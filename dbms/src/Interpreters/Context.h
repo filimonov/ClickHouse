@@ -11,6 +11,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include "config_core.h"
+#include <Common/SensitiveDataMasker.h>
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -169,6 +170,8 @@ public:
     String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
+    std::unique_ptr<SensitiveDataMasker> & getSensitiveDataMasker() const;
+
 
     void setPath(const String & path);
     void setTemporaryPath(const String & path);
