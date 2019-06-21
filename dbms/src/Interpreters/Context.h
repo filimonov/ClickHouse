@@ -10,6 +10,7 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/config.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -167,6 +168,8 @@ public:
     String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
+    std::unique_ptr<SensitiveDataMasker> & getSensitiveDataMasker() const;
+
 
     void setPath(const String & path);
     void setTemporaryPath(const String & path);

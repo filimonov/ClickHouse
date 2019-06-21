@@ -146,6 +146,8 @@ struct ContextShared
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
+    /// Allows to remove sensitive data from queries using set of regexp-based rules
+    mutable std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -522,6 +524,17 @@ String Context::getUserFilesPath() const
 {
     auto lock = getLock();
     return shared->user_files_path;
+}
+
+
+std::unique_ptr<SensitiveDataMasker> & Context::getSensitiveDataMasker() const
+{
+    auto lock = getLock();
+
+    if (!shared->sensitive_data_masker)
+        shared->sensitive_data_masker = std::make_unique<SensitiveDataMasker>(getConfigRef(), "query_masking_rules");
+
+    return shared->sensitive_data_masker;
 }
 
 void Context::setPath(const String & path)

@@ -1,8 +1,8 @@
+#include <Common/Exception.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLException.h>
-#include <Common/Exception.h>
-#include <Common/SensitiveDataMasker.h>
 
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #ifdef __clang__
@@ -63,8 +63,8 @@ TEST(Common, SensitiveDataMasker)
     }
     auto finish = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = finish - start;
-    std::cout << "Elapsed time: " << elapsed.count() << "s per " << iterations << " calls (" << elapsed.count() * 1000000 / iterations
-              << "µs per call)" << std::endl;
+    std::cout << "Elapsed time: " << elapsed.count() << "s per " << iterations <<" calls (" << elapsed.count() * 1000000 / iterations << "µs per call)"
+              << std::endl;
     // I have: "Elapsed time: 3.44022s per 200000 calls (17.2011µs per call)"
     masker2.printStats();
 #endif
@@ -123,10 +123,10 @@ TEST(Common, SensitiveDataMasker)
             <replace>[QUERY IS CENSORED]</replace>
         </rule>
     </query_masking_rules>
-</clickhouse>)END");
+</clickhouse>)END" );
 
     Poco::Util::XMLConfiguration * xml_config(new Poco::Util::XMLConfiguration(xml_isteam));
-    SensitiveDataMasker masker_xml_based(*xml_config, "query_masking_rules");
+    SensitiveDataMasker masker_xml_based( *xml_config, "query_masking_rules" );
     std::string top_secret = "The e-mail of IVAN PETROV is kotik1902@sdsdf.test, and the password is qwerty123";
     EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 4);
     EXPECT_EQ(top_secret, "The e-mail of John Doe is hidden@hidden.test, and the password is ******");
@@ -153,16 +153,18 @@ TEST(Common, SensitiveDataMasker)
             <regexp>abc</regexp>
         </rule>
     </query_masking_rules>
-</clickhouse>)END");
+</clickhouse>)END" );
 
         Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
-        SensitiveDataMasker masker_xml_based_exception_check(*xml_config1, "query_masking_rules");
+        SensitiveDataMasker masker_xml_based_exception_check( *xml_config1, "query_masking_rules" );
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
     catch (DB::Exception & e)
     {
-        EXPECT_EQ(std::string(e.what()), "query_masking_rules configuration contains more than one rule named 'test'.");
+        EXPECT_EQ(
+            std::string(e.what()),
+            "query_masking_rules configuration contains more than one rule named 'test'.");
         EXPECT_EQ(e.code(), DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
 
@@ -174,16 +176,18 @@ TEST(Common, SensitiveDataMasker)
     <query_masking_rules>
         <rule><name>test</name></rule>
     </query_masking_rules>
-</clickhouse>)END");
+</clickhouse>)END" );
 
         Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
-        SensitiveDataMasker masker_xml_based_exception_check(*xml_config1, "query_masking_rules");
+        SensitiveDataMasker masker_xml_based_exception_check( *xml_config1, "query_masking_rules" );
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
     catch (DB::Exception & e)
     {
-        EXPECT_EQ(std::string(e.what()), "query_masking_rules configuration, rule 'test' has no <regexp> node or <regexp> is empty.");
+        EXPECT_EQ(
+            std::string(e.what()),
+            "query_masking_rules configuration, rule 'test' has no <regexp> node or <regexp> is empty.");
         EXPECT_EQ(e.code(), DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
     }
 
@@ -195,10 +199,10 @@ TEST(Common, SensitiveDataMasker)
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
     </query_masking_rules>
-</clickhouse>)END");
+</clickhouse>)END" );
 
         Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
-        SensitiveDataMasker masker_xml_based_exception_check(*xml_config1, "query_masking_rules");
+        SensitiveDataMasker masker_xml_based_exception_check( *xml_config1, "query_masking_rules" );
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
@@ -206,8 +210,11 @@ TEST(Common, SensitiveDataMasker)
     {
         EXPECT_EQ(
             std::string(e.message()),
-            "SensitiveDataMasker: cannot compile re2: ())(, error: missing ): ())(. Look at https://github.com/google/re2/wiki/Syntax for "
-            "reference.: while adding query masking rule 'test'.");
+            "SensitiveDataMasker: cannot compile re2: ())(, error: missing ): ())(. Look at https://github.com/google/re2/wiki/Syntax for reference.: while adding query masking rule 'test'."
+        );
         EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }
+
+
+
 }
