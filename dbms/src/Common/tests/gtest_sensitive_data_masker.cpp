@@ -1,3 +1,6 @@
+#include <Poco/AutoPtr.h>
+#include <Poco/Util/XMLConfiguration.h>
+#include <Poco/XML/XMLException.h>
 #include <Common/Exception.h>
 #include <Common/SensitiveDataMasker.h>
 
@@ -51,7 +54,8 @@ TEST(Common, SensitiveDataMasker)
 #ifndef NDEBUG
     // simple benchmark
     auto start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 200000; ++i)
+    constexpr unsigned long int iterations = 200000;
+    for (int i = 0; i < iterations; ++i)
     {
         std::string query2 = "SELECT id FROM mysql('localhost:3308', 'database', 'table', 'root', 'qwerty123') WHERE ssn='123-45-6789' or "
                              "email='JonhSmith@secret.domain.test'";
@@ -59,8 +63,8 @@ TEST(Common, SensitiveDataMasker)
     }
     auto finish = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = finish - start;
-    std::cout << "Elapsed time: " << elapsed.count() << "s per 200000 calls (" << elapsed.count() * 1000000 / 200000 << "µs per call)"
-              << std::endl;
+    std::cout << "Elapsed time: " << elapsed.count() << "s per " << iterations << " calls (" << elapsed.count() * 1000000 / iterations
+              << "µs per call)" << std::endl;
     // I have: "Elapsed time: 3.44022s per 200000 calls (17.2011µs per call)"
     masker2.printStats();
 #endif
@@ -87,4 +91,123 @@ TEST(Common, SensitiveDataMasker)
 
     EXPECT_EQ(maskerbad.rulesCount(), 0);
     EXPECT_EQ(maskerbad.wipeSensitiveData(x), 0);
+
+    std::istringstream xml_isteam(R"END(<?xml version="1.0"?>
+<clickhouse>
+    <query_masking_rules>
+        <rule>
+            <name>hide SSN</name><!-- by default: it will use xml path, like query_masking_rules.rule[1] -->
+            <regexp>[0-9]{3}-[0-9]{2}-[0-9]{4}</regexp><!-- mandatory -->
+            <replace>000-00-0000</replace><!-- by default - six asterisks (******) -->
+        </rule>
+        <rule>
+            <name>hide root password</name>
+            <regexp>qwerty123</regexp>
+        </rule>
+        <rule>
+            <regexp>(?i)Ivan</regexp>
+            <replace>John</replace>
+        </rule>
+        <rule>
+            <regexp>(?i)Petrov</regexp>
+            <replace>Doe</replace>
+        </rule>
+        <rule>
+            <name>hide email</name>
+            <regexp>(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,4}</regexp>
+            <replace>hidden@hidden.test</replace>
+        </rule>
+        <rule>
+            <name>remove selects to bad_words table</name>
+            <regexp>^.*bad_words.*$</regexp>
+            <replace>[QUERY IS CENSORED]</replace>
+        </rule>
+    </query_masking_rules>
+</clickhouse>)END");
+
+    Poco::Util::XMLConfiguration * xml_config(new Poco::Util::XMLConfiguration(xml_isteam));
+    SensitiveDataMasker masker_xml_based(*xml_config, "query_masking_rules");
+    std::string top_secret = "The e-mail of IVAN PETROV is kotik1902@sdsdf.test, and the password is qwerty123";
+    EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 4);
+    EXPECT_EQ(top_secret, "The e-mail of John Doe is hidden@hidden.test, and the password is ******");
+
+    top_secret = "SELECT * FROM bad_words";
+    EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 1);
+    EXPECT_EQ(top_secret, "[QUERY IS CENSORED]");
+
+#ifndef NDEBUG
+    masker_xml_based.printStats();
+#endif
+
+    try
+    {
+        std::istringstream xml_isteam_bad(R"END(<?xml version="1.0"?>
+<clickhouse>
+    <query_masking_rules>
+        <rule>
+            <name>test</name>
+            <regexp>abc</regexp>
+        </rule>
+        <rule>
+            <name>test</name>
+            <regexp>abc</regexp>
+        </rule>
+    </query_masking_rules>
+</clickhouse>)END");
+
+        Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
+        SensitiveDataMasker masker_xml_based_exception_check(*xml_config1, "query_masking_rules");
+
+        ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
+    }
+    catch (DB::Exception & e)
+    {
+        EXPECT_EQ(std::string(e.what()), "query_masking_rules configuration contains more than one rule named 'test'.");
+        EXPECT_EQ(e.code(), DB::ErrorCodes::INVALID_CONFIG_PARAMETER);
+    }
+
+
+    try
+    {
+        std::istringstream xml_isteam_bad(R"END(<?xml version="1.0"?>
+<clickhouse>
+    <query_masking_rules>
+        <rule><name>test</name></rule>
+    </query_masking_rules>
+</clickhouse>)END");
+
+        Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
+        SensitiveDataMasker masker_xml_based_exception_check(*xml_config1, "query_masking_rules");
+
+        ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
+    }
+    catch (DB::Exception & e)
+    {
+        EXPECT_EQ(std::string(e.what()), "query_masking_rules configuration, rule 'test' has no <regexp> node or <regexp> is empty.");
+        EXPECT_EQ(e.code(), DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    }
+
+
+    try
+    {
+        std::istringstream xml_isteam_bad(R"END(<?xml version="1.0"?>
+<clickhouse>
+    <query_masking_rules>
+        <rule><name>test</name><regexp>())(</regexp></rule>
+    </query_masking_rules>
+</clickhouse>)END");
+
+        Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
+        SensitiveDataMasker masker_xml_based_exception_check(*xml_config1, "query_masking_rules");
+
+        ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
+    }
+    catch (DB::Exception & e)
+    {
+        EXPECT_EQ(
+            std::string(e.message()),
+            "SensitiveDataMasker: cannot compile re2: ())(, error: missing ): ())(. Look at https://github.com/google/re2/wiki/Syntax for "
+            "reference.: while adding query masking rule 'test'.");
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+    }
 }
