@@ -91,8 +91,7 @@ public:
             {
                 auto rule_config_prefix = config_prefix + "." + rule;
 
-                auto rule_name
-                    = config.has(rule_config_prefix + ".name") ? config.getString(rule_config_prefix + ".name") : rule_config_prefix;
+                auto rule_name = config.getString(rule_config_prefix + ".name", rule_config_prefix);
 
                 if (used_names.count(rule_name) == 0)
                 {
@@ -105,7 +104,7 @@ public:
                         ErrorCodes::INVALID_CONFIG_PARAMETER);
                 }
 
-                auto regexp = config.has(rule_config_prefix + ".regexp") ? config.getString(rule_config_prefix + ".regexp") : "";
+                auto regexp = config.getString(rule_config_prefix + ".regexp", "");
 
                 if (regexp == "")
                 {
