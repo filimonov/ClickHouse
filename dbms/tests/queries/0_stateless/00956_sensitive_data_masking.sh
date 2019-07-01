@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT \
 
 # check events count properly increments
 $CLICKHOUSE_CLIENT \
-  --query="select * from (select sum(value) as matches from system.events where event='QueryMaskingRulesMatches') where matches < 5"
+  --query="select * from (select sum(value) as matches from system.events where event='QueryMaskingRulesMatch') where matches < 5"
 
 # and finally querylog
 $CLICKHOUSE_CLIENT \

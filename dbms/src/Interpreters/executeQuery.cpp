@@ -33,7 +33,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event QueryMaskingRulesMatches;
+    extern const Event QueryMaskingRulesMatch;
 }
 
 
@@ -74,8 +74,9 @@ static String prepareQueryForLogging(const String & query, Context & context)
     // we will store less than log_queries_cut_to_length in logs
     res = res.substr(0, context.getSettingsRef().log_queries_cut_to_length);
     auto matches = context.getSensitiveDataMasker()->wipeSensitiveData(res);
-    if ( matches > 0 ) {
-        ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatches, matches);
+    if (matches > 0)
+    {
+        ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
     }
     return res;
 }
@@ -210,7 +211,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Anyway log the query.
         String query = String(begin, begin + std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
 
-        auto query_for_logging = prepareQueryForLogging( query, context );
+        auto query_for_logging = prepareQueryForLogging(query, context);
         logQuery(query_for_logging, context, internal);
 
         if (!internal)
@@ -223,7 +224,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query(begin, query_end);
     BlockIO res;
 
-    auto query_for_logging = prepareQueryForLogging( query, context );
+    auto query_for_logging = prepareQueryForLogging(query, context);
 
     try
     {

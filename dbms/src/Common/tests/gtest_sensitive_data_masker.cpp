@@ -13,12 +13,22 @@
 #include <gtest/gtest.h>
 
 
-using namespace DB;
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int CANNOT_COMPILE_REGEXP;
+extern const int NO_ELEMENTS_IN_CONFIG;
+extern const int INVALID_CONFIG_PARAMETER;
+}
+};
 
 
 TEST(Common, SensitiveDataMasker)
 {
-    SensitiveDataMasker masker;
+
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> empty_xml_config = new Poco::Util::XMLConfiguration();
+    DB::SensitiveDataMasker masker(*empty_xml_config , "");
     masker.addMaskingRule("all a letters", "a+", "--a--");
     masker.addMaskingRule("all b letters", "b+", "--b--");
     masker.addMaskingRule("all d letters", "d+", "--d--");
@@ -36,8 +46,7 @@ TEST(Common, SensitiveDataMasker)
     masker.printStats();
 #endif
 
-
-    SensitiveDataMasker masker2;
+    DB::SensitiveDataMasker masker2(*empty_xml_config , "");
     masker2.addMaskingRule("hide root password", "qwerty123", "******");
     masker2.addMaskingRule("hide SSN", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "000-00-0000");
     masker2.addMaskingRule("hide email", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,4}", "hidden@hidden.test");
@@ -69,7 +78,7 @@ TEST(Common, SensitiveDataMasker)
     masker2.printStats();
 #endif
 
-    SensitiveDataMasker maskerbad;
+    DB::SensitiveDataMasker maskerbad(*empty_xml_config , "");
 
     // gtest has not good way to check exception content, so just do it manually (see https://github.com/google/googletest/issues/952 )
     try
@@ -92,7 +101,8 @@ TEST(Common, SensitiveDataMasker)
     EXPECT_EQ(maskerbad.rulesCount(), 0);
     EXPECT_EQ(maskerbad.wipeSensitiveData(x), 0);
 
-    std::istringstream xml_isteam(R"END(<?xml version="1.0"?>
+    {
+        std::istringstream xml_isteam(R"END(<?xml version="1.0"?>
 <clickhouse>
     <query_masking_rules>
         <rule>
@@ -123,21 +133,22 @@ TEST(Common, SensitiveDataMasker)
             <replace>[QUERY IS CENSORED]</replace>
         </rule>
     </query_masking_rules>
-</clickhouse>)END" );
+</clickhouse>)END");
 
-    Poco::Util::XMLConfiguration * xml_config(new Poco::Util::XMLConfiguration(xml_isteam));
-    SensitiveDataMasker masker_xml_based( *xml_config, "query_masking_rules" );
-    std::string top_secret = "The e-mail of IVAN PETROV is kotik1902@sdsdf.test, and the password is qwerty123";
-    EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 4);
-    EXPECT_EQ(top_secret, "The e-mail of John Doe is hidden@hidden.test, and the password is ******");
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam);
+        DB::SensitiveDataMasker masker_xml_based(*xml_config, "query_masking_rules");
+        std::string top_secret = "The e-mail of IVAN PETROV is kotik1902@sdsdf.test, and the password is qwerty123";
+        EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 4);
+        EXPECT_EQ(top_secret, "The e-mail of John Doe is hidden@hidden.test, and the password is ******");
 
-    top_secret = "SELECT * FROM bad_words";
-    EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 1);
-    EXPECT_EQ(top_secret, "[QUERY IS CENSORED]");
+        top_secret = "SELECT * FROM bad_words";
+        EXPECT_EQ(masker_xml_based.wipeSensitiveData(top_secret), 1);
+        EXPECT_EQ(top_secret, "[QUERY IS CENSORED]");
 
 #ifndef NDEBUG
-    masker_xml_based.printStats();
+        masker_xml_based.printStats();
 #endif
+    }
 
     try
     {
@@ -153,10 +164,9 @@ TEST(Common, SensitiveDataMasker)
             <regexp>abc</regexp>
         </rule>
     </query_masking_rules>
-</clickhouse>)END" );
-
-        Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
-        SensitiveDataMasker masker_xml_based_exception_check( *xml_config1, "query_masking_rules" );
+</clickhouse>)END");
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
@@ -176,10 +186,10 @@ TEST(Common, SensitiveDataMasker)
     <query_masking_rules>
         <rule><name>test</name></rule>
     </query_masking_rules>
-</clickhouse>)END" );
+</clickhouse>)END");
 
-        Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
-        SensitiveDataMasker masker_xml_based_exception_check( *xml_config1, "query_masking_rules" );
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
@@ -199,10 +209,10 @@ TEST(Common, SensitiveDataMasker)
     <query_masking_rules>
         <rule><name>test</name><regexp>())(</regexp></rule>
     </query_masking_rules>
-</clickhouse>)END" );
+</clickhouse>)END");
 
-        Poco::Util::XMLConfiguration * xml_config1(new Poco::Util::XMLConfiguration(xml_isteam_bad));
-        SensitiveDataMasker masker_xml_based_exception_check( *xml_config1, "query_masking_rules" );
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> xml_config = new Poco::Util::XMLConfiguration(xml_isteam_bad);
+        DB::SensitiveDataMasker masker_xml_based_exception_check(*xml_config, "query_masking_rules");
 
         ADD_FAILURE() << "XML should throw an error on bad XML" << std::endl;
     }
@@ -214,7 +224,5 @@ TEST(Common, SensitiveDataMasker)
         );
         EXPECT_EQ(e.code(), DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
     }
-
-
 
 }

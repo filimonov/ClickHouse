@@ -411,7 +411,7 @@
     <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
 
 
-    <!-- Uncomment to use query making rules.
+    <!-- Uncomment to use query masking rules.
         name - name for the rule (optional)
         regexp - RE2 compatible regular expression (mandatory)
         replace - substitution string for sensitive data (optional, by default - six asterisks)
