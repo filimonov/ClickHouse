@@ -17,7 +17,7 @@ echo "SELECT 'TOPSECRET=TOPSECRET' FRRRROM numbers" | ${CLICKHOUSE_CURL} -sSg ${
 
 # failure at before query start
 $CLICKHOUSE_CLIENT \
-  --query="SET send_logs_level='trace';SELECT 'TOPSECRET=TOPSECRET' FROM non_existing_table FORMAT Null" \
+  --query="SET send_logs_level='trace'; SELECT 'TOPSECRET=TOPSECRET' FROM non_existing_table FORMAT Null" \
   --log_queries=1 --ignore-error --multiquery   2>&1 | grep TOPSECRET
 
 # failure at the end of query
