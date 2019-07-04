@@ -582,8 +582,8 @@ The masking rules are applied on whole query (to prevent leaks of sensitive data
 
 `system.events` table have counter `QueryMaskingRulesMatch` which have overall number of query masking rules matches.
 
-For distributed queried each server have to be configured separately, otherwise subquries passed to other
-nodes will store queries without masking.
+For distributed queries each server have to be configured separately, otherwise subquries passed to other
+nodes will be stored without masking.
 
 ## remote_servers
 
