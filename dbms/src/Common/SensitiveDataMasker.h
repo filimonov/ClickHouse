@@ -21,7 +21,7 @@ public:
     SensitiveDataMasker(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
     ~SensitiveDataMasker();
     void addMaskingRule(const std::string & name, const std::string & regexp_string, const std::string & replacement_string);
-    int wipeSensitiveData(std::string & data);
+    int wipeSensitiveData(std::string & data) const;
 
 #ifndef NDEBUG
     void printStats();

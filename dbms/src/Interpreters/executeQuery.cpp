@@ -73,10 +73,14 @@ static String prepareQueryForLogging(const String & query, Context & context)
     // side effect: if the query had long string with sensitive data which were removed,
     // we will store less than log_queries_cut_to_length in logs
     res = res.substr(0, context.getSettingsRef().log_queries_cut_to_length);
-    auto matches = context.getSensitiveDataMasker()->wipeSensitiveData(res);
-    if (matches > 0)
+
+    if (auto masker = context.getSensitiveDataMasker())
     {
-        ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
+        auto matches = masker->wipeSensitiveData(res);
+        if (matches > 0)
+        {
+            ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
+        }
     }
     return res;
 }
@@ -224,7 +228,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     String query(begin, query_end);
     BlockIO res;
 
-    auto query_for_logging = prepareQueryForLogging(query, context);
+    String query_for_logging = "";
 
     try
     {
@@ -239,8 +243,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (context.hasQueryParameters())
         {
             query = serializeAST(*ast);
-            query_for_logging = prepareQueryForLogging(query, context);
         }
+
+        query_for_logging = prepareQueryForLogging(query, context);
 
         logQuery(query_for_logging, context, internal);
 
@@ -458,7 +463,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     catch (...)
     {
         if (!internal)
+        {
+            if (query_for_logging.empty())
+                query_for_logging = prepareQueryForLogging(query, context);
+
             onExceptionBeforeStart(query_for_logging, context, current_time);
+        }
 
         DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
 

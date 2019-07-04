@@ -147,7 +147,7 @@ struct ContextShared
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     /// Allows to remove sensitive data from queries using set of regexp-based rules
-    mutable std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
+    std::unique_ptr<SensitiveDataMasker> sensitive_data_masker;
     std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -287,6 +287,7 @@ struct ContextShared
         background_pool.reset();
         schedule_pool.reset();
         ddl_worker.reset();
+        sensitive_data_masker.reset();
     }
 
 private:
@@ -524,15 +525,15 @@ String Context::getUserFilesPath() const
     return shared->user_files_path;
 }
 
-
-std::unique_ptr<SensitiveDataMasker> & Context::getSensitiveDataMasker() const
+void Context::setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker)
 {
     auto lock = getLock();
+    shared->sensitive_data_masker = std::move(sensitive_data_masker);
+}
 
-    if (!shared->sensitive_data_masker)
-        shared->sensitive_data_masker = std::make_unique<SensitiveDataMasker>(getConfigRef(), "query_masking_rules");
-
-    return shared->sensitive_data_masker;
+SensitiveDataMasker * Context::getSensitiveDataMasker() const
+{
+    return shared->sensitive_data_masker.get();
 }
 
 void Context::setPath(const String & path)

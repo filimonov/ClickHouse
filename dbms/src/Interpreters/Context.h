@@ -170,8 +170,9 @@ public:
     String getTemporaryPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
-    std::unique_ptr<SensitiveDataMasker> & getSensitiveDataMasker() const;
 
+    void setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker);
+    SensitiveDataMasker * getSensitiveDataMasker() const;
 
     void setPath(const String & path);
     void setTemporaryPath(const String & path);

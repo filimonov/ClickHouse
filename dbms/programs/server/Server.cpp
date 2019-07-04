@@ -490,6 +490,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
+    if (config().has("query_masking_rules"))
+    {
+        global_context->setSensitiveDataMasker(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
+
     LOG_INFO(log, "Loading metadata from " + path);
     try
     {

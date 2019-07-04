@@ -137,7 +137,7 @@ void SensitiveDataMasker::addMaskingRule(
 }
 
 
-int SensitiveDataMasker::wipeSensitiveData(std::string & data)
+int SensitiveDataMasker::wipeSensitiveData(std::string & data) const
 {
     int matches = 0;
     for (auto & rule : all_masking_rules)
