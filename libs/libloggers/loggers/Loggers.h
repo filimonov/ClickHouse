@@ -31,11 +31,6 @@ protected:
     std::optional<size_t> layer;
 
 private:
-    Poco::AutoPtr<Poco::FileChannel> createPocoFileChannel(Poco::Util::AbstractConfiguration & config, const std::string & path);
-    Poco::AutoPtr<Poco::Channel>     createSyslogChannel(Poco::Util::AbstractConfiguration & config, const std::string & cmd_name);
-
-    Poco::AutoPtr<DB::OwnFormattingChannel> wrapChannelWithFormatter(Poco::AutoPtr<Poco::Channel> original_channel, OwnPatternFormatter::Options options = OwnPatternFormatter::ADD_NOTHING);
-
     Poco::AutoPtr<Poco::FileChannel> log_file;
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
     Poco::AutoPtr<Poco::Channel> syslog_channel;
