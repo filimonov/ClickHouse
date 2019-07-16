@@ -173,7 +173,7 @@ public:
     String getFlagsPath() const;
     String getUserFilesPath() const;
 
-    void setSensitiveDataMasker(std::unique_ptr<SensitiveDataMasker> sensitive_data_masker);
+    void setSensitiveDataMasker(std::shared_ptr<SensitiveDataMasker> sensitive_data_masker);
     SensitiveDataMasker * getSensitiveDataMasker() const;
 
     void setPath(const String & path);
