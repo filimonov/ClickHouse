@@ -75,6 +75,8 @@ class ShellCommand;
 class ICompressionCodec;
 class SettingsConstraints;
 
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -134,7 +136,7 @@ private:
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
-    Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
+    Context * global_context = nullptr;     /// Global context. Could be equal to this.
 
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
@@ -293,6 +295,8 @@ public:
     BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
     BlockOutputStreamPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
 
+    OutputFormatPtr getOutputFormatProcessor(const String & name, WriteBuffer & buf, const Block & sample) const;
+
     InterserverIOHandler & getInterserverIOHandler();
 
     /// How other servers can access this for downloading replicated data.
@@ -348,7 +352,10 @@ public:
 
     void setQueryContext(Context & context_) { query_context = &context_; }
     void setSessionContext(Context & context_) { session_context = &context_; }
-    void setGlobalContext(Context & context_) { global_context = &context_; }
+
+    void makeQueryContext() { query_context = this; }
+    void makeSessionContext() { session_context = this; }
+    void makeGlobalContext() { global_context = this; }
 
     const Settings & getSettingsRef() const { return settings; }
     Settings & getSettingsRef() { return settings; }
@@ -377,6 +384,8 @@ public:
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
+    /// Reset current zookeeper session. Do not create a new one.
+    void resetZooKeeper() const;
 
     /// Create a cache of uncompressed blocks of specified size. This can be done only once.
     void setUncompressedCache(size_t max_size_in_bytes);
