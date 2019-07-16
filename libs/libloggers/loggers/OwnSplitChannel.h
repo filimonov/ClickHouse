@@ -3,6 +3,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include "ExtendedLogChannel.h"
+#include <Common/SensitiveDataMasker.h>
 
 
 namespace DB
@@ -16,14 +17,19 @@ public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
 
+    void setMasker(const std::shared_ptr<DB::SensitiveDataMasker> _sensitive_data_masker);
+
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
 private:
+    void logSplit(const Poco::Message & msg);
+
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::vector<ExtendedChannelPtrPair> channels;
+    std::shared_ptr<DB::SensitiveDataMasker> sensitive_data_masker;
 };
 
 }

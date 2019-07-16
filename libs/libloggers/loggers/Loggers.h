@@ -3,6 +3,8 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/FileChannel.h>
 #include <Poco/Util/Application.h>
+#include <Common/SensitiveDataMasker.h>
+#include "OwnFormattingChannel.h"
 
 namespace Poco::Util
 {
@@ -14,6 +16,8 @@ class Loggers
 {
 public:
     void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
+    void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::shared_ptr<DB::SensitiveDataMasker> sensitive_data_masker, const std::string & cmd_name = "");
+
 
     /// Close log files. On next log write files will be reopened.
     void closeLogs(Poco::Logger & logger);
@@ -27,10 +31,15 @@ protected:
     std::optional<size_t> layer;
 
 private:
-    /// Файлы с логами.
+    Poco::AutoPtr<Poco::FileChannel> createPocoFileChannel(Poco::Util::AbstractConfiguration & config, const std::string & path);
+    Poco::AutoPtr<Poco::Channel>     createSyslogChannel(Poco::Util::AbstractConfiguration & config, const std::string & cmd_name);
+
+    Poco::AutoPtr<DB::OwnFormattingChannel> wrapChannelWithFormatter(Poco::AutoPtr<Poco::Channel> original_channel, OwnPatternFormatter::Options options = OwnPatternFormatter::ADD_NOTHING);
+
     Poco::AutoPtr<Poco::FileChannel> log_file;
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
     Poco::AutoPtr<Poco::Channel> syslog_channel;
+
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::string config_logger;
 };

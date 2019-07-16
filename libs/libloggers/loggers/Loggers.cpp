@@ -1,6 +1,7 @@
 #include "Loggers.h"
 
 #include <iostream>
+#include <Common/SensitiveDataMasker.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include "OwnFormattingChannel.h"
@@ -12,6 +13,7 @@
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/Path.h>
 
+
 // TODO: move to libcommon
 static std::string createDirectory(const std::string & file)
 {
@@ -22,7 +24,59 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
+Poco::AutoPtr<Poco::FileChannel> Loggers::createPocoFileChannel(Poco::Util::AbstractConfiguration & config, const std::string & path)
+{
+    Poco::AutoPtr<Poco::FileChannel> result = new Poco::FileChannel;
+    result->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(path).absolute().toString());
+    result->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
+    result->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
+    result->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
+    result->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
+    result->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
+    result->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
+    return result;
+}
+
+Poco::AutoPtr<Poco::Channel> Loggers::createSyslogChannel(Poco::Util::AbstractConfiguration & config, const std::string & cmd_name)
+{
+    Poco::AutoPtr<Poco::Channel> channel;
+    //const std::string & cmd_name = commandName();
+    if (config.has("logger.syslog.address"))
+    {
+        channel = new Poco::Net::RemoteSyslogChannel();
+        // syslog address
+        channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_LOGHOST, config.getString("logger.syslog.address"));
+        if (config.has("logger.syslog.hostname"))
+        {
+            channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
+        }
+        channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
+        channel->setProperty(
+            Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
+    }
+    else
+    {
+        channel = new Poco::SyslogChannel();
+        channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
+        channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
+        channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
+    }
+    return channel;
+}
+
+Poco::AutoPtr<DB::OwnFormattingChannel> Loggers::wrapChannelWithFormatter(Poco::AutoPtr<Poco::Channel> original_channel, OwnPatternFormatter::Options options)
+{
+    Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, options);
+    return new DB::OwnFormattingChannel(pf, original_channel);
+}
+
+// do we still need old interface for something else?
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
+{
+    Loggers::buildLoggers(config, logger, {}, cmd_name);
+}
+
+void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::shared_ptr<DB::SensitiveDataMasker> sensitive_data_masker, const std::string & cmd_name)
 {
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger)
@@ -34,6 +88,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
     Poco::AutoPtr<DB::OwnSplitChannel> split = new DB::OwnSplitChannel;
+    if (sensitive_data_masker)
+    {
+        split->setMasker(sensitive_data_masker);
+    }
 
     auto log_level = config.getString("logger.level", "trace");
     const auto log_path = config.getString("logger.log", "");
@@ -43,20 +101,10 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
-        log_file = new Poco::FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(log_path).absolute().toString());
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
-        log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-        log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
-        log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
-        log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
-        log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
+        log_file = std::move(createPocoFileChannel(config,log_path));
         log_file->open();
 
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
-
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, log_file);
-        split->addChannel(log);
+        split->addChannel(wrapChannelWithFormatter(error_log_file));
     }
 
     const auto errorlog_path = config.getString("logger.errorlog", "");
@@ -65,64 +113,28 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         createDirectory(errorlog_path);
         std::cerr << "Logging errors to " << errorlog_path << std::endl;
 
-        error_log_file = new Poco::FileChannel;
-        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(errorlog_path).absolute().toString());
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
-        error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
-
-        Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
+        error_log_file = std::move(createPocoFileChannel(config, errorlog_path));
+        auto errorlog = wrapChannelWithFormatter(error_log_file);
         errorlog->setLevel(Poco::Message::PRIO_NOTICE);
         errorlog->open();
+
         split->addChannel(errorlog);
     }
 
     /// "dynamic_layer_selection" is needed only for Yandex.Metrika, that share part of ClickHouse code.
     /// We don't need this configuration parameter.
-
     if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
     {
-        //const std::string & cmd_name = commandName();
-
-        if (config.has("logger.syslog.address"))
-        {
-            syslog_channel = new Poco::Net::RemoteSyslogChannel();
-            // syslog address
-            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_LOGHOST, config.getString("logger.syslog.address"));
-            if (config.has("logger.syslog.hostname"))
-            {
-                syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
-            }
-            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
-            syslog_channel->setProperty(
-                Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
-        }
-        else
-        {
-            syslog_channel = new Poco::SyslogChannel();
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
-        }
+        syslog_channel = std::move(createSyslogChannel(config,cmd_name));
         syslog_channel->open();
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
-
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, syslog_channel);
-        split->addChannel(log);
+        split->addChannel(wrapChannelWithFormatter(syslog_channel, OwnPatternFormatter::ADD_LAYER_TAG));
     }
 
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO))))
     {
-        Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(new OwnPatternFormatter(this), new Poco::ConsoleChannel);
         logger.warning("Logging " + log_level + " to console");
-        split->addChannel(log);
+        split->addChannel(wrapChannelWithFormatter(new Poco::ConsoleChannel));
     }
 
     split->open();
@@ -158,6 +170,7 @@ void Loggers::closeLogs(Poco::Logger & logger)
         log_file->close();
     if (error_log_file)
         error_log_file->close();
+    // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
         logger.warning("Logging to console but received signal to close log file (ignoring).");
