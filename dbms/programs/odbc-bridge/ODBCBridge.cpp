@@ -123,13 +123,13 @@ void ODBCBridge::initialize(Application & self)
 
     config().setString("logger", "ODBCBridge");
 
-    std::shared_ptr<SensitiveDataMasker> sensitive_data_masker;
+    buildLoggers(config(), logger());
+
     if (config().has("query_masking_rules"))
     {
-        sensitive_data_masker = std::make_shared<SensitiveDataMasker>(config(), "query_masking_rules");
+        setLoggerSensitiveDataMasker(logger(), std::make_shared<SensitiveDataMasker>(config(), "query_masking_rules"));
     }
 
-    buildLoggers(config(), logger(), sensitive_data_masker);
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");

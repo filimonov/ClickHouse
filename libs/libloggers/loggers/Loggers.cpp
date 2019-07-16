@@ -23,13 +23,7 @@ static std::string createDirectory(const std::string & file)
     return path.toString();
 };
 
-// do we still need old interface for something else?
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
-{
-    Loggers::buildLoggers(config, logger, nullptr, cmd_name);
-}
-
-void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::shared_ptr<DB::SensitiveDataMasker> sensitive_data_masker, const std::string & cmd_name)
 {
     auto current_logger = config.getString("logger", "");
     if (config_logger == current_logger)
@@ -41,10 +35,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
     Poco::AutoPtr<DB::OwnSplitChannel> split = new DB::OwnSplitChannel;
-    if (sensitive_data_masker)
-    {
-        split->setMasker(sensitive_data_masker);
-    }
 
     auto log_level = config.getString("logger.level", "trace");
     const auto log_path = config.getString("logger.log", "");
@@ -161,6 +151,15 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (!levels.empty())
         for (const auto & level : levels)
             logger.root().get(level).setLevel(config.getString("logger.levels." + level, "trace"));
+}
+
+void Loggers::setLoggerSensitiveDataMasker(Poco::Logger & logger /*_root*/, const std::shared_ptr<DB::SensitiveDataMasker> sensitive_data_masker)
+{
+    if (sensitive_data_masker)
+    {
+        auto split = dynamic_cast<DB::OwnSplitChannel *>(logger.getChannel());
+        split->setMasker(sensitive_data_masker);
+    }
 }
 
 void Loggers::closeLogs(Poco::Logger & logger)
