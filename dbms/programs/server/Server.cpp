@@ -399,6 +399,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
+
+    if (config().has("query_masking_rules"))
+    {
+        global_context->setSensitiveDataMasker(std::make_shared<SensitiveDataMasker>(config(), "query_masking_rules"));
+    }
+
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         config().getString("path", ""),
@@ -407,6 +413,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         [&](ConfigurationPtr config)
         {
             buildLoggers(*config, logger());
+            if (auto masker = global_context->getSensitiveDataMasker())
+            {
+                setLoggerSensitiveDataMasker(logger(), masker);
+            }
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
         },
@@ -489,13 +499,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
-
-    if (config().has("query_masking_rules"))
-    {
-        auto masker = std::make_shared<SensitiveDataMasker>(config(), "query_masking_rules");
-        global_context->setSensitiveDataMasker(masker);
-        setLoggerSensitiveDataMasker(logger(), masker);
-    }
 
     LOG_INFO(log, "Loading metadata from " + path);
     try

@@ -531,9 +531,9 @@ void Context::setSensitiveDataMasker(std::shared_ptr<SensitiveDataMasker> sensit
     shared->sensitive_data_masker = sensitive_data_masker;
 }
 
-SensitiveDataMasker * Context::getSensitiveDataMasker() const
+std::shared_ptr<SensitiveDataMasker> Context::getSensitiveDataMasker() const
 {
-    return shared->sensitive_data_masker.get();
+    return shared->sensitive_data_masker;
 }
 
 void Context::setPath(const String & path)
