@@ -101,7 +101,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
-        log_file = std::move(createPocoFileChannel(config,log_path));
+        log_file = createPocoFileChannel(config,log_path);
         log_file->open();
 
         split->addChannel(wrapChannelWithFormatter(error_log_file));
@@ -113,7 +113,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         createDirectory(errorlog_path);
         std::cerr << "Logging errors to " << errorlog_path << std::endl;
 
-        error_log_file = std::move(createPocoFileChannel(config, errorlog_path));
+        error_log_file = createPocoFileChannel(config, errorlog_path);
         auto errorlog = wrapChannelWithFormatter(error_log_file);
         errorlog->setLevel(Poco::Message::PRIO_NOTICE);
         errorlog->open();
@@ -125,7 +125,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// We don't need this configuration parameter.
     if (config.getBool("logger.use_syslog", false) || config.getBool("dynamic_layer_selection", false))
     {
-        syslog_channel = std::move(createSyslogChannel(config,cmd_name));
+        syslog_channel = createSyslogChannel(config,cmd_name);
         syslog_channel->open();
         split->addChannel(wrapChannelWithFormatter(syslog_channel, OwnPatternFormatter::ADD_LAYER_TAG));
     }

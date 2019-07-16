@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # Get all server logs
-# export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
+export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
 #export CLICKHOUSE_BINARY='../../../../cmake-build-debug/dbms/programs/clickhouse'
-#export CLICKHOUSE_CLIENT_BINARY=='../../../../cmake-build-debug/dbms/programs/clickhouse client'
+#export CLICKHOUSE_CLIENT_BINARY='../../../../cmake-build-debug/dbms/programs/clickhouse client'
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
@@ -14,7 +14,7 @@ tmp_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
 # normal execution
 $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM numbers(1) FORMAT Null" \
-  --send_logs_level=trace --log_queries=1 --ignore-error --multiquery >$tmp_file 2>&1
+  --log_queries=1 --ignore-error --multiquery >$tmp_file 2>&1
 
 grep 'find_me_[hidden]' $tmp_file >/dev/null || echo 'fail 1a'
 grep 'TOPSECRET=TOPSECRET' $tmp_file && echo 'fail 1b'
@@ -28,7 +28,7 @@ grep 'TOPSECRET=TOPSECRET' $tmp_file && echo 'fail 2b'
 # failure at before query start
 $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET' FROM non_existing_table FORMAT Null" \
-  --log_queries=1 --send_logs_level=trace --ignore-error --multiquery >$tmp_file 2>&1
+  --log_queries=1 --ignore-error --multiquery >$tmp_file 2>&1
 
 grep 'find_me_[hidden]' $tmp_file >/dev/null || echo 'fail 3a'
 grep 'TOPSECRET=TOPSECRET' $tmp_file && echo 'fail 3b'
@@ -36,7 +36,7 @@ grep 'TOPSECRET=TOPSECRET' $tmp_file && echo 'fail 3b'
 # failure at the end of query
 $CLICKHOUSE_CLIENT \
   --query="SELECT 'find_me_TOPSECRET=TOPSECRET', intDiv( 100, number - 10) FROM numbers(11) FORMAT Null" \
-  --log_queries=1 --ignore-error --send_logs_level=trace --max_block_size=2 --multiquery >$tmp_file 2>&1
+  --log_queries=1 --ignore-error --max_block_size=2 --multiquery >$tmp_file 2>&1
 
 grep 'find_me_[hidden]' $tmp_file >/dev/null || echo 'fail 4a'
 grep 'TOPSECRET=TOPSECRET' $tmp_file && echo 'fail 4b'
@@ -44,7 +44,7 @@ grep 'TOPSECRET=TOPSECRET' $tmp_file && echo 'fail 4b'
 # run in background
 bash -c "$CLICKHOUSE_CLIENT \
   --query=\"select sleepEachRow(0.5) from numbers(4) where ignore('find_me_TOPSECRET=TOPSECRET')=0 and ignore('fwerkh_that_magic_string_make_me_unique') = 0 FORMAT Null\" \
-  --log_queries=1 --ignore-error --send_logs_level=trace --multiquery 2>&1 | grep TOPSECRET" &
+  --log_queries=1 --ignore-error --multiquery 2>&1 | grep TOPSECRET" &
 
 sleep 0.1
 
@@ -61,16 +61,20 @@ grep 'TOPSECRET' $tmp_file && echo 'fail 5c'
 
 wait
 
+
+# instead of disabling send_logs_level=trace (enabled globally for that test) - redir it's output to /dev/null
 $CLICKHOUSE_CLIENT \
+  --server_logs_file=/dev/null \
   --query="system flush logs"
 
 # check events count properly increments
 $CLICKHOUSE_CLIENT \
+  --server_logs_file=/dev/null \
   --query="select * from (select sum(value) as matches from system.events where event='QueryMaskingRulesMatch') where matches < 5"
 
 # and finally querylog
 $CLICKHOUSE_CLIENT \
-  --send_logs_level=trace \
+  --server_logs_file=/dev/null \
   --query="select * from system.query_log where event_time>now() - 10 and query like '%TOPSECRET%';"
 
 $CLICKHOUSE_CLIENT \
@@ -79,8 +83,7 @@ insert into sensitive select number as id, toDate('2019-01-01') as date, 'abcd' 
 insert into sensitive select number as id, toDate('2019-01-01') as date, 'find_me_TOPSECRET=TOPSECRET' as value1, rand() as valuer from numbers(10);
 insert into sensitive select number as id, toDate('2019-01-01') as date, 'abcd' as value1, rand() as valuer from numbers(10000);
 select * from sensitive WHERE value1 = 'find_me_TOPSECRET=TOPSECRET' FORMAT Null;
-drop table sensetive;" --log_queries=1 --ignore-error --send_logs_level=trace --multiquery >$tmp_file 2>&1
+drop table sensetive;" --log_queries=1 --ignore-error --multiquery >$tmp_file 2>&1
 
 grep 'find_me_[hidden]' $tmp_file >/dev/null || echo 'fail 4a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 4b'
-

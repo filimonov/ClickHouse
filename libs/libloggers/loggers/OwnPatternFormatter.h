@@ -8,8 +8,8 @@
 /** Format log messages own way.
   * We can't obtain some details using Poco::PatternFormatter.
   *
-  * Firstly, the thread number here is peaked not from Poco::Thread threads only,
-  * but from all threads with number obtained (see ThreadNumber.h)
+  * Firstly, the thread number here is peaked not from Poco::Thread
+  * threads only, but from all threads with number assigned (see ThreadNumber.h)
   *
   * Secondly, the local date and time are correctly displayed.
   * Poco::PatternFormatter does not work well with local time,
