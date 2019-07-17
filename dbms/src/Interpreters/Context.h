@@ -174,7 +174,7 @@ public:
     String getUserFilesPath() const;
 
     void setSensitiveDataMasker(std::shared_ptr<SensitiveDataMasker> sensitive_data_masker);
-    std::shared_ptr<SensitiveDataMasker> Context::getSensitiveDataMasker() const;
+    std::shared_ptr<SensitiveDataMasker> getSensitiveDataMasker() const;
 
     void setPath(const String & path);
     void setTemporaryPath(const String & path);
