@@ -271,7 +271,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         LOG_INFO(log, "Shutting down storages.");
 
         // global_context is the owner of sensitive_data_masker, which will be destoyed after global_context->shutdown() call
-        setLoggerSensitiveDataMasker(log, nullptr);
+        setLoggerSensitiveDataMasker(logger(), nullptr);
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shutted down storages.");

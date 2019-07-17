@@ -166,7 +166,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     if (config().has("query_masking_rules"))
     {
         context->setSensitiveDataMasker(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
-        setLoggerSensitiveDataMasker(log, context->getSensitiveDataMasker());
+        setLoggerSensitiveDataMasker(logger(), context->getSensitiveDataMasker());
     }
 
     auto server = Poco::Net::HTTPServer(

@@ -16,7 +16,7 @@ class Loggers
 {
 public:
     void buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger, const std::string & cmd_name = "");
-    void setLoggerSensitiveDataMasker(Poco::Logger * logger /*_root*/, DB::SensitiveDataMasker * sensitive_data_masker);
+    void setLoggerSensitiveDataMasker(Poco::Logger & logger, DB::SensitiveDataMasker * sensitive_data_masker);
 
 
     /// Close log files. On next log write files will be reopened.
