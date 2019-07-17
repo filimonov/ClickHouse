@@ -71,8 +71,9 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 }
 
 
-void OwnSplitChannel::setMasker(const std::shared_ptr<DB::SensitiveDataMasker> _sensitive_data_masker)
+void OwnSplitChannel::setMasker(DB::SensitiveDataMasker * _sensitive_data_masker)
 {
+    std::lock_guard lock(mutex);
     sensitive_data_masker = _sensitive_data_masker;
 }
 

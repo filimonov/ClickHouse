@@ -153,11 +153,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             logger.root().get(level).setLevel(config.getString("logger.levels." + level, "trace"));
 }
 
-void Loggers::setLoggerSensitiveDataMasker(Poco::Logger & logger /*_root*/, const std::shared_ptr<DB::SensitiveDataMasker> sensitive_data_masker)
+void Loggers::setLoggerSensitiveDataMasker(Poco::Logger * logger /*_root*/, DB::SensitiveDataMasker * sensitive_data_masker)
 {
     if (sensitive_data_masker)
     {
-        auto split = dynamic_cast<DB::OwnSplitChannel *>(logger.getChannel());
+        auto split = dynamic_cast<DB::OwnSplitChannel *>(logger->getChannel());
         split->setMasker(sensitive_data_masker);
     }
 }

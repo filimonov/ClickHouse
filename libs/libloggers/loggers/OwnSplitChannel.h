@@ -17,7 +17,7 @@ public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
 
-    void setMasker(const std::shared_ptr<DB::SensitiveDataMasker> _sensitive_data_masker);
+    void setMasker(DB::SensitiveDataMasker * _sensitive_data_masker);
 
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
@@ -29,7 +29,8 @@ private:
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::vector<ExtendedChannelPtrPair> channels;
-    std::shared_ptr<DB::SensitiveDataMasker> sensitive_data_masker;
+    DB::SensitiveDataMasker * sensitive_data_masker;
+    std::mutex mutex;
 };
 
 }

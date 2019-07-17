@@ -125,11 +125,6 @@ void ODBCBridge::initialize(Application & self)
 
     buildLoggers(config(), logger());
 
-    if (config().has("query_masking_rules"))
-    {
-        setLoggerSensitiveDataMasker(logger(), std::make_shared<SensitiveDataMasker>(config(), "query_masking_rules"));
-    }
-
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
@@ -167,6 +162,12 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 
     context = std::make_shared<Context>(Context::createGlobal());
     context->makeGlobalContext();
+
+    if (config().has("query_masking_rules"))
+    {
+        context->setSensitiveDataMasker(std::make_unique<SensitiveDataMasker>(config(), "query_masking_rules"));
+        setLoggerSensitiveDataMasker(log, context->getSensitiveDataMasker());
+    }
 
     auto server = Poco::Net::HTTPServer(
         new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
