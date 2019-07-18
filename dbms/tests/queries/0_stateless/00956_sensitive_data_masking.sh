@@ -2,7 +2,8 @@
 
 # Get all server logs
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
-#export CLICKHOUSE_BINARY='../../../../cmake-build-debug/dbms/programs/clickhouse'
+#export CLICKHOUSE_BINARY='../../../../build-vscode/Debug/dbms/programs/clickhouse'
+#export CLICKHOUSE_PORT_TCP=59000
 #export CLICKHOUSE_CLIENT_BINARY='../../../../cmake-build-debug/dbms/programs/clickhouse client'
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -11,7 +12,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cur_name=$(basename "${BASH_SOURCE[0]}")
 tmp_file=${CLICKHOUSE_TMP}/$cur_name"_server.logs"
 
-rm -f $tmp_file
+rm -f $tmp_file >/dev/null 2>&1
 echo 1
 # normal execution
 $CLICKHOUSE_CLIENT \
@@ -21,7 +22,7 @@ $CLICKHOUSE_CLIENT \
 grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 1a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 1b'
 
-rm -f $tmp_file
+rm -f $tmp_file >/dev/null 2>&1
 echo 2
 # failure at parsing stage
 echo "SELECT 'find_me_TOPSECRET=TOPSECRET' FRRRROM numbers" | ${CLICKHOUSE_CURL} -sSg ${CLICKHOUSE_URL} -d @- >$tmp_file 2>&1
@@ -32,7 +33,7 @@ echo "SELECT 'find_me_TOPSECRET=TOPSECRET' FRRRROM numbers" | ${CLICKHOUSE_CURL}
 # grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 2a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 2b'
 
-rm -f $tmp_file
+rm -f $tmp_file >/dev/null 2>&1
 echo 3
 # failure at before query start
 $CLICKHOUSE_CLIENT \
@@ -42,7 +43,7 @@ $CLICKHOUSE_CLIENT \
 grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 3a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 3b'
 
-rm -f $tmp_file
+rm -f $tmp_file >/dev/null 2>&1
 echo 4
 # failure at the end of query
 $CLICKHOUSE_CLIENT \
@@ -62,7 +63,7 @@ sleep 0.1
 
 # $CLICKHOUSE_CLIENT --query='SHOW PROCESSLIST'
 
-rm -f $tmp_file
+rm -f $tmp_file >/dev/null 2>&1
 echo '5.1'
 # check that executing query doesn't expose secrets in processlist
 $CLICKHOUSE_CLIENT --query="SHOW PROCESSLIST" --log_queries=0 >$tmp_file 2>&1
@@ -93,7 +94,7 @@ $CLICKHOUSE_CLIENT \
   --query="select * from system.query_log where event_time>now() - 10 and query like '%TOPSECRET%';"
 
 
-rm -f $tmp_file
+rm -f $tmp_file >/dev/null 2>&1
 echo 8
 $CLICKHOUSE_CLIENT \
    --query="drop table if exists sensetive; create table sensitive ( id UInt64, date Date, value1 String, value2 UInt64) Engine=MergeTree ORDER BY id PARTITION BY date;
@@ -105,3 +106,5 @@ drop table sensetive;" --log_queries=1 --ignore-error --multiquery >$tmp_file 2>
 
 grep 'find_me_\[hidden\]' $tmp_file >/dev/null || echo 'fail 8a'
 grep 'TOPSECRET' $tmp_file && echo 'fail 8b'
+
+echo 'finish'
