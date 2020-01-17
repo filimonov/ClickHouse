@@ -3,20 +3,20 @@
 namespace DB
 {
 WriteBufferToKafkaProducer::WriteBufferToKafkaProducer(
-    ProducerPtr producer_,
+    cppkafka::Configuration & conf,
     const std::string & topic_,
     std::optional<char> delimiter,
     size_t rows_per_message,
     size_t chunk_size_,
     std::chrono::milliseconds poll_timeout)
     : WriteBuffer(nullptr, 0)
-    , producer(producer_)
     , topic(topic_)
     , delim(delimiter)
     , max_rows(rows_per_message)
     , chunk_size(chunk_size_)
     , timeout(poll_timeout)
 {
+    producer = std::make_unique<cppkafka::Producer>(conf);
 }
 
 WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()

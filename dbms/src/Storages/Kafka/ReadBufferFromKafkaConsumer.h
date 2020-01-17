@@ -14,13 +14,11 @@ namespace Poco
 namespace DB
 {
 
-using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
-
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
     ReadBufferFromKafkaConsumer(
-        ConsumerPtr consumer_,
+        cppkafka::Configuration & conf,
         Poco::Logger * log_,
         size_t max_batch_size,
         size_t poll_timeout_,
@@ -45,7 +43,7 @@ public:
 private:
     using Messages = std::vector<cppkafka::Message>;
 
-    ConsumerPtr consumer;
+    std::unique_ptr<cppkafka::Consumer> consumer;
     Poco::Logger * log;
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;

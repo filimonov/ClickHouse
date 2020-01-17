@@ -10,14 +10,13 @@ namespace DB
 using namespace std::chrono_literals;
 
 ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
-    ConsumerPtr consumer_,
+    cppkafka::Configuration & conf,
     Poco::Logger * log_,
     size_t max_batch_size,
     size_t poll_timeout_,
     bool intermediate_commit_,
     const std::atomic<bool> & stopped_)
     : ReadBuffer(nullptr, 0)
-    , consumer(consumer_)
     , log(log_)
     , batch_size(max_batch_size)
     , poll_timeout(poll_timeout_)
@@ -25,6 +24,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     , stopped(stopped_)
     , current(messages.begin())
 {
+    consumer = std::make_unique<cppkafka::Consumer>(conf);
 }
 
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()

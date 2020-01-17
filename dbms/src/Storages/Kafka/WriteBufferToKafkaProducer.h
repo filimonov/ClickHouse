@@ -9,13 +9,11 @@
 namespace DB
 {
 
-using ProducerPtr = std::shared_ptr<cppkafka::Producer>;
-
 class WriteBufferToKafkaProducer : public WriteBuffer
 {
 public:
     WriteBufferToKafkaProducer(
-        ProducerPtr producer_,
+        cppkafka::Configuration & conf,
         const std::string & topic_,
         std::optional<char> delimiter,
         size_t rows_per_message,
@@ -29,7 +27,7 @@ public:
 private:
     void nextImpl() override;
 
-    ProducerPtr producer;
+    std::unique_ptr<cppkafka::Producer> producer;
     const std::string topic;
     const std::optional<char> delim;
     const size_t max_rows;

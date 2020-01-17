@@ -35,7 +35,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -231,38 +230,43 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
 }
 
 
-ProducerBufferPtr StorageKafka::createWriteBuffer()
+
+cppkafka::Configuration StorageKafka::getConsumerConfiguration()
 {
+
     cppkafka::Configuration conf;
-    conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
-    conf.set("client.id", VERSION_FULL);
-    // TODO: fill required settings
+    conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
     updateConfiguration(conf);
 
-    auto producer = std::make_shared<cppkafka::Producer>(conf);
-    const Settings & settings = global_context.getSettingsRef();
-    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
-
-    return std::make_shared<WriteBufferToKafkaProducer>(
-        producer, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024, std::chrono::milliseconds(poll_timeout));
-}
-
-
-ConsumerBufferPtr StorageKafka::createReadBuffer()
-{
-    cppkafka::Configuration conf;
-    conf.set("metadata.broker.list", brokers);
-    conf.set("group.id", group);
-    conf.set("client.id", VERSION_FULL);
-    conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+    // we don't want those to be changed by user:
     conf.set("enable.auto.commit", "false");       // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false");     // Ignore EOF messages
-    updateConfiguration(conf);
 
-    // Create a consumer and subscribe to topics
-    auto consumer = std::make_shared<cppkafka::Consumer>(conf);
+    return conf;
+}
+
+// TODO: fill required settings
+cppkafka::Configuration StorageKafka::getProducerConfiguration()
+{
+    cppkafka::Configuration conf;
+    updateConfiguration(conf);
+    return conf;
+}
+
+
+ProducerBufferPtr StorageKafka::createWriteBuffer()
+{
+    const Settings & settings = global_context.getSettingsRef();
+    size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
+
+    auto conf = getProducerConfiguration();
+    return std::make_shared<WriteBufferToKafkaProducer>(
+        conf, topics[0], row_delimiter ? std::optional<char>{row_delimiter} : std::optional<char>(), 1, 1024, std::chrono::milliseconds(poll_timeout));
+}
+
+ConsumerBufferPtr StorageKafka::createReadBuffer()
+{
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = global_context.getSettingsRef();
@@ -271,25 +275,34 @@ ConsumerBufferPtr StorageKafka::createReadBuffer()
         batch_size = settings.max_block_size.value;
     size_t poll_timeout = settings.stream_poll_timeout_ms.totalMilliseconds();
 
+    auto conf = getConsumerConfiguration();
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
-    return std::make_shared<ReadBufferFromKafkaConsumer>(consumer, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled);
+    return std::make_shared<ReadBufferFromKafkaConsumer>(conf, log, batch_size, poll_timeout, intermediate_commit, stream_cancelled);
 }
 
 
 void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 {
+    // overwritable defaults
+    conf.set("client.id", VERSION_FULL);
+
     // Update consumer configuration from the configuration
     const auto & config = global_context.getConfigRef();
     if (config.has(CONFIG_PREFIX))
         loadFromConfig(conf, config, CONFIG_PREFIX);
 
     // Update consumer topic-specific configuration
+    // NOTE: when consuming multiple topics at once we just "merge" settings (no way to diffentiate)
     for (const auto & topic : topics)
     {
         const auto topic_config_key = CONFIG_PREFIX + "_" + topic;
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
+
+    // we don't want those to be changed by user
+    conf.set("metadata.broker.list", brokers);
+    conf.set("group.id", group);
 }
 
 bool StorageKafka::checkDependencies(const StorageID & table_id)

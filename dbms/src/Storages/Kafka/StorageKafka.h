@@ -116,6 +116,10 @@ private:
     void threadFunc();
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
+    cppkafka::Configuration getConsumerConfiguration();
+    cppkafka::Configuration getProducerConfiguration();
+
+
 };
 
 }
