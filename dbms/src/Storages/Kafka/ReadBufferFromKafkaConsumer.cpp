@@ -25,6 +25,16 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     , current(messages.begin())
 {
     consumer = std::make_unique<cppkafka::Consumer>(conf);
+    consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList& topic_partitions) {
+        LOG_TRACE(log, "Topics/partitions assigned: " << topic_partitions);
+    });
+    consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList& topic_partitions) {
+        LOG_TRACE(log, "Got revoked: " << topic_partitions);
+    });
+    consumer->set_rebalance_error_callback([this](cppkafka::Error err) {
+        LOG_TRACE(log, "Rebalance error: " << err);
+    });
+    //    consumer->subscribe();
 }
 
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()

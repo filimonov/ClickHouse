@@ -12,6 +12,7 @@ import json
 import subprocess
 import kafka.errors
 from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer
+from kafka.admin import NewTopic
 from google.protobuf.internal.encoder import _VarintBytes
 
 """
@@ -70,7 +71,7 @@ def kafka_produce(topic, messages, timestamp=None):
     for message in messages:
         producer.send(topic=topic, value=message, timestamp_ms=timestamp)
         producer.flush()
-    print ("Produced {} messages for topic {}".format(len(messages), topic))
+  #  print ("Produced {} messages for topic {}".format(len(messages), topic))
 
 
 def kafka_consume(topic):
@@ -132,7 +133,7 @@ def kafka_setup_teardown():
     wait_kafka_is_available()
     print("kafka is available - running test")
     yield  # run test
-    instance.query('DROP TABLE test.kafka')
+    instance.query('DROP TABLE IF EXISTS test.kafka')
 
 
 # Tests
@@ -726,6 +727,119 @@ def test_kafka_commit_on_block_write(kafka_cluster):
 
     assert result == 1, 'Messages from kafka get duplicated!'
 
+
+@pytest.mark.timeout(600)
+def test_kafka_rebalance(kafka_cluster):
+
+    NUMBER_OF_CONSURRENT_CONSUMERS=2
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+        CREATE TABLE test.destination (
+            key UInt64,
+            value UInt64,
+            _topic String,
+            _key String,
+            _offset UInt64,
+            _partition UInt64,
+            _timestamp Nullable(DateTime),
+            _consumed_by LowCardinality(String)
+        )
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+   # kafka_cluster.open_bash_shell('instance')
+
+    #time.sleep(2)
+
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    topic_list = []
+    topic_list.append(NewTopic(name="topic_with_multiple_partitions", num_partitions=11, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    cancel = threading.Event()
+
+    msg_index = [0]
+    def produce():
+        while not cancel.is_set():
+            messages = []
+            for _ in range(101):
+                messages.append(json.dumps({'key': msg_index[0], 'value': msg_index[0]}))
+                msg_index[0] += 1
+            kafka_produce('topic_with_multiple_partitions', messages)
+
+    kafka_thread = threading.Thread(target=produce)
+    kafka_thread.start()
+
+    for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
+        table_name = 'kafka_consumer{}'.format(consumer_index)
+        print("Setting up {}".format(table_name))
+
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+            DROP TABLE IF EXISTS test.{0}_mv;
+            CREATE TABLE test.{0} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                        kafka_topic_list = 'topic_with_multiple_partitions',
+                        kafka_group_name = 'rebalance_test_group',
+                        kafka_format = 'JSONEachRow',
+                        kafka_max_block_size = 33;
+            CREATE MATERIALIZED VIEW test.{0}_mv TO test.destination AS
+                SELECT
+                key,
+                value,
+                _topic,
+                _key,
+                _offset,
+                _partition,
+                _timestamp,
+                '{0}' as _consumed_by
+            FROM test.{0};
+        '''.format(table_name))
+    #    kafka_cluster.open_bash_shell('instance')
+        while int(instance.query("SELECT count() FROM test.destination WHERE _consumed_by='{}'".format(table_name))) == 0:
+            print("Dropping test.kafka_consumer{}".format(consumer_index))
+            time.sleep(1)
+
+    cancel.set()
+
+    kafka_cluster.open_bash_shell('instance')
+
+    # I leave last one working by intent (to finish consuming after all rebalances)
+    for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS-1):
+        print("Dropping test.kafka_consumer{}".format(consumer_index))
+        instance.query('DROP TABLE IF EXISTS test.kafka_consumer{}'.format(consumer_index))
+        while int(instance.query("SELECT count() FROM system.tables WHERE database='test' AND name='kafka_consumer{}'".format(consumer_index))) == 1:
+            time.sleep(1)
+
+    while 1:
+        messages_consumed = int(instance.query('SELECT uniqExact(key) FROM test.destination'))
+        if messages_consumed >= msg_index[0]:
+            break
+        time.sleep(1)
+        print("Waiting for finishing consuming (have {}, should be {})".format(messages_consumed,msg_index[0]))
+
+    print(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
+
+    result = int(instance.query('SELECT count() == uniqExact(key) FROM test.destination'))
+
+    for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
+        print("kafka_consumer{}".format(consumer_index))
+        table_name = 'kafka_consumer{}'.format(consumer_index)
+        instance.query('''
+            DROP TABLE IF EXISTS test.{0};
+            DROP TABLE IF EXISTS test.{0}_mv;
+        '''.format(table_name))
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.destination;
+    ''')
+
+    kafka_thread.join()
+
+    assert result == 1, 'Messages from kafka get duplicated!'
 
 if __name__ == '__main__':
     cluster.start()
