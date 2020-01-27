@@ -33,15 +33,21 @@ public:
 
     auto pollTimeout() const { return poll_timeout; }
 
+    bool hasMorePolledMessages() const;
+    auto rebalanceHappened() const { return rebalance_happened; }
+    void storeLastReadMessage() { consumer->store_offset(*current); }
+
     // Return values for the message that's being read.
-    String currentTopic() const { return current[-1].get_topic(); }
-    String currentKey() const { return current[-1].get_key(); }
-    auto currentOffset() const { return current[-1].get_offset(); }
-    auto currentPartition() const { return current[-1].get_partition(); }
-    auto currentTimestamp() const { return current[-1].get_timestamp(); }
+    String currentTopic() const { return current->get_topic(); }
+    String currentKey() const { return current->get_key(); }
+    auto currentOffset() const { return current->get_offset(); }
+    auto currentPartition() const { return current->get_partition(); }
+    auto currentTimestamp() const { return current->get_timestamp(); }
+
 
 private:
     using Messages = std::vector<cppkafka::Message>;
+    void printSubscription(const String message, const std::vector<std::string> subscription) const;
 
     std::unique_ptr<cppkafka::Consumer> consumer;
     Poco::Logger * log;
@@ -55,6 +61,8 @@ private:
 
     Messages messages;
     Messages::const_iterator current;
+
+    bool rebalance_happened = false;
 
     bool nextImpl() override;
 };

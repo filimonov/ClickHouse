@@ -798,9 +798,9 @@ def test_kafka_rebalance(kafka_cluster):
                 '{0}' as _consumed_by
             FROM test.{0};
         '''.format(table_name))
-    #    kafka_cluster.open_bash_shell('instance')
+        # kafka_cluster.open_bash_shell('instance')
         while int(instance.query("SELECT count() FROM test.destination WHERE _consumed_by='{}'".format(table_name))) == 0:
-            print("Dropping test.kafka_consumer{}".format(consumer_index))
+            print("Waiting for test.kafka_consumer{} to start consume".format(consumer_index))
             time.sleep(1)
 
     cancel.set()
@@ -823,6 +823,15 @@ def test_kafka_rebalance(kafka_cluster):
 
     print(instance.query('SELECT count(), uniqExact(key), max(key) + 1 FROM test.destination'))
 
+    # SELECT * FROM test.destination where key in (SELECT key FROM test.destination group by key having count() <> 1)
+    # select number + 1 as key from numbers(4141) left join test.destination using (key) where  test.destination.key = 0;
+    # SELECT * FROM test.destination WHERE key between 2360 and 2370 order by key;
+    # select _partition from test.destination group by _partition having count() <> max(_offset) + 1;
+    # select toUInt64(0) as _partition, number + 1 as _offset from numbers(400) left join test.destination using (_partition,_offset) where test.destination.key = 0 order by _offset;
+    # SELECT * FROM test.destination WHERE _partition = 0 and _offset between 220 and 240 order by _offset;
+
+
+
     result = int(instance.query('SELECT count() == uniqExact(key) FROM test.destination'))
 
     for consumer_index in range(NUMBER_OF_CONSURRENT_CONSUMERS):
@@ -840,6 +849,62 @@ def test_kafka_rebalance(kafka_cluster):
     kafka_thread.join()
 
     assert result == 1, 'Messages from kafka get duplicated!'
+
+
+
+
+@pytest.mark.timeout(180)
+def test_kafka_off_by_one_error_at_the_end_of_partition(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    topic_list = []
+    topic_list.append(NewTopic(name="topic_with_multiple_partitions2", num_partitions=50, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'topic_with_multiple_partitions2',
+                     kafka_group_name = 'topic_with_multiple_partitions2',
+                     kafka_format = 'JSONEachRow',
+                     kafka_row_delimiter = '\\n';
+                     kafka_max_block_size = 2;
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka;
+    ''')
+
+    messages = []
+    for i in range(100):
+        messages.append(json.dumps({'key': i, 'value': i}))
+    kafka_produce('topic_with_multiple_partitions2', messages)
+
+    while 1:
+        messages_consumed = int(instance.query('SELECT uniqExact(key) FROM test.view'))
+        if messages_consumed >= 100:
+            break
+        time.sleep(1)
+        print("Waiting for finishing consuming (have {}, should be {})".format(messages_consumed,100))
+
+
+    result = int(instance.query('SELECT count() == uniqExact(key) FROM test.view'))
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert result == 1, 'Messages from kafka get duplicated!'
+
+
+# todo
+# single event (check current-1 commit)
+# flush by block size & by timeout
+
 
 if __name__ == '__main__':
     cluster.start()

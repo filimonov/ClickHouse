@@ -230,7 +230,7 @@ ConsumerBufferPtr StorageKafka::popReadBuffer(std::chrono::milliseconds timeout)
 }
 
 
-
+// TODO: configuration related stuff with needed methods should go to a separate class
 cppkafka::Configuration StorageKafka::getConsumerConfiguration()
 {
 
@@ -409,8 +409,13 @@ bool StorageKafka::streamToViews()
     else
         in = streams[0];
 
-    std::atomic<bool> stub = {false};
-    copyData(*in, *block_io.out, &stub);
+    bool some_data_copied = false;
+    copyData(*in, *block_io.out, [](){ return false; }, [&](const Block& /* block */){ some_data_copied = true; });
+
+    if (!some_data_copied) {
+        return false;
+    }
+
     for (auto & stream : streams)
         stream->as<KafkaBlockInputStream>()->commit();
 

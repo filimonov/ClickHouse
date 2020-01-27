@@ -31,9 +31,11 @@ private:
     Context context;
     Names column_names;
     UInt64 max_block_size;
+//    size_t total_rows = 0;
 
     ConsumerBufferPtr buffer;
     bool broken = true, claimed = false, commit_in_suffix;
+    bool finished = false;
     const Block non_virtual_header, virtual_header;
 };
 

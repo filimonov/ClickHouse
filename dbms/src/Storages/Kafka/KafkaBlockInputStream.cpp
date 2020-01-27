@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -59,7 +60,7 @@ void KafkaBlockInputStream::readPrefixImpl()
 
 Block KafkaBlockInputStream::readImpl()
 {
-    if (!buffer)
+    if (!buffer || finished)
         return Block();
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
@@ -126,6 +127,8 @@ Block KafkaBlockInputStream::readImpl()
 
         auto new_rows = read_kafka_message();
 
+        buffer->storeLastReadMessage();
+
         auto _topic         = buffer->currentTopic();
         auto _key           = buffer->currentKey();
         auto _offset        = buffer->currentOffset();
@@ -151,8 +154,24 @@ Block KafkaBlockInputStream::readImpl()
 
         total_rows = total_rows + new_rows;
         buffer->allowNext();
-        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
+
+        // LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "TTTTTRRR: " << new_rows << ' ' <<  total_rows << ' ' <<  max_block_size );
+        // grep TTTTTRRR /var/log/clickhouse-server/clickhouse-server.log
+
+        if ( buffer->rebalanceHappened() )
+        {
+            finished = true;
+            return Block();
+        }
+        else if ( buffer->hasMorePolledMessages() ) // we need to read the polled block to the end
+        {
+            continue;
+
+        } else  if (!new_rows || total_rows >= max_block_size || !checkTimeLimit() )
+        {
+            finished = true;
             break;
+        }
     }
 
     if (total_rows == 0)
