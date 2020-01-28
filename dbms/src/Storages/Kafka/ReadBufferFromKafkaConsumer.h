@@ -63,6 +63,7 @@ private:
     Messages::const_iterator current;
 
     bool rebalance_happened = false;
+    cppkafka::TopicPartitionList assignment;
 
     bool nextImpl() override;
 };

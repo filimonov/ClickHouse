@@ -42,6 +42,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     consumer = std::make_unique<cppkafka::Consumer>(conf);
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList& topic_partitions) {
         LOG_TRACE(log, "Topics/partitions assigned: " << topic_partitions);
+        assignment = topic_partitions;
     });
     consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList& topic_partitions) {
         // Rebalance is happening now, and now we have a chance to finish the work
@@ -62,6 +63,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
         BufferBase::set(nullptr, 0, 0);
 
         rebalance_happened = true;
+        assignment.clear();
     });
 
     consumer->set_rebalance_error_callback([this](cppkafka::Error err) {
@@ -81,13 +83,13 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 
 void ReadBufferFromKafkaConsumer::commit()
 {
-    LOG_TRACE(log, "Commiting. Polled offset" << consumer->get_offsets_position(consumer->get_assignment()));
+    LOG_TRACE(log, "Commiting. Polled offset: " << consumer->get_offsets_position(consumer->get_assignment()));
     consumer->async_commit();
 }
 
 void ReadBufferFromKafkaConsumer::printSubscription(const String message, const std::vector<std::string> subscription) const
 {
-    LOG_TRACE(log, message << " [" << boost::algorithm::join(subscription, ", ") << " ]");
+    LOG_TRACE(log, message << " [ " << boost::algorithm::join(subscription, ", ") << " ]");
 }
 
 void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
@@ -108,7 +110,7 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
             {
                 if (subscribe_attempts < 3)
                 {
-                    LOG_TRACE(log, "Subscription attempt #" << subscribe_attempts << " failed." << e.what() << " Retrying.");
+                    LOG_WARNING(log, "Subscription attempt #" << subscribe_attempts << " failed: " << e.what() << ". Retrying.");
                     continue;
                 }
                 else
@@ -123,27 +125,43 @@ void ReadBufferFromKafkaConsumer::subscribe(const Names & topics)
         printSubscription("Already subscribed to topics:", subscription);
     }
 
-    stalled = false;
 
     // While we wait for an assignment after subscribtion, we'll poll zero messages anyway.
     // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
     // But due to the nature of async pause/resume/subscribe we can't guarantee any persistent state:
     // see https://github.com/edenhill/librdkafka/issues/2455
 
-    LOG_TRACE(log, consumer->get_assignment());
-
-    while (consumer->get_subscription().empty())
+    size_t assignment_attempts = 0;
+    while (assignment_attempts < 20)
     {
-
-            if (nextImpl())
+        ++assignment_attempts;
+        try
+        {
+            stalled = false;
+            if (nextImpl() || !assignment.empty()) { // if will call poll, poll will fire callbacks, rebalance callback will set up the assignment
+                rebalance_happened = false;
+                stalled = false;
                 break;
-
-            // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
-            //        see https://github.com/edenhill/librdkafka/issues/2077
+            }
+        }
+        catch (cppkafka::HandleException & e)
+        {
+            LOG_WARNING(log, "Exception during assignment attempt #" << assignment_attempts << ": " << e.what() << ". Retrying.");
+            continue;
         }
     }
-    rebalance_happened = false;
-    stalled = false;
+
+    if (!assignment.empty())
+    {
+        LOG_TRACE(log, "Assigned to topics & partitions: " << assignment );
+    }
+    else
+    {
+        LOG_WARNING(log, "Can not assign" );
+    }
+
+    // FIXME: if we failed to receive "subscribe" response while polling and destroy consumer now, then we may hang up.
+    //        see https://github.com/edenhill/librdkafka/issues/2077
 }
 
 void ReadBufferFromKafkaConsumer::unsubscribe()

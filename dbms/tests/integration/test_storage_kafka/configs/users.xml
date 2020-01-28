@@ -2,7 +2,7 @@
 <yandex>
     <profiles>
         <default>
-            <stream_poll_timeout_ms>30000</stream_poll_timeout_ms>
+            <!--stream_poll_timeout_ms>30000</stream_poll_timeout_ms-->
         </default>
     </profiles>
 
