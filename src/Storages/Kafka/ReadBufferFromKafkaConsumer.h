@@ -29,7 +29,7 @@ public:
         const Names & _topics
     );
     ~ReadBufferFromKafkaConsumer() override;
-    void allowNext() { allowed = true; } // Allow to read next message.
+    void allowNext() { allowed = true; stalled = false; } // Allow to read next message.
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
     void unsubscribe(); // Unsubscribe internal consumer in case of failure.

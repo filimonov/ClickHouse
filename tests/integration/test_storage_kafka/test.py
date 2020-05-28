@@ -120,8 +120,6 @@ def kafka_cluster():
         cluster.start()
         kafka_id = instance.cluster.kafka_docker_id
         print("kafka_id is {}".format(kafka_id))
-        instance.query('CREATE DATABASE test')
-
         yield cluster
 
     finally:
@@ -130,13 +128,11 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query('DROP TABLE IF EXISTS test.kafka')
+    instance.query('DROP DATABASE IF EXISTS test')
+    instance.query('CREATE DATABASE test')
     wait_kafka_is_available()
     print("kafka is available - running test")
     yield  # run test
-    instance.query('DROP TABLE IF EXISTS test.kafka')
-
-
 # Tests
 
 @pytest.mark.timeout(180)
@@ -1427,6 +1423,71 @@ def test_bad_reschedule(kafka_cluster):
 
     assert int(instance.query("SELECT max(consume_ts) - min(consume_ts) FROM test.destination")) < 8
 
+
+# if we came to partition end we will repeat polling until reaching kafka_max_block_size or flush_interval
+# that behavior is a bit quesionable - we can just take a bigger pauses between polls instead -
+# to do more job in a single pass, and give more rest for a thread.
+# But in cases of some peaky loads in kafka topic the current contract sounds more predictable and
+# easier to understand, so let's keep it as is for now.
+@pytest.mark.timeout(120)
+def test_premature_flush_on_eof(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value UInt64)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                    kafka_topic_list = 'premature_flush_on_eof',
+                    kafka_group_name = 'premature_flush_on_eof',
+                    kafka_format = 'JSONEachRow';
+        SELECT * FROM test.kafka LIMIT 1;
+
+        CREATE TABLE test.destination (
+            key UInt64,
+            value UInt64,
+            _topic String,
+            _key String,
+            _offset UInt64,
+            _partition UInt64,
+            _timestamp Nullable(DateTime),
+            _consumed_by LowCardinality(String)
+        )
+        ENGINE = MergeTree()
+        ORDER BY key;
+    ''')
+
+    messages = [json.dumps({'key': j+1, 'value': j+1}) for j in range(1)]
+    kafka_produce('premature_flush_on_eof', messages)
+
+    instance.query('''
+        CREATE MATERIALIZED VIEW test.kafka_consumer TO test.destination AS
+        SELECT
+            key,
+            value,
+            _topic,
+            _key,
+            _offset,
+            _partition,
+            _timestamp
+        FROM test.kafka;
+    ''')
+
+
+    # all subscriptions/assignments done during select, so it start sending data to test.destination
+    # immediately after creation of MV
+    time.sleep(2)
+    # produce more messages after delay
+    kafka_produce('premature_flush_on_eof', messages)
+    # data was not flushed yet (it will be flushed 7.5 sec after creating MV)
+    assert int(instance.query("SELECT count() FROM test.destination")) == 0
+    time.sleep(6)
+
+    # it should be single part, i.e. single insert
+    result = instance.query('SELECT _part, count() FROM test.destination group by _part')
+    assert TSV(result) == TSV('all_1_1_0\t2')
+
+    instance.query('''
+        DROP TABLE test.kafka_consumer;
+        DROP TABLE test.destination;
+    ''')
 
 @pytest.mark.timeout(1200)
 def test_kafka_duplicates_when_commit_failed(kafka_cluster):

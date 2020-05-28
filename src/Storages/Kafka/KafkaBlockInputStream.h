@@ -14,7 +14,7 @@ class KafkaBlockInputStream : public IBlockInputStream
 {
 public:
     KafkaBlockInputStream(
-        StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix = true);
+        StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_ = true, bool stop_when_stalled_ = true);
     ~KafkaBlockInputStream() override;
 
     String getName() const override { return storage.getName(); }
@@ -37,6 +37,7 @@ private:
     bool broken = true;
     bool finished = false;
     bool commit_in_suffix;
+    bool stop_when_stalled;
 
     const Block non_virtual_header;
     const Block virtual_header;

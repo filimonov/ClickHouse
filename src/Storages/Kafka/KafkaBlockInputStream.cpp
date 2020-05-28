@@ -5,7 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
-
+#include <common/logger_useful.h>
 namespace DB
 {
 namespace ErrorCodes
@@ -13,12 +13,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 KafkaBlockInputStream::KafkaBlockInputStream(
-    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
+    StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_, bool stop_when_stalled_)
     : storage(storage_)
     , context(context_)
     , column_names(columns)
     , max_block_size(max_block_size_)
     , commit_in_suffix(commit_in_suffix_)
+    , stop_when_stalled(stop_when_stalled_)
     , non_virtual_header(storage.getSampleBlockNonMaterialized()) /// FIXME: add materialized columns support
     , virtual_header(storage.getSampleBlockForColumns({"_topic", "_key", "_offset", "_partition", "_timestamp"}))
 
@@ -129,47 +130,53 @@ Block KafkaBlockInputStream::readImpl()
     {
         // some formats (like RowBinaryWithNamesAndTypes / CSVWithNames)
         // throw an exception from readPrefix when buffer in empty
-        if (buffer->eof())
-            break;
-
-        auto new_rows = read_kafka_message();
-
-        buffer->storeLastReadMessageOffset();
-
-        auto topic         = buffer->currentTopic();
-        auto key           = buffer->currentKey();
-        auto offset        = buffer->currentOffset();
-        auto partition     = buffer->currentPartition();
-        auto timestamp_raw = buffer->currentTimestamp();
-        auto timestamp     = timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(timestamp_raw->get_timestamp()).count()
-                                                : 0;
-        for (size_t i = 0; i < new_rows; ++i)
+        if (!buffer->eof())
         {
-            virtual_columns[0]->insert(topic);
-            virtual_columns[1]->insert(key);
-            virtual_columns[2]->insert(offset);
-            virtual_columns[3]->insert(partition);
-            if (timestamp_raw)
+            LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "1");
+
+            auto new_rows = read_kafka_message();
+
+            buffer->storeLastReadMessageOffset();
+
+            auto topic         = buffer->currentTopic();
+            auto key           = buffer->currentKey();
+            auto offset        = buffer->currentOffset();
+            auto partition     = buffer->currentPartition();
+            auto timestamp_raw = buffer->currentTimestamp();
+            auto timestamp     = timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(timestamp_raw->get_timestamp()).count()
+                                                    : 0;
+            for (size_t i = 0; i < new_rows; ++i)
             {
-                virtual_columns[4]->insert(timestamp);
+                virtual_columns[0]->insert(topic);
+                virtual_columns[1]->insert(key);
+                virtual_columns[2]->insert(offset);
+                virtual_columns[3]->insert(partition);
+                if (timestamp_raw)
+                {
+                    virtual_columns[4]->insert(timestamp);
+                }
+                else
+                {
+                    virtual_columns[4]->insertDefault();
+                }
             }
-            else
-            {
-                virtual_columns[4]->insertDefault();
-            }
+
+            total_rows = total_rows + new_rows;
+        }
+        // stop_when_stalled = true we stop on any reason of eof
+        // stop_when_stalled = false we stop only if we get eof when not stalled
+        else if (stop_when_stalled || !buffer->isStalled())
+        {
+            break;
         }
 
-        total_rows = total_rows + new_rows;
+        if (!buffer->hasMorePolledMessages() && ((total_rows >= max_block_size) || !checkTimeLimit()))
+        {
+            break;
+        }
+
+        LOG_TRACE(&Poco::Logger::get("kkkkkkk"), "aaaa! {}", info.total_stopwatch.elapsed());
         buffer->allowNext();
-
-        if (buffer->hasMorePolledMessages())
-        {
-            continue;
-        }
-        if (total_rows >= max_block_size || !checkTimeLimit())
-        {
-            break;
-        }
     }
 
     if (buffer->polledDataUnusable() || total_rows == 0)

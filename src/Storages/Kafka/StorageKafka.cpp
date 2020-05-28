@@ -453,7 +453,7 @@ bool StorageKafka::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto stream
-            = std::make_shared<KafkaBlockInputStream>(*this, kafka_context, block_io.out->getHeader().getNames(), block_size, false);
+            = std::make_shared<KafkaBlockInputStream>(*this, kafka_context, block_io.out->getHeader().getNames(), block_size, false, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
