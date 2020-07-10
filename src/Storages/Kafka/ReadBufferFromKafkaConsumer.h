@@ -104,6 +104,7 @@ private:
     void resetIfStopped();
 
     bool nextImpl() override;
+    bool skipPolledErrors();
 };
 
 }

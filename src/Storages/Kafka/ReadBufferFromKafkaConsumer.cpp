@@ -311,7 +311,7 @@ bool ReadBufferFromKafkaConsumer::poll()
     if (polledDataUnusable())
         return false;
 
-    if (hasMorePolledMessages())
+    if (hasMorePolledMessages() && skipPolledErrors())
     {
         allowed = true;
         return true;
@@ -388,22 +388,38 @@ bool ReadBufferFromKafkaConsumer::poll()
         }
     }
 
-    while (auto err = current->get_error())
+    if (!skipPolledErrors())
     {
-        ++current;
+        LOG_ERROR(log, "No actual messages polled, errors only.");
+        stalled_status = ERRORS_RETURNED;
+        return false;
+    }
+
+    allowed = true;
+    stalled_status = NOT_STALLED;
+    return true;
+}
+
+bool ReadBufferFromKafkaConsumer::skipPolledErrors()
+{
+    bool message_found = false;
+
+    while (current != messages.end())
+    {
+        auto err = current->get_error();
+
+        if (!err)
+        {
+            message_found = true;
+            break;
+        }
 
         // TODO: should throw exception instead
         LOG_ERROR(log, "Consumer error: {}", err);
-        if (current == messages.end())
-        {
-            LOG_ERROR(log, "No actual messages polled, errors only.");
-            stalled_status = ERRORS_RETURNED;
-            return false;
-        }
+
+        ++current;
     }
-    stalled_status = NOT_STALLED;
-    allowed = true;
-    return true;
+    return message_found;
 }
 
 void ReadBufferFromKafkaConsumer::resetIfStopped()
