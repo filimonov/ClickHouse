@@ -128,7 +128,6 @@ static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
-
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
     std::lock_guard lock(current_zookeeper_mutex);
@@ -177,7 +176,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this, global_context.getBackgroundPool().getNumberOfThreads())
-    , queue(*this)
+    , merge_strategy_picker(*this)
+    , queue(*this, merge_strategy_picker)
     , fetcher(*this)
     , cleanup_thread(*this)
     , part_check_thread(*this)
@@ -991,6 +991,20 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         log_message << " to " << entry.new_part_name;
 
         LOG_TRACE(log, log_message.rdbuf());
+    }
+
+    /// In some use cases merging can be more expensive than fetching
+    /// and it may be better to spread merges tasks across the replicas
+    /// instead of doing exactly the same merge cluster-wise
+    if (merge_strategy_picker.shouldMergeOnSingleReplica(entry))
+    {
+        auto replica_to_execute_merge = merge_strategy_picker.pickReplicaToExecuteMerge(entry);
+
+        if (replica_to_execute_merge)
+        {
+            LOG_DEBUG(log, "Prefer fetching part " << entry.new_part_name << " from replica " << replica_to_execute_merge.value() << " due execute_merges_on_single_replica_time_threshold" );
+            return false;
+        }
     }
 
     DataPartsVector parts;
@@ -2566,6 +2580,11 @@ void StorageReplicatedMergeTree::exitLeaderElection()
     leader_election = nullptr;
 }
 
+bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, const String & part_name)
+{
+    auto zookeeper = getZooKeeper();
+    return zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name);
+}
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
@@ -2581,7 +2600,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
         if (replica == replica_name)
             continue;
 
-        if (zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/parts/" + part_name) &&
+        if (checkReplicaHavePart(replica, part_name) &&
             (!active || zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active")))
             return replica;
 
@@ -3361,6 +3380,7 @@ void StorageReplicatedMergeTree::alter(
         StorageInMemoryMetadata metadata = getInMemoryMetadata();
         params.apply(metadata);
 
+        merge_strategy_picker.refreshState();
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 

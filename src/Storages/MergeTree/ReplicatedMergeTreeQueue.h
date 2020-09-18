@@ -22,6 +22,7 @@ class StorageReplicatedMergeTree;
 class MergeTreeDataMergerMutator;
 
 class ReplicatedMergeTreeMergePredicate;
+class ReplicatedMergeTreeMergeStrategyPicker;
 
 
 class ReplicatedMergeTreeQueue
@@ -51,6 +52,7 @@ private:
 
 
     StorageReplicatedMergeTree & storage;
+    ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker;
     MergeTreeDataFormatVersion format_version;
 
     String zookeeper_path;
@@ -253,7 +255,7 @@ private:
     };
 
 public:
-    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
+    ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
 
     ~ReplicatedMergeTreeQueue();
 
