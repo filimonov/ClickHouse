@@ -236,7 +236,7 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [mono_block = mono_block](
             WriteBuffer & buf,
             const Block & sample,
-            FormatFactory::WriteCallback,
+            const RowOutputFormatParams &,
             const FormatSettings & format_settings)
         {
             return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, format_settings, mono_block);
@@ -246,7 +246,7 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
     factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
-        FormatFactory::WriteCallback,
+        const RowOutputFormatParams &,
         const FormatSettings & format_settings)
     {
         FormatSettings changed_settings = format_settings;
