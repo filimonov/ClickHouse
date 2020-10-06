@@ -202,7 +202,7 @@ BlockInputStreamPtr FormatFactory::getInput(
 
 
 BlockOutputStreamPtr FormatFactory::getOutput(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool allow_multiple_rows_in_unframed_formats) const
 {
     if (!getCreators(name).output_processor_creator)
     {
@@ -220,7 +220,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(
                 output_getter(buf, sample, std::move(callback), format_settings), sample);
     }
 
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback));
+    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), allow_multiple_rows_in_unframed_formats);
     return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
 }
 
@@ -259,7 +259,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 
 OutputFormatPtr FormatFactory::getOutputFormat(
-    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback) const
+    const String & name, WriteBuffer & buf, const Block & sample, const Context & context, WriteCallback callback, const bool allow_multiple_rows_in_unframed_formats) const
 {
     const auto & output_getter = getCreators(name).output_processor_creator;
     if (!output_getter)
@@ -269,6 +269,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     FormatSettings format_settings = getOutputFormatSetting(settings, context);
 
     RowOutputFormatParams params;
+    params.allow_multiple_rows_in_unframed_formats = allow_multiple_rows_in_unframed_formats;
     params.callback = std::move(callback);
 
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,

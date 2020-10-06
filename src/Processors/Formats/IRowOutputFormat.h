@@ -16,6 +16,14 @@ struct RowOutputFormatParams
 
     // Callback used to indicate that another row is written.
     WriteCallback callback;
+
+    /**
+     * some buffers (kafka / rabbit) split the rows internally using callback
+     * so we can push there formats without framing / delimiters
+     * (like ProtobufSingle). In other cases you can't write more than single row
+     * in unframed format.
+     */
+    bool allow_multiple_rows_in_unframed_formats = false;
 };
 
 class WriteBuffer;
@@ -26,6 +34,7 @@ class IRowOutputFormat : public IOutputFormat
 {
 protected:
     DataTypes types;
+    bool first_row = true;
 
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
@@ -66,7 +75,6 @@ public:
     virtual void writeLastSuffix() {}  /// Write something after resultset, totals end extremes.
 
 private:
-    bool first_row = true;
     bool prefix_written = false;
     bool suffix_written = false;
 
