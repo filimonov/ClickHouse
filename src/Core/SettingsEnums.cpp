@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL;
     extern const int UNKNOWN_UNION;
+    extern const int UNKNOWN_HANDLE_KAFKA_ERROR_MODE;
 }
 
 
@@ -102,4 +103,7 @@ IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
      {"ALL",      UnionMode::ALL},
      {"DISTINCT", UnionMode::DISTINCT}})
 
+IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::UNKNOWN_HANDLE_KAFKA_ERROR_MODE,
+    {{"default",      HandleKafkaErrorMode::DEFAULT},
+     {"stream",       HandleKafkaErrorMode::STREAM}})
 }
