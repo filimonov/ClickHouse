@@ -3,7 +3,7 @@ name: ReleaseBranchCI
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
-  is_debug: ${{ secrets.ACTIONS_STEP_DEBUG || env.ACTIONS_STEP_DEBUG || false }}
+  is_debug: ${{ secrets.ACTIONS_STEP_DEBUG || false }}
 
 on: # yamllint disable-line rule:truthy
   pull_request:
