@@ -98,6 +98,7 @@ def build_clickhouse(
 ) -> Tuple[str, bool]:
     build_log_path = os.path.join(logs_path, BUILD_LOG_NAME)
     success = False
+    logging.info(f"!!!!!!! ENV before starting packager: {' '.join(f'{k}={v}' for k, v in os.environ.items())}")
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
         if os.path.exists(build_output_path):
@@ -320,7 +321,8 @@ def main():
         official_flag,
     )
 
-    logging.info("Going to run packager with %s", packager_cmd)
+    # logging.debug(f"!!!!!!! ENV before starting packager: {' '.join(f'{k}={v}' for k, v in os.environ.items())}")
+    logging.info("Going to run packager with '%s'\nenv: %s", packager_cmd, ' '.join(f'{k}={v}' for k, v in os.environ.items()))
 
     logs_path = os.path.join(TEMP_PATH, "build_log")
     if not os.path.exists(logs_path):
