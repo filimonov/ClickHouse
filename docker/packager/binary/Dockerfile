@@ -82,5 +82,9 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
         --yes --no-install-recommends \
     && apt-get clean
 
+# NOTE (vnemkov): Workaround for missing /usr/lib/llvm-14/lib/clang/14.0.6/lib/linux/libclang_rt.builtins-x86_64.a 
+# https://github.com/llvm/llvm-project/issues/59903#issuecomment-1378634639
+RUN apt-get update && apt download libclang-rt-14-dev && dpkg --force-all -i libclang-rt-14-dev*
+
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]

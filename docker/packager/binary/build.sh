@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -x -e
+export PS4='+ ${LINENO}: '
 
 exec &> >(ts)
 
