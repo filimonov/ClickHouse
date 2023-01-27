@@ -84,7 +84,8 @@ RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
 
 # NOTE (vnemkov): Workaround for missing /usr/lib/llvm-14/lib/clang/14.0.6/lib/linux/libclang_rt.builtins-x86_64.a 
 # https://github.com/llvm/llvm-project/issues/59903#issuecomment-1378634639
-RUN apt-get update && apt download libclang-rt-14-dev && dpkg --force-all -i libclang-rt-14-dev*
+# we can not install it via apt/dpkg, because it has wrong/impossible dependencies
+RUN apt-get update && apt-get install lib32gcc-s1 lib32stdc++6 libc6 libc6-i386 libgcc-s1 libstdc++6 && cd /tmp && apt download libclang-rt-14-dev && ar x *.deb && tar -xvJf data.tar.xz -C / && rm -rf /tmp/*
 
 COPY build.sh /
 CMD ["bash", "-c", "/build.sh 2>&1"]
