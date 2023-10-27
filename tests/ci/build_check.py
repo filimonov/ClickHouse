@@ -28,7 +28,6 @@ from s3_helper import S3Helper
 from tee_popen import TeePopen
 from version_helper import (
     ClickHouseVersion,
-    Git,
     get_version_from_repo,
     update_version_local,
 )
@@ -257,7 +256,6 @@ def main():
 
     logging.info("Got version from repo %s", version.string)
 
-
     official_flag = True
     version._flavour = version_type = CLICKHOUSE_STABLE_VERSION_SUFFIX
     # TODO (vnemkov): right now we'll use simplified version management:
@@ -283,7 +281,7 @@ def main():
 
     # NOTE(vnemkov): since we still want to use CCACHE over SCCACHE, unlike upstream,
     # we need to create local directory for that, just as with 22.8
-    ccache_path = os.path.join(CACHES_PATH, build_name + "_ccache")
+    ccache_path = Path(CACHES_PATH, build_name + "_ccache")
 
     logging.info("Will try to fetch cache for our build")
     try:
@@ -295,9 +293,9 @@ def main():
         logging.info("Failed to get ccache, building without it. Error: %s", e)
         rmtree(ccache_path, ignore_errors=True)
 
-    if not os.path.exists(ccache_path):
+    if not ccache_path.exists():
         logging.info("cache was not fetched, will create empty dir")
-        os.makedirs(ccache_path)
+        ccache_path.mkdir(parents=True)
 
     packager_cmd = get_packager_cmd(
         build_config,
@@ -380,10 +378,10 @@ def main():
     print(f"::notice ::Log URL: {log_url}")
 
     # TODO(vnemkov): make use of Path instead of string concatenation
-    src_path = os.path.join(TEMP_PATH, "build_source.src.tar.gz")
+    src_path = Path(TEMP_PATH, "build_source.src.tar.gz")
     s3_path = s3_path_prefix + "/clickhouse-" + version.string + ".src.tar.gz"
     logging.info("s3_path %s", s3_path)
-    if os.path.exists(src_path):
+    if src_path.exists():
         src_url = s3_helper.upload_build_file_to_s3(
             src_path, s3_path
         )
