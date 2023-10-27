@@ -286,7 +286,7 @@ def main():
     logging.info("Will try to fetch cache for our build")
     try:
         get_ccache_if_not_exists(
-            ccache_path, s3_helper, pr_info.number, TEMP_PATH, pr_info.release_pr
+            ccache_path, s3_helper, pr_info.number, temp_path, pr_info.release_pr
         )
     except Exception as e:
         # In case there are issues with ccache, remove the path and do not fail a build
@@ -337,7 +337,7 @@ def main():
 
     # Upload the ccache first to have the least build time in case of problems
     logging.info("Will upload cache")
-    upload_ccache(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
+    upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
 
     # FIXME performance
     performance_urls = []
@@ -377,8 +377,7 @@ def main():
 
     print(f"::notice ::Log URL: {log_url}")
 
-    # TODO(vnemkov): make use of Path instead of string concatenation
-    src_path = Path(TEMP_PATH, "build_source.src.tar.gz")
+    src_path = temp_path / "build_source.src.tar.gz"
     s3_path = s3_path_prefix + "/clickhouse-" + version.string + ".src.tar.gz"
     logging.info("s3_path %s", s3_path)
     if src_path.exists():
