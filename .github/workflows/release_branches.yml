@@ -201,9 +201,7 @@ jobs:
           clear-repository: true
           submodules: true
           filter: tree:0
-          filter: tree:0
           fetch-depth: 0 # otherwise we will have no info about contributors
-          filter: tree:0
       - name: Build
         run: |
           sudo rm -fr "$TEMP_PATH"
