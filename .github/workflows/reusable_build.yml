@@ -22,6 +22,10 @@ name: Build ClickHouse
         description: the label of runner to use
         default: builder
         type: string
+      timeout_minutes:
+        description: Maximum number of minutes to let workflow run before GitHub cancels it.
+        default: 120
+        type: number
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
@@ -32,6 +36,7 @@ jobs:
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
+    timeout-minutes: ${{inputs.timeout_minutes}}
     steps:
       - name: Trust My Directory
         run: git config --global --add safe.directory * # https://stackoverflow.com/a/71940133

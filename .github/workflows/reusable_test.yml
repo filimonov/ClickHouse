@@ -13,6 +13,10 @@ name: Testing workflow
         description: the label of runner to use
         required: true
         type: string
+      timeout_minutes:
+        description: Maximum number of minutes to let workflow run before GitHub cancels it.
+        default: 120
+        type: number
       run_command:
         description: the command to launch the check. Usually starts with `cd '$REPO_COPY/tests/ci'`
         required: true
@@ -49,7 +53,8 @@ jobs:
     # batches < 1 is misconfiguration,
     # and we need this step only for batches > 1
     if: ${{ inputs.batches > 1 }}
-    runs-on: [self-hosted, style-checker-aarch64]
+    runs-on: ubuntu-latest #TODO(vnemkov): NO need for a beefy custom runner for a simple script
+    #runs-on: [self-hosted, style-checker-aarch64]
     outputs:
       batches: ${{steps.batches.outputs.batches}}
     steps:
@@ -69,6 +74,7 @@ jobs:
     env:
       GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ inputs.batches > 1 && format('-{0}',matrix.batch) || '' }}
     runs-on: [self-hosted, '${{inputs.runner_type}}']
+    timeout-minutes: ${{inputs.timeout_minutes}}
     needs: [PrepareStrategy]
     strategy:
       fail-fast: false  # we always wait for entire matrix
