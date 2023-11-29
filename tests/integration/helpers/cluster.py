@@ -39,6 +39,7 @@ try:
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
 
+
 from dict2xml import dict2xml
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
@@ -946,7 +947,7 @@ class ClickHouseCluster:
 
         env_variables["keeper_binary"] = binary_path
         env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
-        env_variables["image"] = "clickhouse/integration-test:" + self.docker_base_tag
+        env_variables["image"] = "altinityinfra/integration-test:" + self.docker_base_tag
         env_variables["user"] = str(os.getuid())
         env_variables["keeper_fs"] = "bind"
         for i in range(1, 4):
@@ -1563,7 +1564,7 @@ class ClickHouseCluster:
         allow_analyzer=True,
         hostname=None,
         env_variables=None,
-        image="clickhouse/integration-test",
+        image="altinityinfra/integration-test",
         tag=None,
         stay_alive=False,
         ipv4_address=None,
@@ -3251,7 +3252,7 @@ class ClickHouseInstance:
         copy_common_configs=True,
         hostname=None,
         env_variables=None,
-        image="clickhouse/integration-test",
+        image="altinityinfra/integration-test",
         tag="latest",
         stay_alive=False,
         ipv4_address=None,
