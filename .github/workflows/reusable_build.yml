@@ -44,6 +44,8 @@ jobs:
           # Prepend self-hosted
           input="self-hosted, ${input}"
 
+          # Remove all whitespace
+          input="$(echo ${input} | tr -d [:space:])"
           # Make something like a JSON array from comma-separated list
           input="['${input}']"
           input="${input//\,/\'\, \'}"

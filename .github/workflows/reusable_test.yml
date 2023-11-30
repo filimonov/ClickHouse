@@ -10,7 +10,7 @@ name: Testing workflow
         required: true
         type: string
       runner_type:
-        description: the label of runner to use
+        description: the label of runner to use, can be a simple string or a comma-separated list
         required: true
         type: string
       timeout_minutes:
@@ -62,6 +62,8 @@ jobs:
           # Prepend self-hosted
           input="self-hosted, ${input}"
 
+          # Remove all whitespace
+          input="$(echo ${input} | tr -d [:space:])"
           # Make something like a JSON array from comma-separated list
           input="['${input}']"
           input="${input//\,/\'\, \'}"
