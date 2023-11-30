@@ -100,7 +100,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Compatibility check X86
-      runner_type: "['self-hosted', 'style-checker', 'on-demand', 'type-cpx41', 'image-x86-app-docker-ce']"
+      runner_type: style-checker, on-demand, type-cpx4, image-x86-app-docker-ce
       timeout_minutes: 180
       run_command: |
         cd "$REPO_COPY/tests/ci"
@@ -116,7 +116,7 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: "['builder', 'on-demand', 'type-cpx51', 'image-x86-app-docker-ce']"
+      runner_type: builder, on-demand, type-cpx51, image-x86-app-docker-ce
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -126,7 +126,7 @@ jobs:
     with:
       build_name: package_aarch64
       checkout_depth: 0
-      runner_type: "['self-hosted', 'builder', 'on-demand', 'type-cax41', 'image-arm-app-docker-ce']"
+      runner_type: builder, on-demand, type-cax41, image-arm-app-docker-ce
 
 
 ############################################################################################
@@ -170,7 +170,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: ClickHouse build check
-      runner_type: "['style-checker', 'on-demand', 'type-cpx31', 'image-x86-app-docker-ce']"
+      runner_type: style-checker, on-demand, type-cpx31, image-x86-app-docker-ce
       timeout_minutes: 180
       additional_envs: |
         NEEDS_DATA<<NDENV
@@ -207,7 +207,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Install packages (amd64)
-      runner_type: "['style-checker', 'on-demand', 'type-cpx51', 'image-x86-app-docker-ce']"
+      runner_type: style-checker, on-demand, type-cpx51, image-x86-app-docker-ce
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 install_check.py "$CHECK_NAME"
@@ -221,7 +221,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (release)
-      runner_type: "['func-tester', 'on-demand', 'type-cpx51', 'image-x86-snapshot-docker_ipv6_x86']"
+      runner_type: func-tester, on-demand, type-cpx51, image-x86-snapshot-docker_ipv6_x86
       additional_envs: |
         KILL_TIMEOUT=10800
       run_command: |
@@ -233,7 +233,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateless tests (aarch64)
-      runner_type: "['func-tester', 'on-demand', 'type-cax41', 'image-arm-snapshot-docker_ipv6_arm']"
+      runner_type: func-tester, on-demand, type-cax41, image-arm-snapshot-docker_ipv6_arm
       additional_envs: |
         KILL_TIMEOUT=10800
       run_command: |
@@ -249,7 +249,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (release)
-      runner_type: "['func-tester', 'on-demand', 'type-cpx51', 'image-x86-snapshot-docker_ipv6_x86']"
+      runner_type: func-tester, on-demand, type-cpx51, image-x86-snapshot-docker_ipv6_x86
       additional_envs: |
         KILL_TIMEOUT=3600
       run_command: |
@@ -261,7 +261,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stateful tests (aarch64)
-      runner_type: "['func-tester', 'on-demand', 'type-cax41', 'image-arm-snapshot-docker_ipv6_arm']"
+      runner_type: func-tester, on-demand, type-cax41, image-arm-snapshot-docker_ipv6_arm
       additional_envs: |
         KILL_TIMEOUT=3600
       run_command: |
@@ -277,7 +277,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (release)
-      runner_type: "['stress-tester', 'func-tester']"
+      runner_type: stress-tester, func-tester
       batches: 4
       run_command: |
         cd "$REPO_COPY/tests/ci"

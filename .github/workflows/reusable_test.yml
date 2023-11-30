@@ -59,11 +59,12 @@ jobs:
         name: Prepare runner_labels variables for the later steps
         run: |
 
-          # Make something like a JSON array if a single value, or leave as is if something like a JSON array
-          input="$(if [ "${input:0:1}" == '[' ]; then echo "$input"; else echo "['${input}']"; fi)"
+          # Prepend self-hosted
+          input="self-hosted, ${input}"
 
-          # Prepend 'self-hosted' to an JSON array
-          input="${input/\[/\[\'self-hosted\',}"
+          # Make something like a JSON array from comma-separated list
+          input="['${input}']"
+          input="${input//\,/\'\, \'}"
 
           echo "runner_labels=$input" >> ${GITHUB_OUTPUT}
         env:
