@@ -35,7 +35,7 @@ jobs:
     runs-on: [self-hosted, style-checker, on-demand, type-cax41, in-fsn1, image-arm-app-docker-ce]
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@4c313c3667805fcab2e812c9ef8689c0bf4cbafb
         with:
           clear-repository: true
       - name: Images check
@@ -52,7 +52,7 @@ jobs:
     runs-on: [self-hosted, style-checker, on-demand, type-cpx51, image-x86-app-docker-ce]
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@4c313c3667805fcab2e812c9ef8689c0bf4cbafb
         with:
           clear-repository: true
       - name: Images check
@@ -70,7 +70,7 @@ jobs:
     runs-on: [self-hosted, style-checker, on-demand, type-cpx41, image-x86-app-docker-ce]
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@4c313c3667805fcab2e812c9ef8689c0bf4cbafb
         with:
           clear-repository: true
           fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
@@ -116,7 +116,7 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: builder, on-demand, type-cpx51, image-x86-app-docker-ce
+      runner_type: builder, on-demand, type-ccx53, image-x86-app-docker-ce
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -126,7 +126,7 @@ jobs:
     with:
       build_name: package_aarch64
       checkout_depth: 0
-      runner_type: builder, on-demand, type-cax41, image-arm-app-docker-ce
+      runner_type: builder, on-demand, type-ccx53, image-x86-app-docker-ce
 
 
 ############################################################################################
@@ -140,7 +140,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@4c313c3667805fcab2e812c9ef8689c0bf4cbafb
         with:
           clear-repository: true
           fetch-depth: 0  # It MUST BE THE SAME for all dependencies and the job itself
@@ -191,7 +191,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@4c313c3667805fcab2e812c9ef8689c0bf4cbafb
         with:
           clear-repository: true
       - name: Mark Commit Release Ready
@@ -1227,7 +1227,7 @@ jobs:
     runs-on: [self-hosted, style-checker, on-demand, type-cpx31, image-x86-app-docker-ce]
     steps:
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@4c313c3667805fcab2e812c9ef8689c0bf4cbafb
         with:
           clear-repository: true
       - name: Finish label
