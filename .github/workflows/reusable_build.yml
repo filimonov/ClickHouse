@@ -19,7 +19,7 @@ name: Build ClickHouse
         type: number
         default: 1
       runner_type:
-        description: the label of runner to use
+        description: the label of runner to use, can be a simple string or a Json array, like ['abc', 'def']
         default: builder
         type: string
       timeout_minutes:
@@ -31,11 +31,33 @@ name: Build ClickHouse
         type: string
 
 jobs:
+  runner_labels_setup:
+    name: Compute proper runner labels for the rest of the jobs
+    runs-on: ubuntu-latest
+    outputs:
+      runner_labels: ${{ steps.setVariables.outputs.runner_labels }}
+    steps:
+      - id: setVariables
+        name: Prepare runner_labels variables for the later steps
+        run: |
+
+          # Make something like a JSON array if a single value, or leave as is if something like a JSON array
+          input="$(if [ "${input:0:1}" == '[' ]; then echo "$input"; else echo "['${input}']"; fi)"
+
+          # Prepend 'self-hosted' to an JSON array
+          input="${input/\[/\[\'self-hosted\',}"
+
+          echo "runner_labels=$input" >> ${GITHUB_OUTPUT}
+        env:
+          input: ${{ inputs.runner_type }}
+
   Build:
     name: Build-${{inputs.build_name}}
+    needs: runner_labels_setup
+    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
+
     env:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
-    runs-on: [self-hosted, '${{inputs.runner_type}}']
     timeout-minutes: ${{inputs.timeout_minutes}}
     steps:
       - name: Trust My Directory
