@@ -265,8 +265,7 @@ def main():
     # if "release" in pr_info.labels or "release-lts" in pr_info.labels:
     #     version_type = CLICKHOUSE_STABLE_VERSION_SUFFIX
     #     official_flag = True
-
-    update_version_local(version, version_type)
+    # update_version_local(version, version_type)
 
     logging.info(f"Updated local files with version : {version.string} / {version.describe}")
 
