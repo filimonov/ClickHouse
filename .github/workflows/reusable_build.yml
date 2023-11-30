@@ -63,6 +63,11 @@ jobs:
       GITHUB_JOB_OVERRIDDEN: Build-${{inputs.build_name}}
     timeout-minutes: ${{inputs.timeout_minutes}}
     steps:
+      - name: Debug input runer tag names
+        run: |
+          cat <<JSON
+          inputs: ${{toJson(inputs)   }}
+          JSON
       - name: Trust My Directory
         run: git config --global --add safe.directory * # https://stackoverflow.com/a/71940133
       - name: Check out repository code

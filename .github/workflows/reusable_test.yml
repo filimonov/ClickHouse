@@ -109,6 +109,11 @@ jobs:
           && fromJson(needs.PrepareStrategy.outputs.batches)
           || fromJson('[0]')}}
     steps:
+      - name: Debug input runer tag names
+        run: |
+          cat <<JSON
+          inputs: ${{toJson(inputs)   }}
+          JSON
       - name: Check out repository code
         uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
         with:
