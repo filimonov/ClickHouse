@@ -117,6 +117,8 @@ jobs:
       checkout_depth: 0
       timeout_minutes: 180
       runner_type: "['builder', 'on-demand', 'type-cpx51', 'image-x86-app-docker-ce']"
+      additional_envs: |
+        CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
   BuilderDebAarch64:
     needs: [DockerHubPush]
