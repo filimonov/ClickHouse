@@ -135,7 +135,7 @@ jobs:
           inputs: ${{toJson(inputs)   }}
           JSON
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
           submodules: ${{inputs.submodules}}
