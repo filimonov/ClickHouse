@@ -101,7 +101,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Compatibility check X86
-      runner_type: style-checker, on-demand, type-cpx4, image-x86-app-docker-ce
+      runner_type: style-checker, on-demand, type-cpx41, image-x86-app-docker-ce
       timeout_minutes: 180
       run_command: |
         cd "$REPO_COPY/tests/ci"
