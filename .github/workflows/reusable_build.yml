@@ -33,8 +33,11 @@ name: Build ClickHouse
       AWS_SECRET_ACCESS_KEY:
         description: the access key to the aws param store.
         required: true
-      AWS_SECRET_KEY_ID:
+      AWS_ACCESS_KEY_ID:
         description: the access key id to the aws param store.
+        required: true
+      AWS_DEFAULT_REGION:
+        description: the region of the aws param store.
         required: true
       DOCKER_USERNAME:
         description: username of the docker user.
