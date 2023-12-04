@@ -1,10 +1,6 @@
 ### For the pure soul wishes to move it to another place
 # https://github.com/orgs/community/discussions/9050
 
-env:
-  # Force the stdout and stderr streams to be unbuffered
-  PYTHONUNBUFFERED: 1
-
 name: Build ClickHouse
 'on':
   workflow_call:
@@ -14,12 +10,12 @@ name: Build ClickHouse
         required: true
         type: string
       checkout_depth:
-        description: the value of the git shallow checkout
+        description: the value of the git shallow checkout.
         required: false
         type: number
         default: 1
       runner_type:
-        description: the label of runner to use, can be a simple string or a comma-separated list
+        description: the label of runner to use, can be a simple string or a comma-separated list.
         default: builder
         type: string
       timeout_minutes:
@@ -27,8 +23,33 @@ name: Build ClickHouse
         default: 120
         type: number
       additional_envs:
-        description: additional ENV variables to setup the job
+        description: additional ENV variables to setup the job.
         type: string
+    secrets:
+      AWS_SECRET_ACCESS_KEY:
+        description: the access key to the aws param store.
+        required: true
+      AWS_ACCESS_KEY_ID:
+        description: the access key id to the aws param store.
+        required: true
+      AWS_DEFAULT_REGION:
+        description: the region of the aws param store.
+        required: true
+      DOCKER_USERNAME:
+        description: username of the docker user.
+        required: true
+      DOCKER_PASSWORD:
+        description: password to the docker user.
+        required: true
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
 jobs:
   runner_labels_setup:
@@ -71,7 +92,7 @@ jobs:
       - name: Trust My Directory
         run: git config --global --add safe.directory * # https://stackoverflow.com/a/71940133
       - name: Check out repository code
-        uses: Altinity/checkout@34c90ad008fe1469182f3637d3de4766aa10a5c7
+        uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
           submodules: true
