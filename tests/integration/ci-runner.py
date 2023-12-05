@@ -15,8 +15,8 @@ import shlex
 import zlib  # for crc32
 
 
-MAX_RETRY = 1
-NUM_WORKERS = 5
+MAX_RETRY = 3
+NUM_WORKERS = 3
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
