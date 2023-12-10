@@ -26,7 +26,7 @@ runs:
         sudo systemctl restart docker
         sudo systemctl info docker
         # Print info about registry
-        docker info
+        docker --version
         # Check if remote docker proxy is accessible
         ping -c 10 65.108.242.32
         ping -c 10 dockerhub-proxy.dockerhub-proxy-zone
