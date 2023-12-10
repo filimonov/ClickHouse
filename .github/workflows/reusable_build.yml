@@ -118,6 +118,8 @@ jobs:
         uses: ./.github/actions/common_setup
         with:
           job_type: build_check
+      - name: Common docker setup
+        uses: ./.github/actions/docker_setup
       - name: Download changed images
         uses: actions/download-artifact@v3
         with:

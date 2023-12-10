@@ -38,6 +38,8 @@ jobs:
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
+      - name: Common docker setup
+        uses: ./.github/actions/docker_setup
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -55,6 +57,8 @@ jobs:
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
+      - name: Common docker setup
+        uses: ./.github/actions/docker_setup
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -75,6 +79,8 @@ jobs:
           clear-repository: true
           fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
           filter: tree:0
+      - name: Common docker setup
+        uses: ./.github/actions/docker_setup
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v3
         with:

@@ -57,7 +57,7 @@ name: Testing workflow
       DOCKER_PASSWORD:
         description: password to the docker user.
         required: true
-        
+
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
@@ -155,22 +155,8 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
-      - name: Docker configuration
-        shell: bash
-        run: |
-          # make sure docker uses proper IPv6 config and registry for caching
-          sudo touch /etc/docker/daemon.json
-          sudo chown ubuntu:ubuntu /etc/docker/daemon.json
-          sudo cat <<EOT > /etc/docker/daemon.json
-          {
-            "ipv6": true,
-            "fixed-cidr-v6": "2001:3984:3989::/64",
-            "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
-            "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-          }
-          EOT
-          sudo chown root:root /etc/docker/daemon.json
-          sudo systemctl restart docker
+      - name: Docker setup
+        uses: ./.github/actions/docker_setup
       - name: Setup batch
         if: ${{ inputs.batches > 1}}
         run: |
