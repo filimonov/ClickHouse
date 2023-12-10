@@ -24,9 +24,9 @@ runs:
         EOT
         sudo chown root:root /etc/docker/daemon.json
         sudo systemctl restart docker
-        sudo systemctl info docker
+        sudo systemctl status docker
         # Print info about registry
-        docker --version
+        docker info
         # Check if remote docker proxy is accessible
         ping -c 10 65.108.242.32
         ping -c 10 dockerhub-proxy.dockerhub-proxy-zone
