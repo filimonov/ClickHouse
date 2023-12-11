@@ -79,22 +79,28 @@ jobs:
           clear-repository: true
           fetch-depth: 0  # to find ancestor merge commits necessary for finding proper docker tags
           filter: tree:0
+
       - name: Common docker setup
         uses: ./.github/actions/docker_setup
+        secrets: inherit
+
       - name: Download changed aarch64 images
         uses: actions/download-artifact@v3
         with:
           name: changed_images_aarch64
           path: ${{ runner.temp }}
+
       - name: Download changed amd64 images
         uses: actions/download-artifact@v3
         with:
           name: changed_images_amd64
           path: ${{ runner.temp }}
+
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
+
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:

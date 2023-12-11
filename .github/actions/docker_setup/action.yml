@@ -5,6 +5,13 @@ inputs:
     description: the fuse for unintended use inside of the reusable callable jobs
     default: true
     type: boolean
+secrets:
+  DOCKER_USERNAME:
+    description: username for the dockerhub login
+    required: true
+  DOCKER_PASSWORD:
+    description: password for the dockerhub login
+    required: true
 runs:
   using: "composite"
   steps:
@@ -30,3 +37,6 @@ runs:
         # Check if remote docker proxy is accessible
         ping -c 10 65.108.242.32
         # ping -c 10 dockerhub-proxy.dockerhub-proxy-zone
+    - name: Docker login
+      shell: bash
+      run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}

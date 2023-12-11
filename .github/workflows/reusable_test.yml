@@ -85,8 +85,7 @@ jobs:
           # Remove all whitespace
           input="$(echo ${input} | tr -d [:space:])"
           # Make something like a JSON array from comma-separated list
-          input="['${input}']"
-          input="${input//\,/\'\, \'}"
+          input="[ '${input//\,/\'\, \'}' ]"
 
           echo "runner_labels=$input" >> ${GITHUB_OUTPUT}
         env:
@@ -134,6 +133,7 @@ jobs:
           cat <<JSON
           inputs: ${{toJson(inputs)   }}
           JSON
+
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
@@ -141,22 +141,28 @@ jobs:
           submodules: ${{inputs.submodules}}
           fetch-depth: ${{inputs.checkout_depth}}
           filter: tree:0
+
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           ${{inputs.additional_envs}}
           ${{secrets.secret_envs}}
           EOF
+
       - name: Common setup
         uses: ./.github/actions/common_setup
         with:
           job_type: test
+
       - name: Download json reports
         uses: actions/download-artifact@v3
         with:
           path: ${{ env.REPORTS_PATH }}
+
       - name: Docker setup
         uses: ./.github/actions/docker_setup
+        secrets: inherit
+
       - name: Setup batch
         if: ${{ inputs.batches > 1}}
         run: |
@@ -164,8 +170,10 @@ jobs:
           RUN_BY_HASH_NUM=${{matrix.batch}}
           RUN_BY_HASH_TOTAL=${{inputs.batches}}
           EOF
+
       - name: Run test
         run: ${{inputs.run_command}}
+
       - name: Clean
         if: always()
         uses: ./.github/actions/clean
