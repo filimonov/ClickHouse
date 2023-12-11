@@ -397,6 +397,12 @@ def main():
         changed_json = TEMP_PATH / "changed_images.json"
 
     if args.push:
+        logging.info('Docker info BEFORE logging in: %s, ', subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
+            "docker info",
+            encoding="utf-8",
+            shell=True,
+        ))
+
         logging.info('Doing docker login')
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'altinityinfra' --password-stdin",
@@ -405,7 +411,7 @@ def main():
             shell=True,
         )
 
-    loggin.info('Docker info: %s, ', subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
+    logging.info('Docker info: %s, ', subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
         "docker info",
         encoding="utf-8",
         shell=True,
