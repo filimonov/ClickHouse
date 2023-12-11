@@ -34,9 +34,8 @@ runs:
         sudo systemctl status docker
         # Print info about registry
         docker info
-        # Check if remote docker proxy is accessible
-        ping -c 10 65.108.242.32
-        # ping -c 10 dockerhub-proxy.dockerhub-proxy-zone
     - name: Docker login
       shell: bash
-      run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+      run: |
+        docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+        docker info
