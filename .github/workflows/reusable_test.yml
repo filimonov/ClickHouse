@@ -161,7 +161,9 @@ jobs:
 
       - name: Docker setup
         uses: ./.github/actions/docker_setup
-        secrets: inherit
+        with:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Setup batch
         if: ${{ inputs.batches > 1}}

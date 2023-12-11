@@ -5,13 +5,14 @@ inputs:
     description: the fuse for unintended use inside of the reusable callable jobs
     default: true
     type: boolean
-secrets:
   DOCKER_USERNAME:
     description: username for the dockerhub login
     required: true
+    type: string
   DOCKER_PASSWORD:
     description: password for the dockerhub login
     required: true
+    type: string
 runs:
   using: "composite"
   steps:
@@ -37,5 +38,5 @@ runs:
     - name: Docker login
       shell: bash
       run: |
-        docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+        docker login -u ${{ inputs.DOCKER_USERNAME }} -p ${{ inputs.DOCKER_PASSWORD }}
         docker info
