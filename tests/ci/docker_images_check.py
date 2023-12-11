@@ -397,6 +397,7 @@ def main():
         changed_json = TEMP_PATH / "changed_images.json"
 
     if args.push:
+        logging.info('Doing docker login')
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
             "docker login --username 'altinityinfra' --password-stdin",
             input=get_parameter_from_ssm("dockerhub-password"),
@@ -404,6 +405,11 @@ def main():
             shell=True,
         )
 
+    loggin.info('Docker info: %s, ', subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
+        "docker info",
+        encoding="utf-8",
+        shell=True,
+    ))
     images_dict = get_images_dict(Path(REPO_COPY), IMAGES_FILE_PATH)
 
     pr_info = PRInfo()
