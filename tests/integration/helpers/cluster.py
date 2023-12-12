@@ -719,6 +719,12 @@ class ClickHouseCluster:
         return self._redis_port
 
     def print_all_docker_pieces(self):
+        logging.debug("!!! Docker info: %s", subprocess.check_output(
+            "docker info",
+            shell=True,
+            universal_newlines=True,
+        ))
+
         res_networks = subprocess.check_output(
             f"docker network ls --filter name='{self.project_name}*'",
             shell=True,
