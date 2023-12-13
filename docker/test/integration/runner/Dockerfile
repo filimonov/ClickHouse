@@ -25,12 +25,12 @@ RUN apt-get update \
     tzdata=2023c-0ubuntu0.22.04.2 \
     libicu-dev=70.1-2 \
     bsdutils=1:2.37.2-4ubuntu3 \
-    curl=7.81.0-1ubuntu1.14 \
+    curl='7.81.*' \
     python3-pika=1.2.0-1 \
-    liblua5.1-dev=5.1.5-8.1build4 \
+    liblua5.1-dev \
     luajit=2.1.0~beta3+dfsg-6 \
     libssl-dev=3.0.2-0ubuntu1.12 \
-    libcurl4-openssl-dev=7.81.0-1ubuntu1.14 \
+    libcurl4-openssl-dev='7.81.*' \
     gdb=12.1-0ubuntu1~22.04 \
     default-jdk=2:1.11-72build2 \
     software-properties-common=0.99.22.8 \

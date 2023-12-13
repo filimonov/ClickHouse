@@ -11,7 +11,7 @@ RUN apt-get update \
         pv=1.6.6-1build2 \
         ripgrep=13.0.0-2ubuntu0.1 \
         zstd=1.4.8+dfsg-3build1 \
-        locales=2.35-0ubuntu3.4 \
+        locales='2.35*' \
         --yes --no-install-recommends
 
 # Sanitizer options for services (clickhouse-server)

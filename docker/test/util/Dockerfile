@@ -43,7 +43,7 @@ RUN apt-get update \
         build-essential=12.9ubuntu3 \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
-        cmake='3.27.*' \
+        cmake='3.*' \
         gdb=12.1-0ubuntu1~22.04 \
         git=1:2.34.1-1ubuntu1.10 \
         gperf=3.1-1build1 \
