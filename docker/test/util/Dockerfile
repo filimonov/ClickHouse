@@ -10,15 +10,15 @@ ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=16
 
 RUN apt-get update \
     && apt-get install \
-        apt-transport-https \
-        apt-utils \
-        ca-certificates \
-        curl \
-        dnsutils \
-        gnupg \
-        iputils-ping \
-        lsb-release \
-        wget \
+        apt-transport-https=2.4.11 \
+        apt-utils=2.4.11 \
+        ca-certificates=20230311ubuntu0.22.04.1 \
+        curl='7.81.*' \
+        dnsutils=1:9.18.18-0ubuntu0.22.04.1 \
+        gnupg=2.2.27-3ubuntu2.1 \
+        iputils-ping=3:20211215-1 \
+        lsb-release=11.1.0ubuntu4 \
+        wget=1.21.2-2ubuntu1 \
         --yes --no-install-recommends --verbose-versions \
     && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
@@ -38,27 +38,27 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | \
 # initial packages
 RUN apt-get update \
     && apt-get install \
-        bash \
-        bsdmainutils \
-        build-essential \
+        bash=5.1-6ubuntu1 \
+        bsdmainutils=12.1.7+nmu3ubuntu2 \
+        build-essential=12.9ubuntu3 \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
-        cmake \
-        gdb \
-        git \
-        gperf \
+        cmake='3.*' \
+        gdb=12.1-0ubuntu1~22.04 \
+        git=1:2.34.1-1ubuntu1.10 \
+        gperf=3.1-1build1 \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
         libclang-${LLVM_VERSION}-dev \
-        moreutils \
-        nasm \
-        ninja-build \
-        pigz \
-        rename \
-        software-properties-common \
-        tzdata \
+        moreutils=0.66-1 \
+        nasm=2.15.05-1 \
+        ninja-build=1.10.1-1 \
+        pigz=2.6-1 \
+        rename=1.30-1 \
+        software-properties-common=0.99.22.8 \
+        tzdata=2023c-0ubuntu0.22.04.2 \
         --yes --no-install-recommends \
     && apt-get clean
 
