@@ -13,7 +13,7 @@ RUN apt-get update \
         apt-transport-https=2.4.11 \
         apt-utils=2.4.11 \
         ca-certificates=20230311ubuntu0.22.04.1 \
-        curl=7.81.0-1ubuntu1.14 \
+        curl='7.81.*' \
         dnsutils=1:9.18.18-0ubuntu0.22.04.1 \
         gnupg=2.2.27-3ubuntu2.1 \
         iputils-ping=3:20211215-1 \
@@ -43,7 +43,7 @@ RUN apt-get update \
         build-essential=12.9ubuntu3 \
         clang-${LLVM_VERSION} \
         clang-tidy-${LLVM_VERSION} \
-        cmake=3.27.7-0kitware1ubuntu22.04.1 \
+        cmake='3.27.*' \
         gdb=12.1-0ubuntu1~22.04 \
         git=1:2.34.1-1ubuntu1.10 \
         gperf=3.1-1build1 \

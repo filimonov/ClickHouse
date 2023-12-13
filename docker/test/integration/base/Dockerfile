@@ -8,7 +8,7 @@ SHELL ["/bin/bash", "-c"]
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
         bsdutils=1:2.37.2-4ubuntu3 \
-        curl=7.81.0-1ubuntu1.14 \
+        curl='7.81.*' \
         default-jre=2:1.11-72build2 \
         g++=4:11.2.0-1ubuntu1 \
         gdb=12.1-0ubuntu1~22.04 \
@@ -28,7 +28,7 @@ RUN apt-get update \
         tzdata=2023c-0ubuntu0.22.04.2 \
         unixodbc=2.3.9-5 \
         python3-pip=22.0.2+dfsg-1ubuntu0.4 \
-        libcurl4-openssl-dev=7.81.0-1ubuntu1.14 \
+        libcurl4-openssl-dev='7.81.*' \
         libssl-dev=3.0.2-0ubuntu1.12 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
