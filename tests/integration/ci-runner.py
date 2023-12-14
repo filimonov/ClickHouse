@@ -255,6 +255,7 @@ class ClickhouseIntegrationTestsRunner:
         )
         # if use_tmpfs is not set we assume it to be true, otherwise check
         self.use_tmpfs = "use_tmpfs" not in self.params or self.params["use_tmpfs"]
+        self.dockerd_volume_dir = self.params.get("dockerd_volume_dir", None)
         self.disable_net_host = (
             "disable_net_host" in self.params and self.params["disable_net_host"]
         )
@@ -419,8 +420,11 @@ class ClickhouseIntegrationTestsRunner:
 
     def _get_runner_opts(self):
         result = []
-        if self.use_tmpfs:
+        if self.dockerd_volume_dir:
+            result.append(f"--dockerd-volume-dir={self.dockerd_volume_dir}")
+        elif self.use_tmpfs:
             result.append("--tmpfs")
+
         if self.disable_net_host:
             result.append("--disable-net-host")
         if self.use_analyzer:
@@ -877,6 +881,10 @@ class ClickhouseIntegrationTestsRunner:
 
         logging.info("Pulling images")
         runner._pre_pull_images(repo_path)
+        if self.dockerd_volume_dir:
+            logging.info("Cached pre-pulled docker images into %s:\n%s",
+                self.dockerd_volume_dir,
+                subprocess.check_output(f"ls -Rlah {shlex.quote(self.dockerd_volume_dir)}", shell=True))
 
         logging.info(
             "Dump iptables before run %s",

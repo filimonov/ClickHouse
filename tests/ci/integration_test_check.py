@@ -60,6 +60,7 @@ def get_json_params_dict(
     docker_images: List[DockerImage],
     run_by_hash_total: int,
     run_by_hash_num: int,
+    dockerd_volume_dir: Path
 ) -> dict:
     return {
         "context_name": check_name,
@@ -72,6 +73,7 @@ def get_json_params_dict(
         "disable_net_host": True,
         "run_by_hash_total": run_by_hash_total,
         "run_by_hash_num": run_by_hash_num,
+        "dockerd_volume_dir": dockerd_volume_dir.as_posix(),
     }
 
 
@@ -227,6 +229,9 @@ def main():
     build_path = temp_path / "build"
     build_path.mkdir(parents=True, exist_ok=True)
 
+    dockerd_volume_dir = temp_path / "dockerd_volume_dir"
+    dockerd_volume_dir.mkdir(parents=True, exist_ok=True)
+
     if validate_bugfix_check:
         download_last_release(build_path)
     else:
@@ -245,6 +250,7 @@ def main():
                 images,
                 run_by_hash_total,
                 run_by_hash_num,
+                dockerd_volume_dir,
             )
         )
         json_params.write(params_text)
