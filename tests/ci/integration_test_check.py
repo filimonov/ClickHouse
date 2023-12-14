@@ -60,7 +60,7 @@ def get_json_params_dict(
     docker_images: List[DockerImage],
     run_by_hash_total: int,
     run_by_hash_num: int,
-    dockerd_volume_dir: str
+    dockerd_volume_dir: Path
 ) -> dict:
     return {
         "context_name": check_name,
@@ -73,7 +73,7 @@ def get_json_params_dict(
         "disable_net_host": True,
         "run_by_hash_total": run_by_hash_total,
         "run_by_hash_num": run_by_hash_num,
-        "dockerd_volume_dir": dockerd_volume_dir,
+        "dockerd_volume_dir": dockerd_volume_dir.as_posix(),
     }
 
 
