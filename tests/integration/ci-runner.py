@@ -884,7 +884,7 @@ class ClickhouseIntegrationTestsRunner:
         if self.dockerd_volume_dir:
             logging.info("Cached pre-pulled docker images into %s:\n%s",
                 self.dockerd_volume_dir,
-                subprocess.check_output(f"ls -Rlah {shlex.quote(self.dockerd_volume_dir)}", shell=True))
+                subprocess.check_output(f"du -hs {shlex.quote(self.dockerd_volume_dir)}", shell=True))
 
         logging.info(
             "Dump iptables before run %s",
