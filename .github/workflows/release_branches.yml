@@ -312,7 +312,7 @@ jobs:
     with:
       test_name: Integration tests (release)
       runner_type: stress-tester, func-tester
-      batches: 4
+      batches: 6
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 integration_test_check.py "$CHECK_NAME"
@@ -322,7 +322,7 @@ jobs:
 #############################################################################################
   RegressionStart:
     ## Not depending on the tests above since they can fail at any given moment.
-    needs: [BuilderDebRelease, BuilderDebAarch64]
+    needs: [BuilderDebRelease, BuilderDebAarch64, IntegrationTestsRelease]
     runs-on: ubuntu-latest
     steps:
       - run: true
