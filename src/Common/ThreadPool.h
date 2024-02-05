@@ -129,21 +129,54 @@ private:
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
+    struct ThreadIterarorHolder {
+        std::optional<typename std::list<Thread>::iterator> thread_it;
+
+        void set(std::list<Thread>::iterator it) {
+            thread_it = it;
+        }
+    };
+
     boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
+    std::list<Thread> service_threads; // threads that are not used for running jobs, but for housekeeping tasks (only for global thread pool)
+    mutable std::mutex threads_mutex; // used only for threads list manipulations
+
+    // housekeepeing_thread is used only for global thread pool
+    // it monitors regularly the demand for threads in the pool
+    // adjusts the size of the pool by decreasing or increasing
+    // its size depoending on the load
+    std::atomic<size_t> desired_pool_size = 0;
+    std::atomic<size_t> current_pool_size = 0;
+    std::condition_variable housekeeping_thread_cv;
+    std::condition_variable pool_grow_thread_cv;
+
+
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
-    void worker(typename std::list<Thread>::iterator thread_it);
+    void calculateDesiredThreadPoolSizeNoLock();
 
-    /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
-    void startNewThreadsNoLock();
+    void worker(std::shared_ptr<ThreadIterarorHolder> thread_it_holder);
+
+    void removeThread(std::shared_ptr<ThreadIterarorHolder> thread_it);
+
+    /// if number of threads is less than desired, creates new threads
+    /// for async mode it creates a task that creates new threads
+    /// otherwise it creates new threads synchronously in the current thread
+    void startThreads(bool async);
+
+    void adjustThreadPoolSize();
 
     void finalize();
     void onDestroy();
+
+    void threadPoolHousekeep();
+    void threadPoolGrow();
+
 };
 
 
