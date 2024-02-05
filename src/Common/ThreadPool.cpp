@@ -83,6 +83,8 @@ public:
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_THREADS = 1;
 static constexpr const size_t GLOBAL_THREAD_POOL_MIN_FREE_THREADS = 12;
+static constexpr const size_t LOCAL_THREAD_POOL_MIN_FREE_THREADS = 1;
+
 static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_STEP = 8;
 static constexpr const size_t GLOBAL_THREAD_POOL_HOUSEKEEP_INTERVAL_MILLISECONDS = 10000; // 10 seconds
 /// static constexpr const size_t GLOBAL_THREAD_POOL_HOUSEKEEP_HISTORY_WINDOW_SECONDS = 600;  // 10 minutes
@@ -202,9 +204,11 @@ void ThreadPoolImpl<Thread>::calculateDesiredThreadPoolSizeNoLock()
     {
         desired_pool_size = max_threads;
     }
-    else if (desired_pool_size < scheduled_jobs + 1 + (std::is_same_v<Thread, std::thread> ? GLOBAL_THREAD_POOL_MIN_FREE_THREADS : 0))
+    // we always 'desire' at least MIN_FREE_THREADS more threads than scheduled jobs
+    // so every time schedule will be called it will spawn a new thread(s) to get to the 'desired' state
+    else if (desired_pool_size < scheduled_jobs + (std::is_same_v<Thread, std::thread> ? GLOBAL_THREAD_POOL_MIN_FREE_THREADS : LOCAL_THREAD_POOL_MIN_FREE_THREADS))
     {
-        desired_pool_size = std::min(max_threads, scheduled_jobs + 1 + (std::is_same_v<Thread, std::thread> ? GLOBAL_THREAD_POOL_EXPANSION_STEP : 0));
+        desired_pool_size = std::min(max_threads, scheduled_jobs + (std::is_same_v<Thread, std::thread> ? GLOBAL_THREAD_POOL_EXPANSION_STEP : LOCAL_THREAD_POOL_MIN_FREE_THREADS));
     }
     else if (current_pool_size > std::min(max_threads, scheduled_jobs + max_free_threads))
     {
