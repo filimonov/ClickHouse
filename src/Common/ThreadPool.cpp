@@ -83,10 +83,10 @@ public:
 
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_THREADS = 1;
-static constexpr const size_t GLOBAL_THREAD_POOL_MIN_FREE_THREADS = 1;
+static constexpr const size_t GLOBAL_THREAD_POOL_MIN_FREE_THREADS = 8;
 static constexpr const size_t LOCAL_THREAD_POOL_MIN_FREE_THREADS = 1;
 
-static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_STEP = 1;
+static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_STEP = 64;
 static constexpr const size_t GLOBAL_THREAD_POOL_HOUSEKEEP_INTERVAL_MILLISECONDS = 10000; // 10 seconds
 /// static constexpr const size_t GLOBAL_THREAD_POOL_HOUSEKEEP_HISTORY_WINDOW_SECONDS = 600;  // 10 minutes
 
@@ -232,7 +232,7 @@ template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
-    LOG_DEBUG(&Poco::Logger::get("ThreadPoolImpl"),"size of lambda: {}", sizeof(job));
+    // LOG_DEBUG(&Poco::Logger::get("ThreadPoolImpl"),"size of lambda: {}", sizeof(job));
     auto on_error = [&](const std::string & reason)
     {
         if constexpr (std::is_same_v<ReturnType, void>)
@@ -277,7 +277,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             /// Check if there are enough threads to process job.
             try
             {
-                startThreads(false, lock); // async for global thread pool
+                startThreads(std::is_same_v<Thread, std::thread>, lock); // async for global thread pool
             }
             catch (const DB::Exception & e)
             {
@@ -386,7 +386,7 @@ void ThreadPoolImpl<Thread>::adjustThreadPoolSize(std::unique_lock<std::mutex> &
 {
     if (threads.size() < desired_pool_size)
     {
-        startThreads(std::is_same_v<Thread, std::thread> /* async for global thread pool */, lock);
+        startThreads(std::is_same_v<Thread, std::thread>/* async for global thread pool */, lock);
     }
     else if (threads.size() > desired_pool_size)
     {
@@ -417,15 +417,17 @@ template <typename Thread>
 void ThreadPoolImpl<Thread>::wait()
 {
     //LOG_TRACE(&Poco::Logger::get("ThreadPoolImpl"), "Waiting for ThreadPool to finish");
+
+    /// Signal here just in case.
+    /// If threads are waiting on condition variables, but there are some jobs in the queue
+    /// then it will prevent us from deadlock.
+    new_job_or_shutdown.notify_all();
+
     Stopwatch watch;
     std::unique_lock lock(mutex);
     ProfileEvents::increment(
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolLockWaitMicroseconds : ProfileEvents::LocalThreadPoolLockWaitMicroseconds,
         watch.elapsedMicroseconds());
-    /// Signal here just in case.
-    /// If threads are waiting on condition variables, but there are some jobs in the queue
-    /// then it will prevent us from deadlock.
-    new_job_or_shutdown.notify_all();
 
     job_finished.wait(lock, [this] { return scheduled_jobs == 0; });
     //LOG_TRACE(&Poco::Logger::get("ThreadPoolImpl"), "ThreadPool has finished");
@@ -653,20 +655,21 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                     if (!first_exception)
                         first_exception = exception_from_job;
                     if (shutdown_on_exception)
+                    {
                         shutdown = true;
+                        new_job_or_shutdown.notify_all();
+                    }
                     exception_from_job = {};
                 }
 
                 --scheduled_jobs;
                 calculateDesiredThreadPoolSizeNoLock();
 
-                job_finished.notify_all();
-                if (shutdown) // TODO: if shutdown was set by finalize(), we already notified all threads, so this is redundant, right?
-                              // but that can be also set by the job on exception, so we have to notify all threads in that case
-                              // also we notify those treads with lock held, so here they wake up and do a lot of lock contentions
-                              // so probably that should be optimized
-                              // also we can have several loop iteration with shutdown=true...
-                    new_job_or_shutdown.notify_all(); /// `shutdown` was set, wake up other threads so they can finish themselves.
+                job_finished.notify_one();
+                if (scheduled_jobs == 0)
+                {
+                    job_finished.notify_all();
+                }
             }
 
             new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || desired_pool_size < threads.size(); });
