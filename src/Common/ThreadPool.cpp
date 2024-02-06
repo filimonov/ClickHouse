@@ -665,10 +665,14 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 --scheduled_jobs;
                 calculateDesiredThreadPoolSizeNoLock();
 
-                job_finished.notify_one();
+                
                 if (scheduled_jobs == 0)
                 {
-                    job_finished.notify_all();
+                    job_finished.notify_all(); // one of the threads can be waiting in wait() for that condition
+                }
+                else
+                {
+                    job_finished.notify_one();
                 }
             }
 
