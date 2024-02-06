@@ -140,14 +140,12 @@ private:
     boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::list<Thread> service_threads; // threads that are not used for running jobs, but for housekeeping tasks (only for global thread pool)
-    mutable std::mutex threads_mutex; // used only for threads list manipulations
 
     // housekeepeing_thread is used only for global thread pool
     // it monitors regularly the demand for threads in the pool
     // adjusts the size of the pool by decreasing or increasing
     // its size depoending on the load
-    std::atomic<size_t> desired_pool_size = 0;
-    std::atomic<size_t> current_pool_size = 0;
+    size_t desired_pool_size = 0;
     std::condition_variable housekeeping_thread_cv;
     std::condition_variable pool_grow_thread_cv;
 
@@ -167,9 +165,9 @@ private:
     /// if number of threads is less than desired, creates new threads
     /// for async mode it creates a task that creates new threads
     /// otherwise it creates new threads synchronously in the current thread
-    void startThreads(bool async);
+    void startThreads(bool async, std::unique_lock<std::mutex> & lock);
 
-    void adjustThreadPoolSize();
+    void adjustThreadPoolSize(std::unique_lock<std::mutex> && lock);
 
     void finalize();
     void onDestroy();
