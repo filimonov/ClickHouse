@@ -335,10 +335,15 @@ void ThreadPoolImpl<Thread>::startThreads(bool async, std::unique_lock<std::mute
                 std::promise<typename std::list<Thread>::iterator> promise_thread_it;
                 std::future<typename std::list<Thread>::iterator> future_thread_id = promise_thread_it.get_future();
 
-                lock.unlock()
+                lock.unlock();
 
                 Stopwatch watch;
-                auto thread = Thread(&ThreadPoolImpl<Thread>::worker, this, std::move(future_thread_id));
+
+                auto thread = Thread([this, ft = std::move(future_thread_id)] mutable
+                { 
+                    auto thread_it = ft.get();
+                    worker(thread_it);
+                });
 
                 ProfileEvents::increment(
                     std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
@@ -355,7 +360,7 @@ void ThreadPoolImpl<Thread>::startThreads(bool async, std::unique_lock<std::mute
                 //     return;
                 // }
                 threads.push_front(std::move(thread));
-                future_thread_id.set_value( threads.begin() );
+                promise_thread_it.set_value( threads.begin() );
             }
             catch (const std::exception & e)
             {
@@ -608,9 +613,8 @@ bool ThreadPoolImpl<Thread>::finished() const
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::worker(std::future<typename std::list<Thread>::iterator> promise_thread_it)
+void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_it)
 {
-    auto thread_it = promise_thread_it.get();
     DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_pool_threads(metric_threads);
 

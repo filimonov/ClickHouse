@@ -151,7 +151,8 @@ private:
 
     void calculateDesiredThreadPoolSizeNoLock();
 
-    void worker(std::future<typename std::list<Thread>::iterator> promise_thread_it);
+    void worker(typename std::list<Thread>::iterator future_thread_it);
+
 
     /// if number of threads is less than desired, creates new threads
     /// for async mode it creates a task that creates new threads
