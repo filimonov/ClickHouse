@@ -232,6 +232,7 @@ template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
+    LOG_DEBUG(&Poco::Logger::get("ThreadPoolImpl"),"size of lambda: {}", sizeof(job));
     auto on_error = [&](const std::string & reason)
     {
         if constexpr (std::is_same_v<ReturnType, void>)
@@ -333,14 +334,18 @@ void ThreadPoolImpl<Thread>::startThreads(bool async, std::unique_lock<std::mute
             try
             {
                 std::promise<typename std::list<Thread>::iterator> promise_thread_it;
-                std::future<typename std::list<Thread>::iterator> future_thread_id = promise_thread_it.get_future();
+                std::shared_future<typename std::list<Thread>::iterator> future_thread_id = promise_thread_it.get_future().share();
 
                 lock.unlock();
 
                 Stopwatch watch;
 
+                ///  we use future here for 2 reasons:
+                ///  1) just passing a ref to list iterator after adding the thread to the list
+                ///  2) hold the thread work until the thread is added to the list, otherwise
+                ///     is can get the lock faster and then can wait for a cond_variable forever
                 auto thread = Thread([this, ft = std::move(future_thread_id)] mutable
-                { 
+                {
                     auto thread_it = ft.get();
                     worker(thread_it);
                 });
