@@ -5,6 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <future>
 #include <queue>
 #include <list>
 #include <optional>
@@ -129,14 +130,6 @@ private:
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
-    struct ThreadIterarorHolder {
-        std::optional<typename std::list<Thread>::iterator> thread_it;
-
-        void set(std::list<Thread>::iterator it) {
-            thread_it = it;
-        }
-    };
-
     boost::heap::priority_queue<JobWithPriority> jobs;
     std::list<Thread> threads;
     std::list<Thread> service_threads; // threads that are not used for running jobs, but for housekeeping tasks (only for global thread pool)
@@ -158,9 +151,7 @@ private:
 
     void calculateDesiredThreadPoolSizeNoLock();
 
-    void worker(std::shared_ptr<ThreadIterarorHolder> thread_it_holder);
-
-    void removeThread(std::shared_ptr<ThreadIterarorHolder> thread_it);
+    void worker(std::future<typename std::list<Thread>::iterator> promise_thread_it);
 
     /// if number of threads is less than desired, creates new threads
     /// for async mode it creates a task that creates new threads
