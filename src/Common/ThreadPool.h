@@ -130,7 +130,7 @@ private:
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
-    boost::heap::priority_queue<JobWithPriority> jobs;
+    boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
     std::list<Thread> threads;
     std::list<Thread> service_threads; // threads that are not used for running jobs, but for housekeeping tasks (only for global thread pool)
 

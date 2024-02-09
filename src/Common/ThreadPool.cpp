@@ -12,8 +12,8 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
-#include <Common/StackTrace.h>
-#include <Common/logger_useful.h>
+/// #include <Common/StackTrace.h>
+/// #include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -81,12 +81,61 @@ public:
     }
 };
 
-static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
-static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_THREADS = 1;
-static constexpr const size_t GLOBAL_THREAD_POOL_MIN_FREE_THREADS = 8;
-static constexpr const size_t LOCAL_THREAD_POOL_MIN_FREE_THREADS = 1;
 
-static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_STEP = 64;
+/// helper class to unlock the mutex temporary in RAII style
+class ScopeUnlock {
+public:
+    explicit ScopeUnlock(std::unique_lock<std::mutex>& mtx) : _mtx(mtx) {
+        // Unlock the mutex when this object is created
+        _mtx.unlock();
+    }
+
+    ~ScopeUnlock() {
+        // Re-lock the mutex when this object is destroyed
+        _mtx.lock();
+    }
+
+    // Delete copy constructor and copy assignment operator to prevent copying
+    ScopeUnlock(const ScopeUnlock&) = delete;
+    ScopeUnlock& operator=(const ScopeUnlock&) = delete;
+
+private:
+    std::unique_lock<std::mutex>& _mtx;
+};
+
+// Helper class to increment a variable upon construction and decrement it upon destruction if not committed
+class Increment {
+public:
+    Increment(size_t& variable) : refVar(variable), committed(false) {
+        // Increment the variable upon construction
+        refVar++;
+    }
+
+    ~Increment() {
+        // Decrement the variable upon destruction if not committed
+        if (!committed) {
+            refVar--;
+        }
+    }
+
+    void commit() {
+        // Disable the automatic decrement
+        committed = true;
+    }
+
+private:
+    size_t& refVar; // Reference to the variable to be managed
+    bool committed; // Whether the increment should be kept
+};
+
+
+
+static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
+static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_THREADS = 2;
+static constexpr const size_t GLOBAL_THREAD_POOL_MIN_FREE_THREADS = 64;
+static constexpr const size_t LOCAL_THREAD_POOL_MIN_FREE_THREADS = 0;
+
+static constexpr const size_t GLOBAL_THREAD_POOL_EXPANSION_STEP = 128;
 static constexpr const size_t GLOBAL_THREAD_POOL_HOUSEKEEP_INTERVAL_MILLISECONDS = 10000; // 10 seconds
 /// static constexpr const size_t GLOBAL_THREAD_POOL_HOUSEKEEP_HISTORY_WINDOW_SECONDS = 600;  // 10 minutes
 
@@ -200,7 +249,7 @@ void ThreadPoolImpl<Thread>::calculateDesiredThreadPoolSizeNoLock()
     {
         desired_pool_size = 0;
     }
-    else if (desired_pool_size >= max_threads)
+    else if (desired_pool_size >= max_threads) // maybe the max_threads was decreased?
     {
         desired_pool_size = max_threads;
     }
@@ -271,6 +320,9 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (shutdown)
             return on_error("shutdown");
 
+        Increment inc(scheduled_jobs);
+        calculateDesiredThreadPoolSizeNoLock();
+
         /// we have a place to grow
         if (threads.size() < desired_pool_size)
         {
@@ -297,8 +349,8 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                      /// capture_frame_pointers
                      DB::Exception::enable_job_stack_trace);
 
-        ++scheduled_jobs;
-        calculateDesiredThreadPoolSizeNoLock();
+        inc.commit();
+
     }
 
     /// Wake up a free thread to run the new job.
@@ -336,45 +388,44 @@ void ThreadPoolImpl<Thread>::startThreads(bool async, std::unique_lock<std::mute
                 std::promise<typename std::list<Thread>::iterator> promise_thread_it;
                 std::shared_future<typename std::list<Thread>::iterator> future_thread_id = promise_thread_it.get_future().share();
 
-                lock.unlock();
+                std::unique_ptr<Thread> thread_ptr;
 
-                Stopwatch watch;
+                { 
+                    // Unlock the mutex temporarily to allow the new thread to add itself to the list
+                    ScopeUnlock unlock(lock);
 
-                ///  we use future here for 2 reasons:
-                ///  1) just passing a ref to list iterator after adding the thread to the list
-                ///  2) hold the thread work until the thread is added to the list, otherwise
-                ///     is can get the lock faster and then can wait for a cond_variable forever
-                auto thread = Thread([this, ft = std::move(future_thread_id)] mutable
-                {
-                    auto thread_it = ft.get();
-                    worker(thread_it);
-                });
+                    Stopwatch watch;
 
-                ProfileEvents::increment(
-                    std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
-                    watch.elapsedMicroseconds());
+                    ///  we use future here for 2 reasons:
+                    ///  1) just passing a ref to list iterator after adding the thread to the list
+                    ///  2) hold the thread work until the thread is added to the list, otherwise
+                    ///     is can get the lock faster and then can wait for a cond_variable forever
+                    thread_ptr = std::make_unique<Thread>([this, ft = std::move(future_thread_id)] mutable
+                    {
+                        auto thread_it = ft.get();
+                        worker(thread_it);
+                    });
 
-                lock.lock();
+
+                    ProfileEvents::increment(
+                        std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
+                        watch.elapsedMicroseconds());
+
+                }
 
                 ProfileEvents::increment(
                     std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
 
-                // if (shutdown)
-                // {
-                //     thread.detach();
-                //     return;
-                // }
-                threads.push_front(std::move(thread));
+                threads.push_front(std::move(*thread_ptr));
                 promise_thread_it.set_value( threads.begin() );
+                new_job_or_shutdown.notify_one();
             }
             catch (const std::exception & e)
             {
-                //lock.lock();
                 throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK, "cannot start thread: {})", e.what());
             }
             catch (...)
             {
-                lock.lock();
                 throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK, "cannot start thread");
             }
         }
@@ -572,16 +623,16 @@ void ThreadPoolImpl<Thread>::threadPoolGrow()
         {
             startThreads(/* async = */ false, lock);
         }
-        catch (const DB::Exception & e)
-        {
-            LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
-                "ThreadPoolImpl::threadPoolGrow(): exception while starting threads: {}",
-                e.what());
-        }
+        // catch (const DB::Exception & e)
+        // {
+        //     LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
+        //         "ThreadPoolImpl::threadPoolGrow(): exception while starting threads: {}",
+        //         e.what());
+        // }
         catch (...)
         {
-            LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
-                "ThreadPoolImpl::threadPoolGrow(): unknown exception while starting threads");
+            // LOG_ERROR(&Poco::Logger::get("ThreadPoolImpl"),
+            //     "ThreadPoolImpl::threadPoolGrow(): unknown exception while starting threads");
         }
     }
 }
@@ -670,11 +721,9 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 {
                     job_finished.notify_all(); // one of the threads can be waiting in wait() for that condition
                 }
-                else
-                {
-                    job_finished.notify_one();
-                }
             }
+
+            job_finished.notify_one();
 
             new_job_or_shutdown.wait(lock, [&] { return !jobs.empty() || shutdown || desired_pool_size < threads.size(); });
 
@@ -706,6 +755,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 job_is_done = true;
                 continue;
             }
+            else if (scheduled_jobs > 1)
+            {
+                new_job_or_shutdown.notify_all();
+            }
+
         }
 
         ALLOW_ALLOCATIONS_IN_SCOPE;
