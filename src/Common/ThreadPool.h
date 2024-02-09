@@ -5,7 +5,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <functional>
-#include <future>
 #include <queue>
 #include <list>
 #include <optional>
@@ -113,9 +112,12 @@ public:
 private:
     friend class GlobalThreadPool;
 
+
     mutable std::mutex mutex;
     std::condition_variable job_finished;
     std::condition_variable new_job_or_shutdown;
+    std::condition_variable housekeeping_thread_cv;
+    std::condition_variable no_jobs;
 
     Metric metric_threads;
     Metric metric_active_threads;
@@ -130,18 +132,12 @@ private:
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
-    boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
-    std::list<Thread> threads;
-    std::list<Thread> service_threads; // threads that are not used for running jobs, but for housekeeping tasks (only for global thread pool)
+    /// boost::heap::stable<true> is used to preserve the FIFO order of jobs with same priority
+    boost::heap::priority_queue<JobWithPriority, boost::heap::stable<true>> jobs;
 
-    // housekeepeing_thread is used only for global thread pool
-    // it monitors regularly the demand for threads in the pool
-    // adjusts the size of the pool by decreasing or increasing
-    // its size depoending on the load
-    size_t desired_pool_size = 0;
-    std::condition_variable housekeeping_thread_cv;
-    std::condition_variable pool_grow_thread_cv;
-
+    mutable std::mutex threads_mutex;
+    std::list<Thread> threads;                 // modified when threads_mutex is locked
+    std::atomic<size_t> current_pool_size = 0; // modified when threads_mutex is locked
 
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
@@ -149,23 +145,28 @@ private:
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
+    std::atomic<size_t> desired_pool_size = 0;  // modified when mutex is locked
     void calculateDesiredThreadPoolSizeNoLock();
 
-    void worker(typename std::list<Thread>::iterator future_thread_it);
+    void worker(typename std::list<Thread>::iterator thread_it);
 
 
     /// if number of threads is less than desired, creates new threads
-    /// for async mode it creates a task that creates new threads
-    /// otherwise it creates new threads synchronously in the current thread
-    void startThreads(bool async, std::unique_lock<std::mutex> & lock);
+    void startThreads();
 
-    void adjustThreadPoolSize(std::unique_lock<std::mutex> && lock);
+    /// will incrase number of threads if needed or decrease if there are too many
+    void adjustThreadPoolSize();
 
     void finalize();
     void onDestroy();
 
-    void threadPoolHousekeep();
-    void threadPoolGrow();
+    // housekeeping_thread is used only for global thread pool
+    // it monitors regularly the demand for threads in the pool
+    // adjusts the size of the pool by decreasing or increasing
+    // its size depoending on the load
+    std::optional<std::thread> housekeeping_thread;
+
+    void housekeep();
 
 };
 
