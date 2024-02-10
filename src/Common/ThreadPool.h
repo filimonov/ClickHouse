@@ -9,6 +9,7 @@
 #include <list>
 #include <optional>
 #include <atomic>
+#include <future>
 #include <stack>
 
 #include <boost/heap/priority_queue.hpp>
@@ -109,9 +110,14 @@ public:
     using OnDestroyCallback = std::function<void()>;
     void addOnDestroyCallback(OnDestroyCallback && callback);
 
+
 private:
     friend class GlobalThreadPool;
 
+    struct PreparedThread {
+        std::promise<typename std::list<Thread>::iterator> promise_thread_it;
+        std::unique_ptr<Thread> thread_ptr;
+    };
 
     mutable std::mutex mutex;
     std::condition_variable job_finished;
@@ -135,9 +141,11 @@ private:
     /// boost::heap::stable<true> is used to preserve the FIFO order of jobs with same priority
     boost::heap::priority_queue<JobWithPriority, boost::heap::stable<true>> jobs;
 
-    mutable std::mutex threads_mutex;
-    std::list<Thread> threads;                 // modified when threads_mutex is locked
-    std::atomic<size_t> current_pool_size = 0; // modified when threads_mutex is locked
+    std::list<Thread> threads;
+    std::atomic<size_t> current_pool_size = 0;
+
+    PreparedThread prepareThread();
+    void activateThread(PreparedThread & prepared_thread);
 
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
@@ -150,11 +158,7 @@ private:
 
     void worker(typename std::list<Thread>::iterator thread_it);
 
-
-    /// if number of threads is less than desired, creates new threads
-    void startThreads();
-
-    /// will incrase number of threads if needed or decrease if there are too many
+    /// will increase number of threads if needed or decrease if there are too many
     void adjustThreadPoolSize();
 
     void finalize();
