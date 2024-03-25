@@ -23,7 +23,7 @@ RUN apt-get update -y \
             odbcinst='2.3.*' \
             openjdk-11-jre-headless='11.0.*' \
             openssl='3.0.*' \
-            postgresql-client=14+238 \
+            postgresql-client='14+*' \
             protobuf-compiler='3.12.*' \
             python3='3.10.*' \
             python3-lxml='4.8.*' \
@@ -36,8 +36,8 @@ RUN apt-get update -y \
             tree='2.0.*' \
             unixodbc='2.3.*' \
             wget='1.21.*' \
-            rustc='1.70.*' \
-            cargo='1.70.*' \
+            rustc='1.*' \
+            cargo='1.*' \
             zstd='1.4.*' \
             file='1:5.41-*' \
             pv='1.6.*' \
