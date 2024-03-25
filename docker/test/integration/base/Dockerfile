@@ -25,7 +25,7 @@ RUN apt-get update \
         rpm2cpio='4.17.*' \
         sqlite3='3.37.*' \
         tar='1.34*' \
-        tzdata='2023c*' \
+        tzdata \
         unixodbc='2.3.*' \
         python3-pip='22.0.*' \
         libcurl4-openssl-dev='7.81.*' \

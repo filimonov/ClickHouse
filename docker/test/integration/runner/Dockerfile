@@ -22,7 +22,7 @@ RUN apt-get update \
     iproute2='5.15.*' \
     cgroupfs-mount=1.4 \
     python3-pip='22.0.*' \
-    tzdata='2023c*' \
+    tzdata \
     libicu-dev='70.1*' \
     bsdutils='1:2.37.*' \
     curl='7.81.*' \

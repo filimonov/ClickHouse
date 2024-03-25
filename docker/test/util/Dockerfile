@@ -58,7 +58,7 @@ RUN apt-get update \
         pigz='2.6*' \
         rename='1.30*' \
         software-properties-common='0.99.*' \
-        tzdata='2023c-0ubuntu0.22.04.*' \
+        tzdata \
         --yes --no-install-recommends \
     && apt-get clean
 
