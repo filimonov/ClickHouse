@@ -293,7 +293,7 @@ def process_single_image(
             logging.info(
                 "Got error will retry %s time and sleep for %s seconds", i, i * 5
             )
-            time.sleep(i * 5)
+            time.sleep(i * 30)
         else:
             results.append(
                 TestResult(
