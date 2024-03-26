@@ -49,6 +49,10 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
+        env:
+          RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
+          RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
+          
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -73,6 +77,10 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
+        env:
+          RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
+          RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
+    
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:
