@@ -32,23 +32,21 @@ on: # yamllint disable-line rule:truthy
 
 jobs:
   DockerHubPushAarch64:
-    runs-on: [self-hosted, style-checker, on-demand, type-cax41, in-fsn1, image-arm-app-docker-ce]
+    runs-on: [self-hosted, style-checker, on-demand, type-cax41, in-hel1, image-arm-app-docker-ce]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
         with:
           clear-repository: true
 
-      - name: Common docker setup
-        uses: ./.github/actions/docker_setup
-        with:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
+        env:
+          RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
+          RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
+          
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -63,16 +61,14 @@ jobs:
         with:
           clear-repository: true
 
-      - name: Common docker setup
-        uses: ./.github/actions/docker_setup
-        with:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-
       - name: Images check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
+        env:
+          RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
+          RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
+    
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:
