@@ -576,6 +576,7 @@ jobs:
   ASTFuzzerTestAsan:
     needs: [BuilderDebAsan]
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: AST fuzzer (asan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -586,6 +587,7 @@ jobs:
   ASTFuzzerTestTsan:
     needs: [BuilderDebTsan]
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: AST fuzzer (tsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -596,6 +598,7 @@ jobs:
   ASTFuzzerTestUBSan:
     needs: [BuilderDebUBsan]
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: AST fuzzer (ubsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -606,6 +609,7 @@ jobs:
   ASTFuzzerTestMSan:
     needs: [BuilderDebMsan]
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: AST fuzzer (msan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
@@ -616,6 +620,7 @@ jobs:
   ASTFuzzerTestDebug:
     needs: [BuilderDebDebug]
     uses: ./.github/workflows/reusable_test.yml
+    secrets: inherit
     with:
       test_name: AST fuzzer (debug)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-app-docker-ce
