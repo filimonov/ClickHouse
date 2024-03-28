@@ -1080,3 +1080,4 @@ if __name__ == "__main__":
     out_results_file = os.path.join(str(runner.path()), "test_results.tsv")
     out_status_file = os.path.join(str(runner.path()), "check_status.tsv")
     write_results(out_results_file, out_status_file, test_results, status)
+    logging.info("Result written")
