@@ -66,8 +66,6 @@ jobs:
           RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
           RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
 
-      - run: sleep 3600
-          
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:
