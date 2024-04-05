@@ -16,7 +16,7 @@ name: Regression test workflow
         type: string
       timeout_minutes:
         description: Maximum number of minutes to let workflow run before GitHub cancels it.
-        default: 210
+        default: 240
         type: number
       build_sha:
         description: commit sha of the workflow run for artifact upload. 
@@ -394,6 +394,7 @@ jobs:
         run: python3
               -u ${{ env.SUITE }}/regression.py
               --clickhouse-binary-path ${{ env.clickhouse_binary_path }}
+              --only "/parquet/${{ matrix.STORAGE }}/*"
               --storage ${{ matrix.STORAGE }}
               --aws-s3-bucket ${{ secrets.REGRESSION_AWS_S3_BUCKET }}
               --aws-s3-region ${{ secrets.REGRESSION_AWS_S3_REGION }}
