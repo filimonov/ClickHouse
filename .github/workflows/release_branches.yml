@@ -170,7 +170,7 @@ jobs:
       build_name: package_asan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-app-docker-ce
+      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx63, altinity-in-ash, altinity-image-x86-app-docker-ce
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -182,7 +182,7 @@ jobs:
       build_name: package_ubsan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-app-docker-ce
+      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx63, altinity-in-ash, altinity-image-x86-app-docker-ce
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
         
@@ -194,7 +194,7 @@ jobs:
       build_name: package_tsan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-app-docker-ce
+      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx63, altinity-in-ash, altinity-image-x86-app-docker-ce
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -206,7 +206,7 @@ jobs:
       build_name: package_msan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-app-docker-ce
+      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx63, altinity-in-ash, altinity-image-x86-app-docker-ce
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
