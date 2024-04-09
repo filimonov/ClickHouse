@@ -522,6 +522,7 @@ jobs:
     with:
       test_name: Stress test (asan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-snapshot-docker_ipv6_x86
+      timeout_minutes: 180
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 stress_check.py "$CHECK_NAME"
@@ -533,6 +534,7 @@ jobs:
     with:
       test_name: Stress test (tsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-snapshot-docker_ipv6_x86
+      timeout_minutes: 180
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 stress_check.py "$CHECK_NAME"
@@ -555,6 +557,7 @@ jobs:
     with:
       test_name: Stress test (ubsan)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-snapshot-docker_ipv6_x86
+      timeout_minutes: 180
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 stress_check.py "$CHECK_NAME"
@@ -566,6 +569,7 @@ jobs:
     with:
       test_name: Stress test (debug)
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-snapshot-docker_ipv6_x86
+      timeout_minutes: 180
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 stress_check.py "$CHECK_NAME"
