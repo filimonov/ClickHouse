@@ -5,8 +5,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
-import logging
-
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
@@ -190,21 +188,9 @@ def test_mutation_simple(started_cluster, replicated):
         # ALTER will sleep for 9s
         def alter():
             node1.query(
-                f"ALTER TABLE {name} UPDATE a = 42 WHERE sleep(16) OR 1",
+                f"ALTER TABLE {name} UPDATE a = 42 WHERE ignore(sleep(9)) == 0",
                 settings=settings,
             )
-
-        def debug_merges():
-            logging.debug("going to print what is going on in system.merges")
-            for i in range(1000):
-                logging.debug("Merges:", node1.query(
-                        f"select now(), * from system.merges FORMAT Pretty",
-                        settings=settings,
-                    ))
-                time.sleep(0.1)
-
-        t_debug_merges = threading.Thread(target=debug_merges)
-        t_debug_merges.start()
 
         t = threading.Thread(target=alter)
         t.start()
