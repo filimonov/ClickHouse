@@ -508,6 +508,7 @@ def main() -> None:
         args.compiler,
         args.sanitizer,
         args.package_type,
+        args.cache,
         args.s3_access_key_id,
         args.s3_bucket,
         args.s3_directory,
