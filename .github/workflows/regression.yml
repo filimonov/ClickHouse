@@ -212,7 +212,7 @@ jobs:
         run: python3 .github/get-deb-url.py --reports-path ${{ env.REPORTS_PATH }} --github-env $GITHUB_ENV
       - name: Run ${{ env.SUITE }} suite
         run: python3
-              -u ${{ env.SUITE }}/regression.py
+              -u alter/regression.py
               --clickhouse-binary-path ${{ env.clickhouse_binary_path }}
               --only "/alter/${{ env.SUITE }}/*"
               --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_binary_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.id="$GITHUB_RUN_ID" job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
