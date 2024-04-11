@@ -638,7 +638,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression
-      commit: 8ca52fb119806bb3ee0d4f6b65fe4b7ad5fb58a1
+      commit: f5ab9d5ef344ae1f4c8d5b8f698aceee84947cda
       arch: release 
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'release' && github.sha }}
 
@@ -648,7 +648,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
-      commit: 8ca52fb119806bb3ee0d4f6b65fe4b7ad5fb58a1
+      commit: f5ab9d5ef344ae1f4c8d5b8f698aceee84947cda
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'release' && github.sha }}
 
