@@ -185,7 +185,7 @@ jobs:
    strategy:
      fail-fast: false
      matrix:
-      SUITE: ["replace partition", "attach partition", "move partition"]    
+      ONLY: ["replace partition", "attach partition", "move partition"]    
    needs: [runner_labels_setup]
    runs-on: ${{ fromJson(needs.runner_labels_setup.outputs.runner_labels) }}
    timeout-minutes: ${{ inputs.timeout_minutes }}
@@ -199,7 +199,7 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           REPORTS_PATH=${{ runner.temp }}/reports_dir
-          SUITE=${{ matrix.SUITE }}
+          SUITE=alter
           EOF
       - name: Download json reports
         uses: actions/download-artifact@v3
@@ -214,7 +214,7 @@ jobs:
         run: python3
               -u alter/regression.py
               --clickhouse-binary-path ${{ env.clickhouse_binary_path }}
-              --only "/alter/${{ env.SUITE }}/*"
+              --only "/alter/${{ matrix.ONLU }}/*"
               --attr project="$GITHUB_REPOSITORY" project.id="$GITHUB_REPOSITORY_ID" package="${{ env.clickhouse_binary_path }}" version="${{ env.version }}" user.name="$GITHUB_ACTOR" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.id="$GITHUB_RUN_ID" job.url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" arch="$(uname -i)"
               ${{ env.args }}
       - name: Create and upload logs
@@ -223,7 +223,7 @@ jobs:
       - uses: actions/upload-artifact@v3
         if: always()
         with:
-          name: ${{ env.SUITE }}-${{ inputs.arch }}-artifacts
+          name: ${{ env.SUITE }}-${{ matrix.ONLY }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
           
   Benchmark:
