@@ -151,14 +151,15 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
     server_settings.loadSettingsFromConfig(config());
 
-    GlobalThreadPool::initialize(
+    GlobalThreadPool<FreeThreadPool>::initialize(
         server_settings.max_thread_pool_size,
         server_settings.max_thread_pool_free_size,
-        server_settings.thread_pool_queue_size);
+        server_settings.thread_pool_queue_size
+    );
 
 #if USE_AZURE_BLOB_STORAGE
     /// See the explanation near the same line in Server.cpp
-    GlobalThreadPool::instance().addOnDestroyCallback([]
+    GlobalThreadPool<FreeThreadPool>::instance().addOnDestroyCallback([]
     {
         Azure::Storage::_internal::XmlGlobalDeinitialize();
     });

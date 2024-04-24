@@ -861,12 +861,24 @@ try
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
-    GlobalThreadPool::initialize(
-        server_settings.max_thread_pool_size,
-        server_settings.max_thread_pool_free_size,
-        server_settings.thread_pool_queue_size,
-        has_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
-        has_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+    if (server_settings.allow_experimental_threadpool)
+    {
+        GlobalThreadPool<tp::ThreadPool>::initialize(
+            server_settings.max_thread_pool_size,
+            server_settings.max_thread_pool_free_size,
+            server_settings.thread_pool_queue_size,
+            will_have_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
+            will_have_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+    }
+    else
+    {
+        GlobalThreadPool<FreeThreadPool>::initialize(
+            server_settings.max_thread_pool_size,
+            server_settings.max_thread_pool_free_size,
+            server_settings.thread_pool_queue_size,
+            will_have_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
+            will_have_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+    }
 
     if (has_trace_collector)
     {
@@ -902,7 +914,9 @@ try
     SCOPE_EXIT({
         Stopwatch watch;
         LOG_INFO(log, "Waiting for background threads");
-        GlobalThreadPool::instance().shutdown();
+        server_settings.allow_experimental_threadpool
+            ? GlobalThreadPool<tp::ThreadPool>::instance().shutdown()
+            : GlobalThreadPool<FreeThreadPool>::instance().shutdown();
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
@@ -991,10 +1005,22 @@ try
     /// at 'pthread_exit'. Deinitialization of libxml leads to call of 'pthread_key_delete'
     /// and if it is done before joining of threads, allocated memory will not be freed
     /// and there may be memory leaks in threads that used libxml.
-    GlobalThreadPool::instance().addOnDestroyCallback([]
+    if (server_settings.allow_experimental_threadpool)
     {
-        Azure::Storage::_internal::XmlGlobalDeinitialize();
-    });
+        GlobalThreadPool<tp::ThreadPool>::instance().addOnDestroyCallback([]
+        {
+            Azure::Storage::_internal::XmlGlobalDeinitialize();
+        });
+    }
+    else
+    {
+        GlobalThreadPool<FreeThreadPool>::instance().addOnDestroyCallback([]
+        {
+            Azure::Storage::_internal::XmlGlobalDeinitialize();
+        });
+    }
+
+
 #endif
 
     getIOThreadPool().initialize(
