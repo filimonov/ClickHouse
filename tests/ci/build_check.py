@@ -6,6 +6,7 @@ import subprocess
 import logging
 import sys
 import time
+from shutil import rmtree
 
 from ci_config import CI_CONFIG, BuildConfig
 from ccache_utils import CargoCache
@@ -14,9 +15,12 @@ from env_helper import (
     GITHUB_JOB_API_URL,
     IMAGES_PATH,
     REPO_COPY,
+    S3_ACCESS_KEY_ID,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
+    S3_SECRET_ACCESS_KEY,
     TEMP_PATH,
+    CLICKHOUSE_STABLE_VERSION_SUFFIX,
 )
 from git_helper import Git, git_runner
 from pr_info import PRInfo
@@ -36,7 +40,7 @@ from clickhouse_helper import (
 )
 from stopwatch import Stopwatch
 
-IMAGE_NAME = "clickhouse/binary-builder"
+IMAGE_NAME = "altinityinfra/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
@@ -78,6 +82,8 @@ def get_packager_cmd(
     cmd += " --s3-rw-access"
     cmd += f" --s3-bucket={S3_BUILDS_BUCKET}"
     cmd += f" --cargo-cache-dir={cargo_cache_dir}"
+    cmd += f" --s3-access-key-id={S3_ACCESS_KEY_ID}"
+    cmd += f" --s3-secret-access-key={S3_SECRET_ACCESS_KEY}"
 
     if build_config.additional_pkgs:
         cmd += " --additional-pkgs"
@@ -248,16 +254,18 @@ def main():
 
     logging.info("Got version from repo %s", version.string)
 
-    official_flag = pr_info.number == 0
+    official_flag = True
+    # version._flavour = version_type = CLICKHOUSE_STABLE_VERSION_SUFFIX
+    # TODO (vnemkov): right now we'll use simplified version management:
+    # only update git hash and explicitly set stable version suffix.
+    # official_flag = pr_info.number == 0
+    # version_type = "testing"
+    # if "release" in pr_info.labels or "release-lts" in pr_info.labels:
+    #     version_type = CLICKHOUSE_STABLE_VERSION_SUFFIX
+    #     official_flag = True
+    # update_version_local(version, version_type)
 
-    version_type = "testing"
-    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
-        version_type = "stable"
-        official_flag = True
-
-    update_version_local(version, version_type)
-
-    logging.info("Updated local files with version")
+    logging.info(f"Updated local files with version : {version.string} / {version.describe}")
 
     logging.info("Build short name %s", build_name)
 
@@ -335,10 +343,25 @@ def main():
             log_path, s3_path_prefix + "/" + log_path.name
         )
         logging.info("Log url %s", log_url)
+        print(f"::notice ::Log URL: {log_url}")
     else:
         logging.info("Build log doesn't exist")
+        print("Build log doesn't exist")
 
     print(f"::notice ::Log URL: {log_url}")
+
+    src_path = temp_path / "build_source.src.tar.gz"
+    s3_path = s3_path_prefix + "/clickhouse-" + version.string + ".src.tar.gz"
+    logging.info("s3_path %s", s3_path)
+    if src_path.exists():
+        src_url = s3_helper.upload_build_file_to_s3(
+            src_path, s3_path
+        )
+        logging.info("Source tar %s", src_url)
+        print(f"::notice ::Source tar URL: {src_url}")
+    else:
+        logging.info("Source tar doesn't exist")
+        print("Source tar doesn't exist")
 
     build_result = BuildResult(
         build_name,
@@ -442,7 +465,7 @@ FORMAT JSONCompactEachRow"""
         log_url,
         f"Build ({build_name})",
     )
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
     # Fail the build job if it didn't succeed
     if build_status != SUCCESS:
