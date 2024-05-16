@@ -26,6 +26,8 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - 'releases/23.8**'
+  schedule:
+    - cron: "0 0 * * 6"
 
 jobs:
   DockerHubPushAarch64:
