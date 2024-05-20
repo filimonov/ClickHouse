@@ -131,7 +131,7 @@ jobs:
           DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Download changed images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload build URLs to artifacts
         if: ${{ success() || failure() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BUILD_URLS }}
           path: ${{ env.TEMP_PATH }}/${{ env.BUILD_URLS }}.json
