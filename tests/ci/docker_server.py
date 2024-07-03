@@ -330,7 +330,6 @@ def main():
     image = DockerImage(args.image_path, args.image_repo, False)
     args.release_type = auto_release_type(args.version, args.release_type)
     tags = gen_tags(args.version, args.release_type)
-    tags.append(f"{pr_info.number}-{args.version}")
     NAME = f"Docker image {image.repo} building check"
     pr_info = None
     if CI:
@@ -339,6 +338,7 @@ def main():
         args.bucket_prefix = (
             f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/{release_or_pr}/{pr_info.sha}"
         )
+        tags.append(f"{pr_info.number}-{args.version}")
 
     if args.push:
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
