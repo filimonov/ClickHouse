@@ -4,6 +4,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <optional>
 
 
 bool cgroupsV2Enabled()
@@ -46,7 +47,7 @@ bool cgroupsV2MemoryControllerEnabled()
 #endif
 }
 
-std::string cgroupV2OfProcess()
+std::optional<std::string> cgroupV2OfProcess()
 {
 #if defined(OS_LINUX)
     chassert(cgroupsV2Enabled());
@@ -54,17 +55,17 @@ std::string cgroupV2OfProcess()
     /// A simpler way to get the membership is:
     std::ifstream cgroup_name_file("/proc/self/cgroup");
     if (!cgroup_name_file.is_open())
-        return "";
+        return std::nullopt;
     /// With cgroups v2, there will be a *single* line with prefix "0::/"
     /// (see https://docs.kernel.org/admin-guide/cgroup-v2.html)
     std::string cgroup;
     std::getline(cgroup_name_file, cgroup);
     static const std::string v2_prefix = "0::/";
     if (!cgroup.starts_with(v2_prefix))
-        return "";
+        return std::nullopt;
     cgroup = cgroup.substr(v2_prefix.length());
     return cgroup;
 #else
-    return "";
+    return std::nullopt;
 #endif
 }
