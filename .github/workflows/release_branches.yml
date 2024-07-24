@@ -45,7 +45,7 @@ jobs:
         env:
           RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
           RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
-          
+
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -364,7 +364,7 @@ jobs:
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-        
+
   FunctionalStatelessTestTsan:
     needs: [BuilderDebTsan]
     uses: ./.github/workflows/reusable_test.yml
@@ -378,7 +378,7 @@ jobs:
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 functional_test_check.py "$CHECK_NAME" "$KILL_TIMEOUT"
-        
+
   FunctionalStatelessTestUBsan:
     needs: [BuilderDebUBsan]
     uses: ./.github/workflows/reusable_test.yml
@@ -592,7 +592,7 @@ jobs:
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 integration_test_check.py "$CHECK_NAME"
-        
+
   IntegrationTestsAnalyzerAsan:
     needs: [BuilderDebAsan]
     uses: ./.github/workflows/reusable_test.yml
@@ -605,7 +605,7 @@ jobs:
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 integration_test_check.py "$CHECK_NAME"
-        
+
   IntegrationTestsTsan:
     needs: [BuilderDebTsan]
     uses: ./.github/workflows/reusable_test.yml
