@@ -657,7 +657,7 @@ jobs:
 
   SignRelease:
     needs: [BuilderDebRelease]
-    runs-on: [self-hosted, altinity-on-demand, altinity-setup-reporter, altinity-type-cax11, altinity-in-ash, altinity-image-arm-system-ubuntu-22.04]
+    runs-on: [self-hosted, altinity-on-demand, altinity-setup-reporter, altinity-type-cax11, altinity-image-arm-system-ubuntu-22.04]
     timeout-minutes: 180
     steps:
       - name: Set envs
