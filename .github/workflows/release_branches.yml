@@ -32,7 +32,7 @@ on: # yamllint disable-line rule:truthy
 
 jobs:
   DockerHubPushAarch64:
-    runs-on: [self-hosted, style-checker, on-demand, type-cax41, in-hel1, image-arm-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-system-ubuntu-22.04]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
@@ -46,7 +46,7 @@ jobs:
         env:
           RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
           RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
-          
+
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -54,7 +54,7 @@ jobs:
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
 
   DockerHubPushAmd64:
-    runs-on: [self-hosted, style-checker, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
@@ -68,7 +68,7 @@ jobs:
         env:
           RUNNER_IP: "$(hostname -I | cut -d ' ' -f 1)"
           RUNNER_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$(hostname -I | cut -d ' ' -f 1)"
-    
+
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -77,7 +77,7 @@ jobs:
 
   DockerHubPush:
     needs: [DockerHubPushAmd64, DockerHubPushAarch64]
-    runs-on: [self-hosted, style-checker, on-demand, type-cpx41, image-x86-app-docker-ce]
+    runs-on: [self-hosted, self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
@@ -159,7 +159,7 @@ jobs:
     needs:
       - BuilderDebRelease
       - BuilderDebAarch64
-    runs-on: [self-hosted, style-checker, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     timeout-minutes: 180
     steps:
       - name: Check out repository code
@@ -194,7 +194,7 @@ jobs:
     secrets: inherit
     with:
       test_name: ClickHouse build check
-      runner_type: style-checker, on-demand, type-cpx31, image-x86-app-docker-ce
+      runner_type: altinity-on-demand, altinity-setup-reporter, altinity-type-cax11, altinity-in-hel1, altinity-image-arm-system-ubuntu-22.04
       timeout_minutes: 180
       additional_envs: |
         NEEDS_DATA<<NDENV
@@ -211,7 +211,7 @@ jobs:
       - BuilderDebRelease
       - BuilderDebAarch64
       - SignRelease
-    runs-on: [self-hosted, style-checker, on-demand, type-cpx31, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-setup-reporter, altinity-type-cax11, altinity-in-hel1, altinity-image-arm-system-ubuntu-22.04]
     timeout-minutes: 180
     steps:
       - name: Check out repository code
@@ -232,7 +232,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Install packages (amd64)
-      runner_type: style-checker, on-demand, type-cpx51, image-x86-app-docker-ce
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04
       run_command: |
         cd "$REPO_COPY/tests/ci"
         python3 install_check.py "$CHECK_NAME"
@@ -247,7 +247,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Stateless tests (release)
-      runner_type: func-tester, on-demand, type-cpx51, image-x86-snapshot-docker_ipv6_x86
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04
       additional_envs: |
         KILL_TIMEOUT=10800
       run_command: |
@@ -260,7 +260,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Stateless tests (aarch64)
-      runner_type: func-tester, on-demand, type-cax41, image-arm-snapshot-docker_ipv6_arm
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-system-ubuntu-22.04
       additional_envs: |
         KILL_TIMEOUT=10800
       run_command: |
@@ -277,7 +277,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Stateful tests (release)
-      runner_type: func-tester, on-demand, type-cpx51, image-x86-snapshot-docker_ipv6_x86
+      runner_type: altinity-on-demand, altinity-type-cpx51, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04
       additional_envs: |
         KILL_TIMEOUT=3600
       run_command: |
@@ -290,7 +290,7 @@ jobs:
     secrets: inherit
     with:
       test_name: Stateful tests (aarch64)
-      runner_type: func-tester, on-demand, type-cax41, image-arm-snapshot-docker_ipv6_arm
+      runner_type: altinity-on-demand, altinity-type-cax41, altinity-in-hel1, altinity-image-arm-system-ubuntu-22.04
       additional_envs: |
         KILL_TIMEOUT=3600
       run_command: |
@@ -329,7 +329,7 @@ jobs:
       matrix:
         SUITE: [aes_encryption, aggregate_functions, atomic_insert, base_58, clickhouse_keeper, data_types, datetime64_extended_range, disk_level_encryption, dns, example, extended_precision_data_types, kafka, kerberos, key_value, lightweight_delete, part_moves_between_shards, rbac, selects, session_timezone, ssl_server, tiered_storage, window_functions]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -391,7 +391,7 @@ jobs:
       matrix:
         SUITE: [aes_encryption, aggregate_functions, atomic_insert, base_58, clickhouse_keeper, data_types, datetime64_extended_range, disk_level_encryption, dns, engines, example, extended_precision_data_types, kafka, kerberos, key_value, lightweight_delete, part_moves_between_shards, rbac, selects, session_timezone, ssl_server, tiered_storage, window_functions]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cax41, image-arm-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -454,7 +454,7 @@ jobs:
       matrix:
         STORAGE: [minio, aws_s3, gcs]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -525,7 +525,7 @@ jobs:
       matrix:
         STORAGE: [minio, aws_s3, gcs]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cax41, image-arm-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -593,7 +593,7 @@ jobs:
 
   RegressionClickHouseKeeperSSLAmd64:
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression]
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_REPORT_SECRET_ACCESS_KEY }}
@@ -651,7 +651,7 @@ jobs:
 
   RegressionClickHouseKeeperSSLAarch64:
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cax41, image-arm-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_REPORT_SECRET_ACCESS_KEY }}
@@ -713,7 +713,7 @@ jobs:
       matrix:
         SUITE: [authentication, external_user_directory, role_mapping]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -775,7 +775,7 @@ jobs:
       matrix:
         SUITE: [authentication, external_user_directory, role_mapping]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cax41, image-arm-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -834,7 +834,7 @@ jobs:
 
   RegressionParquetAmd64:
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -906,7 +906,7 @@ jobs:
       matrix:
         STORAGE: [minio, aws_s3, gcs]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -977,7 +977,7 @@ jobs:
       matrix:
         STORAGE: [minio, aws_s3, gcs]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cax41, image-arm-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -1049,7 +1049,7 @@ jobs:
       matrix:
         STORAGE: [minio, s3amazon, s3gcs]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cpx51, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx51, altinity-image-x86-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -1119,7 +1119,7 @@ jobs:
       matrix:
         STORAGE: [minio, s3amazon, s3gcs]
     needs: [RegressionStart]
-    runs-on: [self-hosted, regression-tester, on-demand, type-cax41, image-arm-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression]
     timeout-minutes: 180
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_REPORT_KEY_ID }}
@@ -1186,7 +1186,7 @@ jobs:
 
   SignRelease:
     needs: [BuilderDebRelease]
-    runs-on: [self-hosted, on-demand, type-cpx41, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     timeout-minutes: 180
     steps:
       - name: Set envs
@@ -1254,7 +1254,7 @@ jobs:
       - RegressionTieredStorageS3Amd64
       - RegressionTieredStorageS3Aarch64
       - SignRelease
-    runs-on: [self-hosted, style-checker, on-demand, type-cpx31, image-x86-app-docker-ce]
+    runs-on: [self-hosted, altinity-on-demand, altinity-type-cpx41, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04]
     steps:
       - name: Check out repository code
         uses: Altinity/checkout@19599efdf36c4f3f30eb55d5bb388896faea69f6
