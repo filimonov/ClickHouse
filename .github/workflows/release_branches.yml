@@ -138,7 +138,7 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: builder, on-demand, type-ccx53, image-x86-app-docker-ce
+      runner_type: altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -149,7 +149,7 @@ jobs:
     with:
       build_name: package_aarch64
       checkout_depth: 0
-      runner_type: builder, on-demand, type-ccx53, image-x86-app-docker-ce
+      runner_type: altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-system-ubuntu-22.04
 
 
 ############################################################################################
