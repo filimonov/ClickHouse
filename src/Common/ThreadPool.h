@@ -234,14 +234,6 @@ public:
                     my_func = std::forward<Function>(func),
                     my_args = std::make_tuple(std::forward<Args>(args)...)]() mutable /// mutable is needed to destroy capture
             {
-                if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
-                    thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
-            }
-            else
-            {
-                UNUSED(global_profiler_real_time_period);
-                UNUSED(global_profiler_cpu_time_period);
-            }
                 SCOPE_EXIT(
                     my_state->thread_id = std::thread::id();
                     my_state->event.set();
@@ -257,6 +249,11 @@ public:
                     if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
                         thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
                 }
+                else
+                {
+                    UNUSED(global_profiler_real_time_period);
+                    UNUSED(global_profiler_cpu_time_period);
+                }              
 
                 /// This moves are needed to destroy function and arguments before exit.
                 /// It will guarantee that after ThreadFromGlobalPool::join all captured params are destroyed.
@@ -305,6 +302,11 @@ public:
                 {
                     if (unlikely(global_profiler_real_time_period != 0 || global_profiler_cpu_time_period != 0))
                         thread_status.initGlobalProfiler(global_profiler_real_time_period, global_profiler_cpu_time_period);
+                }
+                else
+                {
+                    UNUSED(global_profiler_real_time_period);
+                    UNUSED(global_profiler_cpu_time_period);
                 }
 
                 /// This moves are needed to destroy function and arguments before exit.
