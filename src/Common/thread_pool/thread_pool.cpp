@@ -9,6 +9,23 @@ namespace ProfileEvents
     extern const Event GlobalThreadPoolShrinks;
     extern const Event GlobalThreadPoolJobScheduleMicroseconds;
 }
+namespace ProfileEvents
+{
+    extern const Event GlobalThreadPoolExpansions;
+    extern const Event GlobalThreadPoolShrinks;
+    extern const Event GlobalThreadPoolThreadCreationMicroseconds;
+    extern const Event GlobalThreadPoolLockWaitMicroseconds;
+    extern const Event GlobalThreadPoolJobs;
+    extern const Event GlobalThreadPoolJobWaitTimeMicroseconds;
+
+    extern const Event LocalThreadPoolExpansions;
+    extern const Event LocalThreadPoolShrinks;
+    extern const Event LocalThreadPoolThreadCreationMicroseconds;
+    extern const Event LocalThreadPoolLockWaitMicroseconds;
+    extern const Event LocalThreadPoolJobs;
+    extern const Event LocalThreadPoolBusyMicroseconds;
+    extern const Event LocalThreadPoolJobWaitTimeMicroseconds;
+}
 
 
 namespace tp

@@ -14,14 +14,23 @@ extern const Metric LocalThreadScheduled;
 
 using namespace std::chrono_literals;
 
+
 namespace ProfileEvents
 {
-extern const Event GlobalThreadPoolExpansions;
-extern const Event GlobalThreadPoolShrinks;
-extern const Event GlobalThreadPoolJobScheduleMicroseconds;
-extern const Event LocalThreadPoolExpansions;
-extern const Event LocalThreadPoolShrinks;
-extern const Event LocalThreadPoolJobScheduleMicroseconds;
+    extern const Event GlobalThreadPoolExpansions;
+    extern const Event GlobalThreadPoolShrinks;
+    extern const Event GlobalThreadPoolThreadCreationMicroseconds;
+    extern const Event GlobalThreadPoolLockWaitMicroseconds;
+    extern const Event GlobalThreadPoolJobs;
+    extern const Event GlobalThreadPoolJobWaitTimeMicroseconds;
+
+    extern const Event LocalThreadPoolExpansions;
+    extern const Event LocalThreadPoolShrinks;
+    extern const Event LocalThreadPoolThreadCreationMicroseconds;
+    extern const Event LocalThreadPoolLockWaitMicroseconds;
+    extern const Event LocalThreadPoolJobs;
+    extern const Event LocalThreadPoolBusyMicroseconds;
+    extern const Event LocalThreadPoolJobWaitTimeMicroseconds;
 }
 
 
@@ -118,24 +127,46 @@ TEST_P(ThreadPoolTest, Warm)
     warm_pool.wait();
 
     std::cout << std::boolalpha << DB::CurrentThread::isInitialized()
-              << " GlobalThreadPoolExpansions: "
-              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolExpansions]
-              <<  std::endl
-              << "GlobalThreadPoolShrinks: "
-              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolShrinks]
-              <<  std::endl
-              << "GlobalThreadPoolJobScheduleMicroseconds: "
-              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolJobScheduleMicroseconds]
-              <<  std::endl
-              << "LocalThreadPoolExpansions: "
-              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolExpansions]
-              <<  std::endl
-              << "LocalThreadPoolShrinks: "
-              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolShrinks]
-              <<  std::endl
-              << "LocalThreadPoolJobScheduleMicroseconds: "
-              <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolJobScheduleMicroseconds]
-              << std::endl;
+            << " GlobalThreadPoolExpansions: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolExpansions]
+            <<  std::endl
+            << "GlobalThreadPoolShrinks: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolShrinks]
+            <<  std::endl
+            << "GlobalThreadPoolThreadCreationMicroseconds: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds]
+            <<  std::endl
+            << "GlobalThreadPoolLockWaitMicroseconds: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolLockWaitMicroseconds]
+            <<  std::endl
+            << "GlobalThreadPoolJobs: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolJobs]
+            <<  std::endl
+            << "GlobalThreadPoolJobWaitTimeMicroseconds: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds]
+            <<  std::endl
+            << "LocalThreadPoolExpansions: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolExpansions]
+            <<  std::endl
+            << "LocalThreadPoolShrinks: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolShrinks]
+            <<  std::endl
+            << "LocalThreadPoolThreadCreationMicroseconds: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolThreadCreationMicroseconds]
+            <<  std::endl
+            << "LocalThreadPoolLockWaitMicroseconds: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolLockWaitMicroseconds]
+            <<  std::endl
+            << "LocalThreadPoolJobs: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolJobs]
+            <<  std::endl
+            << "LocalThreadPoolBusyMicroseconds: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolBusyMicroseconds]
+            <<  std::endl
+            << "LocalThreadPoolJobWaitTimeMicroseconds: "
+            <<  DB::CurrentThread::getProfileEvents()[ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds]
+            << std::endl;
+
 }
 
 

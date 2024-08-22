@@ -867,8 +867,8 @@ try
             server_settings.max_thread_pool_size,
             server_settings.max_thread_pool_free_size,
             server_settings.thread_pool_queue_size,
-            will_have_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
-            will_have_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+            has_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
+            has_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
     }
     else
     {
@@ -876,8 +876,8 @@ try
             server_settings.max_thread_pool_size,
             server_settings.max_thread_pool_free_size,
             server_settings.thread_pool_queue_size,
-            will_have_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
-            will_have_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
+            has_trace_collector ? server_settings.global_profiler_real_time_period_ns : 0,
+            has_trace_collector ? server_settings.global_profiler_cpu_time_period_ns : 0);
     }
 
     if (has_trace_collector)
