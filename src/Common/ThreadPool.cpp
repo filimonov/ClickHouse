@@ -90,35 +90,6 @@ public:
 
 };
 
-class JobWithPriorityPtr {
-public:
-    std::shared_ptr<JobWithPriority> job;
-
-    JobWithPriorityPtr() : job(nullptr) {}
-
-    JobWithPriorityPtr(
-        JobWithPriority::Job job_, Priority priority_, CurrentMetrics::Metric metric,
-        const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-        bool capture_frame_pointers) : job(std::make_shared<JobWithPriority>(std::move(job_), priority_, metric, thread_trace_context_, capture_frame_pointers)) {}
-
-    // // Move constructor
-    // JobWithPriorityPtr(JobWithPriorityPtr&& other) noexcept
-    //     : job(std::move(other.job)) {}
-
-    // // Move assignment operator
-    // JobWithPriorityPtr& operator=(JobWithPriorityPtr&& other) noexcept {
-    //     if (this != &other) {
-    //         job = std::move(other.job);
-    //     }
-    //     return *this;
-    // }
-
-    // Implementing operator< by comparing the JobWithPriority objects
-    bool operator<(const JobWithPriorityPtr &other) const {
-        return *(this->job) < *(other.job);  // Compare the underlying JobWithPriority objects
-    }
-};
-
 
 static constexpr auto DEFAULT_THREAD_NAME = "ThreadPool";
 
@@ -263,7 +234,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
         /// We must not to allocate any memory after we emplaced a job in a queue.
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
-        auto new_job = JobWithPriorityPtr(
+        auto new_job = make_shared<JobWithPriority>(
             std::move(job),
             priority,
             metric_scheduled_jobs,
@@ -273,7 +244,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         /// Check if there are enough threads to process job.
         if (threads.size() < std::min(max_threads, scheduled_jobs + 1))
         {
-            typename std::list<std::shared_ptr<Thread>>::iterator thread_it;
+            typename std::list<std::unique_ptr<Thread>>::iterator thread_it;
 
             try
             {
@@ -287,7 +258,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             }
 
 
-            std::promise<std::shared_ptr<Thread>> promise_thread;
+            std::promise<std::unique_ptr<Thread>> promise_thread;
             try
             {
                 ++scheduled_jobs;
@@ -295,17 +266,15 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
 
                 lock.unlock();
 
-                std::shared_future<std::shared_ptr<Thread>> future_thread = promise_thread.get_future().share();
-                std::shared_ptr<Thread> thread_ptr;
+                std::future<std::unique_ptr<Thread>> future_thread = promise_thread.get_future();
 
                 Stopwatch watch2;
 
                 // once thread will be started and will get the lock it will put itself into the list
-                std::shared_ptr<Thread> new_thread = std::make_shared<Thread>(
+                std::unique_ptr<Thread> new_thread = std::make_unique<Thread>(
                     [this, thread_it, ft = std::move(future_thread), j = std::move(new_job)] mutable
                     {
-                        auto self_thread = ft.get();
-                        worker(thread_it, self_thread, std::move(j));
+                        worker(thread_it, std::move(ft.get()), std::move(j));
                     });
                 promise_thread.set_value(new_thread);
 
@@ -364,7 +333,7 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         try
         {
             Stopwatch watch;
-            threads.front() = std::make_shared<Thread>([this, it = threads.begin()] { worker(it,nullptr,JobWithPriorityPtr()); });
+            threads.front() = std::make_unique<Thread>([this, it = threads.begin()] { worker(it,nullptr,nullptr); });
             ProfileEvents::increment(
                 std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolThreadCreationMicroseconds : ProfileEvents::LocalThreadPoolThreadCreationMicroseconds,
                 watch.elapsedMicroseconds());
@@ -498,7 +467,7 @@ bool ThreadPoolImpl<Thread>::finished() const
 
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>::iterator thread_it, std::shared_ptr<Thread> self_thread, JobWithPriorityPtr new_job)
+void ThreadPoolImpl<Thread>::worker(typename std::list<std::unique_ptr<Thread>>::iterator thread_it, std::unique_ptr<Thread> self_thread, std::shared_ptr<JobWithPriority> new_job)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     CurrentMetrics::Increment metric_pool_threads(metric_threads);
@@ -514,7 +483,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>:
         setThreadName(DEFAULT_THREAD_NAME);
 
         /// Get a job from the queue.
-        JobWithPriorityPtr job_data;
+        JobWithPriority job_data;
 
         {
             Stopwatch watch;
@@ -590,7 +559,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>:
 
             ProfileEvents::increment(
                 std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolJobWaitTimeMicroseconds : ProfileEvents::LocalThreadPoolJobWaitTimeMicroseconds,
-                job_data.job->elapsedMicroseconds());
+                job_data->elapsedMicroseconds());
 
             /// We don't run jobs after `shutdown` is set, but we have to properly dequeue all jobs and finish them.
             if (shutdown)
@@ -598,7 +567,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>:
                 {
                     ALLOW_ALLOCATIONS_IN_SCOPE;
                     /// job can contain packaged_task which can set exception during destruction
-                    job_data.job.reset();
+                    job_data.reset();
                 }
                 job_is_done = true;
                 continue;
@@ -608,20 +577,20 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>:
         ALLOW_ALLOCATIONS_IN_SCOPE;
 
         /// Set up tracing context for this thread by its parent context.
-        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data.job->thread_trace_context);
+        DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
 
         /// Run the job.
         try
         {
             if (DB::Exception::enable_job_stack_trace)
-                DB::Exception::setThreadFramePointers(std::move(job_data.job->frame_pointers));
+                DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
 
             CurrentMetrics::Increment metric_active_pool_threads(metric_active_threads);
 
             if constexpr (!std::is_same_v<Thread, std::thread>)
             {
                 Stopwatch watch;
-                job_data.job->job();
+                job_data->job();
                 // This metric is less relevant for the global thread pool, as it would show large values (time while
                 // a thread was used by local pools) and increment only when local pools are destroyed.
                 //
@@ -631,7 +600,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>:
             }
             else
             {
-                job_data.job->job();
+                job_data->job();
             }
 
 
@@ -647,13 +616,13 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>:
                 else
                 {
                     /// If the thread name is not set, use the type name of the job instead
-                    thread_trace_context.root_span.operation_name = demangle(job_data.job->job.target_type().name());
+                    thread_trace_context.root_span.operation_name = demangle(job_data->job.target_type().name());
                 }
             }
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.job.reset();
+            job_data.reset();
         }
         catch (...)
         {
@@ -662,7 +631,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<std::shared_ptr<Thread>>:
 
             /// job should be reset before decrementing scheduled_jobs to
             /// ensure that the Job destroyed before wait() returns.
-            job_data.job.reset();
+            job_data.reset();
         }
 
         job_is_done = true;

@@ -24,7 +24,15 @@
 #include <Common/StackTrace.h>
 #include <base/scope_guard.h>
 
-class JobWithPriorityPtr;
+class JobWithPriority;
+
+// struct JobWithPriorityComparator
+// {
+//     bool operator()(const std::unique_ptr<JobWithPriority>& n1, const std::unique_ptr<JobWithPriority>& n2) const
+//     {
+//         return *n1 < *n2;
+//     }
+// };
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -131,10 +139,11 @@ private:
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
 
-    boost::heap::priority_queue<JobWithPriorityPtr,boost::heap::stable<true>> jobs;
+    //  , boost::heap::compare<JobWithPriorityComparator>
+    boost::heap::priority_queue<std::shared_ptr<JobWithPriority>,boost::heap::stable<true>> jobs;
 
     // it can hold nullptrs - those are slot for the threads which are currently starting
-    std::list<std::shared_ptr<Thread>> threads;
+    std::list<std::unique_ptr<Thread>> threads;
 
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
@@ -142,7 +151,7 @@ private:
     template <typename ReturnType>
     ReturnType scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context = true);
 
-    void worker(typename std::list<std::shared_ptr<Thread>>::iterator thread_it, std::shared_ptr<Thread> self_thread, JobWithPriorityPtr new_job);
+    void worker(typename std::list<std::unique_ptr<Thread>>::iterator thread_it, std::unique_ptr<Thread> self_thread, std::shared_ptr<JobWithPriority> new_job);
 
     /// Tries to start new threads if there are scheduled jobs and the limit `max_threads` is not reached. Must be called with `mutex` locked.
     void startNewThreadsNoLock();
