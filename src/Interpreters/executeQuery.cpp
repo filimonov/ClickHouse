@@ -990,7 +990,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings.enable_reads_from_query_cache)
                 {
-                    QueryCache::Key key(ast, context->getUserName());
+                    QueryCache::Key key(ast, context->getUserID(), context->getCurrentRolesAsStdVector());
                     QueryCache::Reader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1091,7 +1091,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                         QueryCache::Key key(
                             ast, res.pipeline.getHeader(),
-                            context->getUserName(), settings.query_cache_share_between_users,
+                            context->getUserID(), context->getCurrentRolesAsStdVector(),
+                            settings.query_cache_share_between_users,
                             std::chrono::system_clock::now() + std::chrono::seconds(settings.query_cache_ttl),
                             settings.query_cache_compress_entries);
 
@@ -1316,7 +1317,22 @@ void executeQuery(
     BlockIO streams;
     OutputFormatPtr output_format;
 
-    std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    try
+    {
+        std::tie(ast, streams) = executeQueryImpl(begin, end, context, false, QueryProcessingStage::Complete, &istr);
+    }
+    catch (...)
+    {
+        /// The timezone was already set before query was processed,
+        /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+        result_details.timezone = DateLUT::instance().getTimeZone();
+        throw;
+    }
+
+    /// The timezone was already set before query was processed,
+    /// But `session_timezone` setting could be modified in the query itself, so we update the value.
+    result_details.timezone = DateLUT::instance().getTimeZone();
+
     auto & pipeline = streams.pipeline;
 
     std::unique_ptr<WriteBuffer> compressed_buffer;

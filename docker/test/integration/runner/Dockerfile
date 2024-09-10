@@ -101,6 +101,7 @@ RUN python3 -m pip install --no-cache-dir \
     redis~=5.0.1 \
     requests==2.31.0 \
     requests-kerberos \
+    requests~=2.31.0 \
     tzlocal~=2.1 \
     retry~=0.9.2 \
     bs4~=0.0.1 \

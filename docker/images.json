@@ -34,8 +34,7 @@
     "docker/test/stateless": {
         "name": "altinityinfra/stateless-test",
         "dependent": [
-            "docker/test/stateful",
-            "docker/test/unit"
+            "docker/test/stateful"
         ]
     },
     "docker/test/stateful": {
@@ -112,11 +111,15 @@
         "dependent": []
     },
     "docker/test/base": {
-        "name": "altinityinfra/test-base",
-        "dependent": [
+         "name": "altinityinfra/test-base",
+         "dependent": [
+            "docker/test/fuzzer",
+            "docker/test/integration/base",
+            "docker/test/sqllogic",
+            "docker/test/sqltest",
             "docker/test/stateless",
-            "docker/test/integration/base"
-        ]
+            "docker/test/unit"
+         ]
     },
     "docker/test/integration/kerberized_hadoop": {
         "only_amd64": true,

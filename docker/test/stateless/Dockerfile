@@ -83,8 +83,10 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 ENV EXPORT_S3_STORAGE_POLICIES=1
 
-RUN npm install -g azurite@3.28.0 \
+# TODO: check against 3.29.0, but 23.8.11 had azurite@3.28.0
+RUN npm install -g azurite@3.29.0 \
     && npm install -g tslib@2.6.2
+
 
 COPY run.sh /
 COPY setup_minio.sh /

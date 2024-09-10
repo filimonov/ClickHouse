@@ -76,7 +76,8 @@
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
-
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 namespace DB
 {
@@ -644,6 +645,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!attach && context_->getSettingsRef().flatten_nested)
         res.flattenNested();
 
+
     if (res.getAllPhysical().empty())
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without physical columns");
 
@@ -745,6 +747,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     }
     else if (create.select)
     {
+        if (create.isParameterizedView())
+            return properties;
 
         Block as_select_sample;
 
@@ -754,10 +758,24 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
         else
         {
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                getContext(),
-                false /* is_subquery */,
-                create.isParameterizedView());
+            /** To get valid sample block we need to prepare query without only_analyze, because we need to execute scalar
+              * subqueries. Otherwise functions that expect only constant arguments will throw error during query analysis,
+              * because the result of scalar subquery is not a constant.
+              *
+              * Example:
+              * CREATE MATERIALIZED VIEW test_mv ENGINE=MergeTree ORDER BY arr
+              * AS
+              * WITH (SELECT '\d[a-z]') AS constant_value
+              * SELECT extractAll(concat(toString(number), 'a'), assumeNotNull(constant_value)) AS arr
+              * FROM test_table;
+              *
+              * For new analyzer this issue does not exists because we always execute scalar subqueries.
+              * We can improve this in new analyzer, and execute scalar subqueries only in contexts when we expect constant
+              * for example: LIMIT, OFFSET, functions parameters, functions constant only arguments.
+              */
+
+            InterpreterSelectWithUnionQuery interpreter(create.select->clone(), getContext(), SelectQueryOptions());
+            as_select_sample = interpreter.getSampleBlock();
         }
 
         properties.columns = ColumnsDescription(as_select_sample.getNamesAndTypesList());
@@ -960,6 +978,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
 
+        if (as_create.is_materialized_view && as_create.to_table_id)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Cannot CREATE a table AS {}, it is a Materialized View without storage. Use \"AS `{}`\" instead",
+                qualified_name,
+                as_create.to_table_id.getQualifiedName());
+
         if (as_create.is_live_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Live View", qualified_name);
 
@@ -1061,8 +1086,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
-        auto database = DatabaseCatalog::instance().getDatabase(database_name);
-        if (database->shouldReplicateQuery(getContext(), query_ptr))
+        // In case of an ON CLUSTER query, the database may not be present on the initiator node
+        auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (database && database->shouldReplicateQuery(getContext(), query_ptr))
         {
             auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.getTable());
             create.setDatabase(database_name);
@@ -1072,6 +1098,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (!create.cluster.empty())
             return executeQueryOnCluster(create);
+
+        if (!database)
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
         /// For short syntax of ATTACH query we have to lock table name here, before reading metadata
         /// and hold it until table is attached
@@ -1214,10 +1243,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DatabasePtr database;
     bool need_add_to_database = !create.temporary;
+    // In case of an ON CLUSTER query, the database may not be present on the initiator node
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    if (need_add_to_database && database && database->shouldReplicateQuery(getContext(), query_ptr))
+    if (database && database->shouldReplicateQuery(getContext(), query_ptr))
     {
         chassert(!ddl_guard);
         auto guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
