@@ -317,7 +317,7 @@ CI_CONFIG = CiConfig(
         "Sqllogic test (release)": TestConfig("package_release"),
         "SQLTest": TestConfig("package_release"),
         "Sign release": TestConfig("package_release"),
-        "Sign release": TestConfig("package_aarch64"),
+        "Sign aarch64": TestConfig("package_aarch64"),
     },
 )
 CI_CONFIG.validate()
