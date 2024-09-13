@@ -76,7 +76,8 @@ def test_distributed_directory_monitor_split_batch_on_failure_OFF(started_cluste
         if setting == "monitor_batch_inserts" and setting_value == 1:
             with pytest.raises(
                 QueryRuntimeException,
-                match=r"DB::Exception: Received from.*Memory limit \(for query\) exceeded: .*while pushing to view default\.mv",
+                # NOTE(vnemkov): memory limit may hit in different stages of query, just make sure that it was reached an query cancelled.
+                match=r"DB::Exception: Received from.*Memory limit \(for query\) exceeded:",
             ):
                 node2.query("system flush distributed dist")
             assert int(node2.query("select count() from dist_data")) == 0
