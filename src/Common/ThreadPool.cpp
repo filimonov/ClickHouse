@@ -514,30 +514,18 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
         if (!thread_scoped_demand_decrease)
             break;
 
-        try
-        {
-            // Successfully decremented, attempt to create a new thread
-            new_thread = std::make_unique<ThreadFromThreadPool>(*this, std::move(thread_scoped_demand_decrease.value()));
-            break;  // Exit loop if thread creation succeeds
-        }
-        catch (...)
-        {
-            break;
-        }
-
-        if (!new_thread)
-            break; /// failed to start more threads
-
         typename ThreadFromThreadPool::ThreadList::iterator thread_slot;
 
         try
         {
+            // Successfully decremented, attempt to create a new thread
+            new_thread = std::make_unique<ThreadFromThreadPool>(*this, std::move(thread_scoped_demand_decrease.value()));
             threads.emplace_front(std::move(new_thread));
             thread_slot = threads.begin();
         }
         catch (...)
         {
-            break;
+            break; /// failed to start more threads
         }
 
         try
