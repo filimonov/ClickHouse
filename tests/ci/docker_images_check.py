@@ -91,9 +91,11 @@ def get_changed_docker_images(
         str(files_changed),
     )
 
+    # Find changed images
+    all_images = []
     changed_images = []
-
     for dockerfile_dir, image_description in images_dict.items():
+        all_images.append(DockerImage(dockerfile_dir, image_description["name"], image_description.get("only_amd64", False)))
         for f in files_changed:
             if f.startswith(dockerfile_dir):
                 name = image_description["name"]
@@ -107,6 +109,20 @@ def get_changed_docker_images(
                 )
                 changed_images.append(DockerImage(dockerfile_dir, name, only_amd64))
                 break
+
+    # Rebuild all on opened PR or during release
+    if pr_info.event['action'] in ['opened', 'reopened', 'published', 'prereleased']:
+        changed_images = all_images
+
+    # Check that image for the PR exists
+    elif pr_info.event['action'] == 'synchronize':
+        unchanged_images = [
+            image for image in all_images if image not in changed_images
+        ]
+        logging.info(f"Unchanged images: {unchanged_images}")
+        for image in unchanged_images:
+            if subprocess.run(f"docker manifest inspect {image.repo}:{pr_info.number}", shell=True).returncode != 0:
+                changed_images.append(image)
 
     # The order is important: dependents should go later than bases, so that
     # they are built with updated base versions.
@@ -236,6 +252,19 @@ def build_and_push_one_image(
         f"--tag {image.repo}:{version_string} "
         f"{cache_from} "
         f"--cache-to type=inline,mode=max "
+            # FIXME: many tests utilize packages without specifying version, hence docker pulls :latest
+            # this will fail multiple jobs are going to be executed on different machines and
+            # push different images as latest.
+            # To fix it we may:
+            # - require jobs to be executed on same machine images were built (no parallelism)
+            # - change all the test's code (mostly docker-compose files in integration tests)
+            #   that depend on said images and push version somehow into docker-compose.
+            #   (and that is lots of work and many potential conflicts with upstream)
+            # - tag and push all images as :latest and then just pray that collisions are infrequent.
+            #   and if even if collision happens, image is not that different and would still properly work.
+            #   (^^^ CURRENT SOLUTION ^^^) But this is just a numbers game, it will blow up at some point.
+            # - do something crazy
+            f"--tag {image.repo}:latest "
         f"{push_arg}"
         f"--progress plain {image.full_path}"
     )
@@ -244,6 +273,7 @@ def build_and_push_one_image(
         retcode = proc.wait()
 
     if retcode != 0:
+        logging.error("Building image {} failed with error: {}\n{}".format(image, retcode, ''.join(list(open(build_log, 'rt')))))
         return False, build_log
 
     logging.info("Processing of %s successfully finished", image.repo)
@@ -278,7 +308,7 @@ def process_single_image(
             logging.info(
                 "Got error will retry %s time and sleep for %s seconds", i, i * 5
             )
-            time.sleep(i * 5)
+            time.sleep(i * 30)
         else:
             results.append(
                 TestResult(
@@ -382,13 +412,25 @@ def main():
         changed_json = TEMP_PATH / "changed_images.json"
 
     if args.push:
+        logging.info('Docker info BEFORE logging in: %s, ', subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
+            "docker info",
+            encoding="utf-8",
+            shell=True,
+        ))
+
+        logging.info('Doing docker login')
         subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
-            "docker login --username 'robotclickhouse' --password-stdin",
-            input=get_parameter_from_ssm("dockerhub_robot_password"),
+            "docker login --username 'altinityinfra' --password-stdin",
+            input=get_parameter_from_ssm("dockerhub-password"),
             encoding="utf-8",
             shell=True,
         )
 
+    logging.info('Docker info: %s, ', subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
+        "docker info",
+        encoding="utf-8",
+        shell=True,
+    ))
     images_dict = get_images_dict(Path(REPO_COPY), IMAGES_FILE_PATH)
 
     pr_info = PRInfo()
@@ -467,7 +509,7 @@ def main():
         NAME,
     )
     ch_helper = ClickHouseHelper()
-    ch_helper.insert_events_into(db="default", table="checks", events=prepared_events)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
     if status == "failure":
         sys.exit(1)
