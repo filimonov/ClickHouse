@@ -25,6 +25,8 @@
 #include <base/scope_guard.h>
 
 class JobWithPriority;
+class ThreadDemandController;
+struct ThreadScopedDemandDecrease;
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:
@@ -55,7 +57,7 @@ public:
         using ThreadList = std::list<std::unique_ptr<ThreadFromThreadPool>>;
 
         /// Constructor to initialize and start the thread (but not associate it with the pool)
-        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
+        explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool_, std::unique_ptr<ThreadScopedDemandDecrease> demand_decrease_);
 
         // Shift the thread state from Preparing to Running to allow the worker to start.
         void start(ThreadList::iterator& it);
@@ -67,6 +69,7 @@ public:
 
     private:
         ThreadPoolImpl& parent_pool;
+        std::unique_ptr<ThreadScopedDemandDecrease> demand_decrease;
         Thread thread;
 
         enum class ThreadState
@@ -176,23 +179,11 @@ private:
 
     size_t scheduled_jobs = 0;
 
-    // Originally equals to max_threads, but changes dynamically.
-    // Decrements with every new thread started, increments when it finishes.
-    // If positive, then more threads can be started.
-    // When it comes to zero, it means that max_threads threads have already been started.
-    // it can be below zero when the threadpool is shutting down
-    std::atomic<int64_t> remaining_pool_capacity;
-
-    // Increments every time a new thread joins the thread pool or a job finishes.
-    // Decrements every time a task is scheduled.
-    // If positive, it means that there are more threads than jobs (and some are idle).
-    // If zero, it means that every thread has a job.
-    // If negative, it means that we have more jobs than threads.
-    std::atomic<int64_t> available_threads;
-
     bool shutdown = false;
     bool threads_remove_themselves = true;
     const bool shutdown_on_exception = true;
+
+    std::unique_ptr<ThreadDemandController> thread_demand_controller;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
     ThreadFromThreadPool::ThreadList threads;

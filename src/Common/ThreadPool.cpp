@@ -47,24 +47,146 @@ namespace ProfileEvents
 
 }
 
-namespace
+
+struct JobScopedDemandIncrease;
+struct ThreadScopedDemandDecrease;
+
+// Class that handles thread demand control
+class ThreadDemandController
 {
-    struct ScopedDecrement
+public:
+    explicit ThreadDemandController(size_t max_threads)
     {
-        std::atomic<int64_t>& atomic_var;
+        ThreadsDemandInternal tmp_demand;
+        tmp_demand.remaining_pool_capacity = static_cast<int32_t>(max_threads);
+        tmp_demand.available_threads = 0;
+        threads_demand.store(tmp_demand, std::memory_order_relaxed);
+    }
 
-        explicit ScopedDecrement(std::atomic<int64_t>& var)
-            : atomic_var(var)
+    // Method to modify threads demand (increments or decrements based on the value of `change`)
+    void modify(int32_t change_available_threads, int32_t change_capacity)
+    {
+        ThreadsDemandInternal current_demand;
+        ThreadsDemandInternal new_demand;
+
+        do
         {
-            atomic_var.fetch_sub(1, std::memory_order_relaxed);
+            current_demand = threads_demand.load(std::memory_order_relaxed);
+            new_demand = current_demand;
+
+            // can theoretically overflow after ~2 bln of thread or tasks,
+            // practically it seems impossible to have so many jobs or threads.
+            new_demand.available_threads += change_available_threads;
+            new_demand.remaining_pool_capacity += change_capacity;
+        }
+        while (!threads_demand.compare_exchange_weak(current_demand, new_demand, std::memory_order_relaxed));
+    }
+
+    // Initiates the shutdown process by preventing the creation of new threads.
+    // This is achieved by setting remaining_pool_capacity to a large negative value
+    // (e.g., -MAX_THEORETICAL_THREAD_COUNT). Since the getThreadScopedDemandDecrease method
+    // does not explicitly check for shutdown, this negative value acts as a signal that
+    // no more threads can be created.
+    void shutdown()
+    {
+        ThreadsDemandInternal current_demand;
+        ThreadsDemandInternal new_demand;
+
+        do
+        {
+            current_demand = threads_demand.load(std::memory_order_relaxed);
+            new_demand = current_demand;
+            new_demand.remaining_pool_capacity = -ThreadPool::MAX_THEORETICAL_THREAD_COUNT;
+        }
+        while (!threads_demand.compare_exchange_weak(current_demand, new_demand, std::memory_order_relaxed));
+    }
+
+    // Factory method to decrease thread demand, returns a scoped 'demand decrease' object, which will live together with the thread.
+    std::optional<std::unique_ptr<ThreadScopedDemandDecrease>> getThreadScopedDemandDecrease(bool force = false)
+    {
+        ThreadsDemandInternal current_demand = threads_demand.load(std::memory_order_relaxed);
+        while (force || (current_demand.available_threads <= 0 && current_demand.remaining_pool_capacity > 0))
+        {
+            ThreadsDemandInternal new_demand = current_demand;
+            new_demand.remaining_pool_capacity -= 1;
+            new_demand.available_threads += 1;
+
+            if (threads_demand.compare_exchange_weak(current_demand, new_demand, std::memory_order_relaxed))
+            {
+                // Return a ThreadScopedDemandDecrease that will adjust thread count on destruction
+                return std::make_unique<ThreadScopedDemandDecrease>(*this);
+            }
+            else
+            {
+                current_demand = threads_demand.load(std::memory_order_relaxed);
+            }
         }
 
-        ~ScopedDecrement()
-        {
-            atomic_var.fetch_add(1, std::memory_order_relaxed);
-        }
+        return std::nullopt; // No more threads can be started
+    }
+
+    // Factory method to increase demand (e.g., when a job is started)
+    std::unique_ptr<JobScopedDemandIncrease> getJobScopedDemandIncrease()
+    {
+        return std::make_unique<JobScopedDemandIncrease>(*this);
+    }
+
+private:
+    struct alignas(8) ThreadsDemandInternal
+    {
+        // Originally equals to max_threads, but changes dynamically.
+        // Decrements with every new thread started, increments when it finishes.
+        // If positive, then more threads can be started.
+        // When it comes to zero, it means that max_threads threads have already been started.
+        // it can be below zero when the threadpool is shutting down
+        int32_t remaining_pool_capacity;  // Number of threads that can still be created
+
+        // Increments every time a new thread joins the thread pool or a job finishes.
+        // Decrements every time a task is scheduled.
+        // If positive, it means that there are more threads than jobs (and some are idle).
+        // If zero, it means that every thread has a job.
+        // If negative, it means that we have more jobs than threads.
+        int32_t available_threads;        // Number of currently available threads
     };
-}
+
+    std::atomic<ThreadsDemandInternal> threads_demand;
+};
+
+// Scoped demand increase (reducing available threads during a job's lifetime)
+struct JobScopedDemandIncrease
+{
+    ThreadDemandController& thread_demand_controller;
+
+    explicit JobScopedDemandIncrease(ThreadDemandController& thread_demand_)
+        : thread_demand_controller(thread_demand_)
+    {
+        thread_demand_controller.modify(-1, 0);  // Decrease available threads
+    }
+
+    ~JobScopedDemandIncrease()
+    {
+        thread_demand_controller.modify(1, 0);
+    }
+};
+
+// Scoped demand decrease (increasing available threads during the thread's lifetime)
+struct ThreadScopedDemandDecrease
+{
+    ThreadDemandController& thread_demand_controller;
+
+    explicit ThreadScopedDemandDecrease(ThreadDemandController& thread_demand_)
+        : thread_demand_controller(thread_demand_)
+    {
+        // Initialization happens in the factory method getThreadScopedDemandDecrease, so no change here
+    }
+
+    ~ThreadScopedDemandDecrease()
+    {
+        // Revert the changes when the object is destroyed:
+        // Decrease available threads, increase pool capacity
+        thread_demand_controller.modify(-1, 1);
+    }
+};
 
 class JobWithPriority
 {
@@ -74,7 +196,7 @@ public:
     Job job;
     Priority priority;
     CurrentMetrics::Increment metric_increment;
-    std::unique_ptr<ScopedDecrement> available_threads_decrement;
+    std::unique_ptr<JobScopedDemandIncrease> demand_increase;
 
     DB::OpenTelemetry::TracingContextOnThread thread_trace_context;
 
@@ -86,9 +208,9 @@ public:
     JobWithPriority(
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
-        bool capture_frame_pointers, std::unique_ptr<ScopedDecrement> available_threads_decrement_)
+        bool capture_frame_pointers, std::unique_ptr<JobScopedDemandIncrease> demand_increase_)
         : job(job_), priority(priority_), metric_increment(metric),
-        available_threads_decrement(std::move(available_threads_decrement_)),
+        demand_increase(std::move(demand_increase_)),
         thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
     {
         if (!capture_frame_pointers)
@@ -144,11 +266,10 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(
     , max_free_threads(std::min(max_free_threads_, max_threads))
     , queue_size(queue_size_ ? std::max(queue_size_, max_threads) : 0 /* zero means the queue is unlimited */)
     , shutdown_on_exception(shutdown_on_exception_)
+    , thread_demand_controller(std::make_unique<ThreadDemandController>(max_threads))
 {
     chassert(max_threads <= MAX_THEORETICAL_THREAD_COUNT);
     chassert(max_free_threads <= MAX_THEORETICAL_THREAD_COUNT);
-    remaining_pool_capacity.store(max_threads, std::memory_order_relaxed);
-    available_threads.store(0, std::memory_order_relaxed);
 }
 
 template <typename Thread>
@@ -156,7 +277,7 @@ void ThreadPoolImpl<Thread>::setMaxThreads(size_t value)
 {
     chassert(value <= MAX_THEORETICAL_THREAD_COUNT);
     std::lock_guard lock(mutex);
-    remaining_pool_capacity.fetch_add(value - max_threads, std::memory_order_relaxed);
+    thread_demand_controller->modify(0, static_cast<int32_t>(value - max_threads));
 
     bool need_start_threads = (value > max_threads);
     bool need_finish_free_threads = (value < max_free_threads);
@@ -234,39 +355,28 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             return false;
     };
 
-    // Decrement available_threads, scoped to the job lifecycle.
-    // This ensures that available_threads decreases when a new job starts
-    // and automatically increments when the job completes or goes out of scope.
-    auto available_threads_decrement = std::make_unique<ScopedDecrement>(available_threads);
-
     std::unique_ptr<ThreadFromThreadPool> new_thread;
 
-    // Load the current capacity
-    int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-    int64_t currently_available_threads = available_threads.load(std::memory_order_relaxed);
+    // Decrease available_threads, the object will be tied to a new job.
+    // Once the job completes or goes out of scope, available_threads will be incremented automatically.
+    auto job_scoped_demand_increase = thread_demand_controller->getJobScopedDemandIncrease();
 
-    // Try to create a new thread if all existing threads are busy and there is capacity.
-    while (currently_available_threads <= 0 && capacity > 0)
+    // Check if a new thread is needed and can be started.
+    // If so, this creates a scoped object that increments available_threads and decrements remaining_pool_capacity.
+    // The adjustments will be automatically reversed when the thread completes or the object goes out of scope.
+    auto thread_scoped_demand_decrease = thread_demand_controller->getThreadScopedDemandDecrease();
+
+    // nullopt if we have enough threads
+    if (thread_scoped_demand_decrease)
     {
-        if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1, std::memory_order_relaxed))
+        try
         {
-            try
-            {
-                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                break; // Exit the loop once a thread is successfully created.
-            }
-            catch (...)
-            {
-                // Failed to create the thread, restore capacity
-                remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                std::lock_guard lock(mutex); // needed to change first_exception.
-                return on_error("failed to start the thread");
-            }
+            new_thread = std::make_unique<ThreadFromThreadPool>(*this, std::move(thread_scoped_demand_decrease.value()));
         }
-        else
+        catch (...)
         {
-            capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-            currently_available_threads = available_threads.load(std::memory_order_relaxed);
+            std::lock_guard lock(mutex); // needed to change first_exception.
+            return on_error("failed to start the thread");
         }
     }
 
@@ -326,13 +436,11 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         {
             try
             {
-                new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                remaining_pool_capacity.fetch_sub(1, std::memory_order_relaxed);
+                thread_scoped_demand_decrease = thread_demand_controller->getThreadScopedDemandDecrease(/*force =*/ true);
+                new_thread = std::make_unique<ThreadFromThreadPool>(*this, std::move(thread_scoped_demand_decrease.value()));
             }
             catch (...)
             {
-                // If thread creation fails, restore the pool capacity and return an error.
-                remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
                 return on_error("failed to start the thread");
             }
             adding_new_thread = true;
@@ -365,7 +473,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
                     propagate_opentelemetry_tracing_context ? DB::OpenTelemetry::CurrentContext() : DB::OpenTelemetry::TracingContextOnThread(),
                     /// capture_frame_pointers
                     DB::Exception::enable_job_stack_trace,
-                    std::move(available_threads_decrement));
+                    std::move(job_scoped_demand_increase));
 
             ++scheduled_jobs;
 
@@ -378,7 +486,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
             if (adding_new_thread)
                 threads.pop_front();
 
-            return on_error("cannot start the job or thread");
+            return on_error("cannot emplace the job");
         }
     }
 
@@ -401,39 +509,26 @@ void ThreadPoolImpl<Thread>::startNewThreadsNoLock()
     {
         std::unique_ptr<ThreadFromThreadPool> new_thread;
 
-        while (true)
+        auto thread_scoped_demand_decrease = thread_demand_controller->getThreadScopedDemandDecrease();
+
+        if (!thread_scoped_demand_decrease)
+            break;
+
+        try
         {
-            int64_t capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-
-            if (capacity == 0)
-                break;
-
-            if (remaining_pool_capacity.compare_exchange_weak(capacity, capacity - 1, std::memory_order_relaxed))
-            {
-                try
-                {
-                    // Successfully decremented, attempt to create a new thread
-                    new_thread = std::make_unique<ThreadFromThreadPool>(*this);
-                    break;  // Exit loop if thread creation succeeds
-                }
-                catch (...)
-                {
-                    // Failed to create the thread, restore capacity
-                    remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-                    break;
-                }
-            }
-            else
-            {
-                capacity = remaining_pool_capacity.load(std::memory_order_relaxed);
-            }
+            // Successfully decremented, attempt to create a new thread
+            new_thread = std::make_unique<ThreadFromThreadPool>(*this, std::move(thread_scoped_demand_decrease.value()));
+            break;  // Exit loop if thread creation succeeds
+        }
+        catch (...)
+        {
+            break;
         }
 
         if (!new_thread)
             break; /// failed to start more threads
 
         typename ThreadFromThreadPool::ThreadList::iterator thread_slot;
-
 
         try
         {
@@ -515,15 +610,11 @@ void ThreadPoolImpl<Thread>::finalize()
         std::lock_guard lock(mutex);
         shutdown = true;
 
-        /// scheduleImpl doesn't check for shutdown outside the critical section,
-        /// so we set remaining_pool_capacity to a large negative value
-        /// (e.g., -MAX_THEORETICAL_THREAD_COUNT) to signal that no new threads are needed.
-        /// This effectively prevents any new threads from being started during shutdown.
-        remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
 
         /// Disable thread self-removal from `threads`. Otherwise, if threads remove themselves,
         /// the thread.join() operation will fail later in this function.
         threads_remove_themselves = false;
+        thread_demand_controller->shutdown();
     }
 
     /// Notify all threads to wake them up, so they can complete their work and exit gracefully.
@@ -574,8 +665,9 @@ bool ThreadPoolImpl<Thread>::finished() const
 
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImpl& parent_pool_)
+ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImpl& parent_pool_, std::unique_ptr<ThreadScopedDemandDecrease> demand_decrease_)
     : parent_pool(parent_pool_)
+    , demand_decrease(std::move(demand_decrease_))
     , thread_state(ThreadState::Preparing)  // Initial state is Preparing
 {
     Stopwatch watch2;
@@ -587,8 +679,6 @@ ThreadPoolImpl<Thread>::ThreadFromThreadPool::ThreadFromThreadPool(ThreadPoolImp
         watch2.elapsedMicroseconds());
     ProfileEvents::increment(
         std::is_same_v<Thread, std::thread> ? ProfileEvents::GlobalThreadPoolExpansions : ProfileEvents::LocalThreadPoolExpansions);
-
-    parent_pool.available_threads.fetch_add(1, std::memory_order_relaxed);
 }
 
 
@@ -599,7 +689,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::start(typename ThreadList::it
     /// no parallelism is expected here. So the only valid transition for the start method is Preparing to Running.
     chassert(thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing);
     thread_it = it;
-    thread_state.store(ThreadState::Running); /// if worker was waiting for finishing the initialization - let it finish.
+    thread_state.store(ThreadState::Running, std::memory_order_relaxed); /// if worker was waiting for finishing the initialization - let it finish.
 }
 
 template <typename Thread>
@@ -622,11 +712,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::removeSelfFromPoolNoPoolLock(
 template <typename Thread>
 ThreadPoolImpl<Thread>::ThreadFromThreadPool::~ThreadFromThreadPool()
 {
-    // the thread destructed, so the capacity grows
-    parent_pool.available_threads.fetch_sub(1, std::memory_order_relaxed);
-    parent_pool.remaining_pool_capacity.fetch_add(1, std::memory_order_relaxed);
-
-    thread_state.store(ThreadState::Destructing); /// if worker was waiting for finishing the initialization - let it finish.
+    thread_state.store(ThreadState::Destructing, std::memory_order_relaxed); /// if worker was waiting for finishing the initialization - let it finish.
 
     join();
 
@@ -683,8 +769,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                     {
                         parent_pool.shutdown = true;
 
-                        // Prevent new thread creation, as explained in finalize.
-                        parent_pool.remaining_pool_capacity.store(-MAX_THEORETICAL_THREAD_COUNT, std::memory_order_relaxed);
+                        // Prevent new thread creation
+                        parent_pool.thread_demand_controller->shutdown();
                     }
                     exception_from_job = {};
                 }
