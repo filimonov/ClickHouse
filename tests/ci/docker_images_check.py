@@ -111,7 +111,7 @@ def get_changed_docker_images(
                 break
 
     # Rebuild all images on push or release
-    if pr_info.number == 0:
+    if pr_info.number == 0 or pr_info.number == f"{pr_info.version.major}.{pr_info.version.minor}.{pr_info.version.patch}":
         changed_images = all_images
 
     else:
