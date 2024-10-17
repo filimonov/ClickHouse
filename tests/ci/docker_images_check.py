@@ -110,15 +110,15 @@ def get_changed_docker_images(
                 changed_images.append(DockerImage(dockerfile_dir, name, only_amd64))
                 break
 
-    # Rebuild all images on push or release
-    if pr_info.number == 0 or pr_info.number == f"{pr_info.version.major}.{pr_info.version.minor}.{pr_info.version.patch}":
+    # Rebuild all images on push, release, or scheduled run
+    if pr_info.number in [0,1]:
         changed_images = all_images
 
     else:
         # Rebuild all on opened PR
         if pr_info.event['action'] in ['opened', 'reopened']:
             changed_images = all_images
-    
+
         # Check that image for the PR exists
         elif pr_info.event['action'] == 'synchronize':
             unchanged_images = [
