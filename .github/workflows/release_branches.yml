@@ -148,7 +148,7 @@ jobs:
       build_name: package_release
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      runner_type: altinity-on-demand, altinity-type-ccx53, altinity-in-hil, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -160,7 +160,7 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-setup-builder, altinity-type-ccx53, altinity-on-demand, altinity-in-ash, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      runner_type: altinity-on-demand, altinity-type-ccx53, altinity-in-hil, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -172,7 +172,7 @@ jobs:
       build_name: package_asan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      runner_type: altinity-on-demand, altinity-type-ccx53, altinity-in-hil, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -184,7 +184,7 @@ jobs:
       build_name: package_ubsan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      runner_type: altinity-on-demand, altinity-type-ccx53, altinity-in-hil, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -196,7 +196,7 @@ jobs:
       build_name: package_tsan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      runner_type: altinity-on-demand, altinity-type-ccx53, altinity-in-hil, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -208,7 +208,7 @@ jobs:
       build_name: package_msan
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      runner_type: altinity-on-demand, altinity-type-ccx53, altinity-in-hil, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
@@ -220,7 +220,7 @@ jobs:
       build_name: package_debug
       checkout_depth: 0
       timeout_minutes: 180
-      runner_type: altinity-on-demand, altinity-setup-builder, altinity-type-ccx53, altinity-in-ash, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
+      runner_type: altinity-on-demand, altinity-type-ccx53, altinity-in-hil, altinity-image-x86-snapshot-22.04-amd, altinity-startup-snapshot, altinity-setup-none
       additional_envs: |
         CLICKHOUSE_STABLE_VERSION_SUFFIX=altinitystable
 
