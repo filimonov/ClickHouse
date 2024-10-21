@@ -170,38 +170,49 @@ private:
 
     struct AliasData
     {
-        String name;
-        DataTypePtr type;
-        ASTPtr expression;
+        String name;       /// "size" in  "size String Alias formatReadableSize(size_bytes)"
+        DataTypePtr type;  /// String in "size String Alias formatReadableSize(size_bytes)", or something different came from query
+        ASTPtr expression; /// formatReadableSize(size_bytes) in "size String Alias formatReadableSize(size_bytes)"
     };
 
     using Aliases = std::vector<AliasData>;
+
+    class RowPolicyData;
 
     static SelectQueryInfo getModifiedQueryInfo(const SelectQueryInfo & query_info,
         const ContextPtr & modified_context,
         const StorageWithLockAndName & storage_with_lock_and_name,
         const StorageSnapshotPtr & storage_snapshot);
 
+    /// Populates AliasData structures for further processing
+    ///   using types from result query if possible
+    /// and removes alias columns from real_column_names
+    void processAliases(
+        Names & real_column_names,
+        const StorageWithLockAndName & storage_with_lock,
+        Aliases & aliases,
+        const Block & sample_block,
+        ContextMutablePtr modified_context);
+
     QueryPipelineBuilderPtr createSources(
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        const QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         UInt64 max_block_size,
         const Block & header,
-        const Aliases & aliases,
         const StorageWithLockAndName & storage_with_lock,
         Names real_column_names,
+        const Block & sample_block,
         ContextMutablePtr modified_context,
         size_t streams_num,
         bool concat_streams = false);
 
-    static void convertingSourceStream(
+    static void convertAndFilterSourceStream(
         const Block & header,
         const StorageMetadataPtr & metadata_snapshot,
         const Aliases & aliases,
+        std::unique_ptr<RowPolicyData> row_policy_data_ptr,
         ContextPtr context,
         QueryPipelineBuilder & builder,
-        const QueryProcessingStage::Enum & processed_stage);
+        QueryProcessingStage::Enum processed_stage);
 };
 
 }
