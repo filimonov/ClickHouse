@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 skim = { version = "0.10.2", default-features = false }
-cxx = "1.0.83"
+cxx = "=1.0.83"
 term = "0.7.0"
 
 [build-dependencies]
