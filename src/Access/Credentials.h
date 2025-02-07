@@ -172,10 +172,6 @@ public:
             is_ready = true;
         }
     }
-    bool isJWT() const
-    {
-        return is_jwt;
-    }
     std::set<String> getGroups() const
     {
         return groups;
@@ -186,7 +182,6 @@ public:
     }
 private:
     String token;
-    bool is_jwt = false;
     std::set<String> groups;
 };
 
