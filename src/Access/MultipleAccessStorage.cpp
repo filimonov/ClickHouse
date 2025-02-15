@@ -9,8 +9,6 @@
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/find.hpp>
 
-#include <iostream>
-
 
 namespace DB
 {

@@ -173,7 +173,7 @@ String TokenAccessStorage::getStorageParamsJSON() const
     std::lock_guard lock(mutex);
     Poco::JSON::Object params_json;
 
-    params_json.set("processor", provider_name);
+    params_json.set("provider", provider_name);
 
     Poco::JSON::Array common_role_names_json;
     for (const auto & role : common_role_names)
@@ -252,7 +252,7 @@ void TokenAccessStorage::assignRolesNoLock(User & user, const std::set<String> &
         }
         else
         {
-            LOG_WARNING(getLogger(), "Unable to grant {} role '{}' to user '{}': role not found", (common ? "common" : "mapped"), role_name, user_name);
+            LOG_TRACE(getLogger(), "Did not grant {} role '{}' to user '{}': role not found", (common ? "common" : "mapped"), role_name, user_name);
         }
     };
 

@@ -216,8 +216,9 @@ bool authenticateUserByHTTP(
         const auto token_credentials = TokenCredentials(jwt_token.substr(BEARER_PREFIX.length()));
         const auto & external_authenticators = global_context->getAccessControl().getExternalAuthenticators();
 
-        if (!external_authenticators.resolveJWTCredentials(token_credentials, false))
-            external_authenticators.checkAccessTokenCredentials(token_credentials);
+        if (!external_authenticators.resolveJWTCredentials(token_credentials, false)
+            && !external_authenticators.checkAccessTokenCredentials(token_credentials))
+            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: Token could not be verified.");
 
         current_credentials = std::make_unique<TokenCredentials>(token_credentials);
     }
