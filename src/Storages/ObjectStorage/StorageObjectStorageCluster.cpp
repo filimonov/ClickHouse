@@ -110,7 +110,9 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         format_settings_,
         mode_,
         /* distributed_processing */false,
-        partition_by_);
+        partition_by_,
+        /* lazy_init */false,
+        sample_path);
 
     auto virtuals_ = getVirtualsPtr();
     if (virtuals_)

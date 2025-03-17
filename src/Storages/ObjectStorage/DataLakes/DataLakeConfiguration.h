@@ -79,6 +79,16 @@ public:
         return std::nullopt;
     }
 
+    std::optional<String> tryGetSamplePathFromMetadata() const override
+    {
+        if (!current_metadata)
+            return std::nullopt;
+        auto data_files = current_metadata->getDataFiles();
+        if (!data_files.empty())
+            return data_files[0];
+        return std::nullopt;
+    }
+
     void implementPartitionPruning(const ActionsDAG & filter_dag) override
     {
         if (!current_metadata || !current_metadata->supportsPartitionPruning())
