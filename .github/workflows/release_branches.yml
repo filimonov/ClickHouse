@@ -510,8 +510,8 @@ jobs:
           ${{ toJson(needs) }}
           EOF
           python3 ./tests/ci/ci_buddy.py --check-wf-status
-      - name: Create and upload combined report
+      - name: Create and upload workflow report
         if: ${{ !cancelled() }}
-        uses: ./.github/actions/create_combined_report
+        uses: ./.github/actions/create_workflow_report
         with:
           final: true
