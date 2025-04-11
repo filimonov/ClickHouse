@@ -251,7 +251,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
 
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        auto map = parseHivePartitioningKeysAndValues(path);
+        auto map = parseHivePartitioningKeysAndValues(path, context);
         auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
         for (auto & item : map)
         {
