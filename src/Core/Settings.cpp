@@ -5942,9 +5942,6 @@ Normally this setting should be set in user profile (users.xml or queries like `
 
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0) \
-    DECLARE(Bool, use_hive_puse_extract_kvp_for_hive_path_parsingartitioning, true, R"(
-Use ClickHouse extractKeyValuePairs function to parse hive paths instead of regex.
-)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
