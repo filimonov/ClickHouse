@@ -186,7 +186,7 @@ std::pair<ColumnPtr, ColumnPtr> parseHivePartitioningKeysAndValues(const String 
         {
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed",
+                "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {}, only unique keys are allowed",
                 path,
                 key.toString());
         }
