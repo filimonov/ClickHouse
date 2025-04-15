@@ -72,13 +72,15 @@ void TableFunctionObjectStorage<Definition, Configuration>::parseArguments(const
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
+    settings = std::make_shared<StorageObjectStorageSettings>();
+
     auto & args = args_func.at(0)->children;
     for (auto * it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
         if (settings_ast)
         {
-            settings.loadFromQuery(*settings_ast);
+            settings->loadFromQuery(*settings_ast);
             args.erase(it);
             break;
         }
@@ -130,7 +132,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
         /* distributed_processing */ false,
-        nullptr);
+        /* partition_by */ nullptr,
+        /* is_table_function */ true);
 
     storage->startup();
     return storage;
