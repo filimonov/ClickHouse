@@ -95,7 +95,11 @@ For more convenient (automatic) cache management, see disable_internal_dns_cache
 
 Clears the mark cache.
 
-## DROP REPLICA
+## DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
+
+Clears the iceberg metadata cache.
+
+## DROP REPLICA {#drop-replica}
 
 Dead replicas of `ReplicatedMergeTree` tables can be dropped using following syntax:
 

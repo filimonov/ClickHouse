@@ -36,7 +36,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -44,12 +43,6 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-}
-
-namespace StorageObjectStorageSetting
-{
-extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
-extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -73,6 +66,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         local_distributed_processing,
         context,
         {}, // predicate
+        {},
         {}, // virtual_columns
         nullptr, // read_keys
         {} // file_progress_callback
@@ -95,6 +89,7 @@ StorageObjectStorage::StorageObjectStorage(
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
     ASTPtr partition_by_,
+    bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
@@ -105,6 +100,7 @@ StorageObjectStorage::StorageObjectStorage(
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
     bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
+    update_configuration_on_read = !is_table_function_ || do_lazy_init;
     bool failed_init = false;
     auto do_init = [&]()
     {
@@ -214,6 +210,18 @@ void StorageObjectStorage::updateExternalDynamicMetadata(ContextPtr context_ptr)
     setInMemoryMetadata(metadata);
 }
 
+std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
+{
+    configuration->update(object_storage, query_context);
+    return configuration->totalRows();
+}
+
+std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
+{
+    configuration->update(object_storage, query_context);
+    return configuration->totalBytes();
+}
+
 namespace
 {
 class ReadFromObjectStorageStep : public SourceStepWithFilter
@@ -255,21 +263,12 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-        const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag.has_value())
-        {
-            predicate = filter_actions_dag->getOutputs().at(0);
-            if (getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
-            {
-                configuration->implementPartitionPruning(*filter_actions_dag);
-            }
-        }
-        createIterator(predicate);
+        createIterator();
     }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
     {
-        createIterator(nullptr);
+        createIterator();
 
         Pipes pipes;
         auto context = getContext();
@@ -321,14 +320,19 @@ private:
     size_t num_streams;
     const bool distributed_processing;
 
-    void createIterator(const ActionsDAG::Node * predicate)
+    void createIterator()
     {
         if (iterator_wrapper)
             return;
+
+        const ActionsDAG::Node * predicate = nullptr;
+        if (filter_actions_dag.has_value())
+            predicate = filter_actions_dag->getOutputs().at(0);
+
         auto context = getContext();
         iterator_wrapper = StorageObjectStorageSource::createFileIterator(
             configuration, configuration->getQuerySettings(context), object_storage, distributed_processing,
-            context, predicate, virtual_columns, nullptr, context->getFileProgressCallback());
+            context, predicate, filter_actions_dag, virtual_columns, nullptr, context->getFileProgressCallback());
     }
 };
 }
@@ -358,7 +362,11 @@ void StorageObjectStorage::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    configuration->update(object_storage, local_context);
+    /// We did configuration->update() in constructor,
+    /// so in case of table function there is no need to do the same here again.
+    if (update_configuration_on_read)
+        configuration->update(object_storage, local_context);
+
     if (partition_by && configuration->withPartitionWildcard())
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -489,6 +497,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         false/* distributed_processing */,
         context,
         {}/* predicate */,
+        {},
         {}/* virtual_columns */,
         &read_keys);
 
@@ -594,7 +603,7 @@ void StorageObjectStorage::Configuration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    StorageObjectStorageSettings * settings)
+    StorageObjectStorageSettingsPtr settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         fromNamedCollection(*named_collection, local_context);
@@ -618,16 +627,15 @@ void StorageObjectStorage::Configuration::initialize(
     else
         FormatFactory::instance().checkFormatName(format);
 
-    if (settings)
-    {
-        allow_dynamic_metadata_for_data_lakes
-            = (*settings)[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes];
-        allow_experimental_delta_kernel_rs
-            = (*settings)[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
-    }
+    storage_settings = settings;
     initialized = true;
 }
 
+const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSettingsRef() const
+{
+    return *storage_settings;
+}
+ 
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
@@ -686,4 +694,5 @@ void StorageObjectStorage::Configuration::assertInitialized() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration was not initialized before usage");
     }
 }
+
 }
