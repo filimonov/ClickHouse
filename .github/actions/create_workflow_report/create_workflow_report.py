@@ -223,8 +223,8 @@ def get_commit_statuses(sha: str) -> pd.DataFrame:
     # Parse relevant fields
     parsed = [
         {
-            "test_name": item["context"],
-            "test_status": item["state"],
+            "job_name": item["context"],
+            "job_status": item["state"],
             "message": item["description"],
             "results_link": item["target_url"],
         }
@@ -233,7 +233,7 @@ def get_commit_statuses(sha: str) -> pd.DataFrame:
 
     return (
         pd.DataFrame(parsed)
-        .sort_values(by=["test_status", "test_name"], ascending=[True, True])
+        .sort_values(by=["job_status", "job_name"], ascending=[True, True])
         .reset_index(drop=True)
     )
 
@@ -269,11 +269,9 @@ def get_checks_fails(client: Client, job_url: str):
     Get tests that did not succeed for the given job URL.
     Exclude checks that have status 'error' as they are counted in get_checks_errors.
     """
-    columns = (
-        "check_status, check_name, test_status, test_name, report_url as results_link"
-    )
+    columns = "check_status as job_status, check_name as job_name, test_status, test_name, report_url as results_link"
     query = f"""SELECT {columns} FROM `gh-data`.checks
-                WHERE task_url='{job_url}'
+                WHERE task_url LIKE '{job_url}%'
                 AND test_status IN ('FAIL', 'ERROR')
                 AND check_status!='error'
                 ORDER BY check_name, test_name
@@ -286,11 +284,9 @@ def get_checks_known_fails(client: Client, job_url: str, known_fails: dict):
     Get tests that are known to fail for the given job URL.
     """
     assert len(known_fails) > 0, "cannot query the database with empty known fails"
-    columns = (
-        "check_status, check_name, test_status, test_name, report_url as results_link"
-    )
+    columns = "check_status as job_status, check_name as job_name, test_status, test_name, report_url as results_link"
     query = f"""SELECT {columns} FROM `gh-data`.checks
-                WHERE task_url='{job_url}'
+                WHERE task_url LIKE '{job_url}%'
                 AND test_status='BROKEN'
                 AND test_name IN ({','.join(f"'{test}'" for test in known_fails.keys())})
                 ORDER BY test_name, check_name
@@ -315,11 +311,9 @@ def get_checks_errors(client: Client, job_url: str):
     """
     Get checks that have status 'error' for the given job URL.
     """
-    columns = (
-        "check_status, check_name, test_status, test_name, report_url as results_link"
-    )
+    columns = "check_status as job_status, check_name as job_name, test_status, test_name, report_url as results_link"
     query = f"""SELECT {columns} FROM `gh-data`.checks
-                WHERE task_url='{job_url}'
+                WHERE task_url LIKE '{job_url}%'
                 AND check_status=='error'
                 ORDER BY check_name, test_name
                 """
@@ -449,9 +443,12 @@ def format_results_as_html_table(results) -> str:
             "Results Link": url_to_html_link,
             "Test Name": format_test_name_for_linewrap,
             "Test Status": format_test_status,
-            "Check Status": format_test_status,
+            "Job Status": format_test_status,
             "Status": format_test_status,
             "Message": lambda m: m.replace("\n", " "),
+            "Identifier": lambda i: url_to_html_link(
+                "https://nvd.nist.gov/vuln/detail/" + i
+            ),
         },
         escape=False,
     ).replace(' border="1"', "")
@@ -561,7 +558,7 @@ def main():
             <th class='hth no-sort'>Pull Request</th><td>{pr_info_html}</td>
         </tr>
         <tr>
-            <th class='hth no-sort'>Task</th><td><a href="{args.actions_run_url}">{args.actions_run_url.split('/')[-1]}</a></td>
+            <th class='hth no-sort'>Workflow Run</th><td><a href="{args.actions_run_url}">{args.actions_run_url.split('/')[-1]}</a></td>
         </tr>
         <tr>
             <th class='hth no-sort'>Commit</th><td><a href="https://github.com/Altinity/ClickHouse/commit/{args.commit_sha}">{args.commit_sha}</a></td>
@@ -574,11 +571,11 @@ def main():
     <h2>Table of Contents</h2>
 {'<p style="font-weight: bold;color: #F00;">This is a preview. FinishCheck has not completed.</p>' if args.mark_preview else ""}
 <ul>
-    <li><a href="#ci-jobs-status">CI Jobs Status</a> ({sum(fail_results['job_statuses']['test_status'] != 'success')} fail/error)</li>
+    <li><a href="#ci-jobs-status">CI Jobs Status</a> ({sum(fail_results['job_statuses']['job_status'] != 'success')} fail/error)</li>
     <li><a href="#checks-errors">Checks Errors</a> ({len(fail_results['checks_errors'])})</li>
     <li><a href="#checks-fails">Checks New Fails</a> ({len(fail_results['checks_fails'])})</li>
     <li><a href="#regression-fails">Regression New Fails</a> ({len(fail_results['regression_fails'])})</li>
-    <li><a href="#docker-images-cves">Docker Images CVEs</a> ({'N/A' if not args.cves else f'{high_cve_count} high/critical)'}</li>
+    <li><a href="#docker-images-cves">Docker Images CVEs</a> ({'N/A' if not args.cves else f'{high_cve_count} high/critical'})</li>
     <li><a href="#checks-known-fails">Checks Known Fails</a> ({'N/A' if not args.known_fails else len(fail_results['checks_known_fails'])})</li>
 </ul>
 
