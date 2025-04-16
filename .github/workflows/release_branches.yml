@@ -513,5 +513,10 @@ jobs:
       - name: Create and upload workflow report
         if: ${{ !cancelled() }}
         uses: ./.github/actions/create_workflow_report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
+          CHECKS_DATABASE_USER: ${{ secrets.CHECKS_DATABASE_USER }}
+          CHECKS_DATABASE_PASSWORD: ${{ secrets.CHECKS_DATABASE_PASSWORD }}
         with:
           final: true

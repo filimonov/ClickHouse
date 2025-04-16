@@ -10,10 +10,6 @@ runs:
   steps:
     - name: Create and upload workflow report
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
-        CHECKS_DATABASE_USER: ${{ secrets.CHECKS_DATABASE_USER }}
-        CHECKS_DATABASE_PASSWORD: ${{ secrets.CHECKS_DATABASE_PASSWORD }}
         PR_NUMBER: ${{ github.event.number }}
         COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         ACTIONS_RUN_URL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
