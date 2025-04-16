@@ -567,9 +567,8 @@ def main():
             <th class='hth no-sort'>Date</th><td>{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</td>
         </tr>
     </table>
-
+    {'<p style="font-weight: bold;color: red;">This is a preview. FinishCheck has not completed.</p>' if args.mark_preview else ""}
     <h2>Table of Contents</h2>
-{'<p style="font-weight: bold;color: #F00;">This is a preview. FinishCheck has not completed.</p>' if args.mark_preview else ""}
 <ul>
     <li><a href="#ci-jobs-status">CI Jobs Status</a> ({sum(fail_results['job_statuses']['job_status'] != 'success')} fail/error)</li>
     <li><a href="#checks-errors">Checks Errors</a> ({len(fail_results['checks_errors'])})</li>

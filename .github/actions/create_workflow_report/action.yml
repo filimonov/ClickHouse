@@ -10,7 +10,7 @@ runs:
   steps:
     - name: Create and upload workflow report
       env:
-        PR_NUMBER: ${{ github.event.number }}
+        PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
         COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         ACTIONS_RUN_URL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
         FINAL: ${{ inputs.final }}

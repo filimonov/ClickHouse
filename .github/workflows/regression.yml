@@ -266,6 +266,13 @@ jobs:
         with:
           name: alter-${{ matrix.ONLY }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
+      - name: Update in progress workflow report
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/create_workflow_report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          final: false
 
   Benchmark:
     strategy:
@@ -337,6 +344,13 @@ jobs:
         with:
           name: benchmark-${{ matrix.STORAGE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths }}
+      - name: Update in progress workflow report
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/create_workflow_report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          final: false
 
   ClickHouseKeeperSSL:
     needs: [runner_labels_setup]
@@ -659,6 +673,13 @@ jobs:
         with:
           name: ${{ env.SUITE }}-${{ matrix.STORAGE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
+      - name: Update in progress workflow report
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/create_workflow_report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          final: false
 
   TieredStorage:
     strategy:
@@ -729,3 +750,10 @@ jobs:
         with:
           name: ${{ env.SUITE }}-${{ matrix.STORAGE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
+      - name: Update in progress workflow report
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/create_workflow_report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          final: false
