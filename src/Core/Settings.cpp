@@ -4796,6 +4796,15 @@ Timeout for polling data from asynchronous insert queue
     M(Bool, async_insert_use_adaptive_busy_timeout, true, R"(
 If it is set to true, use adaptive busy timeout for asynchronous inserts
 )", 0) \
+    M(Int64, async_insert_preallocate_buffer_size, -1, R"(
+The size of buffer used for the inserts data (single insert size)
+)", 0) \
+    M(UInt64, async_insert_bytes_to_throw_insert, 1024*1024*512, R"(
+TODO
+)", 0) \
+    M(UInt64, async_insert_bytes_to_delay_insert, 1024*1024*256, R"(
+TODO
+)", 0) \
     M(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(
 If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm
 )", 0) \

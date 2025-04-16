@@ -39,6 +39,7 @@
 namespace CurrentMetrics
 {
     extern const Metric PendingAsyncInsert;
+    extern const Metric PendingAsyncInsertBytes;
     extern const Metric AsynchronousInsertThreads;
     extern const Metric AsynchronousInsertThreadsActive;
     extern const Metric AsynchronousInsertThreadsScheduled;
@@ -52,6 +53,8 @@ namespace ProfileEvents
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
     extern const Event FailedAsyncInsertQuery;
+    extern const Event RejectedInserts;
+    extern const Event DelayedInserts;
 }
 
 namespace DB
@@ -81,6 +84,9 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsInt64 async_insert_preallocate_buffer_size;
+    extern const SettingsUInt64 async_insert_bytes_to_throw_insert;
+    extern const SettingsUInt64 async_insert_bytes_to_delay_insert;
 }
 
 namespace ErrorCodes
@@ -91,6 +97,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int LIMIT_EXCEEDED;
 }
 
 static const NameSet settings_to_skip
@@ -100,6 +107,83 @@ static const NameSet settings_to_skip
     "insert_deduplication_token",
     "log_comment",
 };
+
+void AsynchronousInsertQueue::StatsManager::onInsertQueued(UInt128 key, size_t bytes)
+{
+    auto now = std::chrono::system_clock::now();
+    std::lock_guard lock(mutex);
+
+    auto & stat = stats_map[key];
+    // stat.inserts++;
+    // stat.total_bytes += bytes;
+    stat.bytes_pending += bytes;
+    stat.last_insert = now;
+
+    if (stat.moving_average <= 0.0)
+    {
+        stat.moving_average = static_cast<double>(bytes);
+    }
+    else
+    {
+        stat.moving_average = moving_average_alpha * static_cast<double>(bytes)
+                            + (1.0 - moving_average_alpha) * stat.moving_average;
+    }
+
+    cleanupStaleNoLock();
+}
+
+void AsynchronousInsertQueue::StatsManager::onInsertFinished(UInt128 key, size_t bytes)
+{
+    auto now = std::chrono::system_clock::now();
+    std::lock_guard lock(mutex);
+
+    auto it = stats_map.find(key);
+    if (it == stats_map.end())
+        return;
+
+    auto & stat = it->second;
+    stat.bytes_pending = (bytes >= stat.bytes_pending ? 0 : stat.bytes_pending - bytes);
+    stat.last_insert = now;
+
+    cleanupStaleNoLock();
+}
+
+double AsynchronousInsertQueue::StatsManager::getMovingAverage(UInt128 key) const
+{
+    std::lock_guard lock(mutex);
+    auto it = stats_map.find(key);
+    if (it == stats_map.end())
+        return 0.0;
+    return it->second.moving_average;
+}
+
+size_t AsynchronousInsertQueue::StatsManager::getBytesPending(UInt128 key) const
+{
+    std::lock_guard lock(mutex);
+    auto it = stats_map.find(key);
+    if (it == stats_map.end())
+        return 0;
+    return it->second.bytes_pending;
+}
+
+void AsynchronousInsertQueue::StatsManager::cleanupStaleNoLock()
+{
+    auto now = std::chrono::system_clock::now();
+    for (auto it = stats_map.begin(); it != stats_map.end();)
+    {
+        const auto & s = it->second;
+        if (s.bytes_pending == 0
+            && s.last_insert + stale_threshold < now)
+        {
+            it = stats_map.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
@@ -315,7 +399,7 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     {
         pool.scheduleOrThrowOnError(
             [this, key, global_context, shard_num, my_data = data_shared]() mutable
-            { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
+            { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num], stats); },
             priority);
     }
     catch (...)
@@ -325,7 +409,7 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     }
 }
 
-void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context)
+AsynchronousInsertQueue::InsertQuery AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context, DataKind data_kind)
 {
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
@@ -363,15 +447,46 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     insert_query.columns = std::make_shared<ASTExpressionList>();
     for (const auto & column : sample_block)
         insert_query.columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
+
+    validateSettings(query_context->getSettingsRef(), log);
+
+    return InsertQuery{query,
+        query_context->getUserID(),
+        query_context->getCurrentRoles(),
+        query_context->getSettingsRef(),
+        data_kind};
 }
 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context)
 {
     query = query->clone();
-    preprocessInsertQuery(query, query_context);
+    auto key = preprocessInsertQuery(query, query_context, DataKind::Parsed);
+
+    size_t bytes_pending = stats.getBytesPending(key.hash);
+
+    if (bytes_pending >= query_context->getSettingsRef()[Setting::async_insert_bytes_to_throw_insert] )
+    {
+        // TODO: RejectedAsyncInserts?
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+
+        // TODO: check if queryid and query will be visible in the log, is LIMIT_EXCEEDED a good one?
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "Too many bytes pending in AsynchronousInsertQueue ({}). Flushes are processing significantly slower than inserts",
+            bytes_pending
+        );
+    }
 
     String bytes;
+
+    auto preallocate_buffer_size = query_context->getSettingsRef()[Setting::async_insert_preallocate_buffer_size];
+
+    if (preallocate_buffer_size > 0)
+        bytes.reserve(preallocate_buffer_size);
+    else if (preallocate_buffer_size == -1)
+        bytes.reserve(static_cast<size_t>(stats.getMovingAverage(key.hash) * 1.2)); // adding 20% if EMA was slightly underestimating
+
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
         /// If limit is exceeded we will fallback to synchronous insert
@@ -386,7 +501,19 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
             /*exact_limit=*/{});
 
         WriteBufferFromString write_buf(bytes);
-        copyData(limit_buf, write_buf);
+
+        if (bytes_pending >= query_context->getSettingsRef()[Setting::async_insert_bytes_to_delay_insert] )
+        {
+            // TODO: RejectedAsyncInserts?
+            ProfileEvents::increment(ProfileEvents::DelayedInserts);
+            // TODO: something smarter than hardcoded 20MBps
+            auto throttler = std::make_shared<Throttler>(20000000);
+            copyDataWithThrottler(limit_buf, write_buf, []() {}, throttler);
+        }
+        else
+        {
+            copyData(limit_buf, write_buf);
+        }
 
         if (!read_buf->eof())
         {
@@ -407,25 +534,35 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
     }
 
-    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context));
+    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context), std::move(key));
 }
 
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context)
 {
     query = query->clone();
-    preprocessInsertQuery(query, query_context);
-    return pushDataChunk(std::move(query), std::move(block), std::move(query_context));
+    // TODO: add throttler / exception to TCPHandler.cpp in the place where pushQueryWithBlock is called
+    auto key = preprocessInsertQuery(query, query_context, DataKind::Preprocessed);
+    return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(key));
 }
 
 AsynchronousInsertQueue::PushResult
-AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context)
+AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context, InsertQuery key)
 {
     const auto & settings = query_context->getSettingsRef();
-    validateSettings(settings, log);
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
+
+    // TODO: failure scnario after that increment but before pushing to queu?
+    // (increment can be preserved...), maybe RAII with commit?
+    // if we will increment after taking the lock - it can hide the amount of the data
+    // which was already allocated and is waiting to be added to the queue.
+    stats.onInsertQueued(key.hash, chunk.byteSize());
+
+    // TODO: maybe also PendingAsyncInsertBytesAllocated?
+    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsertBytes, chunk.byteSize());
+
     auto entry = std::make_shared<InsertData::Entry>(
         std::move(chunk),
         query_context->getCurrentQueryId(),
@@ -442,7 +579,6 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
     if (insert_query.format == "Values")
         entry->query_parameters = query_context->getQueryParameters();
 
-    InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
     InsertDataPtr data_to_process;
     std::future<void> insert_future;
 
@@ -767,13 +903,18 @@ String serializeQuery(const IAST & query, size_t max_length)
 }
 
 void AsynchronousInsertQueue::processData(
-    InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
+    InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history, StatsManager & stats)
 try
 {
     if (!data)
         return;
 
-    SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
+    // Ensure metrics decrement and stats update on both success and exception
+    SCOPE_EXIT({
+        CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size());
+        CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsertBytes, data->size_in_bytes);
+        stats.onInsertFinished(key.hash, data->size_in_bytes);
+    });
 
     setThreadName("AsyncInsertQ");
 

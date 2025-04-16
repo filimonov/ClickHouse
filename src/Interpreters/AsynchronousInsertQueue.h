@@ -13,6 +13,9 @@
 #include <future>
 #include <shared_mutex>
 #include <variant>
+#include <mutex>
+#include <unordered_map>
+#include <chrono>
 
 namespace DB
 {
@@ -69,6 +72,44 @@ public:
     void flushAndShutdown();
 
 private:
+
+    struct StatsManager
+    {
+        struct Statistics
+        {
+            // size_t inserts    = 0;
+            // size_t total_bytes = 0;
+            std::chrono::system_clock::time_point last_insert;
+            size_t bytes_pending = 0;
+
+            // simple ema (exponential moving average)
+            double moving_average = 0.0;
+        };
+
+        /// Called when a new insert chunk is enqueued.
+        void onInsertQueued(UInt128 key, size_t bytes);
+
+        /// Called when a chunk is flushed to the target table.
+        void onInsertFinished(UInt128 key, size_t bytes);
+
+        /// Returns 0.0 if the key is not present.
+        double getMovingAverage(UInt128 key) const;
+
+        size_t getBytesPending(UInt128 key) const;
+
+    private:
+        /// Remove entries where last_insert + stale_threshold < now && bytes_pending == 0
+        void cleanupStaleNoLock();
+
+        mutable std::mutex mutex;
+        std::unordered_map<UInt128, Statistics> stats_map;
+
+        // TODO: do we need to make it configurable?
+        static constexpr std::chrono::minutes stale_threshold{10};
+        static constexpr double moving_average_alpha = 0.1;
+    };
+
+    StatsManager stats;
 
     struct InsertQuery
     {
@@ -261,7 +302,7 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
+    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context, InsertQuery key);
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
@@ -269,13 +310,13 @@ private:
         const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
         std::chrono::steady_clock::time_point now) const;
 
-    void preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context);
+    InsertQuery preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context, DataKind data_kind);
 
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
 
     static void processData(
-        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history, StatsManager & stats);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
