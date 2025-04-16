@@ -366,6 +366,11 @@ def get_regression_fails(client: Client, job_url: str):
 
 
 def get_cves(pr_number, commit_sha):
+    """
+    Fetch Grype results from S3.
+
+    If no results are available for download, returns ... (Ellipsis).
+    """
     s3_client = boto3.client("s3", endpoint_url=os.getenv("S3_URL"))
     s3_prefix = f"{pr_number}/{commit_sha}/grype/"
 
@@ -377,6 +382,11 @@ def get_cves(pr_number, commit_sha):
     grype_result_dirs = [
         content["Prefix"] for content in response.get("CommonPrefixes", [])
     ]
+
+    if len(grype_result_dirs) == 0:
+        # We were asked to check the CVE data, but none was found,
+        # maybe this is a preview report and grype results are not available yet
+        return ...
 
     for path in grype_result_dirs:
         file_key = f"{path}result.json"
@@ -505,6 +515,12 @@ def main():
         ),
     }
 
+    # get_cves returns ... in the case where no Grype result files were found.
+    # This might occur when run in preview mode.
+    cves_not_checked = not args.cves or (
+        args.mark_preview and fail_results["docker_images_cves"] is ...
+    )
+
     if args.known_fails:
         if not os.path.exists(args.known_fails):
             print(f"Known fails file {args.known_fails} not found.")
@@ -575,7 +591,7 @@ def main():
     <li><a href="#checks-fails">Checks New Fails</a> ({len(fail_results['checks_fails'])})</li>
     <li><a href="#regression-fails">Regression New Fails</a> ({len(fail_results['regression_fails'])})</li>
     <li><a href="#docker-images-cves">Docker Images CVEs</a> ({'N/A' if not args.cves else f'{high_cve_count} high/critical'})</li>
-    <li><a href="#checks-known-fails">Checks Known Fails</a> ({'N/A' if not args.known_fails else len(fail_results['checks_known_fails'])})</li>
+    <li><a href="#checks-known-fails">Checks Known Fails</a> ({'N/A' if cves_not_checked else len(fail_results['checks_known_fails'])})</li>
 </ul>
 
 <h2 id="ci-jobs-status">CI Jobs Status</h2> 
@@ -591,7 +607,7 @@ def main():
 {format_results_as_html_table(fail_results['regression_fails'])}
 
 <h2 id="docker-images-cves">Docker Images CVEs</h2>
-{"<p>Not Checked</p>" if not args.cves else format_results_as_html_table(fail_results['docker_images_cves'])}
+{"<p>Not Checked</p>" if cves_not_checked else format_results_as_html_table(fail_results['docker_images_cves'])}
 
 <h2 id="checks-known-fails">Checks Known Fails</h2>
 {"<p>Not Checked</p>" if not args.known_fails else format_results_as_html_table(fail_results['checks_known_fails'])}
