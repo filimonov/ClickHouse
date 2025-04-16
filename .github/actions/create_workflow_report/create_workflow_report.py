@@ -546,7 +546,7 @@ def main():
             pr_info_html = e
 
     high_cve_count = 0
-    if len(fail_results["docker_images_cves"]) > 0:
+    if not cves_not_checked and len(fail_results["docker_images_cves"]) > 0:
         high_cve_count = (
             fail_results["docker_images_cves"]["severity"]
             .str.lower()
