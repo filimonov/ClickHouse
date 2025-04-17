@@ -172,7 +172,8 @@ public:
         ObjectInfos * read_keys_,
         size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
-        std::function<void(FileProgress)> file_progress_callback_ = {});
+        std::function<void(FileProgress)> file_progress_callback_ = {},
+        ObjectStorageListObjectsCache * list_cache_ = nullptr);
 
     ~GlobIterator() override = default;
 
@@ -209,6 +210,8 @@ private:
     const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
+    ObjectStorageListObjectsCache * list_cache;
+    ObjectInfos object_list;
 };
 
 class StorageObjectStorageSource::KeysIterator : public IObjectIterator
