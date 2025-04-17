@@ -89,13 +89,10 @@ private:
         {
             const auto & candidate_prefix = it->first.prefix;
 
-            if (prefix.compare(0, candidate_prefix.size(), candidate_prefix) == 0)
+            if (prefix.starts_with(candidate_prefix) && candidate_prefix.size() > best_length)
             {
-                if (candidate_prefix.size() > best_length)
-                {
-                    best_match = it;
-                    best_length = candidate_prefix.size();
-                }
+                best_match = it;
+                best_length = candidate_prefix.size();
             }
         }
 
@@ -108,7 +105,7 @@ private:
         return std::find_if(cache.begin(), cache.end(), [&](const auto & it)
         {
             const auto & candidate_prefix = it.first.prefix;
-            if (prefix.compare(0, candidate_prefix.size(), candidate_prefix) == 0)
+            if (prefix.starts_with(candidate_prefix))
             {
                 return true;
             }
