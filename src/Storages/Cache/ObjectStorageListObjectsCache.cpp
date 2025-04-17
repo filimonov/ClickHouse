@@ -87,12 +87,22 @@ private:
 
         for (auto it = cache.begin(); it != cache.end(); ++it)
         {
+            const auto & candidate_bucket = it->first.bucket;
             const auto & candidate_prefix = it->first.prefix;
 
-            if (prefix.starts_with(candidate_prefix) && candidate_prefix.size() > best_length)
+            if (candidate_bucket == key.bucket && prefix.starts_with(candidate_prefix))
             {
-                best_match = it;
-                best_length = candidate_prefix.size();
+                if (IsStaleFunction()(it->fist))
+                {
+                    BasePolicy::remove(it->first);
+                    continue;
+                }
+
+                if (candidate_prefix.size() > best_length)
+                {
+                    best_match = it;
+                    best_length = candidate_prefix.size();
+                }
             }
         }
 
@@ -101,12 +111,19 @@ private:
 
     auto findAnyMatchingPrefix(const Key & key) const
     {
+        const auto & bucket = key.bucket;
         const auto & prefix = key.prefix;
         return std::find_if(cache.begin(), cache.end(), [&](const auto & it)
         {
+            const auto & candidate_bucket = it.first.bucket;
             const auto & candidate_prefix = it.first.prefix;
-            if (prefix.starts_with(candidate_prefix))
+            if (candidate_bucket == key.bucket && prefix.starts_with(candidate_prefix))
             {
+                if (IsStaleFunction()(it->fist))
+                {
+                    BasePolicy::remove(it->first);
+                    continue;
+                }
                 return true;
             }
 
