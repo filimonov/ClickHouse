@@ -7,6 +7,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/Cache/ObjectStorageListObjectsCache.h>
 
 
 namespace DB

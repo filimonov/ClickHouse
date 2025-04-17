@@ -1,4 +1,5 @@
 #include <Storages/Cache/ObjectStorageListObjectsCache.h>
+#include <boost/functional/hash.hpp>
 
 namespace DB
 {
@@ -67,16 +68,6 @@ public:
         return std::nullopt;
     }
 
-    bool contains(const Key & key) const override
-    {
-        if (cache.contains(key))
-        {
-            return true;
-        }
-
-        return findAnyMatchingPrefix(key) != cache.end();
-    }
-
 private:
     auto findBestMatchingPrefix(const Key & key)
     {
@@ -85,6 +76,8 @@ private:
         auto best_match = cache.end();
         size_t best_length = 0;
 
+        std::vector<Key> to_remove;
+
         for (auto it = cache.begin(); it != cache.end(); ++it)
         {
             const auto & candidate_bucket = it->first.bucket;
@@ -92,9 +85,9 @@ private:
 
             if (candidate_bucket == key.bucket && prefix.starts_with(candidate_prefix))
             {
-                if (IsStaleFunction()(it->fist))
+                if (IsStaleFunction()(it->first))
                 {
-                    BasePolicy::remove(it->first);
+                    to_remove.push_back(it->first);
                     continue;
                 }
 
@@ -106,29 +99,10 @@ private:
             }
         }
 
+        for (const auto & k : to_remove)
+            BasePolicy::remove(k);
+
         return best_match;
-    }
-
-    auto findAnyMatchingPrefix(const Key & key) const
-    {
-        const auto & bucket = key.bucket;
-        const auto & prefix = key.prefix;
-        return std::find_if(cache.begin(), cache.end(), [&](const auto & it)
-        {
-            const auto & candidate_bucket = it.first.bucket;
-            const auto & candidate_prefix = it.first.prefix;
-            if (candidate_bucket == key.bucket && prefix.starts_with(candidate_prefix))
-            {
-                if (IsStaleFunction()(it->fist))
-                {
-                    BasePolicy::remove(it->first);
-                    continue;
-                }
-                return true;
-            }
-
-            return false;
-        });
     }
 };
 
@@ -146,7 +120,12 @@ bool ObjectStorageListObjectsCache::Key::operator==(const Key & other) const
 
 size_t ObjectStorageListObjectsCache::KeyHasher::operator()(const Key & key) const
 {
-    return std::hash<String>()(key.prefix) + std::hash<String>()(key.bucket);
+    std::size_t seed = 0;
+
+    boost::hash_combine(seed, std::hash<String>()(key.bucket));
+    boost::hash_combine(seed, std::hash<String>()(key.prefix));
+
+    return seed;
 }
 
 bool ObjectStorageListObjectsCache::IsStale::operator()(const Key & key) const
@@ -160,7 +139,7 @@ size_t ObjectStorageListObjectsCache::WeightFunction::operator()(const Value & v
 
     for (const auto & object : value)
     {
-        weight += object->relative_path.size() + sizeof(ObjectMetadata);
+        weight += object->relative_path.capacity() + sizeof(ObjectMetadata);
     }
 
     return weight;
