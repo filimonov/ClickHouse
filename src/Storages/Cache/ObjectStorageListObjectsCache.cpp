@@ -42,14 +42,6 @@ public:
         return {};
     }
 
-    ///
-     /// select * from s3(http://aws.s3.us-east-1/table_root/year=*/*.parquet)
-     /// select * from s3(http://aws.s3.us-east-1/table_root/year={01..3}/*.parquet) -> lista de arquivos cacheada
-     // year=4
-    /// select * from s3(http://aws.s3.us-east-1/table_root/year=201*/*.parquet) -> lista de arquivos cacheada
-    /// select * from s3(http://aws.s3.us-east-1/table_root/year=2011/*.parquet) ->
-     //
-
     std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         if (const auto it = cache.find(key); it != cache.end())
