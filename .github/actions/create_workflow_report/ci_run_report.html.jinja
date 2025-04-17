@@ -151,7 +151,9 @@
       </tr>
     </tbody>
   </table>
-
+  {% if is_preview %}
+  <p style="font-weight: bold;color: red;">This is a preview. The workflow is not yet finished.</p>
+  {% endif %}
   <h2>Table of Contents</h2>
   <ul>
     <li><a href="#ci-jobs-status">CI Jobs Status</a> ({{ counts.jobs_status }})</li>

@@ -266,7 +266,7 @@ jobs:
         with:
           name: alter-${{ matrix.ONLY }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
-      - name: Update in progress workflow report
+      - name: Update workflow report
         if: ${{ !cancelled() }}
         uses: ./.github/actions/create_workflow_report
         env:
@@ -344,7 +344,7 @@ jobs:
         with:
           name: benchmark-${{ matrix.STORAGE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths }}
-      - name: Update in progress workflow report
+      - name: Update workflow report
         if: ${{ !cancelled() }}
         uses: ./.github/actions/create_workflow_report
         env:
@@ -673,7 +673,7 @@ jobs:
         with:
           name: ${{ env.SUITE }}-${{ matrix.STORAGE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
-      - name: Update in progress workflow report
+      - name: Update workflow report
         if: ${{ !cancelled() }}
         uses: ./.github/actions/create_workflow_report
         env:
@@ -750,7 +750,7 @@ jobs:
         with:
           name: ${{ env.SUITE }}-${{ matrix.STORAGE }}-${{ inputs.arch }}-artifacts
           path: ${{ env.artifact_paths}}
-      - name: Update in progress workflow report
+      - name: Update workflow report
         if: ${{ !cancelled() }}
         uses: ./.github/actions/create_workflow_report
         env:

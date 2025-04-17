@@ -395,6 +395,7 @@ def main():
         "workflow_id": args.actions_run_url.split("/")[-1],
         "commit_sha": args.commit_sha,
         "date": f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC",
+        "is_preview": args.mark_preview,
         "counts": {
             "jobs_status": f"{sum(fail_results['job_statuses']['job_status'] != 'success')} fail/error",
             "checks_errors": len(fail_results["checks_errors"]),
@@ -402,7 +403,9 @@ def main():
             "regression_new_fails": len(fail_results["regression_fails"]),
             "cves": "N/A" if cves_not_checked else f"{high_cve_count} high/critical",
             "checks_known_fails": (
-                "N/A" if args.known_fails else len(fail_results["checks_known_fails"])
+                "N/A"
+                if not args.known_fails
+                else len(fail_results["checks_known_fails"])
             ),
         },
         "ci_jobs_status_html": format_results_as_html_table(

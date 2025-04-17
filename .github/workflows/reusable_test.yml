@@ -167,7 +167,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.test_name}}' --batch ${{matrix.batch}}
-      - name: Update in progress workflow report
+      - name: Update workflow report
         if: ${{ !cancelled() }}
         uses: ./.github/actions/create_workflow_report
         env:
