@@ -32,11 +32,6 @@ public:
 
         if (const auto it = findBestMatchingPrefixAndRemoveExpiredEntries(key); it != cache.end())
         {
-            if (IsStaleFunction()(it->first))
-            {
-                BasePolicy::remove(it->first);
-                return std::nullopt;
-            }
             return std::make_optional<KeyMapped>({it->first, it->second});
         }
 
