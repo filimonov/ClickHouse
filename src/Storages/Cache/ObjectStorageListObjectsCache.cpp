@@ -1,6 +1,15 @@
 #include <Storages/Cache/ObjectStorageListObjectsCache.h>
 #include <Common/TTLCachePolicy.h>
+#include <Common/ProfileEvents.h>
 #include <boost/functional/hash.hpp>
+
+namespace ProfileEvents
+{
+extern const Event ObjectStorageListObjectsCacheHits;
+extern const Event ObjectStorageListObjectsCacheMisses;
+extern const Event ObjectStorageListObjectsCacheExactMatchHits;
+extern const Event ObjectStorageListObjectsCachePrefixMatchHits;
+}
 
 namespace DB
 {
@@ -138,10 +147,21 @@ ObjectStorageListObjectsCache::Cache::MappedPtr ObjectStorageListObjectsCache::g
 
     if (!pair)
     {
+        ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCacheMisses);
         return {};
     }
 
-    if (pair->key == input_key || !filter_by_prefix)
+    ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCacheHits);
+
+    if (pair->key == input_key)
+    {
+        ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCacheExactMatchHits);
+        return pair->mapped;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCachePrefixMatchHits);
+
+    if (!filter_by_prefix)
     {
         return pair->mapped;
     }
