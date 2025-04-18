@@ -93,8 +93,8 @@ size_t ObjectStorageListObjectsCache::KeyHasher::operator()(const Key & key) con
 {
     std::size_t seed = 0;
 
-    boost::hash_combine(seed, std::hash<String>()(key.bucket));
-    boost::hash_combine(seed, std::hash<String>()(key.prefix));
+    boost::hash_combine(seed, key.bucket);
+    boost::hash_combine(seed, key.prefix);
 
     return seed;
 }

@@ -62,7 +62,7 @@ private:
     ObjectStorageListObjectsCache();
 
     Cache cache;
-    size_t ttl;
+    size_t ttl {0};
 };
 
 }
