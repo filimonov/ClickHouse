@@ -268,7 +268,7 @@ jobs:
           path: ${{ env.artifact_paths}}
       - name: Update workflow report
         if: ${{ !cancelled() }}
-        uses: ./.github/actions/create_workflow_report
+        uses: Altinity/ClickHouse/.github/actions/create_workflow_report@report_updates
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -346,7 +346,7 @@ jobs:
           path: ${{ env.artifact_paths }}
       - name: Update workflow report
         if: ${{ !cancelled() }}
-        uses: ./.github/actions/create_workflow_report
+        uses: Altinity/ClickHouse/.github/actions/create_workflow_report@report_updates
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -675,7 +675,7 @@ jobs:
           path: ${{ env.artifact_paths}}
       - name: Update workflow report
         if: ${{ !cancelled() }}
-        uses: ./.github/actions/create_workflow_report
+        uses: Altinity/ClickHouse/.github/actions/create_workflow_report@report_updates
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -752,7 +752,7 @@ jobs:
           path: ${{ env.artifact_paths}}
       - name: Update workflow report
         if: ${{ !cancelled() }}
-        uses: ./.github/actions/create_workflow_report
+        uses: Altinity/ClickHouse/.github/actions/create_workflow_report@report_updates
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
