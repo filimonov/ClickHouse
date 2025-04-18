@@ -23,12 +23,12 @@ public:
     {
         if (const auto it = cache.find(key); it != cache.end())
         {
-            if (IsStaleFunction()(it->first))
+            if (!IsStaleFunction()(it->first))
             {
-                BasePolicy::remove(it->first);
-                return std::nullopt;
+                return std::make_optional<KeyMapped>({it->first, it->second});
             }
-            return std::make_optional<KeyMapped>({it->first, it->second});
+            // found a stale entry, remove it but don't return. We still want to perform the prefix matching search
+            BasePolicy::remove(it->first);
         }
 
         if (const auto it = findBestMatchingPrefixAndRemoveExpiredEntries(key); it != cache.end())
