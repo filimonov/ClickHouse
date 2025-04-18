@@ -140,7 +140,7 @@ ObjectStorageListObjectsCache::Cache::MappedPtr ObjectStorageListObjectsCache::g
         return {};
     }
 
-    if (pair->key == input_key || filter_by_prefix)
+    if (pair->key == input_key || !filter_by_prefix)
     {
         return pair->mapped;
     }
