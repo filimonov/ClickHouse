@@ -440,13 +440,9 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_OBJECT_STORAGE_LIST_OBJECTS_CACHE:
         {
-#if USE_PARQUET
             getContext()->checkAccess(AccessType::SYSTEM_DROP_OBJECT_STORAGE_LIST_OBJECTS_CACHE);
             ObjectStorageListObjectsCache::instance().clear();
             break;
-#else
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
-#endif
         }
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
