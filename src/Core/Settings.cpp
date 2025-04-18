@@ -4797,13 +4797,16 @@ Timeout for polling data from asynchronous insert queue
 If it is set to true, use adaptive busy timeout for asynchronous inserts
 )", 0) \
     M(Int64, async_insert_preallocate_buffer_size, -1, R"(
-The size of buffer used for the inserts data (single insert size)
+Preallocate this many bytes for each async‑insert buffer; if –1, use the moving average of recent inserts.
 )", 0) \
-    M(UInt64, async_insert_bytes_to_throw_insert, 1024*1024*512, R"(
-TODO
+    M(UInt64, async_insert_bytes_to_throw_insert, 1024*1024*1024, R"(
+Maximum number of pending bytes for any single async insert type. If exceeded, new async‑insert requests will be rejected with an error.
 )", 0) \
     M(UInt64, async_insert_bytes_to_delay_insert, 1024*1024*256, R"(
-TODO
+Threshold of pending bytes per insert type beyond which async‑insert data will be rate‑limited (throttled) instead of buffered at full speed.
+)", 0) \
+    M(UInt64, async_insert_rate_limit_bytes_per_second, 8*1024*1024, R"(
+Limit the read speed of async insert data, if more than async_insert_bytes_to_delay_insert bytes are pending (for that insert type).
 )", 0) \
     M(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(
 If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm

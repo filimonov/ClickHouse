@@ -253,7 +253,8 @@
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
     M(PendingAsyncInsert, "Number of asynchronous inserts that are waiting for flush.") \
-    M(PendingAsyncInsertBytes, "TODO") \
+    M(PendingAsyncInsertBytes, "Total number of raw bytes currently buffered in the async‑insert queue") \
+    M(PendingAsyncInsertBytesAllocated, "Total reserved capacity (in bytes) for pending async inserts.") \
     M(KafkaConsumers, "Number of active Kafka consumers") \
     M(KafkaConsumersWithAssignment, "Number of active Kafka consumers which have some partitions assigned.") \
     M(KafkaProducers, "Number of active Kafka producer created") \

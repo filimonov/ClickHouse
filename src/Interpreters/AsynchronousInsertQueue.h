@@ -75,22 +75,41 @@ private:
 
     struct StatsManager
     {
-        struct Statistics
+        ///
+        /// RAII guard: on construction it records “queued” + metrics add,
+        /// on destruction it records “finished” + metrics sub.
+        ///
+        struct ScopedInsertStats
         {
-            // size_t inserts    = 0;
-            // size_t total_bytes = 0;
-            std::chrono::system_clock::time_point last_insert;
-            size_t bytes_pending = 0;
+            ScopedInsertStats(StatsManager & mgr_, UInt128 key_, size_t bytes_, size_t alloc_bytes_)
+                : mgr(mgr_), key(key_), bytes(bytes_), alloc_bytes(alloc_bytes_)
+            {
+                mgr.onInsertQueued(key, bytes, alloc_bytes);
+            }
 
-            // simple ema (exponential moving average)
-            double moving_average = 0.0;
+            ~ScopedInsertStats()
+            {
+                mgr.onInsertFinished(key, bytes, alloc_bytes);
+            }
+
+            ScopedInsertStats(const ScopedInsertStats &) = delete;             ///< non‑copyable
+            ScopedInsertStats & operator=(const ScopedInsertStats &) = delete; ///< non‑assignable
+
+            ScopedInsertStats(ScopedInsertStats &&) noexcept;                 ///< movable
+            ScopedInsertStats & operator=(ScopedInsertStats &&) noexcept;     ///< movable‑assignable
+
+        private:
+            StatsManager & mgr;
+            UInt128 key = 0;
+            size_t bytes = 0;
+            size_t alloc_bytes = 0;
         };
 
-        /// Called when a new insert chunk is enqueued.
-        void onInsertQueued(UInt128 key, size_t bytes);
-
-        /// Called when a chunk is flushed to the target table.
-        void onInsertFinished(UInt128 key, size_t bytes);
+        /// Factory: returns a scoped guard that covers both queuing and finishing
+        ScopedInsertStats scopedInsert(UInt128 key, size_t bytes, size_t alloc_bytes)
+        {
+            return ScopedInsertStats(*this, key, bytes, alloc_bytes);
+        }
 
         /// Returns 0.0 if the key is not present.
         double getMovingAverage(UInt128 key) const;
@@ -98,8 +117,27 @@ private:
         size_t getBytesPending(UInt128 key) const;
 
     private:
+        friend struct ScopedInsertStats;
+
+        /// Called when a new insert chunk is enqueued.
+        void onInsertQueued(UInt128 key, size_t bytes, size_t alloc_bytes);
+
+        /// Called when a chunk is flushed to the target table.
+        void onInsertFinished(UInt128 key, size_t bytes, size_t alloc_bytes);
+
         /// Remove entries where last_insert + stale_threshold < now && bytes_pending == 0
         void cleanupStaleNoLock();
+
+        struct Statistics
+        {
+            // size_t inserts          = 0;
+            // size_t total_bytes      = 0;
+            std::chrono::system_clock::time_point last_insert;
+            size_t bytes_pending    = 0;
+
+            // simple ema (exponential moving average)
+            double moving_average   = 0.0;
+        };
 
         mutable std::mutex mutex;
         std::unordered_map<UInt128, Statistics> stats_map;
@@ -108,6 +146,7 @@ private:
         static constexpr std::chrono::minutes stale_threshold{10};
         static constexpr double moving_average_alpha = 0.1;
     };
+
 
     StatsManager stats;
 
@@ -155,6 +194,17 @@ private:
             }, *this);
         }
 
+        size_t allocatedBytes() const
+        {
+            return std::visit([]<typename T>(const T & arg)
+            {
+                if constexpr (std::is_same_v<T, Block>)
+                    return arg.allocatedBytes();
+                else
+                    return arg.capacity();
+            }, *this);
+        }
+
         DataKind getDataKind() const
         {
             if (std::holds_alternative<Block>(*this))
@@ -195,7 +245,10 @@ private:
                 String && query_id_,
                 const String & async_dedup_token_,
                 const String & format_,
-                MemoryTracker * user_memory_tracker_);
+                MemoryTracker * user_memory_tracker_,
+                StatsManager & stats_manager,
+                UInt128 key_hash
+            );
 
             void resetChunk();
             void finish(std::exception_ptr exception_ = nullptr);
@@ -204,6 +257,7 @@ private:
             bool isFinished() const { return finished; }
 
         private:
+            StatsManager::ScopedInsertStats scoped_insert_stats;
             std::promise<void> promise;
             std::atomic_bool finished = false;
         };
@@ -316,7 +370,7 @@ private:
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
 
     static void processData(
-        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history, StatsManager & stats);
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(
