@@ -97,6 +97,28 @@ def get_pr_info_from_number(pr_number: str) -> dict:
     return response.json()
 
 
+def get_run_details(run_url: str) -> dict:
+    """
+    Fetch run details for a given run URL.
+    """
+    run_id = run_url.split("/")[-1]
+
+    headers = {
+        "Authorization": f"token {os.getenv('GITHUB_TOKEN')}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/actions/runs/{run_id}"
+    response = requests.get(url, headers=headers)
+
+    if response.status_code != 200:
+        raise Exception(
+            f"Failed to fetch run details: {response.status_code} {response.text}"
+        )
+
+    return response.json()
+
+
 def get_checks_fails(client: Client, job_url: str):
     """
     Get tests that did not succeed for the given job URL.
@@ -300,15 +322,13 @@ def format_results_as_html_table(results) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create a combined CI report.")
-    parser.add_argument(
+    parser.add_argument(  # Need the full URL rather than just the ID to query the databases
         "--actions-run-url", required=True, help="URL of the actions run"
     )
     parser.add_argument(
-        "--pr-number", required=True, help="Pull request number for the S3 path"
+        "--pr-number", help="Pull request number for the S3 path", type=int
     )
-    parser.add_argument(
-        "--commit-sha", required=True, help="Commit SHA for the S3 path"
-    )
+    parser.add_argument("--commit-sha", help="Commit SHA for the S3 path")
     parser.add_argument(
         "--no-upload", action="store_true", help="Do not upload the report"
     )
@@ -326,6 +346,16 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
+
+    if args.pr_number is None or args.commit_sha is None:
+        run_details = get_run_details(args.actions_run_url)
+        if args.pr_number is None:
+            if len(run_details["pull_requests"]) > 0:
+                args.pr_number = run_details["pull_requests"][0]["number"]
+            else:
+                args.pr_number = 0
+        if args.commit_sha is None:
+            args.commit_sha = run_details["head_commit"]["id"]
 
     db_client = Client(
         host=os.getenv(DATABASE_HOST_VAR),
@@ -367,7 +397,7 @@ def main():
                 db_client, args.actions_run_url, known_fails
             )
 
-    if args.pr_number == "0":
+    if args.pr_number == 0:
         pr_info_html = "Release"
     else:
         try:
