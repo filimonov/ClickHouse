@@ -18,31 +18,6 @@ public:
     {
     }
 
-    MappedPtr get(const Key & key) override
-    {
-        if (const auto it = cache.find(key); it != cache.end())
-        {
-            if (IsStaleFunction()(it->first))
-            {
-                BasePolicy::remove(it->first);
-                return {};
-            }
-            return it->second;
-        }
-
-        if (const auto it = findBestMatchingPrefix(key); it != cache.end())
-        {
-            if (IsStaleFunction()(it->first))
-            {
-                BasePolicy::remove(it->first);
-                return {};
-            }
-            return it->second;
-        }
-
-        return {};
-    }
-
     std::optional<KeyMapped> getWithKey(const Key & key) override
     {
         if (const auto it = cache.find(key); it != cache.end())
@@ -55,7 +30,7 @@ public:
             return std::make_optional<KeyMapped>({it->first, it->second});
         }
 
-        if (const auto it = findBestMatchingPrefix(key); it != cache.end())
+        if (const auto it = findBestMatchingPrefixAndRemoveExpiredEntries(key); it != cache.end())
         {
             if (IsStaleFunction()(it->first))
             {
@@ -69,7 +44,7 @@ public:
     }
 
 private:
-    auto findBestMatchingPrefix(const Key & key)
+    auto findBestMatchingPrefixAndRemoveExpiredEntries(const Key & key)
     {
         const auto & prefix = key.prefix;
 
