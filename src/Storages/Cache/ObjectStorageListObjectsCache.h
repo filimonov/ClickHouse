@@ -3,7 +3,6 @@
 #include <chrono>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Common/TTLCachePolicy.h>
 #include <Common/CacheBase.h>
 
 namespace DB
@@ -19,12 +18,12 @@ public:
         Key(
             const String & bucket_,
             const String & prefix_,
-            const std::chrono::system_clock::time_point & expires_at_ = std::chrono::system_clock::now(),
+            const std::chrono::steady_clock::time_point & expires_at_ = std::chrono::steady_clock::now(),
             std::optional<UUID> user_id_ = std::nullopt);
 
         std::string bucket;
         std::string prefix;
-        std::chrono::system_clock::time_point expires_at;
+        std::chrono::steady_clock::time_point expires_at;
         std::optional<UUID> user_id;
 
         bool operator==(const Key & other) const;

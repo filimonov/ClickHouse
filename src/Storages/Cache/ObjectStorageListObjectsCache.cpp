@@ -1,4 +1,5 @@
 #include <Storages/Cache/ObjectStorageListObjectsCache.h>
+#include <Common/TTLCachePolicy.h>
 #include <boost/functional/hash.hpp>
 
 namespace DB
@@ -79,7 +80,7 @@ private:
 ObjectStorageListObjectsCache::Key::Key(
     const String & bucket_,
     const String & prefix_,
-    const std::chrono::system_clock::time_point & expires_at_,
+    const std::chrono::steady_clock::time_point & expires_at_,
     std::optional<UUID> user_id_)
     : bucket(bucket_), prefix(prefix_), expires_at(expires_at_), user_id(user_id_) {}
 
@@ -100,7 +101,7 @@ size_t ObjectStorageListObjectsCache::KeyHasher::operator()(const Key & key) con
 
 bool ObjectStorageListObjectsCache::IsStale::operator()(const Key & key) const
 {
-    return key.expires_at < std::chrono::system_clock::now();
+    return key.expires_at < std::chrono::steady_clock::now();
 }
 
 size_t ObjectStorageListObjectsCache::WeightFunction::operator()(const Value & value) const
@@ -125,7 +126,7 @@ void ObjectStorageListObjectsCache::set(
     const std::string & prefix,
     const std::shared_ptr<Value> & value)
 {
-    const auto key = Key{bucket, prefix, std::chrono::system_clock::now() + std::chrono::seconds(ttl)};
+    const auto key = Key{bucket, prefix, std::chrono::steady_clock::now() + std::chrono::seconds(ttl)};
 
     cache.set(key, value);
 }
