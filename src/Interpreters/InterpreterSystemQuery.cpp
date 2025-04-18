@@ -47,6 +47,7 @@
 #include <Access/Common/AllowedClientHosts.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Storages/Cache/ObjectStorageListObjectsCache.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/Freeze.h>
@@ -432,6 +433,16 @@ BlockIO InterpreterSystemQuery::execute()
 #if USE_PARQUET
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
             ParquetFileMetaDataCache::instance()->clear();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
+#endif
+        }
+        case Type::DROP_OBJECT_STORAGE_LIST_OBJECTS_CACHE:
+        {
+#if USE_PARQUET
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_OBJECT_STORAGE_LIST_OBJECTS_CACHE);
+            ObjectStorageListObjectsCache::instance().clear();
             break;
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
@@ -1469,6 +1480,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_SCHEMA_CACHE:
         case Type::DROP_FORMAT_SCHEMA_CACHE:
         case Type::DROP_PARQUET_METADATA_CACHE:
+        case Type::DROP_OBJECT_STORAGE_LIST_OBJECTS_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);

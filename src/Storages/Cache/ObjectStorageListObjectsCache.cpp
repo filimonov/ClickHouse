@@ -140,6 +140,11 @@ void ObjectStorageListObjectsCache::set(
     cache.set(key, value);
 }
 
+void ObjectStorageListObjectsCache::clear()
+{
+    cache.clear();
+}
+
 ObjectStorageListObjectsCache::Cache::MappedPtr ObjectStorageListObjectsCache::get(const String & bucket, const String & prefix, bool filter_by_prefix)
 {
     const auto input_key = Key{bucket, prefix};

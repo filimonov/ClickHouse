@@ -54,6 +54,8 @@ public:
 
     Cache::MappedPtr get(const String & bucket, const String & prefix, bool filter_by_prefix = true);
 
+    void clear();
+
     void setMaxSizeInBytes(std::size_t size_in_bytes_);
     void setMaxCount(std::size_t count);
     void setTTL(std::size_t ttl_);
