@@ -31,6 +31,7 @@ template = Environment(loader=FileSystemLoader(template_dir)).get_template(
 def get_commit_statuses(sha: str) -> pd.DataFrame:
     """
     Fetch commit statuses for a given SHA and return as a pandas DataFrame.
+    Handles pagination to get all statuses.
 
     Args:
         sha (str): Commit SHA to fetch statuses for.
@@ -44,14 +45,34 @@ def get_commit_statuses(sha: str) -> pd.DataFrame:
     }
 
     url = f"https://api.github.com/repos/{GITHUB_REPO}/commits/{sha}/statuses"
-    response = requests.get(url, headers=headers)
 
-    if response.status_code != 200:
-        raise Exception(
-            f"Failed to fetch statuses: {response.status_code} {response.text}"
-        )
+    all_data = []
 
-    data = response.json()
+    while url:
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 200:
+            raise Exception(
+                f"Failed to fetch statuses: {response.status_code} {response.text}"
+            )
+
+        data = response.json()
+        all_data.extend(data)
+
+        # Check for pagination links in the response headers
+        if "Link" in response.headers:
+            links = response.headers["Link"].split(",")
+            next_url = None
+
+            for link in links:
+                parts = link.strip().split(";")
+                if len(parts) == 2 and 'rel="next"' in parts[1]:
+                    next_url = parts[0].strip("<>")
+                    break
+
+            url = next_url
+        else:
+            url = None
 
     # Parse relevant fields
     parsed = [
@@ -61,7 +82,7 @@ def get_commit_statuses(sha: str) -> pd.DataFrame:
             "message": item["description"],
             "results_link": item["target_url"],
         }
-        for item in data
+        for item in all_data
     ]
 
     return (
