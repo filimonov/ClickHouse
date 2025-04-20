@@ -135,7 +135,7 @@ void ObjectStorageListObjectsCache::set(
     const std::string & prefix,
     const std::shared_ptr<Value> & value)
 {
-    const auto key = Key{bucket, prefix, std::chrono::steady_clock::now() + std::chrono::seconds(ttl)};
+    const auto key = Key{bucket, prefix, std::chrono::steady_clock::now() + std::chrono::seconds(ttl_in_seconds)};
 
     cache.set(key, value);
 }
@@ -195,9 +195,9 @@ void ObjectStorageListObjectsCache::setMaxCount(std::size_t count)
     cache.setMaxCount(count);
 }
 
-void ObjectStorageListObjectsCache::setTTL(std::size_t ttl_)
+void ObjectStorageListObjectsCache::setTTL(std::size_t ttl_in_seconds_)
 {
-    ttl = ttl_;
+    ttl_in_seconds = ttl_in_seconds_;
 }
 
 ObjectStorageListObjectsCache & ObjectStorageListObjectsCache::instance()

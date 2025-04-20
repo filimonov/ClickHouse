@@ -58,13 +58,13 @@ public:
 
     void setMaxSizeInBytes(std::size_t size_in_bytes_);
     void setMaxCount(std::size_t count);
-    void setTTL(std::size_t ttl_);
+    void setTTL(std::size_t ttl_in_seconds_);
 
 private:
     ObjectStorageListObjectsCache();
 
     Cache cache;
-    size_t ttl {0};
+    size_t ttl_in_seconds {0};
 };
 
 }
