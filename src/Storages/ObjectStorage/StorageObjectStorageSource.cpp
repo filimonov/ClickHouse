@@ -158,6 +158,9 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         }
         else
         {
+            std::shared_ptr<IObjectStorageIterator> object_iterator = nullptr;
+            ObjectStorageListObjectsCache * cache_ptr = nullptr;
+
             if (local_context->getSettingsRef()[Setting::use_object_storage_list_objects_cache])
             {
                 auto & cache = ObjectStorageListObjectsCache::instance();
@@ -165,28 +168,24 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 if (auto objects_info = cache.get(configuration->getNamespace(), configuration->getPathWithoutGlobs(), /*filter_by_prefix=*/ false))
                 {
                     RelativePathsWithMetadata loose_copy(*objects_info);
-                    auto some_iterator = std::make_shared<ObjectStorageIteratorFromList>(std::move(loose_copy));
-                    iterator = std::make_unique<GlobIterator>(
-                        some_iterator, configuration, predicate, virtual_columns,
-                        local_context, is_archive ? nullptr : read_keys,
-                        query_settings.throw_on_zero_files_match, file_progress_callback);
+                    object_iterator = std::make_shared<ObjectStorageIteratorFromList>(std::move(loose_copy));
                 }
                 else
                 {
-                    /// Iterate through disclosed globs and make a source for each file
-                    iterator = std::make_unique<GlobIterator>(
-                        object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size), configuration, predicate, virtual_columns,
-                        local_context, is_archive ? nullptr : read_keys,
-                        query_settings.throw_on_zero_files_match, file_progress_callback, &cache);
+                    cache_ptr = &cache;
+                    object_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size);
                 }
             }
-            else {
-                /// Iterate through disclosed globs and make a source for each file
-                iterator = std::make_unique<GlobIterator>(
-                    object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size), configuration, predicate, virtual_columns,
-                    local_context, is_archive ? nullptr : read_keys,
-                    query_settings.throw_on_zero_files_match, file_progress_callback, nullptr);
+            else
+            {
+                object_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size);
             }
+
+            /// Iterate through disclosed globs and make a source for each file
+            iterator = std::make_unique<GlobIterator>(
+                object_iterator, configuration, predicate, virtual_columns,
+                local_context, is_archive ? nullptr : read_keys,
+                query_settings.throw_on_zero_files_match, file_progress_callback, cache_ptr);
         }
     }
     else if (configuration->supportsFileIterator())
