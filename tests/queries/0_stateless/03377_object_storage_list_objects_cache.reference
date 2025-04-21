@@ -1,0 +1,93 @@
+-- { echoOn }
+
+SELECT  ProfileEvents['ObjectStorageListObjectsCacheMisses'] > 0 as miss
+FROM system.query_log
+where log_comment = 'cold_list_cache'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCacheHits'] > 0 as hit
+FROM system.query_log
+where log_comment = 'warm_list_exact_cache'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCacheExactMatchHits'] > 0 as hit
+FROM system.query_log
+where log_comment = 'warm_list_exact_cache'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCachePrefixMatchHits'] > 0 as prefix_match_hit
+FROM system.query_log
+where log_comment = 'warm_list_exact_cache'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+0
+SELECT ProfileEvents['ObjectStorageListObjectsCacheHits'] > 0 as hit
+FROM system.query_log
+where log_comment = 'warm_list_prefix_match_cache'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCacheExactMatchHits'] > 0 as exact_match_hit
+FROM system.query_log
+where log_comment = 'warm_list_prefix_match_cache'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+0
+SELECT ProfileEvents['ObjectStorageListObjectsCachePrefixMatchHits'] > 0 as prefix_match_hit
+FROM system.query_log
+where log_comment = 'warm_list_prefix_match_cache'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCacheHits'] > 0 as hit
+FROM system.query_log
+where log_comment = 'even_shorter_prefix'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+0
+SELECT ProfileEvents['ObjectStorageListObjectsCacheMisses'] > 0 as miss
+FROM system.query_log
+where log_comment = 'even_shorter_prefix'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCacheHits'] > 0 as hit
+FROM system.query_log
+where log_comment = 'still_exact_match_after_shorter_prefix'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCacheExactMatchHits'] > 0 as exact_match_hit
+FROM system.query_log
+where log_comment = 'still_exact_match_after_shorter_prefix'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
+SELECT ProfileEvents['ObjectStorageListObjectsCacheHits'] > 0 as hit
+FROM system.query_log
+where log_comment = 'after_drop'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+0
+SELECT ProfileEvents['ObjectStorageListObjectsCacheMisses'] > 0 as miss
+FROM system.query_log
+where log_comment = 'after_drop'
+AND type = 'QueryFinish'
+ORDER BY event_time desc
+LIMIT 1;
+1
