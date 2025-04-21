@@ -165,13 +165,12 @@ class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithCon
 {
 public:
     GlobIterator(
-        ObjectStoragePtr object_storage_,
+        const ObjectStorageIteratorPtr & object_storage_iterator_,
         ConfigurationPtr configuration_,
         const ActionsDAG::Node * predicate,
         const NamesAndTypesList & virtual_columns_,
         ContextPtr context_,
         ObjectInfos * read_keys_,
-        size_t list_object_keys_size,
         bool throw_on_zero_files_match_,
         std::function<void(FileProgress)> file_progress_callback_ = {},
         ObjectStorageListObjectsCache * list_cache_ = nullptr);
@@ -187,7 +186,7 @@ private:
     void createFilterAST(const String & any_key);
     void fillBufferForKey(const std::string & uri_key);
 
-    const ObjectStoragePtr object_storage;
+    ObjectStorageIteratorPtr object_storage_iterator;
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
@@ -198,7 +197,6 @@ private:
     ObjectInfos object_infos;
     ObjectInfos * read_keys;
     ExpressionActionsPtr filter_expr;
-    ObjectStorageIteratorPtr object_storage_iterator;
     bool recursive{false};
     std::vector<String> expanded_keys;
     std::vector<String>::iterator expanded_keys_iter;

@@ -63,98 +63,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-struct CachedGlobObjectIterator : IObjectIterator, WithContext
-{
-    using Configuration = StorageObjectStorage::Configuration;
-    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-    using ObjectInfos = StorageObjectStorage::ObjectInfos;
-
-    CachedGlobObjectIterator(
-        const std::shared_ptr<ObjectInfos> & object_infos_,
-        ConfigurationPtr configuration_,
-        const ActionsDAG::Node * predicate,
-        const NamesAndTypesList & virtual_columns,
-        ContextPtr context_,
-        std::size_t ,
-        ObjectInfos * read_keys = nullptr)
-        : WithContext(context_),
-        object_infos(object_infos_),
-        configuration(configuration_)
-    {
-        if (configuration->isPathWithGlobs())
-        {
-            const auto key_with_globs = configuration->getPath();
-
-            //
-            auto matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
-            if (!matcher->ok())
-            {
-                throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP, "Cannot compile regex from glob ({}): {}", key_with_globs, matcher->error());
-            }
-
-            ExpressionActionsPtr filter_expr;
-            recursive = key_with_globs == "/**";
-            if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns))
-            {
-                VirtualColumnUtils::buildSetsForDAG(*filter_dag, getContext());
-                filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-            }
-
-            for (auto it = object_infos->begin(); it != object_infos->end();)
-            {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
-                    it = object_infos->erase(it);
-                else
-                    ++it;
-            }
-
-            if (filter_expr)
-            {
-                std::vector<String> paths;
-                paths.reserve(object_infos->size());
-                for (const auto & object_info : *object_infos)
-                    paths.push_back(StorageObjectStorageSource::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
-
-                VirtualColumnUtils::filterByPathOrFile(*object_infos, paths, filter_expr, virtual_columns, getContext());
-
-                LOG_TEST(getLogger("Arthur"), "Filtered files: {} -> {}", paths.size(), object_infos->size());
-            }
-
-            if (read_keys)
-                read_keys->insert(read_keys->end(), object_infos->begin(), object_infos->end());
-        }
-        else
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Using glob iterator with path without globs is not allowed (used path: {})",
-                configuration->getPath());
-        }
-    }
-
-    ObjectInfoPtr next(size_t) override {
-        std::lock_guard lock(mutex);
-
-        if (index >= object_infos->size()) {
-            return {};
-        }
-
-        return (*object_infos)[index++];
-    }
-
-    size_t estimatedKeysCount() override {
-        return object_infos->size();
-    }
-
-private:
-
-    std::shared_ptr<ObjectInfos> object_infos;
-    std::mutex mutex;
-    size_t index = 0;
-    ConfigurationPtr configuration;
-    bool recursive {false};
-};
-
 StorageObjectStorageSource::StorageObjectStorageSource(
     String name_,
     ObjectStoragePtr object_storage_,
@@ -256,22 +164,27 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
                 if (auto objects_info = cache.get(configuration->getNamespace(), configuration->getPathWithoutGlobs(), /*filter_by_prefix=*/ false))
                 {
-                    iterator = std::make_unique<CachedGlobObjectIterator>(objects_info, configuration, predicate, virtual_columns, local_context, 0, read_keys);
+                    RelativePathsWithMetadata loose_copy(*objects_info);
+                    auto some_iterator = std::make_shared<ObjectStorageIteratorFromList>(std::move(loose_copy));
+                    iterator = std::make_unique<GlobIterator>(
+                        some_iterator, configuration, predicate, virtual_columns,
+                        local_context, is_archive ? nullptr : read_keys,
+                        query_settings.throw_on_zero_files_match, file_progress_callback);
                 }
                 else
                 {
                     /// Iterate through disclosed globs and make a source for each file
                     iterator = std::make_unique<GlobIterator>(
-                        object_storage, configuration, predicate, virtual_columns,
-                        local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                        object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size), configuration, predicate, virtual_columns,
+                        local_context, is_archive ? nullptr : read_keys,
                         query_settings.throw_on_zero_files_match, file_progress_callback, &cache);
                 }
             }
             else {
                 /// Iterate through disclosed globs and make a source for each file
                 iterator = std::make_unique<GlobIterator>(
-                    object_storage, configuration, predicate, virtual_columns,
-                    local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                    object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size), configuration, predicate, virtual_columns,
+                    local_context, is_archive ? nullptr : read_keys,
                     query_settings.throw_on_zero_files_match, file_progress_callback, nullptr);
             }
         }
@@ -767,18 +680,17 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
 }
 
 StorageObjectStorageSource::GlobIterator::GlobIterator(
-    ObjectStoragePtr object_storage_,
+    const ObjectStorageIteratorPtr & object_storage_iterator_,
     ConfigurationPtr configuration_,
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns_,
     ContextPtr context_,
     ObjectInfos * read_keys_,
-    size_t list_object_keys_size,
     bool throw_on_zero_files_match_,
     std::function<void(FileProgress)> file_progress_callback_,
     ObjectStorageListObjectsCache * list_cache_)
     : WithContext(context_)
-    , object_storage(object_storage_)
+    , object_storage_iterator(object_storage_iterator_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
@@ -795,9 +707,6 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     if (configuration->isPathWithGlobs())
     {
         const auto key_with_globs = configuration_->getPath();
-        const auto key_prefix = configuration->getPathWithoutGlobs();
-
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs));
         if (!matcher->ok())
