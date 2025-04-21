@@ -6109,7 +6109,7 @@ Possible values:
 - Positive integer.
 - 0 — All hosts in cluster.
 )", EXPERIMENTAL)                       \
-    DECLARE(Bool, use_object_storage_list_objects_cache, true, R"(
+    DECLARE(Bool, use_object_storage_list_objects_cache, false, R"(
 Cache the list of objects returned by list objects calls in object storage
 )", EXPERIMENTAL) \
     \
