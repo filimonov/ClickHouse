@@ -37,10 +37,10 @@ TEST(ObjectStorageListObjectsCacheTest, BasicSetAndGet)
     
     cache.set(bucket, prefix, value);
     
-    auto result = cache.get(bucket, prefix);
-    ASSERT_EQ(result->size(), 2);
-    EXPECT_EQ((*result)[0]->getPath(), "test-prefix/file1.txt");
-    EXPECT_EQ((*result)[1]->getPath(), "test-prefix/file2.txt");
+    auto result = cache.get(bucket, prefix).value();
+    ASSERT_EQ(result.size(), 2);
+    EXPECT_EQ(result[0]->getPath(), "test-prefix/file1.txt");
+    EXPECT_EQ(result[1]->getPath(), "test-prefix/file2.txt");
 }
 
 TEST(ObjectStorageListObjectsCacheTest, CacheMiss)
@@ -48,9 +48,8 @@ TEST(ObjectStorageListObjectsCacheTest, CacheMiss)
     cache.clear();
     const std::string bucket = "test-bucket";
     const std::string prefix = "test-prefix/";
-    
-    auto result = cache.get(bucket, prefix);
-    EXPECT_EQ(result, nullptr);
+
+    EXPECT_FALSE(cache.get(bucket, prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, ClearCache)
@@ -62,9 +61,8 @@ TEST(ObjectStorageListObjectsCacheTest, ClearCache)
     
     cache.set(bucket, prefix, value);
     cache.clear();
-    
-    auto result = cache.get(bucket, prefix);
-    EXPECT_EQ(result, nullptr);
+
+    EXPECT_FALSE(cache.get(bucket, prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, PrefixMatching)
@@ -82,14 +80,13 @@ TEST(ObjectStorageListObjectsCacheTest, PrefixMatching)
 
     cache.set(bucket, mid_prefix, value);
 
-    auto result1 = cache.get(bucket, mid_prefix);
-    EXPECT_EQ(result1->size(), 2);
+    auto result1 = cache.get(bucket, mid_prefix).value();
+    EXPECT_EQ(result1.size(), 2);
 
-    auto result2 = cache.get(bucket, long_prefix);
-    EXPECT_EQ(result2->size(), 2);
+    auto result2 = cache.get(bucket, long_prefix).value();
+    EXPECT_EQ(result2.size(), 2);
 
-    auto result3 = cache.get(bucket, short_prefix);
-    ASSERT_EQ(result3, nullptr);
+    EXPECT_FALSE(cache.get(bucket, short_prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, PrefixFiltering)
@@ -106,9 +103,9 @@ TEST(ObjectStorageListObjectsCacheTest, PrefixFiltering)
     
     cache.set(bucket, short_prefix, value);
 
-    auto result = cache.get(bucket, "parent/child1/", true);
-    EXPECT_EQ(result->size(), 1);
-    EXPECT_EQ((*result)[0]->getPath(), "parent/child1/file2.txt");
+    auto result = cache.get(bucket, "parent/child1/", true).value();
+    EXPECT_EQ(result.size(), 1);
+    EXPECT_EQ(result[0]->getPath(), "parent/child1/file2.txt");
 }
 
 TEST(ObjectStorageListObjectsCacheTest, TTLExpiration)
@@ -121,13 +118,12 @@ TEST(ObjectStorageListObjectsCacheTest, TTLExpiration)
     cache.set(bucket, prefix, value);
     
     // Verify we can get it immediately
-    auto result1 = cache.get(bucket, prefix);
-    EXPECT_EQ(result1->size(), 1);
+    auto result1 = cache.get(bucket, prefix).value();
+    EXPECT_EQ(result1.size(), 1);
 
     std::this_thread::sleep_for(std::chrono::seconds(4));
 
-    auto result2 = cache.get(bucket, prefix);
-    EXPECT_EQ(result2, nullptr);
+    EXPECT_FALSE(cache.get(bucket, prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, BestPrefixMatch)
@@ -142,8 +138,8 @@ TEST(ObjectStorageListObjectsCacheTest, BestPrefixMatch)
     cache.set(bucket, "a/b/c/", mid_prefix);
 
     // should pick mid_prefix, which has size 2. filter_by_prefix=false so we can assert by size
-    auto result = cache.get(bucket, "a/b/c/d/", false);
-    EXPECT_EQ(result->size(), 2u);
+    auto result = cache.get(bucket, "a/b/c/d/", false).value();
+    EXPECT_EQ(result.size(), 2u);
 }
 
 }
