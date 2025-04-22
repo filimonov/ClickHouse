@@ -49,40 +49,26 @@ public:
     }
 
 private:
-    auto findBestMatchingPrefixAndRemoveExpiredEntries(const Key & key)
+    auto findBestMatchingPrefixAndRemoveExpiredEntries(Key key)
     {
-        const auto & prefix = key.prefix;
-
-        auto best_match = cache.end();
-        size_t best_length = 0;
-
-        std::vector<Key> to_remove;
-
-        for (auto it = cache.begin(); it != cache.end(); ++it)
+        while (!key.prefix.empty())
         {
-            const auto & candidate_bucket = it->first.bucket;
-            const auto & candidate_prefix = it->first.prefix;
-
-            if (candidate_bucket == key.bucket && prefix.starts_with(candidate_prefix))
+            if (const auto it = cache.find(key); it != cache.end())
             {
                 if (IsStaleFunction()(it->first))
                 {
-                    to_remove.push_back(it->first);
-                    continue;
+                    BasePolicy::remove(it->first);
                 }
-
-                if (candidate_prefix.size() > best_length)
+                else
                 {
-                    best_match = it;
-                    best_length = candidate_prefix.size();
+                    return it;
                 }
             }
+
+            key.prefix.pop_back();
         }
 
-        for (const auto & k : to_remove)
-            BasePolicy::remove(k);
-
-        return best_match;
+        return cache.end();
     }
 };
 
