@@ -337,7 +337,9 @@ def format_results_as_html_table(results) -> str:
             ),
         },
         escape=False,
-    ).replace(' border="1"', "")
+        border=0,
+        classes=["test-results-table"],
+    )
     return html
 
 
