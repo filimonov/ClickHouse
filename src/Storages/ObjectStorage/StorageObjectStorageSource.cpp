@@ -167,8 +167,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
                 if (auto objects_info = cache.get(configuration->getNamespace(), configuration->getPathWithoutGlobs(), /*filter_by_prefix=*/ false))
                 {
-                    RelativePathsWithMetadata loose_copy(*objects_info);
-                    object_iterator = std::make_shared<ObjectStorageIteratorFromList>(std::move(loose_copy));
+                    object_iterator = std::make_shared<ObjectStorageIteratorFromList>(std::move(*objects_info));
                 }
                 else
                 {

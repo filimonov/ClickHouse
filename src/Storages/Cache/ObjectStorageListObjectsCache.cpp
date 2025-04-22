@@ -145,7 +145,7 @@ void ObjectStorageListObjectsCache::clear()
     cache.clear();
 }
 
-ObjectStorageListObjectsCache::Cache::MappedPtr ObjectStorageListObjectsCache::get(const String & bucket, const String & prefix, bool filter_by_prefix)
+std::optional<ObjectStorageListObjectsCache::Value> ObjectStorageListObjectsCache::get(const String & bucket, const String & prefix, bool filter_by_prefix)
 {
     const auto input_key = Key{bucket, prefix};
     auto pair = cache.getWithKey(input_key);
@@ -161,24 +161,25 @@ ObjectStorageListObjectsCache::Cache::MappedPtr ObjectStorageListObjectsCache::g
     if (pair->key == input_key)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCacheExactMatchHits);
-        return pair->mapped;
+        return *pair->mapped;
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCachePrefixMatchHits);
 
     if (!filter_by_prefix)
     {
-        return pair->mapped;
+        return *pair->mapped;
     }
 
-    auto filtered_objects = std::make_shared<std::vector<ObjectInfoPtr>>();
-    filtered_objects->reserve(pair->mapped->size());
+    Value filtered_objects;
+
+    filtered_objects.reserve(pair->mapped->size());
 
     for (const auto & object : *pair->mapped)
     {
         if (object->relative_path.starts_with(input_key.prefix))
         {
-            filtered_objects->push_back(object);
+            filtered_objects.push_back(object);
         }
     }
 

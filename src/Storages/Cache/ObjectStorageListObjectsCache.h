@@ -52,7 +52,7 @@ public:
         const std::string & prefix,
         const std::shared_ptr<Value> & value);
 
-    Cache::MappedPtr get(const String & bucket, const String & prefix, bool filter_by_prefix = true);
+    std::optional<Value> get(const String & bucket, const String & prefix, bool filter_by_prefix = true);
 
     void clear();
 
