@@ -2,7 +2,7 @@
 
 SYSTEM DROP OBJECT STORAGE LIST OBJECTS CACHE;
 
-INSERT INTO TABLE FUNCTION s3(s3_conn, filename='dir_a/dir_b/t_03377_sample.parquet', format='Parquet', structure='id UInt64') SETTINGS s3_truncate_on_insert=1 VALUES (1);
+INSERT INTO TABLE FUNCTION s3(s3_conn, filename='dir_a/dir_b/t_03377_sample_{_partition_id}.parquet', format='Parquet', structure='id UInt64') PARTITION BY id SETTINGS s3_truncate_on_insert=1 VALUES (1), (2), (3);
 
 SELECT * FROM s3(s3_conn, filename='dir_**.parquet') Format Null SETTINGS use_object_storage_list_objects_cache=1, log_comment='cold_list_cache';
 SELECT * FROM s3(s3_conn, filename='dir_**.parquet') Format Null SETTINGS use_object_storage_list_objects_cache=1, log_comment='warm_list_exact_cache';
@@ -13,9 +13,15 @@ SELECT * FROM s3(s3_conn, filename='dir_**.parquet') Format Null SETTINGS use_ob
 SYSTEM DROP OBJECT STORAGE LIST OBJECTS CACHE;
 SELECT * FROM s3(s3_conn, filename='dir_**.parquet') Format Null SETTINGS use_object_storage_list_objects_cache=1, log_comment='after_drop';
 
-SYSTEM FLUSH LOGS;
-
 -- { echoOn }
+
+-- The cached key should be `dir_`, and that includes all three files: 1, 2 and 3. Cache should return all three, but ClickHouse should filter out the third.
+SELECT _path, * FROM s3(s3_conn, filename='dir_a/dir_b/t_03377_sample_{1..2}.parquet') order by id SETTINGS use_object_storage_list_objects_cache=1;
+
+-- Make sure the filtering did not interfere with the cached values
+SELECT _path, * FROM s3(s3_conn, filename='dir_a/dir_b/t_03377_sample_*.parquet') order by id SETTINGS use_object_storage_list_objects_cache=1;
+
+SYSTEM FLUSH LOGS;
 
 SELECT  ProfileEvents['ObjectStorageListObjectsCacheMisses'] > 0 as miss
 FROM system.query_log
