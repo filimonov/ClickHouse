@@ -105,7 +105,7 @@ private:
     void updateQueryForDistributedEngineIfNeeded(ASTPtr & query, ContextPtr context);
 
     const String engine_name;
-    const StorageObjectStorage::ConfigurationPtr configuration;
+    StorageObjectStorage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     bool cluster_name_in_settings;
 
