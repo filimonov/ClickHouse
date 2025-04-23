@@ -20,11 +20,7 @@ on: # yamllint disable-line rule:truthy
       - reopened
       - opened
     branches:
-      - 'antalya'
-  release:
-    types:
-      - published
-      - prereleased
+      - '*'
   push:
     branches:
       - 'antalya'
@@ -113,6 +109,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       # always rebuild on release branches to be able to publish from any commit
       force: true
+      runner_type: builder-aarch64
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -175,6 +172,23 @@ jobs:
       test_name: Docker keeper image
       runner_type: altinity-func-tester
       data: ${{ needs.RunConfig.outputs.data }}
+  GrypeScan:
+    needs: [RunConfig, DockerServerImage, DockerKeeperImage]
+    if: ${{ !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: server
+            suffix: ''
+          - image: server
+            suffix: '-alpine'
+          - image: keeper
+            suffix: ''
+    uses: ./.github/workflows/grype_scan.yml
+    secrets: inherit
+    with:
+      docker_image: altinityinfra/clickhouse-${{ matrix.image }}:${{ github.event.pull_request.number || 0 }}-${{ fromJson(needs.RunConfig.outputs.data).version }}${{ matrix.suffix }}
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -319,72 +333,6 @@ jobs:
       runner_type: altinity-func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
-############################ FUNCTIONAl STATEFUL TESTS #######################################
-##############################################################################################
-  FunctionalStatefulTestRelease:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    secrets: inherit
-    with:
-      test_name: Stateful tests (release)
-      runner_type: altinity-func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestAarch64:
-    needs: [RunConfig, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    secrets: inherit
-    with:
-      test_name: Stateful tests (aarch64)
-      runner_type: altinity-func-tester-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestAsan:
-    needs: [RunConfig, BuilderDebAsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    secrets: inherit
-    with:
-      test_name: Stateful tests (asan)
-      runner_type: altinity-func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestTsan:
-    needs: [RunConfig, BuilderDebTsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    secrets: inherit
-    with:
-      test_name: Stateful tests (tsan)
-      runner_type: altinity-func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestMsan:
-    needs: [RunConfig, BuilderDebMsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    secrets: inherit
-    with:
-      test_name: Stateful tests (msan)
-      runner_type: altinity-func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestUBsan:
-    needs: [RunConfig, BuilderDebUBsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    secrets: inherit
-    with:
-      test_name: Stateful tests (ubsan)
-      runner_type: altinity-func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestDebug:
-    needs: [RunConfig, BuilderDebDebug]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    secrets: inherit
-    with:
-      test_name: Stateful tests (debug)
-      runner_type: altinity-func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################
   StressTestAsan:
@@ -475,24 +423,24 @@ jobs:
 ##################################### REGRESSION TESTS ######################################
 #############################################################################################
   RegressionTestsRelease:
-    needs: [BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression') }}
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
-      runner_type: altinity-on-demand, altinity-type-cx52, altinity-image-x86-app-docker-ce, altinity-setup-regression
-      commit: bd31e738c0cedaca253d15a05ed245c41b6e0b6a
+      runner_type: altinity-on-demand, altinity-regression-tester
+      commit: a170f32119a5c872e5ff209b8f39e13acc2d6626
       arch: release
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300
   RegressionTestsAarch64:
-    needs: [BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression') && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'aarch64') }}
+    needs: [RunConfig, BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression') && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'aarch64')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
-      runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
-      commit: bd31e738c0cedaca253d15a05ed245c41b6e0b6a
+      runner_type: altinity-on-demand, altinity-regression-tester-aarch64
+      commit: a170f32119a5c872e5ff209b8f39e13acc2d6626
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300
@@ -529,13 +477,6 @@ jobs:
       - FunctionalStatelessTestTsan
       - FunctionalStatelessTestMsan
       - FunctionalStatelessTestUBsan
-      - FunctionalStatefulTestDebug
-      - FunctionalStatefulTestRelease
-      - FunctionalStatefulTestAarch64
-      - FunctionalStatefulTestAsan
-      - FunctionalStatefulTestTsan
-      - FunctionalStatefulTestMsan
-      - FunctionalStatefulTestUBsan
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan
@@ -548,6 +489,7 @@ jobs:
       - CompatibilityCheckAarch64
       - RegressionTestsRelease
       - RegressionTestsAarch64
+      - GrypeScan
       - SignRelease
     runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     steps:
@@ -577,11 +519,14 @@ jobs:
           COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
           ACTIONS_RUN_URL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          pip install clickhouse-driver==0.2.8 numpy==1.26.4 pandas==2.2.0
+          pip install clickhouse-driver==0.2.8 numpy==1.26.4 pandas==2.0.3
 
-          REPORT_LINK=$(python3 .github/create_combined_ci_report.py --pr-number $PR_NUMBER --commit-sha $COMMIT_SHA --actions-run-url $ACTIONS_RUN_URL --known-fails tests/broken_tests.json)
+          set +e
+          REPORT_LINK=$(python3 .github/create_combined_ci_report.py --pr-number $PR_NUMBER --commit-sha $COMMIT_SHA --actions-run-url $ACTIONS_RUN_URL --known-fails tests/broken_tests.json --cves)
+          echo $REPORT_LINK
 
           IS_VALID_URL=$(echo $REPORT_LINK | grep -E '^https?://')
           if [[ -n $IS_VALID_URL ]]; then
