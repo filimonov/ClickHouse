@@ -775,6 +775,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
+    Addresses all_addresses;
     for (size_t shard_index : collections::range(0, from.shards_info.size()))
     {
         auto create_shards_from_replicas = [&](std::span<const Address> replicas)
@@ -790,6 +791,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
                 if (address.is_local)
                     info.local_addresses.push_back(address);
+                all_addresses.push_back(address);
 
                 auto pool = ConnectionPoolFactory::instance().get(
                     static_cast<unsigned>(settings[Setting::distributed_connections_pool_size]),
@@ -838,14 +840,21 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
         std::shuffle(shards_info.begin(), shards_info.end(), gen);
         shards_info.resize(max_hosts);
 
+        Addresses all_addresses_;
+
         shard_num = 0;
         for (auto & shard_info : shards_info)
+        {
+            all_addresses_.push_back(all_addresses[shard_info.shard_num - 1]);
             shard_info.shard_num = ++shard_num;
+        }
+
+        all_addresses.swap(all_addresses_);
     }
 
     for (size_t i = 0; i < shards_info.size(); ++i)
     {
-        addresses_with_failover.emplace_back(shards_info[i].local_addresses);
+        addresses_with_failover.emplace_back(Addresses({all_addresses[shards_info[i].shard_num - 1]}));
         slot_to_shard.insert(std::end(slot_to_shard), shards_info[i].weight, i);
     }
 
