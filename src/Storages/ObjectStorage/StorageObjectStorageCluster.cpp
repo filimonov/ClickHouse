@@ -112,6 +112,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         mode_,
         /* distributed_processing */false,
         partition_by_,
+        /* is_table_function */false,
         /* lazy_init */false,
         sample_path);
 
