@@ -172,6 +172,23 @@ jobs:
       test_name: Docker keeper image
       runner_type: altinity-func-tester
       data: ${{ needs.RunConfig.outputs.data }}
+  GrypeScan:
+    needs: [RunConfig, DockerServerImage, DockerKeeperImage]
+    if: ${{ !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: server
+            suffix: ''
+          - image: server
+            suffix: '-alpine'
+          - image: keeper
+            suffix: ''
+    uses: ./.github/workflows/grype_scan.yml
+    secrets: inherit
+    with:
+      docker_image: altinityinfra/clickhouse-${{ matrix.image }}:${{ github.event.pull_request.number || 0 }}-${{ fromJson(needs.RunConfig.outputs.data).version }}${{ matrix.suffix }}
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -406,8 +423,8 @@ jobs:
 ##################################### REGRESSION TESTS ######################################
 #############################################################################################
   RegressionTestsRelease:
-    needs: [BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression') }}
+    needs: [RunConfig, BuilderDebRelease]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -417,8 +434,8 @@ jobs:
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300
   RegressionTestsAarch64:
-    needs: [BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression') && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'aarch64') }}
+    needs: [RunConfig, BuilderDebAarch64]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'regression') && !contains(fromJson(needs.RunConfig.outputs.data).ci_settings.exclude_keywords, 'aarch64')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -472,6 +489,7 @@ jobs:
       - CompatibilityCheckAarch64
       - RegressionTestsRelease
       - RegressionTestsAarch64
+      - GrypeScan
       - SignRelease
     runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     steps:
@@ -492,26 +510,13 @@ jobs:
           ${{ toJson(needs) }}
           EOF
           python3 ./tests/ci/ci_buddy.py --check-wf-status
-      - name: Create and upload combined report
+      - name: Finalize workflow report
         if: ${{ !cancelled() }}
+        uses: ./.github/actions/create_workflow_report
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
           CHECKS_DATABASE_USER: ${{ secrets.CHECKS_DATABASE_USER }}
           CHECKS_DATABASE_PASSWORD: ${{ secrets.CHECKS_DATABASE_PASSWORD }}
-          COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          PR_NUMBER: ${{ github.event.number }}
-          ACTIONS_RUN_URL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
-        shell: bash
-        run: |
-          pip install clickhouse-driver==0.2.8 numpy==1.26.4 pandas==2.2.0
-
-          set +e
-          REPORT_LINK=$(python3 .github/create_combined_ci_report.py --pr-number $PR_NUMBER --commit-sha $COMMIT_SHA --actions-run-url $ACTIONS_RUN_URL --known-fails tests/broken_tests.json)
-
-          IS_VALID_URL=$(echo $REPORT_LINK | grep -E '^https?://')
-          if [[ -n $IS_VALID_URL ]]; then
-            echo "Combined CI Report: [View Report]($REPORT_LINK)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Error: $REPORT_LINK" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
+        with:
+          final: true

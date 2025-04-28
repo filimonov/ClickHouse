@@ -97,6 +97,7 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class IcebergMetadataFilesCache;
 class SkippingIndexCache;
 class ProcessList;
 class QueryStatus;
@@ -1126,6 +1127,14 @@ public:
     void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<QueryCache> getQueryCache() const;
     void clearQueryCache(const std::optional<String> & tag) const;
+
+#if USE_AVRO
+    void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
+    void clearIcebergMetadataFilesCache() const;
+#endif
+
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
