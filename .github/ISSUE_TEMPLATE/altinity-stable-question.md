@@ -1,8 +1,8 @@
 ---
-name: Question
+name: Altinity Stable Question
 about: Ask a question about an Altinity Stable Build
 title: ''
-labels: question
+labels: question, stable
 assignees: ''
 
 ---
