@@ -85,11 +85,17 @@ def get_commit_statuses(sha: str) -> pd.DataFrame:
         for item in all_data
     ]
 
-    return (
-        pd.DataFrame(parsed)
-        .sort_values(by=["job_status", "job_name"], ascending=[True, True])
-        .reset_index(drop=True)
-    )
+    # Create DataFrame
+    df = pd.DataFrame(parsed)
+
+    # Drop duplicates keeping the first occurrence (newest status for each context)
+    # GitHub returns statuses in reverse chronological order
+    df = df.drop_duplicates(subset=["job_name"], keep="first")
+
+    # Sort by status and job name
+    return df.sort_values(
+        by=["job_status", "job_name"], ascending=[True, True]
+    ).reset_index(drop=True)
 
 
 def get_pr_info_from_number(pr_number: str) -> dict:
