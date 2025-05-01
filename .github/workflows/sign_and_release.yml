@@ -28,7 +28,9 @@ jobs:
     runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     steps:
       - name: Download artifact "build_report_package_release"
-        run: gh run download "$(echo "${{ inputs.workflow_url }}" | awk -F'/' '{print $NF}')" -n build_report_package_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$(echo "${{ inputs.workflow_url }}" | awk -F'/' '{print $NF}')" -n build_report_package_release  
 
       - name: Unzip Artifact
         run: |
