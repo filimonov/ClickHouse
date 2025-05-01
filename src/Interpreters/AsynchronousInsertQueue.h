@@ -13,9 +13,9 @@
 #include <future>
 #include <shared_mutex>
 #include <variant>
-#include <mutex>
-#include <unordered_map>
-#include <chrono>
+// #include <mutex>
+// #include <unordered_map>
+// #include <chrono>
 
 namespace DB
 {
@@ -71,80 +71,131 @@ public:
     /// because all tables may be already unloaded when we destroy AsynchronousInsertQueue
     void flushAndShutdown();
 
+    using OptionalTimePoint = std::optional<std::chrono::steady_clock::time_point>;
+
 private:
 
+    /// Manages per‑key (defined by insert type) insert statistics: pending bytes, moving
+    /// average of insert size, timestamps of 2 last flushes, and last insert time.
+    /// Lookup is under lock; thereafter all operations
+    /// on a key’s stats are lock‑free via atomics.
     struct StatsManager
     {
         ///
-        /// RAII guard: on construction it records “queued” + metrics add,
-        /// on destruction it records “finished” + metrics sub.
+        /// Lock‑free per‑key stats. You get one of these atomically under lock,
+        /// then all updates/readers proceed without further locking.
         ///
-        struct ScopedInsertStats
+        struct AtomicStats : std::enable_shared_from_this<AtomicStats>
         {
-            ScopedInsertStats(StatsManager & mgr_, UInt128 key_, size_t bytes_, size_t alloc_bytes_)
-                : mgr(mgr_), key(key_), bytes(bytes_), alloc_bytes(alloc_bytes_)
+            AtomicStats() = default;
+
+            using TimePoints = std::pair<OptionalTimePoint, OptionalTimePoint>;
+
+            /// Times of the two most recent queue flushes.
+            /// Used to calculate adaptive timeout.
+            TimePoints getRecentTimePoints() const;
+            void updateWithCurrentTime();
+
+            /// RAII “insert intent”: reserves pending bytes on creation,
+            /// allows in‑flight adjust, and on commit updates EMA & last‑insert,
+            /// on destruction reverts the changes.
+            class InsertIntent
             {
-                mgr.onInsertQueued(key, bytes, alloc_bytes);
+            public:
+                InsertIntent(const InsertIntent &) = delete;
+                InsertIntent & operator=(const InsertIntent &) = delete;
+                InsertIntent(InsertIntent &&) noexcept;
+                InsertIntent & operator=(InsertIntent &&) noexcept;
+                ~InsertIntent();
+
+                /// Adjust in‑flight reservation: delta of pending bytes, do nothing if no change
+                void adjust(size_t new_bytes, size_t new_alloc);
+
+                /// Finalize this insert: update moving average and last‑insert timestamp.
+                void commit();
+
+            private:
+                friend struct AtomicStats;
+                InsertIntent(std::shared_ptr<AtomicStats> stats_, size_t predicted_bytes_, size_t predicted_alloc_);
+
+                std::shared_ptr<AtomicStats> stats;
+                size_t                       bytes;
+                size_t                       alloc;
+            };
+
+            /// Create a new intent for this key.
+            InsertIntent createInsertIntent(size_t predicted_bytes, size_t predicted_alloc)
+            {
+                return InsertIntent(shared_from_this(), predicted_bytes, predicted_alloc);
             }
 
-            ~ScopedInsertStats()
-            {
-                mgr.onInsertFinished(key, bytes, alloc_bytes);
-            }
+            /// Get current pending bytes.
+            size_t getBytesPending() const noexcept { return bytes_pending.load(std::memory_order_relaxed); }
 
-            ScopedInsertStats(const ScopedInsertStats &) = delete;             ///< non‑copyable
-            ScopedInsertStats & operator=(const ScopedInsertStats &) = delete; ///< non‑assignable
+            /// Get current moving average of insert size.
+            double getAverageInsertSize() const noexcept { return moving_average.load(std::memory_order_relaxed); }
 
-            ScopedInsertStats(ScopedInsertStats &&) noexcept;                 ///< movable
-            ScopedInsertStats & operator=(ScopedInsertStats &&) noexcept;     ///< movable‑assignable
+            std::chrono::steady_clock::time_point getLastInsertTime() const noexcept { return last_insert.load(std::memory_order_relaxed); }
 
         private:
-            StatsManager & mgr;
-            UInt128 key = 0;
-            size_t bytes = 0;
-            size_t alloc_bytes = 0;
+
+            friend struct StatsManager;
+
+            /// Adjust the count of pending data (e.g., bytes queued but not yet flushed).
+            void incrementPending(size_t amount) noexcept;
+            void decrementPending(size_t amount) noexcept;
+
+            /// Adjust the count of pending *allocated* data (e.g., capacity reserved).
+            void incrementPendingAllocated(size_t amount) noexcept;
+            void decrementPendingAllocated(size_t amount) noexcept;
+
+            void updateMovingAverage(double actual) noexcept;
+            void updateLastInsertTime() noexcept
+            {
+                last_insert.store(std::chrono::steady_clock::now(), std::memory_order_relaxed);
+            }
+
+            // how much bytes were collected for that insert type already & not yet flushed
+            std::atomic<size_t> bytes_pending{0};
+
+            // // how much bytes were collected for that insert type already & not yet flushed
+            // std::atomic<size_t> bytes_pending_allocated{0};
+
+            // average size of the insert (simple expontnial moving average), used for predicting of
+            // the buffer size
+            std::atomic<double> moving_average{0.0};
+
+            std::atomic<std::chrono::steady_clock::time_point> last_insert;
+
+            // last 2 flushes
+            std::atomic<std::chrono::steady_clock::time_point> time_point1;
+            std::atomic<std::chrono::steady_clock::time_point> time_point2;
         };
 
-        /// Factory: returns a scoped guard that covers both queuing and finishing
-        ScopedInsertStats scopedInsert(UInt128 key, size_t bytes, size_t alloc_bytes)
+        using AtomicStatsPtr = std::shared_ptr<AtomicStats>;
+
+
+        /// Get (or create) the AtomicStats for this key.
+        AtomicStatsPtr getInsertStatistics(UInt128 key)
         {
-            return ScopedInsertStats(*this, key, bytes, alloc_bytes);
+            std::lock_guard lock(mutex);
+            auto & ptr = stats_map[key];
+            if (!ptr)
+                ptr = std::make_shared<AtomicStats>();
+            cleanupStaleNoLock();
+            return ptr;
         }
 
-        /// Returns 0.0 if the key is not present.
-        double getMovingAverage(UInt128 key) const;
-
-        size_t getBytesPending(UInt128 key) const;
-
     private:
-        friend struct ScopedInsertStats;
-
-        /// Called when a new insert chunk is enqueued.
-        void onInsertQueued(UInt128 key, size_t bytes, size_t alloc_bytes);
-
-        /// Called when a chunk is flushed to the target table.
-        void onInsertFinished(UInt128 key, size_t bytes, size_t alloc_bytes);
-
         /// Remove entries where last_insert + stale_threshold < now && bytes_pending == 0
         void cleanupStaleNoLock();
 
-        struct Statistics
-        {
-            // size_t inserts          = 0;
-            // size_t total_bytes      = 0;
-            std::chrono::system_clock::time_point last_insert;
-            size_t bytes_pending    = 0;
-
-            // simple ema (exponential moving average)
-            double moving_average   = 0.0;
-        };
-
         mutable std::mutex mutex;
-        std::unordered_map<UInt128, Statistics> stats_map;
+        std::unordered_map<UInt128, AtomicStatsPtr> stats_map;
 
         // TODO: do we need to make it configurable?
         static constexpr std::chrono::minutes stale_threshold{10};
-        static constexpr double moving_average_alpha = 0.1;
+        static constexpr double  moving_average_alpha = 0.1;
     };
 
 
@@ -162,12 +213,15 @@ private:
         DataKind data_kind;
         UInt128 hash;
 
+        StatsManager::AtomicStatsPtr current_insert_stats;
+
         InsertQuery(
             const ASTPtr & query_,
             const std::optional<UUID> & user_id_,
             const std::vector<UUID> & current_roles_,
             const Settings & settings_,
-            DataKind data_kind_);
+            DataKind data_kind_,
+            StatsManager & stats_manager);
 
         InsertQuery(const InsertQuery & other) { *this = other; }
         InsertQuery & operator=(const InsertQuery & other);
@@ -194,16 +248,16 @@ private:
             }, *this);
         }
 
-        size_t allocatedBytes() const
-        {
-            return std::visit([]<typename T>(const T & arg)
-            {
-                if constexpr (std::is_same_v<T, Block>)
-                    return arg.allocatedBytes();
-                else
-                    return arg.capacity();
-            }, *this);
-        }
+        // size_t allocatedBytes() const
+        // {
+        //     return std::visit([]<typename T>(const T & arg)
+        //     {
+        //         if constexpr (std::is_same_v<T, Block>)
+        //             return arg.allocatedBytes();
+        //         else
+        //             return arg.capacity();
+        //     }, *this);
+        // }
 
         DataKind getDataKind() const
         {
@@ -246,9 +300,7 @@ private:
                 const String & async_dedup_token_,
                 const String & format_,
                 MemoryTracker * user_memory_tracker_,
-                StatsManager & stats_manager,
-                UInt128 key_hash
-            );
+                StatsManager::AtomicStats::InsertIntent && insert_intent_);
 
             void resetChunk();
             void finish(std::exception_ptr exception_ = nullptr);
@@ -257,7 +309,7 @@ private:
             bool isFinished() const { return finished; }
 
         private:
-            StatsManager::ScopedInsertStats scoped_insert_stats;
+            StatsManager::AtomicStats::InsertIntent insert_intent;
             std::promise<void> promise;
             std::atomic_bool finished = false;
         };
@@ -300,8 +352,6 @@ private:
     using QueueIterator = Queue::iterator;
     using QueueIteratorByKey = std::unordered_map<UInt128, QueueIterator>;
 
-    using OptionalTimePoint = std::optional<std::chrono::steady_clock::time_point>;
-
     struct QueueShard
     {
         mutable std::mutex mutex;
@@ -314,25 +364,10 @@ private:
         std::chrono::milliseconds busy_timeout_ms;
     };
 
-    /// Times of the two most recent queue flushes.
-    /// Used to calculate adaptive timeout.
-    struct QueueShardFlushTimeHistory
-    {
-    public:
-        using TimePoints = std::pair<OptionalTimePoint, OptionalTimePoint>;
-        TimePoints getRecentTimePoints() const;
-        void updateWithCurrentTime();
-
-    private:
-        mutable std::shared_mutex mutex;
-        TimePoints time_points;
-    };
-
     const size_t pool_size;
     const bool flush_on_shutdown;
 
     std::vector<QueueShard> queue_shards;
-    std::vector<QueueShardFlushTimeHistory> flush_time_history_per_queue_shard;
 
     /// Logic and events behind queue are as follows:
     ///  - async_insert_busy_timeout_ms:
@@ -356,21 +391,21 @@ private:
 
     LoggerPtr log = getLogger("AsynchronousInsertQueue");
 
-    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context, InsertQuery key);
+    PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context, InsertQuery key, StatsManager::AtomicStats::InsertIntent insert_intent);
 
     Milliseconds getBusyWaitTimeoutMs(
         const Settings & settings,
         const QueueShard & shard,
-        const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
+        const StatsManager::AtomicStats::TimePoints & flush_time_points,
         std::chrono::steady_clock::time_point now) const;
 
     InsertQuery preprocessInsertQuery(const ASTPtr & query, const ContextPtr & query_context, DataKind data_kind);
 
     void processBatchDeadlines(size_t shard_num);
-    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
 
     static void processData(
-        InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
+        InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 
     template <typename LogFunc>
     static Chunk processEntriesWithParsing(

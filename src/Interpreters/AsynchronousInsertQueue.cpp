@@ -112,87 +112,151 @@ static const NameSet settings_to_skip
     "log_comment",
 };
 
-void AsynchronousInsertQueue::StatsManager::onInsertQueued(UInt128 key, size_t bytes, size_t alloc_bytes)
+void AsynchronousInsertQueue::StatsManager::AtomicStats::updateMovingAverage(double actual) noexcept
 {
+    double old_ema = moving_average.load(std::memory_order_relaxed);
+
+    while (true)
+    {
+        double new_ema = (old_ema <= 0.0)
+            ? actual
+            : moving_average_alpha * actual + (1.0 - moving_average_alpha) * old_ema;
+
+        if (moving_average.compare_exchange_weak(
+                old_ema, new_ema,
+                std::memory_order_relaxed,
+                std::memory_order_relaxed))
+        {
+            break;
+        }
+        // compare_exchange_weak updates old_ema on failure
+    }
+}
+
+void AsynchronousInsertQueue::StatsManager::AtomicStats::incrementPending(size_t amount) noexcept
+{
+    bytes_pending.fetch_add(amount, std::memory_order_relaxed);
+    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsertBytes, amount);
+}
+
+void AsynchronousInsertQueue::StatsManager::AtomicStats::decrementPending(size_t amount) noexcept
+{
+    bytes_pending.fetch_sub(amount, std::memory_order_relaxed);
+    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsertBytes, amount);
+}
+
+void AsynchronousInsertQueue::StatsManager::AtomicStats::incrementPendingAllocated(size_t amount) noexcept
+{
+    // bytes_pending_allocated.fetch_add(amount, std::memory_order_relaxed);
+    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsertBytesAllocated, amount);
+}
+
+void AsynchronousInsertQueue::StatsManager::AtomicStats::decrementPendingAllocated(size_t amount) noexcept
+{
+    // bytes_pending_allocated.fetch_sub(amount, std::memory_order_relaxed);
+    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsertBytesAllocated, amount);
+}
+
+AsynchronousInsertQueue::StatsManager::AtomicStats::InsertIntent::InsertIntent(
+    std::shared_ptr<AsynchronousInsertQueue::StatsManager::AtomicStats> stats_,
+    size_t predicted_bytes_,
+    size_t predicted_alloc_)
+    : stats(std::move(stats_))
+    , bytes(predicted_bytes_)
+    , alloc(predicted_alloc_)
+{
+    stats->incrementPending(bytes);
+    stats->incrementPendingAllocated(alloc);
     CurrentMetrics::add(CurrentMetrics::PendingAsyncInsert);
-    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsertBytes, bytes);
-    CurrentMetrics::add(CurrentMetrics::PendingAsyncInsertBytesAllocated, alloc_bytes);
+}
 
-    auto now = std::chrono::system_clock::now();
-    std::lock_guard lock(mutex);
-
-    auto & stat = stats_map[key];
-    // stat.inserts++;
-    // stat.total_bytes += bytes;
-    stat.bytes_pending += bytes;
-    stat.last_insert = now;
-
-    if (stat.moving_average <= 0.0)
+AsynchronousInsertQueue::StatsManager::AtomicStats::InsertIntent::~InsertIntent()
+{
+    if (stats)
     {
-        stat.moving_average = static_cast<double>(bytes);
+        CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert);
+        stats->decrementPending(bytes);
+        stats->decrementPendingAllocated(alloc);
     }
-    else
+}
+
+// move constuctors
+AsynchronousInsertQueue::StatsManager::AtomicStats::InsertIntent::InsertIntent(StatsManager::AtomicStats::InsertIntent && o) noexcept
+    : stats(std::move(o.stats))
+    , bytes(o.bytes)
+    , alloc(o.alloc)
+{
+    o.stats.reset();
+    o.bytes = 0;
+    o.alloc = 0;
+}
+
+AsynchronousInsertQueue::StatsManager::AtomicStats::InsertIntent &
+AsynchronousInsertQueue::StatsManager::AtomicStats::InsertIntent::operator=(StatsManager::AtomicStats::InsertIntent && o) noexcept
+{
+    if (this != &o)
     {
-        stat.moving_average = moving_average_alpha * static_cast<double>(bytes)
-                            + (1.0 - moving_average_alpha) * stat.moving_average;
+        if (stats)
+        {
+            CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert);
+            stats->decrementPending(bytes);
+            stats->decrementPendingAllocated(alloc);
+        }
+
+        stats = std::move(o.stats);
+        bytes = o.bytes;
+        alloc = o.alloc;
+
+        o.stats.reset();
+        o.bytes = 0;
+        o.alloc = 0;
     }
-
-    cleanupStaleNoLock();
+    return *this;
 }
 
-void AsynchronousInsertQueue::StatsManager::onInsertFinished(UInt128 key, size_t bytes, size_t alloc_bytes)
+void AsynchronousInsertQueue::StatsManager::AtomicStats::InsertIntent::adjust(size_t new_bytes, size_t new_alloc)
 {
-    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert);
-    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsertBytes, bytes);
-    CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsertBytesAllocated, alloc_bytes);
+    if (!stats) return;
 
-    auto now = std::chrono::system_clock::now();
-    std::lock_guard lock(mutex);
+    if (new_bytes > bytes)
+        stats->incrementPending(new_bytes - bytes);
+    else if (bytes > new_bytes)
+        stats->decrementPending(bytes - new_bytes);
 
-    auto it = stats_map.find(key);
-    if (it == stats_map.end())
-        return;
+    if (new_alloc > alloc)
+        stats->incrementPendingAllocated(new_alloc - alloc);
+    else if (alloc > new_alloc)
+        stats->decrementPendingAllocated(alloc - new_alloc);
 
-    auto & stat = it->second;
-    stat.bytes_pending = (bytes >= stat.bytes_pending ? 0 : stat.bytes_pending - bytes);
-    stat.last_insert = now;
-
-    cleanupStaleNoLock();
+    bytes = new_bytes;
+    alloc = new_alloc;
 }
 
-double AsynchronousInsertQueue::StatsManager::getMovingAverage(UInt128 key) const
+void AsynchronousInsertQueue::StatsManager::AtomicStats::InsertIntent::commit()
 {
-    std::lock_guard lock(mutex);
-    auto it = stats_map.find(key);
-    if (it == stats_map.end())
-        return 0.0;
-    return it->second.moving_average;
+    if (!stats) return;
+    stats->updateMovingAverage(static_cast<double>(bytes));
+    stats->updateLastInsertTime();
 }
 
-size_t AsynchronousInsertQueue::StatsManager::getBytesPending(UInt128 key) const
-{
-    std::lock_guard lock(mutex);
-    auto it = stats_map.find(key);
-    if (it == stats_map.end())
-        return 0;
-    return it->second.bytes_pending;
-}
 
 void AsynchronousInsertQueue::StatsManager::cleanupStaleNoLock()
 {
-    auto now = std::chrono::system_clock::now();
-    for (auto it = stats_map.begin(); it != stats_map.end();)
+    auto now    = std::chrono::steady_clock::now();
+    auto cutoff = now - stale_threshold;
+
+    for (auto it = stats_map.begin(); it != stats_map.end(); )
     {
-        const auto & s = it->second;
-        if (s.bytes_pending == 0
-            && s.last_insert + stale_threshold < now)
-        {
+        auto stat = it->second;
+
+        // atomically load pending count and last‐insert time:
+        size_t pending = stat->getBytesPending();
+        auto   last    = stat->getLastInsertTime();
+
+        if (pending == 0 && last < cutoff)
             it = stats_map.erase(it);
-        }
         else
-        {
             ++it;
-        }
     }
 }
 
@@ -202,7 +266,8 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
     const Settings & settings_,
-    DataKind data_kind_)
+    DataKind data_kind_,
+    StatsManager & stats_manager)
     : query(query_->clone())
     , query_str(queryToString(query))
     , user_id(user_id_)
@@ -234,6 +299,9 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     }
 
     hash = siphash.get128();
+
+    current_insert_stats = stats_manager.getInsertStatistics(hash);
+
 }
 
 AsynchronousInsertQueue::InsertQuery &
@@ -249,6 +317,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         data_kind = other.data_kind;
         hash = other.hash;
         setting_changes = other.setting_changes;
+        current_insert_stats = other.current_insert_stats;
     }
 
     return *this;
@@ -265,17 +334,15 @@ AsynchronousInsertQueue::InsertData::Entry::Entry(
     const String & async_dedup_token_,
     const String & format_,
     MemoryTracker * user_memory_tracker_,
-    StatsManager & stats_manager,
-    UInt128 key_hash
-    )
+    StatsManager::AtomicStats::InsertIntent && insert_intent_)
     : chunk(std::move(chunk_))
     , query_id(std::move(query_id_))
     , async_dedup_token(async_dedup_token_)
     , format(format_)
     , user_memory_tracker(user_memory_tracker_)
     , create_time(std::chrono::system_clock::now())
-    , scoped_insert_stats(stats_manager, key_hash, chunk.byteSize(), chunk.allocatedBytes())
-{   
+    , insert_intent(std::move(insert_intent_))
+{
 }
 
 void AsynchronousInsertQueue::InsertData::Entry::resetChunk()
@@ -309,18 +376,49 @@ void AsynchronousInsertQueue::InsertData::Entry::finish(std::exception_ptr excep
     }
 }
 
-AsynchronousInsertQueue::QueueShardFlushTimeHistory::TimePoints
-AsynchronousInsertQueue::QueueShardFlushTimeHistory::getRecentTimePoints() const
+// lock‑free peek of the two time points with a “snapshot” CAS loop
+AsynchronousInsertQueue::StatsManager::AtomicStats::TimePoints
+AsynchronousInsertQueue::StatsManager::AtomicStats::getRecentTimePoints() const
 {
-    std::shared_lock lock(mutex);
-    return time_points;
+    using TimePoint = std::chrono::steady_clock::time_point;
+
+    TimePoint tp1, tp2, check;
+    // Loop until we read a consistent pair (tp2 didn’t change mid‑read)
+    do
+    {
+        tp2   = time_point2.load(std::memory_order_relaxed);
+        tp1   = time_point1.load(std::memory_order_relaxed);
+        check = time_point2.load(std::memory_order_relaxed);
+    }
+    while (check != tp2);
+
+    OptionalTimePoint o1, o2;
+
+    // atomics can't be optional, so we use 'default' value (zero timepoint) as 'no value'
+    if (tp1 != TimePoint{}) o1 = tp1;
+    if (tp2 != TimePoint{}) o2 = tp2;
+    return {o1, o2};
 }
 
-void AsynchronousInsertQueue::QueueShardFlushTimeHistory::updateWithCurrentTime()
+// CAS‑based update: install `now` into time_point2, publish old into time_point1
+void AsynchronousInsertQueue::StatsManager::AtomicStats::updateWithCurrentTime()
 {
-    std::unique_lock lock(mutex);
-    time_points.first = time_points.second;
-    time_points.second = std::chrono::steady_clock::now();
+    using TimePoint = std::chrono::steady_clock::time_point;
+    TimePoint now = std::chrono::steady_clock::now();
+
+    TimePoint prev2 = time_point2.load(std::memory_order_relaxed);
+    // CAS loop to install `now` into time_point2
+    while (!time_point2.compare_exchange_weak(
+               prev2,
+               now,
+               std::memory_order_release,
+               std::memory_order_relaxed))
+    {
+        // on failure, prev2 is updated to the current value of time_point2
+        // retry until successful
+    }
+    // now prev2 holds the “old” second‑flush time
+    time_point1.store(prev2, std::memory_order_release);
 }
 
 AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t pool_size_, bool flush_on_shutdown_)
@@ -328,7 +426,6 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
     , pool_size(pool_size_)
     , flush_on_shutdown(flush_on_shutdown_)
     , queue_shards(pool_size)
-    , flush_time_history_per_queue_shard(pool_size)
     , pool(
           CurrentMetrics::AsynchronousInsertThreads,
           CurrentMetrics::AsynchronousInsertThreadsActive,
@@ -366,7 +463,7 @@ void AsynchronousInsertQueue::flushAndShutdown()
             if (flush_on_shutdown)
             {
                 for (auto & [_, elem] : shard.queue)
-                    scheduleDataProcessingJob(elem.key, std::move(elem.data), getContext(), i);
+                    scheduleDataProcessingJob(elem.key, std::move(elem.data), getContext());
             }
             else
             {
@@ -401,7 +498,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
 }
 
 void AsynchronousInsertQueue::scheduleDataProcessingJob(
-    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num)
+    const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
 {
     /// Intuitively it seems reasonable to process first inserted blocks first.
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
@@ -414,8 +511,8 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     try
     {
         pool.scheduleOrThrowOnError(
-            [this, key, global_context, shard_num, my_data = data_shared]() mutable
-            { processData(key, std::move(*my_data), std::move(global_context), flush_time_history_per_queue_shard[shard_num]); },
+            [ key, global_context, my_data = data_shared]() mutable
+            { processData(key, std::move(*my_data), std::move(global_context)); },
             priority);
     }
     catch (...)
@@ -470,7 +567,8 @@ AsynchronousInsertQueue::InsertQuery AsynchronousInsertQueue::preprocessInsertQu
         query_context->getUserID(),
         query_context->getCurrentRoles(),
         query_context->getSettingsRef(),
-        data_kind};
+        data_kind,
+        stats};
 }
 
 AsynchronousInsertQueue::PushResult
@@ -479,7 +577,14 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     query = query->clone();
     auto key = preprocessInsertQuery(query, query_context, DataKind::Parsed);
 
-    size_t bytes_pending = stats.getBytesPending(key.hash);
+    size_t bytes_pending = key.current_insert_stats->getBytesPending();
+
+    auto preallocate_buffer_size = query_context->getSettingsRef()[Setting::async_insert_preallocate_buffer_size];
+
+    if (preallocate_buffer_size == -1)
+        // adding 5%, because EMA prediction is 'smoothed', and we can have short spike over it.
+        // also some small overestimation can still be cheaper than the realloc with doubling the size.
+        preallocate_buffer_size = static_cast<size_t>(key.current_insert_stats->getAverageInsertSize() * 1.05);
 
     if (bytes_pending >= query_context->getSettingsRef()[Setting::async_insert_bytes_to_throw_insert] )
     {
@@ -493,18 +598,9 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         );
     }
 
+    auto insert_intent = key.current_insert_stats->createInsertIntent(preallocate_buffer_size,preallocate_buffer_size);
     String bytes;
-
-    auto preallocate_buffer_size = query_context->getSettingsRef()[Setting::async_insert_preallocate_buffer_size];
-
-    if (preallocate_buffer_size == -1)
-        // adding 5%, because EMA prediction is 'smoothed', and we can have short spike over it.
-        // also some small overestimation can still be cheaper than the realloc with doubling the size.
-        preallocate_buffer_size = static_cast<size_t>(stats.getMovingAverage(key.hash) * 1.05);
-
-    // it's 32 by default anyway, no reason to preallocate less
-    if (preallocate_buffer_size > 32)
-        bytes.reserve(preallocate_buffer_size);
+    bytes.reserve(preallocate_buffer_size);
 
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
@@ -521,6 +617,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
 
         WriteBufferFromString write_buf(bytes);
 
+        // actually we can go over the async_insert_bytes_to_throw_insert limit if a single insert will be huge, bigger than prediced.
         if (bytes_pending >= query_context->getSettingsRef()[Setting::async_insert_bytes_to_delay_insert] )
         {
             ProfileEvents::increment(ProfileEvents::DelayedAsyncInserts);
@@ -552,25 +649,47 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
     }
 
-    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context), std::move(key));
+    insert_intent.adjust(bytes.size(), bytes.capacity());
+    return pushDataChunk(std::move(query), std::move(bytes), std::move(query_context), std::move(key), std::move(insert_intent));
 }
 
+
+// TODO: add earlier checks & throttler to TCPHandler.cpp in the place where pushQueryWithBlock is called
 AsynchronousInsertQueue::PushResult
 AsynchronousInsertQueue::pushQueryWithBlock(ASTPtr query, Block block, ContextPtr query_context)
 {
     query = query->clone();
-    // TODO: add throttler / exception to TCPHandler.cpp in the place where pushQueryWithBlock is called
+
     auto key = preprocessInsertQuery(query, query_context, DataKind::Preprocessed);
-    return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(key));
+
+    size_t bytes_pending = key.current_insert_stats->getBytesPending();
+
+    if (bytes_pending >= query_context->getSettingsRef()[Setting::async_insert_bytes_to_throw_insert] )
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedAsyncInserts);
+
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "Too many bytes pending ({}) for that insert type. Query with id {} will be rejected. Flushes are processing significantly slower than inserts",
+            formatReadableSizeWithBinarySuffix(bytes_pending),
+            query_context->getCurrentQueryId()
+        );
+    }
+
+    auto insert_intent = key.current_insert_stats->createInsertIntent(block.bytes(), block.allocatedBytes());
+
+    return pushDataChunk(std::move(query), std::move(block), std::move(query_context), std::move(key), std::move(insert_intent));
 }
 
 AsynchronousInsertQueue::PushResult
-AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context, InsertQuery key)
+AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context, InsertQuery key, StatsManager::AtomicStats::InsertIntent insert_intent)
 {
     const auto & settings = query_context->getSettingsRef();
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
+
+    const auto flush_time_points = key.current_insert_stats->getRecentTimePoints();
 
     auto entry = std::make_shared<InsertData::Entry>(
         std::move(chunk),
@@ -578,8 +697,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
         settings[Setting::insert_deduplication_token],
         insert_query.format,
         CurrentThread::getUserMemoryTracker(),
-        stats,
-        key.hash);
+        std::move(insert_intent));
 
     /// If data is parsed on client we don't care of format which is written
     /// in INSERT query. Replace it to put all such queries into one bucket in queue.
@@ -595,7 +713,6 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 
     auto shard_num = key.hash % pool_size;
     auto & shard = queue_shards[shard_num];
-    const auto flush_time_points = flush_time_history_per_queue_shard[shard_num].getRecentTimePoints();
     {
         std::lock_guard lock(shard.mutex);
 
@@ -676,7 +793,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
     }
 
     if (data_to_process)
-        scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
+        scheduleDataProcessingJob(key, std::move(data_to_process), getContext());
     else
         shard.are_tasks_available.notify_one();
 
@@ -691,7 +808,7 @@ AsynchronousInsertQueue::pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr
 AsynchronousInsertQueue::Milliseconds AsynchronousInsertQueue::getBusyWaitTimeoutMs(
     const Settings & settings,
     const QueueShard & shard,
-    const QueueShardFlushTimeHistory::TimePoints & flush_time_points,
+    const StatsManager::AtomicStats::TimePoints & flush_time_points,
     std::chrono::steady_clock::time_point now) const
 {
     if (!settings[Setting::async_insert_use_adaptive_busy_timeout])
@@ -793,7 +910,7 @@ void AsynchronousInsertQueue::flushAll()
         {
             total_bytes += entry.data->size_in_bytes;
             total_entries += entry.data->entries.size();
-            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
+            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext());
         }
     }
 
@@ -867,7 +984,7 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num)
         }
 
         for (auto & entry : entries_to_flush)
-            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), shard_num);
+            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext());
     }
 }
 
@@ -917,7 +1034,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 }
 
 void AsynchronousInsertQueue::processData(
-    InsertQuery key, InsertDataPtr data, ContextPtr global_context, QueueShardFlushTimeHistory & queue_shard_flush_time_history)
+    InsertQuery key, InsertDataPtr data, ContextPtr global_context)
 try
 {
     if (!data)
@@ -1106,7 +1223,7 @@ try
         }
 
         LOG_DEBUG(log, "Flushed {} rows, {} bytes for query '{}'", num_rows, num_bytes, key.query_str);
-        queue_shard_flush_time_history.updateWithCurrentTime();
+        key.current_insert_stats->updateWithCurrentTime();
 
         bool pulling_pipeline = false;
         logQueryFinish(
