@@ -20,154 +20,152 @@ on:
         type: string
 
 env:
+  ARTIFACT_NAME: build_report_package_release
   AWS_REGION: us-east-1
+  SRC_BUCKET: altinity-build-artifacts
   S3_STORAGE_BUCKET: altinity-test-reports
 
 jobs:
   extract-package-info:
     runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     steps:
-      - name: Download artifact "build_report_package_release"
+      - name: Validate inputs
         run: |
-          # Extract the run ID from the workflow URL
-          RUN_ID=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
+          if [ -z "${{ inputs.workflow_url }}" ]; then
+            echo "Error: workflow_url is required"
+            exit 1
+          fi
+          if [ -z "${{ inputs.package_version }}" ]; then
+            echo "Error: package_version is required"
+            exit 1
+          fi
+          if [ "${{ inputs.release_environment }}" != "staging" ] && [ "${{ inputs.release_environment }}" != "production" ]; then
+            echo "Error: release_environment must be either 'staging' or 'production'"
+            exit 1
+          fi
 
-          # Get the artifact ID
-          ARTIFACT_ID=$(curl -s https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$RUN_ID/artifacts \
-            | jq '.artifacts[] | select(.name == "build_report_package_release") | .id')
+      - name: Download artifact "${{ env.ARTIFACT_NAME }}"
+        run: |
+          run_id=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
 
-          # Download the artifact
-          curl -L -o build_report_package_release.zip \
-            https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$ARTIFACT_ID/zip
+          # Get artifact ID
+          artifact_id=$(curl -s "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
+            | jq '.artifacts[] | select(.name == "'"${{ env.ARTIFACT_NAME }}"'") | .id')
+
+          # Download artifact
+          curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -o "${{ env.ARTIFACT_NAME }}" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"
 
       - name: Unzip Artifact
         run: |
-          # Locate the downloaded zip file.
-          ZIP_FILE=$(ls | grep "build_report_package_release.*\.zip" | head -n 1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "No zip file found for the artifact."
-            exit 1
-          fi
-          echo "Found zip file: ${ZIP_FILE}"
-          unzip -o "$ZIP_FILE" -d artifact
+          unzip -o "${{ env.ARTIFACT_NAME }}" -d "artifact"
 
-      - name: Extract JSON File
+      - name: Extract and Parse JSON File
         run: |
           cd artifact
-          # Find the JSON file with a name like build_report...package_release.json
           JSON_FILE=$(ls | grep "build_report.*package_release\.json" | head -n 1)
           if [ -z "$JSON_FILE" ]; then
-            echo "No JSON file matching the pattern was found."
+            echo "Error: No JSON file matching the pattern was found"
             exit 1
           fi
           echo "Found JSON file: ${JSON_FILE}"
 
-      - name: Parse JSON file
-        run: |
-          # Use jq to select the URL that ends with clickhouse-client-*-amd64.tgz
-          CLIENT_URL=$(jq -r '.build_urls[] | select(test("clickhouse-client-.*-amd64\\.tgz$"))' "$JSON_FILE")
+          # Extract client URL
+          CLIENT_URL=$(jq -r '.build_urls[] | select(test("clickhouse-client-.*-amd64.tgz$"))' "$JSON_FILE")
           if [ -z "$CLIENT_URL" ]; then
-            echo "No matching client URL found in JSON."
+            echo "Error: No matching client URL found in JSON"
             exit 1
           fi
           echo "Found client URL: ${CLIENT_URL}"
+          echo "CLIENT_URL=$CLIENT_URL" >> $GITHUB_ENV
 
-      - name: Extract information
+      - name: Extract and Validate Package Information
         run: |
-          if ! [[ "$CLIENT_URL" =~ https://s3\.amazonaws\.com/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/]+)/clickhouse-client-([^-]+)-amd64\.tgz$ ]]; then
-            echo "The client URL did not match the expected pattern."
+          # Define regex patterns
+          PR_REGEX="PRs/([^/]+)/([^/]+)/([^/]+)/clickhouse-client-([^-]+)-amd64.tgz"
+          NONPR_REGEX="s3.amazonaws.com/([^/]+)/([^/]+)/([^/]+)/([^/]+)/clickhouse-client-([^-]+)-amd64.tgz"
+
+          # Extract information based on URL pattern
+          if [[ "$CLIENT_URL" =~ $PR_REGEX ]]; then
+            echo "Matched PR pattern"
+            PR_NUMBER="${BASH_REMATCH[1]}"
+            COMMIT_HASH="${BASH_REMATCH[2]}"
+            PACKAGE_TYPE="${BASH_REMATCH[3]}"
+            PACKAGE_VERSION="${BASH_REMATCH[4]}"
+            DOCKER_VERSION="${PR_NUMBER}"
+            TEST_RESULTS_SRC="${PR_NUMBER}"
+            SRC_DIR="PRs/${PR_NUMBER}"
+          elif [[ "$CLIENT_URL" =~ $NONPR_REGEX ]]; then
+            echo "Matched non-PR pattern"
+            BRANCH="${BASH_REMATCH[2]}"
+            COMMIT_HASH="${BASH_REMATCH[3]}"
+            PACKAGE_TYPE="${BASH_REMATCH[4]}"
+            PACKAGE_VERSION="${BASH_REMATCH[5]}"
+            DOCKER_VERSION="0"
+            TEST_RESULTS_SRC="0"
+            SRC_DIR="${BRANCH}"
+          else
+            echo "Error: The client URL did not match any expected pattern"
             exit 1
           fi
 
-      - name: Process information
-        run: |
-          SRC_BUCKET="${BASH_REMATCH[1]}"
-          PACKAGE_VERSION="${BASH_REMATCH[6]}"
-          FOLDER_TIME=$(date -u +"%Y-%m-%dT%H-%M-%S.%3N")
-
-          if [[ "${BASH_REMATCH[2]}" == "PRs" ]]; then
-            SRC_DIR="${BASH_REMATCH[2]}/${BASH_REMATCH[3]}"
-            COMMIT_HASH="${BASH_REMATCH[4]}"
-            PR_NUMBER="${BASH_REMATCH[3]}"
-            DOCKER_VERSION="${PR_NUMBER}"
-            TEST_RESULTS_SRC="${PR_NUMBER}"
-          else
-            SRC_DIR="${BASH_REMATCH[2]}"
-            COMMIT_HASH="${BASH_REMATCH[3]}"
-            DOCKER_VERSION="0"
-            TEST_RESULTS_SRC="0"
-          fi
-
-      - name: Verify package version
-        run: |
+          # Verify package version
           if [ "$PACKAGE_VERSION" != "${{ inputs.package_version }}" ]; then
             echo "Error: Extracted package version ($PACKAGE_VERSION) does not match input package version (${{ inputs.package_version }})"
             exit 1
           fi
 
-      - name: Extract major version and determine if binary processing is needed
-        run: |
+          # Extract major version and determine binary processing need
           MAJOR_VERSION=$(echo "$PACKAGE_VERSION" | cut -d. -f1)
-          if [ "$MAJOR_VERSION" -ge 24 ]; then
-            NEEDS_BINARY_PROCESSING="true"
-          else
-            NEEDS_BINARY_PROCESSING="false"
-          fi
+          NEEDS_BINARY_PROCESSING=$([ "$MAJOR_VERSION" -ge 24 ] && echo "true" || echo "false")
 
-      - name: Extract feature and set repo prefix
-        run: |
-          # Extract the feature from PACKAGE_VERSION (everything after the last dot)
+          # Extract feature and set repo prefix
           ALTINITY_BUILD_FEATURE=$(echo "$PACKAGE_VERSION" | rev | cut -d. -f1 | rev)
-          echo "ALTINITY_BUILD_FEATURE=${ALTINITY_BUILD_FEATURE}" >> $GITHUB_ENV
-
-          # Set REPO_PREFIX based on the feature
           case "$ALTINITY_BUILD_FEATURE" in
-            "altinityhotfix")
-              echo "REPO_PREFIX=hotfix-" >> $GITHUB_ENV
-              ;;
-            "altinityfips")
-              echo "REPO_PREFIX=fips-" >> $GITHUB_ENV
-              ;;
-            "altinityantalya")
-              echo "REPO_PREFIX=antalya-" >> $GITHUB_ENV
-              ;;
-            "altinitystable"|"altinitytest")
-              echo "REPO_PREFIX=" >> $GITHUB_ENV
-              ;;
+            "altinityhotfix") REPO_PREFIX="hotfix-" ;;
+            "altinityfips") REPO_PREFIX="fips-" ;;
+            "altinityantalya") REPO_PREFIX="antalya-" ;;
+            "altinitystable"|"altinitytest") REPO_PREFIX="" ;;
             *)
-              echo "Build feature not supported: ${ALTINITY_BUILD_FEATURE}"
+              echo "Error: Build feature not supported: ${ALTINITY_BUILD_FEATURE}"
               exit 1
               ;;
           esac
 
-      - name: Check extracted information
+          # Generate folder time
+          FOLDER_TIME=$(date -u +"%Y-%m-%dT%H-%M-%S.%3N")
+
+          # Set all environment variables at once
+          {
+            echo "COMMIT_HASH=${COMMIT_HASH}"
+            echo "DOCKER_VERSION=${DOCKER_VERSION}"
+            echo "FOLDER_TIME=${FOLDER_TIME}"
+            echo "NEEDS_BINARY_PROCESSING=${NEEDS_BINARY_PROCESSING}"
+            echo "PACKAGE_VERSION=${PACKAGE_VERSION}"
+            echo "SRC_DIR=${SRC_DIR}"
+            echo "TEST_RESULTS_SRC=${TEST_RESULTS_SRC}"
+            echo "ALTINITY_BUILD_FEATURE=${ALTINITY_BUILD_FEATURE}"
+            echo "REPO_PREFIX=${REPO_PREFIX}"
+            echo "SRC_URL=s3://${SRC_BUCKET}/${SRC_DIR}/${COMMIT_HASH}"
+            echo "DEST_URL=s3://${S3_STORAGE_BUCKET}/builds/stable/v${PACKAGE_VERSION}/${FOLDER_TIME}"
+          } >> $GITHUB_ENV
+
+      - name: Display Extracted Information
         run: |
           echo "Extracted information:"
           echo "altinity_build_feature: ${ALTINITY_BUILD_FEATURE}"
           echo "commit_hash: ${COMMIT_HASH}"
           echo "docker_version: ${DOCKER_VERSION}"
           echo "folder_time: ${FOLDER_TIME}"
-          echo "major_version: ${MAJOR_VERSION}"
           echo "needs_binary_processing: ${NEEDS_BINARY_PROCESSING}"
           echo "package_version: ${PACKAGE_VERSION}"
           echo "repo_prefix: ${REPO_PREFIX}"
           echo "src_bucket: ${SRC_BUCKET}"
           echo "src_dir: ${SRC_DIR}"
           echo "test_results_src: ${TEST_RESULTS_SRC}"
-
-      - name: Set environment variables
-        run: |
-          # Set environment variables for use in subsequent jobs
-          echo "COMMIT_HASH=${COMMIT_HASH}" >> $GITHUB_ENV
-          echo "DOCKER_VERSION=${DOCKER_VERSION}" >> $GITHUB_ENV
-          echo "FOLDER_TIME=${FOLDER_TIME}" >> $GITHUB_ENV
-          echo "NEEDS_BINARY_PROCESSING=${NEEDS_BINARY_PROCESSING}" >> $GITHUB_ENV
-          echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> $GITHUB_ENV
-          echo "SRC_BUCKET=${SRC_BUCKET}" >> $GITHUB_ENV
-          echo "SRC_DIR=${SRC_DIR}" >> $GITHUB_ENV
-          echo "TEST_RESULTS_SRC=${TEST_RESULTS_SRC}" >> $GITHUB_ENV
-          echo "SRC_URL=s3://${SRC_BUCKET}/${SRC_DIR}/${COMMIT_HASH}" >> $GITHUB_ENV
-          echo "DEST_URL=s3://${S3_STORAGE_BUCKET}/builds/stable/v${PACKAGE_VERSION}/${FOLDER_TIME}" >> $GITHUB_ENV
+          echo "src_url: ${SRC_URL}"
+          echo "dest_url: ${DEST_URL}"
 
   copy-packages:
     needs: extract-package-info
@@ -178,13 +176,26 @@ jobs:
     steps:
       - name: Download signed hash artifacts
         run: |
-          # Download both signed hash artifacts
-          gh run download "$(echo "${{ inputs.workflow_url }}" | awk -F'/' '{print $NF}')" -n "Sign release signed-hashes"
-          gh run download "$(echo "${{ inputs.workflow_url }}" | awk -F'/' '{print $NF}')" -n "Sign aarch64 signed-hashes"
-
-          # Unzip both artifacts
-          for zip in *signed-hashes*.zip; do
-            unzip -o "$zip" -d signed-hashes
+          run_id=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
+          for artifact in "Sign release signed-hashes" "Sign aarch64 signed-hashes"; do
+            artifact_id=$(curl -s \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
+              | jq -r --arg NAME "$artifact" '.artifacts[] | select(.name == $NAME) | .id')
+            if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
+              echo "Error: Could not find artifact '$artifact' for run $run_id"
+              exit 1
+            fi
+            if ! curl -L \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -o "${artifact}.zip" \
+              "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"; then
+              echo "Error: Failed to download artifact $artifact"
+              exit 1
+            fi
+            unzip -o "${artifact}.zip" -d signed-hashes
           done
 
       - name: Copy ARM packages
