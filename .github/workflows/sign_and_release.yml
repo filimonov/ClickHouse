@@ -189,93 +189,150 @@ jobs:
       DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
       NEEDS_BINARY_PROCESSING: ${{ needs.extract-package-info.outputs.needs_binary_processing }}
     steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: amd64
+
       - name: Download signed hash artifacts
         run: |
           run_id=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
-          for artifact in "Sign release signed-hashes" "Sign aarch64 signed-hashes"; do
-            artifact_id=$(curl -s \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
-              | jq -r --arg NAME "$artifact" '.artifacts[] | select(.name == $NAME) | .id')
-            if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
-              echo "Error: Could not find artifact '$artifact' for run $run_id"
-              exit 1
-            fi
-            if ! curl -L \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              -o "${artifact}.zip" \
-              "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"; then
-              echo "Error: Failed to download artifact $artifact"
-              exit 1
-            fi
-            unzip -o "${artifact}.zip" -d signed-hashes
-          done
+          mkdir -p signed-hashes/amd64 signed-hashes/arm64
 
-      - name: Copy ARM packages
+          # Download AMD64 hashes
+          artifact_id=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
+            | jq -r --arg NAME "Sign release signed-hashes" '.artifacts[] | select(.name == $NAME) | .id')
+          if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
+            echo "Error: Could not find artifact 'Sign release signed-hashes' for run $run_id"
+            exit 1
+          fi
+          if ! curl -L \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -o "signed-hashes/amd64/hashes.zip" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"; then
+            echo "Error: Failed to download AMD64 hashes"
+            exit 1
+          fi
+          unzip -o "signed-hashes/amd64/hashes.zip" -d signed-hashes/amd64
+
+          # Download ARM64 hashes
+          artifact_id=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
+            | jq -r --arg NAME "Sign aarch64 signed-hashes" '.artifacts[] | select(.name == $NAME) | .id')
+          if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
+            echo "Error: Could not find artifact 'Sign aarch64 signed-hashes' for run $run_id"
+            exit 1
+          fi
+          if ! curl -L \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -o "signed-hashes/arm64/hashes.zip" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/artifacts/$artifact_id/zip"; then
+            echo "Error: Failed to download ARM64 hashes"
+            exit 1
+          fi
+          unzip -o "signed-hashes/arm64/hashes.zip" -d signed-hashes/arm64
+
+      - name: Download packages for verification
         run: |
-          if ! aws s3 sync "${SRC_URL}/package_aarch64/" "${DEST_URL}/packages/ARM_PACKAGES/""; then
-            echo "Failed to copy AMD packages"
+          # Create temporary directories for downloaded packages
+          mkdir -p /tmp/arm_packages /tmp/amd_packages
+
+          # Download ARM packages
+          echo "Downloading ARM packages for verification..."
+          if ! aws s3 sync "${SRC_URL}/package_aarch64/" /tmp/arm_packages; then
+            echo "Failed to download ARM packages"
+            exit 1
+          fi
+
+          # Download AMD packages
+          echo "Downloading AMD packages for verification..."
+          if ! aws s3 sync "${SRC_URL}/package_release/" /tmp/amd_packages; then
+            echo "Failed to download AMD packages"
             exit 1
           fi
 
       - name: Verify ARM packages
         run: |
-          cd signed-hashes
-          for file in ../${DEST_URL}/packages/ARM_PACKAGES/**/*; do
+          cd signed-hashes/arm64
+          # Verify all files
+          for file in /tmp/arm_packages/**/*; do
             if [ -f "$file" ]; then
-              echo "Verifying $file..."
-              if ! gpg --verify "Sign aarch64 signed-hashes/$(basename "$file").sha256.gpg" 2>/dev/null; then
-                echo "GPG verification failed for $file"
+              file_name=$(basename "$file")
+              echo "Verifying $file_name..."
+
+              if ! gpg --verify "$file_name.sha256.gpg" 2>/dev/null; then
+                echo "GPG verification failed for $file_name"
                 exit 1
               fi
-              if ! sha256sum -c "Sign aarch64 signed-hashes/$(basename "$file").sha256.gpg" 2>/dev/null; then
-                echo "SHA256 verification failed for $file"
+              if ! sha256sum -c "$file_name.sha256.gpg" 2>/dev/null; then
+                echo "SHA256 verification failed for $file_name"
                 exit 1
               fi
             fi
           done
+
+      - name: Verify AMD packages
+        run: |
+          cd signed-hashes/amd64
+          # Verify all files
+          for file in /tmp/amd_packages/**/*; do
+            if [ -f "$file" ]; then
+              file_name=$(basename "$file")
+              echo "Verifying $file_name..."
+
+              if ! gpg --verify "$file_name.sha256.gpg" 2>/dev/null; then
+                echo "GPG verification failed for $file_name"
+                exit 1
+              fi
+              if ! sha256sum -c "$file_name.sha256.gpg" 2>/dev/null; then
+                echo "SHA256 verification failed for $file_name"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: Move verified packages to destination
+        run: |
+          # Move ARM packages
+          echo "Moving verified ARM packages to destination..."
+          if ! aws s3 mv "${SRC_URL}/package_aarch64/" "${DEST_URL}/packages/ARM_PACKAGES/" --recursive; then
+            echo "Failed to move ARM packages to destination"
+            exit 1
+          fi
+
+          # Move AMD packages
+          echo "Moving verified AMD packages to destination..."
+          if ! aws s3 mv "${SRC_URL}/package_release/" "${DEST_URL}/packages/AMD_PACKAGES/" --recursive; then
+            echo "Failed to move AMD packages to destination"
+            exit 1
+          fi
+
+          # Clean up temporary directories
+          rm -rf /tmp/arm_packages /tmp/amd_packages
 
       - name: Separate ARM binary
         run: |
           aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse" "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse"
           aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse-stripped"
 
-      - name: Copy AMD packages
-        run: |
-          if ! aws s3 sync "${SRC_URL}/package_release/" "${DEST_URL}/packages/AMD_PACKAGES/"; then
-            echo "Failed to copy AMD packages"
-            exit 1
-          fi
-
-      - name: Verify AMD packages
-        run: |
-          cd signed-hashes
-          for file in ../${DEST_URL}/packages/AMD_PACKAGES/**/*; do
-            if [ -f "$file" ]; then
-              echo "Verifying $file..."
-              if ! gpg --verify "Sign release signed-hashes/$(basename "$file").sha256.gpg" 2>/dev/null; then
-                echo "GPG verification failed for $file"
-                exit 1
-              fi
-              if ! sha256sum -c "Sign release signed-hashes/$(basename "$file").sha256.gpg" 2>/dev/null; then
-                echo "SHA256 verification failed for $file"
-                exit 1
-              fi
-            fi
-          done
-
       - name: Separate AMD binary
         run: |
           aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse" "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse"
           aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse-stripped"
 
-      - name: Process ARM binary
+      - name: Process AMD binary
         if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
         run: |
           echo "Downloading clickhouse binary..."
-          if ! aws s3 cp "${SRC_URL}/package_release/clickhouse" clickhouse; then
+          if ! aws s3 cp "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse" clickhouse; then
             echo "Failed to download clickhouse binary"
             exit 1
           fi
@@ -288,11 +345,11 @@ jobs:
           strip clickhouse -o clickhouse-stripped
 
           echo "Uploading processed binaries..."
-          if ! aws s3 cp clickhouse "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/non-self-extracting/"; then
             echo "Failed to upload clickhouse binary"
             exit 1
           fi
-          if ! aws s3 cp clickhouse-stripped "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse-stripped "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/non-self-extracting/"; then
             echo "Failed to upload stripped clickhouse binary"
             exit 1
           fi
@@ -307,6 +364,11 @@ jobs:
       COMMIT_HASH: ${{ needs.extract-package-info.outputs.commit_hash }}
       DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
     steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
       - name: Copy test results to S3
         run: |
           # Copy test results
@@ -344,7 +406,14 @@ jobs:
       REPO_PREFIX: ${{ needs.extract-package-info.outputs.repo_prefix }}
       NEEDS_BINARY_PROCESSING: ${{ needs.extract-package-info.outputs.needs_binary_processing }}
       DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+      RELEASE_ENVIRONMENT: ${{ inputs.release_environment }}
     steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -447,6 +516,12 @@ jobs:
       PACKAGE_VERSION: ${{ needs.extract-package-info.outputs.package_version }}
       DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
     steps:
+      - name: Install aws cli
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
       - name: Copy to released directory
         run: |
           echo "Copying to released directory..."
