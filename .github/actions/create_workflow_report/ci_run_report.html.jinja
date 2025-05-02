@@ -161,6 +161,7 @@
   {% endif %}
   <h2>Table of Contents</h2>
   <ul>
+    {%- if pr_number != 0 %}<li><a href="#new-fails-pr">New Fails in PR</a> ({{ counts.pr_new_fails }})</li>{% endif %}
     <li><a href="#ci-jobs-status">CI Jobs Status</a> ({{ counts.jobs_status }})</li>
     <li><a href="#checks-errors">Checks Errors</a> ({{ counts.checks_errors }})</li>
     <li><a href="#checks-fails">Checks New Fails</a> ({{ counts.checks_new_fails }})</li>
@@ -168,6 +169,11 @@
     <li><a href="#docker-images-cves">Docker Images CVEs</a> ({{ counts.cves }})</li>
     <li><a href="#checks-known-fails">Checks Known Fails</a> ({{ counts.checks_known_fails }})</li>
   </ul>
+
+  {%- if pr_number != 0 -%}
+  <h2 id="new-fails-pr">New Fails in PR</h2>
+  {{ new_fails_html }}
+  {%- endif %}
 
   <h2 id="ci-jobs-status">CI Jobs Status</h2>
   {{ ci_jobs_status_html }}

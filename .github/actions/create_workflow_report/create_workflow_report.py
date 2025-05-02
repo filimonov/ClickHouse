@@ -247,6 +247,91 @@ def get_regression_fails(client: Client, job_url: str):
     return df
 
 
+def get_new_fails_this_pr(
+    client: Client,
+    pr_info: dict,
+    checks_fails: pd.DataFrame,
+    regression_fails: pd.DataFrame,
+):
+    """
+    Get tests that failed in the PR but passed in the base branch.
+    Compares both checks and regression test results.
+    """
+    base_sha = pr_info.get("base", {}).get("sha")
+    if not base_sha:
+        raise Exception("No base SHA found for PR")
+
+    # Modify tables to have the same columns
+    if len(checks_fails) > 0:
+        checks_fails = checks_fails.copy().drop(columns=["job_status"])
+    if len(regression_fails) > 0:
+        regression_fails = regression_fails.copy()
+        regression_fails["job_name"] = regression_fails.apply(
+            lambda row: f"{row['arch']} {row['job_name']}".strip(), axis=1
+        )
+        regression_fails["test_status"] = regression_fails["status"]
+        regression_fails = regression_fails.drop(columns=["arch", "status"])
+
+    # Combine both types of fails
+    all_pr_fails = pd.concat([checks_fails, regression_fails], ignore_index=True)
+    if len(all_pr_fails) == 0:
+        return pd.DataFrame()
+
+    # Get all checks from the base branch that didn't fail
+    columns = (
+        "check_name as job_name, test_status, test_name, report_url as results_link"
+    )
+    base_checks_query = f"""SELECT {columns} FROM `gh-data`.checks
+                WHERE commit_sha='{base_sha}'
+                AND test_status NOT IN ('FAIL', 'ERROR')
+                AND check_status!='error'
+                ORDER BY check_name, test_name
+                """
+    base_checks = client.query_dataframe(base_checks_query)
+
+    # Get regression results from base branch that didn't fail
+    base_regression_query = f"""SELECT arch, job_name, status, test_name, results_link
+            FROM (
+               SELECT
+                    architecture as arch,
+                    test_name,
+                    argMax(result, start_time) AS status,
+                    job_url,
+                    job_name,
+                    report_url as results_link
+               FROM `gh-data`.clickhouse_regression_results
+               WHERE results_link LIKE'%/{base_sha}/%'
+               GROUP BY architecture, test_name, job_url, job_name, report_url
+               ORDER BY length(test_name) DESC
+            )
+            WHERE status NOT IN ('Fail', 'Error')
+            """
+    base_regression = client.query_dataframe(base_regression_query)
+    if len(base_regression) > 0:
+        base_regression["job_name"] = base_regression.apply(
+            lambda row: f"{row['arch']} {row['job_name']}".strip(), axis=1
+        )
+        base_regression["test_status"] = base_regression["status"]
+        base_regression = base_regression.drop(columns=["arch", "status"])
+
+    # Combine base results
+    base_results = pd.concat([base_checks, base_regression], ignore_index=True)
+
+    # Find tests that failed in PR but passed in base
+    pr_failed_tests = set(zip(all_pr_fails["job_name"], all_pr_fails["test_name"]))
+    base_passed_tests = set(zip(base_results["job_name"], base_results["test_name"]))
+
+    new_fails = pr_failed_tests.intersection(base_passed_tests)
+
+    # Filter PR results to only include new fails
+    mask = all_pr_fails.apply(
+        lambda row: (row["job_name"], row["test_name"]) in new_fails, axis=1
+    )
+    new_fails_df = all_pr_fails[mask]
+
+    return new_fails_df
+
+
 def get_cves(pr_number, commit_sha):
     """
     Fetch Grype results from S3.
@@ -349,6 +434,7 @@ def format_results_as_html_table(results) -> str:
     return html
 
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create a combined CI report.")
     parser.add_argument(  # Need the full URL rather than just the ID to query the databases
@@ -400,6 +486,7 @@ def main():
         "job_statuses": get_commit_statuses(args.commit_sha),
         "checks_fails": get_checks_fails(db_client, args.actions_run_url),
         "checks_known_fails": [],
+        "pr_new_fails": [],
         "checks_errors": get_checks_errors(db_client, args.actions_run_url),
         "regression_fails": get_regression_fails(db_client, args.actions_run_url),
         "docker_images_cves": (
@@ -434,6 +521,12 @@ def main():
             pr_info_html = f"""<a href="https://github.com/{GITHUB_REPO}/pull/{pr_info["number"]}">
                     #{pr_info.get("number")} ({pr_info.get("base", {}).get('ref')} <- {pr_info.get("head", {}).get('ref')})  {pr_info.get("title")}
                     </a>"""
+            fail_results["pr_new_fails"] = get_new_fails_this_pr(
+                db_client,
+                pr_info,
+                fail_results["checks_fails"],
+                fail_results["regression_fails"],
+            )
         except Exception as e:
             pr_info_html = e
 
@@ -451,6 +544,7 @@ def main():
         "title": "ClickHouse® CI Workflow Run Report",
         "github_repo": GITHUB_REPO,
         "pr_info_html": pr_info_html,
+        "pr_number": args.pr_number,
         "workflow_id": args.actions_run_url.split("/")[-1],
         "commit_sha": args.commit_sha,
         "date": f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC",
@@ -466,6 +560,7 @@ def main():
                 if not args.known_fails
                 else len(fail_results["checks_known_fails"])
             ),
+            "pr_new_fails": len(fail_results["pr_new_fails"]),
         },
         "ci_jobs_status_html": format_results_as_html_table(
             fail_results["job_statuses"]
@@ -487,6 +582,7 @@ def main():
             if not args.known_fails
             else format_results_as_html_table(fail_results["checks_known_fails"])
         ),
+        "new_fails_html": format_results_as_html_table(fail_results["pr_new_fails"]),
     }
 
     # Render the template with the context
