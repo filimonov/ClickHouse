@@ -17,6 +17,10 @@ on:
         description: 'Upload artifacts directly in this workflow'
         type: boolean
         default: true
+      s3_upload_path:
+        description: 'Upload artifacts to s3 path'
+        type: string
+        required: false
   workflow_call:
     inputs:
       docker_image:
@@ -30,6 +34,9 @@ on:
         type: boolean
         required: false
         default: false
+      s3_upload_path:
+        type: string
+        required: false
     outputs:
       image_archives_path:
         description: 'Path to the image archives directory'
@@ -40,7 +47,7 @@ env:
 
 jobs:
   republish:
-    runs-on: self-hosted, altinity-style-checker-aarch64
+    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     outputs:
       image_archives_path: ${{ steps.set_path.outputs.image_archives_path }}
     steps:
@@ -118,3 +125,16 @@ jobs:
           name: docker-images-backup
           path: image_archives/
           retention-days: 90
+
+      - name: Install aws cli
+        if: ${{ inputs.s3_upload_path != '' }}
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
+      - name: Upload to S3
+        if: ${{ inputs.s3_upload_path != '' }}
+        run: |
+          aws s3 sync image_archives/ "${{ inputs.s3_upload_path }}"
+
