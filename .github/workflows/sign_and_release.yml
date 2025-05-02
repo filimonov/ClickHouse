@@ -28,9 +28,17 @@ jobs:
     runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
     steps:
       - name: Download artifact "build_report_package_release"
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run download "$(echo "${{ inputs.workflow_url }}" | awk -F'/' '{print $NF}')" -n build_report_package_release  
+        run: |
+          # Extract the run ID from the workflow URL
+          RUN_ID=$(echo "${{ inputs.workflow_url }}" | grep -oP '(?<=runs/)\d+')
+
+          # Get the artifact ID
+          ARTIFACT_ID=$(curl -s https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$RUN_ID/artifacts \
+            | jq '.artifacts[] | select(.name == "build_report_package_release") | .id')
+          
+          # Download the artifact
+          curl -L -o build_report_package_release.zip \
+            https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/actions/artifacts/$ARTIFACT_ID/zip{ inputs.workflow_url }}" | awk -F'/' '{print $NF}')" -n build_report_package_release  
 
       - name: Unzip Artifact
         run: |
