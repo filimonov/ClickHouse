@@ -11,6 +11,12 @@ namespace DB
 class ObjectStorageListObjectsCache
 {
 public:
+    ObjectStorageListObjectsCache(const ObjectStorageListObjectsCache &) = delete;
+    ObjectStorageListObjectsCache(ObjectStorageListObjectsCache &&) noexcept = delete;
+
+    ObjectStorageListObjectsCache& operator=(const ObjectStorageListObjectsCache &) = delete;
+    ObjectStorageListObjectsCache& operator=(ObjectStorageListObjectsCache &&) noexcept = delete;
+
     static ObjectStorageListObjectsCache & instance();
 
     struct Key
