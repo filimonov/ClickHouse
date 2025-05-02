@@ -27,7 +27,19 @@ env:
 
 jobs:
   extract-package-info:
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    runs-on: [altinity-style-checker-aarch64, altinity-on-demand]
+    outputs:
+      docker_version: ${{ env.DOCKER_VERSION }}-${{ env.PACKAGE_VERSION }}
+      commit_hash: ${{ env.COMMIT_HASH }}
+      folder_time: ${{ env.FOLDER_TIME }}
+      needs_binary_processing: ${{ env.NEEDS_BINARY_PROCESSING }}
+      package_version: ${{ env.PACKAGE_VERSION }}
+      src_dir: ${{ env.SRC_DIR }}
+      test_results_src: ${{ env.TEST_RESULTS_SRC }}
+      altinity_build_feature: ${{ env.ALTINITY_BUILD_FEATURE }}
+      repo_prefix: ${{ env.REPO_PREFIX }}
+      src_url: ${{ env.SRC_URL }}
+      dest_url: ${{ env.DEST_URL }}
     steps:
       - name: Validate inputs
         run: |
@@ -169,16 +181,14 @@ jobs:
 
   copy-packages:
     needs: extract-package-info
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker]
+    runs-on: [altinity-style-checker, altinity-on-demand]
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      SRC_URL: ${{ needs.extract-package-info.outputs.src_url }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+      NEEDS_BINARY_PROCESSING: ${{ needs.extract-package-info.outputs.needs_binary_processing }}
     steps:
-      - uses: unfor19/install-aws-cli-action@v1
-        with:
-          version: 2
-          arch: amd64
-
       - name: Download signed hash artifacts
         run: |
           run_id=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
@@ -289,16 +299,14 @@ jobs:
 
   copy-test-results:
     needs: extract-package-info
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    runs-on: [altinity-style-checker-aarch64, altinity-on-demand]
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    steps:      
-      - uses: unfor19/install-aws-cli-action@v1
-        with:
-          version: 2
-          arch: arm64
-
+      TEST_RESULTS_SRC: ${{ needs.extract-package-info.outputs.test_results_src }}
+      COMMIT_HASH: ${{ needs.extract-package-info.outputs.commit_hash }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+    steps:
       - name: Copy test results to S3
         run: |
           # Copy test results
@@ -320,7 +328,7 @@ jobs:
       docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ needs.extract-package-info.outputs.docker_version }}${{ matrix.variant }}
       release_environment: ${{ inputs.release_environment }}
       upload_artifacts: false
-      s3_upload_path: "${DEST_URL}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"
+      s3_upload_path: "${{ needs.extract-package-info.outputs.dest_url }}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"
     secrets: inherit
 
   sign-and-publish:
@@ -331,6 +339,11 @@ jobs:
       REPO_DNS_NAME: ${{ inputs.release_environment == 'production' && 'builds.altinity.cloud' || 'builds.staging.altinity.cloud' }}
       REPO_NAME: ${{ inputs.release_environment == 'production' && 'altinity' || 'altinity-staging' }}
       REPO_SUBTITLE: ${{ inputs.release_environment == 'production' && 'Stable Builds' || 'Staging Builds' }}
+      PACKAGE_VERSION: ${{ needs.extract-package-info.outputs.package_version }}
+      FOLDER_TIME: ${{ needs.extract-package-info.outputs.folder_time }}
+      REPO_PREFIX: ${{ needs.extract-package-info.outputs.repo_prefix }}
+      NEEDS_BINARY_PROCESSING: ${{ needs.extract-package-info.outputs.needs_binary_processing }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -338,11 +351,6 @@ jobs:
           repository: Altinity/ClickHouse
           ref: antalya
           path: ClickHouse
-
-      - uses: unfor19/install-aws-cli-action@v1
-        with:
-          version: 2
-          arch: arm64
 
       - name: Download packages
         run: |
@@ -432,16 +440,13 @@ jobs:
   copy-to-released:
     needs: [sign-and-publish]
     if: ${{ inputs.release_environment == 'production' }}
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
+    runs-on: [altinity-style-checker-aarch64, altinity-on-demand]
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    steps:      
-      - uses: unfor19/install-aws-cli-action@v1
-        with:
-          version: 2
-          arch: arm64
-
+      PACKAGE_VERSION: ${{ needs.extract-package-info.outputs.package_version }}
+      DEST_URL: ${{ needs.extract-package-info.outputs.dest_url }}
+    steps:
       - name: Copy to released directory
         run: |
           echo "Copying to released directory..."
