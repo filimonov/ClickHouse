@@ -191,6 +191,12 @@
   {{ docker_images_cves_html }}
 
   <h2 id="checks-known-fails">Checks Known Fails</h2>
+  <p>
+    Fail reason conventions:<br/>
+    KNOWN - Accepted fail and fix is not planned<br/>
+    INVESTIGATE - We don't know why it fails<br/>
+    NEEDSFIX - Investigation done and a fix is needed to make it pass<br/>
+  </p>
   {{ checks_known_fails_html }}
 
   <script>
