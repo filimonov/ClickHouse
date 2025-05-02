@@ -174,6 +174,11 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
+      - uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: amd64
+
       - name: Download signed hash artifacts
         run: |
           run_id=$(echo "${{ inputs.workflow_url }}" | grep -oE '[0-9]+$')
@@ -288,7 +293,12 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    steps:
+    steps:      
+      - uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
       - name: Copy test results to S3
         run: |
           # Copy test results
@@ -305,29 +315,13 @@ jobs:
       matrix:
         image_type: [server, keeper]
         variant: ['', '-alpine']
-    runs-on: [self-hosted, altinity-on-demand, altinity-style-checker-aarch64]
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    steps:
-      - name: Publish Docker Image
-        id: publish
-        uses: ./.github/workflows/docker_publish.yml
-        with:
-          docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ env.DOCKER_VERSION }}-${{ env.PACKAGE_VERSION }}${{ matrix.variant }}
-          release_environment: ${{ inputs.release_environment }}
-          upload_artifacts: false
-          secrets: inherit
-
-      - name: Upload Docker images to S3
-        run: |
-          # Upload Docker images to S3
-          echo "Uploading Docker images to S3..."
-          if ! aws s3 sync "${{ steps.publish.outputs.image_archives_path }}/" \
-              "${DEST_URL}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"; then
-            echo "Failed to upload Docker images"
-            exit 1
-          fi
+    uses: ./.github/workflows/docker_publish.yml
+    with:
+      docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ needs.extract-package-info.outputs.docker_version }}${{ matrix.variant }}
+      release_environment: ${{ inputs.release_environment }}
+      upload_artifacts: false
+      s3_upload_path: "${DEST_URL}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"
+    secrets: inherit
 
   sign-and-publish:
     needs: [copy-packages]
@@ -344,6 +338,11 @@ jobs:
           repository: Altinity/ClickHouse
           ref: antalya
           path: ClickHouse
+
+      - uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
 
       - name: Download packages
         run: |
@@ -437,7 +436,12 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    steps:
+    steps:      
+      - uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
       - name: Copy to released directory
         run: |
           echo "Copying to released directory..."
