@@ -159,19 +159,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         else
         {
             std::shared_ptr<IObjectStorageIterator> object_iterator = nullptr;
-            ObjectStorageListObjectsCache * cache_ptr = nullptr;
+            std::unique_ptr<GlobIterator::ListObjectsCacheWithKey> cache_ptr;
 
-            if (local_context->getSettingsRef()[Setting::use_object_storage_list_objects_cache])
+            if (const auto identity_fingerprint = object_storage->getIdentityFingerprint(); local_context->getSettingsRef()[Setting::use_object_storage_list_objects_cache] && identity_fingerprint)
             {
                 auto & cache = ObjectStorageListObjectsCache::instance();
+                auto cache_key = ObjectStorageListObjectsCache::Key {*identity_fingerprint, configuration->getNamespace(), configuration->getPathWithoutGlobs()};
 
-                if (auto objects_info = cache.get(configuration->getNamespace(), configuration->getPathWithoutGlobs(), /*filter_by_prefix=*/ false))
+                if (auto objects_info = cache.get(cache_key, /*filter_by_prefix*/ false))
                 {
                     object_iterator = std::make_shared<ObjectStorageIteratorFromList>(std::move(*objects_info));
                 }
                 else
                 {
-                    cache_ptr = &cache;
+                    cache_ptr = std::make_unique<GlobIterator::ListObjectsCacheWithKey>(&cache, cache_key);
                     object_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size);
                 }
             }
@@ -184,7 +185,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             iterator = std::make_unique<GlobIterator>(
                 object_iterator, configuration, predicate, virtual_columns,
                 local_context, is_archive ? nullptr : read_keys,
-                query_settings.throw_on_zero_files_match, file_progress_callback, cache_ptr);
+                query_settings.throw_on_zero_files_match, file_progress_callback, std::move(cache_ptr));
         }
     }
     else if (configuration->supportsFileIterator())
@@ -686,7 +687,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectInfos * read_keys_,
     bool throw_on_zero_files_match_,
     std::function<void(FileProgress)> file_progress_callback_,
-    ObjectStorageListObjectsCache * list_cache_)
+    std::unique_ptr<ListObjectsCacheWithKey> list_cache_)
     : WithContext(context_)
     , object_storage_iterator(object_storage_iterator_)
     , configuration(configuration_)
@@ -696,7 +697,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     , read_keys(read_keys_)
     , local_context(context_)
     , file_progress_callback(file_progress_callback_)
-    , list_cache(list_cache_)
+    , list_cache(std::move(list_cache_))
 {
     if (configuration->isNamespaceWithGlobs())
     {
@@ -771,7 +772,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::GlobIterator::ne
             {
                 if (list_cache)
                 {
-                    list_cache->set(configuration->getNamespace(), configuration->getPathWithoutGlobs(), std::make_shared<ObjectInfos>(std::move(object_list)));
+                    list_cache->set(std::move(object_list));
                 }
                 is_finished = true;
                 return {};

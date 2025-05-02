@@ -29,13 +29,16 @@ public:
         ClientPtr && client_,
         SettingsPtr && settings_,
         const String & object_namespace_,
-        const String & description_);
+        const String & description_,
+        AzureBlobStorage::AuthMethod auth_method_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
+
+    std::optional<std::string> getIdentityFingerprint() const override;
 
     ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
 
@@ -115,6 +118,8 @@ private:
 
     /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
     const String description;
+
+    AzureBlobStorage::AuthMethod auth_method;
 
     LoggerPtr log;
 };

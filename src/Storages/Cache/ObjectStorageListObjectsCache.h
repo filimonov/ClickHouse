@@ -16,11 +16,14 @@ public:
     struct Key
     {
         Key(
+            const String & storage_identity_,
             const String & bucket_,
             const String & prefix_,
             const std::chrono::steady_clock::time_point & expires_at_ = std::chrono::steady_clock::now(),
             std::optional<UUID> user_id_ = std::nullopt);
 
+        // object storage name + account name
+        std::string storage_identity;
         std::string bucket;
         std::string prefix;
         std::chrono::steady_clock::time_point expires_at;
@@ -47,12 +50,9 @@ public:
 
     using Cache = CacheBase<Key, Value, KeyHasher, WeightFunction>;
 
-    void set(
-        const std::string & bucket,
-        const std::string & prefix,
-        const std::shared_ptr<Value> & value);
+    void set(Key key,const std::shared_ptr<Value> & value);
 
-    std::optional<Value> get(const String & bucket, const String & prefix, bool filter_by_prefix = true);
+    std::optional<Value> get(const Key & input_key, bool filter_by_prefix = true);
 
     void clear();
 

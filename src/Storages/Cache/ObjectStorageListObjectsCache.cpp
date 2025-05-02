@@ -73,21 +73,23 @@ private:
 };
 
 ObjectStorageListObjectsCache::Key::Key(
+    const String & storage_identity_,
     const String & bucket_,
     const String & prefix_,
     const std::chrono::steady_clock::time_point & expires_at_,
     std::optional<UUID> user_id_)
-    : bucket(bucket_), prefix(prefix_), expires_at(expires_at_), user_id(user_id_) {}
+    : storage_identity(storage_identity_), bucket(bucket_), prefix(prefix_), expires_at(expires_at_), user_id(user_id_) {}
 
 bool ObjectStorageListObjectsCache::Key::operator==(const Key & other) const
 {
-    return bucket == other.bucket && prefix == other.prefix;
+    return storage_identity == other.storage_identity && bucket == other.bucket && prefix == other.prefix;
 }
 
 size_t ObjectStorageListObjectsCache::KeyHasher::operator()(const Key & key) const
 {
     std::size_t seed = 0;
 
+    boost::hash_combine(seed, key.storage_identity);
     boost::hash_combine(seed, key.bucket);
     boost::hash_combine(seed, key.prefix);
 
@@ -117,12 +119,10 @@ ObjectStorageListObjectsCache::ObjectStorageListObjectsCache()
 }
 
 void ObjectStorageListObjectsCache::set(
-    const std::string & bucket,
-    const std::string & prefix,
+    Key key,
     const std::shared_ptr<Value> & value)
 {
-    const auto key = Key{bucket, prefix, std::chrono::steady_clock::now() + std::chrono::seconds(ttl_in_seconds)};
-
+    key.expires_at = std::chrono::steady_clock::now() + std::chrono::seconds(ttl_in_seconds);
     cache.set(key, value);
 }
 
@@ -131,9 +131,8 @@ void ObjectStorageListObjectsCache::clear()
     cache.clear();
 }
 
-std::optional<ObjectStorageListObjectsCache::Value> ObjectStorageListObjectsCache::get(const String & bucket, const String & prefix, bool filter_by_prefix)
+std::optional<ObjectStorageListObjectsCache::Value> ObjectStorageListObjectsCache::get(const Key & input_key, bool filter_by_prefix)
 {
-    const auto input_key = Key{bucket, prefix};
     auto pair = cache.getWithKey(input_key);
 
     if (!pair)
