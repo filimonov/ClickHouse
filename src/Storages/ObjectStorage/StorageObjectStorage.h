@@ -204,15 +204,15 @@ public:
     virtual void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) = 0;
 
-    bool withPartitionWildcard() const;
+    virtual bool withPartitionWildcard() const;
     bool withGlobs() const { return isPathWithGlobs() || isNamespaceWithGlobs(); }
-    bool withGlobsIgnorePartitionWildcard() const;
-    bool isPathWithGlobs() const;
-    bool isNamespaceWithGlobs() const;
+    virtual bool withGlobsIgnorePartitionWildcard() const;
+    virtual bool isPathWithGlobs() const;
+    virtual bool isNamespaceWithGlobs() const;
     virtual std::string getPathWithoutGlobs() const;
 
     virtual bool isArchive() const { return false; }
-    bool isPathInArchiveWithGlobs() const;
+    virtual bool isPathInArchiveWithGlobs() const;
     virtual std::string getPathInArchive() const;
 
     virtual void check(ContextPtr context) const;
@@ -261,7 +261,7 @@ public:
     String structure = "auto";
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
-    void updateIfRequired(ObjectStoragePtr object_storage, ContextPtr local_context);
+    virtual void updateIfRequired(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     /// Create arguments for table function with path and access parameters
     virtual ASTPtr createArgsWithAccessData() const
@@ -269,7 +269,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method createArgsWithAccessData is not supported by storage {}", getEngineName());
     }
 
-    const StorageObjectStorageSettings & getSettingsRef() const;
+    virtual const StorageObjectStorageSettings & getSettingsRef() const;
 
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
@@ -277,7 +277,7 @@ public:
     virtual ObjectStorageType extractDynamicStorageType(ASTs & /* args */, ContextPtr /* context */, ASTPtr * /* type_arg */ = nullptr) const
     { return ObjectStorageType::None; }
 
-    void assertInitialized() const;
+    virtual void assertInitialized() const;
 
     bool initialized = false;
     std::atomic<bool> updated = false;
