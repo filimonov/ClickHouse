@@ -172,7 +172,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 }
                 else
                 {
-                    cache_ptr = std::make_unique<GlobIterator::ListObjectsCacheWithKey>(&cache, cache_key);
+                    cache_ptr = std::make_unique<GlobIterator::ListObjectsCacheWithKey>(cache, cache_key);
                     object_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), query_settings.list_object_keys_size);
                 }
             }

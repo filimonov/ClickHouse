@@ -164,17 +164,20 @@ private:
 class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext
 {
 public:
+    /*
+     * Helper struct so `GlobIterator` does not need to re-construct the cache key all the time
+     */
     struct ListObjectsCacheWithKey
     {
-        ListObjectsCacheWithKey(ObjectStorageListObjectsCache * cache_, const ObjectStorageListObjectsCache::Key & key_) : cache(cache_), key(key_) {}
+        ListObjectsCacheWithKey(ObjectStorageListObjectsCache & cache_, const ObjectStorageListObjectsCache::Key & key_) : cache(cache_), key(key_) {}
 
         void set(ObjectStorageListObjectsCache::Value && value) const
         {
-            cache->set(key, std::make_shared<ObjectStorageListObjectsCache::Value>(std::move(value)));
+            cache.set(key, std::make_shared<ObjectStorageListObjectsCache::Value>(std::move(value)));
         }
 
     private:
-        ObjectStorageListObjectsCache * cache;
+        ObjectStorageListObjectsCache & cache;
         ObjectStorageListObjectsCache::Key key;
     };
 
