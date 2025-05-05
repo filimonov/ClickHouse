@@ -10,6 +10,7 @@ namespace DB
 
 class ObjectStorageListObjectsCache
 {
+    friend class ObjectStorageListObjectsCacheTest;
 public:
     ObjectStorageListObjectsCache(const ObjectStorageListObjectsCache &) = delete;
     ObjectStorageListObjectsCache(ObjectStorageListObjectsCache &&) noexcept = delete;
