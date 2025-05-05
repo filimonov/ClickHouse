@@ -85,7 +85,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 {
     ColumnsDescription columns{columns_};
     std::string sample_path;
-    resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
+    resolveSchemaAndFormat(columns, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
     StorageInMemoryMetadata metadata;
@@ -275,7 +275,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     configuration->extractDynamicStorageType(args, context, &object_storage_type_arg);
     if (cluster_name_in_settings)
     {
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->getFormat(), context, /*with_structure=*/true);
 
         /// Convert to old-stype *Cluster table function.
         /// This allows to use old clickhouse versions in cluster.
@@ -283,7 +283,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             {"s3", "s3Cluster"},
             {"azureBlobStorage", "azureBlobStorageCluster"},
             {"hdfs", "hdfsCluster"},
-            {"iceberg", "icebergS3Cluster"},
+            {"iceberg", "icebergCluster"},
             {"icebergS3", "icebergS3Cluster"},
             {"icebergAzure", "icebergAzureCluster"},
             {"icebergHDFS", "icebergHDFSCluster"},
@@ -330,7 +330,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     {
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->getFormat(), context, /*with_structure=*/true);
         args.insert(args.begin(), cluster_name_arg);
     }
     if (object_storage_type_arg)
@@ -340,13 +340,26 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
     const ActionsDAG::Node * predicate,
     const ContextPtr & local_context,
-    std::optional<std::vector<std::string>> ids_of_replicas) const
+    ClusterPtr cluster) const
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
         local_context, predicate, {}, getVirtualsList(), nullptr, local_context->getFileProgressCallback());
 
-    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, ids_of_replicas);
+    std::vector<std::string> ids_of_hosts;
+    for (const auto & shard : cluster->getShardsInfo())
+    {
+        if (shard.per_replica_pools.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {} with empty shard {}", cluster->getName(), shard.shard_num);
+        for (const auto & replica : shard.per_replica_pools)
+        {
+            if (!replica)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
+            ids_of_hosts.push_back(replica->getAddress());
+        }
+    }
+
+    auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, ids_of_hosts);
 
     auto callback = std::make_shared<TaskIterator>(
         [task_distributor](size_t number_of_current_replica) mutable -> String {
@@ -416,7 +429,7 @@ void StorageObjectStorageCluster::truncate(
 
 void StorageObjectStorageCluster::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
-    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->getFormat(), context, /*with_structure=*/false);
 }
 
 }
