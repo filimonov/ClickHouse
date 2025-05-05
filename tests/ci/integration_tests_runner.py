@@ -528,6 +528,13 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def _handle_broken_tests(group_counters, known_broken_tests, log_paths):
+
+        def get_log_paths(test_name):
+            """Could be a list of logs for all tests or a dict with test name as a key"""
+            if isinstance(log_paths, dict):
+                return log_paths[test_name]
+            return log_paths
+
         for fail_status in ("ERROR", "FAILED"):
             for failed_test in group_counters[fail_status]:
                 if failed_test in known_broken_tests.keys():
@@ -536,7 +543,7 @@ class ClickhouseIntegrationTestsRunner:
                         mark_as_broken = True
                     else:
                         mark_as_broken = False
-                        for log_path in log_paths:
+                        for log_path in get_log_paths(failed_test):
                             if log_path.endswith(".log"):
                                 with open(log_path) as log_file:
                                     if fail_message in log_file.read():
@@ -833,7 +840,6 @@ class ClickhouseIntegrationTestsRunner:
         tests_times = defaultdict(float)  # type: Dict
         tests_log_paths = defaultdict(list)
         id_counter = 0
-        known_broken_tests = self._get_broken_tests_list(self.repo_path)
         for test_to_run in tests_to_run:
             tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
             for i in range(tries_num):
@@ -850,9 +856,6 @@ class ClickhouseIntegrationTestsRunner:
                     FLAKY_REPEAT_COUNT,
                 )
                 id_counter = id_counter + 1
-
-                self._handle_broken_tests(group_counters, known_broken_tests, log_paths)
-
                 for counter, value in group_counters.items():
                     logging.info(
                         "Tests from group %s stats, %s count %s",
@@ -866,7 +869,6 @@ class ClickhouseIntegrationTestsRunner:
 
                 for test_name, test_time in group_test_times.items():
                     tests_times[test_name] = test_time
-
                 if not should_fail and (
                     group_counters["FAILED"] or group_counters["ERROR"]
                 ):
@@ -875,6 +877,9 @@ class ClickhouseIntegrationTestsRunner:
                         test_to_run,
                     )
                     break
+
+        known_broken_tests = self._get_broken_tests_list(self.repo_path)
+        self._handle_broken_tests(group_counters, known_broken_tests, tests_log_paths)
 
         if counters["FAILED"]:
             logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
