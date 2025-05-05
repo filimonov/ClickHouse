@@ -36,8 +36,6 @@ ObjectStorageListObjectsCache::Key ObjectStorageListObjectsCacheTest::default_ke
 TEST_F(ObjectStorageListObjectsCacheTest, BasicSetAndGet)
 {
     cache->clear();
-    const std::string bucket = "test-bucket";
-    const std::string prefix = "test-prefix/";
     auto value = createTestValue({"test-prefix/file1.txt", "test-prefix/file2.txt"});
     
     cache->set(default_key, value);
@@ -51,8 +49,6 @@ TEST_F(ObjectStorageListObjectsCacheTest, BasicSetAndGet)
 TEST_F(ObjectStorageListObjectsCacheTest, CacheMiss)
 {
     cache->clear();
-    const std::string bucket = "test-bucket";
-    const std::string prefix = "test-prefix/";
 
     EXPECT_FALSE(cache->get(default_key));
 }
@@ -60,8 +56,6 @@ TEST_F(ObjectStorageListObjectsCacheTest, CacheMiss)
 TEST_F(ObjectStorageListObjectsCacheTest, ClearCache)
 {
     cache->clear();
-    const std::string bucket = "test-bucket";
-    const std::string prefix = "test-prefix/";
     auto value = createTestValue({"test-prefix/file1.txt", "test-prefix/file2.txt"});
     
     cache->set(default_key, value);
@@ -125,8 +119,6 @@ TEST_F(ObjectStorageListObjectsCacheTest, PrefixFiltering)
 TEST_F(ObjectStorageListObjectsCacheTest, TTLExpiration)
 {
     cache->clear();
-    const std::string bucket = "test-bucket";
-    const std::string prefix = "test-prefix/";
     auto value = createTestValue({"test-prefix/file1.txt"});
 
     cache->set(default_key, value);
