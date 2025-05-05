@@ -526,6 +526,27 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 main_counters[state].append(test)
 
+    @staticmethod
+    def _handle_broken_tests(group_counters, known_broken_tests, log_paths):
+        for fail_status in ("ERROR", "FAILED"):
+            for failed_test in group_counters[fail_status]:
+                if failed_test in known_broken_tests.keys():
+                    fail_message = known_broken_tests[failed_test].get("message")
+                    if not fail_message:
+                        mark_as_broken = True
+                    else:
+                        mark_as_broken = False
+                        for log_path in log_paths:
+                            if log_path.endswith(".log"):
+                                with open(log_path) as log_file:
+                                    if fail_message in log_file.read():
+                                        mark_as_broken = True
+                                        break
+
+                    if mark_as_broken:
+                        group_counters[fail_status].remove(failed_test)
+                        group_counters["BROKEN"].append(failed_test)
+
     def _get_runner_image_cmd(self):
         image_cmd = ""
         if self._can_run_with(
@@ -812,6 +833,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_times = defaultdict(float)  # type: Dict
         tests_log_paths = defaultdict(list)
         id_counter = 0
+        known_broken_tests = self._get_broken_tests_list(self.repo_path)
         for test_to_run in tests_to_run:
             tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
             for i in range(tries_num):
@@ -828,6 +850,9 @@ class ClickhouseIntegrationTestsRunner:
                     FLAKY_REPEAT_COUNT,
                 )
                 id_counter = id_counter + 1
+
+                self._handle_broken_tests(group_counters, known_broken_tests, log_paths)
+
                 for counter, value in group_counters.items():
                     logging.info(
                         "Tests from group %s stats, %s count %s",
@@ -841,6 +866,7 @@ class ClickhouseIntegrationTestsRunner:
 
                 for test_name, test_time in group_test_times.items():
                     tests_times[test_name] = test_time
+
                 if not should_fail and (
                     group_counters["FAILED"] or group_counters["ERROR"]
                 ):
@@ -1021,24 +1047,7 @@ class ClickhouseIntegrationTestsRunner:
                 group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
 
-            for fail_status in ("ERROR", "FAILED"):
-                for failed_test in group_counters[fail_status]:
-                    if failed_test in known_broken_tests.keys():
-                        fail_message = known_broken_tests[failed_test].get("message")
-                        if not fail_message:
-                            mark_as_broken = True
-                        else:
-                            mark_as_broken = False
-                            for log_path in log_paths:
-                                if log_path.endswith(".log"):
-                                    with open(log_path) as log_file:
-                                        if fail_message in log_file.read():
-                                            mark_as_broken = True
-                                            break
-
-                        if mark_as_broken:
-                            group_counters[fail_status].remove(failed_test)
-                            group_counters["BROKEN"].append(failed_test)
+            self._handle_broken_tests(group_counters, known_broken_tests, log_paths)
 
             total_tests = 0
             for counter, value in group_counters.items():
