@@ -126,9 +126,25 @@ using ServiceClient = Azure::Storage::Blobs::BlobServiceClient;
 using BlobClientOptions = Azure::Storage::Blobs::BlobClientOptions;
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
+/*
+ * In order to implement `AzureObjectStorage::getIdentityFingerprint()` for `StorageSharedKeyCredential`, we need to
+ * access `account_key`. The problem is that `Azure::Storage::StorageSharedKeyCredential::AccessKey` is private and the
+ * class is final inside `Azure SDK`.
+ */
+struct StorageSharedKeyCredentialWithAccessToSecret
+{
+    StorageSharedKeyCredentialWithAccessToSecret(const String & account_name_, const String & account_key_)
+        : account_name(account_name_), account_key(account_key_), impl(std::make_shared<Azure::Storage::StorageSharedKeyCredential>(account_name, account_key))
+    {}
+
+    const std::string account_name;
+    const std::string account_key;
+    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential> impl;
+};
+
 using AuthMethod = std::variant<
     ConnectionString,
-    std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
+    std::shared_ptr<StorageSharedKeyCredentialWithAccessToSecret>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>;
 
