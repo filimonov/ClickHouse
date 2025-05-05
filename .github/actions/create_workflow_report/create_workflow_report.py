@@ -270,10 +270,12 @@ def get_new_fails_this_pr(
             lambda row: f"{row['arch']} {row['job_name']}".strip(), axis=1
         )
         regression_fails["test_status"] = regression_fails["status"]
-        regression_fails = regression_fails.drop(columns=["arch", "status"])
 
-    # Combine both types of fails
-    all_pr_fails = pd.concat([checks_fails, regression_fails], ignore_index=True)
+    # Combine both types of fails and select only desired columns
+    desired_columns = ["job_name", "test_name", "test_status", "results_link"]
+    all_pr_fails = pd.concat([checks_fails, regression_fails], ignore_index=True)[
+        desired_columns
+    ]
     if len(all_pr_fails) == 0:
         return pd.DataFrame()
 
@@ -432,7 +434,6 @@ def format_results_as_html_table(results) -> str:
         classes=["test-results-table"],
     )
     return html
-
 
 
 def parse_args() -> argparse.Namespace:
