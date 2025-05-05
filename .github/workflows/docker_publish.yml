@@ -63,17 +63,31 @@ jobs:
       - name: Set clickhouse-server version as new tag
         run: |
           # Determine "clickhouse-server" or "clickhouse-keeper"
-          echo "COMPONENT=$(echo "$IMAGE" | sed -E 's|.*/(clickhouse-[^:]+):.*|\1|')" >> $GITHUB_ENV
+          echo "Input IMAGE: $IMAGE"
+          COMPONENT=$(echo "$IMAGE" | sed -E 's|.*/(clickhouse-[^:]+):.*|\1|')
           echo "Component determined: $COMPONENT"
+          echo "COMPONENT=$COMPONENT" >> $GITHUB_ENV
+
+          # Pull the image
+          echo "Pulling the image"
+          docker pull $IMAGE
 
           # Run the container to get the version
+          echo "Attempting to run container..."
           CONTAINER_HASH=$(docker run -d --rm $IMAGE 2>&1)
-          NEW_TAG=$(.github/retry.sh 30 10 docker exec $CONTAINER_HASH bash -c "$COMPONENT --version")
-          echo "Base tag from clickhouse version: $NEW_TAG"
+          echo "Container hash: $CONTAINER_HASH"
+
+          # Get version and clean it up
+          VERSION_OUTPUT=$(.github/retry.sh 30 10 docker exec $CONTAINER_HASH bash -c "$COMPONENT --version")
+          echo "Raw version output: $VERSION_OUTPUT"
+
+          # Extract just the version number
+          NEW_TAG=$(echo "$VERSION_OUTPUT" | sed -E 's/.*version ([0-9.]+[^ ]*).*/\1/')
+          echo "Cleaned version: $NEW_TAG"
 
           # Append "-prerelease" if necessary
           if [ "${{ github.event.inputs.release_type || inputs.release_type }}" = "staging" ]; then
-            NEW_TAG="${BASE_TAG}-prerelease"
+            NEW_TAG="${NEW_TAG}-prerelease"
           fi
 
           if [[ "$IMAGE" == *-alpine* ]]; then
