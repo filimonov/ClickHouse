@@ -89,7 +89,7 @@ jobs:
           echo "New tag: $NEW_TAG"
 
           # Export the new tag
-          echo "new_tag=$NEW_TAG" >> $GITHUB_ENV
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
 
       - name: Process multiarch manifest
         run: |
