@@ -204,7 +204,7 @@ jobs:
           artifact_id=$(curl -s \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts?per_page=1000" \
             | jq -r --arg NAME "Sign release signed-hashes" '.artifacts[] | select(.name == $NAME) | .id')
           if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
             echo "Error: Could not find artifact 'Sign release signed-hashes' for run $run_id"
@@ -224,7 +224,7 @@ jobs:
           artifact_id=$(curl -s \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts" \
+            "https://api.github.com/repos/Altinity/ClickHouse/actions/runs/$run_id/artifacts?per_page=1000" \
             | jq -r --arg NAME "Sign aarch64 signed-hashes" '.artifacts[] | select(.name == $NAME) | .id')
           if [ -z "$artifact_id" ] || [ "$artifact_id" == "null" ]; then
             echo "Error: Could not find artifact 'Sign aarch64 signed-hashes' for run $run_id"
