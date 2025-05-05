@@ -263,7 +263,7 @@ jobs:
         run: |
           cd signed-hashes/arm64
           # Verify all files
-          for file in /tmp/arm_packages/**/*; do
+          find /tmp/arm_packages -type f | while read -r file; do
             if [ -f "$file" ]; then
               file_name=$(basename "$file")
               echo "Verifying $file_name..."
@@ -283,7 +283,7 @@ jobs:
         run: |
           cd signed-hashes/amd64
           # Verify all files
-          for file in /tmp/amd_packages/**/*; do
+          find /tmp/amd_packages -type f | while read -r file; do
             if [ -f "$file" ]; then
               file_name=$(basename "$file")
               echo "Verifying $file_name..."
@@ -303,14 +303,14 @@ jobs:
         run: |
           # Move ARM packages
           echo "Moving verified ARM packages to destination..."
-          if ! aws s3 mv "${SRC_URL}/package_aarch64/" "${DEST_URL}/packages/ARM_PACKAGES/" --recursive; then
+          if ! aws s3 cp "${SRC_URL}/package_aarch64/" "${DEST_URL}/packages/ARM_PACKAGES/" --recursive; then
             echo "Failed to move ARM packages to destination"
             exit 1
           fi
 
           # Move AMD packages
           echo "Moving verified AMD packages to destination..."
-          if ! aws s3 mv "${SRC_URL}/package_release/" "${DEST_URL}/packages/AMD_PACKAGES/" --recursive; then
+          if ! aws s3 cp "${SRC_URL}/package_release/" "${DEST_URL}/packages/AMD_PACKAGES/" --recursive; then
             echo "Failed to move AMD packages to destination"
             exit 1
           fi
@@ -387,7 +387,7 @@ jobs:
         variant: ['', '-alpine']
     uses: ./.github/workflows/docker_publish.yml
     with:
-      docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ needs.extract-package-info.outputs.docker_version }}-${{ needs.extract-package-info.outputs.package_version }}${{ matrix.variant }}
+      docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ needs.extract-package-info.outputs.docker_version }}${{ matrix.variant }}
       release_environment: ${{ inputs.release_environment }}
       upload_artifacts: false
       s3_upload_path: "${{ needs.extract-package-info.outputs.dest_url }}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"
