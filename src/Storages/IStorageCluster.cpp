@@ -203,15 +203,14 @@ IStorageCluster::RemoteCallVariables IStorageCluster::convertToRemote(
     }
 
     ASTTableExpression * table_expression = extractTableExpressionASTPtrFromSelectQuery(query_to_send);
-    //ASTPtr table_function = extractTableFunctionASTPtrFromSelectQuery(query_to_send);
-    /// nullptr
+    if (!table_expression)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find table expression");
 
     auto remote_query = makeASTFunction(remote_function_name, std::make_shared<ASTLiteral>(host_name), table_expression->table_function);
 
     table_expression->table_function = remote_query;
 
     auto remote_function = TableFunctionFactory::instance().get(remote_query, new_context);
-    /// nullptr
 
     auto storage = remote_function->execute(query_to_send, new_context, remote_function_name);
 
