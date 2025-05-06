@@ -17,8 +17,6 @@ auto & initializeAndGetCacheInstance()
 
 static auto & cache = initializeAndGetCacheInstance();
 
-ObjectStorageListObjectsCache::Key default_key {"default", "test-bucket", "test-prefix/"};
-
 std::shared_ptr<ObjectStorageListObjectsCache::Value> createTestValue(const std::vector<std::string>& paths)
 {
     auto value = std::make_shared<ObjectStorageListObjectsCache::Value>();
@@ -37,9 +35,9 @@ TEST(ObjectStorageListObjectsCacheTest, BasicSetAndGet)
     const std::string prefix = "test-prefix/";
     auto value = createTestValue({"test-prefix/file1.txt", "test-prefix/file2.txt"});
     
-    cache.set(default_key, value);
+    cache.set(bucket, prefix, value);
     
-    auto result = cache.get(default_key).value();
+    auto result = cache.get(bucket, prefix).value();
     ASSERT_EQ(result.size(), 2);
     EXPECT_EQ(result[0]->getPath(), "test-prefix/file1.txt");
     EXPECT_EQ(result[1]->getPath(), "test-prefix/file2.txt");
@@ -51,7 +49,7 @@ TEST(ObjectStorageListObjectsCacheTest, CacheMiss)
     const std::string bucket = "test-bucket";
     const std::string prefix = "test-prefix/";
 
-    EXPECT_FALSE(cache.get(default_key));
+    EXPECT_FALSE(cache.get(bucket, prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, ClearCache)
@@ -61,50 +59,41 @@ TEST(ObjectStorageListObjectsCacheTest, ClearCache)
     const std::string prefix = "test-prefix/";
     auto value = createTestValue({"test-prefix/file1.txt", "test-prefix/file2.txt"});
     
-    cache.set(default_key, value);
+    cache.set(bucket, prefix, value);
     cache.clear();
 
-    EXPECT_FALSE(cache.get(default_key));
+    EXPECT_FALSE(cache.get(bucket, prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, PrefixMatching)
 {
     cache.clear();
-
-    auto short_prefix_key = default_key;
-    short_prefix_key.prefix = "parent/";
-
-    auto mid_prefix_key = default_key;
-    mid_prefix_key.prefix = "parent/child/";
-
-    auto long_prefix_key = default_key;
-    long_prefix_key.prefix = "parent/child/grandchild/";
+    const std::string bucket = "test-bucket";
+    const std::string short_prefix = "parent/";
+    const std::string mid_prefix = "parent/child/";
+    const std::string long_prefix = "parent/child/grandchild/";
     
     auto value = createTestValue(
     {
         "parent/child/grandchild/file1.txt",
         "parent/child/grandchild/file2.txt"});
 
-    cache.set(mid_prefix_key, value);
+    cache.set(bucket, mid_prefix, value);
 
-    auto result1 = cache.get(mid_prefix_key).value();
+    auto result1 = cache.get(bucket, mid_prefix).value();
     EXPECT_EQ(result1.size(), 2);
 
-    auto result2 = cache.get(long_prefix_key).value();
+    auto result2 = cache.get(bucket, long_prefix).value();
     EXPECT_EQ(result2.size(), 2);
 
-    EXPECT_FALSE(cache.get(short_prefix_key));
+    EXPECT_FALSE(cache.get(bucket, short_prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, PrefixFiltering)
 {
     cache.clear();
-
-    auto key_with_short_prefix = default_key;
-    key_with_short_prefix.prefix = "parent/";
-
-    auto key_with_mid_prefix = default_key;
-    key_with_mid_prefix.prefix = "parent/child1/";
+    const std::string bucket = "test-bucket";
+    const std::string short_prefix = "parent/";
 
     auto value = createTestValue({
         "parent/file1.txt",
@@ -112,9 +101,9 @@ TEST(ObjectStorageListObjectsCacheTest, PrefixFiltering)
         "parent/child2/file3.txt"
     });
     
-    cache.set(key_with_short_prefix, value);
+    cache.set(bucket, short_prefix, value);
 
-    auto result = cache.get(key_with_mid_prefix, true).value();
+    auto result = cache.get(bucket, "parent/child1/", true).value();
     EXPECT_EQ(result.size(), 1);
     EXPECT_EQ(result[0]->getPath(), "parent/child1/file2.txt");
 }
@@ -126,38 +115,30 @@ TEST(ObjectStorageListObjectsCacheTest, TTLExpiration)
     const std::string prefix = "test-prefix/";
     auto value = createTestValue({"test-prefix/file1.txt"});
 
-    cache.set(default_key, value);
+    cache.set(bucket, prefix, value);
     
     // Verify we can get it immediately
-    auto result1 = cache.get(default_key).value();
+    auto result1 = cache.get(bucket, prefix).value();
     EXPECT_EQ(result1.size(), 1);
 
     std::this_thread::sleep_for(std::chrono::seconds(4));
 
-    EXPECT_FALSE(cache.get(default_key));
+    EXPECT_FALSE(cache.get(bucket, prefix));
 }
 
 TEST(ObjectStorageListObjectsCacheTest, BestPrefixMatch)
 {
     cache.clear();
-
-    auto short_prefix_key = default_key;
-    short_prefix_key.prefix = "a/b/";
-
-    auto mid_prefix_key = default_key;
-    mid_prefix_key.prefix = "a/b/c/";
-
-    auto long_prefix_key = default_key;
-    long_prefix_key.prefix = "a/b/c/d/";
+    const std::string bucket = "test-bucket";
 
     auto short_prefix = createTestValue({"a/b/c/d/file1.txt", "a/b/c/file1.txt", "a/b/file2.txt"});
     auto mid_prefix = createTestValue({"a/b/c/d/file1.txt", "a/b/c/file1.txt"});
 
-    cache.set(short_prefix_key, short_prefix);
-    cache.set(mid_prefix_key, mid_prefix);
+    cache.set(bucket, "a/b/", short_prefix);
+    cache.set(bucket, "a/b/c/", mid_prefix);
 
     // should pick mid_prefix, which has size 2. filter_by_prefix=false so we can assert by size
-    auto result = cache.get(long_prefix_key, false).value();
+    auto result = cache.get(bucket, "a/b/c/d/", false).value();
     EXPECT_EQ(result.size(), 2u);
 }
 

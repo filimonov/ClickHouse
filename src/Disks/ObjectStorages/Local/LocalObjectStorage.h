@@ -28,9 +28,6 @@ public:
 
     bool exists(const StoredObject & object) const override;
 
-    // no auth
-    std::optional<std::string> getIdentityFingerprint() const override { return getName(); }
-
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,

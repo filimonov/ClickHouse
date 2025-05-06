@@ -164,13 +164,6 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
     return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
 }
 
-std::optional<std::string> S3ObjectStorage::getIdentityFingerprint() const
-{
-    const auto credentials = client.get()->getCredentials();
-
-    return getName() + credentials.GetAWSAccessKeyId();
-}
-
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,

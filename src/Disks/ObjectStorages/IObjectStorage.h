@@ -126,9 +126,6 @@ public:
 
     virtual std::string getDescription() const = 0;
 
-    // todo arthur add docs
-    virtual std::optional<std::string> getIdentityFingerprint() const = 0;
-
     virtual const MetadataStorageMetrics & getMetadataStorageMetrics() const;
 
     /// Object exists or not

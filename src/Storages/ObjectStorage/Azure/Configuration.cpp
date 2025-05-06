@@ -99,8 +99,7 @@ ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr conte
         connection_params.createForContainer(),
         std::move(settings),
         connection_params.getContainer(),
-        connection_params.getConnectionURL(),
-        connection_params.auth_method);
+        connection_params.getConnectionURL());
 }
 
 static AzureBlobStorage::ConnectionParams getConnectionParams(

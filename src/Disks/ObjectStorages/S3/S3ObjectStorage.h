@@ -81,8 +81,6 @@ public:
 
     ObjectStorageType getType() const override { return ObjectStorageType::S3; }
 
-    std::optional<std::string> getIdentityFingerprint() const override;
-
     bool exists(const StoredObject & object) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

@@ -108,14 +108,12 @@ AzureObjectStorage::AzureObjectStorage(
     ClientPtr && client_,
     SettingsPtr && settings_,
     const String & object_namespace_,
-    const String & description_,
-    AzureBlobStorage::AuthMethod auth_method_)
+    const String & description_)
     : name(name_)
     , client(std::move(client_))
     , settings(std::move(settings_))
     , object_namespace(object_namespace_)
     , description(description_)
-    , auth_method(auth_method_)
     , log(getLogger("AzureObjectStorage"))
 {
 }
@@ -154,40 +152,6 @@ ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_pr
     auto client_ptr = client.get();
 
     return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size);
-}
-
-std::optional<std::string> AzureObjectStorage::getIdentityFingerprint() const
-{
-    std::optional<std::string> fingerprint;
-
-    std::visit([&fingerprint](const auto & auth) {
-        using T = std::decay_t<decltype(auth)>;
-
-        if constexpr (std::is_same_v<T, AzureBlobStorage::ConnectionString>)
-        {
-            auto connection_string_parts = Azure::Storage::_internal::ParseConnectionString(auth);
-            fingerprint = std::to_string(std::hash<std::string>()(connection_string_parts.AccountName));
-        }
-        else if constexpr (std::is_same_v<T, std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>)
-        {
-            if (auth)
-            {
-                fingerprint = std::to_string(std::hash<std::string>()(auth->AccountName));
-            }
-        }
-        /// I am not sure what to do with the other auth methods, needs further investigation
-        // else if constexpr (std::is_same_v<T, std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>) {
-        // }
-        // else if constexpr (std::is_same_v<T, std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>) {
-        // }
-    }, auth_method);
-
-    if (!fingerprint)
-    {
-        return std::nullopt;
-    }
-
-    return getName() + fingerprint.value();
 }
 
 void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -416,7 +380,7 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(
     };
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
-    return std::make_unique<AzureObjectStorage>(name, std::move(new_client), std::move(new_settings), new_namespace, params.endpoint.getServiceEndpoint(), params.auth_method);
+    return std::make_unique<AzureObjectStorage>(name, std::move(new_client), std::move(new_settings), new_namespace, params.endpoint.getServiceEndpoint());
 }
 
 }

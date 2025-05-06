@@ -164,20 +164,6 @@ private:
 class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext
 {
 public:
-    struct ListObjectsCacheWithKey
-    {
-        ListObjectsCacheWithKey(ObjectStorageListObjectsCache * cache_, const ObjectStorageListObjectsCache::Key & key_) : cache(cache_), key(key_) {}
-
-        void set(ObjectStorageListObjectsCache::Value && value) const
-        {
-            cache->set(key, std::make_shared<ObjectStorageListObjectsCache::Value>(std::move(value)));
-        }
-
-    private:
-        ObjectStorageListObjectsCache * cache;
-        ObjectStorageListObjectsCache::Key key;
-    };
-
     GlobIterator(
         const ObjectStorageIteratorPtr & object_storage_iterator_,
         ConfigurationPtr configuration_,
@@ -187,7 +173,7 @@ public:
         ObjectInfos * read_keys_,
         bool throw_on_zero_files_match_,
         std::function<void(FileProgress)> file_progress_callback_ = {},
-        std::unique_ptr<ListObjectsCacheWithKey> list_cache_ = nullptr);
+        ObjectStorageListObjectsCache * list_cache_ = nullptr);
 
     ~GlobIterator() override = default;
 
@@ -223,7 +209,7 @@ private:
     const ContextPtr local_context;
 
     std::function<void(FileProgress)> file_progress_callback;
-    std::unique_ptr<ListObjectsCacheWithKey> list_cache;
+    ObjectStorageListObjectsCache * list_cache;
     ObjectInfos object_list;
 };
 
