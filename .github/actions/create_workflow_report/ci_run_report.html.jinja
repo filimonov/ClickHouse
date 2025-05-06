@@ -172,6 +172,7 @@
 
   {%- if pr_number != 0 -%}
   <h2 id="new-fails-pr">New Fails in PR</h2>
+  <p> Compared with base sha {{ base_sha }} </p>
   {{ new_fails_html }}
   {%- endif %}
 

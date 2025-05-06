@@ -548,6 +548,7 @@ def main():
         "pr_number": args.pr_number,
         "workflow_id": args.actions_run_url.split("/")[-1],
         "commit_sha": args.commit_sha,
+        "base_sha": pr_info.get("base", {}).get("sha"),
         "date": f"{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC",
         "is_preview": args.mark_preview,
         "counts": {
