@@ -27,7 +27,7 @@ from report import JOB_TIMEOUT_TEST_NAME
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-MAX_RETRY = 3
+MAX_RETRY = 2
 NUM_WORKERS = 10
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
