@@ -438,9 +438,13 @@ jobs:
       - name: Process ARM binary
         if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
         run: |
-          chmod +x /home/runner/.cache/tmp/packages/arm-bin/clickhouse
+          sudo apt-get update && sudo apt-get install -y binutils
+
+          echo "Copying ARM binary..."
+          cp /home/runner/.cache/tmp/packages/arm-bin/clickhouse /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse
 
           echo "Running clickhouse binary..."
+          chmod +x /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse
           /home/runner/.cache/tmp/packages/arm-bin/clickhouse -q'q'
 
           echo "Stripping the binary..."
