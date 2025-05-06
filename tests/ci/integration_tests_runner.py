@@ -526,8 +526,7 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 main_counters[state].append(test)
 
-    @staticmethod
-    def _handle_broken_tests(counters, known_broken_tests, log_paths):
+    def _handle_broken_tests(self, counters, known_broken_tests, log_paths):
 
         def get_log_paths(test_name):
             """Could be a list of logs for all tests or a dict with test name as a key"""
@@ -535,24 +534,43 @@ class ClickhouseIntegrationTestsRunner:
                 return log_paths[test_name]
             return log_paths
 
-        for fail_status in ("ERROR", "FAILED"):
-            for failed_test in counters[fail_status]:
-                if failed_test in known_broken_tests.keys():
-                    fail_message = known_broken_tests[failed_test].get("message")
-                    if not fail_message:
-                        mark_as_broken = True
-                    else:
-                        mark_as_broken = False
-                        for log_path in get_log_paths(failed_test):
-                            if log_path.endswith(".log"):
-                                with open(log_path) as log_file:
-                                    if fail_message in log_file.read():
-                                        mark_as_broken = True
-                                        break
+        broken_tests_log = os.path.join(self.result_path, "broken_tests_handler.log")
 
-                    if mark_as_broken:
-                        counters[fail_status].remove(failed_test)
-                        counters["BROKEN"].append(failed_test)
+        with open(broken_tests_log, "w") as log_file:
+            for fail_status in ("ERROR", "FAILED"):
+                for failed_test in counters[fail_status]:
+                    if failed_test in known_broken_tests.keys():
+                        fail_message = known_broken_tests[failed_test].get("message")
+                        log_file.write(
+                            f"Checking test {failed_test} (status: {fail_status})\n"
+                        )
+                        if not fail_message:
+                            log_file.write(
+                                "No fail message specified, marking as broken\n"
+                            )
+                            mark_as_broken = True
+                        else:
+                            log_file.write(
+                                f"Looking for fail message: {fail_message}\n"
+                            )
+                            mark_as_broken = False
+                            for log_path in get_log_paths(failed_test):
+                                if log_path.endswith(".log"):
+                                    log_file.write(f"Checking log file: {log_path}\n")
+                                    with open(log_path) as test_log:
+                                        if fail_message in test_log.read():
+                                            log_file.write(
+                                                "Found fail message in logs\n"
+                                            )
+                                            mark_as_broken = True
+                                            break
+
+                        if mark_as_broken:
+                            log_file.write(f"Moving test to BROKEN state\n")
+                            counters[fail_status].remove(failed_test)
+                            counters["BROKEN"].append(failed_test)
+                        else:
+                            log_file.write("Test not marked as broken\n")
 
     def _get_runner_image_cmd(self):
         image_cmd = ""
