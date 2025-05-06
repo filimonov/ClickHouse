@@ -383,6 +383,14 @@ public:
         return getImpl().createArgsWithAccessData();
     }
 
+    const String & getFormat() const override { return getImpl().getFormat(); }
+    const String & getCompressionMethod() const override { return getImpl().getCompressionMethod(); }
+    const String & getStructure() const override { return getImpl().getStructure(); }
+
+    void setFormat(const String & format_) override { getImpl().setFormat(format_); }
+    void setCompressionMethod(const String & compression_method_) override { getImpl().setCompressionMethod(compression_method_); }
+    void setStructure(const String & structure_) override { getImpl().setStructure(structure_); }
+
     const StorageObjectStorageSettings & getSettingsRef() const override
     {
         return getImpl().getSettingsRef();

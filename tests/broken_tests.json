@@ -39,12 +39,90 @@
         "reason": "Fails on TSAN"
     },
     "02766_prql": {
-        "reason": "PRQL is disabled in Antalya branch"
+        "reason": "KNOWN PRQL is disabled in Antalya branch"
     },
     "02833_local_with_dialect": {
-        "reason": "PRQL is disabled in Antalya branch"
+        "reason": "KNOWN PRQL is disabled in Antalya branch"
     },
     "03003_prql_panic": {
-        "reason": "PRQL is disabled in Antalya branch"
+        "reason": "KNOWN PRQL is disabled in Antalya branch"
+    },
+    "test_git_import/test.py::/test_git_import": {
+        "reason": "NEEDSFIX 403 while getting data from GitHub"
+    },
+    "test_storage_delta/test.py::test_types[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_types[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_single_log_file[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_single_log_file[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken_table_function[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_restart_broken_table_function[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_replicated_database_and_unavailable_s3[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_replicated_database_and_unavailable_s3[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_columns[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_columns[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_columns_2[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_by[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_partition_by[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_multiple_log_files[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_multiple_log_files[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_metadata[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_metadata[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_filesystem_cache[1-s3]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_filesystem_cache[0-s3]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_complex_types[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_complex_types[0]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_checkpoint[1]": {
+        "reason": "NEEDSFIX rust problem"
+    },
+    "test_storage_delta/test.py::test_checkpoint[0]": {
+        "reason": "NEEDSFIX rust problem"
     }
 }

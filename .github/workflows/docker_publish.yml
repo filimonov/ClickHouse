@@ -51,9 +51,6 @@ jobs:
     outputs:
       image_archives_path: ${{ steps.set_path.outputs.image_archives_path }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
       - name: Docker Hub Login
         uses: docker/login-action@v2
         with:
@@ -63,17 +60,27 @@ jobs:
       - name: Set clickhouse-server version as new tag
         run: |
           # Determine "clickhouse-server" or "clickhouse-keeper"
-          echo "COMPONENT=$(echo "$IMAGE" | sed -E 's|.*/(clickhouse-[^:]+):.*|\1|')" >> $GITHUB_ENV
+          echo "Input IMAGE: $IMAGE"
+          COMPONENT=$(echo "$IMAGE" | sed -E 's|.*/(clickhouse-[^:]+):.*|\1|')
           echo "Component determined: $COMPONENT"
+          echo "COMPONENT=$COMPONENT" >> $GITHUB_ENV
 
-          # Run the container to get the version
-          CONTAINER_HASH=$(docker run -d --rm $IMAGE 2>&1)
-          NEW_TAG=$(.github/retry.sh 30 10 docker exec $CONTAINER_HASH bash -c "$COMPONENT --version")
-          echo "Base tag from clickhouse version: $NEW_TAG"
+          # Pull the image
+          echo "Pulling the image"
+          docker pull $IMAGE
+
+          # Get version and clean it up
+          echo "Getting version from image..."
+          VERSION_OUTPUT=$(docker run --rm $IMAGE $COMPONENT --version)
+          echo "Raw version output: $VERSION_OUTPUT"
+
+          # Extract just the version number
+          NEW_TAG=$(echo "$VERSION_OUTPUT" | sed -E 's/.*version ([0-9.]+[^ ]*).*/\1/')
+          echo "Cleaned version: $NEW_TAG"
 
           # Append "-prerelease" if necessary
           if [ "${{ github.event.inputs.release_type || inputs.release_type }}" = "staging" ]; then
-            NEW_TAG="${BASE_TAG}-prerelease"
+            NEW_TAG="${NEW_TAG}-prerelease"
           fi
 
           if [[ "$IMAGE" == *-alpine* ]]; then
@@ -82,7 +89,7 @@ jobs:
           echo "New tag: $NEW_TAG"
 
           # Export the new tag
-          echo "new_tag=$NEW_TAG" >> $GITHUB_ENV
+          echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
 
       - name: Process multiarch manifest
         run: |
