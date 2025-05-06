@@ -73,21 +73,23 @@ private:
 };
 
 ObjectStorageListObjectsCache::Key::Key(
+    const String & storage_description_,
     const String & bucket_,
     const String & prefix_,
     const std::chrono::steady_clock::time_point & expires_at_,
     std::optional<UUID> user_id_)
-    : bucket(bucket_), prefix(prefix_), expires_at(expires_at_), user_id(user_id_) {}
+    : storage_description(storage_description_), bucket(bucket_), prefix(prefix_), expires_at(expires_at_), user_id(user_id_) {}
 
 bool ObjectStorageListObjectsCache::Key::operator==(const Key & other) const
 {
-    return bucket == other.bucket && prefix == other.prefix;
+    return storage_description == other.storage_description && bucket == other.bucket && prefix == other.prefix;
 }
 
 size_t ObjectStorageListObjectsCache::KeyHasher::operator()(const Key & key) const
 {
     std::size_t seed = 0;
 
+    boost::hash_combine(seed, key.storage_description);
     boost::hash_combine(seed, key.bucket);
     boost::hash_combine(seed, key.prefix);
 
@@ -117,13 +119,13 @@ ObjectStorageListObjectsCache::ObjectStorageListObjectsCache()
 }
 
 void ObjectStorageListObjectsCache::set(
-    const std::string & bucket,
-    const std::string & prefix,
+    const Key & key,
     const std::shared_ptr<Value> & value)
 {
-    const auto key = Key{bucket, prefix, std::chrono::steady_clock::now() + std::chrono::seconds(ttl_in_seconds)};
+    auto key_with_ttl = key;
+    key_with_ttl.expires_at = std::chrono::steady_clock::now() + std::chrono::seconds(ttl_in_seconds);
 
-    cache.set(key, value);
+    cache.set(key_with_ttl, value);
 }
 
 void ObjectStorageListObjectsCache::clear()
@@ -131,10 +133,9 @@ void ObjectStorageListObjectsCache::clear()
     cache.clear();
 }
 
-std::optional<ObjectStorageListObjectsCache::Value> ObjectStorageListObjectsCache::get(const String & bucket, const String & prefix, bool filter_by_prefix)
+std::optional<ObjectStorageListObjectsCache::Value> ObjectStorageListObjectsCache::get(const Key & key, bool filter_by_prefix)
 {
-    const auto input_key = Key{bucket, prefix};
-    auto pair = cache.getWithKey(input_key);
+    const auto pair = cache.getWithKey(key);
 
     if (!pair)
     {
@@ -144,7 +145,7 @@ std::optional<ObjectStorageListObjectsCache::Value> ObjectStorageListObjectsCach
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCacheHits);
 
-    if (pair->key == input_key)
+    if (pair->key == key)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageListObjectsCacheExactMatchHits);
         return *pair->mapped;
@@ -163,7 +164,7 @@ std::optional<ObjectStorageListObjectsCache::Value> ObjectStorageListObjectsCach
 
     for (const auto & object : *pair->mapped)
     {
-        if (object->relative_path.starts_with(input_key.prefix))
+        if (object->relative_path.starts_with(key.prefix))
         {
             filtered_objects.push_back(object);
         }
