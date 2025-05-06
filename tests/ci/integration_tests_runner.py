@@ -539,7 +539,11 @@ class ClickhouseIntegrationTestsRunner:
         with open(broken_tests_log, "w") as log_file:
             for fail_status in ("ERROR", "FAILED"):
                 for failed_test in counters[fail_status]:
-                    if failed_test in known_broken_tests.keys():
+                    if failed_test not in known_broken_tests.keys():
+                        log_file.write(
+                            f"Test {failed_test} is not in known broken tests\n"
+                        )
+                    else:
                         fail_message = known_broken_tests[failed_test].get("message")
                         log_file.write(
                             f"Checking test {failed_test} (status: {fail_status})\n"
