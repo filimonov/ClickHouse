@@ -856,6 +856,13 @@ class ClickhouseIntegrationTestsRunner:
                     FLAKY_REPEAT_COUNT,
                 )
                 id_counter = id_counter + 1
+
+                # Debug logging for test statuses
+                logging.info("Test group %s statuses:", test_to_run)
+                for status, tests in group_counters.items():
+                    if tests:
+                        logging.info("  %s: %s", status, tests)
+
                 for counter, value in group_counters.items():
                     logging.info(
                         "Tests from group %s stats, %s count %s",
@@ -878,9 +885,21 @@ class ClickhouseIntegrationTestsRunner:
                     )
                     break
 
+        # Debug logging before handling broken tests
+        logging.info("Statuses before handling broken tests:")
+        for status, tests in counters.items():
+            if tests:
+                logging.info("  %s: %s", status, tests)
+
         # Handle broken tests on the main counters that contain all test results
         known_broken_tests = self._get_broken_tests_list(self.repo_path)
         self._handle_broken_tests(counters, known_broken_tests, tests_log_paths)
+
+        # Debug logging after handling broken tests
+        logging.info("Statuses after handling broken tests:")
+        for status, tests in counters.items():
+            if tests:
+                logging.info("  %s: %s", status, tests)
 
         if counters["FAILED"]:
             logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
