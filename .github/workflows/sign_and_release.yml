@@ -423,11 +423,11 @@ jobs:
 
       - name: Download packages
         run: |
-          if ! aws s3 cp "${DEST_URL}/packages/ARM_PACKAGES/" $RUNNER_TEMP/packages --recursive; then
+          if ! aws s3 cp "${DEST_URL}/packages/ARM_PACKAGES/" /home/runner/.cache/tmp/packages --recursive; then
             echo "Failed to download ARM packages"
             exit 1
           fi
-          if ! aws s3 cp "${DEST_URL}/packages/AMD_PACKAGES/" $RUNNER_TEMP/packages --recursive; then
+          if ! aws s3 cp "${DEST_URL}/packages/AMD_PACKAGES/" /home/runner/.cache/tmp/packages --recursive; then
             echo "Failed to download AMD packages"
             exit 1
           fi
@@ -438,13 +438,13 @@ jobs:
       - name: Process ARM binary
         if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
         run: |
-          chmod +x $RUNNER_TEMP/packages/arm-bin/clickhouse
+          chmod +x /home/runner/.cache/tmp/packages/arm-bin/clickhouse
 
           echo "Running clickhouse binary..."
-          $RUNNER_TEMP/packages/arm-bin/clickhouse -q'q'
+          /home/runner/.cache/tmp/packages/arm-bin/clickhouse -q'q'
 
           echo "Stripping the binary..."
-          strip $RUNNER_TEMP/packages/arm-bin/non-self-extracting/clickhouse -o $RUNNER_TEMP/packages/arm-bin/non-self-extracting/clickhouse-stripped
+          strip /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse -o /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse-stripped
 
       - name: Setup GPG
         run: |
@@ -500,7 +500,7 @@ jobs:
         if: always()
         run: |
           echo "Cleaning up temporary files..."
-          rm -f $RUNNER_TEMP/clickhouse* || true
+          rm -rf /home/runner/.cache/tmp/packages || true
 
   repo-sanity-check:
     needs: sign-and-publish
