@@ -878,8 +878,9 @@ class ClickhouseIntegrationTestsRunner:
                     )
                     break
 
+        # Handle broken tests on the main counters that contain all test results
         known_broken_tests = self._get_broken_tests_list(self.repo_path)
-        self._handle_broken_tests(group_counters, known_broken_tests, tests_log_paths)
+        self._handle_broken_tests(counters, known_broken_tests, tests_log_paths)
 
         if counters["FAILED"]:
             logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
