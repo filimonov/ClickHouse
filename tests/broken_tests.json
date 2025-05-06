@@ -47,7 +47,7 @@
     "03003_prql_panic": {
         "reason": "KNOWN PRQL is disabled in Antalya branch"
     },
-    "test_git_import/test.py::/test_git_import": {
+    "test_git_import/test.py::test_git_import": {
         "reason": "NEEDSFIX 403 while getting data from GitHub"
     },
     "test_storage_delta/test.py::test_types[1]": {
