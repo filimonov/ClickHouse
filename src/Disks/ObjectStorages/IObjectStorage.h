@@ -126,7 +126,7 @@ public:
 
     virtual std::string getDescription() const = 0;
 
-    /// Storage name + authentication unique id. Used for securing ListObjects cache
+    // todo arthur add docs
     virtual std::optional<std::string> getIdentityFingerprint() const = 0;
 
     virtual const MetadataStorageMetrics & getMetadataStorageMetrics() const;

@@ -28,7 +28,7 @@ public:
             const std::chrono::steady_clock::time_point & expires_at_ = std::chrono::steady_clock::now(),
             std::optional<UUID> user_id_ = std::nullopt);
 
-        // object storage name + account
+        // object storage name + account name
         std::string storage_identity;
         std::string bucket;
         std::string prefix;
