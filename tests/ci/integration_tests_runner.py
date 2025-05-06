@@ -527,7 +527,7 @@ class ClickhouseIntegrationTestsRunner:
                 main_counters[state].append(test)
 
     @staticmethod
-    def _handle_broken_tests(group_counters, known_broken_tests, log_paths):
+    def _handle_broken_tests(counters, known_broken_tests, log_paths):
 
         def get_log_paths(test_name):
             """Could be a list of logs for all tests or a dict with test name as a key"""
@@ -536,7 +536,7 @@ class ClickhouseIntegrationTestsRunner:
             return log_paths
 
         for fail_status in ("ERROR", "FAILED"):
-            for failed_test in group_counters[fail_status]:
+            for failed_test in counters[fail_status]:
                 if failed_test in known_broken_tests.keys():
                     fail_message = known_broken_tests[failed_test].get("message")
                     if not fail_message:
@@ -551,8 +551,8 @@ class ClickhouseIntegrationTestsRunner:
                                         break
 
                     if mark_as_broken:
-                        group_counters[fail_status].remove(failed_test)
-                        group_counters["BROKEN"].append(failed_test)
+                        counters[fail_status].remove(failed_test)
+                        counters["BROKEN"].append(failed_test)
 
     def _get_runner_image_cmd(self):
         image_cmd = ""
@@ -856,13 +856,6 @@ class ClickhouseIntegrationTestsRunner:
                     FLAKY_REPEAT_COUNT,
                 )
                 id_counter = id_counter + 1
-
-                # Debug logging for test statuses
-                logging.info("Test group %s statuses:", test_to_run)
-                for status, tests in group_counters.items():
-                    if tests:
-                        logging.info("  %s: %s", status, tests)
-
                 for counter, value in group_counters.items():
                     logging.info(
                         "Tests from group %s stats, %s count %s",
@@ -885,21 +878,9 @@ class ClickhouseIntegrationTestsRunner:
                     )
                     break
 
-        # Debug logging before handling broken tests
-        logging.info("Statuses before handling broken tests:")
-        for status, tests in counters.items():
-            if tests:
-                logging.info("  %s: %s", status, tests)
-
         # Handle broken tests on the main counters that contain all test results
         known_broken_tests = self._get_broken_tests_list(self.repo_path)
         self._handle_broken_tests(counters, known_broken_tests, tests_log_paths)
-
-        # Debug logging after handling broken tests
-        logging.info("Statuses after handling broken tests:")
-        for status, tests in counters.items():
-            if tests:
-                logging.info("  %s: %s", status, tests)
 
         if counters["FAILED"]:
             logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
@@ -1040,8 +1021,6 @@ class ClickhouseIntegrationTestsRunner:
             " ".join(not_found_tests[:3]),
         )
 
-        known_broken_tests = self._get_broken_tests_list(self.repo_path)
-
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
         i = 0
         for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
@@ -1072,8 +1051,6 @@ class ClickhouseIntegrationTestsRunner:
                 group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
 
-            self._handle_broken_tests(group_counters, known_broken_tests, log_paths)
-
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info(
@@ -1096,9 +1073,19 @@ class ClickhouseIntegrationTestsRunner:
             if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
                 logging.info("Collected more than 20 failed/error tests, stopping")
                 break
+
+        # Handle broken tests on the main counters that contain all test results
+        known_broken_tests = self._get_broken_tests_list(self.repo_path)
+        self._handle_broken_tests(counters, known_broken_tests, tests_log_paths)
+
         if counters["FAILED"] or counters["ERROR"]:
             logging.info(
                 "Overall status failure, because we have tests in FAILED or ERROR state"
+            )
+            result_state = "failure"
+        elif len(counters["BROKEN"]) >= 20:
+            logging.info(
+                "Overall status failure, more than 20 broken tests, likely did not run all tests"
             )
             result_state = "failure"
         else:
