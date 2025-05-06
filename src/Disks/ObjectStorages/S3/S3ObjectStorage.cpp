@@ -168,7 +168,7 @@ std::optional<std::string> S3ObjectStorage::getIdentityFingerprint() const
 {
     const auto credentials = client.get()->getCredentials();
 
-    return getName() + credentials.GetAWSAccessKeyId() + credentials.GetAWSSecretKey();
+    return getName() + credentials.GetAWSAccessKeyId();
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT

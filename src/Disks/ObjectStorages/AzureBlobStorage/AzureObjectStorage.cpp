@@ -156,29 +156,30 @@ ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_pr
     return std::make_shared<AzureIteratorAsync>(path_prefix, client_ptr, max_keys ? max_keys : settings_ptr->list_object_keys_size);
 }
 
-/*
- * Only `ConnectionString` and `StorageSharedKeyCredential` auth methods are supported for now.
- */
 std::optional<std::string> AzureObjectStorage::getIdentityFingerprint() const
 {
     std::optional<std::string> fingerprint;
 
-    std::visit([&fingerprint](const auto & auth)
-    {
+    std::visit([&fingerprint](const auto & auth) {
         using T = std::decay_t<decltype(auth)>;
 
         if constexpr (std::is_same_v<T, AzureBlobStorage::ConnectionString>)
         {
             auto connection_string_parts = Azure::Storage::_internal::ParseConnectionString(auth);
-            fingerprint = connection_string_parts.AccountName + connection_string_parts.AccountKey;
+            fingerprint = std::to_string(std::hash<std::string>()(connection_string_parts.AccountName));
         }
-        else if constexpr (std::is_same_v<T, std::shared_ptr<AzureBlobStorage::StorageSharedKeyCredentialWithAccessToSecret>>)
+        else if constexpr (std::is_same_v<T, std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>)
         {
             if (auth)
             {
-                fingerprint = auth->account_name + auth->account_key;
+                fingerprint = std::to_string(std::hash<std::string>()(auth->AccountName));
             }
         }
+        /// I am not sure what to do with the other auth methods, needs further investigation
+        // else if constexpr (std::is_same_v<T, std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>) {
+        // }
+        // else if constexpr (std::is_same_v<T, std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>) {
+        // }
     }, auth_method);
 
     if (!fingerprint)

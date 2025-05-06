@@ -96,7 +96,7 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 auto account_name = args[3].safeGet<String>();
                 auto account_key = args[4].safeGet<String>();
 
-                connection_params.auth_method = std::make_shared<AzureBlobStorage::StorageSharedKeyCredentialWithAccessToSecret>(account_name, account_key);
+                connection_params.auth_method = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(account_name, account_key);
                 connection_params.client_options = AzureBlobStorage::getClientOptions(*request_settings, /*for_disk=*/ true);
             }
             else

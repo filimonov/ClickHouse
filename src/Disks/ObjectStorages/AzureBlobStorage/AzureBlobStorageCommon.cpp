@@ -146,8 +146,6 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
     {
         if constexpr (std::is_same_v<T, ConnectionString>)
             return std::make_unique<ServiceClient>(ServiceClient::CreateFromConnectionString(auth.toUnderType(), client_options));
-        else if constexpr (std::is_same_v<T, std::shared_ptr<StorageSharedKeyCredentialWithAccessToSecret>>)
-            return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth->impl, client_options);
         else
             return std::make_unique<ServiceClient>(endpoint.getServiceEndpoint(), auth, client_options);
     }, auth_method);
@@ -166,11 +164,6 @@ std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
         if constexpr (std::is_same_v<T, ConnectionString>)
         {
             auto raw_client = RawContainerClient::CreateFromConnectionString(auth.toUnderType(), endpoint.container_name, client_options);
-            return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-        }
-        else if constexpr (std::is_same_v<T, std::shared_ptr<StorageSharedKeyCredentialWithAccessToSecret>>)
-        {
-            RawContainerClient raw_client{endpoint.getContainerEndpoint(), auth->impl, client_options};
             return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
         }
         else
@@ -376,7 +369,7 @@ AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const
 {
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
     {
-        return std::make_shared<StorageSharedKeyCredentialWithAccessToSecret>(
+        return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
             config.getString(config_prefix + ".account_name"),
             config.getString(config_prefix + ".account_key")
         );
