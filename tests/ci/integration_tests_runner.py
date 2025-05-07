@@ -874,6 +874,7 @@ class ClickhouseIntegrationTestsRunner:
         }  # type: Dict
         tests_times = defaultdict(float)  # type: Dict
         tests_log_paths = defaultdict(list)
+        known_broken_tests = self._get_broken_tests_list(self.repo_path)
         id_counter = 0
         for test_to_run in tests_to_run:
             tries_num = 1 if should_fail else FLAKY_TRIES_COUNT
@@ -890,6 +891,12 @@ class ClickhouseIntegrationTestsRunner:
                     1,
                     FLAKY_REPEAT_COUNT,
                 )
+
+                # Handle broken tests on the group counters that contain test results for a single group
+                self._handle_broken_tests(
+                    group_counters, known_broken_tests, tests_log_paths
+                )
+
                 id_counter = id_counter + 1
                 for counter, value in group_counters.items():
                     logging.info(
@@ -912,10 +919,6 @@ class ClickhouseIntegrationTestsRunner:
                         test_to_run,
                     )
                     break
-
-        # Handle broken tests on the main counters that contain all test results
-        known_broken_tests = self._get_broken_tests_list(self.repo_path)
-        self._handle_broken_tests(counters, known_broken_tests, tests_log_paths)
 
         if counters["FAILED"]:
             logging.info("Found failed tests: %s", " ".join(counters["FAILED"]))
@@ -1073,6 +1076,7 @@ class ClickhouseIntegrationTestsRunner:
         tests_times = defaultdict(float)
         tests_log_paths = defaultdict(list)
         items_to_run = list(grouped_tests.items())
+        known_broken_tests = self._get_broken_tests_list(self.repo_path)
         logging.info("Total test groups %s", len(items_to_run))
         if self.shuffle_test_groups():
             logging.info("Shuffling test groups")
@@ -1084,6 +1088,11 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
                 group, tests, MAX_RETRY, NUM_WORKERS, 0
+            )
+
+            # Handle broken tests on the group counters that contain test results for a single group
+            self._handle_broken_tests(
+                group_counters, known_broken_tests, tests_log_paths
             )
 
             total_tests = 0
@@ -1105,25 +1114,15 @@ class ClickhouseIntegrationTestsRunner:
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
 
-            # NOTE(strtgbb): Disabling while investigating broken tests not being marked as such
-            # if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
-            #     logging.info("Collected more than 20 failed/error tests, stopping")
-            #     break
-
-        # Handle broken tests on the main counters that contain all test results
-        known_broken_tests = self._get_broken_tests_list(self.repo_path)
-        self._handle_broken_tests(counters, known_broken_tests, tests_log_paths)
+            if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
+                logging.info("Collected more than 20 failed/error tests, stopping")
+                break
 
         if counters["FAILED"] or counters["ERROR"]:
             logging.info(
                 "Overall status failure, because we have tests in FAILED or ERROR state"
             )
             result_state = "failure"
-        # elif len(counters["BROKEN"]) >= 20:
-        #     logging.info(
-        #         "Overall status failure, more than 20 broken tests, likely did not run all tests"
-        #     )
-        #     result_state = "failure"
         else:
             logging.info("Overall success!")
             result_state = "success"
