@@ -179,6 +179,39 @@ jobs:
           echo "src_url: ${SRC_URL}"
           echo "dest_url: ${DEST_URL}"
 
+      - name: Install aws cli
+        if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
+        uses: unfor19/install-aws-cli-action@v1
+        with:
+          version: 2
+          arch: arm64
+
+      - name: Process ARM binary
+        if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
+        run: |
+          echo "Downloading clickhouse binary..."
+          if ! aws s3 cp "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse" clickhouse; then
+            echo "Failed to download clickhouse binary"
+            exit 1
+          fi
+          chmod +x clickhouse
+
+          echo "Running clickhouse binary..."
+          ./clickhouse -q'q'
+
+          echo "Stripping the binary..."
+          strip clickhouse -o clickhouse-stripped
+
+          echo "Uploading processed binaries..."
+          if ! aws s3 cp clickhouse "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/non-self-extracting/"; then
+            echo "Failed to upload clickhouse binary"
+            exit 1
+          fi
+          if ! aws s3 cp clickhouse-stripped "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/non-self-extracting/"; then
+            echo "Failed to upload stripped clickhouse binary"
+            exit 1
+          fi
+
   copy-packages:
     needs: extract-package-info
     runs-on: [altinity-func-tester, altinity-on-demand]
@@ -379,19 +412,19 @@ jobs:
             exit 1
           fi
 
-  publish-docker:
-    needs: extract-package-info
-    strategy:
-      matrix:
-        image_type: [server, keeper]
-        variant: ['', '-alpine']
-    uses: ./.github/workflows/docker_publish.yml
-    with:
-      docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ needs.extract-package-info.outputs.docker_version }}${{ matrix.variant }}
-      release_environment: ${{ inputs.release_environment }}
-      upload_artifacts: false
-      s3_upload_path: "${{ needs.extract-package-info.outputs.dest_url }}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"
-    secrets: inherit
+  # publish-docker:
+  #   needs: extract-package-info
+  #   strategy:
+  #     matrix:
+  #       image_type: [server, keeper]
+  #       variant: ['', '-alpine']
+  #   uses: ./.github/workflows/docker_publish.yml
+  #   with:
+  #     docker_image: altinityinfra/clickhouse-${{ matrix.image_type }}:${{ needs.extract-package-info.outputs.docker_version }}${{ matrix.variant }}
+  #     release_environment: ${{ inputs.release_environment }}
+  #     upload_artifacts: false
+  #     s3_upload_path: "${{ needs.extract-package-info.outputs.dest_url }}/docker_images/${{ matrix.image_type }}${{ matrix.variant }}/"
+  #   secrets: inherit
 
   sign-and-publish:
     needs: [extract-package-info, copy-packages]
@@ -434,22 +467,6 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-      - name: Process ARM binary
-        if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
-        run: |
-          sudo apt-get update && sudo apt-get install -y binutils
-
-          echo "Copying ARM binary..."
-          mkdir -p /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting
-          cp /home/runner/.cache/tmp/packages/arm-bin/clickhouse /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse
-
-          echo "Running clickhouse binary..."
-          sudo chmod +x /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse
-          /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse -q'q'
-
-          echo "Stripping the binary..."
-          strip /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse -o /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse-stripped
 
       - name: Setup GPG
         run: |
