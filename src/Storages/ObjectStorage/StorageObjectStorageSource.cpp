@@ -161,7 +161,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             std::shared_ptr<IObjectStorageIterator> object_iterator = nullptr;
             std::unique_ptr<GlobIterator::ListObjectsCacheWithKey> cache_ptr = nullptr;
 
-            if (local_context->getSettingsRef()[Setting::use_object_storage_list_objects_cache])
+            if (local_context->getSettingsRef()[Setting::use_object_storage_list_objects_cache] && object_storage->supportsListObjectsCache())
             {
                 auto & cache = ObjectStorageListObjectsCache::instance();
                 ObjectStorageListObjectsCache::Key cache_key {object_storage->getDescription(), configuration->getNamespace(), configuration->getPathWithoutGlobs()};
