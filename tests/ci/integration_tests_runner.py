@@ -536,8 +536,14 @@ class ClickhouseIntegrationTestsRunner:
 
         broken_tests_log = os.path.join(self.result_path, "broken_tests_handler.log")
 
-        with open(broken_tests_log, "w") as log_file:
+        with open(broken_tests_log, "a") as log_file:
+            log_file.write(f"{len(known_broken_tests)} Known broken tests\n")
+            log_file.write(f"Total tests in BROKEN state: {len(counters['BROKEN'])}\n")
+            log_file.write(f"Total tests in ERROR state: {len(counters['ERROR'])}\n")
+            log_file.write(f"Total tests in FAILED state: {len(counters['FAILED'])}\n")
+
             for fail_status in ("ERROR", "FAILED"):
+
                 for failed_test in counters[fail_status]:
                     if failed_test not in known_broken_tests.keys():
                         log_file.write(
@@ -575,6 +581,10 @@ class ClickhouseIntegrationTestsRunner:
                             counters["BROKEN"].append(failed_test)
                         else:
                             log_file.write("Test not marked as broken\n")
+
+            log_file.write(f"Total tests in BROKEN state: {len(counters['BROKEN'])}\n")
+            log_file.write(f"Total tests in ERROR state: {len(counters['ERROR'])}\n")
+            log_file.write(f"Total tests in FAILED state: {len(counters['FAILED'])}\n")
 
     def _get_runner_image_cmd(self):
         image_cmd = ""
@@ -1092,9 +1102,10 @@ class ClickhouseIntegrationTestsRunner:
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
 
-            if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
-                logging.info("Collected more than 20 failed/error tests, stopping")
-                break
+            # NOTE(strtgbb): Disabling while investigating broken tests not being marked as such
+            # if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
+            #     logging.info("Collected more than 20 failed/error tests, stopping")
+            #     break
 
         # Handle broken tests on the main counters that contain all test results
         known_broken_tests = self._get_broken_tests_list(self.repo_path)
@@ -1105,11 +1116,11 @@ class ClickhouseIntegrationTestsRunner:
                 "Overall status failure, because we have tests in FAILED or ERROR state"
             )
             result_state = "failure"
-        elif len(counters["BROKEN"]) >= 20:
-            logging.info(
-                "Overall status failure, more than 20 broken tests, likely did not run all tests"
-            )
-            result_state = "failure"
+        # elif len(counters["BROKEN"]) >= 20:
+        #     logging.info(
+        #         "Overall status failure, more than 20 broken tests, likely did not run all tests"
+        #     )
+        #     result_state = "failure"
         else:
             logging.info("Overall success!")
             result_state = "success"
