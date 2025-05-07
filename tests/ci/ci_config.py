@@ -374,18 +374,18 @@ class CI:
         ),
         JobNames.INTEGRATION_TEST_ASAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
-            num_batches=8,
+            num_batches=12,
             timeout=9000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_ASAN],
             num_batches=12,
-            timeout=9000,  # the job timed out with default value (7200)
+            timeout=12000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_TSAN: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_TSAN],
             num_batches=12,
-            timeout=9000,  # the job timed out with default value (7200)
+            timeout=12000,  # the job timed out with default value (7200)
         ),
         JobNames.INTEGRATION_TEST_AARCH64: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_AARCH64],
@@ -394,7 +394,7 @@ class CI:
         ),
         JobNames.INTEGRATION_TEST: CommonJobConfigs.INTEGRATION_TEST.with_properties(
             required_builds=[BuildNames.PACKAGE_RELEASE],
-            num_batches=8,
+            num_batches=12,
             # release_only=True,
             timeout=9000,  # the job timed out with default value (7200)
         ),

@@ -109,6 +109,7 @@ jobs:
       GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
     strategy:
       fail-fast: false  # we always wait for the entire matrix
+      max-parallel: 6  # limit the number of parallel jobs to 6
       matrix:
         batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
     steps:
