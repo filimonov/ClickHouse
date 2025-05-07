@@ -188,6 +188,9 @@ jobs:
 
       - name: Process ARM binary
         if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
+        env:
+         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           echo "Downloading clickhouse binary..."
           if ! aws s3 cp "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse" clickhouse; then
