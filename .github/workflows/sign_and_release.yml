@@ -446,7 +446,7 @@ jobs:
 
           echo "Running clickhouse binary..."
           sudo chmod +x /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse
-          /home/runner/.cache/tmp/packages/arm-bin/clickhouse -q'q'
+          /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse -q'q'
 
           echo "Stripping the binary..."
           strip /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse -o /home/runner/.cache/tmp/packages/arm-bin/non-self-extracting/clickhouse-stripped
