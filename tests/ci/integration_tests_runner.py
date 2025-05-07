@@ -16,7 +16,7 @@ import sys
 import time
 from collections import OrderedDict, defaultdict
 from itertools import chain
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import yaml  # type: ignore[import-untyped]
 
@@ -893,9 +893,7 @@ class ClickhouseIntegrationTestsRunner:
                 )
 
                 # Handle broken tests on the group counters that contain test results for a single group
-                self._handle_broken_tests(
-                    group_counters, known_broken_tests, tests_log_paths
-                )
+                self._handle_broken_tests(group_counters, known_broken_tests, log_paths)
 
                 id_counter = id_counter + 1
                 for counter, value in group_counters.items():
@@ -1091,9 +1089,7 @@ class ClickhouseIntegrationTestsRunner:
             )
 
             # Handle broken tests on the group counters that contain test results for a single group
-            self._handle_broken_tests(
-                group_counters, known_broken_tests, tests_log_paths
-            )
+            self._handle_broken_tests(group_counters, known_broken_tests, log_paths)
 
             total_tests = 0
             for counter, value in group_counters.items():
