@@ -193,7 +193,7 @@ jobs:
          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           echo "Downloading clickhouse binary..."
-          if ! aws s3 cp "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse" clickhouse; then
+          if ! aws s3 cp "${SRC_URL}/package_aarch64/clickhouse" clickhouse; then
             echo "Failed to download clickhouse binary"
             exit 1
           fi
@@ -206,11 +206,11 @@ jobs:
           strip clickhouse -o clickhouse-stripped
 
           echo "Uploading processed binaries..."
-          if ! aws s3 cp clickhouse "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse "${SRC_URL}/package_aarch64/arm-bin/non-self-extracting/"; then
             echo "Failed to upload clickhouse binary"
             exit 1
           fi
-          if ! aws s3 cp clickhouse-stripped "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse-stripped "${SRC_URL}/package_aarch64/arm-bin/non-self-extracting/"; then
             echo "Failed to upload stripped clickhouse binary"
             exit 1
           fi
