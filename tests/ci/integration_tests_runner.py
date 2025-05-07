@@ -526,7 +526,12 @@ class ClickhouseIntegrationTestsRunner:
             for test in current_counters[state]:
                 main_counters[state].append(test)
 
-    def _handle_broken_tests(self, counters, known_broken_tests, log_paths):
+    def _handle_broken_tests(
+        self,
+        counters: Dict[str, List[str]],
+        known_broken_tests: Dict[str, Dict[str, str]],
+        log_paths: Union[Dict[str, List[str]], List[str]],
+    ) -> None:
 
         def get_log_paths(test_name):
             """Could be a list of logs for all tests or a dict with test name as a key"""
@@ -542,7 +547,7 @@ class ClickhouseIntegrationTestsRunner:
                 log_file.write(f"Total tests in {status} state: {len(tests)}\n")
 
             for fail_status in ("ERROR", "FAILED"):
-                for failed_test in counters[fail_status]:
+                for failed_test in counters[fail_status].copy():
                     log_file.write(
                         f"Checking test {failed_test} (status: {fail_status})\n"
                     )
