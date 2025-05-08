@@ -5,6 +5,7 @@ from pathlib import Path
 from itertools import combinations
 import json
 from datetime import datetime
+from functools import lru_cache
 
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
@@ -124,6 +125,7 @@ def get_pr_info_from_number(pr_number: str) -> dict:
     return response.json()
 
 
+@lru_cache
 def get_run_details(run_url: str) -> dict:
     """
     Fetch run details for a given run URL.
@@ -515,7 +517,9 @@ def main():
             )
 
     if args.pr_number == 0:
-        pr_info_html = "Release"
+        run_details = get_run_details(args.actions_run_url)
+        branch_name = run_details.get("head_branch", "unknown branch")
+        pr_info_html = f"Release ({branch_name})"
     else:
         try:
             pr_info = get_pr_info_from_number(args.pr_number)
