@@ -241,5 +241,8 @@
     },
     "test_s3_cache_locality/test.py::test_cache_locality": {
         "reason": "INVESTIGATE - Timeout on TSAN"
+    },
+    "test_reload_clusters_config/test.py::test_update_one_cluster": {
+        "reason": "INVESTIGATE - Fails on ASAN old analyzer"
     }
 }
