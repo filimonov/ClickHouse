@@ -107,7 +107,20 @@ size_t ObjectStorageListObjectsCache::WeightFunction::operator()(const Value & v
 
     for (const auto & object : value)
     {
-        weight += object->relative_path.capacity() + sizeof(ObjectMetadata);
+        const auto object_metadata = object->metadata;
+        weight += object->relative_path.capacity() + sizeof(object_metadata);
+
+        // variable size
+        if (object_metadata)
+        {
+            weight += object_metadata->etag.capacity();
+            weight += object_metadata->attributes.size() * (sizeof(std::string) * 2);
+
+            for (const auto & [k, v] : object_metadata->attributes)
+            {
+                weight += k.capacity() + v.capacity();
+            }
+        }
     }
 
     return weight;
