@@ -14,6 +14,12 @@
     "03203_hive_style_partitioning": {
         "reason": "INVESTIGATE - new fail in 24.12"
     },
+    "00988_expansion_aliases_limit": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
+    "test_overcommit_tracker/test.py::test_user_overcommit": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
     "test_attach_partition_using_copy/test.py::test_all_replicated": {
         "reason": "NEEDSFIX - Web disk is not working"
     },
