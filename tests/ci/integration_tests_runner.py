@@ -116,16 +116,19 @@ def get_counters(fname: str) -> Dict[str, List[str]]:
             #
             #     test_mysql_protocol/test.py::test_golang_client
             #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            #     [gw1] SKIPPED test_odbc_interaction/test.py:56: Sanitizers cannot work with third-party shared libraries
             #
             # And only the line with test status should be matched
             if not (".py::" in line and " " in line):
                 continue
 
             line = line.strip()
-            # [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
-            # ^^^^^^^^^^^^^
+            # Remove worker info and progress percentage if present
             if line.strip().startswith("["):
-                line = re.sub(r"^\[[^\[\]]*\] \[[^\[\]]*\] ", "", line)
+                # Handle both formats:
+                # [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+                # [gw1] SKIPPED test_odbc_interaction/test.py:56: Sanitizers cannot work with third-party shared libraries
+                line = re.sub(r"^\[[^\[\]]*\] (?:\[[^\[\]]*\] )?", "", line)
 
             line_arr = line.split(" ")
             if len(line_arr) < 2:
@@ -137,6 +140,7 @@ def get_counters(fname: str) -> Dict[str, List[str]]:
             #     ERROR test_mysql_protocol/test.py::test_golang_client
             #     PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
             #     PASSED test_drop_is_lock_free/test.py::test_query_is_lock_free[detach part]
+            #     SKIPPED test_odbc_interaction/test.py:56: Sanitizers cannot work with third-party shared libraries
             #
             state = line_arr.pop(0)
             test_name = " ".join(line_arr)
