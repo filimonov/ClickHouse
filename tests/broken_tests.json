@@ -15,10 +15,16 @@
         "reason": "INVESTIGATE - new fail in 24.12"
     },
     "test_attach_partition_using_copy/test.py::test_all_replicated": {
-        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+        "reason": "NEEDSFIX - Web disk is not working"
     },
     "test_attach_partition_using_copy/test.py::test_both_mergetree": {
-        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+        "reason": "NEEDSFIX - Web disk is not working"
+    },
+    "test_attach_partition_using_copy/test.py::test_not_work_on_different_disk": {
+        "reason": "NEEDSFIX - Web disk is not working"
+    },
+    "test_attach_partition_using_copy/test.py::test_only_destination_replicated": {
+        "reason": "NEEDSFIX - Web disk is not working"
     },
     "test_backup_restore_on_cluster/test_cancel_backup.py::test_shutdown_cancels_backup": {
         "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
@@ -31,12 +37,6 @@
     },
     "test_settings_randomization/test.py::test_settings_randomization": {
         "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release"
-    },
-    "test_attach_partition_using_copy/test.py::test_not_work_on_different_disk": {
-        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
-    },
-    "test_attach_partition_using_copy/test.py::test_only_destination_replicated": {
-        "reason": "INVESTIGATE - Fails on TSAN"
     },
     "02766_prql": {
         "reason": "KNOWN - PRQL is disabled in Antalya branch"
@@ -126,10 +126,10 @@
         "reason": "NEEDSFIX - rust problem"
     },
     "test_cow_policy/test.py::test_cow_policy[cow_policy_multi_disk]": {
-        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+        "reason": "NEEDSFIX - Timeout"
     },
     "test_cow_policy/test.py::test_cow_policy[cow_policy_multi_volume]": {
-        "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+        "reason": "NEEDSFIX - Timeout"
     },
     "test_s3_assume_role/test.py::test_using_assumed_creds": {
         "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
@@ -238,5 +238,8 @@
     },
     "test_hedged_requests_parallel/test.py::test_send_table_status_sleep": {
         "reason": "INVESTIGATE - Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_s3_cache_locality/test.py::test_cache_locality": {
+        "reason": "INVESTIGATE - Timeout on TSAN"
     }
 }
