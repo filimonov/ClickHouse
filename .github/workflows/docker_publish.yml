@@ -55,7 +55,7 @@ jobs:
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: Set clickhouse-server version as new tag
         run: |
@@ -79,7 +79,7 @@ jobs:
           echo "Cleaned version: $NEW_TAG"
 
           # Append "-prerelease" if necessary
-          if [ "${{ github.event.inputs.release_type || inputs.release_type }}" = "staging" ]; then
+          if [ "${{ github.event.inputs.release_environment || inputs.release_environment }}" = "staging" ]; then
             NEW_TAG="${NEW_TAG}-prerelease"
           fi
 
@@ -142,6 +142,9 @@ jobs:
 
       - name: Upload to S3
         if: ${{ inputs.s3_upload_path != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           aws s3 sync image_archives/ "${{ inputs.s3_upload_path }}"
 
