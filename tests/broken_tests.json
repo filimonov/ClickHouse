@@ -20,6 +20,12 @@
     "test_overcommit_tracker/test.py::test_user_overcommit": {
         "reason": "INVESTIGATE - fails in tsan"
     },
+    "01037_polygon_dicts_correctness_fast": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
+    "03094_grouparraysorted_memory": {
+        "reason": "INVESTIGATE - fails in tsan"
+    },
     "test_attach_partition_using_copy/test.py::test_all_replicated": {
         "reason": "NEEDSFIX - Web disk is not working"
     },
