@@ -478,7 +478,12 @@ public:
         createDynamicStorage(type);
     }
 
-    virtual void assertInitialized() const override { return getImpl().assertInitialized(); }
+    void assertInitialized() const override { return getImpl().assertInitialized(); }
+
+    std::optional<String> tryGetSamplePathFromMetadata() const override
+    {
+        return getImpl().tryGetSamplePathFromMetadata();
+    }
 
 private:
     inline StorageObjectStorage::Configuration & getImpl() const
