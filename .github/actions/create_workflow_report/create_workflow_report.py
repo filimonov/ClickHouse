@@ -177,14 +177,26 @@ def get_checks_known_fails(client: Client, job_url: str, known_fails: dict):
     """
     Get tests that are known to fail for the given job URL.
     """
-    assert len(known_fails) > 0, "cannot query the database with empty known fails"
-    columns = "check_status as job_status, check_name as job_name, test_status, test_name, report_url as results_link"
-    query = f"""SELECT {columns} FROM `gh-data`.checks
-                WHERE task_url LIKE '{job_url}%'
-                AND test_status='BROKEN'
-                AND test_name IN ({','.join(f"'{test}'" for test in known_fails.keys())})
-                ORDER BY test_name, check_name
-                """
+    if len(known_fails) == 0:
+        return pd.DataFrame()
+
+    query = f"""SELECT job_status, job_name, status as test_status, test_name, results_link
+        FROM (
+            SELECT
+                argMax(check_status, check_start_time) as job_status,
+                check_name as job_name,
+                argMax(test_status, check_start_time) as status,
+                test_name,
+                report_url as results_link,
+                task_url
+            FROM `gh-data`.checks
+            GROUP BY check_name, test_name, report_url, task_url
+        )
+        WHERE task_url LIKE '{job_url}%'
+        AND test_status='BROKEN'
+        AND test_name IN ({','.join(f"'{test}'" for test in known_fails.keys())})
+        ORDER BY job_name, test_name
+        """
 
     df = client.query_dataframe(query)
 
@@ -302,15 +314,21 @@ def get_new_fails_this_pr(
         return pd.DataFrame()
 
     # Get all checks from the base branch that didn't fail
-    columns = (
-        "check_name as job_name, test_status, test_name, report_url as results_link"
-    )
-    base_checks_query = f"""SELECT {columns} FROM `gh-data`.checks
+    base_checks_query = f"""SELECT job_name, status as test_status, test_name, results_link
+            FROM (
+                SELECT
+                    check_name as job_name,
+                    argMax(test_status, check_start_time) as status,
+                    test_name,
+                    report_url as results_link,
+                    task_url
+                FROM `gh-data`.checks
                 WHERE commit_sha='{base_sha}'
-                AND test_status NOT IN ('FAIL', 'ERROR')
-                AND check_status!='error'
-                ORDER BY check_name, test_name
-                """
+                GROUP BY check_name, test_name, report_url, task_url
+            )
+            WHERE test_status NOT IN ('FAIL', 'ERROR')
+            ORDER BY job_name, test_name
+            """
     base_checks = client.query_dataframe(base_checks_query)
 
     # Get regression results from base branch that didn't fail
