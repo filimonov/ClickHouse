@@ -528,10 +528,7 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
 
         auto table_structure = configuration->tryGetTableStructureFromMetadata();
         if (table_structure)
-        {
-            sample_path = configuration->tryGetSamplePathFromMetadata().value_or("");
             return table_structure.value();
-        }
     }
 
     ObjectInfos read_keys;

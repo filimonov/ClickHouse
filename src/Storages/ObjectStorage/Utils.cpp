@@ -67,11 +67,6 @@ void resolveSchemaAndFormat(
     {
         configuration->setFormat(StorageObjectStorage::resolveFormatFromData(object_storage, configuration, format_settings, sample_path, context));
     }
-    else
-    {
-        if (configuration->isDataLakeConfiguration())
-            sample_path = configuration->tryGetSamplePathFromMetadata().value_or("");
-    }
 
     if (!columns.hasOnlyOrdinary())
     {
