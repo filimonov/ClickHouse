@@ -523,8 +523,8 @@ jobs:
         uses: ./.github/actions/create_workflow_report
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
-          CHECKS_DATABASE_USER: ${{ secrets.CHECKS_DATABASE_USER }}
-          CHECKS_DATABASE_PASSWORD: ${{ secrets.CHECKS_DATABASE_PASSWORD }}
+          CHECKS_DATABASE_HOST: ${{ secrets.CLICKHOUSE_TEST_STAT_URL }}
+          CHECKS_DATABASE_USER: ${{ secrets.CLICKHOUSE_TEST_STAT_LOGIN }}
+          CHECKS_DATABASE_PASSWORD: ${{ secrets.CLICKHOUSE_TEST_STAT_PASSWORD }}
         with:
           final: true
