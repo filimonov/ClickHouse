@@ -1,6 +1,6 @@
 - name: Set major version
   set_fact:
-    major_version: "{{ pkgver.split('.')[0] | int }}"
+    major_version: "{{ (pkgver.split('.')[0] | int) }}"
 
 - name: Copy new binaries
   shell:
