@@ -459,11 +459,11 @@ jobs:
 
       - name: Download packages
         run: |
-          if ! aws s3 sync "${DEST_URL}/packages/ARM_PACKAGES/" /home/runner/.cache/tmp/packages --recursive; then
+          if ! aws s3 sync "${DEST_URL}/packages/ARM_PACKAGES/" /home/runner/.cache/tmp/packages; then
             echo "Failed to download ARM packages"
             exit 1
           fi
-          if ! aws s3 sync "${DEST_URL}/packages/AMD_PACKAGES/" /home/runner/.cache/tmp/packages --recursive; then
+          if ! aws s3 sync "${DEST_URL}/packages/AMD_PACKAGES/" /home/runner/.cache/tmp/packages; then
             echo "Failed to download AMD packages"
             exit 1
           fi
