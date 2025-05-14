@@ -471,13 +471,14 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Install Ansible
+      - name: Install required packages
         run: |
-          echo "Installing Ansible..."
+          echo "Installing required packages..."
           sudo apt-get update
-          sudo apt-get install -y software-properties-common
+          sudo apt-get install -y software-properties-common python3-pip dpkg-sig apt-utils gnupg
           sudo apt-add-repository --yes --update ppa:ansible/ansible
           sudo apt-get install -y ansible
+          pip3 install boto3 botocore
 
       - name: Sign and publish packages
         run: |
@@ -553,8 +554,6 @@ jobs:
           version: 2
           arch: arm64
 
-      - name: Copy to released directory
-        run: |
       - name: Copy to released directory
         run: |
           echo "Copying to released directory..."
