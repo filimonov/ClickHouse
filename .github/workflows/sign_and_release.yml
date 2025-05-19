@@ -214,11 +214,11 @@ jobs:
           strip clickhouse -o clickhouse-stripped
 
           echo "Uploading processed binaries..."
-          if ! aws s3 cp clickhouse "${SRC_URL}/package_aarch64/arm-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse "${SRC_URL}/package_aarch64/arm64-bin/non-self-extracting/"; then
             echo "Failed to upload clickhouse binary"
             exit 1
           fi
-          if ! aws s3 cp clickhouse-stripped "${SRC_URL}/package_aarch64/arm-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse-stripped "${SRC_URL}/package_aarch64/arm64-bin/non-self-extracting/"; then
             echo "Failed to upload stripped clickhouse binary"
             exit 1
           fi
@@ -364,19 +364,19 @@ jobs:
 
       - name: Separate ARM binary
         run: |
-          aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse" "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse"
-          aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/ARM_PACKAGES/arm-bin/clickhouse-stripped"
+          aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse" "${DEST_URL}/packages/ARM_PACKAGES/arm64-bin/clickhouse"
+          aws s3 mv "${DEST_URL}/packages/ARM_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/ARM_PACKAGES/arm64-bin/clickhouse-stripped"
 
       - name: Separate AMD binary
         run: |
-          aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse" "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse"
-          aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse-stripped"
+          aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse" "${DEST_URL}/packages/AMD_PACKAGES/amd64-bin/clickhouse"
+          aws s3 mv "${DEST_URL}/packages/AMD_PACKAGES/clickhouse-stripped" "${DEST_URL}/packages/AMD_PACKAGES/amd64-bin/clickhouse-stripped"
 
       - name: Process AMD binary
         if: ${{ env.NEEDS_BINARY_PROCESSING == 'true' }}
         run: |
           echo "Downloading clickhouse binary..."
-          if ! aws s3 cp "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/clickhouse" clickhouse; then
+          if ! aws s3 cp "${DEST_URL}/packages/AMD_PACKAGES/amd64-bin/clickhouse" clickhouse; then
             echo "Failed to download clickhouse binary"
             exit 1
           fi
@@ -389,11 +389,11 @@ jobs:
           strip clickhouse -o clickhouse-stripped
 
           echo "Uploading processed binaries..."
-          if ! aws s3 cp clickhouse "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse "${DEST_URL}/packages/AMD_PACKAGES/amd64-bin/non-self-extracting/"; then
             echo "Failed to upload clickhouse binary"
             exit 1
           fi
-          if ! aws s3 cp clickhouse-stripped "${DEST_URL}/packages/AMD_PACKAGES/amd-bin/non-self-extracting/"; then
+          if ! aws s3 cp clickhouse-stripped "${DEST_URL}/packages/AMD_PACKAGES/amd64-bin/non-self-extracting/"; then
             echo "Failed to upload stripped clickhouse binary"
             exit 1
           fi
@@ -466,11 +466,11 @@ jobs:
 
       - name: Download packages
         run: |
-          if ! aws s3 sync "${DEST_URL}/packages/ARM_PACKAGES/" /home/runner/.cache/tmp/packages; then
+          if ! aws s3 sync "${DEST_URL}/packages/ARM_PACKAGES/" /home/runner/.cache/tmp/packages --exact-timestamps; then
             echo "Failed to download ARM packages"
             exit 1
           fi
-          if ! aws s3 sync "${DEST_URL}/packages/AMD_PACKAGES/" /home/runner/.cache/tmp/packages; then
+          if ! aws s3 sync "${DEST_URL}/packages/AMD_PACKAGES/" /home/runner/.cache/tmp/packages --exact-timestamps; then
             echo "Failed to download AMD packages"
             exit 1
           fi
