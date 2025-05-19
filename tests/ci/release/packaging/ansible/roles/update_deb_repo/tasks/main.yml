@@ -44,10 +44,13 @@
     path: "{{ local_repo_path }}/{{ repo_prefix }}apt-repo/dists/{{ repo_deb_dist }}"
   register: dists_stat
 
-- name: Fail if dists/{{ repo_deb_dist }} does not exist
-  assert:
-    that: "dists_stat.stat.exists"
-    fail_msg: "dists/{{ repo_deb_dist }} does not exist"
+- name: Show directory contents
+  shell: "ls -la {{ local_repo_path }}/{{ repo_prefix }}apt-repo/dists/{{ repo_deb_dist }}/"
+  register: dir_contents
+
+- name: Display directory contents
+  debug:
+    var: dir_contents.stdout_lines
 
 - name: Build and sign {{ repo_prefix }}apt repo
   shell:
