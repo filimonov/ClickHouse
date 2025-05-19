@@ -18,6 +18,10 @@ on:
         description: 'GPG passphrase for signing (required for production releases)'
         required: false
         type: string
+      folder_time:
+        description: 'Optional timestamp for the release folder. If not provided, one will be generated.'
+        required: false
+        type: string
 
 env:
   ARTIFACT_NAME: build_report_package_release
@@ -145,8 +149,12 @@ jobs:
               ;;
           esac
 
-          # Generate folder time
-          FOLDER_TIME=$(date -u +"%Y-%m-%dT%H-%M-%S.%3N")
+          # Generate folder time if not provided
+          if [ -z "${{ inputs.folder_time }}" ]; then
+            FOLDER_TIME=$(date -u +"%Y-%m-%dT%H-%M-%S.%3N")
+          else
+            FOLDER_TIME="${{ inputs.folder_time }}"
+          fi
 
           # Set all environment variables at once
           {
@@ -339,14 +347,14 @@ jobs:
         run: |
           # Move ARM packages
           echo "Moving verified ARM packages to destination..."
-          if ! aws s3 cp "${SRC_URL}/package_aarch64/" "${DEST_URL}/packages/ARM_PACKAGES/" --recursive; then
+          if ! aws s3 sync "${SRC_URL}/package_aarch64/" "${DEST_URL}/packages/ARM_PACKAGES/"; then
             echo "Failed to move ARM packages to destination"
             exit 1
           fi
 
           # Move AMD packages
           echo "Moving verified AMD packages to destination..."
-          if ! aws s3 cp "${SRC_URL}/package_release/" "${DEST_URL}/packages/AMD_PACKAGES/" --recursive; then
+          if ! aws s3 sync "${SRC_URL}/package_release/" "${DEST_URL}/packages/AMD_PACKAGES/"; then
             echo "Failed to move AMD packages to destination"
             exit 1
           fi
@@ -433,7 +441,6 @@ jobs:
     needs: [extract-package-info, copy-packages]
     runs-on: arc-runners-clickhouse-signer
     env:
-      GPG_PASSPHRASE: ${{ inputs.release_environment == 'production' && inputs.GPG_PASSPHRASE || secrets.GPG_PASSPHRASE }}
       REPO_DNS_NAME: ${{ inputs.release_environment == 'production' && 'builds.altinity.cloud' || 'builds.staging.altinity.cloud' }}
       REPO_NAME: ${{ inputs.release_environment == 'production' && 'altinity' || 'altinity-staging' }}
       REPO_SUBTITLE: ${{ inputs.release_environment == 'production' && 'Stable Builds' || 'Staging Builds' }}
@@ -480,11 +487,23 @@ jobs:
           sudo apt-get install -y ansible
           pip3 install boto3 botocore
 
+      - name: Set up GPG passphrase
+        run: |
+          if [ "${{ inputs.release_environment }}" == "production" ]; then
+            if [ -z "${{ inputs.GPG_PASSPHRASE }}" ]; then
+              echo "Error: GPG_PASSPHRASE is required for production releases"
+              exit 1
+            fi
+            echo "${{ inputs.GPG_PASSPHRASE }}" > /tmp/gpg_passphrase
+          else
+            echo "${{ secrets.GPG_PASSPHRASE }}" > /tmp/gpg_passphrase
+          fi
+          chmod 600 /tmp/gpg_passphrase
+
       - name: Sign and publish packages
         run: |
-          if [ -z ${GPG_PASSPHRASE} ]
-          then
-            echo "GPG_PASSPHRASE is not set"
+          if [ ! -f /tmp/gpg_passphrase ]; then
+            echo "Error: GPG passphrase file not found"
             exit 1
           fi
 
@@ -505,7 +524,7 @@ jobs:
 
           GPG_KEY_NAME=$(gpg --quiet --list-secret-keys | grep uid | head --lines 1 | tr -s " " | cut -d " " -f 4-)
           GPG_KEY_ID=$(gpg --quiet --list-secret-keys --with-keygrip "${GPG_KEY_NAME}" | grep Keygrip | head --lines 1 | tr -s " " | cut -d " " -f 4)
-          echo "$GPG_PASSPHRASE" | base64 -d | sudo openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/root/.key-encrypting-key -in - -out - | /usr/lib/gnupg/gpg-preset-passphrase --preset $GPG_KEY_ID >/dev/null 2>&1
+          cat /tmp/gpg_passphrase | base64 -d | sudo openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/root/.key-encrypting-key -in - -out - | /usr/lib/gnupg/gpg-preset-passphrase --preset $GPG_KEY_ID >/dev/null 2>&1
 
           echo "Running Ansible playbook for signing and publishing..."
           echo "ansible-playbook -i ClickHouse/tests/ci/release/packaging/ansible/inventory/localhost.yml -e aws_region=$AWS_REGION -e local_repo_path="/home/runner/.cache/${{ inputs.release_environment }}" -e pkgver=\"${PACKAGE_VERSION}\" -e release_environment=$RELEASE_ENVIRONMENT -e repo_dns_name=$REPO_DNS_NAME -e repo_name=$REPO_NAME -e repo_prefix=\"$REPO_PREFIX\" -e repo_subtitle=\"$REPO_SUBTITLE\" -e s3_pkgs_bucket=$S3_STORAGE_BUCKET -e s3_pkgs_path=\"builds/stable/v${PACKAGE_VERSION}/${FOLDER_TIME}\" -e repo_path=\"/home/runner/.cache/${{ inputs.release_environment }}\" ClickHouse/tests/ci/release/packaging/ansible/sign-and-release.yml "
@@ -533,6 +552,7 @@ jobs:
         run: |
           echo "Cleaning up temporary files..."
           rm -rf /home/runner/.cache/tmp/packages || true
+          rm -f /tmp/gpg_passphrase || true
 
   repo-sanity-check:
     needs: sign-and-publish
