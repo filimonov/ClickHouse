@@ -482,9 +482,10 @@ jobs:
         run: |
           echo "Installing required packages..."
           sudo apt-get update
-          sudo apt-get install -y software-properties-common python3-pip dpkg-sig apt-utils gnupg rpm
+          sudo apt-get install -y software-properties-common python3-pip dpkg-sig apt-utils gnupg rpm createrepo-c
           sudo apt-add-repository --yes --update ppa:ansible/ansible
           sudo apt-get install -y ansible
+          sudo ln -s /usr/bin/createrepo_c /usr/bin/createrepo
           pip3 install boto3 botocore
 
       - name: Set up GPG passphrase
