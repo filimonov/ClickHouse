@@ -1,0 +1,24 @@
+<clickhouse>
+    <access_token_processors>
+        <azure_demo>
+            <provider>azure</provider>
+            <tenant_id>YOUR_TENANT_ID</tenant_id>
+            <cache_lifetime>600</cache_lifetime>
+        </azure_demo>
+    </access_token_processors>
+
+    <users>
+        <demo_user>
+            <jwt />
+        </demo_user>
+    </users>
+
+    <users_directories>
+        <token>
+            <processor>azure_demo</processor>
+            <roles>
+                <sample_role />
+            </roles>
+        </token>
+    </users_directories>
+</clickhouse>
