@@ -1,0 +1,2 @@
+example_name	Variant(Tuple(nested1 Tuple(id Int32, value Int32)), Tuple(nested2 Tuple(id Int32, value Int32)))
+
