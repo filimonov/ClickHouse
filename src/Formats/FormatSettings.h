@@ -349,6 +349,7 @@ struct FormatSettings
     struct
     {
         bool input_flatten_google_wrappers = false;
+        bool oneof_as_variant = false;
         bool output_nullables_with_google_wrappers = false;
         /**
          * Some buffers (kafka / rabbit) split the rows internally using callback,

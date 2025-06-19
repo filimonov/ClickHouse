@@ -42,7 +42,8 @@ DataTypeValidationSettings::DataTypeValidationSettings(const DB::Settings & sett
     , allow_experimental_object_type(settings[Setting::allow_experimental_object_type])
     , allow_suspicious_fixed_string_types(settings[Setting::allow_suspicious_fixed_string_types])
     , enable_variant_type(settings[Setting::allow_experimental_variant_type])
-    , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types])
+    , allow_suspicious_variant_types(settings[Setting::allow_suspicious_variant_types]
+        || settings[Setting::input_format_protobuf_oneof_as_variant])
     , validate_nested_types(settings[Setting::validate_experimental_and_suspicious_types_inside_nested_types])
     , enable_dynamic_type(settings[Setting::allow_experimental_dynamic_type])
     , enable_json_type(settings[Setting::allow_experimental_json_type])
