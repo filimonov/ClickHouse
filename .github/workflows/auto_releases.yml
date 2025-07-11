@@ -19,6 +19,7 @@ on:
 
 jobs:
   AutoReleaseInfo:
+    if: github.repository == 'ClickHouse/ClickHouse'
     runs-on: [self-hosted, release-maker]
     outputs:
       data: ${{ steps.info.outputs.AUTO_RELEASE_PARAMS }}
@@ -65,6 +66,7 @@ jobs:
 
   Releases:
     needs: AutoReleaseInfo
+    if: github.repository == 'ClickHouse/ClickHouse'
     strategy:
       matrix:
         release_params: ${{ fromJson(needs.AutoReleaseInfo.outputs.data).releases }}
@@ -80,6 +82,7 @@ jobs:
 
   CleanUp:
     needs: [Releases]
+    if: github.repository == 'ClickHouse/ClickHouse'
     runs-on: [self-hosted, release-maker]
     steps:
       - uses: ./.github/actions/clean
