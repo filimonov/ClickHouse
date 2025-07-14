@@ -544,6 +544,9 @@ Possible values:
     DECLARE(Bool, input_format_protobuf_flatten_google_wrappers, false, R"(
 Enable Google wrappers for regular non-nested columns, e.g. google.protobuf.StringValue 'str' for String column 'str'. For Nullable columns empty wrappers are recognized as defaults, and missing as nulls
 )", 0) \
+    DECLARE(Bool, input_format_protobuf_oneof_as_variant, false, R"(
+Use Variant data type to represent Protobuf oneof fields.
+)", 0) \
     DECLARE(Bool, output_format_protobuf_nullables_with_google_wrappers, false, R"(
 When serializing Nullable columns with Google wrappers, serialize default values as empty wrappers. If turned off, default and null values are not serialized
 )", 0) \

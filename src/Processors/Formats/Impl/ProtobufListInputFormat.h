@@ -59,6 +59,7 @@ public:
 private:
     const FormatSchemaInfo schema_info;
     bool skip_unsupported_fields;
+    bool oneof_as_variant;
     const String google_protos_path;
 };
 

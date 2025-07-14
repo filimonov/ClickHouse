@@ -24,6 +24,7 @@
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypeTuple.h>
+#    include <DataTypes/DataTypeVariant.h>
 #    include <DataTypes/DataTypesDecimal.h>
 #    include <DataTypes/Serializations/SerializationDecimal.h>
 #    include <DataTypes/Serializations/SerializationFixedString.h>
@@ -3913,12 +3914,36 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
         with_length_delimiter, with_envelope, defaults_for_nullable_google_wrappers);
 }
 
-NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields)
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor, bool skip_unsupported_fields, bool oneof_as_variant)
 {
     NamesAndTypesList schema;
+    std::unordered_set<const FieldDescriptor *> fields_in_oneofs;
+    if (oneof_as_variant)
+    {
+        for (int idx = 0; idx < message_descriptor->oneof_decl_count(); ++idx)
+        {
+            const auto * oneof_desc = message_descriptor->oneof_decl(idx);
+            DataTypes variants;
+            for (int j = 0; j < oneof_desc->field_count(); ++j)
+            {
+                const auto * field = oneof_desc->field(j);
+                if (auto name_and_type = getNameAndDataTypeFromField(field, skip_unsupported_fields))
+                {
+                    fields_in_oneofs.insert(field);
+                    variants.push_back(std::make_shared<DataTypeTuple>(DataTypes{ name_and_type->type }, Strings{ field->name() }));
+                }
+            }
+            if (!variants.empty())
+                schema.emplace_back(oneof_desc->name(), std::make_shared<DataTypeVariant>(variants));
+        }
+    }
+
     for (int i = 0; i != message_descriptor->field_count(); ++i)
     {
-        if (auto name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i), skip_unsupported_fields))
+        const auto * field = message_descriptor->field(i);
+        if (oneof_as_variant && fields_in_oneofs.contains(field))
+            continue;
+        if (auto name_and_type = getNameAndDataTypeFromField(field, skip_unsupported_fields))
             schema.push_back(*name_and_type);
     }
     if (schema.empty())
