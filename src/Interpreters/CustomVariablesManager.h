@@ -2,6 +2,10 @@
 
 #include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 
+#include <Storages/MaterializedView/RefreshSchedule.h>
+#include <Storages/MaterializedView/RefreshSettings.h>
+
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Field.h>
 #include <base/types.h>
 
@@ -10,7 +14,9 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <shared_mutex>
+#include <utility>
 #include <unordered_map>
 #include <vector>
 
@@ -47,10 +53,36 @@ public:
         bool is_valid = false;
     };
 
+    struct RefreshState
+    {
+        std::chrono::sys_seconds last_completed_timeslot;
+        std::chrono::sys_seconds last_attempt_time;
+        String last_attempt_replica;
+        String last_attempt_error;
+        String previous_attempt_error;
+        bool last_attempt_succeeded = false;
+        Int64 attempt_number = 0;
+        Int64 randomness = 0;
+    };
+
+    struct RefreshData
+    {
+        explicit RefreshData(RefreshSchedule schedule_) : schedule(std::move(schedule_)) {}
+
+        std::mutex mutex;
+        RefreshState state;
+        RefreshSchedule schedule;
+        RefreshSettings settings;
+        std::chrono::system_clock::time_point next_refresh_time;
+        BackgroundSchedulePoolTaskHolder task;
+        bool stop_requested = false;
+    };
+
     struct Entry
     {
         Definition definition;
         boost::atomic_shared_ptr<const Value> value;
+        std::unique_ptr<RefreshData> refresh;
     };
 
     using EntryPtr = std::shared_ptr<Entry>;
@@ -65,12 +97,16 @@ public:
     void loadFromStorage(const ContextPtr & context, ICustomVariablesDefinitionsStorage & storage);
     void setEntry(const Key & key, EntryPtr entry);
     bool removeEntry(const Key & key);
+    void startRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry);
 
 private:
     struct KeyHash
     {
         size_t operator()(const Key & key) const;
     };
+
+    void stopRefreshTask(const EntryPtr & entry);
+    void refreshTask(const ContextPtr & context, const EntryPtr & entry);
 
     mutable std::shared_mutex mutex;
     std::unordered_map<Key, EntryPtr, KeyHash> entries;

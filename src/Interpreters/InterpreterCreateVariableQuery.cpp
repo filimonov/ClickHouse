@@ -10,6 +10,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateVariableQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTRefreshStrategy.h>
 
 #include <DataTypes/Utils.h>
 #include <boost/make_shared.hpp>
@@ -26,7 +27,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -59,8 +59,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
     if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local or session variables are supported in this phase");
 
-    if (create_query.refresh_strategy)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "REFRESH is not supported for custom variables yet");
+    if (create_query.refresh_strategy && is_session_scope)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "REFRESH is not supported for session variables");
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::CREATE_VARIABLE);
@@ -73,12 +73,27 @@ BlockIO InterpreterCreateVariableQuery::execute()
     {
         if (is_session_scope)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
+        if (create_query.refresh_strategy)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for refreshable variables");
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
     }
 
     current_context->checkAccess(access_rights_elements);
+
+    if (create_query.refresh_strategy)
+    {
+        const auto * refresh = create_query.refresh_strategy->as<ASTRefreshStrategy>();
+        if (!refresh)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid refresh strategy");
+        if (refresh->append)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "APPEND is not supported for custom variables");
+        if (refresh->dependencies)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "DEPENDS ON is not supported for custom variables");
+        if (isCustomVariableExpressionConstant(create_query.expression, current_context))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH is not allowed for constant custom variable expressions");
+    }
 
     auto evaluated = evaluateCustomVariableExpression(create_query.expression, current_context);
 
@@ -171,7 +186,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
     value->is_valid = true;
     entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
 
-    manager->setEntry(object_name, std::move(entry));
+    manager->setEntry(object_name, entry);
+    manager->startRefreshIfNeeded(current_context, entry);
 
     return {};
 }

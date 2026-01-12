@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -183,6 +184,17 @@ DataTypePtr getCustomVariableExpressionType(const ASTPtr & expression, const Con
         throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Custom variable expression must return a single column");
 
     return sample_block->getByPosition(0).type;
+}
+
+bool isCustomVariableExpressionConstant(const ASTPtr & expression, const ContextPtr & context)
+{
+    assertNoVariableAccess(expression);
+    auto eval_context = createEvaluationContext(context);
+
+    if (!tryEvaluateConstantExpression(expression, eval_context))
+        return false;
+
+    return !astContainsNonDeterministicFunctions(expression, eval_context);
 }
 
 void checkCustomVariableSize(const Field & value)

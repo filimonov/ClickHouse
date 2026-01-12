@@ -3,6 +3,7 @@
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Core/Types.h>
+#include <base/types.h>
 
 #include <algorithm>
 #include <chrono>

@@ -11,6 +11,8 @@
 #include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -71,7 +73,18 @@ void StorageSystemCustomVariables::fillData(
             else
                 res_columns[col++]->insertDefault();
 
-            res_columns[col++]->insertDefault(); // refresh_next_time
+            if (entry->refresh)
+            {
+                std::lock_guard refresh_lock(entry->refresh->mutex);
+                if (entry->refresh->next_refresh_time.time_since_epoch().count() != 0)
+                    res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(entry->refresh->next_refresh_time)));
+                else
+                    res_columns[col++]->insertDefault();
+            }
+            else
+            {
+                res_columns[col++]->insertDefault();
+            }
 
             if (value && !value->last_update_hostname.empty())
                 res_columns[col++]->insert(value->last_update_hostname);
@@ -83,7 +96,18 @@ void StorageSystemCustomVariables::fillData(
             else
                 res_columns[col++]->insertDefault();
 
-            res_columns[col++]->insertDefault(); // refresh_interval
+            if (entry->refresh)
+            {
+                std::lock_guard refresh_lock(entry->refresh->mutex);
+                if (entry->refresh->schedule.period.months == 0 && entry->refresh->schedule.period.seconds > 0)
+                    res_columns[col++]->insert(static_cast<UInt64>(entry->refresh->schedule.period.seconds));
+                else
+                    res_columns[col++]->insertDefault();
+            }
+            else
+            {
+                res_columns[col++]->insertDefault();
+            }
 
             res_columns[col++]->insert(definition.expression ? format({context, *definition.expression}) : "");
 

@@ -20,6 +20,7 @@ struct EvaluatedCustomVariable
 
 EvaluatedCustomVariable evaluateCustomVariableExpression(const ASTPtr & expression, const ContextPtr & context);
 DataTypePtr getCustomVariableExpressionType(const ASTPtr & expression, const ContextPtr & context);
+bool isCustomVariableExpressionConstant(const ASTPtr & expression, const ContextPtr & context);
 void checkCustomVariableSize(const Field & value);
 
 }
