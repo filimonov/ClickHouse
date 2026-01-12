@@ -12,10 +12,51 @@ struct Settings;
 
 struct CustomVariableName
 {
-    String scope;
+    enum class Scope
+    {
+        Local,
+        LocalPersistent,
+        Session,
+        Cluster,
+    };
+
+    Scope scope;
     String name;
 
-    String fullName() const { return scope + "." + name; }
+    static bool tryParseScope(const String & scope_str, Scope & scope_out)
+    {
+        if (scope_str == "local")
+            scope_out = Scope::Local;
+        else if (scope_str == "local_persistent")
+            scope_out = Scope::LocalPersistent;
+        else if (scope_str == "session")
+            scope_out = Scope::Session;
+        else if (scope_str == "cluster")
+            scope_out = Scope::Cluster;
+        else
+            return false;
+
+        return true;
+    }
+
+    static String scopeToString(Scope scope_value)
+    {
+        switch (scope_value)
+        {
+            case Scope::Local:
+                return "local";
+            case Scope::LocalPersistent:
+                return "local_persistent";
+            case Scope::Session:
+                return "session";
+            case Scope::Cluster:
+                return "cluster";
+        }
+
+        return "";
+    }
+
+    String fullName() const { return scopeToString(scope) + "." + name; }
     bool operator==(const CustomVariableName & other) const { return scope == other.scope && name == other.name; }
 };
 

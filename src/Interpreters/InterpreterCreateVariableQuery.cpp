@@ -37,10 +37,14 @@ CustomVariableName getCustomVariableName(const ASTPtr & ast)
     if (!identifier || identifier->name_parts.size() != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
 
-    const auto & scope = identifier->name_parts[0];
+    const auto & scope_str = identifier->name_parts[0];
     const auto & name = identifier->name_parts[1];
-    if (scope.empty() || name.empty())
+    if (scope_str.empty() || name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
+
+    CustomVariableName::Scope scope;
+    if (!CustomVariableName::tryParseScope(scope_str, scope))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown custom variable scope '{}'", scope_str);
 
     return CustomVariableName{scope, name};
 }
@@ -51,8 +55,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
     const auto & create_query = query_ptr->as<ASTCreateVariableQuery &>();
     auto object_name = getCustomVariableName(create_query.variable_name);
 
-    const bool is_session_scope = (object_name.scope == "session");
-    if (object_name.scope != "local" && !is_session_scope)
+    const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
+    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local or session variables are supported in this phase");
 
     if (create_query.refresh_strategy)
@@ -152,7 +156,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
     definition.expression = stored_create_query.expression;
     definition.refresh_strategy = create_query.refresh_strategy;
     definition.declared_type = declared_type;
-    definition.create_time = std::chrono::system_clock::now();
+    definition.load_time = std::chrono::system_clock::now();
 
     auto entry = std::make_shared<CustomVariablesManager::Entry>();
     entry->definition = std::move(definition);

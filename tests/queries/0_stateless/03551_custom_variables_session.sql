@@ -11,4 +11,4 @@ WHERE scope = 'session' AND name = 'cv_sess'
 ORDER BY name;
 
 DROP VARIABLE session.cv_sess;
-SELECT getVariable('session.cv_sess'); -- {serverError BAD_ARGUMENTS}
+SELECT getVariable('session.cv_sess'); -- {serverError UNKNOWN_IDENTIFIER}

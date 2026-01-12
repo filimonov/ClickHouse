@@ -31,7 +31,7 @@ public:
         ASTPtr expression;
         ASTPtr refresh_strategy;
         DataTypePtr declared_type;
-        std::chrono::system_clock::time_point create_time;
+        std::chrono::system_clock::time_point load_time;
     };
 
     struct Value

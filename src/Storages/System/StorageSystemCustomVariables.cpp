@@ -26,7 +26,7 @@ ColumnsDescription StorageSystemCustomVariables::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "Variable name without the scope prefix."},
         {"scope", std::make_shared<DataTypeString>(), "Variable scope (local, local_persistent, session, cluster)."},
         {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Last known value as string, NULL if missing."},
-        {"create_time", std::make_shared<DataTypeDateTime>(), "Time when the variable definition was created (best effort)."},
+        {"load_time", std::make_shared<DataTypeDateTime>(), "Time when the variable definition was loaded into memory."},
         {"last_update", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the last update attempt."},
         {"refresh_next_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Next scheduled refresh time."},
         {"last_update_hostname", std::make_shared<DataTypeString>(), "Hostname of the last updater."},
@@ -57,14 +57,14 @@ void StorageSystemCustomVariables::fillData(
 
             size_t col = 0;
             res_columns[col++]->insert(definition.key.name);
-            res_columns[col++]->insert(definition.key.scope);
+            res_columns[col++]->insert(CustomVariableName::scopeToString(definition.key.scope));
 
             if (value && value->has_value)
                 res_columns[col++]->insert(applyVisitor(FieldVisitorToString(), value->value));
             else
                 res_columns[col++]->insertDefault();
 
-            res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(definition.create_time)));
+            res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(definition.load_time)));
 
             if (value)
                 res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(value->last_update_time)));
@@ -109,7 +109,7 @@ void StorageSystemCustomVariables::fillData(
         }
     };
 
-    append_entries(context->getCustomVariablesManager().getAllEntries());
+        append_entries(context->getCustomVariablesManager().getAllEntries());
     if (context->hasSessionContext())
         append_entries(context->getSessionCustomVariablesManager().getAllEntries());
 }

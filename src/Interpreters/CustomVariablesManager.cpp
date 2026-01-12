@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 namespace
@@ -31,7 +32,7 @@ LoggerPtr getLog()
 
 size_t CustomVariablesManager::KeyHash::operator()(const Key & key) const
 {
-    return std::hash<String>{}(key.scope) ^ (std::hash<String>{}(key.name) << 1);
+    return std::hash<size_t>{}(static_cast<size_t>(key.scope)) ^ (std::hash<String>{}(key.name) << 1);
 }
 
 CustomVariablesManager::EntryPtr CustomVariablesManager::tryGetEntry(const Key & key) const
@@ -47,7 +48,7 @@ CustomVariablesManager::EntryPtr CustomVariablesManager::getEntry(const Key & ke
 {
     auto entry = tryGetEntry(key);
     if (!entry)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable '{}' not found", key.fullName());
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Custom variable '{}' not found", key.fullName());
     return entry;
 }
 
@@ -86,7 +87,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
         definition.expression = create_query->expression;
         definition.refresh_strategy = create_query->refresh_strategy;
         definition.declared_type = nullptr;
-        definition.create_time = std::chrono::system_clock::now();
+        definition.load_time = std::chrono::system_clock::now();
 
         auto entry = std::make_shared<Entry>();
         entry->definition = std::move(definition);

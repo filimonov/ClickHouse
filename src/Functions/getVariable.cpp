@@ -14,8 +14,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int UNKNOWN_IDENTIFIER;
 }
 
 namespace
@@ -46,18 +48,23 @@ CustomVariableName parseVariableName(const ColumnsWithTypeAndName & arguments, c
             "Custom variable name must be specified as scope.name");
     }
 
-    return CustomVariableName{
-        String(full_name.substr(0, dot_pos)),
-        String(full_name.substr(dot_pos + 1))};
+    String scope_str(full_name.substr(0, dot_pos));
+    String name(full_name.substr(dot_pos + 1));
+
+    CustomVariableName::Scope scope;
+    if (!CustomVariableName::tryParseScope(scope_str, scope))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown custom variable scope '{}'", scope_str);
+
+    return CustomVariableName{scope, std::move(name)};
 }
 
 const CustomVariablesManager & getManagerForScope(ContextPtr context, const CustomVariableName & name)
 {
-    if (name.scope != "local")
+    if (name.scope != CustomVariableName::Scope::Local)
     {
-        if (name.scope == "session")
+        if (name.scope == CustomVariableName::Scope::Session)
             return context->getSessionCustomVariablesManager();
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only local or session variables are supported in this phase");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local or session variables are supported in this phase");
     }
 
     return context->getCustomVariablesManager();
@@ -73,7 +80,7 @@ public:
 
     String getName() const override { return name; }
     bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return 1; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -100,7 +107,7 @@ public:
         auto entry = manager.getEntry(variable_name);
         auto value = entry->value.load();
         if (!value || !value->has_value)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable '{}' has no value", variable_name.fullName());
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Custom variable '{}' has no value", variable_name.fullName());
 
         Field field = value->value;
         return result_type->createColumnConst(input_rows_count, convertFieldToType(field, *result_type));

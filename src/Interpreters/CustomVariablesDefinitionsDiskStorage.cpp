@@ -91,7 +91,8 @@ void CustomVariablesDefinitionsDiskStorage::createDirectory()
 
 String CustomVariablesDefinitionsDiskStorage::getFilePath(const ObjectName & object_name) const
 {
-    return dir_path + String(file_prefix) + object_name.scope + "_" + escapeForFileName(object_name.name) + String(file_suffix);
+    return dir_path + String(file_prefix) + CustomVariableName::scopeToString(object_name.scope) + "_"
+        + escapeForFileName(object_name.name) + String(file_suffix);
 }
 
 std::optional<CustomVariablesDefinitionsDiskStorage::ObjectName>
@@ -108,9 +109,13 @@ CustomVariablesDefinitionsDiskStorage::parseFileName(const String & file_name) c
     if (!parts)
         return std::nullopt;
 
-    auto [scope, escaped_name] = *parts;
+    auto [scope_str, escaped_name] = *parts;
     String name = unescapeForFileName(escaped_name);
     if (name.empty())
+        return std::nullopt;
+
+    CustomVariableName::Scope scope;
+    if (!CustomVariableName::tryParseScope(scope_str, scope))
         return std::nullopt;
 
     return ObjectName{scope, std::move(name)};
