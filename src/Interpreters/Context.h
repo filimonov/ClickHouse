@@ -83,6 +83,7 @@ class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalUserDefinedExecutableFunctionsLoader;
 class IUserDefinedSQLObjectsStorage;
+class ICustomVariablesDefinitionsStorage;
 class IWorkloadEntityStorage;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
@@ -95,6 +96,7 @@ class ReplicatedFetchList;
 class RefreshSet;
 class Cluster;
 class Compiler;
+class CustomVariablesManager;
 class MarkCache;
 class PrimaryIndexCache;
 class PageCache;
@@ -1066,6 +1068,11 @@ public:
     const IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+
+    const ICustomVariablesDefinitionsStorage & getCustomVariablesDefinitionsStorage() const;
+    ICustomVariablesDefinitionsStorage & getCustomVariablesDefinitionsStorage();
+    const CustomVariablesManager & getCustomVariablesManager() const;
+    CustomVariablesManager & getCustomVariablesManager();
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 

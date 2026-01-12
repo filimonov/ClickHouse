@@ -89,6 +89,9 @@
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
+#include <Interpreters/CustomVariablesManager.h>
+#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/createCustomVariablesDefinitionsStorage.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -482,6 +485,10 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
+    mutable OnceFlag custom_variables_definitions_storage_initialized;
+    mutable std::unique_ptr<ICustomVariablesDefinitionsStorage> custom_variables_definitions_storage;
+    mutable OnceFlag custom_variables_manager_initialized;
+    mutable std::unique_ptr<CustomVariablesManager> custom_variables_manager;
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
@@ -3465,6 +3472,42 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     });
 
     return *shared->user_defined_sql_objects_storage;
+}
+
+const ICustomVariablesDefinitionsStorage & Context::getCustomVariablesDefinitionsStorage() const
+{
+    callOnce(shared->custom_variables_definitions_storage_initialized, [&] {
+        shared->custom_variables_definitions_storage = createCustomVariablesDefinitionsStorage(getGlobalContext());
+    });
+
+    return *shared->custom_variables_definitions_storage;
+}
+
+ICustomVariablesDefinitionsStorage & Context::getCustomVariablesDefinitionsStorage()
+{
+    callOnce(shared->custom_variables_definitions_storage_initialized, [&] {
+        shared->custom_variables_definitions_storage = createCustomVariablesDefinitionsStorage(getGlobalContext());
+    });
+
+    return *shared->custom_variables_definitions_storage;
+}
+
+const CustomVariablesManager & Context::getCustomVariablesManager() const
+{
+    callOnce(shared->custom_variables_manager_initialized, [&] {
+        shared->custom_variables_manager = std::make_unique<CustomVariablesManager>();
+    });
+
+    return *shared->custom_variables_manager;
+}
+
+CustomVariablesManager & Context::getCustomVariablesManager()
+{
+    callOnce(shared->custom_variables_manager_initialized, [&] {
+        shared->custom_variables_manager = std::make_unique<CustomVariablesManager>();
+    });
+
+    return *shared->custom_variables_manager;
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const

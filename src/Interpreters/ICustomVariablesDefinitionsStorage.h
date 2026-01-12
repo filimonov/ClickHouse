@@ -16,6 +16,7 @@ struct CustomVariableName
     String name;
 
     String fullName() const { return scope + "." + name; }
+    bool operator==(const CustomVariableName & other) const { return scope == other.scope && name == other.name; }
 };
 
 class ICustomVariablesDefinitionsStorage
