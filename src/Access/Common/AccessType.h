@@ -389,7 +389,7 @@ enum class AccessType : uint8_t
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
-    M(getVariable, "", GLOBAL, ALL) /* allows to execute functions getVariable(), getVariableOrDefault() */\
+    M(getVariable, "", GLOBAL, ALL) /* allows to execute function getVariable() */\
     M(displaySecretsInShowAndSelect, "", GLOBAL, ALL) /* allows to show plaintext secrets in SELECT and SHOW queries. display_secrets_in_show_and_select format and server settings must be turned on */\
     \
     M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\

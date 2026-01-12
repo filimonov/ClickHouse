@@ -89,6 +89,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -2765,8 +2766,9 @@ try
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-        /// Load custom variable definitions.
-        global_context->getCustomVariablesDefinitionsStorage().loadObjects();
+        /// Load custom variable definitions. Manager wiring happens later in interpreters.
+        global_context->getCustomVariablesManager().loadFromStorage(
+            global_context->getCustomVariablesDefinitionsStorage());
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }

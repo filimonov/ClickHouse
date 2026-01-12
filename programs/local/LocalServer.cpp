@@ -47,6 +47,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -1050,7 +1051,8 @@ void LocalServer::processConfig()
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
         if (fs::exists(fs::path(path) / "custom_variables"))
-            global_context->getCustomVariablesDefinitionsStorage().loadObjects();
+            global_context->getCustomVariablesManager().loadFromStorage(
+                global_context->getCustomVariablesDefinitionsStorage());
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {

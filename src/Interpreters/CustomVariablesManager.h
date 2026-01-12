@@ -61,6 +61,7 @@ public:
     bool hasEntry(const Key & key) const;
     Entries getAllEntries() const;
 
+    void loadFromStorage(ICustomVariablesDefinitionsStorage & storage);
     void setEntry(const Key & key, EntryPtr entry);
     bool removeEntry(const Key & key);
 
