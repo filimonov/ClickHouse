@@ -243,6 +243,7 @@ enum class AccessType : uint8_t
     M(CREATE_TEMPORARY_VIEW, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
                                                      implicitly enabled by the grant CREATE_VIEW on any table */ \
     M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
+    M(CREATE_VARIABLE, "", GLOBAL, CREATE) /* allows to execute CREATE VARIABLE */ \
     M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
     M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
@@ -254,6 +255,7 @@ enum class AccessType : uint8_t
                                     implicitly enabled by the grant DROP_TABLE */\
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
     M(DROP_FUNCTION, "", GLOBAL, DROP) /* allows to execute DROP FUNCTION */\
+    M(DROP_VARIABLE, "", GLOBAL, DROP) /* allows to execute DROP VARIABLE */\
     M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
     M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
@@ -298,6 +300,7 @@ enum class AccessType : uint8_t
     M(SHOW_QUOTAS, "SHOW CREATE QUOTA", GLOBAL, SHOW_ACCESS) \
     M(SHOW_SETTINGS_PROFILES, "SHOW PROFILES, SHOW CREATE SETTINGS PROFILE, SHOW CREATE PROFILE", GLOBAL, SHOW_ACCESS) \
     M(SHOW_MASKING_POLICIES, "SHOW CREATE MASKING POLICY", GLOBAL, SHOW_ACCESS) \
+    M(SHOW_CUSTOM_VARIABLES, "", GLOBAL, SHOW_ACCESS) /* allows to read system.custom_variables */\
     M(SHOW_ACCESS, "", GROUP, ACCESS_MANAGEMENT) \
     M(IMPERSONATE, "EXECUTE AS", USER_NAME, ACCESS_MANAGEMENT) \
     M(ACCESS_MANAGEMENT, "", GROUP, ALL) \
@@ -368,6 +371,7 @@ enum class AccessType : uint8_t
     M(SYSTEM_SYNC_DATABASE_REPLICA, "SYNC DATABASE REPLICA", DATABASE, SYSTEM) \
     M(SYSTEM_SYNC_TRANSACTION_LOG, "SYNC TRANSACTION LOG", GLOBAL, SYSTEM) \
     M(SYSTEM_SYNC_FILE_CACHE, "SYNC FILE CACHE", GLOBAL, SYSTEM) \
+    M(SYSTEM_CUSTOM_VARIABLES, "SYSTEM REFRESH VARIABLE, SYSTEM REFRESH VARIABLES", GLOBAL, SYSTEM) \
     M(SYSTEM_FLUSH_DISTRIBUTED, "FLUSH DISTRIBUTED", TABLE, SYSTEM_FLUSH) \
     M(SYSTEM_FLUSH_LOGS, "FLUSH LOGS", GLOBAL, SYSTEM_FLUSH) \
     M(SYSTEM_FLUSH_ASYNC_INSERT_QUEUE, "FLUSH ASYNC INSERT QUEUE", GLOBAL, SYSTEM_FLUSH) \
@@ -385,6 +389,7 @@ enum class AccessType : uint8_t
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
+    M(getVariable, "", GLOBAL, ALL) /* allows to execute functions getVariable(), getVariableOrDefault() */\
     M(displaySecretsInShowAndSelect, "", GLOBAL, ALL) /* allows to show plaintext secrets in SELECT and SHOW queries. display_secrets_in_show_and_select format and server settings must be turned on */\
     \
     M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\
