@@ -27,12 +27,36 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
 {
+void assertNoVariableAccess(const ASTPtr & expression)
+{
+    static constexpr std::string_view forbidden_names[] = {"getVariable", "getVariableOrDefault"};
+
+    if (!expression)
+        return;
+
+    if (const auto * function = expression->as<ASTFunction>())
+    {
+        for (const auto & forbidden : forbidden_names)
+        {
+            if (function->name == forbidden)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Custom variable definition cannot reference function {}()",
+                    function->name);
+        }
+    }
+
+    for (const auto & child : expression->children)
+        assertNoVariableAccess(child);
+}
+
 ContextMutablePtr createEvaluationContext(const ContextPtr & context)
 {
     auto eval_context = Context::createCopy(context);
@@ -131,6 +155,7 @@ DataTypePtr getCastTargetType(const ASTPtr & expression)
 
 EvaluatedCustomVariable evaluateCustomVariableExpression(const ASTPtr & expression, const ContextPtr & context)
 {
+    assertNoVariableAccess(expression);
     auto eval_context = createEvaluationContext(context);
     const bool is_select_query = expression->as<ASTSelectWithUnionQuery>() || expression->as<ASTSelectQuery>();
 
@@ -146,6 +171,7 @@ EvaluatedCustomVariable evaluateCustomVariableExpression(const ASTPtr & expressi
 
 DataTypePtr getCustomVariableExpressionType(const ASTPtr & expression, const ContextPtr & context)
 {
+    assertNoVariableAccess(expression);
     if (auto cast_type = getCastTargetType(expression))
         return cast_type;
 
