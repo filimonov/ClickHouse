@@ -20,6 +20,7 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/MaterializedView/RefreshScheduler.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -869,52 +870,10 @@ void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock
     }
 }
 
-static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
-{
-    UInt64 delay_ms;
-    UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
-    /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
-    if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
-        delay_ms = refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] * multiplier;
-    else
-        delay_ms = refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms];
-    return std::chrono::milliseconds(delay_ms);
-}
-
 std::tuple<std::chrono::system_clock::time_point, std::chrono::sys_seconds, RefreshTask::CoordinationZnode>
 RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
 {
-    auto znode = coordination.root_znode;
-    if (refresh_settings[RefreshSetting::refresh_retries] >= 0 && znode.attempt_number > refresh_settings[RefreshSetting::refresh_retries])
-    {
-        /// Skip to the next scheduled refresh, as if a refresh succeeded.
-        znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, znode.last_attempt_time, znode.last_attempt_time, false);
-        znode.attempt_number = 0;
-    }
-    auto timeslot = refresh_schedule.advance(znode.last_completed_timeslot);
-
-    std::chrono::system_clock::time_point when;
-    if (znode.attempt_number == 0)
-        when = refresh_schedule.addRandomSpread(timeslot, znode.randomness);
-    else
-        when = znode.last_attempt_time + backoff(znode.attempt_number - 1, refresh_settings);
-
-    znode.previous_attempt_error = "";
-    if (!znode.last_attempt_succeeded && znode.last_attempt_time.time_since_epoch().count() != 0)
-    {
-        if (znode.last_attempt_error.empty())
-            znode.previous_attempt_error = fmt::format("Replica '{}' went away", znode.last_attempt_replica);
-        else
-            znode.previous_attempt_error = znode.last_attempt_error;
-    }
-
-    znode.attempt_number += 1;
-    znode.last_attempt_time = now;
-    znode.last_attempt_replica = coordination.replica_name;
-    znode.last_attempt_error = "";
-    znode.last_attempt_succeeded = false;
-
-    return {when, timeslot, znode};
+    return planNextRefresh(now, refresh_schedule, refresh_settings, coordination.replica_name, coordination.root_znode);
 }
 
 void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
