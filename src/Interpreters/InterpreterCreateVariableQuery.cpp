@@ -74,8 +74,6 @@ BlockIO InterpreterCreateVariableQuery::execute()
     {
         if (is_session_scope)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
-        if (is_local_persistent)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for local_persistent variables yet");
         if (create_query.refresh_strategy)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for refreshable variables");
         DDLQueryOnClusterParams params;
