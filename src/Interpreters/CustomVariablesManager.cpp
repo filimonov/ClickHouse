@@ -1,7 +1,16 @@
 #include <Interpreters/CustomVariablesManager.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
+#include <Common/logger_useful.h>
+#include <base/getFQDNOrHostName.h>
+
+#include <Interpreters/CustomVariablesEvaluator.h>
+#include <Interpreters/convertFieldToType.h>
+
 #include <Parsers/ASTCreateVariableQuery.h>
+
+#include <boost/make_shared.hpp>
 
 namespace DB
 {
@@ -9,6 +18,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+LoggerPtr getLog()
+{
+    static LoggerPtr log = getLogger("CustomVariablesManager");
+    return log;
+}
 }
 
 size_t CustomVariablesManager::KeyHash::operator()(const Key & key) const
@@ -48,7 +66,7 @@ CustomVariablesManager::Entries CustomVariablesManager::getAllEntries() const
     return res;
 }
 
-void CustomVariablesManager::loadFromStorage(ICustomVariablesDefinitionsStorage & storage)
+void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustomVariablesDefinitionsStorage & storage)
 {
     auto objects = storage.loadObjects();
     std::unordered_map<Key, EntryPtr, KeyHash> new_entries;
@@ -72,6 +90,53 @@ void CustomVariablesManager::loadFromStorage(ICustomVariablesDefinitionsStorage 
 
         auto entry = std::make_shared<Entry>();
         entry->definition = std::move(definition);
+
+        try
+        {
+            entry->definition.declared_type = getCustomVariableExpressionType(entry->definition.expression, context);
+            auto evaluated = evaluateCustomVariableExpression(entry->definition.expression, context);
+            DataTypePtr declared_type = entry->definition.declared_type ? entry->definition.declared_type : evaluated.type;
+            Field value_field = std::move(evaluated.value);
+
+            if (!declared_type->equals(*evaluated.type))
+                value_field = convertFieldToType(value_field, *declared_type);
+
+            checkCustomVariableSize(value_field);
+
+            auto value = boost::make_shared<Value>();
+            value->runtime_type = declared_type;
+            value->value = std::move(value_field);
+            value->last_update_time = std::chrono::system_clock::now();
+            value->last_successful_update_time = value->last_update_time;
+            value->last_update_hostname = getFQDNOrHostName();
+            value->has_value = true;
+            value->is_valid = true;
+            entry->value.store(boost::static_pointer_cast<const Value>(value));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLog(), fmt::format("while evaluating custom variable '{}'", object_name.fullName()));
+            auto value = boost::make_shared<Value>();
+            value->last_update_time = std::chrono::system_clock::now();
+            value->last_error = getCurrentExceptionMessage(false);
+            value->last_error_type = ErrorCodes::getName(getCurrentExceptionCode());
+            value->has_value = false;
+            value->is_valid = false;
+            entry->value.store(boost::static_pointer_cast<const Value>(value));
+
+            if (!entry->definition.declared_type)
+            {
+                try
+                {
+                    entry->definition.declared_type = getCustomVariableExpressionType(entry->definition.expression, context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLog(), fmt::format("while resolving declared type for custom variable '{}'", object_name.fullName()));
+                }
+            }
+        }
+
         new_entries.emplace(object_name, std::move(entry));
     }
 

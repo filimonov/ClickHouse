@@ -1052,6 +1052,7 @@ void LocalServer::processConfig()
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
         if (fs::exists(fs::path(path) / "custom_variables"))
             global_context->getCustomVariablesManager().loadFromStorage(
+                global_context,
                 global_context->getCustomVariablesDefinitionsStorage());
     }
     else if (!getClientConfiguration().has("no-system-tables"))

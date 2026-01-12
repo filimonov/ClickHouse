@@ -6,6 +6,7 @@
 #include <base/types.h>
 
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
+#include <boost/smart_ptr/shared_ptr.hpp>
 
 #include <chrono>
 #include <memory>
@@ -53,7 +54,7 @@ public:
     };
 
     using EntryPtr = std::shared_ptr<Entry>;
-    using ValuePtr = std::shared_ptr<const Value>;
+    using ValuePtr = boost::shared_ptr<const Value>;
     using Entries = std::vector<EntryPtr>;
 
     EntryPtr tryGetEntry(const Key & key) const;
@@ -61,7 +62,7 @@ public:
     bool hasEntry(const Key & key) const;
     Entries getAllEntries() const;
 
-    void loadFromStorage(ICustomVariablesDefinitionsStorage & storage);
+    void loadFromStorage(const ContextPtr & context, ICustomVariablesDefinitionsStorage & storage);
     void setEntry(const Key & key, EntryPtr entry);
     bool removeEntry(const Key & key);
 

@@ -3,10 +3,18 @@
 
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CustomVariablesEvaluator.h>
 #include <Interpreters/CustomVariablesManager.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTCreateVariableQuery.h>
 #include <Parsers/ASTIdentifier.h>
+
+#include <DataTypes/Utils.h>
+#include <boost/make_shared.hpp>
+
+#include <base/getFQDNOrHostName.h>
 
 #include <chrono>
 
@@ -64,14 +72,51 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     current_context->checkAccess(access_rights_elements);
 
+    auto evaluated = evaluateCustomVariableExpression(create_query.expression, current_context);
+
+    DataTypePtr declared_type = evaluated.type;
+    if (create_query.or_replace)
+    {
+        if (auto existing = current_context->getCustomVariablesManager().tryGetEntry(object_name))
+        {
+            if (existing->definition.declared_type)
+            {
+                if (!canBeSafelyCast(evaluated.type, existing->definition.declared_type))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Cannot replace custom variable '{}' because expression type {} is not compatible with existing type {}",
+                        object_name.fullName(),
+                        evaluated.type->getName(),
+                        existing->definition.declared_type->getName());
+
+                declared_type = existing->definition.declared_type;
+            }
+        }
+    }
+
+    Field value_field = std::move(evaluated.value);
+    if (!declared_type->equals(*evaluated.type))
+        value_field = convertFieldToType(value_field, *declared_type);
+
+    checkCustomVariableSize(value_field);
+
     bool throw_if_exists = !create_query.if_not_exists && !create_query.or_replace;
     bool replace_if_exists = create_query.or_replace;
+
+    auto stored_query = query_ptr->clone();
+    auto & stored_create_query = stored_query->as<ASTCreateVariableQuery &>();
+    stored_create_query.expression = addTypeConversionToAST(stored_create_query.expression->clone(), declared_type->getName());
+    stored_create_query.children.clear();
+    stored_create_query.children.push_back(stored_create_query.variable_name);
+    stored_create_query.children.push_back(stored_create_query.expression);
+    if (stored_create_query.refresh_strategy)
+        stored_create_query.children.push_back(stored_create_query.refresh_strategy);
 
     auto & storage = current_context->getCustomVariablesDefinitionsStorage();
     if (!storage.storeObject(
             current_context,
             object_name,
-            query_ptr,
+            stored_query,
             throw_if_exists,
             replace_if_exists,
             current_context->getSettingsRef()))
@@ -81,13 +126,24 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     CustomVariablesManager::Definition definition;
     definition.key = object_name;
-    definition.expression = create_query.expression;
+    definition.expression = stored_create_query.expression;
     definition.refresh_strategy = create_query.refresh_strategy;
-    definition.declared_type = nullptr;
+    definition.declared_type = declared_type;
     definition.create_time = std::chrono::system_clock::now();
 
     auto entry = std::make_shared<CustomVariablesManager::Entry>();
     entry->definition = std::move(definition);
+
+    auto value = boost::make_shared<CustomVariablesManager::Value>();
+    value->runtime_type = declared_type;
+    value->value = std::move(value_field);
+    value->last_update_time = std::chrono::system_clock::now();
+    value->last_successful_update_time = value->last_update_time;
+    value->last_update_hostname = getFQDNOrHostName();
+    value->has_value = true;
+    value->is_valid = true;
+    entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
+
     current_context->getCustomVariablesManager().setEntry(object_name, std::move(entry));
 
     return {};

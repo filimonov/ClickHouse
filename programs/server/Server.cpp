@@ -2768,6 +2768,7 @@ try
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
         /// Load custom variable definitions. Manager wiring happens later in interpreters.
         global_context->getCustomVariablesManager().loadFromStorage(
+            global_context,
             global_context->getCustomVariablesDefinitionsStorage());
 
         global_context->getRefreshSet().setRefreshesStopped(false);
