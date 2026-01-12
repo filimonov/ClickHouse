@@ -3,11 +3,13 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateVariableQuery.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
+#include <Parsers/ASTDropVariableQuery.h>
 #include <Parsers/ASTDropWorkloadQuery.h>
 #include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
@@ -346,9 +348,17 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterCreateFunctionQuery";
     }
+    else if (query->as<ASTCreateVariableQuery>())
+    {
+        interpreter_name = "InterpreterCreateVariableQuery";
+    }
     else if (query->as<ASTDropFunctionQuery>())
     {
         interpreter_name = "InterpreterDropFunctionQuery";
+    }
+    else if (query->as<ASTDropVariableQuery>())
+    {
+        interpreter_name = "InterpreterDropVariableQuery";
     }
     else if (query->as<ASTCreateWorkloadQuery>())
     {

@@ -52,6 +52,8 @@ void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory);
 void registerInterpreterTransactionControlQuery(InterpreterFactory & factory);
 void registerInterpreterCreateFunctionQuery(InterpreterFactory & factory);
 void registerInterpreterDropFunctionQuery(InterpreterFactory & factory);
+void registerInterpreterCreateVariableQuery(InterpreterFactory & factory);
+void registerInterpreterDropVariableQuery(InterpreterFactory & factory);
 void registerInterpreterCreateWorkloadQuery(InterpreterFactory & factory);
 void registerInterpreterDropWorkloadQuery(InterpreterFactory & factory);
 void registerInterpreterCreateResourceQuery(InterpreterFactory & factory);
@@ -118,6 +120,8 @@ void registerInterpreters()
     registerInterpreterTransactionControlQuery(factory);
     registerInterpreterCreateFunctionQuery(factory);
     registerInterpreterDropFunctionQuery(factory);
+    registerInterpreterCreateVariableQuery(factory);
+    registerInterpreterDropVariableQuery(factory);
     registerInterpreterCreateWorkloadQuery(factory);
     registerInterpreterDropWorkloadQuery(factory);
     registerInterpreterCreateResourceQuery(factory);
