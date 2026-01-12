@@ -10,6 +10,13 @@
 namespace DB
 {
 
+namespace RefreshSetting
+{
+    extern const RefreshSettingsInt64 refresh_retries;
+    extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
+    extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
+}
+
 inline std::chrono::milliseconds refreshBackoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
     UInt64 delay_ms;
