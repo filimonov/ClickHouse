@@ -24,6 +24,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
 }
@@ -50,8 +51,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
     const auto & create_query = query_ptr->as<ASTCreateVariableQuery &>();
     auto object_name = getCustomVariableName(create_query.variable_name);
 
-    if (object_name.scope != "local")
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local variables are supported in this phase");
+    const bool is_session_scope = (object_name.scope == "session");
+    if (object_name.scope != "local" && !is_session_scope)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local or session variables are supported in this phase");
 
     if (create_query.refresh_strategy)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "REFRESH is not supported for custom variables yet");
@@ -65,6 +67,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     if (!create_query.cluster.empty())
     {
+        if (is_session_scope)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
@@ -75,9 +79,15 @@ BlockIO InterpreterCreateVariableQuery::execute()
     auto evaluated = evaluateCustomVariableExpression(create_query.expression, current_context);
 
     DataTypePtr declared_type = evaluated.type;
+    CustomVariablesManager * manager = nullptr;
+    if (is_session_scope)
+        manager = &current_context->getSessionCustomVariablesManager();
+    else
+        manager = &current_context->getCustomVariablesManager();
+
     if (create_query.or_replace)
     {
-        if (auto existing = current_context->getCustomVariablesManager().tryGetEntry(object_name))
+        if (auto existing = manager->tryGetEntry(object_name))
         {
             if (existing->definition.declared_type)
             {
@@ -112,16 +122,29 @@ BlockIO InterpreterCreateVariableQuery::execute()
     if (stored_create_query.refresh_strategy)
         stored_create_query.children.push_back(stored_create_query.refresh_strategy);
 
-    auto & storage = current_context->getCustomVariablesDefinitionsStorage();
-    if (!storage.storeObject(
-            current_context,
-            object_name,
-            stored_query,
-            throw_if_exists,
-            replace_if_exists,
-            current_context->getSettingsRef()))
+    if (!is_session_scope)
     {
-        return {};
+        auto & storage = current_context->getCustomVariablesDefinitionsStorage();
+        if (!storage.storeObject(
+                current_context,
+                object_name,
+                stored_query,
+                throw_if_exists,
+                replace_if_exists,
+                current_context->getSettingsRef()))
+        {
+            return {};
+        }
+    }
+    else
+    {
+        if (manager->hasEntry(object_name))
+        {
+            if (throw_if_exists)
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Custom variable '{}' already exists", object_name.fullName());
+            if (!replace_if_exists)
+                return {};
+        }
     }
 
     CustomVariablesManager::Definition definition;
@@ -144,7 +167,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
     value->is_valid = true;
     entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
 
-    current_context->getCustomVariablesManager().setEntry(object_name, std::move(entry));
+    manager->setEntry(object_name, std::move(entry));
 
     return {};
 }

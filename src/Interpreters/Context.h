@@ -409,6 +409,8 @@ protected:
     /// Saved separately for each table uuid used in the query.
     std::unordered_map<UUID, PartitionIdToMaxBlockPtr> partition_id_to_max_block;
 
+    mutable std::unique_ptr<CustomVariablesManager> session_custom_variables_manager;
+
 public:
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -1073,6 +1075,8 @@ public:
     ICustomVariablesDefinitionsStorage & getCustomVariablesDefinitionsStorage();
     const CustomVariablesManager & getCustomVariablesManager() const;
     CustomVariablesManager & getCustomVariablesManager();
+    const CustomVariablesManager & getSessionCustomVariablesManager() const;
+    CustomVariablesManager & getSessionCustomVariablesManager();
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 

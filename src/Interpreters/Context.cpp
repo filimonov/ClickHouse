@@ -1167,6 +1167,7 @@ ContextData::ContextData(const ContextData &o) :
     is_under_restore(o.is_under_restore),
     client_protocol_version(o.client_protocol_version),
     partition_id_to_max_block(o.partition_id_to_max_block),
+    session_custom_variables_manager(nullptr),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
     query_privileges_info(o.query_privileges_info),
@@ -3508,6 +3509,19 @@ CustomVariablesManager & Context::getCustomVariablesManager()
     });
 
     return *shared->custom_variables_manager;
+}
+
+const CustomVariablesManager & Context::getSessionCustomVariablesManager() const
+{
+    return const_cast<Context *>(this)->getSessionCustomVariablesManager();
+}
+
+CustomVariablesManager & Context::getSessionCustomVariablesManager()
+{
+    auto session_context_ptr = getSessionContext();
+    if (!session_context_ptr->session_custom_variables_manager)
+        session_context_ptr->session_custom_variables_manager = std::make_unique<CustomVariablesManager>();
+    return *session_context_ptr->session_custom_variables_manager;
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const

@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_QUERY;
 }
 
@@ -39,8 +40,9 @@ BlockIO InterpreterDropVariableQuery::execute()
     const auto & drop_query = query_ptr->as<ASTDropVariableQuery &>();
     auto object_name = getCustomVariableName(drop_query.variable_name);
 
-    if (object_name.scope != "local")
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local variables are supported in this phase");
+    const bool is_session_scope = (object_name.scope == "session");
+    if (object_name.scope != "local" && !is_session_scope)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local or session variables are supported in this phase");
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::DROP_VARIABLE);
@@ -49,6 +51,8 @@ BlockIO InterpreterDropVariableQuery::execute()
 
     if (!drop_query.cluster.empty())
     {
+        if (is_session_scope)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
@@ -58,11 +62,24 @@ BlockIO InterpreterDropVariableQuery::execute()
 
     bool throw_if_not_exists = !drop_query.if_exists;
 
-    auto & storage = current_context->getCustomVariablesDefinitionsStorage();
-    if (!storage.removeObject(current_context, object_name, throw_if_not_exists))
-        return {};
+    if (!is_session_scope)
+    {
+        auto & storage = current_context->getCustomVariablesDefinitionsStorage();
+        if (!storage.removeObject(current_context, object_name, throw_if_not_exists))
+            return {};
 
-    current_context->getCustomVariablesManager().removeEntry(object_name);
+        current_context->getCustomVariablesManager().removeEntry(object_name);
+    }
+    else
+    {
+        auto & manager = current_context->getSessionCustomVariablesManager();
+        if (!manager.removeEntry(object_name))
+        {
+            if (throw_if_not_exists)
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Custom variable '{}' doesn't exist", object_name.fullName());
+            return {};
+        }
+    }
     return {};
 }
 

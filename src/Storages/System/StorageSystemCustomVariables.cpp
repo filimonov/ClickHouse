@@ -48,65 +48,70 @@ void StorageSystemCustomVariables::fillData(
     if (!access->isGranted(AccessType::SHOW_CUSTOM_VARIABLES))
         return;
 
-    const auto entries = context->getCustomVariablesManager().getAllEntries();
-
-    for (const auto & entry : entries)
+    auto append_entries = [&](const CustomVariablesManager::Entries & entries)
     {
-        const auto & definition = entry->definition;
-        auto value = entry->value.load();
+        for (const auto & entry : entries)
+        {
+            const auto & definition = entry->definition;
+            auto value = entry->value.load();
 
-        size_t col = 0;
-        res_columns[col++]->insert(definition.key.name);
-        res_columns[col++]->insert(definition.key.scope);
+            size_t col = 0;
+            res_columns[col++]->insert(definition.key.name);
+            res_columns[col++]->insert(definition.key.scope);
 
-        if (value && value->has_value)
-            res_columns[col++]->insert(applyVisitor(FieldVisitorToString(), value->value));
-        else
-            res_columns[col++]->insertDefault();
+            if (value && value->has_value)
+                res_columns[col++]->insert(applyVisitor(FieldVisitorToString(), value->value));
+            else
+                res_columns[col++]->insertDefault();
 
-        res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(definition.create_time)));
+            res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(definition.create_time)));
 
-        if (value)
-            res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(value->last_update_time)));
-        else
-            res_columns[col++]->insertDefault();
+            if (value)
+                res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(value->last_update_time)));
+            else
+                res_columns[col++]->insertDefault();
 
-        res_columns[col++]->insertDefault(); // refresh_next_time
+            res_columns[col++]->insertDefault(); // refresh_next_time
 
-        if (value && !value->last_update_hostname.empty())
-            res_columns[col++]->insert(value->last_update_hostname);
-        else
-            res_columns[col++]->insertDefault();
+            if (value && !value->last_update_hostname.empty())
+                res_columns[col++]->insert(value->last_update_hostname);
+            else
+                res_columns[col++]->insertDefault();
 
-        if (value && value->has_value)
-            res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(value->last_successful_update_time)));
-        else
-            res_columns[col++]->insertDefault();
+            if (value && value->has_value)
+                res_columns[col++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(value->last_successful_update_time)));
+            else
+                res_columns[col++]->insertDefault();
 
-        res_columns[col++]->insertDefault(); // refresh_interval
+            res_columns[col++]->insertDefault(); // refresh_interval
 
-        res_columns[col++]->insert(definition.expression ? format({context, *definition.expression}) : "");
+            res_columns[col++]->insert(definition.expression ? format({context, *definition.expression}) : "");
 
-        if (definition.declared_type)
-            res_columns[col++]->insert(definition.declared_type->getName());
-        else if (value && value->runtime_type)
-            res_columns[col++]->insert(value->runtime_type->getName());
-        else
-            res_columns[col++]->insertDefault();
+            if (definition.declared_type)
+                res_columns[col++]->insert(definition.declared_type->getName());
+            else if (value && value->runtime_type)
+                res_columns[col++]->insert(value->runtime_type->getName());
+            else
+                res_columns[col++]->insertDefault();
 
-        if (value && !value->last_error.empty())
-            res_columns[col++]->insert(value->last_error);
-        else
-            res_columns[col++]->insertDefault();
+            if (value && !value->last_error.empty())
+                res_columns[col++]->insert(value->last_error);
+            else
+                res_columns[col++]->insertDefault();
 
-        if (value && !value->last_error_type.empty())
-            res_columns[col++]->insert(value->last_error_type);
-        else
-            res_columns[col++]->insertDefault();
+            if (value && !value->last_error_type.empty())
+                res_columns[col++]->insert(value->last_error_type);
+            else
+                res_columns[col++]->insertDefault();
 
-        res_columns[col++]->insert(static_cast<UInt8>(value && value->has_value));
-        res_columns[col++]->insert(static_cast<UInt8>(value && value->is_valid));
-    }
+            res_columns[col++]->insert(static_cast<UInt8>(value && value->has_value));
+            res_columns[col++]->insert(static_cast<UInt8>(value && value->is_valid));
+        }
+    };
+
+    append_entries(context->getCustomVariablesManager().getAllEntries());
+    if (context->hasSessionContext())
+        append_entries(context->getSessionCustomVariablesManager().getAllEntries());
 }
 
 }

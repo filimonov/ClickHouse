@@ -51,10 +51,16 @@ CustomVariableName parseVariableName(const ColumnsWithTypeAndName & arguments, c
         String(full_name.substr(dot_pos + 1))};
 }
 
-void validateScope(const CustomVariableName & name)
+const CustomVariablesManager & getManagerForScope(ContextPtr context, const CustomVariableName & name)
 {
     if (name.scope != "local")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only local variables are supported in this phase");
+    {
+        if (name.scope == "session")
+            return context->getSessionCustomVariablesManager();
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only local or session variables are supported in this phase");
+    }
+
+    return context->getCustomVariablesManager();
 }
 
 class FunctionGetVariable : public IFunction, WithContext
@@ -75,10 +81,10 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         const auto variable_name = parseVariableName(arguments, getName());
-        validateScope(variable_name);
         getContext()->checkAccess(AccessType::getVariable);
 
-        auto entry = getContext()->getCustomVariablesManager().getEntry(variable_name);
+        const auto & manager = getManagerForScope(getContext(), variable_name);
+        auto entry = manager.getEntry(variable_name);
         if (!entry->definition.declared_type)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable '{}' has unknown type", variable_name.fullName());
 
@@ -88,10 +94,10 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto variable_name = parseVariableName(arguments, getName());
-        validateScope(variable_name);
         getContext()->checkAccess(AccessType::getVariable);
 
-        auto entry = getContext()->getCustomVariablesManager().getEntry(variable_name);
+        const auto & manager = getManagerForScope(getContext(), variable_name);
+        auto entry = manager.getEntry(variable_name);
         auto value = entry->value.load();
         if (!value || !value->has_value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable '{}' has no value", variable_name.fullName());
