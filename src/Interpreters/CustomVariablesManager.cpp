@@ -7,6 +7,7 @@
 
 #include <Interpreters/CustomVariablesEvaluator.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CustomVariablesValuesDiskStorage.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/StorageID.h>
 
@@ -44,6 +45,20 @@ LoggerPtr getLog()
 void randomizeState(CustomVariablesManager::RefreshState & state)
 {
     state.randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+}
+
+bool isLocalPersistentScope(CustomVariableName::Scope scope)
+{
+    return scope == CustomVariableName::Scope::LocalPersistent;
+}
+
+bool isValueStale(const RefreshSchedule & schedule, std::chrono::system_clock::time_point last_success, std::chrono::system_clock::time_point now)
+{
+    if (last_success.time_since_epoch().count() == 0)
+        return true;
+    const auto last_timeslot = std::chrono::floor<std::chrono::seconds>(last_success);
+    const auto next_time = schedule.advance(last_timeslot);
+    return now >= next_time;
 }
 }
 
@@ -89,6 +104,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
     auto objects = storage.loadObjects();
     std::unordered_map<Key, EntryPtr, KeyHash> new_entries;
     new_entries.reserve(objects.size());
+    Entries entries_to_refresh;
 
     for (const auto & [object_name, ast] : objects)
     {
@@ -109,53 +125,117 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
         auto entry = std::make_shared<Entry>();
         entry->definition = std::move(definition);
 
+        const bool is_local_persistent = isLocalPersistentScope(object_name.scope);
+        std::optional<CustomVariableValueSnapshot> snapshot;
+        if (is_local_persistent)
+            snapshot = context->getCustomVariablesValuesStorage().tryLoadValue(object_name.name);
+
+        bool loaded_from_disk = false;
+        bool need_immediate_refresh = false;
+
         try
         {
             entry->definition.declared_type = getCustomVariableExpressionType(entry->definition.expression, context);
-            auto evaluated = evaluateCustomVariableExpression(entry->definition.expression, context);
-            DataTypePtr declared_type = entry->definition.declared_type ? entry->definition.declared_type : evaluated.type;
-            Field value_field = std::move(evaluated.value);
-
-            if (!declared_type->equals(*evaluated.type))
-                value_field = convertFieldToType(value_field, *declared_type);
-
-            checkCustomVariableSize(value_field);
-
-            auto value = boost::make_shared<Value>();
-            value->runtime_type = declared_type;
-            value->value = std::move(value_field);
-            value->last_update_time = std::chrono::system_clock::now();
-            value->last_successful_update_time = value->last_update_time;
-            value->last_update_hostname = getFQDNOrHostName();
-            value->has_value = true;
-            value->is_valid = true;
-            entry->value.store(boost::static_pointer_cast<const Value>(value));
         }
         catch (...)
         {
-            tryLogCurrentException(getLog(), fmt::format("while evaluating custom variable '{}'", object_name.fullName()));
-            auto value = boost::make_shared<Value>();
-            value->last_update_time = std::chrono::system_clock::now();
-            value->last_error = getCurrentExceptionMessage(false);
-            value->last_error_type = ErrorCodes::getName(getCurrentExceptionCode());
-            value->has_value = false;
-            value->is_valid = false;
-            entry->value.store(boost::static_pointer_cast<const Value>(value));
+            tryLogCurrentException(getLog(), fmt::format("while resolving declared type for custom variable '{}'", object_name.fullName()));
+        }
 
-            if (!entry->definition.declared_type)
+        if (snapshot && snapshot->has_value)
+        {
+            try
             {
-                try
+                auto value = boost::make_shared<Value>();
+                value->runtime_type = snapshot->runtime_type ? snapshot->runtime_type : entry->definition.declared_type;
+                value->value = snapshot->value;
+                value->last_update_time = snapshot->last_update_time;
+                value->last_successful_update_time = snapshot->last_successful_update_time;
+                value->last_update_hostname = snapshot->last_update_hostname;
+                value->last_error = snapshot->last_error;
+                value->last_error_type = snapshot->last_error_type;
+                value->has_value = snapshot->has_value;
+                value->is_valid = snapshot->is_valid;
+
+                if (entry->definition.declared_type && (!value->runtime_type || !entry->definition.declared_type->equals(*value->runtime_type)))
                 {
-                    entry->definition.declared_type = getCustomVariableExpressionType(entry->definition.expression, context);
+                    value->value = convertFieldToType(value->value, *entry->definition.declared_type);
+                    value->runtime_type = entry->definition.declared_type;
                 }
-                catch (...)
-                {
-                    tryLogCurrentException(getLog(), fmt::format("while resolving declared type for custom variable '{}'", object_name.fullName()));
-                }
+
+                checkCustomVariableSize(value->value);
+                entry->value.store(boost::static_pointer_cast<const Value>(value));
+                loaded_from_disk = true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLog(), fmt::format("while loading persisted custom variable '{}'", object_name.fullName()));
             }
         }
 
-        new_entries.emplace(object_name, std::move(entry));
+        if (!loaded_from_disk)
+        {
+            try
+            {
+                auto evaluated = evaluateCustomVariableExpression(entry->definition.expression, context);
+                DataTypePtr declared_type = entry->definition.declared_type ? entry->definition.declared_type : evaluated.type;
+                if (!entry->definition.declared_type)
+                    entry->definition.declared_type = declared_type;
+                Field value_field = std::move(evaluated.value);
+
+                if (!declared_type->equals(*evaluated.type))
+                    value_field = convertFieldToType(value_field, *declared_type);
+
+                checkCustomVariableSize(value_field);
+
+                auto value = boost::make_shared<Value>();
+                value->runtime_type = declared_type;
+                value->value = std::move(value_field);
+                value->last_update_time = std::chrono::system_clock::now();
+                value->last_successful_update_time = value->last_update_time;
+                value->last_update_hostname = getFQDNOrHostName();
+                value->has_value = true;
+                value->is_valid = true;
+                entry->value.store(boost::static_pointer_cast<const Value>(value));
+
+                if (is_local_persistent)
+                    persistValueIfNeeded(context, entry);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(getLog(), fmt::format("while evaluating custom variable '{}'", object_name.fullName()));
+                auto value = boost::make_shared<Value>();
+                value->last_update_time = std::chrono::system_clock::now();
+                value->last_error = getCurrentExceptionMessage(false);
+                value->last_error_type = ErrorCodes::getName(getCurrentExceptionCode());
+                value->has_value = false;
+                value->is_valid = false;
+                entry->value.store(boost::static_pointer_cast<const Value>(value));
+
+                if (is_local_persistent)
+                    persistValueIfNeeded(context, entry);
+            }
+        }
+
+        if (!entry->definition.declared_type && snapshot && snapshot->runtime_type)
+            entry->definition.declared_type = snapshot->runtime_type;
+
+        if (loaded_from_disk && entry->definition.refresh_strategy)
+        {
+            const auto * refresh = entry->definition.refresh_strategy->as<ASTRefreshStrategy>();
+            if (refresh)
+            {
+                RefreshSchedule schedule(*refresh);
+                auto loaded_value = entry->value.load();
+                auto last_success = loaded_value ? loaded_value->last_successful_update_time : std::chrono::system_clock::time_point{};
+                const auto now = std::chrono::system_clock::now();
+                need_immediate_refresh = isValueStale(schedule, last_success, now);
+            }
+        }
+
+        auto [it, inserted] = new_entries.emplace(object_name, std::move(entry));
+        if (need_immediate_refresh && inserted)
+            entries_to_refresh.push_back(it->second);
     }
 
     Entries entries_to_stop;
@@ -172,15 +252,24 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
 
     for (const auto & [_, entry] : entries)
         startRefreshIfNeeded(context, entry);
+
+    for (const auto & entry : entries_to_refresh)
+        requestRefresh(entry, false);
 }
 
-void CustomVariablesManager::setEntry(const Key & key, EntryPtr entry)
+void CustomVariablesManager::setEntry(const ContextPtr & context, const Key & key, EntryPtr entry)
 {
+    EntryPtr stored_entry;
     std::unique_lock lock(mutex);
     auto it = entries.find(key);
     if (it != entries.end())
         stopRefreshTask(it->second);
     entries[key] = std::move(entry);
+    stored_entry = entries[key];
+    lock.unlock();
+
+    if (context)
+        persistValueIfNeeded(context, stored_entry);
 }
 
 bool CustomVariablesManager::removeEntry(const Key & key)
@@ -340,6 +429,7 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
         entry->value.store(boost::static_pointer_cast<const Value>(value));
 
         refreshed = true;
+        persistValueIfNeeded(context, entry);
     }
     catch (...)
     {
@@ -361,6 +451,7 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
         value->last_error_type = error_type;
         value->is_valid = false;
         entry->value.store(boost::static_pointer_cast<const Value>(value));
+        persistValueIfNeeded(context, entry);
     }
 
     auto end_time = std::chrono::system_clock::now();
@@ -385,6 +476,36 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
     }
 
     entry->refresh->task->schedule();
+}
+
+void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, const EntryPtr & entry) const
+{
+    if (!context || !entry || !isLocalPersistentScope(entry->definition.key.scope))
+        return;
+
+    const auto value = entry->value.load();
+    if (!value)
+        return;
+
+    CustomVariableValueSnapshot snapshot;
+    snapshot.runtime_type = value->runtime_type;
+    snapshot.value = value->value;
+    snapshot.last_update_time = value->last_update_time;
+    snapshot.last_successful_update_time = value->last_successful_update_time;
+    snapshot.last_update_hostname = value->last_update_hostname;
+    snapshot.last_error = value->last_error;
+    snapshot.last_error_type = value->last_error_type;
+    snapshot.has_value = value->has_value;
+    snapshot.is_valid = value->is_valid;
+
+    try
+    {
+        context->getCustomVariablesValuesStorage().storeValue(entry->definition.key.name, snapshot, context->getSettingsRef());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLog(), fmt::format("while storing custom variable '{}' value", entry->definition.key.fullName()));
+    }
 }
 
 }

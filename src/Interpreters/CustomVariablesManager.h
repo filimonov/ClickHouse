@@ -96,11 +96,12 @@ public:
     Entries getAllEntries() const;
 
     void loadFromStorage(const ContextPtr & context, ICustomVariablesDefinitionsStorage & storage);
-    void setEntry(const Key & key, EntryPtr entry);
+    void setEntry(const ContextPtr & context, const Key & key, EntryPtr entry);
     bool removeEntry(const Key & key);
     void startRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry);
     void refreshNow(const Key & key);
     void refreshAll();
+    void persistValueIfNeeded(const ContextPtr & context, const EntryPtr & entry) const;
 
 private:
     struct KeyHash

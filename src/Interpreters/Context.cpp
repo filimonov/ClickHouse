@@ -91,7 +91,9 @@
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariablesValuesDiskStorage.h>
 #include <Interpreters/createCustomVariablesDefinitionsStorage.h>
+#include <Interpreters/createCustomVariablesValuesStorage.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -487,6 +489,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
     mutable OnceFlag custom_variables_definitions_storage_initialized;
     mutable std::unique_ptr<ICustomVariablesDefinitionsStorage> custom_variables_definitions_storage;
+    mutable OnceFlag custom_variables_values_storage_initialized;
+    mutable std::unique_ptr<CustomVariablesValuesDiskStorage> custom_variables_values_storage;
     mutable OnceFlag custom_variables_manager_initialized;
     mutable std::unique_ptr<CustomVariablesManager> custom_variables_manager;
 
@@ -3491,6 +3495,24 @@ ICustomVariablesDefinitionsStorage & Context::getCustomVariablesDefinitionsStora
     });
 
     return *shared->custom_variables_definitions_storage;
+}
+
+const CustomVariablesValuesDiskStorage & Context::getCustomVariablesValuesStorage() const
+{
+    callOnce(shared->custom_variables_values_storage_initialized, [&] {
+        shared->custom_variables_values_storage = createCustomVariablesValuesStorage(getGlobalContext());
+    });
+
+    return *shared->custom_variables_values_storage;
+}
+
+CustomVariablesValuesDiskStorage & Context::getCustomVariablesValuesStorage()
+{
+    callOnce(shared->custom_variables_values_storage_initialized, [&] {
+        shared->custom_variables_values_storage = createCustomVariablesValuesStorage(getGlobalContext());
+    });
+
+    return *shared->custom_variables_values_storage;
 }
 
 const CustomVariablesManager & Context::getCustomVariablesManager() const

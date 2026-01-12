@@ -186,7 +186,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
     value->is_valid = true;
     entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
 
-    manager->setEntry(object_name, entry);
+    manager->setEntry(current_context, object_name, entry);
     manager->startRefreshIfNeeded(current_context, entry);
 
     return {};

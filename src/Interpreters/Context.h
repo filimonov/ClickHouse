@@ -97,6 +97,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class CustomVariablesManager;
+class CustomVariablesValuesDiskStorage;
 class MarkCache;
 class PrimaryIndexCache;
 class PageCache;
@@ -1073,6 +1074,8 @@ public:
 
     const ICustomVariablesDefinitionsStorage & getCustomVariablesDefinitionsStorage() const;
     ICustomVariablesDefinitionsStorage & getCustomVariablesDefinitionsStorage();
+    const CustomVariablesValuesDiskStorage & getCustomVariablesValuesStorage() const;
+    CustomVariablesValuesDiskStorage & getCustomVariablesValuesStorage();
     const CustomVariablesManager & getCustomVariablesManager() const;
     CustomVariablesManager & getCustomVariablesManager();
     const CustomVariablesManager & getSessionCustomVariablesManager() const;
