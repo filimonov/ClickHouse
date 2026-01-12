@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -63,6 +64,8 @@ ContextMutablePtr createEvaluationContext(const ContextPtr & context)
     auto eval_context = Context::createCopy(context);
     eval_context->makeQueryContext();
     eval_context->setCurrentQueryId({});
+    eval_context->setProcessListElement({});
+    eval_context->setInternalQuery(true);
     return eval_context;
 }
 
@@ -152,13 +155,37 @@ DataTypePtr getCastTargetType(const ASTPtr & expression)
 
     return DataTypeFactory::instance().get(literal->value.safeGet<String>());
 }
+
+ASTPtr getCastExpressionArgument(const ASTPtr & expression)
+{
+    const auto * function = expression ? expression->as<ASTFunction>() : nullptr;
+    if (!function || function->name != "_CAST" || !function->arguments)
+        return nullptr;
+
+    const auto * args = function->arguments->as<ASTExpressionList>();
+    if (!args || args->children.size() != 2)
+        return nullptr;
+
+    return args->children[0];
+}
 }
 
 EvaluatedCustomVariable evaluateCustomVariableExpression(const ASTPtr & expression, const ContextPtr & context)
 {
     assertNoVariableAccess(expression);
     auto eval_context = createEvaluationContext(context);
-    const bool is_select_query = expression->as<ASTSelectWithUnionQuery>() || expression->as<ASTSelectQuery>();
+    ASTPtr eval_expression = expression;
+    const auto cast_type = getCastTargetType(expression);
+    if (cast_type)
+    {
+        if (auto cast_arg = getCastExpressionArgument(expression))
+        {
+            if (cast_arg->as<ASTSelectWithUnionQuery>() || cast_arg->as<ASTSelectQuery>())
+                eval_expression = cast_arg;
+        }
+    }
+
+    const bool is_select_query = eval_expression->as<ASTSelectWithUnionQuery>() || eval_expression->as<ASTSelectQuery>();
 
     if (!is_select_query)
     {
@@ -166,8 +193,16 @@ EvaluatedCustomVariable evaluateCustomVariableExpression(const ASTPtr & expressi
             return EvaluatedCustomVariable{std::move(constant->first), std::move(constant->second)};
     }
 
-    ASTPtr select_query = normalizeToSelectWithUnion(expression);
-    return executeScalarSelect(select_query, eval_context);
+    ASTPtr select_query = normalizeToSelectWithUnion(eval_expression);
+    auto evaluated = executeScalarSelect(select_query, eval_context);
+
+    if (cast_type && !cast_type->equals(*evaluated.type))
+    {
+        evaluated.value = convertFieldToType(evaluated.value, *cast_type);
+        evaluated.type = cast_type;
+    }
+
+    return evaluated;
 }
 
 DataTypePtr getCustomVariableExpressionType(const ASTPtr & expression, const ContextPtr & context)
@@ -190,8 +225,57 @@ bool isCustomVariableExpressionConstant(const ASTPtr & expression, const Context
 {
     assertNoVariableAccess(expression);
     auto eval_context = createEvaluationContext(context);
+    ASTPtr eval_expression = expression;
+    if (auto cast_arg = getCastExpressionArgument(expression))
+        eval_expression = cast_arg;
 
-    if (!tryEvaluateConstantExpression(expression, eval_context))
+    auto is_constant_expr = [&](const ASTPtr & expr) -> bool
+    {
+        try
+        {
+            return tryEvaluateConstantExpression(expr, eval_context).has_value();
+        }
+        catch (...)
+        {
+            return false;
+        }
+    };
+
+    if (const auto * select_union = eval_expression->as<ASTSelectWithUnionQuery>())
+    {
+        const auto * selects = select_union->list_of_selects ? select_union->list_of_selects->as<ASTExpressionList>() : nullptr;
+        if (!selects || selects->children.size() != 1)
+            return false;
+
+        const auto * select = selects->children.front()->as<ASTSelectQuery>();
+        if (!select)
+            return false;
+
+        const auto * select_list = select->select() ? select->select()->as<ASTExpressionList>() : nullptr;
+        if (!select_list || select_list->children.size() != 1)
+            return false;
+
+        const auto & expr = select_list->children.front();
+        if (!is_constant_expr(expr))
+            return false;
+
+        return !astContainsNonDeterministicFunctions(expr, eval_context);
+    }
+
+    if (const auto * select = eval_expression->as<ASTSelectQuery>())
+    {
+        const auto * select_list = select->select() ? select->select()->as<ASTExpressionList>() : nullptr;
+        if (!select_list || select_list->children.size() != 1)
+            return false;
+
+        const auto & expr = select_list->children.front();
+        if (!is_constant_expr(expr))
+            return false;
+
+        return !astContainsNonDeterministicFunctions(expr, eval_context);
+    }
+
+    if (!is_constant_expr(expression))
         return false;
 
     return !astContainsNonDeterministicFunctions(expression, eval_context);
