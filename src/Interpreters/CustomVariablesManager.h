@@ -76,6 +76,7 @@ public:
         std::chrono::system_clock::time_point next_refresh_time;
         BackgroundSchedulePoolTaskHolder task;
         bool stop_requested = false;
+        bool out_of_schedule_refresh_requested = false;
     };
 
     struct Entry
@@ -98,6 +99,8 @@ public:
     void setEntry(const Key & key, EntryPtr entry);
     bool removeEntry(const Key & key);
     void startRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry);
+    void refreshNow(const Key & key);
+    void refreshAll();
 
 private:
     struct KeyHash
@@ -107,6 +110,7 @@ private:
 
     void stopRefreshTask(const EntryPtr & entry);
     void refreshTask(const ContextPtr & context, const EntryPtr & entry);
+    void requestRefresh(const EntryPtr & entry, bool throw_if_not_refreshable);
 
     mutable std::shared_mutex mutex;
     std::unordered_map<Key, EntryPtr, KeyHash> entries;

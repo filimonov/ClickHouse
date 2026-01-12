@@ -27,6 +27,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -140,6 +141,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
@@ -195,6 +197,23 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
 
     if (result.code != 0)
         throw Exception::createDeprecated(result.message, result.code);
+}
+
+CustomVariableName getCustomVariableNameFromSystemQuery(const ASTSystemQuery & query)
+{
+    if (!query.database || !query.table)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
+
+    const auto scope_str = query.getDatabase();
+    const auto name = query.getTable();
+    if (scope_str.empty() || name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
+
+    CustomVariableName::Scope scope;
+    if (!CustomVariableName::tryParseScope(scope_str, scope))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown custom variable scope '{}'", scope_str);
+
+    return CustomVariableName{scope, name};
 }
 
 
@@ -328,7 +347,7 @@ BlockIO InterpreterSystemQuery::execute()
         if (query.database)
             query.setTable(query.getDatabase() + "." + query.getTable());
     }
-    else if (query.table)
+    else if (query.table && query.type != Type::REFRESH_VARIABLE)
     {
         table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
     }
@@ -802,6 +821,19 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::REFRESH_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->run();
+            break;
+        case Type::REFRESH_VARIABLE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CUSTOM_VARIABLES);
+            auto variable_name = getCustomVariableNameFromSystemQuery(query);
+            if (variable_name.scope != CustomVariableName::Scope::Local)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local variables are supported in this phase");
+            getContext()->getCustomVariablesManager().refreshNow(variable_name);
+            break;
+        }
+        case Type::REFRESH_VARIABLES:
+            getContext()->checkAccess(AccessType::SYSTEM_CUSTOM_VARIABLES);
+            getContext()->getCustomVariablesManager().refreshAll();
             break;
         case Type::WAIT_VIEW:
             for (const auto & task : getRefreshTasks())
@@ -2164,6 +2196,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::REFRESH_VARIABLE:
+        case Type::REFRESH_VARIABLES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_CUSTOM_VARIABLES);
             break;
         }
         case Type::REFRESH_VIEW:

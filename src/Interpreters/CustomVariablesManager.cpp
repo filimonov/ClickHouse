@@ -29,6 +29,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_IDENTIFIER;
 }
 
@@ -231,6 +232,18 @@ void CustomVariablesManager::startRefreshIfNeeded(const ContextPtr & context, co
     entry->refresh->task->schedule();
 }
 
+void CustomVariablesManager::refreshNow(const Key & key)
+{
+    requestRefresh(getEntry(key), true);
+}
+
+void CustomVariablesManager::refreshAll()
+{
+    const auto entries_snapshot = getAllEntries();
+    for (const auto & entry : entries_snapshot)
+        requestRefresh(entry, false);
+}
+
 void CustomVariablesManager::stopRefreshTask(const EntryPtr & entry)
 {
     if (!entry || !entry->refresh)
@@ -240,6 +253,28 @@ void CustomVariablesManager::stopRefreshTask(const EntryPtr & entry)
     entry->refresh->stop_requested = true;
     if (entry->refresh->task)
         entry->refresh->task->deactivate();
+
+    entry->refresh->out_of_schedule_refresh_requested = false;
+}
+
+void CustomVariablesManager::requestRefresh(const EntryPtr & entry, bool throw_if_not_refreshable)
+{
+    if (!entry)
+        return;
+
+    if (!entry->refresh)
+    {
+        if (throw_if_not_refreshable)
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "Custom variable '{}' is not refreshable",
+                entry->definition.key.fullName());
+        return;
+    }
+
+    std::lock_guard lock(entry->refresh->mutex);
+    entry->refresh->out_of_schedule_refresh_requested = true;
+    entry->refresh->task->schedule();
 }
 
 void CustomVariablesManager::refreshTask(const ContextPtr & context, const EntryPtr & entry)
@@ -253,12 +288,22 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
 
     const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
     auto state_snapshot = entry->refresh->state;
+    const bool out_of_schedule = entry->refresh->out_of_schedule_refresh_requested;
+    entry->refresh->out_of_schedule_refresh_requested = false;
     auto [when, timeslot, planned_state] = planNextRefresh(
         now, entry->refresh->schedule, entry->refresh->settings, entry->refresh->state.last_attempt_replica, state_snapshot);
     (void)timeslot;
+
+    if (out_of_schedule)
+    {
+        if (planned_state.attempt_number > 0)
+            planned_state.attempt_number -= 1;
+        when = std::chrono::system_clock::now();
+    }
+
     entry->refresh->next_refresh_time = when;
 
-    if (now < when)
+    if (!out_of_schedule && now < when)
     {
         auto delay = std::chrono::duration_cast<std::chrono::milliseconds>(when - std::chrono::system_clock::now());
         auto delay_ms = delay.count() > 0 ? static_cast<size_t>(delay.count()) : 0;

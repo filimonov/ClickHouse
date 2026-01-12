@@ -114,6 +114,8 @@ public:
         STOP_CLEANUP,
         START_CLEANUP,
         RESET_COVERAGE,
+        REFRESH_VARIABLE,
+        REFRESH_VARIABLES,
         REFRESH_VIEW,
         WAIT_VIEW,
         START_VIEW,

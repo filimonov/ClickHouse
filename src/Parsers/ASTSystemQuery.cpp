@@ -448,6 +448,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
         case Type::REFRESH_VIEW:
+        case Type::REFRESH_VARIABLE:
         case Type::START_VIEW:
         case Type::START_REPLICATED_VIEW:
         case Type::STOP_VIEW:
@@ -459,6 +460,8 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_database_table();
             break;
         }
+        case Type::REFRESH_VARIABLES:
+            break;
         case Type::TEST_VIEW:
         {
             ostr << ' ';
