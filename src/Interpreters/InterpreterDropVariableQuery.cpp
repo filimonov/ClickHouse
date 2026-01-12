@@ -45,8 +45,9 @@ BlockIO InterpreterDropVariableQuery::execute()
     auto object_name = getCustomVariableName(drop_query.variable_name);
 
     const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local or session variables are supported in this phase");
+    const bool is_local_persistent = (object_name.scope == CustomVariableName::Scope::LocalPersistent);
+    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, or session variables are supported in this phase");
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::DROP_VARIABLE);
@@ -57,6 +58,8 @@ BlockIO InterpreterDropVariableQuery::execute()
     {
         if (is_session_scope)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
+        if (is_local_persistent)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for local_persistent variables yet");
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);

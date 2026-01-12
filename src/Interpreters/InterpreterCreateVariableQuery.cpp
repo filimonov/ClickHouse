@@ -56,8 +56,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
     auto object_name = getCustomVariableName(create_query.variable_name);
 
     const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local or session variables are supported in this phase");
+    const bool is_local_persistent = (object_name.scope == CustomVariableName::Scope::LocalPersistent);
+    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, or session variables are supported in this phase");
 
     if (create_query.refresh_strategy && is_session_scope)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "REFRESH is not supported for session variables");
@@ -73,6 +74,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
     {
         if (is_session_scope)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
+        if (is_local_persistent)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for local_persistent variables yet");
         if (create_query.refresh_strategy)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for refreshable variables");
         DDLQueryOnClusterParams params;
@@ -94,6 +97,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
         if (isCustomVariableExpressionConstant(create_query.expression, current_context))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH is not allowed for constant custom variable expressions");
     }
+
+    if (is_local_persistent && isCustomVariableExpressionConstant(create_query.expression, current_context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Constant expressions are not allowed for local_persistent custom variables");
 
     auto evaluated = evaluateCustomVariableExpression(create_query.expression, current_context);
 
