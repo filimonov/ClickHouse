@@ -128,13 +128,6 @@ void ScatterByPartitionTransform::generateOutputChunks()
         /// Put all rows into the first bucket
         if (output_size > 0)
             output_chunks[0] = Chunk(columns, num_rows);
-        /// All other buckets are empty
-        if (output_size > 1)
-        {
-            Chunk empty_chunk(chunk.cloneEmptyColumns(), 0);
-            for (size_t i = 1; i < output_size; ++i)
-                output_chunks[i] = Chunk(empty_chunk.getColumns(), 0);
-        }
 
         return;
     }
@@ -148,15 +141,25 @@ void ScatterByPartitionTransform::generateOutputChunks()
 
     const PaddedPODArray<UInt32> & hash_data = hash.getData();
     IColumn::Selector selector(num_rows);
+    std::vector<char> output_has_rows(output_size, false);
 
     for (size_t row = 0; row < num_rows; ++row)
-        selector[row] = (static_cast<UInt64>(hash_data[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
+    {
+        auto output_index = (static_cast<UInt64>(hash_data[row]) * output_size) >> 32; /// The "fastrange" method from Daniel Lemire
+        selector[row] = output_index;
+        output_has_rows[output_index] = true;
+    }
 
     for (const auto & column : columns)
     {
         auto filtered_columns = column->scatter(output_size, selector);
         for (size_t i = 0; i < output_size; ++i)
+        {
+            if (!output_has_rows[i])
+                continue;
+
             output_chunks[i].addColumn(std::move(filtered_columns[i]));
+        }
     }
 }
 
