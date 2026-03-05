@@ -69,7 +69,10 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
 void ScatterByPartitionTransform::work()
 {
     if (all_outputs_processed)
+    {
         generateOutputChunks();
+        Chunk().swap(chunk); /// Source chunk is no longer needed after scattering.
+    }
     all_outputs_processed = true;
 
     size_t chunk_number = 0;
@@ -83,7 +86,17 @@ void ScatterByPartitionTransform::work()
             continue;
 
         if (output.isFinished())
+        {
+            was_processed = true;
             continue;
+        }
+
+        if (output_chunk.getNumRows() == 0)
+        {
+            /// Avoid pushing empty chunks downstream.
+            was_processed = true;
+            continue;
+        }
 
         if (!output.canPush())
         {
