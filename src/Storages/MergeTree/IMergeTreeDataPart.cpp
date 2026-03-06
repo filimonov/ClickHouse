@@ -2074,6 +2074,18 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
     /// We don't need to do fsync when writing CSN, because in case of hard restart
     /// we will be able to restore CSN from transaction log in Keeper.
 
+    if (unlikely(!getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME)))
+    {
+        LOG_WARNING(
+            storage.log,
+            "File {} for part {} is missing before appending {} csn, rewriting full transaction metadata",
+            TXN_VERSION_METADATA_FILE_NAME,
+            name,
+            which_csn == VersionMetadata::WhichCSN::CREATION ? "creation" : "removal");
+        storeVersionMetadata(/* force */ true);
+        return;
+    }
+
     auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
     version.writeCSN(*out, which_csn);
     out->finalize();
@@ -2103,6 +2115,19 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
         LOG_TEST(storage.log, "Clearing removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
     else
         LOG_TEST(storage.log, "Appending removal TID for {} (creation: {}, removal {})", name, version.creation_tid, version.removal_tid);
+
+    if (unlikely(!getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME)))
+    {
+        LOG_WARNING(
+            storage.log,
+            "File {} for part {} is missing before {} removal_tid, rewriting full transaction metadata",
+            TXN_VERSION_METADATA_FILE_NAME,
+            name,
+            clear ? "clearing" : "appending");
+        storeVersionMetadata(/* force */ true);
+        if (!clear)
+            return;
+    }
 
     auto out = getDataPartStorage().writeTransactionFile(WriteMode::Append);
     version.writeRemovalTID(*out, clear);

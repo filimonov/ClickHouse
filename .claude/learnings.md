@@ -1,0 +1,1 @@
+- `2026-03-06`: If `txn_version.txt` is missing, `appendRemovalTIDToVersionMetadata` / `appendCSNToVersionMetadata` can create malformed metadata that starts with `removal_tid` (no `version: 1` header). Recreate full metadata with `storeVersionMetadata` before append operations in this case.
