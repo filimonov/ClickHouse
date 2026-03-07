@@ -1558,6 +1558,7 @@ void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 
 void IMergeTreeDataPart::removeVersionMetadata()
 {
+    std::lock_guard lock{version_metadata_file_mutex};
     getDataPartStorage().removeFileIfExists(TXN_VERSION_METADATA_FILE_NAME);
 }
 
@@ -2052,6 +2053,12 @@ void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) co
 
 void IMergeTreeDataPart::storeVersionMetadata(bool force) const
 {
+    std::lock_guard lock{version_metadata_file_mutex};
+    storeVersionMetadataImpl(force);
+}
+
+void IMergeTreeDataPart::storeVersionMetadataImpl(bool force) const
+{
     if (!wasInvolvedInTransaction() && !force)
         return;
     if (!storage.supportsTransactions())
@@ -2063,6 +2070,8 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
 
 void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN which_csn) const
 {
+    std::lock_guard lock{version_metadata_file_mutex};
+
     chassert(!version.creation_tid.isEmpty());
     chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_tid.isPrehistoric()));
     chassert(!(which_csn == VersionMetadata::WhichCSN::CREATION && version.creation_csn == 0));
@@ -2082,7 +2091,7 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
             TXN_VERSION_METADATA_FILE_NAME,
             name,
             which_csn == VersionMetadata::WhichCSN::CREATION ? "creation" : "removal");
-        storeVersionMetadata(/* force */ true);
+        storeVersionMetadataImpl(/* force */ true);
         return;
     }
 
@@ -2093,6 +2102,8 @@ void IMergeTreeDataPart::appendCSNToVersionMetadata(VersionMetadata::WhichCSN wh
 
 void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
 {
+    std::lock_guard lock{version_metadata_file_mutex};
+
     chassert(!version.creation_tid.isEmpty());
     chassert(version.removal_csn == 0 || (version.removal_csn == Tx::PrehistoricCSN && version.removal_tid.isPrehistoric()));
     chassert(!version.removal_tid.isEmpty());
@@ -2107,7 +2118,7 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
         assert(version.creation_csn == Tx::UnknownCSN || version.creation_csn == Tx::PrehistoricCSN);
         version.creation_csn.store(Tx::PrehistoricCSN);
 
-        storeVersionMetadata();
+        storeVersionMetadataImpl(false);
         return;
     }
 
@@ -2124,7 +2135,7 @@ void IMergeTreeDataPart::appendRemovalTIDToVersionMetadata(bool clear) const
             TXN_VERSION_METADATA_FILE_NAME,
             name,
             clear ? "clearing" : "appending");
-        storeVersionMetadata(/* force */ true);
+        storeVersionMetadataImpl(/* force */ true);
         if (!clear)
             return;
     }

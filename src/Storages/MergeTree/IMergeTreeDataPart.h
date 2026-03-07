@@ -810,6 +810,7 @@ private:
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
     void writeVersionMetadata(const VersionMetadata & version_, bool fsync_part_dir) const;
+    void storeVersionMetadataImpl(bool force) const;
 
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
@@ -831,6 +832,9 @@ private:
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
+
+    /// Protects write/remove operations on txn_version.txt from TOCTOU races.
+    mutable std::mutex version_metadata_file_mutex;
 
     /// If it's true then data related to this part is cleared from mark and index caches.
     mutable std::atomic_bool cleared_data_in_caches = false;

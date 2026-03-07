@@ -1,1 +1,2 @@
 - `2026-03-06`: If `txn_version.txt` is missing, `appendRemovalTIDToVersionMetadata` / `appendCSNToVersionMetadata` can create malformed metadata that starts with `removal_tid` (no `version: 1` header). Recreate full metadata with `storeVersionMetadata` before append operations in this case.
+- `2026-03-07`: `existsFile` check before `WriteMode::Append` is not enough for `txn_version.txt` because append on local disk uses `O_CREAT`; removal between check and open can still recreate malformed file. Serialize remove/write/append paths with a per-part mutex.
