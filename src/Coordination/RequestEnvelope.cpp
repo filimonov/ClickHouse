@@ -119,29 +119,4 @@ void RequestEnvelope::onReleased()
         });
 }
 
-void RequestEnvelope::onCompleted()
-{
-    state = RequestState::Completed;
-}
-
-void RequestEnvelope::onCancelled()
-{
-    state = RequestState::Cancelled;
-
-    /// Safety-net: finalize any open spans that were not finalized on the normal path.
-    ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.read_wait_for_write,
-        [&]
-        {
-            return std::vector<OpenTelemetry::SpanAttribute>{
-                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                {"keeper.session_id", session_id},
-                {"keeper.xid", request->xid},
-                {"keeper.stale", true},
-            };
-        },
-        OpenTelemetry::SpanStatus::ERROR,
-        "Request cancelled");
-}
-
 }

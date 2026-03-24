@@ -38,10 +38,6 @@ enum class RequestState : uint8_t
     Submitted,
     /// Waiting for a preceding write to commit (deferred read).
     Deferred,
-    /// Response has been generated.
-    Completed,
-    /// Request was dropped (stale session, shutdown, etc.).
-    Cancelled,
 };
 
 /// Wraps a raw ZooKeeper request with lifecycle tracking, OTel spans, metrics,
@@ -51,10 +47,10 @@ enum class RequestState : uint8_t
 class RequestEnvelope
 {
 public:
-    int64_t session_id;
+    int64_t session_id{0};
     Coordination::ZooKeeperRequestPtr request;
-    RequestMode mode;
-    RequestTarget target;
+    RequestMode mode{RequestMode::Linear};
+    RequestTarget target{RequestTarget::Raft};
     RequestState state{RequestState::Queued};
     int64_t create_time_ms{0};
     bool use_xid_64{false};
@@ -63,21 +59,18 @@ public:
     /// Null for requests that have no session (SessionID, dead session Close).
     KeeperSessionPtr session;
 
-    /// Safety net: finalize any unclosed OTel spans. Explicit lifecycle methods
-    /// (onCompleted, onCancelled) are the normal finalization path — the destructor
-    /// only catches spans that were leaked due to a missed transition.
+    /// Safety net: finalize any OTel spans that were initialized but not
+    /// explicitly finalized via lifecycle methods.
     ~RequestEnvelope();
 
     /// Build the `KeeperRequestForSession` struct for submitting to `requests_queue` or local read.
     KeeperRequestForSession buildKeeperRequestForSession() const;
 
     /// Lifecycle callbacks -- update state, manage metrics and OTel spans.
-    void onEnqueued();   /// Queued -> Submitted (pushed to requests_queue)
+    void onEnqueued();   /// Queued -> Submitted (pushed to requests_queue, after successful push)
     void onFastPath();   /// Queued -> Submitted (fast local read, no queue)
     void onDeferred();   /// Queued -> Deferred (waiting for preceding write)
     void onReleased();   /// Deferred -> Submitted (preceding write committed)
-    void onCompleted();  /// -> Completed
-    void onCancelled();  /// -> Cancelled
 };
 
 using RequestEnvelopePtr = std::shared_ptr<RequestEnvelope>;
