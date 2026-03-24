@@ -276,6 +276,55 @@ TEST_F(KeeperSessionTest, FinishingStateRejectsRequests)
     ASSERT_EQ(raft_pushes.size(), 0);
 }
 
+/// Test: Close is terminal — no reads can be deferred behind it.
+TEST_F(KeeperSessionTest, CloseIsTerminal_RejectsSubsequentRequests)
+{
+    /// Submit a write, then Close.
+    ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
+    auto close_req = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+    close_req->xid = Coordination::CLOSE_XID;
+    ASSERT_TRUE(session->addRequest(close_req, false));
+    ASSERT_EQ(raft_pushes.size(), 2);
+
+    /// Any request after Close is rejected.
+    ASSERT_FALSE(session->addRequest(makeReadRequest(2), false));
+    ASSERT_FALSE(session->addRequest(makeWriteRequest(3), false));
+
+    /// No reads dispatched, no reads deferred.
+    ASSERT_EQ(local_reads.size(), 0);
+}
+
+/// Test: Close commit does NOT release deferred reads (there shouldn't be any).
+TEST_F(KeeperSessionTest, CloseCommitDoesNotReleaseReads)
+{
+    ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
+    auto close_req = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+    close_req->xid = Coordination::CLOSE_XID;
+    ASSERT_TRUE(session->addRequest(close_req, false));
+
+    /// Commit the write — no deferred reads behind it since Close follows.
+    session->onWriteCommitted(1);
+    ASSERT_EQ(local_reads.size(), 0);
+
+    /// Commit Close — nothing to release.
+    session->onWriteCommitted(Coordination::CLOSE_XID);
+    ASSERT_EQ(local_reads.size(), 0);
+}
+
+/// Test: failed Close push rolls back close_submitted_ flag.
+TEST_F(KeeperSessionTest, FailedClosePushRollsBack)
+{
+    raft_push_should_throw = true;
+    auto close_req = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
+    close_req->xid = Coordination::CLOSE_XID;
+    ASSERT_THROW(session->addRequest(close_req, false), Exception);
+    raft_push_should_throw = false;
+
+    /// Session should still accept requests (close_submitted_ rolled back).
+    ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
+    ASSERT_EQ(raft_pushes.size(), 1);
+}
+
 /// Test: read-only traffic after failed write doesn't hang (the main scenario).
 TEST_F(KeeperSessionTest, ReadOnlyAfterFailedWrite_NoHang)
 {

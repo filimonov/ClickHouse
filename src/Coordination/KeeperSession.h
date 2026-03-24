@@ -109,6 +109,10 @@ private:
     std::deque<UnresolvedWrite> unresolved_writes_;
     mutable std::mutex mutex_;
 
+    /// Set when Close is submitted to Raft. Once true, addRequest rejects
+    /// all subsequent requests — no reads can be deferred behind Close.
+    bool close_submitted_ = false;
+
     /// Injected routing functions.
     RaftPushFunc raft_push_;
     LocalReadFunc local_read_;

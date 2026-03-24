@@ -157,24 +157,30 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     {
         std::lock_guard lock(mutex_);
 
-        if (state_ != State::Active)
+        if (state_ != State::Active || close_submitted_)
             return false;
 
         auto [mode, target] = classify(request);
         sr->mode = mode;
         sr->target = target;
 
+        is_close = (request->getOpNum() == Coordination::OpNum::Close);
+
         switch (mode)
         {
             case RequestMode::Linear:
             {
-                /// Record as unresolved write for barrier tracking.
-                /// When the commit callback fires, onWriteCommitted pops this entry
-                /// and releases any deferred reads behind it.
-                unresolved_writes_.push_back(UnresolvedWrite{.xid = request->xid, .deferred_reads = {}});
+                /// Close is terminal: don't create a barrier entry (no requests
+                /// can follow it), just push to Raft. The close_submitted_ flag
+                /// prevents any subsequent addRequest calls from being accepted.
+                if (!is_close)
+                    unresolved_writes_.push_back(UnresolvedWrite{.xid = request->xid, .deferred_reads = {}});
+
+                if (is_close)
+                    close_submitted_ = true;
+
                 keeper_req = sr->buildKeeperRequestForSession();
                 keeper_req.envelope = sr;
-                is_close = (request->getOpNum() == Coordination::OpNum::Close);
                 action = Action::PushRaft;
                 break;
             }
@@ -213,10 +219,12 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
             catch (...)
             {
                 sr->onEnqueueFailed();
-                /// Roll back the unresolved write entry so subsequent reads
-                /// are not blocked behind a write that was never submitted.
+                /// Roll back session state so subsequent requests are not
+                /// blocked behind a write/close that was never submitted.
                 std::lock_guard rollback_lock(mutex_);
-                if (!unresolved_writes_.empty() && unresolved_writes_.back().xid == request->xid)
+                if (is_close)
+                    close_submitted_ = false;
+                else if (!unresolved_writes_.empty() && unresolved_writes_.back().xid == request->xid)
                     unresolved_writes_.pop_back();
                 throw;
             }
