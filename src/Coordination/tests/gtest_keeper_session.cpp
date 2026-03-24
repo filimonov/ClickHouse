@@ -374,8 +374,7 @@ TEST(RequestEnvelopeTest, DeferredThenFailedRelease)
     ASSERT_EQ(env->state, RequestState::Deferred);
 
     env->onFailedRelease("test failure");
-    /// State doesn't change in onFailedRelease (spans are finalized, that's all).
-    /// The envelope will be destroyed by the shared_ptr going out of scope.
+    ASSERT_EQ(env->state, RequestState::Queued);
 }
 
 #endif
