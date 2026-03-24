@@ -102,6 +102,11 @@ private:
     std::pair<RequestMode, RequestTarget> classify(
         const Coordination::ZooKeeperRequestPtr & request) const;
 
+    /// Walk the FIFO from front, pop stale entries (failed batches), return
+    /// deferred reads for the entry matching committed_xid. Must be called
+    /// with mutex_ held.
+    KeeperRequestsForSessions popDeferredReads(Coordination::XID committed_xid);
+
     const int64_t session_id_;
     State state_ = State::Active;
     std::optional<ZooKeeperResponseCallback> callback_;

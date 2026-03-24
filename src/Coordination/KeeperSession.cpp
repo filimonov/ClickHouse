@@ -103,22 +103,35 @@ void KeeperSession::addDeferredRead(Coordination::XID write_xid, const KeeperReq
     unresolved_writes_.back().deferred_reads.push_back(read_request);
 }
 
+KeeperRequestsForSessions KeeperSession::popDeferredReads(Coordination::XID committed_xid)
+{
+    /// Walk the FIFO from front looking for the entry matching committed_xid.
+    /// Pop any non-matching entries encountered along the way — they are stale
+    /// (from failed batches whose writes never committed). Their deferred reads
+    /// are discarded (the RequestEnvelope destructor handles span cleanup).
+    ///
+    /// This uses exact-match walking instead of numeric xid ordering because
+    /// XIDs are not monotonic: auth (xid=-4), close (xid=INT32_MAX), etc.
+    while (!unresolved_writes_.empty())
+    {
+        if (unresolved_writes_.front().xid == committed_xid)
+        {
+            auto reads = std::move(unresolved_writes_.front().deferred_reads);
+            unresolved_writes_.pop_front();
+            return reads;
+        }
+
+        /// Stale entry from a failed batch — discard.
+        unresolved_writes_.pop_front();
+    }
+
+    return {};
+}
+
 KeeperRequestsForSessions KeeperSession::takeDeferredReads(Coordination::XID committed_xid)
 {
     std::lock_guard lock(mutex_);
-
-    /// Skip stale entries from writes that were never committed (failed batches).
-    /// XIDs are monotonically increasing per session, so any entry with xid < committed_xid
-    /// belongs to a write that failed and will never commit.
-    while (!unresolved_writes_.empty() && unresolved_writes_.front().xid < committed_xid)
-        unresolved_writes_.pop_front();
-
-    if (unresolved_writes_.empty() || unresolved_writes_.front().xid != committed_xid)
-        return {};
-
-    auto reads = std::move(unresolved_writes_.front().deferred_reads);
-    unresolved_writes_.pop_front();
-    return reads;
+    return popDeferredReads(committed_xid);
 }
 
 std::pair<RequestMode, RequestTarget> KeeperSession::classify(
@@ -236,17 +249,7 @@ void KeeperSession::onWriteCommitted(Coordination::XID committed_xid)
     KeeperRequestsForSessions pending_reads;
     {
         std::lock_guard lock(mutex_);
-
-        /// Reuse the existing takeDeferredReads logic (skip stale, pop front).
-        /// But we can't call takeDeferredReads() since it also locks. Inline it.
-        while (!unresolved_writes_.empty() && unresolved_writes_.front().xid < committed_xid)
-            unresolved_writes_.pop_front();
-
-        if (!unresolved_writes_.empty() && unresolved_writes_.front().xid == committed_xid)
-        {
-            pending_reads = std::move(unresolved_writes_.front().deferred_reads);
-            unresolved_writes_.pop_front();
-        }
+        pending_reads = popDeferredReads(committed_xid);
     }
 
     /// Dispatch released reads outside the lock.
