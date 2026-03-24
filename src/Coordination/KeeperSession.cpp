@@ -125,7 +125,7 @@ std::pair<SessionRequestMode, SessionRequestTarget> KeeperSession::classify(
     const Coordination::ZooKeeperRequestPtr & request) const
 {
     if (request->getOpNum() == Coordination::OpNum::Reconfig)
-        return {SessionRequestMode::Exclusive, SessionRequestTarget::Raft};
+        return {SessionRequestMode::Separator, SessionRequestTarget::Raft};
 
     if (quorum_reads_ || !request->isReadRequest())
         return {SessionRequestMode::Linear, SessionRequestTarget::Raft};
@@ -177,9 +177,9 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                 action = Action::PushRaft;
                 break;
             }
-            case SessionRequestMode::Exclusive:
+            case SessionRequestMode::Separator:
             {
-                /// Exclusive (Reconfig) goes through a special RAFT path
+                /// Separator (Reconfig) goes through a special RAFT path
                 /// (KeeperStateMachine::reconfigure) that does NOT trigger the
                 /// normal commit callback. Therefore we must NOT push an unresolved
                 /// write entry -- it would never be popped, blocking all subsequent

@@ -16,9 +16,10 @@ enum class SessionRequestMode : uint8_t
     Linear,
     /// Must wait for the preceding Linear request to commit (deferred non-quorum read with barrier).
     WaitPrevious,
-    /// Acts as a barrier: all preceding requests must complete before this one executes,
-    /// and all subsequent requests must wait for this one (Reconfig).
-    Exclusive,
+    /// Breaks write batching: preceding batch must commit before this request is processed.
+    /// Does not create an unresolved write entry (Reconfig goes through a special RAFT path
+    /// that does not trigger the normal commit callback).
+    Separator,
 };
 
 /// Where the request is executed.

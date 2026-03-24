@@ -261,7 +261,7 @@ void KeeperDispatcher::requestThread()
                 }
 
                 /// All requests arriving here are pre-classified by KeeperSession::addRequest
-                /// as Linear (writes, quorum reads, Auth, Heartbeat, Close) or Exclusive (Reconfig).
+                /// as Linear (writes, quorum reads, Auth, Heartbeat, Close) or Separator (Reconfig).
                 /// Non-quorum reads never enter this queue -- they are handled as fast-path local
                 /// reads or deferred behind writes directly by the session.
 
@@ -509,8 +509,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
-    /// The session classifies the request (Linear/WaitPrevious/Exclusive) and routes it:
-    /// - Linear/Exclusive -> pushed to requests_queue via raft_push_ callback
+    /// The session classifies the request (Linear/WaitPrevious/Separator) and routes it:
+    /// - Linear/Separator -> pushed to requests_queue via raft_push_ callback
     /// - WaitPrevious with preceding writes -> deferred in session FIFO
     /// - WaitPrevious with no preceding writes -> fast-path local read via local_read_ callback
     /// OTel dispatcher_requests_queue span is initialized inside SessionRequest::onEnqueued.

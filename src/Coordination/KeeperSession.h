@@ -66,9 +66,9 @@ public:
 
     /// --- Request classification and routing ---
 
-    /// Classifies the request (Linear/WaitPrevious/Exclusive, Raft/Local),
+    /// Classifies the request (Linear/WaitPrevious/Separator, Raft/Local),
     /// stores in the per-session FIFO, and routes it:
-    /// - Linear/Exclusive -> pushes to Raft queue via `raft_push_`
+    /// - Linear/Separator -> pushes to Raft queue via `raft_push_`
     /// - WaitPrevious with preceding writes -> defers in FIFO
     /// - WaitPrevious with no preceding writes -> fast-path local read via `local_read_`
     ///
