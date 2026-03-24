@@ -138,4 +138,23 @@ void RequestEnvelope::onReleased()
         });
 }
 
+void RequestEnvelope::onFailedRelease(const std::string & reason)
+{
+    auto make_attributes = [&]
+    {
+        return std::vector<OpenTelemetry::SpanAttribute>{
+            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+            {"keeper.session_id", session_id},
+            {"keeper.xid", request->xid},
+        };
+    };
+
+    ZooKeeperOpentelemetrySpans::maybeFinalize(
+        request->spans.dispatcher_requests_queue, make_attributes,
+        OpenTelemetry::SpanStatus::ERROR, reason);
+    ZooKeeperOpentelemetrySpans::maybeFinalize(
+        request->spans.read_wait_for_write, make_attributes,
+        OpenTelemetry::SpanStatus::ERROR, reason);
+}
+
 }

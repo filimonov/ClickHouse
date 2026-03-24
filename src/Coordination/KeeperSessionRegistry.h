@@ -18,6 +18,7 @@ public:
     void registerSession(int64_t session_id, ZooKeeperResponseCallback callback,
                          KeeperSession::RaftPushFunc raft_push,
                          KeeperSession::LocalReadFunc local_read,
+                         KeeperSession::FailReadFunc fail_read,
                          bool quorum_reads);
 
     /// Returns the session or nullptr if not found.

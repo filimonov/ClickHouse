@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/RequestEnvelope.h>
 
@@ -35,10 +36,12 @@ public:
     /// `LocalReadFunc` wraps `server->putLocalReadRequest` plus the `isLeaderAlive`
     /// check and error response fallback.
     using LocalReadFunc = std::function<void(const KeeperRequestForSession &)>;
+    /// `FailReadFunc` wraps `addErrorResponses` for deferred reads whose write failed.
+    using FailReadFunc = std::function<void(const KeeperRequestForSession &, Coordination::Error)>;
 
     KeeperSession(int64_t session_id, ZooKeeperResponseCallback callback,
                   RaftPushFunc raft_push, LocalReadFunc local_read,
-                  bool quorum_reads);
+                  FailReadFunc fail_read, bool quorum_reads);
 
     int64_t getSessionID() const { return session_id_; }
 
@@ -80,6 +83,10 @@ public:
     /// executing them via `local_read_`.
     void onWriteCommitted(Coordination::XID committed_xid);
 
+    /// Called when a write fails (batch rejection, timeout, memory limit).
+    /// Pops the unresolved write entry and sends error responses for its deferred reads.
+    void onWriteFailed(Coordination::XID failed_xid, Coordination::Error error);
+
 private:
     struct UnresolvedWrite
     {
@@ -105,6 +112,7 @@ private:
     /// Injected routing functions.
     RaftPushFunc raft_push_;
     LocalReadFunc local_read_;
+    FailReadFunc fail_read_;
     bool quorum_reads_;
 };
 

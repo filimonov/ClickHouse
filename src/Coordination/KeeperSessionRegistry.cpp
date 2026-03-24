@@ -22,6 +22,7 @@ void KeeperSessionRegistry::registerSession(
     ZooKeeperResponseCallback callback,
     KeeperSession::RaftPushFunc raft_push,
     KeeperSession::LocalReadFunc local_read,
+    KeeperSession::FailReadFunc fail_read,
     bool quorum_reads)
 {
     std::lock_guard lock(mutex_);
@@ -30,7 +31,8 @@ void KeeperSessionRegistry::registerSession(
             session_id,
             std::make_shared<KeeperSession>(
                 session_id, std::move(callback),
-                std::move(raft_push), std::move(local_read), quorum_reads)).second)
+                std::move(raft_push), std::move(local_read),
+                std::move(fail_read), quorum_reads)).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
 
     CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);

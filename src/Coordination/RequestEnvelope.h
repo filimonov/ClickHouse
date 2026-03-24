@@ -70,8 +70,9 @@ public:
     void onEnqueued();       /// Queued -> Submitted (inits OTel span, increments metric)
     void onEnqueueFailed(); /// Submitted -> Queued (rollback: decrements metric, finalizes span)
     void onFastPath();      /// Queued -> Submitted (fast local read, no queue)
-    void onDeferred();      /// Queued -> Deferred (waiting for preceding write)
-    void onReleased();      /// Deferred -> Submitted (preceding write committed)
+    void onDeferred();       /// Queued -> Deferred (waiting for preceding write)
+    void onReleased();       /// Deferred -> Submitted (preceding write committed)
+    void onFailedRelease(const std::string & reason); /// Deferred -> failed (write failed, finalize spans with ERROR)
 };
 
 using RequestEnvelopePtr = std::shared_ptr<RequestEnvelope>;

@@ -22,11 +22,13 @@ KeeperSession::KeeperSession(
     ZooKeeperResponseCallback callback,
     RaftPushFunc raft_push,
     LocalReadFunc local_read,
+    FailReadFunc fail_read,
     bool quorum_reads)
     : session_id_(session_id)
     , callback_(std::move(callback))
     , raft_push_(std::move(raft_push))
     , local_read_(std::move(local_read))
+    , fail_read_(std::move(fail_read))
     , quorum_reads_(quorum_reads)
 {
 }
@@ -250,6 +252,30 @@ void KeeperSession::onWriteCommitted(Coordination::XID committed_xid)
                 read_request.envelope->onReleased();
 
             local_read_(read_request);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void KeeperSession::onWriteFailed(Coordination::XID failed_xid, Coordination::Error error)
+{
+    KeeperRequestsForSessions orphaned_reads;
+    {
+        std::lock_guard lock(mutex_);
+        orphaned_reads = popDeferredReads(failed_xid);
+    }
+
+    for (auto & read_request : orphaned_reads)
+    {
+        try
+        {
+            if (read_request.envelope)
+                read_request.envelope->onFailedRelease("Write failed, deferred read aborted");
+
+            fail_read_(read_request, error);
         }
         catch (...)
         {

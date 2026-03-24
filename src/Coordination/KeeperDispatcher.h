@@ -87,6 +87,9 @@ private:
     /// Clears requests.
     void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
 
+    /// Notify sessions about failed writes so they can release stuck deferred reads.
+    void notifySessionsAboutFailedBatch(const KeeperRequestsForSessions & batch, Coordination::Error error);
+
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments
     nuraft::ptr<nuraft::buffer> forceWaitAndProcessResult(
