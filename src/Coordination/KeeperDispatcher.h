@@ -84,11 +84,11 @@ private:
     bool setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request = nullptr);
 
     /// Add error responses for requests to responses queue.
-    /// Clears requests.
     void addErrorResponses(const KeeperRequestsForSessions & requests_for_sessions, Coordination::Error error);
 
-    /// Notify sessions about failed writes so they can release stuck deferred reads.
-    void notifySessionsAboutFailedBatch(const KeeperRequestsForSessions & batch, Coordination::Error error);
+    /// Send error responses AND notify sessions about failed writes
+    /// so they can release stuck deferred reads.
+    void failBatch(const KeeperRequestsForSessions & batch, Coordination::Error error);
 
     /// Forcefully wait for result and sets errors if something when wrong.
     /// Clears both arguments

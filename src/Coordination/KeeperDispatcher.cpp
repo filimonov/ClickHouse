@@ -256,8 +256,7 @@ void KeeperDispatcher::requestThread()
                         ReadableSize(total_memory_tracker.get()),
                         ReadableSize(total_memory_tracker.getRSS()),
                         request.request->getOpNum());
-                    addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY);
-                    notifySessionsAboutFailedBatch({request}, Coordination::Error::ZOUTOFMEMORY);
+                    failBatch({request}, Coordination::Error::ZOUTOFMEMORY);
                     continue;
                 }
 
@@ -351,8 +350,7 @@ void KeeperDispatcher::requestThread()
 
                     if (!result)
                     {
-                        addErrorResponses(current_batch, Coordination::Error::ZCONNECTIONLOSS);
-                        notifySessionsAboutFailedBatch(current_batch, Coordination::Error::ZCONNECTIONLOSS);
+                        failBatch(current_batch, Coordination::Error::ZCONNECTIONLOSS);
                         current_batch.clear();
                         current_batch_bytes_size = 0;
                     }
@@ -376,10 +374,7 @@ void KeeperDispatcher::requestThread()
                         auto log_idx = bs.get_u64();
 
                         if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
-                        {
-                            addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
-                            notifySessionsAboutFailedBatch(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
-                        }
+                            failBatch(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
                         if (shutdown_called)
                             return;
@@ -935,8 +930,10 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
     }
 }
 
-void KeeperDispatcher::notifySessionsAboutFailedBatch(const KeeperRequestsForSessions & batch, Coordination::Error error)
+void KeeperDispatcher::failBatch(const KeeperRequestsForSessions & batch, Coordination::Error error)
 {
+    addErrorResponses(batch, error);
+
     for (const auto & req : batch)
     {
         /// Close and SessionID don't participate in per-session barriers.
@@ -957,15 +954,9 @@ nuraft::ptr<nuraft::buffer> KeeperDispatcher::forceWaitAndProcessResult(
 
     /// If we get some errors, than send them to clients
     if (!result->get_accepted() || result->get_result_code() == nuraft::cmd_result_code::TIMEOUT)
-    {
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
-        notifySessionsAboutFailedBatch(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
-    }
+        failBatch(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
     else if (result->get_result_code() != nuraft::cmd_result_code::OK)
-    {
-        addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-        notifySessionsAboutFailedBatch(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
-    }
+        failBatch(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
 
     auto result_buf = result->get();
 
