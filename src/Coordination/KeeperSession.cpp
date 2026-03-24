@@ -167,12 +167,24 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
         switch (mode)
         {
             case SessionRequestMode::Linear:
-            case SessionRequestMode::Exclusive:
             {
                 /// Record as unresolved write for barrier tracking.
+                /// When the commit callback fires, onWriteCommitted pops this entry
+                /// and releases any deferred reads behind it.
                 unresolved_writes_.push_back(UnresolvedWrite{.xid = request->xid, .deferred_reads = {}});
                 keeper_req = sr->buildKeeperRequestForSession();
                 is_close = (request->getOpNum() == Coordination::OpNum::Close);
+                action = Action::PushRaft;
+                break;
+            }
+            case SessionRequestMode::Exclusive:
+            {
+                /// Exclusive (Reconfig) goes through a special RAFT path
+                /// (KeeperStateMachine::reconfigure) that does NOT trigger the
+                /// normal commit callback. Therefore we must NOT push an unresolved
+                /// write entry -- it would never be popped, blocking all subsequent
+                /// reads in this session indefinitely.
+                keeper_req = sr->buildKeeperRequestForSession();
                 action = Action::PushRaft;
                 break;
             }
