@@ -171,6 +171,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                 /// and releases any deferred reads behind it.
                 unresolved_writes_.push_back(UnresolvedWrite{.xid = request->xid, .deferred_reads = {}});
                 keeper_req = sr->buildKeeperRequestForSession();
+                keeper_req.envelope = sr;
                 is_close = (request->getOpNum() == Coordination::OpNum::Close);
                 action = Action::PushRaft;
                 break;
@@ -181,6 +182,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                 {
                     /// Fast path: no preceding writes, execute immediately.
                     keeper_req = sr->buildKeeperRequestForSession();
+                    keeper_req.envelope = sr;
                     action = Action::FastLocalRead;
                 }
                 else
