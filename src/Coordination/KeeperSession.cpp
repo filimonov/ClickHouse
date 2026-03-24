@@ -121,17 +121,17 @@ KeeperRequestsForSessions KeeperSession::takeDeferredReads(Coordination::XID com
     return reads;
 }
 
-std::pair<SessionRequestMode, SessionRequestTarget> KeeperSession::classify(
+std::pair<RequestMode, RequestTarget> KeeperSession::classify(
     const Coordination::ZooKeeperRequestPtr & request) const
 {
-    if (request->getOpNum() == Coordination::OpNum::Reconfig)
-        return {SessionRequestMode::Separator, SessionRequestTarget::Raft};
+    /// Reconfig bypasses session classification entirely (handled directly by KeeperDispatcher::putRequest).
+    chassert(request->getOpNum() != Coordination::OpNum::Reconfig);
 
     if (quorum_reads_ || !request->isReadRequest())
-        return {SessionRequestMode::Linear, SessionRequestTarget::Raft};
+        return {RequestMode::Linear, RequestTarget::Raft};
 
     /// Non-quorum read: defer behind preceding writes (per-session barrier).
-    return {SessionRequestMode::WaitPrevious, SessionRequestTarget::Local};
+    return {RequestMode::WaitPrevious, RequestTarget::Local};
 }
 
 bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request, bool use_xid_64)
@@ -139,8 +139,8 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     using namespace std::chrono;
     auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 
-    /// Prepare the SessionRequest and classify it.
-    auto sr = std::make_shared<SessionRequest>();
+    /// Prepare the RequestEnvelope and classify it.
+    auto sr = std::make_shared<RequestEnvelope>();
     sr->session_id = session_id_;
     sr->request = request;
     sr->create_time_ms = now_ms;
@@ -166,7 +166,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
 
         switch (mode)
         {
-            case SessionRequestMode::Linear:
+            case RequestMode::Linear:
             {
                 /// Record as unresolved write for barrier tracking.
                 /// When the commit callback fires, onWriteCommitted pops this entry
@@ -177,18 +177,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                 action = Action::PushRaft;
                 break;
             }
-            case SessionRequestMode::Separator:
-            {
-                /// Separator (Reconfig) goes through a special RAFT path
-                /// (KeeperStateMachine::reconfigure) that does NOT trigger the
-                /// normal commit callback. Therefore we must NOT push an unresolved
-                /// write entry -- it would never be popped, blocking all subsequent
-                /// reads in this session indefinitely.
-                keeper_req = sr->buildKeeperRequestForSession();
-                action = Action::PushRaft;
-                break;
-            }
-            case SessionRequestMode::WaitPrevious:
+            case RequestMode::WaitPrevious:
             {
                 if (unresolved_writes_.empty())
                 {
@@ -201,6 +190,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                     /// Defer: attach to the last unresolved write.
                     sr->onDeferred();
                     keeper_req = sr->buildKeeperRequestForSession();
+                    keeper_req.envelope = sr;
                     unresolved_writes_.back().deferred_reads.push_back(keeper_req);
                     action = Action::Deferred;
                 }
@@ -214,7 +204,19 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     {
         case Action::PushRaft:
             sr->onEnqueued();
-            raft_push_(std::move(keeper_req), is_close);
+            try
+            {
+                raft_push_(std::move(keeper_req), is_close);
+            }
+            catch (...)
+            {
+                /// Roll back the unresolved write entry so subsequent reads
+                /// are not blocked behind a write that was never submitted.
+                std::lock_guard rollback_lock(mutex_);
+                if (!unresolved_writes_.empty() && unresolved_writes_.back().xid == request->xid)
+                    unresolved_writes_.pop_back();
+                throw;
+            }
             break;
         case Action::FastLocalRead:
             sr->onFastPath();
@@ -249,17 +251,8 @@ void KeeperSession::onWriteCommitted(Coordination::XID committed_xid)
     /// Dispatch released reads outside the lock.
     for (auto & read_request : pending_reads)
     {
-        /// Finalize the read_wait_for_write OTel span.
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            read_request.request->spans.read_wait_for_write,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                    {"keeper.session_id", read_request.session_id},
-                    {"keeper.xid", read_request.request->xid},
-                };
-            });
+        if (read_request.envelope)
+            read_request.envelope->onReleased();
 
         local_read_(read_request);
     }

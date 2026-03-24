@@ -260,8 +260,9 @@ void KeeperDispatcher::requestThread()
                     continue;
                 }
 
-                /// All requests arriving here are pre-classified by KeeperSession::addRequest
-                /// as Linear (writes, quorum reads, Auth, Heartbeat, Close) or Separator (Reconfig).
+                /// Requests arriving here are either:
+                /// - Linear (writes, quorum reads, Auth, Heartbeat, Close) routed by KeeperSession::addRequest
+                /// - Reconfig pushed directly by KeeperDispatcher::putRequest (bypasses session classification)
                 /// Non-quorum reads never enter this queue -- they are handled as fast-path local
                 /// reads or deferred behind writes directly by the session.
 
@@ -509,11 +510,34 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (keeper_context->isShutdownCalled())
         return false;
 
-    /// The session classifies the request (Linear/WaitPrevious/Separator) and routes it:
-    /// - Linear/Separator -> pushed to requests_queue via raft_push_ callback
+    /// Reconfig bypasses session classification and goes directly to requests_queue,
+    /// similar to SessionID requests. It's a cluster-level admin operation processed
+    /// via a special RAFT path (KeeperStateMachine::reconfigure) that does not trigger
+    /// the normal commit callback, so it must not participate in per-session barrier tracking.
+    if (request->getOpNum() == Coordination::OpNum::Reconfig)
+    {
+        using namespace std::chrono;
+        auto env = std::make_shared<RequestEnvelope>();
+        env->session_id = session_id;
+        env->request = request;
+        env->create_time_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+        env->session = std::move(session);
+        env->onEnqueued();
+
+        auto req = env->buildKeeperRequestForSession();
+        req.envelope = std::move(env);
+        auto timeout = configuration_and_settings->coordination_settings[
+            CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+        if (!requests_queue->tryPush(std::move(req), timeout))
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
+        return true;
+    }
+
+    /// The session classifies the request (Linear/WaitPrevious) and routes it:
+    /// - Linear -> pushed to requests_queue via raft_push_ callback
     /// - WaitPrevious with preceding writes -> deferred in session FIFO
     /// - WaitPrevious with no preceding writes -> fast-path local read via local_read_ callback
-    /// OTel dispatcher_requests_queue span is initialized inside SessionRequest::onEnqueued.
+    /// OTel dispatcher_requests_queue span is initialized inside RequestEnvelope::onEnqueued.
     return session->addRequest(request, use_xid_64);
 }
 
@@ -538,17 +562,21 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
         return false;
     }
 
-    KeeperRequestForSession request_info;
-    request_info.request = request;
-    using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    request_info.session_id = session_id;
-    auto sr = std::make_shared<SessionRequest>();
-    sr->session = std::move(session);
-    request_info.session_request = std::move(sr);
-
     if (keeper_context->isShutdownCalled())
         return false;
+
+    using namespace std::chrono;
+    auto env = std::make_shared<RequestEnvelope>();
+    env->session_id = session_id;
+    env->request = request;
+    env->mode = RequestMode::WaitPrevious;
+    env->target = RequestTarget::Local;
+    env->create_time_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    env->session = std::move(session);
+    env->onFastPath();
+
+    auto request_info = env->buildKeeperRequestForSession();
+    request_info.envelope = std::move(env);
 
     server->putLocalReadRequest(request_info);
     return true;
@@ -687,7 +715,7 @@ void KeeperDispatcher::shutdown()
                     .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                     .request = std::move(request),
                     .digest = std::nullopt,
-                    .session_request = {},
+                    .envelope = {},
                 };
 
                 close_requests.push_back(std::move(request_info));
@@ -754,7 +782,7 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
     auto raft_push = [this](KeeperRequestForSession && req, bool is_close) -> bool
     {
         /// Note: KeeperOutstandingRequests metric is managed by
-        /// SessionRequest::onEnqueued (increment) and requestThread (decrement).
+        /// RequestEnvelope::onEnqueued (increment) and requestThread (decrement).
         if (is_close)
         {
             if (!requests_queue->push(std::move(req)))
@@ -818,7 +846,7 @@ void KeeperDispatcher::sessionCleanerTask()
                         .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                         .request = std::move(request),
                         .digest = std::nullopt,
-                        .session_request = {},
+                        .envelope = {},
                     };
                     /// Detach session from registry before pushing Close to the queue.
                     /// This gives the leader early filtering -- stale requests for
@@ -828,10 +856,15 @@ void KeeperDispatcher::sessionCleanerTask()
                     /// Close will still pass through RAFT for ephemeral cleanup.
                     finishSession(dead_session);
 
-                    if (!requests_queue->push(std::move(request_info)))
+                    if (requests_queue->push(std::move(request_info)))
+                    {
+                        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+                        LOG_INFO(log, "Dead session close request pushed");
+                    }
+                    else
+                    {
                         LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
-                    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
-                    LOG_INFO(log, "Dead session close request pushed");
+                    }
                 }
             }
         }

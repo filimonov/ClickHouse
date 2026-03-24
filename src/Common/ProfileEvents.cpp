@@ -990,10 +990,6 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
     M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
     M(KeeperLiveSessionsLockHoldMicroseconds, "Time spent holding Keeper live sessions lock", ValueType::Microseconds) \
-    M(KeeperSessionRegistryLockWaitMicroseconds, "Time spent waiting to acquire Keeper session registry lock", ValueType::Microseconds) \
-    M(KeeperSessionRegistryLockHoldMicroseconds, "Time spent holding Keeper session registry lock", ValueType::Microseconds) \
-    M(KeeperSessionLockWaitMicroseconds, "Time spent waiting to acquire Keeper per-session lock", ValueType::Microseconds) \
-    M(KeeperSessionLockHoldMicroseconds, "Time spent holding Keeper per-session lock", ValueType::Microseconds) \
     \
     M(OverflowBreak, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'break' and the result is incomplete.", ValueType::Number) \
     M(OverflowThrow, "Number of times, data processing was cancelled by query complexity limitation with setting '*_overflow_mode' = 'throw' and exception was thrown.", ValueType::Number) \

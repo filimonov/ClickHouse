@@ -584,6 +584,9 @@ class ClickHouseCluster:
         self.env_variables["TSAN_OPTIONS"] = f"use_sigaltstack=0 memory_limit_mb=5120"
         self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
+        # /etc/passwd is mounted from the host, so HOME resolves to the host
+        # user's home directory which does not exist inside the container.
+        self.env_variables["HOME"] = "/tmp"
 
         if enable_thread_fuzzer:
             for key, value in DEFAULT_THREAD_FUZZER_SETTINGS.items():

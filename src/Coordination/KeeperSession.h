@@ -2,7 +2,7 @@
 
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Coordination/KeeperCommon.h>
-#include <Coordination/SessionRequest.h>
+#include <Coordination/RequestEnvelope.h>
 
 #include <deque>
 #include <mutex>
@@ -66,9 +66,8 @@ public:
 
     /// --- Request classification and routing ---
 
-    /// Classifies the request (Linear/WaitPrevious/Separator, Raft/Local),
-    /// stores in the per-session FIFO, and routes it:
-    /// - Linear/Separator -> pushes to Raft queue via `raft_push_`
+    /// Classifies the request (Linear/WaitPrevious) and routes it:
+    /// - Linear -> pushes to Raft queue via `raft_push_`
     /// - WaitPrevious with preceding writes -> defers in FIFO
     /// - WaitPrevious with no preceding writes -> fast-path local read via `local_read_`
     ///
@@ -100,7 +99,7 @@ private:
     };
 
     /// Classify the request into mode + target.
-    std::pair<SessionRequestMode, SessionRequestTarget> classify(
+    std::pair<RequestMode, RequestTarget> classify(
         const Coordination::ZooKeeperRequestPtr & request) const;
 
     const int64_t session_id_;

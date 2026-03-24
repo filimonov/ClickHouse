@@ -24,8 +24,8 @@ class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 class KeeperSession;
 using KeeperSessionPtr = std::shared_ptr<KeeperSession>;
-class SessionRequest;
-using SessionRequestPtr = std::shared_ptr<SessionRequest>;
+class RequestEnvelope;
+using RequestEnvelopePtr = std::shared_ptr<RequestEnvelope>;
 
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
@@ -68,7 +68,7 @@ struct KeeperRequestForSession
     std::optional<KeeperDigest> digest;
     int64_t log_idx{0};
     bool use_xid_64{false};
-    SessionRequestPtr session_request;
+    RequestEnvelopePtr envelope;
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
