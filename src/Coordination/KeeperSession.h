@@ -81,15 +81,6 @@ public:
     /// executing them via `local_read_`.
     void onWriteCommitted(Coordination::XID committed_xid);
 
-    /// --- Legacy deferred reads API (used by requestThread during migration) ---
-
-    /// Lazily creates a FIFO entry for write_xid if the back doesn't match.
-    /// Appends read_request to the back entry's deferred reads.
-    void addDeferredRead(Coordination::XID write_xid, const KeeperRequestForSession & read_request);
-
-    /// Skips stale front entries with xid < committed_xid (from failed batches).
-    /// Pops front if xid == committed_xid, returns its deferred reads.
-    KeeperRequestsForSessions takeDeferredReads(Coordination::XID committed_xid);
 
 private:
     struct UnresolvedWrite

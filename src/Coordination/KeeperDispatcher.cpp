@@ -525,12 +525,14 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
         auto req = env->buildKeeperRequestForSession();
         req.envelope = env;
+        env->onEnqueued();
         auto timeout = configuration_and_settings->coordination_settings[
             CoordinationSetting::operation_timeout_ms].totalMilliseconds();
         if (!requests_queue->tryPush(std::move(req), timeout))
+        {
+            env->onEnqueueFailed();
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
-        /// Increment metric and init OTel span only after successful push.
-        env->onEnqueued();
+        }
         return true;
     }
 

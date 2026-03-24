@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperSpans.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 #include <chrono>
 
@@ -93,16 +94,6 @@ void KeeperSession::closeSilently()
     state_ = State::Closed;
 }
 
-void KeeperSession::addDeferredRead(Coordination::XID write_xid, const KeeperRequestForSession & read_request)
-{
-    std::lock_guard lock(mutex_);
-
-    if (unresolved_writes_.empty() || unresolved_writes_.back().xid != write_xid)
-        unresolved_writes_.push_back(UnresolvedWrite{.xid = write_xid, .deferred_reads = {}});
-
-    unresolved_writes_.back().deferred_reads.push_back(read_request);
-}
-
 KeeperRequestsForSessions KeeperSession::popDeferredReads(Coordination::XID committed_xid)
 {
     /// Walk the FIFO from front looking for the entry matching committed_xid.
@@ -128,11 +119,7 @@ KeeperRequestsForSessions KeeperSession::popDeferredReads(Coordination::XID comm
     return {};
 }
 
-KeeperRequestsForSessions KeeperSession::takeDeferredReads(Coordination::XID committed_xid)
-{
-    std::lock_guard lock(mutex_);
-    return popDeferredReads(committed_xid);
-}
+
 
 std::pair<RequestMode, RequestTarget> KeeperSession::classify(
     const Coordination::ZooKeeperRequestPtr & request) const
@@ -216,12 +203,14 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     switch (action)
     {
         case Action::PushRaft:
+            sr->onEnqueued();
             try
             {
                 raft_push_(std::move(keeper_req), is_close);
             }
             catch (...)
             {
+                sr->onEnqueueFailed();
                 /// Roll back the unresolved write entry so subsequent reads
                 /// are not blocked behind a write that was never submitted.
                 std::lock_guard rollback_lock(mutex_);
@@ -229,8 +218,6 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                     unresolved_writes_.pop_back();
                 throw;
             }
-            /// Increment metric and init OTel span only after successful push.
-            sr->onEnqueued();
             break;
         case Action::FastLocalRead:
             sr->onFastPath();
@@ -253,12 +240,21 @@ void KeeperSession::onWriteCommitted(Coordination::XID committed_xid)
     }
 
     /// Dispatch released reads outside the lock.
+    /// A single local_read_ failure must not abort dispatch of remaining reads,
+    /// otherwise clients would never receive responses for those requests.
     for (auto & read_request : pending_reads)
     {
-        if (read_request.envelope)
-            read_request.envelope->onReleased();
+        try
+        {
+            if (read_request.envelope)
+                read_request.envelope->onReleased();
 
-        local_read_(read_request);
+            local_read_(read_request);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 }
 

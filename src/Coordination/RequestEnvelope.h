@@ -67,10 +67,11 @@ public:
     KeeperRequestForSession buildKeeperRequestForSession() const;
 
     /// Lifecycle callbacks -- update state, manage metrics and OTel spans.
-    void onEnqueued();   /// Queued -> Submitted (pushed to requests_queue, after successful push)
-    void onFastPath();   /// Queued -> Submitted (fast local read, no queue)
-    void onDeferred();   /// Queued -> Deferred (waiting for preceding write)
-    void onReleased();   /// Deferred -> Submitted (preceding write committed)
+    void onEnqueued();       /// Queued -> Submitted (inits OTel span, increments metric)
+    void onEnqueueFailed(); /// Submitted -> Queued (rollback: decrements metric, finalizes span)
+    void onFastPath();      /// Queued -> Submitted (fast local read, no queue)
+    void onDeferred();      /// Queued -> Deferred (waiting for preceding write)
+    void onReleased();      /// Deferred -> Submitted (preceding write committed)
 };
 
 using RequestEnvelopePtr = std::shared_ptr<RequestEnvelope>;

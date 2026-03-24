@@ -61,6 +61,25 @@ void RequestEnvelope::onEnqueued()
     CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
 }
 
+void RequestEnvelope::onEnqueueFailed()
+{
+    state = RequestState::Queued;
+    CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
+    ZooKeeperOpentelemetrySpans::maybeFinalize(
+        request->spans.dispatcher_requests_queue,
+        [&]
+        {
+            return std::vector<OpenTelemetry::SpanAttribute>{
+                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                {"keeper.session_id", session_id},
+                {"keeper.xid", request->xid},
+                {"keeper.enqueue_failed", true},
+            };
+        },
+        OpenTelemetry::SpanStatus::ERROR,
+        "Failed to enqueue request");
+}
+
 void RequestEnvelope::onFastPath()
 {
     state = RequestState::Submitted;
