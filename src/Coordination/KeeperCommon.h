@@ -24,7 +24,7 @@ class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
 class KeeperSession;
 using KeeperSessionPtr = std::shared_ptr<KeeperSession>;
-struct SessionRequest;
+class SessionRequest;
 using SessionRequestPtr = std::shared_ptr<SessionRequest>;
 
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;

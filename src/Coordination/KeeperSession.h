@@ -2,6 +2,7 @@
 
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/SessionRequest.h>
 
 #include <deque>
 #include <mutex>
@@ -10,11 +11,6 @@
 
 namespace DB
 {
-
-struct SessionRequest
-{
-    KeeperSessionPtr session;
-};
 
 class KeeperSession
 {
@@ -33,7 +29,17 @@ public:
         bool detach_after_delivery{false};
     };
 
-    KeeperSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    /// Callback types for request routing (injected by KeeperDispatcher at session creation).
+    /// `RaftPushFunc` wraps the push to `requests_queue` with Close-vs-timeout logic
+    /// and `KeeperOutstandingRequests` metric increment.
+    using RaftPushFunc = std::function<bool(KeeperRequestForSession &&, bool /*is_close*/)>;
+    /// `LocalReadFunc` wraps `server->putLocalReadRequest` plus the `isLeaderAlive`
+    /// check and error response fallback.
+    using LocalReadFunc = std::function<void(const KeeperRequestForSession &)>;
+
+    KeeperSession(int64_t session_id, ZooKeeperResponseCallback callback,
+                  RaftPushFunc raft_push, LocalReadFunc local_read,
+                  bool quorum_reads);
 
     int64_t getSessionID() const { return session_id_; }
 
@@ -58,7 +64,25 @@ public:
     /// Shutdown: clear state silently without delivering, -> Closed.
     void closeSilently();
 
-    /// --- Deferred reads (unresolved writes FIFO) ---
+    /// --- Request classification and routing ---
+
+    /// Classifies the request (Linear/WaitPrevious/Exclusive, Raft/Local),
+    /// stores in the per-session FIFO, and routes it:
+    /// - Linear/Exclusive -> pushes to Raft queue via `raft_push_`
+    /// - WaitPrevious with preceding writes -> defers in FIFO
+    /// - WaitPrevious with no preceding writes -> fast-path local read via `local_read_`
+    ///
+    /// Called from `KeeperDispatcher::putRequest` (TCP handler thread).
+    /// Returns false if the session cannot accept requests.
+    /// May throw TIMEOUT_EXCEEDED if Raft queue is full.
+    bool addRequest(const Coordination::ZooKeeperRequestPtr & request, bool use_xid_64);
+
+    /// Called from the commit callback when a write/exclusive request commits.
+    /// Releases all WaitPrevious reads that were deferred behind this write,
+    /// executing them via `local_read_`.
+    void onWriteCommitted(Coordination::XID committed_xid);
+
+    /// --- Legacy deferred reads API (used by requestThread during migration) ---
 
     /// Lazily creates a FIFO entry for write_xid if the back doesn't match.
     /// Appends read_request to the back entry's deferred reads.
@@ -75,11 +99,20 @@ private:
         KeeperRequestsForSessions deferred_reads;
     };
 
+    /// Classify the request into mode + target.
+    std::pair<SessionRequestMode, SessionRequestTarget> classify(
+        const Coordination::ZooKeeperRequestPtr & request) const;
+
     const int64_t session_id_;
     State state_ = State::Active;
     std::optional<ZooKeeperResponseCallback> callback_;
     std::deque<UnresolvedWrite> unresolved_writes_;
     mutable std::mutex mutex_;
+
+    /// Injected routing functions.
+    RaftPushFunc raft_push_;
+    LocalReadFunc local_read_;
+    bool quorum_reads_;
 };
 
 }

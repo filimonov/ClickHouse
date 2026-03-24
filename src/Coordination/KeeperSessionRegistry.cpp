@@ -17,11 +17,20 @@ namespace DB::ErrorCodes
 namespace DB
 {
 
-void KeeperSessionRegistry::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
+void KeeperSessionRegistry::registerSession(
+    int64_t session_id,
+    ZooKeeperResponseCallback callback,
+    KeeperSession::RaftPushFunc raft_push,
+    KeeperSession::LocalReadFunc local_read,
+    bool quorum_reads)
 {
     std::lock_guard lock(mutex_);
 
-    if (!active_sessions_.try_emplace(session_id, std::make_shared<KeeperSession>(session_id, std::move(callback))).second)
+    if (!active_sessions_.try_emplace(
+            session_id,
+            std::make_shared<KeeperSession>(
+                session_id, std::move(callback),
+                std::move(raft_push), std::move(local_read), quorum_reads)).second)
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "Session with id {} already registered in dispatcher", session_id);
 
     CurrentMetrics::add(CurrentMetrics::KeeperAliveConnections);

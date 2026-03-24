@@ -15,7 +15,10 @@ class KeeperSessionRegistry
 public:
     /// Creates a KeeperSession and inserts into the active map.
     /// Throws LOGICAL_ERROR on duplicate session_id.
-    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
+    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback,
+                         KeeperSession::RaftPushFunc raft_push,
+                         KeeperSession::LocalReadFunc local_read,
+                         bool quorum_reads);
 
     /// Returns the session or nullptr if not found.
     /// Registry mutex is released before returning -- the caller uses

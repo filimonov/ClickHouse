@@ -260,17 +260,19 @@ void KeeperDispatcher::requestThread()
                     continue;
                 }
 
+                /// All requests arriving here are pre-classified by KeeperSession::addRequest
+                /// as Linear (writes, quorum reads, Auth, Heartbeat, Close) or Exclusive (Reconfig).
+                /// Non-quorum reads never enter this queue -- they are handled as fast-path local
+                /// reads or deferred behind writes directly by the session.
+
                 KeeperRequestsForSessions current_batch;
                 size_t current_batch_bytes_size = 0;
 
-                bool has_read_request = false;
                 bool has_reconfig_request = false;
 
-                /// If new request is not read request or reconfig request we must process it through quorum.
-                /// Otherwise we will process it locally.
                 if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                     has_reconfig_request = true;
-                else if (coordination_settings[CoordinationSetting::quorum_reads] || !request.request->isReadRequest())
+                else
                 {
                     current_batch_bytes_size += request.request->bytesSize();
                     current_batch.emplace_back(request);
@@ -288,25 +290,14 @@ void KeeperDispatcher::requestThread()
 
                             handle_opentelemetery_spans(request.request, request.session_id);
 
-                            /// Don't append read request into batch, we have to process them separately
-                            if (!coordination_settings[CoordinationSetting::quorum_reads] && request.request->isReadRequest())
-                            {
-                                const auto & last_request = current_batch.back();
-                                ZooKeeperOpentelemetrySpans::maybeInitialize(request.request->spans.read_wait_for_write, request.request->tracing_context);
-                                if (auto write_session = session_registry_.findSession(last_request.session_id))
-                                    write_session->addDeferredRead(last_request.request->xid, request);
-                            }
-                            else if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
+                            if (request.request->getOpNum() == Coordination::OpNum::Reconfig)
                             {
                                 has_reconfig_request = true;
                                 return false;
                             }
-                            else
-                            {
-                                current_batch_bytes_size += request.request->bytesSize();
-                                current_batch.emplace_back(request);
-                            }
 
+                            current_batch_bytes_size += request.request->bytesSize();
+                            current_batch.emplace_back(request);
                             return true;
                         }
 
@@ -330,19 +321,15 @@ void KeeperDispatcher::requestThread()
                         try_get_request();
                     }
                 }
-                else
-                    has_read_request = true;
 
                 if (shutdown_called)
                     break;
-
-                bool execute_requests_after_write = has_read_request || has_reconfig_request;
 
                 nuraft::ptr<nuraft::buffer> result_buf = nullptr;
                 /// Forcefully process all previous pending requests
                 if (prev_result)
                     result_buf
-                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+                        = forceWaitAndProcessResult(prev_result, prev_batch, /*clear_requests_on_success=*/!has_reconfig_request);
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -371,26 +358,20 @@ void KeeperDispatcher::requestThread()
                     prev_result = result;
                 }
 
-                /// If we will execute read or reconfig next, we have to process result now
-                if (execute_requests_after_write)
+                /// If Reconfig follows, we have to process result now
+                if (has_reconfig_request)
                 {
                     Stopwatch watch;
                     SCOPE_EXIT(ProfileEvents::increment(ProfileEvents::KeeperCommitWaitElapsedMicroseconds, watch.elapsedMicroseconds()));
                     if (prev_result)
                         result_buf = forceWaitAndProcessResult(
-                            prev_result, prev_batch, /*clear_requests_on_success=*/!execute_requests_after_write);
+                            prev_result, prev_batch, /*clear_requests_on_success=*/!has_reconfig_request);
 
-                    /// In case of older version or disabled async replication, result buf will be set to value of `commit` function
-                    /// which always returns nullptr
-                    /// in that case we don't have to do manual wait because are already sure that the batch was committed when we get
-                    /// the result back
-                    /// otherwise, we need to manually wait until the batch is committed
                     if (result_buf)
                     {
                         nuraft::buffer_serializer bs(result_buf);
                         auto log_idx = bs.get_u64();
 
-                        /// if timeout happened set error responses for the requests
                         if (!keeper_context->waitCommittedUpto(log_idx, coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
                             addErrorResponses(prev_batch, Coordination::Error::ZOPERATIONTIMEOUT);
 
@@ -403,28 +384,6 @@ void KeeperDispatcher::requestThread()
 
                 if (has_reconfig_request)
                     server->getKeeperStateMachine()->reconfigure(request);
-
-                /// Read request always goes after write batch (last request)
-                if (has_read_request)
-                {
-                    auto session = session_registry_.findSession(request.session_id);
-                    if (session && session->canAcceptRequests())
-                    {
-                        if (server->isLeaderAlive())
-                            server->putLocalReadRequest({request});
-                        else
-                            addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
-                    }
-                    else
-                    {
-                        /// The session is no longer live (e.g. a Close was committed
-                        /// in the preceding write batch or the session was cleaned up).
-                        /// The dispatcher_requests_queue span was already finalized
-                        /// at handle_opentelemetery_spans above.
-                        ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
-                        LOG_TRACE(log, "Dropping stale read request for non-live session {}, xid {}", request.session_id, request.request->xid);
-                    }
-                }
             }
         }
         catch (...)
@@ -547,33 +506,29 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     if (!session || !session->canAcceptRequests())
         return false;
 
-    KeeperRequestForSession request_info;
-    request_info.use_xid_64 = use_xid_64;
-    request_info.request = request;
-    using namespace std::chrono;
-    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-    request_info.session_id = session_id;
-    request_info.session_request = std::make_shared<SessionRequest>(SessionRequest{.session = std::move(session)});
-
     if (keeper_context->isShutdownCalled())
         return false;
 
-    ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-
-    /// Put close requests without timeouts
-    if (request->getOpNum() == Coordination::OpNum::Close)
-    {
-        if (!requests_queue->push(std::move(request_info)))
-            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
-    }
-    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds()))
-    {
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Cannot push request to queue within operation timeout");
-    }
-    CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
-    return true;
+    /// The session classifies the request (Linear/WaitPrevious/Exclusive) and routes it:
+    /// - Linear/Exclusive -> pushed to requests_queue via raft_push_ callback
+    /// - WaitPrevious with preceding writes -> deferred in session FIFO
+    /// - WaitPrevious with no preceding writes -> fast-path local read via local_read_ callback
+    /// OTel dispatcher_requests_queue span is initialized inside SessionRequest::onEnqueued.
+    return session->addRequest(request, use_xid_64);
 }
 
+/// NOTE: This method is called directly by `KeeperOverDispatcher` (in-process keeper
+/// access used by ClickHouse server for internal ZooKeeper operations such as metadata
+/// reads and DDL coordination). That code path bypasses `putRequest` and session-level
+/// classification entirely -- reads go directly to the state machine without per-session
+/// barrier checks.
+///
+/// This is safe because `KeeperOverDispatcher` is used for server-internal operations
+/// that don't require per-session ordering guarantees with client writes.
+///
+/// Eventually, `KeeperOverDispatcher` should be migrated to use `putRequest` so that
+/// all read paths go through session classification and get proper per-session barrier
+/// semantics. Until then, this method must remain as a public API.
 bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
 {
     auto session = session_registry_.findSession(session_id);
@@ -588,7 +543,9 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
     using namespace std::chrono;
     request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
-    request_info.session_request = std::make_shared<SessionRequest>(SessionRequest{.session = std::move(session)});
+    auto sr = std::make_shared<SessionRequest>();
+    sr->session = std::move(session);
+    request_info.session_request = std::move(sr);
 
     if (keeper_context->isShutdownCalled())
         return false;
@@ -622,62 +579,16 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         snapshot_s3,
         [this](uint64_t /*log_idx*/, const KeeperRequestForSession & request_for_session)
         {
-            /// Release deferred reads that were waiting for this write to commit.
-            KeeperRequestsForSessions pending_reads;
-            if (auto write_session = session_registry_.findSession(request_for_session.session_id))
-                pending_reads = write_session->takeDeferredReads(request_for_session.request->xid);
-
-            for (const auto & read_request : pending_reads)
+            if (auto session = session_registry_.findSession(request_for_session.session_id))
             {
-                /// Skip reads whose session is no longer live
-                auto read_session = session_registry_.findSession(read_request.session_id);
-                if (!read_session || !read_session->canAcceptRequests())
-                {
-                    ProfileEvents::increment(ProfileEvents::KeeperStaleRequestsSkipped);
+                /// Release deferred reads that were waiting for this write to commit.
+                /// The session handles OTel span finalization and local read execution internally.
+                session->onWriteCommitted(request_for_session.request->xid);
 
-                    ZooKeeperOpentelemetrySpans::maybeFinalize(
-                        read_request.request->spans.read_wait_for_write,
-                        [&]
-                        {
-                            return std::vector<OpenTelemetry::SpanAttribute>{
-                                {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                                {"keeper.session_id", read_request.session_id},
-                                {"keeper.xid", read_request.request->xid},
-                                {"keeper.stale", true},
-                            };
-                        },
-                        OpenTelemetry::SpanStatus::ERROR,
-                        "Session is no longer live");
-
-                    continue;
-                }
-
-                if (!server->isLeaderAlive())
-                {
-                    addErrorResponses({read_request}, Coordination::Error::ZCONNECTIONLOSS);
-                    continue;
-                }
-
-                ZooKeeperOpentelemetrySpans::maybeFinalize(
-                    read_request.request->spans.read_wait_for_write,
-                    [&]
-                    {
-                        return std::vector<OpenTelemetry::SpanAttribute>{
-                            {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
-                            {"keeper.session_id", read_request.session_id},
-                            {"keeper.xid", read_request.request->xid},
-                        };
-                    });
-
-                server->putLocalReadRequest(read_request);
-            }
-
-            /// When Close commits, mark the session as finishing so stale requests
-            /// still sitting in the backed-up queue will be filtered before the
-            /// final Close response removes the session from the registry.
-            if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
-            {
-                if (auto session = session_registry_.findSession(request_for_session.session_id))
+                /// When Close commits, mark the session as finishing so stale requests
+                /// still sitting in the backed-up queue will be filtered before the
+                /// final Close response removes the session from the registry.
+                if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
                     session->markCloseCommitted();
             }
         });
@@ -840,7 +751,38 @@ KeeperDispatcher::~KeeperDispatcher()
 
 void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    session_registry_.registerSession(session_id, std::move(callback));
+    auto raft_push = [this](KeeperRequestForSession && req, bool is_close) -> bool
+    {
+        if (is_close)
+        {
+            if (!requests_queue->push(std::move(req)))
+                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
+        }
+        else
+        {
+            auto timeout = configuration_and_settings->coordination_settings[
+                CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+            if (!requests_queue->tryPush(std::move(req), timeout))
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                    "Cannot push request to queue within operation timeout");
+        }
+        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
+        return true;
+    };
+
+    auto local_read = [this](const KeeperRequestForSession & req)
+    {
+        if (server->isLeaderAlive())
+            server->putLocalReadRequest(req);
+        else
+            addErrorResponses({req}, Coordination::Error::ZCONNECTIONLOSS);
+    };
+
+    bool quorum_reads = configuration_and_settings->coordination_settings[CoordinationSetting::quorum_reads];
+
+    session_registry_.registerSession(
+        session_id, std::move(callback),
+        std::move(raft_push), std::move(local_read), quorum_reads);
 }
 
 void KeeperDispatcher::sessionCleanerTask()
