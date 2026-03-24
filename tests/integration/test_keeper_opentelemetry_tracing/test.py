@@ -177,10 +177,28 @@ def test_keeper_opentelemetry_tracing(started_cluster):
                 "keeper.dispatcher.responses_queue",
                 "keeper.send_response",
             ],
-            # case 2: the read did not have to wait for any writes
+            # case 2: the read did not have to wait for any writes but went through the queue
             [
                 "keeper.receive_request",
                 "keeper.dispatcher.requests_queue",
+                "keeper.read.process",
+                "keeper.dispatcher.responses_queue",
+                "keeper.send_response",
+            ],
+            # case 3: fast-path local read — no preceding writes in the session,
+            # so the read bypasses the requests_queue entirely (per-session barrier)
+            [
+                "keeper.receive_request",
+                "keeper.read.process",
+                "keeper.dispatcher.responses_queue",
+                "keeper.send_response",
+            ],
+            # case 4: deferred read that waited for a preceding write to commit
+            # but bypassed the requests_queue (per-session barrier releases reads
+            # directly to local execution)
+            [
+                "keeper.receive_request",
+                "keeper.read.wait_for_write",
                 "keeper.read.process",
                 "keeper.dispatcher.responses_queue",
                 "keeper.send_response",
