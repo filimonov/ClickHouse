@@ -140,6 +140,8 @@ void RequestEnvelope::onReleased()
 
 void RequestEnvelope::onFailedRelease(const std::string & reason)
 {
+    state = RequestState::Queued;
+
     auto make_attributes = [&]
     {
         return std::vector<OpenTelemetry::SpanAttribute>{
