@@ -119,8 +119,6 @@ KeeperRequestsForSessions KeeperSession::popDeferredReads(Coordination::XID comm
     return {};
 }
 
-
-
 std::pair<RequestMode, RequestTarget> KeeperSession::classify(
     const Coordination::ZooKeeperRequestPtr & request) const
 {

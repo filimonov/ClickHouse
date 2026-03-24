@@ -30,8 +30,7 @@ public:
     };
 
     /// Callback types for request routing (injected by KeeperDispatcher at session creation).
-    /// `RaftPushFunc` wraps the push to `requests_queue` with Close-vs-timeout logic
-    /// and `KeeperOutstandingRequests` metric increment.
+    /// `RaftPushFunc` wraps the push to `requests_queue` with Close-vs-timeout logic.
     using RaftPushFunc = std::function<bool(KeeperRequestForSession &&, bool /*is_close*/)>;
     /// `LocalReadFunc` wraps `server->putLocalReadRequest` plus the `isLeaderAlive`
     /// check and error response fallback.
@@ -80,7 +79,6 @@ public:
     /// Releases all WaitPrevious reads that were deferred behind this write,
     /// executing them via `local_read_`.
     void onWriteCommitted(Coordination::XID committed_xid);
-
 
 private:
     struct UnresolvedWrite
