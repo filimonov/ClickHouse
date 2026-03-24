@@ -753,6 +753,8 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 {
     auto raft_push = [this](KeeperRequestForSession && req, bool is_close) -> bool
     {
+        /// Note: KeeperOutstandingRequests metric is managed by
+        /// SessionRequest::onEnqueued (increment) and requestThread (decrement).
         if (is_close)
         {
             if (!requests_queue->push(std::move(req)))
@@ -766,7 +768,6 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                     "Cannot push request to queue within operation timeout");
         }
-        CurrentMetrics::add(CurrentMetrics::KeeperOutstandingRequests);
         return true;
     };
 
