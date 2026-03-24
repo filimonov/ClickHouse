@@ -22,8 +22,16 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class KeeperContext;
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;
+class KeeperSession;
+using KeeperSessionPtr = std::shared_ptr<KeeperSession>;
+struct SessionRequest;
+using SessionRequestPtr = std::shared_ptr<SessionRequest>;
 
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
+
+/// Callback invoked by `KeeperDispatcher` to deliver responses to clients.
+/// Must be safe for concurrent invocation from the response thread and session cleanup paths.
+using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;
 
 enum class KeeperDigestVersion : uint8_t
 {
@@ -60,6 +68,7 @@ struct KeeperRequestForSession
     std::optional<KeeperDigest> digest;
     int64_t log_idx{0};
     bool use_xid_64{false};
+    SessionRequestPtr session_request;
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
