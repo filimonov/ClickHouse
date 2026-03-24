@@ -292,6 +292,32 @@ TEST_F(KeeperSessionTest, ReadOnlyAfterFailedWrite_NoHang)
     ASSERT_EQ(local_reads[0].req.request->xid, 3);
 }
 
+/// Test: onWriteFailed with untracked xid (e.g. Reconfig) silently drops deferred reads.
+/// This documents why failBatch must skip Reconfig: calling onWriteFailed with an xid
+/// that has no unresolved_writes_ entry causes popDeferredReads to walk the entire FIFO,
+/// popping all entries as "stale" and silently discarding their deferred reads.
+TEST_F(KeeperSessionTest, OnWriteFailedWithUntrackedXID_SilentlyDropsReads)
+{
+    /// W1 with deferred R10.
+    ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
+    ASSERT_TRUE(session->addRequest(makeReadRequest(10), false));
+    ASSERT_EQ(local_reads.size(), 0);
+
+    /// Call onWriteFailed with an xid that was never tracked (simulates Reconfig bug).
+    /// popDeferredReads walks the FIFO: xid=1 != 99, pops as stale → R10 silently lost.
+    session->onWriteFailed(99, Coordination::Error::ZCONNECTIONLOSS);
+
+    /// R10 was silently dropped — NOT failed via fail_read_.
+    /// This is why failBatch must filter out Reconfig at the caller level.
+    ASSERT_EQ(failed_reads.size(), 0);
+    ASSERT_EQ(local_reads.size(), 0);
+
+    /// FIFO is now empty — subsequent reads take fast path.
+    ASSERT_TRUE(session->addRequest(makeReadRequest(20), false));
+    ASSERT_EQ(local_reads.size(), 1);
+    ASSERT_EQ(local_reads[0].req.request->xid, 20);
+}
+
 /// Test: RequestEnvelope lifecycle — onEnqueued / onEnqueueFailed metric balance.
 TEST(RequestEnvelopeTest, EnqueueFailedRollsBackMetric)
 {

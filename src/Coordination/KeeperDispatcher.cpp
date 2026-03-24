@@ -936,9 +936,13 @@ void KeeperDispatcher::failBatch(const KeeperRequestsForSessions & batch, Coordi
 
     for (const auto & req : batch)
     {
-        /// Close and SessionID don't participate in per-session barriers.
+        /// Close, SessionID, and Reconfig don't participate in per-session barriers.
+        /// Reconfig bypasses KeeperSession::addRequest and has no unresolved_writes_ entry.
+        /// Calling onWriteFailed for it would cause popDeferredReads to walk the FIFO
+        /// and incorrectly drop preceding entries as "stale".
         if (req.request->getOpNum() == Coordination::OpNum::Close
-            || req.request->getOpNum() == Coordination::OpNum::SessionID)
+            || req.request->getOpNum() == Coordination::OpNum::SessionID
+            || req.request->getOpNum() == Coordination::OpNum::Reconfig)
             continue;
 
         if (auto session = session_registry_.findSession(req.session_id))
