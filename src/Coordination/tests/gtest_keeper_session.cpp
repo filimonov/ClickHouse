@@ -210,20 +210,46 @@ TEST_F(KeeperSessionTest, FailedWrite_ThenCommit_MixedOutcome)
     ASSERT_EQ(local_reads[0].req.request->xid, 20);
 }
 
-/// Test: FIFO walk skips stale entries (W1 never committed, W2 commits).
-TEST_F(KeeperSessionTest, FIFOWalkSkipsStaleEntries)
+/// Test: out-of-order resolution — W2 fails before W1 commits.
+/// popDeferredReads must not destroy W1's entry when processing W2.
+TEST_F(KeeperSessionTest, OutOfOrderResolution_FailedW2_ThenCommittedW1)
 {
     ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
     ASSERT_TRUE(session->addRequest(makeReadRequest(10), false));
     ASSERT_TRUE(session->addRequest(makeWriteRequest(2), false));
     ASSERT_TRUE(session->addRequest(makeReadRequest(20), false));
 
-    /// W1 was never committed (stale from failed batch). W2 commits.
-    /// The FIFO walk should pop W1 (stale), then pop W2 (match).
+    /// W2 fails before W1 commits (batch failure detected synchronously,
+    /// commit callback fires asynchronously).
+    session->onWriteFailed(2, Coordination::Error::ZCONNECTIONLOSS);
+    ASSERT_EQ(failed_reads.size(), 1);
+    ASSERT_EQ(failed_reads[0].req.request->xid, 20);
+    /// W1's entry must still be intact.
+    ASSERT_EQ(local_reads.size(), 0);
+
+    /// W1 commits — R10 should be dispatched normally.
+    session->onWriteCommitted(1);
+    ASSERT_EQ(local_reads.size(), 1);
+    ASSERT_EQ(local_reads[0].req.request->xid, 10);
+}
+
+/// Test: W2 commits before W1 (in-flight overlap) — both reads dispatched.
+TEST_F(KeeperSessionTest, OutOfOrderCommit_W2BeforeW1)
+{
+    ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
+    ASSERT_TRUE(session->addRequest(makeReadRequest(10), false));
+    ASSERT_TRUE(session->addRequest(makeWriteRequest(2), false));
+    ASSERT_TRUE(session->addRequest(makeReadRequest(20), false));
+
+    /// W2 commits first (possible if batches are processed out of order).
     session->onWriteCommitted(2);
     ASSERT_EQ(local_reads.size(), 1);
     ASSERT_EQ(local_reads[0].req.request->xid, 20);
-    /// R10 was silently dropped (stale W1's read — destructor safety net handles spans).
+
+    /// W1 commits — R10 still dispatched.
+    session->onWriteCommitted(1);
+    ASSERT_EQ(local_reads.size(), 2);
+    ASSERT_EQ(local_reads[1].req.request->xid, 10);
 }
 
 /// Test: non-monotonic XIDs (auth xid=-4 after normal write).
@@ -341,30 +367,26 @@ TEST_F(KeeperSessionTest, ReadOnlyAfterFailedWrite_NoHang)
     ASSERT_EQ(local_reads[0].req.request->xid, 3);
 }
 
-/// Test: onWriteFailed with untracked xid (e.g. Reconfig) silently drops deferred reads.
-/// This documents why failBatch must skip Reconfig: calling onWriteFailed with an xid
-/// that has no unresolved_writes_ entry causes popDeferredReads to walk the entire FIFO,
-/// popping all entries as "stale" and silently discarding their deferred reads.
-TEST_F(KeeperSessionTest, OnWriteFailedWithUntrackedXID_SilentlyDropsReads)
+/// Test: onWriteFailed with untracked xid is harmless (no-op).
+/// popDeferredReads scans the FIFO, finds no match, returns empty.
+/// Existing entries are preserved.
+TEST_F(KeeperSessionTest, OnWriteFailedWithUntrackedXID_IsNoOp)
 {
     /// W1 with deferred R10.
     ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
     ASSERT_TRUE(session->addRequest(makeReadRequest(10), false));
     ASSERT_EQ(local_reads.size(), 0);
 
-    /// Call onWriteFailed with an xid that was never tracked (simulates Reconfig bug).
-    /// popDeferredReads walks the FIFO: xid=1 != 99, pops as stale → R10 silently lost.
+    /// Call onWriteFailed with an xid that was never tracked.
+    /// With exact-match scan, this is a no-op — W1's entry is preserved.
     session->onWriteFailed(99, Coordination::Error::ZCONNECTIONLOSS);
-
-    /// R10 was silently dropped — NOT failed via fail_read_.
-    /// This is why failBatch must filter out Reconfig at the caller level.
     ASSERT_EQ(failed_reads.size(), 0);
     ASSERT_EQ(local_reads.size(), 0);
 
-    /// FIFO is now empty — subsequent reads take fast path.
-    ASSERT_TRUE(session->addRequest(makeReadRequest(20), false));
+    /// W1's entry is still intact — commit it and R10 is dispatched.
+    session->onWriteCommitted(1);
     ASSERT_EQ(local_reads.size(), 1);
-    ASSERT_EQ(local_reads[0].req.request->xid, 20);
+    ASSERT_EQ(local_reads[0].req.request->xid, 10);
 }
 
 /// Test: RequestEnvelope lifecycle — onEnqueued / onEnqueueFailed metric balance.
@@ -424,6 +446,23 @@ TEST(RequestEnvelopeTest, DeferredThenFailedRelease)
 
     env->onFailedRelease("test failure");
     ASSERT_EQ(env->state, RequestState::Queued);
+}
+
+/// Test: RequestEnvelope destructor doesn't crash on never-initialized spans.
+/// This verifies the chassert guard — destroying an envelope without calling
+/// any lifecycle method must not trigger an assertion on start_time_us == 0.
+TEST(RequestEnvelopeTest, DestructorSafeOnNeverInitializedSpans)
+{
+    auto req = makeReadRequest(1);
+    {
+        auto env = std::make_shared<RequestEnvelope>();
+        env->session_id = 1;
+        env->request = req;
+        /// No lifecycle method called — spans are never initialized.
+        /// Destructor must not abort.
+    }
+    /// If we get here without abort, the test passes.
+    ASSERT_TRUE(true);
 }
 
 #endif

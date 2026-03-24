@@ -23,22 +23,29 @@ RequestEnvelope::~RequestEnvelope()
     /// Safety net: finalize any OTel spans that were initialized but not
     /// explicitly finalized via lifecycle methods. This catches leaked spans
     /// from missed transitions (e.g., a deferred read whose write never committed).
-    auto make_attributes = [&]
+    /// Only call maybeFinalize on spans that were actually initialized
+    /// (start_time_us != 0). Never-initialized spans would trigger a chassert
+    /// in maybeFinalize and produce bogus histogram observations.
+    auto finalize_if_initialized = [&](auto & span)
     {
-        return std::vector<OpenTelemetry::SpanAttribute>{
-            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-            {"keeper.session_id", session_id},
-            {"keeper.xid", request->xid},
-            {"keeper.leaked", true},
-        };
+        if (span.start_time_us == 0)
+            return;
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            span,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+                    {"keeper.session_id", session_id},
+                    {"keeper.xid", request->xid},
+                    {"keeper.leaked", true},
+                };
+            },
+            OpenTelemetry::SpanStatus::ERROR, "Span not explicitly finalized");
     };
 
-    ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.dispatcher_requests_queue, make_attributes,
-        OpenTelemetry::SpanStatus::ERROR, "Span not explicitly finalized");
-    ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.read_wait_for_write, make_attributes,
-        OpenTelemetry::SpanStatus::ERROR, "Span not explicitly finalized");
+    finalize_if_initialized(request->spans.dispatcher_requests_queue);
+    finalize_if_initialized(request->spans.read_wait_for_write);
 }
 
 KeeperRequestForSession RequestEnvelope::buildKeeperRequestForSession() const

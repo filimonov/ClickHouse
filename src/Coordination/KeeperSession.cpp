@@ -96,26 +96,22 @@ void KeeperSession::closeSilently()
     state_ = State::Closed;
 }
 
-KeeperRequestsForSessions KeeperSession::popDeferredReads(Coordination::XID committed_xid)
+KeeperRequestsForSessions KeeperSession::popDeferredReads(Coordination::XID target_xid)
 {
-    /// Walk the FIFO from front looking for the entry matching committed_xid.
-    /// Pop any non-matching entries encountered along the way — they are stale
-    /// (from failed batches whose writes never committed). Their deferred reads
-    /// are discarded (the RequestEnvelope destructor handles span cleanup).
+    /// Find and erase the entry matching target_xid without disturbing other entries.
+    /// Non-matching entries may belong to writes that are still in-flight (not yet
+    /// committed or failed), so we must not pop them.
     ///
-    /// This uses exact-match walking instead of numeric xid ordering because
-    /// XIDs are not monotonic: auth (xid=-4), close (xid=INT32_MAX), etc.
-    while (!unresolved_writes_.empty())
+    /// This is O(n) scan of the deque, but unresolved_writes_ is typically very small
+    /// (bounded by in-flight writes per session, usually 1-3).
+    for (auto it = unresolved_writes_.begin(); it != unresolved_writes_.end(); ++it)
     {
-        if (unresolved_writes_.front().xid == committed_xid)
+        if (it->xid == target_xid)
         {
-            auto reads = std::move(unresolved_writes_.front().deferred_reads);
-            unresolved_writes_.pop_front();
+            auto reads = std::move(it->deferred_reads);
+            unresolved_writes_.erase(it);
             return reads;
         }
-
-        /// Stale entry from a failed batch — discard.
-        unresolved_writes_.pop_front();
     }
 
     return {};
