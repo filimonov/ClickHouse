@@ -203,7 +203,6 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     switch (action)
     {
         case Action::PushRaft:
-            sr->onEnqueued();
             try
             {
                 raft_push_(std::move(keeper_req), is_close);
@@ -217,6 +216,8 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                     unresolved_writes_.pop_back();
                 throw;
             }
+            /// Increment metric and init OTel span only after successful push.
+            sr->onEnqueued();
             break;
         case Action::FastLocalRead:
             sr->onFastPath();
