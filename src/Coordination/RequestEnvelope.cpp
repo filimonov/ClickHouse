@@ -48,7 +48,7 @@ RequestEnvelope::~RequestEnvelope()
     finalize_if_initialized(request->spans.read_wait_for_write);
 }
 
-KeeperRequestForSession RequestEnvelope::buildKeeperRequestForSession() const
+KeeperRequestForSession RequestEnvelope::buildKeeperRequestForSession(RequestEnvelopePtr self) const
 {
     return KeeperRequestForSession
     {
@@ -57,7 +57,7 @@ KeeperRequestForSession RequestEnvelope::buildKeeperRequestForSession() const
         .request = request,
         .digest = std::nullopt,
         .use_xid_64 = use_xid_64,
-        .envelope = {},
+        .envelope = std::move(self),
     };
 }
 

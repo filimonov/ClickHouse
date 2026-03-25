@@ -64,7 +64,8 @@ public:
     ~RequestEnvelope();
 
     /// Build the `KeeperRequestForSession` struct for submitting to `requests_queue` or local read.
-    KeeperRequestForSession buildKeeperRequestForSession() const;
+    /// The returned struct holds a reference to this envelope to keep it alive through the pipeline.
+    KeeperRequestForSession buildKeeperRequestForSession(RequestEnvelopePtr self) const;
 
     /// Lifecycle callbacks -- update state, manage metrics and OTel spans.
     void onEnqueued();        /// Queued -> Submitted (inits OTel span, increments metric)

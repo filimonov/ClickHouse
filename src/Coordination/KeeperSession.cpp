@@ -14,6 +14,11 @@ namespace ProfileEvents
     extern const Event KeeperStaleRequestsSkipped;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -96,7 +101,7 @@ void KeeperSession::closeSilently()
     state_ = State::Closed;
 }
 
-KeeperRequestsForSessions KeeperSession::popDeferredReads(Coordination::XID target_xid)
+KeeperRequestsForSessions KeeperSession::extractDeferredReads(Coordination::XID target_xid)
 {
     /// Find and erase the entry matching target_xid without disturbing other entries.
     /// Non-matching entries may belong to writes that are still in-flight (not yet
@@ -121,7 +126,8 @@ std::pair<RequestMode, RequestTarget> KeeperSession::classify(
     const Coordination::ZooKeeperRequestPtr & request) const
 {
     /// Reconfig bypasses session classification entirely (handled directly by KeeperDispatcher::putRequest).
-    chassert(request->getOpNum() != Coordination::OpNum::Reconfig);
+    if (request->getOpNum() == Coordination::OpNum::Reconfig)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reconfig must not reach KeeperSession::classify");
 
     if (quorum_reads_ || !request->isReadRequest())
         return {RequestMode::Linear, RequestTarget::Raft};
@@ -136,11 +142,11 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     auto now_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 
     /// Prepare the RequestEnvelope and classify it.
-    auto sr = std::make_shared<RequestEnvelope>();
-    sr->session_id = session_id_;
-    sr->request = request;
-    sr->create_time_ms = now_ms;
-    sr->use_xid_64 = use_xid_64;
+    auto envelope = std::make_shared<RequestEnvelope>();
+    envelope->session_id = session_id_;
+    envelope->request = request;
+    envelope->create_time_ms = now_ms;
+    envelope->use_xid_64 = use_xid_64;
 
     /// We must release the mutex before calling raft_push_ or local_read_ to avoid
     /// lock ordering issues with state machine locks. Prepare what to do under lock,
@@ -157,8 +163,8 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
             return false;
 
         auto [mode, target] = classify(request);
-        sr->mode = mode;
-        sr->target = target;
+        envelope->mode = mode;
+        envelope->target = target;
 
         is_close = (request->getOpNum() == Coordination::OpNum::Close);
 
@@ -180,8 +186,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                     unresolved_writes_.push_back(UnresolvedWrite{.xid = request->xid, .deferred_reads = {}});
                 }
 
-                keeper_req = sr->buildKeeperRequestForSession();
-                keeper_req.envelope = sr;
+                keeper_req = envelope->buildKeeperRequestForSession(envelope);
                 action = Action::PushRaft;
                 break;
             }
@@ -190,16 +195,14 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
                 if (unresolved_writes_.empty())
                 {
                     /// Fast path: no preceding writes, execute immediately.
-                    keeper_req = sr->buildKeeperRequestForSession();
-                    keeper_req.envelope = sr;
+                    keeper_req = envelope->buildKeeperRequestForSession(envelope);
                     action = Action::FastLocalRead;
                 }
                 else
                 {
                     /// Defer: attach to the last unresolved write.
-                    sr->onDeferred();
-                    keeper_req = sr->buildKeeperRequestForSession();
-                    keeper_req.envelope = sr;
+                    envelope->onDeferred();
+                    keeper_req = envelope->buildKeeperRequestForSession(envelope);
                     unresolved_writes_.back().deferred_reads.push_back(keeper_req);
                     action = Action::Deferred;
                 }
@@ -212,14 +215,14 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     switch (action)
     {
         case Action::PushRaft:
-            sr->onEnqueued();
+            envelope->onEnqueued();
             try
             {
                 raft_push_(std::move(keeper_req), is_close);
             }
             catch (...)
             {
-                sr->onEnqueueFailed();
+                envelope->onEnqueueFailed();
                 /// Roll back session state so subsequent requests are not
                 /// blocked behind a write that was never submitted.
                 /// For Close: state_ was set to Finishing, but raft_push_ failed.
@@ -237,7 +240,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
             }
             break;
         case Action::FastLocalRead:
-            sr->onFastPath();
+            envelope->onFastPath();
             local_read_(keeper_req);
             break;
         case Action::Deferred:
@@ -253,7 +256,7 @@ void KeeperSession::onWriteCommitted(Coordination::XID committed_xid)
     KeeperRequestsForSessions pending_reads;
     {
         std::lock_guard lock(mutex_);
-        pending_reads = popDeferredReads(committed_xid);
+        pending_reads = extractDeferredReads(committed_xid);
     }
 
     /// Dispatch released reads outside the lock.
@@ -280,7 +283,7 @@ void KeeperSession::onWriteFailed(Coordination::XID failed_xid, Coordination::Er
     KeeperRequestsForSessions orphaned_reads;
     {
         std::lock_guard lock(mutex_);
-        orphaned_reads = popDeferredReads(failed_xid);
+        orphaned_reads = extractDeferredReads(failed_xid);
     }
 
     for (auto & read_request : orphaned_reads)

@@ -523,8 +523,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         env->create_time_ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
         env->session = std::move(session);
 
-        auto req = env->buildKeeperRequestForSession();
-        req.envelope = env;
+        auto req = env->buildKeeperRequestForSession(env);
         env->onEnqueued();
         auto timeout = configuration_and_settings->coordination_settings[
             CoordinationSetting::operation_timeout_ms].totalMilliseconds();
@@ -578,8 +577,7 @@ bool KeeperDispatcher::putLocalReadRequest(const Coordination::ZooKeeperRequestP
     env->session = std::move(session);
     env->onFastPath();
 
-    auto request_info = env->buildKeeperRequestForSession();
-    request_info.envelope = std::move(env);
+    auto request_info = env->buildKeeperRequestForSession(std::move(env));
 
     server->putLocalReadRequest(request_info);
     return true;
@@ -612,15 +610,18 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         {
             if (auto session = session_registry_.findSession(request_for_session.session_id))
             {
-                /// Release deferred reads that were waiting for this write to commit.
-                /// The session handles OTel span finalization and local read execution internally.
-                session->onWriteCommitted(request_for_session.request->xid);
-
-                /// When Close commits, mark the session as finishing so stale requests
-                /// still sitting in the backed-up queue will be filtered before the
-                /// final Close response removes the session from the registry.
                 if (request_for_session.request->getOpNum() == Coordination::OpNum::Close)
+                {
+                    /// Close has no unresolved_writes_ entry (session transitioned
+                    /// to Finishing when Close was submitted). markCloseCommitted is
+                    /// a no-op here but kept for clarity.
                     session->markCloseCommitted();
+                }
+                else
+                {
+                    /// Release deferred reads that were waiting for this write to commit.
+                    session->onWriteCommitted(request_for_session.request->xid);
+                }
             }
         });
 
@@ -937,9 +938,8 @@ void KeeperDispatcher::failBatch(const KeeperRequestsForSessions & batch, Coordi
     for (const auto & req : batch)
     {
         /// SessionID and Reconfig bypass KeeperSession::addRequest and have no
-        /// unresolved_writes_ entry. Close is terminal (no barrier entry created).
-        /// Calling onWriteFailed for any of these would cause popDeferredReads to
-        /// walk the FIFO and incorrectly drop preceding entries as "stale".
+        /// unresolved_writes_ entry. Close is terminal (transitions to Finishing,
+        /// no barrier entry). Skip these to avoid unnecessary session lookups.
         if (req.request->getOpNum() == Coordination::OpNum::SessionID
             || req.request->getOpNum() == Coordination::OpNum::Reconfig
             || req.request->getOpNum() == Coordination::OpNum::Close)
