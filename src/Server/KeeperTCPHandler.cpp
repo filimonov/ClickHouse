@@ -556,6 +556,14 @@ void KeeperTCPHandler::runImpl()
             /// Process exact amount of responses from pipe
             /// otherwise state of responses queue and signaling pipe
             /// became inconsistent and race condition is possible.
+            ///
+            /// Batch up to max_responses_per_flush responses into the write buffer
+            /// before flushing to coalesce into fewer write() syscalls.
+            static constexpr size_t max_responses_per_flush = 16;
+            size_t responses_since_last_flush = 0;
+            bool session_close_received = false;
+            bool session_expired = false;
+
             while (result.responses_count != 0)
             {
                 RequestWithResponse request_with_response;
@@ -571,7 +579,9 @@ void KeeperTCPHandler::runImpl()
                 if (response->xid == close_xid)
                 {
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
-                    return;
+                    session_close_received = true;
+                    result.responses_count--;
+                    break;
                 }
 
                 updateStats(response, request_with_response.request);
@@ -599,7 +609,6 @@ void KeeperTCPHandler::runImpl()
                 try
                 {
                     response->write(getWriteBuffer(), use_xid_64);
-                    flushWriteBuffer();
                 }
                 catch (...)
                 {
@@ -609,15 +618,39 @@ void KeeperTCPHandler::runImpl()
 
                 maybe_finalize_opentelemetery_span(OpenTelemetry::SpanStatus::OK, "");
 
-                log_long_operation("Sending response");
+                ++responses_since_last_flush;
+                if (responses_since_last_flush >= max_responses_per_flush)
+                {
+                    flushWriteBuffer();
+                    log_long_operation("Sending responses");
+                    responses_since_last_flush = 0;
+                }
+
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
                     LOG_DEBUG(log, "Session #{} expired because server shutting down or quorum is not alive", session_id);
-                    keeper_dispatcher->finishSession(session_id);
-                    return;
+                    session_expired = true;
+                    result.responses_count--;
+                    break;
                 }
 
                 result.responses_count--;
+            }
+
+            /// Flush remaining responses that didn't fill a complete batch.
+            if (responses_since_last_flush > 0)
+            {
+                flushWriteBuffer();
+                log_long_operation("Sending responses");
+            }
+
+            if (session_close_received)
+                return;
+
+            if (session_expired)
+            {
+                keeper_dispatcher->finishSession(session_id);
+                return;
             }
 
             if (result.error)
