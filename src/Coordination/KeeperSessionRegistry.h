@@ -3,6 +3,7 @@
 #include <Coordination/KeeperSession.h>
 
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -45,7 +46,7 @@ public:
     std::vector<KeeperSessionPtr> shutdown();
 
 private:
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;
     std::unordered_map<int64_t, KeeperSessionPtr> active_sessions_;
     std::unordered_map<int64_t, ZooKeeperResponseCallback> new_session_callbacks_;
     std::atomic<int64_t> internal_session_id_counter_{0};

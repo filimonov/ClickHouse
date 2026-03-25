@@ -36,7 +36,7 @@ void KeeperSessionRegistry::registerSession(int64_t session_id, ZooKeeperRespons
 
 KeeperSessionPtr KeeperSessionRegistry::findSession(int64_t session_id) const
 {
-    std::lock_guard lock(mutex_);
+    std::shared_lock lock(mutex_);
 
     auto it = active_sessions_.find(session_id);
     if (it == active_sessions_.end())
