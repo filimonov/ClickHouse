@@ -2,8 +2,11 @@
 
 #include <Coordination/KeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 
 namespace DB
@@ -74,6 +77,17 @@ public:
     void onDeferred();       /// Queued -> Deferred (waiting for preceding write)
     void onReleased();       /// Deferred -> Submitted (preceding write committed)
     void onFailedRelease(const std::string & reason); /// Deferred -> Queued (write failed, finalize spans with ERROR)
+
+private:
+    /// Common OTel attribute construction.
+    std::vector<OpenTelemetry::SpanAttribute> baseSpanAttributes() const;
+    std::vector<OpenTelemetry::SpanAttribute> baseSpanAttributes(
+        std::initializer_list<OpenTelemetry::SpanAttribute> extra) const;
+
+    /// Finalize both dispatcher_requests_queue and read_wait_for_write spans.
+    void finalizeSpans(
+        OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
+        const std::string & message = {});
 };
 
 using RequestEnvelopePtr = std::shared_ptr<RequestEnvelope>;

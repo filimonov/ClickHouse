@@ -15,37 +15,56 @@ namespace CurrentMetrics
 namespace DB
 {
 
+std::vector<OpenTelemetry::SpanAttribute> RequestEnvelope::baseSpanAttributes() const
+{
+    return {
+        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
+        {"keeper.session_id", session_id},
+        {"keeper.xid", request->xid},
+    };
+}
+
+std::vector<OpenTelemetry::SpanAttribute> RequestEnvelope::baseSpanAttributes(
+    std::initializer_list<OpenTelemetry::SpanAttribute> extra) const
+{
+    auto attrs = baseSpanAttributes();
+    attrs.insert(attrs.end(), extra.begin(), extra.end());
+    return attrs;
+}
+
+void RequestEnvelope::finalizeSpans(
+    OpenTelemetry::SpanStatus status,
+    const std::string & message)
+{
+    auto attrs = baseSpanAttributes();
+    auto make_attrs = [&] { return attrs; };
+    ZooKeeperOpentelemetrySpans::maybeFinalize(
+        request->spans.dispatcher_requests_queue, make_attrs, status, message);
+    ZooKeeperOpentelemetrySpans::maybeFinalize(
+        request->spans.read_wait_for_write, make_attrs, status, message);
+}
+
 RequestEnvelope::~RequestEnvelope()
 {
     if (!request)
         return;
 
     /// Safety net: finalize any OTel spans that were initialized but not
-    /// explicitly finalized via lifecycle methods. This catches leaked spans
-    /// from missed transitions (e.g., a deferred read whose write never committed).
-    /// Only call maybeFinalize on spans that were actually initialized
-    /// (start_time_us != 0). Never-initialized spans would trigger a chassert
-    /// in maybeFinalize and produce bogus histogram observations.
-    auto finalize_if_initialized = [&](auto & span)
-    {
-        if (span.start_time_us == 0)
-            return;
-        ZooKeeperOpentelemetrySpans::maybeFinalize(
-            span,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                    {"keeper.session_id", session_id},
-                    {"keeper.xid", request->xid},
-                    {"keeper.leaked", true},
-                };
-            },
-            OpenTelemetry::SpanStatus::ERROR, "Span not explicitly finalized");
-    };
+    /// explicitly finalized via lifecycle methods.
+    /// Only finalize spans that were actually initialized (start_time_us != 0).
+    /// Never-initialized spans would trigger a chassert in maybeFinalize.
+    auto attrs = baseSpanAttributes({{"keeper.leaked", true}});
+    auto make_attrs = [&] { return attrs; };
 
-    finalize_if_initialized(request->spans.dispatcher_requests_queue);
-    finalize_if_initialized(request->spans.read_wait_for_write);
+    if (request->spans.dispatcher_requests_queue.start_time_us != 0)
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            request->spans.dispatcher_requests_queue, make_attrs,
+            OpenTelemetry::SpanStatus::ERROR, "Span not explicitly finalized");
+
+    if (request->spans.read_wait_for_write.start_time_us != 0)
+        ZooKeeperOpentelemetrySpans::maybeFinalize(
+            request->spans.read_wait_for_write, make_attrs,
+            OpenTelemetry::SpanStatus::ERROR, "Span not explicitly finalized");
 }
 
 KeeperRequestForSession RequestEnvelope::buildKeeperRequestForSession(RequestEnvelopePtr self) const
@@ -72,19 +91,11 @@ void RequestEnvelope::onEnqueueFailed()
 {
     state = RequestState::Queued;
     CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
+    auto attrs = baseSpanAttributes({{"keeper.enqueue_failed", true}});
     ZooKeeperOpentelemetrySpans::maybeFinalize(
         request->spans.dispatcher_requests_queue,
-        [&]
-        {
-            return std::vector<OpenTelemetry::SpanAttribute>{
-                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                {"keeper.session_id", session_id},
-                {"keeper.xid", request->xid},
-                {"keeper.enqueue_failed", true},
-            };
-        },
-        OpenTelemetry::SpanStatus::ERROR,
-        "Failed to enqueue request");
+        [&] { return attrs; },
+        OpenTelemetry::SpanStatus::ERROR, "Failed to enqueue request");
 }
 
 void RequestEnvelope::onFastPath()
@@ -92,28 +103,17 @@ void RequestEnvelope::onFastPath()
     state = RequestState::Submitted;
     /// Fast-path reads bypass the requests_queue but still produce the
     /// dispatcher_requests_queue span for consistent OTel tracing.
-    /// Both init and finalize happen here since the request never enters
-    /// requestThread (which normally finalizes the span on pop).
     /// No KeeperOutstandingRequests metric since they don't enter the queue.
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
+    auto attrs = baseSpanAttributes({{"keeper.fast_path", true}});
     ZooKeeperOpentelemetrySpans::maybeFinalize(
         request->spans.dispatcher_requests_queue,
-        [&]
-        {
-            return std::vector<OpenTelemetry::SpanAttribute>{
-                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                {"keeper.session_id", session_id},
-                {"keeper.xid", request->xid},
-                {"keeper.fast_path", true},
-            };
-        });
+        [&] { return attrs; });
 }
 
 void RequestEnvelope::onDeferred()
 {
     state = RequestState::Deferred;
-    /// Initialize both spans: the request will appear in the requests_queue span
-    /// (for consistent OTel tracing) and the read_wait_for_write span (for barrier tracking).
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.read_wait_for_write, request->tracing_context);
 }
@@ -121,49 +121,13 @@ void RequestEnvelope::onDeferred()
 void RequestEnvelope::onReleased()
 {
     state = RequestState::Submitted;
-    /// Finalize the dispatcher_requests_queue span (initialized in onDeferred).
-    ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.dispatcher_requests_queue,
-        [&]
-        {
-            return std::vector<OpenTelemetry::SpanAttribute>{
-                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                {"keeper.session_id", session_id},
-                {"keeper.xid", request->xid},
-            };
-        });
-    /// Finalize the read_wait_for_write span.
-    ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.read_wait_for_write,
-        [&]
-        {
-            return std::vector<OpenTelemetry::SpanAttribute>{
-                {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-                {"keeper.session_id", session_id},
-                {"keeper.xid", request->xid},
-            };
-        });
+    finalizeSpans();
 }
 
 void RequestEnvelope::onFailedRelease(const std::string & reason)
 {
     state = RequestState::Queued;
-
-    auto make_attributes = [&]
-    {
-        return std::vector<OpenTelemetry::SpanAttribute>{
-            {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-            {"keeper.session_id", session_id},
-            {"keeper.xid", request->xid},
-        };
-    };
-
-    ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.dispatcher_requests_queue, make_attributes,
-        OpenTelemetry::SpanStatus::ERROR, reason);
-    ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.read_wait_for_write, make_attributes,
-        OpenTelemetry::SpanStatus::ERROR, reason);
+    finalizeSpans(OpenTelemetry::SpanStatus::ERROR, reason);
 }
 
 }
