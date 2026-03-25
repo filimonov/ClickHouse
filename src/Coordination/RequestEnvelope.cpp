@@ -21,7 +21,8 @@ namespace DB
 namespace
 {
 
-/// Common OTel attribute construction — used by all lifecycle methods.
+/// Common OTel attribute construction — only called when OTel is enabled
+/// (maybeFinalize invokes the lambda only when span is set).
 std::vector<OpenTelemetry::SpanAttribute> baseSpanAttributes(const RequestEnvelope & env)
 {
     return {
@@ -46,6 +47,7 @@ void finalizeSpans(
     OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
     std::string_view message = {})
 {
+    /// Lazy: baseSpanAttributes is only called if maybeFinalize needs it.
     auto make_attrs = [&] { return baseSpanAttributes(env); };
     std::string msg(message);
     ZooKeeperOpentelemetrySpans::maybeFinalize(
@@ -65,8 +67,9 @@ RequestEnvelope::~RequestEnvelope()
     /// explicitly finalized via lifecycle methods.
     /// Only finalize spans that were actually initialized (start_time_us != 0).
     /// Never-initialized spans would trigger a chassert in maybeFinalize.
-    auto attrs = baseSpanAttributes(*this, {{"keeper.leaked", true}});
-    auto make_attrs = [&] { return attrs; };
+    /// Attrs are built lazily inside the lambda — no allocation on the normal
+    /// path where both spans were already finalized.
+    auto make_attrs = [&] { return baseSpanAttributes(*this, {{"keeper.leaked", true}}); };
 
     if (request->spans.dispatcher_requests_queue.start_time_us != 0)
         ZooKeeperOpentelemetrySpans::maybeFinalize(
@@ -103,10 +106,9 @@ void RequestEnvelope::onEnqueueFailed()
 {
     state = RequestState::Queued;
     CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-    auto attrs = baseSpanAttributes(*this, {{"keeper.enqueue_failed", true}});
     ZooKeeperOpentelemetrySpans::maybeFinalize(
         request->spans.dispatcher_requests_queue,
-        [&] { return attrs; },
+        [&] { return baseSpanAttributes(*this, {{"keeper.enqueue_failed", true}}); },
         OpenTelemetry::SpanStatus::ERROR, "Failed to enqueue request");
 }
 
@@ -117,10 +119,9 @@ void RequestEnvelope::onFastPath()
     /// dispatcher_requests_queue span for consistent OTel tracing.
     /// No KeeperOutstandingRequests metric since they don't enter the queue.
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-    auto attrs = baseSpanAttributes(*this, {{"keeper.fast_path", true}});
     ZooKeeperOpentelemetrySpans::maybeFinalize(
         request->spans.dispatcher_requests_queue,
-        [&] { return attrs; });
+        [&] { return baseSpanAttributes(*this, {{"keeper.fast_path", true}}); });
 }
 
 void RequestEnvelope::onDeferred()
