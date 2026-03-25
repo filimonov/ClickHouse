@@ -16,11 +16,14 @@ namespace DB
 class KeeperSession
 {
 public:
+    /// Session state machine:
+    ///   Active -> Finishing  (Close submitted to RAFT, or session expired)
+    ///   Finishing -> Closed  (close response delivered / callback detached)
     enum class State : uint8_t
     {
-        Active,
-        Finishing,
-        Closed,
+        Active,     /// Normal operation, accepts new requests.
+        Finishing,  /// Close submitted or session expired, no new requests accepted.
+        Closed,     /// Callback detached, session fully dead.
     };
 
     struct ResponseAction
@@ -48,7 +51,9 @@ public:
     /// True only when Active.
     bool canAcceptRequests() const;
 
-    /// Active -> Finishing. Called when Close commits through RAFT.
+    /// Active -> Finishing. Called when Close commits through RAFT
+    /// (also called from sessionCleanerTask on session expiry).
+    /// No-op if already Finishing or Closed.
     void markCloseCommitted();
 
     /// Extract callback for response delivery.
@@ -108,10 +113,6 @@ private:
     std::optional<ZooKeeperResponseCallback> callback_;
     std::deque<UnresolvedWrite> unresolved_writes_;
     mutable std::mutex mutex_;
-
-    /// Set when Close is submitted to Raft. Once true, addRequest rejects
-    /// all subsequent requests — no reads can be deferred behind Close.
-    bool close_submitted_ = false;
 
     /// Injected routing functions.
     RaftPushFunc raft_push_;

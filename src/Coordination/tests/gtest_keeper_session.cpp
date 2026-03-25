@@ -337,8 +337,9 @@ TEST_F(KeeperSessionTest, CloseCommitDoesNotReleaseReads)
     ASSERT_EQ(local_reads.size(), 0);
 }
 
-/// Test: failed Close push rolls back close_submitted_ flag.
-TEST_F(KeeperSessionTest, FailedClosePushRollsBack)
+/// Test: failed Close push keeps session in Finishing state (no rollback).
+/// The client gets the exception, disconnects, and finishSession cleans up.
+TEST_F(KeeperSessionTest, FailedClosePushKeepsFinishing)
 {
     raft_push_should_throw = true;
     auto close_req = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Close);
@@ -346,9 +347,9 @@ TEST_F(KeeperSessionTest, FailedClosePushRollsBack)
     ASSERT_THROW(session->addRequest(close_req, false), Exception);
     raft_push_should_throw = false;
 
-    /// Session should still accept requests (close_submitted_ rolled back).
-    ASSERT_TRUE(session->addRequest(makeWriteRequest(1), false));
-    ASSERT_EQ(raft_pushes.size(), 1);
+    /// Session no longer accepts requests — Close is irreversible.
+    ASSERT_FALSE(session->addRequest(makeWriteRequest(1), false));
+    ASSERT_EQ(raft_pushes.size(), 0);
 }
 
 /// Test: read-only traffic after failed write doesn't hang (the main scenario).

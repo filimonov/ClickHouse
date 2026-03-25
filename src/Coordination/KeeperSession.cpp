@@ -153,7 +153,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
     {
         std::lock_guard lock(mutex_);
 
-        if (state_ != State::Active || close_submitted_)
+        if (state_ != State::Active)
             return false;
 
         auto [mode, target] = classify(request);
@@ -166,14 +166,19 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
         {
             case RequestMode::Linear:
             {
-                /// Close is terminal: don't create a barrier entry (no requests
-                /// can follow it), just push to Raft. The close_submitted_ flag
-                /// prevents any subsequent addRequest calls from being accepted.
-                if (!is_close)
-                    unresolved_writes_.push_back(UnresolvedWrite{.xid = request->xid, .deferred_reads = {}});
-
                 if (is_close)
-                    close_submitted_ = true;
+                {
+                    /// Close is terminal: transition to Finishing immediately.
+                    /// No barrier entry — no requests can follow Close.
+                    /// If Close fails in the batch, the client gets an error and
+                    /// disconnects, triggering finishSession. No rollback needed.
+                    state_ = State::Finishing;
+                }
+                else
+                {
+                    /// Record as unresolved write for barrier tracking.
+                    unresolved_writes_.push_back(UnresolvedWrite{.xid = request->xid, .deferred_reads = {}});
+                }
 
                 keeper_req = sr->buildKeeperRequestForSession();
                 keeper_req.envelope = sr;
@@ -216,12 +221,18 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
             {
                 sr->onEnqueueFailed();
                 /// Roll back session state so subsequent requests are not
-                /// blocked behind a write/close that was never submitted.
-                std::lock_guard rollback_lock(mutex_);
-                if (is_close)
-                    close_submitted_ = false;
-                else if (!unresolved_writes_.empty() && unresolved_writes_.back().xid == request->xid)
-                    unresolved_writes_.pop_back();
+                /// blocked behind a write that was never submitted.
+                /// For Close: state_ was set to Finishing, but raft_push_ failed.
+                /// We don't roll back — the client will get the exception,
+                /// disconnect, and finishSession will clean up. Rolling back
+                /// to Active would be wrong (we'd accept requests on a session
+                /// whose Close was attempted).
+                if (!is_close)
+                {
+                    std::lock_guard rollback_lock(mutex_);
+                    if (!unresolved_writes_.empty() && unresolved_writes_.back().xid == request->xid)
+                        unresolved_writes_.pop_back();
+                }
                 throw;
             }
             break;
