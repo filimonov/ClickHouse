@@ -36,8 +36,9 @@ void RequestEnvelope::finalizeSpans(
     OpenTelemetry::SpanStatus status,
     const std::string & message)
 {
-    auto attrs = baseSpanAttributes();
-    auto make_attrs = [&] { return attrs; };
+    /// Lazy: baseSpanAttributes() is only called if maybeFinalize actually
+    /// needs it (i.e., the span was initialized with OTel enabled).
+    auto make_attrs = [&] { return baseSpanAttributes(); };
     ZooKeeperOpentelemetrySpans::maybeFinalize(
         request->spans.dispatcher_requests_queue, make_attrs, status, message);
     ZooKeeperOpentelemetrySpans::maybeFinalize(
