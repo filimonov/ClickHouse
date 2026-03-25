@@ -25,16 +25,10 @@ namespace DB
 KeeperSession::KeeperSession(
     int64_t session_id,
     ZooKeeperResponseCallback callback,
-    RaftPushFunc raft_push,
-    LocalReadFunc local_read,
-    FailReadFunc fail_read,
-    bool quorum_reads)
+    const Callbacks & callbacks)
     : session_id_(session_id)
     , callback_(std::move(callback))
-    , raft_push_(std::move(raft_push))
-    , local_read_(std::move(local_read))
-    , fail_read_(std::move(fail_read))
-    , quorum_reads_(quorum_reads)
+    , callbacks_(callbacks)
 {
 }
 
@@ -129,7 +123,7 @@ std::pair<RequestMode, RequestTarget> KeeperSession::classify(
     if (request->getOpNum() == Coordination::OpNum::Reconfig)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Reconfig must not reach KeeperSession::classify");
 
-    if (quorum_reads_ || !request->isReadRequest())
+    if (callbacks_.quorum_reads || !request->isReadRequest())
         return {RequestMode::Linear, RequestTarget::Raft};
 
     /// Non-quorum read: defer behind preceding writes (per-session barrier).
@@ -218,7 +212,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
             envelope->onEnqueued();
             try
             {
-                raft_push_(std::move(keeper_req), is_close);
+                callbacks_.raft_push(std::move(keeper_req), is_close);
             }
             catch (...)
             {
@@ -241,7 +235,7 @@ bool KeeperSession::addRequest(const Coordination::ZooKeeperRequestPtr & request
             break;
         case Action::FastLocalRead:
             envelope->onFastPath();
-            local_read_(keeper_req);
+            callbacks_.local_read(keeper_req);
             break;
         case Action::Deferred:
             /// Already stored in unresolved_writes_ above.
@@ -269,7 +263,7 @@ void KeeperSession::onWriteCommitted(Coordination::XID committed_xid)
             if (read_request.envelope)
                 read_request.envelope->onReleased();
 
-            local_read_(read_request);
+            callbacks_.local_read(read_request);
         }
         catch (...)
         {
@@ -293,7 +287,7 @@ void KeeperSession::onWriteFailed(Coordination::XID failed_xid, Coordination::Er
             if (read_request.envelope)
                 read_request.envelope->onFailedRelease("Write failed, deferred read aborted");
 
-            fail_read_(read_request, error);
+            callbacks_.fail_read(read_request, error);
         }
         catch (...)
         {

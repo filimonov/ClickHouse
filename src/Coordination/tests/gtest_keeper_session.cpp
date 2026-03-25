@@ -67,6 +67,7 @@ protected:
     std::vector<FailedRead> failed_reads;
     bool raft_push_should_throw = false;
 
+    KeeperSession::Callbacks callbacks;
     KeeperSessionPtr session;
 
     void SetUp() override
@@ -76,30 +77,27 @@ protected:
         failed_reads.clear();
         raft_push_should_throw = false;
 
-        auto raft_push = [this](KeeperRequestForSession && req, bool is_close) -> bool
-        {
-            if (raft_push_should_throw)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Queue full");
-            raft_pushes.push_back({std::move(req), is_close});
-            return true;
-        };
-
-        auto local_read = [this](const KeeperRequestForSession & req)
-        {
-            local_reads.push_back({req});
-        };
-
-        auto fail_read = [this](const KeeperRequestForSession & req, Coordination::Error error)
-        {
-            failed_reads.push_back({req, error});
+        callbacks = {
+            .raft_push = [this](KeeperRequestForSession && req, bool is_close) -> bool
+            {
+                if (raft_push_should_throw)
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Queue full");
+                raft_pushes.push_back({std::move(req), is_close});
+                return true;
+            },
+            .local_read = [this](const KeeperRequestForSession & req)
+            {
+                local_reads.push_back({req});
+            },
+            .fail_read = [this](const KeeperRequestForSession & req, Coordination::Error error)
+            {
+                failed_reads.push_back({req, error});
+            },
+            .quorum_reads = false,
         };
 
         auto callback = [](const ZooKeeperResponsePtr &, ZooKeeperRequestPtr) {};
-
-        session = std::make_shared<KeeperSession>(
-            /*session_id=*/1, std::move(callback),
-            std::move(raft_push), std::move(local_read),
-            std::move(fail_read), /*quorum_reads=*/false);
+        session = std::make_shared<KeeperSession>(/*session_id=*/1, std::move(callback), callbacks);
     }
 };
 

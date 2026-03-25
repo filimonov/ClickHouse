@@ -33,18 +33,22 @@ public:
         bool detach_after_delivery{false};
     };
 
-    /// Callback types for request routing (injected by KeeperDispatcher at session creation).
-    /// `RaftPushFunc` wraps the push to `requests_queue` with Close-vs-timeout logic.
-    using RaftPushFunc = std::function<bool(KeeperRequestForSession &&, bool /*is_close*/)>;
-    /// `LocalReadFunc` wraps `server->putLocalReadRequest` plus the `isLeaderAlive`
-    /// check and error response fallback.
-    using LocalReadFunc = std::function<void(const KeeperRequestForSession &)>;
-    /// `FailReadFunc` wraps `addErrorResponses` for deferred reads whose write failed.
-    using FailReadFunc = std::function<void(const KeeperRequestForSession &, Coordination::Error)>;
+    /// Routing callbacks shared by all sessions. Stored once on KeeperSessionRegistry,
+    /// sessions hold a non-owning pointer (registry outlives all sessions).
+    struct Callbacks
+    {
+        /// Wraps the push to `requests_queue` with Close-vs-timeout logic.
+        std::function<bool(KeeperRequestForSession &&, bool /*is_close*/)> raft_push;
+        /// Wraps `server->putLocalReadRequest` + `isLeaderAlive` check.
+        std::function<void(const KeeperRequestForSession &)> local_read;
+        /// Wraps `addErrorResponses` for deferred reads whose write failed.
+        std::function<void(const KeeperRequestForSession &, Coordination::Error)> fail_read;
+        /// Whether reads go through Raft (quorum_reads setting).
+        bool quorum_reads = false;
+    };
 
     KeeperSession(int64_t session_id, ZooKeeperResponseCallback callback,
-                  RaftPushFunc raft_push, LocalReadFunc local_read,
-                  FailReadFunc fail_read, bool quorum_reads);
+                  const Callbacks & callbacks);
 
     int64_t getSessionID() const { return session_id_; }
 
@@ -114,11 +118,8 @@ private:
     std::deque<UnresolvedWrite> unresolved_writes_;
     mutable std::mutex mutex_;
 
-    /// Injected routing functions.
-    RaftPushFunc raft_push_;
-    LocalReadFunc local_read_;
-    FailReadFunc fail_read_;
-    bool quorum_reads_;
+    /// Shared routing callbacks (owned by KeeperSessionRegistry).
+    const Callbacks & callbacks_;
 };
 
 }

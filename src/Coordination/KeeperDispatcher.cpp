@@ -593,6 +593,40 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     keeper_context->initialize(config, this);
 
     requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings[CoordinationSetting::max_request_queue_size]);
+
+    /// Set up shared session routing callbacks (stored once, used by all sessions).
+    session_registry_.setCallbacks({
+        .raft_push = [this](KeeperRequestForSession && req, bool is_close) -> bool
+        {
+            if (is_close)
+            {
+                if (!requests_queue->push(std::move(req)))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
+            }
+            else
+            {
+                auto timeout = configuration_and_settings->coordination_settings[
+                    CoordinationSetting::operation_timeout_ms].totalMilliseconds();
+                if (!requests_queue->tryPush(std::move(req), timeout))
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Cannot push request to queue within operation timeout");
+            }
+            return true;
+        },
+        .local_read = [this](const KeeperRequestForSession & req)
+        {
+            if (server->isLeaderAlive())
+                server->putLocalReadRequest(req);
+            else
+                addErrorResponses({req}, Coordination::Error::ZCONNECTIONLOSS);
+        },
+        .fail_read = [this](const KeeperRequestForSession & req, Coordination::Error error)
+        {
+            addErrorResponses({req}, error);
+        },
+        .quorum_reads = configuration_and_settings->coordination_settings[CoordinationSetting::quorum_reads],
+    });
+
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
@@ -783,45 +817,7 @@ KeeperDispatcher::~KeeperDispatcher()
 
 void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCallback callback)
 {
-    auto raft_push = [this](KeeperRequestForSession && req, bool is_close) -> bool
-    {
-        /// Note: KeeperOutstandingRequests metric is managed by
-        /// RequestEnvelope::onEnqueued (increment) and requestThread (decrement).
-        if (is_close)
-        {
-            if (!requests_queue->push(std::move(req)))
-                throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push request to queue");
-        }
-        else
-        {
-            auto timeout = configuration_and_settings->coordination_settings[
-                CoordinationSetting::operation_timeout_ms].totalMilliseconds();
-            if (!requests_queue->tryPush(std::move(req), timeout))
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Cannot push request to queue within operation timeout");
-        }
-        return true;
-    };
-
-    auto local_read = [this](const KeeperRequestForSession & req)
-    {
-        if (server->isLeaderAlive())
-            server->putLocalReadRequest(req);
-        else
-            addErrorResponses({req}, Coordination::Error::ZCONNECTIONLOSS);
-    };
-
-    auto fail_read = [this](const KeeperRequestForSession & req, Coordination::Error error)
-    {
-        addErrorResponses({req}, error);
-    };
-
-    bool quorum_reads = configuration_and_settings->coordination_settings[CoordinationSetting::quorum_reads];
-
-    session_registry_.registerSession(
-        session_id, std::move(callback),
-        std::move(raft_push), std::move(local_read),
-        std::move(fail_read), quorum_reads);
+    session_registry_.registerSession(session_id, std::move(callback));
 }
 
 void KeeperDispatcher::sessionCleanerTask()

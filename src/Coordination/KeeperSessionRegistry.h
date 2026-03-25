@@ -13,13 +13,13 @@ namespace DB
 class KeeperSessionRegistry
 {
 public:
+    /// Set the shared routing callbacks (called once during dispatcher initialization).
+    /// Must be called before any registerSession.
+    void setCallbacks(KeeperSession::Callbacks callbacks);
+
     /// Creates a KeeperSession and inserts into the active map.
     /// Throws LOGICAL_ERROR on duplicate session_id.
-    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback,
-                         KeeperSession::RaftPushFunc raft_push,
-                         KeeperSession::LocalReadFunc local_read,
-                         KeeperSession::FailReadFunc fail_read,
-                         bool quorum_reads);
+    void registerSession(int64_t session_id, ZooKeeperResponseCallback callback);
 
     /// Returns the session or nullptr if not found.
     /// Registry mutex is released before returning -- the caller uses
@@ -49,6 +49,9 @@ private:
     std::unordered_map<int64_t, KeeperSessionPtr> active_sessions_;
     std::unordered_map<int64_t, ZooKeeperResponseCallback> new_session_callbacks_;
     std::atomic<int64_t> internal_session_id_counter_{0};
+
+    /// Shared by all sessions — set once via setCallbacks.
+    KeeperSession::Callbacks callbacks_;
 };
 
 }
