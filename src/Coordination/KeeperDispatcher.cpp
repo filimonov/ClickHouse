@@ -1,4 +1,5 @@
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/RequestEnvelope.h>
 #include <libnuraft/async.hxx>
 
 #include <Poco/Path.h>

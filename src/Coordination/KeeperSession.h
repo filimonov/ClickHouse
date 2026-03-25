@@ -3,7 +3,6 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Coordination/KeeperCommon.h>
-#include <Coordination/RequestEnvelope.h>
 
 #include <deque>
 #include <mutex>

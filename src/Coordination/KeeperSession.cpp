@@ -1,4 +1,5 @@
 #include <Coordination/KeeperSession.h>
+#include <Coordination/RequestEnvelope.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>

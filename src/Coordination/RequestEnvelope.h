@@ -1,36 +1,13 @@
 #pragma once
 
 #include <Coordination/KeeperCommon.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <Common/OpenTelemetryTraceContext.h>
 
 #include <memory>
-#include <string>
-#include <vector>
+#include <string_view>
 
 
 namespace DB
 {
-
-/// How the request interacts with other requests in the same session.
-enum class RequestMode : uint8_t
-{
-    /// Serialized through Raft in FIFO order (writes, quorum reads, Auth, Heartbeat, Close).
-    Linear,
-    /// Must wait for the preceding Linear request to commit (deferred non-quorum read with barrier).
-    WaitPrevious,
-    /// Note: Reconfig bypasses session classification entirely and is pushed
-    /// directly to requests_queue by `KeeperDispatcher::putRequest`, similar to SessionID.
-};
-
-/// Where the request is executed.
-enum class RequestTarget : uint8_t
-{
-    /// Sent through Raft consensus (writes, quorum reads, Auth, Heartbeat, Close, Reconfig).
-    Raft,
-    /// Executed locally against the state machine (non-quorum reads).
-    Local,
-};
 
 /// Lifecycle state of the request.
 enum class RequestState : uint8_t
@@ -76,18 +53,7 @@ public:
     void onFastPath();       /// Queued -> Submitted (fast local read, no queue)
     void onDeferred();       /// Queued -> Deferred (waiting for preceding write)
     void onReleased();       /// Deferred -> Submitted (preceding write committed)
-    void onFailedRelease(const std::string & reason); /// Deferred -> Queued (write failed, finalize spans with ERROR)
-
-private:
-    /// Common OTel attribute construction.
-    std::vector<OpenTelemetry::SpanAttribute> baseSpanAttributes() const;
-    std::vector<OpenTelemetry::SpanAttribute> baseSpanAttributes(
-        std::initializer_list<OpenTelemetry::SpanAttribute> extra) const;
-
-    /// Finalize both dispatcher_requests_queue and read_wait_for_write spans.
-    void finalizeSpans(
-        OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
-        const std::string & message = {});
+    void onFailedRelease(std::string_view reason); /// Deferred -> Queued (write failed, finalize spans with ERROR)
 };
 
 using RequestEnvelopePtr = std::shared_ptr<RequestEnvelope>;

@@ -29,6 +29,26 @@ using RequestEnvelopePtr = std::shared_ptr<RequestEnvelope>;
 
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
+/// How the request interacts with other requests in the same session.
+enum class RequestMode : uint8_t
+{
+    /// Serialized through Raft in FIFO order (writes, quorum reads, Auth, Heartbeat, Close).
+    Linear,
+    /// Must wait for the preceding Linear request to commit (deferred non-quorum read with barrier).
+    WaitPrevious,
+    /// Note: Reconfig bypasses session classification entirely and is pushed
+    /// directly to requests_queue by `KeeperDispatcher::putRequest`, similar to SessionID.
+};
+
+/// Where the request is executed.
+enum class RequestTarget : uint8_t
+{
+    /// Sent through Raft consensus (writes, quorum reads, Auth, Heartbeat, Close, Reconfig).
+    Raft,
+    /// Executed locally against the state machine (non-quorum reads).
+    Local,
+};
+
 /// Callback invoked by `KeeperDispatcher` to deliver responses to clients.
 /// Must be safe for concurrent invocation from the response thread and session cleanup paths.
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)>;

@@ -1,6 +1,7 @@
 #include <Coordination/KeeperSessionRegistry.h>
 
 #include <Common/CurrentMetrics.h>
+#include <mutex>
 #include <Common/Exception.h>
 
 

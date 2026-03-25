@@ -1,10 +1,13 @@
 #include <Coordination/RequestEnvelope.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/KeeperSpans.h>
 
 #include <chrono>
+#include <string>
+#include <vector>
 
 
 namespace CurrentMetrics
@@ -15,34 +18,42 @@ namespace CurrentMetrics
 namespace DB
 {
 
-std::vector<OpenTelemetry::SpanAttribute> RequestEnvelope::baseSpanAttributes() const
+namespace
+{
+
+/// Common OTel attribute construction — used by all lifecycle methods.
+std::vector<OpenTelemetry::SpanAttribute> baseSpanAttributes(const RequestEnvelope & env)
 {
     return {
-        {"keeper.operation", Coordination::opNumToString(request->getOpNum())},
-        {"keeper.session_id", session_id},
-        {"keeper.xid", request->xid},
+        {"keeper.operation", Coordination::opNumToString(env.request->getOpNum())},
+        {"keeper.session_id", env.session_id},
+        {"keeper.xid", env.request->xid},
     };
 }
 
-std::vector<OpenTelemetry::SpanAttribute> RequestEnvelope::baseSpanAttributes(
-    std::initializer_list<OpenTelemetry::SpanAttribute> extra) const
+std::vector<OpenTelemetry::SpanAttribute> baseSpanAttributes(
+    const RequestEnvelope & env,
+    std::initializer_list<OpenTelemetry::SpanAttribute> extra)
 {
-    auto attrs = baseSpanAttributes();
+    auto attrs = baseSpanAttributes(env);
     attrs.insert(attrs.end(), extra.begin(), extra.end());
     return attrs;
 }
 
-void RequestEnvelope::finalizeSpans(
-    OpenTelemetry::SpanStatus status,
-    const std::string & message)
+/// Finalize both dispatcher_requests_queue and read_wait_for_write spans.
+void finalizeSpans(
+    RequestEnvelope & env,
+    OpenTelemetry::SpanStatus status = OpenTelemetry::SpanStatus::OK,
+    std::string_view message = {})
 {
-    /// Lazy: baseSpanAttributes() is only called if maybeFinalize actually
-    /// needs it (i.e., the span was initialized with OTel enabled).
-    auto make_attrs = [&] { return baseSpanAttributes(); };
+    auto make_attrs = [&] { return baseSpanAttributes(env); };
+    std::string msg(message);
     ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.dispatcher_requests_queue, make_attrs, status, message);
+        env.request->spans.dispatcher_requests_queue, make_attrs, status, msg);
     ZooKeeperOpentelemetrySpans::maybeFinalize(
-        request->spans.read_wait_for_write, make_attrs, status, message);
+        env.request->spans.read_wait_for_write, make_attrs, status, msg);
+}
+
 }
 
 RequestEnvelope::~RequestEnvelope()
@@ -54,7 +65,7 @@ RequestEnvelope::~RequestEnvelope()
     /// explicitly finalized via lifecycle methods.
     /// Only finalize spans that were actually initialized (start_time_us != 0).
     /// Never-initialized spans would trigger a chassert in maybeFinalize.
-    auto attrs = baseSpanAttributes({{"keeper.leaked", true}});
+    auto attrs = baseSpanAttributes(*this, {{"keeper.leaked", true}});
     auto make_attrs = [&] { return attrs; };
 
     if (request->spans.dispatcher_requests_queue.start_time_us != 0)
@@ -92,7 +103,7 @@ void RequestEnvelope::onEnqueueFailed()
 {
     state = RequestState::Queued;
     CurrentMetrics::sub(CurrentMetrics::KeeperOutstandingRequests);
-    auto attrs = baseSpanAttributes({{"keeper.enqueue_failed", true}});
+    auto attrs = baseSpanAttributes(*this, {{"keeper.enqueue_failed", true}});
     ZooKeeperOpentelemetrySpans::maybeFinalize(
         request->spans.dispatcher_requests_queue,
         [&] { return attrs; },
@@ -106,7 +117,7 @@ void RequestEnvelope::onFastPath()
     /// dispatcher_requests_queue span for consistent OTel tracing.
     /// No KeeperOutstandingRequests metric since they don't enter the queue.
     ZooKeeperOpentelemetrySpans::maybeInitialize(request->spans.dispatcher_requests_queue, request->tracing_context);
-    auto attrs = baseSpanAttributes({{"keeper.fast_path", true}});
+    auto attrs = baseSpanAttributes(*this, {{"keeper.fast_path", true}});
     ZooKeeperOpentelemetrySpans::maybeFinalize(
         request->spans.dispatcher_requests_queue,
         [&] { return attrs; });
@@ -122,13 +133,13 @@ void RequestEnvelope::onDeferred()
 void RequestEnvelope::onReleased()
 {
     state = RequestState::Submitted;
-    finalizeSpans();
+    finalizeSpans(*this);
 }
 
-void RequestEnvelope::onFailedRelease(const std::string & reason)
+void RequestEnvelope::onFailedRelease(std::string_view reason)
 {
     state = RequestState::Queued;
-    finalizeSpans(OpenTelemetry::SpanStatus::ERROR, reason);
+    finalizeSpans(*this, OpenTelemetry::SpanStatus::ERROR, reason);
 }
 
 }
