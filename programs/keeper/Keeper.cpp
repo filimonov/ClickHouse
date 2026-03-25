@@ -381,6 +381,11 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
+    /// Keeper has a small, stable memory footprint unlike ClickHouse server.
+    /// The default MemoryWorker purge settings (dirty_pages=0.2, total_memory=0.9) are tuned
+    /// for server's large bursty allocations. For Keeper they cause a storm of madvise(MADV_DONTNEED)
+    /// syscalls (50K-100K under load) which burn CPU and trigger TLB shootdowns, hurting tail latency.
+    /// Keeper's own max_memory_usage_soft_limit provides sufficient memory management.
     MemoryWorkerConfig memory_worker_config{
         .rss_update_period_ms = server_settings[ServerSetting::memory_worker_period_ms],
         .purge_dirty_pages_threshold_ratio = server_settings[ServerSetting::memory_worker_purge_dirty_pages_threshold_ratio],
@@ -389,6 +394,14 @@ try
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
     };
+
+    /// Override purge defaults for Keeper unless explicitly configured.
+    /// Use has_value-style check: if the user didn't set these in their config,
+    /// they'll have the global defaults (0.2 and 0.9) which are too aggressive for Keeper.
+    if (!config().has("memory_worker_purge_dirty_pages_threshold_ratio"))
+        memory_worker_config.purge_dirty_pages_threshold_ratio = 0;
+    if (!config().has("memory_worker_purge_total_memory_threshold_ratio"))
+        memory_worker_config.purge_total_memory_threshold_ratio = 0;
 
     MemoryWorker memory_worker(memory_worker_config, /*page_cache_=*/nullptr);
     memory_worker.start();
