@@ -460,7 +460,7 @@ public:
 
     void rotate(uint64_t new_start_log_index)
     {
-        /// Start new one
+        /// Build description for the new file.
         auto new_description = std::make_shared<ChangelogFileDescription>();
         new_description->prefix = DEFAULT_PREFIX;
         new_description->from_log_index = new_start_log_index;
@@ -480,7 +480,78 @@ public:
         LOG_TRACE(log, "Starting new changelog {}", new_description->path);
         auto [it, inserted] = existing_changelogs.insert(std::make_pair(new_start_log_index, std::move(new_description)));
 
-        setFile(it->second, WriteMode::Rewrite);
+        /// Prepare the new file.
+        auto next = prepareTargetFileNow(it->second, log_file_settings, getLatestLogDisk(), log);
+
+        /// Retire the old file.
+        if (tryGetFileBaseBuffer() && prealloc_done)
+        {
+            chassert(current_file_description);
+            if (current_file_description->deleted)
+            {
+                LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
+                prealloc_done = false;
+                cancelCurrentFile();
+            }
+            else
+            {
+                /// Build RetiredLogFile from current state.
+                RetiredLogFile retired;
+                retired.description = current_file_description;
+                retired.final_path = current_file_description->path;
+                if (last_index_written && *last_index_written != current_file_description->to_log_index)
+                {
+                    retired.final_path = Changelog::formatChangelogPath(
+                        current_file_description->prefix,
+                        current_file_description->from_log_index,
+                        *last_index_written,
+                        current_file_description->extension);
+                }
+                retired.archive_disk = getDisk();
+
+                /// Sync data before detaching buffers.
+                if (compressed_buffer)
+                    compressed_buffer->finalize();
+                flush();
+                if (file_buf)
+                    file_buf->finalize();
+
+                retired.file_buf = std::move(file_buf);
+                retired.compressed_buffer = std::move(compressed_buffer);
+                retired.initial_file_size = initial_file_size;
+
+                /// Retire: close FD (sync for now, controller will make it async later).
+                retireFileNow(std::move(retired), log);
+
+                /// Rename the old file if needed.
+                /// TODO: this will be handled by the controller in a later commit.
+                if (move_changelog_cb)
+                {
+                    std::string rename_path = current_file_description->path;
+                    if (last_index_written && *last_index_written != current_file_description->to_log_index)
+                    {
+                        rename_path = Changelog::formatChangelogPath(
+                            current_file_description->prefix,
+                            current_file_description->from_log_index,
+                            *last_index_written,
+                            current_file_description->extension);
+                    }
+                    move_changelog_cb(current_file_description, std::move(rename_path), getDisk());
+                }
+            }
+        }
+        else
+        {
+            cancelCurrentFile();
+        }
+
+        /// Attach the new file.
+        file_buf = std::move(next.file_buf);
+        compressed_buffer = std::move(next.compressed_buffer);
+        initial_file_size = next.initial_file_size;
+        prealloc_done = next.prealloc_done;
+        last_index_written.reset();
+        current_file_description = it->second;
     }
 
     void finalize()
