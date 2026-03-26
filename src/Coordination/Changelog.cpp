@@ -113,6 +113,118 @@ struct MoveChangelog
 
 }
 
+/// ---- Lifecycle types for rotation ----
+
+/// A changelog file ready to be written to.
+/// Produced by prepareTargetFileNow (sync) or spare consumption (async).
+struct PreparedLogFile
+{
+    ChangelogFileDescriptionPtr description;
+    std::unique_ptr<WriteBufferFromFileBase> file_buf;
+    std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
+    size_t initial_file_size = 0;
+    bool prealloc_done = false;
+};
+
+/// Everything needed to retire the old file after rotation.
+struct RetiredLogFile
+{
+    ChangelogFileDescriptionPtr description;
+    std::string final_path;       /// may differ from description->path if log was truncated
+    DiskPtr archive_disk;         /// target disk for archive move
+    std::unique_ptr<WriteBufferFromFileBase> file_buf;
+    std::unique_ptr<ZstdDeflatingAppendableWriteBuffer> compressed_buffer;
+    size_t initial_file_size = 0;
+};
+
+/// ---- Pure helpers (single implementation for both sync and async paths) ----
+
+/// Open a new changelog file, preallocate space, and optionally create a compressed buffer.
+/// `create_compressed_buffer` is false for spare files (dummy path — buffer created after rename).
+PreparedLogFile openAndPreallocateFile(
+    const ChangelogFileDescriptionPtr & description,
+    const LogFileSettings & settings,
+    DiskPtr disk,
+    bool create_compressed_buffer,
+    LoggerPtr log)
+{
+    PreparedLogFile result;
+    result.description = description;
+
+    result.file_buf = disk->writeFile(description->path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+    chassert(result.file_buf);
+
+    auto * file_buffer = dynamic_cast<WriteBufferFromFile *>(result.file_buf.get());
+    if (file_buffer)
+        result.initial_file_size = getSizeFromFileDescriptor(file_buffer->getFD());
+
+    result.prealloc_done = true;
+    if (settings.max_size != 0 && file_buffer)
+    {
+#ifdef OS_LINUX
+        int res = -1;
+        do
+        {
+            res = fallocate(file_buffer->getFD(), FALLOC_FL_KEEP_SIZE, 0,
+                            settings.max_size + settings.overallocate_size);
+        } while (res < 0 && errno == EINTR);
+
+        if (res != 0)
+        {
+            if (errno == ENOSPC)
+            {
+                LOG_WARNING(log, "Failed to preallocate space for changelog file: disk full");
+                result.prealloc_done = false;
+            }
+            else
+            {
+                LOG_WARNING(log, "Could not preallocate space for changelog file: {}", errnoToString());
+            }
+        }
+#endif
+    }
+
+    if (create_compressed_buffer && settings.compress_logs && result.file_buf)
+    {
+        result.compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
+            std::move(result.file_buf),
+            /* compression level = */ 3,
+            /* append_to_existing_file_ = */ false,
+            [disk, path = description->path, read_settings = getReadSettings()]
+            { return disk->readFile(path, read_settings); });
+    }
+
+    return result;
+}
+
+/// Convenience: prepare a target file synchronously with compressed buffer.
+PreparedLogFile prepareTargetFileNow(
+    const ChangelogFileDescriptionPtr & description,
+    const LogFileSettings & settings,
+    DiskPtr disk,
+    LoggerPtr log)
+{
+    return openAndPreallocateFile(description, settings, disk, /*create_compressed_buffer=*/true, log);
+}
+
+/// Finalize and close a retired changelog file. Idempotent.
+/// Handles ZSTD footer (idempotent), buffer finalization, and destruction (close).
+/// Skips ftruncate — the extra preallocated bytes are harmless (readers validate via checksums).
+void retireFileNow(RetiredLogFile && file, LoggerPtr log)
+{
+    LOG_TRACE(log, "Retiring changelog file {}", file.description ? file.description->path : "unknown");
+
+    if (file.compressed_buffer)
+        file.compressed_buffer->finalize();
+    else if (file.file_buf)
+        file.file_buf->finalize();
+
+    file.compressed_buffer.reset();
+    file.file_buf.reset();
+}
+
+/// ---- Changelog file operation types (for the existing queue dispatch) ----
+
 using ChangelogFileOperationVariant = std::variant<RemoveChangelog, MoveChangelog>;
 
 struct ChangelogFileOperation
