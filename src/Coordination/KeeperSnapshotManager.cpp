@@ -6,6 +6,7 @@
 #include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperFileOperationsExecutor.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
@@ -902,9 +903,18 @@ void KeeperSnapshotManager<Storage>::removeSnapshot(uint64_t log_idx)
     auto itr = existing_snapshots.find(log_idx);
     if (itr == existing_snapshots.end())
         throw Exception(ErrorCodes::UNKNOWN_SNAPSHOT, "Unknown snapshot with log index {}", log_idx);
-    const auto & [path, disk] = *itr->second;
-    disk->removeFileIfExists(path);
+
+    /// Defer file removal — unlink can take seconds on slow filesystems.
+    auto snap_info = itr->second;
     existing_snapshots.erase(itr);
+
+    keeper_context->getFileOperationsExecutor().runCleanupTask(
+        "remove outdated snapshot",
+        [snap = std::move(snap_info), log_ = log]
+        {
+            snap->disk->removeFileIfExists(snap->path);
+            LOG_INFO(log_, "Removed outdated snapshot {}", snap->path);
+        });
 }
 
 template<typename Storage>
