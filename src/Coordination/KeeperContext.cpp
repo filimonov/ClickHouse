@@ -92,64 +92,68 @@ KeeperFileOperationsExecutor::~KeeperFileOperationsExecutor()
     shutdown();
 }
 
-void KeeperFileOperationsExecutor::runCleanupTask(std::string_view what, std::function<void()> task)
+std::shared_future<void> KeeperFileOperationsExecutor::runCleanupTask(std::string_view what, std::function<void()> task)
 {
-    if (!enabled || shutting_down.load(std::memory_order_relaxed))
-    {
-        task();
-        return;
-    }
-
-    try
-    {
-        cleanup_pool.scheduleOrThrowOnError([fn = std::move(task), desc = std::string(what), log_ = log]
-        {
-            setThreadName(ThreadName::KEEPER_FILE_CLEANUP);
-            try
-            {
-                fn();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log_, fmt::format("Failed to {}", desc));
-            }
-        });
-    }
-    catch (...)
-    {
-        LOG_WARNING(log, "Cleanup pool full, running '{}' synchronously", what);
-        task();
-    }
+    return dispatch(what, std::move(task), cleanup_pool, ThreadName::KEEPER_FILE_CLEANUP);
 }
 
-void KeeperFileOperationsExecutor::runPrepareTask(std::string_view what, std::function<void()> task)
+std::shared_future<void> KeeperFileOperationsExecutor::runPrepareTask(std::string_view what, std::function<void()> task)
+{
+    return dispatch(what, std::move(task), prepare_pool, ThreadName::KEEPER_FILE_PREPARE);
+}
+
+std::shared_future<void> KeeperFileOperationsExecutor::dispatch(
+    std::string_view what, std::function<void()> task,
+    ThreadPool & pool, ThreadName thread_name)
 {
     if (!enabled || shutting_down.load(std::memory_order_relaxed))
-    {
-        task();
-        return;
-    }
+        return runInline(what, std::move(task));
+
+    auto promise = std::make_shared<std::promise<void>>();
+    auto future = promise->get_future().share();
 
     try
     {
-        prepare_pool.scheduleOrThrowOnError([fn = std::move(task), desc = std::string(what), log_ = log]
-        {
-            setThreadName(ThreadName::KEEPER_FILE_PREPARE);
-            try
+        pool.scheduleOrThrowOnError(
+            [fn = std::move(task), promise, desc = std::string(what), thread_name, log_ = log]
             {
-                fn();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log_, fmt::format("Failed to {}", desc));
-            }
-        });
+                setThreadName(thread_name);
+                try
+                {
+                    fn();
+                    promise->set_value();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log_, fmt::format("Failed to {}", desc));
+                    promise->set_value(); /// Mark complete even on failure — callers wait, not retry.
+                }
+            });
     }
     catch (...)
     {
-        LOG_WARNING(log, "Prepare pool full, running '{}' synchronously", what);
+        LOG_WARNING(log, "Pool full, running '{}' synchronously", what);
+        task();
+        promise->set_value();
+    }
+
+    return future;
+}
+
+std::shared_future<void> KeeperFileOperationsExecutor::runInline(std::string_view what, std::function<void()> task)
+{
+    try
+    {
         task();
     }
+    catch (...)
+    {
+        tryLogCurrentException(log, fmt::format("Failed to {}", what));
+    }
+
+    std::promise<void> promise;
+    promise.set_value();
+    return promise.get_future().share();
 }
 
 void KeeperFileOperationsExecutor::wait()

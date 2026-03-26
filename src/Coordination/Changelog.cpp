@@ -105,16 +105,6 @@ Checksum computeRecordChecksum(const ChangelogRecord & record)
     return hash.get64();
 }
 
-struct RemoveChangelog
-{
-};
-
-struct MoveChangelog
-{
-    std::string new_path;
-    DiskPtr new_disk;
-};
-
 }
 
 /// ---- Lifecycle types for rotation ----
@@ -235,28 +225,10 @@ void retireFileNow(RetiredLogFile && file, LoggerPtr log)
 
 /// ---- Changelog file operation types (for the existing queue dispatch) ----
 
-using ChangelogFileOperationVariant = std::variant<RemoveChangelog, MoveChangelog>;
-
-struct ChangelogFileOperation
-{
-    explicit ChangelogFileOperation(ChangelogFileDescriptionPtr changelog_, ChangelogFileOperationVariant operation_)
-        : changelog(std::move(changelog_))
-        , operation(std::move(operation_))
-    {}
-
-    ChangelogFileDescriptionPtr changelog;
-    ChangelogFileOperationVariant operation;
-    std::atomic<bool> done = false;
-};
-
 void ChangelogFileDescription::waitAllAsyncOperations()
 {
-    for (const auto & op : file_operations)
-    {
-        if (auto op_locked = op.lock())
-            op_locked->done.wait(false);
-    }
-
+    for (auto & f : file_operations)
+        f.get();
     file_operations.clear();
 }
 
@@ -310,94 +282,58 @@ public:
         return prepareTargetFileNow(target, settings, keeper_context->getLatestLogDisk(), log);
     }
 
-    /// Retire the old file. The executor handles async/sync dispatch internally.
-    /// Registers with file_operations so waitAllAsyncOperations blocks correctly.
-    void retireFile(RetiredLogFile && file)
+    /// Retire the old file: close FD, then rename/move to final path.
+    /// Both steps run as a single task — the file is fully retired when the
+    /// future completes.
+    /// Retire the old file: optionally rename to reflect actual entries, then
+    /// defer close to the cleanup pool.
+    /// `rename` is false during shutdown — the original code also skipped rename
+    /// during shutdown (the async queue was already finished), and the init logic
+    /// reads filenames to determine file boundaries.
+    void retireFile(RetiredLogFile && file, bool rename = true)
     {
-        auto & executor = keeper_context->getFileOperationsExecutor();
+        auto desc = file.description;
 
-        /// Build a tracked operation for file_operations registration.
-        /// Even in sync mode, we create the operation so waitAllAsyncOperations
-        /// has something to observe (it completes immediately).
-        auto op = std::make_shared<ChangelogFileOperation>(
-            file.description, MoveChangelog{.new_path = file.final_path, .new_disk = file.archive_disk});
-
-        /// Register BEFORE dispatching work so waitAllAsyncOperations can see it.
-        if (file.description)
-            file.description->file_operations.push_back(op);
-
-        /// Move buffers into shared_ptr for the copyable lambda.
-        auto retired = std::make_shared<RetiredLogFile>(std::move(file));
-
-        executor.runCleanupTask("retire old changelog", [retired, op, log_ = log]
-        {
-            retireFileNow(std::move(*retired), log_);
-            op->done = true;
-            op->done.notify_all();
-        });
-    }
-
-    /// Move/rename a rotated file (same-disk rename or cross-disk archive).
-    void moveFile(ChangelogFileDescriptionPtr desc, std::string new_path, DiskPtr target_disk)
-    {
-        auto op = std::make_shared<ChangelogFileOperation>(desc, MoveChangelog{.new_path = new_path, .new_disk = target_disk});
-        if (desc)
-            desc->file_operations.push_back(op);
-
-        auto & executor = keeper_context->getFileOperationsExecutor();
-        executor.runCleanupTask("move changelog", [op, keeper_ctx = keeper_context, log_ = log]
+        if (rename && desc && !desc->deleted
+            && !file.final_path.empty() && file.final_path != desc->path)
         {
             try
             {
-                const auto & changelog = op->changelog;
-                auto * move_op = std::get_if<MoveChangelog>(&op->operation);
-                chassert(move_op);
-
-                if (move_op->new_disk == changelog->disk)
-                {
-                    if (move_op->new_path != changelog->path)
-                    {
-                        changelog->disk->moveFile(changelog->path, move_op->new_path);
-                        changelog->path = std::move(move_op->new_path);
-                    }
-                }
-                else
-                {
-                    moveChangelogBetweenDisks(changelog->disk, changelog, move_op->new_disk, move_op->new_path, keeper_ctx);
-                }
+                desc->disk->moveFile(desc->path, file.final_path);
+                desc->path = file.final_path;
             }
             catch (...)
             {
-                tryLogCurrentException(log_, "Failed to move changelog");
+                tryLogCurrentException(log, "Failed to rename changelog");
             }
-            op->done = true;
-            op->done.notify_all();
+        }
+
+        /// Defer close (the slow part on slow disks) to the cleanup pool.
+        auto & executor = keeper_context->getFileOperationsExecutor();
+        auto retired = std::make_shared<RetiredLogFile>(std::move(file));
+
+        auto future = executor.runCleanupTask("close old changelog", [retired, log_ = log]
+        {
+            retireFileNow(std::move(*retired), log_);
         });
+
+        if (desc)
+            desc->file_operations.push_back(std::move(future));
     }
 
     /// Remove a compacted file.
     void removeFile(ChangelogFileDescriptionPtr desc)
     {
-        auto op = std::make_shared<ChangelogFileOperation>(desc, RemoveChangelog{});
-        if (desc)
-            desc->file_operations.push_back(op);
-
         auto & executor = keeper_context->getFileOperationsExecutor();
-        executor.runCleanupTask("remove compacted changelog", [op, log_ = log]
+        auto future = executor.runCleanupTask("remove compacted changelog", [desc, log_ = log]
         {
-            try
-            {
-                chassert(op->changelog);
-                op->changelog->disk->removeFile(op->changelog->path);
-                LOG_INFO(log_, "Removed changelog {} because of compaction.", op->changelog->path);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log_, "Failed to remove compacted changelog");
-            }
-            op->done = true;
-            op->done.notify_all();
+            chassert(desc);
+            desc->disk->removeFile(desc->path);
+            LOG_INFO(log_, "Removed changelog {} because of compaction.", desc->path);
         });
+
+        if (desc)
+            desc->file_operations.push_back(std::move(future));
     }
 
     /// Best-effort: pre-create next spare file. No-op in SyncOnly mode.
@@ -619,26 +555,7 @@ public:
                     log_file_settings.rotate_interval,
                     file_description->expectedEntriesCountInLog());
 
-            /// Finalize the old file if one is open.
-            auto retired = detachCurrentFileForRetirement();
-            if (retired)
-            {
-                if (rotation_controller)
-                {
-                    auto final_path = retired->final_path;
-                    auto archive_disk = retired->archive_disk;
-                    rotation_controller->retireFile(std::move(*retired));
-                    rotation_controller->moveFile(current_file_description, std::move(final_path), std::move(archive_disk));
-                }
-                else
-                {
-                    retireFileNow(std::move(*retired), log);
-                }
-            }
-            else
-            {
-                cancelCurrentFile();
-            }
+            retireCurrentFile();
 
             auto latest_log_disk = getLatestLogDisk();
             chassert(file_description->disk == latest_log_disk);
@@ -790,29 +707,12 @@ public:
         LOG_TRACE(log, "Starting new changelog {}", new_description->path);
         auto [it, inserted] = existing_changelogs.insert(std::make_pair(new_start_log_index, std::move(new_description)));
 
-        /// Acquire the next file (spare or sync fallback).
-        auto next = rotation_controller
-            ? rotation_controller->acquireNextFile(it->second)
-            : prepareTargetFileNow(it->second, log_file_settings, getLatestLogDisk(), log);
+        chassert(rotation_controller);
 
-        /// Retire the old file.
-        auto retired = detachCurrentFileForRetirement();
-        if (retired)
-        {
-            if (rotation_controller)
-            {
-                auto final_path = retired->final_path;
-                auto archive_disk = retired->archive_disk;
-                rotation_controller->retireFile(std::move(*retired));
-                rotation_controller->moveFile(current_file_description, std::move(final_path), std::move(archive_disk));
-            }
-            else
-            {
-                retireFileNow(std::move(*retired), log);
-            }
-        }
+        auto next = rotation_controller->acquireNextFile(it->second);
 
-        /// Attach the new file.
+        retireCurrentFile();
+
         file_buf = std::move(next.file_buf);
         compressed_buffer = std::move(next.compressed_buffer);
         initial_file_size = next.initial_file_size;
@@ -820,8 +720,7 @@ public:
         last_index_written.reset();
         current_file_description = it->second;
 
-        if (rotation_controller)
-            rotation_controller->warmupNextSpare();
+        rotation_controller->warmupNextSpare();
     }
 
     /// Build a RetiredLogFile from current state, syncing data before detaching buffers.
@@ -869,11 +768,21 @@ public:
 
     void finalize()
     {
+        /// During shutdown, skip the rename — matches original behavior where
+        /// the async rename queue was already finished by the time finalize ran.
+        retireCurrentFile(/*rename=*/false);
+    }
+
+private:
+    /// Retire the current file: detach, close, and optionally rename.
+    /// Uses the controller if available (async/tracked), otherwise inline.
+    void retireCurrentFile(bool rename = true)
+    {
         auto retired = detachCurrentFileForRetirement();
         if (retired)
         {
             if (rotation_controller)
-                rotation_controller->retireFile(std::move(*retired));
+                rotation_controller->retireFile(std::move(*retired), rename);
             else
                 retireFileNow(std::move(*retired), log);
         }
@@ -881,41 +790,6 @@ public:
         {
             cancelCurrentFile();
         }
-    }
-
-private:
-    void finalizeCurrentFile()
-    {
-        chassert(prealloc_done);
-
-        chassert(current_file_description);
-        // compact can delete the file and we don't need to do anything
-        chassert(!current_file_description->deleted);
-
-        if (compressed_buffer)
-            compressed_buffer->finalize();
-
-        flush();
-
-        if (file_buf)
-            file_buf->finalize();
-
-        const auto * file_buffer = tryGetFileBuffer();
-
-        if (log_file_settings.max_size != 0 && file_buffer)
-        {
-            int res = -1;
-            do
-            {
-                res = ftruncate(file_buffer->getFD(), initial_file_size + file_buffer->count());
-            } while (res < 0 && errno == EINTR);
-
-            if (res != 0)
-                LOG_WARNING(log, "Could not ftruncate file. Error: {}, errno: {}", errnoToString(), errno);
-        }
-
-        compressed_buffer.reset();
-        file_buf.reset();
     }
 
     void cancelCurrentFile()
@@ -2368,8 +2242,6 @@ Changelog::Changelog(
         if (existing_changelogs.empty())
             LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", disk->getPath());
 
-        background_changelog_operations_thread = std::make_unique<ThreadFromGlobalPool>([this] { backgroundChangelogOperationsThread(); });
-
         write_thread = std::make_unique<ThreadFromGlobalPool>([this] { writeThread(); });
 
         append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
@@ -3160,12 +3032,6 @@ void Changelog::shutdown()
         current_writer.reset();
     }
 
-    if (!changelog_operation_queue.isFinished())
-        changelog_operation_queue.finish();
-
-    if (background_changelog_operations_thread->joinable())
-        background_changelog_operations_thread->join();
-
     /// Wait for all async file operations to complete.
     keeper_context->getFileOperationsExecutor().wait();
 
@@ -3197,62 +3063,6 @@ Changelog::~Changelog()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
-void Changelog::backgroundChangelogOperationsThread()
-{
-    ChangelogFileOperationPtr changelog_operation;
-    while (changelog_operation_queue.pop(changelog_operation))
-    {
-        if (std::holds_alternative<RemoveChangelog>(changelog_operation->operation))
-        {
-            chassert(changelog_operation->changelog);
-            const auto & changelog = *changelog_operation->changelog;
-            try
-            {
-                changelog.disk->removeFile(changelog.path);
-                LOG_INFO(log, "Removed changelog {} because of compaction.", changelog.path);
-            }
-            catch (Exception & e)
-            {
-                LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log);
-            }
-        }
-        else if (auto * move_operation = std::get_if<MoveChangelog>(&changelog_operation->operation))
-        {
-            const auto & changelog = changelog_operation->changelog;
-
-            if (move_operation->new_disk == changelog->disk)
-            {
-                if (move_operation->new_path != changelog->path)
-                {
-                    try
-                    {
-                        changelog->disk->moveFile(changelog->path, move_operation->new_path);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException(log, fmt::format("File rename failed on disk {}", changelog->disk->getName()));
-                    }
-                    changelog->path = std::move(move_operation->new_path);
-                }
-            }
-            else
-            {
-                moveChangelogBetweenDisks(changelog->disk, changelog, move_operation->new_disk, move_operation->new_path, keeper_context);
-            }
-        }
-        else
-        {
-            LOG_ERROR(log, "Unsupported operation detected for changelog {}", changelog_operation->changelog->path);
-            chassert(false);
-        }
-        changelog_operation->done = true;
     }
 }
 

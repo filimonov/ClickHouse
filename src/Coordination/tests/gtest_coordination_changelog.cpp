@@ -1082,8 +1082,6 @@ TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
 
         waitDurableLogs(changelog);
     }
-
-
     EXPECT_TRUE(fs::exists("./logs/changelog_1_100.bin" + this->extension));
 
     DB::KeeperLogStore changelog_1(

@@ -68,8 +68,6 @@ struct ChangelogRecord
     nuraft::ptr<nuraft::buffer> blob;
 };
 
-struct ChangelogFileOperation;
-using ChangelogFileOperationPtr = std::shared_ptr<ChangelogFileOperation>;
 
 /// changelog_fromindex_toindex.bin
 /// [fromindex, toindex] <- inclusive
@@ -89,7 +87,7 @@ struct ChangelogFileDescription
 
     bool deleted = false;
 
-    std::deque<std::weak_ptr<ChangelogFileOperation>> file_operations;
+    std::deque<std::shared_future<void>> file_operations;
 
     /// How many entries should be stored in this log
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
@@ -439,8 +437,6 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(ChangelogFileDescriptionPtr description);
 
-    /// Thread for operations on changelog file, e.g. removing the file
-    void backgroundChangelogOperationsThread();
 
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
@@ -455,8 +451,6 @@ private:
 
     uint64_t max_log_id = 0;
 
-    ConcurrentBoundedQueue<ChangelogFileOperationPtr> changelog_operation_queue{std::numeric_limits<size_t>::max()};
-    std::unique_ptr<ThreadFromGlobalPool> background_changelog_operations_thread;
 
     struct AppendLog
     {
