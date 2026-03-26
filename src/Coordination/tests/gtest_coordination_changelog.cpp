@@ -83,7 +83,12 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestFile)
 
     EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + this->extension));
     for (const auto & p : fs::directory_iterator("./logs"))
+    {
+        /// Skip pre-created spare files (tmp_changelog_spare_*).
+        if (p.path().filename().string().starts_with("tmp_"))
+            continue;
         EXPECT_EQ(p.path(), "./logs/changelog_1_5.bin" + this->extension);
+    }
 
     changelog.append(entry);
     changelog.append(entry);
@@ -228,8 +233,9 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestAppendAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
 
     size_t logs_count = 0;
-    for (const auto & _ [[maybe_unused]] : fs::directory_iterator("./logs"))
-        logs_count++;
+    for (const auto & p : fs::directory_iterator("./logs"))
+        if (!p.path().filename().string().starts_with("tmp_"))
+            logs_count++;
 
     EXPECT_EQ(logs_count, 2);
 
@@ -245,8 +251,9 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestAppendAfterRead)
     EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + this->extension));
 
     logs_count = 0;
-    for (const auto & _ [[maybe_unused]] : fs::directory_iterator("./logs"))
-        logs_count++;
+    for (const auto & p : fs::directory_iterator("./logs"))
+        if (!p.path().filename().string().starts_with("tmp_"))
+            logs_count++;
 
     EXPECT_EQ(logs_count, 3);
 }

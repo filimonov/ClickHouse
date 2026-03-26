@@ -2,6 +2,7 @@
 #include <exception>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <ranges>
 #include <variant>
 #include <Coordination/Changelog.h>
@@ -24,6 +25,8 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
+#include <Coordination/KeeperFileOperationsExecutor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
@@ -43,6 +46,7 @@ namespace ProfileEvents
 
 namespace DB
 {
+
 
 namespace ErrorCodes
 {
@@ -214,13 +218,19 @@ void retireFileNow(RetiredLogFile && file, LoggerPtr log)
 {
     LOG_TRACE(log, "Retiring changelog file {}", file.description ? file.description->path : "unknown");
 
+    /// The caller (detachCurrentFileForRetirement) has already called finalize()
+    /// on the buffers to ensure durability. Here we just destroy them (triggering close).
+    /// We must NOT call finalize() again — it asserts in debug builds.
+    /// The reset() calls the destructor which handles close safely.
     if (file.compressed_buffer)
-        file.compressed_buffer->finalize();
+    {
+        /// compressed_buffer owns the underlying file_buf. Its destructor handles everything.
+        file.compressed_buffer.reset();
+    }
     else if (file.file_buf)
-        file.file_buf->finalize();
-
-    file.compressed_buffer.reset();
-    file.file_buf.reset();
+    {
+        file.file_buf.reset();
+    }
 }
 
 /// ---- Changelog file operation types (for the existing queue dispatch) ----
@@ -255,6 +265,324 @@ std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint
     return fmt::format("{}_{}_{}.{}", name_prefix, from_index, to_index, extension);
 }
 
+/// ---- ChangelogRotationController ----
+///
+/// Manages the lifecycle of changelog files during rotation:
+///   1. acquireNextFile(desc) → prepares or consumes a spare file
+///   2. retireFile(retired)   → defers close/finalize to cleanup pool
+///   3. removeFile(desc)      → defers unlink to cleanup pool (for compaction)
+///   4. warmupNextSpare()     → best-effort pre-creation of next spare
+///
+/// When async_file_operations=false, the executor runs everything inline.
+/// In AsyncPreferred mode, operations are dispatched to background pools
+/// with automatic sync fallback on queue-full or timeout.
+
+class ChangelogRotationController
+{
+public:
+    ChangelogRotationController(
+        KeeperContextPtr keeper_context_,
+        LogFileSettings settings_,
+        LoggerPtr log_)
+        : keeper_context(std::move(keeper_context_))
+        , settings(settings_)
+        , log(std::move(log_))
+    {
+    }
+
+    ~ChangelogRotationController()
+    {
+        shutdown();
+    }
+
+    /// Always returns a writable file. In AsyncPreferred mode, tries a pre-created
+    /// spare first. Falls back to synchronous prepareTargetFileNow on timeout/failure/SyncOnly.
+    /// Always returns a writable file. Tries a pre-created spare first;
+    /// falls back to synchronous prepareTargetFileNow if none is ready.
+    /// The executor handles async/sync dispatch internally.
+    PreparedLogFile acquireNextFile(const ChangelogFileDescriptionPtr & target)
+    {
+        auto spare = tryConsumeSpare(target);
+        if (spare.file_buf || spare.compressed_buffer)
+            return spare;
+
+        LOG_TRACE(log, "Preparing changelog file synchronously: {}", target->path);
+        return prepareTargetFileNow(target, settings, keeper_context->getLatestLogDisk(), log);
+    }
+
+    /// Retire the old file. The executor handles async/sync dispatch internally.
+    /// Registers with file_operations so waitAllAsyncOperations blocks correctly.
+    void retireFile(RetiredLogFile && file)
+    {
+        auto & executor = keeper_context->getFileOperationsExecutor();
+
+        /// Build a tracked operation for file_operations registration.
+        /// Even in sync mode, we create the operation so waitAllAsyncOperations
+        /// has something to observe (it completes immediately).
+        auto op = std::make_shared<ChangelogFileOperation>(
+            file.description, MoveChangelog{.new_path = file.final_path, .new_disk = file.archive_disk});
+
+        /// Register BEFORE dispatching work so waitAllAsyncOperations can see it.
+        if (file.description)
+            file.description->file_operations.push_back(op);
+
+        /// Move buffers into shared_ptr for the copyable lambda.
+        auto retired = std::make_shared<RetiredLogFile>(std::move(file));
+
+        executor.runCleanupTask("retire old changelog", [retired, op, log_ = log]
+        {
+            retireFileNow(std::move(*retired), log_);
+            op->done = true;
+            op->done.notify_all();
+        });
+    }
+
+    /// Move/rename a rotated file (same-disk rename or cross-disk archive).
+    void moveFile(ChangelogFileDescriptionPtr desc, std::string new_path, DiskPtr target_disk)
+    {
+        auto op = std::make_shared<ChangelogFileOperation>(desc, MoveChangelog{.new_path = new_path, .new_disk = target_disk});
+        if (desc)
+            desc->file_operations.push_back(op);
+
+        auto & executor = keeper_context->getFileOperationsExecutor();
+        executor.runCleanupTask("move changelog", [op, keeper_ctx = keeper_context, log_ = log]
+        {
+            try
+            {
+                const auto & changelog = op->changelog;
+                auto * move_op = std::get_if<MoveChangelog>(&op->operation);
+                chassert(move_op);
+
+                if (move_op->new_disk == changelog->disk)
+                {
+                    if (move_op->new_path != changelog->path)
+                    {
+                        changelog->disk->moveFile(changelog->path, move_op->new_path);
+                        changelog->path = std::move(move_op->new_path);
+                    }
+                }
+                else
+                {
+                    moveChangelogBetweenDisks(changelog->disk, changelog, move_op->new_disk, move_op->new_path, keeper_ctx);
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log_, "Failed to move changelog");
+            }
+            op->done = true;
+            op->done.notify_all();
+        });
+    }
+
+    /// Remove a compacted file.
+    void removeFile(ChangelogFileDescriptionPtr desc)
+    {
+        auto op = std::make_shared<ChangelogFileOperation>(desc, RemoveChangelog{});
+        if (desc)
+            desc->file_operations.push_back(op);
+
+        auto & executor = keeper_context->getFileOperationsExecutor();
+        executor.runCleanupTask("remove compacted changelog", [op, log_ = log]
+        {
+            try
+            {
+                chassert(op->changelog);
+                op->changelog->disk->removeFile(op->changelog->path);
+                LOG_INFO(log_, "Removed changelog {} because of compaction.", op->changelog->path);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log_, "Failed to remove compacted changelog");
+            }
+            op->done = true;
+            op->done.notify_all();
+        });
+    }
+
+    /// Best-effort: pre-create next spare file. No-op in SyncOnly mode.
+    /// Best-effort: pre-create next spare file. The executor decides
+    /// whether to run async or inline based on its enabled flag.
+    void warmupNextSpare()
+    {
+        std::lock_guard lock(spare_mutex);
+        if (spare_future.valid())
+            return; /// Already in progress or ready.
+
+        /// Build a dummy-named spare file description.
+        auto spare_desc = std::make_shared<ChangelogFileDescription>();
+        spare_desc->prefix = DEFAULT_PREFIX;
+        spare_desc->from_log_index = 0;
+        spare_desc->to_log_index = 0;
+        spare_desc->extension = "bin";
+        spare_desc->disk = keeper_context->getLatestLogDisk();
+
+        if (settings.compress_logs)
+        {
+            spare_desc->extension += '.';
+            spare_desc->extension += toContentEncodingName(CompressionMethod::Zstd);
+        }
+
+        spare_desc->path = fmt::format("tmp_changelog_spare_{}.{}", spare_counter.fetch_add(1), spare_desc->extension);
+
+        auto promise = std::make_shared<std::promise<std::shared_ptr<PreparedLogFile>>>();
+        spare_future = promise->get_future();
+
+        LOG_TRACE(log, "Requesting pre-creation of spare changelog file");
+
+        auto & executor = keeper_context->getFileOperationsExecutor();
+        executor.runPrepareTask("pre-create changelog spare", [
+            desc = std::move(spare_desc), s = settings, promise, keeper_ctx = keeper_context, log_ = log]
+        {
+            try
+            {
+                auto result = std::make_shared<PreparedLogFile>(
+                    openAndPreallocateFile(desc, s, keeper_ctx->getLatestLogDisk(), /*create_compressed_buffer=*/false, log_));
+                LOG_TRACE(log_, "Pre-created spare changelog file is ready");
+                promise->set_value(std::move(result));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log_, "Failed to pre-create changelog file");
+                try { keeper_ctx->getLatestLogDisk()->removeFileIfExists(desc->path); }
+                catch (...) { tryLogCurrentException(log_, "Failed to remove spare file after pre-creation failure"); }
+                promise->set_value(nullptr);
+            }
+        });
+    }
+
+    void shutdown()
+    {
+        /// Clean up unused spare file.
+        std::lock_guard lock(spare_mutex);
+        if (spare_future.valid())
+        {
+            try
+            {
+                auto result = spare_future.get();
+                if (result)
+                {
+                    if (result->file_buf)
+                        result->file_buf->cancel();
+                    if (result->compressed_buffer)
+                        result->compressed_buffer->cancel();
+                    keeper_context->getLatestLogDisk()->removeFileIfExists(result->description->path);
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to clean up pre-created file during shutdown");
+            }
+        }
+    }
+
+private:
+    /// Try to consume a pre-created spare file. Returns an empty PreparedLogFile on failure.
+    PreparedLogFile tryConsumeSpare(const ChangelogFileDescriptionPtr & target)
+    {
+        std::future<std::shared_ptr<PreparedLogFile>> future;
+        {
+            std::lock_guard lock(spare_mutex);
+            if (!spare_future.valid())
+                return {};
+            future = std::move(spare_future);
+        }
+
+        /// Wait with a timeout to prevent unbounded blocking of the write thread.
+        if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready)
+        {
+            LOG_ERROR(log, "Timed out waiting for pre-created changelog file, falling back to synchronous");
+            /// Schedule cleanup for the abandoned spare.
+            cleanupAbandonedSpare(std::move(future));
+            return {};
+        }
+
+        std::shared_ptr<PreparedLogFile> result;
+        try
+        {
+            result = future.get();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Pre-creation of changelog file failed");
+            return {};
+        }
+
+        if (!result)
+            return {};
+
+        /// Rename the spare from its dummy name to the target path.
+        auto spare_path = result->description->path;
+        auto disk = keeper_context->getLatestLogDisk();
+        try
+        {
+            disk->moveFile(spare_path, target->path);
+        }
+        catch (...)
+        {
+            /// Expected on object-storage disks. Sync fallback is fine there.
+            LOG_WARNING(log, "Failed to rename spare file, falling back to synchronous rotation");
+            if (result->file_buf)
+                result->file_buf->cancel();
+            try { disk->removeFileIfExists(spare_path); }
+            catch (...) { tryLogCurrentException(log, "Failed to remove orphaned spare file"); }
+            return {};
+        }
+
+        /// Update description to match the target.
+        result->description = target;
+
+        /// Create compressed buffer now that the file has its final path.
+        if (settings.compress_logs && result->file_buf)
+        {
+            result->compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(
+                std::move(result->file_buf),
+                /* compression level = */ 3,
+                /* append_to_existing_file_ = */ false,
+                [disk, path = target->path, read_settings = getReadSettings()]
+                { return disk->readFile(path, read_settings); });
+        }
+
+        LOG_TRACE(log, "Consumed spare file, renamed {} -> {}", spare_path, target->path);
+        return std::move(*result);
+    }
+
+    /// Schedule cleanup for a timed-out spare future.
+    void cleanupAbandonedSpare(std::future<std::shared_ptr<PreparedLogFile>> future)
+    {
+        auto abandoned = std::make_shared<std::future<std::shared_ptr<PreparedLogFile>>>(std::move(future));
+        auto & executor = keeper_context->getFileOperationsExecutor();
+        executor.runCleanupTask("clean up timed-out spare", [abandoned, disk = keeper_context->getLatestLogDisk(), log_ = log]
+        {
+            try
+            {
+                auto result = abandoned->get();
+                if (result)
+                {
+                    if (result->compressed_buffer)
+                        result->compressed_buffer->cancel();
+                    if (result->file_buf)
+                        result->file_buf->cancel();
+                    disk->removeFileIfExists(result->description->path);
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log_, "Failed to clean up timed-out spare file");
+            }
+        });
+    }
+
+    KeeperContextPtr keeper_context;
+    LogFileSettings settings;
+    LoggerPtr log;
+
+    /// Spare slot
+    std::mutex spare_mutex;
+    std::future<std::shared_ptr<PreparedLogFile>> spare_future;
+    std::atomic<uint64_t> spare_counter{0};
+};
+
 /// Appendable log writer
 /// New file on disk will be created when:
 /// - we have already "rotation_interval" amount of logs in a single file
@@ -262,20 +590,19 @@ std::string Changelog::formatChangelogPath(const std::string & name_prefix, uint
 /// At least 1 log record should be contained in each log
 class ChangelogWriter
 {
-    using MoveChangelogCallback = std::function<void(ChangelogFileDescriptionPtr, std::string, DiskPtr)>;
 public:
     ChangelogWriter(
         std::map<uint64_t, ChangelogFileDescriptionPtr> & existing_changelogs_,
         LogEntryStorage & entry_storage_,
         KeeperContextPtr keeper_context_,
         LogFileSettings log_file_settings_,
-        MoveChangelogCallback move_changelog_cb_)
+        ChangelogRotationController * rotation_controller_)
         : existing_changelogs(existing_changelogs_)
         , entry_storage(entry_storage_)
         , log_file_settings(log_file_settings_)
         , keeper_context(std::move(keeper_context_))
         , log(getLogger("Changelog"))
-        , move_changelog_cb(std::move(move_changelog_cb_))
+        , rotation_controller(rotation_controller_)
     {
     }
 
@@ -292,37 +619,20 @@ public:
                     log_file_settings.rotate_interval,
                     file_description->expectedEntriesCountInLog());
 
-            // we have a file we need to finalize first
-            if (tryGetFileBaseBuffer() && prealloc_done)
+            /// Finalize the old file if one is open.
+            auto retired = detachCurrentFileForRetirement();
+            if (retired)
             {
-                chassert(current_file_description);
-                // if we wrote at least 1 log in the log file we can rename the file to reflect correctly the
-                // contained logs
-                // file can be deleted from disk earlier by compaction
-                if (current_file_description->deleted)
+                if (rotation_controller)
                 {
-                    LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
-                    prealloc_done = false;
-                    cancelCurrentFile();
+                    auto final_path = retired->final_path;
+                    auto archive_disk = retired->archive_disk;
+                    rotation_controller->retireFile(std::move(*retired));
+                    rotation_controller->moveFile(current_file_description, std::move(final_path), std::move(archive_disk));
                 }
                 else
                 {
-                    finalizeCurrentFile();
-
-                    auto log_disk = current_file_description->disk;
-                    const auto & path = current_file_description->path;
-                    std::string new_path = path;
-                    if (last_index_written && *last_index_written != current_file_description->to_log_index)
-                    {
-                        new_path = Changelog::formatChangelogPath(
-                            current_file_description->prefix,
-                            current_file_description->from_log_index,
-                            *last_index_written,
-                            current_file_description->extension);
-                    }
-
-                    if (move_changelog_cb)
-                        move_changelog_cb(current_file_description, std::move(new_path), disk);
+                    retireFileNow(std::move(*retired), log);
                 }
             }
             else
@@ -480,69 +790,26 @@ public:
         LOG_TRACE(log, "Starting new changelog {}", new_description->path);
         auto [it, inserted] = existing_changelogs.insert(std::make_pair(new_start_log_index, std::move(new_description)));
 
-        /// Prepare the new file.
-        auto next = prepareTargetFileNow(it->second, log_file_settings, getLatestLogDisk(), log);
+        /// Acquire the next file (spare or sync fallback).
+        auto next = rotation_controller
+            ? rotation_controller->acquireNextFile(it->second)
+            : prepareTargetFileNow(it->second, log_file_settings, getLatestLogDisk(), log);
 
         /// Retire the old file.
-        if (tryGetFileBaseBuffer() && prealloc_done)
+        auto retired = detachCurrentFileForRetirement();
+        if (retired)
         {
-            chassert(current_file_description);
-            if (current_file_description->deleted)
+            if (rotation_controller)
             {
-                LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
-                prealloc_done = false;
-                cancelCurrentFile();
+                auto final_path = retired->final_path;
+                auto archive_disk = retired->archive_disk;
+                rotation_controller->retireFile(std::move(*retired));
+                rotation_controller->moveFile(current_file_description, std::move(final_path), std::move(archive_disk));
             }
             else
             {
-                /// Build RetiredLogFile from current state.
-                RetiredLogFile retired;
-                retired.description = current_file_description;
-                retired.final_path = current_file_description->path;
-                if (last_index_written && *last_index_written != current_file_description->to_log_index)
-                {
-                    retired.final_path = Changelog::formatChangelogPath(
-                        current_file_description->prefix,
-                        current_file_description->from_log_index,
-                        *last_index_written,
-                        current_file_description->extension);
-                }
-                retired.archive_disk = getDisk();
-
-                /// Sync data before detaching buffers.
-                if (compressed_buffer)
-                    compressed_buffer->finalize();
-                flush();
-                if (file_buf)
-                    file_buf->finalize();
-
-                retired.file_buf = std::move(file_buf);
-                retired.compressed_buffer = std::move(compressed_buffer);
-                retired.initial_file_size = initial_file_size;
-
-                /// Retire: close FD (sync for now, controller will make it async later).
-                retireFileNow(std::move(retired), log);
-
-                /// Rename the old file if needed.
-                /// TODO: this will be handled by the controller in a later commit.
-                if (move_changelog_cb)
-                {
-                    std::string rename_path = current_file_description->path;
-                    if (last_index_written && *last_index_written != current_file_description->to_log_index)
-                    {
-                        rename_path = Changelog::formatChangelogPath(
-                            current_file_description->prefix,
-                            current_file_description->from_log_index,
-                            *last_index_written,
-                            current_file_description->extension);
-                    }
-                    move_changelog_cb(current_file_description, std::move(rename_path), getDisk());
-                }
+                retireFileNow(std::move(*retired), log);
             }
-        }
-        else
-        {
-            cancelCurrentFile();
         }
 
         /// Attach the new file.
@@ -552,14 +819,68 @@ public:
         prealloc_done = next.prealloc_done;
         last_index_written.reset();
         current_file_description = it->second;
+
+        if (rotation_controller)
+            rotation_controller->warmupNextSpare();
+    }
+
+    /// Build a RetiredLogFile from current state, syncing data before detaching buffers.
+    /// Returns nullopt if there's no active file or the file was deleted.
+    std::optional<RetiredLogFile> detachCurrentFileForRetirement()
+    {
+        if (!tryGetFileBaseBuffer() || !prealloc_done)
+            return std::nullopt;
+
+        chassert(current_file_description);
+        if (current_file_description->deleted)
+        {
+            LOG_WARNING(log, "Log {} is already deleted", current_file_description->path);
+            prealloc_done = false;
+            cancelCurrentFile();
+            return std::nullopt;
+        }
+
+        RetiredLogFile retired;
+        retired.description = current_file_description;
+        retired.final_path = current_file_description->path;
+        if (last_index_written && *last_index_written != current_file_description->to_log_index)
+        {
+            retired.final_path = Changelog::formatChangelogPath(
+                current_file_description->prefix,
+                current_file_description->from_log_index,
+                *last_index_written,
+                current_file_description->extension);
+        }
+        retired.archive_disk = getDisk();
+
+        /// Sync all data to disk before detaching buffers.
+        if (compressed_buffer)
+            compressed_buffer->finalize();
+        flush();
+        if (file_buf)
+            file_buf->finalize();
+
+        retired.file_buf = std::move(file_buf);
+        retired.compressed_buffer = std::move(compressed_buffer);
+        retired.initial_file_size = initial_file_size;
+
+        return retired;
     }
 
     void finalize()
     {
-        if (isFileSet() && prealloc_done)
-            finalizeCurrentFile();
+        auto retired = detachCurrentFileForRetirement();
+        if (retired)
+        {
+            if (rotation_controller)
+                rotation_controller->retireFile(std::move(*retired));
+            else
+                retireFileNow(std::move(*retired), log);
+        }
         else
+        {
             cancelCurrentFile();
+        }
     }
 
 private:
@@ -715,7 +1036,7 @@ private:
 
     LoggerPtr const log;
 
-    MoveChangelogCallback move_changelog_cb;
+    ChangelogRotationController * rotation_controller;
 };
 
 namespace
@@ -1915,7 +2236,7 @@ void Changelog::spliceChangelog(ChangelogFileDescriptionPtr source_changelog, Ch
     readChangelog(source_changelog, entry_storage);
 
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
-    ChangelogWriter writer(existing_changelogs, entry_storage, keeper_context, log_file_settings, /*move_changelog_cb_=*/{});
+    ChangelogWriter writer(existing_changelogs, entry_storage, keeper_context, log_file_settings, /*rotation_controller=*/nullptr);
     writer.setFile(destination_changelog, WriteMode::Rewrite);
 
     for (auto i = destination_changelog->from_log_index; i <= destination_changelog->to_log_index; ++i)
@@ -1990,6 +2311,13 @@ Changelog::Changelog(
 
                 if (file_name.starts_with(tmp_keeper_file_prefix))
                 {
+                    /// Orphaned spare files from pre-creation (e.g., crash or timeout).
+                    /// Delete directly — they have no matching complete file.
+                    if (file_name.starts_with("tmp_changelog_spare_"))
+                    {
+                        disk->removeFileIfExists(it->path());
+                        continue;
+                    }
                     incomplete_files.emplace(file_name.substr(tmp_keeper_file_prefix.size()), it->path());
                     continue;
                 }
@@ -2046,13 +2374,16 @@ Changelog::Changelog(
 
         append_completion_thread = std::make_unique<ThreadFromGlobalPool>([this] { appendCompletionThread(); });
 
+        /// Create the rotation controller.
+        rotation_controller = std::make_unique<ChangelogRotationController>(
+            keeper_context, log_file_settings, log);
+
         current_writer = std::make_unique<ChangelogWriter>(
             existing_changelogs,
             entry_storage,
             keeper_context,
             log_file_settings,
-            /*move_changelog_cb=*/[&](ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
-            { moveChangelogAsync(std::move(changelog), std::move(new_path), std::move(new_disk)); });
+            rotation_controller.get());
     }
     catch (...)
     {
@@ -2275,6 +2606,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     }
 
     initialized = true;
+
+    /// Pre-create the first spare file so it's ready for the first rotation.
+    if (rotation_controller && current_writer->isFileSet())
+        rotation_controller->warmupNextSpare();
 }
 
 void Changelog::initWriter(ChangelogFileDescriptionPtr description)
@@ -2600,7 +2935,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
-                removeChangelogAsync(itr->second);
+                rotation_controller->removeFile(itr->second);
                 itr = existing_changelogs.erase(itr);
             }
         }
@@ -2649,7 +2984,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", path);
-            removeChangelogAsync(itr->second);
+            rotation_controller->removeFile(itr->second);
             changelog_description.deleted = true;
 
             itr = existing_changelogs.erase(itr);
@@ -2804,11 +3139,6 @@ uint64_t Changelog::size() const
 void Changelog::shutdown()
 {
     LOG_DEBUG(log, "Shutting down Changelog");
-    if (!changelog_operation_queue.isFinished())
-        changelog_operation_queue.finish();
-
-    if (background_changelog_operations_thread->joinable())
-        background_changelog_operations_thread->join();
 
     if (!write_operations.isFinished())
         write_operations.finish();
@@ -2822,11 +3152,26 @@ void Changelog::shutdown()
     if (append_completion_thread->joinable())
         append_completion_thread->join();
 
+    /// Finalize the writer BEFORE finishing the operation queue so the last
+    /// finalization (which pushes to the queue) goes through the normal path.
     if (current_writer)
     {
         current_writer->finalize();
         current_writer.reset();
     }
+
+    if (!changelog_operation_queue.isFinished())
+        changelog_operation_queue.finish();
+
+    if (background_changelog_operations_thread->joinable())
+        background_changelog_operations_thread->join();
+
+    /// Wait for all async file operations to complete.
+    keeper_context->getFileOperationsExecutor().wait();
+
+    /// Clean up unused spare file.
+    if (rotation_controller)
+        rotation_controller->shutdown();
 
     entry_storage.shutdown();
 }
@@ -2909,29 +3254,6 @@ void Changelog::backgroundChangelogOperationsThread()
         }
         changelog_operation->done = true;
     }
-}
-
-void Changelog::modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation)
-{
-    if (!changelog_operation_queue.tryPush(changelog_operation, 60 * 1000))
-    {
-        throw DB::Exception(
-            ErrorCodes::SYSTEM_ERROR, "Background thread for changelog operations is stuck or not keeping up with operations");
-    }
-
-    changelog_operation->changelog->file_operations.push_back(changelog_operation);
-}
-
-void Changelog::removeChangelogAsync(ChangelogFileDescriptionPtr changelog)
-{
-    modifyChangelogAsync(std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{}));
-}
-
-void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)
-{
-    modifyChangelogAsync(
-        std::make_shared<ChangelogFileOperation>(
-            std::move(changelog), MoveChangelog{.new_path = std::move(new_path), .new_disk = std::move(new_disk)}));
 }
 
 void Changelog::setRaftServer(const nuraft::ptr<nuraft::raft_server> & raft_server_)

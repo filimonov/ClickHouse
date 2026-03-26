@@ -332,6 +332,8 @@ private:
     LoggerPtr log;
 };
 
+class ChangelogRotationController; /// Defined in Changelog.cpp
+
 /// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one.
 /// Able to read broken files/entries and discard them. Not thread safe.
@@ -440,18 +442,14 @@ private:
     /// Thread for operations on changelog file, e.g. removing the file
     void backgroundChangelogOperationsThread();
 
-    void modifyChangelogAsync(ChangelogFileOperationPtr changelog_operation);
-    void removeChangelogAsync(ChangelogFileDescriptionPtr changelog);
-    void moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk);
-
     const String changelogs_detached_dir;
     const uint64_t rotate_interval;
     const bool compress_logs;
     LoggerPtr log;
 
     std::mutex writer_mutex;
-    /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
+    std::unique_ptr<ChangelogRotationController> rotation_controller;
 
     LogEntryStorage entry_storage;
 
