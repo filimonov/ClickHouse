@@ -74,6 +74,10 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
+    DECLARE(Bool, async_file_operations, true, "Enable background thread pools for changelog file pre-creation, deferred finalization, and cleanup. Reduces write-thread latency on slow/network-attached filesystems. When disabled, all file I/O is synchronous.", 0) \
+    DECLARE(UInt64, file_cleanup_pool_size, 1, "Number of threads for deferred file cleanup (close, unlink, rename). Serialized by default to prevent concurrent operations from overloading slow filesystems.", 0) \
+    DECLARE(UInt64, file_cleanup_pool_max_queue, 32, "Maximum number of pending file cleanup tasks. When full, cleanup operations run synchronously as a fallback.", 0) \
+    DECLARE(UInt64, file_prepare_pool_size, 4, "Number of threads for pre-creating changelog files (openat, fallocate). Multiple threads allow overlapping preparation.", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)

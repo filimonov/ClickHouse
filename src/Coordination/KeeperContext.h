@@ -21,6 +21,7 @@ namespace DB
 {
 
 class KeeperDispatcher;
+class KeeperFileOperationsExecutor; /// Defined in KeeperFileOperationsExecutor.h
 
 struct CoordinationSettings;
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
@@ -33,6 +34,7 @@ class KeeperContext
 {
 public:
     KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_);
+    ~KeeperContext();
 
     enum class Phase : uint8_t
     {
@@ -112,6 +114,9 @@ public:
 
     bool shouldLogRequests() const;
     void setLogRequests(bool log_requests_);
+
+    KeeperFileOperationsExecutor & getFileOperationsExecutor();
+
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -178,6 +183,8 @@ private:
     bool block_acl = false;
 
     std::atomic<bool> log_requests = false;
+
+    std::unique_ptr<KeeperFileOperationsExecutor> file_ops_executor;
 };
 
 using KeeperContextPtr = std::shared_ptr<KeeperContext>;

@@ -401,6 +401,12 @@ extern const std::vector<Event> keeper_profile_events
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
+    M(KeeperFileCleanupPoolThreads) \
+    M(KeeperFileCleanupPoolThreadsActive) \
+    M(KeeperFileCleanupPoolThreadsScheduled) \
+    M(KeeperFilePreparationPoolThreads) \
+    M(KeeperFilePreparationPoolThreadsActive) \
+    M(KeeperFilePreparationPoolThreadsScheduled) \
 
 namespace CurrentMetrics
 {

@@ -70,6 +70,8 @@ namespace DB
     M(INTERSERVER_HANDLER, "IntersrvHandler") \
     M(IO_URING_MONITOR, "IoUringMonitr") \
     M(KEEPER_HANDLER, "KeeperHandler") \
+    M(KEEPER_FILE_CLEANUP, "KprFileClnup") \
+    M(KEEPER_FILE_PREPARE, "KprFilePrep") \
     M(KEEPER_REQUEST, "KeeperRequest") \
     M(KEEPER_RESPONSE, "KeeperResponse") \
     M(KEEPER_SNAPSHOT, "KeeperSnapshot") \

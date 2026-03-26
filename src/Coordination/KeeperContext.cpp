@@ -2,7 +2,10 @@
 #include <chrono>
 
 #include <Coordination/KeeperContext.h>
+#include <Coordination/KeeperFileOperationsExecutor.h>
 
+#include <Common/CurrentMetrics.h>
+#include <Common/setThreadName.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/Defines.h>
 #include <Disks/DiskLocal.h>
@@ -29,8 +32,26 @@
 #include <rocksdb/utilities/db_ttl.h>
 #endif
 
+namespace CurrentMetrics
+{
+    extern const Metric KeeperFileCleanupPoolThreads;
+    extern const Metric KeeperFileCleanupPoolThreadsActive;
+    extern const Metric KeeperFileCleanupPoolThreadsScheduled;
+    extern const Metric KeeperFilePreparationPoolThreads;
+    extern const Metric KeeperFilePreparationPoolThreadsActive;
+    extern const Metric KeeperFilePreparationPoolThreadsScheduled;
+}
+
 namespace DB
 {
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsBool async_file_operations;
+    extern const CoordinationSettingsUInt64 file_cleanup_pool_size;
+    extern const CoordinationSettingsUInt64 file_cleanup_pool_max_queue;
+    extern const CoordinationSettingsUInt64 file_prepare_pool_size;
+}
 
 namespace ErrorCodes
 {
@@ -40,6 +61,110 @@ extern const int LOGICAL_ERROR;
 extern const int ROCKSDB_ERROR;
 
 }
+
+/// ---- KeeperFileOperationsExecutor ----
+
+KeeperFileOperationsExecutor::KeeperFileOperationsExecutor(
+    bool enabled_,
+    LoggerPtr log_,
+    size_t cleanup_threads,
+    size_t cleanup_max_queue,
+    size_t prepare_threads)
+    : enabled(enabled_)
+    , log(std::move(log_))
+    , cleanup_pool(
+        CurrentMetrics::KeeperFileCleanupPoolThreads,
+        CurrentMetrics::KeeperFileCleanupPoolThreadsActive,
+        CurrentMetrics::KeeperFileCleanupPoolThreadsScheduled,
+        std::max(size_t{1}, cleanup_threads),
+        size_t{0},
+        std::max(size_t{1}, cleanup_max_queue))
+    , prepare_pool(
+        CurrentMetrics::KeeperFilePreparationPoolThreads,
+        CurrentMetrics::KeeperFilePreparationPoolThreadsActive,
+        CurrentMetrics::KeeperFilePreparationPoolThreadsScheduled,
+        std::max(size_t{1}, prepare_threads))
+{
+}
+
+KeeperFileOperationsExecutor::~KeeperFileOperationsExecutor()
+{
+    shutdown();
+}
+
+void KeeperFileOperationsExecutor::runCleanupTask(std::string_view what, std::function<void()> task)
+{
+    if (!enabled || shutting_down.load(std::memory_order_relaxed))
+    {
+        task();
+        return;
+    }
+
+    try
+    {
+        cleanup_pool.scheduleOrThrowOnError([fn = std::move(task), desc = std::string(what), log_ = log]
+        {
+            setThreadName(ThreadName::KEEPER_FILE_CLEANUP);
+            try
+            {
+                fn();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log_, fmt::format("Failed to {}", desc));
+            }
+        });
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, "Cleanup pool full, running '{}' synchronously", what);
+        task();
+    }
+}
+
+void KeeperFileOperationsExecutor::runPrepareTask(std::string_view what, std::function<void()> task)
+{
+    if (!enabled || shutting_down.load(std::memory_order_relaxed))
+    {
+        task();
+        return;
+    }
+
+    try
+    {
+        prepare_pool.scheduleOrThrowOnError([fn = std::move(task), desc = std::string(what), log_ = log]
+        {
+            setThreadName(ThreadName::KEEPER_FILE_PREPARE);
+            try
+            {
+                fn();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log_, fmt::format("Failed to {}", desc));
+            }
+        });
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, "Prepare pool full, running '{}' synchronously", what);
+        task();
+    }
+}
+
+void KeeperFileOperationsExecutor::wait()
+{
+    cleanup_pool.wait();
+    prepare_pool.wait();
+}
+
+void KeeperFileOperationsExecutor::shutdown()
+{
+    shutting_down = true;
+    wait();
+}
+
+/// ---- KeeperContext ----
 
 KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr coordination_settings_)
     : disk_selector(std::make_shared<DiskSelector>())
@@ -68,6 +193,19 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
 
     /// for older clients, the default is equivalent to WITH_MULTI_READ version
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
+
+    /// Initialize file operations executor
+    bool async_enabled = coordination_settings
+        && (*coordination_settings)[CoordinationSetting::async_file_operations];
+    size_t cleanup_threads = coordination_settings
+        ? static_cast<size_t>((*coordination_settings)[CoordinationSetting::file_cleanup_pool_size]) : 1;
+    size_t cleanup_queue = coordination_settings
+        ? static_cast<size_t>((*coordination_settings)[CoordinationSetting::file_cleanup_pool_max_queue]) : 32;
+    size_t prepare_threads = coordination_settings
+        ? static_cast<size_t>((*coordination_settings)[CoordinationSetting::file_prepare_pool_size]) : 4;
+
+    file_ops_executor = std::make_unique<KeeperFileOperationsExecutor>(
+        async_enabled, getLogger("KeeperFileOps"), cleanup_threads, cleanup_queue, prepare_threads);
 }
 
 #if USE_ROCKSDB
@@ -737,5 +875,13 @@ void KeeperContext::setLogRequests(bool log_requests_)
 {
     log_requests.store(log_requests_, std::memory_order_relaxed);
 }
+
+KeeperFileOperationsExecutor & KeeperContext::getFileOperationsExecutor()
+{
+    chassert(file_ops_executor);
+    return *file_ops_executor;
+}
+
+KeeperContext::~KeeperContext() = default;
 
 }
