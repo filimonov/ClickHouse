@@ -5,10 +5,12 @@
 #if USE_NURAFT
 
 #include <Common/CacheLine.h>
+#include <Common/logger_useful.h>
 #include <Common/NonblockingBoundedQueue.h>
-#include <Coordination/KeeperAppendStream.h>
 #include <Coordination/KeeperServer.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+
+#include <libnuraft/client_req_stream.hxx>
 
 extern template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
 extern template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
@@ -31,7 +33,7 @@ namespace DB
 ///  * Ordering. Requests from one client session must be executed in the order they arrived.
 ///    To preserve order even when multiple requests are executed concurrently, we rely on nuraft
 ///    leader not reordering requests, on tcp not reordering messages, and on all the plumbing in
-///    between also preserving order. See KeeperAppendStream.
+///    between also preserving order. See nuraft::client_req_stream.
 ///    If leader changes or we lose connection to it, we fail all in-flight requests (their outcome
 ///    is unknown) and open a new stream.
 ///  * Executing reads locally. Read requests don't need to go through raft, and don't even have to
@@ -284,10 +286,23 @@ private:
     /// head_idx is incremented after the slot is fully vacated.
     std::vector<InFlightBatch> in_flight_batches;
 
-    std::shared_ptr<KeeperAppendStream> stream;
+    /// Dispatch-thread gate on concurrent batches in flight. Equals
+    /// `in_flight_batches.size()` in streaming mode, clamped to 1 when
+    /// `nuraft_streaming_mode` is off (the stream does not serialize
+    /// non-pipelining transports internally).
+    size_t effective_max_in_flight_batches = 0;
+
+    /// Forwarding stream to the leader. Opened lazily; breakage detected
+    /// via `stream->is_abandoned()`.
+    nuraft::ptr<nuraft::client_req_stream> stream;
 
     /// True if no requests sent through the current `stream` succeeded yet.
     std::atomic<bool> current_stream_is_suspect {};
+
+    /// Drop the stream, wait (bounded by operation_timeout_ms) for the
+    /// leader to come back and for in-flight batches to drain via
+    /// natural commits, then force-fail whatever didn't drain.
+    void gracefulStreamShutdown();
 
     NonblockingBoundedQueue<KeeperRequestForSession> requests_queue;
     std::atomic<int64_t> requests_queue_bytes {};
