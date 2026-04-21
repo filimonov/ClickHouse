@@ -2,6 +2,7 @@
 #include <Interpreters/CustomVariablesClusterCoordinator.h>
 
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <base/getFQDNOrHostName.h>
@@ -51,6 +52,11 @@ void randomizeState(CustomVariablesManager::RefreshState & state)
 bool isLocalPersistentScope(CustomVariableName::Scope scope)
 {
     return scope == CustomVariableName::Scope::LocalPersistent;
+}
+
+bool isClusterScope(CustomVariableName::Scope scope)
+{
+    return scope == CustomVariableName::Scope::Cluster;
 }
 
 bool isValueStale(const RefreshSchedule & schedule, std::chrono::system_clock::time_point last_success, std::chrono::system_clock::time_point now)
@@ -342,12 +348,18 @@ void CustomVariablesManager::stopRefreshTask(const EntryPtr & entry)
     if (!entry || !entry->refresh)
         return;
 
-    std::lock_guard lock(entry->refresh->mutex);
-    entry->refresh->stop_requested = true;
+    /// Mark stop + clear pending request under the mutex, but call deactivate()
+    /// outside it: deactivate() blocks until the running refreshTask returns, and
+    /// refreshTask itself needs to re-acquire this very mutex near the end. Holding
+    /// the mutex across deactivate() deadlocks those two threads.
+    {
+        std::lock_guard lock(entry->refresh->mutex);
+        entry->refresh->stop_requested = true;
+        entry->refresh->out_of_schedule_refresh_requested = false;
+    }
+
     if (entry->refresh->task)
         entry->refresh->task->deactivate();
-
-    entry->refresh->out_of_schedule_refresh_requested = false;
 }
 
 void CustomVariablesManager::requestRefresh(const EntryPtr & entry, bool throw_if_not_refreshable)
@@ -407,6 +419,28 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
     entry->refresh->state = std::move(planned_state);
     auto start_time = std::chrono::system_clock::now();
     lock.unlock();
+
+    /// For cluster variables, only one replica should actually refresh per tick.
+    /// If the ephemeral lock is held by somebody else, skip this tick — the ZK
+    /// watch will still deliver the winner's write into our RAM cache.
+    std::unique_ptr<zkutil::ZooKeeperLock> cluster_lock;
+    if (isClusterScope(entry->definition.key.scope))
+    {
+        auto cluster_storage = context->getCustomVariablesClusterStorage();
+        if (!cluster_storage)
+        {
+            entry->refresh->task->scheduleAfter(1000);
+            return;
+        }
+        cluster_lock = cluster_storage->tryLockForRefresh(entry->definition.key.name, getFQDNOrHostName());
+        if (!cluster_lock)
+        {
+            /// Someone else is refreshing. Reschedule at the normal next timeslot.
+            entry->refresh->task->scheduleAfter(std::max<Int64>(
+                0, std::chrono::duration_cast<std::chrono::milliseconds>(when - std::chrono::system_clock::now()).count()));
+            return;
+        }
+    }
 
     bool refreshed = false;
     String error_message;
@@ -509,7 +543,11 @@ void CustomVariablesManager::pokeClusterCoordinator(const String & name)
 
 void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, const EntryPtr & entry) const
 {
-    if (!context || !entry || !isLocalPersistentScope(entry->definition.key.scope))
+    if (!context || !entry)
+        return;
+
+    const auto scope = entry->definition.key.scope;
+    if (!isLocalPersistentScope(scope) && !isClusterScope(scope))
         return;
 
     const auto value = entry->value.load();
@@ -529,7 +567,16 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
 
     try
     {
-        context->getCustomVariablesValuesStorage().storeValue(entry->definition.key.name, snapshot, context->getSettingsRef());
+        if (isClusterScope(scope))
+        {
+            auto cluster_storage = context->getCustomVariablesClusterStorage();
+            if (cluster_storage)
+                cluster_storage->storeValue(entry->definition.key.name, snapshot);
+        }
+        else
+        {
+            context->getCustomVariablesValuesStorage().storeValue(entry->definition.key.name, snapshot, context->getSettingsRef());
+        }
     }
     catch (...)
     {

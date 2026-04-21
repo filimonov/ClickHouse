@@ -61,12 +61,20 @@ Passing:
 - `03553_custom_variables_local_persistent` (reload + DROP cleanup)
 - `03554_custom_variables_or_default`
 
-## Not done / follow-ups
+### Phase 4 — cluster scope (CREATE CLUSTER VARIABLE)
+- New DDL surface: `CREATE [OR REPLACE] CLUSTER VARIABLE [IF NOT EXISTS] <name> [REFRESH ...] AS <expr>`
+  and `DROP CLUSTER VARIABLE [IF EXISTS] <name>`. Single-identifier names; no `ON CLUSTER`.
+- Definitions + values live in ZooKeeper under `<custom_variables_zookeeper_path>/{definitions,values}/<name>`;
+  refresh uses an ephemeral lock at `values/<name>/lock`.
+- Every node runs a single `CustomVariablesClusterCoordinator` thread that watches the root path,
+  picks up new/renamed/removed entries, and swaps in fresh values on ZK data events.
+- Refreshable cluster variables schedule ticks on every node; only the node holding the ephemeral
+  lock actually evaluates and writes to ZK; others skip the tick and pick up the winner's write via watch.
+- Integration test suite `tests/integration/test_custom_variables_cluster/` covers cross-node
+  discovery, DROP propagation, restart reload, OR REPLACE propagation, system.custom_variables,
+  REFRESH cadence, single-leader-per-tick, SYSTEM REFRESH VARIABLE, and failover on node kill.
 
-### Phase 4 — cluster scope
-- Not implemented beyond parser/storage enum.
-- Needs: ZK value blob + ephemeral lock for leader refresh, watcher-driven cache invalidation,
-  `RefreshTask` adapter with ZK lock, cluster tests.
+## Not done / follow-ups
 
 ### Distributed query semantics
 - Design doc §219-224 describes resolve-on-initiator + literal injection for `cluster` and `session` variables.

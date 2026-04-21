@@ -85,9 +85,6 @@ BlockIO InterpreterCreateVariableQuery::execute()
     if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent && !is_cluster_scope)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, session, or cluster variables are supported");
 
-    if (is_cluster_scope && create_query.refresh_strategy)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "REFRESH is not yet implemented for cluster custom variables");
-
     if (create_query.refresh_strategy && is_session_scope)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "REFRESH is not supported for session variables");
 
@@ -240,29 +237,10 @@ BlockIO InterpreterCreateVariableQuery::execute()
     manager->setEntry(current_context, object_name, entry);
     manager->startRefreshIfNeeded(current_context, entry);
 
+    /// Nudge the coordinator thread to pick up the new entry without waiting for ZK echo
+    /// (the initial value was already written to ZK through persistValueIfNeeded inside setEntry).
     if (is_cluster_scope)
-    {
-        /// Publish the initial value in ZooKeeper so peer nodes see it.
-        auto cluster_storage = current_context->getCustomVariablesClusterStorage();
-        if (cluster_storage)
-        {
-            auto snapshot_value = entry->value.load();
-            if (snapshot_value && snapshot_value->has_value)
-            {
-                CustomVariableValueSnapshot snapshot;
-                snapshot.runtime_type = snapshot_value->runtime_type;
-                snapshot.value = snapshot_value->value;
-                snapshot.last_update_time = snapshot_value->last_update_time;
-                snapshot.last_successful_update_time = snapshot_value->last_successful_update_time;
-                snapshot.last_update_hostname = snapshot_value->last_update_hostname;
-                snapshot.has_value = true;
-                snapshot.is_valid = true;
-                cluster_storage->storeValue(object_name.name, snapshot);
-            }
-        }
-        /// Nudge the coordinator thread to pick up the new entry without waiting for ZK echo.
         current_context->getCustomVariablesManager().pokeClusterCoordinator(object_name.name);
-    }
 
     return {};
 }

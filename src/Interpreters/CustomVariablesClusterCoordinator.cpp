@@ -37,9 +37,6 @@ namespace Setting
 
 namespace
 {
-/// Re-enumerate sentinel; no variable name can be empty.
-const String RESYNC_ALL{};
-
 String makeWatchId(const String & prefix, const String & name)
 {
     return fmt::format("CustomVariablesClusterCoordinator({}/{})", prefix, name);
@@ -54,7 +51,7 @@ CustomVariablesClusterCoordinator::CustomVariablesClusterCoordinator(
     , storage(std::move(storage_))
     , manager(manager_)
     , log(getLogger("CustomVariablesClusterCoordinator"))
-    , queue(std::make_shared<ConcurrentBoundedQueue<String>>(std::numeric_limits<size_t>::max()))
+    , queue(std::make_shared<ConcurrentBoundedQueue<Event>>(std::numeric_limits<size_t>::max()))
 {
 }
 
@@ -83,7 +80,9 @@ void CustomVariablesClusterCoordinator::poke(const String & name)
 {
     if (!running)
         return;
-    [[maybe_unused]] bool inserted = queue->emplace(name);
+    /// Use DefinitionChanged on manual poke so CREATE/DROP initiators
+    /// see their entry wired fully (with refresh scheduling).
+    [[maybe_unused]] bool inserted = queue->emplace(Event{Event::Kind::DefinitionChanged, name});
 }
 
 void CustomVariablesClusterCoordinator::watchLoop()
@@ -101,14 +100,22 @@ void CustomVariablesClusterCoordinator::watchLoop()
                 loaded = true;
             }
 
-            String name;
-            if (!queue->tryPop(name, /* timeout_ms */ 10000))
+            Event event;
+            if (!queue->tryPop(event, /* timeout_ms */ 10000))
                 continue;
 
-            if (name.empty())
-                resyncAll();
-            else
-                refreshOne(name);
+            switch (event.kind)
+            {
+                case Event::Kind::ResyncAll:
+                    resyncAll();
+                    break;
+                case Event::Kind::DefinitionChanged:
+                    refreshOne(event.name, /*rebuild_definition=*/true);
+                    break;
+                case Event::Kind::ValueChanged:
+                    refreshOne(event.name, /*rebuild_definition=*/false);
+                    break;
+            }
         }
         catch (...)
         {
@@ -126,7 +133,7 @@ void CustomVariablesClusterCoordinator::initialLoad()
 {
     Strings names = readDefinitionsAndInstallChildrenWatch();
     for (const auto & name : names)
-        refreshOne(name);
+        refreshOne(name, /*rebuild_definition=*/true);
 }
 
 void CustomVariablesClusterCoordinator::resyncAll()
@@ -144,16 +151,77 @@ void CustomVariablesClusterCoordinator::resyncAll()
     }
 
     for (const auto & name : names)
-        refreshOne(name);
+        refreshOne(name, /*rebuild_definition=*/true);
 }
 
-void CustomVariablesClusterCoordinator::refreshOne(const String & name)
+void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool rebuild_definition)
 {
+    const CustomVariableName key{CustomVariableName::Scope::Cluster, name};
+
+    /// Fast path: value-only change for an already-known entry → swap the value snapshot
+    /// atomically and keep the in-memory refresh scheduler intact.
+    if (!rebuild_definition)
+    {
+        if (auto existing = manager.tryGetEntry(key))
+        {
+            String value_blob;
+            if (!readValueDataAndInstallWatch(name, value_blob))
+            {
+                /// Value znode disappeared — likely DROP is in progress; full rescan will tidy up.
+                return;
+            }
+
+            std::optional<CustomVariableValueSnapshot> snapshot;
+            try
+            {
+                ReadBufferFromString rb(value_blob);
+                snapshot = readCustomVariableValueSnapshot(rb);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("decoding value for cluster variable '{}'", name));
+                return;
+            }
+            if (!snapshot)
+                return;
+
+            auto value = boost::make_shared<CustomVariablesManager::Value>();
+            value->runtime_type = snapshot->runtime_type
+                ? snapshot->runtime_type
+                : existing->definition.declared_type;
+            value->value = snapshot->value;
+            value->last_update_time = snapshot->last_update_time;
+            value->last_successful_update_time = snapshot->last_successful_update_time;
+            value->last_update_hostname = snapshot->last_update_hostname;
+            value->last_error = snapshot->last_error;
+            value->last_error_type = snapshot->last_error_type;
+            value->has_value = snapshot->has_value;
+            value->is_valid = snapshot->is_valid;
+
+            if (existing->definition.declared_type && value->runtime_type
+                && !existing->definition.declared_type->equals(*value->runtime_type))
+            {
+                try
+                {
+                    value->value = convertFieldToType(value->value, *existing->definition.declared_type);
+                    value->runtime_type = existing->definition.declared_type;
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, fmt::format("converting value type for cluster variable '{}'", name));
+                }
+            }
+
+            existing->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
+            return;
+        }
+        /// Unknown entry — fall through and rebuild the whole thing.
+    }
+
     String definition_blob;
     if (!readDefinitionDataAndInstallWatch(name, definition_blob))
     {
-        /// Definition gone — drop from manager if we had it.
-        manager.removeEntry(CustomVariableName{CustomVariableName::Scope::Cluster, name});
+        manager.removeEntry(key);
         return;
     }
 
@@ -183,8 +251,22 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name)
         return;
     }
 
+    /// If we already have this entry and the definition hash is unchanged, skip the rebuild —
+    /// only the value znode could have changed, and that path is handled above.
+    if (auto existing = manager.tryGetEntry(key))
+    {
+        if (existing->definition.expression && create_query->expression
+            && existing->definition.expression->getTreeHash(/*ignore_aliases=*/false)
+                == create_query->expression->getTreeHash(/*ignore_aliases=*/false))
+        {
+            /// Definition hasn't actually changed. Only re-load the value.
+            refreshOne(name, /*rebuild_definition=*/false);
+            return;
+        }
+    }
+
     CustomVariablesManager::Definition definition;
-    definition.key = CustomVariableName{CustomVariableName::Scope::Cluster, name};
+    definition.key = key;
     definition.expression = create_query->expression;
     definition.refresh_strategy = create_query->refresh_strategy;
     definition.load_time = std::chrono::system_clock::now();
@@ -245,9 +327,15 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name)
         entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
     }
 
-    /// Pass nullptr for context so the manager does not attempt to persist back to disk
-    /// (cluster entries are written to ZK by the CREATE interpreter / refresh path).
+    /// Pass nullptr for context so the manager does not attempt to persist back to disk / ZK —
+    /// cluster entries are published by the CREATE interpreter / refresh path explicitly.
     manager.setEntry(nullptr, entry->definition.key, entry);
+
+    /// Every peer runs its own refresh schedule; the ephemeral lock ensures only
+    /// one node per tick actually writes to ZK. Without this, SYSTEM REFRESH VARIABLE
+    /// on a peer would fail and failover would never pick up a dead leader's cadence.
+    if (entry->definition.refresh_strategy)
+        manager.startRefreshIfNeeded(global_context, entry);
 }
 
 Strings CustomVariablesClusterCoordinator::readDefinitionsAndInstallChildrenWatch()
@@ -260,7 +348,7 @@ Strings CustomVariablesClusterCoordinator::readDefinitionsAndInstallChildrenWatc
     {
         return [q = queue](const Coordination::WatchResponse &)
         {
-            [[maybe_unused]] bool inserted = q->emplace(RESYNC_ALL);
+            [[maybe_unused]] bool inserted = q->emplace(Event{Event::Kind::ResyncAll, ""});
         };
     });
 
@@ -290,7 +378,7 @@ bool CustomVariablesClusterCoordinator::readDefinitionDataAndInstallWatch(const 
             if (response.type == Coordination::Event::CHANGED
                 || response.type == Coordination::Event::DELETED)
             {
-                [[maybe_unused]] bool inserted = q->emplace(n);
+                [[maybe_unused]] bool inserted = q->emplace(Event{Event::Kind::DefinitionChanged, n});
             }
         };
     });
@@ -312,7 +400,7 @@ bool CustomVariablesClusterCoordinator::readValueDataAndInstallWatch(const Strin
                 || response.type == Coordination::Event::CREATED
                 || response.type == Coordination::Event::DELETED)
             {
-                [[maybe_unused]] bool inserted = q->emplace(n);
+                [[maybe_unused]] bool inserted = q->emplace(Event{Event::Kind::ValueChanged, n});
             }
         };
     });

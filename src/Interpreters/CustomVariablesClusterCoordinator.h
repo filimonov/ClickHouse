@@ -19,12 +19,16 @@ class CustomVariablesManager;
 /// on every node. Single background thread, one event queue. Modelled on
 /// UserDefinedSQLObjectsZooKeeperStorage.
 ///
-/// Queue event semantics:
-///   empty string "" — re-enumerate <root>/definitions (children changed)
-///   non-empty name — re-read that variable's definition + value and upsert or remove
 class CustomVariablesClusterCoordinator
 {
 public:
+    struct Event
+    {
+        enum class Kind : uint8_t { ResyncAll, DefinitionChanged, ValueChanged };
+        Kind kind = Kind::ResyncAll;
+        String name;  // empty for ResyncAll
+    };
+
     CustomVariablesClusterCoordinator(
         ContextPtr global_context_,
         CustomVariablesClusterStoragePtr storage_,
@@ -50,7 +54,7 @@ private:
     void watchLoop();
     void initialLoad();
     void resyncAll();
-    void refreshOne(const String & name);
+    void refreshOne(const String & name, bool rebuild_definition);
 
     /// Low-level ZK reads that also install fresh watches.
     Strings readDefinitionsAndInstallChildrenWatch();
@@ -62,7 +66,7 @@ private:
     CustomVariablesManager & manager;
     LoggerPtr log;
 
-    std::shared_ptr<ConcurrentBoundedQueue<String>> queue;
+    std::shared_ptr<ConcurrentBoundedQueue<Event>> queue;
     ThreadFromGlobalPool thread;
     std::atomic<bool> running{false};
     std::atomic<bool> loaded{false};

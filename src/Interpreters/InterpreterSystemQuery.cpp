@@ -826,8 +826,10 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_CUSTOM_VARIABLES);
             auto variable_name = getCustomVariableNameFromSystemQuery(query);
-            if (variable_name.scope != CustomVariableName::Scope::Local)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local variables are supported in this phase");
+            if (variable_name.scope != CustomVariableName::Scope::Local
+                && variable_name.scope != CustomVariableName::Scope::LocalPersistent
+                && variable_name.scope != CustomVariableName::Scope::Cluster)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "SYSTEM REFRESH VARIABLE supports only local, local_persistent, and cluster scopes");
             getContext()->getCustomVariablesManager().refreshNow(variable_name);
             break;
         }
