@@ -11,6 +11,9 @@
 #include <Parsers/ASTCreateVariableQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/Utils.h>
 #include <boost/make_shared.hpp>
@@ -138,7 +141,12 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     auto stored_query = query_ptr->clone();
     auto & stored_create_query = stored_query->as<ASTCreateVariableQuery &>();
-    stored_create_query.expression = addTypeConversionToAST(stored_create_query.expression->clone(), declared_type->getName());
+    ASTPtr expression_to_cast = stored_create_query.expression->clone();
+    /// CAST argument is an ASTFunction arg and won't be auto-parenthesized when formatted;
+    /// wrap bare SELECTs in a subquery so the persisted DDL round-trips through the parser.
+    if (expression_to_cast->as<ASTSelectWithUnionQuery>() || expression_to_cast->as<ASTSelectQuery>())
+        expression_to_cast = std::make_shared<ASTSubquery>(std::move(expression_to_cast));
+    stored_create_query.expression = addTypeConversionToAST(std::move(expression_to_cast), declared_type->getName());
     stored_create_query.children.clear();
     stored_create_query.children.push_back(stored_create_query.variable_name);
     stored_create_query.children.push_back(stored_create_query.expression);

@@ -2,8 +2,11 @@
 #include <Interpreters/InterpreterDropVariableQuery.h>
 
 #include <Access/ContextAccess.h>
+#include <Common/logger_useful.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/CustomVariablesManager.h>
+#include <Interpreters/CustomVariablesValuesDiskStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTDropVariableQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -74,6 +77,20 @@ BlockIO InterpreterDropVariableQuery::execute()
             return {};
 
         current_context->getCustomVariablesManager().removeEntry(object_name);
+
+        if (is_local_persistent)
+        {
+            try
+            {
+                current_context->getCustomVariablesValuesStorage().removeValue(object_name.name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    getLogger("InterpreterDropVariableQuery"),
+                    fmt::format("while removing persisted value for custom variable '{}'", object_name.fullName()));
+            }
+        }
     }
     else
     {

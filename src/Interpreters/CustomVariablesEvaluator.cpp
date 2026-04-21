@@ -20,6 +20,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Core/Block.h>
@@ -180,6 +181,8 @@ EvaluatedCustomVariable evaluateCustomVariableExpression(const ASTPtr & expressi
     {
         if (auto cast_arg = getCastExpressionArgument(expression))
         {
+            if (const auto * subquery = cast_arg->as<ASTSubquery>(); subquery && !subquery->children.empty())
+                cast_arg = subquery->children.front();
             if (cast_arg->as<ASTSelectWithUnionQuery>() || cast_arg->as<ASTSelectQuery>())
                 eval_expression = cast_arg;
         }

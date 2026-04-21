@@ -47,7 +47,9 @@ void StorageSystemCustomVariables::fillData(
     MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     const auto access = context->getAccess();
-    if (!access->isGranted(AccessType::SHOW_CUSTOM_VARIABLES))
+    const bool show_all = access->isGranted(AccessType::SHOW_CUSTOM_VARIABLES);
+    const bool show_via_getvariable = access->isGranted(AccessType::getVariable);
+    if (!show_all && !show_via_getvariable)
         return;
 
     auto append_entries = [&](const CustomVariablesManager::Entries & entries)
