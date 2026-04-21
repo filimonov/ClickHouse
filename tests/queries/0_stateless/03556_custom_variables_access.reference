@@ -1,0 +1,8 @@
+create_without_grant=DENIED
+drop_without_grant=DENIED
+bare_drop=DENIED
+get_without_grant=DENIED
+7
+1
+sys_refresh_without_grant=DENIED
+readonly_blocks_create=DENIED
