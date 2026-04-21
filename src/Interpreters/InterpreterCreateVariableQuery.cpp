@@ -260,6 +260,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
                 cluster_storage->storeValue(object_name.name, snapshot);
             }
         }
+        /// Nudge the coordinator thread to pick up the new entry without waiting for ZK echo.
+        current_context->getCustomVariablesManager().pokeClusterCoordinator(object_name.name);
     }
 
     return {};

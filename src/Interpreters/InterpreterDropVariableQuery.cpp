@@ -102,7 +102,9 @@ BlockIO InterpreterDropVariableQuery::execute()
             return {};
 
         cluster_storage->removeValueRecursive(object_name.name);
-        current_context->getCustomVariablesManager().removeEntry(object_name);
+        auto & cv_manager = current_context->getCustomVariablesManager();
+        cv_manager.removeEntry(object_name);
+        cv_manager.pokeClusterCoordinator(object_name.name);
     }
     else if (!is_session_scope)
     {

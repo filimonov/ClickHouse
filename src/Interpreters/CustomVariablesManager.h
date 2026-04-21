@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariablesClusterStorage.h>
 
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
@@ -26,9 +27,13 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
+class CustomVariablesClusterCoordinator;
+
 class CustomVariablesManager
 {
 public:
+    CustomVariablesManager();
+    ~CustomVariablesManager();
     using Key = CustomVariableName;
 
     struct Definition
@@ -103,6 +108,12 @@ public:
     void refreshAll();
     void persistValueIfNeeded(const ContextPtr & context, const EntryPtr & entry) const;
 
+    /// Lifecycle for the cluster-coordinator. No-op if storage is null.
+    void startClusterCoordinator(const ContextPtr & global_context, CustomVariablesClusterStoragePtr storage);
+    void stopClusterCoordinator();
+    /// Nudge the coordinator to re-read this specific cluster variable name. Safe if coordinator is absent.
+    void pokeClusterCoordinator(const String & name);
+
 private:
     struct KeyHash
     {
@@ -115,6 +126,8 @@ private:
 
     mutable std::shared_mutex mutex;
     std::unordered_map<Key, EntryPtr, KeyHash> entries;
+
+    std::unique_ptr<CustomVariablesClusterCoordinator> cluster_coordinator;
 };
 
 }

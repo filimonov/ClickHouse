@@ -40,6 +40,7 @@ namespace DB
     M(CONCURRENT_JOIN, "ConcurrentJoin") \
     M(CREATE_TABLES, "CreateTables") \
     M(CUSTOM_RESOURCE_MANAGER, "CustomResMgr") \
+    M(CUSTOM_VARIABLES_CLUSTER, "CustomVarCoord") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(DATABASE_ON_DISK, "DatabaseOnDisk") \
     M(DATABASE_REPLICAS, "DBReplicas") \

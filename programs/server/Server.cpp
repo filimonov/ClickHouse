@@ -2770,6 +2770,9 @@ try
         global_context->getCustomVariablesManager().loadFromStorage(
             global_context,
             global_context->getCustomVariablesDefinitionsStorage());
+        /// Start ZooKeeper-backed coordinator for cluster-scoped variables (no-op if unconfigured).
+        global_context->getCustomVariablesManager().startClusterCoordinator(
+            global_context, global_context->getCustomVariablesClusterStorage());
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }

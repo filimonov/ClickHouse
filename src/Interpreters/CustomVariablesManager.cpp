@@ -1,4 +1,5 @@
 #include <Interpreters/CustomVariablesManager.h>
+#include <Interpreters/CustomVariablesClusterCoordinator.h>
 
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
@@ -61,6 +62,9 @@ bool isValueStale(const RefreshSchedule & schedule, std::chrono::system_clock::t
     return now >= next_time;
 }
 }
+
+CustomVariablesManager::CustomVariablesManager() = default;
+CustomVariablesManager::~CustomVariablesManager() = default;
 
 size_t CustomVariablesManager::KeyHash::operator()(const Key & key) const
 {
@@ -476,6 +480,31 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
     }
 
     entry->refresh->task->schedule();
+}
+
+void CustomVariablesManager::startClusterCoordinator(const ContextPtr & global_context, CustomVariablesClusterStoragePtr storage)
+{
+    if (!storage)
+        return;
+    if (cluster_coordinator)
+        return;
+    cluster_coordinator = std::make_unique<CustomVariablesClusterCoordinator>(global_context, std::move(storage), *this);
+    cluster_coordinator->start();
+}
+
+void CustomVariablesManager::stopClusterCoordinator()
+{
+    if (cluster_coordinator)
+    {
+        cluster_coordinator->stop();
+        cluster_coordinator.reset();
+    }
+}
+
+void CustomVariablesManager::pokeClusterCoordinator(const String & name)
+{
+    if (cluster_coordinator)
+        cluster_coordinator->poke(name);
 }
 
 void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, const EntryPtr & entry) const
