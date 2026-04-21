@@ -3,6 +3,7 @@
 
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CustomVariablesClusterStorage.h>
 #include <Interpreters/CustomVariablesEvaluator.h>
 #include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -16,6 +17,8 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <DataTypes/Utils.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <boost/make_shared.hpp>
 
 #include <base/getFQDNOrHostName.h>
@@ -79,10 +82,11 @@ BlockIO InterpreterCreateVariableQuery::execute()
     const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
     const bool is_local_persistent = (object_name.scope == CustomVariableName::Scope::LocalPersistent);
     const bool is_cluster_scope = (object_name.scope == CustomVariableName::Scope::Cluster);
-    if (is_cluster_scope)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CREATE CLUSTER VARIABLE is not yet implemented");
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, or session variables are supported in this phase");
+    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent && !is_cluster_scope)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, session, or cluster variables are supported");
+
+    if (is_cluster_scope && create_query.refresh_strategy)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "REFRESH is not yet implemented for cluster custom variables");
 
     if (create_query.refresh_strategy && is_session_scope)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "REFRESH is not supported for session variables");
@@ -174,7 +178,21 @@ BlockIO InterpreterCreateVariableQuery::execute()
     if (stored_create_query.refresh_strategy)
         stored_create_query.children.push_back(stored_create_query.refresh_strategy);
 
-    if (!is_session_scope)
+    if (is_cluster_scope)
+    {
+        auto cluster_storage = current_context->getCustomVariablesClusterStorage();
+        if (!cluster_storage)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cluster custom variables require <custom_variables_zookeeper_path> in the server config");
+
+        WriteBufferFromOwnString ddl_buf;
+        IAST::FormatSettings format_settings(/*one_line=*/false);
+        stored_create_query.format(ddl_buf, format_settings);
+        if (!cluster_storage->storeDefinition(object_name.name, ddl_buf.str(), throw_if_exists, replace_if_exists))
+            return {};
+    }
+    else if (!is_session_scope)
     {
         auto & storage = current_context->getCustomVariablesDefinitionsStorage();
         if (!storage.storeObject(
@@ -221,6 +239,28 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     manager->setEntry(current_context, object_name, entry);
     manager->startRefreshIfNeeded(current_context, entry);
+
+    if (is_cluster_scope)
+    {
+        /// Publish the initial value in ZooKeeper so peer nodes see it.
+        auto cluster_storage = current_context->getCustomVariablesClusterStorage();
+        if (cluster_storage)
+        {
+            auto snapshot_value = entry->value.load();
+            if (snapshot_value && snapshot_value->has_value)
+            {
+                CustomVariableValueSnapshot snapshot;
+                snapshot.runtime_type = snapshot_value->runtime_type;
+                snapshot.value = snapshot_value->value;
+                snapshot.last_update_time = snapshot_value->last_update_time;
+                snapshot.last_successful_update_time = snapshot_value->last_successful_update_time;
+                snapshot.last_update_hostname = snapshot_value->last_update_hostname;
+                snapshot.has_value = true;
+                snapshot.is_valid = true;
+                cluster_storage->storeValue(object_name.name, snapshot);
+            }
+        }
+    }
 
     return {};
 }

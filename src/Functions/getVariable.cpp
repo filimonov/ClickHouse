@@ -66,13 +66,8 @@ CustomVariableName parseVariableName(const ColumnsWithTypeAndName & arguments, c
 
 const CustomVariablesManager & getManagerForScope(ContextPtr context, const CustomVariableName & name)
 {
-    if (name.scope != CustomVariableName::Scope::Local && name.scope != CustomVariableName::Scope::LocalPersistent)
-    {
-        if (name.scope == CustomVariableName::Scope::Session)
-            return context->getSessionCustomVariablesManager();
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, or session variables are supported in this phase");
-    }
-
+    if (name.scope == CustomVariableName::Scope::Session)
+        return context->getSessionCustomVariablesManager();
     return context->getCustomVariablesManager();
 }
 

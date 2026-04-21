@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/CustomVariablesClusterStorage.h>
 #include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/CustomVariablesValuesDiskStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -68,10 +69,8 @@ BlockIO InterpreterDropVariableQuery::execute()
     const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
     const bool is_local_persistent = (object_name.scope == CustomVariableName::Scope::LocalPersistent);
     const bool is_cluster_scope = (object_name.scope == CustomVariableName::Scope::Cluster);
-    if (is_cluster_scope)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP CLUSTER VARIABLE is not yet implemented");
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, or session variables are supported in this phase");
+    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent && !is_cluster_scope)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, session, or cluster variables are supported");
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::DROP_VARIABLE);
@@ -91,7 +90,21 @@ BlockIO InterpreterDropVariableQuery::execute()
 
     bool throw_if_not_exists = !drop_query.if_exists;
 
-    if (!is_session_scope)
+    if (is_cluster_scope)
+    {
+        auto cluster_storage = current_context->getCustomVariablesClusterStorage();
+        if (!cluster_storage)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cluster custom variables require <custom_variables_zookeeper_path> in the server config");
+
+        if (!cluster_storage->removeDefinition(object_name.name, throw_if_not_exists))
+            return {};
+
+        cluster_storage->removeValueRecursive(object_name.name);
+        current_context->getCustomVariablesManager().removeEntry(object_name);
+    }
+    else if (!is_session_scope)
     {
         auto & storage = current_context->getCustomVariablesDefinitionsStorage();
         if (!storage.removeObject(current_context, object_name, throw_if_not_exists))

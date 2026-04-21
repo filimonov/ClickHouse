@@ -98,6 +98,7 @@ class Cluster;
 class Compiler;
 class CustomVariablesManager;
 class CustomVariablesValuesDiskStorage;
+class CustomVariablesClusterStorage;
 class MarkCache;
 class PrimaryIndexCache;
 class PageCache;
@@ -1080,6 +1081,9 @@ public:
     CustomVariablesManager & getCustomVariablesManager();
     const CustomVariablesManager & getSessionCustomVariablesManager() const;
     CustomVariablesManager & getSessionCustomVariablesManager();
+
+    /// Returns nullptr if <custom_variables_zookeeper_path> is not configured.
+    std::shared_ptr<CustomVariablesClusterStorage> getCustomVariablesClusterStorage() const;
 
     IWorkloadEntityStorage & getWorkloadEntityStorage() const;
 

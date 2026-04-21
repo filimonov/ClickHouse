@@ -92,8 +92,10 @@
 #include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 #include <Interpreters/CustomVariablesValuesDiskStorage.h>
+#include <Interpreters/CustomVariablesClusterStorage.h>
 #include <Interpreters/createCustomVariablesDefinitionsStorage.h>
 #include <Interpreters/createCustomVariablesValuesStorage.h>
+#include <Interpreters/createCustomVariablesClusterStorage.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -493,6 +495,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<CustomVariablesValuesDiskStorage> custom_variables_values_storage;
     mutable OnceFlag custom_variables_manager_initialized;
     mutable std::unique_ptr<CustomVariablesManager> custom_variables_manager;
+    mutable OnceFlag custom_variables_cluster_storage_initialized;
+    mutable std::shared_ptr<CustomVariablesClusterStorage> custom_variables_cluster_storage;
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::unique_ptr<IWorkloadEntityStorage> workload_entity_storage;
@@ -3544,6 +3548,14 @@ CustomVariablesManager & Context::getSessionCustomVariablesManager()
     if (!session_context_ptr->session_custom_variables_manager)
         session_context_ptr->session_custom_variables_manager = std::make_unique<CustomVariablesManager>();
     return *session_context_ptr->session_custom_variables_manager;
+}
+
+std::shared_ptr<CustomVariablesClusterStorage> Context::getCustomVariablesClusterStorage() const
+{
+    callOnce(shared->custom_variables_cluster_storage_initialized, [&] {
+        shared->custom_variables_cluster_storage = createCustomVariablesClusterStorage(getGlobalContext());
+    });
+    return shared->custom_variables_cluster_storage;
 }
 
 IWorkloadEntityStorage & Context::getWorkloadEntityStorage() const
