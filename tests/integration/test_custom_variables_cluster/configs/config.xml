@@ -1,0 +1,3 @@
+<clickhouse>
+    <custom_variables_zookeeper_path>/clickhouse/custom_variables_test</custom_variables_zookeeper_path>
+</clickhouse>

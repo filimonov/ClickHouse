@@ -1,0 +1,3 @@
+<clickhouse>
+    <!-- Deliberately no <custom_variables_zookeeper_path> -->
+</clickhouse>
