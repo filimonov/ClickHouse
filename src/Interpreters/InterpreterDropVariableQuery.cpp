@@ -19,14 +19,27 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
-CustomVariableName getCustomVariableName(const ASTPtr & ast)
+CustomVariableName getCustomVariableName(const ASTPtr & ast, bool is_cluster_variable)
 {
     const auto * identifier = ast ? ast->as<ASTIdentifier>() : nullptr;
-    if (!identifier || identifier->name_parts.size() != 2)
+    if (!identifier)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name is not an identifier");
+
+    if (is_cluster_variable)
+    {
+        if (identifier->name_parts.size() != 1 || identifier->name_parts[0].empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cluster custom variable name must be a single identifier (no scope prefix)");
+        return CustomVariableName{CustomVariableName::Scope::Cluster, identifier->name_parts[0]};
+    }
+
+    if (identifier->name_parts.size() != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
 
     const auto & scope_str = identifier->name_parts[0];
@@ -38,6 +51,11 @@ CustomVariableName getCustomVariableName(const ASTPtr & ast)
     if (!CustomVariableName::tryParseScope(scope_str, scope))
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown custom variable scope '{}'", scope_str);
 
+    if (scope == CustomVariableName::Scope::Cluster)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Use DROP CLUSTER VARIABLE <name> syntax for cluster-scoped variables");
+
     return CustomVariableName{scope, name};
 }
 }
@@ -45,10 +63,13 @@ CustomVariableName getCustomVariableName(const ASTPtr & ast)
 BlockIO InterpreterDropVariableQuery::execute()
 {
     const auto & drop_query = query_ptr->as<ASTDropVariableQuery &>();
-    auto object_name = getCustomVariableName(drop_query.variable_name);
+    auto object_name = getCustomVariableName(drop_query.variable_name, drop_query.is_cluster_variable);
 
     const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
     const bool is_local_persistent = (object_name.scope == CustomVariableName::Scope::LocalPersistent);
+    const bool is_cluster_scope = (object_name.scope == CustomVariableName::Scope::Cluster);
+    if (is_cluster_scope)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP CLUSTER VARIABLE is not yet implemented");
     if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, or session variables are supported in this phase");
 

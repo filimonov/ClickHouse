@@ -33,6 +33,9 @@ void ASTCreateVariableQuery::formatImpl(
     if (or_replace)
         ostr << "OR REPLACE ";
 
+    if (is_cluster_variable)
+        ostr << "CLUSTER ";
+
     ostr << "VARIABLE ";
 
     if (if_not_exists)
@@ -40,7 +43,8 @@ void ASTCreateVariableQuery::formatImpl(
 
     variable_name->format(ostr, settings, state, frame);
 
-    formatOnCluster(ostr, settings);
+    if (!is_cluster_variable)
+        formatOnCluster(ostr, settings);
 
     if (refresh_strategy)
     {

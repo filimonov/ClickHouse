@@ -19,6 +19,7 @@ bool ParserCreateVariableQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ParserKeyword s_on(Keyword::ON);
     ParserKeyword s_refresh(Keyword::REFRESH);
     ParserKeyword s_as(Keyword::AS);
+    ParserKeyword s_cluster(Keyword::CLUSTER);
     ParserCompoundIdentifier name_p;
     ParserSelectWithUnionQuery select_p;
     ParserExpression expression_p;
@@ -31,12 +32,16 @@ bool ParserCreateVariableQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     String cluster_str;
     bool or_replace = false;
     bool if_not_exists = false;
+    bool is_cluster_variable = false;
 
     if (!s_create.ignore(pos, expected))
         return false;
 
     if (s_or_replace.ignore(pos, expected))
         or_replace = true;
+
+    if (s_cluster.ignore(pos, expected))
+        is_cluster_variable = true;
 
     if (!s_variable.ignore(pos, expected))
         return false;
@@ -47,7 +52,7 @@ bool ParserCreateVariableQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     if (!name_p.parse(pos, variable_name, expected))
         return false;
 
-    if (s_on.ignore(pos, expected))
+    if (!is_cluster_variable && s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -86,6 +91,7 @@ bool ParserCreateVariableQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_variable_query->or_replace = or_replace;
     create_variable_query->if_not_exists = if_not_exists;
     create_variable_query->cluster = std::move(cluster_str);
+    create_variable_query->is_cluster_variable = is_cluster_variable;
 
     return true;
 }

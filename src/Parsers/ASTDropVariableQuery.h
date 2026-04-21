@@ -12,6 +12,7 @@ public:
     ASTPtr variable_name;
 
     bool if_exists = false;
+    bool is_cluster_variable = false;
 
     String getID(char) const override { return "DropVariableQuery"; }
 

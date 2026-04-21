@@ -15,6 +15,7 @@ public:
 
     bool or_replace = false;
     bool if_not_exists = false;
+    bool is_cluster_variable = false;
 
     String getID(char delim) const override { return "CreateVariableQuery" + (delim + getVariableName()); }
 

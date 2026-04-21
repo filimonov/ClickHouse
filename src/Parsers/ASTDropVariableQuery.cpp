@@ -19,13 +19,17 @@ ASTPtr ASTDropVariableQuery::clone() const
 void ASTDropVariableQuery::formatImpl(
     WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
-    ostr << "DROP VARIABLE ";
+    ostr << "DROP ";
+    if (is_cluster_variable)
+        ostr << "CLUSTER ";
+    ostr << "VARIABLE ";
 
     if (if_exists)
         ostr << "IF EXISTS ";
 
     variable_name->format(ostr, settings, state, frame);
-    formatOnCluster(ostr, settings);
+    if (!is_cluster_variable)
+        formatOnCluster(ostr, settings);
 }
 
 String ASTDropVariableQuery::getVariableName() const
