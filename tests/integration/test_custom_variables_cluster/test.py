@@ -1,8 +1,10 @@
+import threading
 import time
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ZOOKEEPER_CONTAINERS
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -236,3 +238,312 @@ def test_refresh_failover(started_cluster, cleanup):
         pytest.fail("no refresh observed on node2 after node1 was killed")
     finally:
         node1.start_clickhouse()
+
+
+# -------- Pass 2: races, ZK disruption, discovery churn --------
+
+
+def test_duplicate_create_cluster_race(started_cluster, cleanup):
+    """Two nodes CREATE the same cluster variable concurrently.
+    Exactly one succeeds; the other sees FILE_ALREADY_EXISTS.
+    Both end up seeing the winner's value."""
+
+    results = {}
+
+    def create(node, tag):
+        try:
+            node.query(
+                f"CREATE CLUSTER VARIABLE race_cv AS toUInt64({tag})"
+            )
+            results[tag] = "ok"
+        except Exception as exc:
+            results[tag] = str(exc)
+
+    t1 = threading.Thread(target=create, args=(node1, 1))
+    t2 = threading.Thread(target=create, args=(node2, 2))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    outcomes = list(results.values())
+    ok_count = sum(1 for o in outcomes if o == "ok")
+    err_count = sum(1 for o in outcomes if "FILE_ALREADY_EXISTS" in o)
+    assert ok_count == 1 and err_count == 1, results
+
+    winner_tag = next(t for t, o in results.items() if o == "ok")
+    expected = str(winner_tag)
+    for node in nodes:
+        assert_eq_with_retry(
+            node,
+            "SELECT getVariable('cluster.race_cv')",
+            expected + "\n",
+            retry_count=40,
+            sleep_time=0.25,
+        )
+
+
+def test_create_or_replace_while_refreshing(started_cluster, cleanup):
+    """OR REPLACE in the middle of a refresh cycle must converge both nodes
+    on the new value and drop the REFRESH schedule."""
+
+    node1.query(
+        "CREATE CLUSTER VARIABLE repl_race REFRESH EVERY 1 SECOND AS toUInt64(now())"
+    )
+    assert_eq_with_retry(node2, "SELECT getVariable('cluster.repl_race') > 0", "1\n")
+
+    # Let several ticks happen so the scheduler is genuinely active.
+    time.sleep(2)
+
+    node2.query(
+        "CREATE OR REPLACE CLUSTER VARIABLE repl_race AS toUInt64(42)"
+    )
+
+    for node in nodes:
+        assert_eq_with_retry(
+            node,
+            "SELECT getVariable('cluster.repl_race')",
+            "42\n",
+            retry_count=40,
+            sleep_time=0.25,
+        )
+
+    # Stable at 42 across a window that would have covered several refresh ticks
+    # if the schedule had survived.
+    time.sleep(3)
+    for node in nodes:
+        assert node.query(
+            "SELECT getVariable('cluster.repl_race')"
+        ).strip() == "42"
+
+
+def test_cluster_refresh_failure_flap(started_cluster, cleanup):
+    """Refresh fails on the leader after its dependency is dropped; the last-good
+    value + last_error propagate via ZK to the peer; recovery clears the error."""
+
+    for node in nodes:
+        node.query("DROP TABLE IF EXISTS default.flap_src SYNC")
+        node.query("CREATE TABLE default.flap_src (x UInt8) ENGINE = Memory")
+        node.query("INSERT INTO default.flap_src VALUES (42)")
+
+    node1.query(
+        "CREATE CLUSTER VARIABLE flap_cv REFRESH EVERY 1 SECOND "
+        "AS (SELECT max(x) FROM default.flap_src)"
+    )
+    assert_eq_with_retry(node2, "SELECT getVariable('cluster.flap_cv')", "42\n")
+
+    for node in nodes:
+        node.query("DROP TABLE default.flap_src SYNC")
+
+    def is_valid_flipped(node):
+        row = node.query(
+            "SELECT has_value, is_valid, coalesce(last_error,'') != '' "
+            "FROM system.custom_variables "
+            "WHERE name = 'flap_cv' AND scope = 'cluster'"
+        ).strip()
+        return row == "1\t0\t1"
+
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        if all(is_valid_flipped(n) for n in nodes):
+            break
+        time.sleep(0.5)
+    else:
+        pytest.fail(
+            "flap did not propagate: "
+            + "; ".join(
+                f"{n.name}: "
+                + n.query(
+                    "SELECT has_value, is_valid, last_error "
+                    "FROM system.custom_variables WHERE name='flap_cv'"
+                ).strip()
+                for n in nodes
+            )
+        )
+
+    # Last-good value is still visible on both nodes.
+    for node in nodes:
+        assert node.query(
+            "SELECT getVariable('cluster.flap_cv')"
+        ).strip() == "42"
+
+    # Recovery: recreate table + data, expect is_valid back to 1 within a few ticks.
+    for node in nodes:
+        node.query("CREATE TABLE default.flap_src (x UInt8) ENGINE = Memory")
+        node.query("INSERT INTO default.flap_src VALUES (7)")
+
+    def recovered(node):
+        row = node.query(
+            "SELECT is_valid, coalesce(last_error,'') = '' "
+            "FROM system.custom_variables "
+            "WHERE name = 'flap_cv' AND scope = 'cluster'"
+        ).strip()
+        return row == "1\t1"
+
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        if all(recovered(n) for n in nodes):
+            for node in nodes:
+                node.query("DROP TABLE IF EXISTS default.flap_src SYNC")
+            return
+        time.sleep(0.5)
+    pytest.fail("recovery did not happen in time")
+
+
+def test_zk_disconnect_reads_continue(started_cluster, cleanup):
+    """Partition node2 from ZK. getVariable on node2 must keep serving the
+    cached value. After the partition heals, a new write from node1 reaches
+    node2 again."""
+
+    node1.query(
+        "CREATE CLUSTER VARIABLE zkd_cv AS toUInt64(100)"
+    )
+    assert_eq_with_retry(node2, "SELECT getVariable('cluster.zkd_cv')", "100\n")
+
+    with PartitionManager() as pm:
+        pm.drop_instance_zk_connections(node2)
+        # Cached reads keep working even while ZK is unreachable.
+        for _ in range(5):
+            assert node2.query(
+                "SELECT getVariable('cluster.zkd_cv')"
+            ).strip() == "100"
+            time.sleep(0.5)
+
+    # After partition heals, a new write on node1 should propagate.
+    node1.query(
+        "CREATE OR REPLACE CLUSTER VARIABLE zkd_cv AS toUInt64(101)"
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT getVariable('cluster.zkd_cv')",
+        "101\n",
+        retry_count=80,
+        sleep_time=0.25,
+    )
+
+
+def test_zk_session_loss_re_enumerate(started_cluster, cleanup):
+    """Stop Keeper long enough for the ZK session to expire, restart it, and
+    assert the coordinator on both nodes re-enumerates — a fresh CREATE on
+    node1 must reach node2 without a node restart."""
+
+    node1.query(
+        "CREATE CLUSTER VARIABLE sess_cv AS toUInt64(1)"
+    )
+    assert_eq_with_retry(node2, "SELECT getVariable('cluster.sess_cv')", "1\n")
+
+    cluster.stop_zookeeper_nodes(ZOOKEEPER_CONTAINERS)
+    # Session timeout for the integration fixture is ~30 s; wait past it.
+    time.sleep(35)
+    cluster.start_zookeeper_nodes(ZOOKEEPER_CONTAINERS)
+
+    # After the session returns, the coordinator should reconnect and a new
+    # CREATE on node1 must reach node2.
+    node1.query_with_retry(
+        "CREATE OR REPLACE CLUSTER VARIABLE sess_cv AS toUInt64(2)",
+        retry_count=40,
+        sleep_time=1.0,
+    )
+    assert_eq_with_retry(
+        node2,
+        "SELECT getVariable('cluster.sess_cv')",
+        "2\n",
+        retry_count=60,
+        sleep_time=1.0,
+    )
+
+
+def test_restart_during_refresh_no_leak(started_cluster, cleanup):
+    """Kill the node most likely to hold the ephemeral refresh lock; after
+    restart it should rejoin cleanly and the variable's value should keep
+    advancing without any node getting stuck on a stale hostname."""
+
+    node1.query(
+        "CREATE CLUSTER VARIABLE rlk_cv REFRESH EVERY 1 SECOND AS toUInt64(now())"
+    )
+    assert_eq_with_retry(node2, "SELECT getVariable('cluster.rlk_cv') > 0", "1\n")
+
+    node1.stop_clickhouse(kill=True)
+    try:
+        time.sleep(3)
+        # While node1 is down, node2 must keep refreshing.
+        before = int(node2.query("SELECT getVariable('cluster.rlk_cv')").strip())
+        time.sleep(3)
+        after = int(node2.query("SELECT getVariable('cluster.rlk_cv')").strip())
+        assert after > before, (before, after)
+    finally:
+        node1.start_clickhouse()
+
+    # After restart node1 sees the variable and the value continues to advance.
+    assert_eq_with_retry(node1, "SELECT getVariable('cluster.rlk_cv') > 0", "1\n")
+    v1 = int(node1.query("SELECT getVariable('cluster.rlk_cv')").strip())
+    time.sleep(3)
+    v2 = int(node1.query("SELECT getVariable('cluster.rlk_cv')").strip())
+    assert v2 > v1, (v1, v2)
+
+
+def test_drop_while_discovery_in_flight(started_cluster, cleanup):
+    """On node1, create a batch of cluster variables; simultaneously drop one
+    of them from node2. All other entries must eventually be visible on node2
+    and the coordinator must keep processing subsequent DDL."""
+
+    names = [f"batch_cv_{i:02d}" for i in range(20)]
+    target = names[7]
+
+    # Seed the target first so that DROP on node2 has something to race with.
+    node1.query(f"CREATE CLUSTER VARIABLE {target} AS toUInt64(999)")
+    assert_eq_with_retry(
+        node2, f"SELECT getVariable('cluster.{target}')", "999\n"
+    )
+
+    def create_batch():
+        for name in names:
+            if name == target:
+                continue
+            node1.query(f"CREATE CLUSTER VARIABLE {name} AS toUInt64(1)")
+
+    def drop_target():
+        time.sleep(0.05)  # small head start for create_batch
+        node2.query(f"DROP CLUSTER VARIABLE IF EXISTS {target}")
+
+    t1 = threading.Thread(target=create_batch)
+    t2 = threading.Thread(target=drop_target)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # Non-target entries must end up visible on both nodes.
+    for node in nodes:
+        for name in names:
+            if name == target:
+                continue
+            assert_eq_with_retry(
+                node,
+                f"SELECT getVariable('cluster.{name}')",
+                "1\n",
+                retry_count=40,
+                sleep_time=0.25,
+            )
+
+    # Target is gone on both nodes.
+    for node in nodes:
+
+        def target_gone(n=node):
+            err = n.query_and_get_error(
+                f"SELECT getVariable('cluster.{target}')"
+            )
+            return "UNKNOWN_IDENTIFIER" in err
+
+        deadline = time.time() + 10
+        while time.time() < deadline and not target_gone():
+            time.sleep(0.25)
+        assert target_gone(), (
+            f"{node.name} still sees cluster.{target} after DROP"
+        )
+
+    # Coordinator is still alive: further DDL goes through.
+    node1.query("CREATE CLUSTER VARIABLE batch_post AS toUInt64(1)")
+    assert_eq_with_retry(
+        node2, "SELECT getVariable('cluster.batch_post')", "1\n"
+    )

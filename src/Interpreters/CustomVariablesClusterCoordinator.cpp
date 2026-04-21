@@ -284,7 +284,8 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
 
     String value_blob;
     std::optional<CustomVariableValueSnapshot> snapshot;
-    if (readValueDataAndInstallWatch(name, value_blob))
+    const bool value_exists = readValueDataAndInstallWatch(name, value_blob);
+    if (value_exists)
     {
         try
         {
@@ -296,6 +297,14 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
             tryLogCurrentException(log, fmt::format("decoding value for cluster variable '{}'", name));
         }
     }
+
+    /// Skip the rebuild if we caught the race between the initiator writing its
+    /// definition znode and its value znode. An `exists` watch is armed on the
+    /// value znode (from readValueDataAndInstallWatch), so we'll be woken up as
+    /// soon as the initiator publishes the value; until then the manager keeps
+    /// whatever state was there, which is either nothing or the prior value.
+    if (!snapshot && !manager.tryGetEntry(key))
+        return;
 
     if (snapshot)
     {
