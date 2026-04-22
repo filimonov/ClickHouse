@@ -16,7 +16,7 @@ mkdir -p "$TMP_DIR/metadata"
 ${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --multiquery --query "
 CREATE TABLE src (x UInt64) ENGINE=Memory;
 INSERT INTO src VALUES (1);
-CREATE VARIABLE local_persistent.cv_hourly REFRESH EVERY 1 HOUR AS (SELECT max(x) FROM src);
+CREATE VARIABLE local_persistent.cv_hourly REFRESH AFTER 1 HOUR AS (SELECT max(x) FROM src);
 "
 
 VALUES_DIR="${TMP_DIR%/}/custom_variables_values"
