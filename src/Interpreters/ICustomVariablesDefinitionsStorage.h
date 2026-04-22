@@ -14,7 +14,7 @@ struct CustomVariableName
 {
     enum class Scope
     {
-        Local,   // Always persistent (was split into Local + LocalPersistent before the collapse).
+        Local,   // Always persistent.
         Session,
         Cluster,
     };

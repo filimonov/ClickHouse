@@ -57,32 +57,16 @@ constexpr std::string_view file_suffix = ".sql";
 
 std::optional<std::pair<String, String>> splitScopeAndName(const String & stem)
 {
-    /// "local_persistent" is the legacy name for today's "local" scope; we accept
-    /// it here so pre-collapse files still load. The loader renames those files
-    /// to the canonical "local_<name>.sql" on first load — see migrateLegacyFiles.
-    static constexpr std::pair<std::string_view, std::string_view> scopes[] = {
-        {"local_persistent", "local"},
-        {"local", "local"},
-        {"cluster", "cluster"},
-        {"session", "session"},
-    };
-    for (const auto & [file_prefix_scope, logical_scope] : scopes)
+    static constexpr std::string_view scopes[] = {"local", "cluster", "session"};
+    for (const auto & scope : scopes)
     {
-        if (stem.starts_with(file_prefix_scope)
-            && stem.size() > file_prefix_scope.size()
-            && stem[file_prefix_scope.size()] == '_')
+        if (stem.starts_with(scope) && stem.size() > scope.size() && stem[scope.size()] == '_')
         {
-            String name = stem.substr(file_prefix_scope.size() + 1);
-            return std::pair<String, String>{String(logical_scope), std::move(name)};
+            String name = stem.substr(scope.size() + 1);
+            return std::pair<String, String>{String(scope), std::move(name)};
         }
     }
     return std::nullopt;
-}
-
-bool isLegacyLocalPersistentFileName(const String & file_name)
-{
-    static constexpr std::string_view legacy_prefix = "variable_local_persistent_";
-    return file_name.starts_with(legacy_prefix) && file_name.ends_with(".sql");
 }
 }
 
@@ -137,42 +121,6 @@ CustomVariablesDefinitionsDiskStorage::parseFileName(const String & file_name) c
     return ObjectName{scope, std::move(name)};
 }
 
-void CustomVariablesDefinitionsDiskStorage::migrateLegacyFiles()
-{
-    if (!std::filesystem::exists(dir_path))
-        return;
-
-    Poco::DirectoryIterator dir_end;
-    std::vector<std::pair<fs::path, fs::path>> pending;
-    for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
-    {
-        if (it->isDirectory())
-            continue;
-        const String & file_name = it.name();
-        if (!isLegacyLocalPersistentFileName(file_name))
-            continue;
-
-        /// variable_local_persistent_<escapedName>.sql → variable_local_<escapedName>.sql
-        const String new_name = "variable_local_" + file_name.substr(std::string_view{"variable_local_persistent_"}.size());
-        pending.emplace_back(fs::path(dir_path) / file_name, fs::path(dir_path) / new_name);
-    }
-
-    for (const auto & [from, to] : pending)
-    {
-        std::error_code ec;
-        if (fs::exists(to, ec))
-        {
-            LOG_WARNING(log, "Legacy custom variable file {} cannot be migrated because {} already exists; keeping both in place", from.string(), to.string());
-            continue;
-        }
-        fs::rename(from, to, ec);
-        if (ec)
-            LOG_WARNING(log, "Failed to rename legacy custom variable file {} to {}: {}", from.string(), to.string(), ec.message());
-        else
-            LOG_INFO(log, "Migrated legacy custom variable file {} to {}", from.string(), to.string());
-    }
-}
-
 CustomVariablesDefinitionsDiskStorage::Objects CustomVariablesDefinitionsDiskStorage::loadObjects()
 {
     LOG_INFO(log, "Loading custom variable definitions from {}", dir_path);
@@ -182,8 +130,6 @@ CustomVariablesDefinitionsDiskStorage::Objects CustomVariablesDefinitionsDiskSto
         LOG_DEBUG(log, "The directory for custom variable definitions ({}) does not exist: nothing to load", dir_path);
         return {};
     }
-
-    migrateLegacyFiles();
 
     Objects objects;
 

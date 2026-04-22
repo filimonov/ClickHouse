@@ -35,7 +35,6 @@ private:
     ContextPtr global_context;
 
     void createDirectory();
-    void migrateLegacyFiles();
 
     String getFilePath(const ObjectName & object_name) const;
     std::optional<ObjectName> parseFileName(const String & file_name) const;
