@@ -1050,10 +1050,12 @@ void LocalServer::processConfig()
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
-        if (fs::exists(fs::path(path) / "custom_variables"))
-            global_context->getCustomVariablesManager().loadFromStorage(
-                global_context,
-                global_context->getCustomVariablesDefinitionsStorage());
+        /// The storage layer handles a missing directory internally, and the
+        /// actual path can be overridden via <custom_variables_path>. Don't
+        /// gate the load on the default-location existence check.
+        global_context->getCustomVariablesManager().loadFromStorage(
+            global_context,
+            global_context->getCustomVariablesDefinitionsStorage());
         /// Start ZooKeeper-backed coordinator for cluster-scoped variables (no-op if unconfigured).
         global_context->getCustomVariablesManager().startClusterCoordinator(
             global_context, global_context->getCustomVariablesClusterStorage());

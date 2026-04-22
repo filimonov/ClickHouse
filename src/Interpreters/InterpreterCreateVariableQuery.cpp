@@ -16,6 +16,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <DataTypes/Utils.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -192,6 +193,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
     if (stored_create_query.refresh_strategy)
         stored_create_query.children.push_back(stored_create_query.refresh_strategy);
 
+    std::unique_ptr<zkutil::ZooKeeperLock> cluster_publish_lock;
     if (is_cluster_scope)
     {
         auto cluster_storage = current_context->getCustomVariablesClusterStorage();
@@ -199,6 +201,20 @@ BlockIO InterpreterCreateVariableQuery::execute()
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cluster custom variables require <custom_variables_zookeeper_path> in the server config");
+
+        /// OR REPLACE rewrites two znodes (definition and value). Without serialisation
+        /// two concurrent replacers on different nodes could end up with writer A's
+        /// definition next to writer B's value. Take the per-variable ephemeral lock
+        /// around the whole publish so only one OR REPLACE (or CREATE) is in flight.
+        /// Plain CREATE doesn't strictly need this — ZK's atomic create is enough
+        /// to serialise conflicting CREATEs — but taking the lock unconditionally
+        /// keeps the code simpler and doesn't meaningfully slow common cases.
+        cluster_publish_lock = cluster_storage->tryLockForRefresh(object_name.name, getFQDNOrHostName());
+        if (!cluster_publish_lock)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Another replica is currently creating or refreshing cluster variable '{}'; retry",
+                object_name.fullName());
 
         WriteBufferFromOwnString ddl_buf;
         IAST::FormatSettings format_settings(/*one_line=*/false);

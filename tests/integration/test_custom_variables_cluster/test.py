@@ -268,7 +268,15 @@ def test_duplicate_create_cluster_race(started_cluster, cleanup):
 
     outcomes = list(results.values())
     ok_count = sum(1 for o in outcomes if o == "ok")
-    err_count = sum(1 for o in outcomes if "FILE_ALREADY_EXISTS" in o)
+    # The loser either hits FILE_ALREADY_EXISTS (if the winner's ZK create
+    # landed first) or the per-variable publish lock (if the winner is still
+    # writing definition + value atomically). Either outcome proves the two
+    # CREATEs were serialised.
+    err_count = sum(
+        1 for o in outcomes
+        if "FILE_ALREADY_EXISTS" in o
+        or "currently creating or refreshing" in o
+    )
     assert ok_count == 1 and err_count == 1, results
 
     winner_tag = next(t for t, o in results.items() if o == "ok")

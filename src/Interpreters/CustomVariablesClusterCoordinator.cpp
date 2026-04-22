@@ -318,6 +318,15 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
     if (!snapshot && !manager.tryGetEntry(key))
         return;
 
+    /// If resolving the declared type locally failed (e.g. the peer hasn't loaded
+    /// something the expression references yet) but the replicated snapshot
+    /// carries a runtime type, fall back to that — same pattern the disk-reload
+    /// path in CustomVariablesManager::loadFromStorage uses. Without this
+    /// fallback getVariable() on this peer throws "has unknown type" even
+    /// though a perfectly readable cached value is sitting right there.
+    if (!entry->definition.declared_type && snapshot && snapshot->runtime_type)
+        entry->definition.declared_type = snapshot->runtime_type;
+
     if (snapshot)
     {
         auto value = boost::make_shared<CustomVariablesManager::Value>();
