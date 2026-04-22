@@ -14,8 +14,7 @@ struct CustomVariableName
 {
     enum class Scope
     {
-        Local,
-        LocalPersistent,
+        Local,   // Always persistent (was split into Local + LocalPersistent before the collapse).
         Session,
         Cluster,
     };
@@ -27,8 +26,6 @@ struct CustomVariableName
     {
         if (scope_str == "local")
             scope_out = Scope::Local;
-        else if (scope_str == "local_persistent")
-            scope_out = Scope::LocalPersistent;
         else if (scope_str == "session")
             scope_out = Scope::Session;
         else if (scope_str == "cluster")
@@ -45,8 +42,6 @@ struct CustomVariableName
         {
             case Scope::Local:
                 return "local";
-            case Scope::LocalPersistent:
-                return "local_persistent";
             case Scope::Session:
                 return "session";
             case Scope::Cluster:

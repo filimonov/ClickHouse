@@ -1,6 +1,10 @@
 -- Tags: no-parallel
 
 DROP VARIABLE IF EXISTS local.cv_test;
+DROP VARIABLE IF EXISTS local.cv_ref;
+DROP VARIABLE IF EXISTS local.cv_big;
+DROP VARIABLE IF EXISTS local.cv_fixed;
+DROP VARIABLE IF EXISTS local.cv_const;
 
 CREATE VARIABLE local.cv_test AS toUInt32(1);
 SELECT getVariable('local.cv_test');
@@ -38,3 +42,9 @@ SELECT getVariable('local.cv_fixed');
 CREATE VARIABLE local.cv_fixed AS (SELECT * FROM nonexistent_table); -- {serverError FILE_ALREADY_EXISTS}
 SELECT getVariable('local.cv_fixed');
 DROP VARIABLE local.cv_fixed;
+
+-- After the scope collapse, `local` is always persistent and no longer bans
+-- constant expressions (the old `local_persistent` rule is gone).
+CREATE VARIABLE local.cv_const AS 42;
+SELECT getVariable('local.cv_const');
+DROP VARIABLE local.cv_const;

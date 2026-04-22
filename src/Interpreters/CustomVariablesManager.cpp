@@ -49,9 +49,9 @@ void randomizeState(CustomVariablesManager::RefreshState & state)
     state.randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
 }
 
-bool isLocalPersistentScope(CustomVariableName::Scope scope)
+bool isLocalScope(CustomVariableName::Scope scope)
 {
-    return scope == CustomVariableName::Scope::LocalPersistent;
+    return scope == CustomVariableName::Scope::Local;
 }
 
 bool isClusterScope(CustomVariableName::Scope scope)
@@ -135,9 +135,9 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
         auto entry = std::make_shared<Entry>();
         entry->definition = std::move(definition);
 
-        const bool is_local_persistent = isLocalPersistentScope(object_name.scope);
+        const bool is_local = isLocalScope(object_name.scope);
         std::optional<CustomVariableValueSnapshot> snapshot;
-        if (is_local_persistent)
+        if (is_local)
             snapshot = context->getCustomVariablesValuesStorage().tryLoadValue(object_name.name);
 
         bool loaded_from_disk = false;
@@ -208,7 +208,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
                 value->is_valid = true;
                 entry->value.store(boost::static_pointer_cast<const Value>(value));
 
-                if (is_local_persistent)
+                if (is_local)
                     persistValueIfNeeded(context, entry);
             }
             catch (...)
@@ -222,7 +222,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
                 value->is_valid = false;
                 entry->value.store(boost::static_pointer_cast<const Value>(value));
 
-                if (is_local_persistent)
+                if (is_local)
                     persistValueIfNeeded(context, entry);
             }
         }
@@ -311,7 +311,7 @@ void CustomVariablesManager::startRefreshIfNeeded(const ContextPtr & context, co
 
     const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
     auto value = entry->value.load();
-    /// For refresh-on-reload (local_persistent after restart, cluster entries
+    /// For refresh-on-reload (local after restart, cluster entries
     /// picked up from ZK) we want the next tick to fall on the original
     /// schedule, not be pushed out by up to a full interval. Seed
     /// last_completed_timeslot from the persisted last_successful_update_time
@@ -562,7 +562,7 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
         return;
 
     const auto scope = entry->definition.key.scope;
-    if (!isLocalPersistentScope(scope) && !isClusterScope(scope))
+    if (!isLocalScope(scope) && !isClusterScope(scope))
         return;
 
     const auto value = entry->value.load();

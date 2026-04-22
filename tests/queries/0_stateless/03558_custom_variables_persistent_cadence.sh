@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests that, after a restart, a refreshable local_persistent variable
+# Tests that, after a restart, a refreshable local variable
 # resumes its schedule from the persisted last_successful_update_time
 # instead of restarting the clock. Without the fix, an almost-due
 # refresh would be postponed by nearly a full interval.
@@ -16,7 +16,7 @@ mkdir -p "$TMP_DIR/metadata"
 ${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --multiquery --query "
 CREATE TABLE src (x UInt64) ENGINE=Memory;
 INSERT INTO src VALUES (1);
-CREATE VARIABLE local_persistent.cv_hourly REFRESH AFTER 1 HOUR AS (SELECT max(x) FROM src);
+CREATE VARIABLE local.cv_hourly REFRESH AFTER 1 HOUR AS (SELECT max(x) FROM src);
 "
 
 VALUES_DIR="${TMP_DIR%/}/custom_variables_values"
@@ -63,7 +63,7 @@ PY
 next_in_seconds="$(${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --query "
 SELECT toInt64(refresh_next_time) - toInt64(now())
 FROM system.custom_variables
-WHERE name = 'cv_hourly' AND scope = 'local_persistent'")"
+WHERE name = 'cv_hourly' AND scope = 'local'")"
 
 # Accept up to 5 minutes of skew for CI jitter; anything approaching 3600
 # seconds means the schedule was reset to the restart moment.
@@ -75,5 +75,5 @@ else
     echo "schedule_preserved"
 fi
 
-${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --query "DROP VARIABLE local_persistent.cv_hourly" >/dev/null
+${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --query "DROP VARIABLE local.cv_hourly" >/dev/null
 rm -rf "$TMP_DIR"

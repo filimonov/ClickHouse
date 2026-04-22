@@ -26,7 +26,7 @@ ColumnsDescription StorageSystemCustomVariables::getColumnsDescription()
     return ColumnsDescription
     {
         {"name", std::make_shared<DataTypeString>(), "Variable name without the scope prefix."},
-        {"scope", std::make_shared<DataTypeString>(), "Variable scope (local, local_persistent, session, cluster)."},
+        {"scope", std::make_shared<DataTypeString>(), "Variable scope (local, session, cluster)."},
         {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Last known value as string, NULL if missing."},
         {"load_time", std::make_shared<DataTypeDateTime>(), "Time when the variable definition was loaded into memory."},
         {"last_update", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the last update attempt."},

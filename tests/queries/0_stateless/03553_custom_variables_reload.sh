@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-TMP_DIR="${CLICKHOUSE_TMP}/custom_variables_local_persistent_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+TMP_DIR="${CLICKHOUSE_TMP}/custom_variables_reload_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 mkdir -p "$TMP_DIR/metadata"
@@ -12,8 +12,8 @@ mkdir -p "$TMP_DIR/metadata"
 ${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --multiquery --query "
 CREATE TABLE src (x UInt64) ENGINE=Memory;
 INSERT INTO src VALUES (1);
-CREATE VARIABLE local_persistent.cv_from_table AS (SELECT max(x) FROM src);
-CREATE VARIABLE local_persistent.cv_stale REFRESH EVERY 1 SECOND AS (SELECT toUInt64(now()));
+CREATE VARIABLE local.cv_from_table AS (SELECT max(x) FROM src);
+CREATE VARIABLE local.cv_stale REFRESH EVERY 1 SECOND AS (SELECT toUInt64(now()));
 DROP TABLE src;
 "
 
@@ -57,10 +57,10 @@ open(path, "wb").write(data)
 PY
 
 output="$(${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --multiquery --format=TSV --query "
-SELECT getVariable('local_persistent.cv_from_table');
-SELECT getVariable('local_persistent.cv_stale');
+SELECT getVariable('local.cv_from_table');
+SELECT getVariable('local.cv_stale');
 SELECT sleep(3) FORMAT Null;
-SELECT getVariable('local_persistent.cv_stale');
+SELECT getVariable('local.cv_stale');
 ")"
 
 IFS=$'\n' read -r -d '' -a lines <<<"${output}"$'\0'
@@ -75,7 +75,7 @@ else
     echo 0
 fi
 
-${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --query "DROP VARIABLE local_persistent.cv_from_table"
+${CLICKHOUSE_LOCAL} --path "$TMP_DIR" --query "DROP VARIABLE local.cv_from_table"
 if [ -f "${VALUES_DIR}/cv_from_table.bin" ]; then
     echo "value_file_remains"
 else

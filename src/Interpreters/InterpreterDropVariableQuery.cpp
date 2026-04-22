@@ -67,10 +67,9 @@ BlockIO InterpreterDropVariableQuery::execute()
     auto object_name = getCustomVariableName(drop_query.variable_name, drop_query.is_cluster_variable);
 
     const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
-    const bool is_local_persistent = (object_name.scope == CustomVariableName::Scope::LocalPersistent);
     const bool is_cluster_scope = (object_name.scope == CustomVariableName::Scope::Cluster);
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent && !is_cluster_scope)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, session, or cluster variables are supported");
+    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_cluster_scope)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, session, or cluster variables are supported");
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::DROP_VARIABLE);
@@ -114,18 +113,16 @@ BlockIO InterpreterDropVariableQuery::execute()
 
         current_context->getCustomVariablesManager().removeEntry(object_name);
 
-        if (is_local_persistent)
+        /// Local scope always persists its value; clean up the .bin file too.
+        try
         {
-            try
-            {
-                current_context->getCustomVariablesValuesStorage().removeValue(object_name.name);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(
-                    getLogger("InterpreterDropVariableQuery"),
-                    fmt::format("while removing persisted value for custom variable '{}'", object_name.fullName()));
-            }
+            current_context->getCustomVariablesValuesStorage().removeValue(object_name.name);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(
+                getLogger("InterpreterDropVariableQuery"),
+                fmt::format("while removing persisted value for custom variable '{}'", object_name.fullName()));
         }
     }
     else

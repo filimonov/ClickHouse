@@ -80,10 +80,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
     auto object_name = getCustomVariableName(create_query.variable_name, create_query.is_cluster_variable);
 
     const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
-    const bool is_local_persistent = (object_name.scope == CustomVariableName::Scope::LocalPersistent);
     const bool is_cluster_scope = (object_name.scope == CustomVariableName::Scope::Cluster);
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_local_persistent && !is_cluster_scope)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, local_persistent, session, or cluster variables are supported");
+    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_cluster_scope)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, session, or cluster variables are supported");
 
     if (create_query.refresh_strategy && is_session_scope)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "REFRESH is not supported for session variables");
@@ -120,9 +119,6 @@ BlockIO InterpreterCreateVariableQuery::execute()
         if (isCustomVariableExpressionConstant(create_query.expression, current_context))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH is not allowed for constant custom variable expressions");
     }
-
-    if (is_local_persistent && isCustomVariableExpressionConstant(create_query.expression, current_context))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Constant expressions are not allowed for local_persistent custom variables");
 
     CustomVariablesManager * manager = nullptr;
     if (is_session_scope)
