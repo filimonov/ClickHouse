@@ -251,13 +251,25 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
         return;
     }
 
-    /// If we already have this entry and the definition hash is unchanged, skip the rebuild —
-    /// only the value znode could have changed, and that path is handled above.
+    /// If we already have this entry and both the expression AND the refresh
+    /// strategy are unchanged, skip the rebuild — only the value znode could
+    /// have changed, and that path is handled above. Comparing only the
+    /// expression was a bug: OR REPLACE that strips or alters REFRESH leaves
+    /// the peer's old scheduler running.
+    auto same_refresh_strategy = [](const ASTPtr & a, const ASTPtr & b)
+    {
+        if (!a && !b)
+            return true;
+        if (!a || !b)
+            return false;
+        return a->getTreeHash(/*ignore_aliases=*/false) == b->getTreeHash(/*ignore_aliases=*/false);
+    };
     if (auto existing = manager.tryGetEntry(key))
     {
         if (existing->definition.expression && create_query->expression
             && existing->definition.expression->getTreeHash(/*ignore_aliases=*/false)
-                == create_query->expression->getTreeHash(/*ignore_aliases=*/false))
+                == create_query->expression->getTreeHash(/*ignore_aliases=*/false)
+            && same_refresh_strategy(existing->definition.refresh_strategy, create_query->refresh_strategy))
         {
             /// Definition hasn't actually changed. Only re-load the value.
             refreshOne(name, /*rebuild_definition=*/false);

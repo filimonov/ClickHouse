@@ -310,11 +310,26 @@ void CustomVariablesManager::startRefreshIfNeeded(const ContextPtr & context, co
         refresh_data->settings.applyChanges(refresh->settings->changes);
 
     const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
-    refresh_data->state.last_completed_timeslot = now;
+    auto value = entry->value.load();
+    /// For refresh-on-reload (local_persistent after restart, cluster entries
+    /// picked up from ZK) we want the next tick to fall on the original
+    /// schedule, not be pushed out by up to a full interval. Seed
+    /// last_completed_timeslot from the persisted last_successful_update_time
+    /// if we know one. Fall back to `now` only when we have never refreshed
+    /// successfully.
+    if (value && value->has_value && value->is_valid
+        && value->last_successful_update_time.time_since_epoch().count() > 0)
+    {
+        refresh_data->state.last_completed_timeslot =
+            std::chrono::floor<std::chrono::seconds>(value->last_successful_update_time);
+    }
+    else
+    {
+        refresh_data->state.last_completed_timeslot = now;
+    }
     refresh_data->state.last_attempt_replica = getFQDNOrHostName();
     randomizeState(refresh_data->state);
 
-    auto value = entry->value.load();
     if (!value || !value->is_valid)
     {
         refresh_data->state.last_attempt_time = now;

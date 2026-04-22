@@ -124,14 +124,35 @@ BlockIO InterpreterCreateVariableQuery::execute()
     if (is_local_persistent && isCustomVariableExpressionConstant(create_query.expression, current_context))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Constant expressions are not allowed for local_persistent custom variables");
 
-    auto evaluated = evaluateCustomVariableExpression(create_query.expression, current_context);
-
-    DataTypePtr declared_type = evaluated.type;
     CustomVariablesManager * manager = nullptr;
     if (is_session_scope)
         manager = &current_context->getSessionCustomVariablesManager();
     else
         manager = &current_context->getCustomVariablesManager();
+
+    /// Without OR REPLACE, evaluating the expression before a cheap existence
+    /// check means a duplicate CREATE (or a misguided IF NOT EXISTS) runs the
+    /// full expression — and fails with whatever the expression throws instead
+    /// of the expected FILE_ALREADY_EXISTS / silent no-op. Check the in-memory
+    /// manager up front for already-known entries. (The durable stores still
+    /// perform their own atomic checks; cross-node races on cluster scope go
+    /// through storeDefinition below.)
+    if (!create_query.or_replace)
+    {
+        if (manager->hasEntry(object_name))
+        {
+            if (create_query.if_not_exists)
+                return {};
+            throw Exception(
+                ErrorCodes::FILE_ALREADY_EXISTS,
+                "Custom variable '{}' already exists",
+                object_name.fullName());
+        }
+    }
+
+    auto evaluated = evaluateCustomVariableExpression(create_query.expression, current_context);
+
+    DataTypePtr declared_type = evaluated.type;
 
     if (create_query.or_replace)
     {

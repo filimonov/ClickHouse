@@ -27,3 +27,14 @@ DROP VARIABLE local.cv_test; -- {serverError FILE_DOESNT_EXIST}
 DROP VARIABLE IF EXISTS local.cv_test;
 
 CREATE VARIABLE local.cv_big AS repeat('x', 2048); -- {serverError TOO_LARGE_STRING_SIZE}
+
+-- Existence check must fire before the expression is evaluated so that both
+-- `IF NOT EXISTS` and duplicate CREATE are no-ops / clean errors even when
+-- the new expression is invalid.
+CREATE VARIABLE local.cv_fixed AS toUInt32(1);
+CREATE VARIABLE IF NOT EXISTS local.cv_fixed AS (SELECT * FROM nonexistent_table);
+SELECT getVariable('local.cv_fixed');
+
+CREATE VARIABLE local.cv_fixed AS (SELECT * FROM nonexistent_table); -- {serverError FILE_ALREADY_EXISTS}
+SELECT getVariable('local.cv_fixed');
+DROP VARIABLE local.cv_fixed;

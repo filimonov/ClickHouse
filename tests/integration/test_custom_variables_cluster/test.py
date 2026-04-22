@@ -482,6 +482,49 @@ def test_restart_during_refresh_no_leak(started_cluster, cleanup):
     assert v2 > v1, (v1, v2)
 
 
+def test_or_replace_drops_refresh_schedule_on_peer(started_cluster, cleanup):
+    """Reported by codex review. The peer's coordinator fast-path skipped rebuilds
+    when the AST hash of the expression matched. If OR REPLACE only removed the
+    REFRESH clause (keeping the same expression), the peer kept its old scheduler
+    alive and continued publishing refreshed values via ZK, violating the new
+    definition that says 'no refresh'."""
+
+    node1.query(
+        "CREATE CLUSTER VARIABLE rs_strip REFRESH EVERY 1 SECOND AS toUInt64(now())"
+    )
+    assert_eq_with_retry(node2, "SELECT getVariable('cluster.rs_strip') > 0", "1\n")
+
+    # Let ticks run on both sides so both nodes have a live refresh scheduler.
+    time.sleep(2)
+
+    # Same expression, REFRESH removed. Hash of expression is unchanged — the
+    # fast-path used to short-circuit and leave the old scheduler alive.
+    node1.query(
+        "CREATE OR REPLACE CLUSTER VARIABLE rs_strip AS toUInt64(now())"
+    )
+
+    # Give any lingering scheduler ticks a chance to fire.
+    time.sleep(3)
+
+    # After OR REPLACE the value is whatever CREATE evaluated once — not a
+    # moving target. Sample on each node across another window; value must be
+    # identical on each sample.
+    for node in nodes:
+        snapshots = []
+        for _ in range(4):
+            snapshots.append(node.query("SELECT getVariable('cluster.rs_strip')").strip())
+            time.sleep(1)
+        assert len(set(snapshots)) == 1, (node.name, snapshots)
+
+    # system.custom_variables.refresh_interval is NULL for a non-refreshable var.
+    for node in nodes:
+        row = node.query(
+            "SELECT refresh_interval IS NULL FROM system.custom_variables "
+            "WHERE name = 'rs_strip' AND scope = 'cluster'"
+        ).strip()
+        assert row == "1", (node.name, row)
+
+
 def test_drop_while_discovery_in_flight(started_cluster, cleanup):
     """On node1, create a batch of cluster variables; simultaneously drop one
     of them from node2. All other entries must eventually be visible on node2
