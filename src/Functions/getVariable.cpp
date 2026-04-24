@@ -83,7 +83,13 @@ public:
     bool isDeterministicInScopeOfQuery() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
     size_t getNumberOfArguments() const override { return (Mode == ErrorHandlingMode::Default) ? 2 : 1; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 1}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        if constexpr (Mode == ErrorHandlingMode::Default)
+            return {0, 1};
+        else
+            return {0};
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
