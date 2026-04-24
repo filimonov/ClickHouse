@@ -357,15 +357,14 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
         entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
     }
 
+    /// Initialize refresh metadata before publishing the entry so concurrent
+    /// readers do not observe a half-initialized refresh pointer.
+    manager.prepareRefreshIfNeeded(global_context, entry);
+
     /// Pass nullptr for context so the manager does not attempt to persist back to disk / ZK —
     /// cluster entries are published by the CREATE interpreter / refresh path explicitly.
     manager.setEntry(nullptr, entry->definition.key, entry);
-
-    /// Every peer runs its own refresh schedule; the ephemeral lock ensures only
-    /// one node per tick actually writes to ZK. Without this, SYSTEM REFRESH VARIABLE
-    /// on a peer would fail and failover would never pick up a dead leader's cadence.
-    if (entry->definition.refresh_strategy)
-        manager.startRefreshIfNeeded(global_context, entry);
+    manager.schedulePreparedRefresh(entry);
 }
 
 Strings CustomVariablesClusterCoordinator::readDefinitionsAndInstallChildrenWatch()

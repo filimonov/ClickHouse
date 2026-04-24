@@ -216,6 +216,63 @@ def test_system_refresh_variable(started_cluster, cleanup):
     )
 
 
+def test_refreshable_create_publishes_initialized_entry(started_cluster, cleanup):
+    """CREATE pauses after in-memory publish. SYSTEM REFRESH during that pause
+    must not report "not refreshable"."""
+
+    errors = []
+    saw_refresh_success = False
+    last_refresh_error = ""
+
+    def create_variable():
+        try:
+            node1.query(
+                "CREATE CLUSTER VARIABLE init_pub REFRESH EVERY 1 YEAR AS toUInt64(now())"
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    node1.query("SYSTEM ENABLE FAILPOINT custom_variable_create_after_publish_pause")
+    creator = threading.Thread(target=create_variable)
+    creator.start()
+    try:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if errors:
+                break
+
+            try:
+                node1.query("SYSTEM REFRESH VARIABLE cluster.init_pub")
+                saw_refresh_success = True
+                break
+            except Exception as exc:
+                message = str(exc)
+                last_refresh_error = message
+                if "not refreshable" in message:
+                    raise
+                if "UNKNOWN_IDENTIFIER" not in message:
+                    # Keep polling while CREATE is still wiring the entry.
+                    pass
+
+            time.sleep(0.1)
+    finally:
+        node1.query("SYSTEM DISABLE FAILPOINT custom_variable_create_after_publish_pause")
+        creator.join(timeout=30)
+
+    assert not creator.is_alive()
+    if errors:
+        raise errors[0]
+    assert saw_refresh_success, last_refresh_error or "SYSTEM REFRESH VARIABLE never succeeded during paused CREATE"
+
+    assert_eq_with_retry(
+        node2,
+        "SELECT getVariable('cluster.init_pub') > 0",
+        "1\n",
+        retry_count=40,
+        sleep_time=0.25,
+    )
+
+
 def test_refresh_failover(started_cluster, cleanup):
     node1.query(
         "CREATE CLUSTER VARIABLE fo_wm REFRESH EVERY 2 SECOND AS toUInt64(now())"
@@ -323,6 +380,49 @@ def test_create_or_replace_while_refreshing(started_cluster, cleanup):
         assert node.query(
             "SELECT getVariable('cluster.repl_race')"
         ).strip() == "42"
+
+
+def test_create_cluster_rolls_back_on_value_store_failure(started_cluster, cleanup):
+    """If initial value publication fails, CREATE must fail and leave no
+    definition-only ghost variable in Keeper."""
+
+    node1.query("SYSTEM ENABLE FAILPOINT custom_variables_cluster_store_value_fail_once")
+    try:
+        err = node1.query_and_get_error(
+            "CREATE CLUSTER VARIABLE publish_fail_cv AS toUInt64(11)"
+        )
+    finally:
+        # ONCE failpoints auto-disable after trigger, but disable explicitly in
+        # case CREATE failed before reaching the injection point.
+        node1.query("SYSTEM DISABLE FAILPOINT custom_variables_cluster_store_value_fail_once")
+
+    assert (
+        "Injected failure while storing cluster variable" in err
+        or "KEEPER_EXCEPTION" in err
+    ), err
+
+    for node in nodes:
+
+        def missing(n=node):
+            error = n.query_and_get_error(
+                "SELECT getVariable('cluster.publish_fail_cv')"
+            )
+            return "UNKNOWN_IDENTIFIER" in error
+
+        deadline = time.time() + 10
+        while time.time() < deadline and not missing():
+            time.sleep(0.25)
+        assert missing(), f"{node.name} still sees cluster.publish_fail_cv"
+
+    node1.query("CREATE CLUSTER VARIABLE publish_fail_cv AS toUInt64(11)")
+    for node in nodes:
+        assert_eq_with_retry(
+            node,
+            "SELECT getVariable('cluster.publish_fail_cv')",
+            "11\n",
+            retry_count=40,
+            sleep_time=0.25,
+        )
 
 
 def test_cluster_refresh_failure_flap(started_cluster, cleanup):

@@ -261,7 +261,10 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
         stopRefreshTask(entry);
 
     for (const auto & [_, entry] : entries)
-        startRefreshIfNeeded(context, entry);
+        prepareRefreshIfNeeded(context, entry);
+
+    for (const auto & [_, entry] : entries)
+        schedulePreparedRefresh(entry);
 
     for (const auto & entry : entries_to_refresh)
         requestRefresh(entry, false);
@@ -293,7 +296,7 @@ bool CustomVariablesManager::removeEntry(const Key & key)
     return true;
 }
 
-void CustomVariablesManager::startRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry)
+void CustomVariablesManager::prepareRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry)
 {
     if (!entry || !entry->definition.refresh_strategy)
         return;
@@ -343,7 +346,20 @@ void CustomVariablesManager::startRefreshIfNeeded(const ContextPtr & context, co
         [this, context, entry] { refreshTask(context, entry); });
 
     entry->refresh = std::move(refresh_data);
+}
+
+void CustomVariablesManager::schedulePreparedRefresh(const EntryPtr & entry)
+{
+    if (!entry || !entry->refresh || !entry->refresh->task)
+        return;
+
     entry->refresh->task->schedule();
+}
+
+void CustomVariablesManager::startRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry)
+{
+    prepareRefreshIfNeeded(context, entry);
+    schedulePreparedRefresh(entry);
 }
 
 void CustomVariablesManager::refreshNow(const Key & key)

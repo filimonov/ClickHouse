@@ -3,6 +3,7 @@
 
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/CustomVariableValueSnapshot.h>
 #include <Interpreters/CustomVariablesClusterStorage.h>
 #include <Interpreters/CustomVariablesEvaluator.h>
 #include <Interpreters/CustomVariablesManager.h>
@@ -16,6 +17,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeperLock.h>
 #include <DataTypes/Utils.h>
 #include <IO/Operators.h>
@@ -25,6 +28,7 @@
 #include <base/getFQDNOrHostName.h>
 
 #include <chrono>
+#include <optional>
 
 namespace DB
 {
@@ -35,6 +39,11 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int INCORRECT_QUERY;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char custom_variable_create_after_publish_pause[];
 }
 
 namespace
@@ -194,9 +203,12 @@ BlockIO InterpreterCreateVariableQuery::execute()
         stored_create_query.children.push_back(stored_create_query.refresh_strategy);
 
     std::unique_ptr<zkutil::ZooKeeperLock> cluster_publish_lock;
+    CustomVariablesClusterStoragePtr cluster_storage;
+    std::optional<String> previous_cluster_definition;
+    bool cluster_definition_written = false;
     if (is_cluster_scope)
     {
-        auto cluster_storage = current_context->getCustomVariablesClusterStorage();
+        cluster_storage = current_context->getCustomVariablesClusterStorage();
         if (!cluster_storage)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -216,11 +228,15 @@ BlockIO InterpreterCreateVariableQuery::execute()
                 "Another replica is currently creating or refreshing cluster variable '{}'; retry",
                 object_name.fullName());
 
+        if (replace_if_exists)
+            previous_cluster_definition = cluster_storage->tryLoadDefinition(object_name.name);
+
         WriteBufferFromOwnString ddl_buf;
         IAST::FormatSettings format_settings(/*one_line=*/false);
         stored_create_query.format(ddl_buf, format_settings);
         if (!cluster_storage->storeDefinition(object_name.name, ddl_buf.str(), throw_if_exists, replace_if_exists))
             return {};
+        cluster_definition_written = true;
     }
     else if (!is_session_scope)
     {
@@ -267,11 +283,60 @@ BlockIO InterpreterCreateVariableQuery::execute()
     value->is_valid = true;
     entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
 
-    manager->setEntry(current_context, object_name, entry);
-    manager->startRefreshIfNeeded(current_context, entry);
+    manager->prepareRefreshIfNeeded(current_context, entry);
+
+    if (is_cluster_scope)
+    {
+        CustomVariableValueSnapshot snapshot;
+        snapshot.runtime_type = value->runtime_type;
+        snapshot.value = value->value;
+        snapshot.last_update_time = value->last_update_time;
+        snapshot.last_successful_update_time = value->last_successful_update_time;
+        snapshot.last_update_hostname = value->last_update_hostname;
+        snapshot.last_error = value->last_error;
+        snapshot.last_error_type = value->last_error_type;
+        snapshot.has_value = value->has_value;
+        snapshot.is_valid = value->is_valid;
+
+        try
+        {
+            cluster_storage->storeValue(object_name.name, snapshot);
+        }
+        catch (...)
+        {
+            if (cluster_definition_written)
+            {
+                try
+                {
+                    if (previous_cluster_definition)
+                        cluster_storage->storeDefinition(object_name.name, *previous_cluster_definition, false, true);
+                    else
+                        cluster_storage->removeDefinition(object_name.name, false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        getLogger("InterpreterCreateVariableQuery"),
+                        fmt::format("while rolling back failed CREATE CLUSTER VARIABLE '{}'", object_name.fullName()));
+                }
+            }
+            throw;
+        }
+
+        /// Value is already published in Keeper. Install in-memory entry without
+        /// re-persisting through best-effort path.
+        manager->setEntry(nullptr, object_name, entry);
+    }
+    else
+    {
+        manager->setEntry(current_context, object_name, entry);
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::custom_variable_create_after_publish_pause);
+    manager->schedulePreparedRefresh(entry);
 
     /// Nudge the coordinator thread to pick up the new entry without waiting for ZK echo
-    /// (the initial value was already written to ZK through persistValueIfNeeded inside setEntry).
+    /// (the initial value was already written to ZK in the CREATE path above).
     if (is_cluster_scope)
         current_context->getCustomVariablesManager().pokeClusterCoordinator(object_name.name);
 

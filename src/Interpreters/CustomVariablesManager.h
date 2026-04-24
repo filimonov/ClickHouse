@@ -103,6 +103,8 @@ public:
     void loadFromStorage(const ContextPtr & context, ICustomVariablesDefinitionsStorage & storage);
     void setEntry(const ContextPtr & context, const Key & key, EntryPtr entry);
     bool removeEntry(const Key & key);
+    void prepareRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry);
+    void schedulePreparedRefresh(const EntryPtr & entry);
     void startRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry);
     void refreshNow(const Key & key);
     void refreshAll();

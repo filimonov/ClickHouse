@@ -1,6 +1,7 @@
 #include <Interpreters/CustomVariablesClusterStorage.h>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -21,7 +22,13 @@ namespace ErrorCodes
 {
     extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int KEEPER_EXCEPTION;
     extern const int NO_ZOOKEEPER;
+}
+
+namespace FailPoints
+{
+    extern const char custom_variables_cluster_store_value_fail_once[];
 }
 
 namespace
@@ -171,6 +178,9 @@ std::optional<CustomVariableValueSnapshot> CustomVariablesClusterStorage::tryLoa
 
 void CustomVariablesClusterStorage::storeValue(const String & name, const CustomVariableValueSnapshot & snapshot)
 {
+    fiu_do_on(FailPoints::custom_variables_cluster_store_value_fail_once,
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injected failure while storing cluster variable '{}'", name););
+
     createRootNodesIfNeeded();
     auto zookeeper = getZooKeeper();
     const auto path = valuePath(escapeForFileName(name));
