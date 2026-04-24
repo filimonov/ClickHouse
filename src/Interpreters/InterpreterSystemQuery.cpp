@@ -827,10 +827,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->getCustomVariablesManager().refreshNow(variable_name);
             break;
         }
-        case Type::REFRESH_VARIABLES:
-            getContext()->checkAccess(AccessType::SYSTEM_CUSTOM_VARIABLES);
-            getContext()->getCustomVariablesManager().refreshAll();
-            break;
         case Type::WAIT_VIEW:
             for (const auto & task : getRefreshTasks())
                 task->wait();
@@ -2196,7 +2192,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::REFRESH_VARIABLE:
         case Type::REFRESH_REPLICATED_VARIABLE:
-        case Type::REFRESH_VARIABLES:
         {
             required_access.emplace_back(AccessType::SYSTEM_CUSTOM_VARIABLES);
             break;

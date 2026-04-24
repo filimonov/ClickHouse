@@ -466,8 +466,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             print_identifier(variable_name);
             break;
         }
-        case Type::REFRESH_VARIABLES:
-            break;
         case Type::TEST_VIEW:
         {
             ostr << ' ';

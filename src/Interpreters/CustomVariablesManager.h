@@ -100,7 +100,6 @@ public:
     void schedulePreparedRefresh(const EntryPtr & entry);
     void startRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry);
     void refreshNow(const Key & key);
-    void refreshAll();
     void persistValueIfNeeded(const ContextPtr & context, const EntryPtr & entry) const;
 
     /// Lifecycle for the cluster-coordinator. No-op if storage is null.

@@ -496,9 +496,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
-        case Type::REFRESH_VARIABLES:
-            break;
-
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
             break;

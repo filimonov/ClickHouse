@@ -12,8 +12,6 @@ FROM system.custom_variables
 WHERE kind = 'server' AND name = 'cv_refresh'
 ORDER BY name;
 
-SYSTEM REFRESH VARIABLES;
-
 CREATE TABLE default.cv_refresh_src (x UInt8) ENGINE = Memory;
 INSERT INTO default.cv_refresh_src VALUES (1);
 

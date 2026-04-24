@@ -358,13 +358,6 @@ void CustomVariablesManager::refreshNow(const Key & key)
     requestRefresh(getEntry(key), true);
 }
 
-void CustomVariablesManager::refreshAll()
-{
-    const auto entries_snapshot = getAllEntries();
-    for (const auto & entry : entries_snapshot)
-        requestRefresh(entry, false);
-}
-
 void CustomVariablesManager::stopRefreshTask(const EntryPtr & entry)
 {
     if (!entry || !entry->refresh)

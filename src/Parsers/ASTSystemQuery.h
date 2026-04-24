@@ -116,7 +116,6 @@ public:
         RESET_COVERAGE,
         REFRESH_VARIABLE,
         REFRESH_REPLICATED_VARIABLE,
-        REFRESH_VARIABLES,
         REFRESH_VIEW,
         WAIT_VIEW,
         START_VIEW,
