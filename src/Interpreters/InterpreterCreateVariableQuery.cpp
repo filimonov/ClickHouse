@@ -16,6 +16,10 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ParserCreateVariableQuery.h>
+#include <Parsers/parseQuery.h>
+
+#include <Core/Settings.h>
 
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -32,6 +36,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -143,7 +153,12 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     DataTypePtr declared_type = evaluated.type;
 
-    if (create_query.or_replace)
+    /// For server and temporary kinds, the local cache is authoritative; check type
+    /// compatibility against it up front. For the replicated kind the local cache can
+    /// be stale (node just started, behind the coordinator, racing with discovery),
+    /// so the OR REPLACE type check has to run against the canonical Keeper state
+    /// under the publish lock — see the replicated branch below.
+    if (create_query.or_replace && !is_replicated)
     {
         if (auto existing = get_existing_entry())
         {
@@ -164,27 +179,28 @@ BlockIO InterpreterCreateVariableQuery::execute()
     }
 
     Field value_field = std::move(evaluated.value);
-    if (!declared_type->equals(*evaluated.type))
-        value_field = convertFieldToType(value_field, *declared_type);
-
     checkCustomVariableSize(value_field);
 
     bool throw_if_exists = !create_query.if_not_exists && !create_query.or_replace;
     bool replace_if_exists = create_query.or_replace;
 
-    auto stored_query = query_ptr->clone();
-    auto & stored_create_query = stored_query->as<ASTCreateVariableQuery &>();
-    ASTPtr expression_to_cast = stored_create_query.expression->clone();
-    /// CAST argument is an ASTFunction arg and won't be auto-parenthesized when formatted;
-    /// wrap bare SELECTs in a subquery so the persisted DDL round-trips through the parser.
-    if (expression_to_cast->as<ASTSelectWithUnionQuery>() || expression_to_cast->as<ASTSelectQuery>())
-        expression_to_cast = std::make_shared<ASTSubquery>(std::move(expression_to_cast));
-    stored_create_query.expression = addTypeConversionToAST(std::move(expression_to_cast), declared_type->getName());
-    stored_create_query.children.clear();
-    stored_create_query.children.push_back(stored_create_query.variable_name);
-    stored_create_query.children.push_back(stored_create_query.expression);
-    if (stored_create_query.refresh_strategy)
-        stored_create_query.children.push_back(stored_create_query.refresh_strategy);
+    auto build_stored_query = [&](const DataTypePtr & final_type) -> ASTPtr
+    {
+        auto query = query_ptr->clone();
+        auto & stored = query->as<ASTCreateVariableQuery &>();
+        ASTPtr expression_to_cast = stored.expression->clone();
+        /// CAST argument is an ASTFunction arg and won't be auto-parenthesized when formatted;
+        /// wrap bare SELECTs in a subquery so the persisted DDL round-trips through the parser.
+        if (expression_to_cast->as<ASTSelectWithUnionQuery>() || expression_to_cast->as<ASTSelectQuery>())
+            expression_to_cast = std::make_shared<ASTSubquery>(std::move(expression_to_cast));
+        stored.expression = addTypeConversionToAST(std::move(expression_to_cast), final_type->getName());
+        stored.children.clear();
+        stored.children.push_back(stored.variable_name);
+        stored.children.push_back(stored.expression);
+        if (stored.refresh_strategy)
+            stored.children.push_back(stored.refresh_strategy);
+        return query;
+    };
 
     std::unique_ptr<zkutil::ZooKeeperLock> cluster_publish_lock;
     CustomVariablesClusterStoragePtr cluster_storage;
@@ -215,14 +231,77 @@ BlockIO InterpreterCreateVariableQuery::execute()
         if (replace_if_exists)
             previous_cluster_definition = cluster_storage->tryLoadDefinition(object_name.name);
 
+        /// For OR REPLACE, run the type-compatibility check against the canonical
+        /// Keeper definition while we hold the publish lock. This covers the case
+        /// where the local cache had no entry (fresh node, stale watch) but Keeper
+        /// does — without this, a replace could change the declared type out from
+        /// under other replicas and break their type-converted last-good values.
+        if (replace_if_exists && previous_cluster_definition)
+        {
+            try
+            {
+                ParserCreateVariableQuery parser;
+                ASTPtr prev_ast = parseQuery(
+                    parser,
+                    previous_cluster_definition->data(),
+                    previous_cluster_definition->data() + previous_cluster_definition->size(),
+                    "",
+                    0,
+                    current_context->getSettingsRef()[Setting::max_parser_depth],
+                    current_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                const auto * prev_create = prev_ast ? prev_ast->as<ASTCreateVariableQuery>() : nullptr;
+                if (prev_create && prev_create->expression)
+                {
+                    auto prev_type = getCustomVariableExpressionType(prev_create->expression, current_context);
+                    if (prev_type)
+                    {
+                        if (!canBeSafelyCast(evaluated.type, prev_type))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot replace replicated variable '{}' because expression type {} is not compatible with existing type {}",
+                                object_name.name,
+                                evaluated.type->getName(),
+                                prev_type->getName());
+                        declared_type = prev_type;
+                    }
+                }
+            }
+            catch (const Exception & e)
+            {
+                /// Re-throw our own type-compat error; swallow other parse/analysis
+                /// issues — on a parse failure, let the replace proceed with the
+                /// new type rather than pinning an unparseable legacy definition.
+                if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+                    throw;
+                tryLogCurrentException(
+                    getLogger("InterpreterCreateVariableQuery"),
+                    fmt::format("while parsing previous Keeper definition for replicated variable '{}'", object_name.name));
+            }
+        }
+
+        if (!declared_type->equals(*evaluated.type))
+            value_field = convertFieldToType(value_field, *declared_type);
+
+        auto stored_query_for_keeper = build_stored_query(declared_type);
         WriteBufferFromOwnString ddl_buf;
         IAST::FormatSettings format_settings(/*one_line=*/false);
-        stored_create_query.format(ddl_buf, format_settings);
+        stored_query_for_keeper->format(ddl_buf, format_settings);
         if (!cluster_storage->storeDefinition(object_name.name, ddl_buf.str(), throw_if_exists, replace_if_exists))
             return {};
         cluster_definition_written = true;
     }
-    else if (is_server)
+    else
+    {
+        /// Server/temporary: declared_type is already final (set above); convert
+        /// value to it before the storage layer sees it.
+        if (!declared_type->equals(*evaluated.type))
+            value_field = convertFieldToType(value_field, *declared_type);
+    }
+
+    auto stored_query = build_stored_query(declared_type);
+    auto & stored_create_query = stored_query->as<ASTCreateVariableQuery &>();
+
+    if (is_server)
     {
         auto & storage = current_context->getCustomVariablesDefinitionsStorage();
         if (!storage.storeObject(
@@ -236,12 +315,11 @@ BlockIO InterpreterCreateVariableQuery::execute()
             return {};
         }
     }
-    else
+    else if (is_temporary)
     {
         /// Temporary: no durable storage. Second-chance in-memory existence check for the
         /// race where OR REPLACE was requested but the entry wasn't present at the earlier
         /// check; if it appeared meanwhile, setEntry below will simply replace it.
-        chassert(is_temporary);
         if (temp_manager->hasEntry(object_name.name))
         {
             if (throw_if_exists)
