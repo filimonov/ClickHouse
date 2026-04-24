@@ -94,9 +94,6 @@
 #include <Interpreters/CustomVariablesDefinitionsDiskStorage.h>
 #include <Interpreters/CustomVariablesValuesDiskStorage.h>
 #include <Interpreters/CustomVariablesClusterStorage.h>
-#include <Interpreters/createCustomVariablesDefinitionsStorage.h>
-#include <Interpreters/createCustomVariablesValuesStorage.h>
-#include <Interpreters/createCustomVariablesClusterStorage.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/Cluster.h>
@@ -398,6 +395,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int INVALID_SETTING_VALUE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
@@ -3484,10 +3482,61 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     return *shared->user_defined_sql_objects_storage;
 }
 
+namespace
+{
+std::unique_ptr<CustomVariablesDefinitionsDiskStorage>
+makeCustomVariablesDefinitionsStorage(const ContextMutablePtr & global_context)
+{
+    static constexpr std::string_view zookeeper_path_key = "custom_variables_definitions_zookeeper_path";
+    static constexpr std::string_view disk_path_key = "custom_variables_path";
+
+    const auto & config = global_context->getConfigRef();
+    if (config.has(String(zookeeper_path_key)))
+    {
+        if (config.has(String(disk_path_key)))
+            throw Exception(
+                ErrorCodes::INVALID_CONFIG_PARAMETER,
+                "'{}' and '{}' must not be both specified in the config",
+                zookeeper_path_key,
+                disk_path_key);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Custom variable definitions in ZooKeeper are not implemented yet");
+    }
+
+    String default_path = std::filesystem::path{global_context->getPath()} / "custom_variables" / "";
+    String path = config.getString(String(disk_path_key), default_path);
+    return std::make_unique<CustomVariablesDefinitionsDiskStorage>(global_context, path);
+}
+
+std::unique_ptr<CustomVariablesValuesDiskStorage>
+makeCustomVariablesValuesStorage(const ContextMutablePtr & global_context)
+{
+    static constexpr std::string_view disk_path_key = "custom_variables_values_path";
+    const auto & config = global_context->getConfigRef();
+    String default_path = std::filesystem::path{global_context->getPath()} / "custom_variables_values" / "";
+    String path = config.getString(String(disk_path_key), default_path);
+    return std::make_unique<CustomVariablesValuesDiskStorage>(global_context, path);
+}
+
+CustomVariablesClusterStoragePtr
+makeCustomVariablesClusterStorage(const ContextMutablePtr & global_context)
+{
+    static constexpr std::string_view zk_path_key = "custom_variables_zookeeper_path";
+    const auto & config = global_context->getConfigRef();
+    if (!config.has(String(zk_path_key)))
+        return nullptr;
+
+    String path = config.getString(String(zk_path_key));
+    if (path.empty())
+        return nullptr;
+
+    return std::make_shared<CustomVariablesClusterStorage>(global_context, path);
+}
+}
+
 const CustomVariablesDefinitionsDiskStorage & Context::getCustomVariablesDefinitionsStorage() const
 {
     callOnce(shared->custom_variables_definitions_storage_initialized, [&] {
-        shared->custom_variables_definitions_storage = createCustomVariablesDefinitionsStorage(getGlobalContext());
+        shared->custom_variables_definitions_storage = makeCustomVariablesDefinitionsStorage(getGlobalContext());
     });
 
     return *shared->custom_variables_definitions_storage;
@@ -3496,7 +3545,7 @@ const CustomVariablesDefinitionsDiskStorage & Context::getCustomVariablesDefinit
 CustomVariablesDefinitionsDiskStorage & Context::getCustomVariablesDefinitionsStorage()
 {
     callOnce(shared->custom_variables_definitions_storage_initialized, [&] {
-        shared->custom_variables_definitions_storage = createCustomVariablesDefinitionsStorage(getGlobalContext());
+        shared->custom_variables_definitions_storage = makeCustomVariablesDefinitionsStorage(getGlobalContext());
     });
 
     return *shared->custom_variables_definitions_storage;
@@ -3505,7 +3554,7 @@ CustomVariablesDefinitionsDiskStorage & Context::getCustomVariablesDefinitionsSt
 const CustomVariablesValuesDiskStorage & Context::getCustomVariablesValuesStorage() const
 {
     callOnce(shared->custom_variables_values_storage_initialized, [&] {
-        shared->custom_variables_values_storage = createCustomVariablesValuesStorage(getGlobalContext());
+        shared->custom_variables_values_storage = makeCustomVariablesValuesStorage(getGlobalContext());
     });
 
     return *shared->custom_variables_values_storage;
@@ -3514,7 +3563,7 @@ const CustomVariablesValuesDiskStorage & Context::getCustomVariablesValuesStorag
 CustomVariablesValuesDiskStorage & Context::getCustomVariablesValuesStorage()
 {
     callOnce(shared->custom_variables_values_storage_initialized, [&] {
-        shared->custom_variables_values_storage = createCustomVariablesValuesStorage(getGlobalContext());
+        shared->custom_variables_values_storage = makeCustomVariablesValuesStorage(getGlobalContext());
     });
 
     return *shared->custom_variables_values_storage;
@@ -3554,7 +3603,7 @@ CustomVariablesManager & Context::getSessionCustomVariablesManager()
 std::shared_ptr<CustomVariablesClusterStorage> Context::getCustomVariablesClusterStorage() const
 {
     callOnce(shared->custom_variables_cluster_storage_initialized, [&] {
-        shared->custom_variables_cluster_storage = createCustomVariablesClusterStorage(getGlobalContext());
+        shared->custom_variables_cluster_storage = makeCustomVariablesClusterStorage(getGlobalContext());
     });
     return shared->custom_variables_cluster_storage;
 }
