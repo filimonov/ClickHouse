@@ -106,7 +106,7 @@ BlockIO InterpreterDropVariableQuery::execute()
     {
         chassert(is_temporary);
         auto & manager = current_context->getSessionCustomVariablesManager();
-        if (!manager.removeEntry(object_name))
+        if (!manager.removeEntry(object_name.name))
         {
             if (throw_if_not_exists)
                 throw Exception(

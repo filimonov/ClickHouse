@@ -49,11 +49,6 @@ void randomizeState(CustomVariablesManager::RefreshState & state)
     state.randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
 }
 
-bool isServerKind(CustomVariableKind kind)
-{
-    return kind == CustomVariableKind::Server;
-}
-
 bool isReplicatedKind(CustomVariableKind kind)
 {
     return kind == CustomVariableKind::Replicated;
@@ -139,10 +134,9 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, CustomV
         auto entry = std::make_shared<Entry>();
         entry->definition = std::move(definition);
 
-        const bool is_server = isServerKind(object_name.kind);
-        std::optional<CustomVariableValueSnapshot> snapshot;
-        if (is_server)
-            snapshot = context->getCustomVariablesValuesStorage().tryLoadValue(object_name.name);
+        /// Disk storage only carries server-kind definitions by construction.
+        std::optional<CustomVariableValueSnapshot> snapshot
+            = context->getCustomVariablesValuesStorage().tryLoadValue(object_name.name);
 
         bool loaded_from_disk = false;
         bool need_immediate_refresh = false;
@@ -205,8 +199,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, CustomV
                 value->is_valid = true;
                 entry->value.store(boost::static_pointer_cast<const Value>(value));
 
-                if (is_server)
-                    persistValueIfNeeded(context, entry);
+                persistValueIfNeeded(context, entry);
             }
             catch (...)
             {
@@ -219,8 +212,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, CustomV
                 value->is_valid = false;
                 entry->value.store(boost::static_pointer_cast<const Value>(value));
 
-                if (is_server)
-                    persistValueIfNeeded(context, entry);
+                persistValueIfNeeded(context, entry);
             }
         }
 
@@ -578,7 +570,9 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
         return;
 
     const auto kind = entry->definition.key.kind;
-    if (!isServerKind(kind) && !isReplicatedKind(kind))
+    /// Temporary variables never reach this manager; they live in TemporaryVariables.
+    /// Defensive check in case a future caller forgets.
+    if (kind == CustomVariableKind::Temporary)
         return;
 
     const auto value = entry->value.load();
@@ -602,6 +596,44 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
     {
         tryLogCurrentException(getLog(), fmt::format("while storing custom variable '{}' value", entry->definition.key.name));
     }
+}
+
+
+TemporaryVariables::EntryPtr TemporaryVariables::tryGetEntry(const String & name) const
+{
+    std::lock_guard lock(mutex);
+    auto it = entries.find(name);
+    if (it == entries.end())
+        return nullptr;
+    return it->second;
+}
+
+bool TemporaryVariables::hasEntry(const String & name) const
+{
+    std::lock_guard lock(mutex);
+    return entries.contains(name);
+}
+
+void TemporaryVariables::setEntry(const String & name, EntryPtr entry)
+{
+    std::lock_guard lock(mutex);
+    entries[name] = std::move(entry);
+}
+
+bool TemporaryVariables::removeEntry(const String & name)
+{
+    std::lock_guard lock(mutex);
+    return entries.erase(name) > 0;
+}
+
+TemporaryVariables::Entries TemporaryVariables::getAllEntries() const
+{
+    Entries res;
+    std::lock_guard lock(mutex);
+    res.reserve(entries.size());
+    for (const auto & [_, entry] : entries)
+        res.push_back(entry);
+    return res;
 }
 
 }

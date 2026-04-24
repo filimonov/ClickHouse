@@ -93,8 +93,7 @@ public:
         if constexpr (Kind == CustomVariableKind::Temporary)
             rejectInDistributedOrSessionlessContext();
 
-        const auto & manager = managerFor();
-        auto entry = manager.tryGetEntry(CustomVariableName{Kind, bare_name});
+        auto entry = tryGetEntryByName(bare_name);
         if (entry && entry->definition.declared_type)
             return entry->definition.declared_type;
 
@@ -126,8 +125,7 @@ public:
         if constexpr (Kind == CustomVariableKind::Temporary)
             rejectInDistributedOrSessionlessContext();
 
-        const auto & manager = managerFor();
-        auto entry = manager.tryGetEntry(CustomVariableName{Kind, bare_name});
+        auto entry = tryGetEntryByName(bare_name);
 
         if (entry)
         {
@@ -166,12 +164,12 @@ public:
     }
 
 private:
-    const CustomVariablesManager & managerFor() const
+    CustomVariablesManager::EntryPtr tryGetEntryByName(const String & bare_name) const
     {
         if constexpr (Kind == CustomVariableKind::Temporary)
-            return getContext()->getSessionCustomVariablesManager();
+            return getContext()->getSessionCustomVariablesManager().tryGetEntry(bare_name);
         else
-            return getContext()->getCustomVariablesManager();
+            return getContext()->getCustomVariablesManager().tryGetEntry(CustomVariableName{Kind, bare_name});
     }
 
     /// v1 semantics: temporary variables are a per-session concept. If the current

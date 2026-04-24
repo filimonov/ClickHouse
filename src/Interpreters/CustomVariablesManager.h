@@ -125,4 +125,26 @@ private:
     std::unique_ptr<CustomVariablesClusterCoordinator> cluster_coordinator;
 };
 
+
+/// Per-session store for CREATE TEMPORARY VARIABLE. RAM only, dies with
+/// the session. No refresh scheduler, no cluster coordinator, no value
+/// persistence — none of that applies to session-scoped variables.
+class TemporaryVariables
+{
+public:
+    using Entry = CustomVariablesManager::Entry;
+    using EntryPtr = CustomVariablesManager::EntryPtr;
+    using Entries = CustomVariablesManager::Entries;
+
+    EntryPtr tryGetEntry(const String & name) const;
+    bool hasEntry(const String & name) const;
+    void setEntry(const String & name, EntryPtr entry);
+    bool removeEntry(const String & name);
+    Entries getAllEntries() const;
+
+private:
+    mutable std::mutex mutex;
+    std::unordered_map<String, EntryPtr> entries;
+};
+
 }

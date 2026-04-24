@@ -3587,16 +3587,16 @@ CustomVariablesManager & Context::getCustomVariablesManager()
     return *shared->custom_variables_manager;
 }
 
-const CustomVariablesManager & Context::getSessionCustomVariablesManager() const
+const TemporaryVariables & Context::getSessionCustomVariablesManager() const
 {
     return const_cast<Context *>(this)->getSessionCustomVariablesManager();
 }
 
-CustomVariablesManager & Context::getSessionCustomVariablesManager()
+TemporaryVariables & Context::getSessionCustomVariablesManager()
 {
     auto session_context_ptr = getSessionContext();
     if (!session_context_ptr->session_custom_variables_manager)
-        session_context_ptr->session_custom_variables_manager = std::make_unique<CustomVariablesManager>();
+        session_context_ptr->session_custom_variables_manager = std::make_unique<TemporaryVariables>();
     return *session_context_ptr->session_custom_variables_manager;
 }
 

@@ -109,16 +109,25 @@ BlockIO InterpreterCreateVariableQuery::execute()
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH is not allowed for constant custom variable expressions");
     }
 
-    CustomVariablesManager * manager = is_temporary
-        ? &current_context->getSessionCustomVariablesManager()
-        : &current_context->getCustomVariablesManager();
+    CustomVariablesManager * global_manager = is_temporary ? nullptr : &current_context->getCustomVariablesManager();
+    TemporaryVariables * temp_manager = is_temporary ? &current_context->getSessionCustomVariablesManager() : nullptr;
+
+    auto has_existing_entry = [&]() -> bool
+    {
+        return is_temporary ? temp_manager->hasEntry(object_name.name) : global_manager->hasEntry(object_name);
+    };
+
+    auto get_existing_entry = [&]() -> CustomVariablesManager::EntryPtr
+    {
+        return is_temporary ? temp_manager->tryGetEntry(object_name.name) : global_manager->tryGetEntry(object_name);
+    };
 
     /// Check in-memory map first for already-known entries so duplicate CREATE / IF NOT EXISTS
     /// short-circuits without evaluating the expression. Durable stores still run their own
     /// atomic checks below for crash-safety.
     if (!create_query.or_replace)
     {
-        if (manager->hasEntry(object_name))
+        if (has_existing_entry())
         {
             if (create_query.if_not_exists)
                 return {};
@@ -136,7 +145,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     if (create_query.or_replace)
     {
-        if (auto existing = manager->tryGetEntry(object_name))
+        if (auto existing = get_existing_entry())
         {
             if (existing->definition.declared_type)
             {
@@ -233,7 +242,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
         /// race where OR REPLACE was requested but the entry wasn't present at the earlier
         /// check; if it appeared meanwhile, setEntry below will simply replace it.
         chassert(is_temporary);
-        if (manager->hasEntry(object_name))
+        if (temp_manager->hasEntry(object_name.name))
         {
             if (throw_if_exists)
                 throw Exception(
@@ -266,7 +275,14 @@ BlockIO InterpreterCreateVariableQuery::execute()
     value->is_valid = true;
     entry->value.store(boost::static_pointer_cast<const CustomVariablesManager::Value>(value));
 
-    manager->prepareRefreshIfNeeded(current_context, entry);
+    if (is_temporary)
+    {
+        temp_manager->setEntry(object_name.name, entry);
+        FailPointInjection::pauseFailPoint(FailPoints::custom_variable_create_after_publish_pause);
+        return {};
+    }
+
+    global_manager->prepareRefreshIfNeeded(current_context, entry);
 
     if (is_replicated)
     {
@@ -297,15 +313,15 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
         /// Value is already published in Keeper. Install in-memory entry without
         /// re-persisting through best-effort path.
-        manager->setEntry(nullptr, object_name, entry);
+        global_manager->setEntry(nullptr, object_name, entry);
     }
     else
     {
-        manager->setEntry(current_context, object_name, entry);
+        global_manager->setEntry(current_context, object_name, entry);
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::custom_variable_create_after_publish_pause);
-    manager->schedulePreparedRefresh(entry);
+    global_manager->schedulePreparedRefresh(entry);
 
     /// Nudge the coordinator thread to pick up the new entry without waiting for ZK echo
     /// (the initial value was already written to ZK in the CREATE path above).
