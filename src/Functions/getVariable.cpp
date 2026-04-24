@@ -143,12 +143,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        /// Lock-free hot path: we do not re-enter the manager here. The value was
-        /// snapshotted in getReturnTypeImpl under the manager mutex; the snapshot
-        /// is kept alive by the shared_ptr even if the entry is dropped mid-query.
-        /// The access check stays — grants can change between analysis and execution.
-        getContext()->checkAccess(AccessType::getVariable);
-
+        /// Lock-free hot path: we do not re-enter the manager or the access layer
+        /// here. The value was snapshotted in getReturnTypeImpl under the manager
+        /// mutex and is kept alive by the shared_ptr; the access check ran there
+        /// too — matching the once-per-analysis pattern used by dictGet et al.
         if (resolved_value)
         {
             Field field = resolved_value->value;
