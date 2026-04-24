@@ -206,7 +206,7 @@ def test_system_refresh_variable(started_cluster, cleanup):
     assert_eq_with_retry(node2, "SELECT getReplicatedVariable('sr_wm') > 0", "1\n")
     first = int(node2.query("SELECT getReplicatedVariable('sr_wm')").strip())
     time.sleep(1)
-    node1.query("SYSTEM REFRESH REPLICATED VARIABLEsr_wm")
+    node1.query("SYSTEM REFRESH REPLICATED VARIABLE sr_wm")
     assert_eq_with_retry(
         node2,
         f"SELECT getReplicatedVariable('sr_wm') > {first}",
@@ -242,7 +242,7 @@ def test_refreshable_create_publishes_initialized_entry(started_cluster, cleanup
                 break
 
             try:
-                node1.query("SYSTEM REFRESH REPLICATED VARIABLEinit_pub")
+                node1.query("SYSTEM REFRESH REPLICATED VARIABLE init_pub")
                 saw_refresh_success = True
                 break
             except Exception as exc:
@@ -386,7 +386,7 @@ def test_create_cluster_rolls_back_on_value_store_failure(started_cluster, clean
     """If initial value publication fails, CREATE must fail and leave no
     definition-only ghost variable in Keeper."""
 
-    node1.query("SYSTEM ENABLE FAILPOINT custom_variables_cluster_store_value_fail_once")
+    node1.query("SYSTEM ENABLE FAILPOINT custom_variables_replicated_store_value_fail_once")
     try:
         err = node1.query_and_get_error(
             "CREATE REPLICATED VARIABLE publish_fail_cv AS toUInt64(11)"
@@ -394,7 +394,7 @@ def test_create_cluster_rolls_back_on_value_store_failure(started_cluster, clean
     finally:
         # ONCE failpoints auto-disable after trigger, but disable explicitly in
         # case CREATE failed before reaching the injection point.
-        node1.query("SYSTEM DISABLE FAILPOINT custom_variables_cluster_store_value_fail_once")
+        node1.query("SYSTEM DISABLE FAILPOINT custom_variables_replicated_store_value_fail_once")
 
     assert (
         "Injected failure while storing cluster variable" in err

@@ -106,7 +106,7 @@ public:
     /// Lifecycle for the cluster-coordinator. No-op if storage is null.
     void startClusterCoordinator(const ContextPtr & global_context, CustomVariablesClusterStoragePtr storage);
     void stopClusterCoordinator();
-    /// Nudge the coordinator to re-read this specific cluster variable name. Safe if coordinator is absent.
+    /// Nudge the coordinator to re-read this specific replicated variable name. Safe if coordinator is absent.
     void pokeClusterCoordinator(const String & name);
 
 private:

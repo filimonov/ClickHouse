@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-    extern const char custom_variables_cluster_store_value_fail_once[];
+    extern const char custom_variables_replicated_store_value_fail_once[];
 }
 
 namespace
@@ -40,7 +40,7 @@ zkutil::GetZooKeeper makeGetZooKeeper(const ContextPtr & context)
     {
         auto locked = weak_ctx.lock();
         if (!locked)
-            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Global context for cluster variables storage is gone");
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Global context for replicated variables storage is gone");
         return locked->getZooKeeper();
     };
 }
@@ -171,15 +171,15 @@ std::optional<CustomVariableValueSnapshot> CustomVariablesClusterStorage::tryLoa
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("while decoding cluster variable value '{}' from {}", name, path));
+        tryLogCurrentException(log, fmt::format("while decoding replicated variable value '{}' from {}", name, path));
         return std::nullopt;
     }
 }
 
 void CustomVariablesClusterStorage::storeValue(const String & name, const CustomVariableValueSnapshot & snapshot)
 {
-    fiu_do_on(FailPoints::custom_variables_cluster_store_value_fail_once,
-        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injected failure while storing cluster variable '{}'", name););
+    fiu_do_on(FailPoints::custom_variables_replicated_store_value_fail_once,
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Injected failure while storing replicated variable '{}'", name););
 
     createRootNodesIfNeeded();
     auto zookeeper = getZooKeeper();

@@ -443,7 +443,7 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
     auto start_time = std::chrono::system_clock::now();
     lock.unlock();
 
-    /// For cluster variables, only one replica should actually refresh per tick.
+    /// For replicated variables, only one replica should actually refresh per tick.
     /// If the ephemeral lock is held by somebody else, skip this tick — the ZK
     /// watch will still deliver the winner's write into our RAM cache.
     std::unique_ptr<zkutil::ZooKeeperLock> cluster_lock;

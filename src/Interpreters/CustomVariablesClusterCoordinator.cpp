@@ -179,7 +179,7 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
             }
             catch (...)
             {
-                tryLogCurrentException(log, fmt::format("decoding value for cluster variable '{}'", name));
+                tryLogCurrentException(log, fmt::format("decoding value for replicated variable '{}'", name));
                 return;
             }
             if (!snapshot)
@@ -208,7 +208,7 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
                 }
                 catch (...)
                 {
-                    tryLogCurrentException(log, fmt::format("converting value type for cluster variable '{}'", name));
+                    tryLogCurrentException(log, fmt::format("converting value type for replicated variable '{}'", name));
                 }
             }
 
@@ -240,14 +240,14 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("parsing cluster variable definition '{}'", name));
+        tryLogCurrentException(log, fmt::format("parsing replicated variable definition '{}'", name));
         return;
     }
 
     const auto * create_query = ast ? ast->as<ASTCreateVariableQuery>() : nullptr;
     if (!create_query)
     {
-        LOG_WARNING(log, "Definition blob for cluster variable '{}' is not a CREATE VARIABLE query", name);
+        LOG_WARNING(log, "Definition blob for replicated variable '{}' is not a CREATE VARIABLE query", name);
         return;
     }
 
@@ -288,7 +288,7 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
     }
     catch (...)
     {
-        tryLogCurrentException(log, fmt::format("resolving declared type for cluster variable '{}'", name));
+        tryLogCurrentException(log, fmt::format("resolving declared type for replicated variable '{}'", name));
     }
 
     auto entry = std::make_shared<CustomVariablesManager::Entry>();
@@ -306,7 +306,7 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
         }
         catch (...)
         {
-            tryLogCurrentException(log, fmt::format("decoding value for cluster variable '{}'", name));
+            tryLogCurrentException(log, fmt::format("decoding value for replicated variable '{}'", name));
         }
     }
 
@@ -350,7 +350,7 @@ void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool reb
             }
             catch (...)
             {
-                tryLogCurrentException(log, fmt::format("converting value type for cluster variable '{}'", name));
+                tryLogCurrentException(log, fmt::format("converting value type for replicated variable '{}'", name));
             }
         }
 
