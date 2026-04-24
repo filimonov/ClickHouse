@@ -90,7 +90,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/CustomVariablesManager.h>
-#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariablesDefinitionsDiskStorage.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>

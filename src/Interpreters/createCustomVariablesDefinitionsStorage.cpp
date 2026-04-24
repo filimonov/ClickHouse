@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-std::unique_ptr<ICustomVariablesDefinitionsStorage> createCustomVariablesDefinitionsStorage(const ContextMutablePtr & global_context)
+std::unique_ptr<CustomVariablesDefinitionsDiskStorage> createCustomVariablesDefinitionsStorage(const ContextMutablePtr & global_context)
 {
     const String zookeeper_path_key = "custom_variables_definitions_zookeeper_path";
     const String disk_path_key = "custom_variables_path";

@@ -90,7 +90,8 @@
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
 #include <Interpreters/CustomVariablesManager.h>
-#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariableKind.h>
+#include <Interpreters/CustomVariablesDefinitionsDiskStorage.h>
 #include <Interpreters/CustomVariablesValuesDiskStorage.h>
 #include <Interpreters/CustomVariablesClusterStorage.h>
 #include <Interpreters/createCustomVariablesDefinitionsStorage.h>
@@ -490,7 +491,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag user_defined_sql_objects_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
     mutable OnceFlag custom_variables_definitions_storage_initialized;
-    mutable std::unique_ptr<ICustomVariablesDefinitionsStorage> custom_variables_definitions_storage;
+    mutable std::unique_ptr<CustomVariablesDefinitionsDiskStorage> custom_variables_definitions_storage;
     mutable OnceFlag custom_variables_values_storage_initialized;
     mutable std::unique_ptr<CustomVariablesValuesDiskStorage> custom_variables_values_storage;
     mutable OnceFlag custom_variables_manager_initialized;
@@ -3483,7 +3484,7 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
     return *shared->user_defined_sql_objects_storage;
 }
 
-const ICustomVariablesDefinitionsStorage & Context::getCustomVariablesDefinitionsStorage() const
+const CustomVariablesDefinitionsDiskStorage & Context::getCustomVariablesDefinitionsStorage() const
 {
     callOnce(shared->custom_variables_definitions_storage_initialized, [&] {
         shared->custom_variables_definitions_storage = createCustomVariablesDefinitionsStorage(getGlobalContext());
@@ -3492,7 +3493,7 @@ const ICustomVariablesDefinitionsStorage & Context::getCustomVariablesDefinition
     return *shared->custom_variables_definitions_storage;
 }
 
-ICustomVariablesDefinitionsStorage & Context::getCustomVariablesDefinitionsStorage()
+CustomVariablesDefinitionsDiskStorage & Context::getCustomVariablesDefinitionsStorage()
 {
     callOnce(shared->custom_variables_definitions_storage_initialized, [&] {
         shared->custom_variables_definitions_storage = createCustomVariablesDefinitionsStorage(getGlobalContext());

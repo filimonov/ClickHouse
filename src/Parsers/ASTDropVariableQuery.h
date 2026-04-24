@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariableKind.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 

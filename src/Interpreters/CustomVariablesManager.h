@@ -2,7 +2,8 @@
 
 #include <Interpreters/CustomVariableValueSnapshot.h>
 #include <Interpreters/CustomVariablesClusterStorage.h>
-#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariableKind.h>
+#include <Interpreters/CustomVariablesDefinitionsDiskStorage.h>
 
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
@@ -92,7 +93,7 @@ public:
     bool hasEntry(const Key & key) const;
     Entries getAllEntries() const;
 
-    void loadFromStorage(const ContextPtr & context, ICustomVariablesDefinitionsStorage & storage);
+    void loadFromStorage(const ContextPtr & context, CustomVariablesDefinitionsDiskStorage & storage);
     void setEntry(const ContextPtr & context, const Key & key, EntryPtr entry);
     bool removeEntry(const Key & key);
     void prepareRefreshIfNeeded(const ContextPtr & context, const EntryPtr & entry);

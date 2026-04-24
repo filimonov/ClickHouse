@@ -2,13 +2,8 @@
 
 #include <base/types.h>
 
-#include <Parsers/IAST_fwd.h>
-#include <Interpreters/Context_fwd.h>
-
 namespace DB
 {
-
-struct Settings;
 
 /// What storage domain a custom variable lives in. The same bare name can
 /// exist independently in each domain; the DDL keyword and the read function
@@ -47,33 +42,6 @@ struct CustomVariableName
     /// should include kindDisplayName() in their format string explicitly.
     String fullName() const { return name; }
     bool operator==(const CustomVariableName & other) const { return kind == other.kind && name == other.name; }
-};
-
-class ICustomVariablesDefinitionsStorage
-{
-public:
-    using ObjectName = CustomVariableName;
-    using Objects = std::vector<std::pair<ObjectName, ASTPtr>>;
-
-    virtual ~ICustomVariablesDefinitionsStorage() = default;
-
-    /// Loads all objects from storage.
-    virtual Objects loadObjects() = 0;
-
-    /// Stores an object definition.
-    virtual bool storeObject(
-        const ContextPtr & current_context,
-        const ObjectName & object_name,
-        ASTPtr create_query,
-        bool throw_if_exists,
-        bool replace_if_exists,
-        const Settings & settings) = 0;
-
-    /// Removes an object definition.
-    virtual bool removeObject(
-        const ContextPtr & current_context,
-        const ObjectName & object_name,
-        bool throw_if_not_exists) = 0;
 };
 
 }

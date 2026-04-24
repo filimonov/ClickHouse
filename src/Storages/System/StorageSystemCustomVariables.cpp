@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/CustomVariablesManager.h>
-#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariableKind.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 
 #include <mutex>

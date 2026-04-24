@@ -113,7 +113,7 @@ CustomVariablesManager::Entries CustomVariablesManager::getAllEntries() const
     return res;
 }
 
-void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustomVariablesDefinitionsStorage & storage)
+void CustomVariablesManager::loadFromStorage(const ContextPtr & context, CustomVariablesDefinitionsDiskStorage & storage)
 {
     auto objects = storage.loadObjects();
     std::unordered_map<Key, EntryPtr, KeyHash> new_entries;

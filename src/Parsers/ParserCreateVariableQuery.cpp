@@ -1,6 +1,6 @@
 #include <Parsers/ParserCreateVariableQuery.h>
 
-#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariableKind.h>
 #include <Parsers/ASTCreateVariableQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
