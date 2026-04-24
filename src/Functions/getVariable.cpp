@@ -4,6 +4,7 @@
 
 #include <Access/ContextAccess.h>
 #include <Core/Field.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/CustomVariablesManager.h>
 #include <Interpreters/CustomVariableKind.h>
@@ -178,18 +179,29 @@ private:
             return getContext()->getCustomVariablesManager().tryGetEntry(CustomVariableName{Kind, bare_name});
     }
 
-    /// v1 semantics: temporary variables are a per-session concept. If the current
-    /// execution has no session context (background tasks, remote-shard subqueries
-    /// dispatched from Distributed tables / remote()/cluster()), refuse the call.
+    /// v1 semantics: temporary variables are a per-session concept. Reject both
+    /// scenarios where the initiating session is not the one executing the call:
+    ///   1) Secondary queries dispatched to remote shards (Distributed table,
+    ///      remote()/cluster(), ON CLUSTER DDL propagation). The remote node has
+    ///      its own session but can never see the initiator's temporaries.
+    ///   2) Contexts with no session at all (background tasks such as MV refreshes,
+    ///      replicated-variable refresh loops, etc.).
     /// Inlining the temporary value as a literal into the remote query text is a
     /// legitimate future feature; for now we prefer a clear, explicit rejection
-    /// over silently returning a wrong value on remote shards.
+    /// over letting a remote node silently consult an unrelated session store.
     void rejectInDistributedOrSessionlessContext() const
     {
-        if (!getContext()->hasSessionContext())
+        const auto & client_info = getContext()->getClientInfo();
+        if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
                 "{} cannot be used in distributed or remote queries; temporary variables only exist on the initiating session",
+                String{name});
+
+        if (!getContext()->hasSessionContext())
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "{} cannot be used outside of a session; temporary variables require an active session context",
                 String{name});
     }
 };
