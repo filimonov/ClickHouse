@@ -146,7 +146,7 @@ void CustomVariablesClusterCoordinator::resyncAll()
     for (const auto & entry : entries)
     {
         const auto & key = entry->definition.key;
-        if (key.scope == CustomVariableName::Scope::Cluster && !present.contains(key.name))
+        if (key.kind == CustomVariableKind::Replicated && !present.contains(key.name))
             manager.removeEntry(key);
     }
 
@@ -156,7 +156,7 @@ void CustomVariablesClusterCoordinator::resyncAll()
 
 void CustomVariablesClusterCoordinator::refreshOne(const String & name, bool rebuild_definition)
 {
-    const CustomVariableName key{CustomVariableName::Scope::Cluster, name};
+    const CustomVariableName key{CustomVariableKind::Replicated, name};
 
     /// Fast path: value-only change for an already-known entry → swap the value snapshot
     /// atomically and keep the in-memory refresh scheduler intact.

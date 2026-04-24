@@ -19,57 +19,34 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
-    extern const int INCORRECT_QUERY;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
 {
-CustomVariableName getCustomVariableName(const ASTPtr & ast, bool is_cluster_variable)
+String getBareVariableName(const ASTPtr & ast)
 {
     const auto * identifier = ast ? ast->as<ASTIdentifier>() : nullptr;
     if (!identifier)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name is not an identifier");
 
-    if (is_cluster_variable)
-    {
-        if (identifier->name_parts.size() != 1 || identifier->name_parts[0].empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cluster custom variable name must be a single identifier (no scope prefix)");
-        return CustomVariableName{CustomVariableName::Scope::Cluster, identifier->name_parts[0]};
-    }
+    String name;
+    if (!tryGetIdentifierNameInto(identifier, name) || name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be a non-empty identifier");
 
-    if (identifier->name_parts.size() != 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
-
-    const auto & scope_str = identifier->name_parts[0];
-    const auto & name = identifier->name_parts[1];
-    if (scope_str.empty() || name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
-
-    CustomVariableName::Scope scope;
-    if (!CustomVariableName::tryParseScope(scope_str, scope))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown custom variable scope '{}'", scope_str);
-
-    if (scope == CustomVariableName::Scope::Cluster)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Use DROP CLUSTER VARIABLE <name> syntax for cluster-scoped variables");
-
-    return CustomVariableName{scope, name};
+    return name;
 }
 }
 
 BlockIO InterpreterDropVariableQuery::execute()
 {
     const auto & drop_query = query_ptr->as<ASTDropVariableQuery &>();
-    auto object_name = getCustomVariableName(drop_query.variable_name, drop_query.is_cluster_variable);
+    auto bare_name = getBareVariableName(drop_query.variable_name);
+    const CustomVariableKind kind = drop_query.kind;
+    CustomVariableName object_name{kind, bare_name};
 
-    const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
-    const bool is_cluster_scope = (object_name.scope == CustomVariableName::Scope::Cluster);
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_cluster_scope)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, session, or cluster variables are supported");
+    const bool is_temporary = (kind == CustomVariableKind::Temporary);
+    const bool is_replicated = (kind == CustomVariableKind::Replicated);
+    const bool is_server = (kind == CustomVariableKind::Server);
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::DROP_VARIABLE);
@@ -78,8 +55,8 @@ BlockIO InterpreterDropVariableQuery::execute()
 
     if (!drop_query.cluster.empty())
     {
-        if (is_session_scope)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
+        /// Grammar guarantees only server kind carries ON CLUSTER.
+        chassert(is_server);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
@@ -89,13 +66,13 @@ BlockIO InterpreterDropVariableQuery::execute()
 
     bool throw_if_not_exists = !drop_query.if_exists;
 
-    if (is_cluster_scope)
+    if (is_replicated)
     {
         auto cluster_storage = current_context->getCustomVariablesClusterStorage();
         if (!cluster_storage)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Cluster custom variables require <custom_variables_zookeeper_path> in the server config");
+                "Replicated custom variables require <custom_variables_zookeeper_path> in the server config");
 
         if (!cluster_storage->removeDefinition(object_name.name, throw_if_not_exists))
             return {};
@@ -105,7 +82,7 @@ BlockIO InterpreterDropVariableQuery::execute()
         cv_manager.removeEntry(object_name);
         cv_manager.pokeClusterCoordinator(object_name.name);
     }
-    else if (!is_session_scope)
+    else if (is_server)
     {
         auto & storage = current_context->getCustomVariablesDefinitionsStorage();
         if (!storage.removeObject(current_context, object_name, throw_if_not_exists))
@@ -113,7 +90,7 @@ BlockIO InterpreterDropVariableQuery::execute()
 
         current_context->getCustomVariablesManager().removeEntry(object_name);
 
-        /// Local scope always persists its value; clean up the .bin file too.
+        /// Server kind always persists its value on disk; clean up the .bin file too.
         try
         {
             current_context->getCustomVariablesValuesStorage().removeValue(object_name.name);
@@ -122,16 +99,21 @@ BlockIO InterpreterDropVariableQuery::execute()
         {
             tryLogCurrentException(
                 getLogger("InterpreterDropVariableQuery"),
-                fmt::format("while removing persisted value for custom variable '{}'", object_name.fullName()));
+                fmt::format("while removing persisted value for server variable '{}'", object_name.name));
         }
     }
     else
     {
+        chassert(is_temporary);
         auto & manager = current_context->getSessionCustomVariablesManager();
         if (!manager.removeEntry(object_name))
         {
             if (throw_if_not_exists)
-                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Custom variable '{}' doesn't exist", object_name.fullName());
+                throw Exception(
+                    ErrorCodes::FILE_DOESNT_EXIST,
+                    "{} variable '{}' doesn't exist",
+                    kindDisplayName(kind),
+                    object_name.name);
             return {};
         }
     }

@@ -48,54 +48,32 @@ namespace FailPoints
 
 namespace
 {
-CustomVariableName getCustomVariableName(const ASTPtr & ast, bool is_cluster_variable)
+/// Extracts the bare identifier name. The DDL grammar uses ParserIdentifier so
+/// `variable_name` is always a single-segment identifier by construction.
+String getBareVariableName(const ASTPtr & ast)
 {
     const auto * identifier = ast ? ast->as<ASTIdentifier>() : nullptr;
     if (!identifier)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name is not an identifier");
 
-    if (is_cluster_variable)
-    {
-        if (identifier->name_parts.size() != 1 || identifier->name_parts[0].empty())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cluster custom variable name must be a single identifier (no scope prefix)");
-        return CustomVariableName{CustomVariableName::Scope::Cluster, identifier->name_parts[0]};
-    }
+    String name;
+    if (!tryGetIdentifierNameInto(identifier, name) || name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be a non-empty identifier");
 
-    if (identifier->name_parts.size() != 2)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
-
-    const auto & scope_str = identifier->name_parts[0];
-    const auto & name = identifier->name_parts[1];
-    if (scope_str.empty() || name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
-
-    CustomVariableName::Scope scope;
-    if (!CustomVariableName::tryParseScope(scope_str, scope))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown custom variable scope '{}'", scope_str);
-
-    if (scope == CustomVariableName::Scope::Cluster)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Use CREATE CLUSTER VARIABLE <name> syntax for cluster-scoped variables");
-
-    return CustomVariableName{scope, name};
+    return name;
 }
 }
 
 BlockIO InterpreterCreateVariableQuery::execute()
 {
     const auto & create_query = query_ptr->as<ASTCreateVariableQuery &>();
-    auto object_name = getCustomVariableName(create_query.variable_name, create_query.is_cluster_variable);
+    auto bare_name = getBareVariableName(create_query.variable_name);
+    const CustomVariableKind kind = create_query.kind;
+    CustomVariableName object_name{kind, bare_name};
 
-    const bool is_session_scope = (object_name.scope == CustomVariableName::Scope::Session);
-    const bool is_cluster_scope = (object_name.scope == CustomVariableName::Scope::Cluster);
-    if (object_name.scope != CustomVariableName::Scope::Local && !is_session_scope && !is_cluster_scope)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only local, session, or cluster variables are supported");
-
-    if (create_query.refresh_strategy && is_session_scope)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "REFRESH is not supported for session variables");
+    const bool is_temporary = (kind == CustomVariableKind::Temporary);
+    const bool is_replicated = (kind == CustomVariableKind::Replicated);
+    const bool is_server = (kind == CustomVariableKind::Server);
 
     AccessRightsElements access_rights_elements;
     access_rights_elements.emplace_back(AccessType::CREATE_VARIABLE);
@@ -106,10 +84,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     if (!create_query.cluster.empty())
     {
-        if (is_session_scope)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for session variables");
-        if (create_query.refresh_strategy)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "ON CLUSTER is not supported for refreshable variables");
+        /// Grammar guarantees only the server kind carries an ON CLUSTER clause.
+        chassert(is_server);
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(access_rights_elements);
         return executeDDLQueryOnCluster(query_ptr, current_context, params);
@@ -119,6 +95,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     if (create_query.refresh_strategy)
     {
+        /// Grammar guarantees temporary doesn't carry REFRESH; this handles the remaining
+        /// sub-clauses (APPEND, DEPENDS ON) that come from the shared MV refresh grammar
+        /// but aren't meaningful for variables.
         const auto * refresh = create_query.refresh_strategy->as<ASTRefreshStrategy>();
         if (!refresh)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid refresh strategy");
@@ -130,19 +109,13 @@ BlockIO InterpreterCreateVariableQuery::execute()
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "REFRESH is not allowed for constant custom variable expressions");
     }
 
-    CustomVariablesManager * manager = nullptr;
-    if (is_session_scope)
-        manager = &current_context->getSessionCustomVariablesManager();
-    else
-        manager = &current_context->getCustomVariablesManager();
+    CustomVariablesManager * manager = is_temporary
+        ? &current_context->getSessionCustomVariablesManager()
+        : &current_context->getCustomVariablesManager();
 
-    /// Without OR REPLACE, evaluating the expression before a cheap existence
-    /// check means a duplicate CREATE (or a misguided IF NOT EXISTS) runs the
-    /// full expression — and fails with whatever the expression throws instead
-    /// of the expected FILE_ALREADY_EXISTS / silent no-op. Check the in-memory
-    /// manager up front for already-known entries. (The durable stores still
-    /// perform their own atomic checks; cross-node races on cluster scope go
-    /// through storeDefinition below.)
+    /// Check in-memory map first for already-known entries so duplicate CREATE / IF NOT EXISTS
+    /// short-circuits without evaluating the expression. Durable stores still run their own
+    /// atomic checks below for crash-safety.
     if (!create_query.or_replace)
     {
         if (manager->hasEntry(object_name))
@@ -151,8 +124,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
                 return {};
             throw Exception(
                 ErrorCodes::FILE_ALREADY_EXISTS,
-                "Custom variable '{}' already exists",
-                object_name.fullName());
+                "{} variable '{}' already exists",
+                kindDisplayName(kind),
+                object_name.name);
         }
     }
 
@@ -169,8 +143,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
                 if (!canBeSafelyCast(evaluated.type, existing->definition.declared_type))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot replace custom variable '{}' because expression type {} is not compatible with existing type {}",
-                        object_name.fullName(),
+                        "Cannot replace {} variable '{}' because expression type {} is not compatible with existing type {}",
+                        kindDisplayName(kind),
+                        object_name.name,
                         evaluated.type->getName(),
                         existing->definition.declared_type->getName());
 
@@ -206,13 +181,13 @@ BlockIO InterpreterCreateVariableQuery::execute()
     CustomVariablesClusterStoragePtr cluster_storage;
     std::optional<String> previous_cluster_definition;
     bool cluster_definition_written = false;
-    if (is_cluster_scope)
+    if (is_replicated)
     {
         cluster_storage = current_context->getCustomVariablesClusterStorage();
         if (!cluster_storage)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Cluster custom variables require <custom_variables_zookeeper_path> in the server config");
+                "Replicated custom variables require <custom_variables_zookeeper_path> in the server config");
 
         /// OR REPLACE rewrites two znodes (definition and value). Without serialisation
         /// two concurrent replacers on different nodes could end up with writer A's
@@ -225,8 +200,8 @@ BlockIO InterpreterCreateVariableQuery::execute()
         if (!cluster_publish_lock)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Another replica is currently creating or refreshing cluster variable '{}'; retry",
-                object_name.fullName());
+                "Another replica is currently creating or refreshing replicated variable '{}'; retry",
+                object_name.name);
 
         if (replace_if_exists)
             previous_cluster_definition = cluster_storage->tryLoadDefinition(object_name.name);
@@ -238,7 +213,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
             return {};
         cluster_definition_written = true;
     }
-    else if (!is_session_scope)
+    else if (is_server)
     {
         auto & storage = current_context->getCustomVariablesDefinitionsStorage();
         if (!storage.storeObject(
@@ -254,10 +229,18 @@ BlockIO InterpreterCreateVariableQuery::execute()
     }
     else
     {
+        /// Temporary: no durable storage. Second-chance in-memory existence check for the
+        /// race where OR REPLACE was requested but the entry wasn't present at the earlier
+        /// check; if it appeared meanwhile, setEntry below will simply replace it.
+        chassert(is_temporary);
         if (manager->hasEntry(object_name))
         {
             if (throw_if_exists)
-                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Custom variable '{}' already exists", object_name.fullName());
+                throw Exception(
+                    ErrorCodes::FILE_ALREADY_EXISTS,
+                    "{} variable '{}' already exists",
+                    kindDisplayName(kind),
+                    object_name.name);
             if (!replace_if_exists)
                 return {};
         }
@@ -285,7 +268,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     manager->prepareRefreshIfNeeded(current_context, entry);
 
-    if (is_cluster_scope)
+    if (is_replicated)
     {
         CustomVariableValueSnapshot snapshot;
         snapshot.runtime_type = value->runtime_type;
@@ -317,7 +300,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
                 {
                     tryLogCurrentException(
                         getLogger("InterpreterCreateVariableQuery"),
-                        fmt::format("while rolling back failed CREATE CLUSTER VARIABLE '{}'", object_name.fullName()));
+                        fmt::format("while rolling back failed CREATE REPLICATED VARIABLE '{}'", object_name.name));
                 }
             }
             throw;
@@ -337,7 +320,7 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     /// Nudge the coordinator thread to pick up the new entry without waiting for ZK echo
     /// (the initial value was already written to ZK in the CREATE path above).
-    if (is_cluster_scope)
+    if (is_replicated)
         current_context->getCustomVariablesManager().pokeClusterCoordinator(object_name.name);
 
     return {};

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
@@ -15,7 +16,7 @@ public:
 
     bool or_replace = false;
     bool if_not_exists = false;
-    bool is_cluster_variable = false;
+    CustomVariableKind kind = CustomVariableKind::Server;
 
     String getID(char delim) const override { return "CreateVariableQuery" + (delim + getVariableName()); }
 

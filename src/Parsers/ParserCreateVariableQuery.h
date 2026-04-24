@@ -5,7 +5,8 @@
 namespace DB
 {
 
-/// CREATE VARIABLE local.foo AS 1
+/// CREATE [OR REPLACE] [TEMPORARY | REPLICATED] VARIABLE [IF NOT EXISTS] name
+///     [ON CLUSTER cluster] [REFRESH <strategy>] AS <expr_or_select>
 class ParserCreateVariableQuery : public IParserBase
 {
 protected:

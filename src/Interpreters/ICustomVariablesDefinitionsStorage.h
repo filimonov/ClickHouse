@@ -10,49 +10,43 @@ namespace DB
 
 struct Settings;
 
+/// What storage domain a custom variable lives in. The same bare name can
+/// exist independently in each domain; the DDL keyword and the read function
+/// together determine which domain a statement targets.
+enum class CustomVariableKind
+{
+    /// Default. CREATE VARIABLE, getVariable(). Definition on disk, value on
+    /// this server only (persisted for restart resilience).
+    Server,
+    /// CREATE TEMPORARY VARIABLE, getTemporaryVariable(). RAM only, dies with
+    /// the session. Never persisted, never distributed.
+    Temporary,
+    /// CREATE REPLICATED VARIABLE, getReplicatedVariable(). Keeper-backed:
+    /// one canonical definition and value shared across all nodes. Requires
+    /// <custom_variables_zookeeper_path> in server config.
+    Replicated,
+};
+
+inline const char * kindDisplayName(CustomVariableKind kind)
+{
+    switch (kind)
+    {
+        case CustomVariableKind::Server: return "server";
+        case CustomVariableKind::Temporary: return "temporary";
+        case CustomVariableKind::Replicated: return "replicated";
+    }
+    return "";
+}
+
 struct CustomVariableName
 {
-    enum class Scope
-    {
-        Local,   // Always persistent.
-        Session,
-        Cluster,
-    };
-
-    Scope scope;
+    CustomVariableKind kind;
     String name;
 
-    static bool tryParseScope(const String & scope_str, Scope & scope_out)
-    {
-        if (scope_str == "local")
-            scope_out = Scope::Local;
-        else if (scope_str == "session")
-            scope_out = Scope::Session;
-        else if (scope_str == "cluster")
-            scope_out = Scope::Cluster;
-        else
-            return false;
-
-        return true;
-    }
-
-    static String scopeToString(Scope scope_value)
-    {
-        switch (scope_value)
-        {
-            case Scope::Local:
-                return "local";
-            case Scope::Session:
-                return "session";
-            case Scope::Cluster:
-                return "cluster";
-        }
-
-        return "";
-    }
-
-    String fullName() const { return scopeToString(scope) + "." + name; }
-    bool operator==(const CustomVariableName & other) const { return scope == other.scope && name == other.name; }
+    /// Bare name for display. Error messages that want to disambiguate kinds
+    /// should include kindDisplayName() in their format string explicitly.
+    String fullName() const { return name; }
+    bool operator==(const CustomVariableName & other) const { return kind == other.kind && name == other.name; }
 };
 
 class ICustomVariablesDefinitionsStorage

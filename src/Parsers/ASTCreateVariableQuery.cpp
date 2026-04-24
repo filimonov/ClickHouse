@@ -33,8 +33,17 @@ void ASTCreateVariableQuery::formatImpl(
     if (or_replace)
         ostr << "OR REPLACE ";
 
-    if (is_cluster_variable)
-        ostr << "CLUSTER ";
+    switch (kind)
+    {
+        case CustomVariableKind::Server:
+            break;
+        case CustomVariableKind::Temporary:
+            ostr << "TEMPORARY ";
+            break;
+        case CustomVariableKind::Replicated:
+            ostr << "REPLICATED ";
+            break;
+    }
 
     ostr << "VARIABLE ";
 
@@ -43,7 +52,9 @@ void ASTCreateVariableQuery::formatImpl(
 
     variable_name->format(ostr, settings, state, frame);
 
-    if (!is_cluster_variable)
+    /// ON CLUSTER is only valid for the server kind. Temporary and Replicated grammar
+    /// rejects ON CLUSTER at parse time, so `cluster` is guaranteed empty for them.
+    if (kind == CustomVariableKind::Server)
         formatOnCluster(ostr, settings);
 
     if (refresh_strategy)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
@@ -12,7 +13,7 @@ public:
     ASTPtr variable_name;
 
     bool if_exists = false;
-    bool is_cluster_variable = false;
+    CustomVariableKind kind = CustomVariableKind::Server;
 
     String getID(char) const override { return "DropVariableQuery"; }
 

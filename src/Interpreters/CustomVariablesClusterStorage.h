@@ -20,7 +20,7 @@ namespace DB
 /// ZooKeeper-backed storage for cluster-scoped custom variables.
 ///
 /// Layout under <root>:
-///   <root>/definitions/<escaped_name>     — DDL blob (CREATE CLUSTER VARIABLE ... AS CAST(...))
+///   <root>/definitions/<escaped_name>     — DDL blob (CREATE REPLICATED VARIABLE ... AS CAST(...))
 ///   <root>/values/<escaped_name>          — binary CustomVariableValueSnapshot blob
 ///   <root>/values/<escaped_name>/lock     — ephemeral leader lock during refresh
 ///

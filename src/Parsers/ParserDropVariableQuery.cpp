@@ -1,3 +1,4 @@
+#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 #include <Parsers/ASTDropVariableQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -12,20 +13,23 @@ bool ParserDropVariableQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     ParserKeyword s_variable(Keyword::VARIABLE);
     ParserKeyword s_if_exists(Keyword::IF_EXISTS);
     ParserKeyword s_on(Keyword::ON);
-    ParserKeyword s_cluster(Keyword::CLUSTER);
-    ParserCompoundIdentifier name_p;
+    ParserKeyword s_temporary(Keyword::TEMPORARY);
+    ParserKeyword s_replicated(Keyword::REPLICATED);
+    ParserIdentifier name_p;
 
     String cluster_str;
     bool if_exists = false;
-    bool is_cluster_variable = false;
+    CustomVariableKind kind = CustomVariableKind::Server;
 
     ASTPtr variable_name;
 
     if (!s_drop.ignore(pos, expected))
         return false;
 
-    if (s_cluster.ignore(pos, expected))
-        is_cluster_variable = true;
+    if (s_temporary.ignore(pos, expected))
+        kind = CustomVariableKind::Temporary;
+    else if (s_replicated.ignore(pos, expected))
+        kind = CustomVariableKind::Replicated;
 
     if (!s_variable.ignore(pos, expected))
         return false;
@@ -36,7 +40,8 @@ bool ParserDropVariableQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     if (!name_p.parse(pos, variable_name, expected))
         return false;
 
-    if (!is_cluster_variable && s_on.ignore(pos, expected))
+    /// ON CLUSTER only valid for server kind.
+    if (kind == CustomVariableKind::Server && s_on.ignore(pos, expected))
     {
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
@@ -50,7 +55,7 @@ bool ParserDropVariableQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
 
     drop_variable_query->if_exists = if_exists;
     drop_variable_query->cluster = std::move(cluster_str);
-    drop_variable_query->is_cluster_variable = is_cluster_variable;
+    drop_variable_query->kind = kind;
 
     return true;
 }

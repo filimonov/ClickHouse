@@ -20,15 +20,28 @@ void ASTDropVariableQuery::formatImpl(
     WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     ostr << "DROP ";
-    if (is_cluster_variable)
-        ostr << "CLUSTER ";
+
+    switch (kind)
+    {
+        case CustomVariableKind::Server:
+            break;
+        case CustomVariableKind::Temporary:
+            ostr << "TEMPORARY ";
+            break;
+        case CustomVariableKind::Replicated:
+            ostr << "REPLICATED ";
+            break;
+    }
+
     ostr << "VARIABLE ";
 
     if (if_exists)
         ostr << "IF EXISTS ";
 
     variable_name->format(ostr, settings, state, frame);
-    if (!is_cluster_variable)
+
+    /// ON CLUSTER only valid for server kind (grammar enforces).
+    if (kind == CustomVariableKind::Server)
         formatOnCluster(ostr, settings);
 }
 

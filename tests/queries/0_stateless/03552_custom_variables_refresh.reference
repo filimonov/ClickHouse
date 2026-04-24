@@ -1,5 +1,5 @@
-local	cv_refresh	1	1
-local	cv_refresh_fail	1	0	1
+server	cv_refresh	1	1
+server	cv_refresh_fail	1	0	1
 1
 1	0	1	1
 1

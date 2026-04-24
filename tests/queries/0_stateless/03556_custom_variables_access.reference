@@ -3,6 +3,9 @@ drop_without_grant=DENIED
 bare_drop=DENIED
 get_without_grant=DENIED
 7
+7
+0
+0
 1
 sys_refresh_without_grant=DENIED
 readonly_blocks_create=DENIED

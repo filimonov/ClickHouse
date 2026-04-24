@@ -54,20 +54,6 @@ String makeDirectoryPathCanonical(const String & directory_path)
 
 constexpr std::string_view file_prefix = "variable_";
 constexpr std::string_view file_suffix = ".sql";
-
-std::optional<std::pair<String, String>> splitScopeAndName(const String & stem)
-{
-    static constexpr std::string_view scopes[] = {"local", "cluster", "session"};
-    for (const auto & scope : scopes)
-    {
-        if (stem.starts_with(scope) && stem.size() > scope.size() && stem[scope.size()] == '_')
-        {
-            String name = stem.substr(scope.size() + 1);
-            return std::pair<String, String>{String(scope), std::move(name)};
-        }
-    }
-    return std::nullopt;
-}
 }
 
 CustomVariablesDefinitionsDiskStorage::CustomVariablesDefinitionsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
@@ -91,8 +77,8 @@ void CustomVariablesDefinitionsDiskStorage::createDirectory()
 
 String CustomVariablesDefinitionsDiskStorage::getFilePath(const ObjectName & object_name) const
 {
-    return dir_path + String(file_prefix) + CustomVariableName::scopeToString(object_name.scope) + "_"
-        + escapeForFileName(object_name.name) + String(file_suffix);
+    /// Only server-kind variables are stored on disk; the filename carries the bare name.
+    return dir_path + String(file_prefix) + escapeForFileName(object_name.name) + String(file_suffix);
 }
 
 std::optional<CustomVariablesDefinitionsDiskStorage::ObjectName>
@@ -103,22 +89,13 @@ CustomVariablesDefinitionsDiskStorage::parseFileName(const String & file_name) c
 
     size_t prefix_length = file_prefix.size();
     size_t suffix_length = file_suffix.size();
-    String stem = file_name.substr(prefix_length, file_name.length() - prefix_length - suffix_length);
+    String escaped_name = file_name.substr(prefix_length, file_name.length() - prefix_length - suffix_length);
 
-    auto parts = splitScopeAndName(stem);
-    if (!parts)
-        return std::nullopt;
-
-    auto [scope_str, escaped_name] = *parts;
     String name = unescapeForFileName(escaped_name);
     if (name.empty())
         return std::nullopt;
 
-    CustomVariableName::Scope scope;
-    if (!CustomVariableName::tryParseScope(scope_str, scope))
-        return std::nullopt;
-
-    return ObjectName{scope, std::move(name)};
+    return ObjectName{CustomVariableKind::Server, std::move(name)};
 }
 
 CustomVariablesDefinitionsDiskStorage::Objects CustomVariablesDefinitionsDiskStorage::loadObjects()
@@ -183,12 +160,12 @@ bool CustomVariablesDefinitionsDiskStorage::storeObject(
 {
     createDirectory();
     String file_path = getFilePath(object_name);
-    LOG_DEBUG(log, "Storing custom variable definition {} to file {}", object_name.fullName(), file_path);
+    LOG_DEBUG(log, "Storing custom variable definition {} to file {}", object_name.name, file_path);
 
     if (fs::exists(file_path))
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Custom variable '{}' already exists", object_name.fullName());
+            throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Custom variable '{}' already exists", object_name.name);
         if (!replace_if_exists)
             return false;
     }
@@ -221,7 +198,7 @@ bool CustomVariablesDefinitionsDiskStorage::storeObject(
         throw;
     }
 
-    LOG_TRACE(log, "Custom variable definition {} stored", object_name.fullName());
+    LOG_TRACE(log, "Custom variable definition {} stored", object_name.name);
     return true;
 }
 
@@ -231,17 +208,17 @@ bool CustomVariablesDefinitionsDiskStorage::removeObject(
     bool throw_if_not_exists)
 {
     String file_path = getFilePath(object_name);
-    LOG_DEBUG(log, "Removing custom variable definition {} from file {}", object_name.fullName(), file_path);
+    LOG_DEBUG(log, "Removing custom variable definition {} from file {}", object_name.name, file_path);
 
     bool existed = fs::remove(file_path);
     if (!existed)
     {
         if (throw_if_not_exists)
-            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Custom variable '{}' doesn't exist", object_name.fullName());
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Custom variable '{}' doesn't exist", object_name.name);
         return false;
     }
 
-    LOG_TRACE(log, "Custom variable definition {} removed", object_name.fullName());
+    LOG_TRACE(log, "Custom variable definition {} removed", object_name.name);
     return true;
 }
 

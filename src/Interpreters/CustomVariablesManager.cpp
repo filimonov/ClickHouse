@@ -49,14 +49,14 @@ void randomizeState(CustomVariablesManager::RefreshState & state)
     state.randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
 }
 
-bool isLocalScope(CustomVariableName::Scope scope)
+bool isServerKind(CustomVariableKind kind)
 {
-    return scope == CustomVariableName::Scope::Local;
+    return kind == CustomVariableKind::Server;
 }
 
-bool isClusterScope(CustomVariableName::Scope scope)
+bool isReplicatedKind(CustomVariableKind kind)
 {
-    return scope == CustomVariableName::Scope::Cluster;
+    return kind == CustomVariableKind::Replicated;
 }
 
 bool isValueStale(const RefreshSchedule & schedule, std::chrono::system_clock::time_point last_success, std::chrono::system_clock::time_point now)
@@ -74,7 +74,7 @@ CustomVariablesManager::~CustomVariablesManager() = default;
 
 size_t CustomVariablesManager::KeyHash::operator()(const Key & key) const
 {
-    return std::hash<size_t>{}(static_cast<size_t>(key.scope)) ^ (std::hash<String>{}(key.name) << 1);
+    return std::hash<size_t>{}(static_cast<size_t>(key.kind)) ^ (std::hash<String>{}(key.name) << 1);
 }
 
 CustomVariablesManager::EntryPtr CustomVariablesManager::tryGetEntry(const Key & key) const
@@ -90,7 +90,11 @@ CustomVariablesManager::EntryPtr CustomVariablesManager::getEntry(const Key & ke
 {
     auto entry = tryGetEntry(key);
     if (!entry)
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Custom variable '{}' not found", key.fullName());
+        throw Exception(
+            ErrorCodes::UNKNOWN_IDENTIFIER,
+            "No {} variable '{}'",
+            kindDisplayName(key.kind),
+            key.name);
     return entry;
 }
 
@@ -123,7 +127,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected custom variable definition for '{}'",
-                object_name.fullName());
+                object_name.name);
 
         Definition definition;
         definition.key = object_name;
@@ -135,9 +139,9 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
         auto entry = std::make_shared<Entry>();
         entry->definition = std::move(definition);
 
-        const bool is_local = isLocalScope(object_name.scope);
+        const bool is_server = isServerKind(object_name.kind);
         std::optional<CustomVariableValueSnapshot> snapshot;
-        if (is_local)
+        if (is_server)
             snapshot = context->getCustomVariablesValuesStorage().tryLoadValue(object_name.name);
 
         bool loaded_from_disk = false;
@@ -149,7 +153,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
         }
         catch (...)
         {
-            tryLogCurrentException(getLog(), fmt::format("while resolving declared type for custom variable '{}'", object_name.fullName()));
+            tryLogCurrentException(getLog(), fmt::format("while resolving declared type for custom variable '{}'", object_name.name));
         }
 
         if (snapshot && snapshot->has_value)
@@ -179,7 +183,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
             }
             catch (...)
             {
-                tryLogCurrentException(getLog(), fmt::format("while loading persisted custom variable '{}'", object_name.fullName()));
+                tryLogCurrentException(getLog(), fmt::format("while loading persisted custom variable '{}'", object_name.name));
             }
         }
 
@@ -208,12 +212,12 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
                 value->is_valid = true;
                 entry->value.store(boost::static_pointer_cast<const Value>(value));
 
-                if (is_local)
+                if (is_server)
                     persistValueIfNeeded(context, entry);
             }
             catch (...)
             {
-                tryLogCurrentException(getLog(), fmt::format("while evaluating custom variable '{}'", object_name.fullName()));
+                tryLogCurrentException(getLog(), fmt::format("while evaluating custom variable '{}'", object_name.name));
                 auto value = boost::make_shared<Value>();
                 value->last_update_time = std::chrono::system_clock::now();
                 value->last_error = getCurrentExceptionMessage(false);
@@ -222,7 +226,7 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
                 value->is_valid = false;
                 entry->value.store(boost::static_pointer_cast<const Value>(value));
 
-                if (is_local)
+                if (is_server)
                     persistValueIfNeeded(context, entry);
             }
         }
@@ -341,7 +345,9 @@ void CustomVariablesManager::prepareRefreshIfNeeded(const ContextPtr & context, 
         refresh_data->state.attempt_number = 1;
     }
 
-    const auto storage_id = StorageID("", "custom_variable." + entry->definition.key.fullName());
+    const auto storage_id = StorageID(
+        "",
+        fmt::format("custom_variable.{}.{}", kindDisplayName(entry->definition.key.kind), entry->definition.key.name));
     refresh_data->task = context->getSchedulePool().createTask(storage_id, "CustomVariableRefresh",
         [this, context, entry] { refreshTask(context, entry); });
 
@@ -403,8 +409,9 @@ void CustomVariablesManager::requestRefresh(const EntryPtr & entry, bool throw_i
         if (throw_if_not_refreshable)
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Custom variable '{}' is not refreshable",
-                entry->definition.key.fullName());
+                "{} variable '{}' is not refreshable",
+                kindDisplayName(entry->definition.key.kind),
+                entry->definition.key.name);
         return;
     }
 
@@ -455,7 +462,7 @@ void CustomVariablesManager::refreshTask(const ContextPtr & context, const Entry
     /// If the ephemeral lock is held by somebody else, skip this tick — the ZK
     /// watch will still deliver the winner's write into our RAM cache.
     std::unique_ptr<zkutil::ZooKeeperLock> cluster_lock;
-    if (isClusterScope(entry->definition.key.scope))
+    if (isReplicatedKind(entry->definition.key.kind))
     {
         auto cluster_storage = context->getCustomVariablesClusterStorage();
         if (!cluster_storage)
@@ -577,8 +584,8 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
     if (!context || !entry)
         return;
 
-    const auto scope = entry->definition.key.scope;
-    if (!isLocalScope(scope) && !isClusterScope(scope))
+    const auto kind = entry->definition.key.kind;
+    if (!isServerKind(kind) && !isReplicatedKind(kind))
         return;
 
     const auto value = entry->value.load();
@@ -598,7 +605,7 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
 
     try
     {
-        if (isClusterScope(scope))
+        if (isReplicatedKind(kind))
         {
             auto cluster_storage = context->getCustomVariablesClusterStorage();
             if (cluster_storage)
@@ -611,7 +618,7 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
     }
     catch (...)
     {
-        tryLogCurrentException(getLog(), fmt::format("while storing custom variable '{}' value", entry->definition.key.fullName()));
+        tryLogCurrentException(getLog(), fmt::format("while storing custom variable '{}' value", entry->definition.key.name));
     }
 }
 

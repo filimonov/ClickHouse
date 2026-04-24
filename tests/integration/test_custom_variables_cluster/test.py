@@ -44,12 +44,12 @@ def started_cluster():
         cluster.shutdown()
 
 
-def _drop_all_cluster_variables(node):
+def _drop_all_replicated_variables(node):
     rows = node.query(
-        "SELECT name FROM system.custom_variables WHERE scope = 'cluster'"
+        "SELECT name FROM system.custom_variables WHERE kind = 'replicated'"
     ).strip()
     for name in [r for r in rows.splitlines() if r]:
-        node.query(f"DROP CLUSTER VARIABLE IF EXISTS {name}")
+        node.query(f"DROP REPLICATED VARIABLE IF EXISTS {name}")
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def cleanup(started_cluster):
     # propagation between tests should not leak state.
     for node in nodes:
         try:
-            _drop_all_cluster_variables(node)
+            _drop_all_replicated_variables(node)
         except Exception:
             pass
 
@@ -67,26 +67,26 @@ def cleanup(started_cluster):
 # -------- Regression locks: already green after step 2 --------
 
 def test_zk_config_required(started_cluster, cleanup):
-    err = node_no_zk.query_and_get_error("CREATE CLUSTER VARIABLE nope AS 1")
+    err = node_no_zk.query_and_get_error("CREATE REPLICATED VARIABLE nope AS 1")
     assert "custom_variables_zookeeper_path" in err
     assert "BAD_ARGUMENTS" in err or "36" in err
 
 
 def test_single_node_create_read_drop(started_cluster, cleanup):
-    node1.query("CREATE CLUSTER VARIABLE sn_foo AS toUInt64(7)")
-    assert node1.query("SELECT getVariable('cluster.sn_foo')").strip() == "7"
-    node1.query("DROP CLUSTER VARIABLE sn_foo")
-    err = node1.query_and_get_error("SELECT getVariable('cluster.sn_foo')")
+    node1.query("CREATE REPLICATED VARIABLE sn_foo AS toUInt64(7)")
+    assert node1.query("SELECT getReplicatedVariable('sn_foo')").strip() == "7"
+    node1.query("DROP REPLICATED VARIABLE sn_foo")
+    err = node1.query_and_get_error("SELECT getReplicatedVariable('sn_foo')")
     assert "UNKNOWN_IDENTIFIER" in err
 
 
 # -------- Step 3: coordinator + watches --------
 
 def test_cross_node_discovery(started_cluster, cleanup):
-    node1.query("CREATE CLUSTER VARIABLE xn_foo AS toUInt64(42)")
+    node1.query("CREATE REPLICATED VARIABLE xn_foo AS toUInt64(42)")
     assert_eq_with_retry(
         node2,
-        "SELECT getVariable('cluster.xn_foo')",
+        "SELECT getReplicatedVariable('xn_foo')",
         "42\n",
         retry_count=40,
         sleep_time=0.25,
@@ -94,13 +94,13 @@ def test_cross_node_discovery(started_cluster, cleanup):
 
 
 def test_cross_node_drop(started_cluster, cleanup):
-    node1.query("CREATE CLUSTER VARIABLE xd_foo AS toUInt64(1)")
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.xd_foo')", "1\n")
+    node1.query("CREATE REPLICATED VARIABLE xd_foo AS toUInt64(1)")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('xd_foo')", "1\n")
 
-    node1.query("DROP CLUSTER VARIABLE xd_foo")
+    node1.query("DROP REPLICATED VARIABLE xd_foo")
 
     def no_longer_exists():
-        err = node2.query_and_get_error("SELECT getVariable('cluster.xd_foo')")
+        err = node2.query_and_get_error("SELECT getReplicatedVariable('xd_foo')")
         return "UNKNOWN_IDENTIFIER" in err
 
     deadline = time.time() + 10
@@ -108,12 +108,12 @@ def test_cross_node_drop(started_cluster, cleanup):
         if no_longer_exists():
             return
         time.sleep(0.25)
-    pytest.fail("node2 still sees cluster.xd_foo after DROP on node1")
+    pytest.fail("node2 still sees replicated xd_foo after DROP on node1")
 
 
 def test_restart_picks_up_existing(started_cluster, cleanup):
-    node1.query("CREATE CLUSTER VARIABLE rs_foo AS toUInt64(100)")
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.rs_foo')", "100\n")
+    node1.query("CREATE REPLICATED VARIABLE rs_foo AS toUInt64(100)")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('rs_foo')", "100\n")
 
     node2.stop_clickhouse()
     node2.start_clickhouse()
@@ -121,7 +121,7 @@ def test_restart_picks_up_existing(started_cluster, cleanup):
     # On boot, node2 must load from ZK — no watch event to rely on.
     assert_eq_with_retry(
         node2,
-        "SELECT getVariable('cluster.rs_foo')",
+        "SELECT getReplicatedVariable('rs_foo')",
         "100\n",
         retry_count=40,
         sleep_time=0.25,
@@ -129,23 +129,23 @@ def test_restart_picks_up_existing(started_cluster, cleanup):
 
 
 def test_create_or_replace_propagates(started_cluster, cleanup):
-    node1.query("CREATE CLUSTER VARIABLE repl_v AS toUInt64(1)")
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.repl_v')", "1\n")
+    node1.query("CREATE REPLICATED VARIABLE repl_v AS toUInt64(1)")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('repl_v')", "1\n")
 
-    node1.query("CREATE OR REPLACE CLUSTER VARIABLE repl_v AS toUInt64(2)")
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.repl_v')", "2\n")
+    node1.query("CREATE OR REPLACE REPLICATED VARIABLE repl_v AS toUInt64(2)")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('repl_v')", "2\n")
 
 
 def test_system_table_sees_cluster_rows(started_cluster, cleanup):
-    node1.query("CREATE CLUSTER VARIABLE st_foo AS toUInt64(5)")
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.st_foo')", "5\n")
+    node1.query("CREATE REPLICATED VARIABLE st_foo AS toUInt64(5)")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('st_foo')", "5\n")
 
     for node in nodes:
         row = node.query(
-            "SELECT name, scope, value, type FROM system.custom_variables "
-            "WHERE name = 'st_foo' AND scope = 'cluster'"
+            "SELECT name, kind, value, type FROM system.custom_variables "
+            "WHERE name = 'st_foo' AND kind = 'replicated'"
         ).strip()
-        assert row == "st_foo\tcluster\t5\tUInt64", f"{node.name}: {row!r}"
+        assert row == "st_foo\treplicated\t5\tUInt64", f"{node.name}: {row!r}"
 
 
 # -------- Step 4: leader election + REFRESH --------
@@ -153,26 +153,26 @@ def test_system_table_sees_cluster_rows(started_cluster, cleanup):
 def test_refresh_clause_accepted(started_cluster, cleanup):
     # After step 4 this must stop returning NOT_IMPLEMENTED.
     node1.query(
-        "CREATE CLUSTER VARIABLE rc_wm REFRESH EVERY 1 SECOND AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE rc_wm REFRESH EVERY 1 SECOND AS toUInt64(now())"
     )
 
 
 def test_refresh_updates_value(started_cluster, cleanup):
     node1.query(
-        "CREATE CLUSTER VARIABLE rv_wm REFRESH EVERY 1 SECOND AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE rv_wm REFRESH EVERY 1 SECOND AS toUInt64(now())"
     )
     assert_eq_with_retry(
         node2,
-        "SELECT getVariable('cluster.rv_wm') > 0",
+        "SELECT getReplicatedVariable('rv_wm') > 0",
         "1\n",
         retry_count=40,
         sleep_time=0.25,
     )
 
-    first = int(node1.query("SELECT getVariable('cluster.rv_wm')").strip())
+    first = int(node1.query("SELECT getReplicatedVariable('rv_wm')").strip())
     time.sleep(3)
-    later_n1 = int(node1.query("SELECT getVariable('cluster.rv_wm')").strip())
-    later_n2 = int(node2.query("SELECT getVariable('cluster.rv_wm')").strip())
+    later_n1 = int(node1.query("SELECT getReplicatedVariable('rv_wm')").strip())
+    later_n2 = int(node2.query("SELECT getReplicatedVariable('rv_wm')").strip())
     assert later_n1 > first
     assert later_n2 > first
 
@@ -182,16 +182,16 @@ def test_refresh_single_leader_per_tick(started_cluster, cleanup):
     The winner may alternate between ticks — we just assert every observed
     hostname is one of the real cluster members."""
     node1.query(
-        "CREATE CLUSTER VARIABLE sl_wm REFRESH EVERY 1 SECOND AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE sl_wm REFRESH EVERY 1 SECOND AS toUInt64(now())"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.sl_wm') > 0", "1\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('sl_wm') > 0", "1\n")
 
     valid_hosts = {node1.hostname, node2.hostname}
     samples = []
     for _ in range(8):
         host = node1.query(
             "SELECT last_update_hostname FROM system.custom_variables "
-            "WHERE name = 'sl_wm' AND scope = 'cluster'"
+            "WHERE name = 'sl_wm' AND kind = 'replicated'"
         ).strip()
         samples.append(host)
         time.sleep(1)
@@ -201,15 +201,15 @@ def test_refresh_single_leader_per_tick(started_cluster, cleanup):
 
 def test_system_refresh_variable(started_cluster, cleanup):
     node1.query(
-        "CREATE CLUSTER VARIABLE sr_wm REFRESH EVERY 1 YEAR AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE sr_wm REFRESH EVERY 1 YEAR AS toUInt64(now())"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.sr_wm') > 0", "1\n")
-    first = int(node2.query("SELECT getVariable('cluster.sr_wm')").strip())
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('sr_wm') > 0", "1\n")
+    first = int(node2.query("SELECT getReplicatedVariable('sr_wm')").strip())
     time.sleep(1)
-    node1.query("SYSTEM REFRESH VARIABLE cluster.sr_wm")
+    node1.query("SYSTEM REFRESH REPLICATED VARIABLEsr_wm")
     assert_eq_with_retry(
         node2,
-        f"SELECT getVariable('cluster.sr_wm') > {first}",
+        f"SELECT getReplicatedVariable('sr_wm') > {first}",
         "1\n",
         retry_count=40,
         sleep_time=0.25,
@@ -227,7 +227,7 @@ def test_refreshable_create_publishes_initialized_entry(started_cluster, cleanup
     def create_variable():
         try:
             node1.query(
-                "CREATE CLUSTER VARIABLE init_pub REFRESH EVERY 1 YEAR AS toUInt64(now())"
+                "CREATE REPLICATED VARIABLE init_pub REFRESH EVERY 1 YEAR AS toUInt64(now())"
             )
         except Exception as exc:
             errors.append(exc)
@@ -242,7 +242,7 @@ def test_refreshable_create_publishes_initialized_entry(started_cluster, cleanup
                 break
 
             try:
-                node1.query("SYSTEM REFRESH VARIABLE cluster.init_pub")
+                node1.query("SYSTEM REFRESH REPLICATED VARIABLEinit_pub")
                 saw_refresh_success = True
                 break
             except Exception as exc:
@@ -266,7 +266,7 @@ def test_refreshable_create_publishes_initialized_entry(started_cluster, cleanup
 
     assert_eq_with_retry(
         node2,
-        "SELECT getVariable('cluster.init_pub') > 0",
+        "SELECT getReplicatedVariable('init_pub') > 0",
         "1\n",
         retry_count=40,
         sleep_time=0.25,
@@ -275,9 +275,9 @@ def test_refreshable_create_publishes_initialized_entry(started_cluster, cleanup
 
 def test_refresh_failover(started_cluster, cleanup):
     node1.query(
-        "CREATE CLUSTER VARIABLE fo_wm REFRESH EVERY 2 SECOND AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE fo_wm REFRESH EVERY 2 SECOND AS toUInt64(now())"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.fo_wm') > 0", "1\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('fo_wm') > 0", "1\n")
 
     node1.stop_clickhouse(kill=True)
     try:
@@ -286,7 +286,7 @@ def test_refresh_failover(started_cluster, cleanup):
         deadline = time.time() + 60
         seen = None
         while time.time() < deadline:
-            v = node2.query("SELECT getVariable('cluster.fo_wm')").strip()
+            v = node2.query("SELECT getReplicatedVariable('fo_wm')").strip()
             if seen is None:
                 seen = v
             elif v != seen:
@@ -310,7 +310,7 @@ def test_duplicate_create_cluster_race(started_cluster, cleanup):
     def create(node, tag):
         try:
             node.query(
-                f"CREATE CLUSTER VARIABLE race_cv AS toUInt64({tag})"
+                f"CREATE REPLICATED VARIABLE race_cv AS toUInt64({tag})"
             )
             results[tag] = "ok"
         except Exception as exc:
@@ -341,7 +341,7 @@ def test_duplicate_create_cluster_race(started_cluster, cleanup):
     for node in nodes:
         assert_eq_with_retry(
             node,
-            "SELECT getVariable('cluster.race_cv')",
+            "SELECT getReplicatedVariable('race_cv')",
             expected + "\n",
             retry_count=40,
             sleep_time=0.25,
@@ -353,21 +353,21 @@ def test_create_or_replace_while_refreshing(started_cluster, cleanup):
     on the new value and drop the REFRESH schedule."""
 
     node1.query(
-        "CREATE CLUSTER VARIABLE repl_race REFRESH EVERY 1 SECOND AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE repl_race REFRESH EVERY 1 SECOND AS toUInt64(now())"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.repl_race') > 0", "1\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('repl_race') > 0", "1\n")
 
     # Let several ticks happen so the scheduler is genuinely active.
     time.sleep(2)
 
     node2.query(
-        "CREATE OR REPLACE CLUSTER VARIABLE repl_race AS toUInt64(42)"
+        "CREATE OR REPLACE REPLICATED VARIABLE repl_race AS toUInt64(42)"
     )
 
     for node in nodes:
         assert_eq_with_retry(
             node,
-            "SELECT getVariable('cluster.repl_race')",
+            "SELECT getReplicatedVariable('repl_race')",
             "42\n",
             retry_count=40,
             sleep_time=0.25,
@@ -378,7 +378,7 @@ def test_create_or_replace_while_refreshing(started_cluster, cleanup):
     time.sleep(3)
     for node in nodes:
         assert node.query(
-            "SELECT getVariable('cluster.repl_race')"
+            "SELECT getReplicatedVariable('repl_race')"
         ).strip() == "42"
 
 
@@ -389,7 +389,7 @@ def test_create_cluster_rolls_back_on_value_store_failure(started_cluster, clean
     node1.query("SYSTEM ENABLE FAILPOINT custom_variables_cluster_store_value_fail_once")
     try:
         err = node1.query_and_get_error(
-            "CREATE CLUSTER VARIABLE publish_fail_cv AS toUInt64(11)"
+            "CREATE REPLICATED VARIABLE publish_fail_cv AS toUInt64(11)"
         )
     finally:
         # ONCE failpoints auto-disable after trigger, but disable explicitly in
@@ -405,20 +405,20 @@ def test_create_cluster_rolls_back_on_value_store_failure(started_cluster, clean
 
         def missing(n=node):
             error = n.query_and_get_error(
-                "SELECT getVariable('cluster.publish_fail_cv')"
+                "SELECT getReplicatedVariable('publish_fail_cv')"
             )
             return "UNKNOWN_IDENTIFIER" in error
 
         deadline = time.time() + 10
         while time.time() < deadline and not missing():
             time.sleep(0.25)
-        assert missing(), f"{node.name} still sees cluster.publish_fail_cv"
+        assert missing(), f"{node.name} still sees replicated publish_fail_cv"
 
-    node1.query("CREATE CLUSTER VARIABLE publish_fail_cv AS toUInt64(11)")
+    node1.query("CREATE REPLICATED VARIABLE publish_fail_cv AS toUInt64(11)")
     for node in nodes:
         assert_eq_with_retry(
             node,
-            "SELECT getVariable('cluster.publish_fail_cv')",
+            "SELECT getReplicatedVariable('publish_fail_cv')",
             "11\n",
             retry_count=40,
             sleep_time=0.25,
@@ -435,10 +435,10 @@ def test_cluster_refresh_failure_flap(started_cluster, cleanup):
         node.query("INSERT INTO default.flap_src VALUES (42)")
 
     node1.query(
-        "CREATE CLUSTER VARIABLE flap_cv REFRESH EVERY 1 SECOND "
+        "CREATE REPLICATED VARIABLE flap_cv REFRESH EVERY 1 SECOND "
         "AS (SELECT max(x) FROM default.flap_src)"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.flap_cv')", "42\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('flap_cv')", "42\n")
 
     for node in nodes:
         node.query("DROP TABLE default.flap_src SYNC")
@@ -447,7 +447,7 @@ def test_cluster_refresh_failure_flap(started_cluster, cleanup):
         row = node.query(
             "SELECT has_value, is_valid, coalesce(last_error,'') != '' "
             "FROM system.custom_variables "
-            "WHERE name = 'flap_cv' AND scope = 'cluster'"
+            "WHERE name = 'flap_cv' AND kind = 'replicated'"
         ).strip()
         return row == "1\t0\t1"
 
@@ -472,7 +472,7 @@ def test_cluster_refresh_failure_flap(started_cluster, cleanup):
     # Last-good value is still visible on both nodes.
     for node in nodes:
         assert node.query(
-            "SELECT getVariable('cluster.flap_cv')"
+            "SELECT getReplicatedVariable('flap_cv')"
         ).strip() == "42"
 
     # Recovery: recreate table + data, expect is_valid back to 1 within a few ticks.
@@ -484,7 +484,7 @@ def test_cluster_refresh_failure_flap(started_cluster, cleanup):
         row = node.query(
             "SELECT is_valid, coalesce(last_error,'') = '' "
             "FROM system.custom_variables "
-            "WHERE name = 'flap_cv' AND scope = 'cluster'"
+            "WHERE name = 'flap_cv' AND kind = 'replicated'"
         ).strip()
         return row == "1\t1"
 
@@ -504,26 +504,26 @@ def test_zk_disconnect_reads_continue(started_cluster, cleanup):
     node2 again."""
 
     node1.query(
-        "CREATE CLUSTER VARIABLE zkd_cv AS toUInt64(100)"
+        "CREATE REPLICATED VARIABLE zkd_cv AS toUInt64(100)"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.zkd_cv')", "100\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('zkd_cv')", "100\n")
 
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node2)
         # Cached reads keep working even while ZK is unreachable.
         for _ in range(5):
             assert node2.query(
-                "SELECT getVariable('cluster.zkd_cv')"
+                "SELECT getReplicatedVariable('zkd_cv')"
             ).strip() == "100"
             time.sleep(0.5)
 
     # After partition heals, a new write on node1 should propagate.
     node1.query(
-        "CREATE OR REPLACE CLUSTER VARIABLE zkd_cv AS toUInt64(101)"
+        "CREATE OR REPLACE REPLICATED VARIABLE zkd_cv AS toUInt64(101)"
     )
     assert_eq_with_retry(
         node2,
-        "SELECT getVariable('cluster.zkd_cv')",
+        "SELECT getReplicatedVariable('zkd_cv')",
         "101\n",
         retry_count=80,
         sleep_time=0.25,
@@ -536,9 +536,9 @@ def test_zk_session_loss_re_enumerate(started_cluster, cleanup):
     node1 must reach node2 without a node restart."""
 
     node1.query(
-        "CREATE CLUSTER VARIABLE sess_cv AS toUInt64(1)"
+        "CREATE REPLICATED VARIABLE sess_cv AS toUInt64(1)"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.sess_cv')", "1\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('sess_cv')", "1\n")
 
     cluster.stop_zookeeper_nodes(ZOOKEEPER_CONTAINERS)
     # Session timeout for the integration fixture is ~30 s; wait past it.
@@ -548,13 +548,13 @@ def test_zk_session_loss_re_enumerate(started_cluster, cleanup):
     # After the session returns, the coordinator should reconnect and a new
     # CREATE on node1 must reach node2.
     node1.query_with_retry(
-        "CREATE OR REPLACE CLUSTER VARIABLE sess_cv AS toUInt64(2)",
+        "CREATE OR REPLACE REPLICATED VARIABLE sess_cv AS toUInt64(2)",
         retry_count=40,
         sleep_time=1.0,
     )
     assert_eq_with_retry(
         node2,
-        "SELECT getVariable('cluster.sess_cv')",
+        "SELECT getReplicatedVariable('sess_cv')",
         "2\n",
         retry_count=60,
         sleep_time=1.0,
@@ -567,26 +567,26 @@ def test_restart_during_refresh_no_leak(started_cluster, cleanup):
     advancing without any node getting stuck on a stale hostname."""
 
     node1.query(
-        "CREATE CLUSTER VARIABLE rlk_cv REFRESH EVERY 1 SECOND AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE rlk_cv REFRESH EVERY 1 SECOND AS toUInt64(now())"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.rlk_cv') > 0", "1\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('rlk_cv') > 0", "1\n")
 
     node1.stop_clickhouse(kill=True)
     try:
         time.sleep(3)
         # While node1 is down, node2 must keep refreshing.
-        before = int(node2.query("SELECT getVariable('cluster.rlk_cv')").strip())
+        before = int(node2.query("SELECT getReplicatedVariable('rlk_cv')").strip())
         time.sleep(3)
-        after = int(node2.query("SELECT getVariable('cluster.rlk_cv')").strip())
+        after = int(node2.query("SELECT getReplicatedVariable('rlk_cv')").strip())
         assert after > before, (before, after)
     finally:
         node1.start_clickhouse()
 
     # After restart node1 sees the variable and the value continues to advance.
-    assert_eq_with_retry(node1, "SELECT getVariable('cluster.rlk_cv') > 0", "1\n")
-    v1 = int(node1.query("SELECT getVariable('cluster.rlk_cv')").strip())
+    assert_eq_with_retry(node1, "SELECT getReplicatedVariable('rlk_cv') > 0", "1\n")
+    v1 = int(node1.query("SELECT getReplicatedVariable('rlk_cv')").strip())
     time.sleep(3)
-    v2 = int(node1.query("SELECT getVariable('cluster.rlk_cv')").strip())
+    v2 = int(node1.query("SELECT getReplicatedVariable('rlk_cv')").strip())
     assert v2 > v1, (v1, v2)
 
 
@@ -598,9 +598,9 @@ def test_or_replace_drops_refresh_schedule_on_peer(started_cluster, cleanup):
     definition that says 'no refresh'."""
 
     node1.query(
-        "CREATE CLUSTER VARIABLE rs_strip REFRESH EVERY 1 SECOND AS toUInt64(now())"
+        "CREATE REPLICATED VARIABLE rs_strip REFRESH EVERY 1 SECOND AS toUInt64(now())"
     )
-    assert_eq_with_retry(node2, "SELECT getVariable('cluster.rs_strip') > 0", "1\n")
+    assert_eq_with_retry(node2, "SELECT getReplicatedVariable('rs_strip') > 0", "1\n")
 
     # Let ticks run on both sides so both nodes have a live refresh scheduler.
     time.sleep(2)
@@ -608,7 +608,7 @@ def test_or_replace_drops_refresh_schedule_on_peer(started_cluster, cleanup):
     # Same expression, REFRESH removed. Hash of expression is unchanged — the
     # fast-path used to short-circuit and leave the old scheduler alive.
     node1.query(
-        "CREATE OR REPLACE CLUSTER VARIABLE rs_strip AS toUInt64(now())"
+        "CREATE OR REPLACE REPLICATED VARIABLE rs_strip AS toUInt64(now())"
     )
 
     # Give any lingering scheduler ticks a chance to fire.
@@ -620,7 +620,7 @@ def test_or_replace_drops_refresh_schedule_on_peer(started_cluster, cleanup):
     for node in nodes:
         snapshots = []
         for _ in range(4):
-            snapshots.append(node.query("SELECT getVariable('cluster.rs_strip')").strip())
+            snapshots.append(node.query("SELECT getReplicatedVariable('rs_strip')").strip())
             time.sleep(1)
         assert len(set(snapshots)) == 1, (node.name, snapshots)
 
@@ -628,7 +628,7 @@ def test_or_replace_drops_refresh_schedule_on_peer(started_cluster, cleanup):
     for node in nodes:
         row = node.query(
             "SELECT refresh_interval IS NULL FROM system.custom_variables "
-            "WHERE name = 'rs_strip' AND scope = 'cluster'"
+            "WHERE name = 'rs_strip' AND kind = 'replicated'"
         ).strip()
         assert row == "1", (node.name, row)
 
@@ -642,20 +642,20 @@ def test_drop_while_discovery_in_flight(started_cluster, cleanup):
     target = names[7]
 
     # Seed the target first so that DROP on node2 has something to race with.
-    node1.query(f"CREATE CLUSTER VARIABLE {target} AS toUInt64(999)")
+    node1.query(f"CREATE REPLICATED VARIABLE {target} AS toUInt64(999)")
     assert_eq_with_retry(
-        node2, f"SELECT getVariable('cluster.{target}')", "999\n"
+        node2, f"SELECT getReplicatedVariable('{target}')", "999\n"
     )
 
     def create_batch():
         for name in names:
             if name == target:
                 continue
-            node1.query(f"CREATE CLUSTER VARIABLE {name} AS toUInt64(1)")
+            node1.query(f"CREATE REPLICATED VARIABLE {name} AS toUInt64(1)")
 
     def drop_target():
         time.sleep(0.05)  # small head start for create_batch
-        node2.query(f"DROP CLUSTER VARIABLE IF EXISTS {target}")
+        node2.query(f"DROP REPLICATED VARIABLE IF EXISTS {target}")
 
     t1 = threading.Thread(target=create_batch)
     t2 = threading.Thread(target=drop_target)
@@ -671,7 +671,7 @@ def test_drop_while_discovery_in_flight(started_cluster, cleanup):
                 continue
             assert_eq_with_retry(
                 node,
-                f"SELECT getVariable('cluster.{name}')",
+                f"SELECT getReplicatedVariable('{name}')",
                 "1\n",
                 retry_count=40,
                 sleep_time=0.25,
@@ -682,7 +682,7 @@ def test_drop_while_discovery_in_flight(started_cluster, cleanup):
 
         def target_gone(n=node):
             err = n.query_and_get_error(
-                f"SELECT getVariable('cluster.{target}')"
+                f"SELECT getReplicatedVariable('{target}')"
             )
             return "UNKNOWN_IDENTIFIER" in err
 
@@ -690,11 +690,11 @@ def test_drop_while_discovery_in_flight(started_cluster, cleanup):
         while time.time() < deadline and not target_gone():
             time.sleep(0.25)
         assert target_gone(), (
-            f"{node.name} still sees cluster.{target} after DROP"
+            f"{node.name} still sees replicated {target} after DROP"
         )
 
     # Coordinator is still alive: further DDL goes through.
-    node1.query("CREATE CLUSTER VARIABLE batch_post AS toUInt64(1)")
+    node1.query("CREATE REPLICATED VARIABLE batch_post AS toUInt64(1)")
     assert_eq_with_retry(
-        node2, "SELECT getVariable('cluster.batch_post')", "1\n"
+        node2, "SELECT getReplicatedVariable('batch_post')", "1\n"
     )

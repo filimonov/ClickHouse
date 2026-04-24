@@ -115,6 +115,7 @@ public:
         START_CLEANUP,
         RESET_COVERAGE,
         REFRESH_VARIABLE,
+        REFRESH_REPLICATED_VARIABLE,
         REFRESH_VARIABLES,
         REFRESH_VIEW,
         WAIT_VIEW,
@@ -183,6 +184,9 @@ public:
     String schema_cache_format;
 
     String fail_point_name;
+
+    /// For SYSTEM REFRESH [REPLICATED] VARIABLE <name>. Bare identifier.
+    String variable_name;
 
     enum class FailPointAction
     {

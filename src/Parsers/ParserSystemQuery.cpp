@@ -474,7 +474,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
 
         case Type::REFRESH_VIEW:
-        case Type::REFRESH_VARIABLE:
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
         case Type::START_REPLICATED_VIEW:
@@ -484,6 +483,18 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
             break;
+
+        case Type::REFRESH_VARIABLE:
+        case Type::REFRESH_REPLICATED_VARIABLE:
+        {
+            ASTPtr name_ast;
+            ParserIdentifier id_parser;
+            if (!id_parser.parse(pos, name_ast, expected))
+                return false;
+            if (!tryGetIdentifierNameInto(name_ast, res->variable_name) || res->variable_name.empty())
+                return false;
+            break;
+        }
 
         case Type::REFRESH_VARIABLES:
             break;

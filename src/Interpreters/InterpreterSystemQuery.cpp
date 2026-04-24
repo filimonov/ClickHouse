@@ -199,21 +199,12 @@ void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
         throw Exception::createDeprecated(result.message, result.code);
 }
 
-CustomVariableName getCustomVariableNameFromSystemQuery(const ASTSystemQuery & query)
+CustomVariableName getCustomVariableNameFromSystemQuery(const ASTSystemQuery & query, CustomVariableKind kind)
 {
-    if (!query.database || !query.table)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
+    if (query.variable_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified");
 
-    const auto scope_str = query.getDatabase();
-    const auto name = query.getTable();
-    if (scope_str.empty() || name.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Custom variable name must be specified as scope.name");
-
-    CustomVariableName::Scope scope;
-    if (!CustomVariableName::tryParseScope(scope_str, scope))
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown custom variable scope '{}'", scope_str);
-
-    return CustomVariableName{scope, name};
+    return CustomVariableName{kind, query.variable_name};
 }
 
 
@@ -347,7 +338,7 @@ BlockIO InterpreterSystemQuery::execute()
         if (query.database)
             query.setTable(query.getDatabase() + "." + query.getTable());
     }
-    else if (query.table && query.type != Type::REFRESH_VARIABLE)
+    else if (query.table)
     {
         table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
     }
@@ -825,10 +816,14 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::REFRESH_VARIABLE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_CUSTOM_VARIABLES);
-            auto variable_name = getCustomVariableNameFromSystemQuery(query);
-            if (variable_name.scope != CustomVariableName::Scope::Local
-                && variable_name.scope != CustomVariableName::Scope::Cluster)
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "SYSTEM REFRESH VARIABLE supports only local and cluster scopes");
+            auto variable_name = getCustomVariableNameFromSystemQuery(query, CustomVariableKind::Server);
+            getContext()->getCustomVariablesManager().refreshNow(variable_name);
+            break;
+        }
+        case Type::REFRESH_REPLICATED_VARIABLE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_CUSTOM_VARIABLES);
+            auto variable_name = getCustomVariableNameFromSystemQuery(query, CustomVariableKind::Replicated);
             getContext()->getCustomVariablesManager().refreshNow(variable_name);
             break;
         }
@@ -2200,6 +2195,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             break;
         }
         case Type::REFRESH_VARIABLE:
+        case Type::REFRESH_REPLICATED_VARIABLE:
         case Type::REFRESH_VARIABLES:
         {
             required_access.emplace_back(AccessType::SYSTEM_CUSTOM_VARIABLES);

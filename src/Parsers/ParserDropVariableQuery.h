@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// DROP VARIABLE local.foo
+/// DROP [TEMPORARY | REPLICATED] VARIABLE [IF EXISTS] name [ON CLUSTER cluster]
 class ParserDropVariableQuery : public IParserBase
 {
 protected:

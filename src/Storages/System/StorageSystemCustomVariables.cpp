@@ -4,17 +4,31 @@
 #include <Columns/ColumnString.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/CustomVariablesManager.h>
+#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 
 #include <mutex>
 
 namespace DB
 {
+
+namespace
+{
+DataTypePtr makeKindEnum()
+{
+    return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
+        {"server", static_cast<Int8>(CustomVariableKind::Server)},
+        {"temporary", static_cast<Int8>(CustomVariableKind::Temporary)},
+        {"replicated", static_cast<Int8>(CustomVariableKind::Replicated)},
+    });
+}
+}
 
 StorageSystemCustomVariables::StorageSystemCustomVariables(const StorageID & storage_id_, ColumnsDescription columns_description_)
     : IStorageSystemOneBlock(storage_id_, std::move(columns_description_))
@@ -25,8 +39,8 @@ ColumnsDescription StorageSystemCustomVariables::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"name", std::make_shared<DataTypeString>(), "Variable name without the scope prefix."},
-        {"scope", std::make_shared<DataTypeString>(), "Variable scope (local, session, cluster)."},
+        {"name", std::make_shared<DataTypeString>(), "Variable name (bare; no scope prefix)."},
+        {"kind", makeKindEnum(), "Variable kind: server, temporary, or replicated."},
         {"value", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Last known value as string, NULL if missing."},
         {"load_time", std::make_shared<DataTypeDateTime>(), "Time when the variable definition was loaded into memory."},
         {"last_update", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the last update attempt."},
@@ -61,7 +75,7 @@ void StorageSystemCustomVariables::fillData(
 
             size_t col = 0;
             res_columns[col++]->insert(definition.key.name);
-            res_columns[col++]->insert(CustomVariableName::scopeToString(definition.key.scope));
+            res_columns[col++]->insert(static_cast<Int8>(definition.key.kind));
 
             if (value && value->has_value)
                 res_columns[col++]->insert(applyVisitor(FieldVisitorToString(), value->value));
@@ -135,7 +149,7 @@ void StorageSystemCustomVariables::fillData(
         }
     };
 
-        append_entries(context->getCustomVariablesManager().getAllEntries());
+    append_entries(context->getCustomVariablesManager().getAllEntries());
     if (context->hasSessionContext())
         append_entries(context->getSessionCustomVariablesManager().getAllEntries());
 }
