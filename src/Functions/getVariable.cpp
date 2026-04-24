@@ -165,12 +165,9 @@ public:
         }
         else
         {
-            const auto * default_column = arguments[1].column.get();
-            if (!default_column || !isColumnConst(*default_column))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The 2nd argument of function {} should be a constant with the default value", String{name});
-            Field field = (*default_column)[0];
+            /// getArgumentsThatAreAlwaysConstant() declares arg 1 as always-constant,
+            /// so the analyzer guarantees it is a ColumnConst here — no runtime check.
+            Field field = (*arguments[1].column)[0];
             return result_type->createColumnConst(input_rows_count, convertFieldToType(field, *result_type));
         }
     }
