@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
+#include <Interpreters/CustomVariableValueSnapshot.h>
 #include <Interpreters/CustomVariablesClusterStorage.h>
+#include <Interpreters/ICustomVariablesDefinitionsStorage.h>
 
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
@@ -45,18 +46,9 @@ public:
         std::chrono::system_clock::time_point load_time;
     };
 
-    struct Value
-    {
-        DataTypePtr runtime_type;
-        Field value;
-        std::chrono::system_clock::time_point last_update_time;
-        std::chrono::system_clock::time_point last_successful_update_time;
-        String last_update_hostname;
-        String last_error;
-        String last_error_type;
-        bool has_value = false;
-        bool is_valid = false;
-    };
+    /// In-memory runtime value — same shape as the disk / Keeper serialization
+    /// shape, so there is exactly one struct to reason about.
+    using Value = CustomVariableValueSnapshot;
 
     struct RefreshState
     {

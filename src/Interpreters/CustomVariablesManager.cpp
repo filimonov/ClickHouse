@@ -160,16 +160,9 @@ void CustomVariablesManager::loadFromStorage(const ContextPtr & context, ICustom
         {
             try
             {
-                auto value = boost::make_shared<Value>();
-                value->runtime_type = snapshot->runtime_type ? snapshot->runtime_type : entry->definition.declared_type;
-                value->value = snapshot->value;
-                value->last_update_time = snapshot->last_update_time;
-                value->last_successful_update_time = snapshot->last_successful_update_time;
-                value->last_update_hostname = snapshot->last_update_hostname;
-                value->last_error = snapshot->last_error;
-                value->last_error_type = snapshot->last_error_type;
-                value->has_value = snapshot->has_value;
-                value->is_valid = snapshot->is_valid;
+                auto value = boost::make_shared<Value>(*snapshot);
+                if (!value->runtime_type)
+                    value->runtime_type = entry->definition.declared_type;
 
                 if (entry->definition.declared_type && (!value->runtime_type || !entry->definition.declared_type->equals(*value->runtime_type)))
                 {
@@ -592,28 +585,17 @@ void CustomVariablesManager::persistValueIfNeeded(const ContextPtr & context, co
     if (!value)
         return;
 
-    CustomVariableValueSnapshot snapshot;
-    snapshot.runtime_type = value->runtime_type;
-    snapshot.value = value->value;
-    snapshot.last_update_time = value->last_update_time;
-    snapshot.last_successful_update_time = value->last_successful_update_time;
-    snapshot.last_update_hostname = value->last_update_hostname;
-    snapshot.last_error = value->last_error;
-    snapshot.last_error_type = value->last_error_type;
-    snapshot.has_value = value->has_value;
-    snapshot.is_valid = value->is_valid;
-
     try
     {
         if (isReplicatedKind(kind))
         {
             auto cluster_storage = context->getCustomVariablesClusterStorage();
             if (cluster_storage)
-                cluster_storage->storeValue(entry->definition.key.name, snapshot);
+                cluster_storage->storeValue(entry->definition.key.name, *value);
         }
         else
         {
-            context->getCustomVariablesValuesStorage().storeValue(entry->definition.key.name, snapshot, context->getSettingsRef());
+            context->getCustomVariablesValuesStorage().storeValue(entry->definition.key.name, *value, context->getSettingsRef());
         }
     }
     catch (...)

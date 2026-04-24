@@ -270,20 +270,9 @@ BlockIO InterpreterCreateVariableQuery::execute()
 
     if (is_replicated)
     {
-        CustomVariableValueSnapshot snapshot;
-        snapshot.runtime_type = value->runtime_type;
-        snapshot.value = value->value;
-        snapshot.last_update_time = value->last_update_time;
-        snapshot.last_successful_update_time = value->last_successful_update_time;
-        snapshot.last_update_hostname = value->last_update_hostname;
-        snapshot.last_error = value->last_error;
-        snapshot.last_error_type = value->last_error_type;
-        snapshot.has_value = value->has_value;
-        snapshot.is_valid = value->is_valid;
-
         try
         {
-            cluster_storage->storeValue(object_name.name, snapshot);
+            cluster_storage->storeValue(object_name.name, *value);
         }
         catch (...)
         {
