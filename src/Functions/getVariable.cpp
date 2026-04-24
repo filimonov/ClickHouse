@@ -94,15 +94,32 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto bare_name = parseVariableName(arguments, getName());
+        /// Follows the getScalar pattern: resolve the entry once at analysis time and
+        /// cache a snapshot of its value. The function object is instantiated fresh
+        /// per query (FunctionFactory::get calls create(context_) each time), so the
+        /// mutable fields never leak across queries — re-entering getReturnTypeImpl
+        /// overwrites them. Readers get multiversion semantics from the atomic
+        /// shared_ptr, and executeImpl becomes lock-free.
+        resolved_bare_name = parseVariableName(arguments, getName());
+        resolved_value.reset();
         getContext()->checkAccess(AccessType::getVariable);
 
         if constexpr (Kind == CustomVariableKind::Temporary)
             rejectInDistributedOrSessionlessContext();
 
-        auto entry = tryGetEntryByName(bare_name);
-        if (entry && entry->definition.declared_type)
-            return entry->definition.declared_type;
+        auto entry = tryGetEntryByName(resolved_bare_name);
+        if (entry)
+        {
+            /// Snapshot the current value. nullptr / !has_value means "entry exists but
+            /// has no live value" — getReturnTypeImpl still returns the declared type
+            /// if known, and executeImpl will fall through to the default / throw.
+            auto snapshot = entry->value.load();
+            if (snapshot && snapshot->has_value)
+                resolved_value = snapshot;
+
+            if (entry->definition.declared_type)
+                return entry->definition.declared_type;
+        }
 
         if constexpr (Mode == ErrorHandlingMode::Exception)
         {
@@ -111,12 +128,12 @@ public:
                     ErrorCodes::UNKNOWN_IDENTIFIER,
                     "No {} variable '{}'",
                     kindDisplayName(Kind),
-                    bare_name);
+                    resolved_bare_name);
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
                 "{} variable '{}' has unknown type",
                 kindDisplayName(Kind),
-                bare_name);
+                resolved_bare_name);
         }
         else
         {
@@ -126,37 +143,25 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        const auto bare_name = parseVariableName(arguments, getName());
+        /// Lock-free hot path: we do not re-enter the manager here. The value was
+        /// snapshotted in getReturnTypeImpl under the manager mutex; the snapshot
+        /// is kept alive by the shared_ptr even if the entry is dropped mid-query.
+        /// The access check stays — grants can change between analysis and execution.
         getContext()->checkAccess(AccessType::getVariable);
 
-        if constexpr (Kind == CustomVariableKind::Temporary)
-            rejectInDistributedOrSessionlessContext();
-
-        auto entry = tryGetEntryByName(bare_name);
-
-        if (entry)
+        if (resolved_value)
         {
-            auto value = entry->value.load();
-            if (value && value->has_value)
-            {
-                Field field = value->value;
-                return result_type->createColumnConst(input_rows_count, convertFieldToType(field, *result_type));
-            }
+            Field field = resolved_value->value;
+            return result_type->createColumnConst(input_rows_count, convertFieldToType(field, *result_type));
         }
 
         if constexpr (Mode == ErrorHandlingMode::Exception)
         {
-            if (!entry)
-                throw Exception(
-                    ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "No {} variable '{}'",
-                    kindDisplayName(Kind),
-                    bare_name);
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
                 "{} variable '{}' has no value",
                 kindDisplayName(Kind),
-                bare_name);
+                resolved_bare_name);
         }
         else
         {
@@ -171,6 +176,12 @@ public:
     }
 
 private:
+    /// Resolved once in getReturnTypeImpl, read without locking in executeImpl.
+    /// Null when the variable has no live value (entry absent, or present but !has_value);
+    /// in that case executeImpl falls through to the default (Default mode) or throws.
+    mutable CustomVariablesManager::ValuePtr resolved_value;
+    mutable String resolved_bare_name;
+
     CustomVariablesManager::EntryPtr tryGetEntryByName(const String & bare_name) const
     {
         if constexpr (Kind == CustomVariableKind::Temporary)
