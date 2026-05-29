@@ -68,6 +68,7 @@
 #include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -902,7 +903,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, merge_storage_snapshot->metadata->getColumns(), aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1495,7 +1496,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
 
         for (const auto & db : databases)
         {
@@ -1550,6 +1551,7 @@ void ReadFromMerge::convertAndFilterSourceStream(
     const Block & header,
     SelectQueryInfo & modified_query_info,
     const StorageSnapshotPtr & snapshot,
+    const ColumnsDescription & merge_columns,
     const Aliases & aliases,
     const RowPolicyDataOpt & row_policy_data_opt,
     ContextPtr local_context,
@@ -1560,11 +1562,126 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     auto pipe_columns = before_block_header->getNamesAndTypesList();
 
+    /// TODO(storage-merge-alias): the analyzer branch below is a manual reproduction of what the
+    /// analyzer's standard column-alias resolution would do if it ran end-to-end on the child
+    /// plan. It exists because of a two-step design in `getModifiedQueryInfo`:
+    ///
+    ///   Step 1 (in `getModifiedQueryInfo`): rewrite the query going to the child storage.
+    ///     References to ALIAS columns at the Merge level are replaced by their resolved
+    ///     expressions via `replaceColumns(query_tree, column_name_to_node)`. As a result the
+    ///     child storage receives a request for the PHYSICAL columns the expressions need; it
+    ///     does not see the alias names at all.
+    ///
+    ///   Step 2 (here, `convertAndFilterSourceStream`): compute the alias VALUES at the Merge
+    ///     level from those physical columns by building a fresh ActionsDAG, running
+    ///     `QueryAnalysisPass` on each alias expression, and visiting with `PlannerActionsVisitor`.
+    ///     Emit each alias output under the alias's analyzer identifier so the Merge target
+    ///     header (also using analyzer identifiers) can pick it up by name.
+    ///
+    /// This is awkward and has a real downside: any condition on an ALIAS column (e.g.
+    /// `WHERE colAlias > 10`) goes through Step 1's `replaceColumns` and becomes a condition on
+    /// the resolved expression (`WHERE col * 2 > 10`), so MergeTree's index analysis CAN apply.
+    /// That part works. But for the output-side computation here, the alias expression is
+    /// re-evaluated at Merge level even when the child has already produced the value (e.g.
+    /// Distributed children inline-evaluate alias expressions on the shard and return them as
+    /// expression-named output columns). The recompute is redundant for those cases.
+    ///
+    /// A natural unification would be to use `__aliasMarker(expr, identifier)` (the function we
+    /// introduced for distributed ALIAS-column header reconciliation) in Step 1: replace each
+    /// ALIAS reference with `__aliasMarker(<resolved expr>, '<analyzer identifier>')` instead of
+    /// the bare resolved expression. The child plan's `ExpressionStep` would evaluate the marker
+    /// (identity-passthrough) and emit the result under the identifier name. Step 2 here would
+    /// then be unnecessary — pipe_columns would already carry alias values under correct names —
+    /// and the entire `if (allow_experimental_analyzer) { ... }` block below could be deleted.
+    ///
+    /// The catch is that wrapping a predicate with `__aliasMarker` makes it opaque to MergeTree's
+    /// index analyzer: `WHERE __aliasMarker(col * 2, '__table1.colAlias') > 10` doesn't get the
+    /// constant-folding / monotonicity / KeyCondition machinery that `WHERE col * 2 > 10` enjoys,
+    /// so a query that uses an ALIAS column in WHERE would lose the index. Either the marker
+    /// would have to be applied only to projection (SELECT-list) alias references and not to
+    /// predicate references, or MergeTree's index/predicate analyzer would have to learn to
+    /// unwrap `__aliasMarker(x, *)` to `x`. Neither is trivial.
+    ///
+    /// Left as future work. The current design is correct (Step 1 + Step 2 together produce the
+    /// right values, indexes apply to alias predicates), just not minimal.
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
+        /// The Merge table expects its columns under analyzer identifiers (e.g. `__table1.a`,
+        /// `__table1.\`n.a\``) while alias expressions and `alias.name` reference plain logical
+        /// names (e.g. `a`, `n.a`).
+        ///
+        /// At this point in the pipeline the planner's TableExpressionData for the Merge node
+        /// is NOT yet populated (column collection happens later in CollectTableExpressionData),
+        /// so we cannot look up the mapping via PlannerContext. Instead, build it ourselves by
+        /// matching each Merge-declared column name against the suffixes of the `header` /
+        /// `pipe_columns` identifier names: a header column named like `<prefix>.<C>` or
+        /// `<prefix>.\`<C>\`` corresponds to the Merge column `C`.
+        ///
+        /// This is robust to dotted column names (Nested, backtick-quoted) because the candidate
+        /// set is the actual declared Merge schema rather than a regex over the analyzer's
+        /// naming convention.
+        auto build_plain_to_identifier = [&](const auto & candidate_names) {
+            std::unordered_map<String, String> plain_to_identifier;
+            std::unordered_set<String> ambiguous;
+            for (const auto & column : candidate_names)
+            {
+                /// First try exact match (no analyzer prefix at all).
+                if (merge_columns.has(column.name))
+                {
+                    if (!plain_to_identifier.emplace(column.name, column.name).second)
+                        ambiguous.insert(column.name);
+                    continue;
+                }
+
+                /// Otherwise look for the `<prefix>.<C>` or `<prefix>.\`<C>\`` shape where C is
+                /// a declared Merge column name. Skip any column that doesn't match a known
+                /// Merge column (e.g. intermediate expression outputs of the child plan).
+                for (const auto & merge_column : merge_columns.getAll())
+                {
+                    bool dotted = merge_column.name.find('.') != String::npos;
+                    String want = dotted ? ("." + backQuote(merge_column.name)) : ("." + merge_column.name);
+                    if (column.name.ends_with(want))
+                    {
+                        if (!plain_to_identifier.emplace(merge_column.name, column.name).second)
+                            ambiguous.insert(merge_column.name);
+                        break;
+                    }
+                }
+            }
+            for (const auto & a : ambiguous)
+                plain_to_identifier.erase(a);
+            return plain_to_identifier;
+        };
+
+        const auto header_plain_to_identifier = build_plain_to_identifier(header);
+        const auto pipe_plain_to_identifier = build_plain_to_identifier(pipe_columns);
+
         for (const auto & alias : aliases)
         {
             ActionsDAG actions_dag(pipe_columns);
+
+            /// Bridge: alias expressions reference columns by plain logical name, but the child
+            /// stream's inputs are named with analyzer identifiers. For each Merge column with a
+            /// known identifier in `pipe_columns`, expose it under its plain name as well so
+            /// `buildQueryTree(alias.expression)` resolves references like `a` or `n.a` against
+            /// inputs named `__table1.a` / `__table1.\`n.a\``. Required for alias-of-alias
+            /// resolution (e.g. `b ALIAS a + 1`, see 04283).
+            for (const auto & [plain, identifier] : pipe_plain_to_identifier)
+            {
+                if (plain == identifier)
+                    continue;
+                const ActionsDAG::Node * input_node = nullptr;
+                for (const auto * candidate : actions_dag.getInputs())
+                {
+                    if (candidate->result_name == identifier)
+                    {
+                        input_node = candidate;
+                        break;
+                    }
+                }
+                if (input_node)
+                    actions_dag.addAlias(*input_node, plain);
+            }
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);
             query_tree->setAlias(alias.name);
@@ -1573,13 +1690,18 @@ void ReadFromMerge::convertAndFilterSourceStream(
             query_analysis_pass.run(query_tree, local_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
-            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
+            PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, true /*use_column_identifier_as_action_node_name*/);
             const auto & [nodes, _] = actions_visitor.visit(actions_dag, query_tree);
 
             if (nodes.size() != 1)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have 1 output but got {}", nodes.size());
 
-            actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), alias.name));
+            /// Emit the alias output under its analyzer identifier so the downstream
+            /// `addMissingDefaults` matches it by name (otherwise the expected
+            /// `__tableN.\`alias.name\`` column would be filled with type defaults).
+            auto it = header_plain_to_identifier.find(alias.name);
+            const String & output_name = it != header_plain_to_identifier.end() ? it->second : alias.name;
+            actions_dag.addOrReplaceInOutputs(actions_dag.addAlias(*nodes.front(), output_name));
             auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(actions_dag));
             child.plan.addStep(std::move(expression_step));
         }
@@ -1653,6 +1775,13 @@ void ReadFromMerge::convertAndFilterSourceStream(
         }
     }
 
+    /// Position match is intentional here. The short-name -> identifier alignment performed
+    /// in the loop above (logical_name_to_header_name + per-column choice between header
+    /// match-by-name, smallest-column-passthrough, position-aligned virtual column, or
+    /// name-with-unneeded-columns) ensures current_step_columns and converted_columns are
+    /// paired index-by-index by construction. Routing through
+    /// makeConvertingActionsPreferNameThenPosition would be a no-op when this invariant
+    /// holds and silently incorrect should it ever break in a future change.
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         current_step_columns,
         converted_columns,
