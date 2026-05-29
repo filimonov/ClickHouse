@@ -1564,46 +1564,43 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
     /// TODO(storage-merge-alias): the analyzer branch below is a manual reproduction of what the
     /// analyzer's standard column-alias resolution would do if it ran end-to-end on the child
-    /// plan. It exists because of a two-step design in `getModifiedQueryInfo`:
+    /// plan. It exists because of a two-step design in `getModifiedQueryInfo` + here:
     ///
     ///   Step 1 (in `getModifiedQueryInfo`): rewrite the query going to the child storage.
     ///     References to ALIAS columns at the Merge level are replaced by their resolved
-    ///     expressions via `replaceColumns(query_tree, column_name_to_node)`. As a result the
-    ///     child storage receives a request for the PHYSICAL columns the expressions need; it
-    ///     does not see the alias names at all.
+    ///     expressions via `replaceColumns(query_tree, column_name_to_node)`. The child storage
+    ///     receives a request for the PHYSICAL columns the expressions need; it does not see the
+    ///     alias names at all.
     ///
-    ///   Step 2 (here, `convertAndFilterSourceStream`): compute the alias VALUES at the Merge
-    ///     level from those physical columns by building a fresh ActionsDAG, running
+    ///   Step 2 (here, `convertAndFilterSourceStream`): re-compute the alias VALUES at the
+    ///     Merge level from those physical columns by building a fresh ActionsDAG, running
     ///     `QueryAnalysisPass` on each alias expression, and visiting with `PlannerActionsVisitor`.
     ///     Emit each alias output under the alias's analyzer identifier so the Merge target
     ///     header (also using analyzer identifiers) can pick it up by name.
     ///
-    /// This is awkward and has a real downside: any condition on an ALIAS column (e.g.
-    /// `WHERE colAlias > 10`) goes through Step 1's `replaceColumns` and becomes a condition on
-    /// the resolved expression (`WHERE col * 2 > 10`), so MergeTree's index analysis CAN apply.
-    /// That part works. But for the output-side computation here, the alias expression is
-    /// re-evaluated at Merge level even when the child has already produced the value (e.g.
+    /// The structural awkwardness: alias values are computed AFTER the child's ReadFromMergeTree,
+    /// not before / inside it. This means predicates on ALIAS columns can only use the underlying
+    /// physical column for index analysis IF Step 1's `replaceColumns` happens to inline the
+    /// alias expression into the predicate too (which it does today), making KeyCondition see
+    /// `col*2 > 10` instead of `alias > 10`. Output-side aliases on the other hand are recomputed
+    /// here from scratch even when the child has already produced the same value (e.g.
     /// Distributed children inline-evaluate alias expressions on the shard and return them as
     /// expression-named output columns). The recompute is redundant for those cases.
     ///
-    /// A natural unification would be to use `__aliasMarker(expr, identifier)` (the function we
-    /// introduced for distributed ALIAS-column header reconciliation) in Step 1: replace each
-    /// ALIAS reference with `__aliasMarker(<resolved expr>, '<analyzer identifier>')` instead of
-    /// the bare resolved expression. The child plan's `ExpressionStep` would evaluate the marker
-    /// (identity-passthrough) and emit the result under the identifier name. Step 2 here would
-    /// then be unnecessary — pipe_columns would already carry alias values under correct names —
-    /// and the entire `if (allow_experimental_analyzer) { ... }` block below could be deleted.
-    ///
-    /// The catch is that wrapping a predicate with `__aliasMarker` makes it opaque to MergeTree's
-    /// index analyzer: `WHERE __aliasMarker(col * 2, '__table1.colAlias') > 10` doesn't get the
-    /// constant-folding / monotonicity / KeyCondition machinery that `WHERE col * 2 > 10` enjoys,
-    /// so a query that uses an ALIAS column in WHERE would lose the index. Either the marker
-    /// would have to be applied only to projection (SELECT-list) alias references and not to
-    /// predicate references, or MergeTree's index/predicate analyzer would have to learn to
-    /// unwrap `__aliasMarker(x, *)` to `x`. Neither is trivial.
+    /// A natural unification would be to use `__aliasMarker(expr, identifier)` (the function
+    /// introduced elsewhere for distributed ALIAS-column header reconciliation) in Step 1:
+    /// replace each ALIAS reference with `__aliasMarker(<resolved expr>, '<analyzer identifier>')`
+    /// instead of the bare resolved expression. The child planner's `PlannerActionsVisitor`
+    /// resolves the marker at plan-build time -- the marker function call disappears from the
+    /// resulting ActionsDAG, leaving a normal action node that computes `<resolved expr>` named
+    /// `<identifier>`. So predicate / KeyCondition analysis is unaffected (it sees the underlying
+    /// computation graph, the marker is a planner-time naming device, not a runtime expression).
+    /// With this unification Step 2 here disappears entirely: pipe_columns would already carry
+    /// alias values under correct names, and the entire `if (allow_experimental_analyzer) { ... }`
+    /// block below could be deleted.
     ///
     /// Left as future work. The current design is correct (Step 1 + Step 2 together produce the
-    /// right values, indexes apply to alias predicates), just not minimal.
+    /// right values), just not minimal.
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         /// The Merge table expects its columns under analyzer identifiers (e.g. `__table1.a`,
