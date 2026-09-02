@@ -241,6 +241,16 @@ void ContentAddressedSettings::validate()
             "content_addressed disk: gc_bulk_delete_chunk_keys must be between 1 and 1000 (got {})",
             settings[ContentAddressedSetting::gc_bulk_delete_chunk_keys].value);
 
+    if (settings[ContentAddressedSetting::mount_lease_ttl_ms] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "content_addressed disk: cas_mount_lease_ttl_ms must be >= 1 (got {})",
+            settings[ContentAddressedSetting::mount_lease_ttl_ms].value);
+
+    if (settings[ContentAddressedSetting::mount_renew_period_ms] == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "content_addressed disk: cas_mount_renew_period_ms must be >= 1 (got {})",
+            settings[ContentAddressedSetting::mount_renew_period_ms].value);
+
     /// The layout subtree identity is explicit and REQUIRED — no default, so an ABSENT key throws a
     /// typed `NO_ELEMENTS_IN_CONFIG` (mirroring the `metadata_type` check in `MetadataStorageFactory`),
     /// distinct from a PRESENT-but-invalid value, which falls through to `validateServerRootId`'s
