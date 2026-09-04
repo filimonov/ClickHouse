@@ -1446,6 +1446,38 @@ Proposed:
    `SYSTEM CAS GC` explicitly (18 tests) or configure their own disks with a 1 s interval, so they
    are unaffected. The product default (60 s) stays.
 
+## `[cas-part-commit-runs-under-parts-lock]` On a CA disk the whole S3 publish of an inserted part (blob fan-out, manifest staging, ledger append) runs while `MergeTreeSink::commitPart` holds the table's `DataPartsLock`, so concurrent inserts into one table serialize on seconds of S3 I/O {#cas-part-commit-runs-under-parts-lock}
+
+Measured 2026-09-04 on the parallel stateless lane (RustFS, binary 9bf134686af), table `dedup_test` of
+`02434_cancel_insert_when_client_dies` / `02435_rollback_cancelled_queries` (many concurrent inserts into
+one table): 61 inserts averaging 107 s, `PartsLockWaitMicroseconds` 3 528 s against
+`PartsLockHoldMicroseconds` 195 s over a 270 s window, i.e. the lock was held 72% of the window by
+inserts. Where the holder was (`system.trace_log` type `Real`, samples inside `commitPart` without a
+`SharedMutex::lock` frame): `finalizeConditionalWrite < nativeConditionalPut < ... <
+CasRefLedger::stagingPutIfAbsent < PartWriteTxn::stageManifest < ContentAddressedTransaction::publishStaging
+< ContentAddressedTransaction::commit < DiskObjectStorageTransaction::commit <
+DataPartStorageOnDiskFull::commitTransaction < MergeTreeData::Transaction::commit < MergeTreeSink::commitPart`
+(246 samples), the same chain through `CasRefLedger::flushRefBatch` (263), `fanOutBlobUploads <
+uploadPendingBlobs < publishStaging` (140). Of 12 634 samples on the test's query threads, 5 719 waited
+for the lock and 717 held it inside the CAS commit.
+
+Why: `MergeTreeSink::commitPart` takes `lockParts()` (`MergeTreeSink.cpp:376`), calls
+`renameTempPartAndAdd` with `rename_in_transaction=false` and then `transaction.commit(lock)`
+(`:408`) inside the same scope. On a plain object-storage disk that commit is local metadata work; on
+a CA disk `ContentAddressedTransaction::commit` is where the blobs are uploaded (fan-out, HEAD-before-PUT),
+the manifest is staged (conditional PUT) and the ref-ledger append is flushed, about 1 to 3 s per part
+at 54 ms per PUT. Every concurrent insert into the table waits for that. The upstream comment above
+the call says the rename must stay under the lock (covered-parts race with merges), so the lock scope
+itself is not ours to move (upstream-coupling rule).
+
+Fix direction (CAS side only): perform the upload half before the lock. The blob fan-out and the
+manifest staging depend only on the part's content, which is final when the writer finalizes, so they
+can run at write-buffer finalize / `finalizePart` time (before `commitPart` takes the lock), leaving
+only the ledger publish (one combined `_log` write per flush batch) under the lock. Check the
+replicated sink (`ReplicatedMergeTreeSink.cpp:1022-1053`) for the same shape before deciding the
+seam. Verification: rerun the two tests on the lane and read `PartsLockHoldMicroseconds` per insert;
+the general win is every multi-writer table on CA storage, not just these tests.
+
 ## `[emulated-resurrect-should-spill-to-disk]` Emulated `publishBlob` should spill before atomic install {#emulated-resurrect-spill-to-disk}
 
 **REFRAMED 2026-08-23; identifier and history preserved.** The separate resurrection API was deleted.
