@@ -691,20 +691,20 @@ using namespace DB;
 namespace
 {
 
-/// Captures what `WriteBufferFromS3` logs at ERROR and above. A message logged below Error (e.g.
-/// Debug) never reaches the channel at this threshold, so an empty capture proves the site logged
-/// below Error rather than merely that this particular text was absent.
+/// Captures what `WriteBufferFromS3` logs at `threshold` and above (default: Error). A message
+/// logged below the threshold never reaches the channel, so an empty capture proves the site logged
+/// below it rather than merely that this particular text was absent.
 class ScopedWriteBufferS3ErrorLogCapture
 {
 public:
-    ScopedWriteBufferS3ErrorLogCapture()
+    explicit ScopedWriteBufferS3ErrorLogCapture(const std::string & threshold = "error")
         : logger(getLogger("WriteBufferFromS3"))
         , channel(new Poco::StreamChannel(stream))
         , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
     {
         logger->setChannel(channel.get());
-        logger->setLevel("error");
+        logger->setLevel(threshold);
     }
 
     ~ScopedWriteBufferS3ErrorLogCapture()
@@ -958,7 +958,8 @@ TEST_P(SyncAsync, ExceptionOnPut) {
 
 /// A non-412 `PutObject` failure on the ordinary (Default) retry profile is a genuine error: the
 /// client's one attempt IS the final answer, so the site logs it at Error.
-TEST_P(SyncAsync, PutObjectErrorLogsErrorForDefaultProfile) {
+TEST_P(SyncAsync, PutObjectErrorLogsErrorForDefaultProfile)
+{
     setInjectionModel(std::make_shared<MockS3::PutObjectFailIngection>());
 
     ScopedWriteBufferS3ErrorLogCapture log_capture;
@@ -978,7 +979,8 @@ TEST_P(SyncAsync, PutObjectErrorLogsErrorForDefaultProfile) {
 /// The same failure on the SingleAttempt profile (the CAS conditional-write client) is owned by an
 /// outer retry loop that resolves the outcome and reissues; the one failed attempt is not terminal,
 /// so nothing here reaches Error.
-TEST_P(SyncAsync, PutObjectErrorLogsDebugForSingleAttemptProfile) {
+TEST_P(SyncAsync, PutObjectErrorLogsDebugForSingleAttemptProfile)
+{
     setInjectionModel(std::make_shared<MockS3::PutObjectFailIngection>());
 
     WriteSettings write_settings;
@@ -998,11 +1000,15 @@ TEST_P(SyncAsync, PutObjectErrorLogsDebugForSingleAttemptProfile) {
 }
 
 /// A conditional write losing its precondition (412) is the caller's expected answer, handled one
-/// frame up -- it must never reach Error, independent of the retry profile.
-TEST_P(SyncAsync, PreconditionFailedNeverLogsAtError) {
+/// frame up -- it says nothing to the operator, so it must stay below Information, independent of the
+/// retry profile. The capture threshold is Information so that an Info-level line from the site would
+/// be caught; the cancel path logs its own Info lines, so the assertion is on the site's text, not on
+/// an empty capture.
+TEST_P(SyncAsync, PreconditionFailedNeverLogsAtError)
+{
     setInjectionModel(std::make_shared<MockS3::PutObjectPreconditionFailedIngection>());
 
-    ScopedWriteBufferS3ErrorLogCapture log_capture;
+    ScopedWriteBufferS3ErrorLogCapture log_capture("information");
     EXPECT_THROW({
         auto buffer = getWriteBuffer("put_object_precondition_failed");
         buffer->write('A');
@@ -1012,7 +1018,7 @@ TEST_P(SyncAsync, PreconditionFailedNeverLogsAtError) {
         buffer->finalize();
     }, DB::S3Exception);
 
-    EXPECT_TRUE(log_capture.captured().empty());
+    EXPECT_THAT(log_capture.captured(), testing::Not(testing::HasSubstr("S3Exception name")));
 }
 
 TEST_P(SyncAsync, ExceptionOnCreateMPU) {

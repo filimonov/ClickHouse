@@ -56,6 +56,22 @@ Scope: the thrown `Poco::TimeoutException` path, which is what the lanes and the
 A failure that arrives as an HTTP status (504, other 5xx) is logged at Error one layer lower, in
 `PocoHTTPClient.cpp` ("Response status: ..."), which knows neither the strategy nor the profile; that
 site is untouched here and becomes a follow-up only if a lane ever shows it.
+Also untouched: `WriteBufferFromS3`'s multipart cleanup path (`tryToAbortMultipartUpload`, Error when
+the abort itself fails). A control-plane object is far below the single-part threshold, and an abort
+that fails is a genuine error on any profile.
+
+## Implementation record {#implementation-record}
+
+Landed as 08c2a2ec25e (product: `Client.h` +4, `Client.cpp` +10/-2, `WriteBufferFromS3.cpp` +8/-2;
+tests: +179 in `gtest_aws_s3_client.cpp`, +109 in `gtest_writebuffer_s3.cpp`). Network exception
+driven through `Client::PutObject` by a derived test client overriding the SDK virtual slot, because a
+socket-level fault is converted to a non-throwing outcome inside `PocoHTTPClient` and never reaches
+`net_exception_handler`. Reviews: ca-review-lite APPROVE; Codex round 3 APPROVE WITH MINORS (the 412
+test captured at the Error threshold and so could not tell Info from Debug: fixed by capturing at
+Information and asserting on the site's own text, since the cancel path logs Info lines of its own; Allman braces on the three `TEST_P` bodies: fixed; the verification matrix asserts
+attempts, outcome type and error counters but not the outcome message text: accepted as is). Gates:
+release `CAS*` 2472 and `WBS3` 37 green; ASan 2512 and `WBS3` 36 green (one test skipped under ASan by
+its own guard).
 
 ## Alternatives considered {#alternatives}
 
