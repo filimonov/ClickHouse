@@ -1574,6 +1574,36 @@ per-key ETag condition that general-purpose buckets enforce, the whole phase bec
 1000 blobs. A store capability, so it would have to be proven by the capability probe the way the
 exact-token DELETE 412 is proven today; not assumed.
 
+## `[chunked-flush-publisher-gate-flake-aborts-gate]` `CASRefWriterChunkedFlush.SnapshotPublisherLatchedAcrossChunks` flakes on a circular wait and, because the assert leaves two joinable threads, terminates the whole `unit_tests_dbms` binary {#chunked-flush-publisher-gate-flake-aborts-gate}
+
+Known since 2026-08-25 (memory only until now; recurred 2026-09-03 on the request-contract gate and
+2026-09-04 during the single-attempt log-level task's combined run; on this host the discriminator
+line appears in a noticeable fraction of full `CAS*` gate logs, e.g. `build/crit6_gate.log` 2026-08-30
+after 1505 green tests). Two independent defects:
+
+1. **Test-side circular wait** (`src/Disks/tests/gtest_cas_ref_chunked_flush.cpp:1017`). The carve
+   hook parks the LEADER append thread in `ChunkFaultBackend::awaitBlockEntered` at the chunk-2
+   boundary (`CarvePhaseForTest::ChunkReseed`), waiting for chunk 1's snapshot publisher to reach its
+   armed `_snap/` PUT. The publisher, however, refuses to publish while `rt->lane_state != Ready`
+   (`Pool/CasRefLedger.cpp:4491`, `refusing snapshot publication while the append lane is not Ready
+   (state 1)`), and the lane is `Writing` exactly because that leader is mid-chunk. Whether the
+   publisher captured its candidate before or after the lane went `Writing` is a race the test does
+   not control; when it loses, the only exits are the 20 s budget inside `awaitBlockEntered` and the
+   test's own `ASSERT_EQ(a.fut.wait_for(20s), ready)` at `:1048`, so the outer wait fails.
+   Discriminator: the refusal line above appears in failing runs only.
+2. **Failure mode kills the run**: the `ASSERT_EQ` returns from `TestBody` with `AppendCaller a`/`b`
+   still holding joinable `std::thread`s; `std::thread::~thread` calls `std::terminate`
+   (`libc++abi: terminating`), so one flake discards every test after it (1458 of 2170 in the first
+   sighting). In CI this is a red unit-test job unrelated to the PR under test.
+
+Fix order: (2) first and mechanically, so a flake costs one test, not the gate: join or detach the
+callers before any `ASSERT`, e.g. an RAII joiner on `AppendCaller` or `EXPECT_` plus explicit joins.
+Then (1): make the hook order deterministic, either by gating the carve hook on the publisher having
+captured its candidate (the `snapshot_after_capture_hook_for_test` seam already exists at
+`CasRefLedger.cpp:4497`) or by arming the block only after that capture; the assertion the test
+proves (the dropped chunk-2 trigger re-fires on settlement) does not depend on which thread parks
+first. Verify with 20 isolated repeats and two full `CAS*` gates with zero refusal lines.
+
 ## `[emulated-resurrect-should-spill-to-disk]` Emulated `publishBlob` should spill before atomic install {#emulated-resurrect-spill-to-disk}
 
 **REFRAMED 2026-08-23; identifier and history preserved.** The separate resurrection API was deleted.
