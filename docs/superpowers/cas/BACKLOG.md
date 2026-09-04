@@ -865,11 +865,21 @@ p50 962 ms (57 statements). Not caused by write contention: `PreconditionFailed`
 `CASHotKeyQueueWaitMicroseconds` are flat over the run while the timeout rate grows fivefold; what
 grows is the object and therefore the window a GET spends behind a PUT.
 
-Fixes, cheapest first: (1) the single-attempt client the CAS control plane uses
-(`S3ObjectStorage::getSingleAttemptClient`, CAS-added in a5783037dbb) should disable adaptive
-timeouts in its configuration copy: the engine has its own per-attempt budget and its own retry, so the
-200 ms fuse only converts a 250 ms wait into a timeout plus a backoff sleep; (2) the catalog growth
-itself, which is the hotspot above.
+Fix direction (user ruling 2026-09-04: keep the adaptive fuse, it exists to abandon a bad connection
+to real S3 quickly; make the CAS retry cooperate with it instead of fighting it). Today the engine's
+reissue is a brand-new request: `ReadBufferFromS3` starts at attempt 1 (`max_single_read_retries` is 1
+for CAS reads), `PocoHTTPClient` sees `first_attempt` again and applies the 200 ms fuse again, and the
+engine sleeps `Retry::backoff(attempt)` (0-200 ms jitter) before it. Upstream's own retry does the
+opposite: attempt 2 runs on a fresh connection with the full timeouts (`Client.cpp:847` bumps
+`setClickhouseAttemptNumber`). Two changes, both in the CAS engine plus one small seam:
+(1) thread the engine's attempt number into the request — `readSettingsFor(profile, timeout, attempt)`
+and the write twin carry it in `ReadSettings`/`WriteSettings`, `ReadBufferFromS3::sendRequest` /
+the write path seed `setClickhouseAttemptNumber` from it (upstream seam, consult first) — so the
+reissue gets the full `attempt_timeout_ms` on a new connection; (2) classify a first-attempt
+`Poco::TimeoutException` as a connection-quality retry: reissue at once, no backoff, still under the
+deadline gate; backoff stays for attempt ≥ 2 and for every store-side fault. Expected on the lane:
+a hit costs the 200 ms fuse only, the double-hit case (p50 962 ms) disappears. The catalog growth
+itself stays the hotspot above.
 
 ## `[cas-decode-register-pressure]` WITHDRAWN — the finding was a build-flag artifact {#cas-decode-register-pressure}
 
