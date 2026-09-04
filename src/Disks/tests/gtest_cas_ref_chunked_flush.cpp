@@ -115,6 +115,12 @@ struct Caller
 {
     std::thread t;
     std::future<std::exception_ptr> fut;
+
+    /// A fatal `ASSERT_*` between launch and the explicit `t.join()` below returns from `TestBody` with
+    /// `t` still joinable; `std::thread::~thread` on a joinable thread calls `std::terminate`, aborting
+    /// the whole binary and discarding every later test. This destructor is the backstop: on every
+    /// success path the explicit join already ran and left nothing for it to do.
+    ~Caller() { if (t.joinable()) t.join(); }
 };
 
 Caller launchAppend(const PoolPtr & store, const RootNamespace & ns, MutationScope scope,
@@ -583,6 +589,10 @@ struct AppendCaller
 {
     std::thread t;
     std::future<AppendResult> fut;
+
+    /// Same hazard as `Caller` above (see its destructor comment): a fatal `ASSERT_*` before the
+    /// explicit join leaves `t` joinable, and a joinable thread's destructor calls `std::terminate`.
+    ~AppendCaller() { if (t.joinable()) t.join(); }
 };
 
 AppendCaller launchAppendOps(const PoolPtr & store, const RootNamespace & ns, MutationScope scope,
