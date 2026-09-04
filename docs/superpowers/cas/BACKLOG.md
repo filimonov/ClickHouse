@@ -72,6 +72,19 @@ own post-failure fsck already showed `unreachable=0`: a timing miss, not non-con
   1092 s for ~98 rounds; real GCS rounds took 18.8 s to 1250 s (round 7: 1114 s of its 1125 s in
   `pending_deletes`, 5000 throttled deletes). Derive the bound from observed round durations, as
   `wait_for_pool_drain` already does; otherwise every real-GCS soak with a backlog fails falsely.
+  **Reproduced on real AWS 2026-09-04** (`ca_live_20260904_aws_r1`, 8-minute no-chaos smoke; read-only
+  investigation report in the run's `tmp/aws_unreachable_debug_report.md`): `history=[3517, 2779]`,
+  bound 300 s, while the pool converged to `unreachable=0 dangling=0 unaccounted=0` on its own 38
+  minutes after the checkpoint started; condemned = graduated = redeleted = 4305, spared/replaced/
+  absent 0, every unreachable object a `blobs/` key in `delete_pending` or `awaiting_gc`. Two concrete
+  defects in `soak/checker.py`: (1) `poll_unreachable_to_stable` needs `stable=3` samples and each sample
+  is a full fsck (~325 s at 4-5k objects), so three samples cannot fit a 300 s bound regardless of GC
+  health; (2) `initial` is read before the first condemning round, so `max(300, 0.2 * initial)` collapses
+  to the floor while the backlog is still rising; the `wait_for_pool_drain` precondition never engaged
+  because `soak.pool`'s physical probe returns `None` on a live store. Fix: bound ≥ `stable` × measured
+  fsck seconds plus a drain estimate taken from `pending_reclaim` in `system.cas_mounts` and the observed
+  `system.cas_gc_log` round durations. Also: the run JSON's `fsck_status: "skipped"` is misleading when
+  three fscks ran and only the final one was not reached.
   Owner: `utils/ca-soak/soak/run.py`.
 - **GC round cost on GCS** — the measurement behind `{#gc-manifests-immutable-cheap-reduce}`: five leader
   rounds 1827 s total, `fold_reduce` 1383 s of it; sequential per-object phases (`fold_reduce`,
