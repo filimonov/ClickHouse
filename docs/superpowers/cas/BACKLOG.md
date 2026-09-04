@@ -1427,7 +1427,7 @@ Proposed:
 1. Give the janitor more than one page per round when the listing says the pool is debris-heavy —
    e.g. keep taking pages while the round's `namespaces_seen` exceeds the live-namespace count by an
    order of magnitude, bounded by a request budget, so a quiet pool still pays one page.
-2. Lane config: raise `cas_gc_interval_sec` from 5 to 30 in
+2. Lane config: raise `cas_gc_interval_sec` from 5 to 20 in (done 2026-09-04)
    `tests/config/config.d/cas_s3_storage_policy_for_merge_tree_by_default.xml` and
    `cas_storage_policy_for_merge_tree_by_default.xml`. The interval is a pause after the round, not
    a period; with 10 s rounds the scheduler ran two thirds of the time. Tests that need GC call
