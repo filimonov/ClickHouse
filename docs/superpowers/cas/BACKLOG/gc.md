@@ -52,6 +52,22 @@ scalability, byte cost, correctness follow-ups, and observability.
   `CASHotKeyQueueWaitMicroseconds` p90 29 ms, p99 125 ms, max 863 ms. Cheapest mitigation to try first:
   lower `concurrent_part_removal_threshold_for_remote_disk` for CA disks so removals overlap; the real
   fix stays the elided repoint above.
+  **Threshold analysis (2026-09-04, not applied yet, user's call):** set
+  `concurrent_part_removal_threshold_for_remote_disk` to 1 (or 2) in the `<merge_tree>` section of the two
+  stateless CAS lane configs (`tests/config/config.d/cas_s3_storage_policy_for_merge_tree_by_default.xml`,
+  `cas_storage_policy_for_merge_tree_by_default.xml`). Why it should pay twice on CAS: a part removal never
+  touches `ref_catalog` (that key is mutated per `CREATE`/`DROP TABLE` only), it writes a manifest and one
+  append to the table's ref-log; `CasRefLedger` already flat-combines concurrent appends of one table into
+  one `_log` object, so N parallel removals write N manifests in parallel and one ledger object, while the
+  serial path (`parts_to_remove.size() <= threshold` → `remove_single_thread`) never lets the combiner
+  fire. The hot-key lane on `ref_catalog` is FIFO in phase A (combining is phase B), so it neither helps
+  nor hurts here. Threshold 1 rather than 2 because two parts already combine; the parallel path splits
+  parts into independent covering ranges (one range for a small table) on the server-wide
+  `max_parts_cleaning_thread_pool_size` (128) pool, so there is no per-DROP thread setup cost. Tests that
+  need a specific threshold set it per table in `SETTINGS` (e.g. `01810_max_part_removal_threads_long`
+  uses 99) and are unaffected. Side benefit: the lane's thousands of `DROP`s would exercise the parallel
+  removal path on CA disks. Known cost: more concurrent CAS writes from ten parallel jobs, independent
+  keys across tables, combined within a table. Measure DROP p90/p99 from `query_log` before and after.
 - **[GC-EMPTY-SHARD-PROBES] constant per-round 404 probe floor** — DESIRABLE (measured 2026-07-15) — ≈1 174 `DiskS3ReadRequestsErrors`/round, CONSTANT regardless of round work (work-driven HEAD/GETs all hit; the misses are the structural probe set of per-shard journal/run/seal keys that are absent for empty shards; grows ≈+4/round as the writer touches new shards). On a small/idle pool this is the dominant GC request class (~3.5K req/min at 3 rounds/min). Removed by [Lever B]'s change-signal (stop probing unchanged/empty shards); until then it belongs in the `07-s3-budget` request-count model (404s bill as requests).
 - **[REF-QUEUE-WAIT-MEASURE] insert-path ref-lane queue wait ≈48 ms/insert** — DESIRABLE (measurement, 2026-07-15) — `CasRefQueueWaitMicroseconds` attributed to Insert queries = 339.6 s over 7 131 inserts (~48 ms avg) in the milestone soak; a data point for the refsnaplog Phase-2 flush-cadence/adaptive-threshold work — verify the batch-flush scheduling isn't leaving easy latency on the table before touching code.
 
