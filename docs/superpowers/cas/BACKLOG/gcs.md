@@ -133,6 +133,15 @@ run (up from a few seconds at the original parameters).
 
 **Open items carried forward.**
 
+- Independently corroborated on 2026-09-01 by a workload that is not GCS and not a soak:
+  `alter_attach_partition_cas` part 1 on package `26.6.2.20001.altinityantalya`, where
+  `ATTACH PARTITION FROM` onto a Replicated destination diverged the replicas and the source answered
+  31541 of 31541 confirms `unproven (unknown)` and none `no`. Reported as
+  [Altinity/ClickHouse#2310](https://github.com/Altinity/ClickHouse/issues/2310); the package predates
+  `a43e2ef89d3` by about a day. That suite is a faster and more natural reproducer than the escalated
+  fake-GCS liveness case (six and a half minutes per run), and re-running it against a post-fix build
+  is the gate on closing the issue. Triage record and the two items it left open:
+  [`BACKLOG/issue-2310.md`](/superpowers/cas/backlog/issue-2310).
 - `CASRelinkConfirmRefusedStateLockBusy` is exercised by no test. The `state_mutex` acquisition it
   counts is non-blocking (`try_to_lock`), and nothing in the current code gives a test a seam that
   forces a miss; closing this needs a new test hook, not asked for by this plan.
@@ -168,7 +177,13 @@ run (up from a few seconds at the original parameters).
 4. **Let the confirm read the durable journal.** Rejected: the zero-I/O contract exists so a remote
    peer cannot make this writer do work.
 5. **Byte-fetch fallback after N failed confirms.** Rejected by taxonomy row 3 in
-   `DataPartsExchange.cpp`: the byte request goes to the very source whose state is in doubt.
+   `DataPartsExchange.cpp`: the byte request goes to the very source whose state is in doubt. That
+   sentence is the taxonomy's reason, not the whole answer, and it does not survive being pressed on
+   the `Unknown` branch — a byte fetch establishes its own GC protection through `putBlob` and does
+   not rest on the sender's ledger. The objection that does hold is cost, and the bounded shape this
+   would have to take if it ever comes back is written out in
+   [`BACKLOG/issue-2310.md`](/superpowers/cas/backlog/issue-2310#byte-fallback-note), which is where
+   the same proposal arrived from outside.
 6. **Shorten tenures on GCS** (the `_ckpt` items below). Necessary anyway, not a liveness guarantee.
 
 **Operational workaround that works today:** alternate `SYSTEM STOP FETCHES` on one replica while the
@@ -237,6 +252,18 @@ gate after every fix has landed.
   fewer requests. Cons: same ceiling; waiting inside the tenure makes F11 worse unless combined with A2.
 - **A4. Rotating or generation-suffixed `_ckpt` key.** Rejected: every reader would have to find the
   latest; layout change for one provider.
+
+**Measured again 2026-09-05, 8-minute no-chaos smoke (`ca_live_20260905_r1`, binary with the
+single-attempt log-level change, 7ec4d8b0c39 relinked):** GCS answered 429 `The object exceeded the rate
+limit for object mutation operations` 175 times on ch1 and 161 times on ch2, every one of them on the
+node's own `cas/ns/state/<ns>/_ckpt`, in bursts of 30-45 per minute during the mutations / ttl_pressure
+stages (`CASRefBatchFlushes` 408 on ch1 over the run). The engine absorbed all of them
+(`CASRequestReissue` 178, `CASRequestResolveRead` 234, zero give-ups, zero failed queries), and the
+`WriteBufferFromS3` line for them is now Debug (`S3Exception name SlowDown`), but each 429 still
+leaves `<Error> AWSClient: Response status: 429, Too Many Requests` from `PocoHTTPClient`'s status
+site, 174 / 161 lines per node -- the third log site named as a follow-up in
+`docs/superpowers/cas/2026-09-04-single-attempt-client-log-level-proposal.md`. A1 stays the fix for
+the rate; the log site is its own small item in the main BACKLOG.
 
 **Until fixed, document the limit:** roughly one commit per second per table and one namespace
 lifecycle transition per second per pool on GCS. `docs/en/antalya/cas/bucket-requirements.md` does not

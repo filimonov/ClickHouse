@@ -1604,6 +1604,22 @@ captured its candidate (the `snapshot_after_capture_hook_for_test` seam already 
 proves (the dropped chunk-2 trigger re-fires on settlement) does not depend on which thread parks
 first. Verify with 20 isolated repeats and two full `CAS*` gates with zero refusal lines.
 
+## `[single-attempt-client-status-error-log-site]` A single-attempt client's HTTP-status failure (429, 5xx) is still logged at Error by `PocoHTTPClient`; on GCS that is 170 lines per node per 8-minute smoke {#single-attempt-client-status-error-log-site}
+
+Follow-up of `docs/superpowers/cas/2026-09-04-single-attempt-client-log-level-proposal.md`, which
+demoted the thrown-exception path (`Client.cpp` network error, `WriteBufferFromS3` S3Exception) and
+declared the status-code path out of scope until a lane showed it. The GCS smoke of 2026-09-05 showed
+it at once: every 429 on `_ckpt` (see `BACKLOG/gcs.md`, failure class 1) is written as
+`<Error> AWSClient: Response status: 429, Too Many Requests` at `src/IO/S3/PocoHTTPClient.cpp` (the
+`else if (HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())` branch), while
+the engine resolves and reissues it. `PocoHTTPClient` knows neither the retry strategy nor the write
+profile, but it is constructed from `PocoHTTPClientConfiguration`, whose base carries `retryStrategy`;
+`getSingleAttemptClient` builds that configuration. Shape: copy a `single_attempt` flag from the
+configuration at construction (next to `s3_use_adaptive_timeouts`) and log a retryable status
+(429, 5xx) at Debug when it is set; 4xx other than 404/412/429 stays Error on every client.
+Verification: the `PocoHTTPClient` gtests plus a GCS smoke with zero `Response status: 429` lines at
+Error and the same 429 count at Debug.
+
 ## `[emulated-resurrect-should-spill-to-disk]` Emulated `publishBlob` should spill before atomic install {#emulated-resurrect-spill-to-disk}
 
 **REFRAMED 2026-08-23; identifier and history preserved.** The separate resurrection API was deleted.
