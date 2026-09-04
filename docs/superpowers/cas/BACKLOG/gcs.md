@@ -265,6 +265,25 @@ site, 174 / 161 lines per node -- the third log site named as a follow-up in
 `docs/superpowers/cas/2026-09-04-single-attempt-client-log-level-proposal.md`. A1 stays the fix for
 the rate; the log site is its own small item in the main BACKLOG.
 
+**The same hot key on AWS S3 answers 409 `ConditionalRequestConflict` (seen 2026-09-05 in a manual test
+on a Kubernetes CHI, key `.../cas/ns/state/<ns>/_ckpt`, object size 90):** AWS's error for a conditional
+PUT that collides with another in-flight operation on the same object, "The conditional request cannot
+succeed due to a conflicting operation against this resource", to be retried. It is NOT a 412 (the
+precondition may still hold) and the SDK has no name for it ("Unable to parse ExceptionName"), which
+makes the log line confusing: it reads like a refusal while it is the AWS spelling of the very
+contention GCS spells as 429. Writers that can overlap on one `_ckpt`: the lane's frontier publish in
+`commitRefChunk`, the asynchronous snapshot publisher (`tryPublishSnapshotAndAdvanceCheckpointOnce...`),
+and a recovery walk (`runRecoveryWalkOnce` / `requireRecovery`, possibly from another replica). RustFS
+and MinIO serialize the two PUTs and answer 412 to the loser, so the 409 never shows up locally.
+Engine handling today, verified in `CasRequests.cpp`: the name is in no classification list
+(`isDefinitelyRefusedWrite` covers malformed / EntityTooLarge / AccessDenied / credentials only), so it
+falls into "outcome unknown" → `Unresolved` → exact resolve read → reissue with backoff inside the
+budget; correct and safe, no failed query unless the 90 s budget runs out. The `WriteBufferFromS3` line
+is Debug since 08c2a2ec25e; `PocoHTTPClient`'s `Response status: 409` stays Error
+(`[single-attempt-client-status-error-log-site]`). When A1 lands, verify on BOTH providers: zero 429
+on GCS and zero 409 on AWS for `_ckpt` under the soak's mutations stage; and classify the name
+explicitly (a conflict-in-flight class next to `PreconditionFailed`) so the log says what it is.
+
 **Until fixed, document the limit:** roughly one commit per second per table and one namespace
 lifecycle transition per second per pool on GCS. `docs/en/antalya/cas/bucket-requirements.md` does not
 mention it yet.
