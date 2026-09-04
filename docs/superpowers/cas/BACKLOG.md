@@ -1399,6 +1399,41 @@ Two independent contributors, each with its own fix:
    from completed tests kept scanning for the rest of the run. The lifecycle redesign
    (`UNMOUNT` stops background work and ejects the disk) subsumes this half.
 
+## `[gc-namespace-janitor-one-page-per-round-cannot-keep-up]` The namespace janitor examines one 1000-key page per round, so dead namespaces accumulate and every round's ref-prefix LIST grows with them {#gc-namespace-janitor-one-page-per-round}
+
+Measured live (2026-09-04, `system.cas_gc_log` of the parallel stateless lane on the `cas_s3` disk,
+`cas_gc_interval_sec = 5`, minio backend). Every regular round pays one LIST of `cas/ns/stream/` inside
+`defer_decision` (three `system.stack_trace` samples of `CasGcSched` all sat in
+`ObjectStorageBackend::listUnder`); the round is never `Deferred` on this disk, so
+`[gc-deferred-round-pays-full-list]` does not apply — this is the FOLD round's fixed cost:
+
+| window | rounds | avg `defer_decision` | keys listed | namespaces listed |
+|---|---|---|---|---|
+| 21:10 | 74 | 673 ms | 3 247 | 95 |
+| 21:30 | 33 | 6 883 ms | 24 873 | 520 |
+| 21:50 | 13 | 19 678 ms | 69 952 | 1 436 |
+
+About 0.28 ms per key, i.e. ~280 ms per 1000-key page. At the end of the window 40 `MergeTree` tables
+were alive while the LIST returned 1 404 namespaces with ~49 `_log` keys each: the prefix is almost
+entirely dead namespaces of dropped test tables. `namespace_cleanup` (`runNamespaceJanitorPage`,
+`janitor.runOnePage`) examines exactly one page per round (`janitor_pages = 1`, `janitor_keys = 1000`)
+and deleted 150–300 keys per round, while the lane added ~27 000 keys per 10 minutes. Totals over the
+46-minute run for `cas_s3`: `defer_decision` 889 s of ~1 830 s of GC wall time, then `fold_reduce`
+393 s and `pending_deletes` 191 s. The pause between rounds (5 s) only divides the LIST count; the
+janitor's page bound is what lets the LIST grow.
+
+Proposed:
+
+1. Give the janitor more than one page per round when the listing says the pool is debris-heavy —
+   e.g. keep taking pages while the round's `namespaces_seen` exceeds the live-namespace count by an
+   order of magnitude, bounded by a request budget, so a quiet pool still pays one page.
+2. Lane config: raise `cas_gc_interval_sec` from 5 to 30 in
+   `tests/config/config.d/cas_s3_storage_policy_for_merge_tree_by_default.xml` and
+   `cas_storage_policy_for_merge_tree_by_default.xml`. The interval is a pause after the round, not
+   a period; with 10 s rounds the scheduler ran two thirds of the time. Tests that need GC call
+   `SYSTEM CAS GC` explicitly (18 tests) or configure their own disks with a 1 s interval, so they
+   are unaffected. The product default (60 s) stays.
+
 ## `[emulated-resurrect-should-spill-to-disk]` Emulated `publishBlob` should spill before atomic install {#emulated-resurrect-spill-to-disk}
 
 **REFRAMED 2026-08-23; identifier and history preserved.** The separate resurrection API was deleted.
