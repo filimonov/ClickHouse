@@ -1501,6 +1501,66 @@ replicated sink (`ReplicatedMergeTreeSink.cpp:1022-1053`) for the same shape bef
 seam. Verification: rerun the two tests on the lane and read `PartsLockHoldMicroseconds` per insert;
 the general win is every multi-writer table on CA storage, not just these tests.
 
+## TASK `[gc-condemn-head-read-ahead-pinned-window]` Free the condemn-time HEAD read-ahead window when the merge passes hinted keys, so mass-removal rounds stop paying inline HEADs {#gc-condemn-head-read-ahead-pinned-window}
+
+**Measured 2026-09-04, real-AWS smoke soak (`ca_live_20260904_aws_r1`, binary 9bf134686af, `cas_gc_read_concurrency` 16, window 64):**
+
+| round | condemned | inline `HEAD` | `CASGCReadAheadHit` | `Miss` | `Wasted` | `fold_reduce` |
+|---|---|---|---|---|---|---|
+| 20:54 | 1261 | 860 | 2453 | 862 | 64 | 128 s |
+| 20:56 | 882 | 771 | 583 | 774 | 64 | 116 s |
+| 21:09 | 1793 | 882 | 3146 | 4 | 19 | 42 s |
+
+Misses equal the inline HEAD count and `Wasted` is exactly the window: the 64 slots hold hints the
+merge never takes, `topUpHeadHints` (`Gc/CasGc.cpp:1801`, `while (pending() < window())`) hints nothing
+more, and every `takeHead` at `:1828` degrades to a serial HEAD at ~150 ms on AWS. The third round shows
+the same code with a free window: 1793 condemns in 42 s. Same signature as the GCS runs recorded under
+`[gc-manifests-are-immutable-so-reduce-and-deletes-can-be-cheap]` (`Wasted=64` per round,
+`epoch_crossings=0`), so this is the mechanism that pins the window without an epoch crossing.
+
+**Task.** `head_candidates[shard]` is a superset of the keys the merge will actually take, in the
+merge's own ascending key order (comment at `Gc/CasGc.cpp:1790`). A hinted key the merge has already
+passed can never be taken. Rule at the hinting site: before topping up, and on any `takeHead` miss with
+`pending() == window()`, `discardHead` every pending hint whose key sorts before the key being taken
+(the read-ahead counts them as wasted, which is the honest figure). Then top up. Add a gtest that
+builds a candidate superset with gaps and asserts hits/misses/wasted per round against the sequential
+oracle, plus the existing `CAS*` gate. Acceptance: on a mass-removal round `Miss` is within one window
+of zero and `fold_reduce` scales with the read-ahead, not with the inline HEAD count. Expected on the
+AWS figures above: 128 s → ~40 s.
+
+## TASK `[gc-pending-deletes-fan-out]` Fan the blob `pending_deletes` loop out over a bounded worker pool; each blob keeps its exact-token HEAD + conditional DELETE {#gc-pending-deletes-fan-out}
+
+**Measured 2026-09-04, real-AWS smoke soak:** `pending_deletes` 351 s for 1261 blobs and 246 s for 882
+(one HEAD ≈100 ms plus one single-key conditional `DeleteObjects` ≈150 ms per blob, serial, ~0.28 s per
+blob); with `fold_reduce` above, these two phases made the 427 s and 328 s rounds that the soak harness'
+300 s fixpoint bound cannot survive (`history=[3517, 2779]`). GCS run 2 showed the same at 551 s for
+2731 blobs (`[gc-blob-pending-deletes-now-dominant]`); the T9 baseline showed it at 208 s
+(`[gc-delete-concurrency-serial]`). Those two entries are the measurement; this is the task.
+
+**Task.** The loop at `Gc/CasGc.cpp:700` does per blob: `op.head` → token compare → `op.remove(key,
+observed etag)` → event, outcome row, meta scheduling. The network pair is independent per key and its
+safety is per key (I5: exact-token delete; a resurrected blob mismatches and is left alone), so
+concurrency changes nothing about safety. Shape: chunks of N = `cas_gc_read_concurrency` entries from
+`redelete_now`; each worker runs head → compare → remove through an operation resumed under the round's
+admitted generation, exactly as `GcReadAhead` workers do, so a fence that moves under the round fails the
+worker's request the way it fails the main one; the worker returns `(Removal, observed)`; the owning
+thread then runs the existing bookkeeping serially in the original order. `authority_held` is checked
+before each chunk, as the serial loop checks it per entry. Not the read-ahead: that design never runs
+the destructive decision, and this task keeps that rule (the decision and the delete run in the worker
+only because they are one exact-token request; nothing is prefetched). Tests: a gtest with an
+instrumented backend asserting that N deletes overlap, that a fence mid-chunk stops the remaining
+chunks with no delete issued after it, that a mismatch during the chunk is `Replaced` and leaves the
+object, and that outcomes/events/meta calls are identical to the serial loop's; the `CAS*` gate; a
+soak round with mass removal reading `pending_deletes` from `system.cas_gc_log`. Acceptance: phase wall
+≤ 2 × (serial wall / N) on the AWS stand; no change in `objects_deleted`/`spared`/`replaced` counts
+for the same input. Falsification stays as in `[gc-delete-concurrency-serial]`: SlowDown/503 at a
+concurrency nobody has tried; start with N = 8 and measure.
+
+**Worth checking first, separately:** AWS added conditional deletes; if `DeleteObjects` accepts a
+per-key ETag condition that general-purpose buckets enforce, the whole phase becomes one request per
+1000 blobs. A store capability, so it would have to be proven by the capability probe the way the
+exact-token DELETE 412 is proven today; not assumed.
+
 ## `[emulated-resurrect-should-spill-to-disk]` Emulated `publishBlob` should spill before atomic install {#emulated-resurrect-spill-to-disk}
 
 **REFRAMED 2026-08-23; identifier and history preserved.** The separate resurrection API was deleted.
