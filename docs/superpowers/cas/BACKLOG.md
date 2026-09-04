@@ -847,16 +847,29 @@ in for it could never have produced this, because it never creates enough namesp
 catalog.
 
 **Reads time out too, and the rate grows with the run (measured 2026-09-04, parallel stateless lane
-on RustFS, binary 9bf134686af).** `AWSClient` logged `Failed to make request to ...cas_s3/cas/ref_catalog:
-will be retried, Poco::TimeoutException` for GETs of this one key only: 24, 260, 305, 401, 436, 468, 455
-per 10-minute window over the run, about 40 per minute at steady state, and no other key ever timed out
-on a read. The retries succeed, so nothing fails, but 32% of `CREATE TABLE` statements in a 30-minute
-window hit it (2 717 of 8 547): those average 335 ms against 16 ms for the rest, with 3.1 read errors
-and 21 `CASRequestAttempt` each. Timeouts land in bursts across threads (three within 40 ms), which
-reads like readers released together after a conditional `PUT` on the same object; the per-attempt
-wait is tens of milliseconds, far below `attempt_timeout_ms` (5 000), so which timeout fires and why
-is still open (`PocoHTTPClient.cpp:837` is the catch site). Same cause as the write hotspot above, same
-fix candidates: fewer catalog rewrites per `CREATE`/`DROP`, or the hot-key lane's phase B combining.
+on RustFS, binary 9bf134686af). Root cause found: the S3 client's adaptive first-attempt timeout.**
+`AWSClient` logged `Failed to make request to ...cas_s3/cas/ref_catalog: will be retried,
+Poco::TimeoutException` for GETs of this one key: 1 222 of 1 233 such lines in a 30-minute window were
+this key; 24, 260, 305, 401, 436, 468, 455 per 10-minute window over the run. The logged stack throws
+in `SocketImpl::receiveBytes` under `HTTPClientSession::receiveResponse`, i.e. waiting for the response
+headers. With `s3_use_adaptive_timeouts` (default on) the first attempt of every request runs under
+`TimeoutsForFirstAttempt`: 200 ms to the first byte for GET (`src/IO/ConnectionTimeouts.cpp`),
+saturated against the request timeout, so the CAS `attempt_timeout_ms` of 5 000 never applies to the
+first try. The catalog is rewritten through conditional PUTs 467 times a minute (hot-key lane submits,
+`CASHotKeyCacheStarts` delta), it had grown to 104 KB / 612 entries, and a PUT on RustFS costs 54 ms
+or more; a GET that lands while the object is being rewritten waits behind it and trips the 200 ms
+fuse. The retry is the CAS engine's own (`Retry::standard`, jittered backoff 0-200 ms first), and it
+succeeds. Cost: every hit shows as exactly 3 `S3ReadRequestsErrors`; `CREATE TABLE` with one hit
+p50 233 ms against 0 ms without (2 731 of 8 943 statements in 30 minutes, 32%), with two hits
+p50 962 ms (57 statements). Not caused by write contention: `PreconditionFailed` on the catalog and
+`CASHotKeyQueueWaitMicroseconds` are flat over the run while the timeout rate grows fivefold; what
+grows is the object and therefore the window a GET spends behind a PUT.
+
+Fixes, cheapest first: (1) the single-attempt client the CAS control plane uses
+(`S3ObjectStorage::getSingleAttemptClient`, CAS-added in a5783037dbb) should disable adaptive
+timeouts in its configuration copy: the engine has its own per-attempt budget and its own retry, so the
+200 ms fuse only converts a 250 ms wait into a timeout plus a backoff sleep; (2) the catalog growth
+itself, which is the hotspot above.
 
 ## `[cas-decode-register-pressure]` WITHDRAWN — the finding was a build-flag artifact {#cas-decode-register-pressure}
 
