@@ -40,6 +40,18 @@ scalability, byte cost, correctness follow-ups, and observability.
 - **[B148] HEAD storm at retire — stored-token optimization** — PARTIAL — The retire/recheck O(universe) HEAD phases are gone (v3 round); the residual condemn HEAD is bounded by newly-condemned candidates. Stored-token skip requires a manifest schema change (deferred). Related: **[PROMOTE-REVALIDATION-MINIMIZATION]** skip per-leaf promote HEADs when the installed round is unchanged since the dep observation.
 - **[process_epoch → writer_epoch] stamp unification** — DESIRABLE — The writable path already sets `process_epoch = writer_epoch`; unify the manifest `writer_instance_id` stamps.
 - **[PART-REMOVAL-REPOINT] part removal pays a wasted repoint of the doomed ref** — DESIRABLE (measured 2026-07-15 milestone soak) — 17 707 `ref_repoint` events, ALL on `delete_tmp_*` refs (writer node, mutations+TTL profile, 20 min): the rename-to-`delete_tmp` + per-file-unlink removal flow commits removal marks (a full stage+precommit+promote repoint, ≈3 PUTs) on a ref that the very next step removes entirely — ≈53K PUTs ≈ 22% of the writer's PUT class, pure overhead. The same-transaction `removeDirectory` supersede-clear (T8) already elides this when unlinks+rmdir share a txn; the cross-transaction removal flow misses it. Fix direction: defer/elide the marks-commit when directory removal follows, or widen the supersede window. (Contrast: scenario cards S03/S04/S05 assert `CasRefRepoint==0` and hold — this class only appears under part-removal churn.)
+  **Latency measured 2026-09-05 on the CA-s3 stateless lane (binary 9bf134686af, MinIO):** every part
+  removal pays the repoint as a full ref transaction on `delete_tmp_<part>` (`manifest_put` of 0 entries,
+  `precommit`, `build_publish`, `ref_resolve`, `ref_drop`, `ref_repoint`), about 0.7 to 1.5 s per part,
+  and the part-removal flow runs them serially below `concurrent_part_removal_threshold_for_remote_disk`
+  (16). A `DROP TABLE ... SYNC` of a 14-part table spent 21 s in `Waiting for threads to finish` (the
+  outdated-parts cleanup removing 13 parts) and 15 s in the catalog's final drop (14 parts), 36 s total
+  with 1 ms of CPU and zero CAS requests on the query thread (`03100_lwu_22_detach_attach_patches`,
+  query id `f7758d27-76f9-45c5-9204-d8159afb05cd`). Lane-wide: DROP p50 0 ms, p90 5.3 s, p99 11 s,
+  max 36 s over 15 912 statements; CREATE p99 5.6 s. The hot-key lane is not the cause: per-query
+  `CASHotKeyQueueWaitMicroseconds` p90 29 ms, p99 125 ms, max 863 ms. Cheapest mitigation to try first:
+  lower `concurrent_part_removal_threshold_for_remote_disk` for CA disks so removals overlap; the real
+  fix stays the elided repoint above.
 - **[GC-EMPTY-SHARD-PROBES] constant per-round 404 probe floor** — DESIRABLE (measured 2026-07-15) — ≈1 174 `DiskS3ReadRequestsErrors`/round, CONSTANT regardless of round work (work-driven HEAD/GETs all hit; the misses are the structural probe set of per-shard journal/run/seal keys that are absent for empty shards; grows ≈+4/round as the writer touches new shards). On a small/idle pool this is the dominant GC request class (~3.5K req/min at 3 rounds/min). Removed by [Lever B]'s change-signal (stop probing unchanged/empty shards); until then it belongs in the `07-s3-budget` request-count model (404s bill as requests).
 - **[REF-QUEUE-WAIT-MEASURE] insert-path ref-lane queue wait ≈48 ms/insert** — DESIRABLE (measurement, 2026-07-15) — `CasRefQueueWaitMicroseconds` attributed to Insert queries = 339.6 s over 7 131 inserts (~48 ms avg) in the milestone soak; a data point for the refsnaplog Phase-2 flush-cadence/adaptive-threshold work — verify the batch-flush scheduling isn't leaving easy latency on the table before touching code.
 
