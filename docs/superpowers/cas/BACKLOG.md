@@ -846,6 +846,18 @@ This finding is the argument for the full lane existing at all: the 41-test CAS 
 in for it could never have produced this, because it never creates enough namespaces to grow the
 catalog.
 
+**Reads time out too, and the rate grows with the run (measured 2026-09-04, parallel stateless lane
+on RustFS, binary 9bf134686af).** `AWSClient` logged `Failed to make request to ...cas_s3/cas/ref_catalog:
+will be retried, Poco::TimeoutException` for GETs of this one key only: 24, 260, 305, 401, 436, 468, 455
+per 10-minute window over the run, about 40 per minute at steady state, and no other key ever timed out
+on a read. The retries succeed, so nothing fails, but 32% of `CREATE TABLE` statements in a 30-minute
+window hit it (2 717 of 8 547): those average 335 ms against 16 ms for the rest, with 3.1 read errors
+and 21 `CASRequestAttempt` each. Timeouts land in bursts across threads (three within 40 ms), which
+reads like readers released together after a conditional `PUT` on the same object; the per-attempt
+wait is tens of milliseconds, far below `attempt_timeout_ms` (5 000), so which timeout fires and why
+is still open (`PocoHTTPClient.cpp:837` is the catch site). Same cause as the write hotspot above, same
+fix candidates: fewer catalog rewrites per `CREATE`/`DROP`, or the hot-key lane's phase B combining.
+
 ## `[cas-decode-register-pressure]` WITHDRAWN — the finding was a build-flag artifact {#cas-decode-register-pressure}
 
 **Raised 2026-08-30 on an assembly review, withdrawn the same day.**
