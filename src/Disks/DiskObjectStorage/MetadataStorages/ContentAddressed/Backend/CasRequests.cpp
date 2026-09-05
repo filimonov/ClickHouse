@@ -982,11 +982,13 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             continue;
         }
 
-        /// Every refused precondition and every ambiguous attempt is settled by ONE exact read, under
-        /// every policy: a refused precondition does not say WHO holds the key, and a 404 and a 412
-        /// reach here as the same answer. A refused precondition needs only to know WHAT is there, so a
-        /// presence-only caller settles it with a HEAD; proving an ambiguous attempt landed needs the
-        /// bytes, and there the body read is unavoidable.
+        /// Every refused precondition, and every ambiguous attempt that was not reissued on a
+        /// connect-failure hint, is settled by ONE exact read, under every policy: a refused
+        /// precondition does not say WHO holds the key, and a 404 and a 412 reach here as the same
+        /// answer. A hinted attempt reaches this read only when its reissue meets a refused
+        /// precondition. A refused precondition needs only to know WHAT is there, so a presence-only
+        /// caller settles it with a HEAD; proving an ambiguous attempt landed needs the bytes, and there
+        /// the body read is unavoidable.
         ProfileEvents::increment(ProfileEvents::CASRequestResolveRead);
         const Resolved resolved = resolve_refusal_with == ResolveWith::Presence && !state.any_ambiguous
             ? observePresence(key, policy, bound)

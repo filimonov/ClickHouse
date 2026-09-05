@@ -50,6 +50,7 @@ namespace ProfileEvents
 {
     extern const Event CASRequestReissue;
     extern const Event CASRequestConflictPause;
+    extern const Event CASRequestConnectFailureHint;
 }
 
 using namespace DB::Cas;
@@ -2201,6 +2202,8 @@ TEST(CASRequestsConnectHint, HintedFailuresReissueWithoutARead)
     backend->failNextWriteWith("k", connectHint());
     auto requests = makeRequests(backend, clock);
     auto op = requests.admit();
+    const auto hints_before = ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load();
+    const auto reissues_before = ProfileEvents::global_counters[ProfileEvents::CASRequestReissue].load();
 
     WriteResult result = op.create("k", "v", Retry::standard());
     const auto * committed = std::get_if<Committed>(&result);
@@ -2212,12 +2215,15 @@ TEST(CASRequestsConnectHint, HintedFailuresReissueWithoutARead)
     ASSERT_EQ(clock.sleeps.size(), 2u);
     EXPECT_EQ(clock.sleeps[0], 50u);                    /// the flat pause, twice
     EXPECT_EQ(clock.sleeps[1], 50u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 2u);
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestReissue].load() - reissues_before, 2u);
 }
 
 TEST(CASRequestsConnectHint, ReissueMeetsPreconditionAndAdoptsOwnBytes)
 {
-    /// The hint was false: the write landed, its response was lost. The reissue meets 412, one read
-    /// follows and proves the bytes are ours.
+    /// The hint was false: the write landed, its response was lost as a connect-failure text. The
+    /// reissue meets 412 (the store now holds our OWN new incarnation, minted by the attempt whose
+    /// response never arrived), one read follows and proves the bytes are ours.
     {
         FakeClock clock;
         auto backend = std::make_shared<CountingBackend>();
@@ -2225,12 +2231,28 @@ TEST(CASRequestsConnectHint, ReissueMeetsPreconditionAndAdoptsOwnBytes)
         auto op = requests.admit();
         const Etag seen = *orThrow(op.create("k", "v1", Retry::standard()), "create");
         backend->resetCounts();
-        backend->injectAmbiguousLandedWrite("k");     /// lands, then throws
+        bool thrown = false;
+        /// Runs after the write lands and before the caller ever sees a value, with no lock held --
+        /// `InMemoryBackend::applyWrite` (CasInMemoryBackend.cpp) calls it right there.
+        backend->onWriteCommitted("k", [&]
+        {
+            if (!thrown)
+            {
+                thrown = true;
+                throw DB::S3Exception(
+                    "Poco::Exception. Code: 1000, e.code() = 99, Cannot assign requested address: 10.0.0.1:9000",
+                    Aws::S3::S3Errors::NETWORK_CONNECTION);
+            }
+        });
         WriteResult result = op.replace("k", "v2", seen, Retry::standard());
         const auto * committed = std::get_if<Committed>(&result);
         ASSERT_NE(committed, nullptr);
         EXPECT_TRUE(committed->resolved_by_read);
+        EXPECT_EQ(committed->attempts_sent, 2u);
+        EXPECT_EQ(backend->writeTotal(), 2u);
         EXPECT_EQ(backend->getTotal(), 1u);
+        ASSERT_EQ(clock.sleeps.size(), 1u);
+        EXPECT_EQ(clock.sleeps[0], 50u);
     }
     /// Different ETag, other bytes: a conflict, as today.
     {
@@ -2281,6 +2303,7 @@ TEST(CASRequestsConnectHint, OnceKeepsOneWriteAndOneRead)
     backend->failNextWriteWith("k", connectHint());
     auto requests = makeRequests(backend, clock);
     auto op = requests.admit();
+    const auto hints_before = ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load();
     WriteResult result = op.create("k", "v", Retry::once());
     const auto * gave_up = std::get_if<GaveUp>(&result);
     ASSERT_NE(gave_up, nullptr);
@@ -2288,6 +2311,8 @@ TEST(CASRequestsConnectHint, OnceKeepsOneWriteAndOneRead)
     EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getTotal(), 1u);
     EXPECT_TRUE(clock.sleeps.empty());
+    /// `Retry::once` never acts on the hint -- the counter means "hint acted on", not "hint seen".
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 0u);
 }
 
 TEST(CASRequestsConnectHint, EarlierAmbiguityStillSettlesByRead)
@@ -2299,12 +2324,21 @@ TEST(CASRequestsConnectHint, EarlierAmbiguityStillSettlesByRead)
     /// queue is checked BEFORE the ambiguous-key injection on every call, so a queued failure would win
     /// attempt 1 regardless of install order. `writeTotal()` ticks before the request is served, so it
     /// reads 2 while attempt 2 is in flight.
+    bool hint_fired_on_second_attempt = false;
     backend->onBeforeWrite("k", [&]
     {
         if (backend->writeTotal() == 2)
+        {
+            /// The ordering claim in full: attempt 1's ambiguity must already have been settled by its
+            /// read before attempt 2 -- the one place `sleeps[1] == 50u` alone could be fooled by a
+            /// same-range jittered draw (`backoff(1)` is `uniform(0, 200)`, so a reversed order would
+            /// false-green about once in 200 runs).
+            EXPECT_EQ(backend->getTotal(), 1u) << "attempt 1's ambiguity read must already have run";
+            hint_fired_on_second_attempt = true;
             throw DB::S3Exception(
                 "Poco::Exception. Code: 1000, e.code() = 99, Cannot assign requested address: 10.0.0.1:9000",
                 Aws::S3::S3Errors::NETWORK_CONNECTION);
+        }
     });
     auto requests = makeRequests(backend, clock);
     auto op = requests.admit();
@@ -2316,6 +2350,7 @@ TEST(CASRequestsConnectHint, EarlierAmbiguityStillSettlesByRead)
     ASSERT_EQ(clock.sleeps.size(), 2u);
     EXPECT_LE(clock.sleeps[0], 200u);     /// the backoff after attempt 1's ambiguity read
     EXPECT_EQ(clock.sleeps[1], 50u);      /// the flat pause after attempt 2's hint
+    EXPECT_TRUE(hint_fired_on_second_attempt);
 }
 
 TEST(CASRequestsConnectHint, GatesRefuseTheReissue)
