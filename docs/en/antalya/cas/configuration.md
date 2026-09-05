@@ -134,6 +134,27 @@ The `expires_at_ms` stamped into the mount object is a writer-stamped diagnostic
 authorizes a reclaim or a GC fence-out. Local fencing is derived instead from the confirmed
 request's pre-I/O `CLOCK_BOOTTIME` anchor plus the TTL.
 
+## CAS client profile {#cas-client-profile}
+
+A `CAS` disk's S3 client is built with a longer HTTP keep-alive than the generic S3 defaults:
+`http_keep_alive_timeout = 30` (seconds) and `http_keep_alive_max_requests = 10000`. These are
+applied as defaults, not overrides, in this precedence order: an explicit value in the disk's own
+XML section wins first, then a changed global `s3_http_keep_alive_timeout` /
+`s3_http_keep_alive_max_requests` setting, and only then the `CAS` defaults above. The values were
+chosen from a connection-churn spike: under sustained load, the generic default
+`http_keep_alive_max_requests = 100` turned out to be the entire lifetime of a connection rather
+than a headroom margin, so almost every connection was being recreated (and its local ephemeral
+port cycled through `TIME_WAIT`) once every 100 requests; raising the limit removed nearly all of
+that churn with no measured effect on throughput or error rate.
+
+The connection pool's own effective ages, for interpreting the settings above: a stored connection
+is expired once it is older than `0.8 ×` the keep-alive timeout, or `0.1 ×` once the shared `disk`
+connection group passes `disk_connections_soft_limit`; a connection returned to the pool is reset
+if its request started more than `0.9 ×` the keep-alive timeout ago (request duration counts
+towards this, not just idle time). See the ten `DiskConnections*` reason `ProfileEvents` (the
+`DiskConnectionsReset*` and `DiskConnectionsExpired*` families in `src/Common/ProfileEvents.cpp`)
+for which of these reasons is retiring connections on a running server.
+
 ## Advanced GC pacing settings {#advanced-gc-pacing-settings}
 
 These settings bound individual phases of a `GC` round. The first two accept any `UInt64` value;
