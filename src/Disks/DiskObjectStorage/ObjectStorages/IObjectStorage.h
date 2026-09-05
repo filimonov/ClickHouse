@@ -273,16 +273,18 @@ public:
         const std::optional<std::string> & start_after) const;
 
     /// Same, under a chosen retry profile, with `request_timeout_ms` bounding one attempt of it
-    /// (0 = the storage's own timeout). A storage that cannot execute the profile must refuse: a
-    /// caller that asked for one attempt has its own deadline, and a transparently retried request
-    /// would outlive it.
+    /// (0 = the storage's own timeout) and `connect_timeout_cap_ms` capping that attempt's connect
+    /// (0 = no cap; Task B3 folds these into one context). A storage that cannot execute the profile
+    /// must refuse: a caller that asked for one attempt has its own deadline, and a transparently
+    /// retried request would outlive it.
     virtual ObjectStorageIteratorPtr iterate(
         const std::string & path_prefix,
         size_t max_keys,
         bool with_tags,
         const std::optional<std::string> & start_after,
         ObjectStorageRetryProfile profile,
-        uint64_t request_timeout_ms) const;
+        uint64_t request_timeout_ms,
+        uint64_t connect_timeout_cap_ms = 0) const;
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
@@ -300,7 +302,8 @@ public:
 
     /// Same, under a chosen retry profile; see the note on `iterate`.
     virtual std::optional<ObjectMetadata> tryGetObjectMetadataWithNativeToken(
-        const std::string & path, bool with_tags, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms) const;
+        const std::string & path, bool with_tags, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
+        uint64_t connect_timeout_cap_ms = 0) const;
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
@@ -370,14 +373,16 @@ public:
 
     /// Same, under a chosen retry profile; see the note on `iterate`.
     virtual ConditionalRemoveResult removeObjectIfTokenMatches(
-        const StoredObject & object, const std::string & etag, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms);
+        const StoredObject & object, const std::string & etag, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
+        uint64_t connect_timeout_cap_ms = 0);
 
     /// Removes every object in ONE request with no per-key precondition; an absent object is success.
     /// Content-addressed callers use it for write-once keys only, at most 1000 per call. Throws on a
     /// request-level failure and on any per-key error other than "not found", naming the failed keys.
     /// Same profile note as `iterate`. Backends without a batch delete keep the default, which refuses.
     virtual void removeObjectsIfExistUnderProfile(
-        const StoredObjects & objects, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms);
+        const StoredObjects & objects, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
+        uint64_t connect_timeout_cap_ms = 0);
 
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT

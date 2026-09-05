@@ -262,7 +262,7 @@ CasRequests::CasRequests(BackendPtr backend_, Fence fence_,
     , fence(std::move(fence_))
     , now_ms(now_ms_ ? std::move(now_ms_) : std::function<uint64_t()>(bootClockMs))
     , sleep_ms(sleep_ms_ ? std::move(sleep_ms_) : std::function<void(uint64_t)>(sleepForMilliseconds))
-    , attempt_reservation_ms(backend->attemptTimeoutMs())
+    , attempt_reservation_ms(backend->attemptEnvelopeMs())
     , own_hot_keys(hot_keys_ ? nullptr : std::make_unique<CasHotKeys>(0))
     , hot_keys(hot_keys_ ? hot_keys_ : own_hot_keys.get())
 {

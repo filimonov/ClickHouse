@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <deque>
+#include <limits>
 #include <map>
 #include <mutex>
 
@@ -65,10 +66,12 @@ public:
     /// requests below: a writable Native mount owns its own retry policy and a transparently retried
     /// request would outlive the caller's deadline, while a read-only mount has no such deadline and
     /// keeps the storage's default. `attempt_timeout_ms` bounds ONE attempt of those requests; 0
-    /// leaves the storage's own timeout in place. Both are supplied by the mount that opens the pool;
-    /// the defaults are what a narrow unit test constructing a bare backend gets.
+    /// leaves the storage's own timeout in place. `connect_timeout_cap_ms` caps the connect portion of
+    /// that same attempt (0 = no cap), frozen by the mount at open. All three are supplied by the mount
+    /// that opens the pool; the defaults are what a narrow unit test constructing a bare backend gets.
     ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_,
-                         bool single_attempt_control_plane_ = false, uint64_t attempt_timeout_ms_ = 0);
+                         bool single_attempt_control_plane_ = false, uint64_t attempt_timeout_ms_ = 0,
+                         uint64_t connect_timeout_cap_ms_ = 0);
 
     /// Read the whole object, or return `nullopt` if it is absent. Native mode reads the incarnation
     /// value out of the GET response itself, so no HEAD precedes it; a not-found race is reported as
@@ -103,6 +106,17 @@ public:
     Dialect dialect() const override { return mode == Mode::Native ? native_token_type : Dialect::Emulated; }
     /// The budget for one attempt of a read-class request, as configured by the mount.
     uint64_t attemptTimeoutMs() const override { return attempt_timeout_ms; }
+    /// What one attempt may cost end to end, connect included: the attempt timeout plus two connect
+    /// caps (TCP, then TLS), saturating. See `CasRequestBudget::attemptEnvelopeMs`.
+    uint64_t attemptEnvelopeMs() const override
+    {
+        const uint64_t connects = connect_timeout_cap_ms > std::numeric_limits<uint64_t>::max() / 2
+            ? std::numeric_limits<uint64_t>::max() : 2 * connect_timeout_cap_ms;
+        return attempt_timeout_ms > std::numeric_limits<uint64_t>::max() - connects
+            ? std::numeric_limits<uint64_t>::max() : attempt_timeout_ms + connects;
+    }
+    /// The frozen connect cap this backend was constructed with; see the constructor.
+    uint64_t connectTimeoutCapMs() const { return connect_timeout_cap_ms; }
     /// Ask the storage to re-acquire credentials through its refresh callback.
     bool refreshCredentials() override { return object_storage->tryRefreshCredentialsViaCallback(); }
 
@@ -199,6 +213,7 @@ private:
     /// See the constructor: what the READ-class requests (read, head, list, remove) carry.
     const bool single_attempt_control_plane;
     const uint64_t attempt_timeout_ms;
+    const uint64_t connect_timeout_cap_ms;
     ObjectStorageRetryProfile controlPlaneProfile() const
     {
         return single_attempt_control_plane ? ObjectStorageRetryProfile::SingleAttempt : ObjectStorageRetryProfile::Default;

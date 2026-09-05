@@ -82,7 +82,10 @@ void seedOwnClaim(CasOperation & op, const Layout & l, const String & srid, UInt
     ASSERT_EQ(claimMount(op, l, srid, uuid, epoch, now_ms, ttl_ms).kind, MountClaimResult::Claimed);
 }
 
-class RenewalScriptBackend final : public InMemoryBackend
+/// Not `final`: `EnvelopeEatingBackend` (Task B2's envelope-cutoff test, below) derives from it to
+/// reuse its `Attempt`/`attempts` bookkeeping while overriding `write`/`read` with its own always-fail
+/// behavior instead of the scripted-action queue.
+class RenewalScriptBackend : public InMemoryBackend
 {
 public:
     enum class Action : uint8_t
@@ -1086,4 +1089,64 @@ TEST(CASHeartbeat, WallClockStepsAndBootSuspendCannotExtendAuthority)
     const DB::Exception failure = terminalException(suspended);
     EXPECT_EQ(failure.code(), DB::ErrorCodes::NETWORK_ERROR);
     EXPECT_TRUE(backend->attempts.empty()) << "suspend-sized BOOTTIME overshoot must close admission";
+}
+
+/// Task B2 (CAS R2 series): every attempt costs the whole envelope (attempt 100 + 2 * cap 50 = 200 ms)
+/// and fails ambiguously. Under a 1000 ms lease with a 100 ms margin the renewal must stop issuing
+/// before the cutoff rather than start an attempt that cannot finish inside it.
+namespace
+{
+/// Bypasses `RenewalScriptBackend`'s scripted-action queue for a guarded mount write and instead
+/// always fails it (and every read) once armed, each failure costing the whole envelope on the
+/// injected boot clock. Left unarmed during `seedOwnClaim` (an unconditional read then an unguarded
+/// create -- neither is a guarded mount write, but the read would still hit the always-throwing
+/// override below) and during `renewer.start()`'s adopt read, so the fixture itself can land.
+struct EnvelopeEatingBackend : RenewalScriptBackend
+{
+    uint64_t * boot_ms = nullptr;
+    bool armed = false;
+    uint64_t attemptTimeoutMs() const override { return 100; }
+    uint64_t attemptEnvelopeMs() const override { return 200; }
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value, TransportAccess & access) override
+    {
+        if (armed && expected_value && key.ends_with("/mount"))
+        {
+            attempts.push_back({key, bytes, expected_value});
+            *boot_ms += 200;
+            throw Poco::TimeoutException("the whole envelope, gone");
+        }
+        return InMemoryBackend::write(key, bytes, expected_value, access);
+    }
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
+    {
+        if (armed)
+        {
+            *boot_ms += 200;
+            throw Poco::TimeoutException("the read too");
+        }
+        return InMemoryBackend::read(key, access);
+    }
+};
+}
+
+TEST(CASHeartbeat, RenewalStopsBeforeTheCutoffWhenEveryAttemptConsumesTheEnvelope)
+{
+    auto backend = std::make_shared<EnvelopeEatingBackend>();
+    uint64_t wall_ms = 1000;
+    uint64_t boot_ms = 100;
+    backend->boot_ms = &boot_ms;
+    Layout layout("pool");
+    Ops ops(backend, &boot_ms);
+    seedOwnClaim(ops.op, layout, "test", UInt128{0x1234}, 9, wall_ms, 1000);
+    MountLeaseRenewer renewer(ops.mount, ops.farewell, layout, "test", UInt128{0x1234}, 9, std::chrono::milliseconds(1000),
+                              [&] { return wall_ms; }, [] { return uint64_t{7}; }, {}, std::chrono::milliseconds(100),
+                              [&] { return boot_ms; });
+    renewer.start();
+    const uint64_t cutoff = renewer.lastCommittedAttemptStartBootMs() + 1000 - 100;
+    backend->attempts.clear();
+    backend->armed = true;
+    const MountRenewResult result = renewer.renew(renewalEnvironment(boot_ms));
+    EXPECT_EQ(result.outcome, MountRenewOutcome::Terminal);
+    EXPECT_LE(boot_ms, cutoff) << "the last attempt started inside the cutoff and the engine did not start one that could not finish";
 }

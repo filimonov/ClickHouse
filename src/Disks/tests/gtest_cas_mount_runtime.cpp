@@ -29,7 +29,8 @@ public:
               MountConfig{.boot_ms_fn = [this] { return boot_ms; }},
               "test", sink,
               CasRequestBudget{.attempt_timeout_ms = attempt_timeout_ms,
-                               .lease_safety_margin_ms = lease_safety_margin_ms},
+                               .lease_safety_margin_ms = lease_safety_margin_ms,
+                               .connect_timeout_cap_ms = std::nullopt},
               [] { return false; })
     {
     }
@@ -142,15 +143,17 @@ TEST(CASMountRuntime, AdmitAllowsAnUnarmedFence)
 }
 
 /// `refAppendFenceOk` is `admit` at one attempt's worth of budget under the live generation.
-TEST(CASMountRuntime, RefAppendFenceOkIsAdmitAtTheAttemptTimeout)
+TEST(CASMountRuntime, RefAppendFenceOkIsAdmitAtTwoEnvelopes)
 {
+    /// connect_timeout_cap_ms is nullopt (see RuntimeFixture), so the envelope equals the bare attempt
+    /// timeout (10 ms); refAppendFenceOk asks for TWO of them (a write and its settlement read).
     RuntimeFixture f(/*lease_safety_margin_ms=*/20, /*attempt_timeout_ms=*/10);
     f.boot_ms = 1'000;
-    f->armMountFence(kUuid, 1, /*deadline_boot_ms=*/1'031);   /// 31 ms left: one more than 10 + 20
+    f->armMountFence(kUuid, 1, /*deadline_boot_ms=*/1'041);   /// 41 ms left: one more than 2*10 + 20
     EXPECT_TRUE(f->refAppendFenceOk());
-    EXPECT_STREQ(admitName(f->admit(f->fenceGeneration(), 10)), "Ok");
+    EXPECT_STREQ(admitName(f->admit(f->fenceGeneration(), 20)), "Ok");
 
-    f->setMountDeadline(1'030);   /// exactly 10 + 20 left
+    f->setMountDeadline(1'040);   /// exactly 2*10 + 20 left
     EXPECT_FALSE(f->refAppendFenceOk());
-    EXPECT_STREQ(admitName(f->admit(f->fenceGeneration(), 10)), "NoBudget");
+    EXPECT_STREQ(admitName(f->admit(f->fenceGeneration(), 20)), "NoBudget");
 }

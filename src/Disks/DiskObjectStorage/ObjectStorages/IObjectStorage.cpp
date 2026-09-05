@@ -73,7 +73,8 @@ ObjectStorageIteratorPtr IObjectStorage::iterate(
     bool with_tags,
     const std::optional<std::string> & start_after,
     ObjectStorageRetryProfile profile,
-    uint64_t /*request_timeout_ms*/) const
+    uint64_t /*request_timeout_ms*/,
+    uint64_t /*connect_timeout_cap_ms*/) const
 {
     if (profile == ObjectStorageRetryProfile::SingleAttempt)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} does not support single-attempt listing requests", getName());
@@ -81,7 +82,8 @@ ObjectStorageIteratorPtr IObjectStorage::iterate(
 }
 
 std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadataWithNativeToken(
-    const std::string & path, bool with_tags, ObjectStorageRetryProfile profile, uint64_t /*request_timeout_ms*/) const
+    const std::string & path, bool with_tags, ObjectStorageRetryProfile profile, uint64_t /*request_timeout_ms*/,
+    uint64_t /*connect_timeout_cap_ms*/) const
 {
     if (profile == ObjectStorageRetryProfile::SingleAttempt)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} does not support single-attempt metadata requests", getName());
@@ -89,14 +91,15 @@ std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadataWithNativeToke
 }
 
 ConditionalRemoveResult IObjectStorage::removeObjectIfTokenMatches(
-    const StoredObject & object, const std::string & etag, ObjectStorageRetryProfile profile, uint64_t /*request_timeout_ms*/)
+    const StoredObject & object, const std::string & etag, ObjectStorageRetryProfile profile, uint64_t /*request_timeout_ms*/,
+    uint64_t /*connect_timeout_cap_ms*/)
 {
     if (profile == ObjectStorageRetryProfile::SingleAttempt)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} does not support single-attempt removal requests", getName());
     return removeObjectIfTokenMatches(object, etag);
 }
 
-void IObjectStorage::removeObjectsIfExistUnderProfile(const StoredObjects &, ObjectStorageRetryProfile, uint64_t)
+void IObjectStorage::removeObjectsIfExistUnderProfile(const StoredObjects &, ObjectStorageRetryProfile, uint64_t, uint64_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} does not support batch removal under a retry profile", getName());
 }

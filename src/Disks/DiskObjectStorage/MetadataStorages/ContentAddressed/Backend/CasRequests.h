@@ -148,7 +148,8 @@ public:
     /// `now_ms` defaults to `CLOCK_BOOTTIME` milliseconds -- the same clock a mount lease deadline is
     /// expressed on, so `Retry::untilLeaseSafe` and this engine compare like with like. `sleep_ms`
     /// defaults to a real sleep. `attempt_reservation_ms` is taken from the backend's own attempt
-    /// timeout: it is what the engine reserves before it starts anything. `hot_keys` is the pool's
+    /// envelope (attempt timeout plus its connect caps): it is what the engine reserves before it
+    /// starts anything. `hot_keys` is the pool's
     /// write lane, shared by its planes; without one this object owns a private lane with no cache,
     /// so a write through it costs today's read and write.
     CasRequests(BackendPtr backend_, Fence fence_,

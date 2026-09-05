@@ -125,11 +125,13 @@ void recordConditionalWriteOutcome(CasWriteOutcome outcome)
 }
 
 ObjectStorageBackend::ObjectStorageBackend(ObjectStoragePtr object_storage_, Mode mode_,
-                                           bool single_attempt_control_plane_, uint64_t attempt_timeout_ms_)
+                                           bool single_attempt_control_plane_, uint64_t attempt_timeout_ms_,
+                                           uint64_t connect_timeout_cap_ms_)
     : object_storage(std::move(object_storage_))
     , mode(mode_)
     , single_attempt_control_plane(single_attempt_control_plane_)
     , attempt_timeout_ms(attempt_timeout_ms_)
+    , connect_timeout_cap_ms(connect_timeout_cap_ms_)
     , emu_root(object_storage->getCommonKeyPrefix())
 {
     if (mode == Mode::Native && object_storage->conditionalOpsUseGenerationTokens())
@@ -224,7 +226,7 @@ bool ObjectStorageBackend::isValidTokenValue(Dialect type, const String & value)
 std::optional<Backend::RawMeta> ObjectStorageBackend::nativeHead(
     const String & key, ObjectStorageRetryProfile profile, uint64_t timeout_ms)
 {
-    auto metadata = object_storage->tryGetObjectMetadataWithNativeToken(key, /*with_tags=*/false, profile, timeout_ms);
+    auto metadata = object_storage->tryGetObjectMetadataWithNativeToken(key, /*with_tags=*/false, profile, timeout_ms, connect_timeout_cap_ms);
     if (!metadata)
         return std::nullopt;
 
@@ -607,6 +609,7 @@ ReadSettings ObjectStorageBackend::readSettingsFor(ObjectStorageRetryProfile pro
     rs.object_storage_request_mode = ObjectStorageRequestMode::NativeConditional;
     rs.object_storage_retry_profile = profile;
     rs.object_storage_attempt_timeout_ms = timeout_ms;
+    rs.object_storage_connect_timeout_cap_ms = connect_timeout_cap_ms;
     return rs;
 }
 
@@ -821,6 +824,8 @@ WriteSettings ObjectStorageBackend::conditionalWriteSettings() const
     /// And that attempt is bounded by the same budget the caller reserved for it. Without this the
     /// write would run under the storage's own timeout while its caller waited on a shorter one.
     ws.object_storage_attempt_timeout_ms = attempt_timeout_ms;
+    /// And that attempt's connect is bounded by the same frozen cap every other control request carries.
+    ws.object_storage_connect_timeout_cap_ms = connect_timeout_cap_ms;
     return ws;
 }
 
@@ -957,7 +962,7 @@ Backend::RawRemoval ObjectStorageBackend::removeUnder(
     {
         /// `NOT_IMPLEMENTED` from a storage that does not enforce conditional removal propagates —
         /// fail-closed by construction.
-        auto result = object_storage->removeObjectIfTokenMatches(StoredObject(key), expected_value, profile, timeout_ms);
+        auto result = object_storage->removeObjectIfTokenMatches(StoredObject(key), expected_value, profile, timeout_ms, connect_timeout_cap_ms);
         switch (result.outcome)
         {
             case ConditionalRemoveOutcome::Removed:
@@ -1010,7 +1015,7 @@ void ObjectStorageBackend::removeManyWriteOnce(const std::vector<WriteOnceKey> &
         for (const WriteOnceKey & key : keys)
             objects.emplace_back(key.str());
         /// `NOT_IMPLEMENTED` from a storage without a batch delete propagates -- fail-closed by construction.
-        object_storage->removeObjectsIfExistUnderProfile(objects, controlPlaneProfile(), attempt_timeout_ms);
+        object_storage->removeObjectsIfExistUnderProfile(objects, controlPlaneProfile(), attempt_timeout_ms, connect_timeout_cap_ms);
         return;
     }
 
@@ -1099,7 +1104,7 @@ Backend::RawListPage ObjectStorageBackend::listUnder(
     static constexpr size_t max_store_page = 1'000'000;
     const size_t store_page = cursor.empty() ? std::min(limit, max_store_page) + 1 : 0;
     RawListPage page;
-    auto it = object_storage->iterate(physical_prefix, /*max_keys=*/store_page, /*with_tags=*/false, start_after, profile, timeout_ms);
+    auto it = object_storage->iterate(physical_prefix, /*max_keys=*/store_page, /*with_tags=*/false, start_after, profile, timeout_ms, connect_timeout_cap_ms);
     for (; it->isValid(); it->next())
     {
         const auto child = it->current();

@@ -2,6 +2,7 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasEtag.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasTransportAccess.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestBudget.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRetry.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasWriteResult.h>
@@ -2484,3 +2485,54 @@ TEST(CASRequestsConnectHint, AmbiguityAfterHintsStartsAtFirstBackoff)
 }
 
 #endif
+
+TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)
+{
+    CasRequestBudget budget{.attempt_timeout_ms = 5000, .lease_safety_margin_ms = 2000, .connect_timeout_cap_ms = 1000};
+    EXPECT_EQ(budget.attemptEnvelopeMs(), 7000u);
+    EXPECT_EQ((CasRequestBudget{.attempt_timeout_ms = 5000, .lease_safety_margin_ms = 2000, .connect_timeout_cap_ms = std::nullopt}.attemptEnvelopeMs()), 5000u);
+    /// Defaults with the default TTL / period are accepted.
+    EXPECT_NO_THROW(validateCasRequestBudget(budget, 30000, 10000, /*background_renewal=*/true));
+    /// A zero attempt timeout would reserve nothing while the request keeps the disk's own timeout.
+    EXPECT_THROW(validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = 0, .lease_safety_margin_ms = 2000,
+                                                           .connect_timeout_cap_ms = std::nullopt}, 30000, 10000, true),
+                 DB::Exception);
+    /// The old inequality (attempt <= TTL - margin - period: 5000 <= 13000) accepted this; two envelopes
+    /// of 15 s do not fit a 25 s lease behind a 10 s period and a 2 s margin.
+    const CasRequestBudget wide{.attempt_timeout_ms = 5000, .lease_safety_margin_ms = 2000, .connect_timeout_cap_ms = 5000};
+    try
+    {
+        validateCasRequestBudget(wide, 25000, 10000, true);
+        FAIL() << "must refuse";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_THAT(e.message(), testing::HasSubstr("envelope"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("15000"));
+    }
+    /// Without background renewal only `envelope + margin < TTL` applies (15000 + 2000 < 25000).
+    EXPECT_NO_THROW(validateCasRequestBudget(wide, 25000, 10000, /*background_renewal=*/false));
+    /// Saturation: absurd values fail closed rather than wrap.
+    EXPECT_THROW(validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = std::numeric_limits<uint64_t>::max(),
+                                                           .lease_safety_margin_ms = 1, .connect_timeout_cap_ms = 1},
+                                          30000, 10000, true), DB::Exception);
+}
+
+TEST(CASRequests, ReservationIsTheEnvelope)
+{
+    struct EnvelopeBackend : InMemoryBackend
+    {
+        uint64_t attemptTimeoutMs() const override { return 5000; }
+        uint64_t attemptEnvelopeMs() const override { return 7000; }
+    };
+    FakeClock clock;
+    auto backend = std::make_shared<EnvelopeBackend>();
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    /// A write reserves two envelopes: 14 s fits a 14 s window, 13.999 s does not.
+    EXPECT_TRUE(std::holds_alternative<Committed>(op.create("k", "v", Retry::within(14'000))));
+    const WriteResult refused = op.create("k2", "v", Retry::within(13'999));
+    const auto * gave_up = std::get_if<GaveUp>(&refused);
+    ASSERT_NE(gave_up, nullptr);
+    EXPECT_FALSE(gave_up->sent_any);
+}

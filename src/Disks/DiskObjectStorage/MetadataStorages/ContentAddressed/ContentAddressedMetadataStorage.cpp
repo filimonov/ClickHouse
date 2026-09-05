@@ -693,6 +693,17 @@ Cas::RebuildReport ContentAddressedMetadataStorage::runGcRebuildNow(bool force) 
     return gc.rebuildBaseline(force);
 }
 
+std::optional<uint64_t> ContentAddressedMetadataStorage::freezeConnectTimeoutCapMs(
+    const ObjectStoragePtr & object_storage, uint64_t cas_attempt_timeout_ms)
+{
+    const auto s3_client = object_storage->tryGetS3StorageClient();
+    if (!s3_client)
+        return std::nullopt;
+    /// A configured zero is "unbounded" to Poco: the cap is then the attempt timeout itself.
+    const auto configured = static_cast<uint64_t>(std::max<long>(0, s3_client->getClientConfiguration().connectTimeoutMs));
+    return configured == 0 ? cas_attempt_timeout_ms : std::min(configured, cas_attempt_timeout_ms);
+}
+
 ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openPoolView(bool context_available) const
 {
     /// Native mode rides real conditional ops (probed fail-closed by Pool::open); Local object
@@ -784,6 +795,9 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     pool_config.gc_bulk_delete_chunk_keys = gc_bulk_delete_chunk_keys;
     pool_config.cas_request_budget.attempt_timeout_ms = cas_attempt_timeout_ms;
     pool_config.cas_request_budget.lease_safety_margin_ms = cas_lease_safety_margin_ms;
+    /// Frozen here, once: see `freezeConnectTimeoutCapMs`. A later reload that widens the disk's
+    /// connect timeout cannot widen the envelope the lease arithmetic was validated against.
+    pool_config.cas_request_budget.connect_timeout_cap_ms = freezeConnectTimeoutCapMs(object_storage, cas_attempt_timeout_ms);
     pool_config.mount_lease_ttl_ms = mount_lease_ttl;
     pool_config.mount_renew_period = mount_renew_period;
     pool_config.event_sink = makeCasEventSink();
@@ -795,7 +809,8 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     auto backend = std::make_shared<Cas::ObjectStorageBackend>(
         object_storage, mode,
         /*single_attempt_control_plane_=*/!read_only && mode == Cas::ObjectStorageBackend::Mode::Native,
-        pool_config.cas_request_budget.attempt_timeout_ms);
+        pool_config.cas_request_budget.attempt_timeout_ms,
+        pool_config.cas_request_budget.connect_timeout_cap_ms.value_or(0));
 
     PoolView view;
     view.physical_key_prefix = physical_key_prefix_local;
@@ -983,7 +998,7 @@ void ContentAddressedMetadataStorage::stopAndDrainForTeardown() noexcept
         if (!old_pool)
             return;
         const auto & budget = old_pool->poolConfig().cas_request_budget;
-        const uint64_t deadline_ms = budget.attempt_timeout_ms + budget.lease_safety_margin_ms;
+        const uint64_t deadline_ms = budget.attemptEnvelopeMs() + budget.lease_safety_margin_ms;
         if (old_pool->stopAndDrainDetachedWork(deadline_ms))
             return;
         ProfileEvents::increment(ProfileEvents::CASDetachedWorkDrainTimeouts);
