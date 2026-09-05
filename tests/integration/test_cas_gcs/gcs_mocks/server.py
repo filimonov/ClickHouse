@@ -29,12 +29,19 @@ Control surface, reserved under the bucket name ``_control``:
     state seam for the writer retry test, not a model of the GC request sequence;
   - ``POST /_control/reset`` — drop the capture log and the counters (objects are kept), and clear the
     delay knob below;
-  - ``POST /_control/delay?substr=S&ms=N`` — every PUT whose key contains ``S`` sleeps ``N``
-    milliseconds before it is served, outside the store lock so other requests keep flowing. A fixed
+  - ``POST /_control/delay?substr=S&ms=N&method=PUT|GET|LIST&once=0|1`` — every request matching
+    ``method`` (default ``PUT``) whose key contains ``S`` sleeps ``N`` milliseconds before it is
+    served, outside the store lock so other requests keep flowing. ``LIST`` matches a GET with an
+    empty key and a ``prefix`` query, against the prefix value rather than the key. A fixed
     per-request delay, not a modelled per-object rate cap: it charges an isolated write the same as a
-    burst. Each delayed PUT also increments the ``DelayedPut`` counter (visible at
-    ``/_control/counters``), so a caller can prove the knob fired rather than infer it from timing.
-    ``substr=&ms=0`` clears it;
+    burst. ``once=1`` clears the whole knob the instant it matches, so only the very first matching
+    request is ever delayed -- needed to fire a fault exactly once and let the retry through clean.
+    Each delayed request increments the ``DelayedRequest`` counter, and a delayed PUT also
+    increments ``DelayedPut`` (both visible at ``/_control/counters``), so a caller can prove the
+    knob fired rather than infer it from timing. Every capture record also carries ``arrival_seq``,
+    assigned when the request arrives, before any delay is applied -- unlike ``seq``, which is
+    assigned when the handler finishes and so can order a delayed request's own faster reissue
+    ahead of it. ``substr=&ms=0`` clears it;
   - ``POST /_control/mode?if_match=reject|ignore&omit_generation=0|1`` — select the adversarial
     behaviours below. Global, not per bucket: the client reuses connections across buckets and a
     per-bucket switch would invite a test to believe it had isolated something it had not.
