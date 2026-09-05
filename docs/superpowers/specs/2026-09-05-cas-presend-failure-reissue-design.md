@@ -1,16 +1,16 @@
 ---
-description: 'Design for the CAS request engine treating a write attempt whose failure text proves no request reached the store (no free local port, connection refused, host or network unreachable, connect timed out) as not sent: reissued after a flat pause under the same deadline, never settled by a read. Text-based classification, deliberately conservative.'
-sidebar_label: 'CAS pre-send failure reissue'
+description: 'Design for the CAS request engine reissuing a write attempt whose failure text says the connection itself failed (no free local port, connection refused, host or network unreachable, connect timed out) after a flat pause and without a preceding settle read. The attempt stays ambiguous; only the pacing changes.'
+sidebar_label: 'CAS connect-failure reissue hint'
 sidebar_position: 10
 slug: /superpowers/specs/cas-presend-failure-reissue-design
-title: 'CAS: a write that never left the host is reissued, not resolved'
+title: 'CAS: a connect-failure hint reissues a write without a preceding read'
 doc_type: 'design'
 ---
 
-# CAS: a write that never left the host is reissued, not resolved {#cas-presend-failure-reissue-design}
+# CAS: a connect-failure hint reissues a write without a preceding read {#cas-presend-failure-reissue-design}
 
-**Status:** DRAFT rev.3 (2026-09-05). rev.1 and rev.2 were reviewed by `codex` (`gpt-5.6-sol`,
-xhigh; records in `tmp/pr2300-cicd-watch/review/codex_spec1.final.md` and `codex_spec1r2.final.md`).
+**Status:** DRAFT rev.4 (2026-09-05). rev.1–rev.3 were reviewed by `codex` (`gpt-5.6-sol`,
+xhigh; records `codex_spec1.final.md`, `codex_spec1r2.final.md`, `codex_spec1r3.final.md`; rev.3 = NO MAJOR, its MINORs folded here).
 rev.2's text whitelist cannot PROVE a request was not sent (Poco maps `send`/`recv` errno through the
 same `SocketImpl::error` as `connect`), so rev.3 stops claiming it: the texts are an optimistic hint
 that skips one read, and every safety statement of the engine stays as it is. The user ruled that
@@ -23,9 +23,16 @@ text says the connection itself failed (the five Poco connect-path texts below),
 spend a settle read on that attempt before reissuing. It reissues the same bytes under the same
 precondition after a flat pause, still under the deadline and fence gates, and lets the reissue's
 own outcome settle everything: a 2xx is a commit; a `412` is settled by the existing single exact
-read, which — because the attempt is still recorded as ambiguous — adopts a byte-identical body as
-`Committed{resolved_by_read}`. Nothing about `any_ambiguous`, `sent_any`, `attempts_sent` or the
-give-up verdicts changes: a hinted attempt is as ambiguous as it is today; only the pacing differs.
+read, which adopts the body as `Committed{resolved_by_read}` only when the attempt is recorded as
+ambiguous (it is), the read shows the original precondition is no longer satisfiable (for a
+`replace`, a different observed ETag; for a `create`, any object), the bytes are ours, and the
+post-commit gate admits. Nothing about `any_ambiguous`, `sent_any`, `attempts_sent` or the verdict
+taxonomy changes: a hinted attempt is as ambiguous as it is today; only the pacing differs.
+
+One deliberate availability difference at the deadline edge: today, with only one read envelope
+left, the loop may still perform its settle read and answer `Committed` or `Conflict`; the hint path
+requires `flat_ms + 2` envelopes for the reissue and otherwise gives up. That is the conservative
+side (a `GaveUp` with `sent_any == true`), accepted and tested.
 
 ## Why {#why}
 
@@ -51,11 +58,12 @@ Poco text survives (`PocoHTTPClient::makeRequestInternal` keeps `getCurrentExcep
 | `ENETUNREACH` | `Network is unreachable` |
 | connect poll timeout | `connect timed out` |
 
-`isConnectFailureHint(const Exception &)`, declared in the CAS backend layer (so both
-`CasRequests.cpp` and `CasObjectStorageBackend.cpp` can call one definition): true only for an
-`S3Exception` with S3 error `NETWORK_CONNECTION` whose message contains one of the substrings. It is
-a hint, not a verdict: the same errno can be reported after `send` or `recv`, and the design needs no
-exclusivity because a hinted attempt keeps every safety property of an ambiguous one.
+`isConnectFailureHint(const Exception &)`, local to `CasRequests.cpp` (the backend's own outcome
+taxonomy stays `CASConditionalWriteUnresolved`): true only for a `dynamic_cast` to `S3Exception`
+whose `getS3ErrorCode() == NETWORK_CONNECTION` and whose message contains one of the substrings
+(case-sensitive). It is a hint, not a verdict: the same errno can be reported after `send` or `recv`,
+and the design needs no exclusivity because a hinted attempt keeps every safety property of an
+ambiguous one.
 
 ## Behaviour {#behaviour}
 
@@ -69,33 +77,45 @@ In `writeLoop`, in the `catch (const Exception & e)` arm, after the credential b
 3. If the deadline or fence refuses the reissue, the existing `gaveUp` applies with `sent_any == true`
    and `any_ambiguous == true`: the caller sees exactly what it sees today for an ambiguous failure.
    No new `GaveUp::Why`; under `single_attempt` the existing settle read runs as today.
-4. The backend's outcome taxonomy (`CASConditionalWriteUnresolved`) is unchanged; ProfileEvents:
-   `CASRequestConnectFailureHint` per hinted attempt.
+4. ProfileEvents: `CASRequestConnectFailureHint` per hinted attempt, recorded in `writeLoop`.
 
 Cost of a false hint (the error was post-send and the write landed): the reissue meets `412`, one
 read follows, byte-identical body → `Committed{resolved_by_read}`; otherwise `Conflict` — the same
 outcomes the loop produces today after its read. No path can duplicate a write or hide a landed one.
 
-## Tests {#tests}
+## Tests, in the order they are written and made to pass {#tests}
 
 Component tests, explicitly not end to end (the existing `gtest_writebuffer_s3.cpp` fake returns a
-prebuilt `AWSError` and cannot exercise `SocketImpl`; an injectable session seam would touch
-`src/IO`):
+prebuilt `AWSError` and cannot exercise `SocketImpl`; the `PocoHTTPClient → AWSError` transformation
+stays an acknowledged residual gap). Each test is written first and fails before its step:
 
-- Poco formatting: constructing `Poco::Net::NetException` through `SocketImpl::error` for each errno
-  yields the five substrings (pins the texts against a Poco bump).
-- `AWSError → S3Exception`: the fake client's `NETWORK_CONNECTION` error with each text reaches the
-  `WriteBufferFromS3` caller with the substring intact and S3 error `NETWORK_CONNECTION`.
-- Engine: backend `write` throws the `EADDRNOTAVAIL`-shaped exception twice, then commits →
-  `Committed{attempts_sent == 3, resolved_by_read == false}` with zero reads before the commit.
-- Engine: hinted attempt, then the reissue meets `412` and the read finds our bytes →
-  `Committed{resolved_by_read == true}`; finds other bytes → `Conflict`.
-- Engine: hinted failures until the deadline → `GaveUp{Deadline, sent_any == true}`; until the fence
-  trips → `GaveUp{FenceLost}`; the flat pause is nonzero and `state.reissues` does not grow.
-- Engine: a receive-phase `Timeout` text takes today's path (read before reissue).
-- Renewal twin: `MountLeaseRenewer` over a backend failing with the hint text for 3 s recovers within
-  its window, `attempts_sent > 1`, no `CASRequestResolveRead` increment, recovery classification
-  `committed_after_retry`.
+1. `CASRequestsConnectHint.PocoTextsArePinned` — `SocketImpl::error(errno)` for the four errno values
+   throws messages containing the four substrings; a timed `connect` against a black-hole address (or
+   the `SocketImpl::connect` timeout producer) throws `connect timed out`. Fails until the pinned
+   list exists.
+2. `CASRequestsConnectHint.ClassifierGuards` — `S3Exception{NETWORK_CONNECTION, text}` hints for each
+   of the five texts; the same text under a non-`NETWORK_CONNECTION` S3 error does not; `NETWORK_CONNECTION`
+   without a listed text does not (`Timeout` alone does not).
+3. `WriteBufferS3Fake.NetworkConnectionTextSurvives` — the fake client's `NETWORK_CONNECTION` error with
+   each text reaches the `WriteBufferFromS3` caller as `S3Exception` with the substring intact.
+4. `CASRequestsConnectHint.HintedFailuresReissueWithoutARead` — backend `write` throws the hinted
+   exception twice, then commits → `Committed{attempts_sent == 3, resolved_by_read == false}`, zero reads
+   before the commit, two flat pauses (virtual clock), `state.reissues == 0` afterwards.
+5. `CASRequestsConnectHint.ReissueMeetsPreconditionAndAdoptsOwnBytes` — hinted attempt, the reissue
+   meets `412`, the read observes a DIFFERENT ETag with our bytes → `Committed{resolved_by_read}`;
+   with other bytes → `Conflict`; with the ORIGINAL ETag → the loop reissues (not adopts).
+6. `CASRequestsConnectHint.OnceKeepsOneWriteAndOneRead` — under `Retry::once()` a hinted failure
+   performs one write and the existing settle read, no sleep, and returns today's verdict.
+7. `CASRequestsConnectHint.EarlierAmbiguityStillSettlesByRead` — ambiguous attempt, then a hinted one:
+   the settle read runs before any reissue.
+8. `CASRequestsConnectHint.GatesRefuseTheReissue` — hinted failures until the deadline → `GaveUp{Deadline,
+   sent_any == true}`; until the fence trips → `GaveUp{FenceLost}`; with exactly one read envelope
+   left → `GaveUp` (the documented deadline-edge difference).
+9. `CASRequestsConnectHint.AmbiguityAfterHintsStartsAtFirstBackoff` — several hints, then a normal
+   ambiguity: the first backoff drawn is `backoff(1)`.
+10. Renewal twin (`gtest_cas_pool.cpp` renewer tests): `MountLeaseRenewer` over a backend failing with
+    the hint text for 3 s recovers within its window, `attempts_sent > 1`, no `CASRequestResolveRead`
+    increment, recovery classification `committed_after_retry`.
 
 ## Out of scope {#out-of-scope}
 
