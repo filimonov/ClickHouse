@@ -359,8 +359,10 @@ private:
     /// the attempt landed.
     enum class ResolveWith : uint8_t { Body, Presence };
 
-    /// The write engine: one call, any policy. Settles every refused precondition and every ambiguity
-    /// by an exact read before it reports anything.
+    /// The write engine: one call, any policy. `Committed` and `Conflict` are proven by an exact read
+    /// or by the reissue's own 2xx before they are reported; an attempt whose transport error named a
+    /// failed connection is reissued before its read. `Refused`, `Declined` and `GaveUp` report what
+    /// the store or the bounds said.
     WriteResult writeLoop(const String & key, const String & bytes, const std::optional<Etag> & expected,
                           const Retry & policy, const Retry::Bound & bound, WriteState & state,
                           ResolveWith resolve_refusal_with);
