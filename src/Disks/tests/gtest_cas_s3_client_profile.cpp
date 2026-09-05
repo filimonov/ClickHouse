@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskObjectStorage/RegisterDiskObjectStorage.h>
+#include <Disks/registerDisks.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/S3/Client.h>
@@ -472,6 +473,27 @@ void ensureObjectStoragesRegistered()
 }
 }
 
+/// Fixture for the `RegisterDiskObjectStorage` suite, the only group in this file that touches
+/// `ObjectStorageFactory`'s registry. Registers once per suite run and clears at the end, mirroring
+/// `DiskObjectStorageTest` (`gtest_disk_object_storage.cpp`) -- the established pattern for a suite
+/// that owns disk/object-storage registration in this shared `unit_tests_dbms` binary. Without the
+/// matching `TearDownTestSuite`, this suite's registration would outlive it and collide with
+/// `DiskObjectStorageTest::SetUpTestSuite`'s own unconditional `DB::registerDisks(true)` (which
+/// transitively calls `registerObjectStorages()`) whenever that suite happened to run afterwards.
+class RegisterDiskObjectStorage : public ::testing::Test
+{
+public:
+    static void SetUpTestSuite()
+    {
+        ensureObjectStoragesRegistered();
+    }
+
+    static void TearDownTestSuite()
+    {
+        DB::clearDiskRegistry();
+    }
+};
+
 /// Test 6c of the spec: the clone's connect cap is the MIN of the base client's own connect timeout
 /// and the requested cap, a configured-zero base is treated as unbounded (never "no limit"), the cache
 /// key is the (request timeout, cap) pair, and a reloaded base client cannot widen a clone rebuilt for
@@ -715,9 +737,8 @@ TEST(S3ObjectStorageProfile, ApplyNewSettingsPreservesTheProfile)
 /// The factory's S3 creator applies the profile exactly when the hint says so. `getClient` builds
 /// the client without connecting, so an unreachable endpoint is fine. Checks both profile fields for
 /// both the hinted and non-hinted creation.
-TEST(RegisterDiskObjectStorage, CasProfileReachesTheS3Creator)
+TEST_F(RegisterDiskObjectStorage, CasProfileReachesTheS3Creator)
 {
-    ensureObjectStoragesRegistered();
     auto cfg = makeConfig("<type>s3</type><endpoint>http://127.0.0.1:1/bucket/</endpoint>"
                           "<access_key_id>a</access_key_id><secret_access_key>b</secret_access_key>");
     auto with_hint = DB::ObjectStorageFactory::instance().create("d", *cfg, "disk", contextForTest(), /*skip_access_check=*/true,
@@ -748,9 +769,8 @@ TEST(RegisterDiskObjectStorage, CasProfileReachesTheS3Creator)
 /// disagrees between the disk-level prefix and a nested location's prefix for exactly this config
 /// shape, and (2) using the disk-level hint (as the fixed code now does for every location) is what
 /// makes the location's own S3 client carry the profile.
-TEST(RegisterDiskObjectStorage, CasProfileHintIsDiskLevelNotPerLocation)
+TEST_F(RegisterDiskObjectStorage, CasProfileHintIsDiskLevelNotPerLocation)
 {
-    ensureObjectStoragesRegistered();
     auto cfg = makeConfig(
         "<metadata_type>cas</metadata_type>"
         "<locations><main>"
