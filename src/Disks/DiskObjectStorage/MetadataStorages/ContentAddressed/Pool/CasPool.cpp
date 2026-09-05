@@ -802,6 +802,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
             break;
         case MountPriorState::Fenced:
         case MountPriorState::UncleanObserved:
+        case MountPriorState::UncleanUnsafe:
             unclean_reclaim = true;
             break;
     }
@@ -810,7 +811,10 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         LOG_INFO(getLogger("CasPool"),
             "Content-addressed mount {} follows a predecessor whose death was not proven clean "
             "(writer_epoch {}). Opening without a grace period: a still-in-flight conditional PUT from "
-            "that predecessor is fenced by the recovery seal, whenever it arrives.", srid, writer_epoch);
+            "that predecessor is fenced by the recovery seal, whenever it arrives.{}", srid, writer_epoch,
+            claimed_prior == MountPriorState::UncleanUnsafe
+                ? " (reclaimed without observation under cas_unsafe_remount_no_delay)"
+                : "");
     }
 
     /// Arm the local write fence: cache (uuid, epoch) and set the boottime deadline at the claim

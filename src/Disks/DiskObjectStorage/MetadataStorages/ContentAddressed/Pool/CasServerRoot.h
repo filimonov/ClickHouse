@@ -193,6 +193,7 @@ enum class MountPriorState
     Clean,             /// the predecessor's own graceful farewell (`min_active_build_sequence == UINT64_MAX`)
     Fenced,            /// the GC leader's own (already threshold-gated) fence-out (`gc_fenced`)
     UncleanObserved,   /// OUR observation watched the incarnation hold stable for the full threshold
+    UncleanUnsafe,     /// the operator's explicit `cas_unsafe_remount_no_delay` authorization carried the slot's exact token
 };
 
 /// Startup decision for the mount lease (`gc/server-roots/<srid>/mount`), run AFTER the owner gate
@@ -271,10 +272,14 @@ public:
 /// CURRENTLY observed incarnation is the ONLY way (besides `gc_fenced` / the clean marker) a
 /// same-uuid different-epoch lease is ever reclaimed. Absent (`{}`, the default) for a bare claim
 /// attempt with no such proof.
+/// `unsafe_reclaim_authorization`: the exact token the operator's `cas_unsafe_remount_no_delay` read
+/// off a same-uuid, different-epoch slot before authorizing this reclaim, with no observation at all.
+/// Never reused from `proven_dead_incarnation`: that one says the token was OBSERVED dead, this one
+/// says the operator accepted the risk. Absent (`{}`, the default) when the knob is off.
 MountClaimResult claimMount(
     CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid, uint64_t our_epoch,
     uint64_t now_ms, uint64_t ttl_ms, const std::optional<Etag> & proven_dead_incarnation = {},
-    const CasEventSink & sink = {});
+    const CasEventSink & sink = {}, const std::optional<Etag> & unsafe_reclaim_authorization = {});
 
 /// Format the operator-actionable startup error shown when the mount lease is held by a genuinely
 /// live second server (the same `server_root_id` is mounted twice). Produced only AFTER this server
