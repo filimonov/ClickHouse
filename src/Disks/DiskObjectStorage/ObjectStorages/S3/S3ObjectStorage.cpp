@@ -52,13 +52,6 @@ namespace ProfileEvents
     extern const Event DiskS3ListObjects;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric ObjectStorageS3Threads;
-    extern const Metric ObjectStorageS3ThreadsActive;
-    extern const Metric ObjectStorageS3ThreadsScheduled;
-}
-
 namespace DB::FailPoints
 {
     extern const char object_storage_force_refresh_callback_success[];
