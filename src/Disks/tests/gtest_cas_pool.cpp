@@ -2455,16 +2455,22 @@ TEST(CASMountOpenWaits, UncleanOpenPaysOnlyTheObservationWindow)
         }));
     ASSERT_TRUE(store);
 
-    /// The token-stability observation window (>= the 500ms ttl) is paid, because this predecessor's
-    /// death was never certified -- only observed.
+    /// The token-stability observation window is paid in full, pinned to the exact configured
+    /// formula (`mountObservationThresholdMs`): threshold_ms = ttl_ms + ttl_ms/20 + poll_interval_ms
+    /// = 500 + 25 + 50 = 575 ms, where poll_interval_ms = max(1, mount_renew_period/2) = 50 ms. The
+    /// loop only re-checks the threshold between polls, so the observed wait rounds UP to the next
+    /// whole poll: ceil(575 / 50) * 50 = 600 ms, i.e. exactly 12 polls of 50 ms each -- because this
+    /// predecessor's death was never certified, only observed.
     uint64_t total = 0;
     for (uint64_t w : waits)
         total += w;
-    EXPECT_GE(total, 500u) << "the observation window must have been paid";
-    /// And NOTHING is paid on top of it. Every recorded wait is a poll of that window, bounded by the
-    /// lease TTL; a wait longer than the whole window can only be a reintroduced grace period.
+    EXPECT_EQ(total, 600u) << "the observation window must be paid in full, poll-rounded to the "
+                              "configured threshold -- neither less (a shortened wait) nor more "
+                              "(a reintroduced grace period)";
+    /// And every one of those polls is exactly one poll interval -- no wait beyond the observation
+    /// poll (the straggler it used to wait out is fenced by the recovery seal instead).
     for (uint64_t w : waits)
-        EXPECT_LE(w, 500u)
+        EXPECT_EQ(w, 50u)
             << "an unclean reclaim must not block on any wait beyond the observation poll -- the "
                "straggler it used to wait out is fenced by the recovery seal instead";
 }
