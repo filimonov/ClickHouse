@@ -138,11 +138,17 @@ class Store:
         # Adversarial behaviour, off by default — see the module docstring.
         self.if_match_mode = "reject"
         self.omit_generation = False
-        # `/_control/delay`: every PUT whose key contains `delay_substr` sleeps `delay_ms` before it is
-        # served, outside the store lock so other requests keep flowing. A fixed per-request delay, not
-        # a modelled rate cap — see the module docstring's `/_control/delay` bullet.
+        # `/_control/delay`: a request matching `delay_method`/`delay_substr` sleeps `delay_ms` before
+        # it is served, outside the store lock so other requests keep flowing. A fixed per-request
+        # delay, not a modelled rate cap — see the module docstring's `/_control/delay` bullet.
+        # `delay_method` is one of PUT (match the key, default), GET (match the key) or LIST (a GET
+        # with an empty key and a `prefix` query, matched against the prefix value). `delay_once`
+        # clears the whole knob the instant it matches, so only the first matching request is ever
+        # delayed — needed to fire a fault exactly once and let the retry through clean.
         self.delay_substr = ""
         self.delay_ms = 0
+        self.delay_method = "PUT"
+        self.delay_once = False
         # `/_control/first_per_key_throttle`: while enabled, every key in `throttled_keys_seen` has
         # already been refused once and is now served normally; a key not yet in the set gets added
         # and refused with 429 instead of being dispatched.
@@ -170,6 +176,25 @@ class Store:
 
 
 STORE = Store()
+
+
+def _delay_matches(method, key, query):
+    """Whether this request is the one the `/_control/delay` knob targets.
+
+    Must be called with `_LOCK` held: it reads `STORE.delay_*` and the caller pairs it with clearing
+    a `once` knob atomically. `query` is the parsed query dict (values are lists), as everywhere else
+    in this module.
+    """
+    if not STORE.delay_ms or not STORE.delay_substr:
+        return False
+    if STORE.delay_method == "LIST":
+        # A LIST is a GET with an empty key and a `prefix` query; match the prefix value, not the key.
+        if method != "GET" or key or "prefix" not in query:
+            return False
+        return any(STORE.delay_substr in value for value in query["prefix"])
+    if STORE.delay_method not in ("PUT", "GET"):
+        return False
+    return method == STORE.delay_method and bool(key) and STORE.delay_substr in key
 
 
 def _xml_escape(text):
@@ -830,11 +855,23 @@ def handle_control(path, method, query):
             {"Content-Type": "application/json"},
         )
     if path == "/_control/delay" and method == "POST":
+        delay_method = query.get("method", ["PUT"])[0]
+        if delay_method not in ("PUT", "GET", "LIST"):
+            return _bad_request("unknown delay method " + delay_method)
         STORE.delay_substr = query.get("substr", [""])[0]
         STORE.delay_ms = int(query.get("ms", ["0"])[0])
+        STORE.delay_method = delay_method
+        STORE.delay_once = query.get("once", ["0"])[0] == "1"
         return Reply(
             200,
-            json.dumps({"substr": STORE.delay_substr, "ms": STORE.delay_ms}).encode(),
+            json.dumps(
+                {
+                    "substr": STORE.delay_substr,
+                    "ms": STORE.delay_ms,
+                    "method": STORE.delay_method,
+                    "once": STORE.delay_once,
+                }
+            ).encode(),
             {"Content-Type": "application/json"},
         )
     if path == "/_control/first_per_key_throttle" and method == "POST":
@@ -850,6 +887,8 @@ def handle_control(path, method, query):
         STORE.counters = {}
         STORE.delay_substr = ""
         STORE.delay_ms = 0
+        STORE.delay_method = "PUT"
+        STORE.delay_once = False
         STORE.first_per_key_throttle = False
         STORE.throttled_keys_seen = set()
         return Reply(200, b"OK")
@@ -899,9 +938,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         stripped = path.lstrip("/")
         bucket, _, key = stripped.partition("/")
 
-        delayed = method == "PUT" and STORE.delay_ms and STORE.delay_substr and STORE.delay_substr in key
+        # Whether this request matches the `/_control/delay` knob, and how long to sleep for it, is
+        # decided under the lock so a `once` knob is consumed by exactly one request even when
+        # several requests race here; the sleep itself still happens outside the lock so other
+        # requests keep flowing while this one is delayed.
+        with _LOCK:
+            delayed = _delay_matches(method, key, query)
+            delay_ms = STORE.delay_ms if delayed else 0
+            if delayed and STORE.delay_once:
+                STORE.delay_substr = ""
+                STORE.delay_ms = 0
+                STORE.delay_method = "PUT"
+                STORE.delay_once = False
         if delayed:
-            time.sleep(STORE.delay_ms / 1000.0)
+            time.sleep(delay_ms / 1000.0)
 
         with _LOCK:
             STORE.count("method_" + method)
@@ -910,7 +960,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # substring that no longer matches the key) — this counter is the caller's proof the
             # sleep above actually ran.
             if delayed:
-                STORE.count("DelayedPut")
+                STORE.count("DelayedRequest")
+                if method == "PUT":
+                    STORE.count("DelayedPut")
             throttled = STORE.first_per_key_throttle and (bucket, key) not in STORE.throttled_keys_seen
             if throttled:
                 STORE.throttled_keys_seen.add((bucket, key))
