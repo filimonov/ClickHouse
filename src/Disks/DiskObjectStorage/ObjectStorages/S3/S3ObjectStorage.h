@@ -206,9 +206,8 @@ public:
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
 
-    /// The keep-alive values shipped for CAS disks (spec: connection-churn design). Chosen from a
-    /// spike that attributed the dominant reset reason directly to the default
-    /// `http_keep_alive_max_requests`, not to the timeout.
+    /// The keep-alive values shipped for CAS disks. Chosen from a spike that attributed the dominant
+    /// reset reason directly to the default `http_keep_alive_max_requests`, not to the timeout.
     static S3ClientProfile casClientProfile();
 
     /// Applies each present value in `profile` into `settings` only where the corresponding

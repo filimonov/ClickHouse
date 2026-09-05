@@ -436,7 +436,13 @@ public:
         context_holder.context->setConfig(config.configuration);
 
         tryRegisterFunctions();
-        registerObjectStorages();
+        /// Guarded rather than unconditional: this suite shares one `unit_tests_dbms` process with
+        /// other test files that also register into `ObjectStorageFactory` without ever clearing it
+        /// (e.g. `gtest_cas_s3_client_profile.cpp`), so an unconditional call here would throw
+        /// "not unique" whenever such a file's test happened to run first. `"local"` is always
+        /// registered by `registerObjectStorages` regardless of build flags, so it is a safe sentinel.
+        if (!DB::ObjectStorageFactory::instance().isRegistered("local"))
+            registerObjectStorages();
         registerPlanSteps();
 
         GlobalThreadPool::instance();

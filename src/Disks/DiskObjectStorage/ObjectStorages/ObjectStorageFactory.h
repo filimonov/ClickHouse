@@ -30,6 +30,12 @@ public:
 
     void registerObjectStorageType(const std::string & type, Creator creator);
 
+    /// Whether `type` (e.g. `"s3"`, `"local"`) already has a registered creator -- lets a caller that
+    /// does not own the registration's lifetime (a unit test sharing a process-wide registry with other
+    /// test suites) register only when needed, instead of risking `registerObjectStorageType`'s
+    /// "not unique" throw against a registration some other, already-run suite left in place.
+    bool isRegistered(const std::string & type) const;
+
     ObjectStoragePtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,

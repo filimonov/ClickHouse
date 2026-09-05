@@ -458,11 +458,17 @@ namespace
 {
 /// `ObjectStorageFactory`'s registry is empty until `registerObjectStorages` runs (normally done once
 /// by `registerDiskObjectStorage` at server startup); a unit test driving the factory directly has to
-/// do it itself, exactly once for the whole binary.
+/// do it itself. Checks the registry's actual state on every call rather than latching a "ran once"
+/// flag: this file shares one `unit_tests_dbms` process with other suites that register into and clear
+/// the same factory around their own tests (e.g. `DistributedQueryTest`, which registers in `SetUp` and
+/// unconditionally clears in `TearDown`), so a "ran once" flag could go stale the moment such a suite
+/// clears the registry after this one already ran -- the next test here would then find a registry
+/// this flag believes is already populated, but isn't. `"local"` is always registered by
+/// `registerObjectStorages` regardless of build flags (`USE_AWS_S3` included), so it is a safe sentinel.
 void ensureObjectStoragesRegistered()
 {
-    static const bool registered = [] { DB::registerObjectStorages(); return true; }();
-    (void)registered;
+    if (!DB::ObjectStorageFactory::instance().isRegistered("local"))
+        DB::registerObjectStorages();
 }
 }
 

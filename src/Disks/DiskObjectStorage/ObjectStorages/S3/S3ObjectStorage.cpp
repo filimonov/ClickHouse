@@ -920,7 +920,7 @@ void S3ObjectStorage::startup()
 
 S3ClientProfile S3ObjectStorage::casClientProfile()
 {
-    /// From the connection-churn spike (spec decision 3): every arm still at the default
+    /// From the connection-churn spike: every arm still at the default
     /// `http_keep_alive_max_requests=100` recycled a connection almost exactly every 100 requests
     /// (`DiskConnectionsExpiredMaxRequests` tracked `DiskConnectionsCreated` one-for-one) -- the default
     /// is the connection's entire lifetime under CAS's request rate, not a headroom margin. Raising it
@@ -985,9 +985,17 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    /// Reapply the disk's client profile (if any) after the config/endpoint merge above, so a reload
-    /// that leaves the keep-alive settings untouched does not silently drop the profile -- and a reload
-    /// that now sets them explicitly still takes precedence, because that value is `changed`.
+    /// Reapply the client profile (if any) to `modified_settings` after the merge above. In the disk
+    /// the factory actually builds this is redundant with the constructor's already-applied
+    /// `s3_settings`: `changed` survives every reload through the copy a few lines up, so the value set
+    /// at construction persists with or without this call. It matters for any other construction shape
+    /// that carries a profile but unapplied settings (`applyNewSettings` is otherwise the only place
+    /// the profile could ever take effect).
+    ///
+    /// Note the same "`changed` never un-sets" behavior applies to an operator's own override: setting
+    /// `http_keep_alive_timeout` explicitly and later removing it from the disk's config does not fall
+    /// back to this profile's default on the next reload -- like every other `S3AuthSettings` field,
+    /// the last explicit value sticks.
     if (client_profile)
         applyClientProfileDefaults(*client_profile, *modified_settings);
 

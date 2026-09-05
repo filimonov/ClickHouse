@@ -147,6 +147,12 @@ than a headroom margin, so almost every connection was being recreated (and its 
 port cycled through `TIME_WAIT`) once every 100 requests; raising the limit removed nearly all of
 that churn with no measured effect on throughput or error rate.
 
+The precedence above is not reversible on reload: once a value has been set explicitly (in the disk's
+XML or via a changed global setting), `SYSTEM RELOAD CONFIG` remembers that it was set explicitly even
+after the explicit value is removed from the config, so it does not fall back to the `CAS` default --
+the last explicit value sticks. This matches how every other S3 client setting behaves across a
+reload; it is not specific to the profile.
+
 The connection pool's own effective ages, for interpreting the settings above: a stored connection
 is expired once it is older than `0.8 ×` the keep-alive timeout, or `0.1 ×` once the shared `disk`
 connection group passes `disk_connections_soft_limit`; a connection returned to the pool is reset
