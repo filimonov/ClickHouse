@@ -952,8 +952,9 @@ MountClaimResult claimMountAwaitingExpiry(
     /// Rate-bound observation threshold: the full lease TTL, plus a 5% allowance for clock-rate
     /// mismatch between the holder's and our own local clock, plus one poll interval for observation
     /// discreteness. It is measured only with OUR OWN clock (`mono_ms_fn`); no cross-node wall-clock
-    /// comparison participates in this loop. The shared helper keeps the startup and GC thresholds
-    /// identical.
+    /// comparison participates in this loop. `poll` here is half the renewal period (the caller's own
+    /// poll cadence), so this threshold is close to, but not identical to, GC's heartbeat fence-out
+    /// threshold, which passes the full renewal period into the same shared helper.
     const uint64_t threshold_ms = mountObservationThresholdMs(ttl_ms, poll);
 
     std::optional<Etag> observed;

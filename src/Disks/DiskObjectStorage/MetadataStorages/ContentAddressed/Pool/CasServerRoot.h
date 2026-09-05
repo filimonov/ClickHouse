@@ -319,10 +319,13 @@ String mountDoubleStartMessage(const String & srid, const std::optional<MountLea
 /// tests drive fake clocks with no real sleeping. `on_wait_start` (default no-op) fires once per
 /// observation-window start (including restarts), with the currently-observed lease and the
 /// threshold, for an operator-visible startup log.
-/// All callers use this shared formula so a future adjustment cannot silently leave the startup
-/// observation path and either GC heartbeat path with different thresholds. `cadence_ms` is the
-/// caller's own poll or heartbeat interval; the additional interval accounts for observation
-/// discreteness, while `ttl_ms / 20` allows for a five-percent clock-rate difference.
+/// All callers share this one formula, not duplicated arithmetic, so a future fix or an added term
+/// applies everywhere at once -- but the callers deliberately pass DIFFERENT `cadence_ms` values, so
+/// the resulting thresholds are close, not identical: the startup reopen wait below passes half the
+/// renewal period (`max(1, floor(mount_renew_period_ms / 2))`), while GC's heartbeat fence-out
+/// (`Gc/CasGc.cpp`) passes the full renewal period. `cadence_ms` is the caller's own poll or
+/// heartbeat interval; the additional interval accounts for observation discreteness, while
+/// `ttl_ms / 20` allows for a five-percent clock-rate difference.
 uint64_t mountObservationThresholdMs(uint64_t ttl_ms, uint64_t cadence_ms);
 
 /// Bounded number of observation restarts `claimMountAwaitingExpiry` allows before giving up on a

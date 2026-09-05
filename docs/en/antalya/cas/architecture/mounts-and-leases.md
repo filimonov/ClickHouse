@@ -61,7 +61,9 @@ Two failure modes this closes:
   over, regardless of lease expiry.
 - A **same-uuid live twin** (two processes sharing one uuid file and `server_root_id`) is caught separately, by
   the mount claim's token-stability observation, and aborts with an operator-facing message rather
-  than corrupting the pool.
+  than corrupting the pool — this is the default behavior, with `cas_unsafe_remount_no_delay` off.
+  With it on, a same-uuid claim over such a slot reclaims at once instead of observing (see
+  `cas_unsafe_remount_no_delay` in the configuration reference).
 
 ## The mount lease {#mount-lease}
 
@@ -125,6 +127,17 @@ configured `TTL`/`period`; nothing about the writer's timing travels on the wire
 `system.cas_mounts` and by the non-authoritative decommission epoch-recovery precheck, never an
 authorization; local fencing is derived instead from the confirmed request's pre-I/O `BOOTTIME`
 anchor plus the TTL, and wall-clock `now` stays audit-only.
+
+Every server sharing a pool must therefore run the identical `cas_mount_lease_ttl_ms` and
+`cas_mount_renew_period_ms`: a member or GC leader configured with a shorter threshold than its
+peers can fence out a healthy peer whose token-update gap merely exceeds that shorter threshold —
+a peer renewing frequently stays live, one that missed a renewal does not. Change these values only
+with every member of the pool stopped; a graceful restart removes only that member's own startup
+observation and does not make mixed thresholds safe. With the defaults (TTL 30 s, period 10 s,
+margin 2 s), `TTL − margin − period − 2 × envelope = 4 s` is the scheduling-lateness budget before
+the first renewal attempt of a period can begin, where `envelope = attempt_timeout + 2 × cap` and
+`cap` is `attempt_timeout` when the disk's `connect_timeout_ms` is `0`, else
+`min(connect_timeout_ms, attempt_timeout)` (7 s with defaults).
 
 ## The two monotone counters {#counters}
 
