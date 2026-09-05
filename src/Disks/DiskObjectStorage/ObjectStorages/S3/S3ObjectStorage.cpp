@@ -83,6 +83,8 @@ namespace S3AuthSetting
 {
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsUInt64 gcs_max_conditional_put_bytes;
+    extern const S3AuthSettingsUInt64 http_keep_alive_timeout;
+    extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
 }
 
 
@@ -916,6 +918,27 @@ void S3ObjectStorage::startup()
     const_cast<S3::Client &>(*client->get()).EnableRequestProcessing();
 }
 
+S3ClientProfile S3ObjectStorage::casClientProfile()
+{
+    /// From the connection-churn spike (spec decision 3): every arm still at the default
+    /// `http_keep_alive_max_requests=100` recycled a connection almost exactly every 100 requests
+    /// (`DiskConnectionsExpiredMaxRequests` tracked `DiskConnectionsCreated` one-for-one) -- the default
+    /// is the connection's entire lifetime under CAS's request rate, not a headroom margin. Raising it
+    /// to 10000 removed essentially all of the churn with no downside observed; 30s sits with room to
+    /// spare under rustfs's verified >= 75s idle tolerance.
+    return S3ClientProfile{.http_keep_alive_timeout = 30, .http_keep_alive_max_requests = 10000};
+}
+
+void S3ObjectStorage::applyClientProfileDefaults(const S3ClientProfile & profile, S3Settings & settings)
+{
+    /// A default, never an override: a value the disk section or a changed global setting supplied
+    /// keeps precedence, which the loader records as `changed`.
+    if (profile.http_keep_alive_timeout && !settings.auth_settings[S3AuthSetting::http_keep_alive_timeout].changed)
+        settings.auth_settings[S3AuthSetting::http_keep_alive_timeout] = *profile.http_keep_alive_timeout;
+    if (profile.http_keep_alive_max_requests && !settings.auth_settings[S3AuthSetting::http_keep_alive_max_requests].changed)
+        settings.auth_settings[S3AuthSetting::http_keep_alive_max_requests] = *profile.http_keep_alive_max_requests;
+}
+
 void S3ObjectStorage::applyNewSettings(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
@@ -961,6 +984,12 @@ void S3ObjectStorage::applyNewSettings(
 
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
+
+    /// Reapply the disk's client profile (if any) after the config/endpoint merge above, so a reload
+    /// that leaves the keep-alive settings untouched does not silently drop the profile -- and a reload
+    /// that now sets them explicitly still takes precedence, because that value is `changed`.
+    if (client_profile)
+        applyClientProfileDefaults(*client_profile, *modified_settings);
 
     /// A caller that derived persistent state from the conditional-ops dialect pinned it (see
     /// `IObjectStorage::pinConditionalOpsGenerationDialect`). Refuse before the client is replaced, so a

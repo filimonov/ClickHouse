@@ -9,16 +9,20 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/RegisterDiskObjectStorage.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/URI.h>
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3Defines.h>
 #include <IO/S3Settings.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Core/Settings.h>
 
 #include <filesystem>
 #include <map>
@@ -371,6 +375,81 @@ std::shared_ptr<RecordingS3ObjectStorage> makeRecordingStorageForTest(long conne
         DB::ObjectStorageKeyGeneratorPtr{}, "disk");
 }
 
+/// Builds `S3Settings` from a `<disk>...</disk>` XML fragment exactly as a live disk's config section
+/// would be loaded, so a test exercises the real `changed`-flag precedence rather than a hand-rolled one.
+std::unique_ptr<DB::S3Settings> settingsFromXml(const std::string & disk_xml, const DB::Settings & global_settings = DB::Settings{})
+{
+    std::istringstream xml_stream("<clickhouse>" + disk_xml + "</clickhouse>"); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration(xml_stream));
+    auto settings = std::make_unique<DB::S3Settings>();
+    settings->loadFromConfigForObjectStorage(*config, "disk", global_settings, "http", /*validate_settings=*/false);
+    return settings;
+}
+
+/// A `<disk>` config section deliberately missing `setting_name`, otherwise carrying the credentials a
+/// reload needs so it never falls through to the (unreachable) EC2 instance metadata provider.
+Poco::AutoPtr<Poco::Util::XMLConfiguration> configWithout(const std::string & /* setting_name */)
+{
+    std::istringstream xml_stream( // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        "<clickhouse><disk>"
+        "<access_key_id>ACCESS_KEY_ID</access_key_id>"
+        "<secret_access_key>SECRET_ACCESS_KEY</secret_access_key>"
+        "</disk></clickhouse>");
+    return new Poco::Util::XMLConfiguration(xml_stream);
+}
+
+DB::ContextPtr contextForTest()
+{
+    return getContext().context;
+}
+
+/// A `<disk>inner</disk>` config wrapped in `<clickhouse>`, matching the shape
+/// `ObjectStorageFactory`/`RegisterDiskObjectStorage` read at `config_prefix = "disk"`.
+Poco::AutoPtr<Poco::Util::XMLConfiguration> makeConfig(const std::string & inner)
+{
+    std::istringstream xml_stream("<clickhouse><disk>" + inner + "</disk></clickhouse>"); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    return new Poco::Util::XMLConfiguration(xml_stream);
+}
+
+/// A storage carrying `profile` as its client profile but whose initial client was built directly
+/// (bypassing the factory's `getClient`), so the defaults are known to come from `applyNewSettings`
+/// reapplying the profile, not from anything baked in at construction.
+std::shared_ptr<DB::S3ObjectStorage> storageWithProfile(const DB::S3ClientProfile & profile)
+{
+    auto client = DB::S3::ClientFactory::instance().create(
+        clientConfigurationForTest(1000), clientSettingsForTest(),
+        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{});
+    return std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(),
+        DB::S3::URI("http://127.0.0.1:1/bucket/"), DB::S3Capabilities{},
+        DB::ObjectStorageKeyGeneratorPtr{}, "disk", /*for_disk_s3=*/true,
+        /*credentials_refresh_callback=*/[] -> std::unique_ptr<const DB::S3::Client> { return nullptr; },
+        std::optional<DB::S3ClientProfile>(profile));
+}
+
+}
+
+namespace DB::S3AuthSetting
+{
+    extern const S3AuthSettingsUInt64 http_keep_alive_timeout;
+    extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
+}
+
+namespace DB
+{
+void registerObjectStorages();
+}
+
+namespace
+{
+/// `ObjectStorageFactory`'s registry is empty until `registerObjectStorages` runs (normally done once
+/// by `registerDiskObjectStorage` at server startup); a unit test driving the factory directly has to
+/// do it itself, exactly once for the whole binary.
+void ensureObjectStoragesRegistered()
+{
+    static const bool registered = [] { DB::registerObjectStorages(); return true; }();
+    (void)registered;
+}
 }
 
 /// Test 6c of the spec: the clone's connect cap is the MIN of the base client's own connect timeout
@@ -548,6 +627,61 @@ TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
     ASSERT_FALSE(chain_storage->selections.empty());
     for (const auto & s : chain_storage->selections)
         EXPECT_EQ(s.selected_connect_timeout_ms, 1000);
+}
+
+/// The CAS client profile's values are defaults, never overrides: an explicit disk-section value or a
+/// changed global `s3_http_keep_alive_*` setting keeps precedence over the profile, exactly because the
+/// loader already marked those fields `changed` before the profile is applied.
+TEST(S3ObjectStorageProfile, CasDefaultsApplyOnlyWhenUnset)
+{
+    const DB::S3ClientProfile profile{.http_keep_alive_timeout = 30, .http_keep_alive_max_requests = std::nullopt};
+    {
+        auto settings = settingsFromXml("<disk><endpoint>http://127.0.0.1:1/b/</endpoint></disk>");
+        DB::S3ObjectStorage::applyClientProfileDefaults(profile, *settings);
+        EXPECT_EQ(settings->auth_settings[DB::S3AuthSetting::http_keep_alive_timeout].value, 30u);
+        EXPECT_EQ(settings->auth_settings[DB::S3AuthSetting::http_keep_alive_max_requests].value, DB::S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS);
+    }
+    {
+        auto settings = settingsFromXml("<disk><endpoint>http://127.0.0.1:1/b/</endpoint><http_keep_alive_timeout>7</http_keep_alive_timeout></disk>");
+        DB::S3ObjectStorage::applyClientProfileDefaults(profile, *settings);
+        EXPECT_EQ(settings->auth_settings[DB::S3AuthSetting::http_keep_alive_timeout].value, 7u);
+    }
+    {
+        /// A changed global `s3_http_keep_alive_timeout` counts as explicit: the loader marks it changed.
+        DB::Settings global;
+        global.set("s3_http_keep_alive_timeout", 11);
+        auto settings = settingsFromXml("<disk><endpoint>http://127.0.0.1:1/b/</endpoint></disk>", global);
+        DB::S3ObjectStorage::applyClientProfileDefaults(profile, *settings);
+        EXPECT_EQ(settings->auth_settings[DB::S3AuthSetting::http_keep_alive_timeout].value, 11u);
+    }
+}
+
+/// `applyNewSettings` reapplies the stored profile on every reload (config, endpoint block, or neither
+/// touching the setting), so a disk that was created with the profile keeps it across
+/// `SYSTEM RELOAD CONFIG`.
+TEST(S3ObjectStorageProfile, ApplyNewSettingsPreservesTheProfile)
+{
+    auto storage = storageWithProfile(DB::S3ClientProfile{.http_keep_alive_timeout = 30, .http_keep_alive_max_requests = std::nullopt});
+    storage->applyNewSettings(*configWithout("http_keep_alive_timeout"), "disk", contextForTest(),
+                              DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
+    EXPECT_EQ(storage->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout, 30u);
+}
+
+/// The factory's S3 creator applies the profile exactly when the hint says so. `getClient` builds
+/// the client without connecting, so an unreachable endpoint is fine.
+TEST(RegisterDiskObjectStorage, CasProfileReachesTheS3Creator)
+{
+    ensureObjectStoragesRegistered();
+    auto cfg = makeConfig("<type>s3</type><endpoint>http://127.0.0.1:1/bucket/</endpoint>"
+                          "<access_key_id>a</access_key_id><secret_access_key>b</secret_access_key>");
+    auto with_hint = DB::ObjectStorageFactory::instance().create("d", *cfg, "disk", contextForTest(), /*skip_access_check=*/true,
+                                                             DB::ObjectStorageCreateHints{.cas_client_profile = true});
+    auto without_hint = DB::ObjectStorageFactory::instance().create("d", *cfg, "disk", contextForTest(), true, DB::ObjectStorageCreateHints{});
+    EXPECT_EQ(with_hint->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout, 30u);
+    EXPECT_EQ(without_hint->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout, DB::S3::DEFAULT_KEEP_ALIVE_TIMEOUT);
+    /// And `RegisterDiskObjectStorage` derives the hint from `metadata_type`: pin the one-line rule.
+    EXPECT_TRUE(DB::casClientProfileHintFor(*makeConfig("<metadata_type>cas</metadata_type>"), "disk"));
+    EXPECT_FALSE(DB::casClientProfileHintFor(*makeConfig("<metadata_type>local</metadata_type>"), "disk"));
 }
 
 #endif

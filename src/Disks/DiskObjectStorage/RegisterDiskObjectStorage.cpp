@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/RegisterDiskObjectStorage.h>
 #include <Disks/ReadOnlyDiskWrapper.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
@@ -22,6 +23,11 @@ namespace ErrorCodes
 void registerObjectStorages();
 void registerMetadataStorages();
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
+
+bool casClientProfileHintFor(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    return config.getString(config_prefix + ".metadata_type", "") == "cas";
+}
 
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check)
 {
@@ -51,14 +57,19 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
                 const std::string object_storage_config_prefix = config_prefix + ".locations." + location;
                 const bool local = config.getBool(object_storage_config_prefix + ".local");
                 const bool enabled = config.getBool(object_storage_config_prefix + ".enabled");
-                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context, /*skip_access_check=*/skip_access_check || !enabled);
+                const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(
+                    fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context,
+                    /*skip_access_check=*/skip_access_check || !enabled,
+                    ObjectStorageCreateHints{.cas_client_profile = casClientProfileHintFor(config, object_storage_config_prefix)});
                 object_storage_registry[location] = object_storage;
                 cluster_registry[location] = {enabled, local, object_storage_config_prefix};
             }
         }
         else
         {
-            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(name, config, config_prefix, context, skip_access_check);
+            const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(
+                name, config, config_prefix, context, skip_access_check,
+                ObjectStorageCreateHints{.cas_client_profile = casClientProfileHintFor(config, config_prefix)});
             object_storage_registry["main"] = object_storage;
             cluster_registry["main"] = { .enabled = true, .local = true, .config_prefix = config_prefix };
         }

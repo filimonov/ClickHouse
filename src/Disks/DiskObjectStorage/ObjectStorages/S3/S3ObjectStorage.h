@@ -25,6 +25,14 @@ namespace S3RequestSetting
     extern const S3RequestSettingsBool read_only;
 }
 
+/// The S3 keep-alive defaults applied to a disk's client -- currently just the CAS connection-churn
+/// profile (see `S3ObjectStorage::casClientProfile`), each field optional so a profile can leave a
+/// setting untouched instead of forcing a value.
+struct S3ClientProfile
+{
+    std::optional<uint64_t> http_keep_alive_timeout;
+    std::optional<uint64_t> http_keep_alive_max_requests;
+};
 
 class S3ObjectStorage : public IObjectStorage
 {
@@ -43,7 +51,8 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; })
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        std::optional<S3ClientProfile> client_profile_ = std::nullopt)
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::make_shared<MultiVersion<S3::Client>>(std::move(client_)))
@@ -53,6 +62,7 @@ private:
         , log(getLogger(logger_name))
         , for_disk_s3(for_disk_s3_)
         , credentials_refresh_callback(credentials_refresh_callback_)
+        , client_profile(client_profile_)
     {
     }
 
@@ -196,6 +206,16 @@ public:
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
 
+    /// The keep-alive values shipped for CAS disks (spec: connection-churn design). Chosen from a
+    /// spike that attributed the dominant reset reason directly to the default
+    /// `http_keep_alive_max_requests`, not to the timeout.
+    static S3ClientProfile casClientProfile();
+
+    /// Applies each present value in `profile` into `settings` only where the corresponding
+    /// `S3AuthSettings` field is not already `changed` -- a default, never an override, of a value an
+    /// explicit disk section or a changed global `s3_http_keep_alive_*` setting already supplied.
+    static void applyClientProfileDefaults(const S3ClientProfile & profile, S3Settings & settings);
+
     /// Lazily-built clone of the current disk client with the single-attempt retry profile
     /// (SingleAttemptRetryStrategy, max_retries=0, Expect:100-continue floor). Rebuilt whenever the
     /// disk client rotates (applyNewSettings/credentials refresh) — the cached clone is keyed by the
@@ -260,6 +280,10 @@ private:
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    /// Set only for a disk created with a client profile (currently just CAS disks); reapplied by
+    /// `applyNewSettings` on every reload so a config/endpoint change cannot silently drop the profile.
+    const std::optional<S3ClientProfile> client_profile;
 
     /// Set once by a caller that has derived persistent state from the conditional-ops dialect (see
     /// `pinConditionalOpsGenerationDialect`). Once set, `applyNewSettings` refuses a reload whose
