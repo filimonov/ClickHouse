@@ -1442,7 +1442,11 @@ bool Pool::tryRemountOnce()
         /// unlike the initial `open`, every event fired below reaches the real sink immediately.
         const auto emit_mount_event = [this](CasEvent e) { emitEvent(std::move(e)); };
 
-        const auto sleep_ms = [](uint64_t ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); };
+        /// Routes through `mount_runtime.waitSleep` (which itself routes through `config.wait_sleep_fn`
+        /// when a test injected one) rather than a bare `sleep_for` directly, so a test intercepting
+        /// `wait_sleep_fn` observes every wait a self-remount can block on, exactly like `Pool::open`'s
+        /// own observation poll above.
+        const auto sleep_ms = [this](uint64_t ms) { mount_runtime.waitSleep(ms); };
         step = "mount_claim";
         CasOperation claim_op = gc_requests.admit();
         const MountClaimResult claim = claimMountAwaitingExpiry(
