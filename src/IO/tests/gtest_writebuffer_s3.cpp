@@ -20,6 +20,8 @@
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/GetBucketVersioningRequest.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
@@ -30,7 +32,9 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/Requests.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/SeekableReadBuffer.h>
 
@@ -38,12 +42,15 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3IteratorAsync.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Core/Settings.h>
+
+#include <fmt/format.h>
 
 #include <Poco/AutoPtr.h>
 #include <Poco/StreamChannel.h>
@@ -67,6 +74,7 @@ namespace Setting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool allow_native_copy;
+    extern const S3RequestSettingsUInt64 max_single_read_retries;
 }
 
 namespace ErrorCodes
@@ -225,6 +233,7 @@ struct InjectionModel
         return std::nullopt; \
     }
     DeclareInjectCall(PutObject)
+    DeclareInjectCall(GetObject)
     DeclareInjectCall(HeadObject)
     DeclareInjectCall(CreateMultipartUpload)
     DeclareInjectCall(CompleteMultipartUpload)
@@ -235,6 +244,31 @@ struct InjectionModel
     DeclareInjectCall(GetBucketVersioning)
 #undef DeclareInjectCall
 };
+
+/// `DB::S3::getClickhouseAttemptNumber(const Aws::AmazonWebServiceRequest &)` reads `GetHeaders()`,
+/// which for a plain S3 request never includes `SetAdditionalCustomHeaderValue`'s custom headers --
+/// only `AWSClient::BuildHttpRequest` merges those into the wire-level `Aws::Http::HttpRequest` that
+/// `PocoHTTPClient` actually inspects (the overload production code reads). This mock overrides the
+/// `S3Client` virtuals directly, below that merge, so it reads the custom header collection itself.
+static size_t attemptNumberFromCustomHeaders(const Aws::AmazonWebServiceRequest & request)
+{
+    const auto & headers = request.GetAdditionalCustomHeaders();
+    auto it = headers.find("clickhouse-request");
+    if (it == headers.end())
+        return 1;
+    static const std::string key = "attempt=";
+    auto pos = it->second.find(key);
+    if (pos == std::string::npos)
+        return 1;
+    try
+    {
+        return static_cast<size_t>(std::stol(it->second.substr(pos + key.size())));
+    }
+    catch (const std::exception &)
+    {
+        return 1;
+    }
+}
 
 struct Client : DB::S3::Client
 {
@@ -282,8 +316,54 @@ struct Client : DB::S3::Client
         injections = injections_;
     }
 
+    /// `clickhouse-request` attempt of every verb, in order -- test-only recorder for the attempt-seed tests.
+    mutable std::vector<size_t> attempts_seen;
+
+    Aws::S3::Model::ListObjectsV2Outcome ListObjectsV2(const Aws::S3::Model::ListObjectsV2Request & request) const override
+    {
+        attempts_seen.push_back(attemptNumberFromCustomHeaders(request));
+        auto & bStore = store->GetBucketStore(request.GetBucket());
+        Aws::S3::Model::ListObjectsV2Result result;
+        result.SetPrefix(request.GetPrefix());
+        int emitted = 0;
+        std::string last;
+        const std::string after = request.ContinuationTokenHasBeenSet() ? request.GetContinuationToken()
+                                : request.StartAfterHasBeenSet() ? request.GetStartAfter() : "";
+        for (const auto & [key, data] : bStore.objects)
+        {
+            if (!key.starts_with(request.GetPrefix()) || key <= after)
+                continue;
+            if (emitted == request.GetMaxKeys())
+            {
+                result.SetIsTruncated(true);
+                result.SetNextContinuationToken(last);
+                break;
+            }
+            Aws::S3::Model::Object object;
+            object.SetKey(key);
+            object.SetSize(static_cast<long long>(data.size()));
+            result.AddContents(std::move(object));
+            last = key;
+            ++emitted;
+        }
+        return Aws::S3::Model::ListObjectsV2Outcome(std::move(result));
+    }
+
+    Aws::S3::Model::DeleteObjectsOutcome DeleteObjects(const Aws::S3::Model::DeleteObjectsRequest & request) const override
+    {
+        attempts_seen.push_back(attemptNumberFromCustomHeaders(request));
+
+        auto & bStore = store->GetBucketStore(request.GetBucket());
+        for (const auto & identifier : request.GetDelete().GetObjects())
+            bStore.objects.erase(identifier.GetKey());
+
+        Aws::S3::Model::DeleteObjectsResult result;
+        return Aws::S3::Model::DeleteObjectsOutcome(std::move(result));
+    }
+
     Aws::S3::Model::PutObjectOutcome PutObject(const Aws::S3::Model::PutObjectRequest & request) const override
     {
+        attempts_seen.push_back(attemptNumberFromCustomHeaders(request));
         ++counters.putObject;
 
         if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
@@ -311,7 +391,14 @@ struct Client : DB::S3::Client
 
     Aws::S3::Model::GetObjectOutcome GetObject(const Aws::S3::Model::GetObjectRequest & request) const override
     {
+        attempts_seen.push_back(attemptNumberFromCustomHeaders(request));
         ++counters.getObject;
+
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+                return std::move(*opt_val);
+        }
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
         const String data = bStore.objects[request.GetKey()];
@@ -338,6 +425,7 @@ struct Client : DB::S3::Client
 
     Aws::S3::Model::HeadObjectOutcome HeadObject(const Aws::S3::Model::HeadObjectRequest & request) const override
     {
+        attempts_seen.push_back(attemptNumberFromCustomHeaders(request));
         ++counters.headObject;
 
         /// The request's DYNAMIC type is still the production `DB::S3::HeadObjectRequest` wrapper --
@@ -499,6 +587,7 @@ struct Client : DB::S3::Client
 
     Aws::S3::Model::DeleteObjectOutcome DeleteObject(const Aws::S3::Model::DeleteObjectRequest & request) const override
     {
+        attempts_seen.push_back(attemptNumberFromCustomHeaders(request));
         ++counters.deleteObject;
 
         if (const auto * wrapper = dynamic_cast<const DB::S3::RequestWithNativeConditionalMode *>(&request))
@@ -574,6 +663,20 @@ struct PutObjectNetworkTextIngection: InjectionModel
         return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, "", text, false);
     }
     std::string text;
+};
+
+/// The first `GetObject` call fails with a retryable network timeout (mirrors what the adaptive
+/// first-attempt fuse produces); every later call succeeds. Drives the local-retry attempt-seed test.
+struct GetObjectFailOnceIngection: InjectionModel
+{
+    std::optional<Aws::S3::Model::GetObjectOutcome> call(const Aws::S3::Model::GetObjectRequest & /*request*/) override
+    {
+        if (failed)
+            return std::nullopt;
+        failed = true;
+        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, "", "Timeout", /*retryable=*/true);
+    }
+    bool failed = false;
 };
 
 struct HeadObjectFailIngection: InjectionModel
@@ -1289,6 +1392,77 @@ TEST_F(WBS3Test, ResultObjectETagIsCaptured) {
         ASSERT_TRUE(buffer->getResultObjectETag().has_value());
         ASSERT_EQ(*buffer->getResultObjectETag(), "etag-multipart-multipart-file");
     }
+}
+
+/// Driving a full fail-then-succeed local retry through `ReadBufferFromS3` against this fixture is not
+/// possible: the mock's successful `GetObject` response feeds `ReadBufferFromIStream`, which requires
+/// the response stream's rdbuf to be a real `Poco::Net::HTTPBasicStreamBuf` (production gets one from
+/// `PocoHTTPClient`'s actual HTTP session; no mock in this file provides one) -- a pre-existing gap in
+/// this fixture, not something this task introduces. Per the task's authorized fallback, this asserts
+/// the single-request attempt number (one physical attempt that fails, so the success path -- and the
+/// gap -- is never reached) plus `S3::seededAttemptNumber`'s arithmetic directly.
+TEST_F(WBS3Test, S3RequestAttemptSeedReadHeaderSequence)
+{
+    for (const auto [seed, expected] : {std::pair<size_t, size_t>{0, 1}, {2, 2}})
+    {
+        client->attempts_seen.clear();
+        setInjectionModel(std::make_shared<MockS3::GetObjectFailOnceIngection>());
+        ReadSettings read_settings;
+        read_settings.object_storage_attempt_number = seed;
+        S3::S3RequestSettings request_settings;
+        request_settings[S3RequestSetting::max_single_read_retries] = 1;   /// exactly one physical attempt
+        ReadBufferFromS3 buffer(client, bucket, "seeded", "", request_settings, read_settings);
+        std::string out;
+        EXPECT_THROW(readStringUntilEOF(out, buffer), DB::Exception);
+        ASSERT_EQ(client->attempts_seen.size(), 1u);
+        EXPECT_EQ(client->attempts_seen[0], expected);
+    }
+
+    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/0, /*local=*/1), 1u);
+    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/0, /*local=*/2), 2u);
+    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/2, /*local=*/1), 2u);
+    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/2, /*local=*/2), 3u);
+}
+
+TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
+{
+    WriteSettings write_settings;
+    write_settings.object_storage_attempt_number = 3;
+    client->attempts_seen.clear();
+    {
+        auto buffer = getWriteBuffer("seeded_put", write_settings);
+        buffer->write('A');
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }
+    ASSERT_FALSE(client->attempts_seen.empty());
+    EXPECT_EQ(client->attempts_seen.front(), 3u);
+    /// Seed 0 adds no header: the attempt number reads back as 1 (the SDK's default).
+    client->attempts_seen.clear();
+    {
+        auto buffer = getWriteBuffer("unseeded_put");
+        buffer->write('A');
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }
+    EXPECT_EQ(client->attempts_seen.front(), 1u);
+}
+
+TEST_F(WBS3Test, S3RequestAttemptSeedListPagesCarryTheSeed)
+{
+    auto & bucket_store = client->store->GetBucketStore(bucket);
+    for (int i = 0; i < 5; ++i)
+        bucket_store.PutObject(fmt::format("p/{}", i), "x");
+    client->attempts_seen.clear();
+    auto iterator = std::make_shared<S3IteratorAsync>(bucket, "p/", client, /*max_list_size=*/2, /*with_tags=*/false,
+                                                      std::optional<std::string>("p/0"), /*attempt_seed=*/2);
+    size_t seen = 0;
+    for (; iterator->isValid(); iterator->next())
+        ++seen;
+    EXPECT_EQ(seen, 4u);
+    ASSERT_EQ(client->attempts_seen.size(), 2u);   /// the initial page and one rebuilt page
+    EXPECT_EQ(client->attempts_seen[0], 2u);
+    EXPECT_EQ(client->attempts_seen[1], 2u);
 }
 
 TEST_P(SyncAsync, EmptyFile) {

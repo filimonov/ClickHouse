@@ -8,6 +8,7 @@
 
 #include <IO/S3Common.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3IteratorAsync.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -143,111 +144,6 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
         tryLogCurrentException(__PRETTY_FUNCTION__, msg());
     }
 }
-
-}
-
-namespace
-{
-
-class S3IteratorAsync final : public IObjectStorageIteratorAsync
-{
-public:
-    S3IteratorAsync(
-        const std::string & bucket_,
-        const std::string & path_prefix,
-        std::shared_ptr<const S3::Client> client_,
-        size_t max_list_size,
-        bool with_tags_,
-        const std::optional<std::string> & start_after_)
-        : IObjectStorageIteratorAsync(
-            CurrentMetrics::ObjectStorageS3Threads,
-            CurrentMetrics::ObjectStorageS3ThreadsActive,
-            CurrentMetrics::ObjectStorageS3ThreadsScheduled,
-            ThreadName::S3_LIST_POOL)
-        , client(client_)
-        , request(std::make_unique<S3::ListObjectsV2Request>())
-        , with_tags(with_tags_)
-        , start_after_set(start_after_.has_value() && !start_after_->empty())
-    {
-        request->SetBucket(bucket_);
-        request->SetPrefix(path_prefix);
-        request->SetMaxKeys(static_cast<int>(max_list_size));
-        if (start_after_set)
-            request->SetStartAfter(*start_after_);
-    }
-
-    ~S3IteratorAsync() override
-    {
-        /// Deactivate background threads before resetting the request to avoid data race.
-        deactivate();
-        request.reset();
-        client.reset();
-    }
-
-private:
-    bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
-    {
-        ProfileEvents::increment(ProfileEvents::S3ListObjects);
-        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
-
-        Aws::S3::Model::ListObjectsV2Outcome outcome;
-
-        {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::S3ListObjectsMicroseconds);
-            outcome = client->ListObjectsV2(*request);
-        }
-
-        /// Outcome failure will be handled on the caller side.
-        if (outcome.IsSuccess())
-        {
-            const auto next_continuation_token = outcome.GetResult().GetNextContinuationToken();
-            if (start_after_set)
-            {
-                /// StartAfter should only be sent on the first request. AWS SDK doesn't provide
-                /// a way to clear "has been set" flag, so we rebuild request for pagination.
-                auto paginated_request = std::make_unique<S3::ListObjectsV2Request>();
-                paginated_request->SetBucket(request->GetBucket());
-                paginated_request->SetPrefix(request->GetPrefix());
-                paginated_request->SetMaxKeys(request->GetMaxKeys());
-                paginated_request->SetContinuationToken(next_continuation_token);
-                request = std::move(paginated_request);
-                start_after_set = false;
-            }
-            else
-            {
-                request->SetContinuationToken(next_continuation_token);
-            }
-
-            auto objects = outcome.GetResult().GetContents();
-            for (const auto & object : objects)
-            {
-                ObjectMetadata metadata{
-                    .size_bytes = static_cast<uint64_t>(object.GetSize()),
-                    .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
-                    .tags = {},
-                    .attributes = {},
-                };
-                if (with_tags)
-                    metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
-                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
-            }
-
-            /// It returns false when all objects were returned
-            return outcome.GetResult().GetIsTruncated();
-        }
-
-        throw S3Exception(outcome.GetError().GetErrorType(),
-                          "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
-                          quoteString(request->GetBucket()), quoteString(request->GetPrefix()),
-                          backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
-    }
-
-    std::shared_ptr<const S3::Client> client;
-    std::unique_ptr<S3::ListObjectsV2Request> request;
-    const bool with_tags;
-    bool start_after_set;
-};
 
 }
 
@@ -567,18 +463,19 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 
 ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatches(const StoredObject & object, const std::string & etag)
 {
-    return removeObjectIfTokenMatchesImpl(object, etag, client->get());
+    return removeObjectIfTokenMatchesImpl(object, etag, client->get(), /*attempt_seed=*/0);
 }
 
 ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatches(
     const StoredObject & object, const std::string & etag, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms)
 {
     return refreshAndRetryOnExpiredCredentials(
-        [&] { return removeObjectIfTokenMatchesImpl(object, etag, clientForRetryProfile(profile, request_timeout_ms)); });
+        [&] { return removeObjectIfTokenMatchesImpl(object, etag, clientForRetryProfile(profile, request_timeout_ms), /*attempt_seed=*/0); });
 }
 
 ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatchesImpl(
-    const StoredObject & object, const std::string & etag, const std::shared_ptr<const S3::Client> & used_client)
+    const StoredObject & object, const std::string & etag, const std::shared_ptr<const S3::Client> & used_client,
+    size_t attempt_seed)
 {
     S3::DeleteObjectRequest request;
     request.SetBucket(uri.bucket);
@@ -587,6 +484,8 @@ ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatchesImpl(
     /// This is a content-addressed exact-token DELETE: mark it eligible for the typed NativeConditional
     /// mode, so a GCS-native client can send the generation token this etag actually encodes.
     request.setNativeConditional();
+    if (attempt_seed != 0)
+        S3::setClickhouseAttemptNumber(request, attempt_seed);
 
     ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
 
@@ -628,12 +527,13 @@ void S3ObjectStorage::removeObjectsIfExistUnderProfile(
 {
     refreshAndRetryOnExpiredCredentials([&]
     {
-        removeObjectsIfExistImpl(objects, clientForRetryProfile(profile, request_timeout_ms));
+        removeObjectsIfExistImpl(objects, clientForRetryProfile(profile, request_timeout_ms), /*attempt_seed=*/0);
         return 0;
     });
 }
 
-void S3ObjectStorage::removeObjectsIfExistImpl(const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client)
+void S3ObjectStorage::removeObjectsIfExistImpl(
+    const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client, size_t attempt_seed)
 {
     if (objects.empty())
         return;
@@ -655,6 +555,8 @@ void S3ObjectStorage::removeObjectsIfExistImpl(const StoredObjects & objects, co
     S3::DeleteObjectsRequest request;
     request.SetBucket(uri.bucket);
     request.SetDelete(std::move(to_delete));
+    if (attempt_seed != 0)
+        S3::setClickhouseAttemptNumber(request, attempt_seed);
 
     ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
     auto outcome = used_client->DeleteObjects(request);

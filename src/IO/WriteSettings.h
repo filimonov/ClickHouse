@@ -85,6 +85,10 @@ struct WriteSettings
     /// `object_storage_retry_profile == SingleAttempt`. 0 = the storage's configured timeout.
     uint64_t object_storage_attempt_timeout_ms = 0;
 
+    /// The caller's own attempt number for the request built from these settings, 1-based; 0 leaves the
+    /// buffer's own numbering. A CAS reissue passes its count so the HTTP client sees attempt ≥ 2.
+    size_t object_storage_attempt_number = 0;
+
     /// Selects the transport requirement for an object storage copy; see `ObjectStorageCopyMode`.
     ObjectStorageCopyMode object_storage_copy_mode = ObjectStorageCopyMode::Default;
 

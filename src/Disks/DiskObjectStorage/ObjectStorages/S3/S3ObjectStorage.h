@@ -215,9 +215,11 @@ private:
         const std::shared_ptr<const S3::Client> & used_client) const;
 
     ConditionalRemoveResult removeObjectIfTokenMatchesImpl(
-        const StoredObject & object, const std::string & etag, const std::shared_ptr<const S3::Client> & used_client);
+        const StoredObject & object, const std::string & etag, const std::shared_ptr<const S3::Client> & used_client,
+        size_t attempt_seed);
 
-    void removeObjectsIfExistImpl(const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client);
+    void removeObjectsIfExistImpl(
+        const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client, size_t attempt_seed);
 
     std::shared_ptr<const S3::Client> clientForRetryProfile(ObjectStorageRetryProfile profile, uint64_t request_timeout_ms) const;
 
