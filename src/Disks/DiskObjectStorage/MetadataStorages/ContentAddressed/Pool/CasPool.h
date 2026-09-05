@@ -471,6 +471,11 @@ public:
     {
         mount_runtime.setArmMountFenceInterpositionHookForTest(std::move(hook));
     }
+    /// Swap the observation-wait hook after open -- see `CasMountRuntime::setWaitSleepForTest`.
+    void setWaitSleepForTest(std::function<void(uint64_t)> fn)
+    {
+        mount_runtime.setWaitSleepForTest(std::move(fn));
+    }
     /// The fence clock: CLOCK_BOOTTIME in milliseconds (includes VM-suspend time, unlike
     /// CLOCK_MONOTONIC — see `MountFence`). Consults the injected `config.boot_ms_fn` if set (tests),
     /// otherwise `bootMs`.

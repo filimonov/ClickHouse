@@ -1799,6 +1799,101 @@ TEST(CASPoolRemount, RemountArmAnchorsAtClaimAttemptNotResponseTime)
            "response-time reading taken after renewerStart/quiesceRefTablesForRemount";
 }
 
+/// ==== self-remount vs. a live successor carrying the same uuid under the unsafe-reclaim knob ====
+///
+/// `cas_unsafe_remount_no_delay` is consulted at exactly one site: the writable `Pool::open` claim.
+/// `Pool::tryRemountOnce` (self-remount after a fence loss) does NOT consult it -- an incarnation
+/// superseded by a duplicate-uuid process must still OBSERVE the slot's write-token before it may
+/// reclaim, or two processes sharing a uuid (a copied uuid file, a stalled predecessor restarted under
+/// the knob) would alternate authority indefinitely.
+
+TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    uint64_t boot_a = 0;
+    uint64_t boot_b = 0;
+    /// Mirrors `UncleanOpenPaysOnlyTheObservationWindow`'s tiny budget: the 1s lease TTL below is far
+    /// under the default `cas_request_budget`, so it must be scaled down to fit the required-timeout
+    /// inequality (attempt_timeout + safety_margin < lease TTL).
+    const CasRequestBudget tiny_budget{
+        .attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = std::nullopt};
+    auto config_for = [&](uint64_t * boot, bool unsafe)
+    {
+        return PoolConfig{
+            .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
+            .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+            .mount_renew_period = std::chrono::milliseconds(200),
+            .unsafe_remount_no_delay = unsafe,
+            .cas_request_budget = tiny_budget,
+            .boot_ms_fn = [boot] { return *boot; },
+            .wait_sleep_fn = [boot](uint64_t ms) { *boot += ms; },
+        };
+    };
+
+    PoolPtr pool_a = Pool::open(backend, config_for(&boot_a, /*unsafe=*/false));
+    ASSERT_TRUE(pool_a);
+    /// B carries the SAME (server_root_id, server_id) as A -- a copied uuid file -- and opens over A's
+    /// still-live slot under the operator's unsafe knob, reclaiming it at once (no observation).
+    PoolPtr pool_b = Pool::open(backend, config_for(&boot_b, /*unsafe=*/true));
+    ASSERT_TRUE(pool_b);
+    EXPECT_NE(pool_a->liveWriterEpoch(), pool_b->liveWriterEpoch())
+        << "the unsafe reclaim must have minted B a fresh epoch over A's slot";
+
+    /// A's next renewal meets the token guard: same uuid, a newer epoch now sits on the slot -- a
+    /// "superseded" conflict, terminal for A's renewer -- and A's local write fence trips closed.
+    EXPECT_THROW(pool_a->renewWatermarkOnce(), DB::Exception);
+    EXPECT_FALSE(pool_a->mayMutate());
+
+    /// A's self-remount now observes the slot's write-token. Drive B's renewal from INSIDE every one
+    /// of A's observation polls, so the token never stabilizes across the whole bounded observation --
+    /// the knob is not consulted by `tryRemountOnce` (only by `Pool::open`), so nothing else could let
+    /// A reclaim a slot a live successor keeps renewing.
+    size_t polls = 0;
+    pool_a->setWaitSleepForTest([&](uint64_t ms)
+    {
+        boot_a += ms;
+        ++polls;
+        boot_b += ms;
+        EXPECT_NO_THROW(pool_b->renewWatermarkOnce());
+    });
+    EXPECT_FALSE(pool_a->tryRemountOnce())
+        << "a superseded incarnation must never reclaim a live successor's slot";
+    EXPECT_GT(polls, 0u) << "the observation must have actually polled B's renewals";
+
+    const MountLease final_lease = decodeMountLease(readObj(*backend, pool_a->layout().mountKey("test"))->bytes);
+    EXPECT_EQ(final_lease.writer_epoch, pool_b->liveWriterEpoch())
+        << "the mount slot must still belong to B's incarnation -- A never reclaimed it";
+}
+
+/// Cutoff-only fencing: with no renewals and no competing incarnation at all, crossing the armed
+/// deadline on the local BOOTTIME clock alone must fence a mount closed -- the mechanism
+/// `SupersededIncarnationDoesNotReclaimALiveSuccessor` above relies on is not special-cased to a
+/// renewal conflict; the plain boot-clock cutoff fences unconditionally.
+TEST(CASMountRemount, CutoffFencesWithoutRenewals)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    uint64_t boot = 0;
+    const CasRequestBudget tiny_budget{
+        .attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = std::nullopt};
+    PoolPtr store = Pool::open(backend, PoolConfig{
+        .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
+        .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+        .mount_renew_period = std::chrono::milliseconds(200),
+        .cas_request_budget = tiny_budget,
+        .boot_ms_fn = [&] { return boot; },
+        .wait_sleep_fn = [&](uint64_t ms) { boot += ms; },
+    });
+    ASSERT_TRUE(store);
+    EXPECT_TRUE(store->mayMutate()) << "freshly armed at open, well within the ttl";
+
+    /// No renewals at all -- advance the boot clock past the armed deadline (open's claim anchor plus
+    /// the lease ttl) on this incarnation's own clock alone.
+    boot += 1001;
+    EXPECT_FALSE(store->mayMutate())
+        << "crossing the armed deadline must fence closed on the boot clock alone, with no renewal "
+           "conflict needed to trip it";
+}
+
 /// ==== rev.6 Task 5: clean-release drain gates the farewell marker ====
 
 namespace
