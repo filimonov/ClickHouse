@@ -274,9 +274,8 @@ public:
 
     /// Same, under a chosen retry profile, with `request_timeout_ms` bounding one attempt of it
     /// (0 = the storage's own timeout) and `connect_timeout_cap_ms` capping that attempt's connect
-    /// (0 = no cap; Task B3 folds these into one context). A storage that cannot execute the profile
-    /// must refuse: a caller that asked for one attempt has its own deadline, and a transparently
-    /// retried request would outlive it.
+    /// (0 = no cap). A storage that cannot execute the profile must refuse: a caller that asked for one
+    /// attempt has its own deadline, and a transparently retried request would outlive it.
     virtual ObjectStorageIteratorPtr iterate(
         const std::string & path_prefix,
         size_t max_keys,

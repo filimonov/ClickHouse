@@ -238,7 +238,9 @@ public:
     virtual uint64_t attemptTimeoutMs() const { return 0; }
 
     /// What one attempt may cost end to end, connect included; the contract reserves THIS. A backend
-    /// with no connect notion answers its attempt timeout.
+    /// with no connect notion answers its attempt timeout. A decorator that forwards `attemptTimeoutMs`
+    /// to an inner backend must forward THIS too -- the default falls back to `attemptTimeoutMs`, which
+    /// would silently drop the inner backend's connect contribution.
     virtual uint64_t attemptEnvelopeMs() const { return attemptTimeoutMs(); }
 
     /// Asks the storage to re-acquire credentials. TRUE when fresh ones were installed, so the

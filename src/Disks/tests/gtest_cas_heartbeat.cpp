@@ -82,7 +82,7 @@ void seedOwnClaim(CasOperation & op, const Layout & l, const String & srid, UInt
     ASSERT_EQ(claimMount(op, l, srid, uuid, epoch, now_ms, ttl_ms).kind, MountClaimResult::Claimed);
 }
 
-/// Not `final`: `EnvelopeEatingBackend` (Task B2's envelope-cutoff test, below) derives from it to
+/// Not `final`: `EnvelopeEatingBackend` (the envelope-cutoff test below) derives from it to
 /// reuse its `Attempt`/`attempts` bookkeeping while overriding `write`/`read` with its own always-fail
 /// behavior instead of the scripted-action queue.
 class RenewalScriptBackend : public InMemoryBackend
@@ -1091,9 +1091,9 @@ TEST(CASHeartbeat, WallClockStepsAndBootSuspendCannotExtendAuthority)
     EXPECT_TRUE(backend->attempts.empty()) << "suspend-sized BOOTTIME overshoot must close admission";
 }
 
-/// Task B2 (CAS R2 series): every attempt costs the whole envelope (attempt 100 + 2 * cap 50 = 200 ms)
-/// and fails ambiguously. Under a 1000 ms lease with a 100 ms margin the renewal must stop issuing
-/// before the cutoff rather than start an attempt that cannot finish inside it.
+/// Every attempt costs the whole envelope (attempt 100 + 2 * cap 50 = 200 ms) and fails ambiguously.
+/// Under a 1000 ms lease with a 100 ms margin the renewal must stop issuing before the cutoff rather
+/// than start an attempt that cannot finish inside it.
 namespace
 {
 /// Bypasses `RenewalScriptBackend`'s scripted-action queue for a guarded mount write and instead

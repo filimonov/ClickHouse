@@ -1,8 +1,8 @@
 #pragma once
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestBudget.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <deque>
-#include <limits>
 #include <map>
 #include <mutex>
 
@@ -107,13 +107,12 @@ public:
     /// The budget for one attempt of a read-class request, as configured by the mount.
     uint64_t attemptTimeoutMs() const override { return attempt_timeout_ms; }
     /// What one attempt may cost end to end, connect included: the attempt timeout plus two connect
-    /// caps (TCP, then TLS), saturating. See `CasRequestBudget::attemptEnvelopeMs`.
+    /// caps (TCP, then TLS), saturating. Delegates to `CasRequestBudget::attemptEnvelopeMs` (the single
+    /// definition of this formula) rather than re-deriving it here.
     uint64_t attemptEnvelopeMs() const override
     {
-        const uint64_t connects = connect_timeout_cap_ms > std::numeric_limits<uint64_t>::max() / 2
-            ? std::numeric_limits<uint64_t>::max() : 2 * connect_timeout_cap_ms;
-        return attempt_timeout_ms > std::numeric_limits<uint64_t>::max() - connects
-            ? std::numeric_limits<uint64_t>::max() : attempt_timeout_ms + connects;
+        return CasRequestBudget{.attempt_timeout_ms = attempt_timeout_ms, .connect_timeout_cap_ms = connect_timeout_cap_ms}
+            .attemptEnvelopeMs();
     }
     /// The frozen connect cap this backend was constructed with; see the constructor.
     uint64_t connectTimeoutCapMs() const { return connect_timeout_cap_ms; }

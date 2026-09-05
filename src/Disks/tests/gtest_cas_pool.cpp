@@ -2407,32 +2407,48 @@ TEST(CASMountOpenWaits, FencedPriorReclaimsWithoutAnyWait)
         << "a certified-dead predecessor needs neither the observation window nor any grace period";
 }
 
-/// Task B2 (CAS R2 series): the open-time publication horizon must reserve TWO attempt envelopes
-/// (connect cap included), not two bare attempt timeouts -- a slow connect could otherwise overrun the
-/// reservation the horizon check was guarding. `background_watermark` defaults false (not set below),
-/// so `CasPool.cpp`'s `renewal_window_ms` ternary takes its no-period branch: `2 * attemptEnvelopeMs()`.
+/// The open-time publication horizon must reserve TWO attempt envelopes (connect cap included), not
+/// two bare attempt timeouts -- a slow connect could otherwise overrun the reservation the horizon
+/// check was guarding. `background_watermark` defaults false (not set below), so `CasPool.cpp`'s
+/// `renewal_window_ms` ternary takes its no-period branch: `2 * attemptEnvelopeMs()`. The check is also
+/// STRICT (refuses equality), matching `CasMountRuntime::admit`.
 TEST(CASMountOpenWaits, PublicationHorizonUsesTheEnvelope)
 {
-    /// attempt 100, cap 100: envelope = 100 + 2*100 = 300, so 2*envelope = 600. The old code reserved
-    /// 2*attempt = 200. `boot_ms_fn` costs 100 ms per read (models a slow claim); empirically, the claim
-    /// path's own anchor read and the horizon's `now_boot_ms` read are five reads apart (500 ms drift),
-    /// leaving `safe_deadline(TTL 1000 - margin 50 = 950) - now(500) = 450`: 200 fits, 600 does not, so
-    /// the open must re-anchor synchronously (one extra mount write) before arming.
-    auto b = std::make_shared<DB::Cas::tests::CountingBackend>();
-    Layout l{"p"};
-    DB::Cas::tests::seedPoolMetaForRestart(*b);
-    uint64_t fake_boot = 0;
-    PoolPtr store;
-    ASSERT_NO_THROW(store = Pool::open(b, PoolConfig{
-        .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
-        .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
-        .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 100, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 100},
-        .boot_ms_fn = [&] { const uint64_t now = fake_boot; fake_boot += 100; return now; },
-        .wait_sleep_fn = [&](uint64_t ms) { fake_boot += ms; },
-    }));
-    ASSERT_TRUE(store);
-    /// Two mount writes: the claim and the synchronous re-anchor.
-    EXPECT_GE(b->putOverwriteCount(l.mountKey("test")) + b->putCount(l.mountKey("test")), 2u);
+    /// Opens with a boot clock costing `per_call_ms` per read (models a faster or slower claim) and
+    /// returns how many times the mount key was written. attempt 100, cap 100: envelope =
+    /// 100 + 2*100 = 300, so 2*envelope = 600; the old code reserved 2*attempt = 200. Empirically the
+    /// claim path's own anchor read and the horizon check's own `now_boot_ms` read are five reads apart,
+    /// so `remaining = safe_deadline(TTL 1000 - margin 50 = 950) - now = 950 - 5 * per_call_ms`.
+    const auto mountWriteCount = [](uint64_t per_call_ms) -> uint64_t
+    {
+        auto b = std::make_shared<DB::Cas::tests::CountingBackend>();
+        Layout l{"p"};
+        DB::Cas::tests::seedPoolMetaForRestart(*b);
+        uint64_t fake_boot = 0;
+        PoolPtr store;
+        store = Pool::open(b, PoolConfig{
+            .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
+            .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+            .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 100, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 100},
+            .boot_ms_fn = [&] { const uint64_t now = fake_boot; fake_boot += per_call_ms; return now; },
+            .wait_sleep_fn = [&](uint64_t ms) { fake_boot += ms; },
+        });
+        if (!store)
+            return 0;
+        return b->putOverwriteCount(l.mountKey("test")) + b->putCount(l.mountKey("test"));
+    };
+
+    /// remaining = 945 (per_call_ms=1): both 2*attempt(200) and 2*envelope(600) fit -- two writes (the
+    /// claim's own reclaim, then the renewer's adopt) and no re-anchor.
+    EXPECT_EQ(mountWriteCount(1), 2u) << "a horizon that fits both windows must not re-anchor";
+    /// remaining = 450 (per_call_ms=100): 2*attempt(200) fits, 2*envelope(600) does not -- the
+    /// re-anchor costs one extra write. This is the discriminator: reverting the reservation to
+    /// 2*attempt would make this case behave like the one above (two writes).
+    EXPECT_EQ(mountWriteCount(100), 3u) << "the old 2*attempt window fit here; only the envelope window must redo";
+    /// remaining = 600 (per_call_ms=70) exactly equals 2*envelope: STRICT ("<", not "<=") refuses
+    /// equality too, so this must also redo -- reverting the strict comparison to "<=" would make this
+    /// case behave like the fits-both case (two writes).
+    EXPECT_EQ(mountWriteCount(70), 3u) << "an exact boundary (renewal_window_ms == remaining) must be refused, not accepted";
 }
 
 /// Same reservation change as `PublicationHorizonUsesTheEnvelope` above, exercised through the remount
@@ -2484,8 +2500,14 @@ TEST(CASPoolRemount, RemountRenewerRedoUsesTheEnvelope)
     /// 450 ms quiescence leaves remaining = TTL(1000) - margin(50) - 450 = 500: the old
     /// period + 2*attempt (300) window fit that, but the new period + 2*envelope (700) window does not
     /// -- so only the envelope-based check must redo (validation: 100 + 600 + 50 = 750 < 1000).
-    EXPECT_GT(remountConditionalMountWrites(450), remountConditionalMountWrites(0))
+    const uint64_t control = remountConditionalMountWrites(0);
+    EXPECT_GT(remountConditionalMountWrites(450), control)
         << "a quiescence that fits the old attempt-only window but not the envelope window must still cost the redo";
+    /// A 250 ms quiescence leaves remaining = 950 - 250 = 700, exactly equal to
+    /// period + 2*envelope (700): STRICT ("<", not "<=") refuses equality too, so this must also
+    /// redo -- reverting the strict comparison to "<=" would make this case behave like the control.
+    EXPECT_GT(remountConditionalMountWrites(250), control)
+        << "an exact boundary (renewal_window_ms == remaining) must be refused, not accepted";
 }
 
 namespace

@@ -15,10 +15,9 @@
 #include <memory>
 #include <utility>
 
-/// Task B2 (CAS R2 series, "one attempt envelope, everywhere"): the single-attempt client clone must
-/// cap its connect timeout at the value the mount froze at open, never at the disk's (possibly wider,
-/// possibly reloaded, possibly unbounded) own connect timeout. See
-/// docs/superpowers/specs/2026-09-05-cas-adaptive-first-attempt-timeout-design.md decision 3.
+/// The single-attempt client clone must cap its connect timeout at the value the mount froze at open,
+/// never at the disk's (possibly wider, possibly reloaded, possibly unbounded) own connect timeout.
+/// See docs/superpowers/specs/2026-09-05-cas-adaptive-first-attempt-timeout-design.md decision 3.
 
 namespace
 {
@@ -97,12 +96,12 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
     EXPECT_EQ(reloaded->getSingleAttemptClient(5000, 1000)->getClientConfiguration().connectTimeoutMs, 1000);
 }
 
-/// Test 6e's SNAPSHOT half (the wiring half -- every verb's clone carrying the recorded pair through
-/// `ContentAddressedMetadataStorage`'s pool_config -- needs Task B3's context struct or a scripted S3
-/// backend able to complete a full Native pool bootstrap, neither of which is available from
-/// `src/Disks/tests` today; see the Task B2 report for the deviation). What IS testable without a live
-/// pool open is the freeze computation itself: `ContentAddressedMetadataStorage::freezeConnectTimeoutCapMs`
-/// is the exact function `openPoolView` calls to build `pool_config.cas_request_budget.connect_timeout_cap_ms`.
+/// This covers the SNAPSHOT half only: every verb's clone carrying the recorded pair through
+/// `ContentAddressedMetadataStorage`'s pool_config needs a context struct threading the cap to each
+/// verb, or a scripted S3 backend able to complete a full Native pool bootstrap -- neither is available
+/// from `src/Disks/tests` today. What IS testable without a live pool open is the freeze computation
+/// itself: `ContentAddressedMetadataStorage::freezeConnectTimeoutCapMs` is the exact function
+/// `openPoolView` calls to build `pool_config.cas_request_budget.connect_timeout_cap_ms`.
 TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
 {
     /// A base client with connectTimeoutMs = 1000 and cas_attempt_timeout_ms = 5000: the narrower of

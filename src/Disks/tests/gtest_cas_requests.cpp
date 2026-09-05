@@ -2,6 +2,7 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasEtag.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasTransportAccess.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInstrumentedBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestBudget.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRetry.h>
@@ -2530,6 +2531,33 @@ TEST(CASRequests, ReservationIsTheEnvelope)
     auto requests = makeRequests(backend, clock);
     auto op = requests.admit();
     /// A write reserves two envelopes: 14 s fits a 14 s window, 13.999 s does not.
+    EXPECT_TRUE(std::holds_alternative<Committed>(op.create("k", "v", Retry::within(14'000))));
+    const WriteResult refused = op.create("k2", "v", Retry::within(13'999));
+    const auto * gave_up = std::get_if<GaveUp>(&refused);
+    ASSERT_NE(gave_up, nullptr);
+    EXPECT_FALSE(gave_up->sent_any);
+}
+
+/// Every `Backend` decorator that forwards `attemptTimeoutMs` to an inner backend must forward
+/// `attemptEnvelopeMs` too, or the default (`attemptEnvelopeMs() { return attemptTimeoutMs(); }`)
+/// silently drops the inner backend's connect contribution -- exactly the gap `Pool::open`'s
+/// `InstrumentedBackend` wrapper had. Pin the forwarding through the same engine construction
+/// production uses.
+TEST(CASRequests, ReservationIsTheEnvelopeThroughInstrumentedBackend)
+{
+    struct EnvelopeBackend : InMemoryBackend
+    {
+        uint64_t attemptTimeoutMs() const override { return 5000; }
+        uint64_t attemptEnvelopeMs() const override { return 7000; }
+    };
+    FakeClock clock;
+    auto inner = std::make_shared<EnvelopeBackend>();
+    auto wrapped = std::make_shared<InstrumentedBackend>(inner);
+    ASSERT_EQ(wrapped->attemptTimeoutMs(), 5000u);
+    ASSERT_EQ(wrapped->attemptEnvelopeMs(), 7000u) << "InstrumentedBackend must forward the envelope, not fall back to the bare attempt timeout";
+    auto requests = makeRequests(wrapped, clock);
+    auto op = requests.admit();
+    /// Same boundary as ReservationIsTheEnvelope, now through the wrapper `Pool::open` actually uses.
     EXPECT_TRUE(std::holds_alternative<Committed>(op.create("k", "v", Retry::within(14'000))));
     const WriteResult refused = op.create("k2", "v", Retry::within(13'999));
     const auto * gave_up = std::get_if<GaveUp>(&refused);
