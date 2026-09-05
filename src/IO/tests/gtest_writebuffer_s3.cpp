@@ -35,6 +35,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
 #include <IO/SeekableReadBuffer.h>
 
@@ -1445,6 +1446,20 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
         getAsyncPolicy().setAutoExecute(true);
         buffer->finalize();
     }
+    EXPECT_EQ(client->attempts_seen.front(), 1u);
+
+    /// The native HEAD's seed: `S3ObjectStorage::tryGetObjectMetadataWithNativeToken`'s profile-aware
+    /// overload always passes 0 today (a later task supplies the engine's real seed, as for every
+    /// other verb here), so this exercises the seed-carrying layer directly --
+    /// `S3::getObjectInfoIfExists`, the same call `tryGetObjectMetadataImpl` makes.
+    client->attempts_seen.clear();
+    S3::getObjectInfoIfExists(*client, bucket, "seeded_head", /*version_id=*/{}, /*with_metadata=*/false,
+                               /*with_tags=*/false, ObjectStorageRequestMode::Default, /*attempt_seed=*/4);
+    ASSERT_EQ(client->attempts_seen.size(), 1u);
+    EXPECT_EQ(client->attempts_seen.front(), 4u);
+    client->attempts_seen.clear();
+    S3::getObjectInfoIfExists(*client, bucket, "unseeded_head");
+    ASSERT_EQ(client->attempts_seen.size(), 1u);
     EXPECT_EQ(client->attempts_seen.front(), 1u);
 }
 
