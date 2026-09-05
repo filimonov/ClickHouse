@@ -9,11 +9,13 @@ doc_type: 'design'
 
 # CAS: connection churn and ephemeral-port exhaustion {#cas-connection-churn-design}
 
-**Status:** DRAFT rev.2 (2026-09-05). rev.1 was reviewed by `codex` (`gpt-5.6-sol`, xhigh; record
-`tmp/pr2300-cicd-watch/review/codex_spec3.final.md`): 4 MAJOR — the causal reading of `Reset >> Expired`,
-the placement of CAS defaults after the client exists, a spike without a reproduced baseline, and a
-stale rustfs binary in the workspace — all folded in. Spec 3 of the R2 series; the measured part of
-BACKLOG.md "Issue #2243 CONFIRMED: local port exhaustion fences out the mount lease".
+**Status:** DRAFT rev.3 (2026-09-05). rev.1 was reviewed by `codex` (`gpt-5.6-sol`, xhigh; records
+`tmp/pr2300-cicd-watch/review/codex_spec3.final.md`, `codex_spec3r2.final.md`): rev.1 had 4 MAJOR — the
+causal reading of `Reset >> Expired`, the placement of CAS defaults after the client exists, a spike
+without a reproduced baseline, and a stale rustfs binary in the workspace; rev.2 = NO MAJOR, its
+MINORs folded here. Spec 3 of the R2 series; the measured part of
+https://github.com/Altinity/ClickHouse/issues/2243 (the CAS backlog entry "Issue #2243 CONFIRMED: local
+port exhaustion fences out the mount lease" lives in the master worktree's `docs/superpowers/cas/BACKLOG.md`).
 
 ## What was measured, and what it does and does not say {#measured}
 
@@ -34,10 +36,17 @@ minute at the start of the concurrent-selects phase. The backlog's #2243 reading
 
 ## Decision, in order {#decision}
 
-1. **Reset and Expired by reason.** New ProfileEvents in `HTTPConnectionPool.cpp` split `Reset` into
-   `disconnected`, `must_reconnect`, `incomplete_response`, `buffered`, `store_limit`,
-   `preserve_exception`, and `Expired` into `age`, `max_requests`, `stale_peer`. Same file, same
-   two functions, one increment per branch. This is the only code change made before the spike.
+1. **Reset and Expired by reason.** New DISK-only ProfileEvents in `HTTPConnectionPool.cpp`. In
+   `atConnectionDestroy` (returned connections), after the existing `max_requests` check and in this
+   order: `DiskConnectionsResetDisconnected`, `DiskConnectionsResetKeepAliveAge`
+   (`isKeepAliveExpired(getKeepAliveReliability())`, the client's own `0.9 ×` age),
+   `DiskConnectionsResetResponseNotKeepAlive` (the residual `mustReconnect`: server `Connection: close`),
+   `DiskConnectionsResetIncompleteRequestOrResponse`, `DiskConnectionsResetUnreadBufferedData`,
+   `DiskConnectionsResetStoreLimit`, `DiskConnectionsResetPreserveException`; `Expired` from that path
+   is `DiskConnectionsExpiredMaxRequests`. In `wipeExpiredImpl` (stored connections), keeping the
+   existing age-before-stale precedence: `DiskConnectionsExpiredAge`, `DiskConnectionsExpiredStalePeer`.
+   One increment per branch, the aggregate counters untouched. This is the only code change made
+   before the spike.
 2. **The spike, as an A/B with a reproduced baseline.** Stand: the lane's rustfs launched as
    `clickhouse_proc.py::start_rustfs` does, with `rustfs --version` asserted to be `1.0.0-rc.3` (the
    workspace's cached `ci/tmp/rustfs` is `1.0.0-beta.9`; the runner downloads only when the file is
@@ -94,7 +103,9 @@ XML > changed `s3_http_keep_alive_*` > CAS defaults), and the effective `0.8 ×`
    counters exist.
 2. The spike (step 2), recorded in this spec's implementation record as a before/after table with the
    reason breakdown; the shipped values are taken from it.
-3. `S3ObjectStorageProfile.CasDefaultsApplyOnlyWhenUnset` (`gtest_aws_s3_client.cpp` / factory test): a
+3. `S3ObjectStorageProfile.CasDefaultsApplyOnlyWhenUnset` (new `src/Disks/tests/gtest_cas_s3_client_profile.cpp`,
+   exercising the public `S3ObjectStorage` configuration — the `src/IO/S3/tests` location would cross
+   the stated boundary): a
    `metadata_type = cas` disk without the settings gets the profile values; explicit disk values and a
    changed `s3_http_keep_alive_timeout` win; a non-CAS disk is untouched; `applyNewSettings` preserves
    the profile.
