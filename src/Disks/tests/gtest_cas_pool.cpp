@@ -2535,6 +2535,53 @@ TEST(CASMountOpenWaits, CleanOpenSkipsAllWaits)
         << "a clean farewell (Task 5) needs no observation window";
 }
 
+namespace
+{
+/// Reports the SHIPPED PRODUCTION default envelope (`CasRequestBudget{}`'s own defaults --
+/// `attempt_timeout_ms=5000`, `connect_timeout_cap_ms=1000` -> `attemptEnvelopeMs()=7000`), so the
+/// teardown below pays the SAME two-envelope reservation (14000 ms) production pays, not the
+/// near-zero envelope a bare `InMemoryBackend` reports by default.
+struct DefaultBudgetEnvelopeBackend : InMemoryBackend
+{
+    uint64_t attemptTimeoutMs() const override { return 5000; }
+    uint64_t attemptEnvelopeMs() const override { return 7000; }
+};
+}
+
+/// `CleanOpenSkipsAllWaits` above proves a clean farewell skips the observation window, but its bare
+/// `InMemoryBackend` reports a zero attempt envelope, so its teardown never exercises the farewell's
+/// own policy window against a write's real cost. Pin the shipped default budget specifically: a
+/// window that cannot admit the write's `2 * attemptEnvelopeMs()` reservation refuses the farewell
+/// before its first attempt, and the successor below then pays a full incarnation-stability
+/// observation instead of reclaiming instantly.
+TEST(CASMountOpenWaits, CleanTeardownUnderDefaultBudgetLeavesAFarewell)
+{
+    auto b = std::make_shared<DefaultBudgetEnvelopeBackend>();
+    auto predecessor = Pool::open(b, PoolConfig{
+        .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test"});
+    predecessor.reset();   /// drives ~Pool(): with nothing in flight, this is the graceful-shutdown farewell.
+
+    const Layout layout{"p"};
+    const auto got = readObj(*b, layout.mountKey("test"));
+    ASSERT_TRUE(got.has_value());
+    const MountLease lease = decodeMountLease(got->bytes);
+    EXPECT_EQ(lease.min_active_build_sequence, std::numeric_limits<uint64_t>::max())
+        << "the farewell's policy window must admit the write's own two-envelope reservation at the "
+           "shipped default budget (2 * 7000 ms) -- otherwise a clean teardown never hands the mount "
+           "slot back";
+
+    std::vector<uint64_t> waits;
+    PoolPtr successor;
+    ASSERT_NO_THROW(
+        successor = Pool::open(b, PoolConfig{
+            .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
+            .wait_sleep_fn = [&](uint64_t ms) { waits.push_back(ms); },
+        }));
+    ASSERT_TRUE(successor);
+    EXPECT_TRUE(waits.empty())
+        << "a clean farewell needs no observation window on reopen, even at the shipped default budget";
+}
+
 TEST(CASMountOpenWaits, FencedPriorReclaimsWithoutAnyWait)
 {
     auto b = std::make_shared<InMemoryBackend>();

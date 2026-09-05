@@ -295,6 +295,53 @@ TEST(CASHeartbeat, StopStampsExpiredAndFarewellSentinel)
     EXPECT_EQ(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
 }
 
+namespace
+{
+/// Reports the SHIPPED PRODUCTION defaults (`attempt_timeout_ms=5000`, two `connect_timeout_cap_ms=1000`
+/// caps -> `attemptEnvelopeMs()=7000`, `CasRequestBudget.cpp`'s own defaults) while landing every attempt
+/// immediately: the write's own success is not what is under test here, only whether the farewell's
+/// policy window is wide enough to admit one attempt in the first place.
+struct DefaultEnvelopeBackend : InMemoryBackend
+{
+    uint64_t attemptTimeoutMs() const override { return 5000; }
+    uint64_t attemptEnvelopeMs() const override { return 7000; }
+};
+}
+
+/// A write reserves two attempt envelopes before it starts (`CasOperation::writeLoop`'s
+/// `reservedFor(0, 2)`), so at the shipped defaults the farewell needs a policy window that admits
+/// 2 * 7000 = 14000 ms. A fixed window that predates that reservation (`kFarewellBudgetMs` alone is
+/// 10000 ms) refuses the write before its first attempt on every graceful shutdown: no farewell is
+/// published, and the next start pays a full incarnation-stability observation instead of reclaiming
+/// the slot instantly.
+TEST(CASHeartbeat, FarewellIsAdmittedUnderTheDefaultBudget)
+{
+    auto backend = std::make_shared<DefaultEnvelopeBackend>();
+    Layout layout("pool");
+    const String srid = "test";
+    const UInt128 uuid(0x1234);
+    uint64_t now_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops(backend, &boot_ms);
+    seedOwnClaim(ops.op, layout, srid, uuid, /*epoch=*/9, now_ms, /*ttl_ms=*/30000);
+
+    MountLeaseRenewer renewer(ops.mount, ops.farewell, layout, srid, uuid, /*writer_epoch=*/9,
+                            std::chrono::milliseconds(30000), [&] { return now_ms; },
+                            [] { return uint64_t{5}; }, {}, std::chrono::milliseconds(2000),
+                            [&] { return boot_ms; });
+    renewer.start();
+
+    now_ms = 2000;
+    EXPECT_NO_THROW(renewer.release())
+        << "the farewell's policy window must admit the write's own two-envelope reservation "
+           "(2 * 7000 ms with the shipped defaults) -- otherwise a clean shutdown never hands the "
+           "mount slot back and every restart pays a full incarnation-stability observation";
+
+    auto m = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
+    EXPECT_LE(m.expires_at_ms, now_ms);
+    EXPECT_EQ(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
+}
+
 /// Phase A (spec rev.4 2026-07-24): a confirmed renewal mismatch whose re-read shows OUR OWN
 /// (uuid, epoch), unfenced, is state UNCERTAINTY (an ambiguous landed renewal of ours, or a
 /// same-pair twin after epoch-state loss) — fail closed via fence + self-remount, never an

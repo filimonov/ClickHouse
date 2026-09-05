@@ -1287,9 +1287,22 @@ bool isCreatorFenceTerminal(CasOperation & op, const Layout & layout, const Stri
     return terminal;
 }
 
-/// The farewell's whole budget. It is deliberately short: a departing mount is holding shutdown open,
-/// and a slot it fails to hand back is fenced out by the next GC round anyway.
+/// The farewell's FLOOR, not its whole budget: a departing mount is holding shutdown open, so the
+/// window still wants to be short, but it can never be shorter than what the farewell's own write
+/// needs to send even one attempt. `terminate` below takes the larger of this and that requirement.
+/// A window below the requirement is strictly worse than a slightly longer shutdown: the write is
+/// refused before it tries the wire, the slot is left holding the departing incarnation, and the next
+/// start pays a full incarnation-stability observation (up to the mount lease TTL) instead of
+/// reclaiming instantly off a clean farewell.
 constexpr uint64_t kFarewellBudgetMs = 10'000;
+
+/// Slack added on top of the write's bare two-envelope reservation (see `terminate`). `fits` admits a
+/// write whose reservation exactly equals the remaining window, but only at the instant it is checked;
+/// with zero slack the farewell would be admitted only to immediately re-fail its own deadline check
+/// once the clock advances by even one millisecond. This mirrors `lease_safety_margin_ms`'s default
+/// (`CasRequestBudget.h`) -- the same order of magnitude already trusted elsewhere on this path for
+/// "admission-time arithmetic needs room to actually run, not just to pass at t=0".
+constexpr uint64_t kFarewellSlackMs = 2'000;
 
 MountLeaseRenewer::MountLeaseRenewer(
     CasRequests & mount_requests_, CasRequests & open_requests_, const Layout & layout_,
@@ -1716,7 +1729,15 @@ void MountLeaseRenewer::terminate(CasOperation & op)
         .min_active_build_sequence = std::numeric_limits<uint64_t>::max(),
         .write_attempt_id = newMountWriteAttemptId(),
     });
-    WriteResult written = op.replace(key, body, precondition(), Retry::within(kFarewellBudgetMs));
+    /// The farewell is admitted on `open_requests` (see `release`, which calls this via `open_requests.admit()`),
+    /// so its own reservation -- attempt plus the read that settles it, `reservedFor(0, 2)` in
+    /// `CasOperation::writeLoop` -- is exactly `2 * open_requests.attemptReservationMs()`. A window
+    /// below that value refuses the write before its first attempt, deterministically, on every call:
+    /// `kFarewellBudgetMs` alone predates the attempt-envelope reservation and can no longer be trusted
+    /// to admit it.
+    const uint64_t farewell_window_ms = std::max<uint64_t>(
+        kFarewellBudgetMs, 2 * open_requests.attemptReservationMs() + kFarewellSlackMs);
+    WriteResult written = op.replace(key, body, precondition(), Retry::within(farewell_window_ms));
 
     if (Committed * committed = std::get_if<Committed>(&written))
     {

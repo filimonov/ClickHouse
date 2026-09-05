@@ -187,6 +187,11 @@ public:
     void setSleepFnForTest(std::function<void(uint64_t)> sleep_ms_);
     void setAttemptReservationForTest(uint64_t ms) { attempt_reservation_ms = ms; }
 
+    /// What every write on this plane reserves before it starts an attempt (the backend's own attempt
+    /// envelope). A caller that derives its OWN policy window from a write's cost -- rather than from a
+    /// constant that predates this reservation -- reads it here instead of duplicating the backend call.
+    uint64_t attemptReservationMs() const { return attempt_reservation_ms; }
+
 private:
     friend class CasOperation;
     /// `CasOperation::owner` is a `CasRequests &`: `CasOperation`'s own friendship with `CasHotKeys`
