@@ -5,6 +5,7 @@
 #include <Poco/URI.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerRequestImpl.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
@@ -49,6 +50,7 @@ struct RequestOptions
     int overwrite_keep_alive_timeout = 0;
     int overwrite_keep_alive_max_requests = 10;
     bool response_no_keep_alive = false;
+    size_t trailing_garbage_bytes = 0;
 };
 
 size_t stream_copy_n(std::istream & in, std::ostream & out, std::size_t count = std::numeric_limits<size_t>::max())
@@ -108,6 +110,28 @@ public:
 
         if (params.slowdown_receive > 0)
             sleepForSeconds(params.slowdown_receive);
+
+        if (params.trailing_garbage_bytes > 0)
+        {
+            /// Hand-assemble the whole response (status line, headers, body, and trailing
+            /// garbage) into one buffer and send it as a single raw write, bypassing
+            /// response.send()'s own framed stream entirely. Two separate writes (the framed
+            /// response, then garbage direct to the socket) can arrive as two separate reads on
+            /// the client, leaving nothing buffered; one write removes that race, so the
+            /// client's HTTP_DEFAULT_BUFFER_SIZE (8 KiB) read-ahead reliably pulls the garbage
+            /// into its buffer alongside the response body.
+            std::string body(static_cast<size_t>(size), '\0');
+            request.stream().read(body.data(), size);
+
+            std::ostringstream raw_response;
+            response.write(raw_response);
+            raw_response << body << String(params.trailing_garbage_bytes, 'x');
+
+            auto & request_impl = static_cast<Poco::Net::HTTPServerRequestImpl &>(request);
+            String raw = raw_response.str();
+            request_impl.socket().sendBytes(raw.data(), static_cast<int>(raw.size()));
+            return;
+        }
 
         stream_copy_n(request.stream(), response.send(), size);
     }
@@ -215,6 +239,13 @@ protected:
     {
         auto opt = options->get();
         opt.response_no_keep_alive = value;
+        options->set(std::move(opt));
+    }
+
+    void setTrailingGarbageBytes(size_t value)
+    {
+        auto opt = options->get();
+        opt.trailing_garbage_bytes = value;
         options->set(std::move(opt));
     }
 
@@ -951,15 +982,21 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }
 
-/// Covers every branch of atConnectionDestroy() and wipeExpiredImpl() that this fixture can
-/// drive without a peer-side disconnect: reset_disconnected and expired_stale_peer need the
-/// server to sever the socket ahead of the negotiated keep-alive, which HTTPServer::stopAll(true)
-/// makes possible (see ResetDisconnectedReasonIsCounted and ExpiredStalePeerReasonIsCounted
-/// below), but once that is used the server is gone for the rest of the test, so those two are
-/// kept in their own tests. reset_unread_buffered_data (a fully-consumed logical response with
-/// bytes from a later request already buffered) needs real HTTP pipelining, and
-/// reset_preserve_exception needs a fault-injected throw from PooledConnection::create/assign or
-/// the stored_connections push; this fixture has no lever for either, so they are not covered.
+/// Covers every branch of atConnectionDestroy() and wipeExpiredImpl() except
+/// reset_preserve_exception: reset_disconnected and expired_stale_peer need the server to sever
+/// the socket ahead of the negotiated keep-alive, which HTTPServer::stopAll(true) makes possible
+/// (see ResetDisconnectedReasonIsCounted and ExpiredStalePeerReasonIsCounted below), but once
+/// that is used the server is gone for the rest of the test, so those two are kept in their own
+/// tests; reset_unread_buffered_data needs the mock server to append raw bytes after a complete
+/// response (see ResetUnreadBufferedDataReasonIsCounted below), also kept separate since it
+/// needs its own mock-handler wiring. reset_preserve_exception needs the try block's
+/// PooledConnection::create (or assign/notifySocketInode/the stored_connections push) to throw;
+/// the only throw site controllable from a test is atConnectionCreate's hard-limit check, but
+/// atConnectionDestroy always decrements total_connections_in_group for the connection being
+/// destroyed *before* attempting to create its storage wrapper, so that check can never see the
+/// group back at the hard limit at the moment it runs (confirmed empirically with hard_limit 1
+/// and 2, one and two connections held: both cases end up preserved, reset staying 0). This
+/// fixture has no lever for reset_preserve_exception, so it is not covered.
 TEST_F(ConnectionPoolTest, ResetAndExpiredReasonsAreCounted)
 {
     auto ka = Poco::Timespan(1, 0); // 1 second
@@ -1002,7 +1039,7 @@ TEST_F(ConnectionPoolTest, ResetAndExpiredReasonsAreCounted)
     ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.reset]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_disconnected]);
 
-    /// Max requests: the second request of a max_requests=1 session returns as expired(max_requests).
+    /// Max requests: the first request of a max_requests=1 session already returns as expired(max_requests).
     timeouts.withHTTPKeepAliveMaxRequests(1);
     {
         auto connection = pool->getConnection(timeouts, nullptr);
@@ -1122,4 +1159,28 @@ TEST_F(ConnectionPoolTest, ExpiredStalePeerReasonIsCounted)
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired]);
     ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired_stale_peer]);
     ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired_age]);
+}
+
+TEST_F(ConnectionPoolTest, ResetUnreadBufferedDataReasonIsCounted)
+{
+    auto pool = getDiskPool();
+    auto metrics = pool->getMetrics();
+
+    /// The server appends bytes after a complete, correctly-framed response, all as one raw
+    /// write (see trailing_garbage_bytes in the mock handler above). Poco's HTTPSession reads
+    /// ahead in HTTP_DEFAULT_BUFFER_SIZE (8 KiB) chunks regardless of how few bytes the caller
+    /// ultimately wants, so on a small response these trailing bytes end up sitting in the
+    /// client's internal buffer once the caller has consumed exactly Content-Length bytes:
+    /// isCompleted() is true (the declared response was received in full) but buffered() is
+    /// still nonzero.
+    setTrailingGarbageBytes(16);
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        echoRequest("Hello", *connection);
+    }
+    setTrailingGarbageBytes(0);
+
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_unread_buffered_data]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset_incomplete_request_or_response]);
 }
