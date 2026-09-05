@@ -2278,7 +2278,9 @@ TEST(CASRequestsConnectHint, ReissueMeetsPreconditionAndAdoptsOwnBytes)
         EXPECT_TRUE(std::holds_alternative<Conflict>(result));
         EXPECT_EQ(backend->getTotal(), 1u);
     }
-    /// The ORIGINAL ETag is still current after the hinted attempt: the reissue simply commits.
+    /// The ORIGINAL ETag is still current after the hinted attempt: the reissue meets a CLEAN 412 (the
+    /// store untouched, unlike sub-block 1's landed write), the settle read observes the original bytes
+    /// still there under the original ETag, and a further reissue is what actually commits.
     {
         FakeClock clock;
         auto backend = std::make_shared<CountingBackend>();
@@ -2286,13 +2288,20 @@ TEST(CASRequestsConnectHint, ReissueMeetsPreconditionAndAdoptsOwnBytes)
         auto op = requests.admit();
         const Etag seen = *orThrow(op.create("k", "v1", Retry::standard()), "create");
         backend->resetCounts();
-        backend->failNextWriteWith("k", connectHint());
+        backend->failNextWriteWith("k", connectHint());   /// attempt 1: hint, flat pause, no read
+        backend->refuseNextWrite("k");                    /// attempt 2: clean 412, store unchanged
         WriteResult result = op.replace("k", "v2", seen, Retry::standard());
         const auto * committed = std::get_if<Committed>(&result);
         ASSERT_NE(committed, nullptr);
         EXPECT_FALSE(committed->resolved_by_read);
-        EXPECT_EQ(committed->attempts_sent, 2u);
-        EXPECT_EQ(backend->getTotal(), 0u);
+        EXPECT_EQ(committed->attempts_sent, 3u);
+        EXPECT_EQ(backend->writeTotal(), 3u);
+        /// The read after attempt 2's 412 saw the precondition still satisfiable (the original ETag,
+        /// untouched), so the loop reissued instead of adopting -- exactly one read, not zero.
+        EXPECT_EQ(backend->getTotal(), 1u);
+        ASSERT_EQ(clock.sleeps.size(), 2u);
+        EXPECT_EQ(clock.sleeps[0], 50u);       /// the flat pause after attempt 1's hint
+        EXPECT_LE(clock.sleeps[1], 200u);      /// the backoff after attempt 2's settle read
     }
 }
 
@@ -2311,8 +2320,9 @@ TEST(CASRequestsConnectHint, OnceKeepsOneWriteAndOneRead)
     EXPECT_EQ(backend->writeTotal(), 1u);
     EXPECT_EQ(backend->getTotal(), 1u);
     EXPECT_TRUE(clock.sleeps.empty());
-    /// `Retry::once` never acts on the hint -- the counter means "hint acted on", not "hint seen".
-    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 0u);
+    /// The counter is "hint seen", recorded at classification: `Retry::once` never acts on it, but the
+    /// attempt's transport error still named a failed connection.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 1u);
 }
 
 TEST(CASRequestsConnectHint, EarlierAmbiguityStillSettlesByRead)
@@ -2351,6 +2361,53 @@ TEST(CASRequestsConnectHint, EarlierAmbiguityStillSettlesByRead)
     EXPECT_LE(clock.sleeps[0], 200u);     /// the backoff after attempt 1's ambiguity read
     EXPECT_EQ(clock.sleeps[1], 50u);      /// the flat pause after attempt 2's hint
     EXPECT_TRUE(hint_fired_on_second_attempt);
+}
+
+/// A single exception can be BOTH refusal-class (`isDefinitelyRefusedWrite` matches on the exception
+/// NAME, independent of the S3 error code) and hint-text (`isConnectFailureHint` matches on the code
+/// and the message): the classifier order, not the exception's shape, must decide which wins. An
+/// earlier ambiguity of this inner write keeps the refusal from ending the call, but that must never
+/// let the hint skip the read the earlier attempt still needs.
+TEST(CASRequestsConnectHint, RefusalAfterAnEarlierAmbiguitySettlesByRead)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    backend->injectAmbiguousWrite("k");           /// attempt 1: ordinary ambiguity -> read, backoff
+    /// Attempt 2's refusal-and-hint exception has to come from the hook, not a second
+    /// `failNextWriteWith`: the armed-failure queue is checked BEFORE the ambiguous-key injection on
+    /// every call, so a queued failure would win attempt 1 regardless of install order (see the sibling
+    /// `EarlierAmbiguityStillSettlesByRead` above). `writeTotal()` ticks before the request is served,
+    /// so it reads 2 while attempt 2 is in flight.
+    bool refusal_fired_on_second_attempt = false;
+    backend->onBeforeWrite("k", [&]
+    {
+        if (backend->writeTotal() == 2)
+        {
+            EXPECT_EQ(backend->getTotal(), 1u) << "attempt 1's ambiguity read must already have run";
+            refusal_fired_on_second_attempt = true;
+            throw DB::S3Exception(
+                "Poco::Exception. Code: 1000, e.code() = 99, Cannot assign requested address: 10.0.0.1:9000",
+                Aws::S3::S3Errors::NETWORK_CONNECTION, "MalformedXML");   /// refusal AND hint text
+        }
+    });
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    const auto hints_before = ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load();
+    WriteResult result = op.create("k", "v", Retry::standard());
+    const auto * committed = std::get_if<Committed>(&result);
+    ASSERT_NE(committed, nullptr);
+    EXPECT_EQ(committed->attempts_sent, 3u);
+    /// Two reads, one per settled attempt: a hint reissue for attempt 2 would have skipped its own
+    /// read and left this at 1.
+    EXPECT_EQ(backend->getTotal(), 2u);
+    ASSERT_EQ(clock.sleeps.size(), 2u);
+    EXPECT_LE(clock.sleeps[0], 200u);      /// backoff(1) after attempt 1's read
+    EXPECT_LE(clock.sleeps[1], 400u);      /// backoff(2) after attempt 2's read -- today's verdict,
+                                           /// never the flat 50 ms hint pause
+    EXPECT_TRUE(refusal_fired_on_second_attempt);
+    /// The refusal classification wins outright: a definite refusal is never a hint, so the counter
+    /// must not move even though the exception's code and text also match `isConnectFailureHint`.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 0u);
 }
 
 TEST(CASRequestsConnectHint, GatesRefuseTheReissue)

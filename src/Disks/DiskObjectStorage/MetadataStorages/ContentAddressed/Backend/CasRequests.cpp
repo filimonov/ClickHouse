@@ -933,12 +933,18 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             }
             /// A refusal that FOLLOWS an ambiguous attempt of this inner write proves nothing about that
             /// attempt, so it is settled by the read below instead of ending the call here.
-            if (!refreshed && isDefinitelyRefusedWrite(e) && !state.any_ambiguous)
+            const bool definitely_refused = !refreshed && isDefinitelyRefusedWrite(e);
+            if (definitely_refused && !state.any_ambiguous)
             {
                 ProfileEvents::increment(ProfileEvents::CASRequestRefused);
                 return Refused{e.code(), e.message(), state.attempts_sent};
             }
-            connect_hint = isConnectFailureHint(e);
+            /// A refusal-class exception is never a hint, even when an earlier ambiguity of this inner
+            /// write kept it from ending the call above: that earlier attempt's fate is what the read
+            /// below must settle, and a hint reissue would skip it.
+            connect_hint = !definitely_refused && isConnectFailureHint(e);
+            if (connect_hint)
+                ProfileEvents::increment(ProfileEvents::CASRequestConnectFailureHint);
         }
         catch (const std::exception & e)
         {
@@ -971,12 +977,13 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             continue;
         }
 
-        /// The failure text named a failed CONNECTION. A read now would meet the same broken condition,
-        /// so the reissue itself is the cheaper probe: the attempt stays ambiguous (`any_ambiguous` is
-        /// set above), and if the reissue meets a refused precondition the read below settles it.
+        /// The failure text named a failed CONNECTION -- counted above, at classification, whether or
+        /// not this policy or the deadline/fence gates below let the reissue actually happen. A read now
+        /// would meet the same broken condition, so the reissue itself is the cheaper probe: the attempt
+        /// stays ambiguous (`any_ambiguous` is set above), and if the reissue meets a refused precondition
+        /// the read below settles it.
         if (connect_hint && !policy.single_attempt)
         {
-            ProfileEvents::increment(ProfileEvents::CASRequestConnectFailureHint);
             if (auto given_up = pauseFlat(state, bound))
                 return *given_up;
             continue;
