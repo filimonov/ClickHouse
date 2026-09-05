@@ -212,7 +212,8 @@ private:
         const std::string & path,
         bool with_tags,
         ObjectStorageRequestMode request_mode,
-        const std::shared_ptr<const S3::Client> & used_client) const;
+        const std::shared_ptr<const S3::Client> & used_client,
+        size_t attempt_seed = 0) const;
 
     ConditionalRemoveResult removeObjectIfTokenMatchesImpl(
         const StoredObject & object, const std::string & etag, const std::shared_ptr<const S3::Client> & used_client,

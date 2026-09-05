@@ -724,7 +724,8 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataWithNativeTok
                 path,
                 with_tags,
                 ObjectStorageRequestMode::NativeConditional,
-                clientForRetryProfile(profile, request_timeout_ms));
+                clientForRetryProfile(profile, request_timeout_ms),
+                /*attempt_seed=*/0);
         });
 }
 
@@ -732,11 +733,12 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataImpl(
     const std::string & path,
     bool with_tags,
     ObjectStorageRequestMode request_mode,
-    const std::shared_ptr<const S3::Client> & used_client) const
+    const std::shared_ptr<const S3::Client> & used_client,
+    size_t attempt_seed) const
 {
     auto settings_ptr = s3_settings.get();
     auto object_info = S3::getObjectInfoIfExists(
-        *used_client, uri.bucket, path, {}, /* with_metadata= */ true, with_tags, request_mode);
+        *used_client, uri.bucket, path, {}, /* with_metadata= */ true, with_tags, request_mode, attempt_seed);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
