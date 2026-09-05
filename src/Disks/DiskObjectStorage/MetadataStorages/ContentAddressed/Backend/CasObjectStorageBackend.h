@@ -197,9 +197,11 @@ public:
     /// Settings for a Native COMPARE/CREATE write (create-if-absent, compare-and-set): mark the request
     /// conditional, make exactly one attempt at every retry layer, skip the racy post-upload
     /// existence/size check, and force a single PUT on generation stores because GCS does not
-    /// enforce the condition on multipart completion.
-    WriteSettings conditionalWriteSettings() const;
-    WriteSettings conditionalWriteSettingsForTest() const { return conditionalWriteSettings(); }
+    /// enforce the condition on multipart completion. `attempt_no` is the engine's own 1-based
+    /// physical-attempt count (see `TransportAccess::attemptNo`), carried into
+    /// `object_storage_attempt_number` so the HTTP client sees a reissue as attempt >= 2.
+    WriteSettings conditionalWriteSettings(size_t attempt_no) const;
+    WriteSettings conditionalWriteSettingsForTest() const { return conditionalWriteSettings(/*attempt_no=*/1); }
     /// Override the emulated backend's wall clock for deterministic expiry tests.
     void setEmuNowNsForTest(uint64_t now_ns);
     /// Return the guarded per-key token-state size for expiry tests.
@@ -217,20 +219,30 @@ private:
     {
         return single_attempt_control_plane ? ObjectStorageRetryProfile::SingleAttempt : ObjectStorageRetryProfile::Default;
     }
-    /// The read settings a request carries: the native conditional dialect, plus the retry profile and
-    /// per-attempt bound its caller is entitled to.
-    ReadSettings readSettingsFor(ObjectStorageRetryProfile profile, uint64_t timeout_ms) const;
+    /// The control-request context every read-class primitive builds from `access.attemptNo()`: this
+    /// backend's own retry profile, attempt timeout and frozen connect cap, plus the caller's attempt
+    /// number -- see `ObjectStorageControlRequest`.
+    ObjectStorageControlRequest controlRequest(size_t attempt_no) const
+    {
+        return ObjectStorageControlRequest{
+            .profile = controlPlaneProfile(),
+            .attempt_timeout_ms = attempt_timeout_ms,
+            .connect_timeout_cap_ms = connect_timeout_cap_ms,
+            .attempt_number = attempt_no};
+    }
+    /// The read settings a request carries: the native conditional dialect, plus the control-request
+    /// context (retry profile, per-attempt bound and connect cap, attempt number) its caller built.
+    ReadSettings readSettingsFor(const ObjectStorageControlRequest & request) const;
 
     /// The bodies a keyed primitive and its legacy override share. They differ in one thing: the
-    /// keyed call passes `controlPlaneProfile(), attempt_timeout_ms`, the legacy one the storage's
-    /// defaults. The legacy arguments disappear with the legacy methods.
-    std::optional<Raw> readUnder(const String & key, ObjectStorageRetryProfile profile, uint64_t timeout_ms);
-    std::optional<RawMeta> headUnder(const String & key, ObjectStorageRetryProfile profile, uint64_t timeout_ms);
+    /// keyed call passes `controlRequest(access.attemptNo())`, the legacy one the storage's defaults.
+    /// The legacy arguments disappear with the legacy methods.
+    std::optional<Raw> readUnder(const String & key, const ObjectStorageControlRequest & request);
+    std::optional<RawMeta> headUnder(const String & key, const ObjectStorageControlRequest & request);
     RawListPage listUnder(const String & prefix, const String & cursor, size_t limit,
-                          ObjectStorageRetryProfile profile, uint64_t timeout_ms);
-    RawRemoval removeUnder(const String & key, const String & expected_value,
-                           ObjectStorageRetryProfile profile, uint64_t timeout_ms);
-    SentinelProbeResult probeSentinelUnder(const String & key, ObjectStorageRetryProfile profile, uint64_t timeout_ms);
+                          const ObjectStorageControlRequest & request);
+    RawRemoval removeUnder(const String & key, const String & expected_value, const ObjectStorageControlRequest & request);
+    SentinelProbeResult probeSentinelUnder(const String & key, const ObjectStorageControlRequest & request);
     /// EmulatedSingleProcess state: per-key {etag, disambiguator} — see emuMintToken. A successfully
     /// deleted entry is retained only while its etag is recent enough that an immediate recreate could
     /// land in the same mtime quantum. `deleteExact` erases already-old entries immediately and queues
@@ -251,7 +263,7 @@ private:
     /// Look up Native metadata and normalize the storage ETag or generation into an incarnation
     /// value. The value is returned as the store gave it: whether it IS an incarnation is judged by
     /// whoever can act on the answer, never here.
-    std::optional<RawMeta> nativeHead(const String & key, ObjectStorageRetryProfile profile, uint64_t timeout_ms);
+    std::optional<RawMeta> nativeHead(const String & key, const ObjectStorageControlRequest & request);
 
     /// Write a body with the condition already encoded in `ws`, finalize it, map a lost precondition
     /// onto `RawConflict`, and return the write response's own value on success -- normalized, and

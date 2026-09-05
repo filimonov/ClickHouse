@@ -21,6 +21,17 @@ enum class ObjectStorageRetryProfile : uint8_t
     SingleAttempt,
 };
 
+/// What a CAS control request carries into the object storage: the retry profile, the per-attempt
+/// budget and connect cap the storage's single-attempt client must honour, and the caller's own
+/// attempt number (0 = unset) so the HTTP client sees a reissue as attempt ≥ 2.
+struct ObjectStorageControlRequest
+{
+    ObjectStorageRetryProfile profile = ObjectStorageRetryProfile::Default;
+    uint64_t attempt_timeout_ms = 0;
+    uint64_t connect_timeout_cap_ms = 0;
+    size_t attempt_number = 0;
+};
+
 /// Per-copy transport requirement, resolved by the object storage that executes the copy.
 /// `NativeOnly` requires a provider-native same-store copy and forbids a client-side fallback.
 enum class ObjectStorageCopyMode : uint8_t

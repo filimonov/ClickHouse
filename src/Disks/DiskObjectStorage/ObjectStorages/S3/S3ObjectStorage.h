@@ -111,9 +111,7 @@ public:
         size_t max_keys,
         bool with_tags,
         const std::optional<std::string> & start_after,
-        ObjectStorageRetryProfile profile,
-        uint64_t request_timeout_ms,
-        uint64_t connect_timeout_cap_ms = 0) const override;
+        const ObjectStorageControlRequest & request) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
@@ -126,13 +124,11 @@ public:
     ConditionalRemoveResult removeObjectIfTokenMatches(const StoredObject & object, const std::string & etag) override;
 
     ConditionalRemoveResult removeObjectIfTokenMatches(
-        const StoredObject & object, const std::string & etag, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
-        uint64_t connect_timeout_cap_ms = 0) override;
+        const StoredObject & object, const std::string & etag, const ObjectStorageControlRequest & request) override;
 
     /// One `DeleteObjects` for the given objects (the caller chunks to at most 1000); absence is success.
     void removeObjectsIfExistUnderProfile(
-        const StoredObjects & objects, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
-        uint64_t connect_timeout_cap_ms = 0) override;
+        const StoredObjects & objects, const ObjectStorageControlRequest & request) override;
 
     void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
@@ -145,8 +141,7 @@ public:
     std::optional<ObjectMetadata> tryGetObjectMetadataWithNativeToken(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadataWithNativeToken(
-        const std::string & path, bool with_tags, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
-        uint64_t connect_timeout_cap_ms = 0) const override;
+        const std::string & path, bool with_tags, const ObjectStorageControlRequest & request) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -234,8 +229,7 @@ private:
     void removeObjectsIfExistImpl(
         const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client, size_t attempt_seed);
 
-    std::shared_ptr<const S3::Client> clientForRetryProfile(
-        ObjectStorageRetryProfile profile, uint64_t request_timeout_ms, uint64_t connect_timeout_cap_ms = 0) const;
+    std::shared_ptr<const S3::Client> clientForRetryProfile(const ObjectStorageControlRequest & request) const;
 
     /// Runs `fn` and, if it failed because the vended credentials expired, refreshes this disk's
     /// client and runs it once more. `fn` must re-read the client itself, so the second run signs

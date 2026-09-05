@@ -217,8 +217,10 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     }
 
     return std::make_unique<ReadBufferFromS3>(
-        clientForRetryProfile(read_settings.object_storage_retry_profile, read_settings.object_storage_attempt_timeout_ms,
-                              read_settings.object_storage_connect_timeout_cap_ms),
+        clientForRetryProfile(ObjectStorageControlRequest{
+            .profile = read_settings.object_storage_retry_profile,
+            .attempt_timeout_ms = read_settings.object_storage_attempt_timeout_ms,
+            .connect_timeout_cap_ms = read_settings.object_storage_connect_timeout_cap_ms}),
         uri.bucket,
         object.remote_path,
         uri.version_id,
@@ -313,9 +315,10 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     /// The SingleAttempt profile (e.g. CAS conditional writes, RFC cas-s3-timeout-retry-control) rides
     /// on WriteSettings instead of changing this disk's shared client — every other write keeps using
     /// client->get() and its normal retry policy unchanged.
-    auto used_client = clientForRetryProfile(
-        write_settings.object_storage_retry_profile, write_settings.object_storage_attempt_timeout_ms,
-        write_settings.object_storage_connect_timeout_cap_ms);
+    auto used_client = clientForRetryProfile(ObjectStorageControlRequest{
+        .profile = write_settings.object_storage_retry_profile,
+        .attempt_timeout_ms = write_settings.object_storage_attempt_timeout_ms,
+        .connect_timeout_cap_ms = write_settings.object_storage_connect_timeout_cap_ms});
 
     return std::make_unique<WriteBufferFromS3>(
         used_client,
@@ -336,7 +339,7 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(
     bool with_tags,
     const std::optional<std::string> & start_after) const
 {
-    return iterate(path_prefix, max_keys, with_tags, start_after, ObjectStorageRetryProfile::Default, /*request_timeout_ms=*/0);
+    return iterate(path_prefix, max_keys, with_tags, start_after, ObjectStorageControlRequest{});
 }
 
 ObjectStorageIteratorPtr S3ObjectStorage::iterate(
@@ -344,15 +347,13 @@ ObjectStorageIteratorPtr S3ObjectStorage::iterate(
     size_t max_keys,
     bool with_tags,
     const std::optional<std::string> & start_after,
-    ObjectStorageRetryProfile profile,
-    uint64_t request_timeout_ms,
-    uint64_t connect_timeout_cap_ms) const
+    const ObjectStorageControlRequest & request) const
 {
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
     return std::make_shared<S3IteratorAsync>(
-        uri.bucket, path_prefix, clientForRetryProfile(profile, request_timeout_ms, connect_timeout_cap_ms), max_keys, with_tags, start_after);
+        uri.bucket, path_prefix, clientForRetryProfile(request), max_keys, with_tags, start_after, request.attempt_number);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -463,12 +464,11 @@ ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatches(const Stored
 }
 
 ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatches(
-    const StoredObject & object, const std::string & etag, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
-    uint64_t connect_timeout_cap_ms)
+    const StoredObject & object, const std::string & etag, const ObjectStorageControlRequest & request)
 {
     return refreshAndRetryOnExpiredCredentials(
         [&] { return removeObjectIfTokenMatchesImpl(
-            object, etag, clientForRetryProfile(profile, request_timeout_ms, connect_timeout_cap_ms), /*attempt_seed=*/0); });
+            object, etag, clientForRetryProfile(request), request.attempt_number); });
 }
 
 ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatchesImpl(
@@ -520,12 +520,11 @@ ConditionalRemoveResult S3ObjectStorage::removeObjectIfTokenMatchesImpl(
         err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName(), object.remote_path);
 }
 
-void S3ObjectStorage::removeObjectsIfExistUnderProfile(
-    const StoredObjects & objects, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms, uint64_t connect_timeout_cap_ms)
+void S3ObjectStorage::removeObjectsIfExistUnderProfile(const StoredObjects & objects, const ObjectStorageControlRequest & request)
 {
     refreshAndRetryOnExpiredCredentials([&]
     {
-        removeObjectsIfExistImpl(objects, clientForRetryProfile(profile, request_timeout_ms, connect_timeout_cap_ms), /*attempt_seed=*/0);
+        removeObjectsIfExistImpl(objects, clientForRetryProfile(request), request.attempt_number);
         return 0;
     });
 }
@@ -713,8 +712,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataWithNativeTok
 }
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataWithNativeToken(
-    const std::string & path, bool with_tags, ObjectStorageRetryProfile profile, uint64_t request_timeout_ms,
-    uint64_t connect_timeout_cap_ms) const
+    const std::string & path, bool with_tags, const ObjectStorageControlRequest & request) const
 {
     return refreshAndRetryOnExpiredCredentials(
         [&]
@@ -723,8 +721,8 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadataWithNativeTok
                 path,
                 with_tags,
                 ObjectStorageRequestMode::NativeConditional,
-                clientForRetryProfile(profile, request_timeout_ms, connect_timeout_cap_ms),
-                /*attempt_seed=*/0);
+                clientForRetryProfile(request),
+                request.attempt_number);
         });
 }
 
@@ -1055,13 +1053,12 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getSingleAttemptClient(uint64
     return single_attempt_clients.emplace(cache_key, base->cloneWithConfigurationOverride(cfg)).first->second;
 }
 
-std::shared_ptr<const S3::Client> S3ObjectStorage::clientForRetryProfile(
-    ObjectStorageRetryProfile profile, uint64_t request_timeout_ms, uint64_t connect_timeout_cap_ms) const
+std::shared_ptr<const S3::Client> S3ObjectStorage::clientForRetryProfile(const ObjectStorageControlRequest & request) const
 {
     /// getSingleAttemptClient is only invoked when actually selected, so an ordinary request never
     /// pays for building or locking the clone.
-    if (profile == ObjectStorageRetryProfile::SingleAttempt)
-        return getSingleAttemptClient(request_timeout_ms, connect_timeout_cap_ms);
+    if (request.profile == ObjectStorageRetryProfile::SingleAttempt)
+        return getSingleAttemptClient(request.attempt_timeout_ms, request.connect_timeout_cap_ms);
     return client->get();
 }
 

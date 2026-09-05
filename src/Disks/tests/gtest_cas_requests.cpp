@@ -682,6 +682,46 @@ TEST(CASRequests, AmbiguousCreateThatNeverLandedIsReissued)
     EXPECT_EQ(clock.sleeps.size(), 1u);
 }
 
+/// The engine's own attempt number reaches the transport through `TransportAccess::attemptNo()`, for
+/// every primitive -- write, read (the resolve read is its own call, with its own attempt count) and
+/// list.
+TEST(CASRequests, TheTransportSeesTheEngineAttemptNumber)
+{
+    struct AttemptRecordingBackend : CountingBackend
+    {
+        std::vector<size_t> write_attempts, read_attempts, list_attempts;
+        std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                                 const std::optional<String> & expected, TransportAccess & access) override
+        {
+            write_attempts.push_back(access.attemptNo());
+            return CountingBackend::write(key, bytes, expected, access);
+        }
+        std::optional<Raw> read(const String & key, TransportAccess & access) override
+        {
+            read_attempts.push_back(access.attemptNo());
+            return CountingBackend::read(key, access);
+        }
+        RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
+        {
+            list_attempts.push_back(access.attemptNo());
+            return CountingBackend::list(prefix, cursor, limit, access);
+        }
+    };
+    FakeClock clock;
+    auto backend = std::make_shared<AttemptRecordingBackend>();
+    backend->injectAmbiguousWrite("k");
+    backend->failNextReadWith("k", std::make_exception_ptr(Poco::TimeoutException("read timed out")));
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    ASSERT_TRUE(std::holds_alternative<Committed>(op.create("k", "v", Retry::standard())));
+    /// Attempt 1 ambiguous, attempt 2 commits. The settle read is its OWN read call: attempt 1 failed, 2 answered.
+    EXPECT_EQ(backend->write_attempts, (std::vector<size_t>{1, 2}));
+    EXPECT_EQ(backend->read_attempts, (std::vector<size_t>{1, 2}));
+    backend->list_attempts.clear();
+    (void)op.list("p/", "", 10, Retry::standard());
+    EXPECT_EQ(backend->list_attempts, (std::vector<size_t>{1}));
+}
+
 TEST(CASRequests, OnceSendsOneWriteAndAtMostOneResolveRead)
 {
     FakeClock clock;

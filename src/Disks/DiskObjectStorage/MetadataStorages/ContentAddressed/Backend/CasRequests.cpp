@@ -652,7 +652,7 @@ SentinelProbeResult CasOperation::probeSentinel(const String & key, const Retry 
         SentinelProbeResult result{ProbeOutcome::Indeterminate, std::nullopt};
         try
         {
-            result = owner.withTransportAccess([&](auto & access)
+            result = owner.withTransportAccess(attempt, [&](auto & access)
             {
                 return owner.backend->probeSentinelRaw(key, access);
             });
@@ -910,7 +910,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         bool connect_hint = false;
         try
         {
-            outcome = owner.withTransportAccess([&](auto & access)
+            outcome = owner.withTransportAccess(state.attempts_sent, [&](auto & access)
             {
                 return owner.backend->write(key, bytes, expected_value, access);
             });

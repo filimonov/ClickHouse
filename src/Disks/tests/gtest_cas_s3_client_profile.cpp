@@ -4,16 +4,21 @@
 
 #if USE_AWS_S3
 
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasFence.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/URI.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/S3Settings.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Common/RemoteHostFilter.h>
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 /// The single-attempt client clone must cap its connect timeout at the value the mount froze at open,
 /// never at the disk's (possibly wider, possibly reloaded, possibly unbounded) own connect timeout.
@@ -66,6 +71,69 @@ std::shared_ptr<DB::S3ObjectStorage> makeStorageForTest(long connect_ms)
         DB::ObjectStorageKeyGeneratorPtr{}, "disk");
 }
 
+/// A conditional write's own `finalize` never runs a real request here: this buffer just records
+/// bytes and reports a fixed, grammar-valid ETag -- exactly what a real conditional PUT's response
+/// would carry, without needing a live endpoint.
+class StubConditionalWriteBuffer final : public DB::WriteBufferFromFileBase
+{
+public:
+    StubConditionalWriteBuffer() : DB::WriteBufferFromFileBase(/*buf_size=*/8192, nullptr, 0) {}
+    void sync() override {}
+    std::string getFileName() const override { return "stub"; }
+    std::optional<std::string> getResultObjectETag() const override { return "\"etag1\""; }
+
+protected:
+    void nextImpl() override {}
+};
+
+/// Records the client selection every profile-aware verb makes, without issuing a single real
+/// request: HEAD returns a synthetic answer directly, and the conditional PUT's buffer never talks to
+/// a socket. See test 6e (`CASEnvelopeWiring.FrozenCapTravelsFromTheClientToEveryVerb`) below.
+class RecordingS3ObjectStorage : public DB::S3ObjectStorage
+{
+public:
+    using DB::S3ObjectStorage::S3ObjectStorage;
+
+    mutable std::vector<long> head_connect_timeouts;
+    std::vector<long> write_connect_timeouts;
+
+    std::optional<DB::ObjectMetadata> tryGetObjectMetadataWithNativeToken(
+        const std::string &, bool, const DB::ObjectStorageControlRequest & request) const override
+    {
+        head_connect_timeouts.push_back(
+            getSingleAttemptClient(request.attempt_timeout_ms, request.connect_timeout_cap_ms)
+                ->getClientConfiguration().connectTimeoutMs);
+        DB::ObjectMetadata metadata;
+        metadata.etag = "\"etag1\"";
+        return metadata;
+    }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase> writeObject(
+        const DB::StoredObject &,
+        DB::WriteMode,
+        std::optional<DB::ObjectAttributes>,
+        size_t,
+        const DB::WriteSettings & write_settings) override
+    {
+        write_connect_timeouts.push_back(
+            getSingleAttemptClient(write_settings.object_storage_attempt_timeout_ms,
+                                   write_settings.object_storage_connect_timeout_cap_ms)
+                ->getClientConfiguration().connectTimeoutMs);
+        return std::make_unique<StubConditionalWriteBuffer>();
+    }
+};
+
+std::shared_ptr<RecordingS3ObjectStorage> makeRecordingStorageForTest(long connect_ms)
+{
+    auto client = DB::S3::ClientFactory::instance().create(
+        clientConfigurationForTest(connect_ms), clientSettingsForTest(),
+        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{});
+    return std::make_shared<RecordingS3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(),
+        DB::S3::URI("http://127.0.0.1:1/bucket/"), DB::S3Capabilities{},
+        DB::ObjectStorageKeyGeneratorPtr{}, "disk");
+}
+
 }
 
 /// Test 6c of the spec: the clone's connect cap is the MIN of the base client's own connect timeout
@@ -96,12 +164,15 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
     EXPECT_EQ(reloaded->getSingleAttemptClient(5000, 1000)->getClientConfiguration().connectTimeoutMs, 1000);
 }
 
-/// This covers the SNAPSHOT half only: every verb's clone carrying the recorded pair through
-/// `ContentAddressedMetadataStorage`'s pool_config needs a context struct threading the cap to each
-/// verb, or a scripted S3 backend able to complete a full Native pool bootstrap -- neither is available
-/// from `src/Disks/tests` today. What IS testable without a live pool open is the freeze computation
-/// itself: `ContentAddressedMetadataStorage::freezeConnectTimeoutCapMs` is the exact function
-/// `openPoolView` calls to build `pool_config.cas_request_budget.connect_timeout_cap_ms`.
+/// The snapshot half (the freeze computation `openPoolView` uses to build
+/// `pool_config.cas_request_budget.connect_timeout_cap_ms`) and the verb-propagation half (every
+/// profile-aware verb's clone carries the SAME frozen pair, through the `ObjectStorageControlRequest`
+/// context `ObjectStorageBackend::controlRequest` builds). The propagation half is exercised over a
+/// real Native `ObjectStorageBackend` built directly with the
+/// frozen cap (not through a full `ContentAddressedMetadataStorage`/`Pool::open` bootstrap, which needs
+/// a scripted S3 backend able to answer conditional PUT/GET/LIST/HEAD -- none exists in
+/// `src/Disks/tests` today): `RecordingS3ObjectStorage` captures the actual `connectTimeoutMs` of the
+/// clone each verb selects, without any network I/O.
 TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
 {
     /// A base client with connectTimeoutMs = 1000 and cas_attempt_timeout_ms = 5000: the narrower of
@@ -128,6 +199,56 @@ TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
     /// A storage with no S3 client (not exercised here -- every storage above is S3) freezes `nullopt`;
     /// covered directly by `S3ObjectStorage::tryGetS3StorageClient` returning null for a non-S3 storage
     /// and `freezeConnectTimeoutCapMs` short-circuiting on it.
+
+    /// Verb-propagation half: a Native backend built with `attempt_timeout_ms=5000`,
+    /// `connect_timeout_cap_ms=1000` (the frozen cap from above). One control read (HEAD) and one
+    /// conditional write (PUT) must both select a clone with `connectTimeoutMs == 1000` -- and stay at
+    /// 1000 after the underlying client is reloaded with a wider (5000), then a zero (unbounded),
+    /// connect timeout: the backend's OWN `connect_timeout_cap_ms` was frozen at construction and a
+    /// later reload cannot widen it (spec decision 3).
+    auto recording_storage = makeRecordingStorageForTest(1000);
+    auto backend = std::make_shared<DB::Cas::ObjectStorageBackend>(
+        recording_storage, DB::Cas::ObjectStorageBackend::Mode::Native,
+        /*single_attempt_control_plane_=*/true, /*attempt_timeout_ms_=*/5000, /*connect_timeout_cap_ms_=*/1000);
+    DB::Cas::CasRequests requests(backend, DB::Cas::Fence::open());
+    auto op = requests.admit();
+
+    ASSERT_TRUE(op.head("k", DB::Cas::Retry::once()).has_value());
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(op.create("k", "v", DB::Cas::Retry::once())));
+    EXPECT_EQ(recording_storage->head_connect_timeouts, (std::vector<long>{1000}));
+    EXPECT_EQ(recording_storage->write_connect_timeouts, (std::vector<long>{1000}));
+
+    /// Widen the disk's own connect timeout: the frozen cap must still win.
+    recording_storage->setClientForTest(DB::S3::ClientFactory::instance().create(
+        clientConfigurationForTest(5000), clientSettingsForTest(),
+        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{}));
+    ASSERT_TRUE(op.head("k", DB::Cas::Retry::once()).has_value());
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(op.create("k2", "v", DB::Cas::Retry::once())));
+    EXPECT_EQ(recording_storage->head_connect_timeouts, (std::vector<long>{1000, 1000}));
+    EXPECT_EQ(recording_storage->write_connect_timeouts, (std::vector<long>{1000, 1000}));
+
+    /// Zero the disk's own connect timeout (Poco "unbounded"): still the frozen cap, never "no limit".
+    recording_storage->setClientForTest(DB::S3::ClientFactory::instance().create(
+        clientConfigurationForTest(0), clientSettingsForTest(),
+        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{}));
+    ASSERT_TRUE(op.head("k", DB::Cas::Retry::once()).has_value());
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(op.create("k3", "v", DB::Cas::Retry::once())));
+    EXPECT_EQ(recording_storage->head_connect_timeouts, (std::vector<long>{1000, 1000, 1000}));
+    EXPECT_EQ(recording_storage->write_connect_timeouts, (std::vector<long>{1000, 1000, 1000}));
+
+    /// A second storage whose base connect timeout is 0 (unbounded) at freeze time: the cap normalizes
+    /// to the attempt timeout itself (5000, from the snapshot half above), and every verb selects a
+    /// clone at that cap -- never at "no limit".
+    auto recording_storage2 = makeRecordingStorageForTest(0);
+    auto backend2 = std::make_shared<DB::Cas::ObjectStorageBackend>(
+        recording_storage2, DB::Cas::ObjectStorageBackend::Mode::Native,
+        /*single_attempt_control_plane_=*/true, /*attempt_timeout_ms_=*/5000, /*connect_timeout_cap_ms_=*/5000);
+    DB::Cas::CasRequests requests2(backend2, DB::Cas::Fence::open());
+    auto op2 = requests2.admit();
+    ASSERT_TRUE(op2.head("k", DB::Cas::Retry::once()).has_value());
+    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(op2.create("k", "v", DB::Cas::Retry::once())));
+    EXPECT_EQ(recording_storage2->head_connect_timeouts, (std::vector<long>{5000}));
+    EXPECT_EQ(recording_storage2->write_connect_timeouts, (std::vector<long>{5000}));
 }
 
 #endif

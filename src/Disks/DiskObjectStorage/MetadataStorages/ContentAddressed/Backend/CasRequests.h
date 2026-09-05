@@ -187,10 +187,12 @@ private:
 
     /// The one place a transport key is created. Every verb reaches the store through this, so no
     /// engine code -- and nothing outside it -- can name the key's type, let alone construct one.
+    /// `attempt_no` is the caller's own 1-based physical-attempt count, threaded to the transport
+    /// through `TransportAccess::attemptNo()` so a reissue is seen as attempt >= 2.
     template <typename Fn>
-    auto withTransportAccess(Fn && fn)
+    auto withTransportAccess(size_t attempt_no, Fn && fn)
     {
-        TransportAccess access;
+        TransportAccess access(attempt_no);
         return std::forward<Fn>(fn)(access);
     }
 
@@ -423,7 +425,12 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
                             const Retry::Bound & bound, Fn && once)
 {
     bool refresh_attempted = false;
-    for (uint32_t attempt = 1;; ++attempt)
+    /// Two counters on purpose: `attempt_no` is the PHYSICAL attempt count handed to the transport
+    /// (so a reissue is seen as attempt >= 2), while `ordinary_reissues` drives the exponential
+    /// backoff index. They advance together here; a zero-pause reissue (the adaptive first-attempt
+    /// fuse's own reissue, added separately) advances only `attempt_no`, so a following ordinary
+    /// failure still starts its backoff at 1.
+    for (uint32_t attempt_no = 1, ordinary_reissues = 0;; ++attempt_no)
     {
         const uint64_t reservation = reservedFor(0, 1);
         switch (gate(reservation))
@@ -433,12 +440,12 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
             case Gate::Ok: break;
         }
         if (!fits(reservation, bound))
-            giveUpReadDeadline(verb, subject, bound, attempt - 1);
+            giveUpReadDeadline(verb, subject, bound, attempt_no - 1);
 
         detail::recordAttempt();
         try
         {
-            return owner.withTransportAccess([&](auto & access) { return once(access); });
+            return owner.withTransportAccess(attempt_no, [&](auto & access) { return once(access); });
         }
         catch (const std::exception & e)
         {
@@ -446,7 +453,7 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
                 throw;
         }
 
-        const uint64_t pause_ms = Retry::backoff(attempt);
+        const uint64_t pause_ms = Retry::backoff(++ordinary_reissues);
         const uint64_t needed = reservedFor(pause_ms, 1);
         switch (gate(needed))
         {
@@ -455,7 +462,7 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
             case Gate::Ok: break;
         }
         if (!fits(needed, bound))
-            giveUpReadDeadline(verb, subject, bound, attempt);
+            giveUpReadDeadline(verb, subject, bound, attempt_no);
         detail::recordReissue();
         owner.sleep_ms(pause_ms);
     }
