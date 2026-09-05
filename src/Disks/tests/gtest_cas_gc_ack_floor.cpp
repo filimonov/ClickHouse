@@ -912,9 +912,10 @@ namespace
 /// (`expires_at_ms`) against the GC's own clock — it fences ONLY once GC has watched a mount's write
 /// token hold unchanged for the full threshold on its OWN monotonic clock. That takes (at least) two
 /// `computeHeartbeatFloor` calls spanning the threshold, so this test drives the GC leader's own
-/// (persistent) `mono_ms_fn` across two rounds: round 1 seeds the observation for both mounts; the
-/// STORE's own mount is then renewed (as a live leader would) before round 2 crosses the threshold —
-/// srid2, never renewed again after its one-shot claim, is the one that gets fenced.
+/// (persistent) `mono_ms_fn` across three rounds: round 1 seeds the observation for both mounts; the
+/// STORE's own mount is then renewed (as a live leader would); round 2, one millisecond short of the
+/// threshold, discriminates the threshold's exact value (must NOT fence yet); round 3, exactly at the
+/// threshold, is where srid2 — never renewed again after its one-shot claim — gets fenced.
 void runExpiredMountFenceOutScenario(const PoolConfig & config)
 {
     auto backend = std::make_shared<InMemoryBackend>();
@@ -961,9 +962,19 @@ void runExpiredMountFenceOutScenario(const PoolConfig & config)
 
     // The store's OWN mount renews between rounds (as a live leader would); srid2 never does.
     store->renewWatermarkOnce();
+    gc_mono = threshold_ms - 1;
+
+    // Round 2 (mono == threshold - 1): a discriminator for the threshold's EXACT value, not just its
+    // existence — one millisecond short of the full threshold, srid2's original token must NOT be fenced
+    // yet. Without this round, any knob-shortened positive threshold would also satisfy the fence-out
+    // assertion taken only at the full threshold below.
+    const RoundReport rep_before_threshold = gc.runRegularRound();
+    EXPECT_EQ(rep_before_threshold.fence_outs, 0u);
+    EXPECT_FALSE(decodeMountLease(readObj(*backend, layout.mountKey(srid2))->bytes).gc_fenced);
+
     gc_mono = threshold_ms;
 
-    // Round 2 (mono == threshold): srid2's original token has held stable for the full threshold —
+    // Round 3 (mono == threshold): srid2's original token has held stable for the full threshold —
     // fenced. The store's own (just-renewed) mount restarts its observation and stays live.
     const RoundReport rep = gc.runRegularRound();
 
@@ -1009,8 +1020,9 @@ TEST(CASGCAckFloor, ExpiredMountFencedOutAndExcluded)
 /// GC's fence-out threshold (`ttl + 5% drift allowance + one round's worth of renewal slack`, computed in
 /// `Gc::runRegularRound`) never reads `PoolConfig::unsafe_remount_no_delay` -- that knob is consulted only
 /// by `Pool::mountWritable`'s own reclaim decision, never by GC's heartbeat-floor observation. Runs the
-/// IDENTICAL two-round scenario as `ExpiredMountFencedOutAndExcluded` with the knob turned on, and asserts
-/// the SAME round-by-round fence-out counts, proving the threshold and its timing are unaffected.
+/// IDENTICAL three-round scenario as `ExpiredMountFencedOutAndExcluded` with the knob turned on, and
+/// asserts the SAME round-by-round fence-out counts -- including the one-millisecond-short discriminator
+/// round -- proving the threshold's exact value and its timing are unaffected.
 TEST(CASGcFenceOut, ThresholdUnchangedByUnsafeKnob)
 {
     runExpiredMountFenceOutScenario(
