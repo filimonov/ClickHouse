@@ -44,6 +44,13 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
     {
         const bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
 
+        /// `metadata_type` is a disk-level key -- the metadata storage is selected from the disk's own
+        /// `config_prefix`, never from a nested location's -- so the hint must be derived once here and
+        /// reused for every `ObjectStorageFactory::create` call below, including inside the per-location
+        /// loop. Deriving it per-location would read `<locations><main>...` (which does not carry
+        /// `metadata_type`) and silently miss the profile on every CAS disk with nested locations.
+        const ObjectStorageCreateHints hints{.cas_client_profile = casClientProfileHintFor(config, config_prefix)};
+
         std::unordered_map<Location, ObjectStoragePtr> object_storage_registry;
         std::unordered_map<Location, LocationInfo> cluster_registry;
         if (config.has(config_prefix + ".locations"))
@@ -60,7 +67,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
                 const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(
                     fmt::format("{}.{}", name, location), config, object_storage_config_prefix, context,
                     /*skip_access_check=*/skip_access_check || !enabled,
-                    ObjectStorageCreateHints{.cas_client_profile = casClientProfileHintFor(config, object_storage_config_prefix)});
+                    hints);
                 object_storage_registry[location] = object_storage;
                 cluster_registry[location] = {enabled, local, object_storage_config_prefix};
             }
@@ -68,8 +75,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         else
         {
             const ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create(
-                name, config, config_prefix, context, skip_access_check,
-                ObjectStorageCreateHints{.cas_client_profile = casClientProfileHintFor(config, config_prefix)});
+                name, config, config_prefix, context, skip_access_check, hints);
             object_storage_registry["main"] = object_storage;
             cluster_registry["main"] = { .enabled = true, .local = true, .config_prefix = config_prefix };
         }

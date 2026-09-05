@@ -151,7 +151,7 @@ further would only overshoot the target).
 **Arms.** 5 arms (`http_keep_alive_timeout`/`http_keep_alive_max_requests` in the `cas_s3` disk
 block, or `disk_connections_soft_limit` at top level), `concurrency=4`, `--timelimit 300`, server
 restarted between every run (fresh client pool), TIME_WAIT-to-rustfs drained below 500 first, run
-order ABBA (forward baseline/30s-100/5s-10000/30s-100000/soft-limit-100, then reversed) so every arm
+order ABBA (forward baseline/30s-100/5s-10000/30s-10000/soft-limit-100, then reversed) so every arm
 gets one early and one late repetition:
 
 | run | arm | completed queries | `DiskS3GetObject` | `DiskConnectionsCreated` | GetObject/Created | `ExpiredMaxRequests` | TIME_WAIT peak | peak % of range |
@@ -219,9 +219,10 @@ it to 10 000 removes essentially all of the churn with no downside observed (sam
 counts, same error rates, zero `EADDRNOTAVAIL`/lease-loss both before and after).
 
 **Chosen values.** `http_keep_alive_timeout=30` and `http_keep_alive_max_requests=10000` -- both
-from the best-performing tested arm (`30s/10000`, GetObject/Created 10 288 summed, the two lowest
-TIME_WAIT peaks of the battery). `http_keep_alive_max_requests` is shipped, not left at its default,
-because the spike attributes the dominant reason (`ExpiredMaxRequests`) to it directly, satisfying
+from the best-performing tested arm (`30s/10000`, GetObject/Created 10 288 summed, its two runs'
+TIME_WAIT peaks at 49 and 325, i.e. 0.2%-1.2% of the range -- in the same low range as `5s/10000`'s
+53 and 324, not distinguishable from it on this metric). `http_keep_alive_max_requests` is shipped,
+not left at its default, because the spike attributes the dominant reason (`ExpiredMaxRequests`) to it directly, satisfying
 the spec's own condition for changing that setting. 30 s (not the backlog's 60 s) because it is the
 value actually tested here and sits with room to spare under rustfs's verified >= 75 s idle
 tolerance.
