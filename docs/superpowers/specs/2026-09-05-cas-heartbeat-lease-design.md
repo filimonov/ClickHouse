@@ -9,7 +9,8 @@ doc_type: 'design'
 
 # CAS mount lease: configurable timing plus an unsafe no-delay reclaim {#cas-heartbeat-lease-design}
 
-**Status:** DRAFT rev.4 (2026-09-05). rev.1 (heartbeat re-vocabulary), rev.2 and rev.3 (small path)
+**Status:** DRAFT rev.5 (2026-09-05; rev.5 folds the combined four-spec review `codex_cross.final.md`: the
+envelope arithmetic from spec 4 and the user-doc reconciliation list). rev.1 (heartbeat re-vocabulary), rev.2 and rev.3 (small path)
 were reviewed by `codex` (`gpt-5.6-sol`, xhigh; records `codex_spec2.final.md`, `codex_spec2r2.final.md`,
 `codex_spec2r3.final.md`; rev.3 = NO MAJOR, its MINORs folded here).
 rev.2's two MAJORs — automatic remount would let duplicate-uuid processes steal the slot back and
@@ -38,7 +39,7 @@ lands on the merge of PR #2307 (`ee6b0fd7826`).
 4. The setting's description and `configuration.md` say, in these words: unsafe whenever two
    processes can hold the same `server_uuid` (a copied uuid file, a stalled predecessor). After such a
    reclaim the predecessor can still START conditional writes until its own cutoff
-   (`confirmed deadline − margin − 2 × attempt_timeout`) or until its next renewal meets the token
+   (`confirmed deadline − margin − 2 × envelope`, spec 4) or until its next renewal meets the token
    guard, and a request already sent may materialize later; ref-log keys carry `(writer_epoch,
    sequence)` and creates are conditional, so two writers cannot commit different bodies to one key
    and recovery's `EpochSeal` settles stragglers — the exposure is availability (recovery fails closed
@@ -61,14 +62,20 @@ Next to the settings in `configuration.md`, and in `mounts-and-leases.md`:
    only that member's own startup observation and does not make mixed thresholds safe.
 2. A shorter TTL reduces the tolerance for store delays; a shorter period increases it (renewal
    starts earlier) at the cost of traffic. With the defaults, `TTL − margin − period − 2 ×
-   attempt_timeout = 8 s` is the scheduling-lateness budget before the first renewal attempt of a
-   period can begin; the renewal then retries until `confirmed deadline − margin`.
+   envelope = 6 s` is the scheduling-lateness budget before the first renewal attempt of a
+   period can begin, where `envelope = attempt_timeout + min(connect_timeout_ms, attempt_timeout)`
+   (spec 4; 6 s with defaults); the renewal then retries until `confirmed deadline − margin`.
 3. `expires_at_ms` in the mount object is a writer-stamped diagnostic used by `system.cas_mounts`
    and by the non-authoritative decommission epoch-recovery precheck; it never authorizes a reclaim
    or a GC fence-out, and local fencing is derived from the confirmed request's pre-I/O BOOTTIME
    anchor plus the TTL. The operator-facing double-start message (`CasServerRoot.cpp:909`) and the
    stale comment in `CasMountRuntime` are corrected in the same change; the observation log line says
    "token-stability observation".
+4. `mounts-and-leases.md` is reconciled in the same change: the "identical formula" sentence (~116)
+   becomes the two formulas of rule 1 (startup `max(1, floor(period/2))`, GC `period`); the claim
+   outcomes table and state diagram (~140) gain `UncleanUnsafe`; the writable-open order (~203)
+   drops "materialization grace if the predecessor was unclean (default 30 s)", which the code no
+   longer pays (`CasPool.cpp` ~802, "THIS NO LONGER WAITS").
 
 ## Tests, in the order they are written and made to pass {#tests}
 

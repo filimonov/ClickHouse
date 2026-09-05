@@ -9,8 +9,9 @@ doc_type: 'design'
 
 # CAS: a connect-failure hint reissues a write without a preceding read {#cas-presend-failure-reissue-design}
 
-**Status:** DRAFT rev.4 (2026-09-05). rev.1–rev.3 were reviewed by `codex` (`gpt-5.6-sol`,
-xhigh; records `codex_spec1.final.md`, `codex_spec1r2.final.md`, `codex_spec1r3.final.md`; rev.3 = NO MAJOR, its MINORs folded here).
+**Status:** DRAFT rev.5 (2026-09-05). rev.1–rev.3 were reviewed by `codex` (`gpt-5.6-sol`,
+xhigh; records `codex_spec1.final.md`, `codex_spec1r2.final.md`, `codex_spec1r3.final.md`; rev.3 = NO MAJOR, its MINORs folded in rev.4).
+rev.5 folds the combined four-spec review (`codex_cross.final.md`): observability texts and the user docs.
 rev.2's text whitelist cannot PROVE a request was not sent (Poco maps `send`/`recv` errno through the
 same `SocketImpl::error` as `connect`), so rev.3 stops claiming it: the texts are an optimistic hint
 that skips one read, and every safety statement of the engine stays as it is. The user ruled that
@@ -77,7 +78,16 @@ In `writeLoop`, in the `catch (const Exception & e)` arm, after the credential b
 3. If the deadline or fence refuses the reissue, the existing `gaveUp` applies with `sent_any == true`
    and `any_ambiguous == true`: the caller sees exactly what it sees today for an ambiguous failure.
    No new `GaveUp::Why`; under `single_attempt` the existing settle read runs as today.
-4. ProfileEvents: `CASRequestConnectFailureHint` per hinted attempt, recorded in `writeLoop`.
+4. ProfileEvents: `CASRequestConnectFailureHint` per hinted attempt, recorded in `writeLoop`;
+   `pauseFlat` increments `CASRequestReissue`, whose description becomes pacing-agnostic (shared
+   wording with spec 4); `CASRequestResolveRead`'s "every ambiguity costs one" becomes "every conflict
+   and every ambiguity that is not a connect-failure hint".
+5. Text that becomes false and is corrected in the same change: the `writeLoop` contract comment
+   (`CasRequests.h` ~356) and the "Resolve before retry" bullet of
+   `docs/en/antalya/cas/architecture/mounts-and-leases.md` (~77), which now reads: a transient or
+   ambiguous conditional `PUT` is followed by one exact `GET`, except that an attempt whose transport
+   error names a failed connection is reissued first and settled by the reissue's own answer (a 2xx)
+   or by the exact `GET` that follows its `412`.
 
 Cost of a false hint (the error was post-send and the write landed): the reissue meets `412`, one
 read follows, byte-identical body → `Committed{resolved_by_read}`; otherwise `Conflict` — the same

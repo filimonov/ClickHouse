@@ -9,8 +9,11 @@ doc_type: 'design'
 
 # CAS reissues cooperate with the adaptive first-attempt timeout {#cas-adaptive-first-attempt-timeout-design}
 
-**Status:** DRAFT rev.3 (2026-09-05). rev.1 and rev.2 were reviewed by `codex` (`gpt-5.6-sol`, xhigh;
-records `codex_spec4.final.md`, `codex_spec4r2.final.md`; rev.2 = NO MAJOR, its MINORs folded here). Spec 4 of the R2
+**Status:** DRAFT rev.4 (2026-09-05). rev.1 and rev.2 were reviewed by `codex` (`gpt-5.6-sol`, xhigh;
+records `codex_spec4.final.md`, `codex_spec4r2.final.md`; rev.2 = NO MAJOR). rev.4 folds the combined
+four-spec review (`codex_cross.final.md`): its one MAJOR — the attempt budget did not cover TCP connect —
+is answered by the attempt envelope (decision 3); its MINORs (read-loop counters, the sentinel, the
+observability texts, the user docs) are folded below. Spec 4 of the R2
 series. Implements the fix direction recorded in BACKLOG.md ("Reads time out too … Root cause found:
 the S3 client's adaptive first-attempt timeout", user ruling 2026-09-04: keep the fuse, make the CAS
 retry cooperate with it).
@@ -58,19 +61,39 @@ there already).
    on every engine reissue and applies the full `attempt_timeout_ms` on a fresh connection, as it does
    for upstream retries; the contract relies only on "1 versus greater than 1" (the SDK's own retry
    numbering overcounts, `Client.cpp:857`, and is left alone). No change to `PocoHTTPClient` or to the
-   fuse itself.
+   fuse itself. `readLoop` keeps TWO counters: `attempt_no` (physical numbering, handed to the
+   transport) and `ordinary_reissues` (the exponential-backoff index); a zero-pause reissue advances
+   only the first.
 2. **A first-attempt timeout is a connection-quality answer** — for GET, HEAD, LIST, DELETE and the
    conditional PUT; the sentinel probe gets attempt propagation only (its backend converts the
    exception into `Indeterminate` before the engine sees it, and the outer loop's ordinary backoff
    stays). One central matcher
    `isFirstAttemptFuseTimeout(e, attempt_no)`: `attempt_no == 1`, `S3Exception` with S3 error
    `NETWORK_CONNECTION`, NOT a spec-1 connect-failure hint (checked first: `connect timed out` belongs
-   to spec 1; a hinted attempt remains ambiguous and is reissued without a preceding settle read), and the generic transport-timeout text. For a qualifying **read** (GET/HEAD/LIST/probe):
+   to spec 1; a hinted attempt remains ambiguous and is reissued without a preceding settle read), and the generic transport-timeout text. For a qualifying **read** (GET/HEAD/LIST; NOT the
+   sentinel probe, whose backend turns every transport exception into `Indeterminate` at
+   `CasObjectStorageBackend.cpp` ~755 and whose outer loop keeps its ordinary backoff):
    re-check admission with `reservedFor(0, 1)` and reissue with no sleep. For a qualifying **write**:
    the exact settlement read still runs (the request may have been sent), then admission with
    `reservedFor(0, 2)` and a no-sleep reissue. This is a separate zero-pause gated reissue helper, not
    spec 1's `pauseFlat`; it does not advance the exponential-backoff index, so a following failure
    starts at `backoff(1)`. Backoff remains for attempt ≥ 2 and for every store-side fault.
+3. **The attempt envelope includes connect.** Today the single-attempt client clone
+   (`S3ObjectStorage::getSingleAttemptClient`) overrides only `requestTimeoutMs`; `connectTimeoutMs`
+   stays the disk's `connect_timeout_ms` (default 1000 ms, `S3AuthSettings`), and on attempt ≥ 2 the
+   adaptive cap does not apply (`ConnectionTimeouts::getAdaptiveTimeouts` returns the configured
+   values for non-first attempts). The engine nevertheless reserved exactly `attempt_timeout_ms` per
+   envelope, so a slow connect could overrun the reservation — the R2 renewal attempt of 11 s is that
+   overrun. Two changes, both in CAS-owned code (`src/IO` untouched, per the user ruling):
+   the clone also sets `cfg.connectTimeoutMs = min(base connectTimeoutMs, attempt_timeout_ms)`, and the
+   backend exposes `attemptEnvelopeMs() = attemptTimeoutMs() + min(connect_timeout_ms, attemptTimeoutMs())`,
+   which `CasRequests::attempt_reservation_ms` (`CasRequests.cpp` ~245) and the writable-open
+   validation `attempt + margin < TTL` (`ContentAddressedMetadataStorage.cpp` ~986, `CasPool.cpp` ~1004,
+   ~1160) use instead of the bare attempt timeout. With defaults the envelope is 6 s (5 s + 1 s).
+   What this does NOT make hard: `requestTimeoutMs` becomes Poco's per-socket-operation send and
+   receive timeouts, so a response that trickles bytes slower than the timeout can still exceed the
+   envelope. An absolute wall-clock deadline across connect/send/receive needs a `PocoHTTPClient`
+   change and stays in the backlog (R2 item (a) is closed for connect and left open for trickle).
 
 Expected on the lane: one fuse trip costs 200 ms plus (for writes) one read; the double-hit case
 (p50 962 ms) disappears; a LIST of a large prefix succeeds on attempt 2 under the full budget, which
@@ -79,10 +102,25 @@ is what the bootstrap residual check and the namespace janitor need.
 ## What this does not change {#unchanged}
 
 The fuse stays for every first attempt (user ruling). The single-attempt client and its request
-timeout stay. Spec 1's pre-send classification is orthogonal: a not-sent attempt is reissued without a
-read; a fuse timeout is reissued after the read. The LIST page bounds of `aee2a4b6880`/`23b67e74a85`
+timeout stay. Spec 1's connect-failure hint is orthogonal: a connect-failure-hinted attempt remains
+ambiguous but is reissued without a preceding settle read; a fuse timeout is reissued after the read. The LIST page bounds of `aee2a4b6880`/`23b67e74a85`
 stay; they reduce what a single attempt has to enumerate, this spec makes the second attempt able to
 finish it.
+
+## Observability and documentation {#observability-docs}
+
+1. `CASRequestReissue` (`ProfileEvents.cpp` ~944) is incremented by the zero-pause helper too and its
+   description becomes pacing-agnostic ("re-sent after a failed or ambiguous attempt; the pause before
+   it is a jittered backoff, a flat pause, or none"). `CASRequestResolveRead`'s "every ambiguity costs
+   one" is qualified: every conflict and every ambiguity that is not a connect-failure hint (spec 1).
+   New `CASRequestFirstAttemptFuse` per matched timeout.
+2. The `writeLoop` contract comment (`CasRequests.h` ~356, "settles every ambiguity by an exact read
+   before it reports anything") is rewritten: every verdict is still proven by a read or by the
+   reissue's own 2xx; a connect-failure-hinted attempt is reissued before its read.
+3. `configuration.md`: the `cas_attempt_timeout_ms` row names the conditional PUT among the requests
+   and states the envelope (`attempt timeout + min(connect_timeout_ms, attempt timeout)` per physical
+   attempt; send/receive are per-socket-operation bounds); the `cas_lease_safety_margin_ms` row uses
+   the envelope in its validation formula.
 
 ## Tests, in the order they are written and made to pass {#tests}
 
@@ -102,6 +140,19 @@ finish it.
    attempt 2.
 6. `CASRequestsFuse.GatesRefuseTheZeroPauseReissue`: deadline and fence refusals at the new gate
    return today's `GaveUp` verdicts; `Retry::once()` performs no second attempt.
+6a. `CASRequestsFuse.ReadLoopZeroPauseKeepsTheBackoffIndex`: a read failing attempt 1 with the fuse and
+   attempt 2 with an ordinary transport fault sleeps exactly `backoff(1)` before attempt 3 while the
+   transport sees `[1, 2, 3]`. Fails while `readLoop` has one counter.
+6b. `S3SingleAttemptClient.ConnectTimeoutIsCappedByTheAttemptBudget`
+   (`src/Disks/tests/gtest_cas_s3_client_profile.cpp`, shared with spec 3): a base configuration with
+   `connectTimeoutMs = 20000` and an attempt timeout of 5000 yields a clone with `connectTimeoutMs ==
+   5000` and `requestTimeoutMs == 5000`; a base with 1000 keeps 1000.
+6c. `CASRequests.ReservationIsTheEnvelope`: `attempt_reservation_ms == attemptEnvelopeMs()` for a
+   backend reporting attempt 5000 / connect 1000 (6000) and attempt 5000 / connect 20000 (10000);
+   the renewal twin (`gtest_cas_pool.cpp`) with `connect_timeout_ms > cas_attempt_timeout_ms` and a
+   backend that consumes the whole envelope per attempt stops issuing before the lease cutoff
+   (virtual clock) instead of overrunning it; the writable-open validation refuses `envelope + margin
+   >= TTL` with the envelope, not the bare attempt timeout, in its message.
 7. `CASBootstrapOrdering.ResidualListSucceedsOnTheSecondAttempt`: a backend that fails every LIST
    whose `access.attempt_no == 1` and answers otherwise opens the pool (fails without propagation
    regardless of which invocation is first).
