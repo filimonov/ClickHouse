@@ -9,7 +9,10 @@ doc_type: 'design'
 
 # CAS reissues cooperate with the adaptive first-attempt timeout {#cas-adaptive-first-attempt-timeout-design}
 
-**Status:** DRAFT rev.5 (2026-09-05; rev.5 folds the fold's re-review `codex_cross_r2.final.md`: the
+**Status:** DRAFT rev.6 (2026-09-05; rev.6 folds round 3 `codex_cross_r3.final.md`: a zero connect timeout is
+normalized, the TLS handshake's second connect interval is budgeted (`attempt + 2 × cap`), an end-to-end wiring
+test, strict horizon checks; the `src/IO` question of its MAJOR 1 is the user's call and is recorded in the
+constraints paragraph below) — earlier: rev.5 rev.5 folds the fold's re-review `codex_cross_r2.final.md`: the
 envelope becomes one authoritative budget value used at every lease-arithmetic site, its connect cap is
 frozen at open so a client reload cannot widen it, a zero attempt timeout is refused, the residual list
 is complete, the observability wording is operational). rev.1 and rev.2 were reviewed by `codex` (`gpt-5.6-sol`, xhigh;
@@ -89,37 +92,46 @@ there already).
    `attempt_timeout_ms` per envelope, so a slow connect could overrun the reservation — the R2 renewal
    attempt of 11 s is that overrun. All changes are in CAS-owned code (`src/IO` untouched, per the
    user ruling):
-   - `CasRequestBudget` gains `connect_timeout_cap_ms` and `attemptEnvelopeMs() = attempt_timeout_ms +
-     connect_timeout_cap_ms`. The cap is FROZEN at writable open by `ContentAddressedMetadataStorage`
-     as `min(disk connect_timeout_ms, attempt_timeout_ms)`, the disk value read once from the S3
+   - `CasRequestBudget` gains `std::optional<uint64_t> connect_timeout_cap_ms` and
+     `attemptEnvelopeMs() = attempt_timeout_ms + 2 × connect_timeout_cap_ms` (saturating; `nullopt`
+     contributes nothing). TWO cap intervals, not one: Poco gives the TLS handshake a fresh connect
+     timeout after the TCP connect (`SecureSocketImpl.cpp` ~156, ~223), so an HTTPS attempt can spend
+     `2 × cap` before any request I/O; the formula is scheme-agnostic on purpose (conservative for
+     plain HTTP). The cap is FROZEN at writable open by `ContentAddressedMetadataStorage` from the S3
      client the storage was created with (`IObjectStorage::tryGetS3StorageClient()` →
-     `getClientConfiguration().connectTimeoutMs`; a storage with no S3 client freezes 0). A later
-     `applyNewSettings` that raises `connect_timeout_ms` cannot widen the envelope: the frozen cap is
-     what every request and every clone carries.
+     `getClientConfiguration().connectTimeoutMs`): a configured `connect_timeout_ms == 0` means
+     "unbounded" to Poco and to the adaptive saturation (`ConnectionTimeouts.cpp` ~33), so it is
+     normalized to `attempt_timeout_ms`; otherwise `min(connect_timeout_ms, attempt_timeout_ms)`. A
+     storage with no S3 client freezes `nullopt`. A later `applyNewSettings` that raises
+     `connect_timeout_ms`, or sets it to zero, cannot widen the envelope: the frozen cap is what every
+     request and every clone carries.
    - `validateCasRequestBudget` refuses `attempt_timeout_ms == 0` for a writable Native mount (a zero
      leaves `requestTimeoutMs` at the disk's own value while reserving nothing) and validates,
      overflow-safely and strictly, `envelope + margin < TTL`, and with background renewal
      `period + 2 × envelope + margin < TTL` (this replaces the `attempt ≤ TTL − margin − period` check
      in `Pool::open`, `CasPool.cpp` ~95). Example the old check accepted and the new one refuses:
-     TTL 25 s, period 10 s, margin 2 s, attempt 5 s, connect 5 s — a 10 s envelope, and the first
+     TTL 25 s, period 10 s, margin 2 s, attempt 5 s, connect 5 s — a 15 s envelope, and the first
      scheduled renewal could not admit its two envelopes.
    - Every lease-arithmetic site uses the envelope: `CasRequests::attempt_reservation_ms`
      (`CasRequests.cpp` ~245) = `attemptEnvelopeMs()` (the backend forwards the budget it was built
      with); the open and remount publication horizons (`CasPool.cpp` ~841, ~1506) reserve
-     `period + 2 × envelope`; `CasMountRuntime::refAppendFenceOk` (`CasMountRuntime.cpp` ~154) asks for
+     `period + 2 × envelope` and refuse EQUALITY, as `CasMountRuntime::admit` does (`CasMountRuntime.cpp`
+     ~149; today the horizons accept it and the fence refuses it, so a horizon that "fits" exactly
+     starts a renewal the fence then rejects); `CasMountRuntime::refAppendFenceOk` (`CasMountRuntime.cpp` ~154) asks for
      `2 × envelope` (a write plus its settlement read, which is what `writeLoop` reserves); the three
      teardown drain deadlines (`ContentAddressedMetadataStorage.cpp` ~986, `CasPool.cpp` ~1004, ~1160)
      use `envelope + margin`.
    - The clone takes the cap: `getSingleAttemptClient(request_timeout_ms, connect_timeout_cap_ms)`,
      cached by the pair, sets `cfg.requestTimeoutMs = request_timeout_ms` and
-     `cfg.connectTimeoutMs = min(base connectTimeoutMs, connect_timeout_cap_ms)` (a zero cap leaves the
-     base value). The control-request context of decision 1 carries the cap next to the timeout, so a
-     clone rebuilt over a reloaded base client still honours the frozen cap.
-   With defaults the envelope is 6 s (5 s + 1 s), and spec 2's scheduling-lateness figure is computed
-   from it.
+     `cfg.connectTimeoutMs = (base connectTimeoutMs == 0) ? cap : min(base connectTimeoutMs, cap)` — a
+     reloaded base of zero (unbounded) resolves to the frozen cap, never to "no limit". The
+     control-request context of decision 1 carries the cap next to the timeout, so a clone rebuilt
+     over a reloaded base client still honours the frozen cap.
+   With defaults the envelope is 7 s (5 s + 2 × 1 s), and spec 2's scheduling-lateness figure is
+   computed from it.
    What this does NOT make hard, stated so nobody reads "envelope" as a wall-clock deadline: it
-   bounds ONE TCP/TLS connect under the frozen cap and each socket operation under
-   `requestTimeoutMs`. An attempt can still exceed it when the response keeps every inactivity gap
+   bounds one TCP connect and one TLS handshake under the frozen cap each, and each socket operation
+   under `requestTimeoutMs`. An attempt can still exceed it when the response keeps every inactivity gap
    shorter than the timeout, when the request throttler or the resource scheduler waits before the
    connection is opened, during DNS resolution, across a redirect, and for a LIST whose store page is
    truncated: `S3IteratorAsync` rebuilds and `IObjectStorageIteratorAsync` prefetches the next page
@@ -184,24 +196,35 @@ finish it.
    attempt 2 with an ordinary transport fault sleeps exactly `backoff(1)` before attempt 3 while the
    transport sees `[1, 2, 3]`. Fails while `readLoop` has one counter.
 6b. `CASRequestBudget.EnvelopeIsValidatedNotTheBareAttempt` (`gtest_cas_requests.cpp`):
-   `attemptEnvelopeMs()` is 6000 for attempt 5000 / cap 1000; `validateCasRequestBudget` refuses
-   attempt 0; refuses TTL 25000 / period 10000 / margin 2000 / attempt 5000 / cap 5000 (the old check
-   accepted it) naming the envelope in its message; accepts the defaults. Fails until the field, the
+   `attemptEnvelopeMs()` is 7000 for attempt 5000 / cap 1000 and 5000 for `nullopt`;
+   `validateCasRequestBudget` refuses attempt 0; refuses TTL 25000 / period 10000 / margin 2000 /
+   attempt 5000 / cap 5000 (the old check accepted it) naming the envelope in its message; accepts the
+   defaults (30000 / 10000 / 2000 / 5000 / 1000: 10000 + 14000 + 2000 < 30000). Fails until the field, the
    accessor and the new inequalities exist.
 6c. `S3SingleAttemptClient.ConnectTimeoutIsCappedAndFrozen`
    (`src/Disks/tests/gtest_cas_s3_client_profile.cpp`, shared with spec 3): a base configuration with
    `connectTimeoutMs = 20000`, request timeout 5000 and cap 5000 yields a clone with
    `connectTimeoutMs == 5000` and `requestTimeoutMs == 5000`; a base with 1000 and cap 5000 keeps 1000;
    after the base client is replaced with `connectTimeoutMs = 5000` (the reload path), the clone
-   rebuilt for cap 1000 has `connectTimeoutMs == 1000`.
+   rebuilt for cap 1000 has `connectTimeoutMs == 1000`; a base of 0 (unbounded) with cap 1000 yields
+   1000; two caps under one request timeout yield two distinct clones (the cache key is the pair).
 6d. `CASRequests.ReservationIsTheEnvelope`: `attempt_reservation_ms == attemptEnvelopeMs()` for a
-   backend built with attempt 5000 / cap 1000 (6000); `CASMountRuntime.RefAppendFenceOkIsAdmitAtTwoEnvelopes`
+   backend built with attempt 5000 / cap 1000 (7000); `CASMountRuntime.RefAppendFenceOkIsAdmitAtTwoEnvelopes`
    replaces `RefAppendFenceOkIsAdmitAtTheAttemptTimeout`; `CASMountOpenWaits.PublicationHorizonUsesTheEnvelope`
    and its remount twin: with the cap set so that `period + 2 × attempt` fits but
    `period + 2 × envelope` does not, the open re-anchors synchronously (one extra renewal write)
    before arming; the renewal twin (`gtest_cas_heartbeat.cpp`) over a backend that consumes the
    whole envelope per attempt stops issuing before the lease cutoff (virtual clock) instead of
-   overrunning it.
+   overrunning it; both horizon tests include the exact-boundary case (`period + 2 × envelope ==
+   remaining` is refused).
+6e. `CASEnvelopeWiring.FrozenCapTravelsFromTheClientToEveryVerb` (`gtest_cas_s3_client_profile.cpp`):
+   a real `ContentAddressedMetadataStorage` opened over a test `S3ObjectStorage` whose client has
+   `connectTimeoutMs = 1000` and `attempt_timeout_ms = 5000` reports `poolConfig().cas_request_budget
+   .attemptEnvelopeMs() == 7000` and `connect_timeout_cap_ms == 1000`; after `applyNewSettings` with a
+   config carrying `connect_timeout_ms = 5000` (and separately `0`), one control read and one
+   conditional write are issued and the recording S3 storage shows both selected a clone with
+   `connectTimeoutMs == 1000`. Fails while any link of the chain (snapshot → `pool_config` → backend
+   → context → clone) is missing.
 7. `CASBootstrapOrdering.ResidualListSucceedsOnTheSecondAttempt`: a backend that fails every LIST
    whose `access.attempt_no == 1` and answers otherwise opens the pool (fails without propagation
    regardless of which invocation is first).

@@ -23,7 +23,7 @@
 - Build: `flock build/.ninja_lock ninja -C build unit_tests_dbms > build/build_<task>.log 2>&1`; run gtests as `build/src/unit_tests_dbms --gtest_filter='<filter>' > build/test_<name>.log 2>&1`; have a subagent summarize each log. The CAS gate filter is exactly `CAS*` (never widen).
 - Each spec is its own commit (spec 3: two commits). Each spec's commit is reviewed with `codex exec -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only - < <prompt-file>` until no MAJOR finding remains, before the next spec starts.
 - Settings, events and docs: setting descriptions in `ContentAddressedSettings.cpp` use plain words; event descriptions in `src/Common/ProfileEvents.cpp` end with what a non-zero value means; docs headers carry `{#anchors}`; SQL/class/function names in backticks; functions written `f` not `f()`.
-- Defaults (verbatim from the specs): `cas_mount_lease_ttl_ms` 30000, `cas_mount_renew_period_ms` 10000, `cas_attempt_timeout_ms` 5000 (now `≥ 1`), `cas_lease_safety_margin_ms` 2000, `connect_timeout_ms` 1000 → envelope 6000 ms; `cas_unsafe_remount_no_delay` default `0`; connect-hint flat pause 50 ms; hint texts `Cannot assign requested address`, `Connection refused`, `No route to host`, `Network is unreachable`, `connect timed out`.
+- Defaults (verbatim from the specs): `cas_mount_lease_ttl_ms` 30000, `cas_mount_renew_period_ms` 10000, `cas_attempt_timeout_ms` 5000 (now `≥ 1`), `cas_lease_safety_margin_ms` 2000, `connect_timeout_ms` 1000 → envelope 7000 ms (attempt + 2 × connect cap; the TLS handshake gets a second connect interval); `cas_unsafe_remount_no_delay` default `0`; connect-hint flat pause 50 ms; hint texts `Cannot assign requested address`, `Connection refused`, `No route to host`, `Network is unreachable`, `connect timed out`.
 
 ---
 
@@ -746,7 +746,7 @@ Expected: all PASS.
 - Test: `src/Disks/tests/gtest_cas_requests.cpp`, new `src/Disks/tests/gtest_cas_s3_client_profile.cpp`, `src/Disks/tests/gtest_cas_mount_runtime.cpp` (~145), `src/Disks/tests/gtest_cas_pool.cpp`, `src/Disks/tests/gtest_cas_heartbeat.cpp`
 
 **Interfaces:**
-- Produces: `CasRequestBudget::connect_timeout_cap_ms` (default 1000) and `uint64_t CasRequestBudget::attemptEnvelopeMs() const` (saturating `attempt_timeout_ms + connect_timeout_cap_ms`); `validateCasRequestBudget(budget, ttl, period, bool background_renewal)`; `virtual uint64_t Backend::attemptEnvelopeMs() const { return attemptTimeoutMs(); }`; `ObjectStorageBackend(object_storage, mode, single_attempt_control_plane, attempt_timeout_ms, connect_timeout_cap_ms = 0)` with `connectTimeoutCapMs()`; `S3ObjectStorage::getSingleAttemptClient(uint64_t request_timeout_ms, uint64_t connect_timeout_cap_ms)` cached by the pair; `S3ObjectStorage::clientForRetryProfile(profile, request_timeout_ms, connect_timeout_cap_ms)` (the profile-aware public overloads gain the cap parameter with default 0 until Task B3 replaces the pair by the context).
+- Produces: `std::optional<uint64_t> CasRequestBudget::connect_timeout_cap_ms` (default 1000) and `uint64_t CasRequestBudget::attemptEnvelopeMs() const` (saturating `attempt_timeout_ms + 2 × connect_timeout_cap_ms`, `nullopt` adds nothing); `validateCasRequestBudget(budget, ttl, period, bool background_renewal)`; `virtual uint64_t Backend::attemptEnvelopeMs() const { return attemptTimeoutMs(); }`; `ObjectStorageBackend(object_storage, mode, single_attempt_control_plane, attempt_timeout_ms, connect_timeout_cap_ms = 0)` with `connectTimeoutCapMs()`; `S3ObjectStorage::getSingleAttemptClient(uint64_t request_timeout_ms, uint64_t connect_timeout_cap_ms)` cached by the pair; `S3ObjectStorage::clientForRetryProfile(profile, request_timeout_ms, connect_timeout_cap_ms)` (the profile-aware public overloads gain the cap parameter with default 0 until Task B3 replaces the pair by the context).
 
 - [ ] **Step 1: Write the budget test**
 
@@ -756,15 +756,16 @@ Append to `gtest_cas_requests.cpp`:
 TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)
 {
     CasRequestBudget budget{.attempt_timeout_ms = 5000, .lease_safety_margin_ms = 2000, .connect_timeout_cap_ms = 1000};
-    EXPECT_EQ(budget.attemptEnvelopeMs(), 6000u);
+    EXPECT_EQ(budget.attemptEnvelopeMs(), 7000u);
+    EXPECT_EQ(CasRequestBudget{.attempt_timeout_ms = 5000, .lease_safety_margin_ms = 2000, .connect_timeout_cap_ms = std::nullopt}.attemptEnvelopeMs(), 5000u);
     /// Defaults with the default TTL / period are accepted.
     EXPECT_NO_THROW(validateCasRequestBudget(budget, 30000, 10000, /*background_renewal=*/true));
     /// A zero attempt timeout would reserve nothing while the request keeps the disk's own timeout.
     EXPECT_THROW(validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = 0, .lease_safety_margin_ms = 2000,
-                                                           .connect_timeout_cap_ms = 0}, 30000, 10000, true),
+                                                           .connect_timeout_cap_ms = std::nullopt}, 30000, 10000, true),
                  DB::Exception);
     /// The old inequality (attempt <= TTL - margin - period: 5000 <= 13000) accepted this; two envelopes
-    /// of 10 s do not fit a 25 s lease behind a 10 s period and a 2 s margin.
+    /// of 15 s do not fit a 25 s lease behind a 10 s period and a 2 s margin.
     const CasRequestBudget wide{.attempt_timeout_ms = 5000, .lease_safety_margin_ms = 2000, .connect_timeout_cap_ms = 5000};
     try
     {
@@ -774,9 +775,9 @@ TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)
     catch (const DB::Exception & e)
     {
         EXPECT_THAT(e.message(), testing::HasSubstr("envelope"));
-        EXPECT_THAT(e.message(), testing::HasSubstr("10000"));
+        EXPECT_THAT(e.message(), testing::HasSubstr("15000"));
     }
-    /// Without background renewal only `envelope + margin < TTL` applies.
+    /// Without background renewal only `envelope + margin < TTL` applies (15000 + 2000 < 25000).
     EXPECT_NO_THROW(validateCasRequestBudget(wide, 25000, 10000, /*background_renewal=*/false));
     /// Saturation: absurd values fail closed rather than wrap.
     EXPECT_THROW(validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = std::numeric_limits<uint64_t>::max(),
@@ -789,15 +790,15 @@ TEST(CASRequests, ReservationIsTheEnvelope)
     struct EnvelopeBackend : InMemoryBackend
     {
         uint64_t attemptTimeoutMs() const override { return 5000; }
-        uint64_t attemptEnvelopeMs() const override { return 6000; }
+        uint64_t attemptEnvelopeMs() const override { return 7000; }
     };
     FakeClock clock;
     auto backend = std::make_shared<EnvelopeBackend>();
     auto requests = makeRequests(backend, clock);
     auto op = requests.admit();
-    /// A write reserves two envelopes: 12 s fits a 12 s window, 11 s does not.
-    EXPECT_TRUE(std::holds_alternative<Committed>(op.create("k", "v", Retry::within(12'000))));
-    const WriteResult refused = op.create("k2", "v", Retry::within(11'999));
+    /// A write reserves two envelopes: 14 s fits a 14 s window, 13.999 s does not.
+    EXPECT_TRUE(std::holds_alternative<Committed>(op.create("k", "v", Retry::within(14'000))));
+    const WriteResult refused = op.create("k2", "v", Retry::within(13'999));
     const auto * gave_up = std::get_if<GaveUp>(&refused);
     ASSERT_NE(gave_up, nullptr);
     EXPECT_FALSE(gave_up->sent_any);
@@ -827,6 +828,10 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
 
     auto narrow = make_storage(1000);
     EXPECT_EQ(narrow->getSingleAttemptClient(5000, 5000)->getClientConfiguration().connectTimeoutMs, 1000);
+    /// A base of 0 means unbounded to Poco: it resolves to the cap, never to "no limit".
+    EXPECT_EQ(make_storage(0)->getSingleAttemptClient(5000, 1000)->getClientConfiguration().connectTimeoutMs, 1000);
+    /// Two caps under one request timeout are two clones: the cache key is the pair.
+    EXPECT_NE(narrow->getSingleAttemptClient(5000, 1000).get(), narrow->getSingleAttemptClient(5000, 500).get());
 
     /// The reload path replaces the base client with a wider connect timeout; a clone rebuilt for the
     /// frozen cap 1000 stays at 1000.
@@ -846,10 +851,10 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
 ```cpp
 TEST(CASMountOpenWaits, PublicationHorizonUsesTheEnvelope)
 {
-    /// TTL 1000, period 300, margin 50, attempt 100, cap 200: `period + 2 × attempt` = 500 fits the
-    /// 950 ms safe window at boot 0, but the open below starts with 500 ms already consumed, where
-    /// `period + 2 × envelope` = 900 does not -- the open must re-anchor synchronously (one extra
-    /// renewal write) before arming.
+    /// TTL 1000, period 100, margin 50, attempt 100, cap 100: `period + 2 × attempt` = 300 fits the
+    /// 950 ms safe window with 500 ms consumed, but `period + 2 × envelope` = 700 does not -- the open
+    /// must re-anchor synchronously (one extra renewal write) before arming. (Validation: 100 + 600 +
+    /// 50 < 1000.)
     auto b = std::make_shared<DB::Cas::tests::CountingBackend>();
     Layout l{"p"};
     DB::Cas::tests::seedPoolMetaForRestart(*b);
@@ -858,8 +863,8 @@ TEST(CASMountOpenWaits, PublicationHorizonUsesTheEnvelope)
     ASSERT_NO_THROW(store = Pool::open(b, PoolConfig{
         .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
-        .mount_renew_period = std::chrono::milliseconds(300),
-        .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 100, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 200},
+        .mount_renew_period = std::chrono::milliseconds(100),
+        .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 100, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 100},
         .boot_ms_fn = [&] { const uint64_t now = fake_boot; fake_boot += 500; return now; },   /// every read of the clock costs 500 ms
         .wait_sleep_fn = [&](uint64_t ms) { fake_boot += ms; },
     }));
@@ -876,7 +881,7 @@ Read `CasPool.cpp` ~836–848 first: the horizon check reads `bootMsNow()` once;
 ```cpp
 TEST(CASHeartbeat, RenewalStopsBeforeTheCutoffWhenEveryAttemptConsumesTheEnvelope)
 {
-    /// Every attempt costs the whole envelope (attempt 100 + cap 100 = 200 ms) and fails ambiguously.
+    /// Every attempt costs the whole envelope (attempt 100 + 2 × cap 50 = 200 ms) and fails ambiguously.
     /// Under a 1000 ms lease with a 100 ms margin the renewal must stop issuing before the cutoff
     /// rather than start an attempt that cannot finish inside it.
     struct EnvelopeEatingBackend : RenewalScriptBackend
@@ -930,13 +935,14 @@ Run: `flock build/.ninja_lock ninja -C build unit_tests_dbms > build/build_b2.lo
 
 `CasRequestBudget.h`:
 ```cpp
-    /// The cap the single-attempt client puts on ONE TCP/TLS connect, frozen when the pool opens as
-    /// `min(disk connect_timeout_ms, attempt_timeout_ms)` so a later client reload cannot widen the
-    /// envelope. 0 when the storage has no S3 client (the envelope is then the attempt alone).
-    uint64_t connect_timeout_cap_ms = 1000;
+    /// The cap the single-attempt client puts on one TCP connect and again on one TLS handshake,
+    /// frozen when the pool opens as `min(disk connect_timeout_ms, attempt_timeout_ms)` (a configured
+    /// zero means unbounded and is normalized to the attempt timeout) so a later client reload cannot
+    /// widen the envelope. Empty when the storage has no S3 client: the envelope is the attempt alone.
+    std::optional<uint64_t> connect_timeout_cap_ms = 1000;
 
-    /// What ONE physical attempt is allowed to cost end to end: the connect cap plus the attempt
-    /// timeout, saturating. The request contract reserves this, not the bare attempt timeout, before
+    /// What ONE physical attempt is allowed to cost end to end: two connect caps (TCP, then TLS) plus
+    /// the attempt timeout, saturating. The request contract reserves this, not the bare attempt timeout, before
     /// every attempt it starts.
     uint64_t attemptEnvelopeMs() const;
 ```
@@ -944,9 +950,14 @@ Run: `flock build/.ninja_lock ninja -C build unit_tests_dbms > build/build_b2.lo
 ```cpp
 uint64_t CasRequestBudget::attemptEnvelopeMs() const
 {
-    return attempt_timeout_ms > std::numeric_limits<uint64_t>::max() - connect_timeout_cap_ms
+    /// The TCP connect and the TLS handshake each get one connect interval from Poco, so an HTTPS
+    /// attempt may spend two caps before any request I/O. Scheme-agnostic on purpose: conservative for
+    /// plain HTTP, exact for HTTPS.
+    const uint64_t cap = connect_timeout_cap_ms.value_or(0);
+    const uint64_t connects = cap > std::numeric_limits<uint64_t>::max() / 2 ? std::numeric_limits<uint64_t>::max() : 2 * cap;
+    return attempt_timeout_ms > std::numeric_limits<uint64_t>::max() - connects
         ? std::numeric_limits<uint64_t>::max()
-        : attempt_timeout_ms + connect_timeout_cap_ms;
+        : attempt_timeout_ms + connects;
 }
 
 void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_lease_ttl_ms,
@@ -965,7 +976,7 @@ void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_le
             "CAS request budget rejected: the attempt envelope ({} ms = attempt_timeout_ms {} + connect cap {}) "
             "plus lease_safety_margin_ms ({}) must be strictly less than the mount lease TTL ({} ms). "
             "A writable mount refuses to open with this budget.",
-            envelope, budget.attempt_timeout_ms, budget.connect_timeout_cap_ms, budget.lease_safety_margin_ms, mount_lease_ttl_ms);
+            envelope, budget.attempt_timeout_ms, budget.connect_timeout_cap_ms.value_or(0), budget.lease_safety_margin_ms, mount_lease_ttl_ms);
     if (background_renewal)
     {
         /// A renewal is a write: two envelopes (the attempt and its settlement read) after one period.
@@ -981,11 +992,11 @@ void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_le
     LOG_INFO(getLogger("CasRequestBudget"),
         "CAS request budget in effect: attempt_timeout_ms={} connect_timeout_cap_ms={} envelope_ms={} lease_safety_margin_ms={} "
         "(mount_lease_ttl_ms={} mount_renew_period_ms={})",
-        budget.attempt_timeout_ms, budget.connect_timeout_cap_ms, envelope, budget.lease_safety_margin_ms,
+        budget.attempt_timeout_ms, budget.connect_timeout_cap_ms.value_or(0), envelope, budget.lease_safety_margin_ms,
         mount_lease_ttl_ms, mount_renew_period_ms);
 }
 ```
-`CasPool.cpp` ~85–110: call `validateCasRequestBudget(config.cas_request_budget, ttl_ms, period_ms, config.background_watermark != nullptr)` and delete the `cadence_fits` block that follows (its check is now inside). Lines ~841 and ~1506: `period_ms + 2 * budget.attemptEnvelopeMs()` / `2 * budget.attemptEnvelopeMs()` for `renewal_window_ms` (saturating add helper if none exists in the file: use the existing pattern `a > max - b ? max : a + b`). `CasMountRuntime::refAppendFenceOk`: `admit(fenceGeneration(), 2 * cas_request_budget.attemptEnvelopeMs())` with the comment "a write and its settlement read". Drains (`ContentAddressedMetadataStorage.cpp` ~986, `CasPool.cpp` ~1004, ~1160): `attemptEnvelopeMs() + lease_safety_margin_ms`.
+`CasPool.cpp` ~85–110: call `validateCasRequestBudget(config.cas_request_budget, ttl_ms, period_ms, config.background_watermark != nullptr)` and delete the `cadence_fits` block that follows (its check is now inside). Lines ~841 and ~1506: `period_ms + 2 * budget.attemptEnvelopeMs()` / `2 * budget.attemptEnvelopeMs()` for `renewal_window_ms` (saturating add helper if none exists in the file: use the existing pattern `a > max - b ? max : a + b`), and `renewal_window_fits` becomes STRICT (`renewal_window_ms < safe_deadline - now_boot_ms`), matching `CasMountRuntime::admit`, which refuses equality; the horizon tests assert the exact-boundary refusal. `CasMountRuntime::refAppendFenceOk`: `admit(fenceGeneration(), 2 * cas_request_budget.attemptEnvelopeMs())` with the comment "a write and its settlement read". Drains (`ContentAddressedMetadataStorage.cpp` ~986, `CasPool.cpp` ~1004, ~1160): `attemptEnvelopeMs() + lease_safety_margin_ms`.
 
 `CasBackend.h`: after `attemptTimeoutMs`:
 ```cpp
@@ -1002,10 +1013,13 @@ void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_le
     /// Frozen here, once: the connect cap every control request and every single-attempt clone carries.
     /// A later reload that widens the disk's connect timeout cannot widen the envelope the lease
     /// arithmetic was validated against.
-    uint64_t connect_timeout_cap_ms = 0;
+    std::optional<uint64_t> connect_timeout_cap_ms;
     if (const auto s3_client = object_storage->tryGetS3StorageClient())
-        connect_timeout_cap_ms = std::min<uint64_t>(
-            static_cast<uint64_t>(s3_client->getClientConfiguration().connectTimeoutMs), cas_attempt_timeout_ms);
+    {
+        /// A configured zero is "unbounded" to Poco: the cap is then the attempt timeout itself.
+        const auto configured = static_cast<uint64_t>(std::max<long>(0, s3_client->getClientConfiguration().connectTimeoutMs));
+        connect_timeout_cap_ms = configured == 0 ? cas_attempt_timeout_ms : std::min(configured, cas_attempt_timeout_ms);
+    }
     pool_config.cas_request_budget.connect_timeout_cap_ms = connect_timeout_cap_ms;
 ```
 and the backend construction passes `pool_config.cas_request_budget.attempt_timeout_ms, connect_timeout_cap_ms`.
@@ -1016,16 +1030,21 @@ and the backend construction passes `pool_config.cas_request_budget.attempt_time
     /// attempt + cap per envelope, and a reloaded base client with a wider connect timeout must not
     /// widen what a reissue can spend.
     if (connect_timeout_cap_ms != 0)
-        cfg.connectTimeoutMs = std::min<long>(cfg.connectTimeoutMs, static_cast<long>(connect_timeout_cap_ms));
+        cfg.connectTimeoutMs = cfg.connectTimeoutMs <= 0 ? static_cast<long>(connect_timeout_cap_ms)
+                                                        : std::min<long>(cfg.connectTimeoutMs, static_cast<long>(connect_timeout_cap_ms));
 ```
 `clientForRetryProfile(profile, request_timeout_ms, connect_timeout_cap_ms)`; `readObject`/`writeObject` pass `read_settings.object_storage_connect_timeout_cap_ms` / `write_settings.object_storage_connect_timeout_cap_ms`. Add `void setClientForTest(std::unique_ptr<S3::Client> && new_client) { client->set(std::move(new_client)); }`.
 
 `ContentAddressedSettings.cpp` ~83–84 descriptions: `"Budget for one HTTP attempt of a writable Native mount's control-plane requests (read, head, list, remove, conditional write), at least 1. With the connect cap it forms the attempt envelope the lease arithmetic reserves"` and `"Startup-only margin validated against the mount lease TTL: attempt envelope + this must be strictly less than the TTL, and renew period + 2 × envelope + this too"`; add `if (settings[ContentAddressedSetting::attempt_timeout_ms] == 0) throw ... "cas_attempt_timeout_ms must be >= 1"` next to the lease validations (~244).
 
+- [ ] **Step 3b: The wiring test (Task B3 completes it)**
+
+In `gtest_cas_s3_client_profile.cpp`, `CASEnvelopeWiring.FrozenCapTravelsFromTheClientToEveryVerb`: open a `ContentAddressedMetadataStorage` (the way `gtest_cas_s3_staging.cpp` builds one over an object storage; substitute the test `S3ObjectStorage` from `make_storage(1000)` with an `S3ObjectStorage` subclass `RecordingS3ObjectStorage` that records the `(request_timeout_ms, connect_timeout_cap_ms)` pair of every `getSingleAttemptClient` call) with `cas_attempt_timeout_ms = 5000`; assert `storage.poolConfigForTest().cas_request_budget.connect_timeout_cap_ms == 1000` and `.attemptEnvelopeMs() == 7000`; call `applyNewSettings` with a config carrying `<connect_timeout_ms>5000</connect_timeout_ms>` and again with `0`; after each, issue one control read (`existsFile` of a namespace file) and one conditional write (`CasPartWriteTxn`-free: a `SYSTEM CAS`-less path such as the GC state write through `pool()->gcRequestsForTest()`), and assert every recorded pair has cap `1000`. Until B3 lands, the write path records through `conditionalWriteSettings`'s cap field. Fails while any link is missing.
+
 - [ ] **Step 4: Build, run the new tests and the CAS gate**
 
 Run: `flock build/.ninja_lock ninja -C build unit_tests_dbms > build/build_b2b.log 2>&1 && build/src/unit_tests_dbms --gtest_filter='CAS*:S3SingleAttemptClient.*' > build/test_b2.log 2>&1; tail -3 build/test_b2.log`
-Expected: all PASS. Existing tests whose fixtures used tiny budgets (`CASMountOpenWaits.UncleanOpenPaysOnlyTheObservationWindow` with attempt 50 / margin 50 / TTL 500 / period 100) now need `connect_timeout_cap_ms` explicitly (default 1000 would fail validation): set `.connect_timeout_cap_ms = 0` in those fixtures; list every fixture changed in the commit message.
+Expected: all PASS. Existing tests whose fixtures used tiny budgets (`CASMountOpenWaits.UncleanOpenPaysOnlyTheObservationWindow` with attempt 50 / margin 50 / TTL 500 / period 100) now need `connect_timeout_cap_ms` explicitly (default 1000 would fail validation): set `.connect_timeout_cap_ms = std::nullopt` in those fixtures; list every fixture changed in the commit message.
 
 ### Task B3: The engine's attempt number reaches the transport
 
@@ -1430,7 +1449,7 @@ Run: `python3 -m ci.praktika run "integration" --test test_cas_gcs > build/test_
 
 - [ ] **Step 1: Docs**
 
-`configuration.md`: row `cas_attempt_timeout_ms`: `Budget for one HTTP attempt of a writable Native mount's control-plane requests (read, head, list, remove, conditional write), at least 1. Together with the connect cap (min(connect_timeout_ms, this)) it forms the attempt envelope: one TCP connect under the cap, then each socket operation under this timeout`; row `cas_lease_safety_margin_ms`: `... envelope + margin must be strictly less than the TTL, and renew period + 2 × envelope + margin too`; row `cas_mount_renew_period_ms`: replace "one request attempt" with "two attempt envelopes". `mounts-and-leases.md` ~82 "one configured attempt still fits" → "one attempt envelope (connect cap plus attempt timeout) still fits"; ~96 `attempt_timeout + safety_margin` → `2 × envelope + safety_margin`. `CasRequestBudget.h` field comments already written in B2.
+`configuration.md`: row `cas_attempt_timeout_ms`: `Budget for one HTTP attempt of a writable Native mount's control-plane requests (read, head, list, remove, conditional write), at least 1. Together with the connect cap (min(connect_timeout_ms, this); a zero connect_timeout_ms counts as this) it forms the attempt envelope: one TCP connect and one TLS handshake under the cap each, then each socket operation under this timeout`; row `cas_lease_safety_margin_ms`: `... envelope + margin must be strictly less than the TTL, and renew period + 2 × envelope + margin too`; row `cas_mount_renew_period_ms`: replace "one request attempt" with "two attempt envelopes". `mounts-and-leases.md` ~82 "one configured attempt still fits" → "one attempt envelope (connect cap plus attempt timeout) still fits"; ~96 `attempt_timeout + safety_margin` → `2 × envelope + safety_margin`. `CasRequestBudget.h` field comments already written in B2.
 
 - [ ] **Step 2: Commit spec 4 and review**
 
@@ -1567,7 +1586,7 @@ TEST(CASMountOpenWaits, UnsafeNoDelayOpensWithoutTheObservationWindow)
     ASSERT_NO_THROW(store = Pool::open(b, PoolConfig{
         .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(500), .mount_renew_period = std::chrono::milliseconds(100),
-        .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 0},
+        .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = std::nullopt},
         .unsafe_remount_no_delay = true,
         .event_sink = [&](CasEvent e) { events.push_back(std::move(e)); },
         .boot_ms_fn = [&] { return fake_boot; },
@@ -1641,7 +1660,7 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
         return PoolConfig{
             .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
             .mount_lease_ttl_ms = std::chrono::milliseconds(1000), .mount_renew_period = std::chrono::milliseconds(200),
-            .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 0},
+            .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = std::nullopt},
             .unsafe_remount_no_delay = unsafe,
             .boot_ms_fn = [boot] { return *boot; },
             .wait_sleep_fn = std::move(on_wait),
@@ -1692,7 +1711,7 @@ The `*ForTest` accessors: use the ones the `CASPoolRemount` tests already call (
 - Modify: `tests/integration/test_cas_mount_renewal_retry/configs/storage_conf.xml` (add `<cas_mount_lease_ttl_ms>1000</cas_mount_lease_ttl_ms>`, `<cas_mount_renew_period_ms>200</cas_mount_renew_period_ms>`, `<cas_attempt_timeout_ms>50</cas_attempt_timeout_ms>`, `<cas_lease_safety_margin_ms>50</cas_lease_safety_margin_ms>`), new `configs/unsafe_remount.xml` with `<cas_unsafe_remount_no_delay>1</cas_unsafe_remount_no_delay>` inside the same disk block
 - Modify: `tests/integration/test_cas_mount_renewal_retry/test.py`
 
-With `connect_timeout_ms` 1000 the frozen cap is `min(1000, 50) = 50`, envelope 100: `100 + 50 < 1000` and `200 + 200 + 50 < 1000` hold.
+With `connect_timeout_ms` 1000 the frozen cap is `min(1000, 50) = 50`, envelope 50 + 2 × 50 = 150: `150 + 50 < 1000` and `200 + 300 + 50 < 1000` hold.
 
 - [ ] **Step 1: Write the test**
 
@@ -1725,7 +1744,7 @@ The observation log line text comes from `claimMountAwaitingExpiry` (`CasServerR
 
 ### Task C6: Docs, texts, commit spec 2
 
-- [ ] **Step 1**: `configuration.md`: new row for `cas_unsafe_remount_no_delay` with the description's words; a paragraph under the lease rows with rules 1–2 of the spec (same values on every member, observer's own clock, change only with every member stopped; `TTL − margin − period − 2 × envelope = 6 s` with defaults). `mounts-and-leases.md`: ~116 two formulas (startup `TTL + floor(TTL/20) + max(1, floor(period/2))`, GC `TTL + floor(TTL/20) + period`); `UncleanUnsafe` row in the `MountPriorState` table and a transition `Live --> Live: same-uuid claim under cas_unsafe_remount_no_delay, no observation` in the diagram; ~203 drop "materialization grace if the predecessor was unclean (default 30 s)" and the sentence "If the grace period consumed the TTL, ..." becomes "If the claim consumed the TTL, one fresh synchronous renewal re-anchors the deadline before the fence is armed". `CasServerRoot.cpp` ~909 double-start message: replace the CLOCK SKEW caveat with the token-stability statement (liveness is judged by the token holding stable on this server's own clock; `expires_at_ms` is diagnostic). `CasMountRuntime` stale comment: grep `expires_at` in `Pool/CasMountRuntime.h` and correct it.
+- [ ] **Step 1**: `configuration.md`: new row for `cas_unsafe_remount_no_delay` with the description's words; a paragraph under the lease rows with rules 1–2 of the spec (same values on every member, observer's own clock, change only with every member stopped; `TTL − margin − period − 2 × envelope = 4 s` with defaults). `mounts-and-leases.md`: ~116 two formulas (startup `TTL + floor(TTL/20) + max(1, floor(period/2))`, GC `TTL + floor(TTL/20) + period`); `UncleanUnsafe` row in the `MountPriorState` table and a transition `Live --> Live: same-uuid claim under cas_unsafe_remount_no_delay, no observation` in the diagram; ~203 drop "materialization grace if the predecessor was unclean (default 30 s)" and the sentence "If the grace period consumed the TTL, ..." becomes "If the claim consumed the TTL, one fresh synchronous renewal re-anchors the deadline before the fence is armed". `CasServerRoot.cpp` ~909 double-start message: replace the CLOCK SKEW caveat with the token-stability statement (liveness is judged by the token holding stable on this server's own clock; `expires_at_ms` is diagnostic). `CasMountRuntime` stale comment: grep `expires_at` in `Pool/CasMountRuntime.h` and correct it.
 
 - [ ] **Step 2: Commit and review** (`tmp/msg_spec2.txt`, explicit paths, `prompt_impl2.md`).
 
