@@ -126,7 +126,7 @@ stays an acknowledged residual gap). Each test is written first and fails before
    left → `GaveUp` (the documented deadline-edge difference).
 9. `CASRequestsConnectHint.AmbiguityAfterHintsStartsAtFirstBackoff` — several hints, then a normal
    ambiguity: the first backoff drawn is `backoff(1)`.
-10. Renewal twin (`gtest_cas_pool.cpp` renewer tests): `MountLeaseRenewer` over a backend failing with
+10. Renewal twin (`gtest_cas_heartbeat.cpp`, where the `MountLeaseRenewer` tests live): `MountLeaseRenewer` over a backend failing with
     the hint text for 3 s recovers within its window, `attempts_sent > 1`, no `CASRequestResolveRead`
     increment, recovery classification `committed_after_retry`.
 
