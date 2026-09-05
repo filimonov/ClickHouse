@@ -264,8 +264,8 @@ bool isConnectFailureHint([[maybe_unused]] const std::exception & e)
 bool isFirstAttemptFuseTimeout([[maybe_unused]] const std::exception & e, [[maybe_unused]] size_t attempt_no)
 {
 #if USE_AWS_S3
-    /// A spec-1 hint is checked FIRST: `connect timed out` belongs to that classifier, and an attempt
-    /// whose text matches both stays a hint, reissued without a preceding settle read.
+    /// The connect-failure hint is checked FIRST: `connect timed out` belongs to that classifier, and
+    /// an attempt whose text matches both stays a hint, reissued without a preceding settle read.
     if (attempt_no != 1 || isConnectFailureHint(e))
         return false;
     const auto * s3 = dynamic_cast<const S3Exception *>(&e);

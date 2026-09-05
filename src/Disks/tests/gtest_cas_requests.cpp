@@ -2534,7 +2534,7 @@ TEST(CASRequestsFuse, MatcherPrecedence)
     EXPECT_TRUE(isFirstAttemptFuseTimeout(fuse, 1));
     EXPECT_FALSE(isFirstAttemptFuseTimeout(fuse, 2));
     const DB::S3Exception hint("Poco::Exception. Code: 1000, e.code() = 0, Timeout: connect timed out: 10.0.0.1:9", S3Errors::NETWORK_CONNECTION);
-    EXPECT_FALSE(isFirstAttemptFuseTimeout(hint, 1));     /// spec 1 owns it
+    EXPECT_FALSE(isFirstAttemptFuseTimeout(hint, 1));     /// the connect-failure hint owns it
     EXPECT_TRUE(isConnectFailureHint(hint));
     EXPECT_FALSE(isFirstAttemptFuseTimeout(DB::S3Exception("Connection reset by peer", S3Errors::NETWORK_CONNECTION), 1));
     EXPECT_FALSE(isFirstAttemptFuseTimeout(DB::S3Exception("Timeout", S3Errors::INTERNAL_FAILURE), 1));
@@ -2611,9 +2611,9 @@ TEST(CASRequestsFuse, GatesRefuseTheZeroPauseReissue)
     FakeClock clock;
     auto backend = std::make_shared<CountingBackend>();
     backend->failNextWriteWith("k", fuseTimeout());
+    int now_calls = 0;
     auto requests = makeRequests(backend, clock);
     requests.setAttemptReservationForTest(1'000);
-    int now_calls = 0;
     requests.setNowFnForTest([&clock, &now_calls]() -> uint64_t
     {
         ++now_calls;
@@ -2625,6 +2625,28 @@ TEST(CASRequestsFuse, GatesRefuseTheZeroPauseReissue)
     ASSERT_NE(gave_up, nullptr);
     EXPECT_EQ(gave_up->why, GaveUp::Why::Deadline);
     EXPECT_TRUE(clock.sleeps.empty()) << "the zero-pause reissue never sleeps, even when refused";
+    /// The fence, not the deadline, refuses the zero-pause reissue: three `Fence::admit` calls happen
+    /// in this scenario -- the write's own admission, the settle read's admission, and the reissue's
+    /// admission -- in that order, so tripping the fence on the THIRD call refuses only the reissue,
+    /// after the write attempt and its settle read both already went through.
+    {
+        FakeClock fence_clock;
+        auto fence_backend = std::make_shared<CountingBackend>();
+        fence_backend->failNextWriteWith("k", fuseTimeout());
+        int admit_calls = 0;
+        Fence fence{
+            [] { return uint64_t{1}; },
+            [&](uint64_t, uint64_t) { return ++admit_calls >= 3 ? Fence::Admit::LostOrRearmed : Fence::Admit::Ok; },
+            [](uint64_t) {}};
+        auto fence_requests = makeRequests(fence_backend, fence_clock, fence);
+        auto fence_op = fence_requests.admit();
+        WriteResult fence_result = fence_op.create("k", "v", Retry::standard());
+        const auto * fence_gave_up = std::get_if<GaveUp>(&fence_result);
+        ASSERT_NE(fence_gave_up, nullptr);
+        EXPECT_EQ(fence_gave_up->why, GaveUp::Why::FenceLost);
+        EXPECT_TRUE(fence_gave_up->sent_any);
+        EXPECT_EQ(fence_backend->writeTotal(), 1u) << "the fence refuses before a second write is ever sent";
+    }
     /// `Retry::once()` never performs a second attempt.
     auto once_backend = std::make_shared<CountingBackend>();
     once_backend->failNextWriteWith("k", fuseTimeout());
@@ -2636,17 +2658,31 @@ TEST(CASRequestsFuse, GatesRefuseTheZeroPauseReissue)
 
 TEST(CASRequestsFuse, ReadLoopZeroPauseKeepsTheBackoffIndex)
 {
+    struct ReadAttemptRecordingBackend : CountingBackend
+    {
+        std::vector<size_t> read_attempts;
+        std::optional<Raw> read(const String & key, TransportAccess & access) override
+        {
+            read_attempts.push_back(access.attemptNo());
+            return CountingBackend::read(key, access);
+        }
+    };
     FakeClock clock;
-    auto backend = std::make_shared<CountingBackend>();
+    auto backend = std::make_shared<ReadAttemptRecordingBackend>();
     auto requests = makeRequests(backend, clock);
     auto op = requests.admit();
     orThrow(op.create("k", "v", Retry::standard()), "seed");
+    backend->read_attempts.clear();
     backend->failNextReadWith("k", fuseTimeout());
     backend->failNextReadWith("k", std::make_exception_ptr(Poco::TimeoutException("attempt 2: an ordinary fault")));
     EXPECT_TRUE(op.read("k", Retry::standard()).has_value());
     ASSERT_EQ(clock.sleeps.size(), 1u);
     /// The one sleep is `backoff(1)`: the zero-pause reissue did not advance the index.
     EXPECT_LE(clock.sleeps[0], 200u);   /// `backoff(1)` is full jitter over [0, 200] ms
+    /// The transport still sees every physical attempt: the zero-pause reissue (attempt 2) advances
+    /// `attempt_no` alone, so attempt 3 -- reached only after the one ordinary backoff -- follows it,
+    /// not a second attempt 1.
+    EXPECT_EQ(backend->read_attempts, (std::vector<size_t>{1, 2, 3}));
 }
 
 #endif

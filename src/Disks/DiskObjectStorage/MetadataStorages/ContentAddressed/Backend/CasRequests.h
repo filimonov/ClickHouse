@@ -38,7 +38,8 @@ bool isConnectFailureHint(const std::exception & e);
 
 /// TRUE when a FIRST physical attempt (`attempt_no == 1`) failed with the adaptive first-attempt
 /// timeout: an `S3Exception` naming `NETWORK_CONNECTION` whose text is the generic transport-timeout
-/// one, not a spec-1 connect-failure hint (checked first, so a hinted attempt stays hinted). A
+/// one, not a connect-failure hint (checked first, so a hinted attempt stays hinted -- the failed
+/// connection it names is a different condition from the fuse, and must not be claimed by it). A
 /// connection-quality answer about a fresh connection, not a store fault -- attempt 2 runs under the
 /// full attempt budget, so the right response is to re-send at once rather than pace it like a fault.
 bool isFirstAttemptFuseTimeout(const std::exception & e, size_t attempt_no);
@@ -444,11 +445,11 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
                             const Retry::Bound & bound, Fn && once)
 {
     bool refresh_attempted = false;
-    /// Two counters, deliberately kept separate even though they advance together today:
-    /// `attempt_no` is the PHYSICAL attempt count handed to the transport (so a reissue is seen as
-    /// attempt >= 2); `ordinary_reissues` is the exponential-backoff index. Keeping them distinct
-    /// leaves room for a future reissue path that advances only `attempt_no` (skipping the backoff
-    /// pause) without disturbing what a following ordinary failure's backoff starts from.
+    /// Two counters, deliberately kept separate: `attempt_no` is the PHYSICAL attempt count handed to
+    /// the transport (so a reissue is seen as attempt >= 2); `ordinary_reissues` is the
+    /// exponential-backoff index. They advance together on an ordinary failure, but the first-attempt
+    /// fuse below advances `attempt_no` alone (via `continue`, skipping the backoff pause) so a
+    /// following ordinary failure's backoff still starts from `backoff(1)`, undisturbed.
     for (uint32_t attempt_no = 1, ordinary_reissues = 0;; ++attempt_no)
     {
         const uint64_t reservation = reservedFor(0, 1);
