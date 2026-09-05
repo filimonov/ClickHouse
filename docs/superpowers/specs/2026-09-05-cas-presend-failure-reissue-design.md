@@ -9,7 +9,7 @@ doc_type: 'design'
 
 # CAS: a connect-failure hint reissues a write without a preceding read {#cas-presend-failure-reissue-design}
 
-**Status:** DRAFT rev.5 (2026-09-05). rev.1–rev.3 were reviewed by `codex` (`gpt-5.6-sol`,
+**Status:** DRAFT rev.6 (2026-09-05; rev.6 folds `codex_cross_r2.final.md`: operational wording for the resolve-read event, contract statement limited to `Committed`/`Conflict`, units of the deadline-edge expression). rev.1–rev.3 were reviewed by `codex` (`gpt-5.6-sol`,
 xhigh; records `codex_spec1.final.md`, `codex_spec1r2.final.md`, `codex_spec1r3.final.md`; rev.3 = NO MAJOR, its MINORs folded in rev.4).
 rev.5 folds the combined four-spec review (`codex_cross.final.md`): observability texts and the user docs.
 rev.2's text whitelist cannot PROVE a request was not sent (Poco maps `send`/`recv` errno through the
@@ -32,7 +32,7 @@ taxonomy changes: a hinted attempt is as ambiguous as it is today; only the paci
 
 One deliberate availability difference at the deadline edge: today, with only one read envelope
 left, the loop may still perform its settle read and answer `Committed` or `Conflict`; the hint path
-requires `flat_ms + 2` envelopes for the reissue and otherwise gives up. That is the conservative
+requires `flat_ms + 2 × attemptEnvelopeMs()` for the reissue and otherwise gives up. That is the conservative
 side (a `GaveUp` with `sent_any == true`), accepted and tested.
 
 ## Why {#why}
@@ -80,10 +80,13 @@ In `writeLoop`, in the `catch (const Exception & e)` arm, after the credential b
    No new `GaveUp::Why`; under `single_attempt` the existing settle read runs as today.
 4. ProfileEvents: `CASRequestConnectFailureHint` per hinted attempt, recorded in `writeLoop`;
    `pauseFlat` increments `CASRequestReissue`, whose description becomes pacing-agnostic (shared
-   wording with spec 4); `CASRequestResolveRead`'s "every ambiguity costs one" becomes "every conflict
-   and every ambiguity that is not a connect-failure hint".
+   wording with spec 4); `CASRequestResolveRead` is described operationally: exact settlement reads
+   the contract made; under a reissuing policy a connect-failure hint defers the read until a later
+   outcome requires it (under `Retry::once` the read is immediate as today; a reissue that meets `412`
+   is settled by a later read).
 5. Text that becomes false and is corrected in the same change: the `writeLoop` contract comment
-   (`CasRequests.h` ~356) and the "Resolve before retry" bullet of
+   (`CasRequests.h` ~356; `Committed` and `Conflict` are proven by an exact read or the reissue's own
+   2xx, a hinted attempt is reissued before its read; `Refused`, `Declined`, `GaveUp` unchanged) and the "Resolve before retry" bullet of
    `docs/en/antalya/cas/architecture/mounts-and-leases.md` (~77), which now reads: a transient or
    ambiguous conditional `PUT` is followed by one exact `GET`, except that an attempt whose transport
    error names a failed connection is reissued first and settled by the reissue's own answer (a 2xx)
