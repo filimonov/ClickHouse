@@ -53,6 +53,7 @@ namespace ProfileEvents
     extern const Event CASRequestReissue;
     extern const Event CASRequestConflictPause;
     extern const Event CASRequestConnectFailureHint;
+    extern const Event CASRequestFirstAttemptFuse;
 }
 
 using namespace DB::Cas;
@@ -2565,7 +2566,7 @@ TEST(CASRequestsFuse, FirstAttemptTimeoutReissuesWithoutSleep)
         EXPECT_EQ(backend->getTotal(), 1u);
         EXPECT_TRUE(clock.sleeps.empty());
     }
-    /// Read and LIST: no settle read, no sleep.
+    /// Read: no settle read, no sleep.
     {
         FakeClock clock;
         auto backend = std::make_shared<CountingBackend>();
@@ -2576,6 +2577,33 @@ TEST(CASRequestsFuse, FirstAttemptTimeoutReissuesWithoutSleep)
         backend->failNextReadWith("k", fuseTimeout());
         EXPECT_TRUE(op.read("k", Retry::standard()).has_value());
         EXPECT_EQ(backend->getTotal(), 2u);
+        EXPECT_TRUE(clock.sleeps.empty());
+    }
+    /// LIST: no sleep either. LIST has no `failNextWith`-style armed queue (only write/read/head do),
+    /// so a small backend that throws the fuse on its first LIST and records the physical attempt
+    /// number stands in.
+    {
+        struct ListFuseOnceBackend : CountingBackend
+        {
+            bool armed = true;
+            std::vector<size_t> list_attempts;
+            RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override
+            {
+                list_attempts.push_back(access.attemptNo());
+                if (armed)
+                {
+                    armed = false;
+                    std::rethrow_exception(fuseTimeout());
+                }
+                return CountingBackend::list(prefix, cursor, limit, access);
+            }
+        };
+        FakeClock clock;
+        auto backend = std::make_shared<ListFuseOnceBackend>();
+        auto requests = makeRequests(backend, clock);
+        auto op = requests.admit();
+        (void)op.list("p/", "", 10, Retry::standard());
+        EXPECT_EQ(backend->list_attempts, (std::vector<size_t>{1, 2}));
         EXPECT_TRUE(clock.sleeps.empty());
     }
     /// Attempts 1 and 2 failing: attempt 2 is not a first attempt, so exactly one sleep, after it.
@@ -2683,6 +2711,23 @@ TEST(CASRequestsFuse, ReadLoopZeroPauseKeepsTheBackoffIndex)
     /// `attempt_no` alone, so attempt 3 -- reached only after the one ordinary backoff -- follows it,
     /// not a second attempt 1.
     EXPECT_EQ(backend->read_attempts, (std::vector<size_t>{1, 2, 3}));
+}
+
+/// `Retry::once` forbids the REISSUE, not the observation: a fuse a single-attempt read hits still
+/// counts (the write path already counts at classification, before its own single-attempt check), it
+/// just throws unchanged instead of re-sending.
+TEST(CASRequestsFuse, ReadUnderOnceCountsTheFuseWithoutReissuing)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    backend->failNextReadWith("k", fuseTimeout());
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    const auto fuses_before = ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load();
+    expectThrowsCode(DB::ErrorCodes::S3_ERROR, [&] { (void)op.read("k", Retry::once()); });
+    EXPECT_EQ(backend->getTotal(), 1u) << "Retry::once performs no second attempt";
+    EXPECT_TRUE(clock.sleeps.empty());
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load() - fuses_before, 1u);
 }
 
 #endif

@@ -474,15 +474,22 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
         }
         catch (const std::exception & e)
         {
-            if (refreshAndClassifyReadFault(e, refresh_attempted) || policy.single_attempt)
+            if (refreshAndClassifyReadFault(e, refresh_attempted))
+                throw;
+            /// Classified -- and counted -- before the single-attempt check below: `Retry::once` forbids
+            /// the REISSUE, not the observation that this attempt hit the fuse, and the write path
+            /// already counts at classification the same way.
+            const bool fuse = isFirstAttemptFuseTimeout(e, attempt_no);
+            if (fuse)
+                detail::recordFirstAttemptFuse();
+            if (policy.single_attempt)
                 throw;
             /// A first-attempt fuse is a connection-quality answer, not a store fault: re-check
             /// admission for the reissue alone and send it at once. `ordinary_reissues` stays put, so a
             /// following ordinary failure's backoff starts at `backoff(1)`, exactly as if this attempt
             /// had never happened.
-            if (isFirstAttemptFuseTimeout(e, attempt_no))
+            if (fuse)
             {
-                detail::recordFirstAttemptFuse();
                 const uint64_t needed = reservedFor(0, 1);
                 switch (gate(needed))
                 {
