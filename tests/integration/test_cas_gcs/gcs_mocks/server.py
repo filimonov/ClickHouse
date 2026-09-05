@@ -157,9 +157,19 @@ class Store:
         self._next_generation = _GENERATION_SEED
         self._next_etag_ordinal = 1
         self._next_upload_ordinal = 1
+        self._next_arrival_seq = 0
 
     def count(self, name):
         self.counters[name] = self.counters.get(name, 0) + 1
+
+    def next_arrival_seq(self):
+        """A strictly increasing id assigned when a request ARRIVES (before any delay), unlike
+        ``seq`` on the capture record, which reflects when its handler FINISHES. A delayed
+        request's handler can finish after its own faster reissue, so ``seq`` alone cannot order
+        them; ``arrival_seq`` can. Must be called with ``_LOCK`` held."""
+        value = self._next_arrival_seq
+        self._next_arrival_seq += 1
+        return value
 
     def mint_generation(self):
         value = str(self._next_generation)
@@ -943,6 +953,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # several requests race here; the sleep itself still happens outside the lock so other
         # requests keep flowing while this one is delayed.
         with _LOCK:
+            arrival_seq = STORE.next_arrival_seq()
             delayed = _delay_matches(method, key, query)
             delay_ms = STORE.delay_ms if delayed else 0
             if delayed and STORE.delay_once:
@@ -971,6 +982,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 STORE.requests.append(
                     {
                         "seq": len(STORE.requests),
+                        "arrival_seq": arrival_seq,
                         "method": method,
                         "bucket": bucket,
                         "key": key,
@@ -1011,6 +1023,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 STORE.requests.append(
                     {
                         "seq": len(STORE.requests),
+                        "arrival_seq": arrival_seq,
                         "method": method,
                         "bucket": bucket,
                         "key": key,

@@ -1535,18 +1535,21 @@ def test_a_first_attempt_timeout_is_reissued_as_attempt_two():
         # LIST: a GC round's first LIST lists the `gc/server-roots/` family; the first matching
         # LIST is delayed past the fuse and must be reissued at once as attempt 2.
         seq = _next_seq()
+        delayed_before = _counters().get("DelayedRequest", 0)
         assert _control_post("/_control/delay?substr=gc&ms=300&method=LIST&once=1")["method"] == "LIST"
         node.query("SYSTEM CAS GC RUN '{}'".format(disk))
+        assert _counters().get("DelayedRequest", 0) - delayed_before == 1, "the LIST delay must fire exactly once"
         lists = [
             r
             for r in _captured_since(seq, FUSE_BUCKET)
             if r["method"] == "GET" and not r["key"] and "prefix=" in r["query"]
         ]
-        # The fake appends a request's capture record when ITS OWN handler finishes, not when the
-        # client issued it: the delayed LIST's handler is still sleeping out its 300 ms when the
-        # reissue (a fresh connection, unaffected by the knob once `once=1` cleared it) completes
-        # and gets captured first. So the pair is identified by sharing one `query` (the same
-        # prefix, reissued), not by their position in the capture log.
+        # The fake appends a request's capture record's `seq` when ITS OWN handler finishes, not
+        # when the client issued it: the delayed LIST's handler is still sleeping out its 300 ms
+        # when the reissue (a fresh connection, unaffected by the knob once `once=1` cleared it)
+        # completes and gets a lower `seq`. So the pair is identified by sharing one `query` (the
+        # same prefix, reissued), and ordered by `arrival_seq` -- assigned when a request arrives,
+        # before any delay is applied, so it reflects issue order rather than completion order.
         by_query = {}
         for r in lists:
             by_query.setdefault(r["query"], []).append(r)
@@ -1554,28 +1557,40 @@ def test_a_first_attempt_timeout_is_reissued_as_attempt_two():
         assert len(retried) == 1, (lists, by_query)
         pair = retried[0]
         assert len(pair) == 2, pair
-        attempts = [r["headers"].get("clickhouse-request", "") for r in pair]
-        assert any(a.endswith("attempt=1") or a == "" for a in attempts), attempts
-        assert any(a.endswith("attempt=2") for a in attempts), attempts
+        list2 = [r for r in pair if r["headers"].get("clickhouse-request", "").endswith("attempt=2")]
+        list1 = [r for r in pair if r not in list2]
+        assert len(list1) == 1 and len(list2) == 1, pair
+        list1, list2 = list1[0], list2[0]
+        assert list1["headers"].get("clickhouse-request", "").endswith("attempt=1") or not list1["headers"].get(
+            "clickhouse-request", ""
+        ), pair
+        assert list1["arrival_seq"] < list2["arrival_seq"], (list1, list2)
 
         # Conditional PUT: delay the first `.meta` PUT of the next insert; expect a settlement GET
-        # and a reissued PUT(2) on that key, and one settlement read counted. Same completion-order
-        # caveat as above: identify PUT(1)/PUT(2) by their attempt header, not by capture order.
+        # arriving strictly between PUT(1) and its reissue PUT(2), and one settlement read counted.
         seq = _next_seq()
         resolve_reads_before = _resolve_reads(node)
+        delayed_before = _counters().get("DelayedRequest", 0)
         assert _control_post("/_control/delay?substr=.meta&ms=300&method=PUT&once=1")["method"] == "PUT"
         node.query("INSERT INTO fuse_probe VALUES (2)")
-        rows = [r for r in _captured_since(seq) if r["key"].endswith(".meta")]
+        assert _counters().get("DelayedRequest", 0) - delayed_before == 1, "the PUT delay must fire exactly once"
+        rows = [r for r in _captured_since(seq, FUSE_BUCKET) if r["key"].endswith(".meta")]
         assert rows, "no `.meta` PUT reached the fake, so this test would be vacuous"
         meta_key = rows[0]["key"]
         same_key = [r for r in rows if r["key"] == meta_key]
         puts = [r for r in same_key if r["method"] == "PUT"]
         gets = [r for r in same_key if r["method"] == "GET"]
         assert len(puts) >= 2, same_key
-        put_attempts = [r["headers"].get("clickhouse-request", "") for r in puts]
-        assert any(a.endswith("attempt=1") or a == "" for a in put_attempts), put_attempts
-        assert any(a.endswith("attempt=2") for a in put_attempts), put_attempts
         assert gets, "no settlement GET reached the fake between PUT(1) and its reissue"
+        put2 = [r for r in puts if r["headers"].get("clickhouse-request", "").endswith("attempt=2")]
+        put1 = [r for r in puts if r not in put2]
+        assert len(put1) == 1 and len(put2) == 1, puts
+        put1, put2 = put1[0], put2[0]
+        assert put1["headers"].get("clickhouse-request", "").endswith("attempt=1") or not put1["headers"].get(
+            "clickhouse-request", ""
+        ), puts
+        settle_get = min(gets, key=lambda r: r["arrival_seq"])
+        assert put1["arrival_seq"] < settle_get["arrival_seq"] < put2["arrival_seq"], (put1, settle_get, put2)
         assert _resolve_reads(node) - resolve_reads_before >= 1
     finally:
         node.query("SYSTEM CAS GC START '{}'".format(disk))
