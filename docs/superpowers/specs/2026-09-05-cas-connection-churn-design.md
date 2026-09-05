@@ -9,7 +9,7 @@ doc_type: 'design'
 
 # CAS: connection churn and ephemeral-port exhaustion {#cas-connection-churn-design}
 
-**Status:** DRAFT rev.3 (2026-09-05). rev.1 was reviewed by `codex` (`gpt-5.6-sol`, xhigh; records
+**Status:** DRAFT rev.4 (2026-09-05; rev.4 records the one unreachable reason branch) — rev.3 rev.1 was reviewed by `codex` (`gpt-5.6-sol`, xhigh; records
 `tmp/pr2300-cicd-watch/review/codex_spec3.final.md`, `codex_spec3r2.final.md`): rev.1 had 4 MAJOR — the
 causal reading of `Reset >> Expired`, the placement of CAS defaults after the client exists, a spike
 without a reproduced baseline, and a stale rustfs binary in the workspace; rev.2 = NO MAJOR, its
@@ -100,7 +100,11 @@ XML > changed `s3_http_keep_alive_*` > CAS defaults), and the effective `0.8 ×`
 
 1. `HTTPConnectionPool.ResetAndExpiredReasonsAreCounted` (pool unit tests): each branch of
    `atConnectionDestroy` and `wipeExpired` increments exactly its reason counter. Fails until the
-   counters exist.
+   counters exist. One branch is unreachable from a single-threaded test and is documented in the test
+   instead: `DiskConnectionsResetPreserveException` — `atConnectionDestroy` releases the destroyed
+   connection's own group slot before it creates the storage wrapper, so the wrapper's hard-limit check
+   cannot see the group at the limit; only a cross-thread race or a fault-injection hook could throw
+   there (implementation finding, 2026-09-05).
 2. The spike (step 2), recorded in this spec's implementation record as a before/after table with the
    reason breakdown; the shipped values are taken from it.
 3. `S3ObjectStorageProfile.CasDefaultsApplyOnlyWhenUnset` (new `src/Disks/tests/gtest_cas_s3_client_profile.cpp`,
