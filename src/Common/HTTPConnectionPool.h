@@ -33,6 +33,18 @@ public:
         const ProfileEvents::Event errors = ProfileEvents::end();
         const ProfileEvents::Event elapsed_microseconds = ProfileEvents::end();
 
+        /// Reason breakdown of `reset` and `expired`, filled only for the DISK group.
+        const ProfileEvents::Event reset_disconnected = ProfileEvents::end();
+        const ProfileEvents::Event reset_keep_alive_age = ProfileEvents::end();
+        const ProfileEvents::Event reset_response_not_keep_alive = ProfileEvents::end();
+        const ProfileEvents::Event reset_incomplete_request_or_response = ProfileEvents::end();
+        const ProfileEvents::Event reset_unread_buffered_data = ProfileEvents::end();
+        const ProfileEvents::Event reset_store_limit = ProfileEvents::end();
+        const ProfileEvents::Event reset_preserve_exception = ProfileEvents::end();
+        const ProfileEvents::Event expired_max_requests = ProfileEvents::end();
+        const ProfileEvents::Event expired_age = ProfileEvents::end();
+        const ProfileEvents::Event expired_stale_peer = ProfileEvents::end();
+
         const CurrentMetrics::Metric stored_count = CurrentMetrics::end();
         const CurrentMetrics::Metric active_count = CurrentMetrics::end();
     };

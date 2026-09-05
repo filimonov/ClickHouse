@@ -1573,6 +1573,16 @@ The server successfully detected this situation and will download merged part fr
     M(DiskConnectionsExpired, "Number of expired connections for disk", ValueType::Number) \
     M(DiskConnectionsErrors, "Number of cases when creation of a connection for disk is failed", ValueType::Number) \
     M(DiskConnectionsElapsedMicroseconds, "Total time spend on creating connections for disk", ValueType::Microseconds) \
+    M(DiskConnectionsResetDisconnected, "Number of disk HTTP connections returned to the pool already disconnected. Growth means the object store or a proxy closes connections under the client.", ValueType::Number) \
+    M(DiskConnectionsResetKeepAliveAge, "Number of disk HTTP connections returned to the pool after a request that started later than 0.9 of the keep-alive timeout. Growth means requests are long relative to the keep-alive timeout.", ValueType::Number) \
+    M(DiskConnectionsResetResponseNotKeepAlive, "Number of disk HTTP connections whose last response carried Connection: close. Growth means the object store refuses keep-alive.", ValueType::Number) \
+    M(DiskConnectionsResetIncompleteRequestOrResponse, "Number of disk HTTP connections returned before the request was fully sent or the response fully received. Growth means readers abandon responses early.", ValueType::Number) \
+    M(DiskConnectionsResetUnreadBufferedData, "Number of disk HTTP connections returned with unread buffered response bytes. Growth means readers stop before the end of a response.", ValueType::Number) \
+    M(DiskConnectionsResetStoreLimit, "Number of disk HTTP connections dropped because the pool's store limit was reached. Growth means more connections finish than the pool may keep.", ValueType::Number) \
+    M(DiskConnectionsResetPreserveException, "Number of disk HTTP connections dropped because storing them threw. A non-zero value indicates memory pressure at the pool.", ValueType::Number) \
+    M(DiskConnectionsExpiredMaxRequests, "Number of disk HTTP connections retired after their keep-alive request limit. Growth is expected under sustained load and bounded by http_keep_alive_max_requests.", ValueType::Number) \
+    M(DiskConnectionsExpiredAge, "Number of stored disk HTTP connections wiped because they were older than 0.8 of the keep-alive timeout (0.1 above the soft limit). Growth means connections idle longer than the keep-alive timeout allows.", ValueType::Number) \
+    M(DiskConnectionsExpiredStalePeer, "Number of stored disk HTTP connections wiped because the peer had already closed them. Growth means the object store closes idle connections before the client's keep-alive timeout.", ValueType::Number) \
     \
     M(HTTPConnectionsCreated, "Number of created client HTTP connections", ValueType::Number) \
     M(HTTPConnectionsReused, "Number of reused client HTTP connections", ValueType::Number) \

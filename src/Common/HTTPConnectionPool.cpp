@@ -54,6 +54,16 @@ namespace ProfileEvents
     extern const Event DiskConnectionsExpired;
     extern const Event DiskConnectionsErrors;
     extern const Event DiskConnectionsElapsedMicroseconds;
+    extern const Event DiskConnectionsResetDisconnected;
+    extern const Event DiskConnectionsResetKeepAliveAge;
+    extern const Event DiskConnectionsResetResponseNotKeepAlive;
+    extern const Event DiskConnectionsResetIncompleteRequestOrResponse;
+    extern const Event DiskConnectionsResetUnreadBufferedData;
+    extern const Event DiskConnectionsResetStoreLimit;
+    extern const Event DiskConnectionsResetPreserveException;
+    extern const Event DiskConnectionsExpiredMaxRequests;
+    extern const Event DiskConnectionsExpiredAge;
+    extern const Event DiskConnectionsExpiredStalePeer;
 
     extern const Event HTTPConnectionsCreated;
     extern const Event HTTPConnectionsReused;
@@ -138,6 +148,16 @@ static IHTTPConnectionPoolForEndpoint::Metrics getMetricsForDiskConnectionPool()
         .expired = ProfileEvents::DiskConnectionsExpired,
         .errors = ProfileEvents::DiskConnectionsErrors,
         .elapsed_microseconds = ProfileEvents::DiskConnectionsElapsedMicroseconds,
+        .reset_disconnected = ProfileEvents::DiskConnectionsResetDisconnected,
+        .reset_keep_alive_age = ProfileEvents::DiskConnectionsResetKeepAliveAge,
+        .reset_response_not_keep_alive = ProfileEvents::DiskConnectionsResetResponseNotKeepAlive,
+        .reset_incomplete_request_or_response = ProfileEvents::DiskConnectionsResetIncompleteRequestOrResponse,
+        .reset_unread_buffered_data = ProfileEvents::DiskConnectionsResetUnreadBufferedData,
+        .reset_store_limit = ProfileEvents::DiskConnectionsResetStoreLimit,
+        .reset_preserve_exception = ProfileEvents::DiskConnectionsResetPreserveException,
+        .expired_max_requests = ProfileEvents::DiskConnectionsExpiredMaxRequests,
+        .expired_age = ProfileEvents::DiskConnectionsExpiredAge,
+        .expired_stale_peer = ProfileEvents::DiskConnectionsExpiredStalePeer,
         .stored_count = CurrentMetrics::DiskConnectionsStored,
         .active_count = CurrentMetrics::DiskConnectionsTotal,
     };
@@ -772,8 +792,12 @@ public:
         {
             auto connection = stored_connections.top();
 
-            if (!isExpired(connection, is_soft_limit_reached) && !isStale(*connection))
+            /// Age is checked before staleness, same precedence as the disjunction below used to have.
+            bool is_expired_by_age = isExpired(connection, is_soft_limit_reached);
+            if (!is_expired_by_age && !isStale(*connection))
                 return stored_connections.size();
+
+            countReason(is_expired_by_age ? getMetrics().expired_age : getMetrics().expired_stale_peer);
 
             stored_connections.pop();
             connection->markAsExpired();
@@ -800,6 +824,14 @@ private:
         if (isSoftLimitReached)
             return connection->isKeepAliveExpired(0.1);
         return connection->isKeepAliveExpired(0.8);
+    }
+
+    /// Increments a reason counter for `reset`/`expired`. A no-op for the HTTP and STORAGE
+    /// groups, whose reason events are left as ProfileEvents::end().
+    static void countReason(ProfileEvents::Event reason)
+    {
+        if (reason != ProfileEvents::end())
+            ProfileEvents::increment(reason, 1);
     }
 
     /// Apply SO_RCVBUF/SO_SNDBUF to a connection socket.
@@ -873,13 +905,30 @@ private:
         if (connection.getKeepAliveRequest() >= connection.getKeepAliveMaxRequests())
         {
             ProfileEvents::increment(getMetrics().expired, 1);
+            countReason(getMetrics().expired_max_requests);
             return;
         }
 
+        /// Kept byte-for-byte as the original disjunction (not the reason ternary below) so that
+        /// the HTTP and STORAGE groups, whose reason events are all ProfileEvents::end(), still
+        /// reset on exactly the same conditions as before: comparing a *selected reason* to
+        /// end() cannot tell "no condition matched" from "this group doesn't track that reason".
         if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered()
             || group->isStoreLimitReached())
         {
             ProfileEvents::increment(getMetrics().reset, 1);
+            /// Age is checked ahead of the residual mustReconnect() (server-sent Connection:
+            /// close): isKeepAliveExpired(getKeepAliveReliability()) is exactly the age half
+            /// that mustReconnect() itself consults, so ruling it out first leaves
+            /// mustReconnect() true only because of the server's response. Re-checking these
+            /// (all pure, side-effect-free) just to pick a reason is cheap and safe.
+            countReason(
+                !connection.connected() ? getMetrics().reset_disconnected
+                : connection.isKeepAliveExpired(connection.getKeepAliveReliability()) ? getMetrics().reset_keep_alive_age
+                : connection.mustReconnect() ? getMetrics().reset_response_not_keep_alive
+                : !connection.isCompleted() ? getMetrics().reset_incomplete_request_or_response
+                : connection.buffered() ? getMetrics().reset_unread_buffered_data
+                : getMetrics().reset_store_limit);
             return;
         }
 
@@ -901,6 +950,7 @@ private:
         catch (...)
         {
             ProfileEvents::increment(getMetrics().reset, 1);
+            countReason(getMetrics().reset_preserve_exception);
             tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
         }
     }
