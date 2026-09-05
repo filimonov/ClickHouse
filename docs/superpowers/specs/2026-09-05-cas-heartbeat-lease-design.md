@@ -9,64 +9,87 @@ doc_type: 'design'
 
 # CAS mount lease: configurable timing plus an unsafe no-delay reclaim {#cas-heartbeat-lease-design}
 
-**Status:** DRAFT rev.2 (2026-09-05). rev.1 proposed a heartbeat re-vocabulary of the lease; `codex`
-(`gpt-5.6-sol`, xhigh; record in `tmp/pr2300-cicd-watch/review/codex_spec2.final.md`) found 6 MAJOR —
-the renewer has no pending/missed state machine, the engine has no one-envelope primitive, admission
-must stay duration-aware, the proportional clock-rate allowance must stay, GC must keep its full
-threshold — and recommended the small path. The user chose the small path (2026-09-05). The heartbeat
-re-vocabulary is recorded in the backlog as a redesign. Spec 2 of the R2 series; lands on the merge
-of PR #2307 (`ee6b0fd7826`).
+**Status:** DRAFT rev.3 (2026-09-05). rev.1 (heartbeat re-vocabulary) and rev.2 (small path) were
+reviewed by `codex` (`gpt-5.6-sol`, xhigh; records `codex_spec2.final.md`, `codex_spec2r2.final.md`).
+rev.2's two MAJORs — automatic remount would let duplicate-uuid processes steal the slot back and
+forth, and a graceful rolling timing change is not safe — are folded in below. The user chose the
+small path (2026-09-05). The heartbeat re-vocabulary is a backlog redesign. Spec 2 of the R2 series;
+lands on the merge of PR #2307 (`ee6b0fd7826`).
 
 ## Decision {#decision}
 
 1. `cas_mount_lease_ttl_ms` (30000) and `cas_mount_renew_period_ms` (10000) from PR #2307 stay as
-   they are. No renaming, no aliases.
-2. One new boolean disk setting, `cas_unsafe_remount_no_delay` (default `0`): when set, a writable
-   open or remount that finds the mount slot held by this server's OWN `server_uuid` with a different
-   `writer_epoch` reclaims it at once instead of observing the slot's token stable for
-   `TTL + TTL/20 + poll`. Certificates (`gc_fenced`, clean farewell) reclaim instantly regardless, as
-   today. The knob applies ONLY to the two same-uuid claim sites (`Pool::open` and `tryRemountOnce`,
-   `CasPool.cpp` ~716 / ~1428); GC's fence-out keeps the full shared threshold, and a foreign uuid is
-   never reclaimed.
-3. The setting's description and `configuration.md` say, in these words: unsafe whenever two processes
-   can hold the same `server_uuid` (a copied uuid file, a stalled predecessor); after such a reclaim the
-   predecessor may keep writing until its own local cutoff or until its next renewal meets the token
-   guard — up to its remaining `TTL − margin`, not one period. Intended for test stands and for
-   deployments that guarantee one process per uuid.
+   they are. No renaming, no aliases, no `MountConfig` or GC threading.
+2. One new boolean disk setting, `cas_unsafe_remount_no_delay` (default `0`), consulted at exactly
+   ONE site: the writable `Pool::open` claim (`Pool::mountWritable`, `CasPool.cpp` ~716). When set and
+   the slot is held by this server's OWN `server_uuid` with a different `writer_epoch` and no
+   certificate, the open reclaims at once instead of observing the slot's token stable for
+   `TTL + floor(TTL/20) + max(1, floor(period/2))` on its own clock. The reclaim is routed through
+   `claimMount` with an explicit authorization carrying the exact token it read (a new argument next
+   to `proven_dead_incarnation`, never reusing it), so the foreign-uuid refusal at `CasServerRoot.cpp:811`
+   still precedes it, the prior state is a new `MountPriorState::UncleanUnsafe`, and the audit event
+   reason names `cas_unsafe_remount_no_delay`. Certificates (`gc_fenced`, clean farewell) reclaim
+   instantly regardless, as today.
+3. `tryRemountOnce` (`CasPool.cpp` ~1428) does NOT consult the knob: an incarnation superseded by a
+   duplicate-uuid process must still observe before it may reclaim, or two such processes would
+   alternate authority indefinitely. GC's fence-out (`CasGc.cpp` ~473, ~4520) keeps the shared full
+   threshold.
+4. The setting's description and `configuration.md` say, in these words: unsafe whenever two
+   processes can hold the same `server_uuid` (a copied uuid file, a stalled predecessor). After such a
+   reclaim the predecessor can still START conditional writes until its own cutoff
+   (`confirmed deadline − margin − 2 × attempt_timeout`) or until its next renewal meets the token
+   guard, and a request already sent may materialize later; ref-log keys carry `(writer_epoch,
+   sequence)` and creates are conditional, so two writers cannot commit different bodies to one key
+   and recovery's `EpochSeal` settles stragglers — the exposure is availability (recovery fails closed
+   after 64 consecutive old-epoch stragglers), not data. Intended for test stands and deployments that
+   guarantee one process per uuid.
 
 ## Documentation rules {#docs}
 
 Next to the settings in `configuration.md`, and in `mounts-and-leases.md`:
 
 1. All servers sharing a pool run the same `cas_mount_lease_ttl_ms` and `cas_mount_renew_period_ms`.
-   Reclaim (startup, remount) and GC fence-out judge liveness by token stability on the observer's
-   OWN clock with the observer's OWN threshold; nothing about the writer's timing is on the wire. A
-   member or GC leader with a shorter TTL treats a healthy peer with a longer one as dead. Rolling
-   timing changes are therefore unsafe: change the values with every member stopped, or restart
-   members gracefully (a graceful farewell leaves a certificate that needs no observation).
-2. Shorter TTL or period makes lease loss easier: any store delay longer than the margin costs a
-   remount (`TTL − margin − period − 2 × attempt_timeout` is the effective renewal window; 8 s at
-   the defaults).
-3. `expires_at_ms` in the mount object is used for local fencing and for `system.cas_mounts`
-   diagnostics only; the operator-facing double-start message still says liveness is judged from the
-   wall clock and is corrected in the same change (`CasServerRoot.cpp:909`).
+   Startup reclaim and GC fence-out judge liveness by token stability on the observer's OWN
+   `CLOCK_BOOTTIME` with the observer's OWN threshold; nothing about the writer's timing is on the
+   wire. A member or GC leader with a shorter threshold treats a healthy peer with a longer one as
+   dead. Change the values only with EVERY member of the pool stopped; a graceful restart removes
+   only that member's own startup observation and does not make mixed thresholds safe.
+2. A shorter TTL reduces the tolerance for store delays; a shorter period increases it (renewal
+   starts earlier) at the cost of traffic. With the defaults, `TTL − margin − period − 2 ×
+   attempt_timeout = 8 s` is the scheduling-lateness budget before the first renewal attempt of a
+   period can begin; the renewal then retries until `confirmed deadline − margin`.
+3. `expires_at_ms` in the mount object is a writer-stamped diagnostic used by `system.cas_mounts`
+   and by the non-authoritative decommission epoch-recovery precheck; it never authorizes a reclaim
+   or a GC fence-out, and local fencing is derived from the confirmed request's pre-I/O BOOTTIME
+   anchor plus the TTL. The operator-facing double-start message (`CasServerRoot.cpp:909`) and the
+   stale comment in `CasMountRuntime` are corrected in the same change; the observation log line says
+   "token-stability observation".
 
 ## Tests {#tests}
 
-- gtest (`gtest_cas_bootstrap_ordering.cpp` / pool tests with a virtual clock): a same-uuid,
-  different-epoch, uncertified slot is reclaimed without a wait when `unsafe_remount_no_delay` is
-  set and only after the full threshold otherwise; a foreign-uuid slot is refused in both cases; GC's
-  fence-out threshold is unchanged by the knob.
-- gtest: the predecessor interleaving — reclaim with the knob, then the predecessor's renewal meets
-  the token guard and is fenced (`gc_fenced`/terminal), proving the bound stated in the docs.
-- Integration (`test_cas_mount_renewal_retry` or a sibling with `with_rustfs`): the disk config sets
-  the two timing settings and the knob; they reach `PoolConfig` (verified through the observation
-  log line `waiting ~N ms (token-stability observation)` on a kill/restart without the knob, N =
-  `TTL + TTL/20 + period/2`, and through the absence of that wait with the knob).
+- Startup, virtual clock (`CASMountOpenWaits.UncleanOpenPaysOnlyTheObservationWindow` fixture in
+  `gtest_cas_pool.cpp` ~2299): an uncertified same-uuid slot is reclaimed without a wait when the knob
+  is set, with prior state `UncleanUnsafe` and the audit reason naming the knob; after the full
+  threshold otherwise. A foreign-uuid slot is refused in both cases.
+- Helper level (`CASMountAwaitExpiry` / `CASMountObservation` tests): unchanged behaviour of
+  `claimMountAwaitingExpiry` — the knob never reaches it.
+- Remount: `tryRemountOnce` uses raw `sleep_for` (`CasPool.cpp:1425`); route it through
+  `mount_runtime.waitSleep` first, then a two-runtime test: after A is superseded by B (B started with
+  the knob), A's renewal becomes `RenewalTerminal` with its local fence tripped, and A's automatic
+  remount does NOT reclaim B's epoch. Separately advance A's BOOTTIME past its cutoff without renewing
+  to prove cutoff-only fencing.
+- GC: `mountObservationThresholdMs` callers unchanged; a GC fence-out test with the knob set behaves
+  identically.
+- Integration (`test_cas_mount_renewal_retry`, `with_rustfs`), short valid values (TTL 1000 ms,
+  period 200 ms, attempt timeout 50 ms, margin 50 ms → observation exactly 1150 ms): the settings
+  reach `PoolConfig` (observed through behaviour); record the log line count before each restart and
+  inspect only appended lines: the safe restart appends exactly one
+  `waiting ~1150 ms (token-stability observation)` line; the unsafe restart appends none, mounts
+  writable, and advances the epoch.
 - The regression hard-restart suite (`lightweight_delete/tests/hard_restart.py`) is pointed at the
   knob instead of shortened lease timings (clickhouse-regression change, out of this repo).
 
 ## Out of scope {#out-of-scope}
 
 The heartbeat re-vocabulary (backlog), in-period renewal retries (issue #2244 direction 1; partly
-covered by spec 1 for the pre-send class), spec 3 and spec 4.
+covered by spec 1 for the connect-failure class), spec 3 and spec 4.
