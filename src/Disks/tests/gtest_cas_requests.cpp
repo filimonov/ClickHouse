@@ -2295,7 +2295,17 @@ TEST(CASRequestsConnectHint, EarlierAmbiguityStillSettlesByRead)
     FakeClock clock;
     auto backend = std::make_shared<CountingBackend>();
     backend->injectAmbiguousWrite("k");           /// attempt 1: ordinary ambiguity -> read, backoff
-    backend->failNextWriteWith("k", connectHint()); /// attempt 2: hinted -> flat pause, no read
+    /// Attempt 2's hint has to come from the hook, not a second `failNextWriteWith`: the armed-failure
+    /// queue is checked BEFORE the ambiguous-key injection on every call, so a queued failure would win
+    /// attempt 1 regardless of install order. `writeTotal()` ticks before the request is served, so it
+    /// reads 2 while attempt 2 is in flight.
+    backend->onBeforeWrite("k", [&]
+    {
+        if (backend->writeTotal() == 2)
+            throw DB::S3Exception(
+                "Poco::Exception. Code: 1000, e.code() = 99, Cannot assign requested address: 10.0.0.1:9000",
+                Aws::S3::S3Errors::NETWORK_CONNECTION);
+    });
     auto requests = makeRequests(backend, clock);
     auto op = requests.admit();
     WriteResult result = op.create("k", "v", Retry::standard());
@@ -2304,7 +2314,8 @@ TEST(CASRequestsConnectHint, EarlierAmbiguityStillSettlesByRead)
     EXPECT_EQ(committed->attempts_sent, 3u);
     EXPECT_EQ(backend->getTotal(), 1u);
     ASSERT_EQ(clock.sleeps.size(), 2u);
-    EXPECT_EQ(clock.sleeps[1], 50u);
+    EXPECT_LE(clock.sleeps[0], 200u);     /// the backoff after attempt 1's ambiguity read
+    EXPECT_EQ(clock.sleeps[1], 50u);      /// the flat pause after attempt 2's hint
 }
 
 TEST(CASRequestsConnectHint, GatesRefuseTheReissue)
@@ -2343,8 +2354,9 @@ TEST(CASRequestsConnectHint, GatesRefuseTheReissue)
         ASSERT_NE(gave_up, nullptr);
         EXPECT_EQ(gave_up->why, GaveUp::Why::FenceLost);
     }
-    /// The documented deadline-edge difference: exactly one envelope left -> a hinted attempt gives up
-    /// (today an ambiguous one would still spend its read).
+    /// Two envelopes exactly for the attempt; today's ambiguous path would still have its read
+    /// envelope (2000 >= 1000), the hint path gives up instead -- the documented deadline-edge
+    /// difference.
     {
         FakeClock clock;
         auto backend = std::make_shared<CountingBackend>();
@@ -2352,7 +2364,7 @@ TEST(CASRequestsConnectHint, GatesRefuseTheReissue)
         auto requests = makeRequests(backend, clock);
         requests.setAttemptReservationForTest(1'000);
         auto op = requests.admit();
-        WriteResult result = op.create("k", "v", Retry::within(2'000 + 1'000));  /// two envelopes for the attempt, one left after it
+        WriteResult result = op.create("k", "v", Retry::within(2'000));
         const auto * gave_up = std::get_if<GaveUp>(&result);
         ASSERT_NE(gave_up, nullptr);
         EXPECT_EQ(gave_up->why, GaveUp::Why::Deadline);
