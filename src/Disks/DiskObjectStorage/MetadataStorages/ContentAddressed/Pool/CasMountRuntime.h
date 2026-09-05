@@ -394,7 +394,9 @@ public:
     /// Swap the wait hook after construction -- a test that must change what a wait DOES partway
     /// through a scenario (e.g. driving a second incarnation's renewal from inside the observed
     /// incarnation's own poll) cannot express that through `PoolConfig::wait_sleep_fn` alone, since
-    /// that value is fixed at open time.
+    /// that value is fixed at open time. Unsynchronized against `waitSleep`'s `const` read of the same
+    /// field: safe only called from the test's own thread before any worker is running (no persistent
+    /// renewal/remount worker reads `config.wait_sleep_fn` concurrently with this write).
     void setWaitSleepForTest(std::function<void(uint64_t)> fn) { config.wait_sleep_fn = std::move(fn); }
 
     /// Forward renewer events to the injected sink. The sink is held by reference so it observes the

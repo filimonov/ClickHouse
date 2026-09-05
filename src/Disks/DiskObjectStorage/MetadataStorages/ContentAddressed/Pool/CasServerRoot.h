@@ -325,6 +325,13 @@ String mountDoubleStartMessage(const String & srid, const std::optional<MountLea
 /// discreteness, while `ttl_ms / 20` allows for a five-percent clock-rate difference.
 uint64_t mountObservationThresholdMs(uint64_t ttl_ms, uint64_t cadence_ms);
 
+/// Bounded number of observation restarts `claimMountAwaitingExpiry` allows before giving up on a
+/// same-uuid slot whose write-token keeps changing (see the function comment above): each restart
+/// means the token changed DURING the observation window, i.e. something is actively renewing it.
+/// Exposed here (rather than kept file-local in the `.cpp`) so tests can size a fixture's poll count
+/// against the exact bound the engine enforces.
+constexpr size_t kMaxObservationRestarts = 3;
+
 MountClaimResult claimMountAwaitingExpiry(
     CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid, uint64_t our_epoch,
     const std::function<uint64_t()> & now_ms_fn,

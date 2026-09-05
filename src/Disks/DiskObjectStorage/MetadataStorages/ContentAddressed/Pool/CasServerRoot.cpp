@@ -932,18 +932,6 @@ String mountDoubleStartMessage(const String & srid, const std::optional<MountLea
         srid, identity, srid, srid);
 }
 
-namespace
-{
-/// Bounded number of observation restarts before giving up on a same-uuid slot whose write-token keeps
-/// changing: each restart means the token changed DURING our observation window — i.e. something is
-/// actively renewing it. A genuinely dead predecessor's token never changes again after its last
-/// renewal, so it is observed stable well within one window; only a truly LIVE writer (a real second
-/// incarnation, or the predecessor's own background renewer racing our first few polls) keeps resetting
-/// the clock. Bounding this converts "wait forever for a live twin" into the same bounded-then-report
-/// shape the old wall-clock wait had, without ever trusting a wall-clock deadline to get there.
-constexpr size_t kMaxObservationRestarts = 3;
-}
-
 uint64_t mountObservationThresholdMs(uint64_t ttl_ms, uint64_t cadence_ms)
 {
     return ttl_ms + ttl_ms / 20 + cadence_ms;

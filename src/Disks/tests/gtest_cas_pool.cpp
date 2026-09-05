@@ -1839,15 +1839,33 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
     EXPECT_NE(pool_a->liveWriterEpoch(), pool_b->liveWriterEpoch())
         << "the unsafe reclaim must have minted B a fresh epoch over A's slot";
 
-    /// A's next renewal meets the token guard: same uuid, a newer epoch now sits on the slot -- a
-    /// "superseded" conflict, terminal for A's renewer -- and A's local write fence trips closed.
-    EXPECT_THROW(pool_a->renewWatermarkOnce(), DB::Exception);
-    EXPECT_FALSE(pool_a->mayMutate());
+    /// A's next renewal meets the token guard: same uuid, a newer epoch now sits on the slot. Pin the
+    /// terminal classification directly (the "superseded" branch of `throwRenewConflict`, the one
+    /// that maps to `MountRenewOutcome::Terminal`) rather than accepting any exception -- no accessor
+    /// exposes the renewer's outcome/state today, so the error code and the classification's own
+    /// wording are what distinguish this from every other terminal reason (foreign owner, GC fence,
+    /// vanished slot, an unresolved write).
+    try
+    {
+        pool_a->renewWatermarkOnce();
+        FAIL() << "A's renewal must be refused once B's reclaim superseded its epoch";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED);
+        EXPECT_NE(e.message().find("superseded by a newer incarnation"), std::string::npos)
+            << "actual message: " << e.message();
+    }
+    EXPECT_FALSE(pool_a->mayMutate()) << "the superseded classification must trip A's local write fence closed";
 
     /// A's self-remount now observes the slot's write-token. Drive B's renewal from INSIDE every one
     /// of A's observation polls, so the token never stabilizes across the whole bounded observation --
     /// the knob is not consulted by `tryRemountOnce` (only by `Pool::open`), so nothing else could let
-    /// A reclaim a slot a live successor keeps renewing.
+    /// A reclaim a slot a live successor keeps renewing. This cannot deadlock: A and B are distinct
+    /// `Pool` objects, so B's `renewWatermarkOnce` takes none of A's locks (each `Pool` owns its own
+    /// `remount_mutex`), and the wait fires between `claimMountAwaitingExpiry`'s polls -- with no
+    /// backend request of A's own in flight -- so B's call is the only one touching the shared
+    /// in-memory backend at that instant.
     size_t polls = 0;
     pool_a->setWaitSleepForTest([&](uint64_t ms)
     {
@@ -1858,7 +1876,15 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
     });
     EXPECT_FALSE(pool_a->tryRemountOnce())
         << "a superseded incarnation must never reclaim a live successor's slot";
-    EXPECT_GT(polls, 0u) << "the observation must have actually polled B's renewals";
+    /// Bounded, not merely nonzero: B renews on every poll, so the observed token changes every
+    /// iteration and the FIRST (non-restart) observation start plus `kMaxObservationRestarts` further
+    /// restarts is exactly the number of polls before `claimMountAwaitingExpiry` gives up -- one
+    /// `sleep_ms_fn` call per iteration that does not itself exceed the bound, and none on the
+    /// terminal iteration that does. A widened or removed restart bound would make this hang instead
+    /// of failing, so pin the exact count rather than only asserting it ran.
+    EXPECT_EQ(polls, DB::Cas::kMaxObservationRestarts + 1)
+        << "the observation must give up after exactly kMaxObservationRestarts restarts, not wait "
+           "indefinitely for a live twin to go quiet";
 
     const MountLease final_lease = decodeMountLease(readObj(*backend, pool_a->layout().mountKey("test"))->bytes);
     EXPECT_EQ(final_lease.writer_epoch, pool_b->liveWriterEpoch())
