@@ -36,6 +36,13 @@ bool isDefinitelyRefusedWrite(const std::exception & e);
 /// ambiguous one; what the hint changes is only that the engine reissues before spending a read.
 bool isConnectFailureHint(const std::exception & e);
 
+/// TRUE when a FIRST physical attempt (`attempt_no == 1`) failed with the adaptive first-attempt
+/// timeout: an `S3Exception` naming `NETWORK_CONNECTION` whose text is the generic transport-timeout
+/// one, not a spec-1 connect-failure hint (checked first, so a hinted attempt stays hinted). A
+/// connection-quality answer about a fresh connection, not a store fault -- attempt 2 runs under the
+/// full attempt budget, so the right response is to re-send at once rather than pace it like a fault.
+bool isFirstAttemptFuseTimeout(const std::exception & e, size_t attempt_no);
+
 /// Deterministic caller/local bugs, surfaced unchanged by every loop here: reissuing only replays the
 /// same failure and buries the root cause behind a retryable exception. The set is `LOGICAL_ERROR`,
 /// `NOT_IMPLEMENTED`, `BAD_ARGUMENTS` and `CORRUPTED_DATA`.
@@ -130,6 +137,7 @@ namespace detail
 void recordAttempt();
 void recordReissue();
 void recordConflictPause();
+void recordFirstAttemptFuse();
 }
 
 class CasOperation;
@@ -384,10 +392,12 @@ private:
     WriteResult gaveUpAfterFailedObservation(std::optional<ReadStop> stop, WriteState & state,
                                              const Retry::Bound & bound) const;
     /// The shared shape behind every gated pause below: admission for `envelopes` attempt reservations
-    /// plus `pause_ms`, the deadline check, the counter this pause records itself under, then the sleep.
-    /// A value means the call ended during it; nullopt means the caller may send another attempt.
+    /// plus `pause_ms`, the deadline check, the counter this pause records itself under, then the sleep
+    /// -- called even with a zero `pause_ms` UNLESS `should_sleep` is false, which is reserved for the
+    /// fuse's zero-pause reissue (a pace of "no pause", not "a zero-length one"). A value means the call
+    /// ended during it; nullopt means the caller may send another attempt.
     std::optional<WriteResult> gatedPause(uint64_t pause_ms, uint32_t envelopes, WriteState & state,
-                                         const Retry::Bound & bound, void (*record)());
+                                         const Retry::Bound & bound, void (*record)(), bool should_sleep);
     /// Admission, then the jittered sleep. A value means the call ended during it; nullopt means the
     /// caller may send another attempt.
     std::optional<WriteResult> pauseAndReissue(WriteState & state, const Retry::Bound & bound);
@@ -398,6 +408,10 @@ private:
     /// The sibling for a failure text that named a failed connection. The same admission and the same
     /// reservation, a flat `kConnectHintPauseMs` sleep, and `state.reissues` untouched.
     std::optional<WriteResult> pauseFlat(WriteState & state, const Retry::Bound & bound);
+    /// The sibling for a first-attempt fuse timeout: the same admission and the same reservation, NO
+    /// sleep at all, and `state.reissues` untouched -- the fuse is a connection-quality answer about a
+    /// fresh connection, not a store fault, so nothing here is paced against it.
+    std::optional<WriteResult> reissueAtOnce(WriteState & state, const Retry::Bound & bound);
 
     /// `sleep_ms` plus `envelopes` attempt reservations, saturating.
     uint64_t reservedFor(uint64_t sleep_ms, uint32_t envelopes) const;
@@ -456,6 +470,25 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
         {
             if (refreshAndClassifyReadFault(e, refresh_attempted) || policy.single_attempt)
                 throw;
+            /// A first-attempt fuse is a connection-quality answer, not a store fault: re-check
+            /// admission for the reissue alone and send it at once. `ordinary_reissues` stays put, so a
+            /// following ordinary failure's backoff starts at `backoff(1)`, exactly as if this attempt
+            /// had never happened.
+            if (isFirstAttemptFuseTimeout(e, attempt_no))
+            {
+                detail::recordFirstAttemptFuse();
+                const uint64_t needed = reservedFor(0, 1);
+                switch (gate(needed))
+                {
+                    case Gate::FenceLost: giveUpReadFenceLost(verb, subject, "before the reissue");
+                    case Gate::NoBudget:  giveUpReadNoBudget(verb, subject, "for the reissue");
+                    case Gate::Ok: break;
+                }
+                if (!fits(needed, bound))
+                    giveUpReadDeadline(verb, subject, bound, attempt_no);
+                detail::recordReissue();
+                continue;
+            }
         }
 
         const uint64_t pause_ms = Retry::backoff(++ordinary_reissues);

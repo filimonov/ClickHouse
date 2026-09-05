@@ -33,6 +33,7 @@ namespace ProfileEvents
     extern const Event CASRequestRefused;
     extern const Event CASRequestFenceLostPostWrite;
     extern const Event CASRequestConnectFailureHint;
+    extern const Event CASRequestFirstAttemptFuse;
 }
 
 namespace DB::ErrorCodes
@@ -64,6 +65,11 @@ void recordReissue()
 void recordConflictPause()
 {
     ProfileEvents::increment(ProfileEvents::CASRequestConflictPause);
+}
+
+void recordFirstAttemptFuse()
+{
+    ProfileEvents::increment(ProfileEvents::CASRequestFirstAttemptFuse);
 }
 
 }
@@ -253,6 +259,23 @@ bool isConnectFailureHint([[maybe_unused]] const std::exception & e)
             return true;
 #endif
     return false;
+}
+
+bool isFirstAttemptFuseTimeout([[maybe_unused]] const std::exception & e, [[maybe_unused]] size_t attempt_no)
+{
+#if USE_AWS_S3
+    /// A spec-1 hint is checked FIRST: `connect timed out` belongs to that classifier, and an attempt
+    /// whose text matches both stays a hint, reissued without a preceding settle read.
+    if (attempt_no != 1 || isConnectFailureHint(e))
+        return false;
+    const auto * s3 = dynamic_cast<const S3Exception *>(&e);
+    if (!s3 || s3->getS3ErrorCode() != Aws::S3::S3Errors::NETWORK_CONNECTION)
+        return false;
+    const std::string_view message = s3->message();
+    return message.find("Timeout") != std::string_view::npos;
+#else
+    return false;
+#endif
 }
 
 CasRequests::CasRequests(BackendPtr backend_, Fence fence_,
@@ -816,7 +839,7 @@ WriteResult CasOperation::postCommit(Etag inc, bool resolved_by_read, WriteState
 }
 
 std::optional<WriteResult> CasOperation::gatedPause(uint64_t pause_ms, uint32_t envelopes, WriteState & state,
-                                                    const Retry::Bound & bound, void (*record)())
+                                                    const Retry::Bound & bound, void (*record)(), bool should_sleep)
 {
     const uint64_t needed = reservedFor(pause_ms, envelopes);
     switch (gate(needed))
@@ -828,18 +851,24 @@ std::optional<WriteResult> CasOperation::gatedPause(uint64_t pause_ms, uint32_t 
     if (!fits(needed, bound))
         return gaveUp(GaveUp::Why::Deadline, sourceFor(bound), state);
     record();
-    owner.sleep_ms(pause_ms);
+    /// `should_sleep` is false ONLY for the fuse's zero-pause reissue: that pause is not "zero
+    /// milliseconds", it is NO PAUSE AT ALL, so it must not call `sleep_ms` even with a zero argument.
+    /// The three ordinary callers always sleep, even when a drawn jitter happens to be exactly zero --
+    /// `Retry::backoff`'s full jitter includes zero -- so their call to `sleep_ms(0)` is kept
+    /// unconditional here to leave their observable behaviour exactly as it was before this collapse.
+    if (should_sleep)
+        owner.sleep_ms(pause_ms);
     return std::nullopt;
 }
 
 std::optional<WriteResult> CasOperation::pauseAndReissue(WriteState & state, const Retry::Bound & bound)
 {
-    return gatedPause(Retry::backoff(++state.reissues), 2, state, bound, detail::recordReissue);
+    return gatedPause(Retry::backoff(++state.reissues), 2, state, bound, detail::recordReissue, /*should_sleep=*/true);
 }
 
 std::optional<WriteResult> CasOperation::pauseForConflict(WriteState & state, const Retry::Bound & bound)
 {
-    return gatedPause(Retry::conflictBackoff(), 2, state, bound, detail::recordConflictPause);
+    return gatedPause(Retry::conflictBackoff(), 2, state, bound, detail::recordConflictPause, /*should_sleep=*/true);
 }
 
 /// A flat pause before reissuing an attempt whose failure text named a failed connection.
@@ -847,7 +876,12 @@ static constexpr uint64_t kConnectHintPauseMs = 50;
 
 std::optional<WriteResult> CasOperation::pauseFlat(WriteState & state, const Retry::Bound & bound)
 {
-    return gatedPause(kConnectHintPauseMs, 2, state, bound, detail::recordReissue);
+    return gatedPause(kConnectHintPauseMs, 2, state, bound, detail::recordReissue, /*should_sleep=*/true);
+}
+
+std::optional<WriteResult> CasOperation::reissueAtOnce(WriteState & state, const Retry::Bound & bound)
+{
+    return gatedPause(0, 2, state, bound, detail::recordReissue, /*should_sleep=*/false);
 }
 
 WriteResult CasOperation::writeLoop(const String & key, const String & bytes, const std::optional<Etag> & expected,
@@ -890,6 +924,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         bool credential_answer = false;
         bool refreshed = false;
         bool connect_hint = false;
+        bool fuse = false;
         try
         {
             outcome = owner.withTransportAccess(state.attempts_sent, [&](auto & access)
@@ -927,6 +962,11 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             connect_hint = !definitely_refused && isConnectFailureHint(e);
             if (connect_hint)
                 ProfileEvents::increment(ProfileEvents::CASRequestConnectFailureHint);
+            /// Checked AFTER the hint, so a hinted attempt stays hinted (reissued before its read); a
+            /// fuse timeout is reissued after the settle read runs below.
+            fuse = isFirstAttemptFuseTimeout(e, state.attempts_sent);
+            if (fuse)
+                ProfileEvents::increment(ProfileEvents::CASRequestFirstAttemptFuse);
         }
         catch (const std::exception & e)
         {
@@ -1012,6 +1052,16 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         /// the store's own answer. A policy with no reissue has to say it settled nothing.
         if (policy.single_attempt)
             return gaveUp(GaveUp::Why::Unresolved, sourceFor(bound), state);
+        /// The first attempt met the adaptive first-attempt timeout: a connection-quality answer, not a
+        /// store fault. The read above settled nothing new about it, so re-send at once as attempt 2
+        /// under the full attempt budget; the backoff index is untouched because no store fault was
+        /// seen yet.
+        if (fuse)
+        {
+            if (auto given_up = reissueAtOnce(state, bound))
+                return *given_up;
+            continue;
+        }
         if (auto given_up = pauseAndReissue(state, bound))
             return *given_up;
     }

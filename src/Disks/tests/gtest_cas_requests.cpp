@@ -2525,6 +2525,130 @@ TEST(CASRequestsConnectHint, AmbiguityAfterHintsStartsAtFirstBackoff)
     EXPECT_LE(clock.sleeps[2], 200u);
 }
 
+TEST(CASRequestsFuse, MatcherPrecedence)
+{
+    using Aws::S3::S3Errors;
+    /// The generic transport-timeout text is Poco's exception name, pinned here.
+    EXPECT_THAT(Poco::TimeoutException("the socket").displayText(), testing::StartsWith("Timeout"));
+    const DB::S3Exception fuse("Poco::Exception. Code: 1000, e.code() = 0, Timeout: the socket", S3Errors::NETWORK_CONNECTION);
+    EXPECT_TRUE(isFirstAttemptFuseTimeout(fuse, 1));
+    EXPECT_FALSE(isFirstAttemptFuseTimeout(fuse, 2));
+    const DB::S3Exception hint("Poco::Exception. Code: 1000, e.code() = 0, Timeout: connect timed out: 10.0.0.1:9", S3Errors::NETWORK_CONNECTION);
+    EXPECT_FALSE(isFirstAttemptFuseTimeout(hint, 1));     /// spec 1 owns it
+    EXPECT_TRUE(isConnectFailureHint(hint));
+    EXPECT_FALSE(isFirstAttemptFuseTimeout(DB::S3Exception("Connection reset by peer", S3Errors::NETWORK_CONNECTION), 1));
+    EXPECT_FALSE(isFirstAttemptFuseTimeout(DB::S3Exception("Timeout", S3Errors::INTERNAL_FAILURE), 1));
+}
+
+namespace
+{
+std::exception_ptr fuseTimeout()
+{
+    return std::make_exception_ptr(DB::S3Exception("Poco::Exception. Code: 1000, e.code() = 0, Timeout: the socket",
+                                                   Aws::S3::S3Errors::NETWORK_CONNECTION));
+}
+}
+
+TEST(CASRequestsFuse, FirstAttemptTimeoutReissuesWithoutSleep)
+{
+    /// Write: the settle read still runs (the request may have been sent), then a no-sleep reissue.
+    {
+        FakeClock clock;
+        auto backend = std::make_shared<CountingBackend>();
+        backend->failNextWriteWith("k", fuseTimeout());
+        auto requests = makeRequests(backend, clock);
+        auto op = requests.admit();
+        WriteResult result = op.create("k", "v", Retry::standard());
+        const auto * committed = std::get_if<Committed>(&result);
+        ASSERT_NE(committed, nullptr);
+        EXPECT_EQ(committed->attempts_sent, 2u);
+        EXPECT_EQ(backend->getTotal(), 1u);
+        EXPECT_TRUE(clock.sleeps.empty());
+    }
+    /// Read and LIST: no settle read, no sleep.
+    {
+        FakeClock clock;
+        auto backend = std::make_shared<CountingBackend>();
+        auto requests = makeRequests(backend, clock);
+        auto op = requests.admit();
+        orThrow(op.create("k", "v", Retry::standard()), "seed");
+        backend->resetCounts();
+        backend->failNextReadWith("k", fuseTimeout());
+        EXPECT_TRUE(op.read("k", Retry::standard()).has_value());
+        EXPECT_EQ(backend->getTotal(), 2u);
+        EXPECT_TRUE(clock.sleeps.empty());
+    }
+    /// Attempts 1 and 2 failing: attempt 2 is not a first attempt, so exactly one sleep, after it.
+    {
+        FakeClock clock;
+        auto backend = std::make_shared<CountingBackend>();
+        backend->failNextWriteWith("k", fuseTimeout());
+        backend->failNextWriteWith("k", fuseTimeout());
+        auto requests = makeRequests(backend, clock);
+        auto op = requests.admit();
+        WriteResult result = op.create("k", "v", Retry::standard());
+        ASSERT_TRUE(std::holds_alternative<Committed>(result));
+        EXPECT_EQ(std::get<Committed>(result).attempts_sent, 3u);
+        EXPECT_EQ(clock.sleeps.size(), 1u);
+    }
+}
+
+TEST(CASRequestsFuse, GatesRefuseTheZeroPauseReissue)
+{
+    /// `setAttemptReservationForTest(1'000)`: the write's own admission reserves two envelopes
+    /// (`reservedFor(0, 2) == 2000`), which matches a 2000 ms window exactly -- `fits` is `needed <=
+    /// remaining`, so the boundary admits. The settle read that follows the fuse reserves only one
+    /// envelope (`reservedFor(0, 1) == 1000`), which still fits even after the clock below has moved.
+    /// What must NOT fit is the zero-pause reissue's own `reservedFor(0, 2) == 2000`. `FakeClock` never
+    /// moves on its own -- only a sleep advances it, and this path sleeps none -- so a naive `now()`
+    /// would see the SAME instant at every one of the four calls this operation makes (the initial
+    /// `bind`, the write's own admission, the settle read's admission, the reissue's admission) and
+    /// wrongly admit the reissue too. A real failing attempt spends wall time even though it never
+    /// lands, so this fixture's clock counts its own calls and adds 1 ms starting from the THIRD one
+    /// (the settle read's admission) onward: late enough that the write's own admission still sees the
+    /// pristine window, early enough that the reissue's admission sees one fewer millisecond than it
+    /// needs.
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    backend->failNextWriteWith("k", fuseTimeout());
+    auto requests = makeRequests(backend, clock);
+    requests.setAttemptReservationForTest(1'000);
+    int now_calls = 0;
+    requests.setNowFnForTest([&clock, &now_calls]() -> uint64_t
+    {
+        ++now_calls;
+        return clock.now + (now_calls <= 2 ? 0 : 1);
+    });
+    auto op = requests.admit();
+    WriteResult result = op.create("k", "v", Retry::within(2'000));
+    const auto * gave_up = std::get_if<GaveUp>(&result);
+    ASSERT_NE(gave_up, nullptr);
+    EXPECT_EQ(gave_up->why, GaveUp::Why::Deadline);
+    EXPECT_TRUE(clock.sleeps.empty()) << "the zero-pause reissue never sleeps, even when refused";
+    /// `Retry::once()` never performs a second attempt.
+    auto once_backend = std::make_shared<CountingBackend>();
+    once_backend->failNextWriteWith("k", fuseTimeout());
+    auto once_requests = makeRequests(once_backend, clock);
+    auto once_op = once_requests.admit();
+    (void)once_op.create("k", "v", Retry::once());
+    EXPECT_EQ(once_backend->writeTotal(), 1u);
+}
+
+TEST(CASRequestsFuse, ReadLoopZeroPauseKeepsTheBackoffIndex)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    orThrow(op.create("k", "v", Retry::standard()), "seed");
+    backend->failNextReadWith("k", fuseTimeout());
+    backend->failNextReadWith("k", std::make_exception_ptr(Poco::TimeoutException("attempt 2: an ordinary fault")));
+    EXPECT_TRUE(op.read("k", Retry::standard()).has_value());
+    ASSERT_EQ(clock.sleeps.size(), 1u);
+    /// The one sleep is `backoff(1)`: the zero-pause reissue did not advance the index.
+    EXPECT_LE(clock.sleeps[0], 200u);   /// `backoff(1)` is full jitter over [0, 200] ms
+}
+
 #endif
 
 TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)
