@@ -1958,3 +1958,11 @@ void S3ObjectStorage::applyClientProfileDefaults(const S3ClientProfile & profile
 - [ ] Run `python3 -m ci.praktika run "integration" --test test_cas_gcs` and `--test test_cas_mount_renewal_retry` — all PASS.
 - [ ] Run the stateless CAS lane locally for the request-engine tests: `python3 -m ci.praktika run "Stateless tests (amd_binary, cas s3 storage, parallel)" --test 05024` (and the CAS-tagged tests that exercise conditional writes: grep `cas` in `tests/queries/0_stateless/*.sh` names).
 - [ ] Update `tmp/pr2300-cicd-watch/STATE.md` with the commit list; do not push.
+
+## After the plan: two repro items not to forget
+
+- [ ] Reproduce and debug the two open CI failures recorded in `tmp/pr2300-cicd-watch/FOLLOWUP_T1_R3.md`: T1 (memory ceiling
+  16–19.5 GiB on the ASan CAS stateless lane; investigate through `system.trace_log` memory samples, the jemalloc profiler,
+  or any other allocation-site attribution) and R3 (`NUMBER_OF_COLUMNS_DOESNT_MATCH` through a materialized view in the
+  `cas_s3_cache_atomic_insert` regression suite; reproduce the statement pair on plain, CAS and cache-over-CAS policies). One
+  at a time, after the final review of this plan.
