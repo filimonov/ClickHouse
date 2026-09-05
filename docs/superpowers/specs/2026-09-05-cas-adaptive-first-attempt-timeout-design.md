@@ -9,7 +9,7 @@ doc_type: 'design'
 
 # CAS reissues cooperate with the adaptive first-attempt timeout {#cas-adaptive-first-attempt-timeout-design}
 
-**Status:** DRAFT rev.8 (2026-09-05; rev.8 folds round 4 `codex_cross_r4.final.md`: test 6e exercises the
+**Status:** DRAFT rev.9 (2026-09-05; rev.9 adds the fixed-window rule after the farewell regression found in implementation) — rev.8 rev.8 folds round 4 `codex_cross_r4.final.md`: test 6e exercises the
 initial-zero connect timeout at the snapshot seam, the control-request context names the cap, the doc
 formulas use `attempt + 2 × cap` with zero normalized) — rev.7 rev.7 records the user's ruling on the `src/IO` constraint, closing round 3's MAJOR 1) — rev.6 rev.6 folds round 3 `codex_cross_r3.final.md`: a zero connect timeout is
 normalized, the TLS handshake's second connect interval is budgeted (`attempt + 2 × cap`), an end-to-end wiring
@@ -132,7 +132,13 @@ there already).
      starts a renewal the fence then rejects); `CasMountRuntime::refAppendFenceOk` (`CasMountRuntime.cpp` ~154) asks for
      `2 × envelope` (a write plus its settlement read, which is what `writeLoop` reserves); the three
      teardown drain deadlines (`ContentAddressedMetadataStorage.cpp` ~986, `CasPool.cpp` ~1004, ~1160)
-     use `envelope + margin`.
+     use `envelope + margin`; and every FIXED request window on the mount path is derived from the
+     reservation instead of a constant — the farewell in `MountLeaseRenewer::terminate` ran under a
+     10 s constant (`kFarewellBudgetMs`), which a write's two-envelope reservation (14 s with defaults)
+     could never satisfy, so no clean farewell was ever published and each restart paid the full
+     observation (found by the integration module on 2026-09-05; the window is now at least
+     `2 × attempt_reservation_ms` plus a flat slack, pinned by `CASHeartbeat.FarewellIsAdmittedUnderTheDefaultBudget`
+     and a pool-level clean-teardown test).
    - The clone takes the cap: `getSingleAttemptClient(request_timeout_ms, connect_timeout_cap_ms)`,
      cached by the pair, sets `cfg.requestTimeoutMs = request_timeout_ms` and
      `cfg.connectTimeoutMs = (base connectTimeoutMs == 0) ? cap : min(base connectTimeoutMs, cap)` — a
