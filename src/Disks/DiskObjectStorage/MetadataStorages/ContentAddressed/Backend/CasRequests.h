@@ -425,11 +425,11 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
                             const Retry::Bound & bound, Fn && once)
 {
     bool refresh_attempted = false;
-    /// Two counters on purpose: `attempt_no` is the PHYSICAL attempt count handed to the transport
-    /// (so a reissue is seen as attempt >= 2), while `ordinary_reissues` drives the exponential
-    /// backoff index. They advance together here; a zero-pause reissue (the adaptive first-attempt
-    /// fuse's own reissue, added separately) advances only `attempt_no`, so a following ordinary
-    /// failure still starts its backoff at 1.
+    /// Two counters, deliberately kept separate even though they advance together today:
+    /// `attempt_no` is the PHYSICAL attempt count handed to the transport (so a reissue is seen as
+    /// attempt >= 2); `ordinary_reissues` is the exponential-backoff index. Keeping them distinct
+    /// leaves room for a future reissue path that advances only `attempt_no` (skipping the backoff
+    /// pause) without disturbing what a following ordinary failure's backoff starts from.
     for (uint32_t attempt_no = 1, ordinary_reissues = 0;; ++attempt_no)
     {
         const uint64_t reservation = reservedFor(0, 1);

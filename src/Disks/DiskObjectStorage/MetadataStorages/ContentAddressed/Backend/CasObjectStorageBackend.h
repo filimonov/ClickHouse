@@ -234,9 +234,8 @@ private:
     /// context (retry profile, per-attempt bound and connect cap, attempt number) its caller built.
     ReadSettings readSettingsFor(const ObjectStorageControlRequest & request) const;
 
-    /// The bodies a keyed primitive and its legacy override share. They differ in one thing: the
-    /// keyed call passes `controlRequest(access.attemptNo())`, the legacy one the storage's defaults.
-    /// The legacy arguments disappear with the legacy methods.
+    /// The keyed primitive's body, taking the control-request context its caller built
+    /// (`controlRequest(access.attemptNo())`) rather than deriving it again here.
     std::optional<Raw> readUnder(const String & key, const ObjectStorageControlRequest & request);
     std::optional<RawMeta> headUnder(const String & key, const ObjectStorageControlRequest & request);
     RawListPage listUnder(const String & prefix, const String & cursor, size_t limit,
