@@ -117,9 +117,14 @@ inside authority already proved by the last confirmed lease.
 
 GC's own view of a dead server is symmetric and clock-skew-immune: a slot becomes fence-eligible
 only after the leader observes the *same* renewal token hold stable, on its own monotonic clock,
-for `TTL + TTL/20 + cadence` — the identical formula a re-mounting server uses to wait out a
-predecessor. The stamped `expires_at_ms` never participates in that decision; wall-clock `now` is
-audit-only.
+for `TTL + floor(TTL/20) + period` — close to, but not identical to, the threshold a re-mounting
+server uses to wait out a predecessor, which observes `TTL + floor(TTL/20) + max(1,
+floor(period/2))`. Both thresholds are evaluated purely on the observer's own clock and its own
+configured `TTL`/`period`; nothing about the writer's timing travels on the wire. The stamped
+`expires_at_ms` never participates in either decision — it is a writer-stamped diagnostic used by
+`system.cas_mounts` and by the non-authoritative decommission epoch-recovery precheck, never an
+authorization; local fencing is derived instead from the confirmed request's pre-I/O `BOOTTIME`
+anchor plus the TTL, and wall-clock `now` stays audit-only.
 
 ## The two monotone counters {#counters}
 
@@ -158,6 +163,7 @@ a `MountClaimResult::Kind` together with a `MountPriorState` describing which ce
 | `Clean` | the predecessor's own graceful farewell (`min_active_build_sequence == UINT64_MAX`) |
 | `Fenced` | GC's own threshold-gated fence-out (`gc_fenced`) |
 | `UncleanObserved` | this claimant's own token-stability observation held for the full `TTL + drift` window |
+| `UncleanUnsafe` | the operator's explicit `cas_unsafe_remount_no_delay` authorization carried the slot's exact token — not a certificate of death |
 
 ## Behavioral mount-slot model {#mount-state-machines}
 
@@ -174,6 +180,7 @@ stateDiagram-v2
     Fenced --> Live: same-uuid claim with a fresh writer_epoch, instant reclaim
     Terminated --> Live: same-uuid claim with a fresh writer_epoch, instant reclaim
     Live --> Live: same-uuid claim, proven-dead token via UncleanObserved
+    Live --> Live: same-uuid claim under cas_unsafe_remount_no_delay, no observation
     Fenced --> Fenced: same uuid and epoch claim, FencedSelf, no write
     Live --> Absent: decommission tail, mount then epoch then owner tombstone
     Terminated --> [*]
@@ -204,10 +211,10 @@ under a live mount is an operator-level event.
 
 **Writable open** runs in a strict order: bootstrap-residual proof, capability probe under a
 random per-mount prefix, pool-meta create-or-validate, `validateServerRootId`, owner claim,
-`allocateWriterEpoch`, mount claim and synchronous renewer start, materialization grace if the
-predecessor was unclean (default 30 s), arm the fence, then create and release the runtime-owned
-renewal and remount workers before the writable pool becomes externally visible. If the grace period
-consumed the TTL, one fresh synchronous renewal re-anchors the deadline before the fence is armed.
+`allocateWriterEpoch`, mount claim and synchronous renewer start, arm the fence, then create and
+release the runtime-owned renewal and remount workers before the writable pool becomes externally
+visible. If the claim consumed the TTL, one fresh synchronous renewal re-anchors the deadline
+before the fence is armed.
 Failure to construct either worker joins the partial pair, closes the fence, and fails the writable
 open. No incident path constructs a thread.
 

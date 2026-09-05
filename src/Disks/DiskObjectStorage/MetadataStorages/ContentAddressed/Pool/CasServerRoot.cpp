@@ -915,13 +915,20 @@ String mountDoubleStartMessage(const String & srid, const std::optional<MountLea
         "server is holding the same CAS namespace. This prevents two ClickHouse servers from writing it.\n"
         " - If the other server is running intentionally, configure a unique <cas_server_root_id> for this disk.\n"
         " - If the other server is a stale/zombie process, stop it; this server will then reclaim the mount on restart.\n"
-        " - CLOCK SKEW CAVEAT: liveness is judged by comparing the lease's wall-clock expires_at_ms against\n"
-        "   THIS server's clock, so a large clock skew between the two servers can misjudge it (a healthy holder\n"
-        "   may look mounted here, or a dead one may look live). Verify both servers' clocks are in sync (NTP).\n"
+        " - LIVENESS: this wait judges the holder alive by its write token holding stable on THIS server's\n"
+        "   own clock for the full observation threshold; the stamped expires_at_ms above never enters that\n"
+        "   judgment on its own -- it is a writer-stamped diagnostic (also shown in system.cas_mounts), not\n"
+        "   an authorization. Every server sharing this pool must run the SAME cas_mount_lease_ttl_ms and\n"
+        "   cas_mount_renew_period_ms: a server configured with a shorter threshold than its peers can fence\n"
+        "   out a healthy one.\n"
         " - If the local ClickHouse uuid file was regenerated, restore the old uuid file, or remove the stale\n"
         "   owner object gc/server-roots/{}/owner only after verifying no server uses this root.\n"
         " - As a LAST RESORT, after verifying that NO server is writing this root, manually delete the mount\n"
-        "   object gc/server-roots/{}/mount and restart; this server will then re-claim it.",
+        "   object gc/server-roots/{}/mount and restart; this server will then re-claim it.\n"
+        " - For a test stand or a deployment that guarantees one process per server_uuid,\n"
+        "   cas_unsafe_remount_no_delay reclaims a slot carrying this server's own uuid at once instead of\n"
+        "   waiting -- but a live predecessor sharing this uuid may still be writing, so enable it only\n"
+        "   under that guarantee.",
         srid, identity, srid, srid);
 }
 
@@ -1013,7 +1020,7 @@ MountClaimResult claimMountAwaitingExpiry(
                 on_wait_start(*r.body, threshold_ms);
             LOG_INFO(getLogger("CasMountLease"),
                 "Attempting to mount content-addressed server root {} after node change or hard "
-                "restart; waiting ~{} ms (incarnation-stability observation) to confirm the previous "
+                "restart; waiting ~{} ms (token-stability observation) to confirm the previous "
                 "incarnation's operations are all finalized", srid, threshold_ms);
         }
 

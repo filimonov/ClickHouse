@@ -892,11 +892,13 @@ TEST(CASMountMessage, DoubleStartTextHasIdentityAndRemediation)
     EXPECT_NE(msg.find("unique"), std::string::npos);
     EXPECT_NE(msg.find("reclaim the mount on restart"), std::string::npos);
     EXPECT_NE(msg.find("uuid file"), std::string::npos);
-    /// Clock-skew caveat + manual mount-object delete escape hatch.
-    EXPECT_NE(msg.find("CLOCK SKEW"), std::string::npos);
-    EXPECT_NE(msg.find("NTP"), std::string::npos);
+    /// Token-stability liveness statement (replaces the old wall-clock CLOCK SKEW caveat) + manual
+    /// mount-object delete escape hatch + the unsafe-knob escape hatch.
+    EXPECT_NE(msg.find("own clock"), std::string::npos);
+    EXPECT_NE(msg.find("diagnostic"), std::string::npos);
     EXPECT_NE(msg.find("manually delete the mount"), std::string::npos);
     EXPECT_NE(msg.find("gc/server-roots/replica-a/mount"), std::string::npos);
+    EXPECT_NE(msg.find("cas_unsafe_remount_no_delay"), std::string::npos);
 }
 
 /// rev.6: a stamped `expires_at_ms` that already looks past-due on our wall clock must NOT shortcut
