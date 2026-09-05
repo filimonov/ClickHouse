@@ -1044,7 +1044,7 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getSingleAttemptClient(uint64
         cfg.requestTimeoutMs = static_cast<long>(request_timeout_ms);
 
     /// One TCP/TLS connect may not cost more than the cap the mount froze at open: the engine reserves
-    /// attempt + cap per envelope, and a reloaded base client with a wider connect timeout must not
+    /// attempt + 2 × cap per envelope, and a reloaded base client with a wider connect timeout must not
     /// widen what a reissue can spend.
     if (connect_timeout_cap_ms != 0)
         cfg.connectTimeoutMs = cfg.connectTimeoutMs <= 0 ? static_cast<long>(connect_timeout_cap_ms)

@@ -18,17 +18,21 @@
 #include <IO/S3Settings.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 #include <utility>
 #include <vector>
 
 #include <fmt/format.h>
+
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <IO/S3Common.h>
 #include <aws/s3/S3Errors.h>
@@ -71,6 +75,22 @@ DB::S3::ClientSettings clientSettingsForTest()
         .gcs_issue_compose_request = false,
         .is_s3express_bucket = false,
     };
+}
+
+/// A `<disk>` config section carrying `connect_timeout_ms`, for driving a reload through the real
+/// `applyNewSettings` path (as a live disk's config reload would) rather than swapping the client
+/// directly. Explicit static credentials keep the reload from falling through to the EC2 instance
+/// metadata credentials provider (no access/secret key configured means "try every other provider"),
+/// which would otherwise probe an unreachable metadata endpoint on every reload.
+Poco::AutoPtr<Poco::Util::XMLConfiguration> configWithConnectTimeout(long connect_timeout_ms)
+{
+    std::istringstream xml_stream( // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        "<clickhouse><disk>"
+        "<connect_timeout_ms>" + std::to_string(connect_timeout_ms) + "</connect_timeout_ms>"
+        "<access_key_id>ACCESS_KEY_ID</access_key_id>"
+        "<secret_access_key>SECRET_ACCESS_KEY</secret_access_key>"
+        "</disk></clickhouse>");
+    return new Poco::Util::XMLConfiguration(xml_stream);
 }
 
 std::shared_ptr<DB::S3ObjectStorage> makeStorageForTest(long connect_ms)
@@ -509,20 +529,20 @@ TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
     for (const auto & s : chain_storage->selections)
         EXPECT_EQ(s.selected_connect_timeout_ms, 1000);
 
-    /// Reload the disk's own client wider, then to zero: the mount's frozen cap must still win --
-    /// `ObjectStorageBackend::connect_timeout_cap_ms` was captured once at `openPoolView` time.
-    chain_storage->setClientForTest(DB::S3::ClientFactory::instance().create(
-        clientConfigurationForTest(5000), clientSettingsForTest(),
-        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{}));
+    /// Reload the disk's own client wider, then to zero, through the REAL config-reload path (as a live
+    /// disk's `SYSTEM RELOAD CONFIG` would): the mount's frozen cap must still win --
+    /// `ObjectStorageBackend::connect_timeout_cap_ms` was captured once at `openPoolView` time, never
+    /// re-read from the reloaded client.
+    chain_storage->applyNewSettings(*configWithConnectTimeout(5000), "disk", getContext().context,
+                                    DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
     chain_storage->selections.clear();
     EXPECT_TRUE(metadata_storage->existsFile(probe_path));
     ASSERT_FALSE(chain_storage->selections.empty());
     for (const auto & s : chain_storage->selections)
         EXPECT_EQ(s.selected_connect_timeout_ms, 1000);
 
-    chain_storage->setClientForTest(DB::S3::ClientFactory::instance().create(
-        clientConfigurationForTest(0), clientSettingsForTest(),
-        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{}));
+    chain_storage->applyNewSettings(*configWithConnectTimeout(0), "disk", getContext().context,
+                                    DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
     chain_storage->selections.clear();
     EXPECT_TRUE(metadata_storage->existsFile(probe_path));
     ASSERT_FALSE(chain_storage->selections.empty());
