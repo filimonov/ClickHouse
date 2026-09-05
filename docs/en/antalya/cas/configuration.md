@@ -124,9 +124,10 @@ A shorter TTL reduces the tolerance for object-storage delays; a shorter renewal
 (renewal starts earlier) at the cost of more background traffic. With the defaults,
 `cas_mount_lease_ttl_ms − cas_lease_safety_margin_ms − cas_mount_renew_period_ms − 2 × envelope =
 4000` ms is the scheduling-lateness budget before the first renewal attempt of a period can begin,
-where `envelope = cas_attempt_timeout_ms + 2 × cap` and `cap` is `cas_attempt_timeout_ms` when the
-disk's `connect_timeout_ms` is `0`, else `min(connect_timeout_ms, cas_attempt_timeout_ms)` (7000 ms
-with defaults); the renewal then keeps retrying until `confirmed deadline − cas_lease_safety_margin_ms`.
+where `envelope = cas_attempt_timeout_ms + 2 × cap` (7000 ms with defaults) and `cap` is
+`cas_attempt_timeout_ms` when the disk's `connect_timeout_ms` is `0`, else
+`min(connect_timeout_ms, cas_attempt_timeout_ms)` (1000 ms with defaults); the renewal then keeps
+retrying until `confirmed deadline − cas_lease_safety_margin_ms`.
 
 ## Advanced GC pacing settings {#advanced-gc-pacing-settings}
 
