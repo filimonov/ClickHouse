@@ -74,8 +74,10 @@ there already).
    `S3AuthSettings` — which stay untouched; the ADDITIVE edits this decision needs are permitted and
    are exactly these: two fields each in `ReadSettings.h` and `WriteSettings.h`
    (`object_storage_attempt_number`, `object_storage_connect_timeout_cap_ms`), one line in
-   `ReadBufferFromS3::sendRequest`, three lines in `WriteBufferFromS3::getPutRequest`, and the inline
-   `seededAttemptNumber` helper in `S3/Requests.h`. The branch already added
+   `ReadBufferFromS3::sendRequest`, three lines in `WriteBufferFromS3::getPutRequest`, the inline
+   `seededAttemptNumber` helper in `S3/Requests.h`, and one optional `attempt_seed` parameter threaded
+   through `S3::getObjectInfo` to the `headObject` helper in `S3/getObjectInfo.cpp` (the profile-aware
+   native HEAD is built there, not in `S3ObjectStorage.cpp`). The branch already added
    `object_storage_retry_profile` / `object_storage_attempt_timeout_ms` to the same two settings
    structs, so this follows the established seam. `readLoop` keeps TWO counters: `attempt_no` (physical numbering, handed to the
    transport) and `ordinary_reissues` (the exponential-backoff index); a zero-pause reissue advances
