@@ -18,6 +18,7 @@
 
 #include <fmt/format.h>
 
+#include <array>
 #include <ctime>
 #include <limits>
 #include <utility>
@@ -231,6 +232,24 @@ bool isDefinitelyRefusedWrite([[maybe_unused]] const std::exception & e)
         /// available -- which is every CAS disk today.
         return S3::isMalformedRequestError(*s3) || S3::isEntityTooLargeError(*s3)
             || S3::isAccessDeniedError(*s3) || isRefreshableCredentialError(e);
+#endif
+    return false;
+}
+
+bool isConnectFailureHint([[maybe_unused]] const std::exception & e)
+{
+#if USE_AWS_S3
+    const auto * s3 = dynamic_cast<const S3Exception *>(&e);
+    if (!s3 || s3->getS3ErrorCode() != Aws::S3::S3Errors::NETWORK_CONNECTION)
+        return false;
+    /// This repository's Poco (`SocketImpl::error`, `SocketImpl::connect`) is the source of every text.
+    static constexpr std::array<std::string_view, 5> texts{
+        "Cannot assign requested address", "Connection refused", "No route to host",
+        "Network is unreachable", "connect timed out"};
+    const std::string_view message = s3->message();
+    for (std::string_view text : texts)
+        if (message.find(text) != std::string_view::npos)
+            return true;
 #endif
     return false;
 }

@@ -16,9 +16,16 @@
 #include "config.h"
 
 #include <Poco/Exception.h>
+#include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketImpl.h>
 #include <base/defines.h>
 
+#include <gmock/gmock.h>
+
+#include <fmt/format.h>
+
 #include <atomic>
+#include <cerrno>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -2129,3 +2136,50 @@ TEST(CASRequests, StreamBodyServesTheAdoptedWindowEvenWhenAdmissionIsAlreadyRefu
     char c;
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { body->readStrict(&c, 1); });
 }
+
+/// The hint is a text match on this repository's Poco. These pins fail the build's own tests the day
+/// `SocketImpl::error` changes a word, which is the only way a text match stays honest.
+TEST(CASRequestsConnectHint, PocoTextsArePinned)
+{
+    const auto text_of = [](int err)
+    {
+        try
+        {
+            Poco::Net::SocketImpl::error(err);
+        }
+        catch (const Poco::Exception & e)
+        {
+            return e.displayText();
+        }
+        return std::string("did not throw");
+    };
+    EXPECT_THAT(text_of(EADDRNOTAVAIL), testing::HasSubstr("Cannot assign requested address"));
+    EXPECT_THAT(text_of(ECONNREFUSED), testing::HasSubstr("Connection refused"));
+    EXPECT_THAT(text_of(EHOSTUNREACH), testing::HasSubstr("No route to host"));
+    EXPECT_THAT(text_of(ENETUNREACH), testing::HasSubstr("Network is unreachable"));
+    /// The fifth text is the connect poll's own: `SocketImpl::connect` throws
+    /// `Poco::TimeoutException("connect timed out", ...)` (SocketImpl.cpp ~138).
+    EXPECT_THAT(Poco::TimeoutException("connect timed out", "10.255.255.1:9").displayText(),
+                testing::HasSubstr("connect timed out"));
+}
+
+#if USE_AWS_S3
+TEST(CASRequestsConnectHint, ClassifierGuards)
+{
+    using Aws::S3::S3Errors;
+    for (const char * text : {"Cannot assign requested address", "Connection refused", "No route to host",
+                              "Network is unreachable", "connect timed out"})
+    {
+        const DB::S3Exception hinted(fmt::format("Poco::Exception. Code: 1000, e.code() = 99, {}: 10.0.0.1:9000", text),
+                                     S3Errors::NETWORK_CONNECTION);
+        EXPECT_TRUE(isConnectFailureHint(hinted)) << text;
+        /// The same text under another S3 error is not a transport verdict.
+        const DB::S3Exception other(String(text), S3Errors::INTERNAL_FAILURE);
+        EXPECT_FALSE(isConnectFailureHint(other)) << text;
+    }
+    EXPECT_FALSE(isConnectFailureHint(DB::S3Exception("Timeout", S3Errors::NETWORK_CONNECTION)));
+    EXPECT_FALSE(isConnectFailureHint(DB::S3Exception("Connection reset by peer", S3Errors::NETWORK_CONNECTION)));
+    EXPECT_FALSE(isConnectFailureHint(Poco::TimeoutException("connect timed out")));
+    EXPECT_FALSE(isConnectFailureHint(std::runtime_error("Connection refused")));
+}
+#endif

@@ -30,6 +30,12 @@ namespace DB::Cas
 /// refusal: an unmodeled error may have landed.
 bool isDefinitelyRefusedWrite(const std::exception & e);
 
+/// TRUE when a transport failure's text says the CONNECTION itself failed: no free local port, a
+/// refused or unreachable peer, or the connect poll's own timeout. A hint, not a verdict: the same
+/// errno can be reported after `send` or `recv`, so a hinted attempt keeps every property of an
+/// ambiguous one; what the hint changes is only that the engine reissues before spending a read.
+bool isConnectFailureHint(const std::exception & e);
+
 /// Deterministic caller/local bugs, surfaced unchanged by every loop here: reissuing only replays the
 /// same failure and buries the root cause behind a retryable exception. The set is `LOGICAL_ERROR`,
 /// `NOT_IMPLEMENTED`, `BAD_ARGUMENTS` and `CORRUPTED_DATA`.
