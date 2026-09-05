@@ -1746,7 +1746,16 @@ void MountLeaseRenewer::terminate(CasOperation & op)
         ? std::numeric_limits<uint64_t>::max()
         : doubled_reservation_ms + kFarewellSlackMs;
     const uint64_t farewell_window_ms = std::max<uint64_t>(kFarewellBudgetMs, two_envelope_reservation_plus_slack_ms);
-    WriteResult written = op.replace(key, body, precondition(), Retry::within(farewell_window_ms));
+    /// The derived window alone is not enough: mount-control activity must also never run past the
+    /// point this node's own fence may already be gone (the same rule `renew` enforces via
+    /// `Retry::untilLeaseSafe` above). The precondition on this write already stops it from clobbering
+    /// a successor if it DOES land late, but a shutdown holding the process open to retry a write past
+    /// its own lease-safe deadline serves no one -- the successor's own reclaim does not wait for it.
+    /// `confirmed_deadline_boot_ms` is set at `start()` and kept current by every successful `renew`,
+    /// so it is valid here whenever `terminate` runs (only reachable from `release`, which requires
+    /// `Active`, which `start` alone establishes).
+    WriteResult written = op.replace(key, body, precondition(),
+        Retry::untilLeaseSafe(confirmed_deadline_boot_ms, static_cast<uint64_t>(lease_safety_margin.count()), farewell_window_ms));
 
     if (Committed * committed = std::get_if<Committed>(&written))
     {

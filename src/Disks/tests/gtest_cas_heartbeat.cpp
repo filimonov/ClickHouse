@@ -385,6 +385,111 @@ TEST(CASHeartbeat, FarewellIsAdmittedUnderADifferentEnvelope)
     EXPECT_EQ(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
 }
 
+/// The derived window alone is not the whole story: mount-control activity must also never run past
+/// the point this node's own fence may already be gone. A 5000 ms TTL with a 2000 ms safety margin
+/// leaves only 3000 ms of lease-safe remaining time at release -- far short of the 7000 ms envelope's
+/// own 16000 ms derived window (2 * 7000 + 2000 slack) -- so the LEASE bound, not the derived window,
+/// must be what refuses this write, and it must refuse it before any physical attempt: a write that
+/// cannot land inside the lease-safe remainder gains nothing by being sent anyway.
+TEST(CASHeartbeat, FarewellIsRefusedWhenTheLeaseExpiresBeforeItsDerivedWindow)
+{
+    auto backend = std::make_shared<DefaultEnvelopeBackend>();
+    Layout layout("pool");
+    const String srid = "test";
+    const UInt128 uuid(0x1234);
+    uint64_t now_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops(backend, &boot_ms);
+    seedOwnClaim(ops.op, layout, srid, uuid, /*epoch=*/9, now_ms, /*ttl_ms=*/5000);
+
+    MountLeaseRenewer renewer(ops.mount, ops.farewell, layout, srid, uuid, /*writer_epoch=*/9,
+                            std::chrono::milliseconds(5000), [&] { return now_ms; },
+                            [] { return uint64_t{5}; }, {}, std::chrono::milliseconds(2000),
+                            [&] { return boot_ms; });
+    renewer.start();
+
+    now_ms = 2000;
+    String message;
+    int code = 0;
+    bool threw = false;
+    try
+    {
+        renewer.release();
+    }
+    catch (const DB::Exception & e)
+    {
+        threw = true;
+        message = e.message();
+        code = e.code();
+    }
+    EXPECT_TRUE(threw) << "a farewell whose reservation cannot fit inside the lease-safe remaining "
+                           "time must be refused, not admitted past the point this node's fence may "
+                           "already be gone";
+    EXPECT_EQ(code, DB::ErrorCodes::NETWORK_ERROR) << message;
+    EXPECT_NE(message.find("gave up at the lease deadline after zero attempt(s)"), String::npos) << message;
+
+    auto m = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
+    EXPECT_NE(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max())
+        << "the refused write must not have landed";
+}
+
+/// The lease bound added above must not change what an ordinary Conflict outcome does: a successor
+/// that took the slot (a different, unfenced incarnation) before this node's own shutdown could
+/// publish its farewell must be left untouched, and the release must report the conflict rather than
+/// silently succeeding or overwriting the successor's incarnation.
+TEST(CASHeartbeat, ForeignIncarnationDuringFarewellLeavesTheSuccessorUntouchedAndReportsTheConflict)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    Layout layout("pool");
+    const String srid = "test";
+    const UInt128 uuid(0x1234);
+    uint64_t now_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops(backend, &boot_ms);
+    seedOwnClaim(ops.op, layout, srid, uuid, /*epoch=*/9, now_ms, /*ttl_ms=*/100);
+
+    MountLeaseRenewer renewer(ops.mount, ops.farewell, layout, srid, uuid, /*writer_epoch=*/9,
+                            std::chrono::milliseconds(100), [&] { return now_ms; },
+                            [] { return uint64_t{5}; }, {}, std::chrono::milliseconds(0),
+                            [&] { return boot_ms; });
+    renewer.start();
+
+    /// A successor (a different uuid/epoch, NOT gc_fenced) took the slot before this node's own
+    /// clean shutdown could publish its farewell -- the exact shape a live double-start reclaim
+    /// leaves behind.
+    const auto observed = ops.op.read(layout.mountKey(srid), Retry::standard());
+    ASSERT_TRUE(observed.has_value());
+    MountLease successor;
+    successor.server_uuid = UInt128(0x9999);
+    successor.writer_epoch = 1;
+    successor.seq = 1;
+    successor.write_attempt_id = UInt128{1};
+    mustCommit(ops.op.replace(layout.mountKey(srid), encodeMountLease(successor), observed->etag,
+                              Retry::standard()), "successor slot");
+
+    now_ms = 2000;
+    String message;
+    int code = 0;
+    try
+    {
+        renewer.release();
+        FAIL() << "a farewell that finds a foreign, unfenced incarnation must report the conflict, "
+                  "not silently succeed or clobber the successor";
+    }
+    catch (const DB::Exception & e)
+    {
+        message = e.message();
+        code = e.code();
+    }
+    EXPECT_EQ(code, DB::ErrorCodes::ABORTED) << message;
+    EXPECT_NE(message.find("found a foreign incarnation"), String::npos) << message;
+
+    auto m = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
+    EXPECT_EQ(m.server_uuid, successor.server_uuid)
+        << "the successor's own incarnation must be untouched by the refused farewell";
+    EXPECT_EQ(m.writer_epoch, successor.writer_epoch);
+}
+
 /// Phase A (spec rev.4 2026-07-24): a confirmed renewal mismatch whose re-read shows OUR OWN
 /// (uuid, epoch), unfenced, is state UNCERTAINTY (an ambiguous landed renewal of ours, or a
 /// same-pair twin after epoch-state loss) — fail closed via fence + self-remount, never an
