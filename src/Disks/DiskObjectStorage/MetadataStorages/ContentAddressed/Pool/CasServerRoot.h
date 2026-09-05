@@ -184,7 +184,8 @@ uint64_t allocateWriterEpoch(CasOperation & op, const Layout & l, const String &
                              EpochMintPolicy policy, uint64_t now_ms,
                              const ObserveRefCatalog & observe_catalog);
 
-/// Which certificate of death justified a same-uuid, different-epoch mount reclaim. `None` when no
+/// Which certificate of death, or the operator's explicit unsafe authorization, justified a
+/// same-uuid, different-epoch mount reclaim. `None` when no
 /// reclaim of that kind happened (a fresh claim, a
 /// same-epoch refresh, `LiveDoubleStart`, `ForeignOwner`, `FencedSelf`).
 enum class MountPriorState
@@ -206,7 +207,8 @@ enum class MountPriorState
 ///       - `gc_fenced` → terminal for THIS (uuid, epoch) — a fence costs an epoch, so refreshing it
 ///         in place would reactivate a fenced incarnation → `FencedSelf` (no write);
 ///       - otherwise → refresh (`replace` to bump seq + fresh `expires_at_ms`) → `Claimed`;
-///   - same `server_uuid`, DIFFERENT `writer_epoch` → reclaimed ONLY on a certificate of death that
+///   - same `server_uuid`, DIFFERENT `writer_epoch` → reclaimed ONLY on a certificate of death, or the
+///     operator's explicit unsafe authorization, that
 ///     needs no fresh wall-clock trust (see
 ///     `claimMountAwaitingExpiry` below for how a plain "looks expired" reading is turned into one):
 ///       - `gc_fenced` (the GC leader already, itself, threshold-gated this incarnation dead; a fence
@@ -216,6 +218,9 @@ enum class MountPriorState
 ///       - `proven_dead_incarnation` matches the CURRENTLY OBSERVED incarnation (the caller itself
 ///         watched that exact incarnation hold stable for the full observation threshold) → reclaim, `prior =
 ///         UncleanObserved`;
+///       - `unsafe_reclaim_authorization` matches the CURRENTLY OBSERVED incarnation (the operator's
+///         explicit `cas_unsafe_remount_no_delay` authorization, carrying the exact token read, with NO
+///         observation at all) → reclaim, `prior = UncleanUnsafe`;
 ///       - none of the above → `LiveDoubleStart` (do NOT write). In particular `expires_at_ms <=
 ///         now_ms` ALONE is never sufficient — comparing a predecessor's stamp against OUR wall clock
 ///         is unsafe because a clock-skewed or merely late-observing
@@ -242,7 +247,8 @@ struct MountClaimResult
     /// message may name a holder, and the lease this server merely PROPOSED is not one. An optional
     /// rather than the proposal, because a caller cannot check a convention it cannot see.
     std::optional<MountLease> body;
-    /// Which certificate of death justified a same-uuid, different-epoch `Claimed` reclaim (`None` for
+    /// Which certificate of death, or the operator's explicit unsafe authorization, justified a
+    /// same-uuid, different-epoch `Claimed` reclaim (`None` for
     /// every other `Kind`, and for the absent-slot / same-epoch-refresh `Claimed` cases).
     MountPriorState prior = MountPriorState::None;
     /// The incarnation of the body this result observed, for

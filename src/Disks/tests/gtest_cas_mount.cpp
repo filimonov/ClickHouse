@@ -1128,6 +1128,11 @@ TEST(CASMountClaim, UnsafeAuthorizationIsTokenExact)
     EXPECT_EQ(reclaimed.prior, MountPriorState::UncleanUnsafe);
     ASSERT_FALSE(events.empty());
     EXPECT_THAT(events.back().reason, testing::HasSubstr("cas_unsafe_remount_no_delay"));
+    /// Pin the fields `system.cas_log` consumers actually key on, not just the free-form reason: the
+    /// unsafe reclaim shares the same event type and outcome as every other reclaim (`emitMountEvent`'s
+    /// "reclaim" branch argument), so nothing about this path is a separate, unaudited channel.
+    EXPECT_EQ(events.back().type, CasEventType::MountClaim);
+    EXPECT_EQ(events.back().outcome, "reclaim");
     EXPECT_EQ(decodeMountLease(ops.op.read(l.mountKey("r"), Retry::standard())->bytes).writer_epoch, 8u);
 }
 

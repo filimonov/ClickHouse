@@ -778,9 +778,11 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     }
 
     /// A reclaim over a predecessor whose death was NOT proven clean may still have a conditional PUT
-    /// from that predecessor in flight -- `Fenced` and `UncleanObserved` are exactly the two
-    /// `MountPriorState`s with no such proof (`Clean`, drained farewell, and `None`, a fresh mount /
-    /// same-epoch refresh with nothing to hand over, are the proven ones).
+    /// from that predecessor in flight -- `Fenced`, `UncleanObserved`, and `UncleanUnsafe` are exactly
+    /// the three `MountPriorState`s with no such proof (`UncleanUnsafe` has no proof at all, not merely
+    /// no proof of a CLEAN death: it is the operator's explicit `cas_unsafe_remount_no_delay`
+    /// acceptance of that risk, with no observation behind it). `Clean`, drained farewell, and `None`, a
+    /// fresh mount / same-epoch refresh with nothing to hand over, are the proven ones.
     /// An EXHAUSTIVE switch, not a positive allowlist -- a future `MountPriorState`
     /// enumerator with no proof of clean death must fail the BUILD (a missing `-Wswitch` case), never
     /// silently fall through to "clean".
