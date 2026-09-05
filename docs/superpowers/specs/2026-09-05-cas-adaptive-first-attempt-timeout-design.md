@@ -9,7 +9,7 @@ doc_type: 'design'
 
 # CAS reissues cooperate with the adaptive first-attempt timeout {#cas-adaptive-first-attempt-timeout-design}
 
-**Status:** DRAFT rev.6 (2026-09-05; rev.6 folds round 3 `codex_cross_r3.final.md`: a zero connect timeout is
+**Status:** DRAFT rev.7 (2026-09-05; rev.7 records the user's ruling on the `src/IO` constraint, closing round 3's MAJOR 1) — rev.6 rev.6 folds round 3 `codex_cross_r3.final.md`: a zero connect timeout is
 normalized, the TLS handshake's second connect interval is budgeted (`attempt + 2 × cap`), an end-to-end wiring
 test, strict horizon checks; the `src/IO` question of its MAJOR 1 is the user's call and is recorded in the
 constraints paragraph below) — earlier: rev.5 rev.5 folds the fold's re-review `codex_cross_r2.final.md`: the
@@ -67,7 +67,15 @@ there already).
    on every engine reissue and applies the full `attempt_timeout_ms` on a fresh connection, as it does
    for upstream retries; the contract relies only on "1 versus greater than 1" (the SDK's own retry
    numbering overcounts, `Client.cpp:857`, and is left alone). No change to `PocoHTTPClient` or to the
-   fuse itself. `readLoop` keeps TWO counters: `attempt_no` (physical numbering, handed to the
+   fuse itself. **Constraint, as ruled by the user on 2026-09-05:** the "no `src/IO`" rule names the
+   four transport components — `PocoHTTPClient`, `S3Exception` (`S3Common`), `ConnectionTimeouts`,
+   `S3AuthSettings` — which stay untouched; the ADDITIVE edits this decision needs are permitted and
+   are exactly these: two fields each in `ReadSettings.h` and `WriteSettings.h`
+   (`object_storage_attempt_number`, `object_storage_connect_timeout_cap_ms`), one line in
+   `ReadBufferFromS3::sendRequest`, three lines in `WriteBufferFromS3::getPutRequest`, and the inline
+   `seededAttemptNumber` helper in `S3/Requests.h`. The branch already added
+   `object_storage_retry_profile` / `object_storage_attempt_timeout_ms` to the same two settings
+   structs, so this follows the established seam. `readLoop` keeps TWO counters: `attempt_no` (physical numbering, handed to the
    transport) and `ordinary_reissues` (the exponential-backoff index); a zero-pause reissue advances
    only the first.
 2. **A first-attempt timeout is a connection-quality answer** — for GET, HEAD, LIST, DELETE and the
@@ -90,8 +98,8 @@ there already).
    attempt ≥ 2 the adaptive cap does not apply (`ConnectionTimeouts::getAdaptiveTimeouts` returns the
    configured values for non-first attempts). The engine nevertheless reserved exactly
    `attempt_timeout_ms` per envelope, so a slow connect could overrun the reservation — the R2 renewal
-   attempt of 11 s is that overrun. All changes are in CAS-owned code (`src/IO` untouched, per the
-   user ruling):
+   attempt of 11 s is that overrun. All changes are in CAS-owned code plus the additive `src/IO`
+   edits listed under decision 1:
    - `CasRequestBudget` gains `std::optional<uint64_t> connect_timeout_cap_ms` and
      `attemptEnvelopeMs() = attempt_timeout_ms + 2 × connect_timeout_cap_ms` (saturating; `nullopt`
      contributes nothing). TWO cap intervals, not one: Poco gives the TLS handshake a fresh connect
