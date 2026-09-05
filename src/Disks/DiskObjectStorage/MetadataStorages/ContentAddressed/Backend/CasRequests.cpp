@@ -32,6 +32,7 @@ namespace ProfileEvents
     extern const Event CASRequestGaveUp;
     extern const Event CASRequestRefused;
     extern const Event CASRequestFenceLostPostWrite;
+    extern const Event CASRequestConnectFailureHint;
 }
 
 namespace DB::ErrorCodes
@@ -848,6 +849,25 @@ std::optional<WriteResult> CasOperation::pauseForConflict(WriteState & state, co
     return std::nullopt;
 }
 
+/// A flat pause before reissuing an attempt whose failure text named a failed connection.
+static constexpr uint64_t kConnectHintPauseMs = 50;
+
+std::optional<WriteResult> CasOperation::pauseFlat(WriteState & state, const Retry::Bound & bound)
+{
+    const uint64_t needed = reservedFor(kConnectHintPauseMs, 2);
+    switch (gate(needed))
+    {
+        case Gate::FenceLost: return gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), state);
+        case Gate::NoBudget:  return gaveUp(GaveUp::Why::Deadline, GaveUp::Source::Lease, state);
+        case Gate::Ok: break;
+    }
+    if (!fits(needed, bound))
+        return gaveUp(GaveUp::Why::Deadline, sourceFor(bound), state);
+    detail::recordReissue();
+    owner.sleep_ms(kConnectHintPauseMs);
+    return std::nullopt;
+}
+
 WriteResult CasOperation::writeLoop(const String & key, const String & bytes, const std::optional<Etag> & expected,
                                     const Retry & policy, const Retry::Bound & bound, WriteState & state,
                                     ResolveWith resolve_refusal_with)
@@ -887,6 +907,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         /// instead of resolved by a read and reissued to the deadline.
         bool credential_answer = false;
         bool refreshed = false;
+        bool connect_hint = false;
         try
         {
             outcome = owner.withTransportAccess([&](auto & access)
@@ -917,6 +938,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
                 ProfileEvents::increment(ProfileEvents::CASRequestRefused);
                 return Refused{e.code(), e.message(), state.attempts_sent};
             }
+            connect_hint = isConnectFailureHint(e);
         }
         catch (const std::exception & e)
         {
@@ -945,6 +967,17 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         if (refreshed && !policy.single_attempt && !state.any_ambiguous)
         {
             if (auto given_up = pauseAndReissue(state, bound))
+                return *given_up;
+            continue;
+        }
+
+        /// The failure text named a failed CONNECTION. A read now would meet the same broken condition,
+        /// so the reissue itself is the cheaper probe: the attempt stays ambiguous (`any_ambiguous` is
+        /// set above), and if the reissue meets a refused precondition the read below settles it.
+        if (connect_hint && !policy.single_attempt)
+        {
+            ProfileEvents::increment(ProfileEvents::CASRequestConnectFailureHint);
+            if (auto given_up = pauseFlat(state, bound))
                 return *given_up;
             continue;
         }

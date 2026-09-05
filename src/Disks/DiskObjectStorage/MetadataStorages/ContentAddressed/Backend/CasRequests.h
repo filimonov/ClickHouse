@@ -385,6 +385,9 @@ private:
     /// `Retry::conflictBackoff` sleep, and `state.reissues` untouched, so a transport fault that follows
     /// starts its own schedule at the beginning.
     std::optional<WriteResult> pauseForConflict(WriteState & state, const Retry::Bound & bound);
+    /// The sibling for a failure text that named a failed connection. The same admission and the same
+    /// reservation, a flat `kConnectHintPauseMs` sleep, and `state.reissues` untouched.
+    std::optional<WriteResult> pauseFlat(WriteState & state, const Retry::Bound & bound);
 
     /// `sleep_ms` plus `envelopes` attempt reservations, saturating.
     uint64_t reservedFor(uint64_t sleep_ms, uint32_t envelopes) const;
