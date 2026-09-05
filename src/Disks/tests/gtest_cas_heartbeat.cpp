@@ -306,6 +306,16 @@ struct DefaultEnvelopeBackend : InMemoryBackend
     uint64_t attemptTimeoutMs() const override { return 5000; }
     uint64_t attemptEnvelopeMs() const override { return 7000; }
 };
+
+/// A DIFFERENT envelope from `DefaultEnvelopeBackend`'s, for
+/// `FarewellIsAdmittedUnderADifferentEnvelope` below: that test exists to pin the window's
+/// ARITHMETIC, not just that some window admits the write, so it needs a reservation the
+/// shipped-default window (16000 ms) could not have admitted by coincidence.
+struct WiderEnvelopeBackend : InMemoryBackend
+{
+    uint64_t attemptTimeoutMs() const override { return 5000; }
+    uint64_t attemptEnvelopeMs() const override { return 9000; }
+};
 }
 
 /// A write reserves two attempt envelopes before it starts (`CasOperation::writeLoop`'s
@@ -336,6 +346,39 @@ TEST(CASHeartbeat, FarewellIsAdmittedUnderTheDefaultBudget)
         << "the farewell's policy window must admit the write's own two-envelope reservation "
            "(2 * 7000 ms with the shipped defaults) -- otherwise a clean shutdown never hands the "
            "mount slot back and every restart pays a full incarnation-stability observation";
+
+    auto m = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
+    EXPECT_LE(m.expires_at_ms, now_ms);
+    EXPECT_EQ(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
+}
+
+/// Pins the window's ARITHMETIC, not just that some fixed window happens to be wide enough: a
+/// regression that hardcoded the shipped-default window (16000 ms) instead of deriving it from
+/// `attemptReservationMs()` would still pass `FarewellIsAdmittedUnderTheDefaultBudget` above (16000
+/// happens to equal what a 7000 ms envelope needs) but would refuse THIS write, whose reservation is
+/// 2 * 9000 = 18000 ms -- strictly more than the shipped-default window.
+TEST(CASHeartbeat, FarewellIsAdmittedUnderADifferentEnvelope)
+{
+    auto backend = std::make_shared<WiderEnvelopeBackend>();
+    Layout layout("pool");
+    const String srid = "test";
+    const UInt128 uuid(0x1234);
+    uint64_t now_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops(backend, &boot_ms);
+    seedOwnClaim(ops.op, layout, srid, uuid, /*epoch=*/9, now_ms, /*ttl_ms=*/40000);
+
+    MountLeaseRenewer renewer(ops.mount, ops.farewell, layout, srid, uuid, /*writer_epoch=*/9,
+                            std::chrono::milliseconds(40000), [&] { return now_ms; },
+                            [] { return uint64_t{5}; }, {}, std::chrono::milliseconds(2000),
+                            [&] { return boot_ms; });
+    renewer.start();
+
+    now_ms = 2000;
+    EXPECT_NO_THROW(renewer.release())
+        << "the farewell's policy window must be DERIVED from this backend's own envelope "
+           "(2 * 9000 ms), not hardcoded to the shipped-default window -- a window fixed at "
+           "16000 ms would refuse this write's 18000 ms reservation";
 
     auto m = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
     EXPECT_LE(m.expires_at_ms, now_ms);

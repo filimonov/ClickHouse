@@ -1734,9 +1734,18 @@ void MountLeaseRenewer::terminate(CasOperation & op)
     /// `CasOperation::writeLoop` -- is exactly `2 * open_requests.attemptReservationMs()`. A window
     /// below that value refuses the write before its first attempt, deterministically, on every call:
     /// `kFarewellBudgetMs` alone predates the attempt-envelope reservation and can no longer be trusted
-    /// to admit it.
-    const uint64_t farewell_window_ms = std::max<uint64_t>(
-        kFarewellBudgetMs, 2 * open_requests.attemptReservationMs() + kFarewellSlackMs);
+    /// to admit it. Saturating, like every other deadline computation on this path (see the
+    /// `expires_at_ms`/`confirmed_deadline_boot_ms` arithmetic above): an operator-configured envelope
+    /// is not bounds-checked against this doubling, and wrapping past `UINT64_MAX` would turn a too-long
+    /// window into a too-SHORT one -- the exact failure mode this fix exists to remove.
+    const uint64_t reservation_ms = open_requests.attemptReservationMs();
+    const uint64_t doubled_reservation_ms = reservation_ms > std::numeric_limits<uint64_t>::max() / 2
+        ? std::numeric_limits<uint64_t>::max()
+        : reservation_ms * 2;
+    const uint64_t two_envelope_reservation_plus_slack_ms = doubled_reservation_ms > std::numeric_limits<uint64_t>::max() - kFarewellSlackMs
+        ? std::numeric_limits<uint64_t>::max()
+        : doubled_reservation_ms + kFarewellSlackMs;
+    const uint64_t farewell_window_ms = std::max<uint64_t>(kFarewellBudgetMs, two_envelope_reservation_plus_slack_ms);
     WriteResult written = op.replace(key, body, precondition(), Retry::within(farewell_window_ms));
 
     if (Committed * committed = std::get_if<Committed>(&written))
