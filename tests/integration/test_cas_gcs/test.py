@@ -1520,7 +1520,9 @@ def test_a_first_attempt_timeout_is_reissued_as_attempt_two():
     """
     node = cluster.instances["node"]
     disk = FUSE_DISK
-    _control_post("/_control/reset")
+    # No `/_control/reset` here: it would wipe the fake's cumulative capture log, which the
+    # run-wide fence at the end of this file depends on seeing from the very start of the run.
+    # No earlier test in this file arms the delay knob, so there is nothing stale to clear.
     node.query("DROP TABLE IF EXISTS fuse_probe SYNC")
     node.query(
         "CREATE TABLE fuse_probe (id UInt64) ENGINE = MergeTree ORDER BY id "
