@@ -3,9 +3,12 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/HTTPServerRequest.h>
@@ -82,6 +85,116 @@ public:
     const Poco::Net::MessageHeader & getLastRequestHeader() const
     {
         return last_request_header;
+    }
+};
+
+/// Fails the first `fail_first_n` requests with `fail_status` (empty body), then serves `body` with a
+/// 200 to every request after. Records every request's header (not just the last) so a caller can
+/// check the sequence a local retry produced.
+class SequenceRecordingRequestHandler : public Poco::Net::HTTPRequestHandler
+{
+    std::vector<Poco::Net::MessageHeader> & all_request_headers;
+    size_t & requests_seen;
+    size_t fail_first_n;
+    Poco::Net::HTTPResponse::HTTPStatus fail_status;
+    std::string body;
+
+public:
+    SequenceRecordingRequestHandler(
+        std::vector<Poco::Net::MessageHeader> & all_request_headers_,
+        size_t & requests_seen_,
+        size_t fail_first_n_,
+        Poco::Net::HTTPResponse::HTTPStatus fail_status_,
+        std::string body_)
+        : all_request_headers(all_request_headers_)
+        , requests_seen(requests_seen_)
+        , fail_first_n(fail_first_n_)
+        , fail_status(fail_status_)
+        , body(std::move(body_))
+    {
+    }
+
+    void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+    {
+        all_request_headers.push_back(request);
+        ++requests_seen;
+
+        if (requests_seen <= fail_first_n)
+        {
+            response.setStatus(fail_status);
+            response.send();
+            return;
+        }
+
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setContentLength(static_cast<std::streamsize>(body.size()));
+        auto & out = response.send();
+        out << body;
+        out.flush();
+    }
+};
+
+class SequenceRecordingRequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+    std::vector<Poco::Net::MessageHeader> & all_request_headers;
+    size_t & requests_seen;
+    size_t fail_first_n;
+    Poco::Net::HTTPResponse::HTTPStatus fail_status;
+    std::string body;
+
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+    {
+        return new SequenceRecordingRequestHandler(all_request_headers, requests_seen, fail_first_n, fail_status, body);
+    }
+
+public:
+    SequenceRecordingRequestHandlerFactory(
+        std::vector<Poco::Net::MessageHeader> & all_request_headers_,
+        size_t & requests_seen_,
+        size_t fail_first_n_,
+        Poco::Net::HTTPResponse::HTTPStatus fail_status_,
+        std::string body_)
+        : all_request_headers(all_request_headers_)
+        , requests_seen(requests_seen_)
+        , fail_first_n(fail_first_n_)
+        , fail_status(fail_status_)
+        , body(std::move(body_))
+    {
+    }
+
+    ~SequenceRecordingRequestHandlerFactory() override = default;
+};
+
+/// Like `TestPocoHTTPServer`, but for driving a real local retry: the first `fail_first_n` requests
+/// get `fail_status`, every one after gets `body` with a 200, and every request's header is kept (not
+/// just the last).
+class TestPocoHTTPSequenceServer
+{
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    Poco::SharedPtr<SequenceRecordingRequestHandlerFactory> handler_factory;
+    Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+    std::vector<Poco::Net::MessageHeader> all_request_headers;
+    size_t requests_seen = 0;
+
+public:
+    TestPocoHTTPSequenceServer(size_t fail_first_n, Poco::Net::HTTPResponse::HTTPStatus fail_status, std::string body = {}):
+        server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
+        handler_factory(new SequenceRecordingRequestHandlerFactory(all_request_headers, requests_seen, fail_first_n, fail_status, std::move(body))),
+        server_params(new Poco::Net::HTTPServerParams()),
+        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+    {
+        server->start();
+    }
+
+    std::string getUrl()
+    {
+        return "http://" + server_socket->address().toString();
+    }
+
+    const std::vector<Poco::Net::MessageHeader> & getAllRequestHeaders() const
+    {
+        return all_request_headers;
     }
 };
 

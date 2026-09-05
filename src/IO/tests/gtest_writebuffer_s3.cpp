@@ -251,23 +251,26 @@ struct InjectionModel
 /// only `AWSClient::BuildHttpRequest` merges those into the wire-level `Aws::Http::HttpRequest` that
 /// `PocoHTTPClient` actually inspects (the overload production code reads). This mock overrides the
 /// `S3Client` virtuals directly, below that merge, so it reads the custom header collection itself.
-static size_t attemptNumberFromCustomHeaders(const Aws::AmazonWebServiceRequest & request)
+/// `nullopt` means the `clickhouse-request` header is absent -- distinct from an explicit `attempt=1`,
+/// since a seed of 0 leaves every verb but the read path unseeded (no header at all; see
+/// `S3::seededAttemptNumber`'s callers).
+static std::optional<size_t> attemptNumberFromCustomHeaders(const Aws::AmazonWebServiceRequest & request)
 {
     const auto & headers = request.GetAdditionalCustomHeaders();
     auto it = headers.find("clickhouse-request");
     if (it == headers.end())
-        return 1;
+        return std::nullopt;
     static const std::string key = "attempt=";
     auto pos = it->second.find(key);
     if (pos == std::string::npos)
-        return 1;
+        return std::nullopt;
     try
     {
         return static_cast<size_t>(std::stol(it->second.substr(pos + key.size())));
     }
     catch (const std::exception &)
     {
-        return 1;
+        return std::nullopt;
     }
 }
 
@@ -318,7 +321,7 @@ struct Client : DB::S3::Client
     }
 
     /// `clickhouse-request` attempt of every verb, in order -- test-only recorder for the attempt-seed tests.
-    mutable std::vector<size_t> attempts_seen;
+    mutable std::vector<std::optional<size_t>> attempts_seen;
 
     Aws::S3::Model::ListObjectsV2Outcome ListObjectsV2(const Aws::S3::Model::ListObjectsV2Request & request) const override
     {
@@ -1438,7 +1441,7 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
     }
     ASSERT_FALSE(client->attempts_seen.empty());
     EXPECT_EQ(client->attempts_seen.front(), 3u);
-    /// Seed 0 adds no header: the attempt number reads back as 1 (the SDK's default).
+    /// Seed 0 adds no header at all (the spec's rule for every verb but the read path).
     client->attempts_seen.clear();
     {
         auto buffer = getWriteBuffer("unseeded_put");
@@ -1446,7 +1449,8 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
         getAsyncPolicy().setAutoExecute(true);
         buffer->finalize();
     }
-    EXPECT_EQ(client->attempts_seen.front(), 1u);
+    ASSERT_EQ(client->attempts_seen.size(), 1u);
+    EXPECT_FALSE(client->attempts_seen.front().has_value());
 
     /// The native HEAD's seed: `S3ObjectStorage::tryGetObjectMetadataWithNativeToken`'s profile-aware
     /// overload always passes 0 today (a later task supplies the engine's real seed, as for every
@@ -1460,7 +1464,48 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
     client->attempts_seen.clear();
     S3::getObjectInfoIfExists(*client, bucket, "unseeded_head");
     ASSERT_EQ(client->attempts_seen.size(), 1u);
-    EXPECT_EQ(client->attempts_seen.front(), 1u);
+    EXPECT_FALSE(client->attempts_seen.front().has_value());
+
+    /// Conditional (single) and bulk DELETE: reachable now through `S3ObjectStorage`'s
+    /// `ObjectStorageControlRequest`-carrying overloads (Task B3), which is what actually drives
+    /// `removeObjectIfTokenMatchesImpl`/`removeObjectsIfExistImpl` with a real nonzero seed -- unlike
+    /// the HEAD case above, this needs no fallback to a lower-level free function.
+    (void)getContext(); // BlobStorageLogWriter::create falls back to the global context
+    auto delete_store = std::make_shared<MockS3::S3MemStrore>();
+    delete_store->CreateBucket(bucket);
+    auto owned_delete_client = std::make_unique<MockS3::Client>(delete_store);
+    MockS3::Client * delete_client = owned_delete_client.get();
+    S3::URI delete_uri;
+    delete_uri.bucket = bucket;
+    auto delete_object_storage = std::make_shared<S3ObjectStorage>(
+        std::move(owned_delete_client),
+        std::make_unique<S3Settings>(),
+        delete_uri,
+        S3Capabilities{},
+        ObjectStorageKeyGeneratorPtr{},
+        "seed-delete-disk");
+
+    delete_client->attempts_seen.clear();
+    delete_object_storage->removeObjectIfTokenMatches(StoredObject("unseeded-delete-key"), "etag-1");
+    ASSERT_EQ(delete_client->attempts_seen.size(), 1u);
+    EXPECT_FALSE(delete_client->attempts_seen.front().has_value());
+
+    delete_client->attempts_seen.clear();
+    delete_object_storage->removeObjectIfTokenMatches(
+        StoredObject("seeded-delete-key"), "etag-1", ObjectStorageControlRequest{.attempt_number = 3});
+    ASSERT_EQ(delete_client->attempts_seen.size(), 1u);
+    EXPECT_EQ(delete_client->attempts_seen.front(), 3u);
+
+    delete_client->attempts_seen.clear();
+    delete_object_storage->removeObjectsIfExistUnderProfile({StoredObject("unseeded-bulk-key")}, ObjectStorageControlRequest{});
+    ASSERT_EQ(delete_client->attempts_seen.size(), 1u);
+    EXPECT_FALSE(delete_client->attempts_seen.front().has_value());
+
+    delete_client->attempts_seen.clear();
+    delete_object_storage->removeObjectsIfExistUnderProfile(
+        {StoredObject("seeded-bulk-key")}, ObjectStorageControlRequest{.attempt_number = 3});
+    ASSERT_EQ(delete_client->attempts_seen.size(), 1u);
+    EXPECT_EQ(delete_client->attempts_seen.front(), 3u);
 }
 
 TEST_F(WBS3Test, S3RequestAttemptSeedListPagesCarryTheSeed)
@@ -1468,6 +1513,7 @@ TEST_F(WBS3Test, S3RequestAttemptSeedListPagesCarryTheSeed)
     auto & bucket_store = client->store->GetBucketStore(bucket);
     for (int i = 0; i < 5; ++i)
         bucket_store.PutObject(fmt::format("p/{}", i), "x");
+
     client->attempts_seen.clear();
     auto iterator = std::make_shared<S3IteratorAsync>(bucket, "p/", client, /*max_list_size=*/2, /*with_tags=*/false,
                                                       std::optional<std::string>("p/0"), /*attempt_seed=*/2);
@@ -1478,6 +1524,18 @@ TEST_F(WBS3Test, S3RequestAttemptSeedListPagesCarryTheSeed)
     ASSERT_EQ(client->attempts_seen.size(), 2u);   /// the initial page and one rebuilt page
     EXPECT_EQ(client->attempts_seen[0], 2u);
     EXPECT_EQ(client->attempts_seen[1], 2u);
+
+    /// Seed 0 adds no header on either page.
+    client->attempts_seen.clear();
+    auto unseeded_iterator = std::make_shared<S3IteratorAsync>(bucket, "p/", client, /*max_list_size=*/2, /*with_tags=*/false,
+                                                      std::optional<std::string>("p/0"));
+    seen = 0;
+    for (; unseeded_iterator->isValid(); unseeded_iterator->next())
+        ++seen;
+    EXPECT_EQ(seen, 4u);
+    ASSERT_EQ(client->attempts_seen.size(), 2u);
+    EXPECT_FALSE(client->attempts_seen[0].has_value());
+    EXPECT_FALSE(client->attempts_seen[1].has_value());
 }
 
 TEST_P(SyncAsync, EmptyFile) {
