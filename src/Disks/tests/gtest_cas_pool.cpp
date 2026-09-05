@@ -2353,12 +2353,21 @@ TEST(CASMountOpenWaits, UnsafeNoDelayOpensWithoutTheObservationWindow)
     auto b = std::make_shared<InMemoryBackend>();
     Layout l{"p"};
     DB::Cas::tests::seedPoolMetaForRestart(*b);
+    /// Same predecessor shape as UncleanOpenPaysOnlyTheObservationWindow above: a bare `claimMount`
+    /// plants the lease directly, with no clean-farewell marker and no `gc_fenced`, so this slot has no
+    /// certificate of death -- only `cas_unsafe_remount_no_delay` below will let the successor skip
+    /// observing it.
     ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(b), l, "test", UInt128(1), 7, 1000, 500).kind, MountClaimResult::Claimed);
+    /// A real predecessor at epoch 7 durably minted this first; seed it here too, or the successor's
+    /// own `allocateWriterEpoch` trips the Phase C guard (epoch absent, mount present -> fail closed).
     createObj(*b, l.epochKey("test"), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 8}));
     std::vector<CasEvent> events;
     uint64_t fake_boot = 0;
     std::vector<uint64_t> waits;
     PoolPtr store;
+    /// Same server_id (uuid) as the seeded predecessor and a different epoch -- exactly the shape
+    /// `unsafe_remount_no_delay` is for. Unlike the neighbour test, no wait is expected: the bare
+    /// `claimMount` reclaims at once under the operator's authorization.
     ASSERT_NO_THROW(store = Pool::open(b, PoolConfig{
         .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
         .event_sink = [&](CasEvent e) { events.push_back(std::move(e)); },
@@ -2370,7 +2379,16 @@ TEST(CASMountOpenWaits, UnsafeNoDelayOpensWithoutTheObservationWindow)
     }));
     ASSERT_TRUE(store);
     EXPECT_TRUE(waits.empty()) << "no observation window under the unsafe setting";
-    EXPECT_TRUE(std::ranges::any_of(events, [](const CasEvent & e) { return e.reason.find("cas_unsafe_remount_no_delay") != String::npos; }));
+    /// `Pool` has no test accessor for the adopted `MountPriorState`, so the `UncleanUnsafe`
+    /// classification is asserted through the mount audit event instead: `claimMount`'s unsafe-reclaim
+    /// branch (`CasServerRoot.cpp`) emits exactly one `MountClaim`/"reclaim" event whose reason names
+    /// the setting, and `CASMountClaim.UnsafeAuthorizationIsTokenExact` already pins the classification
+    /// itself at the `claimMount` level.
+    const auto reclaim_event = std::ranges::find_if(events,
+        [](const CasEvent & e) { return e.reason.find("cas_unsafe_remount_no_delay") != String::npos; });
+    ASSERT_NE(reclaim_event, events.end());
+    EXPECT_EQ(reclaim_event->type, CasEventType::MountClaim);
+    EXPECT_EQ(reclaim_event->outcome, "reclaim");
     EXPECT_EQ(decodeMountLease((*DB::Cas::tests::OperationForTest(b)).read(l.mountKey("test"), Retry::standard())->bytes).writer_epoch, 8u);
 }
 

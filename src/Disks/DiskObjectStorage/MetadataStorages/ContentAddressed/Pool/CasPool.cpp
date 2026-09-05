@@ -699,12 +699,14 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         if (policy == MountClaimPolicy::WaitForExpiry)
         {
             CasOperation claim_op = store->gc_requests.admit();
-            if (store->config.unsafe_remount_no_delay)
+            const bool unsafe = store->config.unsafe_remount_no_delay;
+            if (unsafe)
             {
                 /// One bare attempt first: a slot held by OUR uuid under another epoch is reclaimed at
                 /// once under the operator's authorization, carrying the exact token this read saw so a
-                /// slot that moves in between is refused. Every other outcome takes the ordinary
-                /// observed path below.
+                /// slot that moves in between is refused. Every outcome but a claim (an absent slot
+                /// freshly minted, or a same-epoch refresh) falls through to the ordinary observed path
+                /// below.
                 claim = claimMount(claim_op, store->pool_layout, srid, our_uuid, writer_epoch, now_ms(), ttl_ms,
                                    /*proven_dead_incarnation=*/{}, emit_mount_event);
                 if (claim.kind == MountClaimResult::LiveDoubleStart && claim.etag
@@ -712,7 +714,13 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
                     claim = claimMount(claim_op, store->pool_layout, srid, our_uuid, writer_epoch, now_ms(), ttl_ms,
                                        {}, emit_mount_event, /*unsafe_reclaim_authorization=*/claim.etag);
             }
-            if (claim.kind != MountClaimResult::Claimed || !store->config.unsafe_remount_no_delay)
+            /// A `FencedSelf`, a foreign-uuid `LiveDoubleStart`/`ForeignOwner`, or a raced
+            /// `LiveDoubleStart` the authorization above did not cover falls through here and re-runs
+            /// the bare `claimMount` a second time inside `claimMountAwaitingExpiry`'s own loop; under
+            /// the knob that means the same conflict is recorded twice in the mount audit stream for
+            /// one open. The outcome this open ends in is unaffected -- only the audit stream gains a
+            /// duplicate row, and only when the knob is set.
+            if (!unsafe || claim.kind != MountClaimResult::Claimed)
                 claim = claimMountAwaitingExpiry(
                     claim_op, store->pool_layout, srid, our_uuid, writer_epoch,
                     [&now_ms]() { return now_ms(); }, [raw] { return raw->bootMsNow(); },
