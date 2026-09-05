@@ -216,6 +216,11 @@ struct PoolConfig
     /// `mount_renew_period` (default ttl/3) so a healthy mount renews well before expiry.
     std::chrono::milliseconds mount_lease_ttl_ms{30000};
     std::chrono::milliseconds mount_renew_period{10000};   /// = ttl/3 by default
+
+    /// `cas_unsafe_remount_no_delay`: reclaim a same-uuid, different-epoch, uncertified mount slot at
+    /// once, with no token-stability observation at all. Unsafe whenever two processes can hold the
+    /// same server_uuid; see the setting's own description for the exact risk.
+    bool unsafe_remount_no_delay = false;
     bool read_only = false;                   /// observe-only open: skip the mutating capability probe; reads only
 
     /// Boot-time "start now, fix later": skip the access-check-class part of the capability probe

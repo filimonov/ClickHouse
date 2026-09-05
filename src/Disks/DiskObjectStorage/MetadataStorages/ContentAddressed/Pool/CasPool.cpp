@@ -699,10 +699,24 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         if (policy == MountClaimPolicy::WaitForExpiry)
         {
             CasOperation claim_op = store->gc_requests.admit();
-            claim = claimMountAwaitingExpiry(
-                claim_op, store->pool_layout, srid, our_uuid, writer_epoch,
-                [&now_ms]() { return now_ms(); }, [raw] { return raw->bootMsNow(); },
-                ttl_ms, poll_interval_ms, sleep_ms, on_wait_start, emit_mount_event);
+            if (store->config.unsafe_remount_no_delay)
+            {
+                /// One bare attempt first: a slot held by OUR uuid under another epoch is reclaimed at
+                /// once under the operator's authorization, carrying the exact token this read saw so a
+                /// slot that moves in between is refused. Every other outcome takes the ordinary
+                /// observed path below.
+                claim = claimMount(claim_op, store->pool_layout, srid, our_uuid, writer_epoch, now_ms(), ttl_ms,
+                                   /*proven_dead_incarnation=*/{}, emit_mount_event);
+                if (claim.kind == MountClaimResult::LiveDoubleStart && claim.etag
+                    && claim.body && claim.body->server_uuid == our_uuid)
+                    claim = claimMount(claim_op, store->pool_layout, srid, our_uuid, writer_epoch, now_ms(), ttl_ms,
+                                       {}, emit_mount_event, /*unsafe_reclaim_authorization=*/claim.etag);
+            }
+            if (claim.kind != MountClaimResult::Claimed || !store->config.unsafe_remount_no_delay)
+                claim = claimMountAwaitingExpiry(
+                    claim_op, store->pool_layout, srid, our_uuid, writer_epoch,
+                    [&now_ms]() { return now_ms(); }, [raw] { return raw->bootMsNow(); },
+                    ttl_ms, poll_interval_ms, sleep_ms, on_wait_start, emit_mount_event);
         }
         else
         {

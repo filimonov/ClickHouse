@@ -2348,6 +2348,32 @@ TEST(CASMountOpenWaits, UncleanOpenPaysOnlyTheObservationWindow)
                "straggler it used to wait out is fenced by the recovery seal instead";
 }
 
+TEST(CASMountOpenWaits, UnsafeNoDelayOpensWithoutTheObservationWindow)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    Layout l{"p"};
+    DB::Cas::tests::seedPoolMetaForRestart(*b);
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(b), l, "test", UInt128(1), 7, 1000, 500).kind, MountClaimResult::Claimed);
+    createObj(*b, l.epochKey("test"), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 8}));
+    std::vector<CasEvent> events;
+    uint64_t fake_boot = 0;
+    std::vector<uint64_t> waits;
+    PoolPtr store;
+    ASSERT_NO_THROW(store = Pool::open(b, PoolConfig{
+        .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
+        .event_sink = [&](CasEvent e) { events.push_back(std::move(e)); },
+        .mount_lease_ttl_ms = std::chrono::milliseconds(500), .mount_renew_period = std::chrono::milliseconds(100),
+        .unsafe_remount_no_delay = true,
+        .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = std::nullopt},
+        .boot_ms_fn = [&] { return fake_boot; },
+        .wait_sleep_fn = [&](uint64_t ms) { fake_boot += ms; waits.push_back(ms); },
+    }));
+    ASSERT_TRUE(store);
+    EXPECT_TRUE(waits.empty()) << "no observation window under the unsafe setting";
+    EXPECT_TRUE(std::ranges::any_of(events, [](const CasEvent & e) { return e.reason.find("cas_unsafe_remount_no_delay") != String::npos; }));
+    EXPECT_EQ(decodeMountLease((*DB::Cas::tests::OperationForTest(b)).read(l.mountKey("test"), Retry::standard())->bytes).writer_epoch, 8u);
+}
+
 TEST(CASMountOpenWaits, CleanOpenSkipsAllWaits)
 {
     auto b = std::make_shared<InMemoryBackend>();
