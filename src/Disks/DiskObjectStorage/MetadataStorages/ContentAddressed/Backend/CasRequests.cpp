@@ -815,10 +815,10 @@ WriteResult CasOperation::postCommit(Etag inc, bool resolved_by_read, WriteState
     return Committed{std::move(inc), state.attempts_sent, resolved_by_read};
 }
 
-std::optional<WriteResult> CasOperation::pauseAndReissue(WriteState & state, const Retry::Bound & bound)
+std::optional<WriteResult> CasOperation::gatedPause(uint64_t pause_ms, uint32_t envelopes, WriteState & state,
+                                                    const Retry::Bound & bound, void (*record)())
 {
-    const uint64_t pause_ms = Retry::backoff(++state.reissues);
-    const uint64_t needed = reservedFor(pause_ms, 2);
+    const uint64_t needed = reservedFor(pause_ms, envelopes);
     switch (gate(needed))
     {
         case Gate::FenceLost: return gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), state);
@@ -827,26 +827,19 @@ std::optional<WriteResult> CasOperation::pauseAndReissue(WriteState & state, con
     }
     if (!fits(needed, bound))
         return gaveUp(GaveUp::Why::Deadline, sourceFor(bound), state);
-    detail::recordReissue();
+    record();
     owner.sleep_ms(pause_ms);
     return std::nullopt;
 }
 
+std::optional<WriteResult> CasOperation::pauseAndReissue(WriteState & state, const Retry::Bound & bound)
+{
+    return gatedPause(Retry::backoff(++state.reissues), 2, state, bound, detail::recordReissue);
+}
+
 std::optional<WriteResult> CasOperation::pauseForConflict(WriteState & state, const Retry::Bound & bound)
 {
-    const uint64_t pause_ms = Retry::conflictBackoff();
-    const uint64_t needed = reservedFor(pause_ms, 2);
-    switch (gate(needed))
-    {
-        case Gate::FenceLost: return gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), state);
-        case Gate::NoBudget:  return gaveUp(GaveUp::Why::Deadline, GaveUp::Source::Lease, state);
-        case Gate::Ok: break;
-    }
-    if (!fits(needed, bound))
-        return gaveUp(GaveUp::Why::Deadline, sourceFor(bound), state);
-    detail::recordConflictPause();
-    owner.sleep_ms(pause_ms);
-    return std::nullopt;
+    return gatedPause(Retry::conflictBackoff(), 2, state, bound, detail::recordConflictPause);
 }
 
 /// A flat pause before reissuing an attempt whose failure text named a failed connection.
@@ -854,18 +847,7 @@ static constexpr uint64_t kConnectHintPauseMs = 50;
 
 std::optional<WriteResult> CasOperation::pauseFlat(WriteState & state, const Retry::Bound & bound)
 {
-    const uint64_t needed = reservedFor(kConnectHintPauseMs, 2);
-    switch (gate(needed))
-    {
-        case Gate::FenceLost: return gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), state);
-        case Gate::NoBudget:  return gaveUp(GaveUp::Why::Deadline, GaveUp::Source::Lease, state);
-        case Gate::Ok: break;
-    }
-    if (!fits(needed, bound))
-        return gaveUp(GaveUp::Why::Deadline, sourceFor(bound), state);
-    detail::recordReissue();
-    owner.sleep_ms(kConnectHintPauseMs);
-    return std::nullopt;
+    return gatedPause(kConnectHintPauseMs, 2, state, bound, detail::recordReissue);
 }
 
 WriteResult CasOperation::writeLoop(const String & key, const String & bytes, const std::optional<Etag> & expected,

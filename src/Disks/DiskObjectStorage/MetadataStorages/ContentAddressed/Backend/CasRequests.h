@@ -383,6 +383,11 @@ private:
     /// state the read never saw, which is how a lease refusal used to be reported as a policy deadline.
     WriteResult gaveUpAfterFailedObservation(std::optional<ReadStop> stop, WriteState & state,
                                              const Retry::Bound & bound) const;
+    /// The shared shape behind every gated pause below: admission for `envelopes` attempt reservations
+    /// plus `pause_ms`, the deadline check, the counter this pause records itself under, then the sleep.
+    /// A value means the call ended during it; nullopt means the caller may send another attempt.
+    std::optional<WriteResult> gatedPause(uint64_t pause_ms, uint32_t envelopes, WriteState & state,
+                                         const Retry::Bound & bound, void (*record)());
     /// Admission, then the jittered sleep. A value means the call ended during it; nullopt means the
     /// caller may send another attempt.
     std::optional<WriteResult> pauseAndReissue(WriteState & state, const Retry::Bound & bound);
