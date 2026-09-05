@@ -407,6 +407,16 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
     node.start_clickhouse()
     assert log_count_since_last_restart(observation) == 1
     assert _mount_snapshot(node)["state"] == "live"
+    # This restart already reclaims the slot and advances the epoch on its own (via the observation
+    # wait, not the knob), so the knob-restart's own advance must be measured from THIS value, not
+    # from epoch_before -- otherwise a knob-restart that wrongly reused this same epoch would still
+    # pass an `epoch_after > epoch_before` check.
+    epoch_after_safe_restart = int(
+        node.query(
+            "SELECT writer_epoch FROM system.cas_mounts WHERE disk = '{}' LIMIT 1".format(DISK)
+        ).strip()
+    )
+    assert epoch_after_safe_restart > epoch_before
 
     # Enable the unsafe knob while the server is stopped (a test-stand-only config.d overlay), then
     # hard-kill again: this server's own uuid already holds the slot, so the knob may reclaim it at
@@ -420,11 +430,11 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
         node.start_clickhouse()
         assert log_count_since_last_restart(observation) == 0
         assert _mount_snapshot(node)["state"] == "live"
-        epoch_after = int(
+        epoch_after_knob_restart = int(
             node.query(
                 "SELECT writer_epoch FROM system.cas_mounts WHERE disk = '{}' LIMIT 1".format(DISK)
             ).strip()
         )
-        assert epoch_after > epoch_before
+        assert epoch_after_knob_restart > epoch_after_safe_restart
     finally:
         node.exec_in_container(["rm", "-f", "/etc/clickhouse-server/config.d/unsafe_remount.xml"])
