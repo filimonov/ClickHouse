@@ -63,8 +63,9 @@ Next to the settings in `configuration.md`, and in `mounts-and-leases.md`:
 2. A shorter TTL reduces the tolerance for store delays; a shorter period increases it (renewal
    starts earlier) at the cost of traffic. With the defaults, `TTL − margin − period − 2 ×
    envelope = 4 s` is the scheduling-lateness budget before the first renewal attempt of a
-   period can begin, where `envelope = attempt_timeout + 2 × min(connect_timeout_ms, attempt_timeout)`
-   (spec 4; the TLS handshake gets its own connect interval; 7 s with defaults); the renewal then retries until `confirmed deadline − margin`.
+   period can begin, where `envelope = attempt_timeout + 2 × cap`, `cap = attempt_timeout` when
+   `connect_timeout_ms` is 0 and `min(connect_timeout_ms, attempt_timeout)` otherwise (spec 4; the
+   TLS handshake gets its own connect interval; 7 s with defaults); the renewal then retries until `confirmed deadline − margin`.
 3. `expires_at_ms` in the mount object is a writer-stamped diagnostic used by `system.cas_mounts`
    and by the non-authoritative decommission epoch-recovery precheck; it never authorizes a reclaim
    or a GC fence-out, and local fencing is derived from the confirmed request's pre-I/O BOOTTIME

@@ -9,7 +9,9 @@ doc_type: 'design'
 
 # CAS reissues cooperate with the adaptive first-attempt timeout {#cas-adaptive-first-attempt-timeout-design}
 
-**Status:** DRAFT rev.7 (2026-09-05; rev.7 records the user's ruling on the `src/IO` constraint, closing round 3's MAJOR 1) — rev.6 rev.6 folds round 3 `codex_cross_r3.final.md`: a zero connect timeout is
+**Status:** DRAFT rev.8 (2026-09-05; rev.8 folds round 4 `codex_cross_r4.final.md`: test 6e exercises the
+initial-zero connect timeout at the snapshot seam, the control-request context names the cap, the doc
+formulas use `attempt + 2 × cap` with zero normalized) — rev.7 rev.7 records the user's ruling on the `src/IO` constraint, closing round 3's MAJOR 1) — rev.6 rev.6 folds round 3 `codex_cross_r3.final.md`: a zero connect timeout is
 normalized, the TLS handshake's second connect interval is budgeted (`attempt + 2 × cap`), an end-to-end wiring
 test, strict horizon checks; the `src/IO` question of its MAJOR 1 is the user's call and is recorded in the
 constraints paragraph below) — earlier: rev.5 rev.5 folds the fold's re-review `codex_cross_r2.final.md`: the
@@ -51,10 +53,10 @@ there already).
    `CasRequests`) carries `attempt_no` (1-based). `readLoop` passes its loop counter; `writeLoop`
    passes the count of attempts it has started (every physical attempt, hinted ones included);
    the sentinel-probe loop (`CasRequests.cpp` ~613) passes its own. The backend threads it into one
-   small **control-request context** `{retry profile, attempt timeout, attempt_no}` that replaces the
-   current `(profile, timeout_ms)` pair on the overloads this branch already owns:
+   small **control-request context** `{retry profile, attempt timeout, connect-timeout cap, attempt_no}`
+   that replaces the current `(profile, timeout_ms)` pair on the overloads this branch already owns:
    `readSettingsFor` and `conditionalWriteSettings` (the latter embeds `SingleAttempt` and the backend
-   timeout today and becomes `{SingleAttempt, attempt_timeout_ms, access.attempt_no}`; new fields
+   timeout today and becomes `{SingleAttempt, attempt_timeout_ms, connect_timeout_cap_ms, access.attempt_no}`; new fields
    `ReadSettings::object_storage_attempt_number`, `WriteSettings::object_storage_attempt_number`,
    0 = unset), `tryGetObjectMetadataWithNativeToken`,
    `removeObjectIfTokenMatches`, `removeObjectsIfExistUnderProfile`, and the profile-aware `iterate`.
@@ -171,8 +173,9 @@ finish it.
    or by the reissue's own 2xx; a connect-failure-hinted attempt is reissued before its read;
    `Refused`, `Declined` and `GaveUp` are what they always were.
 3. `configuration.md`: the `cas_attempt_timeout_ms` row names the conditional PUT among the requests,
-   says `≥ 1`, and states the envelope (`attempt timeout + min(connect_timeout_ms, attempt timeout)`
-   per physical attempt; send/receive are per-socket-operation bounds); the
+   says `≥ 1`, and states the envelope (`attempt timeout + 2 × cap`, `cap = attempt timeout` when
+   `connect_timeout_ms` is 0, else `min(connect_timeout_ms, attempt timeout)`; one TCP connect and one
+   TLS handshake under the cap each; send/receive are per-socket-operation bounds); the
    `cas_lease_safety_margin_ms` row and the `cas_mount_renew_period_ms` row (~96, "one request
    attempt") use the envelope in their formulas (`envelope + margin < TTL`,
    `period + 2 × envelope + margin < TTL`).
@@ -231,8 +234,12 @@ finish it.
    .attemptEnvelopeMs() == 7000` and `connect_timeout_cap_ms == 1000`; after `applyNewSettings` with a
    config carrying `connect_timeout_ms = 5000` (and separately `0`), one control read and one
    conditional write are issued and the recording S3 storage shows both selected a clone with
-   `connectTimeoutMs == 1000`. Fails while any link of the chain (snapshot → `pool_config` → backend
-   → context → clone) is missing.
+   `connectTimeoutMs == 1000`. A second storage opened over a client whose `connectTimeoutMs` is 0
+   (with `cas_mount_lease_ttl_ms` large enough for the budget: TTL 60000, attempt 5000 → envelope
+   15000) reports `connect_timeout_cap_ms == 5000`, `attemptEnvelopeMs() == 15000`, and its requests
+   select clones with `connectTimeoutMs == 5000` — a snapshot computing `min(0, attempt)` fails here.
+   Fails while any link of the chain (snapshot → `pool_config` → backend → context → clone) is
+   missing.
 7. `CASBootstrapOrdering.ResidualListSucceedsOnTheSecondAttempt`: a backend that fails every LIST
    whose `access.attempt_no == 1` and answers otherwise opens the pool (fails without propagation
    regardless of which invocation is first).
