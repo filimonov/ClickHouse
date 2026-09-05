@@ -893,7 +893,7 @@ MountClaimResult claimMount(
 
     emitMountEvent(sink, CasEventType::MountConflict, srid, "live_double_start", &existing,
         "same server_uuid, different writer_epoch, not fenced/clean/proven-dead — no wall-clock trust; "
-        "the caller must run the incarnation-stability observation wait before reclaiming");
+        "the caller must run the token-stability observation wait before reclaiming");
     /// No write was attempted on this path -- `got->etag` is exactly the CURRENT body's
     /// etag (what we just read is what's still there), so it is safe to hand back for the
     /// caller's observation loop to compare across polls without a redundant re-read.
@@ -1121,7 +1121,7 @@ HeartbeatFloor computeHeartbeatFloor(CasOperation & op, const Layout & l, uint64
             LOG_INFO(getLogger("CasHeartbeatFloor"),
                 "CAS GC fenced out mount lease for content-addressed server root {} at "
                 "wall-clock ms {}: its write incarnation held unchanged for >= {} ms on the GC "
-                "leader's own monotonic clock (incarnation-stability observation)",
+                "leader's own monotonic clock (token-stability observation)",
                 srid, now_ms, stable_threshold_ms);
             return true;
         }
