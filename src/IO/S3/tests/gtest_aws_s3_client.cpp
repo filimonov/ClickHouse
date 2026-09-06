@@ -215,10 +215,10 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(const DB::S3::URI & uri)
         });
 }
 
-/// Spec 4 (CAS adaptive-timeout cooperation): an unset seed sends `[1, 2]` across a local retry, a
-/// seed of 2 sends `[2, 3]` -- a real HTTP round trip through `TestPocoHTTPSequenceServer` is the only
-/// way to drive the retry through `ReadBufferFromS3`'s actual success path (the SDK's response stream
-/// wraps a real `Poco::Net::HTTPBasicStreamBuf`, which `ReadBufferFromIStream` requires).
+/// An unset seed sends `[1, 2]` across a local retry, a seed of 2 sends `[2, 3]` -- a real HTTP round
+/// trip through `TestPocoHTTPSequenceServer` is the only way to drive the retry through
+/// `ReadBufferFromS3`'s actual success path (the SDK's response stream wraps a real
+/// `Poco::Net::HTTPBasicStreamBuf`, which `ReadBufferFromIStream` requires).
 TEST(IOTestAwsS3Client, ReadBufferFromS3AttemptSeedCarriesAcrossLocalRetry)
 {
     for (const auto [seed, first, second] : {std::tuple<size_t, size_t, size_t>{0, 1, 2}, {2, 2, 3}})

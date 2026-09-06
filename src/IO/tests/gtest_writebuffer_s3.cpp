@@ -1467,7 +1467,7 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
     EXPECT_FALSE(client->attempts_seen.front().has_value());
 
     /// Conditional (single) and bulk DELETE: reachable now through `S3ObjectStorage`'s
-    /// `ObjectStorageControlRequest`-carrying overloads (Task B3), which is what actually drives
+    /// `ObjectStorageControlRequest`-carrying overloads, which is what actually drives
     /// `removeObjectIfTokenMatchesImpl`/`removeObjectsIfExistImpl` with a real nonzero seed -- unlike
     /// the HEAD case above, this needs no fallback to a lower-level free function.
     (void)getContext(); // BlobStorageLogWriter::create falls back to the global context

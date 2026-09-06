@@ -44,7 +44,6 @@
 
 /// The single-attempt client clone must cap its connect timeout at the value the mount froze at open,
 /// never at the disk's (possibly wider, possibly reloaded, possibly unbounded) own connect timeout.
-/// See docs/superpowers/specs/2026-09-05-cas-adaptive-first-attempt-timeout-design.md decision 3.
 
 namespace
 {
@@ -579,7 +578,7 @@ TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
     /// conditional write (PUT) must both select a clone with `connectTimeoutMs == 1000` -- and stay at
     /// 1000 after the underlying client is reloaded with a wider (5000), then a zero (unbounded),
     /// connect timeout: the backend's OWN `connect_timeout_cap_ms` was frozen at construction and a
-    /// later reload cannot widen it (spec decision 3).
+    /// later reload cannot widen it.
     auto recording_storage = makeRecordingStorageForTest(1000);
     auto backend = std::make_shared<DB::Cas::ObjectStorageBackend>(
         recording_storage, DB::Cas::ObjectStorageBackend::Mode::Native,
