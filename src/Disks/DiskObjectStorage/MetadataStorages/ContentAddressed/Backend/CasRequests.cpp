@@ -453,7 +453,7 @@ bool CasOperation::fits(uint64_t needed_ms, const Retry::Bound & bound) const
     return needed_ms <= bound.deadline_ms - now;
 }
 
-bool CasOperation::refreshAndClassifyReadFault(const std::exception & e, bool & refresh_attempted)
+bool CasOperation::refreshAndClassifyReadFault(const std::exception & e, bool & refresh_attempted, bool & refreshed)
 {
     if (const auto * db_e = dynamic_cast<const Exception *>(&e); db_e && isDeterministicLocalFailure(db_e->code()))
         return true;
@@ -471,7 +471,8 @@ bool CasOperation::refreshAndClassifyReadFault(const std::exception & e, bool & 
         if (refresh_attempted)
             return true;
         refresh_attempted = true;
-        return !owner.backend->refreshCredentials();
+        refreshed = owner.backend->refreshCredentials();
+        return !refreshed;
     }
     /// The store's own answer decides. A refusal it proved never applied, and an authoritative absence,
     /// both replay identically; everything else -- a throttle, a 5xx, a missing bucket, an unmodeled
@@ -682,7 +683,10 @@ SentinelProbeResult CasOperation::probeSentinel(const String & key, const Retry 
         }
         catch (const std::exception & e)
         {
-            if (refreshAndClassifyReadFault(e, refresh_attempted))
+            /// The probe never counts a fuse, so whether this fault was a credential reissue is not
+            /// interesting here -- only the write and read loops guard a counter with it.
+            bool refreshed = false;
+            if (refreshAndClassifyReadFault(e, refresh_attempted, refreshed))
                 throw;
             /// The probe reports every transport failure as `Indeterminate` rather than by throwing, so
             /// a decorator that does throw is folded onto the same inconclusive outcome.

@@ -2786,6 +2786,34 @@ TEST(CASRequestsFuse, RefreshedCredentialTextDoesNotDoubleCountTheFuse)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load() - fuses_before, 0u);
 }
 
+/// The read loop's own twin of `RefreshedCredentialTextDoesNotDoubleCountTheFuse`: a first read attempt
+/// whose exception is both fuse-text and refreshable-credential-name is a credential reissue, not a
+/// fuse, so the counter must not move even though the reissue itself is immediate, exactly like a fuse.
+TEST(CASRequestsFuse, ReadRefreshedCredentialTextDoesNotDoubleCountTheFuse)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    orThrow(op.create("k", "v", Retry::standard()), "seed");
+    backend->resetCounts();
+    backend->setRefreshCredentialsResult(true);
+    backend->failNextReadWith("k", std::make_exception_ptr(DB::S3Exception(
+        "Poco::Exception. Code: 1000, e.code() = 0, Timeout: the socket",
+        Aws::S3::S3Errors::NETWORK_CONNECTION, "ExpiredToken")));
+    const auto fuses_before = ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load();
+
+    const auto seen = op.read("k", Retry::standard());
+    ASSERT_TRUE(seen.has_value());
+    EXPECT_EQ(seen->bytes, "v");
+    EXPECT_EQ(backend->getTotal(), 2u) << "the failed attempt and its immediate reissue both reached the store";
+    EXPECT_EQ(backend->refreshCredentialsCalls(), 1u);
+    EXPECT_TRUE(clock.sleeps.empty());
+    /// The refresh -- not the fuse's immediate reissue -- drove the resend, so the fuse counter must not
+    /// move even though the exception's code and text also match `isFirstAttemptFuseTimeout`.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load() - fuses_before, 0u);
+}
+
 #endif
 
 TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)

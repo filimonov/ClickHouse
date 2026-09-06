@@ -428,8 +428,10 @@ private:
     /// One failed read-class attempt, classified. A credential failure is refreshed HERE so the reissue
     /// signs with the new client, at most once per call -- `refresh_attempted` is the caller's, and a
     /// second credential failure under the same call is classified as if no refresh were available.
-    /// TRUE means the failure must surface unchanged.
-    bool refreshAndClassifyReadFault(const std::exception & e, bool & refresh_attempted);
+    /// `refreshed` is set true only when THIS call installed new credentials, mirroring the write
+    /// loop's own local of the same name, so the caller can keep a credential reissue from also
+    /// inflating a counter whose text it happens to match. TRUE means the failure must surface unchanged.
+    bool refreshAndClassifyReadFault(const std::exception & e, bool & refresh_attempted, bool & refreshed);
 
     /// Each records its cause in `last_read_stop` before throwing, so the resolve read can report it.
     [[noreturn]] void giveUpReadFenceLost(std::string_view verb, const String & subject, std::string_view when);
@@ -474,13 +476,16 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
         }
         catch (const std::exception & e)
         {
-            if (refreshAndClassifyReadFault(e, refresh_attempted))
+            bool refreshed = false;
+            if (refreshAndClassifyReadFault(e, refresh_attempted, refreshed))
                 throw;
             /// Classified -- and counted -- before the single-attempt check below: `Retry::once` forbids
             /// the REISSUE, not the observation that this attempt hit the fuse, and the write path
-            /// already counts at classification the same way.
+            /// already counts at classification the same way -- except when `refreshed` is also true: a
+            /// credential answer whose text happens to also match the fuse text is a credential reissue,
+            /// not a fuse one, and must not inflate this count.
             const bool fuse = isFirstAttemptFuseTimeout(e, attempt_no);
-            if (fuse)
+            if (fuse && !refreshed)
                 detail::recordFirstAttemptFuse();
             if (policy.single_attempt)
                 throw;
