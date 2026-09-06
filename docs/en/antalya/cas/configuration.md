@@ -153,14 +153,6 @@ after the explicit value is removed from the config, so it does not fall back to
 the last explicit value sticks. This matches how every other S3 client setting behaves across a
 reload; it is not specific to the profile.
 
-The connection pool's own effective ages, for interpreting the settings above: a stored connection
-is expired once it is older than `0.8 ×` the keep-alive timeout, or `0.1 ×` once the shared `disk`
-connection group passes `disk_connections_soft_limit`; a connection returned to the pool is reset
-if its request started more than `0.9 ×` the keep-alive timeout ago (request duration counts
-towards this, not just idle time). See the ten `DiskConnections*` reason `ProfileEvents` (the
-`DiskConnectionsReset*` and `DiskConnectionsExpired*` families in `src/Common/ProfileEvents.cpp`)
-for which of these reasons is retiring connections on a running server.
-
 ## Advanced GC pacing settings {#advanced-gc-pacing-settings}
 
 These settings bound individual phases of a `GC` round. The first two accept any `UInt64` value;

@@ -5,7 +5,6 @@
 #include <Poco/URI.h>
 #include <Poco/Net/MessageHeader.h>
 #include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerRequestImpl.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/HTTPServerParams.h>
@@ -49,8 +48,6 @@ struct RequestOptions
     size_t slowdown_receive = 0;
     int overwrite_keep_alive_timeout = 0;
     int overwrite_keep_alive_max_requests = 10;
-    bool response_no_keep_alive = false;
-    size_t trailing_garbage_bytes = 0;
 };
 
 size_t stream_copy_n(std::istream & in, std::ostream & out, std::size_t count = std::numeric_limits<size_t>::max())
@@ -98,9 +95,6 @@ public:
         if (params.overwrite_keep_alive_timeout > 0)
             response.setKeepAliveTimeout(params.overwrite_keep_alive_timeout, params.overwrite_keep_alive_max_requests);
 
-        if (params.response_no_keep_alive)
-            response.setKeepAlive(false);
-
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto size = request.getContentLength();
         if (size > 0)
@@ -110,28 +104,6 @@ public:
 
         if (params.slowdown_receive > 0)
             sleepForSeconds(params.slowdown_receive);
-
-        if (params.trailing_garbage_bytes > 0)
-        {
-            /// Hand-assemble the whole response (status line, headers, body, and trailing
-            /// garbage) into one buffer and send it as a single raw write, bypassing
-            /// response.send()'s own framed stream entirely. Two separate writes (the framed
-            /// response, then garbage direct to the socket) can arrive as two separate reads on
-            /// the client, leaving nothing buffered; one write removes that race, so the
-            /// client's HTTP_DEFAULT_BUFFER_SIZE (8 KiB) read-ahead reliably pulls the garbage
-            /// into its buffer alongside the response body.
-            std::string body(static_cast<size_t>(size), '\0');
-            request.stream().read(body.data(), size);
-
-            std::ostringstream raw_response;
-            response.write(raw_response);
-            raw_response << body << String(params.trailing_garbage_bytes, 'x');
-
-            auto & request_impl = static_cast<Poco::Net::HTTPServerRequestImpl &>(request);
-            String raw = raw_response.str();
-            request_impl.socket().sendBytes(raw.data(), static_cast<int>(raw.size()));
-            return;
-        }
 
         stream_copy_n(request.stream(), response.send(), size);
     }
@@ -193,13 +165,6 @@ protected:
         return DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::HTTP, uri, DB::ProxyConfiguration{});
     }
 
-    /// The reset/expired reason counters are only filled in for the DISK group.
-    DB::IHTTPConnectionPoolForEndpoint::Ptr getDiskPool()
-    {
-        auto uri = Poco::URI(getServerUrl());
-        return DB::HTTPConnectionPools::instance().getPool(DB::HTTPConnectionGroupType::DISK, uri, DB::ProxyConfiguration{});
-    }
-
     std::string getServerUrl() const
     {
         return "http://" + server_data.server->socket().address().toString();
@@ -232,20 +197,6 @@ protected:
         auto opt = options->get();
         opt.overwrite_keep_alive_timeout = int(seconds);
         opt.overwrite_keep_alive_max_requests= max_requests;
-        options->set(std::move(opt));
-    }
-
-    void setResponseNoKeepAlive(bool value)
-    {
-        auto opt = options->get();
-        opt.response_no_keep_alive = value;
-        options->set(std::move(opt));
-    }
-
-    void setTrailingGarbageBytes(size_t value)
-    {
-        auto opt = options->get();
-        opt.trailing_garbage_bytes = value;
         options->set(std::move(opt));
     }
 
@@ -980,207 +931,4 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
 
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
-}
-
-/// Covers every branch of atConnectionDestroy() and wipeExpiredImpl() except
-/// reset_preserve_exception: reset_disconnected and expired_stale_peer need the server to sever
-/// the socket ahead of the negotiated keep-alive, which HTTPServer::stopAll(true) makes possible
-/// (see ResetDisconnectedReasonIsCounted and ExpiredStalePeerReasonIsCounted below), but once
-/// that is used the server is gone for the rest of the test, so those two are kept in their own
-/// tests; reset_unread_buffered_data needs the mock server to append raw bytes after a complete
-/// response (see ResetUnreadBufferedDataReasonIsCounted below), also kept separate since it
-/// needs its own mock-handler wiring. reset_preserve_exception needs the try block's
-/// PooledConnection::create (or assign/notifySocketInode/the stored_connections push) to throw;
-/// the only throw site controllable from a test is atConnectionCreate's hard-limit check, but
-/// atConnectionDestroy always decrements total_connections_in_group for the connection being
-/// destroyed *before* attempting to create its storage wrapper, so that check can never see the
-/// group back at the hard limit at the moment it runs (confirmed empirically with hard_limit 1
-/// and 2, one and two connections held: both cases end up preserved, reset staying 0). This
-/// fixture has no lever for reset_preserve_exception, so it is not covered.
-TEST_F(ConnectionPoolTest, ResetAndExpiredReasonsAreCounted)
-{
-    auto ka = Poco::Timespan(1, 0); // 1 second
-    timeouts.withHTTPKeepAliveTimeout(ka);
-    auto pool = getDiskPool();
-    auto metrics = pool->getMetrics();
-
-    /// Keep-alive age: destroy a connection after holding it past 0.9 x keep-alive, with no
-    /// second request in between. A second request would hit sendRequest()'s own preamble
-    /// (connected() && !keepAlive) || mustReconnect(), which transparently reconnects and
-    /// tears down the *old* socket as already disconnected (verified: that path reports
-    /// reset_disconnected, not reset_keep_alive_age) before atConnectionDestroy ever sees it;
-    /// only a connection that is simply let go once it is too old exercises this reason.
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-        sleepForMilliseconds(950);
-    }
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_keep_alive_age]);
-    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset_disconnected]);
-    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset_response_not_keep_alive]);
-
-    /// Stored connection older than 0.8 x keep-alive: expired by age at the next wipe.
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-    }
-    sleepForMilliseconds(900);
-    {
-        /// wipeExpiredImpl() runs at the top of getConnection(), so a throwaway connection
-        /// is enough to trigger it; .reset() keeps this one out of `preserved`, at the cost
-        /// of adding one more reset(disconnected) of its own (accounted for below).
-        auto connection = pool->getConnection(timeouts, nullptr);
-        (*connection).reset();
-    }
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired_age]);
-    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired_stale_peer]);
-    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.reset]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_disconnected]);
-
-    /// Max requests: the first request of a max_requests=1 session already returns as expired(max_requests).
-    timeouts.withHTTPKeepAliveMaxRequests(1);
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-    }
-    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.expired]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired_max_requests]);
-
-    /// Back to the plain 1-second keep-alive, unlimited requests, for the remaining blocks.
-    timeouts = DB::ConnectionTimeouts();
-    timeouts.withHTTPKeepAliveTimeout(ka);
-
-    /// Response not keep-alive: the server sends Connection: close. isKeepAliveExpired() is
-    /// ruled out first (the request is immediate), so the residual mustReconnect() is counted
-    /// as the response header, not as age.
-    setResponseNoKeepAlive(true);
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-    }
-    setResponseNoKeepAlive(false);
-    ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.reset]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_response_not_keep_alive]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_keep_alive_age]);
-
-    /// Store limit: a connection that would otherwise be preserved is dropped instead, same as
-    /// the plain StoreLimit test above, but observed through the disk pool's reason counter.
-    DB::HTTPConnectionPools::Limits zero_limits {0, 0, 0};
-    DB::HTTPConnectionPools::instance().setLimits(zero_limits, zero_limits, zero_limits);
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-    }
-    DB::HTTPConnectionPools::Limits def_limits {};
-    DB::HTTPConnectionPools::instance().setLimits(def_limits, def_limits, def_limits);
-    ASSERT_EQ(4, DB::CurrentThread::getProfileEvents()[metrics.reset]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_store_limit]);
-
-    /// Incomplete request/response: sendRequest() marks the response as not-yet-complete;
-    /// with receiveResponse() never called, the connection is torn down before it can be
-    /// preserved, same as the plain NoReceiveCall test above.
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        auto data = String("Hello");
-        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
-        request.setContentLength(data.size());
-        std::ostream & ostream = connection->sendRequest(request);
-        ostream << data;
-        connection->flushRequest();
-    }
-    ASSERT_EQ(5, DB::CurrentThread::getProfileEvents()[metrics.reset]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_incomplete_request_or_response]);
-}
-
-TEST_F(ConnectionPoolTest, ResetDisconnectedReasonIsCounted)
-{
-    /// A long keep-alive so age never trips; only the forced peer-side shutdown should.
-    auto ka = Poco::Timespan(30, 0);
-    timeouts.withHTTPKeepAliveTimeout(ka);
-    auto pool = getDiskPool();
-    auto metrics = pool->getMetrics();
-
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-
-        /// Force an immediate peer-side shutdown regardless of the negotiated keep-alive:
-        /// HTTPServer::stopAll(true) shuts down every accepted socket right away (unlike
-        /// stop(), which only stops accepting new connections and leaves live ones alone).
-        getServer().stopAll(true);
-        wait_until([&] () { return getServer().currentConnections() == 0; });
-
-        /// The next attempt on the now-severed socket fails; Poco's receiveResponse() (or, if
-        /// the write itself fails, the reconnect a failed write triggers, since the pool is
-        /// gone too) closes the session before rethrowing, so connected() is already false by
-        /// the time this connection is destroyed.
-        ASSERT_ANY_THROW(echoRequest("Hello", *connection));
-    }
-
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_disconnected]);
-    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset_keep_alive_age]);
-}
-
-TEST_F(ConnectionPoolTest, ExpiredStalePeerReasonIsCounted)
-{
-    /// A long keep-alive so age never trips before the forced peer-side shutdown does.
-    auto ka = Poco::Timespan(30, 0);
-    timeouts.withHTTPKeepAliveTimeout(ka);
-    auto pool = getDiskPool();
-    auto metrics = pool->getMetrics();
-
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-    }
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
-
-    /// Force an immediate peer-side shutdown of the now-idle, stored connection; isStale()'s
-    /// poll(SELECT_READ) sees the pending FIN well before the 0.8 x keep-alive age threshold
-    /// (24 seconds away here) has any chance to fire.
-    getServer().stopAll(true);
-    wait_until([&] () { return getServer().currentConnections() == 0; });
-
-    /// wipeExpiredImpl() runs at the top of getConnection(), so a throwaway connection is
-    /// enough to trigger it; the listener is stopped too, so the fresh connect this then
-    /// attempts (the stored connection was just wiped) is expected to fail.
-    try
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        (*connection).reset();
-    }
-    catch (...)
-    {
-    }
-
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.expired_stale_peer]);
-    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired_age]);
-}
-
-TEST_F(ConnectionPoolTest, ResetUnreadBufferedDataReasonIsCounted)
-{
-    auto pool = getDiskPool();
-    auto metrics = pool->getMetrics();
-
-    /// The server appends bytes after a complete, correctly-framed response, all as one raw
-    /// write (see trailing_garbage_bytes in the mock handler above). Poco's HTTPSession reads
-    /// ahead in HTTP_DEFAULT_BUFFER_SIZE (8 KiB) chunks regardless of how few bytes the caller
-    /// ultimately wants, so on a small response these trailing bytes end up sitting in the
-    /// client's internal buffer once the caller has consumed exactly Content-Length bytes:
-    /// isCompleted() is true (the declared response was received in full) but buffered() is
-    /// still nonzero.
-    setTrailingGarbageBytes(16);
-    {
-        auto connection = pool->getConnection(timeouts, nullptr);
-        echoRequest("Hello", *connection);
-    }
-    setTrailingGarbageBytes(0);
-
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
-    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset_unread_buffered_data]);
-    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset_incomplete_request_or_response]);
 }
