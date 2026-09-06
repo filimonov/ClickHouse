@@ -109,10 +109,12 @@ std::shared_ptr<DB::S3ObjectStorage> makeStorageForTest(long connect_ms)
 /// A genuine `S3ObjectStorage` (not a `LocalObjectStorage`-based fake) whose object body is an
 /// in-memory, ETag-conditional store faithful enough to satisfy a real writable Native `Pool::open`
 /// bootstrap (`CasProbe`'s exact create/read/replace/remove/list sequence) without ever touching a
-/// socket. Every profile-aware verb calls `recordSelection`, which invokes the REAL, unmodified
-/// `S3ObjectStorage::clientForRetryProfile` with the SAME context the verb received -- so a test
-/// observes exactly what the production selector chose (proving `request.profile` was actually
-/// consulted, not merely carried), while the answer itself comes from the map below.
+/// socket. Every profile-aware verb calls `recordSelection`, which reproduces
+/// `S3ObjectStorage::clientForRetryProfile`'s one-line dispatch using only its two PUBLIC
+/// destinations (`getSingleAttemptClient`/`getS3StorageClient`) -- the dispatch itself is exercised
+/// end-to-end by `S3SingleAttemptClient.ConnectTimeoutIsCappedAndFrozen` and by every real
+/// single-attempt/default S3 verb in `gtest_writebuffer_s3.cpp`, so this only needs to prove the cap
+/// and attempt number a verb built actually reach the selected client.
 class RecordingS3ObjectStorage : public DB::S3ObjectStorage
 {
 public:
@@ -129,8 +131,14 @@ public:
 
     void recordSelection(const DB::ObjectStorageControlRequest & request) const
     {
+        /// `getS3StorageClient` is non-const on the production interface; this method stays const to
+        /// match the base-class overrides (`iterate`, `tryGetObjectMetadataWithNativeToken`) it is
+        /// invoked from, hence the cast.
+        auto used_client = request.profile == DB::ObjectStorageRetryProfile::SingleAttempt
+            ? getSingleAttemptClient(request.attempt_timeout_ms, request.connect_timeout_cap_ms)
+            : const_cast<RecordingS3ObjectStorage *>(this)->getS3StorageClient();
         selections.push_back({request.profile, request.connect_timeout_cap_ms, request.attempt_number,
-                              clientForRetryProfile(request)->getClientConfiguration().connectTimeoutMs});
+                              used_client->getClientConfiguration().connectTimeoutMs});
     }
 
     std::unique_ptr<DB::ReadBufferFromFileBase> readObject(
@@ -201,8 +209,8 @@ public:
 
     /// The conditional write's retry profile/timeout/cap ride on `WriteSettings` directly (it is not
     /// one of the four `ObjectStorageControlRequest`-taking verbs), exactly as the real
-    /// `S3ObjectStorage::writeObject` reads them -- reconstructed here so the SAME
-    /// `clientForRetryProfile` call that function makes is exercised, before answering from memory.
+    /// `S3ObjectStorage::writeObject` reads them -- reconstructed here so `recordSelection` sees the
+    /// same context that function would have built, before answering from memory.
     std::unique_ptr<DB::WriteBufferFromFileBase> writeObject(
         const DB::StoredObject & object, DB::WriteMode mode, std::optional<DB::ObjectAttributes>, size_t,
         const DB::WriteSettings & write_settings) override
@@ -465,13 +473,13 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
     /// Two caps under one request timeout are two clones: the cache key is the pair.
     EXPECT_NE(narrow->getSingleAttemptClient(5000, 1000).get(), narrow->getSingleAttemptClient(5000, 500).get());
 
-    /// The reload path replaces the base client with a wider connect timeout; a clone rebuilt for the
-    /// frozen cap 1000 stays at 1000.
+    /// The reload path replaces the base client with a wider connect timeout, through the real
+    /// `applyNewSettings` config-reload path (as `SYSTEM RELOAD CONFIG` would drive it); a clone
+    /// rebuilt for the frozen cap 1000 stays at 1000.
     auto reloaded = makeStorageForTest(1000);
     (void)reloaded->getSingleAttemptClient(5000, 1000);
-    reloaded->setClientForTest(DB::S3::ClientFactory::instance().create(
-        clientConfigurationForTest(5000), clientSettingsForTest(),
-        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{}));
+    reloaded->applyNewSettings(*configWithConnectTimeout(5000), "disk", contextForTest(),
+                               DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
     EXPECT_EQ(reloaded->getSingleAttemptClient(5000, 1000)->getClientConfiguration().connectTimeoutMs, 1000);
 }
 
@@ -481,9 +489,10 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
 /// context `ObjectStorageBackend::controlRequest` builds, over a directly-built `ObjectStorageBackend`),
 /// and the full-chain half (a real `ContentAddressedMetadataStorage`, its writable-mount bootstrap
 /// included, over the SAME in-memory store: `openPoolView` -> `pool_config` -> backend -> context ->
-/// clone, with no link faked). Every profile-aware call records the actual client the REAL,
-/// unmodified `S3ObjectStorage::clientForRetryProfile` selected for it -- `RecordingS3ObjectStorage`
-/// answers from an in-memory conditional store, but never bypasses the production selector.
+/// clone, with no link faked). Every profile-aware call records the actual client
+/// `RecordingS3ObjectStorage::recordSelection` selected for it, reproducing the production selector's
+/// dispatch over its public surface -- `RecordingS3ObjectStorage` answers from an in-memory
+/// conditional store, but the cap and attempt number it observes came from the real CAS backend.
 TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
 {
     /// A base client with connectTimeoutMs = 1000 and cas_attempt_timeout_ms = 5000: the narrower of
@@ -544,20 +553,20 @@ TEST(CASEnvelopeWiring, FrozenCapTravelsFromTheClientToEveryVerb)
     ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(op.create("k", "v", DB::Cas::Retry::once())));
     expectAllSelectedCap(*recording_storage, /*cap=*/1000, /*expected_count=*/2);
 
-    /// Widen the disk's own connect timeout: the frozen cap must still win.
+    /// Widen the disk's own connect timeout, through the real config-reload path: the frozen cap must
+    /// still win.
     recording_storage->selections.clear();
-    recording_storage->setClientForTest(DB::S3::ClientFactory::instance().create(
-        clientConfigurationForTest(5000), clientSettingsForTest(),
-        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{}));
+    recording_storage->applyNewSettings(*configWithConnectTimeout(5000), "disk", contextForTest(),
+                                        DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
     ASSERT_TRUE(op.head("k", DB::Cas::Retry::once()).has_value());
     ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(op.create("k2", "v", DB::Cas::Retry::once())));
     expectAllSelectedCap(*recording_storage, /*cap=*/1000, /*expected_count=*/2);
 
-    /// Zero the disk's own connect timeout (Poco "unbounded"): still the frozen cap, never "no limit".
+    /// Zero the disk's own connect timeout (Poco "unbounded"), again via a real reload: still the
+    /// frozen cap, never "no limit".
     recording_storage->selections.clear();
-    recording_storage->setClientForTest(DB::S3::ClientFactory::instance().create(
-        clientConfigurationForTest(0), clientSettingsForTest(),
-        "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{}));
+    recording_storage->applyNewSettings(*configWithConnectTimeout(0), "disk", contextForTest(),
+                                        DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
     ASSERT_TRUE(op.head("k", DB::Cas::Retry::once()).has_value());
     ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(op.create("k3", "v", DB::Cas::Retry::once())));
     expectAllSelectedCap(*recording_storage, /*cap=*/1000, /*expected_count=*/2);
