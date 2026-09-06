@@ -958,14 +958,18 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             }
             /// A refusal-class exception is never a hint, even when an earlier ambiguity of this inner
             /// write kept it from ending the call above: that earlier attempt's fate is what the read
-            /// below must settle, and a hint reissue would skip it.
+            /// below must settle, and a hint reissue would skip it. Both counters below are recorded
+            /// here, at classification, regardless of `policy.single_attempt` (`Retry::once` never acts
+            /// on either, but the attempt's transport error still named what it named) -- except when
+            /// `refreshed` is also true: a credential answer whose text happens to also match a hint or
+            /// fuse text is a credential reissue, not a hint or fuse one, and must not inflate these counts.
             connect_hint = !definitely_refused && isConnectFailureHint(e);
-            if (connect_hint)
+            if (connect_hint && !refreshed)
                 ProfileEvents::increment(ProfileEvents::CASRequestConnectFailureHint);
             /// Checked AFTER the hint, so a hinted attempt stays hinted (reissued before its read); a
             /// fuse timeout is reissued after the settle read runs below.
             fuse = isFirstAttemptFuseTimeout(e, state.attempts_sent);
-            if (fuse)
+            if (fuse && !refreshed)
                 ProfileEvents::increment(ProfileEvents::CASRequestFirstAttemptFuse);
         }
         catch (const std::exception & e)

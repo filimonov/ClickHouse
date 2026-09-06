@@ -41,6 +41,7 @@
 namespace DB::ErrorCodes
 {
 extern const int ABORTED;
+extern const int BAD_ARGUMENTS;
 extern const int CAS_DELETE_MARKER;
 extern const int CORRUPTED_DATA;
 extern const int LOGICAL_ERROR;
@@ -2453,6 +2454,34 @@ TEST(CASRequestsConnectHint, RefusalAfterAnEarlierAmbiguitySettlesByRead)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 0u);
 }
 
+/// A single exception can ALSO be both refreshable-credential-class (`isRefreshableCredentialError`
+/// matches on the exception NAME, independent of the S3 error code) and hint-text
+/// (`isConnectFailureHint` matches on the code and the message). The credential refresh drives the
+/// reissue here, not the hint, so the hint counter must stay put.
+TEST(CASRequestsConnectHint, RefreshedCredentialTextDoesNotDoubleCountTheHint)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    backend->setRefreshCredentialsResult(true);
+    backend->failNextWriteWith("k", std::make_exception_ptr(DB::S3Exception(
+        "Poco::Exception. Code: 1000, e.code() = 99, Connection refused: 10.0.0.1:9000",
+        Aws::S3::S3Errors::NETWORK_CONNECTION, "ExpiredToken")));
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    const auto hints_before = ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load();
+
+    WriteResult result = op.create("k", "v", Retry::standard());
+    const auto * committed = std::get_if<Committed>(&result);
+    ASSERT_NE(committed, nullptr);
+    EXPECT_EQ(committed->attempts_sent, 2u);
+    EXPECT_FALSE(committed->resolved_by_read);
+    EXPECT_EQ(backend->getTotal(), 0u);
+    EXPECT_EQ(backend->refreshCredentialsCalls(), 1u);
+    /// The refresh -- not the hint's flat pause -- drove the reissue, so the hint counter must not move
+    /// even though the exception's code and text also match `isConnectFailureHint`.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 0u);
+}
+
 TEST(CASRequestsConnectHint, GatesRefuseTheReissue)
 {
     /// Deadline: hints until the window closes.
@@ -2730,6 +2759,33 @@ TEST(CASRequestsFuse, ReadUnderOnceCountsTheFuseWithoutReissuing)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load() - fuses_before, 1u);
 }
 
+/// The fuse counter's credential-refresh twin of `CASRequestsConnectHint.RefreshedCredentialTextDoesNotDoubleCountTheHint`:
+/// a first attempt whose exception is both fuse-text and refreshable-credential-name must be counted
+/// as the credential reissue it actually is, not also as a fuse.
+TEST(CASRequestsFuse, RefreshedCredentialTextDoesNotDoubleCountTheFuse)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    backend->setRefreshCredentialsResult(true);
+    backend->failNextWriteWith("k", std::make_exception_ptr(DB::S3Exception(
+        "Poco::Exception. Code: 1000, e.code() = 0, Timeout: the socket",
+        Aws::S3::S3Errors::NETWORK_CONNECTION, "ExpiredToken")));
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    const auto fuses_before = ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load();
+
+    WriteResult result = op.create("k", "v", Retry::standard());
+    const auto * committed = std::get_if<Committed>(&result);
+    ASSERT_NE(committed, nullptr);
+    EXPECT_EQ(committed->attempts_sent, 2u);
+    EXPECT_FALSE(committed->resolved_by_read);
+    EXPECT_EQ(backend->getTotal(), 0u);
+    EXPECT_EQ(backend->refreshCredentialsCalls(), 1u);
+    /// The refresh -- not the fuse's immediate reissue -- drove the resend, so the fuse counter must not
+    /// move even though the exception's code and text also match `isFirstAttemptFuseTimeout`.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestFirstAttemptFuse].load() - fuses_before, 0u);
+}
+
 #endif
 
 TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)
@@ -2740,9 +2796,11 @@ TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)
     /// Defaults with the default TTL / period are accepted.
     EXPECT_NO_THROW(validateCasRequestBudget(budget, 30000, 10000, /*background_renewal=*/true));
     /// A zero attempt timeout would reserve nothing while the request keeps the disk's own timeout.
-    EXPECT_THROW(validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = 0, .lease_safety_margin_ms = 2000,
-                                                           .connect_timeout_cap_ms = std::nullopt}, 30000, 10000, true),
-                 DB::Exception);
+    expectThrowsCode(DB::ErrorCodes::BAD_ARGUMENTS, [&]
+    {
+        validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = 0, .lease_safety_margin_ms = 2000,
+                                                   .connect_timeout_cap_ms = std::nullopt}, 30000, 10000, true);
+    });
     /// The old inequality (attempt <= TTL - margin - period: 5000 <= 13000) accepted this; two envelopes
     /// of 15 s do not fit a 25 s lease behind a 10 s period and a 2 s margin.
     const CasRequestBudget wide{.attempt_timeout_ms = 5000, .lease_safety_margin_ms = 2000, .connect_timeout_cap_ms = 5000};
@@ -2759,9 +2817,12 @@ TEST(CASRequestBudget, EnvelopeIsValidatedNotTheBareAttempt)
     /// Without background renewal only `envelope + margin < TTL` applies (15000 + 2000 < 25000).
     EXPECT_NO_THROW(validateCasRequestBudget(wide, 25000, 10000, /*background_renewal=*/false));
     /// Saturation: absurd values fail closed rather than wrap.
-    EXPECT_THROW(validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = std::numeric_limits<uint64_t>::max(),
-                                                           .lease_safety_margin_ms = 1, .connect_timeout_cap_ms = 1},
-                                          30000, 10000, true), DB::Exception);
+    expectThrowsCode(DB::ErrorCodes::BAD_ARGUMENTS, [&]
+    {
+        validateCasRequestBudget(CasRequestBudget{.attempt_timeout_ms = std::numeric_limits<uint64_t>::max(),
+                                                   .lease_safety_margin_ms = 1, .connect_timeout_cap_ms = 1},
+                                  30000, 10000, true);
+    });
 }
 
 TEST(CASRequests, ReservationIsTheEnvelope)
