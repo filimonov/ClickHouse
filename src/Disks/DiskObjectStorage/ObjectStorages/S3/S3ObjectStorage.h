@@ -25,15 +25,6 @@ namespace S3RequestSetting
     extern const S3RequestSettingsBool read_only;
 }
 
-/// The S3 keep-alive defaults applied to a disk's client -- currently just the CAS connection-churn
-/// profile (see `S3ObjectStorage::casClientProfile`), each field optional so a profile can leave a
-/// setting untouched instead of forcing a value.
-struct S3ClientProfile
-{
-    std::optional<uint64_t> http_keep_alive_timeout;
-    std::optional<uint64_t> http_keep_alive_max_requests;
-};
-
 class S3ObjectStorage : public IObjectStorage
 {
 public:
@@ -203,15 +194,6 @@ public:
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
-
-    /// The keep-alive values shipped for CAS disks. Chosen from a spike that attributed the dominant
-    /// reset reason directly to the default `http_keep_alive_max_requests`, not to the timeout.
-    static S3ClientProfile casClientProfile();
-
-    /// Applies each present value in `profile` into `settings` only where the corresponding
-    /// `S3AuthSettings` field is not already `changed` -- a default, never an override, of a value an
-    /// explicit disk section or a changed global `s3_http_keep_alive_*` setting already supplied.
-    static void applyClientProfileDefaults(const S3ClientProfile & profile, S3Settings & settings);
 
     /// Lazily-built clone of the current disk client with the single-attempt retry profile
     /// (SingleAttemptRetryStrategy, max_retries=0, Expect:100-continue floor). Rebuilt whenever the
