@@ -9,10 +9,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskObjectStorage/RegisterDiskObjectStorage.h>
-#include <Disks/registerDisks.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/S3/Client.h>
@@ -417,8 +415,8 @@ DB::ContextPtr contextForTest()
     return getContext().context;
 }
 
-/// A `<disk>inner</disk>` config wrapped in `<clickhouse>`, matching the shape
-/// `ObjectStorageFactory`/`RegisterDiskObjectStorage` read at `config_prefix = "disk"`.
+/// A `<disk>inner</disk>` config wrapped in `<clickhouse>`, matching the shape `casClientProfileHintFor`
+/// reads at `config_prefix = "disk"`.
 Poco::AutoPtr<Poco::Util::XMLConfiguration> makeConfig(const std::string & inner)
 {
     std::istringstream xml_stream("<clickhouse><disk>" + inner + "</disk></clickhouse>"); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -448,50 +446,6 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsUInt64 http_keep_alive_timeout;
     extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
 }
-
-namespace DB
-{
-void registerObjectStorages();
-}
-
-namespace
-{
-/// `ObjectStorageFactory`'s registry is empty until `registerObjectStorages` runs (normally done once
-/// by `registerDiskObjectStorage` at server startup); a unit test driving the factory directly has to
-/// do it itself. Checks the registry's actual state on every call rather than latching a "ran once"
-/// flag: this file shares one `unit_tests_dbms` process with other suites that register into and clear
-/// the same factory around their own tests (e.g. `DistributedQueryTest`, which registers in `SetUp` and
-/// unconditionally clears in `TearDown`), so a "ran once" flag could go stale the moment such a suite
-/// clears the registry after this one already ran -- the next test here would then find a registry
-/// this flag believes is already populated, but isn't. `"local"` is always registered by
-/// `registerObjectStorages` regardless of build flags (`USE_AWS_S3` included), so it is a safe sentinel.
-void ensureObjectStoragesRegistered()
-{
-    if (!DB::ObjectStorageFactory::instance().isRegistered("local"))
-        DB::registerObjectStorages();
-}
-}
-
-/// Fixture for the `RegisterDiskObjectStorage` suite, the only group in this file that touches
-/// `ObjectStorageFactory`'s registry. Registers once per suite run and clears at the end, mirroring
-/// `DiskObjectStorageTest` (`gtest_disk_object_storage.cpp`) -- the established pattern for a suite
-/// that owns disk/object-storage registration in this shared `unit_tests_dbms` binary. Without the
-/// matching `TearDownTestSuite`, this suite's registration would outlive it and collide with
-/// `DiskObjectStorageTest::SetUpTestSuite`'s own unconditional `DB::registerDisks(true)` (which
-/// transitively calls `registerObjectStorages()`) whenever that suite happened to run afterwards.
-class RegisterDiskObjectStorage : public ::testing::Test
-{
-public:
-    static void SetUpTestSuite()
-    {
-        ensureObjectStoragesRegistered();
-    }
-
-    static void TearDownTestSuite()
-    {
-        DB::clearDiskRegistry();
-    }
-};
 
 /// Test 6c of the spec: the clone's connect cap is the MIN of the base client's own connect timeout
 /// and the requested cap, a configured-zero base is treated as unbounded (never "no limit"), the cache
@@ -735,43 +689,17 @@ TEST(S3ObjectStorageProfile, ApplyNewSettingsPreservesTheProfile)
     EXPECT_EQ(storage->getS3StorageClient()->getClientConfiguration().http_keep_alive_max_requests, 55u);
 }
 
-/// The factory's S3 creator applies the profile exactly when the hint says so. `getClient` builds
-/// the client without connecting, so an unreachable endpoint is fine. Checks both profile fields for
-/// both the hinted and non-hinted creation.
-TEST_F(RegisterDiskObjectStorage, CasProfileReachesTheS3Creator)
+/// `casClientProfileHintFor` (the one-line rule `registerDiskObjectStorage` uses to decide whether a
+/// disk's S3 client gets the CAS keep-alive defaults) tested directly against the config shapes that
+/// matter: a plain `metadata_type`, and -- the regression this pins -- a disk using the `<locations>`
+/// form, where `metadata_type` lives on the disk's OWN `config_prefix` and is never visible from a
+/// nested location's prefix. Deriving the hint per-location instead of once at the disk level would
+/// silently produce `cas_client_profile = false` for every location of such a disk.
+TEST(S3ObjectStorageProfile, CasClientProfileHintForMetadataType)
 {
-    auto cfg = makeConfig("<type>s3</type><endpoint>http://127.0.0.1:1/bucket/</endpoint>"
-                          "<access_key_id>a</access_key_id><secret_access_key>b</secret_access_key>");
-    auto with_hint = DB::ObjectStorageFactory::instance().create("d", *cfg, "disk", contextForTest(), /*skip_access_check=*/true,
-                                                             DB::ObjectStorageCreateHints{.cas_client_profile = true});
-    auto without_hint = DB::ObjectStorageFactory::instance().create("d", *cfg, "disk", contextForTest(), true, DB::ObjectStorageCreateHints{});
-    EXPECT_EQ(with_hint->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout, 30u);
-    EXPECT_EQ(with_hint->getS3StorageClient()->getClientConfiguration().http_keep_alive_max_requests, 10000u);
-    EXPECT_EQ(without_hint->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout, DB::S3::DEFAULT_KEEP_ALIVE_TIMEOUT);
-    EXPECT_EQ(without_hint->getS3StorageClient()->getClientConfiguration().http_keep_alive_max_requests, DB::S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS);
-    /// And `RegisterDiskObjectStorage` derives the hint from `metadata_type`: pin the one-line rule.
     EXPECT_TRUE(DB::casClientProfileHintFor(*makeConfig("<metadata_type>cas</metadata_type>"), "disk"));
     EXPECT_FALSE(DB::casClientProfileHintFor(*makeConfig("<metadata_type>local</metadata_type>"), "disk"));
-}
 
-/// Regression test for a bug caught in review: `metadata_type` lives on the disk's OWN `config_prefix`
-/// -- the metadata storage is always selected from there, never from a nested location's prefix -- so
-/// `registerDiskObjectStorage`'s creator must compute the CAS profile hint exactly once, at the disk
-/// level, and reuse it for every `ObjectStorageFactory::create` call it makes, including inside the
-/// per-location loop. Deriving the hint per-location instead (reading `metadata_type` off
-/// `<locations><main>...`, which never carries it) would silently produce `cas_client_profile = false`
-/// for every location of a CAS disk that uses the `<locations>` form.
-///
-/// `registerDiskObjectStorage`'s own creator lambda is not reachable in isolation here: driving it
-/// through `DiskFactory` would run the full CAS disk startup (the mandatory conditional-write
-/// correctness battery `skip_access_check` does NOT skip), which needs a real, reachable object store.
-/// So this drives `ObjectStorageFactory` directly, the same way `CasProfileReachesTheS3Creator` above
-/// does, but proves the two halves `registerDiskObjectStorage`'s fix depends on: (1) the hint function
-/// disagrees between the disk-level prefix and a nested location's prefix for exactly this config
-/// shape, and (2) using the disk-level hint (as the fixed code now does for every location) is what
-/// makes the location's own S3 client carry the profile.
-TEST_F(RegisterDiskObjectStorage, CasProfileHintIsDiskLevelNotPerLocation)
-{
     auto cfg = makeConfig(
         "<metadata_type>cas</metadata_type>"
         "<locations><main>"
@@ -779,20 +707,29 @@ TEST_F(RegisterDiskObjectStorage, CasProfileHintIsDiskLevelNotPerLocation)
         "<endpoint>http://127.0.0.1:1/bucket/</endpoint>"
         "<access_key_id>a</access_key_id><secret_access_key>b</secret_access_key>"
         "</main></locations>");
-
-    /// (1) `metadata_type` is disk-level: the per-location prefix does not see it.
     EXPECT_TRUE(DB::casClientProfileHintFor(*cfg, "disk"));
     EXPECT_FALSE(DB::casClientProfileHintFor(*cfg, "disk.locations.main"));
+}
 
-    /// (2) the disk-level hint, applied to the location's own `ObjectStorageFactory::create` call
-    /// (exactly as `registerDiskObjectStorage`'s per-location loop now does), reaches that location's
-    /// S3 client -- both profile fields.
-    const bool disk_level_hint = DB::casClientProfileHintFor(*cfg, "disk");
-    auto location_storage = DB::ObjectStorageFactory::instance().create(
-        "d.main", *cfg, "disk.locations.main", contextForTest(), /*skip_access_check=*/true,
-        DB::ObjectStorageCreateHints{.cas_client_profile = disk_level_hint});
-    EXPECT_EQ(location_storage->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout, 30u);
-    EXPECT_EQ(location_storage->getS3StorageClient()->getClientConfiguration().http_keep_alive_max_requests, 10000u);
+/// Whether an `S3ObjectStorage` carries a client profile decides whether its constructed client gets
+/// the CAS keep-alive defaults -- checked both ways, directly on the storage the factory's S3 creator
+/// would build in each case (with a profile when the disk's `metadata_type` is `cas`, without one
+/// otherwise), rather than through the factory itself.
+TEST(S3ObjectStorageProfile, ClientProfileAppliesOnlyWhenGiven)
+{
+    auto with_profile = storageWithProfile(DB::S3ObjectStorage::casClientProfile());
+    with_profile->applyNewSettings(*configWithout("http_keep_alive_timeout"), "disk", contextForTest(),
+                                   DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
+    EXPECT_EQ(with_profile->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout, 30u);
+    EXPECT_EQ(with_profile->getS3StorageClient()->getClientConfiguration().http_keep_alive_max_requests, 10000u);
+
+    auto without_profile = makeStorageForTest(1000);
+    without_profile->applyNewSettings(*configWithout("http_keep_alive_timeout"), "disk", contextForTest(),
+                                      DB::IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true});
+    EXPECT_EQ(without_profile->getS3StorageClient()->getClientConfiguration().http_keep_alive_timeout,
+              DB::S3::DEFAULT_KEEP_ALIVE_TIMEOUT);
+    EXPECT_EQ(without_profile->getS3StorageClient()->getClientConfiguration().http_keep_alive_max_requests,
+              DB::S3::DEFAULT_KEEP_ALIVE_MAX_REQUESTS);
 }
 
 #endif
