@@ -2482,6 +2482,50 @@ TEST(CASRequestsConnectHint, RefreshedCredentialTextDoesNotDoubleCountTheHint)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 0u);
 }
 
+/// The counter's ambiguity-precedence twin: the credential-owned reissue above requires
+/// `!state.any_ambiguous`, so an earlier ambiguity of this inner write keeps it from applying even
+/// though attempt 2's exception matches the refreshable-credential class. Attempt 2 is then reissued
+/// by the ordinary hint mechanism instead -- flat-paused, and after the resolve read attempt 1 still
+/// owes -- so the hint counter must count it.
+TEST(CASRequestsConnectHint, CredentialRefreshAfterAnEarlierAmbiguityStillCountsTheHint)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    backend->setRefreshCredentialsResult(true);
+    backend->injectAmbiguousWrite("k");           /// attempt 1: ordinary ambiguity -> read, backoff
+    bool hint_fired_on_second_attempt = false;
+    backend->onBeforeWrite("k", [&]
+    {
+        if (backend->writeTotal() == 2)
+        {
+            EXPECT_EQ(backend->getTotal(), 1u) << "attempt 1's ambiguity read must already have run";
+            hint_fired_on_second_attempt = true;
+            throw DB::S3Exception(
+                "Poco::Exception. Code: 1000, e.code() = 99, Cannot assign requested address: 10.0.0.1:9000",
+                Aws::S3::S3Errors::NETWORK_CONNECTION, "ExpiredToken");   /// hint AND credential-refreshable
+        }
+    });
+    auto requests = makeRequests(backend, clock);
+    auto op = requests.admit();
+    const auto hints_before = ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load();
+
+    WriteResult result = op.create("k", "v", Retry::standard());
+    const auto * committed = std::get_if<Committed>(&result);
+    ASSERT_NE(committed, nullptr);
+    EXPECT_EQ(committed->attempts_sent, 3u);
+    /// One read (attempt 1's) settles the earlier ambiguity; attempt 2's hint reissue skips its own
+    /// read, exactly as `EarlierAmbiguityStillSettlesByRead` pins for a non-credential hint.
+    EXPECT_EQ(backend->getTotal(), 1u);
+    EXPECT_EQ(backend->refreshCredentialsCalls(), 1u);
+    ASSERT_EQ(clock.sleeps.size(), 2u);
+    EXPECT_LE(clock.sleeps[0], 200u);     /// the backoff after attempt 1's ambiguity read
+    EXPECT_EQ(clock.sleeps[1], 50u);      /// the flat pause after attempt 2's hint, not a credential backoff
+    EXPECT_TRUE(hint_fired_on_second_attempt);
+    /// The hint mechanism, not a credential-owned reissue, actually resent this attempt, so the counter
+    /// counts it even though the exception's name also matches the refreshable-credential class.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRequestConnectFailureHint].load() - hints_before, 1u);
+}
+
 TEST(CASRequestsConnectHint, GatesRefuseTheReissue)
 {
     /// Deadline: hints until the window closes.

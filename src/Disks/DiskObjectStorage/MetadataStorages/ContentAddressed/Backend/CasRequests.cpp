@@ -927,6 +927,12 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         /// instead of resolved by a read and reissued to the deadline.
         bool credential_answer = false;
         bool refreshed = false;
+        /// Set once `refreshed` is known: true only when the credential-owned reissue below (the one
+        /// guarded by this exact expression) is what will actually resend this attempt. An earlier
+        /// ambiguity of this inner write routes the reissue through the ordinary hint/fuse/backoff
+        /// mechanisms instead -- the credential answer never gets to skip their read or their pacing --
+        /// so a hint or fuse counter must still count in that case even though credentials were refreshed.
+        bool refresh_owns_reissue = false;
         bool connect_hint = false;
         bool fuse = false;
         try
@@ -952,6 +958,11 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
                 state.refresh_attempted = true;
                 refreshed = owner.backend->refreshCredentials();
             }
+            /// Mirrors the condition guarding the credential-owned reissue below exactly, so the two
+            /// can never drift: `state.any_ambiguous` here is still this attempt's INCOMING value,
+            /// because the update below only fires when `!credential_answer`, which `refreshed` implies
+            /// false for.
+            refresh_owns_reissue = refreshed && !policy.single_attempt && !state.any_ambiguous;
             /// A refusal that FOLLOWS an ambiguous attempt of this inner write proves nothing about that
             /// attempt, so it is settled by the read below instead of ending the call here.
             const bool definitely_refused = !refreshed && isDefinitelyRefusedWrite(e);
@@ -965,15 +976,18 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             /// below must settle, and a hint reissue would skip it. Both counters below are recorded
             /// here, at classification, regardless of `policy.single_attempt` (`Retry::once` never acts
             /// on either, but the attempt's transport error still named what it named) -- except when
-            /// `refreshed` is also true: a credential answer whose text happens to also match a hint or
-            /// fuse text is a credential reissue, not a hint or fuse one, and must not inflate these counts.
+            /// the credential answer OWNS the reissue: a credential answer whose text happens to also
+            /// match a hint or fuse text is a credential reissue, not a hint or fuse one, and must not
+            /// inflate these counts. When an earlier ambiguity of this inner write keeps the credential
+            /// answer from owning the reissue, the hint/fuse mechanism reissues it instead, exactly as
+            /// if credentials had never been refreshed, so the counter must still count it.
             connect_hint = !definitely_refused && isConnectFailureHint(e);
-            if (connect_hint && !refreshed)
+            if (connect_hint && !refresh_owns_reissue)
                 ProfileEvents::increment(ProfileEvents::CASRequestConnectFailureHint);
             /// Checked AFTER the hint, so a hinted attempt stays hinted (reissued before its read); a
             /// fuse timeout is reissued after the settle read runs below.
             fuse = isFirstAttemptFuseTimeout(e, state.attempts_sent);
-            if (fuse && !refreshed)
+            if (fuse && !refresh_owns_reissue)
                 ProfileEvents::increment(ProfileEvents::CASRequestFirstAttemptFuse);
         }
         catch (const std::exception & e)
@@ -1000,7 +1014,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
 
         /// Nothing for a read to settle: this attempt did not apply, and no EARLIER attempt of this
         /// inner write is unresolved either. Re-send it under the credentials the refresh installed.
-        if (refreshed && !policy.single_attempt && !state.any_ambiguous)
+        if (refresh_owns_reissue)
         {
             if (auto given_up = pauseAndReissue(state, bound))
                 return *given_up;
