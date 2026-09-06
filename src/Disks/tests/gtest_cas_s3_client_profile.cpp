@@ -734,6 +734,63 @@ TEST(CASEnvelopeWiring, ProductionDispatchAppliesTheFrozenConnectCapAtConnectTim
     }
 }
 
+/// `FreezeConnectTimeoutCapSnapshot` above pins the ARITHMETIC of `freezeConnectTimeoutCapMs` in
+/// isolation; `ProductionDispatchAppliesTheFrozenConnectCapAtConnectTime` pins that a cap handed
+/// DIRECTLY to `S3ObjectStorage` reaches the connect phase. Neither proves the composition
+/// `ContentAddressedMetadataStorage::openPoolView` actually performs: freezing the cap from a real S3
+/// client (`ContentAddressedMetadataStorage.cpp` ~802) and handing it into `Cas::ObjectStorageBackend`'s
+/// constructor (the backend handoff at ~812-822) exactly as a writable Native mount does. This test
+/// drives that whole chain end to end -- real client -> freezeConnectTimeoutCapMs -> ObjectStorageBackend
+/// -> CasRequests/CasOperation -> the SAME production S3ObjectStorage dispatch the tests above cover --
+/// with no recording subclass anywhere in it. `Pool::open` itself is not driven here: it needs a live
+/// store (PoolMeta creation/validation) that a stalled-connect endpoint cannot provide, so the backend
+/// composition above is the reachable end of the chain from a unit test.
+///
+/// A read-only backend (`single_attempt_control_plane_ = false`, matching `openPoolView`'s own choice
+/// for a read-only mount) keeps the storage's DEFAULT client for its read-class requests -- the base
+/// 2000 ms connect timeout -- as the uncapped control. The SAME derived cap and attempt timeout, handed
+/// to a WRITABLE Native backend exactly as `openPoolView` constructs one, must then fail an order of
+/// magnitude faster: a dropped or corrupted handoff anywhere in the chain would silently fall back to
+/// the uncapped control's timing instead.
+TEST(CASEnvelopeWiring, FreezeConnectTimeoutCapReachesTheBackendOverProductionDispatch)
+{
+    (void)contextForTest();
+
+    constexpr long base_connect_timeout_ms = 2000;
+    constexpr uint64_t cas_attempt_timeout_ms = 100;
+
+    ConnectStallServer server;
+    auto storage = makeConnectStallStorageForTest(server.getUrl(), base_connect_timeout_ms);
+
+    /// The exact derivation `ContentAddressedMetadataStorage::openPoolView` uses: min(base connect
+    /// timeout, attempt timeout) = 100 here, never the wide 2000 ms base timeout.
+    const auto cap = DB::ContentAddressedMetadataStorage::freezeConnectTimeoutCapMs(storage, cas_attempt_timeout_ms);
+    ASSERT_TRUE(cap.has_value());
+    EXPECT_EQ(*cap, cas_attempt_timeout_ms);
+
+    auto uncapped_backend = std::make_shared<DB::Cas::ObjectStorageBackend>(
+        storage, DB::Cas::ObjectStorageBackend::Mode::Native,
+        /*single_attempt_control_plane_=*/false, /*attempt_timeout_ms_=*/0, /*connect_timeout_cap_ms_=*/0);
+    {
+        DB::Cas::CasRequests requests(DB::Cas::BackendPtr(uncapped_backend), DB::Cas::Fence::open());
+        auto op = requests.admit();
+        const auto elapsed = expectConnectFailureAndMeasure([&] { (void)op.head("k", DB::Cas::Retry::once()); });
+        EXPECT_GE(elapsed.count(), 1500);
+    }
+
+    /// The derived cap, handed to the backend exactly as `openPoolView` constructs it (:812-822) for a
+    /// WRITABLE Native mount.
+    auto capped_backend = std::make_shared<DB::Cas::ObjectStorageBackend>(
+        storage, DB::Cas::ObjectStorageBackend::Mode::Native,
+        /*single_attempt_control_plane_=*/true, cas_attempt_timeout_ms, *cap);
+    {
+        DB::Cas::CasRequests requests(DB::Cas::BackendPtr(capped_backend), DB::Cas::Fence::open());
+        auto op = requests.admit();
+        const auto elapsed = expectConnectFailureAndMeasure([&] { (void)op.head("k", DB::Cas::Retry::once()); });
+        EXPECT_LT(elapsed.count(), 1000);
+    }
+}
+
 /// The CAS client profile's values are defaults, never overrides: an explicit disk-section value or a
 /// changed global `s3_http_keep_alive_*` setting keeps precedence over the profile, exactly because the
 /// loader already marked those fields `changed` before the profile is applied. Exercises the real
