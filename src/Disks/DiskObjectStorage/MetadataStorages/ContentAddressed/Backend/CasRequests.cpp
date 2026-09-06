@@ -961,7 +961,10 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             /// Mirrors the condition guarding the credential-owned reissue below exactly, so the two
             /// can never drift: `state.any_ambiguous` here is still this attempt's INCOMING value,
             /// because the update below only fires when `!credential_answer`, which `refreshed` implies
-            /// false for.
+            /// false for. `!policy.single_attempt` is redundant today -- `refreshed` can only be set
+            /// above under `!policy.single_attempt` already -- but it is kept so this stays an exact
+            /// copy of the reissue branch's condition rather than a hand-simplified one that could
+            /// silently stop matching it.
             refresh_owns_reissue = refreshed && !policy.single_attempt && !state.any_ambiguous;
             /// A refusal that FOLLOWS an ambiguous attempt of this inner write proves nothing about that
             /// attempt, so it is settled by the read below instead of ending the call here.
