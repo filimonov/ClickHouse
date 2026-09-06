@@ -3,7 +3,6 @@
 #include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/RegisterDiskObjectStorage.h>
 #include <Disks/ReadOnlyDiskWrapper.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
@@ -23,11 +22,6 @@ namespace ErrorCodes
 void registerObjectStorages();
 void registerMetadataStorages();
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check);
-
-bool casClientProfileHintFor(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    return config.getString(config_prefix + ".metadata_type", "") == "cas";
-}
 
 void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_check)
 {
@@ -49,7 +43,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         /// reused for every `ObjectStorageFactory::create` call below, including inside the per-location
         /// loop. Deriving it per-location would read `<locations><main>...` (which does not carry
         /// `metadata_type`) and silently miss the profile on every CAS disk with nested locations.
-        const ObjectStorageCreateHints hints{.cas_client_profile = casClientProfileHintFor(config, config_prefix)};
+        const ObjectStorageCreateHints hints{.cas_client_profile = config.getString(config_prefix + ".metadata_type", "") == "cas"};
 
         std::unordered_map<Location, ObjectStoragePtr> object_storage_registry;
         std::unordered_map<Location, LocationInfo> cluster_registry;

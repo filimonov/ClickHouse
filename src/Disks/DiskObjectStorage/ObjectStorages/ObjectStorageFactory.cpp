@@ -144,23 +144,17 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         /// The disk's S3 client is built here, before the metadata storage exists, so this is the only
         /// place a CAS disk's client can be given the connection-churn profile (see
         /// `S3ObjectStorage::casClientProfile`) -- applied as defaults only, never overriding a value the
-        /// disk section or a changed global `s3_http_keep_alive_*` setting already supplied.
-        std::optional<S3ClientProfile> client_profile;
+        /// disk section or a changed global `s3_http_keep_alive_*` setting already supplied. Applying it
+        /// here marks the affected `S3AuthSettings` fields `changed`, which is what makes the value
+        /// survive every later `applyNewSettings` reload on its own, with nothing to re-apply.
         if (hints.cas_client_profile)
-        {
-            client_profile = S3ObjectStorage::casClientProfile();
-            S3ObjectStorage::applyClientProfileDefaults(*client_profile, *settings);
-        }
+            S3ObjectStorage::applyClientProfileDefaults(S3ObjectStorage::casClientProfile(), *settings);
 
         auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
-        return std::make_shared<S3ObjectStorage>(
-            std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name,
-            /*for_disk_s3=*/true,
-            /*credentials_refresh_callback=*/[] -> std::unique_ptr<const S3::Client> { return nullptr; },
-            client_profile);
+        return std::make_shared<S3ObjectStorage>(std::move(client), std::move(settings), uri, s3_capabilities, key_generator, name);
     };
 
     factory.registerObjectStorageType("s3", creator);

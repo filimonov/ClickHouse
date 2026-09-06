@@ -51,8 +51,7 @@ private:
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true,
-        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
-        std::optional<S3ClientProfile> client_profile_ = std::nullopt)
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; })
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::make_shared<MultiVersion<S3::Client>>(std::move(client_)))
@@ -62,7 +61,6 @@ private:
         , log(getLogger(logger_name))
         , for_disk_s3(for_disk_s3_)
         , credentials_refresh_callback(credentials_refresh_callback_)
-        , client_profile(client_profile_)
     {
     }
 
@@ -270,13 +268,6 @@ private:
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
-
-    /// Set only for a disk created with a client profile (currently just CAS disks). In the disk the
-    /// factory builds, the profile is already applied to `s3_settings` before construction, and the
-    /// resulting `changed` flag survives every later reload through `applyNewSettings`'s settings copy
-    /// on its own; this member exists so `applyNewSettings` can also apply the profile for a
-    /// construction shape that carries it but not yet applied to (unapplied) settings.
-    const std::optional<S3ClientProfile> client_profile;
 
     /// Set once by a caller that has derived persistent state from the conditional-ops dialect (see
     /// `pinConditionalOpsGenerationDialect`). Once set, `applyNewSettings` refuses a reload whose

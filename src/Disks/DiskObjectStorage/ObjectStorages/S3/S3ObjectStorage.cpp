@@ -1102,20 +1102,6 @@ void S3ObjectStorage::applyNewSettings(
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
-    /// Reapply the client profile (if any) to `modified_settings` after the merge above. In the disk
-    /// the factory actually builds this is redundant with the constructor's already-applied
-    /// `s3_settings`: `changed` survives every reload through the copy a few lines up, so the value set
-    /// at construction persists with or without this call. It matters for any other construction shape
-    /// that carries a profile but unapplied settings (`applyNewSettings` is otherwise the only place
-    /// the profile could ever take effect).
-    ///
-    /// Note the same "`changed` never un-sets" behavior applies to an operator's own override: setting
-    /// `http_keep_alive_timeout` explicitly and later removing it from the disk's config does not fall
-    /// back to this profile's default on the next reload -- like every other `S3AuthSettings` field,
-    /// the last explicit value sticks.
-    if (client_profile)
-        applyClientProfileDefaults(*client_profile, *modified_settings);
-
     /// A caller that derived persistent state from the conditional-ops dialect pinned it (see
     /// `IObjectStorage::pinConditionalOpsGenerationDialect`). Refuse before the client is replaced, so a
     /// rejected reload leaves the working client and its dialect in place.
