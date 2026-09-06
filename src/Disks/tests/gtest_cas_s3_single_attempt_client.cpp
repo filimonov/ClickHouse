@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <sstream>
@@ -235,6 +236,20 @@ public:
 
     std::string getUrl() const { return "http://" + listener.address().toString(); }
 };
+
+/// `ConnectStallServer` relies on Linux dropping the overflow SYN silently, which only happens while
+/// `net.ipv4.tcp_abort_on_overflow` stays at its default 0; a host with it set to 1 resets the
+/// connection instead, so the queue-full state this fixture depends on never actually stalls a connect.
+/// An unreadable file is treated the same as "1": this is a fixture precondition, not the behaviour
+/// under test, so silently assuming the default would risk fencing that at the fixture layer.
+bool tcpAbortOnOverflowPreventsStallServer()
+{
+    std::ifstream sysctl_file("/proc/sys/net/ipv4/tcp_abort_on_overflow");
+    char value = '\0';
+    if (!(sysctl_file >> value))
+        return true;
+    return value != '0';
+}
 
 /// A genuine `S3ObjectStorage` for the CONNECT-phase discriminator: `connect_timeout_ms` governs only
 /// the base client's TCP connect deadline, while `requestTimeoutMs` is set far wider so a call against
@@ -593,6 +608,10 @@ TEST(CASEnvelopeWiring, ProductionDispatchSelectsTheFrozenSingleAttemptClientPer
 /// therefore specifically on the CAP, not merely on whether a SingleAttempt clone was selected at all.
 TEST(CASEnvelopeWiring, ProductionDispatchAppliesTheFrozenConnectCapAtConnectTime)
 {
+    if (tcpAbortOnOverflowPreventsStallServer())
+        GTEST_SKIP() << "net.ipv4.tcp_abort_on_overflow is not 0 (or unreadable): ConnectStallServer "
+                        "cannot reliably stall a connect on this host";
+
     (void)contextForTest(); // getThreadPoolWriter/BlobStorageLogWriter::create fall back to the global context
 
     constexpr long base_connect_timeout_ms = 2000;
@@ -694,6 +713,10 @@ TEST(CASEnvelopeWiring, ProductionDispatchAppliesTheFrozenConnectCapAtConnectTim
 /// the uncapped control's timing instead.
 TEST(CASEnvelopeWiring, FreezeConnectTimeoutCapReachesTheBackendOverProductionDispatch)
 {
+    if (tcpAbortOnOverflowPreventsStallServer())
+        GTEST_SKIP() << "net.ipv4.tcp_abort_on_overflow is not 0 (or unreadable): ConnectStallServer "
+                        "cannot reliably stall a connect on this host";
+
     (void)contextForTest();
 
     constexpr long base_connect_timeout_ms = 2000;
