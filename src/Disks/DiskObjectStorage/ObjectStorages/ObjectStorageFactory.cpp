@@ -67,11 +67,6 @@ void ObjectStorageFactory::registerObjectStorageType(const std::string & type, C
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ObjectStorageFactory: the metadata type '{}' is not unique", type);
 }
 
-bool ObjectStorageFactory::isRegistered(const std::string & type) const
-{
-    return registry.contains(type);
-}
-
 ObjectStoragePtr ObjectStorageFactory::create(
     const std::string & name,
     const Poco::Util::AbstractConfiguration & config,
