@@ -32,7 +32,6 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
-#include <IO/ReadHelpers.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
@@ -75,7 +74,6 @@ namespace Setting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool allow_native_copy;
-    extern const S3RequestSettingsUInt64 max_single_read_retries;
 }
 
 namespace ErrorCodes
@@ -234,7 +232,6 @@ struct InjectionModel
         return std::nullopt; \
     }
     DeclareInjectCall(PutObject)
-    DeclareInjectCall(GetObject)
     DeclareInjectCall(HeadObject)
     DeclareInjectCall(CreateMultipartUpload)
     DeclareInjectCall(CompleteMultipartUpload)
@@ -395,14 +392,7 @@ struct Client : DB::S3::Client
 
     Aws::S3::Model::GetObjectOutcome GetObject(const Aws::S3::Model::GetObjectRequest & request) const override
     {
-        attempts_seen.push_back(attemptNumberFromCustomHeaders(request));
         ++counters.getObject;
-
-        if (injections)
-        {
-            if (auto opt_val = injections->call(request))
-                return std::move(*opt_val);
-        }
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
         const String data = bStore.objects[request.GetKey()];
