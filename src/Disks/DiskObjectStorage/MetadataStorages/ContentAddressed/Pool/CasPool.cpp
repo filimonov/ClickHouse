@@ -1114,10 +1114,9 @@ bool Pool::detachedWorkStoppingForTest() const
     return teardownBegun();
 }
 
-void Pool::setDetachedDrainDeadlineBudgetForTest(uint64_t attempt_timeout_ms, uint64_t lease_safety_margin_ms)
+void Pool::setDetachedDrainDeadlineBudgetForTest(const CasRequestBudget & budget)
 {
-    config.cas_request_budget.attempt_timeout_ms = attempt_timeout_ms;
-    config.cas_request_budget.lease_safety_margin_ms = lease_safety_margin_ms;
+    config.cas_request_budget = budget;
 }
 
 void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const String & reason)

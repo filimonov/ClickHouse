@@ -433,7 +433,10 @@ public:
     bool detachedWorkStoppingForTest() const;
     /// Test-only: shortens the metadata-storage teardown deadline without changing any request path.
     /// Call before dispatching detached work; production configuration remains immutable after open.
-    void setDetachedDrainDeadlineBudgetForTest(uint64_t attempt_timeout_ms, uint64_t lease_safety_margin_ms);
+    /// Replaces the whole budget (not just `attempt_timeout_ms`) because the drain deadline is read
+    /// from `attemptEnvelopeMs()`, which also folds in `connect_timeout_cap_ms` -- a caller that only
+    /// overrode the attempt timeout would silently keep whatever connect cap the pool froze at open.
+    void setDetachedDrainDeadlineBudgetForTest(const CasRequestBudget & budget);
 
     /// ---- per-server watermark surface ----
     /// process_epoch: random nonzero per Pool (process). GC checks epoch EQUALITY, never ordering.
