@@ -711,11 +711,13 @@ TEST(S3ObjectStorageProfile, CasDefaultsApplyOnlyWhenUnset)
     }
 }
 
-/// `applyNewSettings` reapplies the stored profile on every reload (config, endpoint block, or neither
-/// touching the setting), so a disk that was created with the profile keeps it across
-/// `SYSTEM RELOAD CONFIG` -- and an explicit value given on a LATER reload still takes precedence over
-/// the already-applied profile. Checks both `http_keep_alive_timeout` and `http_keep_alive_max_requests`
-/// at each stage.
+/// `storageWithProfile` builds a storage whose settings have NOT had the profile applied yet, so the
+/// first `applyNewSettings` call below is what actually applies it -- unlike the disk the factory
+/// builds, where the profile is already applied before construction and simply survives every later
+/// reload via the sticky `changed` flag in the settings copy. Once applied here, the same sticky flag
+/// takes over: the profile keeps showing up across a later `SYSTEM RELOAD CONFIG` that touches
+/// neither setting, and an explicit value given on a LATER reload still takes precedence over it.
+/// Checks both `http_keep_alive_timeout` and `http_keep_alive_max_requests` at each stage.
 TEST(S3ObjectStorageProfile, ApplyNewSettingsPreservesTheProfile)
 {
     auto storage = storageWithProfile(DB::S3ObjectStorage::casClientProfile());
