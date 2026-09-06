@@ -43,7 +43,7 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3IteratorAsync.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Common/filesystemHelpers.h>
@@ -1510,32 +1510,53 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
 
 TEST_F(WBS3Test, S3RequestAttemptSeedListPagesCarryTheSeed)
 {
-    auto & bucket_store = client->store->GetBucketStore(bucket);
+    /// Drives the seed through the public `iterate` overload a real caller (the CAS backend's LIST
+    /// primitive) uses, rather than the anonymous-namespace `S3IteratorAsync` directly -- that class is
+    /// an implementation detail of `S3ObjectStorage.cpp` and not reachable from a test in this file.
+    auto list_store = std::make_shared<MockS3::S3MemStrore>();
+    list_store->CreateBucket(bucket);
+    auto owned_list_client = std::make_unique<MockS3::Client>(list_store);
+    MockS3::Client * list_client = owned_list_client.get();
+    S3::URI list_uri;
+    list_uri.bucket = bucket;
+    auto list_object_storage = std::make_shared<S3ObjectStorage>(
+        std::move(owned_list_client),
+        std::make_unique<S3Settings>(),
+        list_uri,
+        S3Capabilities{},
+        ObjectStorageKeyGeneratorPtr{},
+        "seed-list-disk");
+
+    auto & bucket_store = list_store->GetBucketStore(bucket);
     for (int i = 0; i < 5; ++i)
         bucket_store.PutObject(fmt::format("p/{}", i), "x");
 
-    client->attempts_seen.clear();
-    auto iterator = std::make_shared<S3IteratorAsync>(bucket, "p/", client, /*max_list_size=*/2, /*with_tags=*/false,
-                                                      std::optional<std::string>("p/0"), /*attempt_seed=*/2);
+    /// Profile is left at Default (not SingleAttempt): that would route through
+    /// `clientForRetryProfile`'s single-attempt clone, whose `cloneWithConfigurationOverride` the mock
+    /// client does not override, and the test would stop exercising the mock entirely.
+    list_client->attempts_seen.clear();
+    auto iterator = list_object_storage->iterate(
+        "p/", /*max_keys=*/2, /*with_tags=*/false, std::optional<std::string>("p/0"),
+        ObjectStorageControlRequest{.attempt_number = 2});
     size_t seen = 0;
     for (; iterator->isValid(); iterator->next())
         ++seen;
     EXPECT_EQ(seen, 4u);
-    ASSERT_EQ(client->attempts_seen.size(), 2u);   /// the initial page and one rebuilt page
-    EXPECT_EQ(client->attempts_seen[0], 2u);
-    EXPECT_EQ(client->attempts_seen[1], 2u);
+    ASSERT_EQ(list_client->attempts_seen.size(), 2u);   /// the initial page and one rebuilt page
+    EXPECT_EQ(list_client->attempts_seen[0], 2u);
+    EXPECT_EQ(list_client->attempts_seen[1], 2u);
 
     /// Seed 0 adds no header on either page.
-    client->attempts_seen.clear();
-    auto unseeded_iterator = std::make_shared<S3IteratorAsync>(bucket, "p/", client, /*max_list_size=*/2, /*with_tags=*/false,
-                                                      std::optional<std::string>("p/0"));
+    list_client->attempts_seen.clear();
+    auto unseeded_iterator = list_object_storage->iterate(
+        "p/", /*max_keys=*/2, /*with_tags=*/false, std::optional<std::string>("p/0"), ObjectStorageControlRequest{});
     seen = 0;
     for (; unseeded_iterator->isValid(); unseeded_iterator->next())
         ++seen;
     EXPECT_EQ(seen, 4u);
-    ASSERT_EQ(client->attempts_seen.size(), 2u);
-    EXPECT_FALSE(client->attempts_seen[0].has_value());
-    EXPECT_FALSE(client->attempts_seen[1].has_value());
+    ASSERT_EQ(list_client->attempts_seen.size(), 2u);
+    EXPECT_FALSE(list_client->attempts_seen[0].has_value());
+    EXPECT_FALSE(list_client->attempts_seen[1].has_value());
 }
 
 TEST_P(SyncAsync, EmptyFile) {
