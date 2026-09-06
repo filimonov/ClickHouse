@@ -884,7 +884,7 @@ MountClaimResult claimMount(
             existing.gc_fenced ? "same server_uuid, different writer_epoch, GC-fenced — reclaimed"
             : clean_marker     ? "same server_uuid, different writer_epoch, clean farewell — reclaimed"
             : proven_dead      ? "same server_uuid, different writer_epoch, observed dead by "
-                                 "incarnation stability — reclaimed"
+                                 "token-stability observation — reclaimed"
                                : "same server_uuid, different writer_epoch, reclaimed at once under "
                                  "cas_unsafe_remount_no_delay — the operator accepted that a live "
                                  "predecessor with this uuid may still be writing");
