@@ -224,17 +224,6 @@ public:
     /// pair, so two callers asking for the same request timeout but different caps get distinct clones.
     std::shared_ptr<const S3::Client> getSingleAttemptClient(uint64_t request_timeout_ms, uint64_t connect_timeout_cap_ms = 0) const;
 
-    /// Test hook only: install `new_client` as this storage's base client directly, bypassing
-    /// `applyNewSettings`. `client->set` cannot be called on a const client from the outside, so this
-    /// wraps the one mutation a test needs to model a client reload.
-    void setClientForTest(std::unique_ptr<S3::Client> && new_client) { client->set(std::move(new_client)); }
-
-protected:
-    /// The one place a control-plane verb picks its client, exposed to (test-only) subclasses so one
-    /// can observe -- by calling it directly, not by duplicating its branching -- exactly which client
-    /// a real request would have used, without a live endpoint ever being asked to answer it.
-    std::shared_ptr<const S3::Client> clientForRetryProfile(const ObjectStorageControlRequest & request) const;
-
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
@@ -254,6 +243,8 @@ private:
 
     void removeObjectsIfExistImpl(
         const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client, size_t attempt_seed);
+
+    std::shared_ptr<const S3::Client> clientForRetryProfile(const ObjectStorageControlRequest & request) const;
 
     /// Runs `fn` and, if it failed because the vended credentials expired, refreshes this disk's
     /// client and runs it once more. `fn` must re-read the client itself, so the second run signs
