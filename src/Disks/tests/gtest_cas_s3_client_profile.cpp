@@ -25,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 
@@ -37,9 +38,15 @@
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/StreamSocket.h>
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <IO/S3Common.h>
+
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasFence.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 
 /// The single-attempt client clone must cap its connect timeout at the value the mount froze at open,
 /// never at the disk's (possibly wider, possibly reloaded, possibly unbounded) own connect timeout.
@@ -185,6 +192,100 @@ public:
     size_t requestsSeen() const { return requests_seen.load(); }
     void resetRequestsSeen() { requests_seen = 0; }
 };
+
+/// A TCP listener whose accept queue is permanently full of connections it never accept()s: `backlog =
+/// 1` requests a one-entry queue, but Linux's actual capacity for a given backlog is not exactly that
+/// number (historically `backlog + 1`, and kernel-version-dependent besides), so a single pre-filled
+/// connection is not reliably enough to make the very next connect attempt stall. Instead, this keeps
+/// connecting -- each attempt bounded by a short timeout -- until an attempt itself times out: that IS
+/// the proof the queue is now genuinely full, whatever slack the nominal backlog actually bought, and
+/// every established connection up to that point is kept (never accepted) to hold the queue full for
+/// the rest of this object's life. Once full, every FURTHER inbound SYN finds no room: Linux's default
+/// `tcp_abort_on_overflow = 0` then just drops that SYN instead of answering it (no RST, no SYN-ACK),
+/// so a connecting client's kernel silently retransmits in the background while the client's OWN
+/// socket-connect timeout -- not the kernel's SYN retry timer -- is what actually bounds how long a
+/// caller waits. Nothing here ever completes a handshake with a real peer, so a call against this
+/// listener can only ever fail on CONNECT, never on request/response -- unlike `DelayedResponseServer`
+/// above, which answers every request and so can only discriminate the request/response phase.
+class ConnectStallServer
+{
+    Poco::Net::ServerSocket listener;
+    std::vector<Poco::Net::StreamSocket> prefill_connections;
+
+public:
+    ConnectStallServer() : listener(Poco::Net::SocketAddress("127.0.0.1", 0), /*backlog=*/1)
+    {
+        /// The loop bound is only a safety net (the queue always fills well before it on Linux): without
+        /// one, an environment where the queue somehow never fills would hang the constructor forever.
+        for (size_t i = 0; i < 64; ++i)
+        {
+            Poco::Net::StreamSocket prefill;
+            try
+            {
+                prefill.connect(listener.address(), Poco::Timespan(200 * 1000));
+            }
+            catch (const Poco::TimeoutException &)
+            {
+                return;
+            }
+            prefill_connections.push_back(prefill);
+        }
+        throw Poco::RuntimeException("ConnectStallServer: accept queue never filled");
+    }
+
+    std::string getUrl() const { return "http://" + listener.address().toString(); }
+};
+
+/// A genuine `S3ObjectStorage` for the CONNECT-phase discriminator: `connect_timeout_ms` governs only
+/// the base client's TCP connect deadline, while `requestTimeoutMs` is set far wider so a call against
+/// `ConnectStallServer` can only ever fail on connect, never on request/response (the peer there never
+/// completes a handshake at all, so no request is ever sent). Adaptive timeouts are disabled for the
+/// same reason `makeDispatchStorageForTest` disables them: the adaptive strategy would shrink the first
+/// attempt's own connect deadline below whatever this function configures.
+std::shared_ptr<DB::S3ObjectStorage> makeConnectStallStorageForTest(const std::string & endpoint, long connect_timeout_ms)
+{
+    DB::RemoteHostFilter remote_host_filter;
+    DB::S3::PocoHTTPClientConfiguration cfg = DB::S3::ClientFactory::instance().createClientConfiguration(
+        "us-east-1",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ false,
+        /* s3_slow_all_threads_after_retryable_error = */ false,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ true,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {});
+    cfg.endpointOverride = endpoint;
+    cfg.connectTimeoutMs = connect_timeout_ms;
+    cfg.requestTimeoutMs = 30000;
+    cfg.s3_use_adaptive_timeouts = false;
+    auto client = DB::S3::ClientFactory::instance().create(
+        cfg, clientSettingsForTest(), "ACCESS_KEY_ID", "SECRET_ACCESS_KEY", "", {}, {}, DB::S3::CredentialsConfiguration{});
+    return std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(),
+        DB::S3::URI(endpoint + "/test-bucket/"), DB::S3Capabilities{},
+        DB::ObjectStorageKeyGeneratorPtr{}, "disk");
+}
+
+/// Runs `attempt`, expecting a connection-class failure -- a stalled connect is classified by
+/// `PocoHTTPClient` as `Aws::Client::CoreErrors::NETWORK_CONNECTION` from the `Poco::TimeoutException`
+/// its connect poll raises, never as a request/response error -- and returns how long it took.
+template <typename F>
+std::chrono::milliseconds expectConnectFailureAndMeasure(F && attempt)
+{
+    const auto start = std::chrono::steady_clock::now();
+    try
+    {
+        attempt();
+        ADD_FAILURE() << "expected a connection failure, the call unexpectedly succeeded";
+    }
+    catch (const DB::S3Exception & e)
+    {
+        EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::NETWORK_CONNECTION);
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+}
 
 /// A genuine `S3ObjectStorage` pointed at `endpoint`. `base_request_timeout_ms` is the base client's
 /// request AND connect timeout -- comfortably above the server's simulated delay, so a `Default` call
@@ -537,6 +638,99 @@ TEST(CASEnvelopeWiring, ProductionDispatchSelectsTheFrozenSingleAttemptClientPer
         server.resetRequestsSeen();
         EXPECT_THROW(get(DB::ObjectStorageRetryProfile::SingleAttempt, single_attempt_timeout_ms), DB::Exception);
         EXPECT_EQ(server.requestsSeen(), 1u);
+    }
+}
+
+/// The test above proves production dispatch selects a short-REQUEST-timeout clone, but every server
+/// there answers every request -- it can never tell whether the frozen `connect_timeout_cap_ms` reaches
+/// the CONNECTION phase at all, only whether SOME clone with a short deadline was picked. This test
+/// closes that gap with `ConnectStallServer`, which never completes a handshake with anyone: a call
+/// against it can only fail on connect. Under `Default`, the base client's own 2000 ms connect timeout
+/// governs; under `SingleAttempt` with a 100 ms `connect_timeout_cap_ms` and a much wider 5000 ms
+/// `attempt_timeout_ms` (so the request/response budget, which this discriminator never reaches, is not
+/// what is being measured), a dropped or ignored cap would fall back to the base client's 2000 ms
+/// connect timeout -- making the SingleAttempt call take just as long as Default. The discrimination is
+/// therefore specifically on the CAP, not merely on whether a SingleAttempt clone was selected at all.
+TEST(CASEnvelopeWiring, ProductionDispatchAppliesTheFrozenConnectCapAtConnectTime)
+{
+    (void)contextForTest(); // getThreadPoolWriter/BlobStorageLogWriter::create fall back to the global context
+
+    constexpr long base_connect_timeout_ms = 2000;
+    constexpr uint64_t single_attempt_timeout_ms = 5000;
+    constexpr uint64_t single_attempt_connect_cap_ms = 100;
+
+    /// PUT: writeObject; the profile and cap ride on WriteSettings, not an ObjectStorageControlRequest.
+    {
+        ConnectStallServer server;
+        auto storage = makeConnectStallStorageForTest(server.getUrl(), base_connect_timeout_ms);
+
+        auto put = [&](DB::ObjectStorageRetryProfile profile, uint64_t attempt_timeout_ms, uint64_t connect_cap_ms)
+        {
+            DB::WriteSettings write_settings;
+            write_settings.object_storage_retry_profile = profile;
+            write_settings.object_storage_attempt_timeout_ms = attempt_timeout_ms;
+            write_settings.object_storage_connect_timeout_cap_ms = connect_cap_ms;
+            auto buffer = storage->writeObject(
+                DB::StoredObject("put-key"), DB::WriteMode::Rewrite, {}, DB::DBMS_DEFAULT_BUFFER_SIZE, write_settings);
+            buffer->write('A');
+            buffer->finalize();
+        };
+
+        const auto default_elapsed = expectConnectFailureAndMeasure(
+            [&] { put(DB::ObjectStorageRetryProfile::Default, 0, 0); });
+        EXPECT_GE(default_elapsed.count(), 1500);
+
+        const auto capped_elapsed = expectConnectFailureAndMeasure([&]
+        {
+            put(DB::ObjectStorageRetryProfile::SingleAttempt, single_attempt_timeout_ms, single_attempt_connect_cap_ms);
+        });
+        EXPECT_LT(capped_elapsed.count(), 1000);
+    }
+
+    /// HEAD: tryGetObjectMetadataWithNativeToken's ObjectStorageControlRequest-taking overload.
+    {
+        ConnectStallServer server;
+        auto storage = makeConnectStallStorageForTest(server.getUrl(), base_connect_timeout_ms);
+
+        const auto default_elapsed = expectConnectFailureAndMeasure([&]
+        {
+            storage->tryGetObjectMetadataWithNativeToken("head-key", /*with_tags=*/false, DB::ObjectStorageControlRequest{});
+        });
+        EXPECT_GE(default_elapsed.count(), 1500);
+
+        const auto capped_elapsed = expectConnectFailureAndMeasure([&]
+        {
+            storage->tryGetObjectMetadataWithNativeToken(
+                "head-key", /*with_tags=*/false,
+                DB::ObjectStorageControlRequest{
+                    .profile = DB::ObjectStorageRetryProfile::SingleAttempt,
+                    .attempt_timeout_ms = single_attempt_timeout_ms,
+                    .connect_timeout_cap_ms = single_attempt_connect_cap_ms});
+        });
+        EXPECT_LT(capped_elapsed.count(), 1000);
+    }
+
+    /// Conditional DELETE: removeObjectIfTokenMatches's ObjectStorageControlRequest-taking overload.
+    {
+        ConnectStallServer server;
+        auto storage = makeConnectStallStorageForTest(server.getUrl(), base_connect_timeout_ms);
+
+        const auto default_elapsed = expectConnectFailureAndMeasure([&]
+        {
+            storage->removeObjectIfTokenMatches(DB::StoredObject("delete-key"), "\"etag\"", DB::ObjectStorageControlRequest{});
+        });
+        EXPECT_GE(default_elapsed.count(), 1500);
+
+        const auto capped_elapsed = expectConnectFailureAndMeasure([&]
+        {
+            storage->removeObjectIfTokenMatches(
+                DB::StoredObject("delete-key"), "\"etag\"",
+                DB::ObjectStorageControlRequest{
+                    .profile = DB::ObjectStorageRetryProfile::SingleAttempt,
+                    .attempt_timeout_ms = single_attempt_timeout_ms,
+                    .connect_timeout_cap_ms = single_attempt_connect_cap_ms});
+        });
+        EXPECT_LT(capped_elapsed.count(), 1000);
     }
 }
 
