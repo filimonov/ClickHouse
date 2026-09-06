@@ -12,8 +12,11 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasThrottlingBackend.h>
 #include "cas_test_helpers.h"
 #include <Common/ProfileEvents.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/S3/Client.h>
+#include <IO/WriteBufferFromS3.h>
 
 #include "config.h"
 
@@ -21,6 +24,11 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketImpl.h>
 #include <base/defines.h>
+
+#include <aws/core/auth/AWSCredentialsProvider.h>
+#include <aws/core/client/AWSError.h>
+#include <aws/core/client/CoreErrors.h>
+#include <aws/s3/model/PutObjectRequest.h>
 
 #include <gmock/gmock.h>
 
@@ -2226,6 +2234,87 @@ TEST(CASRequestsConnectHint, ClassifierGuards)
     EXPECT_FALSE(isConnectFailureHint(DB::S3Exception("Connection reset by peer", S3Errors::NETWORK_CONNECTION)));
     EXPECT_FALSE(isConnectFailureHint(Poco::TimeoutException("connect timed out")));
     EXPECT_FALSE(isConnectFailureHint(std::runtime_error("Connection refused")));
+}
+
+namespace
+{
+
+DB::S3::PocoHTTPClientConfiguration networkFailureClientConfiguration()
+{
+    DB::RemoteHostFilter remote_host_filter;
+    return DB::S3::ClientFactory::instance().createClientConfiguration(
+        "some-region",
+        remote_host_filter,
+        /* s3_max_redirects = */ 100,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+        /* s3_slow_all_threads_after_network_error = */ true,
+        /* s3_slow_all_threads_after_retryable_error = */ true,
+        /* enable_s3_requests_logging = */ false,
+        /* for_disk_s3 = */ false,
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {});
+}
+
+/// A client whose `PutObject` always fails with a `NETWORK_CONNECTION` `AWSError` carrying `text`
+/// verbatim -- shaped exactly as `PocoHTTPClient` shapes a real connection failure (empty exception
+/// name, the Poco text as the message) -- so a test built on it proves `WriteBufferFromS3`'s rethrow,
+/// not a hand-built exception, is what `isConnectFailureHint` above actually has to classify.
+struct NetworkFailurePutClient : DB::S3::Client
+{
+    explicit NetworkFailurePutClient(std::string text_)
+        : DB::S3::Client(
+            /*max_retries=*/100,
+            DB::S3::ServerSideEncryptionKMSConfig(),
+            std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("", ""),
+            networkFailureClientConfiguration(),
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+            DB::S3::ClientSettings{
+                .use_virtual_addressing = true,
+                .disable_checksum = false,
+                .gcs_issue_compose_request = false,
+                .is_s3express_bucket = false,
+            })
+        , text(std::move(text_))
+    {
+    }
+
+    Aws::S3::Model::PutObjectOutcome PutObject(const Aws::S3::Model::PutObjectRequest &) const override
+    {
+        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, "", text, /*retryable=*/false);
+    }
+
+    std::string text;
+};
+
+}
+
+/// The classifier above reads the Poco text a connection failure carries off an `S3Exception`; this
+/// pins that the REAL `WriteBufferFromS3` rethrow every CAS conditional write goes through -- not a
+/// hand-built exception -- hands the caller that text unchanged, under `NETWORK_CONNECTION`.
+TEST(CASRequestsConnectHint, WriteBufferFromS3SurfacesTheConnectFailureTextUnchanged)
+{
+    for (const char * text : {"Cannot assign requested address", "Connection refused", "No route to host",
+                              "Network is unreachable", "connect timed out"})
+    {
+        auto client = std::make_shared<NetworkFailurePutClient>(text);
+        DB::WriteSettings write_settings;
+        write_settings.object_storage_retry_profile = DB::ObjectStorageRetryProfile::SingleAttempt;
+        DB::S3::S3RequestSettings request_settings;
+        DB::WriteBufferFromS3 buffer(
+            client, "bucket", "network_text", DB::DBMS_DEFAULT_BUFFER_SIZE, request_settings,
+            /*blob_log_=*/nullptr, /*object_metadata_=*/std::nullopt, /*schedule_=*/{}, write_settings);
+        buffer.write('A');
+        try
+        {
+            buffer.finalize();
+            FAIL() << "the injected failure must surface";
+        }
+        catch (const DB::S3Exception & e)
+        {
+            EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::NETWORK_CONNECTION) << text;
+            EXPECT_THAT(e.message(), testing::HasSubstr(text));
+        }
+    }
 }
 
 namespace

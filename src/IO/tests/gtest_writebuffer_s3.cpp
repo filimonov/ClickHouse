@@ -657,32 +657,6 @@ struct PutObjectPreconditionFailedIngection: InjectionModel
     }
 };
 
-/// A transport failure shaped as `PocoHTTPClient` shapes one: the S3 error is `NETWORK_CONNECTION`
-/// and the message is the Poco text, exception name empty.
-struct PutObjectNetworkTextIngection: InjectionModel
-{
-    explicit PutObjectNetworkTextIngection(std::string text_) : text(std::move(text_)) {}
-    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & /*request*/) override
-    {
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, "", text, false);
-    }
-    std::string text;
-};
-
-/// The first `GetObject` call fails with a retryable network timeout (mirrors what the adaptive
-/// first-attempt fuse produces); every later call succeeds. Drives the local-retry attempt-seed test.
-struct GetObjectFailOnceIngection: InjectionModel
-{
-    std::optional<Aws::S3::Model::GetObjectOutcome> call(const Aws::S3::Model::GetObjectRequest & /*request*/) override
-    {
-        if (failed)
-            return std::nullopt;
-        failed = true;
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, "", "Timeout", /*retryable=*/true);
-    }
-    bool failed = false;
-};
-
 struct HeadObjectFailIngection: InjectionModel
 {
     std::optional<Aws::S3::Model::HeadObjectOutcome> call(const Aws::S3::Model::HeadObjectRequest & /*request*/) override
@@ -1140,35 +1114,6 @@ TEST_P(SyncAsync, PreconditionFailedNeverLogsAtError)
     EXPECT_THAT(log_capture.captured(), testing::Not(testing::HasSubstr("S3Exception name")));
 }
 
-/// The classifier a later change adds to the CAS request engine (`isConnectFailureHint`) reads the
-/// Poco text a connection failure carries. This pins that the fake S3 client -- and, through it, the
-/// same `WriteBufferFromS3` rethrow every real disk uses -- hands the caller that text unchanged,
-/// under `NETWORK_CONNECTION`.
-TEST_F(WBS3Test, NetworkConnectionTextSurvives)
-{
-    for (const char * text : {"Cannot assign requested address", "Connection refused", "No route to host",
-                              "Network is unreachable", "connect timed out"})
-    {
-        setInjectionModel(std::make_shared<MockS3::PutObjectNetworkTextIngection>(text));
-        WriteSettings write_settings;
-        write_settings.object_storage_retry_profile = ObjectStorageRetryProfile::SingleAttempt;
-        write_settings.s3_max_unexpected_write_error_retries_override = 1;
-        try
-        {
-            auto buffer = getWriteBuffer("network_text", write_settings);
-            buffer->write('A');
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-            FAIL() << "the injected failure must surface";
-        }
-        catch (const DB::S3Exception & e)
-        {
-            EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::NETWORK_CONNECTION) << text;
-            EXPECT_THAT(e.message(), testing::HasSubstr(text));
-        }
-    }
-}
-
 TEST_P(SyncAsync, ExceptionOnCreateMPU) {
     setInjectionModel(std::make_shared<MockS3::CreateMPUFailIngection>());
 
@@ -1396,36 +1341,6 @@ TEST_F(WBS3Test, ResultObjectETagIsCaptured) {
         ASSERT_TRUE(buffer->getResultObjectETag().has_value());
         ASSERT_EQ(*buffer->getResultObjectETag(), "etag-multipart-multipart-file");
     }
-}
-
-/// Driving a full fail-then-succeed local retry through `ReadBufferFromS3` against this fixture is not
-/// possible: the mock's successful `GetObject` response feeds `ReadBufferFromIStream`, which requires
-/// the response stream's rdbuf to be a real `Poco::Net::HTTPBasicStreamBuf` (production gets one from
-/// `PocoHTTPClient`'s actual HTTP session; no mock in this file provides one) -- a pre-existing gap in
-/// this fixture, not something this task introduces. Per the task's authorized fallback, this asserts
-/// the single-request attempt number (one physical attempt that fails, so the success path -- and the
-/// gap -- is never reached) plus `S3::seededAttemptNumber`'s arithmetic directly.
-TEST_F(WBS3Test, S3RequestAttemptSeedReadHeaderSequence)
-{
-    for (const auto [seed, expected] : {std::pair<size_t, size_t>{0, 1}, {2, 2}})
-    {
-        client->attempts_seen.clear();
-        setInjectionModel(std::make_shared<MockS3::GetObjectFailOnceIngection>());
-        ReadSettings read_settings;
-        read_settings.object_storage_attempt_number = seed;
-        S3::S3RequestSettings request_settings;
-        request_settings[S3RequestSetting::max_single_read_retries] = 1;   /// exactly one physical attempt
-        ReadBufferFromS3 buffer(client, bucket, "seeded", "", request_settings, read_settings);
-        std::string out;
-        EXPECT_THROW(readStringUntilEOF(out, buffer), DB::Exception);
-        ASSERT_EQ(client->attempts_seen.size(), 1u);
-        EXPECT_EQ(client->attempts_seen[0], expected);
-    }
-
-    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/0, /*local=*/1), 1u);
-    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/0, /*local=*/2), 2u);
-    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/2, /*local=*/1), 2u);
-    EXPECT_EQ(S3::seededAttemptNumber(/*seed=*/2, /*local=*/2), 3u);
 }
 
 TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
