@@ -209,18 +209,29 @@ bool ReadBufferFromS3::nextImpl()
             }
 
             /// Try to read a next portion of data.
-            next_result = impl->next();
-            if (next_result && !pending_response_bytes_delivered)
+            const bool delivered_more_data = impl->next();
+            if (delivered_more_data && !pending_response_bytes_delivered)
             {
                 /// This response just delivered its first byte: check it against whichever response
                 /// last delivered bytes, then it becomes the new baseline. A response that never
                 /// reaches this point (fails before delivering anything) never touches the baseline,
                 /// so any number of empty failed attempts in between are transparent to the check.
+                ///
+                /// Nothing here may throw: `last_delivering_response_etag = pending_response_etag`
+                /// used to be a copy, which can allocate and throw for a non-SSO ETag; if that throw
+                /// happened after `next_result` was already set to true, the catch block below resets
+                /// `impl` (since `processException` retries), but the loop's `!next_result` condition
+                /// is already false, so it exits with `impl` null while the code past the loop still
+                /// dereferences it. A `std::string` move is noexcept, so this block cannot throw; as a
+                /// second line of defense, `next_result` itself is set only once this block is done, so
+                /// even a future throwing addition here would leave the loop's retry invariant intact
+                /// instead of exiting with a dangling `impl`.
                 if (last_delivering_response_etag && *last_delivering_response_etag != pending_response_etag)
                     response_identity_changed = true;
-                last_delivering_response_etag = pending_response_etag;
+                last_delivering_response_etag = std::move(pending_response_etag);
                 pending_response_bytes_delivered = true;
             }
+            next_result = delivered_more_data;
             break;
         }
         catch (...)
