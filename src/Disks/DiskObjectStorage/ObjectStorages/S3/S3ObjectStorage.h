@@ -279,11 +279,12 @@ private:
     /// the main client's `DisableRequestProcessing`/`EnableRequestProcessing` toggle. Every clone already
     /// cached at the moment `shutdown()` runs is disabled there and then, under the same lock; this flag
     /// is what makes a clone built afterwards by `getSingleAttemptClient` come into being already
-    /// disabled too. NOTE: since every clone here runs `SingleAttemptRetryStrategy` (max_retries=0),
-    /// this flag is never actually consulted by the transport (the AWS SDK checks it only between
-    /// attempts of a request that retries) -- what actually prevents a NEW CAS control-plane request
-    /// from reaching a clone after shutdown is admission, refused earlier at the CAS engine's own fence
-    /// (see the comment on `S3ObjectStorage::shutdown()`).
+    /// disabled too. NOTE: this flag cannot prevent a request's initial dispatch or interrupt one already
+    /// in flight -- the AWS SDK checks it only after an attempt has failed, right before deciding whether
+    /// to retry, and every clone here runs `SingleAttemptRetryStrategy` (max_retries=0), whose own answer
+    /// to that question is already always no. What actually prevents a NEW request on the CAS engine's
+    /// open plane (GC, FSCK, the probe) from reaching a clone after shutdown is admission, refused
+    /// earlier at that engine's own fence (see the comment on `S3ObjectStorage::shutdown()`).
     mutable bool single_attempt_clients_disabled = false;
 };
 

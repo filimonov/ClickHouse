@@ -1106,17 +1106,23 @@ void S3ObjectStorage::shutdown()
     /// This should significantly speed up shutdown process if S3 is unhealthy.
     const_cast<S3::Client &>(*client->get()).DisableRequestProcessing();
 
-    /// Parity with the main client above, not a stronger guarantee: `DisableRequestProcessing` is
-    /// consulted only between attempts of a MULTI-attempt request (contrib/aws AWSClient.cpp, the
-    /// retry path), and every cached clone here is built with `SingleAttemptRetryStrategy`
-    /// (max_retries=0), which never reaches that check. A request already dispatched on a clone still
-    /// runs to its own attempt/connect timeout regardless of this flag; what actually stops a NEW CAS
-    /// control-plane request from being dispatched at all is admission, refused earlier and on a
-    /// different plane: `DiskObjectStorage::shutdown()` calls `metadata_storage->shutdown()` (which
-    /// arms `Pool::beginTeardown()`, tripping the open-plane fence `CasPool.cpp` wires to
+    /// Parity with the main client above, not a stronger guarantee. `DisableRequestProcessing` cannot
+    /// prevent a request's INITIAL dispatch, and cannot interrupt an attempt already in flight: contrib/aws's
+    /// AWSClient checks it only after an attempt has already failed and returned, right before deciding
+    /// whether to retry (AWSClient.cpp, between `ShouldRetry` and the backoff sleep). Every cached clone
+    /// here runs `SingleAttemptRetryStrategy` (max_retries=0), whose `ShouldRetry` already always says no
+    /// -- so the flag is still consulted on a clone's failed attempt, it just changes nothing observable
+    /// there, since no retry was ever going to happen regardless of the flag's value.
+    ///
+    /// What actually stops a NEW request on the OPEN plane -- GC, FSCK, the probe; the plane the write-once
+    /// bulk-delete verb this storage serves runs on -- from being dispatched at all is admission, refused
+    /// earlier and on a different plane: `DiskObjectStorage::shutdown()` calls `metadata_storage->shutdown()`
+    /// (which arms `Pool::beginTeardown()`, tripping the open-plane fence `CasPool.cpp` wires to
     /// `teardownBegun()`) BEFORE it calls this object storage's `shutdown()`, and `CasOperation::readLoop`
-    /// (CasRequests.h) checks that fence before every attempt, including the first -- so a request
-    /// issued after the disk's shutdown began throws at admission and never reaches a clone at all.
+    /// (CasRequests.h) checks that fence before every attempt, including the first -- so an open-plane
+    /// request issued after the disk's shutdown began throws at admission and never reaches a clone at
+    /// all. The mount and farewell planes are NOT covered by this: they intentionally stay admitting
+    /// through this same window, since teardown's own drain and farewell I/O run on them.
     std::lock_guard lock(single_attempt_client_mutex);
     single_attempt_clients_disabled = true;
     for (const auto & [_, clone] : single_attempt_clients)

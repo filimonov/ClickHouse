@@ -372,11 +372,14 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
     EXPECT_EQ(reloaded->getSingleAttemptClient(5000, 1000)->getClientConfiguration().connectTimeoutMs, 1000);
 }
 
-/// `shutdown()` used to call `DisableRequestProcessing` only on the main client. Since every CAS
-/// control-plane verb can be dispatched on a cached single-attempt clone (`getSingleAttemptClient`), and
-/// each clone builds its OWN `Aws::Http::HttpClient` (a clone shares nothing else in the SDK's request
-/// path with the client it was built from), a clone left enabled would keep waiting its full timeout
-/// against a storage the caller believes has already shut down.
+/// `shutdown()` used to call `DisableRequestProcessing` only on the main client, leaving every cached
+/// single-attempt clone (`getSingleAttemptClient`) at its default enabled state. This test verifies only
+/// that the flag now propagates to every clone and is restored by `startup()` -- it does NOT prove a
+/// disabled clone rejects or interrupts a request: `DisableRequestProcessing` cannot prevent a request's
+/// initial dispatch or interrupt one in flight, and a clone that is not currently retrying (every clone
+/// here runs `SingleAttemptRetryStrategy`, which never retries) never has an occasion to consult it at
+/// all. See the comment on `S3ObjectStorage::shutdown()` for what actually stops a new request after
+/// shutdown (CAS engine admission, on a different plane).
 TEST(S3SingleAttemptClient, ShutdownDisablesRequestProcessingOnCachedAndFutureClones)
 {
     auto storage = makeStorageForTest(20000);
@@ -385,13 +388,13 @@ TEST(S3SingleAttemptClient, ShutdownDisablesRequestProcessingOnCachedAndFutureCl
 
     storage->shutdown();
     EXPECT_FALSE(clone->GetHttpClient()->IsRequestProcessingEnabled())
-        << "a clone cached before shutdown() ran must be disabled by it";
+        << "a clone cached before shutdown() ran must have the flag propagated to it";
 
     /// A clone for a (timeout, cap) pair never requested before, built WHILE shutdown is in effect, must
-    /// come into being already disabled -- not just the ones that existed when shutdown() ran.
+    /// come into being with the flag already set -- not just the ones that existed when shutdown() ran.
     auto clone_after_shutdown = storage->getSingleAttemptClient(/*request_timeout_ms=*/6000, /*connect_timeout_cap_ms=*/6000);
     EXPECT_FALSE(clone_after_shutdown->GetHttpClient()->IsRequestProcessingEnabled())
-        << "a clone built after shutdown() started must not accept requests either";
+        << "a clone built after shutdown() started must come into being with the flag already set too";
 
     storage->startup();
     EXPECT_TRUE(clone->GetHttpClient()->IsRequestProcessingEnabled());
