@@ -210,8 +210,17 @@ bool ReadBufferFromS3::nextImpl()
 
             /// Try to read a next portion of data.
             next_result = impl->next();
-            if (next_result)
-                current_response_bytes_consumed = true;
+            if (next_result && !pending_response_bytes_delivered)
+            {
+                /// This response just delivered its first byte: check it against whichever response
+                /// last delivered bytes, then it becomes the new baseline. A response that never
+                /// reaches this point (fails before delivering anything) never touches the baseline,
+                /// so any number of empty failed attempts in between are transparent to the check.
+                if (last_delivering_response_etag && *last_delivering_response_etag != pending_response_etag)
+                    response_identity_changed = true;
+                last_delivering_response_etag = pending_response_etag;
+                pending_response_bytes_delivered = true;
+            }
             break;
         }
         catch (...)
@@ -534,8 +543,8 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
 
 void ReadBufferFromS3::forgetResponseIdentityBaseline()
 {
-    current_response_etag.reset();
-    current_response_bytes_consumed = false;
+    last_delivering_response_etag.reset();
+    pending_response_bytes_delivered = false;
 }
 
 std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
@@ -556,16 +565,14 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
-    /// Compare against the ETag of the response bytes were last delivered from, not against the first
-    /// response ever seen: an earlier attempt that returned headers but whose body read failed before
-    /// any byte reached the consumer never contributed anything, so a different ETag on reissue is an
-    /// ordinary retry. Once a response has delivered at least one byte, a differing ETag on the next
-    /// reissue means the consumer is about to receive bytes from a second incarnation of the object.
-    const String etag = read_result.GetETag();
-    if (current_response_etag && current_response_bytes_consumed && *current_response_etag != etag)
-        response_identity_changed = true;
-    current_response_etag = etag;
-    current_response_bytes_consumed = false;
+    /// Record the new response's identity; the coherence check itself happens in nextImpl(), at the
+    /// moment this response actually delivers its first byte. Comparing here instead (against
+    /// whatever the previous attempt's ETag was) would flag a mismatch as soon as a differently-ETagged
+    /// response is merely attempted, before it is known whether that attempt will ever deliver
+    /// anything - and would just as easily lose track of an earlier delivering response across an
+    /// intervening empty failed attempt with yet another ETag.
+    pending_response_etag = read_result.GetETag();
+    pending_response_bytes_delivered = false;
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));

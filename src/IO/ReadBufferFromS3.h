@@ -124,10 +124,19 @@ private:
     /// consumer as their own self-consistent range, so the next response is not compared against them.
     void forgetResponseIdentityBaseline();
 
-    /// ETag of the response `impl` currently represents (or, between initialize() calls, of the response
-    /// that was just discarded), and whether any bytes from it were delivered to the consumer.
-    std::optional<String> current_response_etag;
-    bool current_response_bytes_consumed = false;
+    /// ETag of the last response that has delivered at least one byte to the consumer: the baseline a
+    /// newly-delivering response is checked against. A response that never delivers a byte (e.g. it
+    /// fails before the body starts) leaves this untouched, however many such empty attempts happen in
+    /// a row, so the baseline always reflects the last response that actually contributed bytes.
+    std::optional<String> last_delivering_response_etag;
+
+    /// ETag of the response `impl` currently represents, and whether that response has delivered a byte
+    /// yet. Both are set together in initialize(); nextImpl() flips `pending_response_bytes_delivered`
+    /// to true (and advances last_delivering_response_etag) the moment this response's first byte
+    /// reaches the consumer.
+    String pending_response_etag;
+    bool pending_response_bytes_delivered = false;
+
     bool response_identity_changed = false;
 
     ReadSettings read_settings;

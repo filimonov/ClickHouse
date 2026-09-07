@@ -398,6 +398,275 @@ TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenReissuedEtagMatches)
     ASSERT_FALSE(subject.responseIdentityChanged());
 }
 
+TEST_F(ReadBufferFromS3Test, ThreeResponsesABytesThenAEmptyFailThenBBytesIsFlagged)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 3;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    auto delivers_then_fails = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 3);
+    auto fails_empty = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 0);
+    auto rest_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(delivers_then_fails.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 3);
+        if (call == 2)
+            return makeGetObjectOutcome(fails_empty.get(), "A");
+        return makeGetObjectOutcome(rest_buf.get(), "B");
+    };
+
+    /// A delivers 3 bytes, then breaks. The reissue (same ETag "A") fails before delivering anything.
+    /// The next reissue answers with ETag "B" and delivers the rest: A-bytes and B-bytes were mixed, so
+    /// this must be flagged, even though an empty failed attempt for "A" sat in between.
+    readAndAssert(subject, body.c_str());
+    ASSERT_TRUE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, ThreeResponsesABytesThenBEmptyFailThenABytesIsNotFlagged)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 3;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    auto delivers_then_fails = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 3);
+    auto fails_empty = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 0);
+    auto rest_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(delivers_then_fails.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 3);
+        if (call == 2)
+            return makeGetObjectOutcome(fails_empty.get(), "B");
+        return makeGetObjectOutcome(rest_buf.get(), "A");
+    };
+
+    /// A delivers 3 bytes, then breaks. The reissue under ETag "B" fails before delivering anything, so
+    /// it never contributes to the read. The next reissue answers with ETag "A" (matching the only
+    /// response that ever delivered bytes) and delivers the rest: the read is coherent and must not be
+    /// flagged, even though a differently-ETagged empty failed attempt sat in between.
+    readAndAssert(subject, body.c_str());
+    ASSERT_FALSE(subject.responseIdentityChanged());
+    ASSERT_EQ(subject.getObjectMetadataFromTheLastRequest().etag, "A");
+}
+
+TEST_F(ReadBufferFromS3Test, SeekReissueAcceptsNewEtagWithoutFlag)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 3;
+    read_settings.remote_fs_settings.min_bytes_for_seek = 0;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    auto first_buf = std::make_shared<StringHTTPBasicStreamBuf>(body);
+    auto after_seek_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(8));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(first_buf.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 8);
+        return makeGetObjectOutcome(after_seek_buf.get(), "B");
+    };
+
+    readAndAssert(subject, "123");
+    /// A seek far enough ahead to force a reissue (not an in-buffer rewind, not a small forward skip):
+    /// the caller explicitly repositioned to a different range, so the new response's ETag "B" must not
+    /// be compared against "A".
+    subject.seek(8, SEEK_SET);
+    readAndAssert(subject, "9");
+    ASSERT_FALSE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, SetReadUntilPositionReissueAcceptsNewEtagWithoutFlag)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 2;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456";
+    auto first_buf = std::make_shared<StringHTTPBasicStreamBuf>(body);
+    auto after_reposition_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(2, 3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(first_buf.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 2);
+        return makeGetObjectOutcome(after_reposition_buf.get(), "B");
+    };
+
+    readAndAssert(subject, "12");
+    /// impl is still open (no read-until-position was set yet, so nothing released it). Narrowing the
+    /// read-until bound now tears impl down to reissue for the new bound: an explicit reposition, so
+    /// the new response's ETag "B" must not be compared against "A".
+    subject.setReadUntilPosition(5);
+    readAndAssert(subject, "345");
+    ASSERT_FALSE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, SetReadUntilEndReissueAcceptsNewEtagWithoutFlag)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 3;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+    subject.setReadUntilPosition(3);
+
+    const std::string body = "123456789";
+    auto first_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(0, 3));
+    auto after_reposition_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(first_buf.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 3);
+        return makeGetObjectOutcome(after_reposition_buf.get(), "B");
+    };
+
+    readAndAssert(subject, "123");
+    /// Reading exactly up to the bound releases the result (does not reset impl). Removing the bound
+    /// now tears impl down to reissue for the rest of the object: an explicit reposition, so the new
+    /// response's ETag "B" must not be compared against "A".
+    subject.setReadUntilEnd();
+    readAndAssert(subject, "456789");
+    ASSERT_FALSE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, InBufferSeekPreservesBaselineAndLaterMixedRetryIsFlagged)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 3;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    auto breaking_buf = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 3);
+    auto rest_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(breaking_buf.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 3);
+        return makeGetObjectOutcome(rest_buf.get(), "B");
+    };
+
+    readAndAssert(subject, "123");
+    /// Rewind within the bytes already buffered: this hits the in-buffer fast path in seek(), which
+    /// never touches impl, so it must not forget the identity baseline.
+    subject.seek(1, SEEK_SET);
+    readAndAssert(subject, "23");
+    /// Reading past the buffer now reissues on the SAME impl (a retry after a stream break, not an
+    /// explicit reposition); the baseline from "A" must have survived the harmless seek above, so the
+    /// mismatched ETag "B" here must still be flagged.
+    readAndAssert(subject, "456789");
+    ASSERT_TRUE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, ExternalBufferFlagsMixedIncarnations)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    auto subject = DB::ReadBufferFromS3(
+        client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings, /* use_external_buffer */ true);
+
+    const std::string body = "123456789";
+    auto breaking_buf = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 3);
+    auto rest_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(breaking_buf.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 3);
+        return makeGetObjectOutcome(rest_buf.get(), "B");
+    };
+
+    std::vector<char> external_memory(3);
+
+    /// Drive the external-buffer path the way a prefetching/threadpool reader does: supply the memory
+    /// with set() and pull one chunk with next(), rather than relying on the buffer's own allocation.
+    subject.set(external_memory.data(), external_memory.size());
+    ASSERT_TRUE(subject.next());
+    ASSERT_EQ(std::string(subject.buffer().begin(), subject.buffer().end()), "123");
+    ASSERT_FALSE(subject.responseIdentityChanged());
+
+    /// This next() call breaks the "A" stream and reissues; the reissue answers with ETag "B" and
+    /// delivers bytes via the external buffer. Bytes were consumed on this path too, so it must flag.
+    subject.set(external_memory.data(), external_memory.size());
+    ASSERT_TRUE(subject.next());
+    ASSERT_EQ(std::string(subject.buffer().begin(), subject.buffer().end()), "456");
+    ASSERT_TRUE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, PartialInternalFillNeverExposedDoesNotCountAsDelivery)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 5;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    /// internal_buffer is 5 bytes but only 2 bytes are ever produced before the stream throws, so
+    /// ReadBufferFromIStream's fill loop calls readFromDevice a second time (asking for more) and gets
+    /// the exception before it ever assigns `working_buffer` - those 2 bytes are read off the wire but
+    /// never exposed to the consumer.
+    auto partial_then_fails = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 2);
+    auto full_buf = std::make_shared<StringHTTPBasicStreamBuf>(body);
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        EXPECT_EQ(rangeStart(request), 0);
+        if (call == 1)
+            return makeGetObjectOutcome(partial_then_fails.get(), "A");
+        return makeGetObjectOutcome(full_buf.get(), "B");
+    };
+
+    readAndAssert(subject, body.c_str());
+    ASSERT_FALSE(subject.responseIdentityChanged());
+}
+
 TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)
 {
     std::unique_ptr<DB::S3::Client> client = std::make_unique<ClientFake>();
