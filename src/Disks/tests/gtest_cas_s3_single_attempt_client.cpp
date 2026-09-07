@@ -372,6 +372,36 @@ TEST(S3SingleAttemptClient, ConnectTimeoutIsCappedAndFrozen)
     EXPECT_EQ(reloaded->getSingleAttemptClient(5000, 1000)->getClientConfiguration().connectTimeoutMs, 1000);
 }
 
+/// `shutdown()` used to call `DisableRequestProcessing` only on the main client. Since every CAS
+/// control-plane verb can be dispatched on a cached single-attempt clone (`getSingleAttemptClient`), and
+/// each clone builds its OWN `Aws::Http::HttpClient` (a clone shares nothing else in the SDK's request
+/// path with the client it was built from), a clone left enabled would keep waiting its full timeout
+/// against a storage the caller believes has already shut down.
+TEST(S3SingleAttemptClient, ShutdownDisablesRequestProcessingOnCachedAndFutureClones)
+{
+    auto storage = makeStorageForTest(20000);
+    auto clone = storage->getSingleAttemptClient(/*request_timeout_ms=*/5000, /*connect_timeout_cap_ms=*/5000);
+    ASSERT_TRUE(clone->GetHttpClient()->IsRequestProcessingEnabled());
+
+    storage->shutdown();
+    EXPECT_FALSE(clone->GetHttpClient()->IsRequestProcessingEnabled())
+        << "a clone cached before shutdown() ran must be disabled by it";
+
+    /// A clone for a (timeout, cap) pair never requested before, built WHILE shutdown is in effect, must
+    /// come into being already disabled -- not just the ones that existed when shutdown() ran.
+    auto clone_after_shutdown = storage->getSingleAttemptClient(/*request_timeout_ms=*/6000, /*connect_timeout_cap_ms=*/6000);
+    EXPECT_FALSE(clone_after_shutdown->GetHttpClient()->IsRequestProcessingEnabled())
+        << "a clone built after shutdown() started must not accept requests either";
+
+    storage->startup();
+    EXPECT_TRUE(clone->GetHttpClient()->IsRequestProcessingEnabled());
+    EXPECT_TRUE(clone_after_shutdown->GetHttpClient()->IsRequestProcessingEnabled());
+
+    /// The ordinary case: a clone built with no shutdown in effect is enabled from the start.
+    auto clone_after_startup = storage->getSingleAttemptClient(/*request_timeout_ms=*/7000, /*connect_timeout_cap_ms=*/7000);
+    EXPECT_TRUE(clone_after_startup->GetHttpClient()->IsRequestProcessingEnabled());
+}
+
 /// The freeze computation `openPoolView` uses to build `pool_config.cas_request_budget.connect_timeout_cap_ms`,
 /// isolated from any particular verb: the cap is the MIN of the base client's own connect timeout and
 /// the attempt timeout, a configured-zero base normalizes to the attempt timeout itself (never "no
