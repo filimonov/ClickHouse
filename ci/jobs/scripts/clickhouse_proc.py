@@ -533,25 +533,11 @@ profiles:
             os.environ["LLVM_PROFILE_FILE"] = "ft-server-%m.profraw"
 
         env = os.environ.copy()
-        # Under ASan the server's resident set is dominated by the sanitizer runtime, not by tracked heap:
-        # `detect_stack_use_after_return` (on by default) gives every thread a fake stack whose touched pages
-        # stay mapped for the thread's lifetime, and the stateless run keeps ~1-2k live threads while creating
-        # hundreds per second, so a parallel shard climbs to 30-45 GiB and hits the runner's memory ceiling
-        # (the global limit check is RSS-based). The malloc stack depot is the second term. With these options
-        # the same shard plateaus near 10 GiB. `malloc_context_size` and the release interval follow
-        # tests/docker_scripts/stress_tests.lib.
-        env["ASAN_OPTIONS"] = " ".join(
-            filter(
-                lambda x: x is not None,
-                [
-                    env.get("ASAN_OPTIONS", None),
-                    "detect_stack_use_after_return=0",
-                    "malloc_context_size=10",
-                    "allocator_release_to_os_interval_ms=10000",
-                ],
-            )
-        )
-        print(f"ASAN_OPTIONS = {env['ASAN_OPTIONS']}")
+        # Leave ASAN_OPTIONS at the sanitizer defaults here. Under ASan, a stateless run's resident set is
+        # proportional to the number of live server threads (each gets a fake stack via
+        # `detect_stack_use_after_return`), so when an ASan lane hits the memory ceiling, check the thread
+        # count first (`system.metrics` GlobalThread / LocalThread, `system.stack_trace` grouped by
+        # thread_name) rather than tuning ASan away from its defaults.
         env["TSAN_OPTIONS"] = " ".join(
             filter(
                 lambda x: x is not None,
