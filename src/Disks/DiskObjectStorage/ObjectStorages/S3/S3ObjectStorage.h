@@ -275,11 +275,15 @@ private:
     /// released as soon as the next rotation is observed and the clones are dropped — which is what
     /// makes the identity comparison in getSingleAttemptClient sound.
     mutable std::shared_ptr<const S3::Client> single_attempt_client_base;
-    /// Set for the duration of a `shutdown()` (cleared by the matching `startup()`). Every clone already
+    /// Set for the duration of a `shutdown()` (cleared by the matching `startup()`), kept in parity with
+    /// the main client's `DisableRequestProcessing`/`EnableRequestProcessing` toggle. Every clone already
     /// cached at the moment `shutdown()` runs is disabled there and then, under the same lock; this flag
-    /// is what makes a clone built afterwards by `getSingleAttemptClient` (a CAS control-plane verb can
-    /// still call it, racing the shutdown) come into being already disabled, instead of independently
-    /// accepting requests against a storage the caller believes has stopped.
+    /// is what makes a clone built afterwards by `getSingleAttemptClient` come into being already
+    /// disabled too. NOTE: since every clone here runs `SingleAttemptRetryStrategy` (max_retries=0),
+    /// this flag is never actually consulted by the transport (the AWS SDK checks it only between
+    /// attempts of a request that retries) -- what actually prevents a NEW CAS control-plane request
+    /// from reaching a clone after shutdown is admission, refused earlier at the CAS engine's own fence
+    /// (see the comment on `S3ObjectStorage::shutdown()`).
     mutable bool single_attempt_clients_disabled = false;
 };
 

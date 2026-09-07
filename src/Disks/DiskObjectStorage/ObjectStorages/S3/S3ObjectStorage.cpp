@@ -1088,10 +1088,17 @@ void S3ObjectStorage::shutdown()
     /// This should significantly speed up shutdown process if S3 is unhealthy.
     const_cast<S3::Client &>(*client->get()).DisableRequestProcessing();
 
-    /// Every CAS control-plane verb can run on a cached single-attempt clone (`getSingleAttemptClient`);
-    /// each clone builds its own `Aws::Http::HttpClient` rather than sharing the main client's, so
-    /// disabling only the main client above would leave requests on a clone waiting their full timeout
-    /// against a storage the caller believes has already shut down.
+    /// Parity with the main client above, not a stronger guarantee: `DisableRequestProcessing` is
+    /// consulted only between attempts of a MULTI-attempt request (contrib/aws AWSClient.cpp, the
+    /// retry path), and every cached clone here is built with `SingleAttemptRetryStrategy`
+    /// (max_retries=0), which never reaches that check. A request already dispatched on a clone still
+    /// runs to its own attempt/connect timeout regardless of this flag; what actually stops a NEW CAS
+    /// control-plane request from being dispatched at all is admission, refused earlier and on a
+    /// different plane: `DiskObjectStorage::shutdown()` calls `metadata_storage->shutdown()` (which
+    /// arms `Pool::beginTeardown()`, tripping the open-plane fence `CasPool.cpp` wires to
+    /// `teardownBegun()`) BEFORE it calls this object storage's `shutdown()`, and `CasOperation::readLoop`
+    /// (CasRequests.h) checks that fence before every attempt, including the first -- so a request
+    /// issued after the disk's shutdown began throws at admission and never reaches a clone at all.
     std::lock_guard lock(single_attempt_client_mutex);
     single_attempt_clients_disabled = true;
     for (const auto & [_, clone] : single_attempt_clients)
@@ -1246,8 +1253,10 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getSingleAttemptClient(uint64
     const auto & clone = single_attempt_clients.emplace(cache_key, base->cloneWithConfigurationOverride(cfg)).first->second;
 
     /// A fresh clone's own `Aws::Http::HttpClient` starts with request processing enabled regardless of
-    /// the main client's state; if `shutdown()` is already in effect, this clone must not become a way
-    /// to keep issuing requests against a storage the caller believes has stopped.
+    /// the main client's state; kept in parity with `shutdown()` for the same reason that flag is set
+    /// there in the first place (see the comment on `shutdown()`) -- this does not, by itself, stop a
+    /// request already dispatched on this clone, which a single-attempt clone never reaches anyway once
+    /// admission is refused (see `shutdown()`).
     if (single_attempt_clients_disabled)
         const_cast<S3::Client &>(*clone).DisableRequestProcessing();
 
