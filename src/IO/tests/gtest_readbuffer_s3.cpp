@@ -21,8 +21,14 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/Priority.h>
+#include <Common/Exception.h>
 #include <Poco/ConsoleChannel.h>
 #include <Core/Settings.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int S3_ERROR;
+}
 
 static constexpr auto TEST_LOG_LEVEL = "debug";
 static fs::path caches_dir = fs::current_path() / "readbuffer_s3";
@@ -110,6 +116,57 @@ private:
         return static_cast<int>(bodyStream.gcount());
     }
 };
+
+/// A response body stream that throws once `bytes_before_failure` bytes have been handed out (0 means
+/// the very first read fails), simulating a GET whose headers arrived successfully but whose body read
+/// broke before delivering that many bytes to the consumer.
+class BreakingHTTPBasicStreamBuf : public Poco::Net::HTTPBasicStreamBuf
+{
+public:
+    BreakingHTTPBasicStreamBuf(std::string body, size_t bytes_before_failure_)
+        : BasicBufferedStreamBuf(body.size(), IOS::in), bodyStream(std::stringstream(std::move(body))), bytes_before_failure(bytes_before_failure_)
+    {
+    }
+
+private:
+    std::stringstream bodyStream;
+    size_t bytes_before_failure;
+
+    int readFromDevice(char_type * buf, std::streamsize n) override
+    {
+        if (bytes_before_failure == 0)
+            throw DB::Exception(DB::ErrorCodes::S3_ERROR, "Simulated S3 body read failure");
+
+        bodyStream.read(buf, std::min<std::streamsize>(n, static_cast<std::streamsize>(bytes_before_failure)));
+        const auto got = bodyStream.gcount();
+        bytes_before_failure -= static_cast<size_t>(got);
+        return static_cast<int>(got);
+    }
+};
+
+/// The byte offset the request's Range header asks for, or 0 when no Range was set. sendRequest()
+/// always emits "bytes=<begin>-" or "bytes=<begin>-<end>", so parsing out <begin> lets a mock GetObject
+/// serve the bytes a reissued request should actually receive.
+static size_t rangeStart(const Aws::S3::Model::GetObjectRequest & request)
+{
+    if (!request.RangeHasBeenSet())
+        return 0;
+    const std::string & range = request.GetRange();
+    const size_t begin_pos = range.find('=') + 1;
+    const size_t dash_pos = range.find('-', begin_pos);
+    return std::stoull(range.substr(begin_pos, dash_pos - begin_pos));
+}
+
+static Aws::S3::Model::GetObjectOutcome makeGetObjectOutcome(std::streambuf * sb, const std::string & etag)
+{
+    Aws::Http::HeaderValueCollection headers;
+    headers["etag"] = etag;
+    auto response_stream = Aws::Utils::Stream::ResponseStream(
+        Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", std::make_shared<CountedSession>(), sb));
+    Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), std::move(headers));
+    DB::S3::Model::GetObjectResult result(std::move(aws_result));
+    return Aws::S3::Model::GetObjectOutcome(std::move(result));
+}
 
 using GetObjectFn = std::function<Aws::S3::Model::GetObjectOutcome(const Aws::S3::Model::GetObjectRequest & request)>;
 
@@ -253,6 +310,92 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
 
     ASSERT_TRUE(subject.eof());
     ASSERT_FALSE(subject.nextImpl());
+}
+
+TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenFailedAttemptDeliveredNoBytes)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 20;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    auto failing_buf = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 0);
+    auto full_buf = std::make_shared<StringHTTPBasicStreamBuf>(body);
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        EXPECT_EQ(rangeStart(request), 0);
+        if (call == 1)
+            return makeGetObjectOutcome(failing_buf.get(), "A");
+        return makeGetObjectOutcome(full_buf.get(), "B");
+    };
+
+    /// First attempt's headers carried ETag "A", but its body read fails before any byte reaches the
+    /// consumer; the reissue delivers the whole object under ETag "B". No bytes of "A" were ever
+    /// consumed, so this must not be flagged as a coherence problem.
+    readAndAssert(subject, body.c_str());
+    ASSERT_FALSE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, IdentityFlaggedWhenBytesDeliveredBeforeFailure)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 3;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    auto breaking_buf = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 3);
+    auto rest_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(breaking_buf.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 3);
+        return makeGetObjectOutcome(rest_buf.get(), "B");
+    };
+
+    /// The first response (ETag "A") delivers 3 bytes before its stream breaks; the reissue, resuming
+    /// from offset 3, answers with ETag "B". Bytes from two different incarnations reached the
+    /// consumer, so this must be flagged.
+    readAndAssert(subject, body.c_str());
+    ASSERT_TRUE(subject.responseIdentityChanged());
+}
+
+TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenReissuedEtagMatches)
+{
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 3;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    const std::string body = "123456789";
+    auto breaking_buf = std::make_shared<BreakingHTTPBasicStreamBuf>(body, /* bytes_before_failure */ 3);
+    auto rest_buf = std::make_shared<StringHTTPBasicStreamBuf>(body.substr(3));
+
+    client->getObjectImpl = [&, call = 0](const Aws::S3::Model::GetObjectRequest & request) mutable -> Aws::S3::Model::GetObjectOutcome
+    {
+        ++call;
+        if (call == 1)
+        {
+            EXPECT_EQ(rangeStart(request), 0);
+            return makeGetObjectOutcome(breaking_buf.get(), "A");
+        }
+        EXPECT_EQ(rangeStart(request), 3);
+        return makeGetObjectOutcome(rest_buf.get(), "A");
+    };
+
+    /// Same as above, but the reissue answers with the same ETag "A": both attempts belong to the same
+    /// incarnation, so this must not be flagged.
+    readAndAssert(subject, body.c_str());
+    ASSERT_FALSE(subject.responseIdentityChanged());
 }
 
 TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)

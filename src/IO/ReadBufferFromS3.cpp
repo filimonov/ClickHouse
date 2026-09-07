@@ -210,6 +210,8 @@ bool ReadBufferFromS3::nextImpl()
 
             /// Try to read a next portion of data.
             next_result = impl->next();
+            if (next_result)
+                current_response_bytes_consumed = true;
             break;
         }
         catch (...)
@@ -448,6 +450,7 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
             if (!atEndOfRequestedRangeGuess())
                 ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
             impl.reset();
+            forgetResponseIdentityBaseline();
         }
     }
 
@@ -493,6 +496,7 @@ void ReadBufferFromS3::setReadUntilPosition(size_t position)
             offset = getPosition();
             resetWorkingBuffer();
             impl.reset();
+            forgetResponseIdentityBaseline();
         }
         read_until_position = position;
     }
@@ -512,6 +516,7 @@ void ReadBufferFromS3::setReadUntilEnd()
             offset = getPosition();
             resetWorkingBuffer();
             impl.reset();
+            forgetResponseIdentityBaseline();
         }
     }
 }
@@ -525,6 +530,12 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
     if (file_size)
         return getPosition() >= static_cast<off_t>(*file_size);
     return false;
+}
+
+void ReadBufferFromS3::forgetResponseIdentityBaseline()
+{
+    current_response_etag.reset();
+    current_response_bytes_consumed = false;
 }
 
 std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
@@ -545,13 +556,16 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     Stopwatch watch{CLOCK_MONOTONIC};
     auto read_result = sendRequest(attempt, offset, right_offset);
 
-    /// Compared per reissue rather than only against the first response, so an A -> B -> A' sequence
-    /// is caught at B: a later response equal to the first is not evidence that nothing changed.
+    /// Compare against the ETag of the response bytes were last delivered from, not against the first
+    /// response ever seen: an earlier attempt that returned headers but whose body read failed before
+    /// any byte reached the consumer never contributed anything, so a different ETag on reissue is an
+    /// ordinary retry. Once a response has delivered at least one byte, a differing ETag on the next
+    /// reissue means the consumer is about to receive bytes from a second incarnation of the object.
     const String etag = read_result.GetETag();
-    if (!first_response_etag)
-        first_response_etag = etag;
-    else if (*first_response_etag != etag)
+    if (current_response_etag && current_response_bytes_consumed && *current_response_etag != etag)
         response_identity_changed = true;
+    current_response_etag = etag;
+    current_response_bytes_consumed = false;
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_settings.buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size, std::move(watch));

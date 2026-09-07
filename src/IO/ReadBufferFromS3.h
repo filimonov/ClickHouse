@@ -91,8 +91,11 @@ public:
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.
     ObjectMetadata getObjectMetadataFromTheLastRequest() const;
 
-    /// True when a reissued GET answered with a different ETag than the first one did, i.e. the bytes
-    /// this buffer produced may come from more than one incarnation of the object.
+    /// True when bytes already delivered to the consumer came from a response whose ETag turned out to
+    /// differ from a later, reissued response's ETag, i.e. the bytes this buffer produced may come from
+    /// more than one incarnation of the object. A response that never delivered a byte (e.g. the GET
+    /// succeeded but the body read failed before any data arrived) does not count: reissuing it and
+    /// getting a different ETag is an ordinary retry, not a coherence problem.
     bool responseIdentityChanged() const { return response_identity_changed; }
 
     size_t getReadUntilPosition() const { return read_until_position; }
@@ -115,7 +118,16 @@ private:
 
     Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
 
-    std::optional<String> first_response_etag;
+    /// Drops the identity baseline. Called when the next request is a reissue for a range the caller
+    /// explicitly repositioned to (seek, or a change of the read-until bound), as opposed to a retry of
+    /// the same range after a failure: the bytes already delivered before the reposition reached the
+    /// consumer as their own self-consistent range, so the next response is not compared against them.
+    void forgetResponseIdentityBaseline();
+
+    /// ETag of the response `impl` currently represents (or, between initialize() calls, of the response
+    /// that was just discarded), and whether any bytes from it were delivered to the consumer.
+    std::optional<String> current_response_etag;
+    bool current_response_bytes_consumed = false;
     bool response_identity_changed = false;
 
     ReadSettings read_settings;
