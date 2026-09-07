@@ -815,6 +815,12 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
         pool_config.cas_request_budget.attempt_timeout_ms,
         pool_config.cas_request_budget.connect_timeout_cap_ms.value_or(0));
 
+    /// A programmer error, not an input one: the handoff above is code, not configuration. The pool's
+    /// lease arithmetic was validated against `pool_config.cas_request_budget` alone (never against the
+    /// backend), so a backend built with a different cap or timeout would silently outlive it. Fail
+    /// closed before `Pool::open` rather than trust the two stayed in sync.
+    Cas::ensureBackendMatchesBudget(*backend, pool_config.cas_request_budget);
+
     PoolView view;
     view.physical_key_prefix = physical_key_prefix_local;
     view.pool_prefix = pool_prefix;

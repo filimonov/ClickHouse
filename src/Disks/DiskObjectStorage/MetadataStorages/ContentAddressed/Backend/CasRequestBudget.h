@@ -5,10 +5,12 @@
 namespace DB::Cas
 {
 
-/// The limits a writable mount is configured with. `attempt_timeout_ms` and `lease_safety_margin_ms`
-/// are what `CasMountRuntime::admit` measures a request against, and the three `recovery_retry_*` fields
-/// bound a whole ref-table recovery; see `validateCasRequestBudget` for the relationship a writable
-/// mount enforces at startup.
+/// The limits a writable mount is configured with. `CasMountRuntime::admit` measures a request against
+/// `lease_safety_margin_ms` plus a caller-supplied need expressed in attempt envelopes (one for an
+/// ordinary attempt, TWO for a ref-log append's write-plus-settlement-read -- see
+/// `CasMountRuntime::refAppendFenceOk`), and the three `recovery_retry_*` fields bound a whole
+/// ref-table recovery; see `validateCasRequestBudget` for the relationship a writable mount enforces
+/// at startup.
 struct CasRequestBudget
 {
     /// Maximum client wait budgeted for one HTTP attempt. The request contract reserves this before

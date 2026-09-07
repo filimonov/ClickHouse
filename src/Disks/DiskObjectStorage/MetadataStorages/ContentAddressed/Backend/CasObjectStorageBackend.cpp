@@ -1135,5 +1135,21 @@ Backend::RawListPage ObjectStorageBackend::listUnder(
     return page;
 }
 
+void ensureBackendMatchesBudget(const ObjectStorageBackend & backend, const CasRequestBudget & budget)
+{
+    const uint64_t budget_connect_cap = budget.connect_timeout_cap_ms.value_or(0);
+    if (backend.connectTimeoutCapMs() != budget_connect_cap)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "CAS: backend connect timeout cap ({} ms) does not match the pool's request budget ({} ms); "
+            "the mount's lease arithmetic was validated against the budget alone, so a backend built with "
+            "another cap could silently outlive it",
+            backend.connectTimeoutCapMs(), budget_connect_cap);
+    if (backend.attemptTimeoutMs() != budget.attempt_timeout_ms)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "CAS: backend attempt timeout ({} ms) does not match the pool's request budget ({} ms); "
+            "the mount's lease arithmetic was validated against the budget alone, so a backend built with "
+            "another timeout could silently outlive it",
+            backend.attemptTimeoutMs(), budget.attempt_timeout_ms);
+}
 
 }

@@ -127,14 +127,8 @@ def _log_count_since_last_restart(node, pattern):
     return int(node.exec_in_container(["bash", "-c", script]).strip())
 
 
-def _renewal_log_rows(node, since, sequence=None):
-    # `sequence` is optional: with the shortened renewal period a background renewal can advance
-    # `system.cas_mounts`'s `renewal_sequence` between the moment a caller observes a recovery (via
-    # profile events) and the moment it reads that column, so pre-filtering this query on a
-    # snapshot-derived sequence can miss the very row it is looking for. Callers that need the exact
-    # sequence of a specific renewal instead look it up from the returned row itself.
+def _renewal_log_rows(node, since):
     node.query("SYSTEM FLUSH LOGS")
-    seq_filter = "AND detail['seq'] = '{}' ".format(sequence) if sequence is not None else ""
     rows = node.query(
         "SELECT outcome, detail['seq'], detail['write_attempt_id'], "
         "detail['attempts_sent'], detail['classification'] "
@@ -142,9 +136,8 @@ def _renewal_log_rows(node, since, sequence=None):
         "WHERE event_type = 'watermark_renew' AND disk_name = '{}' "
         "AND detail['server_root_id'] = '{}' "
         "AND event_time_microseconds >= toDateTime64('{}', 6) "
-        "{}"
         "ORDER BY event_time_microseconds FORMAT TSV".format(
-            DISK, SERVER_ROOT_ID, since, seq_filter
+            DISK, SERVER_ROOT_ID, since
         )
     )
     return [tuple(row.split("\t")) for row in rows.splitlines() if row]

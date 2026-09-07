@@ -1358,9 +1358,9 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
     EXPECT_FALSE(client->attempts_seen.front().has_value());
 
     /// The native HEAD's seed: `S3ObjectStorage::tryGetObjectMetadataWithNativeToken`'s profile-aware
-    /// overload always passes 0 today (a later task supplies the engine's real seed, as for every
-    /// other verb here), so this exercises the seed-carrying layer directly --
-    /// `S3::getObjectInfoIfExists`, the same call `tryGetObjectMetadataImpl` makes.
+    /// overload now forwards `request.attempt_number`, like every other verb here; this exercises the
+    /// seed-carrying layer directly -- `S3::getObjectInfoIfExists`, the same call
+    /// `tryGetObjectMetadataImpl` makes.
     client->attempts_seen.clear();
     S3::getObjectInfoIfExists(*client, bucket, "seeded_head", /*version_id=*/{}, /*with_metadata=*/false,
                                /*with_tags=*/false, ObjectStorageRequestMode::Default, /*attempt_seed=*/4);
@@ -1373,8 +1373,8 @@ TEST_F(WBS3Test, S3RequestAttemptSeedPutHeadDeleteCarryTheSeed)
 
     /// Conditional (single) and bulk DELETE: reachable now through `S3ObjectStorage`'s
     /// `ObjectStorageControlRequest`-carrying overloads, which is what actually drives
-    /// `removeObjectIfTokenMatchesImpl`/`removeObjectsIfExistImpl` with a real nonzero seed -- unlike
-    /// the HEAD case above, this needs no fallback to a lower-level free function.
+    /// `removeObjectIfTokenMatchesImpl`/`removeObjectsIfExistImpl` with a real nonzero seed, through the
+    /// object storage's own API rather than a lower-level free function.
     (void)getContext(); // BlobStorageLogWriter::create falls back to the global context
     auto delete_store = std::make_shared<MockS3::S3MemStrore>();
     delete_store->CreateBucket(bucket);

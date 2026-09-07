@@ -310,4 +310,12 @@ private:
     String emuMintToken(const String & key, const String & etag, bool just_wrote);
 };
 
+/// Fail-closed programmer-error guard: a mount opens exactly one backend and one `CasRequestBudget`
+/// together (`ContentAddressedMetadataStorage::openPoolView`), and the pool's lease arithmetic
+/// (`validateCasRequestBudget`, `CasMountRuntime::admit`) is validated against the budget alone --
+/// never against the backend it hands to the request layer. If the two ever disagree, the backend
+/// would silently outlive (or underlive) the envelope the lease math was checked against. Throws
+/// `LOGICAL_ERROR` naming both values; called once at open, before `Pool::open`.
+void ensureBackendMatchesBudget(const ObjectStorageBackend & backend, const CasRequestBudget & budget);
+
 }
