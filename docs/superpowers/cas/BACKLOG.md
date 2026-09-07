@@ -2509,3 +2509,29 @@ input to this item. The dynamic half was NOT run — other priorities (user, 202
 
 **Cost.** ~20 incremental debug builds + ~20 `CAS*` runs, sequential (one builder); roughly 3–4 hours
 of a cheap agent's time. Zero risk to the tree if step 2's revert check is honoured.
+
+- [ ] **CAS mount protocols run serially on the startup thread** (found 2026-09-05, analysed 2026-09-06,
+  `lane-g/tmp/followup/multidisk/REPORT.md`). One disk's token-stability observation (~TTL + TTL/20 + poll) blocks the
+  startup thread while earlier-mounted disks' leases age; renewers are per-disk and start eagerly, so the exposure is the
+  serial `DiskSelector::initialize` → `disk->startup()` → `Pool::open` chain. Trigger is gone on ordinary restarts since the
+  farewell-window fix; a genuine hard kill of a multi-disk server still opens it. Fix direction: run `Pool::open` per disk on
+  a background task and collect futures after the disk loop (touches `DiskSelector`, consult-first). Needs a hard-kill
+  integration step (`stop_clickhouse(kill=True)` with two CAS disks) and a spec.
+
+- [ ] **Mount-lease budget: fewer knobs, derived attempt timeout** (2026-09-07, from the PR #2300 run-3 triage). Today
+  the operator sets TTL, renew period, `cas_attempt_timeout_ms` and margin, and the connect cap is `min(connect_timeout_ms,
+  attempt)`; the mount refuses when `period + 2×(attempt + 2×cap) + margin ≥ TTL` (a disk with `connect_timeout_ms ≥ 2 s`
+  under the old defaults). Proposed: (1) `cas_attempt_timeout_ms = 0` = auto = `(TTL − period − margin)/5 − 2×cap`, i.e.
+  "five full attempts fit in the renewal window" as a design constant; the validation then becomes tautological; (2) clamp
+  the connect cap to the lease budget instead of refusing the mount, WARN once at mount and show the effective cap in
+  `system.cas_mounts` and the "budget in effect" log line; (3) document the fencing-latency trade-off (observation =
+  TTL + TTL/20 + period/2; GC fence-out = TTL + TTL/20 + period). Interim fix applied: the `test_cas_s3` config keeps `connect_timeout_ms` at 1000 (user chose the smallest change; the default TTL stays 30 s).
+- [ ] **GC per-disk thread pools → one server-wide pool** (2026-09-07). `Cas::Gc` owns `read_pool` (gc_read_concurrency
+  16, max_free 16) and `GcMetaWriter`'s pool (gc_meta_pool_size 16) for the DISK's lifetime although both are used only inside
+  a round: ≈17–32 idle threads per CAS disk, measured 523 threads at 30 inline disks. Do it like `CasBlobUploadPool`: one
+  pool initialised once from server settings, per-disk settings keep bounding per-round in-flight work; or create the pools
+  per round. Interim fix applied: `SYSTEM CAS FORGET` in every stateless test that creates an inline disk.
+- [ ] **ASan memory ceiling on stateless lanes = thread count × fake stack** (2026-09-07). Resident set grows with live threads
+  (fake stacks, `max_uar_stack_size_log` 20 → 11 MB/thread); `detect_stack_use_after_return=0` fixes it but weakens
+  detection; `max_uar_stack_size_log=18` is the conservative alternative (E2 not finished). Prefer cutting threads first
+  (FORGET, shared GC pool, review `background_schedule_pool_size=512` in the test config).

@@ -704,6 +704,17 @@ coverage (`f2bfa8478ac`, `7fd15a34786`, the `05023` regression test — deferred
 stage's cluster teardown, per the residual gate row). Verified this session on that branch.
 Integration into `master` is pending.
 
+Third catch-point (2026-09-07, PR #2300 run 3, regression suite `tiered_storage_cas`): seven
+concurrent background movers made the first writes of a fresh table; the loser's own pre-check read
+inside `createNamespace` found the sibling's entry already `Live` (the sibling had completed all
+three steps between the loop's "no entry" read and the pre-check) and hit the remaining
+`LOGICAL_ERROR` branch, which the earlier fix had left in place on the claim that `Live` could only
+mean a caller bypassed `namespaceLife`. Fixed by `f9b7c0a7ded` ("a sibling that already won namespace
+birth is Superseded, not a logical error"): the pre-check reports `Superseded` for any existing
+entry, the loop re-reads and adopts the sibling's life; red-proven through the production path with a
+one-shot hook before the pre-check read. `CaRefCatalogCore.tla` needs no change: its `Create` is
+enabled only on an absent entry, so a loser observing an entry never mints an incarnation.
+
 **If these two do not land**, the branch carries a server-killing exception on a live namespace-
 creation race and an unbounded namespace leak on every table drop whose last part was already gone
 — both real, both found, neither hidden in only the residual list: this verdict line is where they
