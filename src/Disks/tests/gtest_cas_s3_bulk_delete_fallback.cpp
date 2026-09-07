@@ -162,6 +162,23 @@ void sendDeleteObjectSuccess(Poco::Net::HTTPServerResponse & response)
     response.send();
 }
 
+/// A single-key `DeleteObject` failure -- used to script the per-key fallback loop's own error handling,
+/// as distinct from the batch response's per-key `<Error>` elements covered by the test above.
+void sendSingleDeleteError(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & code, const std::string & message)
+{
+    const std::string body =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<Error><Code>" + code + "</Code><Message>" + message + "</Message></Error>";
+    sendXml(response, status, body);
+}
+
+/// The path a real `DeleteObject`/`DeleteObjects` request to `key` under `makeStorageForTest`'s bucket
+/// carries -- lets a test script per-key responses for the sequential fallback loop by URI.
+std::string keyPath(const std::string & key)
+{
+    return "/test-bucket/" + key;
+}
+
 std::shared_ptr<DB::S3ObjectStorage> makeStorageForTest(const std::string & endpoint, const DB::S3Capabilities & capabilities)
 {
     DB::RemoteHostFilter remote_host_filter;
@@ -260,6 +277,71 @@ TEST(S3BulkDeleteFallback, FallsBackToSingleDeletesAndRemembersTheCapability)
     EXPECT_NO_THROW(storage->removeObjectsIfExistUnderProfile(objects, DB::ObjectStorageControlRequest{}));
     EXPECT_EQ(batch_attempts.load(), 1u) << "a second DeleteObjects attempt means the learned capability was not honoured";
     EXPECT_EQ(server.countMethod("DELETE"), 4u);
+}
+
+/// The sequential fallback's own per-key error handling: an absence is ignored (as the batch path's
+/// per-key `NoSuchKey` is), a real error stops the loop and is reported with its key, and -- the part
+/// `PerKeyErrorsWithinASuccessfulBatchAreUnchanged` cannot show, since every key there is requested in
+/// one batch response -- no request is issued for any key AFTER the one that failed.
+TEST(S3BulkDeleteFallback, SequentialFallbackIgnoresAbsenceThenStopsAtTheFirstRealErrorWithNoFurtherRequests)
+{
+    (void)contextForTest();
+
+    ScriptedS3Server server([](const Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
+    {
+        if (request.getMethod() == "POST")
+        {
+            sendBatchNotImplemented(response);
+            return;
+        }
+        const std::string uri = request.getURI();
+        if (uri == keyPath("absent-key"))
+            sendSingleDeleteError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "NoSuchKey", "The specified key does not exist.");
+        else if (uri == keyPath("denied-key"))
+            sendSingleDeleteError(response, Poco::Net::HTTPResponse::HTTP_FORBIDDEN, "AccessDenied", "Access Denied");
+        else
+            sendDeleteObjectSuccess(response);
+    });
+    auto storage = makeStorageForTest(server.getUrl(), DB::S3Capabilities{});
+
+    /// "never-requested-key" comes AFTER "denied-key": if the loop failed to stop at the real error, its
+    /// DELETE would show up in countMethod("DELETE") as a third request.
+    DB::StoredObjects objects{
+        DB::StoredObject("absent-key"), DB::StoredObject("denied-key"), DB::StoredObject("never-requested-key")};
+
+    try
+    {
+        storage->removeObjectsIfExistUnderProfile(objects, DB::ObjectStorageControlRequest{});
+        FAIL() << "expected removeObjectsIfExistUnderProfile to throw on the AccessDenied key";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_NE(e.message().find("denied-key"), std::string::npos) << e.message();
+    }
+
+    EXPECT_EQ(server.countMethod("DELETE"), 2u)
+        << "the absent key and the denied key, and nothing requested after the denied key stopped the loop";
+}
+
+/// A batch made entirely of absent keys succeeds with no throw: every key is ignored in turn, and the
+/// loop runs to completion having found nothing left to report.
+TEST(S3BulkDeleteFallback, AbsenceOnlyFallbackSucceedsWithNoThrow)
+{
+    (void)contextForTest();
+
+    ScriptedS3Server server([](const Poco::Net::HTTPServerRequest &, Poco::Net::HTTPServerResponse & response)
+    {
+        sendSingleDeleteError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, "NoSuchKey", "The specified key does not exist.");
+    });
+    /// Explicit false: this test is about the sequential loop's own absence handling, not about
+    /// re-proving capability discovery (already covered above).
+    auto storage = makeStorageForTest(server.getUrl(), DB::S3Capabilities{/*support_batch_delete_=*/false});
+
+    EXPECT_NO_THROW(storage->removeObjectsIfExistUnderProfile(
+        {DB::StoredObject("absent-a"), DB::StoredObject("absent-b")}, DB::ObjectStorageControlRequest{}));
+
+    EXPECT_EQ(server.countMethod("DELETE"), 2u);
+    EXPECT_EQ(server.countMethod("POST"), 0u);
 }
 
 TEST(S3BulkDeleteFallback, OtherFailureClassesKeepFailingClosedWithNoFallback)
