@@ -40,6 +40,7 @@
 #include <Common/Macros.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
+#include <aws/core/client/CoreErrors.h>
 #include <aws/s3/model/Tag.h>
 #include <aws/s3/model/Tagging.h>
 
@@ -142,6 +143,23 @@ void logIfError(const Aws::Utils::Outcome<Result, Error> & response, std::functi
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, msg());
     }
+}
+
+/// Classifies a per-key error `Code` string from a `DeleteObjects` response body (data the SDK never
+/// builds an `Aws::S3::S3Error` for, since the response as a whole was a success) the same way the SDK's
+/// own `S3ErrorMarshaller::Marshall` classifies a whole-response error: `Aws::S3::S3ErrorMapper` first
+/// (the S3-specific extension names -- `NoSuchKey`, `NoSuchBucket`, ...), falling back to
+/// `Aws::Client::CoreErrorsMapper` for a name shared across every AWS service (`AccessDenied`,
+/// `InternalError`, ...), which `S3ErrorMapper` alone does not recognize and would otherwise leave
+/// classified as `UNKNOWN`. The two mappers' shared codes carry identical numeric values by construction
+/// (see the "// From Core//" section of `Aws::S3::S3Errors`), so reinterpreting a `CoreErrors` result as
+/// `S3Errors` is exactly what the SDK's own marshaller does.
+Aws::S3::S3Errors classifyDeleteObjectsErrorCode(const String & code)
+{
+    if (const auto s3_specific = Aws::S3::S3ErrorMapper::GetErrorForName(code.c_str()).GetErrorType();
+        s3_specific != Aws::Client::CoreErrors::UNKNOWN)
+        return static_cast<Aws::S3::S3Errors>(s3_specific);
+    return static_cast<Aws::S3::S3Errors>(Aws::Client::CoreErrorsMapper::GetErrorForName(code.c_str()).GetErrorType());
 }
 
 }
@@ -762,8 +780,7 @@ void S3ObjectStorage::removeObjectsIfExistImpl(
     std::optional<Aws::S3::S3Errors> first_error_type;
     for (const auto & err : outcome.GetResult().GetErrors())
     {
-        const auto error_type = static_cast<Aws::S3::S3Errors>(
-            Aws::S3::S3ErrorMapper::GetErrorForName(err.GetCode().c_str()).GetErrorType());
+        const auto error_type = classifyDeleteObjectsErrorCode(err.GetCode());
         if (S3::isNotFoundError(error_type))
             continue;
         if (!failed_keys.empty())

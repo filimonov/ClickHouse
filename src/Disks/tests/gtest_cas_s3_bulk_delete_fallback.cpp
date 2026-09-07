@@ -10,6 +10,7 @@
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/URI.h>
 #include <IO/S3Settings.h>
+#include <IO/S3Common.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tests/gtest_global_context.h>
 
@@ -234,8 +235,9 @@ TEST(S3BulkDeleteFallback, PerKeyErrorsWithinASuccessfulBatchAreUnchanged)
             DB::ObjectStorageControlRequest{});
         FAIL() << "expected removeObjectsIfExistUnderProfile to throw on the AccessDenied key";
     }
-    catch (const DB::Exception & e)
+    catch (const DB::S3Exception & e)
     {
+        EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::ACCESS_DENIED);
         EXPECT_NE(e.message().find("denied-key"), std::string::npos) << e.message();
     }
 
@@ -322,8 +324,9 @@ TEST(S3BulkDeleteFallback, ExactlyOneObjectIgnoresAbsenceAndThrowsOnARealError)
             storage->removeObjectsIfExistUnderProfile({DB::StoredObject("denied-key")}, DB::ObjectStorageControlRequest{});
             FAIL() << "expected removeObjectsIfExistUnderProfile to throw on the AccessDenied key";
         }
-        catch (const DB::Exception & e)
+        catch (const DB::S3Exception & e)
         {
+            EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::ACCESS_DENIED);
             EXPECT_NE(e.message().find("denied-key"), std::string::npos) << e.message();
         }
     }
