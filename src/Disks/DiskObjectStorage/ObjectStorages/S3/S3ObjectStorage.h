@@ -224,6 +224,12 @@ private:
     void removeObjectsIfExistImpl(
         const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client, size_t attempt_seed);
 
+    /// The `DeleteObjects` fallback: one `DeleteObjectRequest` per key, on the same `used_client` and
+    /// `attempt_seed`, with the same NoSuchKey tolerance and blob_storage_log events as the batch path.
+    /// Used when `s3_capabilities` says batch delete is unsupported, or a batch attempt just discovered so.
+    void removeObjectsIfExistSequentially(
+        const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client, size_t attempt_seed);
+
     std::shared_ptr<const S3::Client> clientForRetryProfile(const ObjectStorageControlRequest & request) const;
 
     /// Runs `fn` and, if it failed because the vended credentials expired, refreshes this disk's
@@ -269,6 +275,12 @@ private:
     /// released as soon as the next rotation is observed and the clones are dropped — which is what
     /// makes the identity comparison in getSingleAttemptClient sound.
     mutable std::shared_ptr<const S3::Client> single_attempt_client_base;
+    /// Set for the duration of a `shutdown()` (cleared by the matching `startup()`). Every clone already
+    /// cached at the moment `shutdown()` runs is disabled there and then, under the same lock; this flag
+    /// is what makes a clone built afterwards by `getSingleAttemptClient` (a CAS control-plane verb can
+    /// still call it, racing the shutdown) come into being already disabled, instead of independently
+    /// accepting requests against a storage the caller believes has stopped.
+    mutable bool single_attempt_clients_disabled = false;
 };
 
 }

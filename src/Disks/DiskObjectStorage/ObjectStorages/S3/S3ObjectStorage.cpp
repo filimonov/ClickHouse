@@ -653,6 +653,15 @@ void S3ObjectStorage::removeObjectsIfExistImpl(
     if (objects.empty())
         return;
 
+    /// GCS has no `DeleteObjects`: a capability the config declared false, or that an earlier batch
+    /// attempt on this same storage already learned false, must not be retried here.
+    if (auto support_batch_delete = s3_capabilities.isBatchDeleteSupported();
+        support_batch_delete.has_value() && !support_batch_delete.value())
+    {
+        removeObjectsIfExistSequentially(objects, used_client, attempt_seed);
+        return;
+    }
+
     std::vector<Aws::S3::Model::ObjectIdentifier> identifiers; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     identifiers.reserve(objects.size());
     for (const auto & object : objects)
@@ -677,7 +686,8 @@ void S3ObjectStorage::removeObjectsIfExistImpl(
     auto outcome = used_client->DeleteObjects(request);
 
     /// Every key lands in system.blob_storage_log, as the single-key paths do; the batch's outcome is
-    /// stamped on each of them.
+    /// stamped on each of them. This still happens when the batch turns out to be unsupported and the
+    /// call falls back below: the failed batch attempt is itself an event, same as in `deleteFilesFromS3`.
     if (auto blob_storage_log = BlobStorageLogWriter::create(disk_name))
     {
         for (const auto & object : objects)
@@ -692,6 +702,18 @@ void S3ObjectStorage::removeObjectsIfExistImpl(
     if (!outcome.IsSuccess())
     {
         const auto & err = outcome.GetError();
+        /// Same classification `deleteFilesFromS3` uses to detect a backend that rejects `DeleteObjects`
+        /// itself (as opposed to a request that reached S3 and failed for an ordinary reason).
+        if ((err.GetExceptionName() == "InvalidRequest") || (err.GetExceptionName() == "InvalidArgument")
+            || (err.GetExceptionName() == "NotImplemented"))
+        {
+            LOG_TRACE(log, "DeleteObjects is not supported: {} (Code: {}). Retrying with plain DeleteObject.",
+                      err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
+            s3_capabilities.setIsBatchDeleteSupported(false);
+            removeObjectsIfExistSequentially(objects, used_client, attempt_seed);
+            return;
+        }
+
         throw S3Exception(err.GetErrorType(), "{} (Code: {}) while removing {} objects from S3 in one request",
                           err.GetMessage(), static_cast<size_t>(err.GetErrorType()), objects.size());
     }
@@ -712,6 +734,45 @@ void S3ObjectStorage::removeObjectsIfExistImpl(
     }
     if (first_error_type)
         throw S3Exception(*first_error_type, "batch removal left objects behind: [{}]", failed_keys);
+}
+
+void S3ObjectStorage::removeObjectsIfExistSequentially(
+    const StoredObjects & objects, const std::shared_ptr<const S3::Client> & used_client, size_t attempt_seed)
+{
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+
+    for (const auto & object : objects)
+    {
+        S3::DeleteObjectRequest request;
+        request.SetBucket(uri.bucket);
+        request.SetKey(object.remote_path);
+        if (attempt_seed != 0)
+            S3::setClickhouseAttemptNumber(request, attempt_seed);
+
+        ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
+        Stopwatch watch;
+        auto outcome = used_client->DeleteObject(request);
+        auto elapsed = watch.elapsedMicroseconds();
+
+        if (blob_storage_log)
+            blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
+                                       uri.bucket, object.remote_path,
+                                       object.local_path, object.bytes_size, elapsed,
+                                       outcome.IsSuccess() ? 0 : static_cast<Int32>(outcome.GetError().GetErrorType()),
+                                       outcome.IsSuccess() ? "" : outcome.GetError().GetMessage());
+
+        if (outcome.IsSuccess())
+            continue;
+
+        const auto & err = outcome.GetError();
+        /// A key that is gone or was never there is not a failure here, same as the batch path's
+        /// per-key `NoSuchKey` tolerance.
+        if (S3::isNotFoundError(err.GetErrorType()))
+            continue;
+
+        throw S3Exception(err.GetErrorType(), "{} (Code: {}) while removing object with path {} from S3",
+                          err.GetMessage(), static_cast<size_t>(err.GetErrorType()), object.remote_path);
+    }
 }
 
 bool S3ObjectStorage::conditionalOpsUseGenerationTokens() const
@@ -1026,12 +1087,26 @@ void S3ObjectStorage::shutdown()
     /// If S3 is healthy nothing wrong will be happened and S3 requests will be processed in a regular way without errors.
     /// This should significantly speed up shutdown process if S3 is unhealthy.
     const_cast<S3::Client &>(*client->get()).DisableRequestProcessing();
+
+    /// Every CAS control-plane verb can run on a cached single-attempt clone (`getSingleAttemptClient`);
+    /// each clone builds its own `Aws::Http::HttpClient` rather than sharing the main client's, so
+    /// disabling only the main client above would leave requests on a clone waiting their full timeout
+    /// against a storage the caller believes has already shut down.
+    std::lock_guard lock(single_attempt_client_mutex);
+    single_attempt_clients_disabled = true;
+    for (const auto & [_, clone] : single_attempt_clients)
+        const_cast<S3::Client &>(*clone).DisableRequestProcessing();
 }
 
 void S3ObjectStorage::startup()
 {
     /// Need to be enabled if it was disabled during shutdown() call.
     const_cast<S3::Client &>(*client->get()).EnableRequestProcessing();
+
+    std::lock_guard lock(single_attempt_client_mutex);
+    single_attempt_clients_disabled = false;
+    for (const auto & [_, clone] : single_attempt_clients)
+        const_cast<S3::Client &>(*clone).EnableRequestProcessing();
 }
 
 void S3ObjectStorage::applyNewSettings(
@@ -1168,7 +1243,15 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getSingleAttemptClient(uint64
         cfg.connectTimeoutMs = cfg.connectTimeoutMs <= 0 ? static_cast<long>(connect_timeout_cap_ms)
                                                          : std::min<long>(cfg.connectTimeoutMs, static_cast<long>(connect_timeout_cap_ms));
 
-    return single_attempt_clients.emplace(cache_key, base->cloneWithConfigurationOverride(cfg)).first->second;
+    const auto & clone = single_attempt_clients.emplace(cache_key, base->cloneWithConfigurationOverride(cfg)).first->second;
+
+    /// A fresh clone's own `Aws::Http::HttpClient` starts with request processing enabled regardless of
+    /// the main client's state; if `shutdown()` is already in effect, this clone must not become a way
+    /// to keep issuing requests against a storage the caller believes has stopped.
+    if (single_attempt_clients_disabled)
+        const_cast<S3::Client &>(*clone).DisableRequestProcessing();
+
+    return clone;
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::clientForRetryProfile(const ObjectStorageControlRequest & request) const
