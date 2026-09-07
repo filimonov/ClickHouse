@@ -2557,3 +2557,10 @@ of a cheap agent's time. Zero risk to the tree if step 2's revert check is honou
   `ThreadPool` (idle timeout + shrink) outside the CAS tree, with wide blast radius and its own
   warm-up cost per burst; probably too much for the gain, and the per-disk pools would be better
   removed altogether (see the shared GC pool item above) than made shrinkable.
+- [ ] **`deleteFilesFromS3` per-key error classification loses the error class** (2026-09-08, found while fixing the CAS batch delete).
+  `src/IO/S3/deleteFileFromS3.cpp` classifies each per-key error of a `DeleteObjects` reply with
+  `S3ErrorMapper::GetErrorForName` alone, which knows only S3-specific names (`NoSuchKey`, `NoSuchBucket`, …);
+  a service-wide name such as `AccessDenied` comes back `UNKNOWN`. Message and code text stay right, only the
+  `S3Errors` enum callers may match on is wrong. The CAS path got a two-step lookup (S3 mapper, then
+  `Aws::Client::CoreErrorsMapper`, the same order `S3ErrorMarshaller::Marshall` uses) in 13bf6a92df0; the generic
+  path is shared upstream code, out of the CAS PR's scope → separate small fix, upstream-worthy.
