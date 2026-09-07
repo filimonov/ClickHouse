@@ -151,6 +151,7 @@ alongside the disk's other settings:
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
                 <metadata_type>cas</metadata_type>
+                <cas_server_root_id>{replica}</cas_server_root_id>
                 <endpoint>https://example-bucket.s3.amazonaws.com/cas/</endpoint>
                 <access_key_id>...</access_key_id>
                 <secret_access_key>...</secret_access_key>
