@@ -393,7 +393,8 @@ uint64_t removeChunkWriteOnceOrOneByOne(CasOperation & op, const std::vector<Wri
             throw;
         for (const WriteOnceKey & key : chunk)
             op.removeManyWriteOnce({key}, policy);
-        return chunk.size();
+        /// +1: the failed bulk attempt above is itself a call this helper made.
+        return 1 + chunk.size();
     }
 }
 

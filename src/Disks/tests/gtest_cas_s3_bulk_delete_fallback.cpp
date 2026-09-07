@@ -33,6 +33,11 @@
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/SharedPtr.h>
 
+namespace DB::ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 /// `S3ObjectStorage::removeObjectsIfExistImpl` (the CAS bulk-delete path, reached through
 /// `removeObjectsIfExistUnderProfile`) must honour `S3Capabilities::isBatchDeleteSupported()` the same
 /// way the generic `deleteFilesFromS3` does, but WITHOUT looping over the objects itself: once the
@@ -216,6 +221,23 @@ DB::ContextPtr contextForTest()
     return getContext().context;
 }
 
+/// The CAS-side fallback (CasGc.cpp's `removeChunkWriteOnceOrOneByOne`) keys specifically on
+/// `NOT_IMPLEMENTED`; a capability-rejection test that only checks "threw a DB::Exception" would still
+/// pass if this storage started throwing, say, BAD_ARGUMENTS instead -- which would silently break that
+/// fallback while every assertion here kept passing.
+void expectNotImplemented(const std::function<void()> & fn)
+{
+    try
+    {
+        fn();
+        FAIL() << "expected a NOT_IMPLEMENTED exception";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::NOT_IMPLEMENTED) << e.message();
+    }
+}
+
 }
 
 TEST(S3BulkDeleteFallback, PerKeyErrorsWithinASuccessfulBatchAreUnchanged)
@@ -262,13 +284,13 @@ TEST(S3BulkDeleteFallback, UnsupportedBatchReplyRecordsCapabilityFalseAndThrowsN
 
     DB::StoredObjects objects{DB::StoredObject("key-a"), DB::StoredObject("key-b")};
 
-    EXPECT_THROW(storage->removeObjectsIfExistUnderProfile(objects, DB::ObjectStorageControlRequest{}), DB::Exception);
+    expectNotImplemented([&] { storage->removeObjectsIfExistUnderProfile(objects, DB::ObjectStorageControlRequest{}); });
     EXPECT_EQ(batch_attempts.load(), 1u);
     EXPECT_EQ(server.countMethod("DELETE"), 0u) << "this storage never loops over objects itself";
 
     /// The capability is now known false on this storage: a second call must throw at once, without
     /// even a `DeleteObjects` probe.
-    EXPECT_THROW(storage->removeObjectsIfExistUnderProfile(objects, DB::ObjectStorageControlRequest{}), DB::Exception);
+    expectNotImplemented([&] { storage->removeObjectsIfExistUnderProfile(objects, DB::ObjectStorageControlRequest{}); });
     EXPECT_EQ(batch_attempts.load(), 1u) << "a second DeleteObjects attempt means the learned capability was not honoured";
     EXPECT_EQ(server.countMethod("DELETE"), 0u);
 }
@@ -362,10 +384,11 @@ TEST(S3BulkDeleteFallback, ExplicitlyDisabledCapabilityThrowsNotImplementedWitho
     /// `<support_batch_delete>false</support_batch_delete>` in a disk's config resolves to this.
     auto storage = makeStorageForTest(server.getUrl(), DB::S3Capabilities{/*support_batch_delete_=*/false});
 
-    EXPECT_THROW(
+    expectNotImplemented([&]
+    {
         storage->removeObjectsIfExistUnderProfile(
-            {DB::StoredObject("key-a"), DB::StoredObject("key-b")}, DB::ObjectStorageControlRequest{}),
-        DB::Exception);
+            {DB::StoredObject("key-a"), DB::StoredObject("key-b")}, DB::ObjectStorageControlRequest{});
+    });
 
     EXPECT_EQ(server.countMethod("POST"), 0u);
     EXPECT_EQ(server.countMethod("DELETE"), 0u);

@@ -86,7 +86,7 @@ TEST(CASGCBulkDeleteFallback, NotImplementedFallsBackToOneRequestPerKeyEachDelet
 
     const uint64_t requests_issued = removeChunkWriteOnceOrOneByOne(op, keys, Retry::once());
 
-    EXPECT_EQ(requests_issued, 3u);
+    EXPECT_EQ(requests_issued, 4u) << "the failed bulk attempt is itself a call, counted alongside the 3 that followed it";
     EXPECT_EQ(backend->bulkRemoveCalls(), 4u) << "1 failed bulk attempt + 3 single-key fallback requests";
     for (const WriteOnceKey & key : keys)
         EXPECT_FALSE(op.head(key.str(), Retry::once()).has_value()) << key.str();
@@ -130,6 +130,37 @@ TEST(CASGCBulkDeleteFallback, TeardownBegunBetweenTwoFallbackKeysStopsTheRemaind
     EXPECT_TRUE(verify.head(keys[2].str(), Retry::once()).has_value()) << "refused at admission, never reached the backend";
     EXPECT_TRUE(verify.head(keys[3].str(), Retry::once()).has_value()) << "never attempted";
     EXPECT_EQ(backend->bulkRemoveCalls(), 3u) << "1 failed bulk attempt + 2 single-key fallback requests that landed";
+}
+
+/// A REAL error on one of the fallback's per-key deletes (not "batch not supported", so not caught and
+/// retried again) stops the loop exactly where it happened: the keys before it are deleted, the ones
+/// from it on are never attempted, and the error itself propagates out of the helper.
+TEST(CASGCBulkDeleteFallback, ARealErrorOnAFallbackKeyStopsTheRemainderAndPropagates)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    auto store = openPlainPool(backend);
+    CasOperation op = store->openRequests().admit();
+    const std::vector<WriteOnceKey> keys = manifestKeys(4);
+    for (const WriteOnceKey & key : keys)
+        ASSERT_TRUE(std::holds_alternative<Committed>(op.create(key.str(), "b", Retry::once())));
+
+    backend->failNextBulkRemoveWith(std::make_exception_ptr(DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "no batch delete")));
+
+    /// The hook does not run on an armed (failing) call, so this fires only on the fallback's own
+    /// per-key calls that actually reached the backend -- the FIRST of which (key[0]'s own delete) arms
+    /// a real, non-capability failure for the call right after it, i.e. key[1]'s.
+    backend->onBeforeBulkRemove([&]
+    {
+        backend->failNextBulkRemoveWith(std::make_exception_ptr(DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "not a capability problem")));
+    });
+
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { (void)removeChunkWriteOnceOrOneByOne(op, keys, Retry::once()); });
+
+    EXPECT_FALSE(op.head(keys[0].str(), Retry::once()).has_value()) << "deleted before the real error";
+    EXPECT_TRUE(op.head(keys[1].str(), Retry::once()).has_value()) << "this delete is the one that failed";
+    EXPECT_TRUE(op.head(keys[2].str(), Retry::once()).has_value()) << "never attempted";
+    EXPECT_TRUE(op.head(keys[3].str(), Retry::once()).has_value()) << "never attempted";
+    EXPECT_EQ(backend->bulkRemoveCalls(), 3u) << "1 failed bulk attempt + key[0]'s delete + key[1]'s failed attempt";
 }
 
 /// A failure outside the "batch delete not supported" class must propagate as-is, with no fallback:

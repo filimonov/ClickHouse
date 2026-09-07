@@ -82,8 +82,13 @@ uint64_t retiredLogicalSize(ObjectKind kind, uint64_t object_size, uint64_t blob
 /// failure propagates unchanged: retry/reissue for it is the engine's own policy, applied to each
 /// admitted attempt -- bulk or single -- the same way it always was.
 ///
-/// Returns the number of `removeManyWriteOnce` requests actually issued (1 for the bulk path,
-/// `chunk.size()` for the fallback), so a caller's own request-count metric stays accurate either way.
+/// Returns the number of `op.removeManyWriteOnce` calls THIS HELPER issued: 1 for the bulk path, or
+/// 1 + `chunk.size()` for the fallback -- the failed bulk attempt counted alongside the one call per key
+/// that followed it, since that attempt is a call this helper made whether or not it reached the network
+/// (there is no signal available here to tell "sent and rejected" apart from "refused locally, unsent";
+/// `S3ObjectStorage::removeObjectsIfExistImpl` reports both as the same NOT_IMPLEMENTED). This is call
+/// COUNT, not a distinct network-request count -- the same granularity `CountingBackend::bulkRemoveCalls`
+/// and the `CASBulkDeleteRequests` profile event already use elsewhere for "request".
 /// Declared here (not file-local) so a unit test can drive it directly against a scripted backend,
 /// rather than only through a full GC round.
 uint64_t removeChunkWriteOnceOrOneByOne(CasOperation & op, const std::vector<WriteOnceKey> & chunk, const Retry & policy);
