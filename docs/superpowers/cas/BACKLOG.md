@@ -2535,3 +2535,25 @@ of a cheap agent's time. Zero risk to the tree if step 2's revert check is honou
   (fake stacks, `max_uar_stack_size_log` 20 → 11 MB/thread); `detect_stack_use_after_return=0` fixes it but weakens
   detection; `max_uar_stack_size_log=18` is the conservative alternative (E2 not finished). Prefer cutting threads first
   (FORGET, shared GC pool, review `background_schedule_pool_size=512` in the test config).
+- [ ] **Sanitizer CI lanes: a smaller thread-pool profile for the CAS stateless stand** (2026-09-07, run-3 triage).
+  Measured throughput of the CAS lane under MSan is 0.5 k tests/h against 2.0 k/h for the regular S3
+  lane with the same sanitizer (TSan CAS < 0.9 k/h vs 2.0 k/h; ASan CAS 4.2 k/h, fine), so the msan
+  and tsan CAS shards never fit the 6 h job budget. The thread census points at pools, not tests:
+  ≈2400 threads at 30 inline disks (BgSchPool 508, IOWriter 165, CAS per-disk GC pools 523, …).
+  `tests/config/install.sh` already has an `is_sanitizer_build` branch and a `--cas-s3-storage`
+  branch; add one `config.d/cas_sanitizer_pools.yaml` linked only when both hold, with a short,
+  explained key list: `threadpool_writer_pool_size` 500 → 64–100, `background_schedule_pool_size`
+  512 → 128–256 (renewal and cleanup tasks live there; not below 128), and on the default CAS disk
+  `cas_gc_read_concurrency` / `cas_gc_meta_pool_size` 16 → 4 (inline disks created by tests do not
+  inherit these — there is no server-wide default for disk settings — so `SYSTEM CAS FORGET` stays
+  the lever for them). `max_thread_pool_free_size` is not a lever: local pools built on the global
+  pool count as busy (E1 with 50 changed nothing). Order: FORGET first (landed, run 4), this profile
+  second, resharding (tsan ≥ 4, msan ≥ 6, plus the harness's own 4 h budget) only as insurance.
+  Verify by the same `system.stack_trace` census per thread group, not by job wall time.
+  Alternative idea, recorded for completeness: give idle pool threads a bounded lifetime so a pool
+  shrinks between bursts and re-creates threads on demand. ClickHouse's `ThreadPool` never retires an
+  idle worker unless `threads.size() > min(max_threads, scheduled + max_free_threads)`, and local
+  pools pin their workers for the pool's lifetime, so this would be a change to the shared
+  `ThreadPool` (idle timeout + shrink) outside the CAS tree, with wide blast radius and its own
+  warm-up cost per burst; probably too much for the gain, and the per-disk pools would be better
+  removed altogether (see the shared GC pool item above) than made shrinkable.
