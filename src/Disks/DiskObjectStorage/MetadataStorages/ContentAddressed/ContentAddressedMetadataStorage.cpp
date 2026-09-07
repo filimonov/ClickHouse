@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
+#include "config.h"
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.h>
@@ -696,14 +697,20 @@ Cas::RebuildReport ContentAddressedMetadataStorage::runGcRebuildNow(bool force) 
 }
 
 std::optional<uint64_t> ContentAddressedMetadataStorage::freezeConnectTimeoutCapMs(
-    const ObjectStoragePtr & object_storage, uint64_t cas_attempt_timeout_ms)
+    [[maybe_unused]] const ObjectStoragePtr & object_storage, [[maybe_unused]] uint64_t cas_attempt_timeout_ms)
 {
+#if USE_AWS_S3
     const auto s3_client = object_storage->tryGetS3StorageClient();
     if (!s3_client)
         return std::nullopt;
     /// A configured zero is "unbounded" to Poco: the cap is then the attempt timeout itself.
     const auto configured = static_cast<uint64_t>(std::max<long>(0, s3_client->getClientConfiguration().connectTimeoutMs));
     return configured == 0 ? cas_attempt_timeout_ms : std::min(configured, cas_attempt_timeout_ms);
+#else
+    /// Without the AWS S3 client compiled in there is no S3 storage to read a connect timeout from,
+    /// so nothing is frozen: the same answer an S3-less object storage gets above.
+    return std::nullopt;
+#endif
 }
 
 ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openPoolView(bool context_available) const
