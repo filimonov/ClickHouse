@@ -108,6 +108,25 @@ def _decode_mount(body):
     return json.loads(lines[1])
 
 
+def _log_count_since_last_restart(node, pattern):
+    # The shortened renewal period makes this server log heavily enough to rotate
+    # clickhouse-server.log mid-test, so a plain grep on the live file alone can miss matches that
+    # already rotated out to clickhouse-server.log.N.gz. Concatenate the rotated files (oldest
+    # first, by the numeric suffix) followed by the live file, then count matches only after the
+    # LAST "Starting ClickHouse" line -- i.e. since the current server incarnation's own start --
+    # so the count is a clean per-restart delta regardless of how many times rotation happened.
+    script = (
+        "combined=$(mktemp); "
+        "for f in $(ls /var/log/clickhouse-server/clickhouse-server.log.[0-9]*.gz 2>/dev/null "
+        "| sort -t. -k3,3rn); do zcat \"$f\" >> \"$combined\"; done; "
+        "cat /var/log/clickhouse-server/clickhouse-server.log >> \"$combined\"; "
+        "start_line=$(grep -n 'Starting ClickHouse' \"$combined\" | tail -1 | cut -d: -f1); "
+        "tail -n +\"${start_line:-1}\" \"$combined\" | grep -c -- '%s' || true; "
+        "rm -f \"$combined\""
+    ) % pattern
+    return int(node.exec_in_container(["bash", "-c", script]).strip())
+
+
 def _renewal_log_rows(node, since, sequence=None):
     # `sequence` is optional: with the shortened renewal period a background renewal can advance
     # `system.cas_mounts`'s `renewal_sequence` between the moment a caller observes a recovery (via
@@ -139,6 +158,15 @@ def start_cluster():
         with_rustfs=True,
         stay_alive=True,
     )
+    # A separate instance for the two `disk_cas_budget_*` probe disks (see
+    # configs/request_budget_disks.xml): the hard-restart tests below count EXACT occurrences of a
+    # production log line across every writable CAS disk on `node`, so sharing that node with more
+    # writable CAS disks would inflate their counts.
+    cluster.add_instance(
+        "budget_probe",
+        main_configs=["configs/request_budget_disks.xml"],
+        with_rustfs=True,
+    )
     cluster.base_cmd.extend(
         ["--file", os.path.join(os.path.dirname(__file__), "docker_compose_proxy.yml")]
     )
@@ -161,7 +189,11 @@ def start_cluster():
             )
         )
         node.query("INSERT INTO renewal_probe VALUES (0, 'before')")
-        yield {"node": node, "control_url": control_url}
+        yield {
+            "node": node,
+            "budget_probe": cluster.instances["budget_probe"],
+            "control_url": control_url,
+        }
     finally:
         if control_url is not None:
             try:
@@ -169,6 +201,25 @@ def start_cluster():
             except Exception:
                 pass
         cluster.shutdown()
+
+
+def test_openpoolview_handoff_freezes_the_connect_cap_from_the_real_disk(start_cluster):
+    # `ContentAddressedMetadataStorage::openPoolView` derives `connect_timeout_cap_ms` from the
+    # disk's OWN S3 client (`freezeConnectTimeoutCapMs`) and hands it into the pool's request budget;
+    # `Pool::open` logs that budget once, at startup, through logger `CasRequestBudget`. This proves
+    # the handoff end to end through the two disks' real startup, not through a test-constructed
+    # backend: `disk_cas_budget_capped` (connect_timeout_ms=1000) must show the derived cap 1000 and
+    # envelope 7000; `disk_cas_budget_unbounded` (connect_timeout_ms=0, Poco's "unbounded") must show
+    # the cap falling back to the attempt timeout itself, 5000, and envelope 15000. Either disk
+    # opening with the base client's own timeout instead (1000/1000/... or 2000/...) would mean the
+    # freeze was skipped or the frozen value never reached the backend.
+    node = start_cluster["budget_probe"]
+    assert _log_count_since_last_restart(
+        node, "CAS request budget in effect: attempt_timeout_ms=5000 connect_timeout_cap_ms=1000 envelope_ms=7000"
+    ) == 1
+    assert _log_count_since_last_restart(
+        node, "CAS request budget in effect: attempt_timeout_ms=5000 connect_timeout_cap_ms=5000 envelope_ms=15000"
+    ) == 1
 
 
 def test_transient_mount_renewal_retries_without_remount(start_cluster):
@@ -376,22 +427,7 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
     node = start_cluster["node"]
 
     def log_count_since_last_restart(pattern):
-        # The shortened renewal period makes this server log heavily enough to rotate
-        # clickhouse-server.log mid-test, so a plain grep on the live file alone can miss matches that
-        # already rotated out to clickhouse-server.log.N.gz. Concatenate the rotated files (oldest
-        # first, by the numeric suffix) followed by the live file, then count matches only after the
-        # LAST "Starting ClickHouse" line -- i.e. since the current server incarnation's own start --
-        # so the count is a clean per-restart delta regardless of how many times rotation happened.
-        script = (
-            "combined=$(mktemp); "
-            "for f in $(ls /var/log/clickhouse-server/clickhouse-server.log.[0-9]*.gz 2>/dev/null "
-            "| sort -t. -k3,3rn); do zcat \"$f\" >> \"$combined\"; done; "
-            "cat /var/log/clickhouse-server/clickhouse-server.log >> \"$combined\"; "
-            "start_line=$(grep -n 'Starting ClickHouse' \"$combined\" | tail -1 | cut -d: -f1); "
-            "tail -n +\"${start_line:-1}\" \"$combined\" | grep -c -- '%s' || true; "
-            "rm -f \"$combined\""
-        ) % pattern
-        return int(node.exec_in_container(["bash", "-c", script]).strip())
+        return _log_count_since_last_restart(node, pattern)
 
     # 1150 = mountObservationThresholdMs(ttl_ms=1000, poll=max(1, period/2)=100): ttl + ttl/20 + poll.
     observation = "waiting ~1150 ms (token-stability observation)"
