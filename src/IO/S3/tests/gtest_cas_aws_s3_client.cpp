@@ -28,6 +28,7 @@
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/SharedPtr.h>
 #include <Poco/StreamChannel.h>
+#include <Poco/ThreadPool.h>
 #include <Poco/URI.h>
 
 #include <aws/core/client/AWSError.h>
@@ -222,16 +223,33 @@ class TestPocoHTTPSequenceServer
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<SequenceRecordingRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    /// A dedicated pool instead of `Poco::ThreadPool::defaultPool()` (what every `HTTPServer`
+    /// constructor that doesn't take one explicitly uses). `TCPServerDispatcher::enqueue`
+    /// (`base/poco/Net/src/TCPServerDispatcher.cpp`) has an acknowledged-in-comment bug: its
+    /// saturation check races when the pool is shared by more than one live `TCPServerDispatcher`,
+    /// so a connection this same binary's OTHER local-server tests happen to saturate the shared
+    /// pool with gets accepted and then immediately closed with no response -- observed directly:
+    /// the client's connect() and send() succeed, but the read then fails with a genuine
+    /// "Connection reset by peer" with no HTTP response ever sent. A private pool makes this
+    /// server's thread accounting exact regardless of how many other servers this binary runs.
+    Poco::ThreadPool thread_pool;
     std::unique_ptr<Poco::Net::HTTPServer> server;
     std::vector<Poco::Net::MessageHeader> all_request_headers;
     size_t requests_seen = 0;
 
 public:
     TestPocoHTTPSequenceServer(size_t fail_first_n, Poco::Net::HTTPResponse::HTTPStatus fail_status, std::string body = {}):
-        server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
+        /// Bind to the loopback address explicitly, NOT `ServerSocket(0)`'s wildcard `0.0.0.0`: Linux
+        /// happens to translate an outbound connect() to `0.0.0.0` into a loopback connection, but
+        /// that is a kernel convenience, not a guarantee, and it is not the actual failure this
+        /// class was hitting (see the `thread_pool` member comment for that) -- fixed regardless,
+        /// since `server_socket->address()` (what `getUrl()` below hands the client) should be an
+        /// address that is actually valid to connect to, not one the kernel merely tolerates.
+        server_socket(std::make_unique<Poco::Net::ServerSocket>(Poco::Net::SocketAddress("127.0.0.1", 0))),
         handler_factory(new SequenceRecordingRequestHandlerFactory(all_request_headers, requests_seen, fail_first_n, fail_status, std::move(body))),
         server_params(new Poco::Net::HTTPServerParams()),
-        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+        thread_pool("TestPocoHTTPSequenceServer"),
+        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, thread_pool, *server_socket, server_params))
     {
         server->start();
     }

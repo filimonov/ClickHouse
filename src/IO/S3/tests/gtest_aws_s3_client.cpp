@@ -18,6 +18,7 @@
 #include <boost/algorithm/string/split.hpp>
 
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/ThreadPool.h>
 #include <Poco/URI.h>
 
 #include <aws/core/client/AWSError.h>
@@ -1055,7 +1056,8 @@ public:
         , server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
         , handler_factory(new Factory(*this))
         , server_params(new Poco::Net::HTTPServerParams())
-        , server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+        , thread_pool("ScriptedResponseServer")
+        , server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, thread_pool, *server_socket, server_params))
     {
         server->start();
     }
@@ -1114,6 +1116,16 @@ private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<Factory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    /// A dedicated pool instead of `Poco::ThreadPool::defaultPool()` (what the `HTTPServer`
+    /// constructor uses when none is given explicitly): `TCPServerDispatcher::enqueue`
+    /// (`base/poco/Net/src/TCPServerDispatcher.cpp`) has an acknowledged-in-comment bug where its
+    /// saturation check races once more than one `TCPServerDispatcher` shares that pool, so a
+    /// connection can be accepted and then immediately closed with no response whenever this
+    /// binary's OTHER local-server tests have the shared pool saturated at that moment -- observed
+    /// directly as this server's request count staying at 0 with no exception on the server side. A
+    /// private pool makes this server's thread accounting exact regardless of how many other
+    /// in-process servers this binary runs.
+    Poco::ThreadPool thread_pool;
     std::unique_ptr<Poco::Net::HTTPServer> server;
 };
 
