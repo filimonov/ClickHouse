@@ -24,20 +24,11 @@ static constexpr auto TEST_LOG_LEVEL = "debug";
 static fs::path caches_dir = fs::current_path() / "readbuffer_s3";
 static std::string cache_base_path = caches_dir / "cache1" / "";
 
-/// Everything below, including the fixture, is local to this translation unit and has internal
-/// linkage. Two problems, both real ODR violations, ruled this out being external:
-/// `ClientFake` here is NOT identical to `gtest_readbuffer_s3.cpp`'s (it implements only the
-/// `GetObject` override these tests need) -- giving it external linkage under the same name lets the
-/// linker keep only one of the two conflicting definitions, silently dropping
-/// `ListObjectsV2`/`last_start_after` for whichever file's tests didn't win. And an EARLIER version of
-/// this fixture, `ReadBufferFromS3Test`, WAS textually identical to that file's copy but still
-/// violated the rule: both definitions call `setupLogs`/reference `cache_base_path`, and each of those
-/// names has internal linkage, so it resolves to a DIFFERENT entity per translation unit -- the
-/// standard's "one token sequence, same meaning" test for treating two definitions as one entity
-/// fails even though the text matches. The suite is renamed to `CASReadBufferFromS3Test` (test names
-/// unchanged) specifically so this internal-linkage fixture doesn't share a suite name with that
-/// file's externally-linked one, which gtest's own registration-time check
-/// ("different test fixture classes") would otherwise reject.
+/// Everything below, including the fixture, has internal linkage: `gtest_readbuffer_s3.cpp` defines
+/// its own, different `ClientFake`/`CountedSession`/etc. under the same names, and this fixture
+/// references file-local `static`s, so external linkage here would be an ODR violation. The suite is
+/// renamed to `CASReadBufferFromS3Test` (test names unchanged) so it doesn't share a suite name with
+/// that file's fixture, which gtest's own registration-time check would otherwise reject.
 namespace
 {
 

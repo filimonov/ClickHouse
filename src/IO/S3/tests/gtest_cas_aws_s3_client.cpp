@@ -223,15 +223,10 @@ class TestPocoHTTPSequenceServer
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<SequenceRecordingRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
-    /// A dedicated pool instead of `Poco::ThreadPool::defaultPool()` (what every `HTTPServer`
-    /// constructor that doesn't take one explicitly uses). `TCPServerDispatcher::enqueue`
-    /// (`base/poco/Net/src/TCPServerDispatcher.cpp`) has an acknowledged-in-comment bug: its
-    /// saturation check races when the pool is shared by more than one live `TCPServerDispatcher`,
-    /// so a connection this same binary's OTHER local-server tests happen to saturate the shared
-    /// pool with gets accepted and then immediately closed with no response -- observed directly:
-    /// the client's connect() and send() succeed, but the read then fails with a genuine
-    /// "Connection reset by peer" with no HTTP response ever sent. A private pool makes this
-    /// server's thread accounting exact regardless of how many other servers this binary runs.
+    /// A dedicated pool, not `Poco::ThreadPool::defaultPool()` (the `HTTPServer` default): that pool
+    /// is shared with every other local-server test in this binary, and `TCPServerDispatcher::enqueue`
+    /// (base/poco/Net/src/TCPServerDispatcher.cpp) has an acknowledged-in-comment saturation-check race
+    /// when it's shared, which can accept a connection and then close it with no response.
     Poco::ThreadPool thread_pool;
     std::unique_ptr<Poco::Net::HTTPServer> server;
     std::vector<Poco::Net::MessageHeader> all_request_headers;
@@ -239,12 +234,9 @@ class TestPocoHTTPSequenceServer
 
 public:
     TestPocoHTTPSequenceServer(size_t fail_first_n, Poco::Net::HTTPResponse::HTTPStatus fail_status, std::string body = {}):
-        /// Bind to the loopback address explicitly, NOT `ServerSocket(0)`'s wildcard `0.0.0.0`: Linux
-        /// happens to translate an outbound connect() to `0.0.0.0` into a loopback connection, but
-        /// that is a kernel convenience, not a guarantee, and it is not the actual failure this
-        /// class was hitting (see the `thread_pool` member comment for that) -- fixed regardless,
-        /// since `server_socket->address()` (what `getUrl()` below hands the client) should be an
-        /// address that is actually valid to connect to, not one the kernel merely tolerates.
+        /// Bind to the loopback address explicitly, not `ServerSocket(0)`'s wildcard `0.0.0.0`: the
+        /// latter is not a valid connection target, even though the kernel happens to tolerate a
+        /// connect() to it as loopback on Linux.
         server_socket(std::make_unique<Poco::Net::ServerSocket>(Poco::Net::SocketAddress("127.0.0.1", 0))),
         handler_factory(new SequenceRecordingRequestHandlerFactory(all_request_headers, requests_seen, fail_first_n, fail_status, std::move(body))),
         server_params(new Poco::Net::HTTPServerParams()),
@@ -254,13 +246,8 @@ public:
         server->start();
     }
 
-    /// `~HTTPServer()`'s own `stop()` lets an active connection finish at its own pace -- with the
-    /// private `thread_pool` above, its worker thread would otherwise still be blocked reading for a
-    /// next request when `thread_pool`'s destructor tries to join it. `stopAll(true)` aborts active
-    /// connections immediately (shuts down their sockets), so the worker returns right away and
-    /// `thread_pool.joinAll()` has nothing left to wait for. Runs while every member this server's
-    /// handler touches is still alive: this is destructor BODY code, executed before any member's own
-    /// destructor begins.
+    /// `stopAll(true)` aborts any active connection immediately, so its worker thread isn't still
+    /// blocked reading for a next request when `thread_pool`'s destructor tries to join it.
     ~TestPocoHTTPSequenceServer()
     {
         server->stopAll(true);

@@ -60,14 +60,10 @@ class TestPocoHTTPServer
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<HTTPRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
-    /// A dedicated pool instead of `Poco::ThreadPool::defaultPool()` (what the `HTTPServer`
-    /// constructor uses when none is given explicitly): `TCPServerDispatcher::enqueue`
-    /// (`base/poco/Net/src/TCPServerDispatcher.cpp`) has an acknowledged-in-comment bug where its
-    /// saturation check races once more than one `TCPServerDispatcher` shares that pool, so a
-    /// connection can be accepted and then immediately closed with no response whenever this
-    /// binary's OTHER local-server tests have the shared pool saturated at that moment. A private
-    /// pool makes this server's thread accounting exact regardless of how many other in-process
-    /// servers this binary runs.
+    /// A dedicated pool, not `Poco::ThreadPool::defaultPool()` (the `HTTPServer` default): that pool
+    /// is shared with every other local-server test in this binary, and `TCPServerDispatcher::enqueue`
+    /// (base/poco/Net/src/TCPServerDispatcher.cpp) has an acknowledged-in-comment saturation-check race
+    /// when it's shared, which can accept a connection and then close it with no response.
     Poco::ThreadPool thread_pool;
     std::unique_ptr<Poco::Net::HTTPServer> server;
     // Stores the last request header handled. It's obviously not thread-safe to share the same
@@ -85,13 +81,8 @@ public:
         server->start();
     }
 
-    /// `~HTTPServer()`'s own `stop()` (via `TCPServer::stop()`) lets an active connection finish at
-    /// its own pace -- with the private `thread_pool` above, its worker thread would otherwise still
-    /// be blocked reading for a next request when `thread_pool`'s destructor tries to join it.
-    /// `stopAll(true)` aborts active connections immediately (shuts down their sockets), so the
-    /// worker returns right away and `thread_pool.joinAll()` below has nothing left to wait for. Runs
-    /// while every member this server's handler touches is still alive: this is destructor BODY code,
-    /// executed before any member's own destructor begins.
+    /// `stopAll(true)` aborts any active connection immediately, so its worker thread isn't still
+    /// blocked reading for a next request when `thread_pool`'s destructor tries to join it.
     ~TestPocoHTTPServer()
     {
         server->stopAll(true);
@@ -202,9 +193,7 @@ public:
         server->start();
     }
 
-    /// See `TestPocoHTTPServer`'s destructor above: `stopAll(true)` aborts any active connection so
-    /// its worker returns immediately, instead of `thread_pool`'s destructor having to join a thread
-    /// still blocked reading for a next request.
+    /// See `TestPocoHTTPServer`'s destructor above.
     ~TestPocoHTTPStsServer()
     {
         server->stopAll(true);
