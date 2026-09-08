@@ -1111,9 +1111,10 @@ void S3ObjectStorage::shutdown()
 
     /// The SDK checks this flag only after an attempt has failed, right before deciding whether to
     /// retry -- it neither blocks a request's initial dispatch nor interrupts one already in flight.
-    /// Every cached clone below runs `SingleAttemptRetryStrategy` (max_retries=0), so no retry is ever
-    /// attempted there either way: this flag only decides which branch of that post-failure check
-    /// fires (disabled short-circuits before `ShouldRetry` is even asked), not whether a retry follows.
+    /// Every cached clone below runs `SingleAttemptRetryStrategy` (max_retries=0), so its retry strategy
+    /// never asks for a reissue; the one reissue the SDK makes on its own regardless of the strategy --
+    /// an `AWS_GLOBAL` client re-signing for the region a 301/307/400/403 reply names -- is what the
+    /// disabled flag stops on a clone, since that check runs before the region redirect is considered.
     /// What actually blocks a NEW request on the CAS engine's open plane (GC, FSCK, the probe) after
     /// shutdown began is admission, refused at `Pool::teardownBegun()` (`CasPool.cpp`), which
     /// `CasOperation::readLoop` (`CasRequests.h`) checks before every attempt, including the first.
