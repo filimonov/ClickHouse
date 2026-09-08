@@ -1062,6 +1062,19 @@ public:
         server->start();
     }
 
+    /// `~HTTPServer()`'s own `stop()` lets an active connection finish at its own pace -- with the
+    /// private `thread_pool` above, its worker thread would otherwise still be blocked reading for a
+    /// next request when `thread_pool`'s destructor tries to join it. `stopAll(true)` aborts active
+    /// connections immediately (shuts down their sockets), so the worker returns right away and
+    /// `thread_pool.joinAll()` has nothing left to wait for. Runs while every member `Handler` touches
+    /// (`captured_requests`, `responses`, `request_count`) is still alive: this is destructor BODY
+    /// code, executed before any member's own destructor begins.
+    ~ScriptedResponseServer()
+    {
+        server->stopAll(true);
+        thread_pool.joinAll();
+    }
+
     /// `server_socket->address()` is the wildcard bind address (`0.0.0.0:PORT`), which is not a usable
     /// connection target and could silently conflate distinct servers under the same host string. Build
     /// the URL from an explicit loopback address plus the bound port instead.
@@ -1089,17 +1102,6 @@ private:
 
             const size_t index = owner.request_count.fetch_add(1);
             const auto & scripted = owner.responses[std::min(index, owner.responses.size() - 1)];
-            /// `HTTPServerConnection::run()` re-derives the session's keep-alive timeout from this
-            /// response (falling back to the request) after every exchange, ignoring the
-            /// constructor-time `HTTPServerParams` default entirely once the first response has gone
-            /// out. The S3 client's own default keep-alive is 30 seconds
-            /// (`DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT`), which the request carries; without an explicit
-            /// override here that value wins, and the connection-handling worker thread sits blocked
-            /// waiting for a next request that never comes for the rest of this test's lifetime --
-            /// `~ThreadPool()` then pays `PooledThread::release`'s 10 s join cap per such thread as
-            /// pure teardown cost. Set before the scripted headers below so a script that explicitly
-            /// wants a different Keep-Alive header still wins.
-            response.setKeepAliveTimeout(1, 100);
             response.setStatus(scripted.status);
             for (const auto & [name, value] : scripted.headers)
                 response.set(name, value);

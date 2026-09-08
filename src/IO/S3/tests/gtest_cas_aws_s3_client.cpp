@@ -168,17 +168,6 @@ public:
         all_request_headers.push_back(request);
         ++requests_seen;
 
-        /// `HTTPServerConnection::run()` re-derives the session's keep-alive timeout from the
-        /// response (falling back to the request) after every exchange, ignoring the constructor-time
-        /// `HTTPServerParams` default entirely once the first response has gone out. The S3 client's
-        /// own default keep-alive is 30 seconds (`DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT`), which the request
-        /// carries; without an explicit override here that value wins, and the connection-handling
-        /// worker thread sits blocked waiting for a next request that never comes for the rest of
-        /// this test's lifetime -- `~ThreadPool()` then pays `PooledThread::release`'s 10 s join cap
-        /// per such thread as pure teardown cost. Setting it here keeps that wait to the timeout this
-        /// response actually declares.
-        response.setKeepAliveTimeout(1, 100);
-
         if (requests_seen <= fail_first_n)
         {
             response.setStatus(fail_status);
@@ -263,6 +252,19 @@ public:
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, thread_pool, *server_socket, server_params))
     {
         server->start();
+    }
+
+    /// `~HTTPServer()`'s own `stop()` lets an active connection finish at its own pace -- with the
+    /// private `thread_pool` above, its worker thread would otherwise still be blocked reading for a
+    /// next request when `thread_pool`'s destructor tries to join it. `stopAll(true)` aborts active
+    /// connections immediately (shuts down their sockets), so the worker returns right away and
+    /// `thread_pool.joinAll()` has nothing left to wait for. Runs while every member this server's
+    /// handler touches is still alive: this is destructor BODY code, executed before any member's own
+    /// destructor begins.
+    ~TestPocoHTTPSequenceServer()
+    {
+        server->stopAll(true);
+        thread_pool.joinAll();
     }
 
     std::string getUrl()

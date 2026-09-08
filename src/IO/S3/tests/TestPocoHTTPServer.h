@@ -31,11 +31,6 @@ public:
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
     {
-        /// See the identical comment on `ScriptedResponseServer::Handler::handleRequest` in
-        /// gtest_aws_s3_client.cpp: without this, the client's own 30 s default keep-alive
-        /// (`DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT`) wins, and this test's teardown pays
-        /// `PooledThread::release`'s 10 s join cap for the connection-handling worker.
-        response.setKeepAliveTimeout(1, 100);
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         last_request_header = request;
         response.send();
@@ -90,6 +85,19 @@ public:
         server->start();
     }
 
+    /// `~HTTPServer()`'s own `stop()` (via `TCPServer::stop()`) lets an active connection finish at
+    /// its own pace -- with the private `thread_pool` above, its worker thread would otherwise still
+    /// be blocked reading for a next request when `thread_pool`'s destructor tries to join it.
+    /// `stopAll(true)` aborts active connections immediately (shuts down their sockets), so the
+    /// worker returns right away and `thread_pool.joinAll()` below has nothing left to wait for. Runs
+    /// while every member this server's handler touches is still alive: this is destructor BODY code,
+    /// executed before any member's own destructor begins.
+    ~TestPocoHTTPServer()
+    {
+        server->stopAll(true);
+        thread_pool.joinAll();
+    }
+
     /// `server_socket->address()` is the wildcard bind address (`0.0.0.0:PORT`), which is not a usable
     /// connection target. Build the URL from an explicit loopback address plus the bound port instead.
     std::string getUrl()
@@ -127,8 +135,6 @@ public:
         Poco::URI uri(request.getURI());
         last_request_info->query_params = uri.getQueryParameters();
 
-        /// See `MockRequestHandler::handleRequest` above.
-        response.setKeepAliveTimeout(1, 100);
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto & out = response.send();
 
@@ -194,6 +200,15 @@ public:
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, thread_pool, *server_socket, server_params))
     {
         server->start();
+    }
+
+    /// See `TestPocoHTTPServer`'s destructor above: `stopAll(true)` aborts any active connection so
+    /// its worker returns immediately, instead of `thread_pool`'s destructor having to join a thread
+    /// still blocked reading for a next request.
+    ~TestPocoHTTPStsServer()
+    {
+        server->stopAll(true);
+        thread_pool.joinAll();
     }
 
     /// `server_socket->address()` is the wildcard bind address (`0.0.0.0:PORT`), which is not a usable
