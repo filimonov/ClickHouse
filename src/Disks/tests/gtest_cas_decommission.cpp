@@ -82,6 +82,32 @@ private:
     bool latched = false;
 };
 
+/// Fails a read of one designated key a fixed number of times with a transient `Poco::TimeoutException`
+/// -- the class the request engine classifies as a transport failure and reissues -- before delegating
+/// to the base `InMemoryBackend`. Drives the owner-object read `Pool::openForDecommission` itself issues
+/// on the OPEN plane (`claimOwnerOrThrow` -> `readOwnerObject`, CasServerRoot.cpp) through a bounded
+/// number of paced retries DURING opening, before `decommissionPoolMember` gets a chance to install
+/// anything on the already-open `Pool`.
+class FlakyReadBackend : public InMemoryBackend
+{
+public:
+    void failReadNTimes(const String & key, int times) { flaky_key = key; remaining = times; }
+
+    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        if (key == flaky_key && remaining > 0)
+        {
+            --remaining;
+            throw Poco::TimeoutException("injected transient read failure for " + key);
+        }
+        return InMemoryBackend::read(key, access);
+    }
+
+private:
+    String flaky_key;
+    int remaining = 0;
+};
+
 /// Replaces the durable catalog immediately after returning the first armed catalog read. This
 /// distinguishes the immutable cut validated before decommission impersonation from a later mount
 /// safety observation without assuming those two decisions share one GET.
@@ -1416,6 +1442,45 @@ TEST(CASDecommission, DrainClockUnifiesWithTheFarewellBootClockRegardlessOfHostU
     EXPECT_FALSE((*raw_op).head("p/gc/server-roots/victim/mount", Retry::once()).has_value())
         << "one clock for both the request engine and the mount lease -- the farewell must commit and the "
            "slot must retire in a single call, with no leftover mount to resume against";
+}
+
+/// Review round 9r2: folding `drain_now_fn` into `config.boot_ms_fn` alone left `Pool::openForDecommission`'s
+/// own mount/farewell/GC planes -- constructed and used DURING opening, before `decommissionPoolMember`
+/// gets a chance to call `setCasRequestNowFnForTest`/`setCasRetrySleepForTest` on the already-open `Pool`
+/// -- retrying on a clock that only a fake SLEEP advances, while those planes still slept for REAL between
+/// attempts. A transient failure during opening (the owner-object read on the open plane) would then never
+/// see its own `Retry::standard()` deadline elapse, because the bound is measured against a clock frozen
+/// at the value it had when the retry loop started: nothing calls the fake clock's `sleepFn` from a path
+/// that still sleeps for real. `PoolConfig::retry_sleep_fn` closes this by installing the matching fake
+/// sleep on those same planes AT CONSTRUCTION, together with `boot_ms_fn`.
+///
+/// Failing-first without risking an actual hang: this fixture flakes the owner read 5 times, so a correct
+/// fix paces exactly 5 retries on the fake clock and returns in well under a second of real time; the
+/// pre-fix code either never returns (the bound never elapses) or, if it did return, would show an empty
+/// `clock.sleeps` (nothing ever called the fake sleep) and real wall time consumed by 5 real backoffs.
+TEST(CASDecommission, OpeningRetriesPaceOnTheSameFakeClockAndSleepAsTheDrain)
+{
+    auto backend = std::make_shared<FlakyReadBackend>();
+    { auto victim = openVictim(backend); }   /// identity only
+
+    const Layout layout("p");
+    backend->failReadNTimes(layout.ownerKey("victim"), /*times=*/5);
+
+    DB::Cas::tests::FakeClock clock;
+    clock.now = 1'000'000'000'000'000ULL;
+
+    const auto started = std::chrono::steady_clock::now();
+    const auto report = decommissionPoolMember(
+        backend, PoolConfig{.pool_prefix = "p", .server_root_id = "a1"}, "victim",
+        /*sink=*/{}, /*request_gc_round=*/{}, clock.nowFn(), clock.sleepFn());
+    const auto wall_elapsed = std::chrono::steady_clock::now() - started;
+
+    EXPECT_TRUE(report.warnings.empty());
+    EXPECT_TRUE(report.slot_removed);
+    EXPECT_FALSE(clock.sleeps.empty())
+        << "the opening retries must have been paced on the injected clock, not a real sleep";
+    EXPECT_LT(wall_elapsed, std::chrono::seconds(5))
+        << "paced on the fake clock, five retries during opening should cost no real wall time at all";
 }
 
 /// Task 5 (Task-1 carry-forward, escalated by review): preserve recovery from the legacy partial
