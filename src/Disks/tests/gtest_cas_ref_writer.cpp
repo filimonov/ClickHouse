@@ -2825,7 +2825,10 @@ TEST(CASRefWriterSnapshotPublish, TriggerFiresOnCountAboveThresholdWithoutAging)
     PoolConfig config;
     config.snapshot_log_count_threshold = 3;
     config.snapshot_log_bytes_threshold = 1ULL << 40;
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    /// Captured by value: the value never changes, and the Pool can outlive this stack frame (a
+    /// background publish holds `shared_from_this()`), so a by-reference capture of `fake_now` would
+    /// dangle once the frame returns.
+    config.boot_ms_fn = [fake_now] { return fake_now; };
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
     auto store = openPoolWithConfig(backend, config);
 
@@ -3092,7 +3095,9 @@ TEST(CASRefWriterSnapshotPublish, C4LatchBoundedUnderSustainedNonCommittedPublis
     config.snapshot_log_bytes_threshold = 1ULL << 40;
     config.snapshot_publish_backoff_initial_ms = 5000;   /// the frozen clock keeps the backoff armed
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    /// Captured by value: `fake_now` never changes and the Pool can outlive this stack frame (a
+    /// background publish holds `shared_from_this()`), so a by-reference capture would dangle.
+    config.boot_ms_fn = [fake_now] { return fake_now; };
     config.cas_request_budget = budget;
     auto store = openPoolWithConfig(backend, config);
     /// The boot clock above is frozen (it is what keeps the publish backoff armed), so the REQUEST
@@ -3227,13 +3232,16 @@ TEST(CASRefWriterSnapshotPublish, C4BackoffDefersThenRetriesAndPublishes)
 
     const CasRequestBudget budget = wedgeTestBudget();
 
-    uint64_t fake_now = 1'000'000;
+    /// Held in a shared atomic, not a plain local: this test mutates the clock after the Pool exists
+    /// (below), and the Pool can outlive this stack frame (a background publish holds
+    /// `shared_from_this()`), so a by-reference capture of a local would dangle.
+    auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
     PoolConfig config;
     config.snapshot_log_count_threshold = 1;
     config.snapshot_log_bytes_threshold = 1ULL << 40;
     config.snapshot_publish_backoff_initial_ms = 1000;
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    config.boot_ms_fn = [fake_now] { return fake_now->load(); };
     config.cas_request_budget = budget;
     auto store = openPoolWithConfig(backend, config);
     /// As above: the frozen boot clock drives the backoff decisions, so the request engine gets its
@@ -3264,7 +3272,7 @@ TEST(CASRefWriterSnapshotPublish, C4BackoffDefersThenRetriesAndPublishes)
 
     /// Advance past the backoff, with the fault cleared: exactly one retry is dispatched and it publishes.
     backend->disarmFaults();
-    fake_now += 2000;
+    *fake_now += 2000;
     store->resolveRef(ns, "a");
     store->waitForSnapshotPublishSettleForTest(ns);
     EXPECT_EQ(global_counters[ProfileEvents::CASRefSnapshotPublishDispatched].load(), d1 + 1)
@@ -3467,10 +3475,12 @@ TEST(CASRefWriterStalePrecommitSweep, BoundedBatchesAndInterruptionResumeAcrossM
     /// pays a real ~36.5s token-stability observation wait here. Inject a fake `boot_ms_fn` +
     /// `wait_sleep_fn` (mirroring `CASMountOpenWaits.UncleanOpenPaysOnlyTheObservationWindow`) so it
     /// resolves instantly.
-    uint64_t resumer_fake_boot = 0;
+    /// Held in a shared atomic, not a plain local: the Pool can outlive this stack frame (a background
+    /// publish holds `shared_from_this()`), so a by-reference capture of a local would dangle.
+    auto resumer_fake_boot = std::make_shared<std::atomic<uint64_t>>(0);
     PoolConfig resumer_config;
-    resumer_config.boot_ms_fn = [&resumer_fake_boot] { return resumer_fake_boot; };
-    resumer_config.wait_sleep_fn = [&resumer_fake_boot](uint64_t ms) { resumer_fake_boot += ms; };
+    resumer_config.boot_ms_fn = [resumer_fake_boot] { return resumer_fake_boot->load(); };
+    resumer_config.wait_sleep_fn = [resumer_fake_boot](uint64_t ms) { *resumer_fake_boot += ms; };
     auto resumer = openPoolWithConfig(backend, resumer_config);
     EXPECT_NO_THROW(resumer->listRefs(ns));
 
@@ -3519,11 +3529,14 @@ TEST(CASRefWriterStalePrecommitSweep, FailedSweepRearmsAndRetriesUntilClean)
     const Layout layout("p");
     const RootNamespace ns{"srv1/precommit_sweep_retry"};
 
-    /// One shared injected clock for both incarnations. The successor's wait hook below advances this
-    /// same clock, so both mount observation and the later sweep-backoff deadline are deterministic.
-    uint64_t fake_now = 1'000'000;
-    size_t mount_wait_calls = 0;
-    const auto fake_clock = [&fake_now] { return fake_now; };
+    /// One shared injected clock for both incarnations, held in a shared atomic rather than a plain
+    /// local: the successor Pool can outlive this stack frame (a background publish holds
+    /// `shared_from_this()`), so a by-reference capture of a local would dangle. The successor's wait
+    /// hook below advances this same clock, so both mount observation and the later sweep-backoff
+    /// deadline are deterministic.
+    auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
+    auto mount_wait_calls = std::make_shared<std::atomic<size_t>>(0);
+    const auto fake_clock = [fake_now] { return fake_now->load(); };
 
     {
         /// A predecessor writer leaves THREE precommits dangling (a crash before promote).
@@ -3549,14 +3562,14 @@ TEST(CASRefWriterStalePrecommitSweep, FailedSweepRearmsAndRetriesUntilClean)
     config.cas_request_budget = budget;
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
     config.boot_ms_fn = fake_clock;
-    config.wait_sleep_fn = [&fake_now, &mount_wait_calls](uint64_t ms)
+    config.wait_sleep_fn = [fake_now, mount_wait_calls](uint64_t ms)
     {
-        ++mount_wait_calls;
-        fake_now += ms;
+        ++(*mount_wait_calls);
+        *fake_now += ms;
     };
     SynchronizedEventLog seen;   /// declared BEFORE the Pool so it outlives the background syncer's emits (ASan 2026-07-09)
     auto successor = openPoolWithConfig(backend, config);
-    EXPECT_GT(mount_wait_calls, 0u)
+    EXPECT_GT(mount_wait_calls->load(), 0u)
         << "the unclean predecessor must exercise the injected mount-observation wait";
 
     successor->setEventSink([&](const CasEvent & e) { seen.add(e); });
@@ -3600,7 +3613,7 @@ TEST(CASRefWriterStalePrecommitSweep, FailedSweepRearmsAndRetriesUntilClean)
     /// mutation this time) retries: the lane resolves its wedge (the first chunk's removals become
     /// durable and applied), the re-pass verifies clean, and the flag clears permanently.
     backend->materializePendingDelayedWrite();
-    fake_now += 60'000;   /// beyond any armed backoff (initial 200 ms, max 30 s)
+    *fake_now += 60'000;   /// beyond any armed backoff (initial 200 ms, max 30 s)
     EXPECT_NO_THROW(publishEmptyPart(successor, ns, "fresh"));
     EXPECT_FALSE(successor->refLaneWedgedForTest(ns));
     EXPECT_FALSE(successor->needsStalePrecommitSweepForTest(ns))
@@ -3869,12 +3882,14 @@ TEST(CASRefWriterRemount, DiscardsWedgeAndLaneRemainsUsable)
     auto backend = std::make_shared<RefWriterTestBackend>();
     /// The self-remount below blocks on nothing (see
     /// `CASRemountWaits.UnresolvedWedgeRemountPaysNoWaitEither`, `gtest_cas_pool.cpp`); the injected
-    /// `boot_ms_fn`/`wait_sleep_fn` keep this test off the real clock anyway.
-    uint64_t fake_boot = 0;
+    /// `boot_ms_fn`/`wait_sleep_fn` keep this test off the real clock anyway. Held in a shared atomic,
+    /// not a plain local: the Pool can outlive this stack frame (a background publish holds
+    /// `shared_from_this()`), so a by-reference capture of a local would dangle.
+    auto fake_boot = std::make_shared<std::atomic<uint64_t>>(0);
     PoolConfig config;
     config.cas_request_budget = budget;
-    config.boot_ms_fn = [&fake_boot] { return fake_boot; };
-    config.wait_sleep_fn = [&fake_boot](uint64_t ms) { fake_boot += ms; };
+    config.boot_ms_fn = [fake_boot] { return fake_boot->load(); };
+    config.wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; };
     auto store = openPoolWithConfig(backend, config);
     const Layout & layout = store->layout();
     const RootNamespace ns{"srv1/remount_wedge"};
@@ -3916,11 +3931,13 @@ TEST(CASRefWriterRemount, SupersededLeaderMidFlushFailsClosedCreatesNoObject)
     CasRequestBudget budget;
     budget.attempt_timeout_ms = 100;
     budget.lease_safety_margin_ms = 100;
-    uint64_t fake_boot = 0;
+    /// Held in a shared atomic, not a plain local: the Pool can outlive this stack frame (a background
+    /// publish holds `shared_from_this()`), so a by-reference capture of a local would dangle.
+    auto fake_boot = std::make_shared<std::atomic<uint64_t>>(0);
     PoolConfig config;
     config.cas_request_budget = budget;
-    config.boot_ms_fn = [&fake_boot] { return fake_boot; };
-    config.wait_sleep_fn = [&fake_boot](uint64_t ms) { fake_boot += ms; };
+    config.boot_ms_fn = [fake_boot] { return fake_boot->load(); };
+    config.wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; };
     auto store = openPoolWithConfig(backend, config);
     const Layout & layout = store->layout();
     const RootNamespace ns{"srv1/remount_midflush"};
@@ -5359,7 +5376,10 @@ TEST(CASRefWriterRecoveryRetry, TransientSealFailureIsRetriedThenSucceeds)
     config.cas_request_budget.recovery_retry_budget_ms = 120000;
     config.cas_request_budget.recovery_retry_initial_backoff_ms = 1000;
     config.cas_request_budget.recovery_retry_max_backoff_ms = 30000;
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    /// Captured by value: `fake_now` stays frozen for the whole test (see below), and the Pool can
+    /// outlive this stack frame (a background publish holds `shared_from_this()`), so a by-reference
+    /// capture would dangle.
+    config.boot_ms_fn = [fake_now] { return fake_now; };
     config.wait_sleep_fn = [](uint64_t) {};
     auto store = openPoolWithConfig(backend, config);
     ASSERT_TRUE(store);
@@ -5412,7 +5432,10 @@ TEST(CASRefWriterRecoveryRetry, RecoveryDoesNotEnumerateItsStream)
     config.mount_lease_ttl_ms = std::chrono::milliseconds(500);
     config.cas_request_budget = sealTestTinyBudget();
     config.cas_request_budget.recovery_retry_budget_ms = 120000;
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    /// Captured by value: `fake_now` is never mutated in this test, and the Pool can outlive this
+    /// stack frame (a background publish holds `shared_from_this()`), so a by-reference capture would
+    /// dangle.
+    config.boot_ms_fn = [fake_now] { return fake_now; };
     config.wait_sleep_fn = [](uint64_t) {};
     auto store = openPoolWithConfig(backend, config);
     ASSERT_TRUE(store);
@@ -5445,7 +5468,10 @@ TEST(CASRefWriterRecoveryRetry, TransientFailureLongerThanBudgetPropagates)
     seedSealFixtureDeadEpochs(backend, layout, ns);
     seedUncleanPredecessorMount(backend, layout, /*epoch=*/2);
 
-    uint64_t fake_now = 1'000'000;
+    /// Held in a shared atomic, not a plain local: this test mutates the clock via the retry-sleep
+    /// hook below, and the Pool can outlive this stack frame (a background publish holds
+    /// `shared_from_this()`), so a by-reference capture of a local would dangle.
+    auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
 
     PoolConfig config;
     config.server_id = UInt128(1);
@@ -5456,11 +5482,11 @@ TEST(CASRefWriterRecoveryRetry, TransientFailureLongerThanBudgetPropagates)
     config.cas_request_budget.recovery_retry_budget_ms = 5000;   /// small, deterministic
     config.cas_request_budget.recovery_retry_initial_backoff_ms = 1000;
     config.cas_request_budget.recovery_retry_max_backoff_ms = 30000;
-    config.boot_ms_fn = [&fake_now] { return fake_now; };
+    config.boot_ms_fn = [fake_now] { return fake_now->load(); };
     config.wait_sleep_fn = [](uint64_t) {};
     auto store = openPoolWithConfig(backend, config);
     ASSERT_TRUE(store);
-    store->setCasRetrySleepForTest([&fake_now](uint64_t ms) { fake_now += ms; });
+    store->setCasRetrySleepForTest([fake_now](uint64_t ms) { *fake_now += ms; });
 
     /// The seal is an in-band LOG transaction at the slot after the dead epoch's last durable id, not a
     /// snapshot at a synthetic id: epoch 1 closes at `{1,2}`, which is the FIRST write the walk attempts.
