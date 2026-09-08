@@ -1111,13 +1111,14 @@ void S3ObjectStorage::shutdown()
 
     /// The SDK checks this flag only after an attempt has failed, right before deciding whether to
     /// retry -- it neither blocks a request's initial dispatch nor interrupts one already in flight.
-    /// Every cached clone below runs `SingleAttemptRetryStrategy` (max_retries=0), so the flag changes
-    /// nothing observable there: `ShouldRetry` already always says no. What actually blocks a NEW
-    /// request on the CAS engine's open plane (GC, FSCK, the probe) after shutdown is admission,
-    /// refused at `Pool::teardownBegun()` (`CasPool.cpp`), which `CasOperation::readLoop`
-    /// (`CasRequests.h`) checks before every attempt, including the first. The mount and farewell
-    /// planes stay admitting through this window, since teardown's own drain and farewell I/O run on
-    /// them.
+    /// Every cached clone below runs `SingleAttemptRetryStrategy` (max_retries=0), so no retry is ever
+    /// attempted there either way: this flag only decides which branch of that post-failure check
+    /// fires (disabled short-circuits before `ShouldRetry` is even asked), not whether a retry follows.
+    /// What actually blocks a NEW request on the CAS engine's open plane (GC, FSCK, the probe) after
+    /// shutdown began is admission, refused at `Pool::teardownBegun()` (`CasPool.cpp`), which
+    /// `CasOperation::readLoop` (`CasRequests.h`) checks before every attempt, including the first.
+    /// The mount and farewell planes stay admitting through this window, since teardown's own drain
+    /// and farewell I/O run on them.
     std::lock_guard lock(single_attempt_client_mutex);
     single_attempt_clients_disabled = true;
     for (const auto & [_, clone] : single_attempt_clients)
