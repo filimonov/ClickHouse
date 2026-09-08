@@ -25,6 +25,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsBool read_only;
 }
 
+
 class S3ObjectStorage : public IObjectStorage
 {
 public:
