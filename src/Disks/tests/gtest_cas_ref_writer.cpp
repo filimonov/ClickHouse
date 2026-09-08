@@ -5514,8 +5514,9 @@ TEST(CASRefWriterRecoveryRetry, NonNetworkErrorIsNotRetried)
     auto store = openPoolWithConfig(backend, config);
     ASSERT_TRUE(store);
 
-    size_t sleep_calls = 0;
-    store->setCasRetrySleepForTest([&sleep_calls](uint64_t) { ++sleep_calls; });
+    /// Owned by the closure: the pool may outlive this frame and retry a farewell request.
+    auto sleep_calls = std::make_shared<std::atomic<size_t>>(0);
+    store->setCasRetrySleepForTest([sleep_calls](uint64_t) { ++*sleep_calls; });
 
     /// A foreign writer lands DIFFERENT valid bytes at the seal key; resolve-before-reissue then throws
     /// CORRUPTED_DATA (a real cross-process seal conflict), which must NOT be retried.
@@ -5526,7 +5527,7 @@ TEST(CASRefWriterRecoveryRetry, NonNetworkErrorIsNotRetried)
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->listRefs(ns); });
     EXPECT_EQ(backend->corrupt_count, 0)
         << "the test must reach the injected foreign seal conflict, not fail on fixture validation";
-    EXPECT_EQ(sleep_calls, 0u) << "a non-transient error must fail fast with zero backoff sleeps";
+    EXPECT_EQ(sleep_calls->load(), 0u) << "a non-transient error must fail fast with zero backoff sleeps";
 }
 
 TEST(CASRefWriterRecoveryRetry, VanishBrakeStaysTerminalNotRetried)
@@ -5555,8 +5556,9 @@ TEST(CASRefWriterRecoveryRetry, VanishBrakeStaysTerminalNotRetried)
 
     auto store = openPool(backend);
 
-    size_t sleep_calls = 0;
-    store->setCasRetrySleepForTest([&sleep_calls](uint64_t) { ++sleep_calls; });
+    /// Owned by the closure: the pool may outlive this frame and retry a farewell request.
+    auto sleep_calls = std::make_shared<std::atomic<size_t>>(0);
+    store->setCasRetrySleepForTest([sleep_calls](uint64_t) { ++*sleep_calls; });
 
     /// A checkpoint-named snapshot belongs to the caller's immutable authority cut. If that exact
     /// object is absent, recovery must report corruption immediately; it must neither reinterpret a
@@ -5573,7 +5575,7 @@ TEST(CASRefWriterRecoveryRetry, VanishBrakeStaysTerminalNotRetried)
         << "the test must reach the checkpoint-named snapshot GET, not fail on earlier fixture validation";
     EXPECT_EQ(global_counters[ProfileEvents::CASRefRecoveryRetries].load(), retries_before)
         << "missing immutable checkpoint authority is terminal; the outer transient-retry loop must NOT re-drive it";
-    EXPECT_EQ(sleep_calls, 0u) << "no backoff sleep for missing immutable checkpoint authority";
+    EXPECT_EQ(sleep_calls->load(), 0u) << "no backoff sleep for missing immutable checkpoint authority";
 }
 
 TEST(CASRefWriterRecoveryRetry, ThrowingBackoffSleepDoesNotWedgeRecovery)
@@ -5601,10 +5603,11 @@ TEST(CASRefWriterRecoveryRetry, ThrowingBackoffSleepDoesNotWedgeRecovery)
     /// First touch: the seal create fails transiently and the next thing either loop does is sleep on
     /// this one seam -- the write engine's reissue pause is simply the first to reach it -- so the throw
     /// lands while `recovery_in_progress` is set, which is the state this test is about.
-    bool sleep_should_throw = true;
-    store->setCasRetrySleepForTest([&sleep_should_throw](uint64_t)
+    /// Owned by the closure: the pool may outlive this frame and retry a farewell request.
+    auto sleep_should_throw = std::make_shared<std::atomic<bool>>(true);
+    store->setCasRetrySleepForTest([sleep_should_throw](uint64_t)
     {
-        if (sleep_should_throw)
+        if (sleep_should_throw->load())
             throw std::runtime_error("injected backoff-sleep failure");
     });
     const RefTxnId seal_id{1, 2};
@@ -5616,7 +5619,7 @@ TEST(CASRefWriterRecoveryRetry, ThrowingBackoffSleepDoesNotWedgeRecovery)
     /// The lane must NOT be wedged: with the fault now spent and the sleep no longer throwing, a second
     /// touch recovers cleanly. If recovery_in_progress had leaked (SCOPE_EXIT run unlocked / not run), a
     /// concurrent-safe second recovery would deadlock or mis-behave.
-    sleep_should_throw = false;
+    sleep_should_throw->store(false);
     EXPECT_EQ(store->listRefs(ns).size(), 2u) << "a second touch must recover; the retry lane is not wedged";
 }
 
