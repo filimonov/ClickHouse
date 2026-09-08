@@ -839,7 +839,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
         const String offered_pool_cookie = parse<String>(in->getResponseCookie(CA_POOL_UUID_PARAM, ""));
         auto choice = chooseForcedCaDisk(
             static_cast<bool>(disk), ca_candidates, ca_candidate_disks, advertised_pools, offered_pool_cookie, part_name, log);
-        offered_pool = choice.offered_pool;
+        offered_pool = std::move(choice.offered_pool);
         /// From here on the target is decided: every `!disk` reservation branch below is skipped.
         if (choice.disk)
             disk = forced_ca_disk = choice.disk;
