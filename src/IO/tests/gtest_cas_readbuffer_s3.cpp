@@ -24,17 +24,25 @@ static constexpr auto TEST_LOG_LEVEL = "debug";
 static fs::path caches_dir = fs::current_path() / "readbuffer_s3";
 static std::string cache_base_path = caches_dir / "cache1" / "";
 
-/// A byte-for-byte copy of `ReadBufferFromS3Test` from `gtest_readbuffer_s3.cpp`, kept at external
-/// linkage (NOT in the anonymous namespace below) and identical token-for-token: gtest itself checks,
-/// at test registration, that every `TEST_F` under one suite name shares the same fixture TYPE, and
-/// that check runs across translation units by comparing each fixture's `GetTypeId()` -- for two
-/// externally-linked, identically-defined classes that resolves to the same type (permitted by the
-/// One Definition Rule), so both files' `TEST_F(ReadBufferFromS3Test, ...)` register under the one
-/// suite without tripping "different test fixture classes" at runtime. If this ever needs to diverge
-/// from that file's copy, move it into the anonymous namespace below (or the mocks header) instead of
-/// letting it drift while still external -- a drifted-but-external copy is exactly the ODR violation
-/// `ClientFake` had.
-class ReadBufferFromS3Test : public ::testing::Test
+/// Everything below, including the fixture, is local to this translation unit and has internal
+/// linkage. Two problems, both real ODR violations, ruled this out being external:
+/// `ClientFake` here is NOT identical to `gtest_readbuffer_s3.cpp`'s (it implements only the
+/// `GetObject` override these tests need) -- giving it external linkage under the same name lets the
+/// linker keep only one of the two conflicting definitions, silently dropping
+/// `ListObjectsV2`/`last_start_after` for whichever file's tests didn't win. And an EARLIER version of
+/// this fixture, `ReadBufferFromS3Test`, WAS textually identical to that file's copy but still
+/// violated the rule: both definitions call `setupLogs`/reference `cache_base_path`, and each of those
+/// names has internal linkage, so it resolves to a DIFFERENT entity per translation unit -- the
+/// standard's "one token sequence, same meaning" test for treating two definitions as one entity
+/// fails even though the text matches. The suite is renamed to `CASReadBufferFromS3Test` (test names
+/// unchanged) specifically so this internal-linkage fixture doesn't share a suite name with that
+/// file's externally-linked one, which gtest's own registration-time check
+/// ("different test fixture classes") would otherwise reject.
+namespace
+{
+
+/// A copy of `ReadBufferFromS3Test` from `gtest_readbuffer_s3.cpp`, renamed per the note above.
+class CASReadBufferFromS3Test : public ::testing::Test
 {
 public:
     static void setupLogs(const std::string & level)
@@ -62,17 +70,6 @@ public:
             fs::remove_all(cache_base_path);
     }
 };
-
-/// Everything below, down to `readAndAssert`, is local to this translation unit: `ClientFake` here is
-/// NOT identical to `gtest_readbuffer_s3.cpp`'s (it implements only the `GetObject` override these
-/// tests need), so giving it external linkage under the same name would be an ODR violation -- the
-/// linker keeps only one of the two conflicting definitions, and whichever survives silently drops
-/// `ListObjectsV2`/`last_start_after` for both files' tests. The anonymous namespace gives every
-/// name here internal linkage instead, so it can share the same identifiers as that file's copies
-/// without colliding at link time; the tests below still resolve these names to the local copies
-/// because ordinary unqualified lookup in this TU never sees the other file's version.
-namespace
-{
 
 /// A copy of `CountedSession` from `gtest_readbuffer_s3.cpp`, an opaque session marker for
 /// `SessionAwareIOStream`. That file's version counts live instances for its session-lifetime tests;
@@ -200,7 +197,7 @@ static void readAndAssert(DB::ReadBuffer & buf, const char * str)
 
 }
 
-TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenFailedAttemptDeliveredNoBytes)
+TEST_F(CASReadBufferFromS3Test, IdentityNotFlaggedWhenFailedAttemptDeliveredNoBytes)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -227,7 +224,7 @@ TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenFailedAttemptDeliveredNoBytes
     ASSERT_FALSE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, IdentityFlaggedWhenBytesDeliveredBeforeFailure)
+TEST_F(CASReadBufferFromS3Test, IdentityFlaggedWhenBytesDeliveredBeforeFailure)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -257,7 +254,7 @@ TEST_F(ReadBufferFromS3Test, IdentityFlaggedWhenBytesDeliveredBeforeFailure)
     ASSERT_TRUE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenReissuedEtagMatches)
+TEST_F(CASReadBufferFromS3Test, IdentityNotFlaggedWhenReissuedEtagMatches)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -286,7 +283,7 @@ TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenReissuedEtagMatches)
     ASSERT_FALSE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, ThreeResponsesABytesThenAEmptyFailThenBBytesIsFlagged)
+TEST_F(CASReadBufferFromS3Test, ThreeResponsesABytesThenAEmptyFailThenBBytesIsFlagged)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -319,7 +316,7 @@ TEST_F(ReadBufferFromS3Test, ThreeResponsesABytesThenAEmptyFailThenBBytesIsFlagg
     ASSERT_TRUE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, ThreeResponsesABytesThenBEmptyFailThenABytesIsNotFlagged)
+TEST_F(CASReadBufferFromS3Test, ThreeResponsesABytesThenBEmptyFailThenABytesIsNotFlagged)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -354,7 +351,7 @@ TEST_F(ReadBufferFromS3Test, ThreeResponsesABytesThenBEmptyFailThenABytesIsNotFl
     ASSERT_EQ(subject.getObjectMetadataFromTheLastRequest().etag, "A");
 }
 
-TEST_F(ReadBufferFromS3Test, SeekReissueAcceptsNewEtagWithoutFlag)
+TEST_F(CASReadBufferFromS3Test, SeekReissueAcceptsNewEtagWithoutFlag)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -387,7 +384,7 @@ TEST_F(ReadBufferFromS3Test, SeekReissueAcceptsNewEtagWithoutFlag)
     ASSERT_FALSE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, SetReadUntilPositionReissueAcceptsNewEtagWithoutFlag)
+TEST_F(CASReadBufferFromS3Test, SetReadUntilPositionReissueAcceptsNewEtagWithoutFlag)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -419,7 +416,7 @@ TEST_F(ReadBufferFromS3Test, SetReadUntilPositionReissueAcceptsNewEtagWithoutFla
     ASSERT_FALSE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, SetReadUntilEndReissueAcceptsNewEtagWithoutFlag)
+TEST_F(CASReadBufferFromS3Test, SetReadUntilEndReissueAcceptsNewEtagWithoutFlag)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -452,7 +449,7 @@ TEST_F(ReadBufferFromS3Test, SetReadUntilEndReissueAcceptsNewEtagWithoutFlag)
     ASSERT_FALSE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, InBufferSeekPreservesBaselineAndLaterMixedRetryIsFlagged)
+TEST_F(CASReadBufferFromS3Test, InBufferSeekPreservesBaselineAndLaterMixedRetryIsFlagged)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -487,7 +484,7 @@ TEST_F(ReadBufferFromS3Test, InBufferSeekPreservesBaselineAndLaterMixedRetryIsFl
     ASSERT_TRUE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, ExternalBufferFlagsMixedIncarnations)
+TEST_F(CASReadBufferFromS3Test, ExternalBufferFlagsMixedIncarnations)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
@@ -527,7 +524,7 @@ TEST_F(ReadBufferFromS3Test, ExternalBufferFlagsMixedIncarnations)
     ASSERT_TRUE(subject.responseIdentityChanged());
 }
 
-TEST_F(ReadBufferFromS3Test, PartialInternalFillNeverExposedDoesNotCountAsDelivery)
+TEST_F(CASReadBufferFromS3Test, PartialInternalFillNeverExposedDoesNotCountAsDelivery)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;

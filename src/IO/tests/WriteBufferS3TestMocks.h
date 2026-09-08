@@ -249,7 +249,14 @@ struct InjectionModel
 /// `nullopt` means the `clickhouse-request` header is absent -- distinct from an explicit `attempt=1`,
 /// since a seed of 0 leaves every verb but the read path unseeded (no header at all; see
 /// `S3::seededAttemptNumber`'s callers).
-static std::optional<size_t> attemptNumberFromCustomHeaders(const Aws::AmazonWebServiceRequest & request)
+///
+/// `inline`, not `static`: this header is included into two translation units, and `MockS3::Client`'s
+/// (in-class, therefore already-inline) methods that call this are meant to be the SAME definition in
+/// both -- but a `static` function has internal linkage, so each TU's copy is a DIFFERENT entity, and
+/// two definitions that are token-identical but call different entities are not one definition under
+/// the One Definition Rule. `inline` gives this one external-linkage identity shared by both TUs,
+/// matching what the callers that reference it already assume.
+inline std::optional<size_t> attemptNumberFromCustomHeaders(const Aws::AmazonWebServiceRequest & request)
 {
     const auto & headers = request.GetAdditionalCustomHeaders();
     auto it = headers.find("clickhouse-request");
@@ -774,13 +781,17 @@ struct SimpleAsyncTasks : BaseSyncPolicy
 namespace DB
 {
 
-static void writeAsOneBlock(WriteBuffer& buf, size_t size)
+/// `inline`, not `static`, for the same reason as `attemptNumberFromCustomHeaders` above:
+/// `WBS3Test::runSimpleScenario` (in-class, already-inline) calls these, and a `static` function's
+/// internal linkage would make each including TU's copy a distinct entity, breaking the "one
+/// definition" the shared, externally-linked `WBS3Test` depends on.
+inline void writeAsOneBlock(WriteBuffer& buf, size_t size)
 {
     std::vector<char> data(size, 'a');
     buf.write(data.data(), data.size());
 }
 
-static void writeAsPieces(WriteBuffer& buf, size_t size)
+inline void writeAsPieces(WriteBuffer& buf, size_t size)
 {
     size_t ceil = 15ull*1024*1024*1024;
     size_t piece = 1;

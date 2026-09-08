@@ -16,6 +16,7 @@
 #include <Poco/URI.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/SharedPtr.h>
+#include <Poco/ThreadPool.h>
 #include <fmt/format.h>
 
 class MockRequestHandler : public Poco::Net::HTTPRequestHandler
@@ -30,6 +31,11 @@ public:
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
     {
+        /// See the identical comment on `ScriptedResponseServer::Handler::handleRequest` in
+        /// gtest_aws_s3_client.cpp: without this, the client's own 30 s default keep-alive
+        /// (`DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT`) wins, and this test's teardown pays
+        /// `PooledThread::release`'s 10 s join cap for the connection-handling worker.
+        response.setKeepAliveTimeout(1, 100);
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         last_request_header = request;
         response.send();
@@ -59,6 +65,15 @@ class TestPocoHTTPServer
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<HTTPRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    /// A dedicated pool instead of `Poco::ThreadPool::defaultPool()` (what the `HTTPServer`
+    /// constructor uses when none is given explicitly): `TCPServerDispatcher::enqueue`
+    /// (`base/poco/Net/src/TCPServerDispatcher.cpp`) has an acknowledged-in-comment bug where its
+    /// saturation check races once more than one `TCPServerDispatcher` shares that pool, so a
+    /// connection can be accepted and then immediately closed with no response whenever this
+    /// binary's OTHER local-server tests have the shared pool saturated at that moment. A private
+    /// pool makes this server's thread accounting exact regardless of how many other in-process
+    /// servers this binary runs.
+    Poco::ThreadPool thread_pool;
     std::unique_ptr<Poco::Net::HTTPServer> server;
     // Stores the last request header handled. It's obviously not thread-safe to share the same
     // reference across request handlers, but it's good enough for this the purposes of this test.
@@ -69,14 +84,17 @@ public:
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new HTTPRequestHandlerFactory(last_request_header)),
         server_params(new Poco::Net::HTTPServerParams()),
-        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+        thread_pool("TestPocoHTTPServer"),
+        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, thread_pool, *server_socket, server_params))
     {
         server->start();
     }
 
+    /// `server_socket->address()` is the wildcard bind address (`0.0.0.0:PORT`), which is not a usable
+    /// connection target. Build the URL from an explicit loopback address plus the bound port instead.
     std::string getUrl()
     {
-        return "http://" + server_socket->address().toString();
+        return "http://127.0.0.1:" + std::to_string(server_socket->address().port());
     }
 
     const Poco::Net::MessageHeader & getLastRequestHeader() const
@@ -109,6 +127,8 @@ public:
         Poco::URI uri(request.getURI());
         last_request_info->query_params = uri.getQueryParameters();
 
+        /// See `MockRequestHandler::handleRequest` above.
+        response.setKeepAliveTimeout(1, 100);
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         auto & out = response.send();
 
@@ -157,6 +177,9 @@ class TestPocoHTTPStsServer
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<StsHTTPRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
+    /// See the identical member in `TestPocoHTTPServer` above: a private pool avoids
+    /// `TCPServerDispatcher`'s shared-pool saturation bug (base/poco/Net/src/TCPServerDispatcher.cpp).
+    Poco::ThreadPool thread_pool;
     std::unique_ptr<Poco::Net::HTTPServer> server;
     // Stores the last request header handled. It's obviously not thread-safe to share the same
     // reference across request handlers, but it's good enough for this the purposes of this test.
@@ -167,14 +190,17 @@ public:
         server_socket(std::make_unique<Poco::Net::ServerSocket>(0)),
         handler_factory(new StsHTTPRequestHandlerFactory(last_request_info, std::move(role_access_key), std::move(role_secret_key))),
         server_params(new Poco::Net::HTTPServerParams()),
-        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
+        thread_pool("TestPocoHTTPStsServer"),
+        server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, thread_pool, *server_socket, server_params))
     {
         server->start();
     }
 
+    /// `server_socket->address()` is the wildcard bind address (`0.0.0.0:PORT`), which is not a usable
+    /// connection target. Build the URL from an explicit loopback address plus the bound port instead.
     std::string getUrl()
     {
-        return "http://" + server_socket->address().toString();
+        return "http://127.0.0.1:" + std::to_string(server_socket->address().port());
     }
 
     void resetLastRequest()
