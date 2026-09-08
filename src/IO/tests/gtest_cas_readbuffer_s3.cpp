@@ -24,9 +24,16 @@ static constexpr auto TEST_LOG_LEVEL = "debug";
 static fs::path caches_dir = fs::current_path() / "readbuffer_s3";
 static std::string cache_base_path = caches_dir / "cache1" / "";
 
-/// A byte-for-byte copy of `ReadBufferFromS3Test` from `gtest_readbuffer_s3.cpp`: identically-defined
-/// classes in two translation units are the same type under the One Definition Rule, so `TEST_F` bodies
-/// for this fixture can live in either file without a shared header.
+/// A byte-for-byte copy of `ReadBufferFromS3Test` from `gtest_readbuffer_s3.cpp`, kept at external
+/// linkage (NOT in the anonymous namespace below) and identical token-for-token: gtest itself checks,
+/// at test registration, that every `TEST_F` under one suite name shares the same fixture TYPE, and
+/// that check runs across translation units by comparing each fixture's `GetTypeId()` -- for two
+/// externally-linked, identically-defined classes that resolves to the same type (permitted by the
+/// One Definition Rule), so both files' `TEST_F(ReadBufferFromS3Test, ...)` register under the one
+/// suite without tripping "different test fixture classes" at runtime. If this ever needs to diverge
+/// from that file's copy, move it into the anonymous namespace below (or the mocks header) instead of
+/// letting it drift while still external -- a drifted-but-external copy is exactly the ODR violation
+/// `ClientFake` had.
 class ReadBufferFromS3Test : public ::testing::Test
 {
 public:
@@ -56,20 +63,23 @@ public:
     }
 };
 
-/// A session-counting stand-in for the SDK's own HTTP session, exactly as `CountedSession` in
-/// `gtest_readbuffer_s3.cpp` -- `static inline` here instead of an out-of-class definition so this
-/// duplicate doesn't collide with that file's copy of the same counter at link time.
+/// Everything below, down to `readAndAssert`, is local to this translation unit: `ClientFake` here is
+/// NOT identical to `gtest_readbuffer_s3.cpp`'s (it implements only the `GetObject` override these
+/// tests need), so giving it external linkage under the same name would be an ODR violation -- the
+/// linker keeps only one of the two conflicting definitions, and whichever survives silently drops
+/// `ListObjectsV2`/`last_start_after` for both files' tests. The anonymous namespace gives every
+/// name here internal linkage instead, so it can share the same identifiers as that file's copies
+/// without colliding at link time; the tests below still resolve these names to the local copies
+/// because ordinary unqualified lookup in this TU never sees the other file's version.
+namespace
+{
+
+/// A copy of `CountedSession` from `gtest_readbuffer_s3.cpp`, an opaque session marker for
+/// `SessionAwareIOStream`. That file's version counts live instances for its session-lifetime tests;
+/// no test in this file reads such a count, and an internal-linkage member nothing calls or reads
+/// trips `-Wunused-member-function`/`-Wunneeded-member-function`, so this copy carries no state at all.
 class CountedSession
 {
-public:
-    CountedSession() { ++total; }
-    CountedSession(const CountedSession &) { ++total; }
-    ~CountedSession() { --total; }
-
-    static int OustandingObjects() { return total; }
-
-private:
-    static inline int total = 0;
 };
 
 using CountedSessionPtr = std::shared_ptr<CountedSession>;
@@ -144,9 +154,9 @@ static Aws::S3::Model::GetObjectOutcome makeGetObjectOutcome(std::streambuf * sb
 
 using GetObjectFn = std::function<Aws::S3::Model::GetObjectOutcome(const Aws::S3::Model::GetObjectRequest & request)>;
 
-/// A copy of `ClientFake` from `gtest_readbuffer_s3.cpp`: only the `GetObject` override this file's
-/// tests need, reconstructed here rather than shared through a header because that file's `ClientFake`
-/// is otherwise untouched by these tests and a header would only add an indirection for one method.
+/// A trimmed copy of `ClientFake` from `gtest_readbuffer_s3.cpp`: only the `GetObject` override this
+/// file's tests need. It deliberately does NOT match that file's `ClientFake` (which also overrides
+/// `ListObjectsV2`) -- see the anonymous-namespace comment above for why that's required, not optional.
 struct ClientFake : DB::S3::Client
 {
     explicit ClientFake()
@@ -186,6 +196,8 @@ static void readAndAssert(DB::ReadBuffer & buf, const char * str)
     std::vector<char> tmp(n);
     buf.readStrict(tmp.data(), n);
     ASSERT_EQ(strncmp(tmp.data(), str, n), 0);
+}
+
 }
 
 TEST_F(ReadBufferFromS3Test, IdentityNotFlaggedWhenFailedAttemptDeliveredNoBytes)

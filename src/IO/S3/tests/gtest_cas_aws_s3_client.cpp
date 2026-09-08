@@ -129,6 +129,13 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(const DB::S3::URI & uri)
         });
 }
 
+/// Anonymous namespace: these three classes have no counterpart in gtest_aws_s3_client.cpp today, but
+/// giving them internal linkage costs nothing and avoids ever silently colliding with a same-named
+/// class that file adds later (see the equivalent note in gtest_cas_readbuffer_s3.cpp for what such a
+/// collision actually does at link time).
+namespace
+{
+
 /// Fails the first `fail_first_n` requests with `fail_status` (empty body), then serves `body` with a
 /// 200 to every request after. Records every request's header (not just the last) so a caller can
 /// check the sequence a local retry produced.
@@ -240,11 +247,13 @@ public:
     }
 };
 
+}
+
 /// An unset seed sends `[1, 2]` across a local retry, a seed of 2 sends `[2, 3]` -- a real HTTP round
 /// trip through `TestPocoHTTPSequenceServer` is the only way to drive the retry through
 /// `ReadBufferFromS3`'s actual success path (the SDK's response stream wraps a real
 /// `Poco::Net::HTTPBasicStreamBuf`, which `ReadBufferFromIStream` requires).
-TEST(IOTestAwsS3Client, ReadBufferFromS3AttemptSeedCarriesAcrossLocalRetry)
+TEST(CASIOTestAwsS3Client, ReadBufferFromS3AttemptSeedCarriesAcrossLocalRetry)
 {
     for (const auto [seed, first, second] : {std::tuple<size_t, size_t, size_t>{0, 1, 2}, {2, 2, 3}})
     {
@@ -382,7 +391,7 @@ std::shared_ptr<NetworkFailingClient> makeNetworkFailingClient(std::shared_ptr<A
 /// always false, tested directly against `DoesNotRetryPreconditionFailed`/`SingleAttemptRetryStrategyRefusesAndCounts`
 /// in `gtest_aws_s3_client.cpp`); `usesSingleAttemptRetryStrategy` is a separate, purely descriptive
 /// check of which strategy is installed, tested directly here.
-TEST(IOTestAwsS3Client, UsesSingleAttemptRetryStrategyIdentifiesTheInstalledStrategy)
+TEST(CASIOTestAwsS3Client, UsesSingleAttemptRetryStrategyIdentifiesTheInstalledStrategy)
 {
     auto single_attempt_client = makeNetworkFailingClient(std::make_shared<DB::S3::SingleAttemptRetryStrategy>());
     EXPECT_TRUE(single_attempt_client->usesSingleAttemptRetryStrategy());
@@ -396,7 +405,7 @@ TEST(IOTestAwsS3Client, UsesSingleAttemptRetryStrategyIdentifiesTheInstalledStra
 /// `S3ObjectStorage::getSingleAttemptClient`) is owned by an outer retry loop that resolves the outcome
 /// and reissues; its one failed attempt is not terminal, so the network-error log site must not reach
 /// Error.
-TEST(IOTestAwsS3Client, NetworkErrorLogsDebugForSingleAttemptStrategy)
+TEST(CASIOTestAwsS3Client, NetworkErrorLogsDebugForSingleAttemptStrategy)
 {
     using ProfileEvents::global_counters;
     const auto errors_before = global_counters[ProfileEvents::S3WriteRequestsErrors].load();
@@ -423,7 +432,7 @@ TEST(IOTestAwsS3Client, NetworkErrorLogsDebugForSingleAttemptStrategy)
 /// `max_retries = 0` on the ORDINARY strategy is a supported user configuration (`s3_retry_attempts`)
 /// with no outer retry loop: its one failed attempt IS the final answer, so it must keep logging at
 /// Error -- this is exactly the case a signal keyed on `max_retries == 0` alone would misclassify.
-TEST(IOTestAwsS3Client, NetworkErrorLogsErrorForOrdinaryZeroRetryStrategy)
+TEST(CASIOTestAwsS3Client, NetworkErrorLogsErrorForOrdinaryZeroRetryStrategy)
 {
     using ProfileEvents::global_counters;
     const auto errors_before = global_counters[ProfileEvents::S3WriteRequestsErrors].load();
