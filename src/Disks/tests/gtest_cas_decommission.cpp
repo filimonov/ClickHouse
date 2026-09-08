@@ -1309,11 +1309,17 @@ TEST(CASDecommission, FailedDrainKeepsSlotThenResumes)
     auto failing = std::make_shared<FailDeletesUnderPrefixBackend>(inner, "p/roots/victim/");
     /// The engine reissues an unresolved delete until its own retry window closes, measured on this
     /// clock, so the fault (armed across every reissue) reaches a genuine give-up with no real time
-    /// passing.
+    /// passing -- `clock` fast-forwards through the whole 90 s `Retry::standard()` window in one call.
+    /// `drain_now_fn` is also this session's boot clock (decommissionPoolMember unifies the two), so the
+    /// admin's own mount lease needs a TTL well past that fast-forward or the farewell it attempts on
+    /// the way out would refuse against a deadline the retry exhaustion already ran past -- a real
+    /// decommission's background renewer would have kept the deadline current over 90 real seconds, but
+    /// nothing here advances real time to let it.
     DB::Cas::tests::FakeClock clock;
     const auto first = decommissionPoolMember(
-        failing, PoolConfig{.pool_prefix = "p", .server_root_id = "a1"}, "victim",
-        /*sink=*/{}, /*request_gc_round=*/{}, clock.nowFn(), clock.sleepFn());
+        failing,
+        PoolConfig{.pool_prefix = "p", .server_root_id = "a1", .mount_lease_ttl_ms = std::chrono::milliseconds(300'000)},
+        "victim", /*sink=*/{}, /*request_gc_round=*/{}, clock.nowFn(), clock.sleepFn());
     EXPECT_FALSE(first.warnings.empty());
     EXPECT_FALSE(first.slot_removed);
     EXPECT_TRUE((*raw_op).head("p/gc/server-roots/victim/mount", Retry::once()).has_value())
@@ -1382,6 +1388,34 @@ TEST(CASDecommission, ManifestDebrisFailureKeepsSlotThenResumes)
     EXPECT_TRUE((*raw_op).head(debris_key, Retry::once()).has_value());
     EXPECT_TRUE((*raw_op).head("p/gc/server-roots/victim/mount", Retry::once()).has_value())
         << "the slot is still the resume anchor -- nothing was retired against unreclaimed debris";
+}
+
+/// CI run 7 (PR #2300): `drain_now_fn` fakes the drain's own request clock, but the mount lease's
+/// farewell deadline is bound to `PoolConfig::boot_ms_fn`, a distinct clock that -- before this test's
+/// fix -- stayed on the real boot clock regardless. On a freshly booted CI host (real boot time below
+/// `FakeClock`'s starting instant) the two clocks disagreed enough that the farewell's own bound looked
+/// already-expired, so `admin.reset()` released nothing and the slot was never retired -- passing locally
+/// only because a long-lived dev box's real uptime dwarfs the fake clock. Pin the fake clock far beyond
+/// ANY real host's boot time (rather than relying on the host actually being fresh) so the mismatch --
+/// and the fix -- are exercised deterministically on every machine.
+TEST(CASDecommission, DrainClockUnifiesWithTheFarewellBootClockRegardlessOfHostUptime)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    { auto victim = openVictim(backend); }   /// identity only -- no namespace, so retirement runs straight
+                                              /// to the farewell instead of stopping on an unrelated warning
+
+    DB::Cas::tests::FakeClock clock;
+    clock.now = 1'000'000'000'000'000ULL;   /// dwarfs any real CLOCK_BOOTTIME on any host
+    const auto report = decommissionPoolMember(
+        backend, PoolConfig{.pool_prefix = "p", .server_root_id = "a1"}, "victim",
+        /*sink=*/{}, /*request_gc_round=*/{}, clock.nowFn(), clock.sleepFn());
+
+    EXPECT_TRUE(report.warnings.empty());
+    EXPECT_TRUE(report.slot_removed);
+    OperationForTest raw_op(*backend);
+    EXPECT_FALSE((*raw_op).head("p/gc/server-roots/victim/mount", Retry::once()).has_value())
+        << "one clock for both the request engine and the mount lease -- the farewell must commit and the "
+           "slot must retire in a single call, with no leftover mount to resume against";
 }
 
 /// Task 5 (Task-1 carry-forward, escalated by review): preserve recovery from the legacy partial

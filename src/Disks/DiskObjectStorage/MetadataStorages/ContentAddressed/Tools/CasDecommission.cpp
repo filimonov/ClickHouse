@@ -149,6 +149,15 @@ DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
     const CasRefCatalog::Snapshot catalog_cut = CasRefCatalog::read(preflight_op, catalog_layout);
     catalog_cut.life_index.throwIfAmbiguous("CAS decommission");
 
+    /// `drain_now_fn` below replaces the request engine's own clock, but `config.boot_ms_fn` -- the
+    /// separate clock the opened `Pool`'s mount-lease renewer binds its farewell deadline to -- is a
+    /// distinct seam. Left unset, it falls back to the real boot clock, and a test (or any other caller)
+    /// that only fakes the request clock ends up comparing two unrelated clocks against each other at
+    /// the farewell bound. Fold the drain clock in here too, unless the caller already asked for a
+    /// specific boot clock of its own.
+    if (drain_now_fn && !config.boot_ms_fn)
+        config.boot_ms_fn = drain_now_fn;
+
     config.event_sink = sink;
     PoolPtr admin = Pool::openForDecommission(std::move(backend), std::move(config), victim_srid);
     if (drain_now_fn && drain_sleep_fn)
