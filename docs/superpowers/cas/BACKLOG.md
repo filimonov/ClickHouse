@@ -2564,3 +2564,13 @@ of a cheap agent's time. Zero risk to the tree if step 2's revert check is honou
   `S3Errors` enum callers may match on is wrong. The CAS path got a two-step lookup (S3 mapper, then
   `Aws::Client::CoreErrorsMapper`, the same order `S3ErrorMarshaller::Marshall` uses) in 13bf6a92df0; the generic
   path is shared upstream code, out of the CAS PR's scope → separate small fix, upstream-worthy.
+- [ ] **CAS gtests: ~92 more PoolConfig hooks capture test-frame locals by reference** (2026-09-08). ASan caught one
+  (`gtest_cas_ref_writer.cpp:2828`, fixed in a726e933419: a Pool outlives its test frame through a background
+  publish's `shared_from_this()`, deferred teardown calls `boot_ms_fn` on a dead local). Census of the same
+  `_fn = [&` shape: gtest_cas_pool.cpp 51, gtest_cas_mount.cpp 23, gtest_cas_writer_duties.cpp 5,
+  gtest_cas_ref_recovery_cas_walk.cpp 4, gtest_cas_observability.cpp 2, gtest_cas_retirement_sweep.cpp 2,
+  gtest_cas_ref_snapshot_publish_ordering.cpp 2, gtest_cas_detached_work.cpp 1, gtest_cas_event_log.cpp 1,
+  gtest_cas_gc_ack_floor.cpp 1. Each site needs a read (is the value mutated after the hook is installed, by whom);
+  over half of the ref-writer sites needed shared state, not a by-value capture. One task per file; run the suite
+  5× under ASan after each. Alternative that removes the class: make `Pool` teardown not call config hooks (snapshot
+  the clock values it needs at construction), then the capture shape stops mattering.
