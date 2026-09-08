@@ -699,7 +699,10 @@ TEST(CASEnvelopeWiring, ProductionDispatchAppliesTheFrozenConnectCapAtConnectTim
                     .attempt_timeout_ms = single_attempt_timeout_ms,
                     .connect_timeout_cap_ms = single_attempt_connect_cap_ms});
         });
-        EXPECT_LT(capped_elapsed.count(), 1000);
+        /// A sanitizer build adds a roughly constant addend to both measurements, so the fence is the
+        /// DIFFERENCE the cap made, not an absolute bound: at least half of the connect budget it removed.
+        EXPECT_GE(default_elapsed.count() - capped_elapsed.count(),
+                  (base_connect_timeout_ms - static_cast<long>(single_attempt_connect_cap_ms)) / 2);
     }
 
     /// Conditional DELETE: removeObjectIfTokenMatches's ObjectStorageControlRequest-taking overload.
@@ -722,7 +725,10 @@ TEST(CASEnvelopeWiring, ProductionDispatchAppliesTheFrozenConnectCapAtConnectTim
                     .attempt_timeout_ms = single_attempt_timeout_ms,
                     .connect_timeout_cap_ms = single_attempt_connect_cap_ms});
         });
-        EXPECT_LT(capped_elapsed.count(), 1000);
+        /// A sanitizer build adds a roughly constant addend to both measurements, so the fence is the
+        /// DIFFERENCE the cap made, not an absolute bound: at least half of the connect budget it removed.
+        EXPECT_GE(default_elapsed.count() - capped_elapsed.count(),
+                  (base_connect_timeout_ms - static_cast<long>(single_attempt_connect_cap_ms)) / 2);
     }
 }
 
@@ -767,11 +773,12 @@ TEST(CASEnvelopeWiring, FreezeConnectTimeoutCapReachesTheBackendOverProductionDi
     auto uncapped_backend = std::make_shared<DB::Cas::ObjectStorageBackend>(
         storage, DB::Cas::ObjectStorageBackend::Mode::Native,
         /*single_attempt_control_plane_=*/false, /*attempt_timeout_ms_=*/0, /*connect_timeout_cap_ms_=*/0);
+    std::chrono::milliseconds uncapped_elapsed{};
     {
         DB::Cas::CasRequests requests(DB::Cas::BackendPtr(uncapped_backend), DB::Cas::Fence::open());
         auto op = requests.admit();
-        const auto elapsed = expectConnectFailureAndMeasure([&] { (void)op.head("k", DB::Cas::Retry::once()); });
-        EXPECT_GE(elapsed.count(), 1500);
+        uncapped_elapsed = expectConnectFailureAndMeasure([&] { (void)op.head("k", DB::Cas::Retry::once()); });
+        EXPECT_GE(uncapped_elapsed.count(), 1500);
     }
 
     /// The derived cap, handed to the backend exactly as `openPoolView` constructs it (:812-822) for a
@@ -783,7 +790,9 @@ TEST(CASEnvelopeWiring, FreezeConnectTimeoutCapReachesTheBackendOverProductionDi
         DB::Cas::CasRequests requests(DB::Cas::BackendPtr(capped_backend), DB::Cas::Fence::open());
         auto op = requests.admit();
         const auto elapsed = expectConnectFailureAndMeasure([&] { (void)op.head("k", DB::Cas::Retry::once()); });
-        EXPECT_LT(elapsed.count(), 1000);
+        /// A sanitizer build adds a roughly constant addend to both measurements, so the fence is the
+        /// DIFFERENCE the cap made, not an absolute bound: at least half of the connect budget it removed.
+        EXPECT_GE(uncapped_elapsed.count() - elapsed.count(), (base_connect_timeout_ms - static_cast<long>(*cap)) / 2);
     }
 }
 
