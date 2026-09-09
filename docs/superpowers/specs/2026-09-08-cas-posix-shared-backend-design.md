@@ -1,5 +1,5 @@
 ---
-description: 'Design for a coordinator-free CAS backend over local and shared POSIX filesystems (local disks, NFSv3/v4, CephFS, Lustre, GPFS): the full Cas::Backend contract from mkdir, link, rename, unlink and rmdir alone, built on one rule — no name is ever reused within the life of an object — so that every conditional operation is a server-decided create-if-absent and a delayed or replayed syscall can only ever reach the thing it was aimed at; durable through fsync; no in-process state; replaces EmulatedSingleProcess.'
+description: 'Design for a coordinator-free CAS backend over local and shared POSIX filesystems (local disks, NFSv3/v4, CephFS, Lustre, GPFS): the full Cas::Backend contract from link, mkdir, rename, unlink and rmdir, where every conditional operation is a server-decided create-if-absent of a deterministic successor name, every mutation is sourced from a uniquely named intent object created before the predecessor is observed, and a name is freed only when no intent on it exists — so a delayed or stalled syscall is refused at the server by a missing source, exactly as If-Match is refused by S3; durable through fsync; no in-process state and no timing assumption; replaces EmulatedSingleProcess.'
 sidebar_label: 'CAS POSIX shared backend'
 sidebar_position: 50
 slug: /superpowers/specs/cas-posix-shared-backend-design
@@ -9,37 +9,34 @@ doc_type: 'design'
 
 # CAS backend over local and shared POSIX filesystems {#cas-posix-shared-backend}
 
-Revision 3, 2026-09-08. Revision 1 used an `mtime` token and a timed per-key lock; the round-1
-review (`tmp/cas-posix-spec-review-astra-r1.md`) showed a timed lock cannot fence a delayed syscall.
-Revision 2 used incarnation-chain directories but reclaimed successor names and renamed the fixed
-object directory; the round-2 review (`tmp/cas-posix-spec-review-astra-r2.md`) showed that every
-reused name is a target for a paused writer's or remover's delayed operation, that `readdir` is not
-an authoritative read, that Linux CIFS caches negative lookups for a second regardless of options,
-and that blob payload reads bypass the backend. Revision 3 is built on one rule:
-
-> **Within the life of an object, no name is ever created twice.** Chains, incarnations, markers
-> and private directories all have names that are either unique (random) or monotone (never
-> restarted). A delayed, replayed or paused syscall therefore either hits exactly the inode it was
-> aimed at, or fails with `ENOENT`/`EEXIST` decided at the server. Nothing needs a lock, a
-> timestamp, a handle-identity assumption, or an age.
+Revision 4, 2026-09-09. Three review rounds (`tmp/cas-posix-spec-review-astra-r{1,2,3}.md`)
+established one theorem: on POSIX the server enforces only `EEXIST`/`ENOTEMPTY` on an existing name,
+so an occupied name is the only fence, and any name freed while a paused or stalled writer still
+aims at it becomes a false-success target — a timed lock (rev 1), reclaimed successor names (rev 2)
+and reclaimed chain names (rev 3) all fail the same way, and the stall can be inside the syscall
+itself (an NFS RPC retransmitted after a partition), where no user-space deadline can see it.
+Revision 4 adds the one rule that closes it without a timing assumption, borrowed from the mount
+lease's `min_active_build_sequence`: **a writer declares its intent as an object it owns before it
+observes the predecessor, its mutation is sourced from that object by path, and a name is freed only
+when no intent on it exists.** A stalled `link`/`rename` executing late finds its *source* gone and
+fails at the server — the condition travels with the request, which is what `If-Match` does on S3.
 
 Decisions taken with the user: coordinator-free (no Keeper); one mode for local and shared
-filesystems; lowest-common-denominator primitives only. SMB is demoted from v1 (`§2`).
+filesystems; lowest-common-denominator primitives only; SMB out of v1 (`§2`).
 
 ## 1. Problem {#problem}
 
 `object_storage_type = local` routes a CAS disk to `ObjectStorageBackend::Mode::EmulatedSingleProcess`
 (`ContentAddressedMetadataStorage.cpp`, `openPoolView`): the conditional contract of `Cas::Backend`
 emulated with one process-wide `std::mutex` and an in-memory `mtime`-derived token map. Correct for
-one process, silently wrong for two (independent token state, both pass the probe alone, the mount
-logs at `Information`), and not crash-durable even for one (no `fsync` anywhere; mutable control
-objects rewritten in place with `O_TRUNC`).
+one process, silently wrong for two, and not crash-durable even for one (no `fsync` anywhere; mutable
+control objects rewritten in place with `O_TRUNC`).
 
 The goal is one backend mode, `Mode::Posix`, that satisfies the whole `Cas::Backend` contract
-(`Backend/CasBackend.h`) on every filesystem in `§2`, with no in-process state, so that N servers
-sharing a directory are as safe as N servers sharing an S3 bucket, and one server on a local disk is
-crash-durable. The request engine, GC decisions, mount lease, ref lanes, `_ckpt` and every persisted
-format are unchanged; what the mode needs outside the backend is listed in `§9`.
+(`Backend/CasBackend.h`) on every filesystem in `§2`, with no in-process state and no assumption
+about how long a process or a syscall may stall, so that N servers sharing a directory are as safe
+as N servers sharing an S3 bucket. The request engine, GC decisions, mount lease, ref lanes, `_ckpt`
+and every persisted format are unchanged; what the mode needs outside the backend is in `§9`.
 
 ## 2. Supported filesystems and the facts relied on {#filesystems}
 
@@ -49,331 +46,309 @@ format are unchanged; what the mode needs outside the backend is listed in `§9`
 | NFSv4, 4.1, 4.2 | supported | `hard`, `lookupcache=positive` |
 | NFSv3 | supported | `hard`, `lookupcache=positive` |
 | CephFS, Lustre, GPFS | supported (coherent caches) | none |
-| SMB / CIFS | **not in v1**: the Linux client accepts a negative dentry for about one second regardless of `cache=`/`actimeo=` (`fs/smb/client/dir.c`, `cifs_d_revalidate`), so absence cannot be made authoritative; revisit with a Windows-side or coherence argument | — |
+| SMB / CIFS | not in v1: the Linux client keeps a negative dentry for about one second regardless of options (`fs/smb/client/dir.c`, `cifs_d_revalidate`) | — |
 
 Facts relied on, each decided at the server and verified by the probe (`§8`):
 
-1. `link(src, dst)` fails `EEXIST` when `dst` exists; on success `dst` and `src` are one inode.
+1. `link(src, dst)` fails `EEXIST` when `dst` exists and `ENOENT` when `src` does not; on success
+   `dst` and `src` are one inode.
 2. `mkdir(p)` fails `EEXIST` when `p` exists.
-3. `rename(dir_a, dir_b)` of a directory onto an existing non-empty directory fails
-   (`ENOTEMPTY`/`EEXIST`); onto an absent name it succeeds atomically.
+3. `rename(src, dst)` fails `ENOENT` when `src` does not exist; for directories it fails
+   (`ENOTEMPTY`/`EEXIST`) when `dst` is a non-empty directory; onto an absent name it succeeds
+   atomically.
 4. `rmdir(p)` fails `ENOTEMPTY` when `p` has any entry.
-5. A `LOOKUP` of a name that does not exist returns `ENOENT` from the server, not from a client
-   cache (`§6`).
+5. A `LOOKUP` of an absent name is answered by the server, not by a client cache (`§6`).
+6. A client's own create/unlink/rename in a directory invalidates that client's cached listing of
+   it (Linux NFS: `nfs_post_op_update_inode` sets `NFS_INO_INVALID_DATA` on the parent for v3 and
+   v4 creates).
 
-Not relied on: `O_EXCL`, `flock`/`fcntl`, extended attributes, `renameat2`, timestamps, inode
-numbers or handles as identity across time (handles are used only as an efficiency: a stale
-handle failing `ESTALE` is an ambiguity, `§5`), listing order, listing completeness, or `rename`
-onto an *empty* directory (used opportunistically; `rmdir`-then-retry is the universal fallback).
+Not relied on: `O_EXCL`, `flock`/`fcntl`, extended attributes, `renameat2`, timestamps, handle
+identity across time (a stale handle's `ESTALE` is an ambiguity, `§5`), listing order or
+completeness, any clock, any bound on the duration of a pause or of a syscall.
 
 ## 3. Layout {#layout}
 
 ```
-P(k)/D(k)/                           the object; created once, NEVER renamed or removed (§3.3)
-P(k)/D(k)/c-<m>/                     chain m (16 hex, monotone within D(k), never restarted)
-P(k)/D(k)/c-<m>/<g>-<n>              incarnation n of chain m; g = 16 hex random per chain, n dense from 1
-P(k)/D(k)/c-<m>/<g>-<n>/             a MARKER (a directory, so it can never be mistaken for data)
-P(k)/D(k)/c-<m>/.tmp-<r>-<e>-<u>     writer scratch: server root r, writer epoch e, uuid u
-P(k)/D(k)/.new-<r>-<e>-<u>/          a creator's private chain directory before rename
-P(k)/D(k)/.gone-<u>/                 a chain renamed away for deletion
+P(k)/D(k)/                            the object directory; removable only when it holds no intent (§4.5)
+P(k)/D(k)/c-<m>/                      chain m (16 hex; monotone while D(k) exists)
+P(k)/D(k)/c-<m>/<g>-<n>               incarnation n of chain m; g = 16 hex random per chain, n dense from 1
+P(k)/D(k)/c-<m>/<g>-<n>/              a MARKER (directory): the tombstone that ends a chain
+P(k)/D(k)/c-<m>/.tmp-<r>-<e>-<u>      an INTENT to extend chain m with data: server root r, writer epoch e, uuid u
+P(k)/D(k)/c-<m>/.tomb-<r>-<e>-<u>/    an INTENT to end chain m with a tombstone
+P(k)/D(k)/.new-<r>-<e>-<u>/           an INTENT to create the next chain (a private chain directory)
+P(k)/D(k)/.gone-<u>/                  a chain, or a killed intent, on its way to deletion
+P(k)/.d-<u>                           a listing-freshness dotfile (§4.6), created and removed at once
 ```
 
 ### 3.1 Values and the current incarnation {#values}
 
-The contract's **value** of an incarnation is `c-<m>/<g>-<n>`, minted by the writer before the
-write. An incarnation file is written into a private `.tmp-*`, linked to its final name, and never
-modified; `VALUE ⟹ CONTENT` holds by construction. The **current incarnation** of an object is the
-top of its greatest chain:
-
-- the greatest chain is the greatest `m` for which `c-<m>` exists;
-- the top of a chain is the greatest `n` for which `<g>-<n>` exists (one `g` per chain, `§4.2`);
-- a top that is a **marker directory** is a **tombstone**: the object is absent (`§4.4`).
-
-Both "greatest" are found by **lookup, not by listing**: `readdir` supplies a hint, then the
-backend probes `c-<m+1>`, `<g>-<n+1>`, … with `fstatat` until the server answers `ENOENT`. Under
-`§6` that answer is authoritative, so `chain(k)` returns the true current incarnation even when the
-client's directory cache is stale. Cost: one extra `LOOKUP` per level in the common case.
+The contract's **value** is `c-<m>/<g>-<n>`, minted by the writer before the write. An incarnation
+file is written into an intent, linked to its final name, and never modified: `VALUE ⟹ CONTENT`
+by construction. The **current incarnation** is the top of the greatest chain, both found by
+**lookup, never by listing**: `readdir` gives a hint, then `fstatat` probes `c-<m+1>`, `<g>-<n+1>`,
+… until the server answers `ENOENT` (fact 5). A probe that finds the hinted chain gone (`ENOENT`
+on `c-<m>` itself) restarts from a fresh listing (fact 6 applied by the prober: it creates and
+removes a `.d-<u>` in `D(k)` first). A top that is a marker is a **tombstone**: the object is
+absent. A chain whose greatest chain directory is empty is in transition (a creator's `rename`
+landed before its content — impossible by `§4.2`, hence an error, never absence).
 
 ### 3.2 Successor names are deterministic and exclusive {#successors}
 
-Given a current incarnation `c-<m>/<g>-<n>`, its successor has exactly one name:
+For a current incarnation `c-<m>/<g>-<n>` the successor has exactly one name:
 
 | Predecessor | Successor name | Created by |
 |---|---|---|
-| `n < K` (`K = 64`, `§9`) | `c-<m>/<g>-<n+1>` | `link` (data) or `mkdir` (tombstone) |
-| `n ≥ K` (chain full) | `c-<m+1>` | `rename` of a private directory holding the new incarnation `<g'>-1` or a tombstone marker |
+| `n < K(k)` | `c-<m>/<g>-<n+1>` | `link` from an intent (data) or `mkdir` (tombstone) |
+| `n ≥ K(k)` | `c-<m+1>` | `rename` of a `.new-*` intent holding `<g'>-1` (data) or a marker `<g'>-1/` (tombstone) |
 
-Because the name is a pure function of the predecessor, and facts 1–3 make its creation exclusive,
-**at most one writer succeeds a given predecessor**: the contract's conditional overwrite and
-conditional delete are decided by the server, and they are decided against each other (a writer's
-successor and a remover's tombstone compete for the same name).
+`K(k)` is a **protocol constant** by plane, not a setting: `1` under `blobs/` (every publication is
+a new chain, so a superseded body is reclaimable at once), `64` elsewhere. Because the successor
+name is a pure function of the predecessor and facts 1–3 make its creation exclusive, at most one
+writer succeeds a given predecessor, and a writer's successor and a remover's tombstone compete
+for the same name: the contract's conditional overwrite and conditional delete are decided by the
+server, against each other.
 
-### 3.3 Nothing is ever reused {#no-reuse}
+### 3.3 The intent rule {#intent-rule}
 
-- An incarnation name `<g>-<n>` is never unlinked while its chain exists (`§4.3` reclaims space by
-  renaming whole chains away, never by freeing a name inside a live chain).
-- A chain name `c-<m>` is never created twice: `m` is monotone for the life of `D(k)`, and `D(k)`
-  is never removed, so the floor is always discoverable (`§4.5`).
-- `.tmp-*`, `.new-*` and `.gone-*` names carry a fresh uuid.
-- `D(k)` is created once and never renamed or removed.
+1. **Declare before observing.** A writer creates its intent object (`.tmp-*` in the chain it may
+   extend, or `.new-*` in `D(k)`) **before** it looks up the predecessor. The intent's name carries
+   the writer's server root and writer epoch.
+2. **Mutate from the intent, by path.** The successor is created by `link(intent_path, name)` or
+   `rename(intent_path, name)`. If the intent has been killed (`§4.4`), the server refuses with
+   `ENOENT` on the source — at execution time, however late.
+3. **Free a name only where no intent exists.** A superseded chain (`c-<m>` when `c-<m+1>` exists),
+   a tombstoned chain, or `D(k)` itself may be renamed away for deletion only after a **fresh**
+   listing (fact 6: the reclaimer first creates and removes `.d-<u>` in the directory it is about to
+   list) shows no intent in it. An intent from a live epoch defers the reclaim; an intent from an
+   epoch that is dead by the mount-lease certificate (`§4.4`) is killed first, then the reclaim
+   proceeds.
 
-Consequences: a paused remover's `mkdir` of a tombstone, a paused writer's `link` of a successor,
-a replayed `unlink`, a replayed `rename` — each names a thing that either still is exactly what it
-was aimed at, or no longer exists and never will again. Path-based addressing is therefore as safe
-as handle-based, which is what makes the design independent of NFSv4 volatile handles and of how a
-client implements `linkat`.
-
-Cost: a deleted object that is never reborn leaves `D(k)`, its tombstoned chain and the marker: three
-empty inodes (`§10`).
+Why this is sufficient. A writer can only aim at a name derived from a predecessor it observed
+(rule 1: after its intent existed). A reclaimer frees only superseded names, and "superseded" is a
+server-side fact established before the reclaimer's fresh listing. Either the writer's intent
+existed at that listing — then the reclaim was deferred (live epoch) or the intent was killed (dead
+epoch) and the writer's mutation fails `ENOENT` — or the intent was created after the listing, in
+which case the writer observed the predecessor after the superseding successor existed and aims at
+a later name. No clock, no bound on pauses, and nothing about *where* the stall happens: a `LINK`
+RPC retransmitted a minute later is refused by the same `ENOENT`.
 
 ## 4. Operations {#operations}
 
-`tmp(dir, bytes)`: create `.tmp-<r>-<e>-<u>` in `dir`, write, `fsync`, keep open. `settle(dir)`:
-`fsync` of the directory. `chain(k)`: `§3.1`. All errors not listed are handled per `§5`.
+`intent(dir)`: create `.tmp-<r>-<e>-<u>` in `dir` (or `.new-<r>-<e>-<u>/` in `D(k)`), then write and
+`fsync`. `settle(dir)`: `fsync` of a directory. `chain(k)`: `§3.1`. `fresh(dir)`: create and unlink
+`.d-<u>` in `dir`, then `readdir`. Errors not listed are handled per `§5`.
 
 ### 4.1 Contract methods {#contract-methods}
 
 | Method | Implementation |
 |---|---|
-| `write(k, bytes, expected = absent)` | `chain(k)`: a live top ⇒ `RawConflict`. Otherwise `m₀` = the greatest existing chain (0 if none; `§4.5`), target `c-<m₀+1>`. Build `.new-*` in `D(k)` (`mkdir D(k)` first if absent, `EEXIST` fine) holding `<g>-1` via `tmp` + `link`; `settle`; `rename(.new-*, c-<m₀+1>)`. Success ⇒ `settle(D(k))`, return `c-<m₀+1>/<g>-1`. Target exists (`ENOTEMPTY`/`EEXIST`) ⇒ remove our `.new-*` (`§4.3`), `RawConflict` |
-| `write(k, bytes, expected = c-<m>/<g>-<n>)` | `fstatat(D(k)/c-<m>, <g>-<n>)` must succeed, else `RawConflict` (the token names a chain this object does not have: rebirth, or a foreign token). `n < K`: `tmp` in `c-<m>`, `link(tmp, c-<m>/<g>-<n+1>)`: `EEXIST` ⇒ (`§5` ownership check, else) `RawConflict`; success ⇒ return `c-<m>/<g>-<n+1>`. `n ≥ K`: as the absent path with target `c-<m+1>` and content `<g'>-1`; success ⇒ return `c-<m+1>/<g'>-1`, then opportunistically `§4.3` on `c-<m>`. In both cases `unlink(tmp)` and `settle` afterwards |
-| `remove(k, c-<m>/<g>-<n>)` | `chain(k)`: current is not that value ⇒ `Mismatch` (a successor exists) or `Gone` (absent). Create the successor **as a marker**: `n < K` ⇒ `mkdir(c-<m>/<g>-<n+1>)`; `n ≥ K` ⇒ `rename` a private directory holding one marker `<g'>-1/` onto `c-<m+1>`. `EEXIST`/`ENOTEMPTY` ⇒ `Mismatch` (a writer's successor won; the object is untouched). Success ⇒ the object is absent and this chain can never be extended; then `§4.3` on the chain's data files; `Removed`. `DeleteMarker` is never returned |
-| `publish(request)` | unconditional by protocol: loop { `chain(k)`; absent (no chain or tombstone) ⇒ the absent-`write` path with the blob body (a tombstone top is a full chain for this purpose: the rebirth is `c-<m+1>`); present ⇒ the conditional path against the current value }, until a write succeeds or the internal attempt bound (`§9`) is hit, which is reported as a transport failure. The envelope + bounded payload copy and exact size check are those of `emuPublishBlobAtomically` today. Older incarnations are reclaimed by `§4.3` |
-| `read(k)` | `chain(k)`; absent ⇒ nullopt; `open` the incarnation, `fstat`, read whole; value = the name opened |
-| `stream(k)` | as `read`, returning a `ReadBufferFromFileDescriptor` owning the descriptor. A remote `unlink` of the chain while streaming surfaces as the read error it is (NFSv3 `ESTALE`); the callers (GC, fsck) fail closed on read errors |
-| `head(k)` | `chain(k)`; absent ⇒ nullopt; `fstatat` size |
+| `write(k, bytes, expected = absent)` | `mkdir D(k)` (`EEXIST` fine); `intent`: `.new-*` in `D(k)` holding `<g>-1` (written via a `.tmp-*` inside it and linked); `chain(k)`: a live top ⇒ remove own intent, `RawConflict`; else target `c-<m₀+1>` (`m₀` = greatest existing chain, 0 if none); `rename(.new-*, c-<m₀+1>)`: success ⇒ `settle(D(k))`, return `c-<m₀+1>/<g>-1`; `ENOTEMPTY`/`EEXIST` ⇒ remove own intent, `RawConflict`; `ENOENT` on source ⇒ `§5` |
+| `write(k, bytes, expected = c-<m>/<g>-<n>)` | `n < K`: `intent` `.tmp-*` in `c-<m>` (`ENOENT` on `c-<m>` ⇒ `RawConflict`); `fstatat(c-<m>, <g>-<n>)` must succeed else remove intent, `RawConflict`; `link(.tmp-*, c-<m>/<g>-<n+1>)`: success ⇒ `unlink(.tmp-*)`, `settle`, return; `EEXIST` ⇒ `§5` ownership check, else remove intent, `RawConflict`; `ENOENT` on source ⇒ `§5`. `n ≥ K`: as the absent path but with `chain` required to be exactly the expected value and target `c-<m+1>` |
+| `remove(k, c-<m>/<g>-<n>)` | `chain(k)`: not that value ⇒ `Mismatch` / `Gone`. Tombstone = the successor name **as a directory**, created from an intent so that a killed intent refuses with `ENOENT` exactly like a data write: `n < K` ⇒ `mkdir(c-<m>/.tomb-<r>-<e>-<u>)`, then `rename(.tomb-*, c-<m>/<g>-<n+1>)`; `n ≥ K` ⇒ `.new-*` holding a marker `<g'>-1/`, `rename` onto `c-<m+1>`. `EEXIST`/`ENOTEMPTY` ⇒ `Mismatch`; success ⇒ `Removed`; the data is reclaimed later by `§4.4`. `DeleteMarker` is never returned |
+| `publish(request)` | unconditional by protocol: loop { `chain(k)`; absent ⇒ the absent-`write` path with the body; present ⇒ the conditional path against the current value } until success or `posix_publish_max_attempts`, then a transport failure. Envelope + bounded payload copy + exact size check as `emuPublishBlobAtomically` today |
+| `read(k)` / `head(k)` / `stream(k)` | `chain(k)`; absent ⇒ nullopt / null; open the incarnation; value = the name opened. `stream` returns a `ReadBufferFromFileDescriptor` owning the descriptor; a remote unlink surfaces as the read error it is |
 | `list(prefix, cursor, limit)` | `§4.6` |
-| `removeManyWriteOnce(keys)` | for each: `rename(D(k)/c-<m>, .gone-<u>)` for every chain, delete contents, `rmdir`; then `rmdir D(k)`. Allowed to remove `D(k)` because the engine proves by `WriteOnceKey` (`Primitives/CasWriteOnceKey.h`) that the key is never created again, so no name under it can ever be reused. `ENOENT` is success |
-| `probeSentinelRaw(k)` | `chain(k)` with error classification: pool root absent ⇒ `ContainerAbsent`; `EACCES`/`EPERM` ⇒ `AccessDenied`; other errors ⇒ `Indeterminate`; absent ⇒ `KeyAbsent`; present ⇒ `Present` with the body. Ordinary `read`/`head` classify a missing pool root the same way and throw, never return nullopt, so root loss is never flattened into key absence |
+| `removeManyWriteOnce(keys)` | for each key: `§4.4` on every chain and on `D(k)`, subject to the intent rule like any other reclaim (the `WriteOneKey` guarantee is not needed for safety; it only makes rebirth impossible in practice) |
+| `probeSentinelRaw(k)` | `chain(k)` with error classification: pool root absent ⇒ `ContainerAbsent`; `EACCES`/`EPERM` ⇒ `AccessDenied`; other errors ⇒ `Indeterminate`; absent ⇒ `KeyAbsent`; present ⇒ `Present` with the body. Ordinary `read`/`head` classify a missing pool root the same way and throw |
 
-### 4.2 Why a chain has one `g` {#one-gen}
+### 4.2 Why a chain has one `g` and is never empty {#one-gen}
 
-A chain directory is created by exactly one `rename` (fact 3), from a private directory holding
-`<g>-1`; every later incarnation in it is `<g>-<n+1>` linked against an existing `<g>-<n>`
-(checked by `fstatat` first). No path creates a second `g` in a chain.
+A chain directory becomes visible only by one `rename` of a `.new-*` that already holds `<g>-1`
+(fact 3); every later incarnation in it is `<g>-<n+1>` linked against an existing `<g>-<n>`. Nothing
+creates a second `g` in a chain, and nothing empties a live chain: names inside a live chain are
+never unlinked (`§4.4` reclaims by moving whole chains).
 
-### 4.3 Reclaiming space {#reclaim}
+### 4.3 Lost replies and ownership {#ownership}
 
-Space is reclaimed only by moving whole chains, never by freeing a name inside a live chain:
+`§5`.
 
-- When `c-<m+1>` exists, `c-<m>` is superseded: anyone may `rename(D(k)/c-<m>, D(k)/.gone-<u>)`,
-  then `unlink` its entries and `rmdir` it. `c-<m>` is never created again (`§3.3`), so a delayed
-  `link`/`mkdir` aimed at `c-<m>/…` fails `ENOENT`, and a replayed `rename` finds no source.
-- A tombstoned chain (top is a marker) has its data files deleted the same way, but **the chain
-  directory and its marker stay** until a rebirth chain `c-<m+1>` exists; they are the floor
-  (`§4.5`).
-- `.tmp-*` and `.new-*` belong to the server root and writer epoch in their name. They are removed
-  by their writer on every path, and otherwise only when that epoch is dead by the mount-lease
-  protocol's own certificate (a fenced or farewelled slot, `Pool/CasServerRoot.cpp`), which the
-  namespace janitor already knows. **No age is used**: a slow live creator is never touched, and a
-  fenced creator's later `rename` of a `.new-*` that was renamed away fails `ENOENT` (`§5`).
-- `.gone-*` directories are deleted by whoever created them, else by the janitor (unique names,
-  contents are dead by construction).
+### 4.4 Reclaim {#reclaim}
 
-### 4.4 Tombstones {#tombstones}
+Reclaim is the only way a name is ever freed, and it obeys `§3.3` rule 3:
 
-A tombstone is the successor name created as a directory. It cannot be confused with data (a
-data incarnation is a regular file), it is exclusive against a data successor (facts 1–3), and it
-is never removed while its chain exists. Reads of a tombstoned object return absent. The next write
-of the object is a rebirth at `c-<m+1>` (`§3.2`), so a tombstone is simply "a full chain whose top
-is not data". A remover that crashes after the tombstone has already completed the contract's work
-(`Removed` semantics: the incarnation is unreachable); the data files are reclaimed by anyone via
-`§4.3`.
+1. `fresh(dir)`; if any `.tmp-*`/`.new-*`/`.tomb-*` in `dir` belongs to a **live** epoch (per the
+   mount-lease certificate: the slot is neither fenced nor farewelled nor superseded by a later
+   epoch — `isCreatorFenceTerminal`, `Pool/CasServerRoot.cpp`; an unreadable slot is treated as live),
+   stop: deferred.
+2. Kill every intent of a dead epoch. **How depends on the primitive it sources**: an NFS `LINK`
+   carries the source as a file handle, and a handle survives `rename`, so a `.tmp-*` is killed by
+   `unlink`, which drops the inode's last link and makes its handle stale (`ESTALE` at execution);
+   `RENAME` names its source by directory handle plus name, so a `.new-*`/`.tomb-*` is killed by
+   `rename` to `D(k)/.gone-<u>` (`ENOENT` at execution). On a local filesystem the path is resolved
+   at syscall time under the rename lock, so either works. A stalled mutation sourced from a killed
+   intent is therefore refused at the server whenever it executes.
+3. Free the target: `rename(c-<m>, D(k)/.gone-<u>)` for a superseded or tombstoned chain; for
+   `D(k)` itself, when it holds no chain with a live top and no intent, `rmdir D(k)` (fact 4 makes
+   this safe against a concurrent creator, whose `mkdir`+`.new-*` either precedes the `rmdir` and
+   makes it fail, or follows it and recreates `D(k)` legitimately).
+4. Delete `.gone-*` contents and `rmdir`.
 
-### 4.5 The floor {#floor}
+Who reclaims: the writer that rotated a chain (opportunistically, for the chain it superseded), the
+publisher that rebirthed a blob, and the namespace janitor's physical sweep (`§9`). Reclaim never
+blocks a writer: a deferred reclaim is retried on the next visit.
 
-`m₀` for a rebirth is the greatest existing `c-<m>` (found by lookup, `§3.1`). Since a tombstoned
-chain is never renamed away before its successor exists, and `D(k)` is never removed, the floor is
-always present for a key that ever existed, and `m` never restarts. The three-inode residue per
-never-reborn deleted key is the price of not having a server that enforces conditions; it is ~12 KiB
-of metadata on ext4 and zero data, and `§10` sizes it against the pool.
+Rebirth after full removal is safe: `D(k)` cannot be removed while any intent exists in it, so a
+later creator is one that declared its intent after the removal and observed no chain.
+
+### 4.5 Residue {#residue}
+
+None permanent. A deleted key that is never reborn leaves nothing once its chains and `D(k)` are
+reclaimed. Transient: intents of live epochs, superseded chains awaiting reclaim, `.gone-*`.
 
 ### 4.6 Listing {#listing}
 
-`list` performs one complete recursive enumeration of object directories under `prefix` (an object
-is a `D(k)` whose `chain` is a live data incarnation), sorts it lexicographically, spools it to a
-scratch file under `cas_scratch_path`, and pages from that spool; the cursor is `<spool id>:<offset>`
-and the spool lives until the cursor is exhausted or `posix_list_spool_ttl_sec` passes, so a full
-walk costs one enumeration, not one per page. `.new-*`, `.gone-*`, `.tmp-*`, `.nfs*`, markers and
-tombstoned or empty objects are skipped. Values are absent (`supportsListTokens = false`).
-
-Freshness: before reading the top-level directory of the enumeration on an NFS mount, the backend
-creates and unlinks a unique dotfile in it; the client's own mutation updates its cached change
-attribute and invalidates the cached `readdir` of that directory, so the **top level** of every
-listing is fresh. That is what the engine's emptiness proofs consume ("no key under
-`cas/manifests/<root>/`" is "the directory has no entries"); deeper levels remain hints, as
-everywhere in CAS.
+`list` performs one complete recursive enumeration under `prefix`, sorted, spooled to a scratch
+file under `cas_scratch_path` and paged by `<spool id>:<offset>` (spool kept until exhausted or
+`posix_list_spool_ttl_sec`); an object is a `D(k)` whose `chain` is live data; `.new-*`, `.gone-*`,
+`.tmp-*`, `.tomb-*`, `.d-*`, `.nfs*`, markers and tombstoned or empty objects are skipped;
+values absent (`supportsListTokens = false`). On NFS mounts **every directory the enumeration
+descends is listed after `fresh`** (fact 6), so the listing is complete as of the enumeration for
+every level — the engine's emptiness proofs (`Pool/CasServerRoot.cpp`, `Backend/CasSentinelProbe.cpp`)
+consume `keys`, never raw entries, and the `.d-*` names are filtered before pages are built. Cost:
+two extra RPCs per directory per enumeration.
 
 ## 5. Ambiguity and lost replies {#ambiguity}
 
-A hard NFS mount retransmits an RPC whose reply was lost; `link`, `mkdir`, `rename`, `unlink` and
-`rmdir` are not idempotent. Per primitive:
-
 | Primitive | After a possibly-lost reply |
 |---|---|
-| `link(tmp, name)` → `EEXIST` | `stat(name)` vs `fstat(tmp)`: same `st_dev`/`st_ino` ⇒ ours, success. Different ⇒ real conflict. `stat` fails ⇒ ambiguity |
-| `mkdir(marker)` → `EEXIST` | a marker is only ever created by a remover of *this* predecessor and the name is exclusive: if `name` is a directory ⇒ the tombstone exists ⇒ our `remove` succeeded (whether by us or by a concurrent remover of the same incarnation, the contract's outcome is `Removed` either way); if it is a file ⇒ a writer won ⇒ `Mismatch` |
-| `rename(.new-*, c-<m>)` → `ENOENT` (source) | `stat(c-<m>/<g>-1)` with our `g` ⇒ ours. Otherwise **ambiguity** (our create may have landed and been superseded); never `RawConflict` |
-| `rename(c-<m>, .gone-*)` → `ENOENT` | done by someone; if `.gone-<u>` exists it is ours to delete |
+| `link(intent, name)` → `EEXIST` | `stat(name)` vs `stat(intent)`: same `st_dev`/`st_ino` ⇒ ours, success. Different ⇒ real conflict |
+| `link`/`rename` → `ENOENT` on the source | the intent was killed (`§4.4`) or our earlier attempt consumed it: **ambiguity** |
+| `rename(.new-*, c-<m>)` → `ENOENT` (source) | `stat(c-<m>/<g>-1)` with our `g` ⇒ ours. Otherwise ambiguity |
+| `rename(.tomb-*, name)` → `EEXIST` | `name` is a directory ⇒ the tombstone exists (ours or a concurrent remover's of the same incarnation: `Removed` either way); a file ⇒ `Mismatch` |
+| `rename(c-<m>, .gone-*)` → `ENOENT` | done by someone; own `.gone-<u>` is ours to delete |
 | `unlink`/`rmdir` → `ENOENT` | success |
-| any `ESTALE` | ambiguity (the handle outlived the name; re-resolve by path on retry) |
+| any `ESTALE` | ambiguity |
 
-Everything not resolved above — timeouts, `EIO`, a failed `fsync` or `close` after a mutation — is a
-**transport ambiguity**: the backend throws a `Poco::Exception`-derived exception, the class the
-request engine settles by an exact read (`Backend/CasRequests.cpp`; the write path re-throws any
-non-`Poco::Exception` as a local fault and settles nothing). A bare `std::system_error` never
-escapes the backend, and a `DB::Exception` is used only for definite, non-transport refusals. The
-engine's wedge rule then applies unchanged.
-
-`CAS_WRITE_UNATTRIBUTED` cannot arise: the value of a completed write is the name chosen before it.
+Everything else after a request may have been sent — timeouts, `EIO`, a failed `fsync`/`close` —
+is a **transport ambiguity**: the backend throws a `Poco::Exception`-derived exception, the class
+the request engine settles by an exact read (`Backend/CasRequests.cpp`; a non-`Poco::Exception` is
+re-thrown as a local fault and settles nothing). No `std::system_error` escapes; a `DB::Exception`
+is used only for definite refusals. `CAS_WRITE_UNATTRIBUTED` cannot arise.
 
 ## 6. Absence and caches {#absence}
 
-Every engine consumer of a null `head`/`read`/`stream` was enumerated in the round-1 review. The
-authorization-class ones — the blob `.meta` read on a dedup hit (absent reads as `Clean`,
-`Pool/CasPartWriteTxn.cpp`), GC's blob `HEAD` before marker cleanup (`Gc/CasGc.cpp`), the owner and
-epoch claims' emptiness proofs (`Pool/CasServerRoot.cpp`, `Backend/CasSentinelProbe.cpp`), the
-lifecycle `IdentityLost` verdict and the empty-table probe (`Pool/CasPool.cpp`,
-`ContentAddressedMetadataStorage.cpp`), and the request engine's settlement read — require that
-absence be **server-decided**. The backend guarantees it by construction:
-
-- every "does `x` exist" question is a `LOOKUP` of a specific name (`§3.1`), never a listing;
-- the top level of a listing is made fresh by a local mutation (`§4.6`);
-- on NFS, `lookupcache=positive` makes the Linux client send every negative lookup to the server
-  (`fs/nfs/dir.c`: negative dentries are not cached under that option even while the parent's
-  attributes are), which is exactly and only what the two rules above need; positive entries may be
-  cached because a name, once it exists, is never replaced by different content (`§3.3`);
-- on local and coherent cluster filesystems nothing is needed.
-
-The mount-option gate is **mandatory** (`§8`): for filesystem types `nfs`/`nfs4` a writable mount is
-refused without `lookupcache=positive` (or `none`) and `hard`. The mount is identified by the mount
-id of the pool root (`statx` `STATX_MNT_ID`) matched against `/proc/self/mountinfo`, so bind mounts,
-autofs (the root is opened first, which triggers it) and container namespaces resolve to the
-effective superblock options; a pathname-prefix match is not used.
-
-Positive staleness is not a hazard: an incarnation never changes, and `chain` never trusts a listing
-for "which is current". The successor's epoch seal in the engine is a create-if-absent
-(`rename` of a private chain onto `c-1` of the slot key), so a stale view can only make it fail and
-re-read.
+The authorization-class consumers of absence in the engine (blob `.meta` on a dedup hit, GC's
+`HEAD` before marker cleanup, the owner/epoch emptiness proofs, `IdentityLost`, the empty-table
+probe, the settlement read) require server-decided absence. The backend guarantees it by
+construction: existence is always a `LOOKUP` of a specific name (`§3.1`); listings are fresh at
+every level (`§4.6`); on NFS `lookupcache=positive` makes the client send every negative lookup to
+the server (`fs/nfs/dir.c`), which is all the two rules need; positive caching is harmless because
+a name, once it exists, never changes content. The mount-option gate is mandatory (`§8`): for
+`nfs`/`nfs4` a writable mount is refused without `lookupcache=positive` (or `none`) and `hard`.
+The mount is identified by the pool root's open descriptor: `mnt_id` from
+`/proc/self/fdinfo/<fd>` (Linux ≥ 3.15) matched against `/proc/self/mountinfo`, so bind mounts,
+autofs and container namespaces resolve to the effective superblock options.
 
 ## 7. Durability {#durability}
 
-- An incarnation file is `fsync`ed before it is linked; a private chain directory is `fsync`ed
-  before it is renamed.
-- After a name changes, `fsync` the directory; after a directory is created or renamed, `fsync` its
-  parent; newly created ancestors are `fsync`ed in order. On Linux NFS a directory `fsync` is a
-  no-op because namespace operations are synchronous at the server.
-- A failed `fsync` or `close` after a mutation is an ambiguity (`§5`), never "nothing written".
-- An NFS export with `async`, or storage that acknowledges before persisting, is outside what a
-  client can verify: an operator precondition, documented next to the S3 ones.
+An intent's content is `fsync`ed before it is linked or renamed; after a name changes, `fsync` the
+directory; after a directory is created or renamed, `fsync` its parent; new ancestors in order. On
+Linux NFS a directory `fsync` is a no-op (namespace operations are synchronous at the server). A
+failed `fsync`/`close` after a mutation is an ambiguity. An `async` export or storage that
+acknowledges before persisting is an operator precondition, documented next to the S3 ones.
 
 ## 8. Capability probe {#probe}
 
-`checkPoolPreconditions` for `Mode::Posix` runs before the generic seven-step battery under a
-per-mount random prefix and fails closed with `NOT_IMPLEMENTED` naming the failed fact:
+`checkPoolPreconditions` for `Mode::Posix` runs before the generic battery under a per-mount random
+prefix and fails closed with `NOT_IMPLEMENTED` naming the failed fact: (1) mount-option gate; (2)
+fact 1 including `ENOENT` on a missing source; (3) fact 2; (4) fact 3 including `ENOENT` on a
+missing source and refusal onto a non-empty directory; (5) fact 4; (6) fact 6: create a file in a
+directory, list it, unlink it, list again — the unlinked name must be absent from the second
+listing; (7) `fsync` of a file and of a directory succeed; (8) layout check: a regular file where
+`D(k)` is expected under a plane is a retired-emulated-layout pool ⇒ refuse, naming migration.
 
-1. Mount-option gate (`§6`).
-2. Fact 1: `link(a, b)` succeeds and `b` is `a`'s inode; `link(c, b)` fails `EEXIST`.
-3. Fact 2: second `mkdir` of one path fails `EEXIST`.
-4. Fact 3: `rename` of a directory onto a non-empty directory fails; onto an absent name succeeds.
-5. Fact 4: `rmdir` of a non-empty directory fails `ENOTEMPTY`.
-6. `fsync` of a file and of a directory succeed.
-7. Layout check: a regular file where `D(k)` is expected under a plane is a pool written by the
-   retired emulated layout ⇒ refuse, naming migration (`§11`).
-
-`checkSkipAccessCheckSupport` **refuses** `skip_access_check = true` for a writable `Mode::Posix`
-mount (gate 1 is what makes absence authoritative, and `Pool::open` skips `checkPoolPreconditions`
-on that path, `Pool/CasPool.cpp`). `checkConditionalWriteSingleAttemptSupport` stays a no-op.
-
-The generic battery then runs unchanged and exercises the code paths a second process would. What
-a single-client probe cannot verify is cross-client atomicity of facts 1–4 (an operator
-precondition; the two-client integration test in `§10`) and export durability.
+`checkSkipAccessCheckSupport` refuses `skip_access_check = true` for a writable `Mode::Posix` mount
+(`Pool::open` skips `checkPoolPreconditions` on that path, `Pool/CasPool.cpp`).
+`checkConditionalWriteSingleAttemptSupport` stays a no-op. A single-client probe cannot verify
+cross-client atomicity of facts 1–5 or export durability; those are operator preconditions and the
+subject of `§11`'s two-client test.
 
 ## 9. What this needs outside the backend {#outside-backend}
 
 - **Blob payload reads.** `ContentAddressedMetadataStorage` hands the logical blob key to the
-  object storage for ranged reads (`ContentAddressedMetadataStorage.cpp`, the read-path
-  `StoredObject` construction), and `LocalObjectStorage` opens that path as a file. In
-  `Mode::Posix` the key is a directory, so the read path must resolve the key to its current
-  incarnation file **through the backend** (`Backend::resolveReadPath`, new) before constructing the
-  `StoredObject`; offsets are unchanged (the envelope is inside the incarnation file) and the cache
-  identity becomes the incarnation path, which is immutable. This is a wiring change in the CAS
-  metadata storage, not in the engine's decisions.
-- **Dialect.** None new: `Dialect::Emulated`, grammar "non-empty" (`Backend/CasEtag.cpp`). Values
-  are persisted as strings in record streams (`Formats/CasRecordStreamFormat.cpp`) and compared
-  only within one key's context; `c-<m>/<g>-<n>` fits.
-- **Settings** through `ContentAddressedSettings` / `openPoolView`: `posix_chain_length` (`K`,
-  default 64), `posix_list_memory_budget_bytes` (default 256 MiB), `posix_list_spool_ttl_sec`
-  (default 600), `posix_publish_max_attempts` (default 16: the internal bound on the append loop,
-  after which a transport failure is thrown for the engine's own retry; `TransportAccess` carries no
-  deadline).
+  object storage for ranged reads (`ContentAddressedMetadataStorage.cpp`, read-path `StoredObject`
+  construction); `LocalObjectStorage` opens it as a file. In `Mode::Posix` the read path obtains a
+  **backend-owned ranged reader** (`Backend::openPayloadRange`, new): it resolves the key to the
+  current incarnation, opens it, and on `ENOENT`/`ESTALE` mid-read re-resolves and reopens at the
+  same payload offset — correct because every incarnation of a blob key carries the same payload
+  bytes after the pool-constant envelope. This is what makes reclaim of a superseded blob chain safe
+  for a query that is reading it on another client; a local reader keeps its inode anyway. Cache
+  identity is the incarnation path (immutable).
+- **Dialect.** `Dialect::Emulated`, grammar "non-empty" (`Backend/CasEtag.cpp`); values persist as
+  strings compared within one key's context (`Formats/CasRecordStreamFormat.cpp`).
+- **Settings** through `ContentAddressedSettings`/`openPoolView`: `posix_list_memory_budget_bytes`
+  (256 MiB), `posix_list_spool_ttl_sec` (600), `posix_publish_max_attempts` (16). `K` is not a
+  setting (`§3.2`).
 - **Mode selection.** `object_storage_type = local` selects `Mode::Posix`; `EmulatedSingleProcess`
   and its `emu_*` state are deleted.
-- **Janitor.** The namespace janitor's page (`Gc/CasNamespaceJanitor.cpp`) gains a backend step
-  "reclaim under this prefix": superseded chains, `.gone-*`, and `.tmp-*`/`.new-*` whose epoch is
-  dead by the mount-lease certificate. No age participates.
-- **Nothing in formats, GC decisions, the ref lanes, the mount lease or the request engine changes.**
+- **Physical sweep.** The namespace janitor today walks only `cas/ns/` with catalog membership
+  (`Gc/CasNamespaceJanitor.cpp`) and has no epoch-death evidence. A backend-driven physical sweep
+  is added to the GC leader's bounded janitor page: one prefix page per round across all planes,
+  calling `§4.4` reclaim, with `isCreatorFenceTerminal` (`Pool/CasServerRoot.cpp`) plumbed in as the
+  certificate source. The GC leader is the natural owner because it already reads every mount slot
+  in phase 3. No GC *decision* changes.
+- **Nothing in formats, GC's decisions, the ref lanes, the mount lease or the request engine
+  changes.**
 
 ## 10. Cost {#cost}
 
 | Item | Cost |
 |---|---|
 | Object at rest | `D(k)` + one chain + one file: 3 inodes |
-| Hot mutable key (`_ckpt`, `mount`) | one incarnation file per write, reclaimed a chain (`K` writes) at a time: at most `2K` files transiently, two chain directories |
-| `head`/`read` | `readdir` hint + one `LOOKUP` per level (2) + `open` + `read`: ~5 RPCs on NFS, sub-millisecond locally |
-| Conditional write | `tmp` create + write + `fsync` + `link` + `unlink` + directory `fsync`: ~6 RPCs |
-| Deleted, never reborn key | 3 empty inodes (≈12 KiB metadata on ext4). For blobs that is per content hash ever reclaimed; the janitor may not remove them (`§3.3`). A pool that churns 10 M distinct blobs leaves ≈120 GiB of metadata: sized here so the decision is explicit |
-| `list` | one full enumeration per walk, spooled; `O(M log M)` per walk, not per page |
-
-The residue for deleted keys is the one cost that is structural. It is removable only by an actor
-that can prove no writer can still be aiming at names under `D(k)`, which no coordinator-free
-protocol can prove; a future GC-owned deep reclaim under the mount-lease certificates of *all*
-roots is possible but is out of scope here.
+| Conditional write | intent create + write + `fsync` + `link` + `unlink` + directory `fsync`: ~6 RPCs on NFS |
+| `head`/`read` | `readdir` hint + one `LOOKUP` per level + `open` + `read`: ~5 RPCs on NFS |
+| Hot mutable key | ≤ `K` incarnations per chain, two chains transiently; a superseded chain is reclaimed by its rotator when no intent is present |
+| Blob republish | a new chain per publication (`K = 1`); the superseded body is reclaimable at once unless an intent from a live epoch is present in `D(k)` |
+| Reclaim | `fresh` (2 RPCs) + listing + renames; deferred, never blocking |
+| Deleted key | nothing permanent (`§4.5`) |
+| `list` | one enumeration per walk, spooled; on NFS two extra RPCs per directory |
+| Stalled writer | its intent defers reclaim of that one key until it completes, releases, or its epoch is certified dead; never a correctness cost |
 
 ## 11. Tests {#tests}
 
 Unit (`CAS*` suites, gtest, standard gate filter):
 
-- `CASPosixBackend`: the full contract over a temporary directory, then the same battery driven by
-  two independent backend instances on one directory, including: create-vs-create (one `rename`
-  wins); overwrite-vs-overwrite from one predecessor (one `link` wins); remove-vs-overwrite from one
-  predecessor (marker vs file at one name; the loser reports `Mismatch`/`RawConflict`; never both
-  `Removed` and success); publish-vs-remove (a publication after the tombstone rebirths at
-  `c-<m+1>`; the tombstone stays); **two intervening successors then a delayed tombstone `mkdir`**
-  (fails `EEXIST` on the occupied name, `Mismatch`); a stale token from before a rebirth (`fstatat`
-  of the predecessor fails ⇒ `RawConflict`, no second `g` in a chain); chain rotation at `K` with
-  two writers racing `c-<m+1>`; a delayed `rename` of a superseded chain after it was already
-  reclaimed (`ENOENT`, harmless).
-- `CASPosixLostReply`: a fault-injecting filesystem shim drops the reply of a successful `link`,
-  `mkdir`, `rename`, `unlink`, `rmdir` once; ownership resolves by inode or by `g`; landed-then-
-  superseded creation throws a `Poco::Exception`-derived ambiguity, never `RawConflict`; no
-  `std::system_error` escapes.
-- `CASPosixChain`: a shim serving stale `readdir` (missing the newest chain / incarnation / marker)
-  while lookups are fresh: `chain` still returns the true current; a stale listing never yields an
+- `CASPosixBackend`: the full contract on a temporary directory; then two independent backend
+  instances on one directory: create-vs-create, overwrite-vs-overwrite, remove-vs-overwrite from one
+  predecessor (never both `Removed` and success), publish-vs-remove with rebirth, chain rotation with
+  two writers, stale token after rebirth (`RawConflict`).
+- `CASPosixIntent` (the theorem's schedules): a writer declares intent, observes `g-7`, is paused
+  (shim holds the `link`); fence `g-8`, reclaim `g-9`…, rotation, reclaim of the old chain **is
+  deferred** while the intent's epoch is live; then the epoch is certified dead, the intent is
+  killed, the old chain reclaimed, and the held `link` executes: `ENOENT`, reported as ambiguity,
+  never success. Same with a `.new-*` creator across two rotations (round-3 finding 1) and with a
+  remover's `.tomb-*` (round-3 finding 2). Same with the stall placed *inside* the syscall (the
+  shim delays the RPC, not the caller). A live-epoch intent never has its target freed.
+- `CASPosixLostReply`: dropped replies for `link`, `mkdir`, `rename`, `unlink`, `rmdir`; ownership by
+  inode or `g`; landed-then-superseded creation ⇒ ambiguity; no `std::system_error` escapes.
+- `CASPosixChain`: stale `readdir` hints (missing chains, missing incarnations, hinted chain gone)
+  with fresh lookups: `chain` returns the true current or restarts from a fresh listing; never an
   old value.
-- `CASPosixList`: hash-order `readdir` with page limit 1 enumerates every key exactly once in order;
-  spool reuse across pages; top-level freshness (a key created by the second instance after the
-  first instance cached the directory is listed).
-- `CASPosixDurability`: crash injection (kill, and shim "power loss" discarding unsynced writes) at
-  each step of create, overwrite, remove, rotate and publish: the object always reads as the old
-  incarnation, the complete new one, or absent; residue is reclaimed by the janitor step and only
-  for dead epochs (a live slow creator's `.new-*` is untouched).
+- `CASPosixList`: hash-order `readdir`, page limit 1, exactly-once in order; spool reuse; per-level
+  freshness (a key created by the second instance under a directory the first instance had cached
+  is listed).
+- `CASPosixReclaim`: reclaim of superseded/tombstoned chains and of `D(k)`; `rmdir D(k)` vs a
+  concurrent creator; write-once keys; the janitor page never touches a live epoch's intent;
+  deferred reclaim retried.
+- `CASPosixDurability`: crash/power-loss injection at each step of create, overwrite, remove,
+  rotate, publish, reclaim.
+- `CASPosixReadPath`: table reads (full, ranged, cached) after publish, republish, rebirth, and
+  with the incarnation reclaimed mid-read (reopen at offset).
 - `CASPosixProbe`: each fact fails closed on a violating shim; missing mount option; emulated
   layout; `skip_access_check` refused.
-- `CASPosixReadPath`: table reads (full and ranged, with and without a cache disk) after
-  publication, after a republish (new incarnation), after a rebirth.
 - `CASPosixBackendDeathTest`: every `LOGICAL_ERROR` site as `EXPECT_DEATH` with `std::_Exit`.
 
-Integration: `test_cas_posix_shared` — an NFS server container, two `clickhouse-server` containers
-each mounting it as a separate NFS client with the mandatory options, a `ReplicatedMergeTree` on
-both, inserts on both, `SYSTEM CAS GC RUN`, `ca-fsck` `dangling=0`; kill one mid-insert and verify
-the survivor fences and reclaims; mount without `lookupcache=positive` and verify refusal. Soak:
-`utils/ca-soak/docker-compose-nfs.yml` with the existing scenario suite unchanged; report inode
-residue after the run. The stateless `cas storage` lane becomes the single-process durability lane.
+Integration: `test_cas_posix_shared` — an NFS server container, two `clickhouse-server` containers as
+separate NFS clients with the mandatory options, a `ReplicatedMergeTree` on both, inserts on both,
+`SYSTEM CAS GC RUN`, `ca-fsck` `dangling=0`; a `SIGSTOP`ped server resumed after the other fenced it
+and rotated its keys (the resumed server's writes must all fail as ambiguity, never succeed); mount
+without `lookupcache=positive` refused. Soak: `utils/ca-soak/docker-compose-nfs.yml` with the
+existing scenario suite; report transient residue after the run. The stateless `cas storage` lane
+becomes the single-process durability lane.
 
 ## 12. Migration and out of scope {#out-of-scope}
 
-Pools written by `EmulatedSingleProcess` use a flat-file layout and are refused by probe gate 7; no
-converter (no production data). Out of scope: Keeper coordination; SMB (`§2`); the single-write
-blob optimization (conflicts with `BlobSource::open`); trustworthy `list` values; deep reclaim of
-deleted-key residue; any change to persisted formats or the request engine.
+Pools written by `EmulatedSingleProcess` are refused by probe gate 8; no converter (no production
+data). Out of scope: Keeper coordination; SMB; the single-write blob optimization (conflicts with
+`BlobSource::open`); trustworthy `list` values; any change to persisted formats or the request
+engine.
