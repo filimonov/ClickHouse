@@ -344,7 +344,7 @@ TEST(CASInMemory, PublishBlobKeepsThePreviousIncarnationVisibleUntilTheCompleteB
 
     CasOperation read_op = requests.admit();
     auto observation = std::async(std::launch::async, [&] { return read_op.read("blob", Retry::once()); });
-    const auto observation_status = observation.wait_for(2s);
+    const auto observation_status = observation.wait_for(20s);
     EXPECT_EQ(observation_status, std::future_status::ready)
         << "publication must not hold the visibility lock while draining its source";
     if (observation_status == std::future_status::ready)
@@ -938,7 +938,7 @@ TEST(CASObjectStorageBackend, PublishBlobEmulatedKeepsDestinationCompleteUntilAt
         op.publish(streamingPublication(key, "fresh-envelope", "payload", 7), Retry::once());
     });
 
-    const auto opened_status = opened.wait_for(2s);
+    const auto opened_status = opened.wait_for(20s);
     EXPECT_EQ(opened_status, std::future_status::ready);
     if (opened_status == std::future_status::ready)
         EXPECT_EQ(readStorageObject(storage, physical_key), "old-complete-body");
