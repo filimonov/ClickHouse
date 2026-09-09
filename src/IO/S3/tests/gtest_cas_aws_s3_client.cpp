@@ -250,12 +250,9 @@ public:
         server->start();
     }
 
-    /// Drop the process-wide client connection pools first: the S3 client keeps its connections to this
-    /// server alive across requests, and a worker blocked waiting for the next request on one of them
-    /// returns only when the client side closes. Closing from the client side lets every worker shut its
-    /// own socket on its own thread. `stopAll(true)` did it from here through Poco's abort path, which
-    /// touches the socket without the connection mutex and raced the worker's own close (a TSan data race
-    /// on `SocketImpl::_sockfd`).
+    /// Closing the cached client sockets wakes the server workers without Poco's abort notification,
+    /// whose unlocked socket shutdown races the worker's own close. Precondition: callers have released
+    /// their sessions, otherwise `joinAll` waits for the server's request timeout.
     ~TestPocoHTTPSequenceServer()
     {
         DB::HTTPConnectionPools::instance().dropCache();
