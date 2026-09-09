@@ -56,21 +56,32 @@ def _control(base_url, path, patch=None):
 
 
 def _wait_until(probe, timeout=40, interval=0.2):
+    # `probe` is called with the seconds remaining until THIS call's own deadline, on every attempt, so
+    # a probe running a `node.query(...)` can bound that query at `timeout=remaining` instead of
+    # inheriting the client's much larger (600s) default -- otherwise one slow or stuck query could
+    # silently burn the whole budget of a caller that is itself waiting on a much tighter deadline. A
+    # truthy result that only comes back after this deadline has already passed (the query ran long
+    # enough to blow through its own remaining budget) is rejected here too, rather than accepted as an
+    # on-time success.
     deadline = time.monotonic() + timeout
     last = None
-    while time.monotonic() < deadline:
-        last = probe()
-        if last:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        last = probe(remaining)
+        if last and time.monotonic() < deadline:
             return last
         time.sleep(interval)
     raise AssertionError("condition did not become true within {}s; last={!r}".format(timeout, last))
 
 
-def _profile_events(node):
+def _profile_events(node, timeout=None):
     rows = node.query(
         "SELECT event, value FROM system.events WHERE event IN ({}) FORMAT TSV".format(
             ", ".join("'{}'".format(event) for event in RENEWAL_EVENTS)
-        )
+        ),
+        timeout=timeout,
     )
     values = {event: 0 for event in RENEWAL_EVENTS}
     for row in rows.splitlines():
@@ -83,13 +94,14 @@ def _event_delta(before, after):
     return {event: after[event] - before[event] for event in RENEWAL_EVENTS}
 
 
-def _mount_snapshot(node):
+def _mount_snapshot(node, timeout=None):
     row = node.query(
         "SELECT renewal_sequence, state, lifecycle, gc_fenced "
         "FROM system.cas_mounts "
         "WHERE disk = '{}' AND server_root_id = '{}' LIMIT 1 FORMAT TSV".format(
             DISK, SERVER_ROOT_ID
-        )
+        ),
+        timeout=timeout,
     ).strip()
     assert row, "the local CAS mount row must be visible"
     sequence, state, lifecycle, gc_fenced = row.split("\t")
@@ -139,8 +151,8 @@ def _log_count_since_last_restart(node, pattern):
     return int(node.exec_in_container(["bash", "-c", script]).strip())
 
 
-def _renewal_log_rows(node, since):
-    node.query("SYSTEM FLUSH LOGS")
+def _renewal_log_rows(node, since, timeout=None):
+    node.query("SYSTEM FLUSH LOGS", timeout=timeout)
     rows = node.query(
         "SELECT outcome, detail['seq'], detail['write_attempt_id'], "
         "detail['attempts_sent'], detail['classification'] "
@@ -150,7 +162,8 @@ def _renewal_log_rows(node, since):
         "AND event_time_microseconds >= toDateTime64('{}', 6) "
         "ORDER BY event_time_microseconds FORMAT TSV".format(
             DISK, SERVER_ROOT_ID, since
-        )
+        ),
+        timeout=timeout,
     )
     return [tuple(row.split("\t")) for row in rows.splitlines() if row]
 
@@ -183,7 +196,7 @@ def start_cluster():
             cluster.base_cmd + ["port", "s3proxy", "8474"], text=True
         ).strip()
         control_url = "http://{}".format(binding)
-        _wait_until(lambda: _control(control_url, "/healthz"), timeout=30)
+        _wait_until(lambda remaining: _control(control_url, "/healthz"), timeout=30)
         _control(control_url, "/config", {"reset": True})
 
         node = cluster.instances["node"]
@@ -249,14 +262,14 @@ def test_transient_mount_renewal_retries_without_remount(start_cluster):
         },
     )
 
-    def recovered_snapshot():
+    def recovered_snapshot(remaining):
         # Read the counter before the mount row: `CASMountRenewalRecovered` is incremented as soon as
         # the renewal decides its outcome, strictly before the mount row's `renewal_sequence` (and the
         # matching cas_log row) is updated to the new sequence. With the shortened renewal period a
         # background (fault-free) renewal can land between the two reads; reading counters first makes
         # the subsequent mount read very unlikely to still observe the pre-recovery sequence.
-        counters = _profile_events(node)
-        mount = _mount_snapshot(node)
+        counters = _profile_events(node, timeout=remaining)
+        mount = _mount_snapshot(node, timeout=remaining)
         if (
             mount["sequence"] > mount_before["sequence"]
             and counters["CASMountRenewalRecovered"]
@@ -277,12 +290,12 @@ def test_transient_mount_renewal_retries_without_remount(start_cluster):
     # renewal period, background renewals can advance `system.cas_mounts` past the exact sequence this
     # recovery landed on before either of these two reads gets to it.
     rows = _wait_until(
-        lambda: (
+        lambda remaining: (
             found
             if any(row[0] == "recovered" for row in found)
             else None
         )
-        if (found := _renewal_log_rows(node, since))
+        if (found := _renewal_log_rows(node, since, timeout=remaining))
         else None,
         timeout=20,
     )
@@ -347,7 +360,7 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
     # background renewal that started immediately after this one resolved (see the mount_before/after
     # sequence race this replaced). Wait for the proxy's own record first, then poll the object for
     # its exact upstream_etag, so body_after is unambiguously the write this test is about.
-    def dropped_record():
+    def dropped_record(remaining):
         found_stats = _control(control_url, "/stats")
         found_records = found_stats["drop_after_forward"]
         return (found_stats, found_records[0]) if len(found_records) == 1 else None
@@ -355,16 +368,16 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
     stats, record = _wait_until(dropped_record)
     target_etag = record["upstream_etag"].strip('"')
 
-    def matching_object():
+    def matching_object(remaining):
         body, token = _read_mount_object()
         return (body, token) if token == target_etag else None
 
     body_after, token_after = _wait_until(matching_object)
     mount_body = _decode_mount(body_after)
 
-    def resolved_snapshot():
-        counters = _profile_events(node)
-        mount = _mount_snapshot(node)
+    def resolved_snapshot(remaining):
+        counters = _profile_events(node, timeout=remaining)
+        mount = _mount_snapshot(node, timeout=remaining)
         if (
             mount["sequence"] > mount_before["sequence"]
             and counters["CASMountRenewalResolved"]
@@ -385,12 +398,12 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
     # (see _renewal_log_rows): background renewals can advance `system.cas_mounts` past the exact
     # sequence this recovery landed on before either of these reads gets to it.
     rows = _wait_until(
-        lambda: (
+        lambda remaining: (
             found
             if any(row[0] == "recovered" and row[4] == "committed_by_read" for row in found)
             else None
         )
-        if (found := _renewal_log_rows(node, since))
+        if (found := _renewal_log_rows(node, since, timeout=remaining))
         else None,
         timeout=20,
     )
@@ -457,7 +470,7 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
     # `Pool::open` (which performs the observation wait itself) to finish; reading the log or the mount
     # row before that completes races the very thing being measured. Wait for the mount to report
     # "live" first, then the log line and row are both settled.
-    _wait_until(lambda: _mount_snapshot(node)["state"] == "live", timeout=120)
+    _wait_until(lambda remaining: _mount_snapshot(node, timeout=remaining)["state"] == "live", timeout=120)
     assert log_count_since_last_restart(observation) == 1
     assert _mount_snapshot(node)["state"] == "live"
     # This restart already reclaims the slot and advances the epoch on its own (via the observation
@@ -482,7 +495,7 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
     try:
         node.start_clickhouse()
         # Same race as the safe restart above: wait for the mount to settle before reading the log.
-        _wait_until(lambda: _mount_snapshot(node)["state"] == "live", timeout=120)
+        _wait_until(lambda remaining: _mount_snapshot(node, timeout=remaining)["state"] == "live", timeout=120)
         assert log_count_since_last_restart(observation) == 0
         assert _mount_snapshot(node)["state"] == "live"
         epoch_after_knob_restart = int(
