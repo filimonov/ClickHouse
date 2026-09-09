@@ -376,7 +376,10 @@ TEST(CASRefSnapshotPublishOrdering, PublishBackoffDecisionsAreCharacterized)
     config.snapshot_publish_backoff_initial_ms = 1000;
     config.snapshot_publish_backoff_max_ms = 4000;
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
-    config.boot_ms_fn = [fake_now] { return fake_now->load(); };
+    config.boot_ms_fn = [fake_now]
+    {
+        return fake_now->load();
+    };
     config.cas_request_budget = budget;
     /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the budget
     /// field alone; pair the two so the mount lease's admission arithmetic sees what the budget claims.
@@ -507,7 +510,10 @@ TEST(CASRefSnapshotPublishOrdering, NotReadyRefusalBacksOffAndResetsAfterDurable
     config.snapshot_publish_backoff_initial_ms = 200;
     config.snapshot_publish_backoff_max_ms = 30'000;
     config.mount_lease_ttl_ms = std::chrono::milliseconds(10'000'000);
-    config.boot_ms_fn = [fake_now] { return fake_now->load(); };
+    config.boot_ms_fn = [fake_now]
+    {
+        return fake_now->load();
+    };
     config.cas_request_budget = budget;
     /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the budget
     /// field alone; pair the two so the mount lease's admission arithmetic sees what the budget claims.
