@@ -898,9 +898,10 @@ namespace
 /// two-round scenario described below. Parameterized only by `config` so the same scenario can be run
 /// against the default `PoolConfig` (`ExpiredMountFencedOutAndExcluded`) and against
 /// `unsafe_remount_no_delay = true` (`CASGcFenceOut.ThresholdUnchangedByUnsafeKnob`), proving the knob
-/// changes nothing about the fence-out threshold or its round count. `backend` and `events` are declared
-/// BEFORE the Pool inside this same function so they outlive the background syncer's emits (ASan
-/// 2026-07-09) -- the Pool must never outlive the function that opened it.
+/// changes nothing about the fence-out threshold or its round count. `events` is heap-owned (not a
+/// plain local) because the Pool CAN outlive the function that opened it: a background publish can hold
+/// an extra `shared_from_this()` past this function's return, so a stack-local sink target -- even one
+/// declared before the Pool (the fix for the 2026-07-09 ASan finding) -- is not enough.
 ///
 /// A dead mount is fenced out by the round's heartbeat step: gc_fenced is set on its body (a
 /// token-guarded rewrite that bumps seq). The fence is pure liveness (re-arms the write fence so a
@@ -919,7 +920,10 @@ namespace
 void runExpiredMountFenceOutScenario(const PoolConfig & config)
 {
     auto backend = std::make_shared<InMemoryBackend>();
-    std::vector<CasEvent> events;   /// declared BEFORE the Pool so it outlives the background syncer's emits (ASan 2026-07-09)
+    /// Heap-owned, not a plain local: declaring it before the Pool (ASan 2026-07-09) only protects
+    /// against an ordinary same-thread unwind, not a detached background completion holding an extra
+    /// `shared_from_this()` that can still be running on another thread after this frame returns.
+    auto events = std::make_shared<DB::Cas::tests::SharedEventLog>();
     auto store = Pool::open(backend, config);
     const Layout & layout = store->layout();
 
@@ -947,7 +951,10 @@ void runExpiredMountFenceOutScenario(const PoolConfig & config)
     Gc gc(store, kGc, [&] { return gc_now; }, [&] { return gc_mono; });
 
     // Capture the emitted events so we can assert the round emits exactly one GcFenceOut row for srid2.
-    store->setEventSink([&](const CasEvent & e) { events.push_back(e); });
+    store->setEventSink([events](const CasEvent & e)
+    {
+        events->push(e);
+    });
 
     const RootNamespace ns{"00/aa@cas@"};
     const ManifestRef r = ref("srv-a:1", 1, 0xAA);
@@ -984,7 +991,7 @@ void runExpiredMountFenceOutScenario(const PoolConfig & config)
 
     // Exactly one GcFenceOut audit row was emitted, naming srid2 in its detail.
     size_t fence_out_rows = 0;
-    for (const CasEvent & e : events)
+    for (const CasEvent & e : events->snapshot())
         if (e.type == CasEventType::GcFenceOut)
         {
             ++fence_out_rows;
