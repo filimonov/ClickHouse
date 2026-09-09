@@ -130,9 +130,12 @@ CasRequestBudget renewalEventBudget()
     };
 }
 
+/// `boot_ms` is a shared, heap-owned atomic, not a plain reference parameter: some callers mutate it
+/// after the Pool exists, and the Pool can outlive this function's own call (a background publish
+/// holds `shared_from_this()`), so a by-reference capture of a caller-local would dangle.
 PoolPtr openRenewalEventPool(
     const std::shared_ptr<RenewalEventBackend> & backend,
-    uint64_t & boot_ms,
+    const std::shared_ptr<std::atomic<uint64_t>> & boot_ms,
     CasRequestBudget budget = renewalEventBudget(),
     String prefix = "renewal-events",
     String server_root_id = "test")
@@ -145,7 +148,7 @@ PoolPtr openRenewalEventPool(
         .server_root_id = std::move(server_root_id),
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .cas_request_budget = budget,
-        .boot_ms_fn = [&] { return boot_ms; },
+        .boot_ms_fn = [boot_ms] { return boot_ms->load(); },
     });
 }
 
@@ -214,7 +217,7 @@ TEST(CASEvent, PoolEmitsToSink)
 TEST(CASEvent, FirstAttemptRenewalIsSilent)
 {
     auto backend = std::make_shared<RenewalEventBackend>();
-    uint64_t boot_ms = 100;
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     std::vector<CasEvent> events;
     auto store = openRenewalEventPool(backend, boot_ms);
     store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
@@ -226,7 +229,7 @@ TEST(CASEvent, FirstAttemptRenewalIsSilent)
 TEST(CASEvent, WatermarkRenewEventsAreBoundedAndComplete)
 {
     auto backend = std::make_shared<RenewalEventBackend>();
-    uint64_t boot_ms = 100;
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     std::vector<CasEvent> events;
     auto store = openRenewalEventPool(backend, boot_ms);
     store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
@@ -270,7 +273,7 @@ TEST(CASEvent, WatermarkRenewEventsAreBoundedAndComplete)
 TEST(CASEvent, AnAmbiguityPastTheLeaseBoundNeverStartsTheResolvingRead)
 {
     auto backend = std::make_shared<RenewalEventBackend>();
-    uint64_t boot_ms = 100;
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     std::vector<CasEvent> events;
     auto store = openRenewalEventPool(
         backend, boot_ms, renewalEventBudget(), "renewal-inflight-ambiguity");
@@ -278,7 +281,7 @@ TEST(CASEvent, AnAmbiguityPastTheLeaseBoundNeverStartsTheResolvingRead)
 
     /// The lease was anchored at 100 with a 1000 ms TTL, so the fence expires at 1100 and holds a 20 ms
     /// safety margin. At 1081 only 19 ms remain, and admission refuses the resolve read.
-    backend->before_throw = [&] { boot_ms = 1'081; };
+    backend->before_throw = [boot_ms] { boot_ms->store(1'081); };
     backend->throw_before_next_write = true;
     backend->armResolveProbe();
     EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
@@ -385,7 +388,7 @@ TEST(CASEvent, DeepReentrancyPreservesDeterministicPhysicalAttemptTruth)
 TEST(CASEvent, WatermarkRenewSinkFailureCannotChangeOutcome)
 {
     auto backend = std::make_shared<RenewalEventBackend>();
-    uint64_t boot_ms = 100;
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     auto store = openRenewalEventPool(backend, boot_ms);
     const String mount_key = store->layout().mountKey("test");
     const uint64_t seq_before = decodeMountLease(backend->readForTest(mount_key)->bytes).seq;
@@ -421,7 +424,7 @@ TEST(CASEvent, TerminalRenewalDetailsPreservePhysicalTruthAndClassification)
 
     {
         auto backend = std::make_shared<RenewalEventBackend>();
-        uint64_t boot_ms = 100;
+        auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
         std::vector<CasEvent> events;
         auto store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-deterministic-details");
         store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
@@ -437,13 +440,13 @@ TEST(CASEvent, TerminalRenewalDetailsPreservePhysicalTruthAndClassification)
 
     {
         auto backend = std::make_shared<RenewalEventBackend>();
-        uint64_t boot_ms = 100;
+        auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
         std::vector<CasEvent> events;
         auto store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-deadline-details");
         store->setEventSink([&](CasEvent event) { events.push_back(std::move(event)); });
         /// The lease was anchored at 100 with a 1000 ms TTL and holds a 20 ms safety margin, so 1090
         /// leaves 10 ms of it and admission refuses the renewal before its first attempt.
-        boot_ms = 1090;
+        boot_ms->store(1090);
 
         EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
         const std::optional<CasEvent> failed = one_failed_event(events);
@@ -456,7 +459,7 @@ TEST(CASEvent, TerminalRenewalDetailsPreservePhysicalTruthAndClassification)
 TEST(CASEvent, ReentrantRenewalSinkPreservesOuterObservationIdentity)
 {
     auto backend = std::make_shared<RenewalEventBackend>();
-    uint64_t boot_ms = 100;
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     std::vector<CasEvent> events;
     PoolPtr store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-reentrant-sink");
     bool reentered = false;
@@ -487,12 +490,12 @@ TEST(CASEvent, ReentrantRenewalSinkPreservesOuterObservationIdentity)
 TEST(CASEvent, PreCompletionConflictReentrancyPreservesOuterTerminalObservation)
 {
     auto inner_backend = std::make_shared<RenewalEventBackend>();
-    uint64_t inner_boot_ms = 100;
+    auto inner_boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     auto inner = openRenewalEventPool(
         inner_backend, inner_boot_ms, renewalEventBudget(), "renewal-reentrant-inner", "inner");
 
     auto outer_backend = std::make_shared<RenewalEventBackend>();
-    uint64_t outer_boot_ms = 100;
+    auto outer_boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     auto outer = openRenewalEventPool(
         outer_backend, outer_boot_ms, renewalEventBudget(), "renewal-reentrant-outer", "outer");
     std::vector<CasEvent> outer_events;
