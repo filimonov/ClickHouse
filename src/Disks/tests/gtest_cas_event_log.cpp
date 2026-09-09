@@ -148,7 +148,10 @@ PoolPtr openRenewalEventPool(
         .server_root_id = std::move(server_root_id),
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .cas_request_budget = budget,
-        .boot_ms_fn = [boot_ms] { return boot_ms->load(); },
+        .boot_ms_fn = [boot_ms]
+        {
+            return boot_ms->load();
+        },
     });
 }
 
@@ -281,7 +284,10 @@ TEST(CASEvent, AnAmbiguityPastTheLeaseBoundNeverStartsTheResolvingRead)
 
     /// The lease was anchored at 100 with a 1000 ms TTL, so the fence expires at 1100 and holds a 20 ms
     /// safety margin. At 1081 only 19 ms remain, and admission refuses the resolve read.
-    backend->before_throw = [boot_ms] { boot_ms->store(1'081); };
+    backend->before_throw = [boot_ms]
+    {
+        boot_ms->store(1'081);
+    };
     backend->throw_before_next_write = true;
     backend->armResolveProbe();
     EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
