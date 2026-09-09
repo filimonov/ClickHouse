@@ -9,11 +9,11 @@ doc_type: 'design'
 
 # CAS backend over local and shared POSIX filesystems {#cas-posix-shared-backend}
 
-Revision 7, 2026-09-09. Six review rounds (`tmp/cas-posix-spec-review-astra-r{1,2,3,4,5,6}.md`)
+Revision 8, 2026-09-09. Seven review rounds (`tmp/cas-posix-spec-review-astra-r{1,2,3,4,5,6,7}.md`)
 established: on POSIX an occupied name is the only fence; any name freed while a stalled writer still
 aims at it is a false-success target; the stall may be inside the syscall; and a source revoked by
 `rename` does not stop an NFS `LINK` that already resolved its file handle, while it does stop a
-`RENAME`, which names its source. Revision 7 uses exactly two kinds of names:
+`RENAME`, which names its source. Revision 8 uses exactly two kinds of names:
 
 - **names inside a chain** (`<g>-<n>`), which are never freed while the chain exists — a delayed
   `link` at such a name meets `EEXIST`, or lands in a chain that was moved as a whole into a
@@ -46,8 +46,8 @@ in `§9`.
 | Filesystem | Status | Mandatory mount options (`§6`) |
 |---|---|---|
 | Local ext4 / xfs / btrfs / zfs | supported; one process; replaces `EmulatedSingleProcess` | none |
-| NFSv4, 4.1, 4.2 | supported | `hard`, `lookupcache=none`, `nosoftreval` |
-| NFSv3 | supported | `hard`, `lookupcache=none`, `nosoftreval` |
+| NFSv4, 4.1, 4.2 | supported | effective `hard`, `lookupcache=none`, and `softreval` **absent** |
+| NFSv3 | supported | effective `hard`, `lookupcache=none`, and `softreval` **absent** |
 | CephFS, Lustre | supported (coherent caches; `RENAME` names its source on both) | none |
 | GPFS | supported on the same facts only after the two-client suite of `§11` has been run on it; there is no CI recipe for it, so it is not certified in v1 | none |
 | SMB / CIFS | not in v1: the Linux client keeps a negative dentry for about one second regardless of options (`fs/smb/client/dir.c`) | — |
@@ -56,10 +56,14 @@ in `§9`.
 directory by a name it no longer has after another client renamed it, so both the post-check of
 `§3.3` and a reader's chain selection could bind to a moved chain (`fs/nfs/dir.c`,
 `nfs_do_lookup_revalidate`). With `lookupcache=none` every path component is looked up at the
-server; the cost is one `LOOKUP` per component per operation on short paths. `nosoftreval` is
-required with it: `softreval` (combinable with `hard`) makes `nfs_lookup_revalidate_done` accept a
-cached positive binding when the revalidating `LOOKUP` times out, which would let the post-check
-and a reader bind to a moved chain exactly as a cached dentry would. Directory delegations are
+server; the cost is one `LOOKUP` per component of the paths the backend resolves (all short). The
+soft-revalidation bit must be clear: `softreval` (combinable with `hard`, and also set by `softerr`;
+option order matters, `hard` clears it) makes `nfs_lookup_revalidate_done` accept a cached positive
+binding when the revalidating `LOOKUP` times out, which would let the post-check and a reader bind
+to a moved chain exactly as a cached dentry would. The gate checks the **kernel-reported** options
+(`/proc/self/mountinfo` renders `softreval` when the bit is set and nothing when it is clear;
+Linux v6.12 does not even parse a `nosoftreval` token), so the requirement is "`softreval` absent",
+never a literal negative token. Directory delegations are
 defined by NFSv4.1 (`GET_DIR_DELEGATION`) but not implemented by the Linux client; an open dirfd
 keeps naming its directory after a rename, which is why hints from it are hints only.
 
@@ -186,7 +190,7 @@ create and unlink `.d-<u>` in `dir`, open a new stream, `readdir`. Errors not li
 | `write(k, bytes, expected = absent)` | `mkdir D(k)` (`EEXIST` fine); `intent(bytes)`; `chain(k)`: a live top ⇒ remove own intent, `RawConflict`; else `m₀` = greatest chain (0 if none); `rename(.new-*, c-<m₀+1>)`: success ⇒ `settle(D(k))`, return `c-<m₀+1>/<g'>-1`; `ENOTEMPTY`/`EEXIST` ⇒ remove own intent, `RawConflict`; `ENOENT` on the source ⇒ `§5` |
 | `write(k, bytes, expected = c-<m>/<g>-<n>)`, `n < K` | `fstatat(c-<m>, <g>-<n>)` succeeds else `RawConflict`; `scratch`; `link(.tmp-*, c-<m>/<g>-<n+1>)`: success ⇒ `unlink(.tmp-*)`, `settle`, return `c-<m>/<g>-<n+1>`; `EEXIST` ⇒ `§5` ownership check, else `unlink(.tmp-*)`, `RawConflict`; `ENOENT` on the chain ⇒ `RawConflict` |
 | `write(k, bytes, expected = c-<m>/<g>-<n>)`, `n ≥ K` | `intent(bytes)`; `chain(k)` must equal the expected value else remove intent, `RawConflict`; `rename(.new-*, c-<m+1>)` as above; success ⇒ return `c-<m+1>/<g'>-1`, then opportunistic `§4.4` |
-| `remove(k, c-<m>/<g>-<n>)` | **declare first**: `n < K` ⇒ `mkdir c-<m>/.tomb-<u>`; `n ≥ K` ⇒ `intent(marker)`. Then `chain(k)`: not that value ⇒ remove own scratch/intent, `Mismatch` / `Gone`. Then `rename(.tomb-*, c-<m>/<g>-<n+1>)` or `rename(.new-*, c-<m+1>)`: `EEXIST`/`ENOTEMPTY`/`ENOTDIR` ⇒ `Mismatch`; success (post-checked, `§3.3`) ⇒ `Removed`. Then **compaction**, best-effort here and completed by the sweep: a tombstoned chain that still holds data files is compacted by creating the successor of its marker top — `intent(marker)` **first**, then a fresh `chain(k)` confirming the tombstoned data-bearing chain is still current (never the removal's earlier observation), then `rename(.new-*, c-<m+1>)` — after which `c-<m>` is superseded and reclaimable in order (`§4.4`); a rebirth competes for the same name and either outcome is fine (a rebirth that loses retries at `c-<m+2>`). The floor is therefore always a marker-only chain, and compaction never applies to one (its stop condition). `DeleteMarker` is never returned |
+| `remove(k, c-<m>/<g>-<n>)` | **declare first**: `n < K` ⇒ `mkdir c-<m>/.tomb-<u>`; `n ≥ K` ⇒ `intent(marker)`. Then `chain(k)`: not that value ⇒ remove own scratch/intent, `Mismatch` / `Gone`. Then `rename(.tomb-*, c-<m>/<g>-<n+1>)` or `rename(.new-*, c-<m+1>)`: `EEXIST`/`ENOTEMPTY`/`ENOTDIR` ⇒ `Mismatch`; success (post-checked, `§3.3`) ⇒ `Removed`. Then **compaction**, best-effort here and completed by the sweep: a tombstoned chain that still holds data files is compacted by creating the successor of its marker top — `intent(marker)` **first**, then a fresh `chain(k)` confirming the tombstoned data-bearing chain is still current (never the removal's earlier observation), then `rename(.new-*, c-<m+1>)` — after which `c-<m>` is superseded and reclaimable in order (`§4.4`); a rebirth competes for the same name and either outcome is fine (a rebirth that loses retries at `c-<m+2>`). The floor is therefore eventually a marker-only chain (compaction is best-effort and completed by the sweep), and compaction never applies to a marker-only chain (its stop condition). `DeleteMarker` is never returned |
 | `publish(request)` | unconditional by protocol: loop { `chain(k)`; absent ⇒ the absent-`write` path with the body; present ⇒ the conditional path against the current value } until success or `posix_publish_max_attempts`, then a transport failure. Envelope + bounded payload copy + exact size check as `emuPublishBlobAtomically` today |
 | `read(k)` / `head(k)` / `stream(k)` | `chain(k)`; absent ⇒ nullopt / null; open the incarnation; value = the name opened. `stream` returns a `ReadBufferFromFileDescriptor` owning the descriptor; a remote unlink surfaces as the read error it is |
 | `list(prefix, cursor, limit)` | `§4.6` |
@@ -303,8 +307,10 @@ The authorization-class consumers of absence in the engine (blob `.meta` on a de
 probe, the settlement read) require server-decided absence. The backend guarantees it by
 construction: existence is a `LOOKUP` of a specific name (`§3.1`), listings are fresh at every level
 (`§4.6`), on NFS `lookupcache=none` sends every lookup, negative and positive, to the server (`fs/nfs/dir.c`),
-and positive caching is harmless because a name never changes content. The mount-option gate is
-mandatory (`§8`): for `nfs`/`nfs4` a writable mount is refused without `lookupcache=none`, `hard` and `nosoftreval`. The mount is identified by the pool root's open descriptor: `mnt_id` from
+and cached positive *attributes* of an incarnation file are harmless because its content never
+changes (the binding checks of `§3.1` and `§3.3` are lookups, never attribute reads). The
+mount-option gate is mandatory (`§8`): for `nfs`/`nfs4` a writable mount is refused unless the
+kernel-reported options contain `hard` and `lookupcache=none` and do not contain `softreval`. The mount is identified by the pool root's open descriptor: `mnt_id` from
 `/proc/self/fdinfo/<fd>` matched against `/proc/self/mountinfo` (no precedent in the codebase;
 missing or unreadable procfs fails closed).
 
@@ -357,8 +363,16 @@ subject of `§11`'s two-client test.
   staging and mountpoints under its claim, writes farewell, then deletes mount, epoch and retires
   the owner) changes in two ways. **It no longer deletes the epoch object**: it retires it in place
   with a marker that keeps the counter, so a same-owner successor continues from the retired epoch
-  and retained certificates stay ordered (`§4.4`, certificate lifetime); the successor-presence
-  recheck and owner retirement are unchanged. And it gains a physical-intent drain **between
+  and retained certificates stay ordered (`§4.4`, certificate lifetime). Concretely: the epoch
+  object is conditionally replaced (a successor of its captured incarnation) by a body with the
+  same `next_writer_epoch` plus a `retired` field — one additive, tolerant-decoded field on
+  `ServerEpoch` (`Formats/CasServerRootFormats.h`), the single format change this design admits —
+  and the committed value is kept. The successor-presence recheck (today `current_mount ||
+  current_epoch`, `Tools/CasDecommission.cpp`) changes to: a present mount, or an epoch object whose
+  value differs from the retired one just committed, means a successor; the exact retired object
+  means none, and owner retirement proceeds. Ignoring epoch presence outright would miss a
+  successor that allocated but has not yet published its mount. Epoch exhaustion (`uint64_t`
+  wrap) fails closed. And it gains a physical-intent drain **between
   farewell and mount deletion**: it kills only
   intents of the victim root with `e ≤` the retired epoch (never `e = 0`, never a newer epoch — a
   successor may already be claiming), and it does so while the slot still exists, since the slot is
@@ -376,8 +390,9 @@ subject of `§11`'s two-client test.
   setting.
 - **Mode selection.** `object_storage_type = local` selects `Mode::Posix`; `EmulatedSingleProcess`
   and its `emu_*` state are deleted.
-- **Nothing in formats, GC's decisions, the ref lanes, the mount lease or the request engine's
-  retry/settlement logic changes.**
+- **Nothing in GC's decisions, the ref lanes, the mount lease or the request engine's
+  retry/settlement logic changes; the only format change is the additive `retired` field on
+  `ServerEpoch` (decommission item above).**
 
 ## 10. Cost {#cost}
 
@@ -429,7 +444,9 @@ Unit (`CAS*` suites, gtest, standard gate filter):
   of `§5` under the same shim; detach between validation and probe.
 - `CASPosixCompaction`: a tombstoned chain with data is compacted to a marker-only floor and the
   old chain reclaimed in order; compaction racing a rebirth for `c-<m+1>` in both orders; N
-  rebirths leave one floor; allocated bytes after deletion are zero beyond the three inodes.
+  rebirths leave one floor; after compaction and reclaim no regular file remains and the residue is
+  exactly three directory inodes with their directory blocks; compaction of a marker-only floor is a
+  no-op; compaction re-observes after declaring.
 - `CASPosixIdentity`: every request plane's intent carries the frozen `(r, e)` of admission
   across retries; bootstrap intents are `e = 0` and never killed by the sweep; two `e = 0`
   bootstraps of one root: one installs `c-1`, the other meets a non-empty target; an older
@@ -444,7 +461,8 @@ Integration: `test_cas_posix_shared` — an NFS server container, two `clickhous
 separate NFS clients with the mandatory options, a `ReplicatedMergeTree` on both, inserts on both,
 `SYSTEM CAS GC RUN`, `ca-fsck` `dangling=0`; a `SIGSTOP`ped server resumed after the other fenced it
 and rotated its keys (every write of the resumed server fails as ambiguity, never succeeds); mount
-without `lookupcache=none` or with `softreval` refused; a timeout-driven `softreval` fallback shim
+without `lookupcache=none`, with `softreval`, or with `softerr` after `hard` refused, judged on
+kernel-reported options; a timeout-driven `softreval` fallback shim
 (v3 and v4) never yields success on the post-check or a reader; residue counted after the run. Soak:
 `utils/ca-soak/docker-compose-nfs.yml` with the existing scenario suite. The stateless `cas storage`
 lane becomes the single-process durability lane.
@@ -454,4 +472,5 @@ lane becomes the single-process durability lane.
 Pools written by `EmulatedSingleProcess` are refused by probe gate 8; no converter (no production
 data). Out of scope: Keeper coordination; SMB; the single-write blob optimization (conflicts with
 `BlobSource::open`); trustworthy `list` values; deep reclaim of the floor residue; any change to
-persisted formats or the request engine's retry and settlement logic.
+persisted formats beyond the `ServerEpoch` `retired` field, or to the request engine's retry and
+settlement logic.
