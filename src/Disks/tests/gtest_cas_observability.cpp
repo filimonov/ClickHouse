@@ -160,7 +160,10 @@ TEST(CASObservability, RenewalCountersHaveExactPhysicalAndLogicalDeltas)
             .server_root_id = "test",
             .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
             .cas_request_budget = renewalCounterBudget(),
-            .boot_ms_fn = [] { return boot_ms; },
+            .boot_ms_fn = []
+            {
+                return boot_ms;
+            },
         });
         backend->fault = fault;
         const RenewalCounterSnapshot before = renewalCounters();
@@ -187,7 +190,10 @@ TEST(CASObservability, ExternalLeaseDeadlineCountsOnceWithoutReconstructingAttem
         .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .cas_request_budget = renewalCounterBudget(),
-        .boot_ms_fn = [boot_ms] { return boot_ms->load(); },
+        .boot_ms_fn = [boot_ms]
+        {
+            return boot_ms->load();
+        },
     });
 
     /// The fence deadline is 1100 and the safety margin 20, so admission refuses once fewer than
