@@ -15,6 +15,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteSettings.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <chrono>
 #include <atomic>
@@ -340,7 +341,26 @@ TEST(CASInMemory, PublishBlobKeepsThePreviousIncarnationVisibleUntilTheCompleteB
     /// racing on `op`.
     CasOperation publish_op = requests.admit();
     auto publication = std::async(std::launch::async, [&] { publish_op.publish(request, Retry::once()); });
-    source_opened.get_future().wait();
+
+    /// A failing ASSERT_* below would otherwise `return` out of this function while the publisher
+    /// thread is still parked in `open_payload` on `release.wait()`. `publication` is a future returned
+    /// by `std::async`, so ITS destructor blocks until that thread finishes -- and `release_source`'s
+    /// own destructor (the other thing that could unblock it, by breaking the promise) only runs AFTER
+    /// `publication`'s in local-variable teardown order, so the two would deadlock the process instead
+    /// of just failing the test. Declared after `publication` so it tears down FIRST on every exit path,
+    /// this guard releases the publisher unconditionally, guarded against the ordinary release below
+    /// having already done it.
+    bool released = false;
+    SCOPE_EXIT({
+        if (!released)
+        {
+            released = true;
+            release_source.set_value();
+        }
+    });
+
+    ASSERT_EQ(source_opened.get_future().wait_for(20s), std::future_status::ready)
+        << "publish() never reached open_payload";
 
     CasOperation read_op = requests.admit();
     auto observation = std::async(std::launch::async, [&] { return read_op.read("blob", Retry::once()); });
@@ -354,6 +374,7 @@ TEST(CASInMemory, PublishBlobKeepsThePreviousIncarnationVisibleUntilTheCompleteB
         EXPECT_EQ(visible->bytes, "old-complete-body");
     }
 
+    released = true;
     release_source.set_value();
     EXPECT_NO_THROW(publication.get());
     const auto after = op.read("blob", Retry::once());
@@ -938,11 +959,26 @@ TEST(CASObjectStorageBackend, PublishBlobEmulatedKeepsDestinationCompleteUntilAt
         op.publish(streamingPublication(key, "fresh-envelope", "payload", 7), Retry::once());
     });
 
+    /// Same hazard as `PublishBlobKeepsThePreviousIncarnationVisibleUntilTheCompleteBodyIsReady`: an
+    /// exception unwinding out of this function (a failing ASSERT_*, or `readStorageObject` throwing)
+    /// while the write is still parked on `barrier->release_future.wait()` would deadlock `publication`'s
+    /// blocking `std::async` destructor against `barrier`'s own (later) teardown. Declared after
+    /// `publication` so it tears down FIRST, this guard releases the write unconditionally.
+    bool released = false;
+    SCOPE_EXIT({
+        if (!released)
+        {
+            released = true;
+            barrier->release.set_value();
+        }
+    });
+
     const auto opened_status = opened.wait_for(20s);
     EXPECT_EQ(opened_status, std::future_status::ready);
     if (opened_status == std::future_status::ready)
         EXPECT_EQ(readStorageObject(storage, physical_key), "old-complete-body");
 
+    released = true;
     barrier->release.set_value();
     EXPECT_NO_THROW(publication.get());
     EXPECT_EQ(storage->metadata_calls, 0u);
