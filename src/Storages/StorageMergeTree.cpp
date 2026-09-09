@@ -88,6 +88,7 @@ namespace FailPoints
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
+    extern const char mt_pause_before_mutation_registration[];
     extern const char mt_alter_throw_in_durable_rollback[];
 }
 
@@ -947,6 +948,11 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// mutex across the file I/O would block merge selection for its full duration.
     auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
+
+    /// The block number is allocated and `mutation_*.txt` is written, but the entry is not
+    /// registered yet; a concurrent mutation with a higher block number can register first.
+    FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_mutation_registration);
+
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
         addPreparedMutationEntry(std::move(prepared));
@@ -1801,7 +1807,28 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
-    auto mutations_end_it = current_mutations_by_version.end();
+    /// A mutation's block number is allocated and its `mutation_*.txt` is written before the entry
+    /// is registered in `current_mutations_by_version` (see `prepareMutationEntry` and
+    /// `addPreparedMutationEntry`), so two concurrent mutations can register out of order and the
+    /// map may hold version N while version N-1 is still in flight. A part mutated to data version N
+    /// would never receive N-1 (`upper_bound(data_version)` skips it), and N-1 would be reported done
+    /// with its rows untouched. Bound the applicable range by the lowest in-flight mutation block:
+    /// `PreparedMutationEntry` keeps its block in `committing_blocks` until `addPreparedMutationEntry`
+    /// runs under `currently_processing_in_background_mutex`, which this function holds.
+    std::optional<UInt64> min_in_flight_mutation_block;
+    for (const auto & block : getCommittingBlocks())
+    {
+        if (block.op == CommittingBlock::Op::Mutation)
+        {
+            min_in_flight_mutation_block = static_cast<UInt64>(block.number);
+            break;
+        }
+    }
+
+    auto mutations_end_it = min_in_flight_mutation_block
+        ? current_mutations_by_version.lower_bound(*min_in_flight_mutation_block)
+        : current_mutations_by_version.end();
+
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (currently_merging_mutating_parts.contains(part))
@@ -1815,8 +1842,15 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             continue;
 
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
-        if (mutations_begin_it == mutations_end_it)
+        if (mutations_begin_it == current_mutations_by_version.end())
             continue;
+
+        if (min_in_flight_mutation_block && mutations_begin_it->first >= *min_in_flight_mutation_block)
+        {
+            /// Every mutation pending for this part sits above one that is still being registered.
+            current_parts_postpone_reasons[part->name] = PostponeReasons::EARLIER_MUTATION_NOT_REGISTERED;
+            continue;
+        }
 
         fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
         if (max_source_part_size < part->getBytesOnDisk())
