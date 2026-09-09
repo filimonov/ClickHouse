@@ -28,6 +28,17 @@ RENEWAL_EVENTS = (
     "CASRemountFailed",
 )
 
+# The lease timing `configs/storage_conf.xml` compiles into `disk_cas_renewal`. A sanitizer build runs
+# every request slower, so a lease sized for a native build can have a resolve outlive its TTL and force
+# an unwanted remount (observed under MSan); `start_cluster` scales these into the disk's live config when
+# `node.is_built_with_sanitizer()` and yields the effective values so tests derive expectations from them
+# instead of repeating the numbers.
+MOUNT_LEASE_TTL_MS = 1000
+MOUNT_RENEW_PERIOD_MS = 200
+ATTEMPT_TIMEOUT_MS = 50
+LEASE_SAFETY_MARGIN_MS = 50
+SANITIZER_TIMING_SCALE = 5
+
 
 def _control(base_url, path, patch=None):
     if patch is None:
@@ -175,6 +186,26 @@ def start_cluster():
         _control(control_url, "/config", {"reset": True})
 
         node = cluster.instances["node"]
+        sanitizer_build = node.is_built_with_sanitizer()
+        mount_lease_ttl_ms = MOUNT_LEASE_TTL_MS
+        mount_renew_period_ms = MOUNT_RENEW_PERIOD_MS
+        if sanitizer_build:
+            storage_conf_path = "/etc/clickhouse-server/config.d/storage_conf.xml"
+            for tag, base in (
+                ("cas_mount_lease_ttl_ms", MOUNT_LEASE_TTL_MS),
+                ("cas_mount_renew_period_ms", MOUNT_RENEW_PERIOD_MS),
+                ("cas_attempt_timeout_ms", ATTEMPT_TIMEOUT_MS),
+                ("cas_lease_safety_margin_ms", LEASE_SAFETY_MARGIN_MS),
+            ):
+                node.replace_in_config(
+                    storage_conf_path,
+                    "<{0}>{1}</{0}>".format(tag, base),
+                    "<{0}>{1}</{0}>".format(tag, base * SANITIZER_TIMING_SCALE),
+                )
+            node.restart_clickhouse()
+            mount_lease_ttl_ms *= SANITIZER_TIMING_SCALE
+            mount_renew_period_ms *= SANITIZER_TIMING_SCALE
+
         node.query(
             "CREATE TABLE renewal_probe (id UInt64, payload String) "
             "ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = '{}'".format(
@@ -186,6 +217,9 @@ def start_cluster():
             "node": node,
             "budget_probe": cluster.instances["budget_probe"],
             "control_url": control_url,
+            "sanitizer_build": sanitizer_build,
+            "mount_lease_ttl_ms": mount_lease_ttl_ms,
+            "mount_renew_period_ms": mount_renew_period_ms,
         }
     finally:
         if control_url is not None:
@@ -363,9 +397,10 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
             return mount, counters
         return None
 
-    # Polling at the renewal's own 200 ms period (the default `interval`) can alias with it under a
-    # sanitizer build's slowdown -- a resolved renewal can land and be superseded by the next one
-    # between two polls. Poll faster than the cadence it observes, with a longer timeout to match.
+    # Polling at the renewal's own period (`MOUNT_RENEW_PERIOD_MS`, itself scaled on a sanitizer build)
+    # can alias with it under a sanitizer build's slowdown -- a resolved renewal can land and be
+    # superseded by the next one between two polls. Poll faster than the cadence it observes, with a
+    # longer timeout to match.
     mount_after, counters_after = _wait_until(resolved_snapshot, timeout=120, interval=0.05)
     _control(control_url, "/config", {"rate": 0.0})
     delta = _event_delta(counters_before, counters_after)
@@ -425,8 +460,13 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
     def log_count_since_last_restart(pattern):
         return _log_count_since_last_restart(node, pattern)
 
-    # 1150 = mountObservationThresholdMs(ttl_ms=1000, poll=max(1, period/2)=100): ttl + ttl/20 + poll.
-    observation = "waiting ~1150 ms (token-stability observation)"
+    # mountObservationThresholdMs(ttl_ms, poll=max(1, period_ms / 2)) = ttl_ms + ttl_ms / 20 + poll:
+    # derived from the module's own (possibly sanitizer-scaled) lease constants rather than hard-coded,
+    # so this stays correct whichever budget `start_cluster` put in effect.
+    ttl_ms = start_cluster["mount_lease_ttl_ms"]
+    poll_ms = max(1, start_cluster["mount_renew_period_ms"] // 2)
+    threshold_ms = ttl_ms + ttl_ms // 20 + poll_ms
+    observation = "waiting ~{} ms (token-stability observation)".format(threshold_ms)
     epoch_before = int(
         node.query(
             "SELECT writer_epoch FROM system.cas_mounts WHERE disk = '{}' LIMIT 1".format(DISK)
