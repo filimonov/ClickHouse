@@ -1040,9 +1040,12 @@ TEST(CASGcFenceOut, ThresholdUnchangedByUnsafeKnob)
 TEST(CASGCAckFloor, DefaultMonoClockTracksPoolsInjectedBootClockNotWallClock)
 {
     auto backend = std::make_shared<InMemoryBackend>();
-    uint64_t fake_boot = 0;
+    /// Held in a shared atomic, not a plain local: this test mutates the clock below, and the Pool can
+    /// outlive this stack frame (a background publish holds `shared_from_this()`), so a by-reference
+    /// capture of a local would dangle.
+    auto fake_boot = std::make_shared<std::atomic<uint64_t>>(0);
     auto store = Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "test",
-        .boot_ms_fn = [&] { return fake_boot; }});
+        .boot_ms_fn = [fake_boot] { return fake_boot->load(); }});
     const Layout & layout = store->layout();
 
     // A stale mount, exactly as `ExpiredMountFencedOutAndExcluded`: one claim, never renewed again.
@@ -1050,7 +1053,7 @@ TEST(CASGCAckFloor, DefaultMonoClockTracksPoolsInjectedBootClockNotWallClock)
     CasRequests renewer_requests = openRequestsForTest(backend);
     MountLeaseRenewer srid2_renewer(renewer_requests, renewer_requests, layout, srid2, DB::UInt128(0x2222),
         /*writer_epoch=*/1,
-        std::chrono::milliseconds(100), [] { return 1000u; }, [&] { return fake_boot; });
+        std::chrono::milliseconds(100), [] { return 1000u; }, [fake_boot] { return fake_boot->load(); });
     srid2_renewer.start();
     ASSERT_FALSE(decodeMountLease(readObj(*backend, layout.mountKey(srid2))->bytes).gc_fenced);
 
@@ -1065,7 +1068,7 @@ TEST(CASGCAckFloor, DefaultMonoClockTracksPoolsInjectedBootClockNotWallClock)
     EXPECT_EQ(rep1.fence_outs, 0u);
 
     store->renewWatermarkOnce();
-    fake_boot = threshold_ms;   // advance the FAKE clock only; this test runs in well under a millisecond
+    fake_boot->store(threshold_ms);   // advance the FAKE clock only; this test runs in well under a millisecond
 
     const RoundReport rep2 = gc.runRegularRound();
     EXPECT_EQ(rep2.fence_outs, 1u)
@@ -1283,13 +1286,17 @@ TEST(CASGCCondemnMarker, SwallowedMarkerWriteCarriesEntryInsteadOfDeleting)
     /// millisecond, because full-jitter backoff may draw zero and a clock that never moves never closes
     /// the window. Scoped to the GC plane, which is where `writeCondemnedMeta` runs, so the mount
     /// plane's lease-bound policies keep their real clock.
-    std::atomic<uint64_t> engine_now_ms{0};
-    std::atomic<uint64_t> engine_sleeps{0};
-    store->openRequests().setNowFnForTest([&] { return engine_now_ms.load(); });
-    store->openRequests().setSleepFnForTest([&](uint64_t pause_ms)
+    /// Held in shared, heap-owned atomics, not plain locals: `store->openRequests()` is the Pool's own
+    /// persistent engine, and the Pool can outlive this stack frame (a background publish holds
+    /// `shared_from_this()`), so a by-reference capture of a local -- even an already-atomic one --
+    /// would dangle once the frame returns.
+    auto engine_now_ms = std::make_shared<std::atomic<uint64_t>>(0);
+    auto engine_sleeps = std::make_shared<std::atomic<uint64_t>>(0);
+    store->openRequests().setNowFnForTest([engine_now_ms] { return engine_now_ms->load(); });
+    store->openRequests().setSleepFnForTest([engine_now_ms, engine_sleeps](uint64_t pause_ms)
     {
-        engine_sleeps.fetch_add(1);
-        engine_now_ms.fetch_add(pause_ms + 1);
+        engine_sleeps->fetch_add(1);
+        engine_now_ms->fetch_add(pause_ms + 1);
     });
 
     const RootNamespace ns{"00/aa@cas@"};
@@ -1310,9 +1317,9 @@ TEST(CASGCCondemnMarker, SwallowedMarkerWriteCarriesEntryInsteadOfDeleting)
     /// seconds, so it cannot happen before the clock has passed `Retry::standard()`'s window minus
     /// that draw. Both assertions pin the REISSUING, which is what the ambiguous kind buys; neither
     /// can tell the injected clock from the real one -- that seam bounds the reissuing in real time.
-    EXPECT_GT(engine_sleeps.load(), 1u)
+    EXPECT_GT(engine_sleeps->load(), 1u)
         << "an ambiguous marker write must be resolved and reissued, not surfaced on its first attempt";
-    EXPECT_GT(engine_now_ms.load(), 85'000u)
+    EXPECT_GT(engine_now_ms->load(), 85'000u)
         << "the marker write must have spent its whole retry window before reporting failure";
     ASSERT_TRUE(currentEntryFor(*backend, store->layout(), blob).has_value())
         << "precondition: the retired entry must have been committed despite the lost marker";
