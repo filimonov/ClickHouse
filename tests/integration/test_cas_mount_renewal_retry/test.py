@@ -45,6 +45,13 @@ LEASE_SAFETY_MARGIN_MS = 500
 
 
 def _control(base_url, path, patch=None, timeout=10):
+    # `timeout` bounds each individual blocking socket operation (connect, then each read), not the
+    # wall-clock time to a fully-read response: a peer that trickles bytes in slowly enough to keep
+    # resetting the read timeout, without ever exceeding it, could still keep this call running past
+    # the caller's deadline. Accepted: the s3proxy control server this talks to answers in one small,
+    # immediate response with nothing in the path that could trickle, and every `_wait_until` probe in
+    # this module calls it at most once, so the worst case this leaves open is bounded and small -- not
+    # worth a cancellation thread for a well-behaved local test double.
     if patch is None:
         request = urllib.request.Request("{}{}".format(base_url, path))
     else:
@@ -135,6 +142,14 @@ def _rustfs_client(timeout):
     # `http_client` (see wait_rustfs_to_start in helpers/cluster.py) has no configured timeout, so a
     # stalled RustFS response through it could block a `_wait_until` probe past its own deadline
     # without ever timing out on its own. Cheap to construct; only used for this module's polling reads.
+    #
+    # `timeout` bounds each individual blocking socket operation (connect, then each read) through this
+    # client, not the wall-clock time to a fully-read response: a peer trickling bytes slowly enough to
+    # keep resetting the read timeout, without ever exceeding it, could still run past the caller's
+    # deadline. Accepted: RustFS is a local, well-behaved test double (never observed to trickle), and
+    # every operation _read_mount_object issues through a client built here recomputes ITS OWN fresh
+    # timeout first, so the number of such operations per probe is fixed and small -- not worth a
+    # cancellation thread for a local test double.
     return Minio(
         "{}:{}".format(cluster.rustfs_ip, cluster.rustfs_port),
         access_key=cluster.rustfs_access_key,
@@ -147,15 +162,28 @@ def _rustfs_client(timeout):
     )
 
 
-def _read_mount_object(timeout=20):
-    client = _rustfs_client(timeout)
-    response = client.get_object(cluster.rustfs_bucket, MOUNT_OBJECT_KEY)
+def _read_mount_object(deadline=None):
+    # Three sequential RustFS operations (client construction for the GET, the GET/body-read, then
+    # client construction for the HEAD): `deadline.remaining()` is read again before EACH one rather
+    # than reused from the first, so a slow GET cannot silently gift the HEAD the same full budget
+    # again. Standalone callers (outside any `_wait_until` probe) get a fresh 20s deadline of their own.
+    if deadline is None:
+        deadline = _Deadline(20)
+
+    remaining = deadline.remaining()
+    if remaining <= 0:
+        raise AssertionError("_read_mount_object: deadline already expired before the GET")
+    response = _rustfs_client(remaining).get_object(cluster.rustfs_bucket, MOUNT_OBJECT_KEY)
     try:
         body = response.read()
     finally:
         response.close()
         response.release_conn()
-    stat = client.stat_object(cluster.rustfs_bucket, MOUNT_OBJECT_KEY)
+
+    remaining = deadline.remaining()
+    if remaining <= 0:
+        raise AssertionError("_read_mount_object: deadline already expired before the HEAD")
+    stat = _rustfs_client(remaining).stat_object(cluster.rustfs_bucket, MOUNT_OBJECT_KEY)
     return body, stat.etag.strip('"')
 
 
@@ -408,7 +436,7 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
     target_etag = record["upstream_etag"].strip('"')
 
     def matching_object(deadline):
-        body, token = _read_mount_object(timeout=deadline.remaining())
+        body, token = _read_mount_object(deadline)
         return (body, token) if token == target_etag else None
 
     body_after, token_after = _wait_until(matching_object)
