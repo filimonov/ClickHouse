@@ -217,9 +217,15 @@ TEST(CASObservability, ExternalLeaseDeadlineCountsOnceWithoutReconstructingAttem
 TEST(CASObservability, StageManifestEmitsManifestPut)
 {
     std::shared_ptr<InMemoryBackend> b;
-    std::vector<CasEvent> seen;   /// declared BEFORE the Pool so it outlives the background syncer's emits (ASan 2026-07-09)
+    /// Heap-owned, not a plain local: declaring it before the Pool (ASan 2026-07-09) only protects
+    /// against an ordinary same-thread unwind, not a detached background completion holding an extra
+    /// `shared_from_this()` that can still be running on another thread after this frame returns.
+    auto seen = std::make_shared<DB::Cas::tests::SharedEventLog>();
     auto s = openPool(b);
-    s->setEventSink([&](const CasEvent & e){ seen.push_back(e); });
+    s->setEventSink([seen](const CasEvent & e)
+    {
+        seen->push(e);
+    });
 
     const RootNamespace ns{"srv/tbl@cas@"};
     auto build = s->beginPartWrite(PartWriteInfo{.intended_ref = ns.string() + "/all_0_0_0", .intended_namespace = ns});
@@ -230,12 +236,13 @@ TEST(CASObservability, StageManifestEmitsManifestPut)
     const ManifestId id = build->stageManifest({e});
     s->setEventSink(nullptr);
 
-    EXPECT_EQ(std::count_if(seen.begin(), seen.end(),
+    const std::vector<CasEvent> observed = seen->snapshot();
+    EXPECT_EQ(std::count_if(observed.begin(), observed.end(),
         [](const CasEvent & x){ return x.type == CasEventType::ManifestPut; }), 1);
 
-    const auto it = std::find_if(seen.begin(), seen.end(),
+    const auto it = std::find_if(observed.begin(), observed.end(),
         [](const CasEvent & x){ return x.type == CasEventType::ManifestPut; });
-    ASSERT_NE(it, seen.end());
+    ASSERT_NE(it, observed.end());
     EXPECT_EQ(it->object_kind, CasEventObjectKind::Manifest);
     EXPECT_EQ(it->object_hash, manifestRefDebugString(id.ref));
     EXPECT_FALSE(it->token.empty());
@@ -248,7 +255,10 @@ TEST(CASObservability, StageManifestEmitsManifestPut)
 TEST(CASObservability, AbandonEmitsPrecommitRemoved)
 {
     std::shared_ptr<InMemoryBackend> b;
-    std::vector<CasEvent> seen;   /// declared BEFORE the Pool so it outlives the background syncer's emits (ASan 2026-07-09)
+    /// Heap-owned, not a plain local: declaring it before the Pool (ASan 2026-07-09) only protects
+    /// against an ordinary same-thread unwind, not a detached background completion holding an extra
+    /// `shared_from_this()` that can still be running on another thread after this frame returns.
+    auto seen = std::make_shared<DB::Cas::tests::SharedEventLog>();
     auto s = openPool(b);
 
     const RootNamespace ns{"srv/tbl@cas@"};
@@ -260,16 +270,20 @@ TEST(CASObservability, AbandonEmitsPrecommitRemoved)
     const ManifestId id = build->stageManifest({e});
     build->precommitAdd(ns, "all_0_0_0", id);
 
-    s->setEventSink([&](const CasEvent & x){ seen.push_back(x); });
+    s->setEventSink([seen](const CasEvent & x)
+    {
+        seen->push(x);
+    });
     build->abandon();
     s->setEventSink(nullptr);
 
-    EXPECT_EQ(std::count_if(seen.begin(), seen.end(),
+    const std::vector<CasEvent> observed = seen->snapshot();
+    EXPECT_EQ(std::count_if(observed.begin(), observed.end(),
         [](const CasEvent & x){ return x.type == CasEventType::PrecommitRemoved; }), 1);
 
-    const auto it = std::find_if(seen.begin(), seen.end(),
+    const auto it = std::find_if(observed.begin(), observed.end(),
         [](const CasEvent & x){ return x.type == CasEventType::PrecommitRemoved; });
-    ASSERT_NE(it, seen.end());
+    ASSERT_NE(it, observed.end());
     EXPECT_EQ(it->namespace_, ns.string());
     EXPECT_EQ(it->ref_name, "all_0_0_0");
     EXPECT_EQ(it->object_kind, CasEventObjectKind::Root);
@@ -281,7 +295,10 @@ TEST(CASObservability, AbandonEmitsPrecommitRemoved)
 TEST(CASObservability, AbandonWithoutPrecommitEmitsNoPrecommitRemoved)
 {
     std::shared_ptr<InMemoryBackend> b;
-    std::vector<CasEvent> seen;   /// declared BEFORE the Pool so it outlives the background syncer's emits (ASan 2026-07-09)
+    /// Heap-owned, not a plain local: declaring it before the Pool (ASan 2026-07-09) only protects
+    /// against an ordinary same-thread unwind, not a detached background completion holding an extra
+    /// `shared_from_this()` that can still be running on another thread after this frame returns.
+    auto seen = std::make_shared<DB::Cas::tests::SharedEventLog>();
     auto s = openPool(b);
 
     const RootNamespace ns{"srv/tbl@cas@"};
@@ -292,11 +309,15 @@ TEST(CASObservability, AbandonWithoutPrecommitEmitsNoPrecommitRemoved)
     e.inline_bytes = "AAA";
     build->stageManifest({e});   /// staged, never precommitted
 
-    s->setEventSink([&](const CasEvent & x){ seen.push_back(x); });
+    s->setEventSink([seen](const CasEvent & x)
+    {
+        seen->push(x);
+    });
     build->abandon();
     s->setEventSink(nullptr);
 
-    EXPECT_EQ(std::count_if(seen.begin(), seen.end(),
+    const std::vector<CasEvent> observed = seen->snapshot();
+    EXPECT_EQ(std::count_if(observed.begin(), observed.end(),
         [](const CasEvent & x){ return x.type == CasEventType::PrecommitRemoved; }), 0);
 }
 
@@ -313,7 +334,10 @@ TEST(CASObservability, AbandonWithoutPrecommitEmitsNoPrecommitRemoved)
 TEST(CASObservability, ResurrectSupersedeEmitsOnlyRetireReplacedWithOldToken)
 {
     std::shared_ptr<InMemoryBackend> b;
-    std::vector<CasEvent> seen;   /// declared BEFORE the Pool so it outlives the background syncer's emits (ASan 2026-07-09)
+    /// Heap-owned, not a plain local: declaring it before the Pool (ASan 2026-07-09) only protects
+    /// against an ordinary same-thread unwind, not a detached background completion holding an extra
+    /// `shared_from_this()` that can still be running on another thread after this frame returns.
+    auto seen = std::make_shared<DB::Cas::tests::SharedEventLog>();
     auto s = openPool(b);
     const RootNamespace ns{"test/tbl"};
     const String P = "republish-payload-audit";
@@ -354,7 +378,10 @@ TEST(CASObservability, ResurrectSupersedeEmitsOnlyRetireReplacedWithOldToken)
     const auto condemned_before = global_counters[ProfileEvents::CASGCRetiredCondemned].load();
     const auto replaced_before  = global_counters[ProfileEvents::CASGCRetireReplaced].load();
 
-    s->setEventSink([&](const CasEvent & e){ seen.push_back(e); });
+    s->setEventSink([seen](const CasEvent & e)
+    {
+        seen->push(e);
+    });
     const RoundReport rep = gc.runRegularRound();
     s->setEventSink(nullptr);
     ASSERT_TRUE(rep.acquired_lease);
@@ -367,12 +394,13 @@ TEST(CASObservability, ResurrectSupersedeEmitsOnlyRetireReplacedWithOldToken)
     const String hash_hex = DB::Cas::blobIdOf(DB::Cas::BlobRef{DB::Cas::BlobHashAlgo::CityHash128, DB::Cas::BlobDigest::fromU128(u128Of(P))});
     const auto is_this_blob = [&](const CasEvent & e){ return e.object_hash == hash_hex; };
 
-    EXPECT_EQ(std::count_if(seen.begin(), seen.end(),
+    const std::vector<CasEvent> observed = seen->snapshot();
+    EXPECT_EQ(std::count_if(observed.begin(), observed.end(),
         [&](const CasEvent & e){ return is_this_blob(e) && e.type == CasEventType::BlobRetire; }), 0)
         << "supersede must not also emit blob_retire (that is the fresh-condemn hook's event)";
 
     std::vector<CasEvent> replaced_events;
-    std::copy_if(seen.begin(), seen.end(), std::back_inserter(replaced_events),
+    std::copy_if(observed.begin(), observed.end(), std::back_inserter(replaced_events),
         [&](const CasEvent & e){ return is_this_blob(e) && e.type == CasEventType::BlobRetireReplaced; });
     ASSERT_EQ(replaced_events.size(), 1u) << "exactly one blob_retire_replaced for the supersede";
     /// The event's token text is dialect-qualified ("emulated:<value>", matching `Etag::render`
