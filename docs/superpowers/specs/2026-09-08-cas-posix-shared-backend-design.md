@@ -38,8 +38,8 @@ control objects rewritten in place with `O_TRUNC`).
 The goal is one backend mode, `Mode::Posix`, that satisfies the whole `Cas::Backend` contract
 (`Backend/CasBackend.h`) on every filesystem in `§2`, with no in-process state and no assumption
 about how long a process or a syscall may stall. The request engine, GC decisions, mount lease, ref
-lanes, `_ckpt` and every persisted format are unchanged; what the mode needs outside the backend is
-in `§9`.
+lanes and `_ckpt` are unchanged, and the only persisted-format change is one additive field
+(`§9`, decommission); what the mode needs outside the backend is in `§9`.
 
 ## 2. Supported filesystems and the facts relied on {#filesystems}
 
@@ -467,7 +467,39 @@ kernel-reported options; a timeout-driven `softreval` fallback shim
 `utils/ca-soak/docker-compose-nfs.yml` with the existing scenario suite. The stateless `cas storage`
 lane becomes the single-process durability lane.
 
-## 12. Migration and out of scope {#out-of-scope}
+## 12. Implementation checklist {#implementation-checklist}
+
+Carried from the closing review (`tmp/cas-posix-spec-review-astra-r8.md`, no remaining CRITICAL or
+MAJOR) into the implementation plan:
+
+- [ ] `retired` on `ServerEpoch`: encoding, default when absent, cleared on the next allocation;
+  preserve the **next** counter exactly; the decommission recheck compares the committed
+  incarnation value; old/new codec round trips (`Formats/CasServerRootFormats.cpp` already skips
+  unknown fields).
+- [ ] Decommission schedules: uncontended completion; successor allocation before retirement;
+  allocation after retirement but before mount publication or the recheck; lost retirement reply;
+  interruption and retry. Bound the intent drain by the captured farewell's **writer epoch**, not
+  `next_writer_epoch`.
+- [ ] Exhaustion checks before every epoch increment (including recovery from a surviving mount)
+  and before advancing the chain counter; boundary tests without wrap or name reuse.
+- [ ] Reclaim ordering: fix the candidate chain before the fresh intent enumeration; never reuse an
+  earlier no-intent result for a newly discovered candidate; lowest-first, floor retention,
+  declare-before-observe compaction, marker-only no-op.
+- [ ] Mount gate on real mount information: safe omission, `softreval`, `softerr`, both option
+  orders (`hard` clears all three soft flags in the v6.12 parser), bind and container mounts,
+  unreadable procfs; tokens parsed from the descriptor-selected mount only.
+- [ ] Deterministic stalls inside syscalls, independent NFS clients and caches, every
+  reconstructed-success post-check; definite conflict versus transport ambiguity decided from the
+  operation's history (the engine treats a returned value as committed and recognises only
+  `Poco::Exception` in its transport catch).
+- [ ] Ranged reopen across different envelope tags and mid-buffer offsets; terminate on
+  authoritative absence or unrecoverable errors; cursor expiry, scratch cleanup, bounded-memory
+  sort; read-only diagnostic enumeration.
+- [ ] Measure directory blocks as well as inodes; the three-directory figure is the fully reclaimed
+  case, not a bound during growth or while intents pin predecessors; carry per-filesystem
+  durability and delayed-operation qualification; GPFS stays uncertified in v1.
+
+## 13. Migration and out of scope {#out-of-scope}
 
 Pools written by `EmulatedSingleProcess` are refused by probe gate 8; no converter (no production
 data). Out of scope: Keeper coordination; SMB; the single-write blob optimization (conflicts with
