@@ -324,7 +324,10 @@ TEST(CASMountAudit, RenewalDefaultLogsAreBounded)
             .server_root_id = "test",
             .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
             .cas_request_budget = renewalLogBudget(),
-            .boot_ms_fn = [boot_ms] { return boot_ms->load(); },
+            .boot_ms_fn = [boot_ms]
+            {
+                return boot_ms->load();
+            },
         });
     };
 
@@ -1401,8 +1404,14 @@ TEST(CASMountStartup, StaleSelfMountReclaimedAfterWait)
             .mount_lease_ttl_ms = std::chrono::milliseconds(300),
             .mount_renew_period = std::chrono::milliseconds(100),
             .cas_request_budget = tiny_budget,
-            .boot_ms_fn = [a2_fake_boot] { return a2_fake_boot->load(); },
-            .wait_sleep_fn = [a2_fake_boot](uint64_t ms) { *a2_fake_boot += ms; }}));
+            .boot_ms_fn = [a2_fake_boot]
+            {
+                return a2_fake_boot->load();
+            },
+            .wait_sleep_fn = [a2_fake_boot](uint64_t ms)
+            {
+                *a2_fake_boot += ms;
+            }}));
     ASSERT_NE(a2, nullptr);
     EXPECT_GT(a2->writerEpoch(), e1);
 
@@ -1429,8 +1438,14 @@ TEST(CASMountStartup, StaleSelfMountReclaimedAfterWait)
         .mount_lease_ttl_ms = std::chrono::milliseconds(300),
         .mount_renew_period = std::chrono::milliseconds(100),
         .cas_request_budget = tiny_budget,
-        .boot_ms_fn = [overlap_fake_boot] { return overlap_fake_boot->load(); },
-        .wait_sleep_fn = [overlap_fake_boot](uint64_t ms) { *overlap_fake_boot += ms; }});
+        .boot_ms_fn = [overlap_fake_boot]
+        {
+            return overlap_fake_boot->load();
+        },
+        .wait_sleep_fn = [overlap_fake_boot](uint64_t ms)
+        {
+            *overlap_fake_boot += ms;
+        }});
     ASSERT_NE(replacement, nullptr);
 
     Ops overlap_ops(overlap_backend);
