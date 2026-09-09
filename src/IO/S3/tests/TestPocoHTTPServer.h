@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/HTTPConnectionPool.h>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -81,11 +82,16 @@ public:
         server->start();
     }
 
-    /// `stopAll(true)` aborts any active connection immediately, so its worker thread isn't still
-    /// blocked reading for a next request when `thread_pool`'s destructor tries to join it.
+    /// Drop the process-wide client connection pools first: the S3 client keeps its connections to this
+    /// server alive across requests, and a worker blocked waiting for the next request on one of them
+    /// returns only when the client side closes. Closing from the client side lets every worker shut its
+    /// own socket on its own thread. `stopAll(true)` did it from here through Poco's abort path, which
+    /// touches the socket without the connection mutex and raced the worker's own close (a TSan data race
+    /// on `SocketImpl::_sockfd`).
     ~TestPocoHTTPServer()
     {
-        server->stopAll(true);
+        DB::HTTPConnectionPools::instance().dropCache();
+        server->stop();
         thread_pool.joinAll();
     }
 
@@ -196,7 +202,8 @@ public:
     /// See `TestPocoHTTPServer`'s destructor above.
     ~TestPocoHTTPStsServer()
     {
-        server->stopAll(true);
+        DB::HTTPConnectionPools::instance().dropCache();
+        server->stop();
         thread_pool.joinAll();
     }
 
