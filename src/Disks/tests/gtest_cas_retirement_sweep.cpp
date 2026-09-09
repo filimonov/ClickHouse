@@ -48,38 +48,11 @@ namespace DB::ErrorCodes
 
 using namespace DB::Cas;
 using DB::Cas::tests::idOf;
+using DB::Cas::tests::SharedWaitLog;
 using DB::Cas::tests::u128Of;
 
 namespace
 {
-
-/// Heap-owned wait/sleep log for the hooks below: a hook that pushed into a stack-local vector would
-/// read (or write) a dead frame if a background completion outlives the test -- the Pool's own
-/// detached publish can hold `shared_from_this()` past this function's return. Mutex-guarded because
-/// that background call can race the foreground read.
-class SharedWaitLog
-{
-public:
-    void push(uint64_t ms)
-    {
-        std::lock_guard lock(mutex);
-        values.push_back(ms);
-    }
-    size_t size() const
-    {
-        std::lock_guard lock(mutex);
-        return values.size();
-    }
-    bool empty() const
-    {
-        std::lock_guard lock(mutex);
-        return values.empty();
-    }
-
-private:
-    mutable std::mutex mutex;
-    std::vector<uint64_t> values;
-};
 
 /// A backend that drops ONE chosen key from ONE chosen `list` call while exact `get`/`head` of that key
 /// keep working: the minimal realisation of "the store returned an incomplete answer". WHICH call is
@@ -394,8 +367,15 @@ TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoveryS
         .pool_prefix = "p", .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30000),
         .cas_request_budget = budget,
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot, waits](uint64_t ms) { *fake_boot += ms; waits->push(ms); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+        {
+            *fake_boot += ms;
+            waits->push(ms);
+        },
     });
     ASSERT_TRUE(store);
     const Layout & layout = store->layout();
@@ -419,7 +399,10 @@ TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoveryS
     /// give-up is the append's own retry window -- paced on ITS OWN virtual clock, separate from
     /// `fake_boot` (the mount fence's), so the standard policy's full window is available to reissue
     /// against rather than being cut short by the 30s lease `fake_boot` also measures.
-    store->setCasRequestNowFnForTest([fake_retry] { return fake_retry->load(); });
+    store->setCasRequestNowFnForTest([fake_retry]
+    {
+        return fake_retry->load();
+    });
     store->setCasRetrySleepForTest([fake_retry, retry_sleeps](uint64_t ms)
     {
         *fake_retry += ms + 1;
