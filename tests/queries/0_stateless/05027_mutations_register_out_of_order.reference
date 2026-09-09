@@ -1,3 +1,12 @@
+--- inversion: N+1 registers while N is paused
 ['Waiting for an earlier mutation to be registered']
 0
 2	2
+--- gap: K is applied alone while N is paused, N+1 and N+3 wait; a part inserted above N is postponed too
+0_1_1_0_2	75
+1_5_5_0	100
+1	[]
+0	['Waiting for an earlier mutation to be registered']
+0	['Waiting for an earlier mutation to be registered','Waiting for an earlier mutation to be registered']
+50	100	149
+4	4
