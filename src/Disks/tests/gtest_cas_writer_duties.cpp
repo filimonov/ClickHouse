@@ -13,7 +13,6 @@
 #include <chrono>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -22,32 +21,10 @@ extern const int NETWORK_ERROR;
 }
 
 using namespace DB::Cas;
+using DB::Cas::tests::SharedWaitLog;
 
 namespace
 {
-
-/// Heap-owned wait log for the `wait_sleep_fn` hooks below: a hook that pushed into a stack-local
-/// vector would read (or write) a dead frame if a background completion outlives the test -- the
-/// Pool's own detached publish can hold `shared_from_this()` past this function's return. Mutex-guarded
-/// because that background call can race the foreground snapshot read.
-class SharedWaitLog
-{
-public:
-    void push(uint64_t ms)
-    {
-        std::lock_guard lock(mutex);
-        values.push_back(ms);
-    }
-    bool empty() const
-    {
-        std::lock_guard lock(mutex);
-        return values.empty();
-    }
-
-private:
-    mutable std::mutex mutex;
-    std::vector<uint64_t> values;
-};
 
 PoolConfig singleAttemptConfig()
 {
@@ -441,8 +418,15 @@ TEST(CASWriterDuties, PendingDutySkipsCleanFarewellAndSuccessorSweepsTheCrashRem
         .mount_lease_ttl_ms = std::chrono::milliseconds(500),
         .mount_renew_period = std::chrono::milliseconds(100),
         .cas_request_budget = budget,
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot, waits](uint64_t ms) { *fake_boot += ms; waits->push(ms); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+        {
+            *fake_boot += ms;
+            waits->push(ms);
+        },
     });
     ASSERT_GT(successor_store->writerEpoch(), predecessor_epoch);
     ASSERT_FALSE(waits->empty()) << "the predecessor supplied no clean-death certificate";
@@ -508,7 +492,10 @@ TEST(CASWriterDuties, RejectedAttemptBodyIsEventuallyNominatedAndSwept)
         .mount_lease_ttl_ms = std::chrono::milliseconds(500),
         .mount_renew_period = std::chrono::milliseconds(100),
         .cas_request_budget = budget,
-        .boot_ms_fn = [] { return predecessor_boot; },
+        .boot_ms_fn = []
+        {
+            return predecessor_boot;
+        },
     });
     auto clock = DB::Cas::tests::VirtualRetryClock::installOn(predecessor);
 
@@ -559,8 +546,15 @@ TEST(CASWriterDuties, RejectedAttemptBodyIsEventuallyNominatedAndSwept)
         .mount_lease_ttl_ms = std::chrono::milliseconds(500),
         .mount_renew_period = std::chrono::milliseconds(100),
         .cas_request_budget = budget,
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot, waits](uint64_t ms) { *fake_boot += ms; waits->push(ms); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+        {
+            *fake_boot += ms;
+            waits->push(ms);
+        },
     });
     ASSERT_GT(successor_store->writerEpoch(), predecessor_epoch);
     ASSERT_FALSE(waits->empty()) << "the predecessor supplied no clean-death certificate";
