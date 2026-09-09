@@ -1057,12 +1057,18 @@ TEST(CASRefRecoveryCasWalk, RecoveryPublishesEveryOccupiedObjectBeforeAdvancingP
         /// by-reference capture of a local would dangle.
         auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
         PoolConfig config = walkTestConfig();
-        config.boot_ms_fn = [fake_now] { return fake_now->load(); };
+        config.boot_ms_fn = [fake_now]
+        {
+            return fake_now->load();
+        };
         config.cas_request_budget.recovery_retry_budget_ms = 1;
         config.cas_request_budget.recovery_retry_initial_backoff_ms = 1;
         config.cas_request_budget.recovery_retry_max_backoff_ms = 1;
         auto store = openWalkPool(backend, config);
-        store->setCasRetrySleepForTest([fake_now](uint64_t ms) { *fake_now += ms; });
+        store->setCasRetrySleepForTest([fake_now](uint64_t ms)
+        {
+            *fake_now += ms;
+        });
 
         backend->ambiguous_cas_substr = layout.refCkptKey(life);
         backend->ambiguous_cas_count = kFaultsBeyondTheRetryWindow;
@@ -1136,13 +1142,19 @@ TEST(CASRefRecoveryCasWalk, RecoveryPublishesEachCreatedSealBeforeCreatingTheNex
     /// by-reference capture of a local would dangle.
     auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
     PoolConfig config = walkTestConfig();
-    config.boot_ms_fn = [fake_now] { return fake_now->load(); };
+    config.boot_ms_fn = [fake_now]
+    {
+        return fake_now->load();
+    };
     config.cas_request_budget.recovery_retry_budget_ms = 1;
     config.cas_request_budget.recovery_retry_initial_backoff_ms = 1;
     config.cas_request_budget.recovery_retry_max_backoff_ms = 1;
     auto store = openWalkPool(backend, config);
     ASSERT_EQ(store->liveWriterEpoch(), 3u);
-    store->setCasRetrySleepForTest([fake_now](uint64_t ms) { *fake_now += ms; });
+    store->setCasRetrySleepForTest([fake_now](uint64_t ms)
+    {
+        *fake_now += ms;
+    });
 
     backend->ambiguous_cas_substr = layout.refCkptKey(life);
     backend->ambiguous_cas_count = kFaultsBeyondTheRetryWindow;
@@ -1192,12 +1204,18 @@ TEST(CASRefRecoveryCasWalk, RecoveryPublishesAnAdoptedStragglerBeforeCreatingIts
     /// by-reference capture of a local would dangle.
     auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
     PoolConfig config = walkTestConfig();
-    config.boot_ms_fn = [fake_now] { return fake_now->load(); };
+    config.boot_ms_fn = [fake_now]
+    {
+        return fake_now->load();
+    };
     config.cas_request_budget.recovery_retry_budget_ms = 1;
     config.cas_request_budget.recovery_retry_initial_backoff_ms = 1;
     config.cas_request_budget.recovery_retry_max_backoff_ms = 1;
     auto store = openWalkPool(backend, config);
-    store->setCasRetrySleepForTest([fake_now](uint64_t ms) { *fake_now += ms; });
+    store->setCasRetrySleepForTest([fake_now](uint64_t ms)
+    {
+        *fake_now += ms;
+    });
 
     backend->ambiguous_cas_substr = layout.refCkptKey(life);
     backend->ambiguous_cas_count = kFaultsBeyondTheRetryWindow;
@@ -1966,11 +1984,17 @@ TEST(CASRefRecoveryCasWalk, UnresolvedSealSlotFailsClosedWithoutInstalling)
     /// by-reference capture of a local would dangle.
     auto fake_now = std::make_shared<std::atomic<uint64_t>>(1'000'000);
     PoolConfig config = walkTestConfig();
-    config.boot_ms_fn = [fake_now] { return fake_now->load(); };
+    config.boot_ms_fn = [fake_now]
+    {
+        return fake_now->load();
+    };
     auto store = openWalkPool(backend, config);
     ASSERT_TRUE(store);
 
-    store->setCasRetrySleepForTest([fake_now](uint64_t ms) { *fake_now += ms; });
+    store->setCasRetrySleepForTest([fake_now](uint64_t ms)
+    {
+        *fake_now += ms;
+    });
     backend->ambiguous_put_substr = "/_log/";
 
     const uint64_t fake_now_before = fake_now->load();
