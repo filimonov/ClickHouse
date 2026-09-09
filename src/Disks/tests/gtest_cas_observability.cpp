@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Poco/Exception.h>
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -150,13 +151,16 @@ TEST(CASObservability, RenewalCountersHaveExactPhysicalAndLogicalDeltas)
     {
         auto backend = std::make_shared<RenewalCounterBackend>();
         backend->setAttemptTimeoutMs(renewalCounterBudget().attempt_timeout_ms);
-        uint64_t boot_ms = 100;
+        /// Captured by value: `boot_ms` is never mutated in this test, and the Pool can outlive this
+        /// lambda's own stack frame (a background publish holds `shared_from_this()`), so a
+        /// by-reference capture of a local would dangle.
+        const uint64_t boot_ms = 100;
         auto store = Pool::open(backend, PoolConfig{
             .pool_prefix = "renewal-counter-" + std::to_string(attempts) + "-" + std::to_string(resolved),
             .server_root_id = "test",
             .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
             .cas_request_budget = renewalCounterBudget(),
-            .boot_ms_fn = [&] { return boot_ms; },
+            .boot_ms_fn = [] { return boot_ms; },
         });
         backend->fault = fault;
         const RenewalCounterSnapshot before = renewalCounters();
@@ -174,20 +178,23 @@ TEST(CASObservability, ExternalLeaseDeadlineCountsOnceWithoutReconstructingAttem
 {
     auto backend = std::make_shared<RenewalCounterBackend>();
     backend->setAttemptTimeoutMs(renewalCounterBudget().attempt_timeout_ms);
-    uint64_t boot_ms = 100;
+    /// Held in a shared atomic, not a plain local: this test mutates it below, and the Pool can
+    /// outlive this stack frame (a background publish holds `shared_from_this()`), so a by-reference
+    /// capture of a local would dangle.
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
     auto store = Pool::open(backend, PoolConfig{
         .pool_prefix = "renewal-deadline-counter",
         .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .cas_request_budget = renewalCounterBudget(),
-        .boot_ms_fn = [&] { return boot_ms; },
+        .boot_ms_fn = [boot_ms] { return boot_ms->load(); },
     });
 
     /// The fence deadline is 1100 and the safety margin 20, so admission refuses once fewer than
     /// twenty milliseconds of lease remain. At 1090 only ten milliseconds remain, short of the margin
     /// however much a single attempt reserves, so nothing can be started and the logical renewal ends
     /// without reconstructing a sent attempt.
-    boot_ms = 1090;
+    boot_ms->store(1090);
     const RenewalCounterSnapshot before = renewalCounters();
     EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
     const RenewalCounterSnapshot after = renewalCounters();
