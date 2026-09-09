@@ -9,11 +9,11 @@ doc_type: 'design'
 
 # CAS backend over local and shared POSIX filesystems {#cas-posix-shared-backend}
 
-Revision 8, 2026-09-09. Seven review rounds (`tmp/cas-posix-spec-review-astra-r{1,2,3,4,5,6,7}.md`)
+Revision 9, 2026-09-10. Eight review rounds (`tmp/cas-posix-spec-review-astra-r{1..8}.md`)
 established: on POSIX an occupied name is the only fence; any name freed while a stalled writer still
 aims at it is a false-success target; the stall may be inside the syscall; and a source revoked by
 `rename` does not stop an NFS `LINK` that already resolved its file handle, while it does stop a
-`RENAME`, which names its source. Revision 8 uses exactly two kinds of names:
+`RENAME`, which names its source. Revision 9 uses exactly two kinds of names:
 
 - **names inside a chain** (`<g>-<n>`), which are never freed while the chain exists — a delayed
   `link` at such a name meets `EEXIST`, or lands in a chain that was moved as a whole into a
@@ -23,9 +23,13 @@ aims at it is a false-success target; the stall may be inside the syscall; and a
   only when no intent on them exists — a delayed `RENAME` from a killed intent is refused at the
   server by its missing source name, whenever it executes.
 
-No clock, no bound on pauses, no handle-identity assumption. Decisions taken with the user:
-coordinator-free (no Keeper); one mode for local and shared filesystems; SMB out of v1 (`§2`); the
-per-deleted-key residue of `§4.5` accepted as the price of having no server that enforces conditions.
+No clock, no bound on pauses, no handle-identity assumption. Revision 9 adds **plane rules**
+(`§3.4`): the monotone chain counter and its permanent floor are needed only where create-if-absent
+must be exclusive (the control plane); blob bodies, whose publication is unconditional by protocol,
+use globally unique chain names and need neither intents nor a floor; write-once keys are removed
+completely because any later content at such a key is garbage by protocol. The residue that scaled
+with data is gone. Decisions taken with the user: coordinator-free (no Keeper); one mode for local
+and shared filesystems; SMB out of v1 (`§2`); no per-deleted-key residue on data planes.
 
 ## 1. Problem {#problem}
 
@@ -91,8 +95,9 @@ of a syscall.
 ## 3. Layout {#layout}
 
 ```
-P(k)/D(k)/                            the object directory; created once, NEVER removed (§4.5)
-P(k)/D(k)/c-<m>/                      chain m (16 hex; monotone for the life of D(k))
+P(k)/D(k)/                            the object directory; removable per the plane rules of §3.4
+P(k)/D(k)/c-<m>/                      chain m (16 hex; monotone for the life of D(k)) — control and write-once planes
+P(k)/D(k)/c-<r>-<e>-<q>/              a UNIQUE chain: server root r, epoch e, per-epoch sequence q — blob plane (§3.4)
 P(k)/D(k)/c-<m>/<g>-<n>               incarnation n of chain m; g = 16 hex random per chain, n dense from 1
 P(k)/D(k)/c-<m>/<g>-<n>/              a MARKER (directory): the tombstone that ends a chain
 P(k)/D(k)/c-<m>/.tmp-<u>              scratch for a data incarnation (not an intent)
@@ -131,7 +136,9 @@ For a current incarnation `c-<m>/<g>-<n>` the successor has exactly one name:
 | `n < K(k)` | `c-<m>/<g>-<n+1>` | `link` from `.tmp-*` (data) or `rename` from `.tomb-*/` (tombstone) |
 | `n ≥ K(k)` | `c-<m+1>` | `rename` of a `.new-*` intent holding `<g'>-1` (data) or a marker `<g'>-1/` (tombstone) |
 
-`K(k)` is a **protocol constant** by plane: `1` under `blobs/`, `64` elsewhere. The successor name
+`K(k)` is a **protocol constant** by plane: `1` for blob bodies, `64` elsewhere (including `.meta`).
+On the blob-body plane the second row does not apply: a body's successor is always a new unique
+chain (`§3.4`). The successor name
 is a pure function of the predecessor, and facts 1–3 make its creation exclusive — including a data
 file against a marker directory at the same name (`link` onto a directory: `EEXIST`; directory
 `rename` onto a file: `ENOTDIR`) — so at most one writer succeeds a given predecessor, and a
@@ -176,6 +183,47 @@ intent was declared after the listing, in which case the creator observed a stat
 freed chain's successor already existed and it aims higher. The reclaimer's own delayed `rename` is
 harmless because its source `c-<m>` is never created again (`§4.5`).
 
+### 3.4 Plane rules {#plane-rules}
+
+The monotone counter `c-<m>` exists to make **create-if-absent exclusive**: two creators of an
+absent object must compete for one name, so the name must be a function of the object's history,
+so the history must be remembered — the permanent floor. Where exclusivity of creation is not
+required by the protocol, none of that is needed. The backend applies a rule per plane, decided by
+the key's prefix (`Formats/CasLayout.h`), which is the only key-type knowledge it has:
+
+| Plane | Chain names | Intents | `D(k)` removal | Why |
+|---|---|---|---|---|
+| Control: `_pool_meta`, `gc/`, `cas/ns/state/*/_ckpt`, `cas/ref_catalog`, `roots/`, `_files` | `c-<m>` monotone; floor kept | required (`§3.3`) | never (`§4.5`) | create-if-absent is the mutual-exclusion primitive here; these keys are O(servers + tables) and rarely deleted |
+| Write-once: `cas/manifests/`, `cas/ns/stream/` (`_log`, `_snap`), `gc/gen/` | `c-<m>` monotone within one life of `D(k)` | required for the first creation | **yes**, after logical tombstoning | the engine proves by `WriteOneKey` that the key never receives legitimate new content after deletion; a late duplicate publication that recreates it (the engine tolerates one landing, `Pool/CasRefLedger.cpp`) is garbage the engine never addresses again, so a reclaimer's delayed `rename` detaching it destroys garbage |
+| Blob bodies: `blobs/<algo>/<hh>/<hash>` | `c-<r>-<e>-<q>` **globally unique**; several live chains may coexist | none | **yes**, when empty | publication is unconditional by protocol (`ensureBlobPresent` does `HEAD` then publishes; two identical writers may both publish); a late publication is a legitimate new incarnation, exactly as on S3; a unique chain name never recurs, so a reclaimer's delayed `rename` finds `ENOENT` |
+| Blob markers: `blobs/<algo>/<hh>/<hash>.meta` | `c-<r>-<e>-<q>` unique, `K = 64` inside | none | **yes**, when empty | conditional replaces stay exclusive inside a chain; create-if-absent may produce several chains, made safe by the fail-safe read below |
+
+**Blob bodies.** `publish` creates a new unique chain holding `<g>-1` (`.new-*` used as private
+staging only), never observes a predecessor, never meets `EEXIST` except on its own replay
+(`§5`). `head`/`read` return the **lexicographically greatest live data chain**, so GC observes one
+incarnation per round, condemns and deletes it by its exact chain name, and the next chain becomes
+observable; an unreferenced hash is drained chain by chain. `remove(k, c-x/<g>-1)` tombstones exactly
+chain `c-x` (`rename(.tomb-*, c-x/<g>-2)`, exclusive inside that chain) and reclaims it by renaming
+the unique chain away; when `D(k)` is empty it is `rmdir`ed (`ENOTEMPTY` protects a concurrent
+publisher). The revival rule of the blob protocol is unchanged: a writer that reads `Condemned`
+republishes under a fresh chain, never reuses a condemned one.
+
+**Blob markers.** Writes are conditional inside a chain as everywhere; a create-if-absent (the
+writer's "create or reconcile `.meta` to `Clean`") makes a new unique chain, so two publishers can
+leave two `Clean` chains. **Fail-safe read:** `head`/`read` of a `.meta` key examine every live
+chain; if any top decodes as `Condemned` the key reads as that incarnation (its value), otherwise
+as the greatest chain's top. A writer therefore never adopts a body whose condemnation lives in a
+chain it did not pick; the cost of the duplicate is at most one spurious re-upload, the direction
+the blob protocol already accepts. GC's exact delete of a `.meta` value tombstones that chain; the
+sweep additionally tombstones any non-greatest live chain whose bytes equal the greatest's (a pure
+duplicate that no `head` can ever return), so `D(k)` empties and is removed with the body's.
+
+**Write-once keys.** `removeManyWriteOnce` tombstones every live chain (logical absence when the
+call returns, as before), reclaims the chains in order, and then `rmdir`s `D(k)`. A later
+recreation by a late duplicate publisher starts a new life of `D(k)` with `m = 1`; a delayed
+`rename` from the previous life can only detach that duplicate, which the protocol has already
+declared absent and never reads again.
+
 ## 4. Operations {#operations}
 
 `scratch(chain, bytes)`: create `.tmp-<u>` in the chain, write, `fsync`, close. `intent(bytes | marker)`:
@@ -194,7 +242,7 @@ create and unlink `.d-<u>` in `dir`, open a new stream, `readdir`. Errors not li
 | `publish(request)` | unconditional by protocol: loop { `chain(k)`; absent ⇒ the absent-`write` path with the body; present ⇒ the conditional path against the current value } until success or `posix_publish_max_attempts`, then a transport failure. Envelope + bounded payload copy + exact size check as `emuPublishBlobAtomically` today |
 | `read(k)` / `head(k)` / `stream(k)` | `chain(k)`; absent ⇒ nullopt / null; open the incarnation; value = the name opened. `stream` returns a `ReadBufferFromFileDescriptor` owning the descriptor; a remote unlink surfaces as the read error it is |
 | `list(prefix, cursor, limit)` | `§4.6` |
-| `removeManyWriteOnce(keys)` | for each key: **tombstone first** — loop `chain(k)` and tombstone its current top exactly as `remove` would (any expected value; an already-tombstoned or absent key is success) until a marker is on top; the contract's "absent is success" is thereby true when the call returns (`read`/`head`/`list` report absent). Physical reclaim follows `§4.4`, deferred if an intent is present |
+| `removeManyWriteOnce(keys)` | for each key: **tombstone first** — loop `chain(k)` and tombstone its current top exactly as `remove` would (any expected value; an already-tombstoned or absent key is success) until a marker is on top; the contract's "absent is success" is thereby true when the call returns (`read`/`head`/`list` report absent). Physical reclaim follows `§4.4` and, on this plane, ends with `rmdir D(k)` (`§3.4`) |
 | `probeSentinelRaw(k)` | `chain(k)` with error classification: pool root absent ⇒ `ContainerAbsent`; `EACCES`/`EPERM` ⇒ `AccessDenied`; other errors ⇒ `Indeterminate`; absent ⇒ `KeyAbsent`; present ⇒ `Present` with the body. Ordinary `read`/`head` classify a missing pool root the same way and throw |
 
 ### 4.2 Why a chain has one `g` and is never empty {#one-gen}
@@ -252,20 +300,17 @@ and the sweep treats a root whose epoch object is absent as **live** (defer).
 
 ### 4.5 Residue {#residue}
 
-`D(k)` is never removed, and a compacted floor (a marker-only chain, `§4.1` compaction) stays until a
-rebirth chain exists. A deleted key that is never reborn therefore leaves **three empty inodes**
-(`D(k)`, `c-<m>`, the marker): three directory inodes and three directory blocks, 12.75 KiB on
-ext4 with 4 KiB blocks and 256-byte inodes (inline-data directories allocate less), and no data.
-This applies to
-**every plane**, and write-once keys dominate it: every manifest, ref log and snapshot ever deleted
-by GC leaves one such residue forever. One million deleted keys a year is three million inodes and
-about 12 GiB of metadata a year; ten million is about 122 GiB. `D(k)` of a write-once key cannot be
-removed either: a duplicate publisher paused *before* it enters the backend (no intent yet) may
-recreate the key after bulk deletion — the engine permits it (`Pool/CasRefLedger.cpp`, the post-PUT
-guard tolerating older publications) — and a reclaimer's delayed `rename` of the recreated `c-1`
-would then detach it. This is the structural price of a store that does not enforce conditions.
-Deep reclaim of floors is out of scope (`§12`); it would need an engine-level proof that no
-publisher of the key can ever be admitted again.
+**Data planes leave nothing.** Blob bodies, blob markers and write-once keys are removed down to
+and including `D(k)` (`§3.4`).
+
+**Control plane only:** `D(k)` is never removed, and a compacted floor (a marker-only chain, `§4.1`
+compaction) stays until a rebirth chain exists: three directory inodes and three directory blocks,
+12.75 KiB on ext4 with 4 KiB blocks and 256-byte inodes, per deleted-and-never-reborn control key.
+Control keys number O(servers + tables) and are deleted only by table drop (`_ckpt`, `_files`) and
+decommission (`owner`, `epoch`, `mount`), so this residue is bounded by the pool's lifetime table
+count, not by its data churn. It is the structural price of exclusive create-if-absent on a store
+that does not enforce conditions: a reusable chain name needs a permanent floor, and a reclaimer's
+own delayed `rename` needs the name it was aimed at never to return.
 
 Transient residue: intents of live epochs, superseded chains awaiting reclaim, `.gone-*`, and
 intents whose epoch never gets a certificate (`e = 0`, or a root retired before its intents were
@@ -398,13 +443,13 @@ subject of `§11`'s two-client test.
 
 | Item | Cost |
 |---|---|
-| Object at rest | `D(k)` + one chain + one file: 3 inodes |
+| Object at rest | `D(k)` + one chain + one file: 3 inodes; a blob hash with duplicate publications holds one chain per publication until GC drains them |
 | Conditional write inside a chain | scratch create + write + `fsync` + `link` + `unlink` + directory `fsync`: ~6 RPCs on NFS |
 | Chain creation (rotation, rebirth, every blob publish since `K = 1`) | intent `mkdir` + scratch + `link` + `fsync` + `rename` + `fsync(D(k))`: ~10 RPCs, plus a reclaim visit (`fresh` 2 RPCs + renames) when a chain was superseded |
 | `head`/`read` | `readdir` hint + one `LOOKUP` per level + `open` + `read`: ~5 RPCs on NFS |
 | Hot mutable key | ≤ `K` incarnations per chain; the superseded chain is reclaimed by its rotator unless an intent is present |
-| Blob republish | a new chain per publication; the superseded body is reclaimable at once unless an intent of a live epoch is present in `D(k)`; an indefinitely stalled intent retains chains indefinitely (delay-class) |
-| Deleted key never reborn | 3 empty inodes (`§4.5`) |
+| Blob republish | a new unique chain per publication, no intent, no reclaim visit; superseded incarnations are drained by GC's exact deletes one chain per round |
+| Deleted key never reborn | data planes: nothing; control plane: 3 empty inodes (`§4.5`) |
 | `list` | one enumeration per walk, spooled; on NFS two extra RPCs per directory |
 
 ## 11. Tests {#tests}
@@ -431,7 +476,15 @@ Unit (`CAS*` suites, gtest, standard gate filter):
   later chains reclaimed in order: `chain` returns the true current; never an old value.
 - `CASPosixList`: hash-order `readdir`, page limit 1, exactly-once in order; spool reuse; per-level
   freshness with a new stream.
-- `CASPosixReclaim`: order rule (a lower chain blocks reclaim above it); floor retention; write-once
+- `CASPosixPlanes`: blob bodies — two publishers of one hash leave two unique chains, `head`
+  returns the greatest, GC's exact delete of it exposes the next, a delayed reclaimer `rename` of a
+  unique chain after `D(k)` was removed and the hash republished finds `ENOENT`; blob markers — two
+  `Clean` chains plus one `Condemned` read as `Condemned`, the duplicate-chain sweep empties
+  `D(k)`; write-once — `D(k)` removed after bulk delete, a late duplicate publication recreates it
+  and a delayed reclaimer `rename` detaches only that duplicate while `read` of the key stays
+  absent for the engine's purposes (the engine never names a pruned key again).
+- `CASPosixReclaim`: order rule (a lower chain blocks reclaim above it); floor retention on the
+  control plane; write-once
   keys tombstone before return and read/list absent immediately; a live epoch's intent defers;
   `e = 0` intents untouched; an absent epoch object defers; a retained `(20, farewelled)`
   observation never kills a successor's intent because the counter continues from 20.
@@ -503,6 +556,6 @@ MAJOR) into the implementation plan:
 
 Pools written by `EmulatedSingleProcess` are refused by probe gate 8; no converter (no production
 data). Out of scope: Keeper coordination; SMB; the single-write blob optimization (conflicts with
-`BlobSource::open`); trustworthy `list` values; deep reclaim of the floor residue; any change to
+`BlobSource::open`); trustworthy `list` values; deep reclaim of control-plane floors; any change to
 persisted formats beyond the `ServerEpoch` `retired` field, or to the request engine's retry and
 settlement logic.
