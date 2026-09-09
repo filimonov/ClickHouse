@@ -960,7 +960,14 @@ TEST(CASDecommission, PerObjectFailureWarnsAndContinuesDrain)
     const auto report = decommissionPoolMember(
         backend, PoolConfig{.pool_prefix = "p", .server_root_id = "admin"}, "victim",
         /*sink=*/{}, /*request_gc_round=*/{},
-        [clock] { return clock->nowFn()(); }, [clock](uint64_t ms) { clock->sleepFn()(ms); });
+        [clock]
+        {
+            return clock->nowFn()();
+        },
+        [clock](uint64_t ms)
+        {
+            clock->sleepFn()(ms);
+        });
 
     EXPECT_EQ(report.staging_objects_removed, 1u)
         << "the OTHER staging object must still be deleted despite the injected failure on its sibling";
@@ -1033,7 +1040,14 @@ TEST(CASDecommission, ManifestDebrisDeleteFailureWarnsAndContinues)
     const auto report = decommissionPoolMember(
         backend, PoolConfig{.pool_prefix = "p", .server_root_id = "admin"}, "victim",
         /*sink=*/{}, /*request_gc_round=*/{},
-        [clock] { return clock->nowFn()(); }, [clock](uint64_t ms) { clock->sleepFn()(ms); });
+        [clock]
+        {
+            return clock->nowFn()();
+        },
+        [clock](uint64_t ms)
+        {
+            clock->sleepFn()(ms);
+        });
 
     EXPECT_EQ(report.namespaces_removed, 1u)
         << "victim/db/t1's namespace erasure (Task 2) is untouched by either injected failure";
@@ -1358,7 +1372,14 @@ TEST(CASDecommission, FailedDrainKeepsSlotThenResumes)
         failing,
         PoolConfig{.pool_prefix = "p", .server_root_id = "a1", .mount_lease_ttl_ms = std::chrono::milliseconds(300'000)},
         "victim", /*sink=*/{}, /*request_gc_round=*/{},
-        [clock] { return clock->nowFn()(); }, [clock](uint64_t ms) { clock->sleepFn()(ms); });
+        [clock]
+        {
+            return clock->nowFn()();
+        },
+        [clock](uint64_t ms)
+        {
+            clock->sleepFn()(ms);
+        });
     EXPECT_FALSE(first.warnings.empty());
     EXPECT_FALSE(first.slot_removed);
     EXPECT_TRUE((*raw_op).head("p/gc/server-roots/victim/mount", Retry::once()).has_value())
@@ -1402,7 +1423,14 @@ TEST(CASDecommission, ManifestDebrisFailureKeepsSlotThenResumes)
     const auto first = decommissionPoolMember(
         backend, PoolConfig{.pool_prefix = "p", .server_root_id = "a1"}, "victim",
         /*sink=*/{}, /*request_gc_round=*/{},
-        [clock] { return clock->nowFn()(); }, [clock](uint64_t ms) { clock->sleepFn()(ms); });
+        [clock]
+        {
+            return clock->nowFn()();
+        },
+        [clock](uint64_t ms)
+        {
+            clock->sleepFn()(ms);
+        });
     EXPECT_FALSE(first.warnings.empty());
     EXPECT_FALSE(first.slot_removed);
     EXPECT_EQ(first.manifest_debris_removed, 0u);
@@ -1449,7 +1477,14 @@ TEST(CASDecommission, DrainClockUnifiesWithTheFarewellBootClockRegardlessOfHostU
     const auto report = decommissionPoolMember(
         backend, PoolConfig{.pool_prefix = "p", .server_root_id = "a1"}, "victim",
         /*sink=*/{}, /*request_gc_round=*/{},
-        [clock] { return clock->nowFn()(); }, [clock](uint64_t ms) { clock->sleepFn()(ms); });
+        [clock]
+        {
+            return clock->nowFn()();
+        },
+        [clock](uint64_t ms)
+        {
+            clock->sleepFn()(ms);
+        });
 
     EXPECT_TRUE(report.warnings.empty());
     EXPECT_TRUE(report.slot_removed);
@@ -1488,7 +1523,14 @@ TEST(CASDecommission, OpeningRetriesPaceOnTheSameFakeClockAndSleepAsTheDrain)
     const auto report = decommissionPoolMember(
         backend, PoolConfig{.pool_prefix = "p", .server_root_id = "a1"}, "victim",
         /*sink=*/{}, /*request_gc_round=*/{},
-        [clock] { return clock->nowFn()(); }, [clock](uint64_t ms) { clock->sleepFn()(ms); });
+        [clock]
+        {
+            return clock->nowFn()();
+        },
+        [clock](uint64_t ms)
+        {
+            clock->sleepFn()(ms);
+        });
     const auto wall_elapsed = std::chrono::steady_clock::now() - started;
 
     EXPECT_TRUE(report.warnings.empty());
