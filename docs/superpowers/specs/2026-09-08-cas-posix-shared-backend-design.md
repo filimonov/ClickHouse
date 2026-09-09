@@ -126,7 +126,13 @@ Space is reclaimed only by moving a whole chain: `rename(c-<m>, .gone-<u>)`. A d
 `rename` aimed at a name inside a moved chain either fails (`ENOENT` by path) or lands inside the
 unique `.gone-<u>` directory that nothing reads and that the reclaimer deletes (a late arrival makes
 its `rmdir` fail `ENOTEMPTY`; the janitor retries). A delayed operation after the chain is deleted
-meets `ENOENT`/`ESTALE`. Nothing inside a chain therefore needs an intent.
+meets `ENOENT`/`ESTALE`. Nothing inside a chain therefore needs an intent — but a mutation that
+landed inside `.gone-*` through a directory handle resolved before the move must not be reported
+as success. **Post-check:** after every successful in-chain `link` or `rename`, the writer does
+`fstatat(D(k), c-<m>)`; `ENOENT` ⇒ ambiguity (`§5`). This is sound because `c-<m>` is never
+created twice (`§4.5`): if it is present after the mutation it was present throughout, so the
+mutation landed in the live chain; if it is gone the mutation may have landed in `.gone-*`, and the
+engine settles by an exact read, which returns the new chain's value.
 
 **A chain name is created only from an intent, and freed only when no intent on it exists.**
 
