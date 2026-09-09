@@ -678,15 +678,19 @@ TEST(CASDetachedWork, ThrowingPublishAttemptIsPacedByTheBackoff)
 {
     auto backend = std::make_shared<DB::Cas::tests::OrderedFaultBackend>();
     constexpr uint64_t step_ms = 100;
-    std::atomic<uint64_t> fake_boot{1000};
-    std::atomic<uint64_t> error_hook_calls{0};
+    /// Held in shared, heap-owned atomics, not plain locals: the Pool's detached publisher can still be
+    /// running when this frame returns (the last `stopAndDrainDetachedWork` below is best-effort against
+    /// an already-known task, not a guarantee against every future one), so a by-reference capture of a
+    /// local would risk dangling.
+    auto fake_boot = std::make_shared<std::atomic<uint64_t>>(1000);
+    auto error_hook_calls = std::make_shared<std::atomic<uint64_t>>(0);
     PoolConfig config;
-    config.boot_ms_fn = [&fake_boot] { return fake_boot.load(); };
+    config.boot_ms_fn = [fake_boot] { return fake_boot->load(); };
     /// Initial == max, so every step of the schedule is the same virtual `step_ms` and the test can
     /// advance the clock by a constant.
     config.snapshot_publish_backoff_initial_ms = step_ms;
     config.snapshot_publish_backoff_max_ms = step_ms;
-    config.publish_error_hook_for_test = [&error_hook_calls] { error_hook_calls.fetch_add(1); };
+    config.publish_error_hook_for_test = [error_hook_calls] { error_hook_calls->fetch_add(1); };
     auto store = openPublishingPool(backend, config);
     const RootNamespace ns{"srv1/throwing_publisher_pacing"};
 
@@ -705,7 +709,7 @@ TEST(CASDetachedWork, ThrowingPublishAttemptIsPacedByTheBackoff)
     while (std::chrono::steady_clock::now() < observe_until && attempts.load() <= 1)
         std::this_thread::yield();
     EXPECT_EQ(attempts.load(), 1u) << "the throwing attempt redispatched without arming the publish backoff";
-    EXPECT_GE(error_hook_calls.load(), 1u) << "the injected throw never reached the error handler";
+    EXPECT_GE(error_hook_calls->load(), 1u) << "the injected throw never reached the error handler";
 
     /// One step of the schedule per iteration: the tail is still over threshold, so each mutation
     /// re-evaluates admission, and AT MOST one attempt may pass per elapsed backoff interval. At most,
@@ -716,7 +720,7 @@ TEST(CASDetachedWork, ThrowingPublishAttemptIsPacedByTheBackoff)
     /// is what catches it; progress is asserted once after the loop.
     for (uint64_t step = 1; step <= 3; ++step)
     {
-        fake_boot.fetch_add(step_ms);
+        fake_boot->fetch_add(step_ms);
         ASSERT_NO_THROW(publishRef(store, ns, "ref_" + std::to_string(step + 1), step + 1));
         /// Bounded poll rather than `waitForSnapshotPublishSettleForTest`: that call waits on a condvar
         /// predicate with no deadline, and on an unpaced-redispatch regression the reservation count
@@ -737,7 +741,7 @@ TEST(CASDetachedWork, ThrowingPublishAttemptIsPacedByTheBackoff)
     /// elapsed backoff must eventually admit a further attempt, or the pacing gate would be a wedge.
     for (uint64_t extra = 0; attempts.load() < 2 && extra < 20; ++extra)
     {
-        fake_boot.fetch_add(step_ms);
+        fake_boot->fetch_add(step_ms);
         ASSERT_NO_THROW(publishRef(store, ns, "ref_progress_" + std::to_string(extra), 100 + extra));
         const auto settle = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         while (store->pendingSnapshotPublishesForTest(ns) != 0)
@@ -749,7 +753,7 @@ TEST(CASDetachedWork, ThrowingPublishAttemptIsPacedByTheBackoff)
     EXPECT_GE(attempts.load(), 2u)
         << "no elapsed backoff ever admitted a further publish attempt: the gate is a wedge, not a pace";
 
-    EXPECT_EQ(error_hook_calls.load(), attempts.load());
+    EXPECT_EQ(error_hook_calls->load(), attempts.load());
     /// The publisher is detached work: a redispatch admitted by the last elapsed backoff can still be
     /// running when this body returns, and it reads `fake_boot` through `boot_ms_fn`. Stop and drain it
     /// while the locals it reads are alive.
