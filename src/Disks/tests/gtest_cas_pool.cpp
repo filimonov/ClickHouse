@@ -54,6 +54,7 @@ using namespace DB::Cas;
 using DB::Cas::tests::blobEntryFor;
 using DB::Cas::tests::expectThrowsCode;
 using DB::Cas::tests::idOf;
+using DB::Cas::tests::SharedWaitLog;
 using DB::Cas::tests::u128Of;
 
 namespace
@@ -1537,8 +1538,14 @@ TEST(CASPoolMountFence, OpenRecoversFromFenceInAdoptWindowWithFreshEpoch)
     ASSERT_NO_THROW(
         store = DB::Cas::Pool::open(fencing,
             DB::Cas::PoolConfig{.pool_prefix = "p", .server_root_id = "test",
-                .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-                .wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; }}))
+                .boot_ms_fn = [fake_boot]
+                {
+                    return fake_boot->load();
+                },
+                .wait_sleep_fn = [fake_boot](uint64_t ms)
+                {
+                    *fake_boot += ms;
+                }}))
         << "open must recover from a fence in the adopt window, not wedge (exit-49 S13 bug)";
     ASSERT_TRUE(store);
 
@@ -1568,7 +1575,10 @@ TEST(CASPool, WriteFenceUsesInjectedBootClock)
         .pool_prefix = "p",
         .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30000),
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
     });
 
     /// Freshly armed at open (deadline = fake_boot + ttl): well within the ttl, mutations are allowed.
@@ -1781,7 +1791,10 @@ TEST(CASPoolRemount, RemountArmAnchorsAtClaimAttemptNotResponseTime)
     auto store = DB::Cas::Pool::open(backend, DB::Cas::PoolConfig{
         .pool_prefix = "p", .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30'000),
-        .boot_ms_fn = [clock] { return (*clock)(); },
+        .boot_ms_fn = [clock]
+        {
+            return (*clock)();
+        },
     });
     ASSERT_TRUE(store);
 
@@ -1818,14 +1831,17 @@ TEST(CASPoolRemount, RemountArmAnchorsAtClaimAttemptNotResponseTime)
 TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
 {
     auto backend = std::make_shared<InMemoryBackend>();
-    uint64_t boot_a = 0;
-    uint64_t boot_b = 0;
+    /// Held in shared atomics, not plain locals: `wait_sleep_fn`/`setWaitSleepForTest` below mutate
+    /// them, and each Pool can outlive this stack frame (a background publish holds
+    /// `shared_from_this()`), so a by-reference or by-raw-pointer capture of a local would dangle.
+    auto boot_a = std::make_shared<std::atomic<uint64_t>>(0);
+    auto boot_b = std::make_shared<std::atomic<uint64_t>>(0);
     /// Mirrors `UncleanOpenPaysOnlyTheObservationWindow`'s tiny budget: the 1s lease TTL below is far
     /// under the default `cas_request_budget`, so it must be scaled down to fit the required-timeout
     /// inequality (attempt_timeout + safety_margin < lease TTL).
     const CasRequestBudget tiny_budget{
         .attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = std::nullopt};
-    auto config_for = [&](uint64_t * boot, bool unsafe)
+    auto config_for = [&](const std::shared_ptr<std::atomic<uint64_t>> & boot, bool unsafe)
     {
         return PoolConfig{
             .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
@@ -1833,16 +1849,22 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
             .mount_renew_period = std::chrono::milliseconds(200),
             .unsafe_remount_no_delay = unsafe,
             .cas_request_budget = tiny_budget,
-            .boot_ms_fn = [boot] { return *boot; },
-            .wait_sleep_fn = [boot](uint64_t ms) { *boot += ms; },
+            .boot_ms_fn = [boot]
+            {
+                return boot->load();
+            },
+            .wait_sleep_fn = [boot](uint64_t ms)
+            {
+                *boot += ms;
+            },
         };
     };
 
-    PoolPtr pool_a = Pool::open(backend, config_for(&boot_a, /*unsafe=*/false));
+    PoolPtr pool_a = Pool::open(backend, config_for(boot_a, /*unsafe=*/false));
     ASSERT_TRUE(pool_a);
     /// B carries the SAME (server_root_id, server_id) as A -- a copied uuid file -- and opens over A's
     /// still-live slot under the operator's unsafe knob, reclaiming it at once (no observation).
-    PoolPtr pool_b = Pool::open(backend, config_for(&boot_b, /*unsafe=*/true));
+    PoolPtr pool_b = Pool::open(backend, config_for(boot_b, /*unsafe=*/true));
     ASSERT_TRUE(pool_b);
     EXPECT_NE(pool_a->liveWriterEpoch(), pool_b->liveWriterEpoch())
         << "the unsafe reclaim must have minted B a fresh epoch over A's slot";
@@ -1874,12 +1896,13 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
     /// `remount_mutex`), and the wait fires between `claimMountAwaitingExpiry`'s polls -- with no
     /// backend request of A's own in flight -- so B's call is the only one touching the shared
     /// in-memory backend at that instant.
-    size_t polls = 0;
-    pool_a->setWaitSleepForTest([&](uint64_t ms)
+    /// Heap-owned, not a plain local: same lifetime rule as `boot_a`/`boot_b` above.
+    auto polls = std::make_shared<std::atomic<size_t>>(0);
+    pool_a->setWaitSleepForTest([boot_a, boot_b, polls, pool_b](uint64_t ms)
     {
-        boot_a += ms;
-        ++polls;
-        boot_b += ms;
+        *boot_a += ms;
+        ++(*polls);
+        *boot_b += ms;
         EXPECT_NO_THROW(pool_b->renewWatermarkOnce());
     });
     EXPECT_FALSE(pool_a->tryRemountOnce())
@@ -1890,7 +1913,7 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
     /// `sleep_ms_fn` call per iteration that does not itself exceed the bound, and none on the
     /// terminal iteration that does. A widened or removed restart bound would make this hang instead
     /// of failing, so pin the exact count rather than only asserting it ran.
-    EXPECT_EQ(polls, DB::Cas::kMaxObservationRestarts + 1)
+    EXPECT_EQ(polls->load(), DB::Cas::kMaxObservationRestarts + 1)
         << "the observation must give up after exactly kMaxObservationRestarts restarts, not wait "
            "indefinitely for a live twin to go quiet";
 
@@ -1917,8 +1940,14 @@ TEST(CASMountRemount, CutoffFencesWithoutRenewals)
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .mount_renew_period = std::chrono::milliseconds(200),
         .cas_request_budget = tiny_budget,
-        .boot_ms_fn = [boot] { return boot->load(); },
-        .wait_sleep_fn = [boot](uint64_t ms) { *boot += ms; },
+        .boot_ms_fn = [boot]
+        {
+            return boot->load();
+        },
+        .wait_sleep_fn = [boot](uint64_t ms)
+        {
+            *boot += ms;
+        },
     });
     ASSERT_TRUE(store);
     EXPECT_TRUE(store->mayMutate()) << "freshly armed at open, well within the ttl";
@@ -2384,11 +2413,20 @@ TEST(CASPoolShutdown, UnresolvedWedgeSkipsFarewell)
     auto fake_boot = std::make_shared<std::atomic<uint64_t>>(1'000'000);
     auto store = DB::Cas::Pool::open(backend, DB::Cas::PoolConfig{
         .pool_prefix = "p", .server_root_id = "test", .cas_request_budget = budget,
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; }});
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot](uint64_t ms)
+        {
+            *fake_boot += ms;
+        }});
     /// The engine's own inter-attempt sleep advances the same clock its deadlines are read from, so the
     /// retry bound is reached in test time rather than in ninety real seconds.
-    store->setCasRetrySleepForTest([fake_boot](uint64_t ms) { *fake_boot += ms; });
+    store->setCasRetrySleepForTest([fake_boot](uint64_t ms)
+    {
+        *fake_boot += ms;
+    });
     /// By value: `layout` is used after `store.reset()` below, a reference would dangle.
     const Layout layout = store->layout();
     const RootNamespace ns{"srv/wedge_shutdown"};
@@ -2434,32 +2472,6 @@ TEST(CASPoolShutdown, UnresolvedWedgeSkipsFarewell)
 /// These three tests pin the surviving shape from all three directions: observed-dead, certified-dead,
 /// and cleanly departed.
 
-namespace
-{
-/// Heap-owned wait log for the `wait_sleep_fn` hooks below: a hook that pushed into a stack-local
-/// vector would read (or write) a dead frame if a background completion outlives the test -- the
-/// Pool's own detached publish can hold `shared_from_this()` past this function's return. Mutex-guarded
-/// because that background call can race the foreground snapshot read.
-class SharedWaitLog
-{
-public:
-    void push(uint64_t ms)
-    {
-        std::lock_guard lock(mutex);
-        values.push_back(ms);
-    }
-    std::vector<uint64_t> snapshot() const
-    {
-        std::lock_guard lock(mutex);
-        return values;
-    }
-
-private:
-    mutable std::mutex mutex;
-    std::vector<uint64_t> values;
-};
-}
-
 TEST(CASMountOpenWaits, UncleanOpenPaysOnlyTheObservationWindow)
 {
     auto b = std::make_shared<InMemoryBackend>();
@@ -2493,8 +2505,15 @@ TEST(CASMountOpenWaits, UncleanOpenPaysOnlyTheObservationWindow)
             .mount_lease_ttl_ms = std::chrono::milliseconds(500),
             .mount_renew_period = std::chrono::milliseconds(100),
             .cas_request_budget = tiny_budget,
-            .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-            .wait_sleep_fn = [fake_boot, waits](uint64_t ms) { *fake_boot += ms; waits->push(ms); },
+            .boot_ms_fn = [fake_boot]
+            {
+                return fake_boot->load();
+            },
+            .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+            {
+                *fake_boot += ms;
+                waits->push(ms);
+            },
         }));
     ASSERT_TRUE(store);
 
@@ -2548,8 +2567,15 @@ TEST(CASMountOpenWaits, UnsafeNoDelayOpensWithoutTheObservationWindow)
         .mount_lease_ttl_ms = std::chrono::milliseconds(500), .mount_renew_period = std::chrono::milliseconds(100),
         .unsafe_remount_no_delay = true,
         .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 50, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = std::nullopt},
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot, waits](uint64_t ms) { *fake_boot += ms; waits->push(ms); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+        {
+            *fake_boot += ms;
+            waits->push(ms);
+        },
     }));
     ASSERT_TRUE(store);
     EXPECT_TRUE(waits->snapshot().empty()) << "no observation window under the unsafe setting";
@@ -2582,7 +2608,10 @@ TEST(CASMountOpenWaits, CleanOpenSkipsAllWaits)
     ASSERT_NO_THROW(
         successor = Pool::open(b, PoolConfig{
             .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
-            .wait_sleep_fn = [waits](uint64_t ms) { waits->push(ms); },
+            .wait_sleep_fn = [waits](uint64_t ms)
+            {
+                waits->push(ms);
+            },
         }));
     ASSERT_TRUE(successor);
 
@@ -2632,7 +2661,10 @@ TEST(CASMountOpenWaits, CleanTeardownUnderDefaultBudgetLeavesAFarewell)
     ASSERT_NO_THROW(
         successor = Pool::open(b, PoolConfig{
             .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
-            .wait_sleep_fn = [waits](uint64_t ms) { waits->push(ms); },
+            .wait_sleep_fn = [waits](uint64_t ms)
+            {
+                waits->push(ms);
+            },
         }));
     ASSERT_TRUE(successor);
     EXPECT_TRUE(waits->snapshot().empty())
@@ -2667,7 +2699,10 @@ TEST(CASMountOpenWaits, FencedPriorReclaimsWithoutAnyWait)
             .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
             .mount_lease_ttl_ms = std::chrono::milliseconds(500),
             .cas_request_budget = tiny_budget,
-            .wait_sleep_fn = [waits](uint64_t ms) { waits->push(ms); },
+            .wait_sleep_fn = [waits](uint64_t ms)
+            {
+                waits->push(ms);
+            },
         }));
     ASSERT_TRUE(store);
 
@@ -2704,8 +2739,14 @@ TEST(CASMountOpenWaits, PublicationHorizonUsesTheEnvelope)
             .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
             .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
             .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 100, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 100},
-            .boot_ms_fn = [fake_boot, per_call_ms] { return fake_boot->fetch_add(per_call_ms); },
-            .wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; },
+            .boot_ms_fn = [fake_boot, per_call_ms]
+            {
+                return fake_boot->fetch_add(per_call_ms);
+            },
+            .wait_sleep_fn = [fake_boot](uint64_t ms)
+            {
+                *fake_boot += ms;
+            },
         });
         if (!store)
             return 0;
@@ -2757,9 +2798,18 @@ TEST(CASPoolRemount, RemountRenewerRedoUsesTheEnvelope)
             .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
             .mount_renew_period = std::chrono::milliseconds(100),
             .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 100, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 100},
-            .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-            .wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; },
-            .remount_quiesce_hook_for_test = [fake_boot, quiesce_ms] { *fake_boot += quiesce_ms; },
+            .boot_ms_fn = [fake_boot]
+            {
+                return fake_boot->load();
+            },
+            .wait_sleep_fn = [fake_boot](uint64_t ms)
+            {
+                *fake_boot += ms;
+            },
+            .remount_quiesce_hook_for_test = [fake_boot, quiesce_ms]
+            {
+                *fake_boot += quiesce_ms;
+            },
         });
         const String mount_key = store->layout().mountKey("test");
 
@@ -2868,11 +2918,17 @@ TEST(CASPool, StartupArmRedoesLeaseWriteWhenTheClaimConsumesTtl)
     cfg.server_root_id = srid;
     cfg.background_watermark = true;
     cfg.mount_lease_ttl_ms = std::chrono::milliseconds(30'000);
-    cfg.boot_ms_fn = [fake_boot_ms] { return fake_boot_ms->load(); };
+    cfg.boot_ms_fn = [fake_boot_ms]
+    {
+        return fake_boot_ms->load();
+    };
     /// The renewer's adopt write stalls for 15 s of boot clock. That consumes the publication horizon
     /// (one 10 s cadence plus one 5 s attempt) while leaving one physical attempt admissible inside
     /// the old lease's safety window, so the synchronous redo can safely re-anchor.
-    backend->on_second_mount_write = [fake_boot_ms] { *fake_boot_ms += 15'000; };
+    backend->on_second_mount_write = [fake_boot_ms]
+    {
+        *fake_boot_ms += 15'000;
+    };
 
     auto store = DB::Cas::Pool::open(backend, cfg);
     ASSERT_NE(store, nullptr);
@@ -2906,12 +2962,22 @@ TEST(CASRemountWaits, DrainedRemountPaysNoWait)
     auto store = Pool::open(backend, PoolConfig{
         .pool_prefix = "p", .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30000),
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot, waits](uint64_t ms) { *fake_boot += ms; waits->push(ms); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+        {
+            *fake_boot += ms;
+            waits->push(ms);
+        },
     });
     ASSERT_TRUE(store);
     EXPECT_TRUE(waits->snapshot().empty()) << "a fresh mount (no predecessor) pays no wait at open";
-    store->setCasRetrySleepForTest([fake_boot](uint64_t ms) { *fake_boot += ms; });
+    store->setCasRetrySleepForTest([fake_boot](uint64_t ms)
+    {
+        *fake_boot += ms;
+    });
 
     /// Trip the fence: advance the local boot clock past the deadline (as in `WriteFenceUsesInjectedBootClock`
     /// above) and mark the durable lease `gc_fenced` (the certificate `claimMountAwaitingExpiry` reclaims
@@ -2945,8 +3011,15 @@ TEST(CASRemountWaits, UnresolvedWedgeRemountPaysNoWaitEither)
         .pool_prefix = "p", .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30000),
         .cas_request_budget = budget,
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot, waits](uint64_t ms) { *fake_boot += ms; waits->push(ms); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot, waits](uint64_t ms)
+        {
+            *fake_boot += ms;
+            waits->push(ms);
+        },
     });
     ASSERT_TRUE(store);
     EXPECT_TRUE(waits->snapshot().empty()) << "a fresh mount (no predecessor) pays no wait at open";
@@ -2955,7 +3028,10 @@ TEST(CASRemountWaits, UnresolvedWedgeRemountPaysNoWaitEither)
     /// elapsed time against `boot_ms_now_fn` -- the frozen `fake_boot` this fixture already injects.
     /// Without also virtualizing the sleep, that elapsed check never advances and the loop spins for
     /// real until the harness times the test out.
-    store->setCasRetrySleepForTest([fake_boot](uint64_t ms) { *fake_boot += ms; });
+    store->setCasRetrySleepForTest([fake_boot](uint64_t ms)
+    {
+        *fake_boot += ms;
+    });
 
     const Layout & layout = store->layout();
     const RootNamespace ns{"srv/remount_wedge"};
@@ -3016,11 +3092,20 @@ TEST(CASRemountWaits, ALateTouchedTableClosesEveryDeadEpochInBandHoweverItsPrede
         .pool_prefix = "p", .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30000),
         .cas_request_budget = budget,
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .wait_sleep_fn = [fake_boot](uint64_t ms)
+        {
+            *fake_boot += ms;
+        },
     });
     ASSERT_TRUE(store);
-    store->setCasRetrySleepForTest([fake_boot](uint64_t ms) { *fake_boot += ms; });
+    store->setCasRetrySleepForTest([fake_boot](uint64_t ms)
+    {
+        *fake_boot += ms;
+    });
 
     const Layout & layout = store->layout();
     const RootNamespace ns1{"srv/table_a"};
@@ -3972,8 +4057,14 @@ TEST(CASPoolRemount, StaleRemountAnchorPerformsParkedRedo)
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .mount_renew_period = std::chrono::milliseconds(100),
         .cas_request_budget = runtimeRenewBudget(),
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-        .remount_quiesce_hook_for_test = [fake_boot] { *fake_boot += 900; },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
+        .remount_quiesce_hook_for_test = [fake_boot]
+        {
+            *fake_boot += 900;
+        },
     };
     auto store = Pool::open(backend, config);
     const String key = store->layout().mountKey("test");
@@ -4018,7 +4109,10 @@ TEST(CASPoolRemount, ParkedRedoRecoveryObservabilityPrecedesRemountResult)
         /// the engine's jittered backoff draws from its first-reissue range of at most 200 ms.
         .mount_renew_period = std::chrono::milliseconds(500),
         .cas_request_budget = runtimeRenewBudget(),
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
         /// `backend` is captured BY VALUE (a copy of the shared_ptr, not the stack slot holding it):
         /// the Pool can outlive this frame, so a by-reference capture of the local `shared_ptr` itself
         /// would dangle even though the pointee it owns is heap-allocated.
@@ -4092,7 +4186,10 @@ TEST(CASPoolRemount, ParkedRedoFailureObservabilityPrecedesRemountResult)
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .mount_renew_period = std::chrono::milliseconds(100),
         .cas_request_budget = runtimeRenewBudget(),
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
         /// `backend` is captured BY VALUE (a copy of the shared_ptr): the Pool can outlive this frame,
         /// so a by-reference capture of the local `shared_ptr` itself would dangle.
         .remount_quiesce_hook_for_test = [fake_boot, backend]
@@ -4101,7 +4198,10 @@ TEST(CASPoolRemount, ParkedRedoFailureObservabilityPrecedesRemountResult)
             backend->fault = RuntimeRenewBackend::Fault::ThrowBefore;
             /// The attempt is admitted 80 ms before its lease-safe bound; spending 90 inside it puts the
             /// resolve read past that bound, so the ambiguity is refused instead of reissued.
-            backend->before_throw = [fake_boot] { *fake_boot += 90; };
+            backend->before_throw = [fake_boot]
+            {
+                *fake_boot += 90;
+            };
         },
     };
     auto store = Pool::open(backend, config);
@@ -4143,21 +4243,26 @@ TEST(CASPoolRemount, ThrowingEventSinkAfterCommitLeavesRuntimeLive)
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = Pool::open(backend, PoolConfig{
         .pool_prefix = "throwing-remount-event", .server_root_id = "test", .background_watermark = true});
-    DB::Cas::tests::ManualBarrier committed;
-    store->setEventSink([&](const CasEvent & event)
+    /// Heap-owned, not a plain local declared after `store`: if `waitUntilArrived` below throws on its
+    /// own internal timeout, unwinding would destroy a stack-local barrier before `store`'s destructor
+    /// joins the remount worker, and that worker can still be inside `arriveAndWait` on the dangling
+    /// reference. A `shared_ptr` capture keeps the barrier alive for as long as the worker needs it,
+    /// independent of declaration order.
+    auto committed = std::make_shared<DB::Cas::tests::ManualBarrier>();
+    store->setEventSink([committed](const CasEvent & event)
     {
         if (event.type == CasEventType::MountRemount && event.outcome == "ok")
         {
-            committed.arriveAndWait();
+            committed->arriveAndWait();
             throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected remount event sink failure");
         }
     });
     fenceOutMount(*backend, store->layout().mountKey("test"));
     ASSERT_TRUE(store->scheduleRemountForTest());
-    committed.waitUntilArrived();
+    committed->waitUntilArrived();
     EXPECT_EQ(store->lifecycle(), PoolLifecycle::Live);
     EXPECT_TRUE(store->mayMutate());
-    committed.release();
+    committed->release();
     EXPECT_NO_THROW(store.reset());
 }
 
@@ -4367,7 +4472,10 @@ TEST(CASPool, RenewWatermarkOnceRefreshesFenceAndDepositsOneFailure)
         .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
         .cas_request_budget = runtimeRenewBudget(),
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        },
     };
     auto store = Pool::open(backend, config);
     fake_boot->store(500);
@@ -4379,7 +4487,10 @@ TEST(CASPool, RenewWatermarkOnceRefreshesFenceAndDepositsOneFailure)
     /// The renewal that succeeded at 500 anchored the lease for its 1000 ms TTL, so it expires at 1500.
     /// Expire it from inside the attempt: the fault alone no longer ends a renewal, because the engine
     /// settles the ambiguity by reading and reissues, and the reissue commits.
-    backend->before_throw = [fake_boot] { fake_boot->store(1500); };
+    backend->before_throw = [fake_boot]
+    {
+        fake_boot->store(1500);
+    };
     const uint64_t schedules_before = store->scheduleRemountCallCountForTest();
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->renewWatermarkOnce(); });
     EXPECT_FALSE(store->mayMutate());
@@ -4462,9 +4573,18 @@ TEST(CASPoolRemount, TheRenewerRedoRenewsOnTheOpenPlane)
                 if (event.type == CasEventType::MountRemount && event.outcome == "ok")
                     committed.arriveAndWait();
             },
-            .boot_ms_fn = [fake_boot] { return fake_boot->load(); },
-            .wait_sleep_fn = [fake_boot](uint64_t ms) { *fake_boot += ms; },
-            .remount_quiesce_hook_for_test = [fake_boot, quiesce_ms] { *fake_boot += quiesce_ms; },
+            .boot_ms_fn = [fake_boot]
+            {
+                return fake_boot->load();
+            },
+            .wait_sleep_fn = [fake_boot](uint64_t ms)
+            {
+                *fake_boot += ms;
+            },
+            .remount_quiesce_hook_for_test = [fake_boot, quiesce_ms]
+            {
+                *fake_boot += quiesce_ms;
+            },
         });
         const String mount_key = store->layout().mountKey("test");
 
