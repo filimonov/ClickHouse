@@ -437,6 +437,11 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
     # token-stability observation wait once before it can safely reclaim it.
     node.stop_clickhouse(kill=True)
     node.start_clickhouse()
+    # `node.start_clickhouse()` only waits for the server to accept queries, not for the CAS disk's
+    # `Pool::open` (which performs the observation wait itself) to finish; reading the log or the mount
+    # row before that completes races the very thing being measured. Wait for the mount to report
+    # "live" first, then the log line and row are both settled.
+    _wait_until(lambda: _mount_snapshot(node)["state"] == "live", timeout=120)
     assert log_count_since_last_restart(observation) == 1
     assert _mount_snapshot(node)["state"] == "live"
     # This restart already reclaims the slot and advances the epoch on its own (via the observation
@@ -460,6 +465,8 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
     )
     try:
         node.start_clickhouse()
+        # Same race as the safe restart above: wait for the mount to settle before reading the log.
+        _wait_until(lambda: _mount_snapshot(node)["state"] == "live", timeout=120)
         assert log_count_since_last_restart(observation) == 0
         assert _mount_snapshot(node)["state"] == "live"
         epoch_after_knob_restart = int(
