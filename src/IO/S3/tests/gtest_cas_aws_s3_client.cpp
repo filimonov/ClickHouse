@@ -99,6 +99,9 @@ static std::shared_ptr<DB::S3::Client> makeTestClient(const DB::S3::URI & uri)
         /*opt_disk_name=*/{},
         /*request_throttler=*/{},
         uri.uri.getScheme());
+    /// Fresh connection per request: this file's servers live on ephemeral ports and die with the test,
+    /// and a pooled keep-alive connection can outlive its server (`Connection reset by peer` under `--gtest_repeat`).
+    client_configuration.http_keep_alive_timeout = 0;
     client_configuration.endpointOverride = uri.endpoint;
     /// `ClientFactory::create` installs the SDK's actual retry strategy itself from
     /// `client_configuration.retry_strategy`/`s3_slow_all_threads_after_retryable_error` (any
@@ -377,6 +380,9 @@ std::shared_ptr<NetworkFailingClient> makeNetworkFailingClient(std::shared_ptr<A
         /*for_disk_s3=*/false,
         /*opt_disk_name=*/{},
         /*request_throttler=*/{});
+    /// Fresh connection per request: this file's servers live on ephemeral ports and die with the test,
+    /// and a pooled keep-alive connection can outlive its server (`Connection reset by peer` under `--gtest_repeat`).
+    client_configuration.http_keep_alive_timeout = 0;
     /// `PutObject` never reaches the wire (it is overridden below), so the endpoint is irrelevant --
     /// only the installed retry strategy, which is what `usesSingleAttemptRetryStrategy` inspects.
     client_configuration.retryStrategy = std::move(retry_strategy);
