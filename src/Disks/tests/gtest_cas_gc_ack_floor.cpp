@@ -1045,7 +1045,10 @@ TEST(CASGCAckFloor, DefaultMonoClockTracksPoolsInjectedBootClockNotWallClock)
     /// capture of a local would dangle.
     auto fake_boot = std::make_shared<std::atomic<uint64_t>>(0);
     auto store = Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "test",
-        .boot_ms_fn = [fake_boot] { return fake_boot->load(); }});
+        .boot_ms_fn = [fake_boot]
+        {
+            return fake_boot->load();
+        }});
     const Layout & layout = store->layout();
 
     // A stale mount, exactly as `ExpiredMountFencedOutAndExcluded`: one claim, never renewed again.
@@ -1053,7 +1056,11 @@ TEST(CASGCAckFloor, DefaultMonoClockTracksPoolsInjectedBootClockNotWallClock)
     CasRequests renewer_requests = openRequestsForTest(backend);
     MountLeaseRenewer srid2_renewer(renewer_requests, renewer_requests, layout, srid2, DB::UInt128(0x2222),
         /*writer_epoch=*/1,
-        std::chrono::milliseconds(100), [] { return 1000u; }, [fake_boot] { return fake_boot->load(); });
+        std::chrono::milliseconds(100), [] { return 1000u; },
+        [fake_boot]
+        {
+            return fake_boot->load();
+        });
     srid2_renewer.start();
     ASSERT_FALSE(decodeMountLease(readObj(*backend, layout.mountKey(srid2))->bytes).gc_fenced);
 
@@ -1292,7 +1299,10 @@ TEST(CASGCCondemnMarker, SwallowedMarkerWriteCarriesEntryInsteadOfDeleting)
     /// would dangle once the frame returns.
     auto engine_now_ms = std::make_shared<std::atomic<uint64_t>>(0);
     auto engine_sleeps = std::make_shared<std::atomic<uint64_t>>(0);
-    store->openRequests().setNowFnForTest([engine_now_ms] { return engine_now_ms->load(); });
+    store->openRequests().setNowFnForTest([engine_now_ms]
+    {
+        return engine_now_ms->load();
+    });
     store->openRequests().setSleepFnForTest([engine_now_ms, engine_sleeps](uint64_t pause_ms)
     {
         engine_sleeps->fetch_add(1);
