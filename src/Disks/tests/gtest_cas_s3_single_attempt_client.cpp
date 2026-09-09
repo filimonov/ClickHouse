@@ -677,7 +677,18 @@ TEST(CASEnvelopeWiring, ProductionDispatchAppliesTheFrozenConnectCapAtConnectTim
         {
             put(DB::ObjectStorageRetryProfile::SingleAttempt, single_attempt_timeout_ms, single_attempt_connect_cap_ms);
         });
+        EXPECT_LT(capped_elapsed.count(), default_elapsed.count())
+            << "the cap must remove SOME of the connect budget, unconditionally";
+        /// A sanitizer build adds a roughly constant addend to both measurements, so the PRIMARY fence
+        /// is the DIFFERENCE the cap made, not an absolute bound: at least half of the connect budget it
+        /// removed.
+        EXPECT_GE(default_elapsed.count() - capped_elapsed.count(),
+                  (base_connect_timeout_ms - static_cast<long>(single_attempt_connect_cap_ms)) / 2);
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Release builds keep the original tighter absolute bound too: sanitizer instrumentation
+        /// overhead is the only reason it was loosened to a difference above.
         EXPECT_LT(capped_elapsed.count(), 1000);
+#endif
     }
 
     /// HEAD: tryGetObjectMetadataWithNativeToken's ObjectStorageControlRequest-taking overload.
