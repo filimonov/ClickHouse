@@ -133,8 +133,8 @@ void ContentAddressedTransaction::abandonBuildBestEffort(
     /// Everything that can allocate stays inside a catch boundary: this runs from the destructor.
     try
     {
-        /// Test-only fault seam; a no-op in production (nothing ever arms it).
-        if (metadata_storage.takeAbandonFailureForTest({Cas::RootNamespace{ns}, ref}))
+        /// Test-only fault seam; inert in production (nothing ever arms it, and an unarmed seam allocates nothing).
+        if (metadata_storage.hasAbandonFailureForTest() && metadata_storage.takeAbandonFailureForTest({Cas::RootNamespace{ns}, ref}))
             throw Exception(ErrorCodes::ABORTED,
                 "ContentAddressedTransaction: test-injected abandon failure for {}/{}", ns, ref);
         st.build->abandon();
@@ -1074,8 +1074,7 @@ void ContentAddressedTransaction::removeDirectory(const std::string & path)
             {
                 /// The ref drop above is already durable (or the ref was absent); the build is this
                 /// transaction's own scratch and is discarded either way. Same tolerance as after a repoint.
-                const Cas::PartRefKey rk = r->refKey();
-                abandonBuildBestEffort(rk.ns.string(), rk.ref, *st,
+                abandonBuildBestEffort(r->ns.string(), r->ref, *st,
                     "abandoning the scratch build after a ref drop (the precommit is left to the writer cleanup duty)");
             }
         }

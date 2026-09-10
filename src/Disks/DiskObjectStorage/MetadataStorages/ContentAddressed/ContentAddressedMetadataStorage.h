@@ -584,6 +584,7 @@ public:
     /// successful repoint or ref drop) throw where the real `PartWriteTxn::abandon` would, so a test can
     /// prove the commit outcome survives a refused abandon.
     void armAbandonFailureForTest(const Cas::PartRefKey & key) { abandon_failure_refs_for_test.insert(key.cacheKey()); }
+    bool hasAbandonFailureForTest() const { return !abandon_failure_refs_for_test.empty(); }
     bool takeAbandonFailureForTest(const Cas::PartRefKey & key) { return abandon_failure_refs_for_test.erase(key.cacheKey()) > 0; }
     bool shouldFailPromoteForTest(const Cas::PartRefKey & key) const { return promote_failure_refs_for_test.contains(key.cacheKey()); }
     void setAfterPromoteHookForTest(const Cas::PartRefKey & key, std::function<void()> hook)
