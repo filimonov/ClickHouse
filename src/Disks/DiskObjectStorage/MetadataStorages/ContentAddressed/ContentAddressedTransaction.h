@@ -227,6 +227,11 @@ private:
     /// grows a container -- it exists for the serial publish loop's rollback bookkeeping. Parts are
     /// published serially (`commit`'s loop); only the blob uploads WITHIN a part fan out. Concurrent
     /// cross-part publication is future scope and is NOT done here.
+    /// Abandons `st.build` and resets it. Never throws: a refused abandon is logged and the live precommit
+    /// binding it leaves behind is reclaimed after a remount. Used wherever the abandon is bookkeeping
+    /// after a durable step, and in the destructor.
+    void abandonBuildBestEffort(const Cas::PartRefKey & key, PartStaging & st, const char * what) noexcept;
+
     void publishStaging(const Cas::RootNamespace & ns, const std::string & ref, PartStaging & st,
                         std::optional<Cas::CommitOutcome> & out_slot);
 };

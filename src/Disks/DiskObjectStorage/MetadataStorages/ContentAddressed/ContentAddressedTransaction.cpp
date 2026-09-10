@@ -122,23 +122,28 @@ ContentAddressedTransaction::~ContentAddressedTransaction()
     /// a re-key in this overlay. An abandoned transaction therefore has no early-published ref to
     /// compensate for; it only needs to abandon still-open builds below.
     for (auto & [key, st] : parts)
+        if (st.build)
+            abandonBuildBestEffort({Cas::RootNamespace{key.first}, key.second}, st, "abandoning a build during transaction destruction");
+}
+
+void ContentAddressedTransaction::abandonBuildBestEffort(const Cas::PartRefKey & key, PartStaging & st, const char * what) noexcept
+{
+    try
     {
-        if (!st.build)
-            continue;
-        try
-        {
-            st.build->abandon();
-        }
-        catch (...)
-        {
-            /// A destructor must not throw. But a failed abandon can leave a LIVE-epoch precommit
-            /// binding that neither GC nor the (prior-epoch-scoped) stale-precommit sweep reclaims
-            /// until this mount remounts -- that must be diagnosable, not silently swallowed.
-            tryLogCurrentException(getLogger("ContentAddressedTransaction"),
-                                   "abandoning a build during transaction destruction "
-                                   "(a live precommit binding may persist until remount)");
-        }
+        /// Test-only fault seam; a no-op in production (nothing ever arms it).
+        if (metadata_storage.takeAbandonFailureForTest(key))
+            throw Exception(ErrorCodes::ABORTED, "ContentAddressedTransaction: test-injected abandon failure for {}/{}", key.ns.string(), key.ref);
+        st.build->abandon();
     }
+    catch (...)
+    {
+        /// A failed abandon can leave a LIVE-epoch precommit binding that neither GC nor the
+        /// (prior-epoch-scoped) stale-precommit sweep reclaims until this mount remounts -- that must
+        /// be diagnosable, not silently swallowed.
+        tryLogCurrentException(getLogger("ContentAddressedTransaction"),
+                               std::string(what) + " (a live precommit binding may persist until remount)");
+    }
+    st.build.reset();   /// never re-abandon this build from the destructor
 }
 
 ContentAddressedTransaction::PartStaging &
@@ -410,8 +415,14 @@ void ContentAddressedTransaction::publishStaging(const Cas::RootNamespace & ns, 
             metadata_storage.runAfterPromoteHookForTest({ns, ref});
             if (st.build)
             {
-                st.build->abandon();   /// scratch precommit's protecting job is done; the real manifest is live
-                st.build.reset();      /// never re-abandon this build from the destructor
+                /// The scratch precommit's protecting job is done and the real manifest is live, with its
+                /// outcome already in `out_slot`; what is left is bookkeeping, so a store that refuses the
+                /// abandon's ref-log append now (fence tripped, lease not healthy, deadline exhausted)
+                /// must not fail the commit. This branch runs inside `noexcept` callers --
+                /// `MergeTreeTransaction::afterCommit` writes `txn_version.txt` into committed parts --
+                /// where a throw terminates the server. The live precommit binding is reclaimed after a
+                /// remount, exactly as the destructor already tolerates.
+                abandonBuildBestEffort({ns, ref}, st, "abandoning the scratch build after a repoint");
             }
             st.published = true;
             return;
@@ -1049,10 +1060,7 @@ void ContentAddressedTransaction::removeDirectory(const std::string & path)
             st->content_removed.clear();
             st->entries.clear();
             if (st->build)
-            {
-                st->build->abandon();
-                st->build.reset();
-            }
+                abandonBuildBestEffort(r->refKey(), *st, "abandoning the scratch build after a ref drop");
         }
         return;
     }
