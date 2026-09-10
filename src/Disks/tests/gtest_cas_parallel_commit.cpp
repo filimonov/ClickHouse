@@ -311,6 +311,37 @@ TEST(CASCommitRollback, AbandonRefusedAfterRepointDoesNotFailCommit)
     EXPECT_NE(fx.currentManifest(key), before);
 }
 
+/// The removal path drops the ref durably and then abandons this transaction's scratch build. A
+/// refused abandon must not fail the removal or the commit (same `noexcept` callers as above), the
+/// removal must consume the seam, and the ref must stay absent. Covered for a committed ref (a durable
+/// drop) and, below, for a ref that was never published (the absent-ref return, no durable drop).
+TEST(CASCommitRollback, AbandonRefusedAfterRefDropDoesNotFailCommit)
+{
+    auto fx = makeCaWiringFixture();
+    const Cas::PartRefKey key{fx.ns(), "a_drop_1_1_0"};
+    fx.commitSimplePart(key, 1);
+    auto txn = fx.beginTxn();
+    fx.stageInto(txn, key, 1);
+    fx.storage->armAbandonFailureForTest(key);
+    EXPECT_NO_THROW(txn->removeDirectory(CaTxnRollbackFixture::tablePrefix() + "/" + key.ref));
+    EXPECT_FALSE(fx.storage->takeAbandonFailureForTest(key)) << "the removal must have consumed the seam";
+    EXPECT_NO_THROW(txn->commit({}));
+    EXPECT_FALSE(fx.partAccess().existsRef(key, Cas::Freshness::ForceFresh));
+}
+
+TEST(CASCommitRollback, AbandonRefusedAfterAbsentRefDropDoesNotFailCommit)
+{
+    auto fx = makeCaWiringFixture();
+    const Cas::PartRefKey key{fx.ns(), "a_never_published_1_1_0"};
+    auto txn = fx.beginTxn();
+    fx.stageInto(txn, key, 1);
+    fx.storage->armAbandonFailureForTest(key);
+    EXPECT_NO_THROW(txn->removeDirectory(CaTxnRollbackFixture::tablePrefix() + "/" + key.ref));
+    EXPECT_FALSE(fx.storage->takeAbandonFailureForTest(key)) << "the removal must have consumed the seam";
+    EXPECT_NO_THROW(txn->commit({}));
+    EXPECT_FALSE(fx.partAccess().existsRef(key, Cas::Freshness::ForceFresh));
+}
+
 TEST(CASCommitRollback, RepointByOtherWriterSurvivesRollback)
 {
     auto fx = makeCaWiringFixture();

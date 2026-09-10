@@ -123,25 +123,35 @@ ContentAddressedTransaction::~ContentAddressedTransaction()
     /// compensate for; it only needs to abandon still-open builds below.
     for (auto & [key, st] : parts)
         if (st.build)
-            abandonBuildBestEffort({Cas::RootNamespace{key.first}, key.second}, st, "abandoning a build during transaction destruction");
+            abandonBuildBestEffort(key.first, key.second, st,
+                "abandoning a build during transaction destruction (the precommit is left to the writer cleanup duty)");
 }
 
-void ContentAddressedTransaction::abandonBuildBestEffort(const Cas::PartRefKey & key, PartStaging & st, const char * what) noexcept
+void ContentAddressedTransaction::abandonBuildBestEffort(
+    const std::string & ns, const std::string & ref, PartStaging & st, const char * what) noexcept
 {
+    /// Everything that can allocate stays inside a catch boundary: this runs from the destructor.
     try
     {
         /// Test-only fault seam; a no-op in production (nothing ever arms it).
-        if (metadata_storage.takeAbandonFailureForTest(key))
-            throw Exception(ErrorCodes::ABORTED, "ContentAddressedTransaction: test-injected abandon failure for {}/{}", key.ns.string(), key.ref);
+        if (metadata_storage.takeAbandonFailureForTest({Cas::RootNamespace{ns}, ref}))
+            throw Exception(ErrorCodes::ABORTED,
+                "ContentAddressedTransaction: test-injected abandon failure for {}/{}", ns, ref);
         st.build->abandon();
     }
     catch (...)
     {
-        /// A failed abandon can leave a LIVE-epoch precommit binding that neither GC nor the
-        /// (prior-epoch-scoped) stale-precommit sweep reclaims until this mount remounts -- that must
-        /// be diagnosable, not silently swallowed.
-        tryLogCurrentException(getLogger("ContentAddressedTransaction"),
-                               std::string(what) + " (a live precommit binding may persist until remount)");
+        /// A refused abandon leaves the precommit unsettled. Resetting the build below runs
+        /// `PartWriteTxn`'s destructor, which queues the writer cleanup duty for that precommit; a
+        /// successor's recovery sweep is the backstop. It must stay diagnosable, but a logging failure
+        /// must not keep the reset from running.
+        try
+        {
+            tryLogCurrentException(getLogger("ContentAddressedTransaction"), what);
+        }
+        catch (...)
+        {
+        }
     }
     st.build.reset();   /// never re-abandon this build from the destructor
 }
@@ -420,9 +430,10 @@ void ContentAddressedTransaction::publishStaging(const Cas::RootNamespace & ns, 
                 /// abandon's ref-log append now (fence tripped, lease not healthy, deadline exhausted)
                 /// must not fail the commit. This branch runs inside `noexcept` callers --
                 /// `MergeTreeTransaction::afterCommit` writes `txn_version.txt` into committed parts --
-                /// where a throw terminates the server. The live precommit binding is reclaimed after a
-                /// remount, exactly as the destructor already tolerates.
-                abandonBuildBestEffort({ns, ref}, st, "abandoning the scratch build after a repoint");
+                /// where a throw terminates the server. The unsettled precommit goes to the writer
+                /// cleanup duty, exactly as the destructor already tolerates.
+                abandonBuildBestEffort(ns.string(), ref, st,
+                    "abandoning the scratch build after a repoint (the precommit is left to the writer cleanup duty)");
             }
             st.published = true;
             return;
@@ -1060,7 +1071,13 @@ void ContentAddressedTransaction::removeDirectory(const std::string & path)
             st->content_removed.clear();
             st->entries.clear();
             if (st->build)
-                abandonBuildBestEffort(r->refKey(), *st, "abandoning the scratch build after a ref drop");
+            {
+                /// The ref drop above is already durable (or the ref was absent); the build is this
+                /// transaction's own scratch and is discarded either way. Same tolerance as after a repoint.
+                const Cas::PartRefKey rk = r->refKey();
+                abandonBuildBestEffort(rk.ns.string(), rk.ref, *st,
+                    "abandoning the scratch build after a ref drop (the precommit is left to the writer cleanup duty)");
+            }
         }
         return;
     }
