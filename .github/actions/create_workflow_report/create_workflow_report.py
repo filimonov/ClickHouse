@@ -260,7 +260,7 @@ def _git_log_merge_prs(
         if not m:
             continue
         pr_number, head_owner = int(m.group(1)), m.group(2)
-        if head_owner.lower() != repo.split("/")[0].lower():
+        if head_owner == 'ClickHouse':
             continue
         rows.append(
             {
@@ -280,7 +280,9 @@ def _find_release_baseline(
     branch_ref: str, repo: str, cwd: str | None
 ) -> tuple[str | None, str | None, str | None]:
     """Return (tag_name, tag_sha, published_date YYYY-MM-DD) for the latest
-    non-draft release tag that is an ancestor of branch_ref."""
+    non-draft release tag that is an ancestor of branch_ref.
+    Version-tag refs skip the matching release so the range is previous→this tag.
+    """
     if not GITHUB_TOKEN:
         return None, None, None
     headers = {
@@ -295,6 +297,8 @@ def _find_release_baseline(
         raise Exception(
             f"GitHub API request failed: {response.status_code} {response.text}"
         )
+    parsed = _parse_release_ref(branch_ref)
+    skip_current = parsed is not None and parsed[2] is not None
     for rel in response.json():
         if rel.get("draft"):
             continue
@@ -305,6 +309,8 @@ def _find_release_baseline(
         if not tag_sha:
             continue
         if not _git_is_ancestor(tag_sha, branch_ref, cwd):
+            continue
+        if skip_current and _git_is_ancestor(branch_ref, tag_sha, cwd):
             continue
         published_at = rel.get("published_at") or rel.get("created_at") or ""
         published_date = published_at[:10] if published_at else None
@@ -362,8 +368,8 @@ def get_prs_in_release_dataframe(
     f"""
     PRs merged into branch_ref that belong in the next release notes: after the latest GitHub
     Release tag on this history, or after the oldest rebase bootstrap if no such tag exists.
-    Only merge commits whose subject has from <repo_owner>/ (e.g. from Altinity/) are included.
-    Columns: pr_number, pr_name, labels. Omits PRs labeled cicd.
+    Merge commits whose subject is from the upstream repository (ClickHouse/) are omitted.
+    Columns: pr_number, pr_name, labels.
 
     Returns (dataframe, baseline_date YYYY-MM-DD or None).
     """
@@ -387,11 +393,18 @@ def get_prs_in_release_dataframe(
         check=False,
     )
 
+    parsed = _parse_release_ref(branch_ref)
+    fetch_ref = (
+        f"refs/tags/{branch_ref}"
+        if parsed is not None and parsed[2] is not None
+        else branch_ref
+    )
+
     baseline_sha = None
     baseline_date = None
     for _ in range(DEEPEN_CAP // DEEPEN_STEP):
         subprocess.run(
-            ["git", "fetch", f"--deepen={DEEPEN_STEP}", "origin", branch_ref],
+            ["git", "fetch", f"--deepen={DEEPEN_STEP}", "origin", fetch_ref],
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -1116,11 +1129,12 @@ def backfill_skipped_statuses(
 
     skipped_jobs = []
     for job in workflow_result["results"]:
-        if job["status"] == "skipped" and len(job["links"]) > 0:
+        status = job["status"].lower()
+        if status == "skipped" and len(job["links"]) > 0:
             skipped_jobs.append(
                 {
                     "job_name": job["name"],
-                    "job_status": job["status"],
+                    "job_status": status,
                     "message": job["info"],
                     "results_link": job["links"][0],
                 }
