@@ -241,7 +241,9 @@ mentions a specific storage backend, a fork, or a ticket.
 ## 4. Tests, failing-first order {#tests}
 
 One stateless test `0_stateless/<next number>_transaction_metadata_store_retry.sh`, tags `no-ordinary-database,
-no-encrypted-storage, no-object-storage, no-parallel` (server-wide failpoints; raw metadata files are read), using `transactions.lib` (`tx_async`, `tx_wait`) like
+no-replicated-database, no-shared-merge-tree, no-encrypted-storage, no-object-storage, no-parallel` (server-wide failpoints;
+raw metadata files are read; in a Replicated database the transactional `ALTER UPDATE` of scenario B is routed through
+replicated DDL, which is refused inside a transaction), using `transactions.lib` (`tx_async`, `tx_wait`) like
 `04141_transaction_after_commit_no_premature_wakeup.sh`, with a `trap` that disables both failpoints on exit.
 
 The callback processes its objects one after another, and a REGULAR failpoint stays active until disabled, so the
