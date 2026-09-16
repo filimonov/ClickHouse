@@ -40,7 +40,7 @@ historical or closed must not be read as the current body-publication API.
 | [`BACKLOG/operability-and-introspection.md`](BACKLOG/operability-and-introspection.md) | 24 | Operability & release gates, disk-error audit follow-ups, fsck/introspection surfaces, the `lazy_load_tables` decision. Top items: `[B197]` SYSTEM control surface, `lazy_load_tables` USER DECISION, `[fsck-partial-degrade-false-consistency]`. |
 | [`BACKLOG/performance.md`](BACKLOG/performance.md) | 26 | Read/write path, write-path optimization candidates, stage 2 (postponed), scalability findings from the full-scale campaign. Top items: `[ckpt-read-policy]`, `[ref-catalog-write-hotspot]`, stage-2 concurrent commitPart (postponed). |
 | [`BACKLOG/docs-and-cleanup.md`](BACKLOG/docs-and-cleanup.md) | 25 | Architecture/refactoring (no behavior change), minor/polish, source-layout residue, standing hygiene checklist items. Top items: `[refactor: CasGc split]`, `[Group G]` upstream carve-outs, `[phase4-blob-uploader-descoped]`. |
-| [`BACKLOG/issue-2310.md`](BACKLOG/issue-2310.md) | 2 | Triage of Altinity/ClickHouse#2310 (`ATTACH PARTITION FROM` stalls on relink confirm): the verdict that it is `[relink-confirm-lane-livelock]` on a pre-fix package, and the two items that stayed open. Items: `[attach-partition-cas-relink-residency]`, `[s3-empty-file-multipart-retry]`. |
+| [`BACKLOG/issue-2310.md`](BACKLOG/issue-2310.md) | 2 | Issue CLOSED 2026-09-14 (gate passed on #2300 run 10, fix in 26.6.4.20001). Triage of Altinity/ClickHouse#2310 (`ATTACH PARTITION FROM` stalls on relink confirm): the verdict that it is `[relink-confirm-lane-livelock]` on a pre-fix package, and the two items that stayed open. Items: `[attach-partition-cas-relink-residency]`, `[s3-empty-file-multipart-retry]`. |
 
 Priority legend: **GATE** = release gate; **HARD** = agreed-necessary, not yet done; **DESIRABLE** =
 valuable, not committed; **DOC** = documentation debt; **TEST/INFRA** = validation/harness/CI;
@@ -58,6 +58,70 @@ as a confirmation note rather than inserted separately. Full triage record:
 `.superpowers/sdd/2026-08-03-cas-docs-map-reduce-consolidation/orphan-triage-final.md`.
 
 ## Inbox {#inbox}
+
+### `[cas-txn-commit-inside-noexcept-aftercommit]` A CAS transaction over a committed part runs inside `noexcept` MergeTree-transaction callbacks; any throw there is a server abort (2026-09-10) {#cas-txn-commit-inside-noexcept-aftercommit}
+
+**Observed.** PR #2300 CI run 10 (head f377ba3a499, attempt 2), Stateless amd_asan_ubsan cas-s3 2/2: "Server died",
+signal 6, during `01169_old_alter_partition_isolation_stress` on the query `COMMIT`. `clickhouse-server.err.log`:
+`Terminate called for uncaught exception: Code: 210. DB::Exception: CAS write could not be committed (CAS ref-log
+append for namespace 'stateless-ca-s3/store/044/...' txn 1-804 was refused BEFORE any request was sent — the append
+lane is NOT wedged ... and the txn id is not consumed); retrying later. (NETWORK_ERROR)`, thrown by
+`makeCasWriteRetryLaterExceptionPtr` ← `CasRefLedger::commitRefChunk` ← `flushRefBatch` ← `runRefQueueLeader` ←
+`appendRefOpsOnRuntime` ← `Pool::appendRefOps` ← `PartWriteTxn::abandon` ← `ContentAddressedTransaction::publishStaging`
+(the scratch build's abandon right after a successful `repointRef`). The same namespace logged `refusing snapshot
+publication while the append lane is not Ready (state 1)` in the same second: an ordinary transient refusal. The
+reviewer's independent 2026-09-10 report on the PR reached the same root cause and named it the sole merge blocker.
+
+**Why a transient became an abort.** `TransactionLog::finalizeCommittedTransaction` and
+`MergeTreeTransaction::afterCommit` are `noexcept`. `afterCommit` calls `VersionMetadata::setAndStoreRemovalCSN` /
+`setAndStoreCreationCSN` for every part the transaction touched → `updateInfoWithRefreshDataThenStoreAndSetMetadata`
+→ `storeInfo` → `writeFile(txn_version.txt)` into the COMMITTED part directory; no try/catch anywhere on that path
+(`src/Interpreters/MergeTreeTransaction.cpp`, `src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp`).
+`MergeTreeTransaction::rollback() noexcept` does the same with `RolledBackCSN`. On a content-addressed disk a file
+write into a committed part is a transaction over a live ref, and `publishStaging` takes the repoint branch:
+`checkOpAdmitted(Write)` → `getView(ForceFresh)` → `stageManifest` + `precommitAdd` → `fanOutBlobUploads` →
+`repointRef` → hook → scratch-build `abandon`. Every one of those steps throws on a transient refusal or timeout;
+the abandon is merely the one that fired. Upstream has the same contract hole for any object-storage disk
+(`writeFile` can throw inside `noexcept afterCommit`); on local disks it is practically unreachable, on CAS a
+lease-health refusal is routine, so it is reachable under sanitizer load.
+
+**Landed (point fix, not the class).** fix-cicd 25051b967f0 + 8b8cb8a50d9 + be8666f8f06 (denoised 21249fab1ee;
+cas-gc-rebuild 8d68db5e3c1..fb035142262): `ContentAddressedTransaction::abandonBuildBestEffort(ns, ref, st, what)
+noexcept` — try { seam; `st.build->abandon()`; } catch(...) { log inside its own catch } `st.build.reset()`; used
+after the repoint, after `dropRefIfPresent` on the removal path, and in the destructor (which already had this
+tolerance inline). Nothing allocates outside a catch boundary (it runs from the destructor); the message is a
+literal; the strings come by reference from the route. GC accounting is sound (codex verified against
+`CasPartWriteTxn.cpp:152` and `CasPool.cpp:1677`): the reset runs `~PartWriteTxn`, which queues the writer cleanup
+duty for the unsettled precommit without retiring its build sequence; a successor's recovery sweep is the backstop;
+reclamation is delayed, never premature. Test seam `armAbandonFailureForTest` / `takeAbandonFailureForTest`
+(one-shot, inert and allocation-free when unarmed, gated by `hasAbandonFailureForTest`), tests
+`CASCommitRollback.AbandonRefused{AfterRepoint,AfterRefDrop,AfterAbsentRefDrop}DoesNotFailCommit`. Codex: 3 rounds
+(MAJOR:2 → MAJOR:1 + MINOR → clean). Gates: release `CAS*` 2529, ASan 2533, 0 reports; fail-first verified.
+
+**Why abandon is the ONLY point that may be swallowed.** After the repoint (or the ref drop) the durable outcome is
+already recorded in `out_slot`; the abandon is bookkeeping with a documented fallback. Swallowing any of the other
+five steps would silently drop the `txn_version.txt` write itself and tell the caller nothing.
+
+**Options for the class (estimates 2026-09-10).**
+
+| Option | Where | Size | Risk | Estimate |
+|---|---|---|---|---|
+| Catch at each remaining throw point of the repoint branch in CAS | CAS only | ~50 lines | high: hides a lost durable write from a caller that cannot react | do not do |
+| Tolerate a failed CSN store in `afterCommit`/`rollback`: catch, log, keep the in-memory CSN, rely on the TID→CSN lookup `VersionMetadata::isVisible` already performs (`TransactionLog::getCSN(removal_tid)`), and re-persist at the next opportunity (`appendCSNToVersionMetadata` on part load) | `src/Interpreters/MergeTreeTransaction.cpp` (upstream file; fork patch, portable upstream) | ~30–50 lines + a failpoint test: inject a write failure during `COMMIT`, assert no abort, visibility correct, the Keeper transaction log still gets cleaned | medium: the upstream comment says the CSN write is what lets the ZK log be cleaned ("Write allocated CSN, so we will be able to cleanup log in ZK"); must prove a lost write is a bounded leak, not a stuck log | 1–2 days, mostly the semantic proof |
+| Shrink the CAS surface: a single inline entry written into a committed part should not need a scratch build (no `stageManifest`/`precommitAdd`/`abandon`), one `repointRef` RMW instead | CAS | ~100–150 lines, restructure the repoint branch | medium; reduces six throw points to two, does not remove the class | 1 day |
+| Retry these writes under the lease instead of the 90 s policy | CAS | small | turns the abort into a `COMMIT` that hangs for minutes | not a solution |
+
+**Recommendation.** Option 2 as the class fix (it is the right contract for every object-storage disk, not only
+CAS), option 3 as CAS-side surface reduction. Do not patch site by site again: if another `Terminate called` shows
+`ContentAddressedTransaction::commit` under `afterCommit`, `rollback`, or a destructor, this entry is the plan.
+
+**Related.** `[cas-transient-lease-fence-surfaces-to-clients]` (the same `retrying later` reaching synchronous
+callers); `[ref-catalog-write-hotspot]` and Altinity/ClickHouse#2343 (the load that makes lanes not-Ready);
+`reference_cas_ci_observability_gaps` (the ASan log kept only 12 frames of the exception stack, the terminate stack
+was unsymbolized beyond `terminate_handler`; the chain above was established from the code, the query id and the
+`Child process was terminated by signal 6` line). Evidence: lane-g `tmp/pr2300-cicd-watch/run10/asan_cas_2of2_att2.err.log`
+(line 131680 ff.), `tmp/round9/review/abandon{,2,3}.md`.
+
 
 ### Real-GCS 15-minute soak (2026-09-04, binary 03ccdd795d9) — return items {#gcs-soak-2026-09-04-return-items}
 
@@ -372,6 +436,56 @@ Deferred by the reviews (all triaged as not blocking the merge; the first is the
 - Unused `ProfileEvents` externs in `gtest_cas_ref_catalog.cpp` and `gtest_cas_pool.cpp` (plan-mandated).
 - The two remaining items of `task-1-review.md` (the SDD workspace under `.superpowers/sdd/`, git-ignored; the
   review files there are the only record of them if the workspace is deleted).
+
+### `[drop-path-head-of-line-and-repoint-ramp]` A synchronous DROP waits for an unrelated table's batch, and the per-part repoint grows 30-100x over an MSan shard (2026-09-15) {#drop-path-head-of-line-and-repoint-ramp}
+
+Two findings from the T4 msan investigation (`docs/superpowers/cas/2026-09-16-msan-cas-s3-shard-budget-rca.md` §1.7, shard
+`Stateless (amd_msan, cas s3 storage, parallel, 2/3)` of run 10, binary v26.6.4, no hot-key lane phase A). They
+sit on top of `[PART-REMOVAL-REPOINT]` (`BACKLOG/gc.md`: elide the `delete_tmp_*` repoint; parallel removal via
+`concurrent_part_removal_threshold_for_remote_disk=1`) and `[ref-catalog-cas-starvation]` (namespace removal on
+`ref_catalog`, fixed by hot-key phase A), and neither of those two closes them.
+
+**1. Head-of-line wait in the catalog drop task (upstream code, small portable fix).** With
+`database_atomic_wait_for_drop_and_detach_synchronously = 1` (the stateless test users config) every `DROP TABLE`
+blocks in `DatabaseCatalog: Waiting for table … to be finally dropped`. `dropTableDataTask`
+(`src/Interpreters/DatabaseCatalog.cpp:1649`) takes the current batch, runs `dropTablesParallel`, waits for the
+whole batch, and only then reschedules; a table enqueued while a batch runs waits for the batch's slowest drop
+whatever `database_catalog_drop_table_concurrency` (256 in CI) allows. Measured: `tab_00718` enqueued 10:36:27,
+reached `dropAllData` 10:42:29, exactly when the previous batch's `badFixedStringSort` (6 parts, 379 s) finished;
+a `File` table with nothing to delete waited 5 min 27 s the same way. 13 of the shard's per-test timeouts had
+`DROP TABLE` as the slowest statement (25-564 s) and none was stuck on a single query. The parallel-removal
+threshold above shortens one table's drop; it does not stop the next table waiting for it. Fix shape: reschedule
+the task while a batch is in flight (or drop per table from `enqueueDroppedTableCleanup` when `ignore_delay`), so
+a synchronous drop only ever waits for its own table. Grade as an upstream patch: compact, motivated by the CAS
+lane, useful outside it.
+
+**2. The per-part repoint cost is not constant: 0.35 s early, 10-37 s late.** `[PART-REMOVAL-REPOINT]` measured
+0.7-1.5 s per part as a flat cost. On the msan shard the drop-task thread's own timestamps give, per part removed
+(`Removing N parts from filesystem (serially)` to the last `Repointed committed ref … delete_tmp_*`): hour 07
+median 0.83 s, 08: 2.38 s, 09: 6.66 s, 10: 10.73 s (p90 23 s, max 37 s); a 7-part table took 3 min 5 s at 10:42.
+What is known about where the time goes, and what is not:
+- The ledger is one per pool (`CasPool.h:1245`, `CasRefLedger ref_ledger`) with one leader-flush queue
+  (`appendRefOpsOnRuntime`); the periodic `system.stack_trace` samples of local runs 7 and 8 show removal threads
+  waiting either in that queue (18 threads at once in one run-7 sample, `IMergeTreeDataPart::remove →
+  moveDirectory → republishRef → precommitAdd → appendRefOps → appendRefOpsOnRuntime`) or as the leader inside
+  the conditional PUT of the `_log` chunk / `_ckpt` (`commitRefChunk`, `publishCkpt` → `finalizeConditionalWrite`
+  → `TaskTracker::waitAll`). Run 8 totals: `CASRefBatchFlushes` 262,468 for `CASRefBatchedMutations` 291,366,
+  i.e. ~1.1 mutations per flush, the combiner almost never fires; `CASRefQueueWaitMicroseconds` 19,889 s.
+- It is NOT raw PUT latency: in the CI log the sampled `WriteBufferFromS3` Create→Close for `_log` / `_ckpt` keys
+  grows only from 22 ms to 81 ms median (p90 58 → 175 ms) between hours 07 and 10, max 12 s once. A 3.7x
+  growth in PUT cannot make a 30-100x growth in repoint unless the queue in front of the PUT is deep or tail
+  PUTs dominate. The CI log is silent inside the gap (no line between the `Removing N parts` and the first
+  `Repointed`), and run 8's `query_log`/`cas_log` were empty, so the split between queue wait and PUT tail is
+  unmeasured.
+- Open: whether the ramp is the pool-wide serial lane saturating under the whole shard's ref traffic (inserts,
+  removals, GC intake all through one queue at ~1 PUT per mutation), or the store's tail latency. This decides
+  whether eliding the repoint halves the cost or removes it.
+
+Next measurement (before any code): a run with `query_log`, `cas_log` and `system.stack_trace` sampling enabled on
+a plain disk, then per part removal: `CASRefQueueWaitMicroseconds` of the removing thread vs the `_log` PUT
+latency of the same flush, by hour. One number each answers the open question above. Then order the fixes:
+(1) here, the catalog batch wait; (2) `[PART-REMOVAL-REPOINT]`'s elided repoint if the queue dominates, or the
+store latency work of `{#gc-backlog-runaway}` / RustFS knobs if the tail dominates.
 
 ### `[hot-key-lane-phase-b]` Hot-key lane phase B: combining, GCS spacing, the hold clamp, the GC erase, `_ckpt` (2026-09-04) {#hot-key-lane-phase-b}
 
@@ -1796,6 +1910,217 @@ Housekeeping folded in:
   `NETWORK_ERROR` — our own soaks would ride through a #2243 event and score it recoverable; add a
   lease-loss detector (count `TransientNotLive` windows / `CasMountLeaseKeeper` errors) to checkpoints.
 
+## GC falls behind without bound under sustained small-part churn (measured 2026-09-15) {#gc-backlog-runaway}
+
+Local msan rig, CI msan binary v26.6.4, 6 passes of the CI shard 2/3 test list on one server (3 h 24 min), RustFS
+rc.3 in its own cgroup (`tmp/investigation/t4/msan_local/analysis/REPORT_run7.md` in lane-g): GC round duration
+24.3 s → 596.8 s (24x) against a 20 s interval, `CASGCPendingReclaim_cas_s3` 81 → 35,351 (436x), rounds per 10 min
+23 → 1. Round length tracks the backlog (r = 0.92) more than the object store's delete latency (r = 0.57, RustFS
+`delete` 0.4 → 44 ms with store size), so the loop is inside CAS: the bigger the backlog, the longer the round, the
+more the backlog grows. GC is ~1/3 of all object-store operations in that run (run 3 events: ~890k GC reads, 290k
+`CASGCMetaOps`, ~510k graduation HEADs of ~4.7 M S3 requests). On NVMe the tests do not feel it (iteration 6 / 1
+median 1.17); on the CI runner's slow disk it is the likeliest amplifier of the msan/tsan CAS-S3 lane ramp
+(issue #2298). The CI msan shard's own log shows round 27 at +61 min = ~135 s per round already in hour one.
+
+**Which phases grow, and why** (live `system.cas_gc_log` of run 8, `cas_s3`, 5-minute windows; the `round` column
+is 0 on `Phase` rows — use `round_id`):
+
+| window | rounds | `defer_decision` | `fold_ref_intake` | `pending_deletes` | `fold_reduce` | `namespace_cleanup` |
+|---|---|---|---|---|---|---|
+| 0-5 min | 11 | 0.2 s | 0.5 s | 0.1 s | 0.6 s | 0.8 s |
+| 15-20 min | 6 | 10.9 s | 9.7 s | 8.4 s | 3.9 s | 2.0 s |
+
+- `defer_decision`: a full LIST of the ref-log prefix across every namespace each round, `ref_log_keys_listed`
+  2,308 → 19,415, `namespaces_seen` 105 → 434 — of which `dead_life_debris` 51 → 403 (93-95 %): with one live test
+  table on the server, almost everything the LIST walks is dropped tables' debris waiting for cleanup.
+- `fold_ref_intake`: one GET per ref-log record (`logs_applied` 613 → 2,102 per round); the unmerged fold read-ahead
+  branch (2.4x intake) targets exactly this.
+- `pending_deletes`: `deleted` 60 → 1,181 per round at ~7 ms each (exact-token DELETE + graduation HEAD); RustFS
+  `delete` latency itself grows 0.4 → 44 ms with store size (run 7), which is where the loop closes.
+- `fold_reduce`: one HEAD per zero-transition candidate.
+The other 13 phases stay in the tens of milliseconds.
+
+**Why the debris cleanup does not keep up** (`CasGc.cpp:352-386`, `CasNamespaceJanitor.cpp`): the janitor runs ONCE
+per round over ONE page of 1,000 keys (page size hard-coded at `CasGc.cpp:363`), deleting dead-life objects one by one
+(HEAD + exact `remove`; the bulk-delete path is not used), and it runs AFTER the LIST/intake phases, so what it removes
+was already listed and read in the same round. Its throughput is `page × rounds/min`, and rounds/min collapses as the
+listed debris grows (11 → 4 rounds per 5 min; namespace removals per window 417 → 10 while 403 dead lives waited):
+a positive feedback loop. Namespace deaths themselves are folded (`new_removals`, ~35-40 per folding round). No
+setting bounds this: `gc_round_ref_cleanup_budget` (5000) is not the limiter.
+
+Asks, in order of size:
+1. **Small, measurable first:** make the janitor's pages per round and page size settings (`gc_round_janitor_pages`,
+   default 1; `gc_janitor_page_keys`, default 1000) and let a round run pages while dead candidates and a time budget
+   remain; move `namespace_cleanup` BEFORE `defer_decision` so a round does not list what it is about to delete.
+   A/B on the msan rig (`pages=10`) in one run.
+2. **Medium:** batch the janitor's deletes through the existing bulk-delete path (`gc_bulk_delete_chunk_keys`; the
+   LIST already carries etags, skip the per-key HEAD where the token is known), and delete the covered ref logs of
+   dead lives together with them instead of waiting for retention prune.
+3. **Structural, the real O(debris) fix:** replace the global hint enumeration (`enumerateRefPrefix`,
+   `CasGc.cpp:3955`: one LIST of `<prefix>/cas/ns/stream/` over everything incl. dead lives) with the catalog cut
+   (already one GET per round, `CasRefCatalog::read` in `listRefPrefix` `:4003`) plus one frontier probe per LIVE life
+   (GET of `refLogKey(life, last_folded + 1)`, 404 = unchanged — the same probe fold intake already makes for
+   `frontier_proven`/`absent_probes`), and a per-life LIST of `<prefix>/cas/ns/stream/<life>/_log/` only for the
+   lives that fold. Run 8 at 20 min: 20 LIST pages / 19,415 keys (93 % debris) would become ~30-50 small requests
+   with zero debris sensitivity. A cross-round index of dead lives does NOT help by itself: S3 still walks their
+   keys, only the parsing is saved. Also note `gc_fold_threshold = 1` (`CasPool.h:160`) means every round with one
+   new log anywhere folds (`deferred = 0` throughout the runs) and the defer verdict is computed AFTER the full LIST,
+   so a deferred round pays the whole enumeration anyway.
+4. Bound the work per round / make the drain rate independent of the backlog (batching deletes; merge the fold
+   read-ahead branch `cas-gc-fold-read-ahead`, 2.4x intake, implemented and NOT merged); back off rounds when the
+   store's delete latency is high instead of stacking longer rounds.
+5. Export `cas_gc_log` round and phase durations to the CI artifacts so this is visible per run.
+Corrections from the run-8 `cas_gc_log` dump (brainstorm rev.2, `docs/superpowers/specs/2026-09-15-cas-gc-dead-namespace-debris-cleanup-design.md`):
+- "deferred = 0 throughout" is wrong for run 8: 12 of 85 rounds were deferred.
+- The janitor's limiter is REQUEST COUNT, not page count: over 85 rounds it visited 55,285 keys and deleted 22,888,
+  a full 1000-key page costs 1.3-7.4 s (~7 ms per key: HEAD + exact DELETE, serial). Raising pages per round first
+  would lengthen rounds and partly cancel itself. Revised order: (1) batch the janitor's write-once `_log`/`_snap`
+  deletes through `removeChunkWriteOnceOrOneByOne` (~60 lines, no license change; a page becomes 1-2 batch requests),
+  (2) page settings at the existing phase position (the reorder before `defer_decision` is NOT invariant-preserving:
+  `suppress_destructive` comes from the fold verdict), (3) the targeted drain of retired lives.
+- `gc_round_ref_cleanup_budget` IS the limiter on the rounds where covered-log cleanup is live: of 73
+  `ref_object_cleanup` rows, 66 deleted nothing and 6 sat exactly on the 5,000 cap — bimodal, i.e. cleanup fires only
+  for lives that hold a checkpoint-authorized snapshot (`planRefCleanup` returns early without a checkpoint,
+  `CasRefProtocol.cpp:822-835`), and short-lived test tables never publish one (run 8: ~40 `_snap` keys for 434 lives).
+- Safety notes from the codex review of the brainstorm: `retired_lives` are lives observed absent/replaced during
+  reconciliation, not proof that this actor erased them; the janitor's liveness lambda is a per-page cached
+  `authority_held` (`CasGc.cpp:364-367`, `4692-4703`) and cannot fence a concurrent new leader; `Removing` lives still
+  have recovery readers (`namespaceStillLogicallyPresent`, `dropNamespaceImpl` retry), so deleting on the DROP path
+  is rejected. Open question for the owner: may the round's drain phase perform physical deletes at all.
+CI-side mitigation without GC changes: system logs of the CAS lanes on a plain disk (every log flush onto `cas_s3`
+is new ref logs and objects), which also shrinks the RustFS object count.
+Related: RustFS `delete`/`delete_version` latency growth with object count (RustFS side),
+`[part-removal-repoint-waste]`.
+
+## `[covered-log-cleanup-aborts-on-catalog-etag]` Covered-log cleanup aborts before its first delete whenever any other namespace changed since the fold (found by the janitor review, 2026-09-16) {#covered-log-cleanup-aborts-on-catalog-etag}
+
+Found by the codex review of the janitor brainstorm (`docs/superpowers/reports/2026-09-15-cas-gc-dead-namespace-debris-cleanup-codex-reviews/review_r2.md` MAJOR 1,
+`BRAINSTORM.md` rev.3a §1(d) and §7 question 5). Recorded here as its own item: it is outside the janitor's
+scope and may be the larger lever.
+
+**Mechanism.** `Gc::cleanupRefObjects` deletes the `_log` objects of **live** lives that are already covered
+by their checkpoint. Before its first chunk it re-reads the pool catalog and, in `authorityHolds`
+(`Gc/CasGc.cpp:3590-3605`), requires `current_catalog.etag == folded.catalog_cut->etag` — equality of the
+**whole pool catalog** with the cut taken at fold time — in addition to the per-namespace checks (row
+unchanged, life resolves to the same incarnation, `gc/state` present with the same owner/sequence). The
+etag condition is the strict one: any `CREATE` or `DROP` of any other table between the fold and the cleanup
+changes it, and the caller then stops the entire pass before the first delete (`:3690-3691`). The code
+comment says the strictness is deliberate: "every irreversible delete is still licensed by the SAME complete
+catalog observation and GC lease that adopted the fold".
+
+**Measured (run 8 of the msan rig, `RIG/run8/samples/cas_gc_log.tsv`, 85 `ref_object_cleanup` rows, stage
+read off each row's ProfileEvents: the catalog GET classifies as `Other`, `/cas/ns/` reads as `Root`):**
+
+| stage reached | rows |
+|---|---|
+| no object read at all (no checkpoint / no `checkpoint_snapshot_id`; `planRefCleanup` returns early) | 37 |
+| nonempty chunk built, then `authorityHolds` false at the catalog comparison | **40** |
+| failed after the catalog comparison | 0 |
+| deleted something | 8 (7 at the 5,000 `gc_round_ref_cleanup_budget` cap) |
+
+Under a workload that creates and drops tables continuously, the etag rarely survives from the fold to the
+cleanup; the phases in between (`pending_deletes`, `fold_reduce`) are exactly the ones that grow over the run
+(`{#gc-backlog-runaway}`), so the window widens as the round lengthens.
+
+**Why it matters beyond cleanup.** Covered logs the pass fails to delete stay under the live life's `_log/`,
+are listed by every global `enumerateRefPrefix` LIST (`defer_decision` growth), and become dead-life debris
+for the janitor when the table is dropped. So the aborts feed the very debris that S1/S2 make the janitor
+remove faster: **longer round → cleanup aborts more → more objects → longer LIST → longer round.** The 8
+successful rows deleted 23,840 objects; 40 aborted rounds at up to 5,000 each is the order of the backlog
+this can produce per run.
+
+**Plan, three steps, no step before the previous one's result:**
+
+0. *Estimate from existing data, no code.* From run 8's Phase rows: the window between the fold's catalog cut
+   and `ref_object_cleanup` per round, against the lane's CREATE/DROP rate. If the window is seconds and the
+   rate is several per second, survival of the etag is structurally near zero and the question is not "how
+   often" but "is whole-catalog equality required at all".
+1. *Measurement with code, one local run.* Split the stop reason in `authorityHolds` into ProfileEvents:
+   etag-only (row and life of THIS namespace unchanged), row/life changed, `gc/state` absent or owner/sequence
+   changed; plus, per round, the number of objects planned and not deleted because of the abort. Release
+   build in lane-g, local ca-s3 stateless lane, 60-90 min, dump `cas_gc_log` and events. Result: the share
+   of aborts whose per-namespace licence was intact, and the undeleted volume per run. ca-impl, half a day.
+2. *Brainstorm on the licence, only if etag-only dominates.* The narrow question: which observation must be
+   unchanged to delete write-once `_log` keys of one life that its own checkpoint covers. Candidates:
+   (a) narrow the licence to row + life + `gc/state`, dropping whole-catalog etag equality — the argument is
+   that the keys are write-once, belong to one life, and the plan derives from that life's durable
+   checkpoint, so other namespaces' churn changes neither the key set nor its coverage; the counter-argument
+   to answer is the author's "same complete observation" comment, i.e. whether the fold seal or this life's
+   coverage depends on the rest of the cut; (b) keep the licence, re-read the catalog and take a fresh cut
+   immediately before the cleanup inside the same round, shrinking the window to milliseconds; (c) move the
+   cleanup phase to right after the fold while the cut is fresh. Constraints in: the round stays one-pass,
+   LIST trust is not reopened, no new object kinds. ca-arch with the code, then codex in a loop capped at
+   three rounds.
+
+**Not to do:** relax the etag check directly. It is a licence on irreversible deletes and the comment says
+the strictness is intended. Numbers first, then the invariant, then code.
+
+Related: `{#gc-backlog-runaway}`, `[targeted-drain-of-retired-lives]`, `[PART-REMOVAL-REPOINT]`
+(`BACKLOG/gc.md`).
+
+## `[targeted-drain-of-retired-lives]` FROZEN, not designed: draining a retired life's prefixes right after reconciliation (approach A of the janitor brainstorm, 2026-09-15) {#targeted-drain-of-retired-lives}
+
+Source: `docs/superpowers/specs/2026-09-15-cas-gc-dead-namespace-debris-cleanup-design.md` rev.3 §A, and the three codex review rounds
+(`docs/superpowers/reports/2026-09-15-cas-gc-dead-namespace-debris-cleanup-codex-reviews/`). Status by owner decision 2026-09-16: **frozen as "not
+designed"**. It is not scheduled after S1/S2; whether it is worth building at all is decided by the S1/S2
+measurements (`{#gc-backlog-runaway}`).
+
+**The idea.** `pre_fold_ref_drain` erases every eligible `Removing` row and the reconciler returns
+`retired_lives` (`Gc/CatalogLifecycleReconciler.h:32-34`); both per-life prefixes are constructible from the
+incarnation (`Formats/CasLayout.h:134-143`). A would, after a drain that reports `Authoritative` and
+`DrainComplete`, and only for a life that the unambiguous `final_catalog_cut` no longer resolves, delete that
+life's `namespaceStreamPrefix` (batched write-once deletes) and `namespaceStatePrefix` (exact removes), leaving
+the global janitor page as a backstop. Cost per dead life: 2 LISTs, 1 batch delete, a few exact removes.
+~150 lines plus a budget setting. The attraction: today's janitor finds dead-life debris only by paging the
+global `<prefix>/cas/ns/stream/` LIST, one 1,000-key page per round, and 93-95% of listed keys are that debris.
+
+**Why it is frozen: five review findings, each a legitimate reader or writer of a retired prefix that the
+design did not fence, and each answered in the brainstorm by one more precondition rather than an
+invariant.**
+
+1. `retired_lives` records lives *observed* absent or replaced, including on `FencedOut`
+   (`Gc/CatalogLifecycleReconciler.cpp:99-118`, `Pool/CasRefCatalog.cpp:474-484`, `525-536`); it is not proof
+   that this actor erased the row. Only the conjunction with an unambiguous final cut is a licence (r1 #1).
+2. Two GC actors can overlap. The janitor's liveness callback is a flag refreshed once per page
+   (`Gc/CasGc.cpp:364-367`, `4692-4703`); `CasOperation::gate` samples it without refreshing the lease
+   (`Backend/CasRequests.cpp:413-425`) and cannot cancel an in-flight delete. A successor leader's janitor and
+   a stale leader's drain can hit the same prefix. Per-chunk authority refresh improves stopping, it is not
+   fencing (r1 #2).
+3. `Removing` lives still have readers: `namespaceStillLogicallyPresent` and a retried DROP both call
+   `ensureRefTableRecovered` first (`Pool/CasRefLedger.cpp:5063-5071`, `5146-5155`), and recovery over drained
+   inputs **throws `CORRUPTED_DATA`**, non-transiently: `chooseRecoveryGrounding` throws for a `Live` or
+   `Removing` namespace with no readable `_ckpt` (`Pool/CasRefCkpt.cpp:142-151`); partial drainage throws on
+   missing committed logs under an unchanged checkpoint (`:1067-1081`); the outer retry treats corruption as
+   final (`:1489-1494`). Rev.2's "a cold probe answers present conservatively" and "a DROP retry proceeds to a
+   terminal append" were both wrong. The window exists today (the janitor deletes the same bytes after the row
+   erase); A narrows it from many rounds to part of one round and so raises the hit rate (r1 #4, r2 #2).
+4. A drained prefix is not guaranteed empty: a snapshot publisher captures live state and then creates at the
+   captured life's `_snap` key (`Pool/CasRefLedger.cpp:4543-4544`); its admission checks mount generation and
+   runtime flags (`:4445-4456`), which retirement invalidates but cannot un-send. A PUT in flight lands after
+   the drain. "Nothing can write under a dead incarnation" is withdrawn; the true guarantee is only "a
+   successor life uses a different prefix" (r2 #4).
+5. Bulk deletion is accounting-atomic, not physically all-or-nothing (`removeManyWriteOnce` contract), so a
+   partially drained prefix is a normal outcome, and `deletePrefixWholesale`'s `out_fully_drained` means
+   "enumeration exhausted", not "prefix empty" (`Gc/CasGc.cpp:3733-3757`) (r2 #3).
+
+The accretion is the signal: after two rounds A carried "publisher quiescence", "per-chunk authority
+refresh", "own budget", "backstop stays forever", and two blocking open questions (may the drain phase perform
+physical deletes at all; how the callers in 3 handle the exception). The system's recovery model treats a
+missing checkpoint of a `Live`/`Removing` life as corruption, not as "nothing to recover", and there is no
+durable marker "this prefix may be destroyed" that recovery, the publisher, a DROP retry and a second GC
+actor all consult. Without that marker A is a race by construction and the backstop does the real work.
+
+**What would unfreeze it.** A retirement-fence invariant designed first, on its own: who may read or write a
+retired life's prefix and until which durable event; recovery over a fenced life refuses (not
+`CORRUPTED_DATA`), publisher admission and DROP retry check the fence, and the fence is visible in the
+catalog cut a successor leader derives. Only then is a targeted drain a licence instead of a bet. That is
+architectural work, not a janitor optimisation, and it is justified only if S1/S2 leave the janitor unable to
+keep up with debris production.
+
+**Decision pending from the owner, no default:** whether a round's drain phase may perform physical deletes
+at all. Today the drain erases catalog rows under the lease (`Pool/CasRefCatalog.cpp:514-517`) and performs
+no physical cleanup; nothing in the code states either way.
+
 ## Issue #2244 (filed by us): lease/remount retry asymmetry — CI RCA of job 96307284077 (2026-08-20) {#issue-2244-lease-retry-asymmetry}
 
 https://github.com/Altinity/ClickHouse/issues/2244 — full RCA in the issue. Before the minimum fix, the
@@ -1819,18 +2144,34 @@ The minimum pre-release fix is specified in
 `docs/superpowers/specs/2026-08-23-cas-mount-renewal-retry-design.md`: ambiguity-aware in-period
 renewal retries, renewal/remount observability, and the snapshot-refusal backoff hole. It deliberately
 does not change the remount protocol. **Implemented 2026-08-24:** the minimum cut and its focused/full
-TLA+, Release/Debug, proxy-integration, and 15-minute S39 gates are complete. The separately anchored
-per-step remount follow-up below remains open.
+TLA+, Release/Debug, proxy-integration, and 15-minute S39 gates are complete. The per-step remount
+follow-up below landed afterwards (see its CLOSED note). **Issue closed 2026-09-14**; first release with
+the whole fix: 26.6.4.20001.altinityantalya.
 
-### Issue #2244 follow-up: per-step remount recovery {#issue-2244-remount-retry-follow-up}
+### Issue #2244 follow-up: per-step remount recovery — CLOSED 2026-09-14 {#issue-2244-remount-retry-follow-up}
 
-After the minimum renewal fix, replace whole-chain remount retry with an explicitly modeled state
-machine. Required design questions: per-step retry classification; which owner/catalog/epoch results
-may be preserved; whether an own ambiguous claim preserves or resets token-stability observation;
-prevention of repeated epoch burning; cancellation at every teardown boundary; and deterministic
-fault injection before/after every state-changing step. This is safety-critical single-writer work and
-requires its own focused TLA+ gate plus a refinement audit against `CaCasMountCore`; do not fold it into
-the minimum renewal implementation without that design review.
+Originally: replace whole-chain remount retry with an explicitly modeled state machine (per-step retry
+classification, preserved owner/catalog/epoch results, own-ambiguous-claim handling, epoch burning,
+teardown cancellation, deterministic fault injection), gated by its own TLA+ pass.
+
+What landed in antalya-26.6 (7f932d31352 "classify mount-claim conflicts", 2026-08-25, and the
+request-engine migration 37c9bd4356b, 2026-09-05), verified against the tree on 2026-09-14:
+- no `SingleAttempt` is left on the mount path: `readOwnerObject`, `claimOwnerOrThrow`, the sentinel
+  probe in `allocateWriterEpoch`, `claimMount` (read/create/replace), `claimMountAwaitingExpiry`,
+  `computeHeartbeatFloor`, `probeNonTerminalMountSlots` all run under `Retry::standard()` (90 s budget,
+  `CasRetry.h:41`); the only remaining "single attempt" is `checkConditionalWriteSingleAttemptSupport`,
+  a backend capability probe;
+- an own claim that landed after a client-side timeout is recognized as ours in `claimMount` ("own
+  claim replayed — refreshed seq + expiry", same uuid + same epoch) instead of resetting the
+  token-stability observation; unresolved conditional writes are settled by the engine's resolve read
+  (`CASRequestResolveRead`);
+- coverage: `gtest_cas_mount_claim_conflicts.cpp`, `gtest_cas_mount.cpp`, `gtest_cas_mount_runtime.cpp`,
+  integration `test_cas_mount_renewal_retry`.
+
+Not done, and no longer blocking anything: the explicit state-machine model with its own TLA+ gate.
+The retry classification was folded into the request engine's policies rather than a mount-specific
+model; the refinement audit against `CaCasMountCore` was not repeated for it. Reopen only if a remount
+defect appears that the engine-level policies cannot explain.
 
 Triage bonus recorded: the RustFS "Erasure decode failed ... downstream_closed" error class is a red
 herring = ClickHouse's silent-by-design mid-body aborts (cancellations, LIMIT, abandoned prefetch);

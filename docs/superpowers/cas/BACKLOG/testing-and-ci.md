@@ -137,3 +137,18 @@ Fix: add one write-path test constructing an unnamed/`SlowDown` `S3Exception` an
 resolves via ambiguity rather than `Refused`; add an `EntityTooLarge`-named case alongside the existing
 `MalformedXML`/`AccessDenied` tests in `gtest_cas_requests.cpp`; add a direct
 `makeCasWriteRetryLaterExceptionPtr` classification test next to `CASWriteResult.OrThrowMapsEveryAlternative`.
+
+## ASan stateless lanes: memory-ceiling failures are a memory-tracker snap, not CAS growth (established 2026-09-09, PR #2300 run 8) {#asan-memory-tracker-snap}
+
+Facts, all measured on `Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 2/2)` and its plain twin `(amd_asan_ubsan, distributed plan, parallel, 2/2)` from `metric_log` (1 s samples), the `MemoryWorker` log lines and `trace_log` symbolised against the CI ASan binary:
+
+- Resident memory is the same on both lanes: 16.5–20 GiB (CAS) and 1.2→21.6 GiB (plain) over the run, with 1600–1800 live server threads on both; the driver is threads × ASan fake stacks (`detect_stack_use_after_return`) plus shadow and redzones, as 483e00c4dd1 already recorded.
+- `MemoryTracking` differs: plain stays at 0.2–1.3 GiB for the whole run; CAS sits at 14.7–19 GiB from 06:51:19 to the end. That is the sole cause of the `(total) memory limit exceeded: would use 15–17 GiB` failures on ordinary tests (17 + 5 on the two CAS shards).
+- The plateau starts in ONE second: 06:51:18.676 `MemoryTracking` = 1.8 MB, 06:51:19.676 = 15.4 GiB. It is not an allocation (no trace rows of that size; `MemoryTrackingUncorrected` = −0.0 GiB, i.e. exactly one correction). It is `src/Common/MemoryWorker.cpp` (non-jemalloc branch, used by every sanitizer build, byte-identical to `altinity/antalya-26.6`): `if (total_memory_tracker.get() < 0 || correct_tracker) MemoryTracker::updateAllocated(resident)` — a negative tracker amount is replaced by resident memory, i.e. by the ASan-inflated RSS.
+- The 11.5 GiB burst just before is the stateless setup insert `INSERT INTO test.hits_s3 SELECT * FROM test.hits` (disk `s3_cache`, not CAS; 16 insert threads); it is released on both lanes (tracked back to 0.3 GiB at 06:50:35).
+- The sub-zero dip is a few MB. Both lanes idle near zero (CAS min 88 KB, plain min 1.1 MB); the CAS lane crossed first. The drift source is `src/Common/memory.h` `untrackMemory`: without jemalloc an unsized delete subtracts `malloc_usable_size`, which the file itself calls inaccurate under sanitizers. Nothing CAS-specific was found (no memory-tracker blockers in CAS code, no blocked-context traces). Run 3's "T1 disappeared" and run 1/8's "T1 present" are consistent with a near-zero coin flip, not with a CAS mechanism.
+- The sibling shard 1/2 shows the same one-second jump (06:52:41).
+
+Not established: the drift rate, and why the CAS lane's idle tracked baseline is ~1 MB lower than the plain lane's.
+
+Fix candidates: (a) `MemoryWorker` non-jemalloc branch resets a negative amount to 0 instead of resident (small upstream-file change; value for every sanitizer lane); (b) symmetric size accounting in `memory.h` without jemalloc; (c) fewer baseline threads on sanitizer lanes (the T4 pool profile, −34 % threads) for the RSS itself. Evidence: lane-g `tmp/pr2300-cicd-watch/run8/` (`symbolize.py`, metric logs, decompressed CI ASan binary under `bin/x/`).
