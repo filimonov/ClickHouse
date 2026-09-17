@@ -765,7 +765,12 @@ frame, with the fault counter of the scenario deciding whether the next `StorePe
 | Action | Guard | Effect |
 |---|---|---|
 | `ProcessDown(cause)` | `server = Up` and a frame with `noexcept_owner` has just faulted under `Terminate` (`StoreFault`), or has `noexcept_retries = NOEXCEPT_RETRY_BUDGET` under `Retry` (`RetryExhausted`), or a `Refuse` was raised inside a `noexcept` call site (`Other`) | the effect of `Crash` on every server variable, `down_cause := cause`, `restarts` unchanged |
-| `StoreRetry(p, f)` | `NOEXCEPT_STORE_FAULT_POLICY = Retry`, frame `f` on `p` has `noexcept_owner` and has just faulted, `f.noexcept_retries < NOEXCEPT_RETRY_BUDGET` | `f.noexcept_retries + 1`, `f.pc := Read`, the frame's `tentative` kept | `NoAvoidableTermination` states `down_cause \in {None, RetryExhausted}` in every state: the server may
+| `StoreRetry(p, f)` | `NOEXCEPT_STORE_FAULT_POLICY = Retry`, frame `f` on `p` has `noexcept_owner` and has just faulted, `f.noexcept_retries < NOEXCEPT_RETRY_BUDGET` | `f.noexcept_retries + 1`, `f.pc := Read`, the frame's `tentative` kept |
+| `KillRetry(m)` | `NOEXCEPT_STORE_FAULT_POLICY = Retry`, `KillRemoveFile(m)` inside `RollbackKill*` has just faulted (a disk fault on the file removal, counted by `disk_faults`), `kill_retries[m] < NOEXCEPT_RETRY_BUDGET` | `kill_retries[m] + 1`, `KillRemoveFile(m)` re-enabled; `KillUnregister` is not repeated, because `killMutation` erases the map entry before touching the file and a repeated call finds nothing, which is the idempotence PR 2396 relies on when it wraps `killMutation` in the retry helper; under `Terminate` the same fault is `ProcessDown(StoreFault)`; an exhausted `kill_retries[m]` is `ProcessDown(RetryExhausted)`, and the file left behind is removed by `RestartLoadMutation` because its transaction has no CSN |
+
+`kill_retries[m]` is a bounded counter of the mutation, declared with the other retry counters.
+
+`NoAvoidableTermination` states `down_cause \in {None, RetryExhausted}` in every state: the server may
 go down only when the model's own fault budget has been exceeded. On the baseline it is expected red as soon as a
 disk fault is enabled; the safety properties then additionally check that the restart recovers a consistent
 state, and the `Retry` policy is the fix under test. In scenarios without disk faults, `NoProcessDown`
