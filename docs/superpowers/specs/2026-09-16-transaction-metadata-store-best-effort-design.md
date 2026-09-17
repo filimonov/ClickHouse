@@ -9,7 +9,7 @@ doc_type: 'design'
 
 # Transaction metadata writes under `noexcept` callbacks do not terminate the server {#transaction-metadata-store-best-effort}
 
-Revision 3e, 2026-09-17 (revision 3d plus the post-implementation reviews: ONCE failpoints, a test without
+Revision 3f, 2026-09-17 (revision 3e plus the full post-fix review: tolerant temporary cleanup in `loadMutations`, session-shutdown lock note; revision 3d plus the post-implementation reviews: ONCE failpoints, a test without
 polling, lazy log descriptions, a backend caveat; before that, revision 3 plus review rounds 3 to 6 and one user decision, no waiting during shutdown: no shutdown exit, idempotent mutation-CSN write
 in its own temporary-file namespace, per-object budget, tests that inspect the persisted records). Revision 1 proposed plain best-effort persistence on the premise that the transaction log
 can always re-derive a CSN by tid; review round 1 refuted it (`TransactionLog::removeOldEntries` deletes the entry
@@ -345,6 +345,16 @@ argues about, not code paths it adds.
   already going to lose the server; it now waits and usually succeeds.
 - **The log updating thread** retries in place when it finalizes an unknown-state transaction, stalling log loading
   and pruning for other transactions for the duration. A slow write stalls it the same way today.
+- **Named-session shutdown.** `Session`'s named-session registry is cleared under its global mutex at shutdown
+  (`Session.cpp:96`); a session whose transaction holder rolls back there runs `rollback`, and with it the retry,
+  under that mutex, before `TransactionLog`'s stop flag is set. Today a slow write holds the same mutex the same
+  way; the retry lengthens it by up to one budget per object. Accepted: it only delays other session operations
+  during shutdown, and moving session destruction outside the mutex is a `Session` change outside this design.
+- **Interrupted `writeCSN` and loading.** After an interruption between the temporary write and `replaceFile`, both
+  `mutation_<N>.txt` (without `csn:`) and `tmp_mutation_csn_<N>.txt` exist. `loadMutations` repairs the canonical
+  file through `writeCSN`, which consumes the temporary name; the directory iterator may still return the
+  consumed entry, so the leftover cleanup removes temporary files with `removeFileIfExists` (found by the full
+  post-fix review; a strict removal failed the table load).
 - **Shutdown signal timing.** `TransactionLog`'s stop flag is set late in server shutdown, after executors are drained
   and databases are shut down (`Context.cpp:981`). A retry running in a background merge commit at that point is
   waited for by the executor drain before the flag can cut it short, so the shutdown shortcut of §3.1 helps
