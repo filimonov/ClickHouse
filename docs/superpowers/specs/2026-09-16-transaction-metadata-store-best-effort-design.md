@@ -9,7 +9,8 @@ doc_type: 'design'
 
 # Transaction metadata writes under `noexcept` callbacks do not terminate the server {#transaction-metadata-store-best-effort}
 
-Revision 3d, 2026-09-16 (revision 3 plus review rounds 3 to 6 and one user decision, no waiting during shutdown: no shutdown exit, idempotent mutation-CSN write
+Revision 3e, 2026-09-17 (revision 3d plus the post-implementation reviews: ONCE failpoints, a test without
+polling, lazy log descriptions, a backend caveat; before that, revision 3 plus review rounds 3 to 6 and one user decision, no waiting during shutdown: no shutdown exit, idempotent mutation-CSN write
 in its own temporary-file namespace, per-object budget, tests that inspect the persisted records). Revision 1 proposed plain best-effort persistence on the premise that the transaction log
 can always re-derive a CSN by tid; review round 1 refuted it (`TransactionLog::removeOldEntries` deletes the entry
 once every snapshot that could need it is released, and `VersionMetadata::tryGetCSN` then reads "no CSN, not
@@ -97,9 +98,13 @@ In `MergeTreeTransaction.cpp`, an anonymous-namespace function:
 /// NOT_IMPLEMENTED, which are rethrown at once. An exhausted budget rethrows,
 /// which keeps the current behaviour (the server terminates) instead of hiding
 /// a lost write.
-template <typename F>
-void retryMetadataStore(LoggerPtr log, std::string_view what, F && store);
+template <typename Describe, typename F>
+void retryMetadataStore(LoggerPtr log, Describe && describe, F && store);
 ```
+
+`describe` returns the object description (`String`) and is called only when a log line is written: a callback
+that never fails formats nothing, and nothing that can allocate or take a mutex runs outside the helper's `try`
+in the `noexcept` callbacks.
 
 Behaviour, for each attempt that throws:
 
@@ -219,17 +224,21 @@ Unchanged. A crash leaves what an unmodified server leaves after a crash at the 
 
 ### 3.6 Failpoints {#failpoint}
 
-Two REGULAR failpoints in `src/Common/FailPoint.cpp`, both throwing `Exception(ErrorCodes::FAULT_INJECTED, ...)`
+Two ONCE failpoints in `src/Common/FailPoint.cpp`, both throwing `Exception(ErrorCodes::FAULT_INJECTED, ...)`
 before any I/O, so a failed attempt leaves the old file:
 
 - `transaction_metadata_store_fail`: first line of `VersionMetadataOnDisk::storeInfoToDataPartStorage`
   (`VersionMetadataOnDisk.cpp:323`).
 - `transaction_mutation_csn_store_fail`: first line of `MergeTreeMutationEntry::writeCSN`, after `csn = csn_`.
 
-Two names because the callback processes objects serially: one failpoint covering both kinds could not be
-disabled "after the parts but before the mutation". Not in `removeFile`: a retry of `killMutation` is a no-op after
-the map erase (§3.2), so a failpoint there would test restart cleanup, not the retry. `FAULT_INJECTED` is neither
-`LOGICAL_ERROR` nor `NOT_IMPLEMENTED`, so the helper retries it.
+ONCE (fires once, then disables itself) is the documented shape for "a transient error in an operation that
+retries" (`FailPoint.h`): the retried write fails exactly once and the next attempt succeeds, so a test needs no
+hand-off between the failing and the succeeding attempt and cannot race the retry budget. Two names because the
+callback processes objects serially and each scenario targets one kind of write. Not in `removeFile`: a retry of
+`killMutation` is a no-op after the map erase (§3.2), so a failpoint there would test restart cleanup, not the
+retry. `FAULT_INJECTED` is neither `LOGICAL_ERROR` nor `NOT_IMPLEMENTED`, so the helper retries it. The
+registration lines sit next to an entry that exists in every branch (`replicated_queue_unfail_entries`), so the
+hunk applies to upstream `master` unchanged.
 
 ### 3.7 Comments {#comments}
 
@@ -246,20 +255,16 @@ raw metadata files are read; in a Replicated database the transactional `ALTER U
 replicated DDL, which is refused inside a transaction), using `transactions.lib` (`tx_async`, `tx_wait`) like
 `04141_transaction_after_commit_no_premature_wakeup.sh`, with a `trap` that disables both failpoints on exit.
 
-The callback processes its objects one after another, and a REGULAR failpoint stays active until disabled, so the
-first object retries until the test intervenes and later objects never start. Each scenario therefore exercises
-the retry on **one** object, the first one the callback reaches, and disables the failpoint after that object's
-first warning:
+The callback processes its objects one after another, and each scenario targets one kind of write with a ONCE
+failpoint, so exactly one object fails exactly once, on the first attempt, and its retry succeeds. Each scenario:
 
 1. `SYSTEM ENABLE FAILPOINT <name>`.
-2. Run the transactional statement in the background (`tx_async`); it blocks in the callback, retrying.
-3. Poll `system.text_log` (with `SYSTEM FLUSH LOGS` in the loop, bounded by the test timeout) until one
-   `Cannot store transaction metadata for ... will retry` line exists.
-4. `SYSTEM DISABLE FAILPOINT <name>`.
-5. `tx_wait`: the statement returns success. This asserts that the retry, not the budget, ended the loop: the
-   budget is 60 s and step 3 finishes in a few seconds.
-6. Assert exactly one `Stored transaction metadata for <object> after N attempts` line (count formatted away with
-   a regex) and exactly one `will retry` object name, equal to it. Then the durable-state check below.
+2. Run the transactional statement synchronously (`tx_sync`); it prints nothing on success and an error text on
+   failure, which breaks the reference: that is the success assertion.
+3. `SYSTEM FLUSH LOGS text_log`; assert from `system.text_log`, matching the table by its UUID (a rerun in the
+   same database must not see lines of a previous run): exactly one `Cannot store transaction metadata for
+   <object>, will retry` object, exactly one `Stored transaction metadata for <object> after N attempts` object,
+   the two objects equal, and `N = 2`. Then the durable-state check below.
 
 **Durable-state check.** `system.parts` reads in-memory metadata (`StorageSystemParts.cpp:365`), and a plain
 `DETACH`/`ATTACH` repairs a missing CSN from the log entry (`loadAndUpdateMetadata`) for as long as the entry or
@@ -285,7 +290,7 @@ assertion on them races with cleanup.
 - **Scenario A, commit of parts.** Table `MergeTree ORDER BY k`, `SYSTEM STOP MERGES`, two inserts outside a
   transaction. In a transaction: `ALTER TABLE t DROP PARTITION ID 'all'`, then `INSERT` (one new part); failpoint
   `transaction_metadata_store_fail`; `COMMIT`. The retried object is the first part of `creating_parts` (the new
-  part). Durable-state check: the new part's `txn_version.txt` carries `creation_csn: <csn>`.
+  part); nothing else stores version metadata between the enable and the commit (merges stopped, no parallel test). Durable-state check: the new part's `txn_version.txt` carries `creation_csn: <csn>`.
 - **Scenario B, commit of a mutation.** Table with columns `k` (key) and `v`; `SYSTEM STOP MERGES` is **not**
   issued (a transactional mutation waits for its parts, `StorageMergeTree.cpp:1097`, and `STOP MERGES` blocks
   mutations). Insert outside a transaction; in a transaction `ALTER TABLE t UPDATE v = v + 1 WHERE 1`; failpoint
@@ -296,6 +301,9 @@ assertion on them races with cleanup.
   original parts' rows, the `will retry` / `Stored` lines as in step 6. There is no durable-state discriminator
   for rollback: a rolled-back tid re-derives to the same result at load whether or not the store landed (§2). The
   scenario asserts that the rollback path returns instead of terminating and that the retry ran.
+
+  A rerun of the whole file is deterministic: the only state the scenarios share is the server-wide failpoints,
+  each of which has fired and disabled itself by the time the next scenario enables it again.
 
 Failing-first order, single pull request:
 
@@ -318,7 +326,10 @@ argues about, not code paths it adds.
   it is not part of this change.
 - A `replaceFile` on the object-storage metadata backend that loses its destination when both the move and its
   undo fail (§3.2) is a metadata-storage defect with consequences today (a part silently loaded as
-  non-transactional after restart); it is not fixed here and the retry does not make it worse.
+  non-transactional after restart); it is not fixed here and the retry does not make it worse. With the retry the
+  same end state is reached without a restart: a retried `setAndStoreRemovalTID(EmptyTID)` reloads the synthesized
+  non-transactional record, finds the value already equal and returns, exactly what the next load would have
+  produced after the termination.
 - `TransactionLog` retention, snapshots, the two-stage unknown-state lists, `VersionMetadata` validation and
   publication, the mutation file format and loader: untouched.
 - No new setting, no new system table column, no new metric.
