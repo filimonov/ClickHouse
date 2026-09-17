@@ -240,12 +240,83 @@ git commit -m "tla(transactions): state-space budget for the two-session Base sc
 
 ---
 
+### Task 5: Base at the matrix bounds, the Atomicity clause, and the findings file {#task-5}
+
+Added during execution (2026-09-18). The controller measured `Base` at `TID_MAX = 3`, `CSN_MAX = 38` on the
+tree after Task 2: `Atomicity` is violated on the baseline after 7.98M distinct states (50-step trace at
+`tmp/tla/findings/atomicity_tid3_trace.txt`), and with `Atomicity` removed the run is green at 28,553,697
+distinct states in 4 min 58 s. Task 2's review found three findings without a tracked placement. This task
+gives them one.
+
+**Files:**
+- Modify: `utils/tla/transactions/Invariants.tla` (the `Atomicity` clause), `MC_Base.cfg` (`TID_MAX = 3`,
+  `CSN_MAX = 36`), `MC_BaseWitness.{tla,cfg}` (delete: `Base` now carries the matrix bounds), `WITNESSES.md`,
+  `STATE_SPACE.md`
+- Create: `utils/tla/transactions/FINDINGS.md`
+
+**Interfaces:**
+- Produces: `FINDINGS.md` with three sections, each header anchored: (1) counterexamples on the baseline, one
+  entry per trace with columns `Id | Scenario, bounds | Property | Action sequence (short) | Classification
+  (model / property / code) | Resolution | Proposed code fix (for code findings)`; (2) model defects found and
+  their placement (the task or plan that fixes them); (3) spec defects (rows of the design document that the
+  model contradicts, with the correction to fold into the next spec revision). Task 4's README points to it.
+
+- [ ] **Step 1: Classify the `Atomicity` counterexample**
+
+Read the trace. The shape: `t1` inserts `P1` (CSN 34); `t2` (snapshot 34) drops `P1` and inserts `P2`,
+`CommitCreateCSN` gives CSN 35, the updater loads it while `t2` is still storing; `t3` (snapshot 35) drops `P2`
+itself, then its `SELECT` reads `{}`: `P1` is removed by `t2` at CSN 35 ≤ 35, `P2` is removed by `t3` itself
+(own removal wins, as `ReadYourWrites` states). `Atomicity`'s `C` is `{P2}` and demands `P2 \in V`. Decide,
+against the spec's `Atomicity` row and `isVisible` in `src/Storages/MergeTree/VersionMetadata.cpp` (or where
+`VersionMetadata::isVisible` lives at `2c24b6b9291e`), whether the read is what the code produces (then the
+property misstates atomicity: `C` must exclude the reader's own removals, `h.removing[t]`) or whether the
+model let `t3` remove `P2` where the code would refuse (then the model is wrong; find the C++ guard). Record
+the classification in `FINDINGS.md` section 1 with the trace file copied to
+`utils/tla/transactions/traces/atomicity-own-removal.txt`.
+
+- [ ] **Step 2: Fix what Step 1 decided, and raise `Base` to the matrix bounds**
+
+If the property is wrong: change only `AtomicityStep` (and the `ReadOK` mirror) so that `C` excludes
+`h.removing[t]`, cite the spec row in the comment, and note the spec row's missing clause in `FINDINGS.md`
+section 3. If the model is wrong: fix the action with the C++ citation. Then set `MC_Base.cfg` to `TID_MAX = 3`,
+`CSN_MAX = 36` (`FirstCSN = 33` plus three commits), keep `SYMMETRY` and `VIEW`, add to `MC_Base.tla`'s view
+comment the sentence that the view's argument depends on enabled actions and checked properties only, so the
+bounds change keeps it sound. Delete `MC_BaseWitness.{tla,cfg}` and move its three rows in `WITNESSES.md` to
+`Base`. Run `run_tlc.sh Base`: expected green, about 28.6M distinct states, under 10 minutes with
+`-workers auto`. If it is red, stop and report the trace (another counterexample), do not weaken anything.
+
+- [ ] **Step 3: Rerun every witness at the new `Base` bounds**
+
+`witness.sh Base <Property> [<WitnessName>]` for every row of `WITNESSES.md` that is not deferred, including the
+two-change minimality halves. Expected: every row `RED`, every half `GREEN`. Update the table's states and
+times; write "approximate (multi-worker)" once above the table. A witness over 20 minutes is `TIMEOUT` and a
+finding, not something to wait for. Update `STATE_SPACE.md`'s final-counts section (keep the Task 3 history).
+
+- [ ] **Step 4: Write `FINDINGS.md`**
+
+Section 1: the `Atomicity` entry. Section 2: the legacy-part store defect (`LegacyPartRecord` sets `mem.sv = 0`
+while the stored record is `Legacy`, so `StoredRecord` falls back to `EmptyInfo` with `sv = -1` and every
+store takes `TOO_OLD_VERSION`; placement: plan 3, the task that enables `LEGACY_PARTS`, must give a legacy
+record a stored `sv` of 0 or make `StoredRecord` treat `Legacy` as version 0, whichever `loadMetadata` in the
+C++ implies). Section 3: the `validateInfo, removal` witness row (one change named, two needed because
+`EnrolBody` starts the store), the `NoAvoidableTermination` row (names `Base`, needs `ProcessDown`), and the
+two properties admitted without a spec row (`RollbackNoLeak` from Task 1, `KillerNotStranded` from Task 3):
+ruling recorded here, they stay, and the spec's next revision adds their rows and witnesses (plan 5 for
+`KillerNotStranded`'s witness, which needs a rollback step that never completes).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "tla(transactions): Base at the matrix bounds, Atomicity own-removal clause, findings file" -- utils/tla/transactions
+```
+
+---
+
 ### Task 4: README with code map, run table, findings file {#task-4}
 
 **Files:**
 - Create: `utils/tla/transactions/README.md`
-- Create: `utils/tla/transactions/FINDINGS.md` (a header and an empty table if no code finding was recorded in
-  Tasks 1 to 3)
+- Modify: `utils/tla/transactions/FINDINGS.md` (created by Task 5; add nothing unless Task 4's code-map check finds a defect)
 
 - [ ] **Step 1: Write the README**
 
