@@ -9,11 +9,15 @@ doc_type: 'design'
 
 # A TLA+ model of MergeTree transactions for finding bugs with TLC {#mergetree-transactions-tla-design}
 
-Revision 7, 2026-09-17. Baseline: upstream `ClickHouse/ClickHouse` master at commit `2c24b6b9291e`. The transaction
+Revision 8, 2026-09-17. Baseline: upstream `ClickHouse/ClickHouse` master at commit `2c24b6b9291e`. The transaction
 sources listed in the code map below are identical between `d1ba1699a271` (2026-09-16) and this commit; every
 function name in this document refers to that tree.
 
-Revision 7 folds the sixth review round, which calibrated the model against the 23 defect-fixing upstream commits
+Revision 8 corrects one stance of revisions 2 to 7 on the user's objection: a server termination caused by a
+transient storage error inside a `noexcept` callback is a loss of availability of already committed data until
+a restart, not conformant behaviour. The model now treats every avoidable termination as a violation
+(`NoAvoidableTermination`); on the baseline this property is expected red, which is the first defect of Altinity
+PR 2396, and availability is listed among the goals. Revision 7 folded the sixth review round, which calibrated the model against the 23 defect-fixing upstream commits
 of the last two years (4 caught, 12 missed in scope, 6 out of scope, table in the calibration section) and one
 Altinity fix (PR 2396). The misses were systematic and are closed as classes, not one by one: the
 non-transactional removal batch is a step machine with a contract (durable stamping on success, no change on
@@ -63,9 +67,10 @@ assertions are transcribed completely.
 Build a TLA+ specification of the MergeTree transaction algorithm that is faithful to the current C++ implementation
 at the granularity where crashes and thread interleavings matter, and check it with TLC against the properties a user
 of transactions relies on: an acknowledged `COMMIT` is durable, reads inside a transaction are snapshot-isolated,
-parts and transaction-log entries are garbage-collected only when nobody can need them, and two transactions cannot
-both remove the same part. The expected outcome is a list of counterexample traces, each mapped back to a sequence
-of C++ calls, or evidence that the bounded model has none.
+parts and transaction-log entries are garbage-collected only when nobody can need them, two transactions cannot
+both remove the same part, and a transient fault never takes the server down, because committed data that is
+unreadable until a restart is a loss of availability. The expected outcome is a list of counterexample traces,
+each mapped back to a sequence of C++ calls, or evidence that the bounded model has none.
 
 The model is written so that a `ReplicatedMergeTree` model can later be built on top of the same Keeper and disk
 modules; that extension is out of scope here.
@@ -109,8 +114,9 @@ Covered:
 - The merge blocker taken by `DROP PARTITION`, the set of parts reserved by running merges and mutations, and the
   parts lock, so that the model does not explore schedules the code excludes.
 - Failures: Keeper response lost or session expired at commit, server crash at any point with loss of every
-  write that was not fsynced, a disk write that throws (including inside `noexcept` paths, where the process
-  terminates and restarts), and an exception thrown by a query between any two steps.
+  write that was not fsynced, a disk write that throws (including inside `noexcept` paths, where the baseline
+  terminates the process, which the model reports as a loss of availability), and an exception thrown by a query
+  between any two steps.
 - Server restart with metadata repair from disk and Keeper, including parts that finish loading after the
   server is marked started.
 
@@ -467,7 +473,7 @@ not enter `h_committed`. `CommitCreateCSN` is the commit point; its three outcom
 creations, removals, mutations, then `CommitFlip`, which also sets `csn_notified` (`csn.notify_all()`).
 `CommitStoreMutation(k, m)` on a mutation that `KillMutation` has already unregistered throws `LOGICAL_ERROR`
 from `setMutationCSN` on the baseline; inside `noexcept` that is `ProcessDown` with `down_cause = Other`, which
-`NoProcessDown` reports. `CommitFinalize` removes the transaction from the running list and releases the
+`NoAvoidableTermination` reports. `CommitFinalize` removes the transaction from the running list and releases the
 snapshot, and `CommitAck` delivers `Acked` to the client. With `wait_mode = WAIT_UNKNOWN`, `CommitUnknown` returns
 `CommittingCSN` and the client blocks in `waitStateChange`, which in the model is enabled only when
 `csn_notified` holds for the transaction's current `csn`; with any other mode the client receives `UnknownStatus`
@@ -614,13 +620,17 @@ on or a later `Fsync` runs.
 
 `NOEXCEPT_STORE_FAULT_POLICY \in {Terminate, Retry}` decides what a `StorePersist` fault or `STALE_VERSION`
 inside `afterCommit`, `rollback` or `finalizeCommittedTransaction` does. `Terminate` is the baseline:
-`ProcessDown`. `Retry` is the behaviour of Altinity PR 2396: the store is retried in place up to
-`NOEXCEPT_RETRY_BUDGET` times while the transaction stays in `running_list` and holds its snapshot, and only an
-exhausted budget is `ProcessDown`; the model exists to show that the retry is sound, that is, that every safety
-property holds with the policy set to `Retry`, in particular that `tail_ptr` cannot advance past the retrying
-transaction's entry (`LogEntryNeeded`) and that a `KillMutation` during the retry window is tolerated. Under
-`Retry`, `CommitStoreMutation` on an unregistered mutation is a logged warning, not `LOGICAL_ERROR`, as in that
-PR; under `Terminate` it is `ProcessDown` with `down_cause = Other`.
+`ProcessDown` with `down_cause = StoreFault` or `RetryExhausted`. Because the fault the model injects is by
+definition transient (a retryable storage error), a termination on it is avoidable and is a violation of
+`NoAvoidableTermination`; the baseline is therefore expected red under `Terminate`, and that is the first defect
+of Altinity PR 2396 as a finding, not a policy. `Retry` is the behaviour of that PR: the store is retried in
+place up to `NOEXCEPT_RETRY_BUDGET` times while the transaction stays in `running_list` and holds its snapshot,
+and only an exhausted budget is `ProcessDown` (`down_cause = RetryExhausted`), which `NoAvoidableTermination`
+tolerates because a fault that outlasts the budget is no longer transient by the model's own definition. Under
+`Retry` every safety property must hold, in particular `LogEntryNeeded` (`tail_ptr` cannot advance past the
+retrying transaction's entry) and tolerance of `KillMutation` during the retry window. Under `Retry`,
+`CommitStoreMutation` on an unregistered mutation is a logged warning, not `LOGICAL_ERROR`, as in that PR; under
+`Terminate` it is `ProcessDown` with `down_cause = Other`.
 
 ### Restart {#actions-restart}
 
@@ -681,13 +691,15 @@ layers, Keeper and the history module survive.
 ### Disk write faults {#failures-disk}
 
 `StorePersist` may throw instead of writing. Where the call site is `noexcept` (`afterCommit`, `rollback`,
-`finalizeCommittedTransaction`), the C++ runtime terminates the process. The model has the transition
-`ProcessDown`, which is `Crash` reached only from such a fault (`down_cause := StoreFault`) or from
-`STALE_VERSION` in the same call sites (`down_cause := RetryExhausted`), and continues with the normal `Restart`.
-Any other transition that would take the server down inside those call sites sets `down_cause := Other`. The
-conformance property `DownOnlyByNoexceptFault` states that `down_cause` is never `Other`; the safety properties
-then check that the restart recovers a consistent state. In scenarios without disk faults, `NoProcessDown`
-(`down_cause = None` always) is an ordinary invariant. Where the call site can throw
+`finalizeCommittedTransaction`), the baseline C++ runtime terminates the process. The model has the transition
+`ProcessDown`, which is `Crash` reached from such a fault (`down_cause := StoreFault`), from an exhausted retry
+budget under the `Retry` policy (`down_cause := RetryExhausted`), or from any other exception inside those call
+sites (`down_cause := Other`, for example `LOGICAL_ERROR` from `setMutationCSN`), and continues with the normal
+`Restart`. `NoAvoidableTermination` states `down_cause \in {None, RetryExhausted}` in every state: the server may
+go down only when the model's own fault budget has been exceeded. On the baseline it is expected red as soon as a
+disk fault is enabled; the safety properties then additionally check that the restart recovers a consistent
+state, and the `Retry` policy is the fix under test. In scenarios without disk faults, `NoProcessDown`
+(`down_cause = None` always) is the same property with nothing to tolerate. Where the call site can throw
 (`removeOldPart` inside a query, `setAndStoreCreationTID` at part creation), the fault becomes a `Fail` of that
 query.
 
@@ -801,8 +813,8 @@ Every `chassert` and `LOGICAL_ERROR` on the modelled paths, transcribed as the c
 | `Assert_IsNonTransactionalDomain` | action property on every step that evaluates `isNonTransactional(tid)` (`RestartLoadPart`, `validateInfo` inside `StoreRead`, `NtBatchPreflight`): the argument is never `DummyTID` unless the exempt-shape check has already accepted the record in that step | the exempt-shape check in `RestartLoadPart` moved after the `isNonTransactional` call (`Crash`, on a tmp-only directory) |
 | `FlipAfterStores` | action property on `CommitFlip(t)`: in its pre-state every part of `h_creating[t]` has `mem.creation_csn = h_csn[t]`, every part of `h_removing[t]` has `mem.removal_csn = h_csn[t]`, and every `m \in h_mutations[t]` not killed has `csn = h_csn[t]`; this is the contract of `waitStateChange` that `afterCommit` documents | `CommitFlip` moved before the store loops (`Base`) |
 | `NoSpuriousStaleVersion` | a frame reaches `STALE_VERSION` only if `interfered` was set on each of its `MAX_STORE_RETRIES` attempts; a `TOO_OLD_VERSION` outcome with `interfered = FALSE` is a defect of the reload logic (`StoreRead` on a retry must call `loadMetadata`, not `getInfo`) | `StoreRead` on a retry uses `getInfo` instead of `loadMetadata` (`Base`) |
-| `NoProcessDown` (scenarios without disk faults) | `down_cause = None` in every state | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` (`Base`) |
-| `DownOnlyByNoexceptFault` (scenarios with disk faults) | `down_cause /= Other` in every state | `Fail` allowed inside `afterCommit` (`DiskFault`) |
+| `NoProcessDown` (scenarios without disk faults) | `down_cause = None` in every state; the availability property where no fault is injected, so any termination is a defect (`KILL MUTATION` in the commit window on the baseline) | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` (`Base`) |
+| `NoAvoidableTermination` (scenarios with disk faults) | `down_cause \in {None, RetryExhausted}` in every state; a transient fault never takes the server down, because committed data unreadable until a restart is a loss of availability; expected red on the baseline under `Terminate` (the first defect of Altinity PR 2396), expected green under `Retry` | `Retry` policy with `NOEXCEPT_RETRY_BUDGET = 0` (`DiskFault`) |
 
 The assertion in `preparePartForRemoval` (an `Outdated` part with a transactional creation has a `removal_tid`) is
 not listed: on the modelled paths a part becomes `Outdated` at load only through the covered-part path, which
@@ -850,7 +862,7 @@ everywhere.
 | `Keeper` | + `M12` | `Base` + `Merge*` + `Updater+GC` + `Updater+Unknown` | Keeper, both wait modes | `UnknownResolvesByLog`, `NoOutdatedLookup`, the two-list race |
 | `Crash` | + `M12` | `Base` + `Merge*` + `Cleanup*` + `Updater+GC` + `Restart*`, `Layered` disk | restart, both `FSYNC_PART_DIRECTORY` values, `LEGACY_PARTS` on and off | `NoResurrection`, `LogEntryNeeded`, `AckedWriteIsDurable` across restart, `LegacyLoads`, `Assert_IsNonTransactionalDomain`, `NoFalseCorruption` after restart |
 | `MutationCrash` | `P1`, `P1m` | one session, `Begin`, `Insert*`, `MutPrepare*`, `MutRegister`, `Mut*`, `Commit*`, `Rollback*`, `Updater+GC`, `Restart*`, `Layered` disk | restart | `MutationNotResurrected`, `LogEntryNeeded` for mutation records, the written-but-unattached window; `MutationRecovered` run separately as the expected finding on the unsynced `writeCSN` append |
-| `DiskFault` | + `M12`, `P1m` | `Base` + `Merge*` + `MutPrepare*`, `MutRegister`, `Mut*`, `KillMutation` + `Restart*`, `Layered` disk, both `NOEXCEPT_STORE_FAULT_POLICY` values | disk write | `Terminate`: `DownOnlyByNoexceptFault`, recovery after `ProcessDown`; `Retry`: every safety property, `LogEntryNeeded` under the retry window, tolerance of `KillMutation` during the retry |
+| `DiskFault` | + `M12`, `P1m` | `Base` + `Merge*` + `MutPrepare*`, `MutRegister`, `Mut*`, `KillMutation` + `Restart*`, `Layered` disk, both `NOEXCEPT_STORE_FAULT_POLICY` values | disk write | `Terminate`: `NoAvoidableTermination` expected red (the finding), recovery after `ProcessDown`; `Retry`: `NoAvoidableTermination` and every safety property green, `LogEntryNeeded` under the retry window, tolerance of `KillMutation` during the retry |
 | `QueryFault` | + `P1m` | `Base` + `MutPrepare*`, `MutRegister`, `Mut*` | query | rollback between steps, the orphan-file window, `NoUnattachedMutationAfterFailure` |
 | `Live` | `P1`, `P2` | `Base` + `Cleanup*` + `Updater+GC` + `Updater+Unknown` | Keeper | `CommitResolves`, `OutdatedEventuallyDeleted` |
 
@@ -949,7 +961,7 @@ the development order by injecting each pre-fix behaviour into the model.
 | `ab40e11d3c73`, `f8f46fb1eb14`, `86b6861a1a8e` | batch refused after earlier members were stamped | `NtBatchRefusedUnchanged` (`NonTxn`) |
 | `f6ad379c8301` | `csn` changed without `notify_all`, client blocked forever | `ClientCommitEventuallyReturns` (`Live`) |
 | `65e4e2b5bf69` | refusal trusted `creation_csn = 0` although the log had the commit | `NtRefusalJustified` (`NonTxn`) |
-| Altinity PR 2396, part 1 | store fault inside `noexcept` terminated a committed transaction's server | conformant under `Terminate`; the fix is validated under `Retry` (`DiskFault`) |
+| Altinity PR 2396, part 1 | store fault inside `noexcept` terminated a committed transaction's server, committed data unreadable until restart | `NoAvoidableTermination` (`DiskFault`, `Terminate`); the fix is validated under `Retry` |
 | Altinity PR 2396, part 2 | `KILL MUTATION` in the commit window, `LOGICAL_ERROR` inside `noexcept` | `NoProcessDown` (`Mutation`) |
 | `d71f8329a129`, `c309b745aaf0`, `56958de54fba`, `2e070c30cc07`, `d34ccec49297`, `319e693e72f5` | relaxed loads, malformed tid, `ALTER RENAME`, `ATTACH AS REPLICATED`, corrupt tmp sidecar, `REPLACE`/`MOVE PARTITION` | out of scope, listed under accepted risks |
 
