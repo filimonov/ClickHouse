@@ -23,7 +23,7 @@ AbsentTxn == [state |-> "Absent", csn |-> UnknownCSN, snapshot |-> UnknownCSN, p
 ClientPcs == {"Idle", "InsertWrite", "InsertPreActive", "PublishStart", "PublishEnrol", "PublishStore", "PublishFlip",
               "SelectCheck", "DropWait", "DropEnrol", "DropStore", "DropOutdate",
               "MutPrepareWrite", "MutPrepareAttach", "MutRegister",
-              "Commit", "Rollback", "RollbackWait", "Refuse", "StmtRollbackMark", "StmtRollbackDrop"}
+              "Commit", "Rollback", "RollbackWait", "KillWait", "Refuse", "StmtRollbackMark", "StmtRollbackDrop"}
 \* a read: the visible parts and the fragments they expand to, tagged with the visible root they came through
 ReadType == [parts : SUBSET Parts, frags : SUBSET (Parts \X Parts \X (0..3))]
 NoRead == [parts |-> {}, frags |-> {}]
@@ -441,15 +441,27 @@ RollbackReturn(k) ==
   /\ client[k].pc = "RollbackWait" /\ txn[Cur(k)].pc = "Idle"
   /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].current = IF client[k].rb_detach THEN EmptyTID ELSE @, ![k].rb_detach = FALSE]
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, sys, stmt, mut, task>>
-\* KILL TRANSACTION from another session: the CAS, then the killer drives the rollback steps
+\* KILL TRANSACTION from another session: the CAS, then the killer drives the rollback steps.
+\* The killer is a session running a query, so it is between statements of its own (executeQuery), and
+\* MergeTreeTransaction::rollback wins the compare_exchange on csn, which makes its caller the only actor
+\* that runs the rollback body: holders becomes the killer alone, not the killer added to the owner.
 KillTransaction(k, t) ==
-  /\ Up /\ Cur(k) /= t /\ txn[t].state = "Running" /\ txn[t].pc = "Idle"
+  /\ Up /\ client[k].pc = "Idle" /\ Cur(k) /= t /\ txn[t].state = "Running" /\ txn[t].pc = "Idle"
   /\ txn' = [txn EXCEPT ![t].state = "RolledBack", ![t].csn = RolledBackCSN, ![t].csn_notified = TRUE,
-                         ![t].pc = "RollbackCopyLists", ![t].holders = @ \cup {Sess(k)}]
+                         ![t].pc = "RollbackCopyLists", ![t].holders = {Sess(k)}]
   /\ h' = [h EXCEPT !.snapshot[t] = txn[t].snapshot]
-  /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
+  /\ client' = [client EXCEPT ![k].pc = "KillWait"]
+  /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, stmt, mut, task>>
+\* InterpreterKillQueryQuery calls onException, which rolls the transaction back on the killer's own thread,
+\* so the KILL query returns only once the rollback it drives has finished.
+KillReturn(k) ==
+  /\ client[k].pc = "KillWait"
+  /\ \A t \in Tids : t /= Cur(k) => Sess(k) \notin txn[t].holders
+  /\ client' = [client EXCEPT ![k].pc = "Idle"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, sys, stmt, mut, task>>
 
-\* the rollback machine: driven by any session that holds the transaction
+\* the rollback machine: driven by the session that holds the transaction, and the compare_exchange in
+\* MergeTreeTransaction::rollback leaves exactly one such session once a rollback is under way
 Drives(k, t) == Sess(k) \in txn[t].holders
 RollbackCopyLists(k, t) ==
   /\ Drives(k, t) /\ txn[t].pc = "RollbackCopyLists" /\ txn[t].mutex = NoActor

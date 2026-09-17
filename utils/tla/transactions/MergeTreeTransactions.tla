@@ -12,7 +12,7 @@ Init == KeeperInit /\ DiskInit /\ HistoryInit /\ PartsInit /\ ServerInit
 ClientNext == \E k \in Sessions :
   \/ Begin(k) \/ CommitBefore(k) \/ CommitError(k) \/ CommitCreateCSN(k) \/ CommitReadOnly(k) \/ CommitFlip(k)
   \/ CommitFinalize(k) \/ CommitAck(k) \/ CommitUnknown(k) \/ FrameFail(k) \/ Refuse(k) \/ Fail(k)
-  \/ RollbackStart(k) \/ RollbackOnException(k) \/ RollbackReturn(k) \/ QueryOnCancelled(k) \/ SelectCapture(k) \/ SelectFinish(k) \/ PublishFlip(k) \/ StmtRollbackDrop(k)
+  \/ RollbackStart(k) \/ KillReturn(k) \/ RollbackOnException(k) \/ RollbackReturn(k) \/ QueryOnCancelled(k) \/ SelectCapture(k) \/ SelectFinish(k) \/ PublishFlip(k) \/ StmtRollbackDrop(k)
   \/ DropStart(k) \/ DropLock(k) \/ DropOutdate(k)
   \/ (\E p \in Parts : InsertWrite(k, p) \/ InsertPreActive(k, p) \/ PublishStart(k, p) \/ PublishEnrol(k, p)
                        \/ PublishStore(k, p) \/ StmtRollbackMark(k, p) \/ SelectCheck(k, p)
