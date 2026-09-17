@@ -329,7 +329,12 @@ argues about, not code paths it adds.
   non-transactional after restart); it is not fixed here and the retry does not make it worse. With the retry the
   same end state is reached without a restart: a retried `setAndStoreRemovalTID(EmptyTID)` reloads the synthesized
   non-transactional record, finds the value already equal and returns, exactly what the next load would have
-  produced after the termination.
+  produced after the termination. One difference remains and is accepted: a termination also discards every
+  running snapshot, while a successful retry keeps them, so a snapshot that predates the part's creation could
+  see the part once it is reloaded as non-transactional. Closing that needs the reload path to fail closed when a
+  record that was stored before has vanished (in-memory `storing_version > 0` and no file on disk) instead of
+  synthesizing a non-transactional record; that is a `VersionMetadataOnDisk` change outside this design and is
+  tracked as a follow-up.
 - `TransactionLog` retention, snapshots, the two-stage unknown-state lists, `VersionMetadata` validation and
   publication, the mutation file format and loader: untouched.
 - No new setting, no new system table column, no new metric.

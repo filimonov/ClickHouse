@@ -1933,7 +1933,7 @@ is 0 on `Phase` rows — use `round_id`):
 - `defer_decision`: a full LIST of the ref-log prefix across every namespace each round, `ref_log_keys_listed`
   2,308 → 19,415, `namespaces_seen` 105 → 434 — of which `dead_life_debris` 51 → 403 (93-95 %): with one live test
   table on the server, almost everything the LIST walks is dropped tables' debris waiting for cleanup.
-- `fold_ref_intake`: one GET per ref-log record (`logs_applied` 613 → 2,102 per round); the unmerged fold read-ahead
+- `fold_ref_intake`: one GET per ref-log record (`logs_applied` 613 → 2,102 per round); the fold read-ahead (in `antalya-26.6` since `8f6cd74a3f5`, 2026-09-05, so ON in this run at its default `cas_gc_read_concurrency=16`)
   branch (2.4x intake) targets exactly this.
 - `pending_deletes`: `deleted` 60 → 1,181 per round at ~7 ms each (exact-token DELETE + graduation HEAD); RustFS
   `delete` latency itself grows 0.4 → 44 ms with store size (run 7), which is where the loop closes.
@@ -1967,7 +1967,7 @@ Asks, in order of size:
    new log anywhere folds (`deferred = 0` throughout the runs) and the defer verdict is computed AFTER the full LIST,
    so a deferred round pays the whole enumeration anyway.
 4. Bound the work per round / make the drain rate independent of the backlog (batching deletes; merge the fold
-   read-ahead branch `cas-gc-fold-read-ahead`, 2.4x intake, implemented and NOT merged); back off rounds when the
+   read-ahead is already in: `cas-gc-fold-read-ahead` was merged into `cas-gc-rebuild` as `e377741c725` and reached `antalya-26.6` as `8f6cd74a3f5` on 2026-09-05, so run 8 measured intake WITH it; the remaining lever is `[gc-intake-manifest-edge-serial-chain]`); back off rounds when the
    store's delete latency is high instead of stacking longer rounds.
 5. Export `cas_gc_log` round and phase durations to the CI artifacts so this is visible per run.
 Corrections from the run-8 `cas_gc_log` dump (brainstorm rev.2, `docs/superpowers/specs/2026-09-15-cas-gc-dead-namespace-debris-cleanup-design.md`):
@@ -2915,3 +2915,11 @@ of a cheap agent's time. Zero risk to the tree if step 2's revert check is honou
   over half of the ref-writer sites needed shared state, not a by-value capture. One task per file; run the suite
   5× under ASan after each. Alternative that removes the class: make `Pool` teardown not call config hooks (snapshot
   the clock values it needs at construction), then the capture shape stops mattering.
+
+## `[version-metadata-reload-fail-closed-when-record-vanished]` Reload of `txn_version.txt` synthesizes a non-transactional record when a previously stored file has vanished (2026-09-17, follow-up of the transaction metadata retry) {#version-metadata-reload-fail-closed}
+
+**Where.** `VersionMetadataOnDisk::loadMetadata` (`VersionMetadataOnDisk.cpp:86-93`): when neither `txn_version.txt` nor its `.tmp` exists, the part gets non-transactional metadata (empty `removal_tid`, `NonTransactionalCSN`). That is correct for a part that never had the file and wrong for a part whose file was stored before and is gone.
+
+**How it can vanish.** `ReplaceFileOperation` of the object-storage metadata backend (`MetadataStorageFromDiskTransactionOperations.cpp:428`) moves the destination aside, then the replacement in; if the second move and its undo both fail, the destination is lost. Today: the server terminates in the callback, restarts, and reloads the part as non-transactional (silently wrong, but every running snapshot died with the process). With the bounded retry from `2026-09-16-transaction-metadata-store-best-effort-design.md` (rev.3e, §5): the retried `setAndStoreRemovalTID(EmptyTID)` reloads the synthesized record, finds the value equal and returns; running snapshots survive, and a snapshot that predates the part's creation can see the part after a re-attach. Found by the codex xhigh review of the branch (`lane-g/tmp/txn_meta_store/branch_review.md` #1, still open in `fixwave_review.md`).
+
+**Fix shape.** Fail closed on reload: if the in-memory info has `storing_version > 0` (a record was stored before) and no file is found, throw (`CORRUPTED_DATA`-class, not `LOGICAL_ERROR`, since it is input-reachable) instead of synthesizing; the retry helper then rethrows after its budget as for any other persistent error, and the load path surfaces the corruption. Needs a fault test for "replacement and undo both fail" on the metadata storage. Generic MergeTree code, upstream-portable; separate PR after the retry branch lands.
