@@ -143,7 +143,7 @@ StoreReadStep(p, o) ==
         THEN IF f.retries < MAX_STORE_RETRIES
              THEN part' = WithFrame(p, [f EXCEPT !.retries = @ + 1])
              ELSE part' = WithFrame(p, [f EXCEPT !.pc = "Error", !.err = "STALE_VERSION"])
-        ELSE IF ValidateInfoOK(upd.info) \/ Witness("Assert_isVisible_fast")
+        ELSE IF ValidateInfoOK(upd.info) \/ Witness("Assert_isVisible_fast") \/ Witness("Assert_isVisible_fast_only2")
         THEN part' = WithFrame(p, [f EXCEPT !.tentative = upd.info, !.pc = "Persist"])
         ELSE part' = WithFrame(p, [f EXCEPT !.pc = "Error", !.err = "LOGICAL_ERROR"])
 

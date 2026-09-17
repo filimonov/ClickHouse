@@ -96,7 +96,12 @@ ActiveSetShape == /\ \A p, q \in Parts : part[p].pstate = "Active" /\ part[q].ps
                   /\ \A i, j \in Tasks : i /= j => task[i].reserved \cap task[j].reserved = {}
 
 \* ---- code assertions (spec #invariants-code)
-Assert_validateInfo == \A p \in Parts : part[p].pstate /= "Absent" /\ part[p].mem.ctid /= EmptyTID => ValidateInfoOK(part[p].mem)
+\* validateInfo is a chassert, so both the record a part carries and the record a store computed before it
+\* persists anything are subject to it: a frame the model parks in Error(LOGICAL_ERROR) because its record
+\* failed validation is that assertion firing, not a refusal the code is free to make.
+Assert_validateInfo ==
+  /\ \A p \in Parts : part[p].pstate /= "Absent" /\ part[p].mem.ctid /= EmptyTID => ValidateInfoOK(part[p].mem)
+  /\ \A p \in Parts : \A f \in part[p].frames : f.err /= "LOGICAL_ERROR"
 Assert_isVisible_fast == \A p \in Parts : LET m == part[p].mem IN
   /\ (m.rcsn /= UnknownCSN => m.ccsn /= UnknownCSN)
   /\ m.ccsn \in {UnknownCSN, NonTransactionalCSN, RolledBackCSN} \cup RealCSNs

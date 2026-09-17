@@ -185,7 +185,11 @@ PublishStart(k, p) ==
 \* removeOldPart, first half (shared by Drop and Publish): mutex, checkIsNotCancelled, lockRemovalTID, enrol
 \* nextpc is the client pc after success; on refusal the client goes to Refuse with last_error set
 EnrolBody(k, q, nextpc) ==
-  LET t == Cur(k) IN
+  LET t == Cur(k)
+      \* the Assert_validateInfo_removal witness skips the removal-TID store of removeOldPart, so the lock is
+      \* held in memory only and CommitStoreRemoval later stores a removal CSN on a record with no removal TID
+      nostore == Witness("Assert_validateInfo_removal") \/ Witness("Assert_validateInfo_removal_only1")
+      enrolled == IF nostore THEN part ELSE StartFrame(q, Sess(k), "RemovalTID", t, FALSE) IN
   /\ txn[t].mutex = NoActor
   /\ \/ /\ txn[t].state = "RolledBack"
         /\ client' = [client EXCEPT ![k].last_error = "INVALID_TRANSACTION", ![k].pc = "Refuse"]
@@ -196,7 +200,7 @@ EnrolBody(k, q, nextpc) ==
         /\ UNCHANGED <<txn, part, h>>
      \/ /\ txn[t].state = "Running"
         /\ (part[q].lock = EmptyTID /\ part[q].mem.rcsn = UnknownCSN) \/ Witness("SingleRemover")
-        /\ part' = [StartFrame(q, Sess(k), "RemovalTID", t, FALSE) EXCEPT ![q].lock = t, ![q].pins = @ \cup {<<"Txn", t>>}]
+        /\ part' = [enrolled EXCEPT ![q].lock = t, ![q].pins = @ \cup {<<"Txn", t>>}]
         /\ txn' = [txn EXCEPT ![t].mutex = Sess(k), ![t].removing = Append(@, q)]
         /\ h' = [h EXCEPT !.removing[t] = @ \cup {q}]
         /\ client' = [client EXCEPT ![k].pc = nextpc]
@@ -204,7 +208,8 @@ EnrolBody(k, q, nextpc) ==
 \* removeOldPart, second half: the store ran, release the mutex, next part or the phase's end
 StoreDoneBody(k, q) ==
   LET t == Cur(k) IN
-  /\ (FrameDone(q, Sess(k), "RemovalTID", t) \/ Witness("Assert_validateInfo_removal"))
+  /\ (FrameDone(q, Sess(k), "RemovalTID", t) \/ Witness("Assert_validateInfo_removal")
+                                             \/ Witness("Assert_validateInfo_removal_only2"))
   /\ txn' = [txn EXCEPT ![t].mutex = NoActor]
 
 PublishEnrol(k, q) ==
@@ -342,7 +347,8 @@ CommitStore(k, p, op, phase) ==
       val == IF Witness("Assert_validateInfo_creator") /\ op = "CreationCSN" THEN h.csn[t] + 1
              ELSE IF Witness("Assert_validateInfo_order") /\ op = "CreationCSN" THEN CSN_MAX
              ELSE h.csn[t]
-      skip == Witness("Assert_isVisible_fast") /\ op = "CreationCSN" /\ p \in h.removing[t] IN
+      skip == (Witness("Assert_isVisible_fast") \/ Witness("Assert_isVisible_fast_only1"))
+              /\ op = "CreationCSN" /\ p \in h.removing[t] IN
   /\ client[k].pc = "Commit" /\ txn[t].pc = phase /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
   /\ \/ /\ ~skip /\ ~HasFrame(p, Sess(k)) /\ ApplyOp(op, val, part[p].mem) /= part[p].mem
         /\ part' = StartFrame(p, Sess(k), op, val, TRUE)
