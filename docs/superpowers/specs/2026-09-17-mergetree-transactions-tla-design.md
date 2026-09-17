@@ -931,7 +931,7 @@ Every `chassert` and `LOGICAL_ERROR` on the modelled paths, transcribed as the c
 `validateInfo`, `isVisible`, `getOldestSnapshot`, `NoUnknownMutationCSN`, `Assert_IsNonTransactionalDomain`;
 each is an invariant `Assert_<name>` whose witness removes the guard the code relies on), followed by the
 behavioural contracts that guard the same code paths but are not assertions in the code (`FlipAfterStores`,
-`NoSpuriousStaleVersion`) and the availability properties (`NoProcessDown`, `NoAvoidableTermination`).
+`NoSpuriousStaleVersion`) and the availability property (`NoAvoidableTermination`).
 
 | Assertion | Statement | Witness (scenario) |
 |---|---|---|
