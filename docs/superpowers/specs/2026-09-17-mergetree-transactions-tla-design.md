@@ -9,12 +9,18 @@ doc_type: 'design'
 
 # A TLA+ model of MergeTree transactions for finding bugs with TLC {#mergetree-transactions-tla-design}
 
-Revision 3, 2026-09-17. Baseline: upstream `ClickHouse/ClickHouse` master at commit `2c24b6b9291e`. The transaction
+Revision 4, 2026-09-17. Baseline: upstream `ClickHouse/ClickHouse` master at commit `2c24b6b9291e`. The transaction
 sources listed in the code map below are identical between `d1ba1699a271` (2026-09-16) and this commit; every
 function name in this document refers to that tree.
 
-Revision 2 folded the first review round (20 findings). Revision 3 folds the second round (8 incorrect folds, 9 new
-findings): the history module now records effects continuously, the assigned CSN, the snapshot and the rollback
+Revision 4 folds the third review round (5 findings, 10 witnesses that could not reach their target):
+`NoOrphanMutation`, `MutationOnVisible`, `ReadYourWrites` and `NoLostVisibleData` no longer reject legal traces
+(rollback before `killMutation`, skipped invisible candidates, insert-then-drop in one transaction, content
+recaptured at `SET TRANSACTION SNAPSHOT`); a `MutationCrash` scenario covers the unsynced mutation-CSN append and
+the written-but-unattached window against restart and log truncation; every invalid witness was replaced or its
+property removed (`RegrabBeforeDelete`, the `preparePartForRemoval` row); the witness contract allows two named
+changes. Revision 2 folded the first review round (20 findings). Revision 3 folded the second round (8 incorrect
+folds, 9 new findings): the history module now records effects continuously, the assigned CSN, the snapshot and the rollback
 completion, so that every durability and rollback property is stated over ghost state that survives crash and log
 truncation; `SET TRANSACTION SNAPSHOT` accepts the values the code accepts; the mutation entry is prepared in two
 steps with the orphan-file window; metadata stores have per-caller frames; `KILL TRANSACTION` is a client action
@@ -268,10 +274,12 @@ never read by an action. All are bounded by `Tids`, `Parts` and `Mutations`:
 - `h_unknown[t]`: for a transaction resolved from `unknown_state_list`, whether the decision was `Committed` or
   `RolledBack`, and whether `t \in h_committed` at that moment.
 - `h_removers[p]`: the set of tids (including `NonTransactionalTID`) that committed a removal of `p`.
-- `h_selected`: the set of `(m, p, visible)` triples recorded by `MutSelect`, where `visible` is the result of the
-  visibility test at selection.
-- `h_content[t]`: the (fragment, version) set visible at `txn[t].snapshot` when the transaction began.
-- `h_regrab[p]`: whether `CleanupDeleteFail(p)` has run and no `CleanupGrab(p)` since.
+- `h_selected`: the set of `(m, p, visible)` triples recorded by `MutSelect` for the parts it actually selected,
+  where `visible` is the result of the visibility test at selection. Candidates that the test rejects are not
+  recorded, because the code skips them without selecting.
+- `h_content[t]`: the (fragment, version) set visible at `txn[t].snapshot`, captured at `Begin` and recaptured
+  at every `SetSnapshot(t)`, so that a loss caused by choosing an older snapshot is not attributed to the next
+  action of another actor.
 
 ### Background actors {#entities-background}
 
@@ -421,9 +429,9 @@ baseline), so its property lives in scenarios that enable both Keeper faults and
 
 | Action | C++ |
 |---|---|
-| `CleanupGrab(p)` | `grabOldParts`: `canBeRemoved`, `isSharedPtrUnique`, state `Deleting`; clears `h_regrab[p]` |
+| `CleanupGrab(p)` | `grabOldParts`: `canBeRemoved`, `isSharedPtrUnique`, state `Deleting` |
 | `CleanupDeleteOk(p)` | `clearPartsFromFilesystemAndRollbackIfError` success: directory removed in both layers, `removePartsFinally`, `Deleted` |
-| `CleanupDeleteFail(p)` | the same function's error path: `rollbackDeletingParts`, back to `Outdated`; sets `h_regrab[p]` |
+| `CleanupDeleteFail(p)` | the same function's error path: `rollbackDeletingParts`, back to `Outdated` |
 
 `CleanupGrab` is enabled for an `Outdated` part when `canBeRemoved` holds with `getOldestSnapshot` (over
 `protected_snapshot` values) and `pins = {}`.
@@ -447,7 +455,7 @@ an uncommitted creation or removal, and requires no other merge in flight.
 
 | Action | C++ |
 |---|---|
-| `MutSelect(m, p)` | `selectPartsToMutate`: `merges_blocker = 0`, `p` not in `reserved`, `m` `Registered`; the visibility test (`isVisible(first_mutation_tid.start_csn, tid)` for a transactional mutation, `isVisible(MaxCommittedCSN, EmptyTID)` for a non-transactional one) is evaluated and its result recorded in `h_selected` together with `(m, p)`; a part that fails it is skipped; for a transactional mutation the transaction is looked up (`tryGetTransactionForMutation`) or, if gone, `mut.csn` decides: `RolledBackCSN` skips, `UnknownCSN` is a `LOGICAL_ERROR`; the selected part is reserved and pinned |
+| `MutSelect(m, p)` | `selectPartsToMutate`: `merges_blocker = 0`, `p` not in `reserved`, `m` `Registered`; the visibility test (`isVisible(first_mutation_tid.start_csn, tid)` for a transactional mutation, `isVisible(MaxCommittedCSN, EmptyTID)` for a non-transactional one) is evaluated; a part that fails it is skipped and nothing is recorded; a part that passes it is selected and `(m, p, result)` is recorded in `h_selected`; for a transactional mutation the transaction is looked up (`tryGetTransactionForMutation`) or, if gone, `mut.csn` decides: `RolledBackCSN` skips, `UnknownCSN` is a `LOGICAL_ERROR`; the selected part is reserved and pinned |
 | `MutWrite(m, p)` | `MutateTask`, `setAndStoreCreationTID` on `Pm` with the mutation's tid |
 | `MutFinish(m, p)` | `MutatePlainMergeTreeTask::executeStep`, `renameTempPartAndReplaceUnlocked` plus `Transaction::commit` under `lockParts`, the source part locked and stored through `removeOldPart`; reservation released; `h_creating`, `h_removing` updated |
 | `MutDone(m)` | `updateMutationEntriesErrors`, `is_done` |
@@ -570,8 +578,8 @@ over internal variables where the code's own assertions are the subject. "Commit
 `p`, and on the durable layer of `disk[p]` while it is down or has not yet loaded `p` (a durable committed removal
 counts as `Outdated`, a durable rolled-back creation or a missing directory counts as `Absent`).
 
-Witness contract: for each property `Q` the `MC` module has an override `Witness_Q` that changes one action as
-stated in the table. `witness.sh Scenario Q` runs TLC with `Witness_Q` applied and only `Q` checked, in a scenario
+Witness contract: for each property `Q` the `MC` module has an override `Witness_Q` that changes one or two named
+actions as stated in the table. `witness.sh Scenario Q` runs TLC with `Witness_Q` applied and only `Q` checked, in a scenario
 whose enabled actions include those the witness needs, and must report a violation of `Q`. Other properties may
 also fail under the witness; they are not checked in that run. A property without a passing witness is not
 accepted into `Invariants.tla`.
@@ -582,7 +590,7 @@ accepted into `Invariants.tla`.
 |---|---|---|
 | `AckedWriteIsDurable` | `h_outcome[t] = Acked` and `h_effects[t]` non-empty implies `t \in h_committed`, and in every later state each part of `h_creating[t]` is `Active`, or `Outdated`/`Deleting`/`Deleted` with `h_removers[p] /= {}`, and no part of `h_removing[t]` is `Active` in any later state | `CommitAck` moved before `CommitCreateCSN` and `Fail` allowed after it (`Crash`) |
 | `AckedReadOnly` | `h_outcome[t] = Acked` with empty `h_effects[t]` implies `t \notin h_committed` and `h_csn[t] = h_snapshot[t]` | `CommitReadOnly` replaced by `CommitCreateCSN` for empty-effect transactions (`Base`) |
-| `ErrorIsAbsent` | `h_outcome[t] = Error` implies `t \notin h_committed`, and once `h_rolled_back[t]` or a restart has completed no part of `h_creating[t]` is `Active` | `RollbackOutdateCreated` skipped (`Base`) |
+| `ErrorIsAbsent` | `h_outcome[t] = Error` implies `t \notin h_committed`, and once `h_rolled_back[t]` or a restart has completed no part of `h_creating[t]` is `Active` | `RollbackOutdateCreated` skipped (`Base`; `Error` is delivered when `CommitBefore` finds the transaction cancelled by `KillTransaction`, or in `Keeper` after `FailBefore` with `WAIT_UNKNOWN`) |
 | `UnknownResolvesByLog` | `h_unknown[t] = Committed` iff `t \in h_committed` at the decision | the two-list swap collapsed to one list (`Keeper`) |
 | `Atomicity` | for any transaction `u` with `h_snapshot`-or-current snapshot `>= h_csn[t]`, every `SelectFinish` of `u` completed after `h_loaded[t]` contains either all fragments of `h_creating[t]` and none of `h_removing[t]`, or none of the former and all of the latter (through covering) | `SelectCheck` uses `mem` only and skips the `tid_to_csn` lookup (`Merge`, where `DROP` supplies multi-part removals) |
 | `RollbackRestores` | once `h_rolled_back[t]`, every part of `h_removing[t]` not in `h_creating[t]` is `Active` and visible to `NtSelect`, and no fragment of `h_creating[t]` appears in any read of a transaction other than `t` | `RollbackRestore` skipped (`NonTxn`, which has `NtSelect`) |
@@ -594,31 +602,31 @@ Stated for transactions whose snapshot is not `EverythingVisibleCSN`.
 | Property | Statement | Witness (scenario) |
 |---|---|---|
 | `StableRead` | the first and last read of `t` differ only by fragments of parts in `h_creating[t]` or `h_removing[t]` at the time of the last read | `SelectCheck` uses `latest_snapshot` instead of `txn.snapshot` (`Base`) |
-| `ReadYourWrites` | after `InsertCommit(t, p)` every later read of `t` contains `p`'s fragments; after `DropOutdate(t)` no later read of `t` contains the dropped fragments | the `creation_tid = current_tid` clause removed from `isVisible` (`Base`) |
+| `ReadYourWrites` | after `InsertCommit(t, p)` every later read of `t` contains `p`'s fragments until a `DropOutdate(t)` covering `p`; after `DropOutdate(t)` no later read of `t` contains the dropped fragments (the removal clause precedes the own-creation clause in `isVisible`, so own removal wins) | the `creation_tid = current_tid` clause removed from `isVisible` (`Base`) |
 | `NoUncommittedRead` | no fragment in a read of `t` comes from a part whose `creation_tid` is not in `h_committed`, not `t` and not `NonTransactionalTID` | `SelectCheck` treats `creation_csn = 0` as `creation_csn = snapshot` (`Base`) |
 | `NoDoubleRead` | a read never contains two versions of the same fragment | `SelectCheck` ignores `removal_csn` and `removal_tid` (`Merge`) |
 | `NoLostRead` | a fragment whose creating part is committed with `h_csn <= snapshot` and whose removal is not committed with `h_csn <= snapshot` is in the read | `SelectCapture` skips `Outdated` parts (`Base`, through a transactional `DROP` in flight) |
-| `NoLostVisibleData` | for a running `t`, the (fragment, version) set visible at `txn[t].snapshot`, recomputed after every action of another actor, never loses an element of `h_content[t]` | `CleanupGrab` uses `latest_snapshot` instead of `getOldestSnapshot` (`Merge`) |
+| `NoLostVisibleData` | for a running `t`, the (fragment, version) set visible at `txn[t].snapshot`, recomputed after every action of another actor, never loses an element of `h_content[t]` (which `SetSnapshot(t)` recaptures) | `CleanupGrab` uses `latest_snapshot` instead of `getOldestSnapshot` (`Merge`) |
 
 ### Safety of part removal and log truncation {#invariants-cleanup}
 
 | Property | Statement | Witness (scenario) |
 |---|---|---|
-| `NoPrematureDelete` | a part enters `Deleting` only if it is not visible at `txn[u].snapshot` for any running `u` (the actual snapshot, not the protected one) | `CleanupGrab` ignores `pins` (`Merge`); the baseline `SetSnapshot` scenario is expected to violate this property on the code as it is, which is a finding, not a witness |
+| `NoPrematureDelete` | a part enters `Deleting` only if it is not visible at `txn[u].snapshot` for any running `u` (the actual snapshot, not the protected one) | `CleanupGrab` uses `latest_snapshot` instead of `getOldestSnapshot` (`Merge`); the baseline `SetSnapshot` scenario is expected to violate this property on the code as it is, which is a finding, not a witness |
 | `NoResurrection` | after every `RestartLoadPart(p)`, `p` is not `Active` if its durable metadata has a committed removal or a non-transactional removal, or if its `creation_tid` is transactional and not in `h_committed` | `updateCSNIfNeeded` returns `UnknownCSN` instead of `RolledBackCSN` for a tid absent from the log (`Crash`) |
 | `LogEntryNeeded` | an entry `csn -> t` leaves `zk_log` only if no durable part metadata and no durable mutation record mentions `t` without the corresponding CSN | the `async_loading_jobs` gate removed (`Crash`) |
 | `NoOutdatedLookup` | `assertTIDIsNotOutdated` never throws | `UpdRemoveOldEntriesSetTail` uses `latest_snapshot` instead of `getOldestSnapshot` (`Keeper`, which enables truncation and unknown-state finalization) |
-| `RegrabBeforeDelete` | `CleanupDeleteOk(p)` never runs while `h_regrab[p]` | `CleanupDeleteFail` leaves `pstate = Deleting` (`Merge`) |
+| `MutationRecovered` | after `RestartLoadMutation(m)`, `m` is present iff its tid is non-transactional or in `h_committed`, and a present transactional `m` has `csn = h_csn[tid]`; this is expected to fail on the code as it is when the log entry was truncated before the unsynced `writeCSN` append reached the durable layer, which is a finding | `RestartLoadMutation` keeps an entry whose tid has no log entry (`MutationCrash`) |
 
 ### Write-write conflicts {#invariants-conflicts}
 
 | Property | Statement | Witness (scenario) |
 |---|---|---|
-| `SingleRemover` | `Cardinality(h_removers[p]) <= 1` | `lockRemovalTID` skips the `removal_csn /= 0` refusal, so a committed removal can be locked again (`Base`) |
+| `SingleRemover` | `Cardinality(h_removers[p]) <= 1` | the CAS in `DropLockOne` replaced by an unconditional write of `lock`, so a second transaction overwrites a committed remover's lock and stores its own `removal_tid` (`Base`) |
 | `LockConsistent` | `lock = t` transactional implies `mem.removal_tid \in {Empty, t}`; `lock = NonTransactionalTID` implies `mem.removal_tid \in {Empty, NonTransactionalTID}`; `lock = 0` implies `mem.removal_tid = Empty` or `mem.removal_csn /= 0` | `RollbackUnlock` unlocks before clearing `removal_tid` (`Base`) |
-| `MutationOnVisible` | every `(m, p, visible)` in `h_selected` has `visible = TRUE` | the visibility result is ignored when deciding to proceed in `MutSelect` (`Mutation`) |
+| `MutationOnVisible` | every selected `(m, p, visible)` in `h_selected` has `visible = TRUE` | `MutSelect` selects and records a candidate regardless of the visibility result (`Mutation`) |
 | `MutationContent` | after a committed mutation `m` of `p`, every read with `snapshot >= h_csn` sees `p`'s fragment at `ver + 1` (or the tombstone), never at `ver` | `MutFinish` publishes `ver` instead of `ver + 1` (`Mutation`) |
-| `NoOrphanMutation` | no mutation is `Registered` while its transaction is `RolledBack` or absent and its `csn` is unknown, once the registering query has completed or failed | the re-check in `MutRegister` removed (`Mutation`, with `KillTransaction` between `MutPrepareAttach` and `MutRegister`) |
+| `NoOrphanMutation` | once `h_rolled_back[t]` holds and every `MutRegister` of `t` has completed or failed, no mutation of `t` is `Registered` or `Selected` (a rollback in progress may still see registered mutations, because `killMutation` runs after the CAS to `RolledBackCSN`) | the re-check in `MutRegister` removed (`Mutation`, with `KillTransaction` between `MutPrepareAttach` and `MutRegister`, so that `RollbackKill*` finds nothing and `MutRegister` registers afterwards) |
 
 ### Assertions from the code {#invariants-code}
 
@@ -628,15 +636,19 @@ Every `chassert` and `LOGICAL_ERROR` on the modelled paths, transcribed as the c
 | Assertion | Statement | Witness (scenario) |
 |---|---|---|
 | `validateInfo`, running creator | if a transaction with `creation_tid` is running and `creation_csn \notin {0, RolledBackCSN}` and the transaction's `csn` is not `CommittingCSN`, then `creation_csn` equals the transaction's `csn` | `CommitStoreCreation` writes `h_csn + 1` (`Base`) |
-| `validateInfo`, no creation CSN | `creation_csn = 0` implies `removal_csn = 0` and `removal_tid \in {Empty, creation_tid}` | `DropLockOne` allowed on a part with `creation_csn = 0` by another transaction (`Base`) |
-| `validateInfo`, order | `creation_csn /= 0` implies (`removal_csn = 0` or `removal_csn = NonTransactionalCSN` or `creation_csn <= removal_csn`) and (`creation_tid` non-transactional or `creation_tid.start_csn <= creation_csn`) | `CommitStoreRemoval` writes `h_csn - 1` (`Base`) |
-| `validateInfo`, removal | `removal_csn /= 0` implies `removal_tid /= Empty` and `removal_tid.start_csn <= removal_csn` | `RollbackUnlock` clears `removal_tid` but not `removal_csn` (`Base`) |
+| `validateInfo`, no creation CSN | `creation_csn = 0` implies `removal_csn = 0` and `removal_tid \in {Empty, creation_tid}` | `NtDropLock` skips the uncommitted-creation refusal, so a non-transactional removal stores `removal_csn = NonTransactionalCSN` on a part with `creation_csn = 0` (`NonTxn`) |
+| `validateInfo`, order | `creation_csn /= 0` implies (`removal_csn = 0` or `removal_csn = NonTransactionalCSN` or `creation_csn <= removal_csn`) and (`creation_tid` non-transactional or `creation_tid.start_csn <= creation_csn`) | `CommitStoreCreation` writes `CSN_MAX` instead of `h_csn`, so a later committed removal by another transaction has a smaller CSN (`Base`) |
+| `validateInfo`, removal | `removal_csn /= 0` implies `removal_tid /= Empty` and `removal_tid.start_csn <= removal_csn` | `DropLockOne` locks in memory only and skips the `setAndStoreRemovalTID` store, so `CommitStoreRemoval` later stores `removal_csn` with `removal_tid = Empty` (`Base`) |
 | `validateInfo`, exempt shape | the `DummyTID`/`RolledBackCSN`/empty-removal shape produced by `loadMetadata` case 2 is skipped | not a property, a definition |
-| `isVisible`, fast path | `removal_csn /= 0` implies `creation_csn /= 0`; both CSNs are `0`, `NonTransactionalCSN` or above `MaxReservedCSN` | `CommitStoreRemoval` before `CommitStoreCreation` (`Base`) |
+| `isVisible`, fast path | `removal_csn /= 0` implies `creation_csn /= 0`; both CSNs are `0`, `NonTransactionalCSN` or above `MaxReservedCSN` | `CommitStoreCreation` skipped for a part both created and removed by `t`, with `CommitStoreRemoval` running before `UpdLoadNewEntries`, so `updateCSNIfNeeded` cannot repair `creation_csn` (`Base`) |
 | `isVisible`, slow path | on entry to the slow path at least one CSN is `0`, and `current_tid` is neither the creator nor the remover | the `creation_tid = current_tid` clause removed (`Base`) |
 | `getOldestSnapshot` | `snapshots_in_use` sorted, same size as `running_list` | `SetSnapshot` also rewrites `protected_snapshot` (`SetSnapshot`) |
-| `preparePartForRemoval` | an `Outdated` part with a transactional creation has a `removal_tid` | `RollbackMarkCreated` skipped (`Crash`) |
-| `NoUnknownMutationCSN` | `MutSelect` never meets a transactional mutation with no running transaction and `csn = 0` | `CommitStoreMutation` skipped (`Mutation`) |
+| `NoUnknownMutationCSN` | `MutSelect` never meets a transactional mutation with no running transaction and `csn = 0` | the re-check in `MutRegister` removed, so an orphaned registered mutation reaches `MutSelect` after its transaction is gone (`Mutation`) |
+
+The assertion in `preparePartForRemoval` (an `Outdated` part with a transactional creation has a `removal_tid`) is
+not listed: on the modelled paths a part becomes `Outdated` at load only through `removal_csn /= 0` or
+`RolledBackCSN`, both of which imply the required shape, so no witness can falsify it. It is kept as a comment in
+`Server.tla` next to `RestartLoadPart`, not as a property.
 | `NoProcessDown` (scenarios without disk faults) and `DownOnlyByNoexceptFault` (with them) | `ProcessDown` is reached only from a `StorePersist` fault or `STALE_VERSION` inside `afterCommit`, `rollback` or `finalizeCommittedTransaction` | `Fail` allowed inside `afterCommit` (`DiskFault`) |
 
 ### Liveness {#invariants-liveness}
@@ -674,6 +686,7 @@ everywhere.
 | `Implicit` | `P1`, `P2` | the implicit wrapper, `Updater` | query | acknowledgement ordering |
 | `Keeper` | + `M12` | `Base` + `Merge*` + `Updater+GC` + `Updater+Unknown` | Keeper, both wait modes | `UnknownResolvesByLog`, `NoOutdatedLookup`, the two-list race |
 | `Crash` | + `M12` | `Base` + `Merge*` + `Cleanup*` + `Updater+GC` + `Restart*`, `Layered` disk | restart, both `FSYNC_PART_DIRECTORY` values | `NoResurrection`, `LogEntryNeeded`, `AckedWriteIsDurable` across restart |
+| `MutationCrash` | `P1`, `P1m` | one session, `Begin`, `Insert*`, `MutPrepare*`, `MutRegister`, `Mut*`, `Commit*`, `Rollback*`, `Updater+GC`, `Restart*`, `Layered` disk | restart | `MutationRecovered`, `LogEntryNeeded` for mutation records, the written-but-unattached window, the unsynced `writeCSN` append |
 | `DiskFault` | + `M12` | `Base` + `Merge*` + `Restart*`, `Layered` disk | disk write | `DownOnlyByNoexceptFault`, recovery after `ProcessDown` |
 | `QueryFault` | + `P1m` | `Base` + `MutPrepare*`, `MutRegister`, `Mut*` | query | rollback between steps, the orphan-file window |
 | `Live` | `P1`, `P2` | `Base` + `Cleanup*` + `Updater+GC` + `Updater+Unknown` | Keeper | `CommitResolves`, `OutdatedEventuallyDeleted` |
@@ -730,7 +743,8 @@ allow it, as an integration test.
 5. `Nt*`, `NtSelect*`; the `NonTxn` scenario.
 6. Keeper faults and the rest of the updating thread; the `Keeper` scenario, both wait modes.
 7. `Crash`, `Restart*` with asynchronous part loading; the `Crash` scenario, both `FSYNC_PART_DIRECTORY` values.
-8. `MutPrepare*`, `MutRegister`, `Mut*`, `Kill*`; the `Mutation`, `MutationChain` and `QueryFault` scenarios.
+8. `MutPrepare*`, `MutRegister`, `Mut*`, `Kill*`; the `Mutation`, `MutationChain`, `MutationCrash` and
+   `QueryFault` scenarios.
 9. Disk write faults and `ProcessDown`; the `DiskFault` scenario.
 10. `Implicit` and `Live`.
 11. Code-map review, known-trace check, README with measured numbers.
