@@ -8,8 +8,9 @@ SymSessions == Permutations(Sessions)
 \* client.outcome_tid, part.pins, and last_error beyond the one value NoSpuriousStaleVersion tests), fields that
 \* are a function of the kept ones (the durable layer, which equals the cached layer under DISK_MODE = "Durable",
 \* and a read's frags, which Covers = empty and a constant payload make a function of its parts), and fields that
-\* no Base action writes (mdisk, mut, task, the mutation and non-transactional parts of h, the tail-pointer and
-\* unknown-state parts of tlog, the fault counters and loading fields of sys, a frame's noexcept_retries).
+\* no Base action writes (mdisk, mut, task, part.payload, the mutation and non-transactional parts of h, the
+\* tail-pointer and unknown-state parts of tlog, the fault counters and loading fields of sys, a frame's
+\* noexcept_retries).
 \* Each of the three depends on the configuration below, so a scenario with other constants needs its own view.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
@@ -24,7 +25,7 @@ BaseView ==
        tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use>>,
      [t \in Tids |-> <<txn[t].state, txn[t].csn, txn[t].snapshot, txn[t].protected_snapshot,
                        txn[t].creating, txn[t].removing, txn[t].mutations, txn[t].holders,
-                       txn[t].mutex, txn[t].pc, txn[t].work>>],
+                       txn[t].rb_driver, txn[t].mutex, txn[t].pc, txn[t].work>>],
      <<sys.server, sys.parts_lock, sys.merges_blocker, sys.updater_pc>>,
      [k \in Sessions |-> <<client[k].current, client[k].last_error = "STALE_VERSION",
                            client[k].first_read.parts, client[k].last_read.parts,

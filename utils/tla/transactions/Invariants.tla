@@ -105,6 +105,12 @@ Assert_getOldestSnapshot == /\ tlog.running_list = { t \in Tids : tlog.snapshots
                             /\ \A t \in tlog.running_list : tlog.snapshots_in_use[t] = txn[t].protected_snapshot
 NoAvoidableTermination == h.down_cause \in {"None", "RetryExhausted"}
 NoSpuriousStaleVersion == \A k \in Sessions : client[k].last_error = "STALE_VERSION" => client[k].stale_interferences = MAX_STORE_RETRIES
+\* A KILL query blocks at KillWait until the rollback it drives finishes, and the runner disables TLC's deadlock
+\* check (an exhausted TID_MAX leaves a legitimate idle terminal state), so a killer that could never be released
+\* would pass unnoticed. Only RollbackFinalize clears rb_driver, so a killer parked on a transaction whose
+\* rollback machine has already gone idle is stranded; when no transaction names it, KillReturn is enabled.
+KillerNotStranded == \A k \in Sessions : client[k].pc = "KillWait" =>
+  \A t \in Tids : txn[t].rb_driver = Sess(k) => txn[t].pc /= "Idle"
 
 \* ---- action properties
 RollbackRestoresStep == \A k \in Sessions, t \in Tids : RollbackFinalize(k, t) =>

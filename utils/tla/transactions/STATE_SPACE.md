@@ -131,6 +131,11 @@ and still growing, and `TID_MAX = 2` already bounds the transactions that can re
 `RollbackFinalize` to two, because `Begin` draws from a monotone counter capped at `TID_MAX`, which makes that
 constraint vacuous.
 
+A third candidate, outside the plan's list, was built and measured too: restricting the kill to a session that
+holds no transaction of its own. It reached 23,908,162 distinct states after three minutes and was still growing,
+and it would also have cost the case where the kill lands while two transactions are live, so it was discarded on
+both counts.
+
 `CSN_MAX = 35` is a bound and is the smallest one that works: real commit sequence numbers start at
 `FirstCSN = 33`, the log starts with one entry there, and two transactions can commit, so the sequence reaches
 35. Lowering it would disable `CommitCreateCSN` for the second commit.
@@ -141,14 +146,16 @@ Both scenarios green, `-workers auto` on 32 cores, one run at a time.
 
 | Scenario | States generated | Distinct states | Time |
 |---|---|---|---|
-| `BaseSmall` | 35,609 | 24,667 | 1 s |
-| `Base` | 4,321,337 | 1,814,598 | 16 s |
+| `BaseSmall` | 66,399 | 47,381 | 1 s |
+| `Base` | 5,138,339 | 2,163,747 | 19 s |
 
-Under `-workers auto` the `Base` counts move by a few states between runs, because two workers can fingerprint
-the same state before either has inserted it; 4,321,334 and 1,814,597 came out of the run before this one.
+Under `-workers auto` the counts move by a few states between runs, because two workers can fingerprint the same
+state before either has inserted it.
 
-`BaseSmall` is unchanged by all of the above: with one session no transaction is ever killed, so none of the
-three corrections and none of the dropped fields make a difference to it.
+Both figures are above the measurement tables above, and for one reason: those were taken while a session could
+not kill its own transaction. Allowing it, which is what the C++ does, takes `Base` from 1,814,603 to 2,163,747
+on the same modules, and takes `BaseSmall` from 24,667 to 47,381, because with one session that is now the only
+way a transaction is ever killed. Everything else the corrections and the view do is unchanged by it.
 
 ## Reproducing {#reproducing}
 
