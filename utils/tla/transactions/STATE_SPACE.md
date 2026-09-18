@@ -269,9 +269,9 @@ coarse.
 | Configuration | Distinct states | Time |
 |---|---|---|
 | `SetSnapshot` before the cleanup group | 7,420,004 | 1 min 05 s |
-| `SetSnapshot` with it | 13,634,354 | 2 min 01 s |
+| `SetSnapshot` with it | 13,634,229 | 2 min 01 s |
 | `SetSnapshotFixed` before | 7,291,951 | 1 min 04 s |
-| `SetSnapshotFixed` with it | 13,104,253 | 2 min 02 s |
+| `SetSnapshotFixed` with it | 13,104,416 | 2 min 01 s |
 
 Both stay well inside the 30 million distinct states and 10 minutes a scenario is budgeted, so no further
 reduction was sought. The two factors are not separable by these runs: the actions and the two view fields
@@ -287,14 +287,17 @@ was killed at 333 seconds with 131,878,184 states generated, 46,726,144 distinct
 8.2 million still growing; the violation is at depth 45. A run past 30 million distinct that is still growing
 is a defect of the configuration rather than something to wait for, and the defect here is breadth: two
 sessions and two parts cross the whole space with a behaviour that uses neither. Cutting the universe to what
-the trace uses puts it at 177,195 distinct states and three seconds.
+the trace uses puts it at about 170,000 distinct states and three seconds.
 
 | Configuration | Distinct states | Time | Result |
 |---|---|---|---|
-| `SetSnapshotF2` | 177,195 | 3 s | red on `NoPrematureDelete`, 45 states |
+| `SetSnapshotF2` | 170,881, a first-violation count | 3 s | red on `NoPrematureDelete`, 45 states |
 | `SetSnapshotF2Fixed` | 367,183 | 4 s | green |
 
-The `Fixed` run is larger than the red one because it finishes; the red one stops at the first violation.
+The `Fixed` run is larger than the red one because it finishes; the red one stops at the first violation, so
+its count is not reproducible. Two runs of it here gave 177,195 and 170,881, and a reviewer's gave 167,361, all
+on the same 45-state trace. Every first-violation count in these documents is an order of magnitude, not a
+figure to match.
 
 ### The bounds, and why there are two sets {#setsnapshot-bounds}
 

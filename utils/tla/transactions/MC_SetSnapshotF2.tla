@@ -6,7 +6,7 @@ EXTENDS MergeTreeTransactions
 \* transactions, while the exhaustive bounds give two. It also needs a snapshot target at which something is
 \* visible: SNAPSHOT_TARGETS = {33} is FirstCSN, which is latest_snapshot at init, and the first commit takes
 \* CSN 34 (Keeper.tla: zk.seq starts at FirstCSN), so no part is ever visible at 33 and the property is
-\* vacuously true there however deep the search goes. This module raises TID_MAX to 3, lowers the target to 34,
+\* vacuously true there however deep the search goes. This module raises TID_MAX to 3, raises the target to 34,
 \* and cuts the scenario to one session and one part, because the shape is sequential: the same session runs the
 \* three transactions in turn, so a second session and a second part only add breadth the violation does not need.
 \* MC_SetSnapshotF2Fixed is the same configuration with SET_SNAPSHOT_PROTECTS = TRUE and is green.

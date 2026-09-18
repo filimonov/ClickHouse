@@ -177,7 +177,7 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 |---|---|---|---|
 | `UpdLoadEntriesMap` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::loadEntries` (:135), from `loadNewEntries` (:272) | the `NOEXCEPT_SCOPE_STRICT` block (:161) has run: the batch of new entries is in `tid_to_csn` under `TransactionLog::mutex` and `last_loaded_entry` has advanced. `latest_snapshot` has not moved, which is the window a `Begin` or a `SelectCheck` can fall into |
 | `UpdPublishSnapshot` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::loadEntries` (:135) | the block under `running_list_mutex` (:174): `latest_snapshot` takes the CSN of the last loaded entry and `local_tid_counter` is reset. `loadNewEntries` then calls `latest_snapshot.notify_all` (:281), which is what releases `waitForCSNLoaded` |
-| `UpdRemoveOldEntriesSetTail` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | everything up to and including `tail_ptr.store` (:316): the `isServerCompletelyStarted` gate, the `asyncTablesLoadingJobNumber` gate that applies only while `updated_tail_ptr` is false, the read of the `tail_ptr` znode, `getOldestSnapshot`, the `LOGICAL_ERROR` when the new value is below the old one, the early return when they are equal, and the `set` of the znode |
+| `UpdRemoveOldEntriesSetTail` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | everything up to and including `tail_ptr.store` (:321): the `isServerCompletelyStarted` gate, the `asyncTablesLoadingJobNumber` gate that applies only while `updated_tail_ptr` is false, the read of the `tail_ptr` znode, `getOldestSnapshot`, the `LOGICAL_ERROR` when the new value is below the old one, the early return when they are equal, and the `set` of the znode |
 | `UpdRemoveOldEntriesDelete(c)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | one iteration of the removal loop (:319-341): one `tryRemove` of the log znode and one `tid_to_csn` erase, for an entry whose `tid.start_csn` is below the new tail and whose CSN is not the latest loaded one. `ZNONODE` counts as removed |
 
 ### Outdated-parts cleanup thread {#code-map-cleanup}
@@ -185,9 +185,9 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 | Action | C++ file | Function | Step boundary |
 |---|---|---|---|
 | `CleanupGrab(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4074) | one part moves from `Outdated` to `Deleting` under `lockParts`: its version `canBeRemoved` (:4140), nobody else holds it (`isSharedPtrUnique`, :4150), and it is not an empty part still covering an `Outdated` one (:4158). The code grabs a set under one lock and the model one part per step; the removal-time and mutation-parent conditions at :4167 are time and zero-copy-replication bookkeeping, which `force` covers |
-| `CleanupValidate(p)` | `src/Storages/MergeTree/IMergeTreeDataPart.cpp` | `IMergeTreeDataPart::remove` (:2928) through `assertHasValidVersionMetadata` (:2863) and `VersionMetadata::hasValidMetadata` | the `chassert` on the grabbed part passes, on the path `clearPartsFromFilesystemAndRollbackIfError` (`MergeTreeData.cpp:4566`) takes for each grabbed part |
-| `CleanupDeleteOk(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `clearPartsFromFilesystemAndRollbackIfError` (:4566) and `removePartsFinally` (:4217) | the directory is gone in both disk layers and the part leaves `data_parts_indexes` |
-| `CleanupDeleteFail(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `rollbackDeletingParts` (:4205) | the part goes back to `Outdated`. Two producers: the `CORRUPTED_DATA` `hasValidMetadata` raises, and a filesystem error in `clearPartsFromFilesystemImpl`. The second needs a disk fault, so its disjunct is `FALSE` until plan 5 raises `DISK_FAULTS_MAX` |
+| `CleanupValidate(p)` | `src/Storages/MergeTree/IMergeTreeDataPart.cpp` | `IMergeTreeDataPart::remove` (:2928) through `assertHasValidVersionMetadata` (:2863) and `VersionMetadata::hasValidMetadata` | the `chassert` on the grabbed part passes, on the path `clearPartsFromFilesystemAndRollbackIfError` (`MergeTreeData.cpp:4566`) takes for each grabbed part. This row and the validation half of `CleanupDeleteFail` model a `DEBUG_OR_SANITIZER_BUILD`: in release `chassert` is `(void)sizeof(!(x))` (`base/base/defines.h:84-102`) and does not evaluate its argument, so nothing validates and nothing refuses |
+| `CleanupDeleteOk(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `clearPartsFromFilesystemAndRollbackIfError` (:4566) and `removePartsFinally` (:4217-4240), under `lockParts` | the directory is gone in both disk layers and the part leaves `data_parts_indexes` |
+| `CleanupDeleteFail(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `rollbackDeletingParts` (:4204-4215), under `lockParts` | the part goes back to `Outdated`. Two producers: the `CORRUPTED_DATA` `hasValidMetadata` raises, and a filesystem error in `clearPartsFromFilesystemImpl`. The second needs a disk fault, so its disjunct is `FALSE` until plan 5 raises `DISK_FAULTS_MAX` |
 
 ### The metadata store {#code-map-store}
 
@@ -258,11 +258,11 @@ discarded.
 | `Schema` | 2026-09-18 | the cleanup-thread commit | 1 | 1 s | green |
 | `BaseSmall` | 2026-09-18 | the cleanup-thread commit | 47,381 | 1 s | green |
 | `Base` | 2026-09-18 | the cleanup-thread commit | 28,552,285 | 4 min 11 s | green at the matrix bounds; an unmodified `630d8ad28674` re-run in the same session gave 28,553,740, so the spread is run-to-run counting noise and not this change |
-| `SetSnapshot` | 2026-09-18 | the cleanup-thread commit | 13,634,354 | 2 min 01 s | green at the exhaustive bounds; the cleanup group and the two view fields roughly double it |
-| `SetSnapshotFixed` | 2026-09-18 | the cleanup-thread commit | 13,104,253 | 2 min 02 s | green at the same bounds |
-| `SetSnapshotF2` | 2026-09-18 | the cleanup-thread commit | 177,195 | 3 s | **red on `NoPrematureDelete`**, 45 states, which is finding F2 |
-| `SetSnapshotF2Fixed` | 2026-09-18 | the cleanup-thread commit | 367,183 | 4 s | green on the four cleanup-scenario properties |
-| cleanup witnesses, 3 rows | 2026-09-18 | the cleanup-thread commit | 236,828 for the largest | 8 s in total | all three red |
+| `SetSnapshot` | 2026-09-18 | the cleanup-thread commit | 13,634,229 | 2 min 01 s | green at the exhaustive bounds; the cleanup group and the two view fields roughly double it |
+| `SetSnapshotFixed` | 2026-09-18 | the cleanup-thread commit | 13,104,416 | 2 min 01 s | green at the same bounds |
+| `SetSnapshotF2` | 2026-09-18 | the cleanup-thread commit | 170,881, a first-violation count that is not reproducible | 3 s | **red on `NoPrematureDelete`**, 45 states, which is finding F2 |
+| `SetSnapshotF2Fixed` | 2026-09-18 | the cleanup-thread commit | 367,183 | 4 s | green on the four cleanup-scenario properties; `NoFalseCorruption` is vacuously green there and in `SetSnapshotFixed`, because no `CleanupDeleteFail` step is reachable |
+| cleanup witnesses, 3 rows | 2026-09-18 | the cleanup-thread commit | 243,397 for the largest, all first-violation counts | 10 s in total | all three red |
 | witnesses `NoPrematureDelete` and `NoLostVisibleData` in `SetSnapshotFixed` | 2026-09-18 | the cleanup-thread commit | 13,664,284 and 13,664,666 | 96 s and 98 s | green, which is debt `B2` |
 
 The commits are `885a5c382cab` (Task 1, the modules and the runner), `5260d5d44f67` and `53814c46e7e5`

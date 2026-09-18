@@ -245,17 +245,29 @@ against a `Fixed` configuration, so that the `SET TRANSACTION SNAPSHOT` defect d
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 236,828 | 3 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupGrab` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 31,862 | 2 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 229,640 | 3 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 238,916 | 3 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupGrab` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 30,526 | 3 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 243,397 | 4 s |
 
 `PinnedNotDeleted` is red at the exhaustive bounds because it needs no visible part at all: a `SELECT` pin on an
 `Outdated` part whose removal has committed is enough, and two transactions produce that. The other two were
 run at the exhaustive bounds first and are green there, 13,664,284 and 13,664,666 distinct states in 96 and
 98 seconds, which is what debt B2 records.
 
-`NoFalseCorruption`'s witness is deferred to task 4 of this plan and is in the deferred table above. The
-property itself is checked, green, in `SetSnapshotFixed` and `SetSnapshotF2Fixed`.
+`PinnedNotDeleted` restates `CleanupGrab`'s own guard, so in every non-witness run it is a tautology and its
+only content is the witness row above. It is stated anyway because the guard is a refinement decision that a
+later task could change without noticing that nothing was checking it.
+
+`NoFalseCorruption` is **vacuously green** in `SetSnapshotFixed` and in `SetSnapshotF2Fixed`: no
+`CleanupDeleteFail` step is reachable in either, because a validation refusal needs a disagreement between the
+in-memory and the stored record that no action of this plan can produce, and the filesystem-error disjunct is
+`FALSE` until plan 5. The green says nothing about the property, and its only content is the witness, which is
+deferred to task 4 of this plan and is in the deferred table above.
+
+The state counts in the table above are **first-violation counts and are not reproducible**: a witness run
+stops at the first violation, and how many states it has fingerprinted by then depends on how the workers
+raced. A reviewer's re-run of the same three gave 259,738, 235,808 and 29,910. They are recorded to show the
+order of magnitude, not as figures to match.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 

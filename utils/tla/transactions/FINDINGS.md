@@ -26,8 +26,9 @@ Baseline C++ throughout is upstream `master` `2c24b6b9291e`, checked out in this
 
 ### F2 in full {#f2}
 
-**Trace**: `traces/f2-set-snapshot-premature-delete.txt`, 45 states, found after 177,195 distinct states in
-three seconds. Scenario `SetSnapshotF2`, classification `code`.
+**Trace**: `traces/f2-set-snapshot-premature-delete.txt`, 45 states, found after 170,881 distinct states in
+three seconds. That count is a first-violation count and is not reproducible; re-runs gave 177,195 and 167,361
+on the same trace. Scenario `SetSnapshotF2`, classification `code`.
 
 **Action sequence.** `Begin`, `InsertWrite`, the three store steps, `InsertPreActive`, `PublishStart`,
 `PublishFlip`, `CommitBefore`, `CommitCreateCSN`, `CommitStoreCreation` with its store steps, `CommitFlip`,
@@ -77,7 +78,9 @@ three transactions.
 `SNAPSHOT_TARGETS = {34}`. A second session and a second part add only breadth the violation does not use, and
 removing them puts the trace within reach of a three-second run. `MC_SetSnapshotF2Fixed` is the same
 configuration with `SET_SNAPSHOT_PROTECTS = TRUE` and is green on `NoPrematureDelete`, `PinnedNotDeleted`,
-`NoLostVisibleData` and `NoFalseCorruption` over 367,183 distinct states. `MC_SetSnapshot` and
+`NoLostVisibleData` and `NoFalseCorruption` over 367,183 distinct states. `NoFalseCorruption` is vacuously
+green there: no `CleanupDeleteFail` step is reachable in this plan, which is what model defect `M7` and the
+deferred witness record. `MC_SetSnapshot` and
 `MC_SetSnapshotFixed` keep their bounds and their target: 33 is what the `Assert_getOldestSnapshot` and
 `Assert_TailPtrNotRegressing` witnesses need, and neither of those needs a visible part.
 
@@ -235,6 +238,8 @@ evaluated it and a correction applied to one copy and not the other would have b
 | M4 | An exhaustive run of `MC_SetSnapshot` at the bounds the scenario matrix gives it does not finish: five runs at `TID_MAX = 3`, `CSN_MAX = 36` were killed, the last at 56,968,754 distinct states after 8 minutes with 4.47 million still queued. The scenario is 3.4 times `Base` at equal bounds, which puts it near 98 million and about 15 minutes | The scenario is checked exhaustively at `TID_MAX = 2`, `CSN_MAX = 35` instead, in 65 seconds, and its witnesses are shown at the matrix bounds in `MC_SetSnapshotWitness`, where a run stops at the first violation. What that costs is debt B1 below | the task that owns the state-space budget; a `VIEW` or `CONSTRAINT` that closes the gap would let the two bound sets become one again. The measurements, the three reductions applied and the one measured and rejected are in `STATE_SPACE.md`, section "The `SetSnapshot` scenario" |
 | M5 | `UpdRemoveOldEntriesSetTail` sets `tlog.updated_tail_ptr` inside the branch where the tail actually moves, while `TransactionLog::removeOldEntries` stores `true` at `:302`, before it reads the znode and before the `new == old` early return | The async-loading gate stays armed in the model after a pass the code would have disarmed. Dead here: `sys.completely_started` is `TRUE` at init and `sys.async_loading_jobs` is `0` at init, and no action of this plan writes either, so the gate is a constant. It is not a one-line reorder, because the model has no action for a pass that ran and moved nothing, and adding one would add states for a behaviour nothing yet observes | plan 3, the task that enables restarts and table loading, which is what makes both gates variable |
 | M6 | Under `SET_SNAPSHOT_PROTECTS` the sortedness conjunct of `Assert_getOldestSnapshot` is switched off, while `OldestSnapshot` is still `Min({...})` (`Parts.tla`) | Nothing in `MC_SetSnapshotFixed` checks that the fix keeps `front()` equal to the minimum, which is the one thing the sorted re-insert exists to preserve. The model cannot state it as written, because `Min` encodes the answer rather than the list | the task that gives `snapshots_in_use` an ordered encoding, if one is ever needed; until then `MC_SetSnapshotFixed` verifies that the fix breaks nothing, not that it preserves `front()` |
+| M7 | `CleanupValidate` and the validation half of `CleanupDeleteFail` turn every refusal of `hasValidMetadata` into the rollback to `Outdated`. The code has two outcomes, not one: `hasValidMetadata` throws `CORRUPTED_DATA` on a mismatch, which is the rollback, but its catch-all (`src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:711-720`) *returns false*, and a false makes the `chassert` at `IMergeTreeDataPart.cpp:2928` abort the process | The model has no terminating outcome for a failed validation, so a scenario that reached one would report a recoverable rollback where the server dies. Dead today: the validation refusal is itself unreachable in every scenario of this plan, which is why `NoFalseCorruption` is vacuously green | plan 5, the task that enables `ProcessDown`, where the outcome belongs to `NoAvoidableTermination` alongside the other terminations |
+| M8 | `part_is_probably_removed_from_disk` (`IMergeTreeDataPart.cpp:2873`) makes a second `remove` of the same part skip validation entirely; the model re-validates on every grab | The model can loop where the code cannot: `CleanupDeleteFail` returns a part to `Outdated`, `CleanupGrab` takes it again and the same validation fails again. Harmless while the refusal is unreachable | plan 5, the task that turns on disk faults and makes the refusal reachable |
 
 `M2` was closed rather than placed. `Refuse` now routes to `StmtRollbackMark` whenever `stmt.precommitted` is non-empty, which is what `MergeTreeData::Transaction::isEmpty` (`src/Storages/MergeTree/MergeTreeData.h:391`) tests, and both statement-rollback actions act on the whole of `stmt.precommitted`. The attached part keeps its entry in `txn[t].creating` and in `h.creating[t]`, because `MergeTreeTransaction::creating_parts` keeps its entry too; `Refuse` always ends at the outer rollback, and that rollback's second stamp of `RolledBackCSN` and second removal from the working set are both no-ops in the C++ and in the model. The entry `README.md`, section 8, used to carry for this divergence is gone with it. Nothing in `Base` changed state: the count stayed at the figure the run table records, for the reason the row above gives.
 
@@ -266,6 +271,11 @@ The first four are `Base` properties and `Base` verifies all four at `TID_MAX = 
 rows `WITNESSES.md` already explains need a third transaction, and `Assert_validateInfo_removal` is the fourth,
 which plan 1 found needs three transactions too. They are not re-verified in `SetSnapshot`, and nothing about
 this scenario changes the actions those witnesses mutate.
+
+`h.content` is in `MC_SetSnapshot`'s view although that configuration checks no property that reads it. It is
+there for uniformity with the four sibling modules rather than because a property needs it, and a finer view is
+sound in any case: it can only split states, never merge two that behave differently. `part.pins` is the other
+way round in every module, including that one, because `CleanupGrab` reads it.
 
 `B2` has the same cause as `F2` and the paragraph above it: the shape both witnesses need is a part still
 visible to a running transaction at a lowered snapshot, which takes three transactions and a snapshot target

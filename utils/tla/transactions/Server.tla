@@ -697,6 +697,13 @@ CleanupGrab(p) ==
 
 \* chassert(assertHasValidVersionMetadata()) in IMergeTreeDataPart::remove, IMergeTreeDataPart.cpp:2928, on the
 \* path clearPartsFromFilesystemAndRollbackIfError (MergeTreeData.cpp:4566) takes for each grabbed part.
+\* This action and the validation half of CleanupDeleteFail model a DEBUG_OR_SANITIZER_BUILD: chassert expands
+\* to abortOnFailedAssertion there and to (void)sizeof(!(x)) in release (base/base/defines.h:84-102), which does
+\* not evaluate the argument at all, so a release build never validates and never refuses.
+\* One outcome is not modelled. hasValidMetadata returns false from its catch-all (VersionMetadata.cpp:711-720)
+\* rather than throwing, and a false there makes the chassert abort the process; the model turns every refusal
+\* into the rollback to Outdated instead. Model defect M7 places that in plan 5, with ProcessDown and
+\* NoAvoidableTermination.
 CleanupValidate(p) ==
   /\ Up /\ sys.cleanup_pc = "Validate" /\ sys.cleanup_part = p
   /\ ValidateMetadataOK(p)
@@ -704,19 +711,21 @@ CleanupValidate(p) ==
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
 
 \* the success path of clearPartsFromFilesystemAndRollbackIfError: the directory is gone in both layers and
-\* removePartsFinally (MergeTreeData.cpp:4217) erases the part from data_parts_indexes.
+\* removePartsFinally (MergeTreeData.cpp:4217-4240) erases the part from data_parts_indexes under lockParts.
 CleanupDeleteOk(p) ==
   /\ Up /\ sys.cleanup_pc = "Delete" /\ sys.cleanup_part = p
+  /\ sys.parts_lock = NoActor                                 \* removePartsFinally takes lockParts at :4222
   /\ disk' = DiskWithoutDir(p)
   /\ part' = [part EXCEPT ![p].pstate = "Deleted", ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo]
   /\ sys' = [sys EXCEPT !.cleanup_pc = "Idle", !.cleanup_part = "None"]
   /\ UNCHANGED <<zk, mdisk, h, tlog, txn, client, stmt, mut, task>>
 
-\* rollbackDeletingParts, MergeTreeData.cpp:4205: back to Outdated. Two producers: the CORRUPTED_DATA that
+\* rollbackDeletingParts, MergeTreeData.cpp:4204-4215: back to Outdated, under lockParts. Two producers: the CORRUPTED_DATA that
 \* hasValidMetadata throws, and the filesystem error of clearPartsFromFilesystemImpl. The second needs a disk
 \* fault, which is plan 5's; until then the disjunct is FALSE and is written out so the action is complete.
 CleanupDeleteFail(p) ==
   /\ Up /\ sys.cleanup_part = p
+  /\ sys.parts_lock = NoActor                                 \* rollbackDeletingParts takes lockParts at :4206
   /\ \/ (sys.cleanup_pc = "Validate" /\ ~ValidateMetadataOK(p))
      \/ (sys.cleanup_pc = "Delete" /\ FALSE)      \* the filesystem-error path: plan 5, DISK_FAULTS_MAX > 0
   /\ part' = [part EXCEPT ![p].pstate = "Outdated"]
