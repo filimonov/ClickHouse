@@ -68,7 +68,7 @@ NoDoubleRead == [][NoDoubleReadStep]_vars
 \* created and did not itself remove, minus those a later committed transaction visible to the reader removed,
 \* "which the code hides by giving own removal priority". That priority is the reader's too: VersionInfo::isVisible
 \* (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:171) returns false for removal_tid == current_tid before
-\* ever reaching the creation clause at :182, so a part the reader is itself dropping is invisible to it however
+\* ever reaching the creation clause at :178, so a part the reader is itself dropping is invisible to it however
 \* the writer that created it committed. The reader's own removals are therefore out of C as well. The row states
 \* only the writer's half; see FINDINGS.md section 3.
 AtomicityStep == \A k \in Sessions : SelectFinish(k) => LET t == Cur(k)
