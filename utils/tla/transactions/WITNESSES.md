@@ -50,9 +50,18 @@ witness of every property the scenario checks stays red, and for those three it 
 matrix bounds, `BaseWitness` is deleted, and its three rows are ordinary `Base` rows.
 
 A fourth witness was distorted by the reduced bound rather than blocked by it. `Assert_validateInfo_removal` was
-built as a two-change witness because the one change the design document names left the run green at
-`TID_MAX = 2`. At three that change is red on its own, so the witness is now the one-change witness the document
-describes and its minimality halves are gone.
+built as a two-change witness because the one change the design document names, `DropStore` not waiting for the
+removal-TID store, left the run green at `TID_MAX = 2`; the second change stopped `EnrolBody` from starting that
+store at all. At three the first change is red on its own, so the witness is now the one-change witness the
+document names, the `EnrolBody` hook is gone, and so are the two minimality halves, which a one-change witness
+does not have. What made the difference is a third transaction: the target shape needs a rollback to clear the
+removal TID under a later remover, which two transactions cannot produce.
+
+That row is now by far the most expensive witness in the table. It is red only after 53.1 million distinct
+states, well above the 30 million a witness is budgeted, because the shape lies deep in the full state space
+rather than near the root like every other row here. It was kept rather than deferred because it still finishes
+in about five and a half minutes, so the budget it exceeds costs wall clock that a witness sweep can afford. A
+full sweep of this table is about 15 minutes, and that one row is a third of it.
 
 The cost of the third transaction is a factor of 13, from 2.16 million distinct states in 19 seconds to
 28.6 million in about 4 minutes, and it bought a counterexample as well as the contract: `Atomicity` went red on
