@@ -385,6 +385,35 @@ the reservation clause of `ActiveSetShape` is vacuous here. It is checked in the
 a mutation side by side, and the debt is in `WITNESSES.md`'s deferred table with that scenario as its
 destination.
 
+### Was the growth a model defect? {#merge-growth-not-a-defect}
+
+Asked before the bound was reduced, because a scenario that does not finish is more often a model defect than a
+bound. Three candidates were checked against the actions, and none of them holds.
+
+A task cannot start a second merge while the first is in flight. `MergeBegin` requires
+`task[i].kind = "Idle" /\ task[i].pc = "Idle"`, and the only two steps that return a task to `IdleTask` are
+`MergeCommitFinalize` and `MergeUnwind`, which are the ends of the two paths.
+
+`reserved` is released, at exactly those two steps, with the rest of the task record. It is deliberately not
+released at `MergePublishFlip`, which is spec defect `S10`: `CurrentlyMergingPartsTagger::finalize` runs at the
+end of `MergePlainMergeTreeTask::finish`, after the commit.
+
+A merge is not selectable on every step. `MergeSelect` requires `part[r].pstate = "Absent"`, and no action of
+any scenario returns a part to `Absent`: `MergeWrite` takes the result to `Temporary` and the furthest it can
+fall back is `Outdated` or `Deleted`. So `M12` is written at most once in a behaviour, and there is at most one
+merge per run — which is also the C++'s "at most one merge per partition at a time", enforced there by
+`CurrentlyMergingPartsTagger` and here by that plus the reservation.
+
+What the reduced run confirms is the same thing from the other side: at one session the scenario terminates at
+depth 62 with an empty queue. An actor that could restart itself, or a reservation that leaked, would not
+terminate at any session count. The growth is the ordinary product of a third part, a task with thirteen program
+counters, a fourth actor's worth of commits and the cleanup thread crossing the whole of `Base`.
+
+The exhaustive-versus-witness split of spec defect `S7` is therefore not used here and there is no
+`MC_MergeWitness`. That pattern exists for a scenario whose exhaustive run does not finish at bounds its
+witnesses need; `Merge` finishes at 49 seconds at the bounds every one of its witnesses runs at, which is the
+condition `S7` asks for when it can be met.
+
 ### What the view keeps {#merge-view}
 
 `MergeView` is `BaseView` plus every field the three additions read or write, and minus one of `BaseView`'s
@@ -397,6 +426,16 @@ because `Covers` was empty and every payload constant, so every root expanded to
 `P1` and `P2` a read of `{M12}` and a read of `{P1, P2}` have the same fragments and different parts, and
 `NoDoubleRead` is stated over fragments alone. `client[k].first_read.frags` and `client[k].last_read.frags` are
 therefore in the fingerprint.
+
+### A witness result read from the wrong directory {#witness-directory}
+
+Worth recording because it cost a round. `witness.sh` wrote every run to `tmp/tla/w_<WitnessName>/`, with no
+scenario in the path, so a `Merge` sweep overwrote the `Base` log of the same witness name. The
+`Assert_validateInfo_removal` row was then read as a `Base` regression — green after the extraction, where it had
+been red before — when what was in the directory was the `Merge` run, green there for the reason debt `B3` gives.
+Re-run on `Base` after the extraction it is red at 53,619,513 distinct states in 5 min 31 s, against 53,133,545
+in 5 min 21 s before, so the extraction moved neither the hook nor the shape. The script now writes to
+`tmp/tla/w_<Scenario>_<WitnessName>/`.
 
 ## Reproducing {#reproducing}
 

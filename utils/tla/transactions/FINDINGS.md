@@ -38,23 +38,33 @@ and `pc = "RollbackCopyLists"`: the kill has won the compare-and-exchange and th
 `~OracleVisible(M12, txn[2].snapshot, 2)` and gets `FALSE`, because the oracle's first clause is that a
 transaction sees what it created and the creator is `2`.
 
-**Why the code is right.** A transaction whose state is `RolledBack` can no longer read anything. The next
+**Why the code is right.** A transaction whose state is `RolledBack` can no longer *start* a read. The next
 statement on it is refused by `executeQuery` with "Cannot execute query because current transaction failed.
 Expecting ROLLBACK statement", which the model has as `QueryOnCancelled`, and `SelectCapture` carries the same
-`Running` guard. The part is not visible to that transaction either: `MergeTreeData::Transaction::rollback`
+`Running` guard. The part is not visible to it either: `MergeTreeData::Transaction::rollback`
 (`src/Storages/MergeTree/MergeTreeData.cpp:11126`) has already stamped `RolledBackCSN` on it, and
 `VersionInfo::isVisible` (`src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:167`) returns false on
 `snapshot_version < creation_csn` for every snapshot, the creator's own included, because `RolledBackCSN` is
-above every real CSN. So there is no reader to protect and the grab is correct.
+above every real CSN. So there is no read the grab can spoil, and the grab is correct.
 
-**What the property now says.** `NoPrematureDeleteStep` quantifies over
-`u \in tlog.running_list` with `txn[u].state = "Running"`. That is a narrowing of the antecedent, and it is
-fidelity rather than a weakening for two reasons. The property's subject is a part some transaction can still
-read, and the model's own definition of "can still read" is the `Running` guard on `SelectCapture`. And every
-sibling property that consults the oracle already carries it: `NoFutureRead`, `NoLostRead`, `Atomicity` and
-`NoLostVisibleData` all guard their antecedent on `txn[t].state = "Running"`, and `NoPrematureDelete` was the
-only one that did not. A transaction in `running_list` still holds `getOldestSnapshot` back whatever its state,
-so nothing about what the C++ protects changes. The witness stays red, in `SetSnapshotF2Fixed` and in `Merge`.
+**What the property now says, and what it gives up.** `NoPrematureDeleteStep` quantifies over
+`u \in tlog.running_list` with `txn[u].state = "Running"`.
+
+The one thing this must not do is drop a read that is already **in flight** when the kill lands. `SelectCheck`
+and `SelectFinish` carry no state guard, deliberately: a `SELECT` that has passed `SelectCapture` runs to
+completion whatever happens to its transaction meanwhile, which is what the server does. Such a read is not
+covered by this property before the narrowing either, and it is covered by a different one. `SelectCapture` pins
+every part it captures with `<<"Select", k>>` and releases them only at `SelectFinish` or `Refuse`, and
+`CleanupGrab` requires `part[p].pins = {}`, which is `isSharedPtrUnique` (`MergeTreeData.cpp:4150`) and is
+exactly what the spec's `PinnedNotDeleted` row states. The in-flight read is protected by the pin, checked by
+`PinnedNotDeleted`, and red in both `SetSnapshotFixed` and `Merge`. So the narrowing gives up a case that was
+never this property's and that another property holds.
+
+What is left is fidelity rather than a weakening, for the reason the sibling properties already show: every
+other property that consults the oracle guards its antecedent on `txn[t].state = "Running"` — `NoFutureRead`,
+`NoLostRead`, `Atomicity` and `NoLostVisibleData` all do, and `NoPrematureDelete` was the only one that did not.
+A transaction in `running_list` still holds `getOldestSnapshot` back whatever its state, so nothing about what
+the C++ protects changes. The witness stays red, in `SetSnapshotF2Fixed` and in `Merge`.
 
 **The model defect the same trace exposed.** `MergeWrite` did not pin the result part. The merge task holds it
 from the moment it is written, through `merge_task` and then through
@@ -294,7 +304,7 @@ evaluated it and a correction applied to one copy and not the other would have b
 | M8 | `part_is_probably_removed_from_disk` (`IMergeTreeDataPart.cpp:2873`) makes a second `remove` of the same part skip validation entirely; the model re-validates on every grab | The model can loop where the code cannot: `CleanupDeleteFail` returns a part to `Outdated`, `CleanupGrab` takes it again and the same validation fails again. Harmless while the refusal is unreachable | plan 5, the task that turns on disk faults and makes the refusal reachable |
 | M9 | `MergeWrite` did not pin the merge result with `Tsk(i)`, although the task holds it from the write until the task object is destroyed (`merge_task`, then `MergePlainMergeTreeTask::new_part`, `src/Storages/MergeTree/MergePlainMergeTreeTask.cpp:156`) | The cleanup thread could take a result the task's statement rollback had just outdated while the task was still alive, which `isSharedPtrUnique` (`MergeTreeData.cpp:4150`) forbids. Found by counterexample `F3` | closed by this task: `MergeWrite` adds the pin and `MergeCommitFinalize` and `MergeUnwind` remove it |
 | M10 | `Transaction::commit` recomputes `getActivePartsToReplace` inside its `NOEXCEPT_SCOPE` (`MergeTreeData.cpp:11298`) and, on a non-null `covering_part`, outdates the new part instead of activating it (`:11316`); `PublishStartEffect` and `PublishFlipEffect` model that, and it is unreachable in every scenario of this plan | The branch is written and cited but never taken, so it is checked by inspection only. It cannot be reached with the model's `Covers`, which is a fixed relation over a finite part universe: `M12`'s sources are exactly `P1` and `P2`, `MergeSelect` requires both to exist already, and `InsertWrite` requires `Absent`, so no part can appear under a cover that is already `Active`. The C++ shape it models is a new block number landing inside a range a merge has already published, which needs a covering part whose source set is a strict subset of what it covers | the plan that gives `Covers` a range shape rather than a fixed source set, or any scenario with a covering part over a source that can still be inserted |
-| M11 | `MergeUnwind` can in principle win the compare-and-exchange in `MergeTreeTransaction::rollback` (`src/Interpreters/MergeTreeTransaction.cpp:382`) and become the rollback driver, and every step of the rollback machine is session-shaped (`Drives(k, t)` reads `Sess(k)`), so the transaction would sit in `RollbackCopyLists` with nothing able to advance it | No scenario of this plan reaches it. The task's own unwind triggers are a refusal from `removeOldPart` and a failed `beforeCommit`, both of which mean a `KILL` has already won the exchange, and the third, a store of the task's own ending in an error, needs a second frame on one of the task's parts, which no other actor can have while the merge's transaction is still `Running`. The invariant `NoTaskDrivenRollback` says so rather than letting the search wedge without a word | the plan whose scenario enables a fault on a background task, which is the disk-fault plan: it owes `DrivesA(a, t)`, the task-shaped `Rollback*` steps, and the removal of `NoTaskDrivenRollback` |
+| M11 | `MergeUnwind` can in principle win the compare-and-exchange in `MergeTreeTransaction::rollback` (`src/Interpreters/MergeTreeTransaction.cpp:382`) and become the rollback driver, and every step of the rollback machine is session-shaped (`Drives(k, t)` reads `Sess(k)`), so the transaction would sit in `RollbackCopyLists` with nothing able to advance it | No scenario of this plan reaches it. The task's own unwind triggers are a refusal from `removeOldPart` and a failed `beforeCommit`, both of which mean a `KILL` has already won the exchange, and the third, a store of the task's own ending in an error, needs a second frame on one of the task's parts, which no other actor can have while the merge's transaction is still `Running`: the result is the task's alone, and the sources are unreachable to a session because `DropLock` waits for every task's `reserved` to drain before it takes the parts lock, and the merge holds its reservation from `MergeSelect` until the task idles, so no client removal can start on them in that window. The invariant `NoTaskDrivenRollback` says so rather than letting the search wedge without a word | the plan whose scenario enables a fault on a background task, which is the disk-fault plan: it owes `DrivesA(a, t)`, the task-shaped `Rollback*` steps, and the removal of `NoTaskDrivenRollback` |
 
 `M2` was closed rather than placed. `Refuse` now routes to `StmtRollbackMark` whenever `stmt.precommitted` is non-empty, which is what `MergeTreeData::Transaction::isEmpty` (`src/Storages/MergeTree/MergeTreeData.h:391`) tests, and both statement-rollback actions act on the whole of `stmt.precommitted`. The attached part keeps its entry in `txn[t].creating` and in `h.creating[t]`, because `MergeTreeTransaction::creating_parts` keeps its entry too; `Refuse` always ends at the outer rollback, and that rollback's second stamp of `RolledBackCSN` and second removal from the working set are both no-ops in the C++ and in the model. The entry `README.md`, section 8, used to carry for this divergence is gone with it. Nothing in `Base` changed state: the count stayed at the figure the run table records, for the reason the row above gives.
 

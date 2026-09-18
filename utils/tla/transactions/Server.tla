@@ -932,7 +932,7 @@ MergePublishStore(i, q) ==
 
 \* reserved[i] is NOT released here: CurrentlyMergingPartsTagger::finalize runs at the end of
 \* MergePlainMergeTreeTask::finish (:200), after transaction.commit() at :161 and after commitTransaction at
-\* :195. That is spec defect S5's shape on the merge side.
+\* :195. That is spec defect S10.
 MergePublishFlip(i) ==
   /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "PublishFlip" /\ sys.parts_lock = Tsk(i)
   /\ PublishFlipEffect(Tsk(i), task[i].result, stmt[Tsk(i)].covered)
@@ -965,6 +965,11 @@ MergeCommitFlip(i) ==
       \/ (Witness("FlipAfterStores") /\ txn[task[i].txn].pc \in {"CommitStoreCreation", "CommitStoreRemoval"}))
   /\ CommitFlipEffect(task[i].txn)
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, client, stmt, mut, task>>
+\* the isReadOnly branch of commitTransaction. Dead for a merge: the task always creates its result, so
+\* Effects(t) holds at the commit. It is written because the commit machine has the branch and because the
+\* covering-part branch of PublishStartEffect would make it live if it were reachable (model defect M10): a
+\* result that already has a covering part is never attached to the transaction, which then commits with
+\* nothing in creating or removing.
 MergeCommitReadOnly(i) ==
   /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit"
   /\ txn[task[i].txn].pc = "CommitFlip" /\ ~Effects(task[i].txn) /\ txn[task[i].txn].state = "Committing"
@@ -1025,6 +1030,10 @@ MergeStmtRollbackDrop(i) ==
 \* (src/Interpreters/MergeTreeTransaction.cpp:382) it loses to a KILL that got there first. Winning it makes the
 \* task the rollback driver, and the rollback machine's steps are all session-shaped, so the winning branch is
 \* not yet executable; NoTaskDrivenRollback is the invariant that says so rather than letting it wedge quietly.
+\* It is unreachable here because every trigger of MergeFail but the store-error one means a KILL has already
+\* won, and the store-error one needs a second frame on a part of the task's, which no session can reach: the
+\* result is the task's alone, and DropLock waits for every task's reserved set to drain before it takes the
+\* parts lock, so no client removal can start on a source while the merge holds it.
 MergeUnwind(i) ==
   /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Unwind"
   /\ LET t == task[i].txn

@@ -20,8 +20,8 @@ alone makes the run green again.
 `Assert_validateInfo_*` variants do. The script derives `MC_W.cfg` from `MC_<Scenario>.cfg` by dropping every
 property the scenario checks, setting `WITNESS_NAME`, and adding a single `INVARIANT` or `PROPERTY` line for the
 target, and derives `MC_W.tla` from `MC_<Scenario>.tla`. `SPECIFICATION`, `SYMMETRY`, `VIEW` and every constant
-are kept, so a witness run has its scenario's bounds. Each run works in `tmp/tla/w_<WitnessName>/` and removes
-its own `states` directory when it ends. Output is one line:
+are kept, so a witness run has its scenario's bounds. Each run works in `tmp/tla/w_<Scenario>_<WitnessName>/` and removes
+its own `states` directory when it ends. The scenario is in the directory name so that a sweep of one scenario never overwrites another's log: the same witness name is used in several scenarios, and reading the wrong one is how a `Merge` result once got reported as a `Base` regression. Output is one line:
 
 ```
 RED|GREEN|ERROR|TIMEOUT <Property> states=<distinct> time=<s>
@@ -94,7 +94,7 @@ sweep, before it, and the fix changes no reachable `Base` state.
 | `Assert_isVisible_fast` | `Assert_isVisible_fast` | two changes: `CommitStoreCreation` is skipped for a part the transaction both creates and removes, and `StoreRead` skips `validateInfo`, so `CommitStoreRemoval` publishes a removal CSN over an unknown creation CSN | `Base` | RED | 196,417 | 3 s |
 | | `Assert_isVisible_fast_only1` | the skipped creation store alone | `Base` | GREEN, as minimality requires | 22,554,686 | 2 min 51 s |
 | | `Assert_isVisible_fast_only2` | the skipped validation alone | `Base` | GREEN, as minimality requires | 28,553,258 | 3 min 34 s |
-| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED (re-run) | 8,017 | 2 s |
+| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED | 6,883 | 2 s |
 | `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | `StoreRead` on a retry re-reads memory instead of the stored record, so an attempt that met no interference still sees a stale version | `Base` | RED | 368,402 | 4 s |
 
 
@@ -296,6 +296,14 @@ snapshot `SetSnapshotF2Fixed` needs: a merge gives a running reader a part that 
 while it is still visible at the reader's own snapshot, which is a shape two sessions inserting and dropping
 cannot build.
 
+`FlipAfterStores` has one conjunct per actor that can reach `CommitFlipEffect`, a session through `CommitFlip`
+and a background task through `MergeCommitFlip`, because `afterCommit` stores every CSN before the state flip on
+whatever thread is committing. Quantifying over `Sessions` alone would have left a merge's own flip unobserved.
+That the task conjunct has teeth of its own was measured rather than assumed: a scratch copy under `tmp/` with
+the session conjunct removed, so that only the `Tasks` half is checked, is red under the same witness at
+1,336,942 distinct states. The witness needs no second hook, because `MergeCommitFlip` carries the same
+`Witness("FlipAfterStores")` disjunct the session's action does.
+
 ### The full sweep at these bounds {#witnesses-merge-full}
 
 Every witness of every property `MC_Merge.cfg` checks. Nineteen runs, about nine minutes in all, of which one
@@ -308,7 +316,7 @@ row is five.
 | `LockConsistent` | `LockConsistent` | RED | 45,237 | 2 s |
 | `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | **GREEN**, debt B3 | 5,921,770 | 44 s |
 | `RollbackRestores` | `RollbackRestores` | RED | 254,238 | 4 s |
-| `FlipAfterStores` | `FlipAfterStores` | RED | 1,862 | 1 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 2,119 | 1 s |
 | `StableRead` | `StableRead` | RED | 1,898,738 | 15 s |
 | `ReadYourWrites` | `ReadYourWrites` | RED | 2,315 | 1 s |
 | `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B3 | 5,196,830 | 39 s |
@@ -368,6 +376,12 @@ After the merge work, which changed `Parts.tla`, `Server.tla`, `Invariants.tla` 
 | `SetSnapshotFixed` | green at the same bounds | 13,092,635 | 2 min 02 s |
 | `SetSnapshotF2Fixed` | green | 367,183 | 4 s |
 | `Merge` | green at one session, `TID_MAX = 3`, `CSN_MAX = 36` | 5,196,830 | 49 s |
+
+The full `Base` sweep was re-run on that tree, because the extraction moved the operators six of its witnesses
+hook into. All eighteen rows keep their verdict: fifteen red, `Assert_validateInfo_removal` red at 53,619,513
+distinct states in 5 min 31 s against 53,133,545 in 5 min 21 s before, and both `Assert_isVisible_fast`
+minimality halves green, at 22,549,585 and 28,547,605. The second of those two explores the whole of `Base`, so
+it doubles as a check that the scenario's own count is where the run table says it is.
 
 `SetSnapshotF2` is still red on `NoPrematureDelete`, and the three cleanup witnesses are still red, which is
 what had to be shown after that property's antecedent was narrowed to the transactions that can still read.

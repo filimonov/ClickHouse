@@ -34,7 +34,7 @@ grep -q "Witness(\"$WNAME\")" "$HERE"/*.tla || {
 # ---- one TLC run with the witness $1 applied; echoes "<verdict> <distinct> <seconds>"
 run_one() {
   local wname="$1"
-  local out="$ROOT/tmp/tla/w_$wname"
+  local out="$ROOT/tmp/tla/w_${SCENARIO}_$wname"
   rm -rf "$out"; mkdir -p "$out"
 
   # The checked property: an action property is declared in Invariants.tla as "Name == [][...]_vars".
@@ -85,8 +85,8 @@ echo "$VERDICT $PROPERTY states=$DISTINCT time=$SECS"
 case "$VERDICT" in
   RED) ;;
   GREEN)   exit 1 ;;
-  TIMEOUT) echo "see $ROOT/tmp/tla/w_$WNAME/tlc.log" >&2; exit 2 ;;
-  *)       tail -15 "$ROOT/tmp/tla/w_$WNAME/tlc.log" >&2; exit 2 ;;
+  TIMEOUT) echo "see $ROOT/tmp/tla/w_${SCENARIO}_$WNAME/tlc.log" >&2; exit 2 ;;
+  *)       tail -15 "$ROOT/tmp/tla/w_${SCENARIO}_$WNAME/tlc.log" >&2; exit 2 ;;
 esac
 
 # ---- minimality of a two-change witness

@@ -97,7 +97,7 @@ fixed that are in `STATE_SPACE.md`.
 
 `witness.sh` applies one witness, checks that one property and nothing else, and prints a single line
 `RED|GREEN|ERROR|TIMEOUT <Property> states=<distinct> time=<s>`. `RED` is the outcome a witness must have, and
-the exit status is 0 only for `RED`. Its default timeout is 600 seconds and `WITNESS_TIMEOUT` overrides it. See
+the exit status is 0 only for `RED`. It works in `tmp/tla/w_<Scenario>_<WitnessName>/`, so sweeps of two scenarios do not overwrite each other's logs. Its default timeout is 600 seconds and `WITNESS_TIMEOUT` overrides it. See
 `WITNESSES.md`.
 
 ## 3. Code map {#code-map}
@@ -292,6 +292,8 @@ discarded.
 | `Merge` | 2026-09-18 | the merge commit | 44,277,426 after 8 min, queue 4.7M and growing | killed twice | two sessions: an exhaustive run at the matrix bounds does not finish |
 | `Merge` | 2026-09-18 | the merge commit | 5,196,830 | 49 s | green at one session, which is the committed configuration |
 | `Merge` witness sweep, 22 rows | 2026-09-18 | the merge commit | 38,568,430 for the largest | ≈ 9 min in total, 4 min 51 s for that row | red except the three of debt `B3`; both minimality halves green |
+| `Base` witness sweep, 18 rows | 2026-09-18 | the fix-round commit | 53,619,513 for the largest | ≈ 14 min in total, 5 min 31 s for that row | every row red, both minimality halves green, after the extraction moved six of the hooked operators |
+| `Merge` | 2026-09-18 | the fix-round commit | 5,196,830 | 49 s | green after `FlipAfterStores` gained its task conjunct |
 
 The commits are `885a5c382cab` (Task 1, the modules and the runner), `5260d5d44f67` and `53814c46e7e5`
 (Task 3, the state-space budget and the rollback-driver correction), `bea5c15bf346` and `ad432095717a` (Task 2,

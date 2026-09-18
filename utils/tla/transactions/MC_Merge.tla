@@ -7,6 +7,8 @@ CONSTANTS P1, P2, M12
 \* can insert (InsertWrite requires IsBase). One covering part means exactly one merge is possible, which is
 \* why Tasks is a singleton; the argument is in STATE_SPACE.md.
 CoversDef == [p \in Parts |-> IF p = M12 THEN {P1, P2} ELSE {}]
+\* One session, so this is the identity group and the SYMMETRY line is a no-op. It is kept so that the cfg is
+\* the same shape as its siblings and raising the session count needs no other edit.
 SymSessions == Permutations(Sessions)
 
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is BaseView plus everything the merge

@@ -174,13 +174,19 @@ NoLostVisibleData == [][NoLostVisibleDataStep]_vars
 \* ---- the cleanup thread (spec #invariants-cleanup)
 \* Stated over the oracle, not over VersionMetadata::canBeRemoved, so that a wrong canBeRemoved is caught rather
 \* than assumed; the snapshot is the actual one a running transaction reads at, not the protected one.
-\* The quantifier is over the transactions that can still issue a read, not over every entry of running_list.
+\* The quantifier is over the transactions that can still START a read, not over every entry of running_list.
 \* A transaction whose state is RolledBack is still in running_list until RollbackFinalize, and it still holds
-\* the oldest snapshot back, but it can no longer read: SelectCapture requires `Running`, which is
-\* InterpreterSelectQuery being refused with "Cannot execute query because current transaction failed"
-\* (the QueryOnCancelled action). Without the guard the oracle's "a transaction sees what it created" clause
-\* fires for the creator of a part whose creation was rolled back, which is a part the C++ makes invisible to
-\* everyone, its creator included: VersionInfo::isVisible returns false on `snapshot_version < creation_csn`
+\* the oldest snapshot back, but it can no longer begin one: SelectCapture requires `Running`, which is
+\* executeQuery refusing the next statement with "Cannot execute query because current transaction failed"
+\* (the QueryOnCancelled action). A read already IN FLIGHT when the KILL lands is a different matter, and it is
+\* not this property that protects it: SelectCheck and SelectFinish carry no state guard, so such a read runs to
+\* completion. What protects it is the pin. SelectCapture pins every captured part with <<"Select", k>> and
+\* releases them only at SelectFinish or Refuse, and CleanupGrab requires part[p].pins = {}, which is
+\* isSharedPtrUnique at MergeTreeData.cpp:4150 and is what PinnedNotDeleted states. So the narrowing gives up
+\* nothing: the in-flight read was never covered by this property and is covered by another one.
+\* Without the narrowing the oracle's "a transaction sees what it created" clause fires for the creator of a
+\* part whose creation was rolled back, which is a part the C++ makes invisible to everyone, its creator
+\* included: VersionInfo::isVisible returns false on `snapshot_version < creation_csn`
 \* (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:167) and RolledBackCSN is above every snapshot.
 \* Counterexample F3.
 NoPrematureDeleteStep == \A p \in Parts : CleanupGrab(p) =>
@@ -197,10 +203,17 @@ RollbackRestoresStep == \A k \in Sessions, t \in Tids : RollbackFinalize(k, t) =
   \A p \in h.removing[t] \ h.creating[t] :
     part'[p].pstate = "Active" \/ part[p].lock \notin {EmptyTID, t} \/ (h.removers[p] \ {t}) /= {}
 RollbackRestores == [][RollbackRestoresStep]_vars
-FlipAfterStoresStep == \A k \in Sessions : CommitFlip(k) =>
-  LET t == Cur(k) IN /\ \A p \in h.creating[t] : part[p].mem.ccsn = h.csn[t]
-                     /\ \A p \in h.removing[t] : part[p].mem.rcsn = h.csn[t]
-                     \* the spec row's third conjunct; vacuous while Mutations = {}, live from plan 4
-                     /\ \A m \in h.mutations[t] : mut[m].mstate /= "Killed" => mut[m].csn = h.csn[t]
+\* afterCommit stores every CSN before the state flip, and it does so on whatever thread is committing. The
+\* property therefore has one conjunct per actor that can reach CommitFlipEffect: a session through CommitFlip
+\* and a background task through MergeCommitFlip. Quantifying over Sessions alone would leave the task's flip
+\* unobserved, which is what a merge committing on its own thread does.
+FlipStoresDone(t) ==
+  /\ \A p \in h.creating[t] : part[p].mem.ccsn = h.csn[t]
+  /\ \A p \in h.removing[t] : part[p].mem.rcsn = h.csn[t]
+  \* the spec row's third conjunct; vacuous while Mutations = {}, live from plan 4
+  /\ \A m \in h.mutations[t] : mut[m].mstate /= "Killed" => mut[m].csn = h.csn[t]
+FlipAfterStoresStep ==
+  /\ \A k \in Sessions : CommitFlip(k) => FlipStoresDone(Cur(k))
+  /\ \A i \in Tasks : MergeCommitFlip(i) => FlipStoresDone(task[i].txn)
 FlipAfterStores == [][FlipAfterStoresStep]_vars
 ====
