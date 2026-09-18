@@ -69,8 +69,8 @@ The second is the snapshot target. `SNAPSHOT_TARGETS = {33}` is `FirstCSN`, whic
 initialisation, while `zk.seq` also starts at `FirstCSN` (`Keeper.tla`) so the first commit takes CSN 34. No
 part is ever visible at snapshot 33, and `NoPrematureDelete` is vacuously true there however deep the search
 runs: a run at the witness bounds with the target left at 33 was green, and one at those bounds with the target
-at 34 reached 46.7 million distinct states at depth 43 in five minutes without reaching the violation, which
-lies at depth 45. Breadth is the wrong resource here; the violating behaviour is a single sequential run of
+at 34 was killed at 333 seconds, at 46,726,144 distinct states and depth 43 with a queue of 8.2 million still
+growing, without reaching the violation, which lies at depth 45. Breadth is the wrong resource here; the violating behaviour is a single sequential run of
 three transactions.
 
 `MC_SetSnapshotF2` is that configuration: one session, one part, `TID_MAX = 3`, `CSN_MAX = 35`,
@@ -259,7 +259,7 @@ bound or dropping the property.
 
 | Id | Scenario | What is not verified at the exhaustive bounds | Where it is verified instead |
 |---|---|---|---|
-| B1 | `SetSnapshot` and `SetSnapshotFixed` at `TID_MAX = 2`, `CSN_MAX = 35` | Five witnesses are green or do not finish there: `SingleRemover`, `NoUncommittedRead`, `NoLostRead`, `Assert_validateInfo_removal` and `Assert_getOldestSnapshot`'s sortedness conjunct | See the two paragraphs below |
+| B1 | `SetSnapshot` and `SetSnapshotFixed` at `TID_MAX = 2`, `CSN_MAX = 35` | Five witnesses are green or do not finish there, and `NoPrematureDelete` itself is unreachable there, which is `B2`: `SingleRemover`, `NoUncommittedRead`, `NoLostRead`, `Assert_validateInfo_removal` and `Assert_getOldestSnapshot`'s sortedness conjunct | See the two paragraphs below |
 | B2 | `SetSnapshot` and `SetSnapshotFixed` at `TID_MAX = 2`, `CSN_MAX = 35` | The witnesses of `NoPrematureDelete` and of `NoLostVisibleData`, both of which change `CleanupGrab` to compare against `tlog.latest_snapshot` instead of `getOldestSnapshot`, are green there: 13,664,284 and 13,664,666 distinct states, 96 and 98 seconds, no violation | `SetSnapshotF2Fixed`, where both are red in three seconds |
 
 The first four are `Base` properties and `Base` verifies all four at `TID_MAX = 3`: three of them are the three

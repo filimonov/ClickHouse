@@ -282,9 +282,12 @@ arrived together, and a run with the actions and the old view would be unsound t
 `MC_SetSnapshotF2` and `MC_SetSnapshotF2Fixed` are one session, one part, `TID_MAX = 3`, `CSN_MAX = 35`,
 `SNAPSHOT_TARGETS = {34}`, with the same view and the same action set. They exist because the violating
 behaviour of finding F2 is a single sequential run of three transactions, and breadth is the wrong resource for
-reaching it: at the witness bounds with two sessions and two parts the search reached 46.7 million distinct
-states at depth 43 in five minutes without arriving at the violation, which is at depth 45. Cutting the
-universe to what the trace uses puts it at 177,195 distinct states and three seconds.
+reaching it. A probe at the witness bounds with two sessions, two parts and only `NoPrematureDelete` checked
+was killed at 333 seconds with 131,878,184 states generated, 46,726,144 distinct, at depth 43, and a queue of
+8.2 million still growing; the violation is at depth 45. A run past 30 million distinct that is still growing
+is a defect of the configuration rather than something to wait for, and the defect here is breadth: two
+sessions and two parts cross the whole space with a behaviour that uses neither. Cutting the universe to what
+the trace uses puts it at 177,195 distinct states and three seconds.
 
 | Configuration | Distinct states | Time | Result |
 |---|---|---|---|
