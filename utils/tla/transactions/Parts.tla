@@ -30,6 +30,12 @@ PartsInit == part = [p \in Parts |-> IF p \in LEGACY_PARTS THEN LegacyPartRecord
 PartsTypeOK == /\ part \in [Parts -> PartRecord]
                /\ \A p \in Parts : \A f, g \in part[p].frames : f.owner = g.owner => f = g
 
+\* The fragments a set of visible roots expands to, each tagged with the payload version it carries. A merge
+\* replaces a root by a covering one without losing a fragment, so a property stated over fragments survives it
+\* where one stated over roots does not. It lives here rather than in Invariants.tla because Begin and
+\* SetSnapshot capture h.content with it.
+Frags(V) == { <<q, part[q].payload.ver>> : q \in Expand(V) }
+
 \* ---- transaction log lookups (TransactionLog::getCSN, getOldestSnapshot, tryGetCSN)
 LookupCsn(t) == IF t = NonTransactionalTID THEN NonTransactionalCSN
                 ELSE IF t \in Tids THEN tlog.tid_to_csn[t] ELSE UnknownCSN

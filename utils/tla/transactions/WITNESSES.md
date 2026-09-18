@@ -119,7 +119,9 @@ not results.
 | `NoDoubleRead` | `SelectCheck` ignores `removal_csn` and `removal_tid` | `Merge` | plan 2 |
 | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts | `Merge`; the `Base` universe has no covering relation, so no two parts can be related | plan 2 |
 | `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
-| `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot` | `SetSnapshot` | plan 2 |
+
+`Assert_getOldestSnapshot` came off this table with the `SetSnapshot` scenario: the action its witness needs
+now exists, and the row is in the scenario's own table below.
 
 One further property checked in `Base` is not in the design document at all: not as a witness row, and not as a
 property either. The witness contract says a property without a passing witness is not accepted into
@@ -133,6 +135,62 @@ absent.
 
 `TypeOK` is a type invariant, not a behavioural property, and has no witness by design.
 
+## Witnesses of the `SetSnapshot` scenario {#witnesses-setsnapshot}
+
+`SetSnapshot` checks `Base`'s properties plus `Assert_TailPtrNotRegressing`, and it is where
+`Assert_getOldestSnapshot` finally gets the witness `WITNESSES.md` had deferred. Both rows below were run at the
+scenario's committed bounds, `TID_MAX = 3`, `CSN_MAX = 36`, two sessions. A witness run stops at the first
+violation, so it finishes even though a full run of this scenario does not.
+
+| Property | Witness name | The model change | Result | States | Time |
+|---|---|---|---|---|---|
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the `snapshots_in_use` entry, which is the same object in the C++ | RED | 442,867 | 5 s |
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot` | the same change; the next `removeOldEntries` then computes a `getOldestSnapshot` below the `tail_ptr` it has already stored | RED | 568,869 | 6 s |
+
+The second row shares the first row's witness rather than having one of its own, which the witness contract
+allows: the change is a single named one and the property it is being run against is named on the command line.
+There is no separate hook, because the only way to make the stored tail regress is to lower a running
+transaction's entry, which is exactly what this witness does.
+
+`NoOutdatedLookup` is defined in `Invariants.tla` and is **not** in `MC_SetSnapshot.cfg`. It is vacuous here,
+and by inspection rather than by search: `UpdFinalizeUnknown(t)` is `FALSE` in this plan, so
+`NoOutdatedLookupStep` is an implication with a false antecedent in every step. `assertTIDIsNotOutdated` is
+reached only from `tryFinalizeUnknownStateTransactions` (`src/Interpreters/TransactionLog.cpp:387`) and from
+`getCSNAndAssert` (`:645`), which has no caller in the tree, so no scenario without the unknown-state group can
+falsify it. The design document lists it among the `SetSnapshot` scenario's properties anyway, which is spec
+defect S6 in `FINDINGS.md`.
+
+### The sweep at `TID_MAX = 2`, and why that bound was rejected {#witnesses-setsnapshot-tid2}
+
+The scenario finishes in 65 seconds at `TID_MAX = 2`, `CSN_MAX = 35`, so the bound was measured against the
+witness contract before being discarded. Fourteen witnesses, one run each.
+
+| Property | Result at `TID_MAX = 2` | States | Time |
+|---|---|---|---|
+| `ErrorIsAbsent` | RED | 46,290 | 2 s |
+| `SingleRemover` | **GREEN** | 7,420,073 | 55 s |
+| `LockConsistent` | RED | 187,101 | 4 s |
+| `NoSpuriousStaleVersion` | RED | 218,745 | 3 s |
+| `RollbackRestores` | RED | 460,885 | 5 s |
+| `FlipAfterStores` | RED | 6,436 | 2 s |
+| `StableRead` | RED | 229,506 | 4 s |
+| `ReadYourWrites` | RED | 5,916 | 2 s |
+| `NoUncommittedRead` | **GREEN** | 7,419,925 | 53 s |
+| `NoFutureRead` | RED | 25,801 | 2 s |
+| `NoLostRead` | **GREEN** | 6,815,382 | 49 s |
+| `Atomicity` | RED | 305,075 | 5 s |
+| `Assert_getOldestSnapshot` | **GREEN** | 7,399,399 | 54 s |
+
+Four green, so the bound fails the contract. Three of them are the same three `Base` found could not reach
+their target at two transactions, which is why `Base` carries the matrix bounds. The fourth is the witness this
+task exists to fire. All four are red again at `TID_MAX = 3`: `SingleRemover` at 7,159,902 states in 46 s,
+`NoUncommittedRead` at 2,976,961 in 20 s, `NoLostRead` at 1,345,642 in 11 s, and `Assert_getOldestSnapshot` in
+the table above.
+
+The nine red rows stay red at `TID_MAX = 3` without being re-run, and that needs no measurement: raising
+`TID_MAX` only adds behaviours, and a behaviour that uses two transactions is still a behaviour of the model
+that allows three.
+
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
 Both on the tree this file is committed with, at the bounds above.
@@ -141,3 +199,12 @@ Both on the tree this file is committed with, at the bounds above.
 |---|---|---|---|
 | `BaseSmall` | green | 47,381 | 1 s |
 | `Base` | green | 28,552,935 | 4 min 06 s |
+
+After the `SetSnapshot` work, which changed `Types.tla`, `Parts.tla`, `Server.tla` and `Invariants.tla`:
+
+| Scenario | Result | Distinct states | Time |
+|---|---|---|---|
+| `BaseSmall` | green | 47,381 | 1 s |
+| `Base` | green | 28,553,303 | 4 min 12 s |
+| `SetSnapshot` | did not finish | 56,968,754 after 8 min, queue 4.47M | killed |
+| `SetSnapshotFixed` | did not finish at the committed bounds; green at `TID_MAX = 2` | 7,291,861 there | 1 min 03 s |

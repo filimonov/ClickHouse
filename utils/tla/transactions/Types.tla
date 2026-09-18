@@ -9,7 +9,8 @@ CONSTANTS
   TID_MAX, CSN_MAX, Covers,
   RESTARTS_MAX, KEEPER_FAULTS_MAX, DISK_FAULTS_MAX, QUERY_FAULTS_MAX,
   MAX_STORE_RETRIES, NOEXCEPT_RETRY_BUDGET, NOEXCEPT_STORE_FAULT_POLICY,
-  DISK_MODE, FSYNC_PART_DIRECTORY, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME
+  DISK_MODE, FSYNC_PART_DIRECTORY, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME,
+  SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS
 
 ASSUME Covers \in [Parts -> SUBSET Parts]
 ASSUME NOEXCEPT_STORE_FAULT_POLICY \in {"Terminate", "Retry"}
@@ -42,6 +43,12 @@ RolledBackCSN        == CSN_MAX + 1
 RealCSNs             == FirstCSN..CSN_MAX
 AllCSNs              == {UnknownCSN, NonTransactionalCSN, CommittingCSN, EverythingVisibleCSN, RolledBackCSN} \cup RealCSNs
 LogCSNs              == MaxReservedCSN..CSN_MAX      \* values tail_ptr / latest_snapshot can take
+
+\* SET TRANSACTION SNAPSHOT refuses a reserved CSN other than these two
+\* (InterpreterTransactionControlQuery::executeSetSnapshot, src/Interpreters/InterpreterTransactionControlQuery.cpp:144).
+\* The set is a scenario bound, not a refinement: the code accepts any CSN above MaxReservedCSN.
+ASSUME SNAPSHOT_TARGETS \subseteq (RealCSNs \cup {NonTransactionalCSN, EverythingVisibleCSN})
+ASSUME SET_SNAPSHOT_PROTECTS \in BOOLEAN
 
 \* Covering relation: Covers[p] = direct children of p. Expand gives the base parts under a set.
 RECURSIVE ExpandSeen(_, _)

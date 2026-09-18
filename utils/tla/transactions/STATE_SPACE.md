@@ -190,6 +190,98 @@ while a session could not kill its own transaction. Allowing it, which is what t
 session that is now the only way a transaction is ever killed. Everything else the corrections and the view do
 is unchanged by it.
 
+## The `SetSnapshot` scenario {#setsnapshot}
+
+`SetSnapshot` is `Base` plus three things: the action `SetSnapshot`, the updater's truncation pass
+(`UpdRemoveOldEntriesSetTail`, `UpdRemoveOldEntriesDelete`, `UpdRemoveOldEntriesDone`), and the cleanup group,
+which is still a set of `FALSE` stubs and contributes nothing until the task that fills it in. Its bounds are
+`Base`'s, with two constants added: `SNAPSHOT_TARGETS = {33}` and `SET_SNAPSHOT_PROTECTS = FALSE`.
+`MC_SetSnapshotFixed` is the same scenario with `SET_SNAPSHOT_PROTECTS = TRUE`.
+
+**It does not finish inside the budget, and that is the scenario's open problem.** Four runs at the matrix
+bounds were killed; none of them was converging. The state count is not a mystery and not a defect of any one
+addition: measured at equal bounds the scenario is 3.4 times `Base`, 7,420,069 distinct against 2,163,747 at
+`TID_MAX = 2`, which puts the matrix bounds near 98 million and about 15 minutes at the 6.9 million distinct
+states a minute the runs sustain. The reductions below were applied and measured; they moved it by single-digit
+per cent, because every addition multiplies and none dominates.
+
+`SNAPSHOT_TARGETS` is one value and stays one value. `FirstCSN` is the oldest real CSN the scenario can name,
+and a snapshot at or above the one a transaction already holds cannot make a part prematurely removable, so
+the one interesting target is the oldest one. With the change guard on `SetSnapshot` one value also means each
+transaction can retarget at most once, which is the "at most once per transaction" bound without a counter.
+
+### Where the growth is {#setsnapshot-ablations}
+
+Three variants under `tmp/tla/measure/`, each killed at three minutes, all with `SetSnapshotView`. The point of
+the table is the negative result.
+
+| Variant | Distinct states at 3 min |
+|---|---|
+| `M0`, `Base` actions only, `SNAPSHOT_TARGETS = {}` | 14,859,870 |
+| `M1`, `Base` actions with `SET TRANSACTION SNAPSHOT` live | 15,781,536 |
+| `M2`, `Base` actions with the truncation pass live | 14,523,121 |
+
+All three are within 8% of each other. No single addition is the multiplier; each crosses its own dimension
+with the whole `Base` space, and the three-minute mark is too early in the breadth-first search to separate
+them anyway.
+
+### Reductions applied and what each was worth {#setsnapshot-reductions}
+
+Every row is a two-session run at `TID_MAX = 3`, `CSN_MAX = 36`, compared at the same elapsed time, because
+none of them finished. The logs are under `tmp/tla/old_logs/`.
+
+| Configuration | Distinct states | At |
+|---|---|---|
+| as first written | 57,590,498 | 8 min 13 s; killed at 520 s with the queue growing from 2.97M to 5.91M |
+| plus the three changes below | 57,317,500 | 8 min 03 s; killed at 10 min at 70,926,154, queue 4.94M |
+| plus `CONSTRAINT AtMostOneSetSnapshot` | 63,177,430 | 9 min 03 s, against 64,111,651 for the row above at the same minute |
+| the constraint removed again | 56,968,754 | 8 min 03 s |
+
+The three changes, together worth nothing measurable:
+
+1. **`SetSnapshot` is guarded on the snapshot actually changing.** `setSnapshot` storing the value the
+   transaction already holds changes nothing the server can observe, and the model also restarts the read
+   baseline there, so without the guard every idle point of every running transaction produced a state. This
+   is a model correction, not a bound.
+2. **`h.content` left `SetSnapshotView`.** It is captured history rather than a function of the current state,
+   so it splits states that are otherwise equal. No property in this configuration reads it, because
+   `NoLostVisibleData` is not checked here yet. The task that adds that property has to put the field back and
+   re-make the view argument.
+3. **The truncation pass got the updater's program counter.** `removeOldEntries` runs on one thread and never
+   interleaves with itself, so `SetTail` takes `sys.updater_pc` from `"Idle"` to `"Delete"`, each removal is a
+   step of the `"Delete"` phase, and `UpdRemoveOldEntriesDone` ends the pass. This is the more faithful shape,
+   and it is the reason the three changes net out to zero: the counter removes a second pass starting inside
+   the first, and pays for it with a new state field and a new action.
+
+`AtMostOneSetSnapshot` was measured at 1.5% and **not applied**. With a single target only a transaction that
+began above it can move at all, so two transactions holding moved snapshots is already close to unreachable and
+the constraint has almost nothing to prune. A bound that buys 1.5% is not worth the sentence it costs.
+
+### The two reduced configurations, and why neither is committed {#setsnapshot-bounds}
+
+Both finish comfortably. Both break the witness contract, which allows a reduction below the matrix bounds only
+while every witness of every property the scenario checks stays red.
+
+| Configuration | Distinct states | Time | Result |
+|---|---|---|---|
+| `TID_MAX = 2`, `CSN_MAX = 35`, two sessions | 7,420,069 | 1 min 05 s | green |
+| `MC_SetSnapshotFixed`, same bounds | 7,291,861 | 1 min 03 s | green |
+| `TID_MAX = 3`, `CSN_MAX = 36`, one session | 1,271,599 | 10 s | green |
+
+At `TID_MAX = 2` four witnesses go green: `SingleRemover`, `NoUncommittedRead`, `NoLostRead` and, worst of all,
+`Assert_getOldestSnapshot`, which is the witness this scenario exists to fire. `WITNESSES.md` has the sweep. The
+reason the last one needs three transactions is the shape of the violation: the sortedness clause is broken only
+when a *later* transaction holds a *lower* entry, so an earlier transaction has to have begun above `FirstCSN`,
+which costs one committed transaction before either of the two that run concurrently.
+
+The one-session configuration is cheaper still and worse: a session runs one transaction at a time, so two
+transactions are never running together and `Assert_getOldestSnapshot` cannot be falsified at all.
+
+So the committed configuration is the matrix bounds, where every witness is red and the run does not finish.
+That is the open item this scenario hands on: either a reduction nobody has found yet, or a ruling that a
+15-minute scenario is acceptable, or an action-level bound on the truncation pass. It is recorded as `M4` in
+`FINDINGS.md`.
+
 ## Reproducing {#reproducing}
 
 ```bash

@@ -77,11 +77,14 @@ SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_
               query_faults : 0..QUERY_FAULTS_MAX, merges_blocker : 0..Cardinality(Sessions),
               parts_lock : Actors \cup {NoActor}, nt_batch : BatchType,
               updater_pc : {"Idle", "PublishSnapshot", "SetTail", "Delete", "Swap", "Finalize"},
-              cleanup_pc : {"Idle", "Validate", "Delete"}]
+              \* cleanup_part is the part MergeTreeData::grabOldParts has grabbed; written by the cleanup
+              \* actions, which plan 2's next task adds. It is declared here so that the SetSnapshot view,
+              \* which keeps it, does not have to change when those actions arrive.
+              cleanup_pc : {"Idle", "Validate", "Delete"}, cleanup_part : Parts \cup {"None"}]
 SysInit == [server |-> "TableUp", completely_started |-> TRUE, async_loading_jobs |-> 0,
             loaded_parts |-> Parts, loaded_mutations |-> Mutations, restarts |-> 0, keeper_faults |-> 0,
             disk_faults |-> 0, query_faults |-> 0, merges_blocker |-> 0, parts_lock |-> NoActor, nt_batch |-> NoBatchRec,
-            updater_pc |-> "Idle", cleanup_pc |-> "Idle"]
+            updater_pc |-> "Idle", cleanup_pc |-> "Idle", cleanup_part |-> "None"]
 
 ServerTypeOK ==
   /\ txn \in [Tids -> TxnRecord]
@@ -147,11 +150,37 @@ Begin(k) ==
      /\ txn' = [txn EXCEPT ![t] = [AbsentTxn EXCEPT !.state = "Running", !.snapshot = s, !.protected_snapshot = s,
                                      !.holders = {Sess(k)}]]
      /\ client' = [client EXCEPT ![k].current = t, ![k].first_read = NoRead, ![k].last_read = NoRead]
-     /\ h' = [h EXCEPT !.content[t] = { <<q, part[q].payload.ver>> : q \in
-                { r \in Parts : part[r].pstate \in {"Active", "Outdated"} /\ OracleVisible(r, s, t) } }]
+     \* the fragments visible at the snapshot this transaction started with; SetSnapshot recaptures it.
+     /\ h' = [h EXCEPT !.content[t] = Frags({ r \in Parts : part[r].pstate \in {"Active", "Outdated"}
+                                                           /\ OracleVisible(r, s, t) })]
   /\ UNCHANGED <<zk, disk, mdisk, part, sys, stmt, mut, task>>
 
-SetSnapshot(k, c) == FALSE
+\* executeSetSnapshot (src/Interpreters/InterpreterTransactionControlQuery.cpp:138) then
+\* MergeTreeTransaction::setSnapshot (src/Interpreters/MergeTreeTransaction.cpp:52): one relaxed store into
+\* `snapshot`. `protected_snapshot` and the snapshots_in_use entry are deliberately left alone, which is the
+\* behaviour NoPrematureDelete is expected to catch; SET_SNAPSHOT_PROTECTS is the proposed fix (FINDINGS F2).
+SetSnapshot(k, c) ==
+  /\ Up /\ HasTxn(k) /\ client[k].pc = "Idle" /\ txn[Cur(k)].state = "Running"
+  /\ c \in SNAPSHOT_TARGETS
+  \* setSnapshot stores the value it is given; storing the value the transaction already holds changes nothing
+  \* the server can observe, so the model does not make it a step. Without this guard the action is enabled at
+  \* every idle point of every running transaction and, because it also restarts the read baseline below, each
+  \* of those no-ops produces a state.
+  /\ c /= txn[Cur(k)].snapshot
+  /\ LET t == Cur(k)
+         moves == SET_SNAPSHOT_PROTECTS \/ Witness("Assert_getOldestSnapshot") IN
+     /\ (SET_SNAPSHOT_PROTECTS => c >= tlog.tail_ptr)
+     /\ txn' = [txn EXCEPT ![t].snapshot = c, ![t].protected_snapshot = IF moves THEN c ELSE @]
+     /\ tlog' = [tlog EXCEPT !.snapshots_in_use[t] = IF moves THEN c ELSE @]
+     /\ h' = [h EXCEPT !.content[t] = Frags({ r \in Parts : part[r].pstate \in {"Active", "Outdated"}
+                                                           /\ OracleVisible(r, c, t) })]
+     \* The read baseline restarts, exactly as it does at Begin. StableRead compares a read against the first
+     \* read taken at the snapshot it was judged by, and SET TRANSACTION SNAPSHOT is the sanctioned way to
+     \* change that snapshot: a read before it and a read after it are reads at two different snapshots, and
+     \* requiring them to agree would make the statement itself a violation. The first run of this scenario
+     \* was red on StableRead for exactly that trace.
+     /\ client' = [client EXCEPT ![k].first_read = NoRead, ![k].last_read = NoRead]
+  /\ UNCHANGED <<zk, disk, mdisk, part, sys, stmt, mut, task>>
 
 \* ============================================================ client: insert and publication
 InsertWrite(k, p) ==
@@ -568,6 +597,55 @@ UpdPublishSnapshot ==
   /\ sys' = [sys EXCEPT !.updater_pc = "Idle"]
   /\ UNCHANGED <<zk, disk, mdisk, h, part, txn, client, stmt, mut, task>>
 
+\* removeOldEntries up to tail_ptr.store (src/Interpreters/TransactionLog.cpp:284-316).
+\* The guard is `new /= old`, not `new > old`: the regressing case is what Assert_TailPtrNotRegressing catches,
+\* and a guard that excluded it would make the property vacuous.
+\* The updating thread runs `loadNewEntries(); removeOldEntries(); tryFinalizeUnknownStateTransactions();` in
+\* one loop iteration on one thread, so removeOldEntries never interleaves with itself: one pass sets the tail
+\* and then walks the removal loop to its end before another pass can start. The model gives the pass the
+\* program counter sys.updater_pc, which UpdLoadEntriesMap already uses for the same reason: SetTail takes the
+\* thread from "Idle" to "Delete", each removal is one step of the "Delete" phase, and UpdRemoveOldEntriesDone
+\* ends the pass. Client steps still interleave freely between them, because the updater is a separate thread;
+\* what the counter removes is a second pass starting inside the first, which the C++ cannot do.
+\* The removal loop runs only when the tail actually moved: removeOldEntries returns at :317 when the new value
+\* equals the old one, before the loop is reached.
+UpdRemoveOldEntriesSetTail ==
+  /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
+  /\ zk.session = "Alive"
+  /\ sys.completely_started
+  /\ (tlog.updated_tail_ptr \/ sys.async_loading_jobs = 0)
+  /\ LET nt == IF Witness("NoOutdatedLookup") THEN tlog.latest_snapshot ELSE OldestSnapshot IN
+     /\ nt /= zk.tail
+     /\ zk' = KeeperWithTail(nt)
+     /\ tlog' = [tlog EXCEPT !.tail_ptr = nt, !.updated_tail_ptr = TRUE]
+     /\ sys' = [sys EXCEPT !.updater_pc = "Delete"]
+  /\ UNCHANGED <<disk, mdisk, h, part, txn, client, stmt, mut, task>>
+
+\* removeOldEntries, one iteration of the removal loop (src/Interpreters/TransactionLog.cpp:319-341).
+\* The loop walks the loaded map tid_to_csn, not the znode list, so an entry the updater has not loaded is not a
+\* candidate; it skips an entry whose tid.start_csn is at or above the new tail, and always keeps the entry whose
+\* csn is the latest loaded one. ZNONODE counts as removed, which is why no `c \in DOMAIN zk.log` guard appears.
+\* The C++ snapshots tid_to_csn and latest_snapshot once and then loops; the model re-reads them per iteration,
+\* so it can delete an entry the C++ would have kept as "the latest one we fetched". That widens the behaviour
+\* set; see FINDINGS.md section 2, model defect M3, for why it is sound here and where it gets settled.
+UpdRemoveOldEntriesDelete(c) ==
+  /\ sys.updater_pc = "Delete"
+  /\ zk.session = "Alive"
+  /\ c /= tlog.latest_snapshot
+  /\ \E t \in Tids :
+     /\ tlog.tid_to_csn[t] = c
+     /\ tlog.tid_start[t] < tlog.tail_ptr
+     /\ zk' = KeeperRemoved(c)
+     /\ tlog' = [tlog EXCEPT !.tid_to_csn[t] = UnknownCSN]
+     /\ h' = [h EXCEPT !.truncated = @ \cup {t}]
+  /\ UNCHANGED <<disk, mdisk, part, txn, sys, client, stmt, mut, task>>
+
+\* the removal loop ends and the thread leaves removeOldEntries (src/Interpreters/TransactionLog.cpp:341)
+UpdRemoveOldEntriesDone ==
+  /\ sys.updater_pc = "Delete"
+  /\ sys' = [sys EXCEPT !.updater_pc = "Idle"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+
 \* ============================================================ store steps as root actions
 StoreRead(p, o) == /\ Up /\ HasFrame(p, o) /\ StoreReadStep(p, o)
                    /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
@@ -580,8 +658,6 @@ Fsync(p) == /\ Layered /\ disk' = DiskWithMetaSynced(p)
 
 \* ============================================================ stubs for later plans
 UpdReconnect == FALSE
-UpdRemoveOldEntriesSetTail == FALSE
-UpdRemoveOldEntriesDelete(c) == FALSE
 UpdSwapUnknownLists == FALSE
 UpdFinalizeUnknown(t) == FALSE
 CleanupGrab(p) == FALSE

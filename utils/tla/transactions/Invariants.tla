@@ -4,7 +4,6 @@
 \* Baseline C++: upstream ClickHouse master 2c24b6b9291e
 EXTENDS Server
 
-Frags(V) == { <<q, part[q].payload.ver>> : q \in Expand(V) }
 Proj(F) == { <<f[2], f[3]>> : f \in F }      \* drop the root of a fragment tuple
 
 \* ---- isolation (spec #invariants-isolation): evaluated when a read completes (SelectFinish), over the
@@ -95,8 +94,17 @@ Assert_isVisible_fast == \A p \in Parts : LET m == part[p].mem IN
   /\ (m.rcsn /= UnknownCSN => m.ccsn /= UnknownCSN)
   /\ m.ccsn \in {UnknownCSN, NonTransactionalCSN, RolledBackCSN} \cup RealCSNs
   /\ m.rcsn \in {UnknownCSN, NonTransactionalCSN} \cup RealCSNs
-Assert_getOldestSnapshot == /\ tlog.running_list = { t \in Tids : tlog.snapshots_in_use[t] /= UnknownCSN }
-                            /\ \A t \in tlog.running_list : tlog.snapshots_in_use[t] = txn[t].protected_snapshot
+\* TransactionLog::getOldestSnapshot, src/Interpreters/TransactionLog.cpp:677-686: the running list and the
+\* snapshot bag have the same members, each entry is the value beginTransaction inserted, and the bag is sorted.
+\* snapshots_in_use is a list in insertion order and Begin draws tids from a monotone counter while
+\* latest_snapshot never decreases, so "sorted" is "non-decreasing in the tid order". Under SET_SNAPSHOT_PROTECTS
+\* the proposed fix re-inserts the entry at its sorted position, so the tid order is no longer the list order and
+\* the clause does not apply; the C++ assertion still does.
+Assert_getOldestSnapshot ==
+  /\ tlog.running_list = { t \in Tids : tlog.snapshots_in_use[t] /= UnknownCSN }
+  /\ \A t \in tlog.running_list : tlog.snapshots_in_use[t] = txn[t].protected_snapshot
+  /\ ~SET_SNAPSHOT_PROTECTS =>
+       \A t1, t2 \in tlog.running_list : t1 < t2 => tlog.snapshots_in_use[t1] <= tlog.snapshots_in_use[t2]
 NoAvoidableTermination == h.down_cause \in {"None", "RetryExhausted"}
 NoSpuriousStaleVersion == \A k \in Sessions : client[k].last_error = "STALE_VERSION" => client[k].stale_interferences = MAX_STORE_RETRIES
 \* A KILL query blocks at KillWait until the rollback it drives finishes, and the runner disables TLC's deadlock
@@ -107,6 +115,37 @@ KillerNotStranded == \A k \in Sessions : client[k].pc = "KillWait" =>
   \A t \in Tids : txn[t].rb_driver = Sess(k) => txn[t].pc /= "Idle"
 
 \* ---- action properties
+\* removeOldEntries, src/Interpreters/TransactionLog.cpp:312-314: "Got unexpected tail_ptr {}, oldest snapshot is
+\* {}, it's a bug". A LOGICAL_ERROR on a modelled path is an invariant, not a precondition (spec, "Actions").
+TailPtrNotRegressingStep == UpdRemoveOldEntriesSetTail => OldestSnapshot >= zk.tail
+Assert_TailPtrNotRegressing == [][TailPtrNotRegressingStep]_vars
+
+\* TransactionLog::assertTIDIsNotOutdated, src/Interpreters/TransactionLog.cpp:656-675: the LOGICAL_ERROR
+\* "Trying to get CSN for too old TID". It is reached from tryFinalizeUnknownStateTransactions
+\* (src/Interpreters/TransactionLog.cpp:387), which is UpdFinalizeUnknown, and from getCSNAndAssert (:645),
+\* which has no caller in the tree, so the property is vacuous in every scenario that leaves UpdFinalizeUnknown
+\* disabled. See FINDINGS.md, spec defect S6.
+NoOutdatedLookupStep == \A t \in Tids : UpdFinalizeUnknown(t) =>
+  (tlog.tid_to_csn[t] /= UnknownCSN \/ tlog.tail_ptr <= tlog.tid_start[t])
+NoOutdatedLookup == [][NoOutdatedLookupStep]_vars
+
+\* spec #invariants-isolation, NoLostVisibleData. The fragments visible to a running transaction at its own
+\* snapshot never shrink, except by its own drops; SetSnapshot recaptures h.content, so a transaction that
+\* deliberately reads an older snapshot is judged against that snapshot's content, not against its first one.
+\* It is stated over all running transactions rather than over "a step that is not an action of t", because the
+\* two exemptions the spec's row gives for t's own steps, h.removing[t] and the SetSnapshot recapture, already
+\* cover every way t can shrink its own view. Both exemptions are read in the post-state, which is what makes
+\* that true: the step that enrols t's own removal is the step that adds the part to h.removing[t], and the
+\* SetSnapshot step is the step that rewrites h.content[t], so a pre-state read of either would make t's own
+\* drop and t's own SET TRANSACTION SNAPSHOT false positives. Both were, until the first run of this scenario.
+\* A merge transaction, which never reads, has h.content = {} and is therefore vacuously covered.
+VisibleFrags(t) == Frags({ r \in Parts : part[r].pstate \in {"Active", "Outdated"}
+                                        /\ OracleVisible(r, txn[t].snapshot, t) })
+NoLostVisibleDataStep ==
+  \A t \in Tids : (txn[t].state = "Running" /\ txn[t].snapshot /= EverythingVisibleCSN) =>
+    (h.content[t]' \ Frags(h.removing[t])') \subseteq VisibleFrags(t)'
+NoLostVisibleData == [][NoLostVisibleDataStep]_vars
+
 RollbackRestoresStep == \A k \in Sessions, t \in Tids : RollbackFinalize(k, t) =>
   \A p \in h.removing[t] \ h.creating[t] :
     part'[p].pstate = "Active" \/ part[p].lock \notin {EmptyTID, t} \/ (h.removers[p] \ {t}) /= {}

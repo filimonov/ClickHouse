@@ -66,8 +66,10 @@ the three-step metadata store. Every other action of the design document is pres
 ```
 
 `run_tlc.sh` runs `MC_<Scenario>` with `-workers auto` unless a second argument overrides it. The scenarios that
-exist today are `Schema` (one state, a type check), `BaseSmall` (one session) and `Base` (two sessions, the
-matrix bounds). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
+exist today are `Schema` (one state, a type check), `BaseSmall` (one session), `Base` (two sessions, the
+matrix bounds), `SetSnapshot` (`Base` plus `SET TRANSACTION SNAPSHOT`, the cleanup group and the updater's GC
+group) and `SetSnapshotFixed` (the same with `SET_SNAPSHOT_PROTECTS = TRUE`, the model variant of the fix
+proposed in `FINDINGS.md`, finding F2). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
 45-minute `timeout`.
 
 Output goes under `tmp/tla/<Scenario>/`: the full TLC log is `tlc.log`, and a counterexample is additionally
@@ -84,7 +86,10 @@ Exit codes:
 | 2 | a parse or configuration error, a missing `MC_<Scenario>` module, a missing tool, or a timeout |
 
 A timeout is not something to wait out. A run that passes 45 minutes, or 30 million distinct states, is a defect
-of the model or of the bounds: kill it, record what it reached, and reduce. The `Base` scenario reached
+of the model or of the bounds: kill it, record what it reached, and reduce. `SetSnapshot` is currently in that
+state and is the exception on the run table below: it is committed at the matrix bounds, where its witnesses are
+red and the run does not finish, because both bounds that do finish turn witnesses green. See `FINDINGS.md`,
+`M4`. The `Base` scenario reached
 115,663,927 distinct states without finishing when it was first written, and the three model corrections that
 fixed that are in `STATE_SPACE.md`.
 
@@ -170,6 +175,8 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 |---|---|---|---|
 | `UpdLoadEntriesMap` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::loadEntries` (:135), from `loadNewEntries` (:272) | the `NOEXCEPT_SCOPE_STRICT` block (:161) has run: the batch of new entries is in `tid_to_csn` under `TransactionLog::mutex` and `last_loaded_entry` has advanced. `latest_snapshot` has not moved, which is the window a `Begin` or a `SelectCheck` can fall into |
 | `UpdPublishSnapshot` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::loadEntries` (:135) | the block under `running_list_mutex` (:174): `latest_snapshot` takes the CSN of the last loaded entry and `local_tid_counter` is reset. `loadNewEntries` then calls `latest_snapshot.notify_all` (:281), which is what releases `waitForCSNLoaded` |
+| `UpdRemoveOldEntriesSetTail` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | everything up to and including `tail_ptr.store` (:316): the `isServerCompletelyStarted` gate, the `asyncTablesLoadingJobNumber` gate that applies only while `updated_tail_ptr` is false, the read of the `tail_ptr` znode, `getOldestSnapshot`, the `LOGICAL_ERROR` when the new value is below the old one, the early return when they are equal, and the `set` of the znode |
+| `UpdRemoveOldEntriesDelete(c)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | one iteration of the removal loop (:319-341): one `tryRemove` of the log znode and one `tid_to_csn` erase, for an entry whose `tid.start_csn` is below the new tail and whose CSN is not the latest loaded one. `ZNONODE` counts as removed |
 
 ### The metadata store {#code-map-store}
 
@@ -191,9 +198,7 @@ the one that implements the action, from the plan's "Plans that follow this one"
 
 | Action | Plan |
 |---|---|
-| `SetSnapshot(k, c)` | plan 2 |
 | `CleanupGrab(p)`, `CleanupValidate(p)`, `CleanupDeleteOk(p)`, `CleanupDeleteFail(p)` | plan 2 |
-| `UpdRemoveOldEntriesSetTail`, `UpdRemoveOldEntriesDelete(c)` | plan 2 |
 | `MergeBegin(i)`, `MergeSelect(i)`, `MergeWrite(i)`, `MergeRename(i)`, `MergeFail(i)` | plan 2 |
 | `NtInsert(p)`, `NtBatchStart(B)`, `NtBatchPreflight(p)`, `NtBatchLock(p)`, `NtBatchStore(p)`, `NtBatchEnd`, `NtDropCover` | plan 2 |
 | `CommitUnknown(k)` | plan 3 |
@@ -228,6 +233,13 @@ discarded.
 | `Base` | 2026-09-18 | `5aaefae31249` | 28,553,114 | 4 min 08 s | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` |
 | witness sweep, 18 rows | 2026-09-18 | `5aaefae31249` | 53,133,545 for the largest single row | ≈ 15 min in total, 5 min 21 s for that row | every witness red, both minimality halves green |
 | `Schema` | 2026-09-18 | the final-review fix commit | 1 | 1 s | green |
+| `Schema` | 2026-09-18 | the `SetSnapshot` commit | 1 | 1 s | green |
+| `BaseSmall` | 2026-09-18 | the `SetSnapshot` commit | 47,381 | 1 s | green |
+| `Base` | 2026-09-18 | the `SetSnapshot` commit | 28,553,303 | 4 min 12 s | green; 28,553,114 before the shared-module changes, which is the multi-worker counting noise |
+| `SetSnapshot` | 2026-09-18 | the `SetSnapshot` commit | 56,968,754 after 8 min, queue 4.47M | killed | did not finish at the matrix bounds; model defect `M4`, and `STATE_SPACE.md` has the four runs and the reductions |
+| `SetSnapshot` | 2026-09-18 | the `SetSnapshot` commit | 7,420,069 | 1 min 05 s | green at `TID_MAX = 2`, `CSN_MAX = 35`, a bound that four witnesses reject |
+| `SetSnapshotFixed` | 2026-09-18 | the `SetSnapshot` commit | 7,291,861 | 1 min 03 s | green at the same reduced bound |
+| `SetSnapshot` witnesses, 2 rows | 2026-09-18 | the `SetSnapshot` commit | 568,869 for the larger | 11 s in total | both red at the matrix bounds |
 | `BaseSmall` | 2026-09-18 | the final-review fix commit | 47,381 | 1 s | green |
 | `Base` | 2026-09-18 | the final-review fix commit | 28,552,935 | 4 min 06 s | green at the matrix bounds |
 | witness `FlipAfterStores` | 2026-09-18 | the final-review fix commit | 8,017 | 2 s | red, as required |
@@ -286,7 +298,7 @@ green, and any red on a `Base` run is a finding to be explained rather than a re
 |---|---|---|
 | `NoAvoidableTermination` | `DiskFault` under `Terminate` | a transient store fault inside a `noexcept` callback terminates the process, which is the first defect Altinity PR 2396 addresses |
 | `NoAvoidableTermination` | `Mutation` | `KILL MUTATION` in the commit window makes `setMutationCSN` raise a `LOGICAL_ERROR` inside `noexcept`, the second defect of that PR |
-| `NoPrematureDelete` | `SetSnapshot` | a snapshot set by `SET TRANSACTION SNAPSHOT` does not enter `snapshots_in_use`, so cleanup can delete a part the transaction can still read |
+| `NoPrematureDelete` | `SetSnapshot` | a snapshot set by `SET TRANSACTION SNAPSHOT` does not enter `snapshots_in_use`, so cleanup can delete a part the transaction can still read. Not yet reached: the property needs `CleanupGrab` to move a part to `Deleting`, and the cleanup group is still a stub, so `MC_SetSnapshot` is green and the red is owed by the task that fills those actions in. `FINDINGS.md`, finding F2, carries the mechanism, the proposed fix and what remains to be run |
 | `MutationRecoveredStrict` | `MutationCrash` | the `writeCSN` append is not synced, so a truncation that follows a termination can lose a committed mutation's CSN |
 
 What the model has actually found is in `FINDINGS.md`: counterexamples on baseline runs with their

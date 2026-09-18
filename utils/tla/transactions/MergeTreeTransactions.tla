@@ -27,7 +27,7 @@ ClientNext == \E k \in Sessions :
 StoreNext == \E p \in Parts : \/ Fsync(p)
                               \/ (\E o \in FrameOwners : StoreRead(p, o) \/ StorePersist(p, o) \/ StorePublish(p, o) \/ StoreRetry(p, o))
 UpdaterNext == UpdLoadEntriesMap \/ UpdPublishSnapshot
-UpdaterGCNext == UpdRemoveOldEntriesSetTail \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
+UpdaterGCNext == UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
 UpdaterUnknownNext == UpdReconnect \/ UpdSwapUnknownLists \/ (\E t \in Tids : UpdFinalizeUnknown(t))
 CleanupNext == \E p \in Parts : CleanupGrab(p) \/ CleanupValidate(p) \/ CleanupDeleteOk(p) \/ CleanupDeleteFail(p)
 TaskNext == \E i \in Tasks : MergeBegin(i) \/ MergeSelect(i) \/ MergeWrite(i) \/ MergeRename(i) \/ MergeFail(i) \/ MutFail(i)
@@ -49,4 +49,8 @@ Spec == Init /\ [][AllNext]_vars
 \* the Base scenario (spec matrix): client, store, updater load/publish, noexcept termination
 BaseNext == ClientNext \/ StoreNext \/ UpdaterNext \/ NoexceptFrameDown
 BaseSpec == Init /\ [][BaseNext]_vars
+
+\* the SetSnapshot scenario (spec matrix): Base + SetSnapshot + Cleanup* + Updater+GC
+SetSnapshotNext == BaseNext \/ UpdaterGCNext \/ CleanupNext
+SetSnapshotSpec == Init /\ [][SetSnapshotNext]_vars
 ====
