@@ -94,9 +94,12 @@ ActiveSetShape == /\ \A p, q \in Parts : part[p].pstate = "Active" /\ part[q].ps
 \* Not a property of the server: a bound guard. MergeUnwind can in principle win the compare-and-exchange in
 \* MergeTreeTransaction::rollback and become the rollback driver, and every step of the rollback machine is
 \* session-shaped, so the transaction would sit in RollbackCopyLists with nothing able to advance it. No
-\* scenario of this plan reaches it, because the task's own steps can only find the transaction already rolled
-\* back, and this invariant says so instead of letting the search wedge without a word. The plan that enables a
-\* fault on a background task owes the task-driven rollback steps and takes this out.
+\* scenario of this plan reaches it: the two triggers that read the transaction's state can only find it already
+\* rolled back, and the two that do not -- a source locked or already removed, and a store of the task's own in
+\* error -- are excluded by the reservation, which keeps every other actor off the task's parts. Model defect
+\* M11 in FINDINGS.md carries the argument. This invariant says so instead of letting the search wedge without a
+\* word. The plan that enables a fault on a background task owes the task-driven rollback steps and takes this
+\* out.
 NoTaskDrivenRollback == \A t \in Tids : \A i \in Tasks : txn[t].rb_driver /= Tsk(i)
 
 \* ---- code assertions (spec #invariants-code)
@@ -198,6 +201,47 @@ PinnedNotDeleted == [][PinnedNotDeletedStep]_vars
 \* the validation refusal is justified only by a disagreement history says cannot be transient
 NoFalseCorruptionStep == \A p \in Parts : CleanupDeleteFail(p) => RealDisagreement(p)
 NoFalseCorruption == [][NoFalseCorruptionStep]_vars
+
+\* ---- the non-transactional removal batch (spec #invariants-conflicts)
+\* Stated on the step that ends a batch with Refused: the batch wrote nothing. This is what the four upstream
+\* fixes about half-applied batches are for (ab40e11d3c73, f8f46fb1eb14, 86b6861a1a8e, and ba2ee3239b8d for the
+\* memory-only stamp): without a transaction there is no rollback, so a batch that refuses must leave no trace.
+\* The spec row states it as "every target's mem, stored record and lock equal their values recorded in h_batch
+\* at NtBatchStart", which is a statement about the whole world and is falsified by any concurrent actor that
+\* touches a target for its own reasons -- a rollback clearing a removal lock or stamping RolledBackCSN takes
+\* no lockParts, so it can run beside the batch. Recorded as spec defect S12. What the batch itself can write is
+\* exactly a non-transactional removal TID, the NonTransactionalCSN that comes with it in the same update
+\* function, and its own lock, so the property is stated over those three and is immune to what another actor
+\* does. h.batch.before is still what "was it already there" is judged against, which is why it is recorded.
+NtBatchRefusedUnchangedStep ==
+  (sys.nt_batch.active /\ ~sys'.nt_batch.active /\ h'.batch_outcome = "Refused") =>
+    \A p \in h.batch.targets :
+      /\ (part'[p].mem.rtid = NonTransactionalTID => h.batch.before[p][1].rtid = NonTransactionalTID)
+      /\ (StoredRecord(p)'.rtid = NonTransactionalTID => h.batch.before[p][2].rtid = NonTransactionalTID)
+      /\ part'[p].lock /= NonTransactionalTID
+NtBatchRefusedUnchanged == [][NtBatchRefusedUnchangedStep]_vars
+
+\* A refusal is justified by an uncommitted creator as the transaction log sees it, or by a lock somebody else
+\* holds. Both are read in the pre-state, which is the state the refusing step judged.
+NtRefusalJustifiedStep ==
+  (sys.nt_batch.active /\ ~sys'.nt_batch.active /\ h'.batch_outcome = "Refused") =>
+    \E p \in h.batch.targets :
+      \/ (part[p].mem.ccsn = UnknownCSN /\ part[p].mem.ctid \in Tids
+          /\ LookupCsn(part[p].mem.ctid) = UnknownCSN)
+      \/ part[p].lock /= EmptyTID
+NtRefusalJustified == [][NtRefusalJustifiedStep]_vars
+
+\* Not a property of the server: a bound guard, of the shape NoTaskDrivenRollback has. NtBatchStore has no
+\* branch that consumes a frame parked in Error, so a store that failed would leave the batch with nothing able
+\* to advance it. In the C++ such an exception leaves store(), the SCOPE_EXIT and the destructor release the
+\* locks, and the parts already drained keep their stored removal -- which is a half-applied batch and would be
+\* a finding, not a refusal. No behaviour of this plan's scenario reaches it: the preflight refuses every
+\* creation still in flight before anything is locked, so the SERIALIZATION_ERROR of setAndStoreRemovalTID
+\* cannot fire in the store phase, and no other actor can store on a part the batch holds locked, so neither
+\* can STALE_VERSION. This invariant says so rather than letting the search wedge without a word. The plan that
+\* gives the batch a disk or query fault owes the action and takes this out.
+NoNtStoreError == sys.nt_batch.active /\ sys.nt_batch.phase = "Store" =>
+  \A p \in Parts : ~FrameError(p, sys.nt_batch.owner)
 
 RollbackRestoresStep == \A k \in Sessions, t \in Tids : RollbackFinalize(k, t) =>
   \A p \in h.removing[t] \ h.creating[t] :

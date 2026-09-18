@@ -10,7 +10,7 @@ CONSTANTS
   RESTARTS_MAX, KEEPER_FAULTS_MAX, DISK_FAULTS_MAX, QUERY_FAULTS_MAX,
   MAX_STORE_RETRIES, NOEXCEPT_RETRY_BUDGET, NOEXCEPT_STORE_FAULT_POLICY,
   DISK_MODE, FSYNC_PART_DIRECTORY, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME,
-  SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS
+  SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS, OBSOLETE_IS_ROLLED_BACK
 
 ASSUME Covers \in [Parts -> SUBSET Parts]
 ASSUME NOEXCEPT_STORE_FAULT_POLICY \in {"Terminate", "Retry"}
@@ -49,6 +49,11 @@ LogCSNs              == MaxReservedCSN..CSN_MAX      \* values tail_ptr / latest
 \* The set is a scenario bound, not a refinement: the code accepts any CSN above MaxReservedCSN.
 ASSUME SNAPSHOT_TARGETS \subseteq (RealCSNs \cup {NonTransactionalCSN, EverythingVisibleCSN})
 ASSUME SET_SNAPSHOT_PROTECTS \in BOOLEAN
+\* FALSE is the baseline: Transaction::commit's obsolete branch (src/Storages/MergeTree/MergeTreeData.cpp:11305)
+\* moves a precommitted part that already has a covering part to Outdated and stamps nothing on it, so it keeps
+\* creation_csn = 0 for ever. TRUE is the fix proposed by finding F6: stamp it RolledBackCSN there, the way
+\* MergeTreeData::Transaction::rollback stamps a part that does not make it in.
+ASSUME OBSOLETE_IS_ROLLED_BACK \in BOOLEAN
 
 \* Covering relation: Covers[p] = direct children of p. Expand gives the base parts under a set.
 RECURSIVE ExpandSeen(_, _)

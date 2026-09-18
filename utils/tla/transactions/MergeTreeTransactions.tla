@@ -42,9 +42,14 @@ TaskNext == \E i \in Tasks :
   \/ (\E m \in Mutations, p \in Parts : MutSelect(i, m, p) \/ MutWrite(i, m, p) \/ MutRename(i, m, p))
   \/ (\E m \in Mutations : KillCancelTask(m, i))
 MutationNext == \E m \in Mutations : MutDestroyOwner(m) \/ KillUnregister(m) \/ KillRollbackTxn(m) \/ KillRemoveFile(m) \/ KillRetry(m)
-NtNext == \/ (\E p \in Parts : NtInsert(p) \/ NtBatchPreflight(p) \/ NtBatchLock(p) \/ NtBatchStore(p))
-          \/ (\E B \in SUBSET Parts : NtBatchStart(B))
-          \/ NtBatchEnd \/ NtDropCover
+\* The target set of a batch is always computed by its caller, never chosen: an "\E B \in SUBSET Parts" would
+\* give the model 2^|Parts| branches the code does not have. NtDropPublish computes it and starts the batch.
+NtNext == \/ (\E k \in Sessions, p \in Parts : NtInsertWrite(k, p) \/ NtInsertPublish(k, p)
+                                               \/ NtDropWrite(k, p) \/ NtDropPublish(k, p) \/ NtDropFlip(k, p)
+                                               \/ NtDropUnwindMark(k, p))
+          \/ (\E k \in Sessions : NtDropUnwindDrop(k))
+          \/ (\E p \in Parts : NtBatchPreflight(p) \/ NtBatchLock(p) \/ NtBatchStore(p))
+          \/ NtBatchEnd
 FaultNext == Crash \/ NoexceptFrameDown \/ (\E c \in {"StoreFault", "RetryExhausted", "Other"} : ProcessDown(c))
 RestartNext == RestartLoadLog \/ RestartTableStart \/ RestartTablePublished \/ RestartOutdatedDone \/ RestartDone
                \/ (\E p \in Parts : RestartLoadPart(p))
@@ -65,4 +70,8 @@ SetSnapshotSpec == Init /\ [][SetSnapshotNext]_vars
 \* the Merge scenario (spec matrix): Base + Merge* + Cleanup* + Updater+GC
 MergeNext == BaseNext \/ TaskNext \/ CleanupNext \/ UpdaterGCNext
 MergeSpec == Init /\ [][MergeNext]_vars
+
+\* the NonTxn scenario (spec matrix): Base + NtInsert, NtBatch*, NtDropCover + Cleanup*
+NonTxnNext == BaseNext \/ NtNext \/ CleanupNext
+NonTxnSpec == Init /\ [][NonTxnNext]_vars
 ====

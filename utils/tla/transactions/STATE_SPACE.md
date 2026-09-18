@@ -404,8 +404,10 @@ fall back is `Outdated` or `Deleted`. So `M12` is written at most once in a beha
 merge per run — which is also the C++'s "at most one merge per partition at a time", enforced there by
 `CurrentlyMergingPartsTagger` and here by that plus the reservation.
 
-What the reduced run confirms is the same thing from the other side: at one session the scenario terminates at
-depth 62 with an empty queue. An actor that could restart itself, or a reservation that leaked, would not
+What the reduced run confirms is the same thing from the other side: at one session the scenario terminates
+with an empty queue, at a complete search depth of 127. (The run's one `Progress` line is at breadth-first
+level 43, three seconds in; TLC prints that line once a minute and the run finishes before the next one, so 43
+is where the report stops, not where the search does.) An actor that could restart itself, or a reservation that leaked, would not
 terminate at any session count. The growth is the ordinary product of a third part, a task with thirteen program
 counters, a fourth actor's worth of commits and the cleanup thread crossing the whole of `Base`.
 
@@ -436,6 +438,88 @@ been red before — when what was in the directory was the `Merge` run, green th
 Re-run on `Base` after the extraction it is red at 53,619,513 distinct states in 5 min 31 s, against 53,133,545
 in 5 min 21 s before, so the extraction moved neither the hook nor the shape. The script now writes to
 `tmp/tla/w_<Scenario>_<WitnessName>/`.
+
+## The `NonTxn` scenario {#nontxn}
+
+`NonTxn` is `Base` plus the non-transactional queries and the removal batch (`NtInsert*`, `NtDrop*`,
+`NtBatch*`) and the cleanup group, over a part universe of three: `P1`, `P2` and `E`, the empty part a
+non-transactional `DROP PARTITION` publishes over them. It is the first scenario in which a writer that is not
+a transaction changes the active parts set.
+
+### Bounds, and why `TID_MAX = 2` {#nontxn-bounds}
+
+The scenario matrix asks for `TID_MAX = 3`, `CSN_MAX = 36` and two sessions, and at those bounds it does not
+finish. The run was killed at 27,234,570 distinct states after four minutes, at breadth-first level 43, with
+5.34 million queued and the queue growing by about 1.2 million a minute. A run past 30 million distinct that is
+still growing is a defect of the configuration rather than something to wait for, which is the rule
+`SetSnapshot` established.
+
+The reduction is `TID_MAX = 2`, `CSN_MAX = 35`, and it is the second rung of the ladder because the first rung
+is not available here. Cutting to one session would remove the scenario's whole subject: `NtInsertWrite` and
+`NtDropWrite` require `~HasTxn(k)`, and a session holds its transaction from `Begin` until it commits or rolls
+back, so with one session a non-transactional query and a running transaction can never overlap. Every race the
+batch exists for -- a target locked by a transaction, a target created by a transaction that has not committed
+-- needs two sessions. `MC_NonTxnF5` is one session, and it reaches its finding only because the
+non-transactional work there is sequential rather than concurrent.
+
+The cost of the reduction is the usual one, and it is recorded as a bound-contract debt rather than hidden:
+the witnesses that need a third transaction are the four `Base` already verifies at `TID_MAX = 3`.
+
+**And it does not finish there either.** At `TID_MAX = 2` the run was killed at 59,047,617 distinct states
+after nine minutes with 7.45 million queued and the queue growing by about 650,000 a minute. The ladder has no
+further rung that keeps the scenario's subject: one session removes the overlap between a transaction and a
+non-transactional query, which is what every race here is, and the part universe is already the three the
+covering relation needs. `NonTxn` therefore has no exhaustive run, which is model defect `M4`'s shape and is
+recorded as `M16`. What the scenario delivers instead is five red modules, one per finding, and a green fix
+variant for the one finding whose fix is established; the witness sweep runs against the scenario's own bounds
+and every witness that finishes is red.
+
+### What the view keeps {#nontxn-view}
+
+`NonTxnView` is `MergeView`'s shape, because `Covers` is non-empty here too and a read's fragments are
+therefore not a function of its parts. Three changes. `task` is dropped, because `Tasks = {}`.
+`tlog.tail_ptr`, `tlog.updated_tail_ptr` and `h.truncated` are dropped, because the matrix does not give
+`NonTxn` the truncation pass and no action writes them. `sys.nt_batch`, `h.batch` and `h.batch_outcome` are
+added, because the batch actions read all three and the two batch properties read the last two. `h.abandoned`
+is in every view in the tree, `BaseView` included, from this task on: the visibility oracle reads it.
+
+### The runs {#nontxn-runs}
+
+| Configuration | Result | Distinct states | Time |
+|---|---|---|---|
+| `NonTxn`, `TID_MAX = 3`, `CSN_MAX = 36`, two sessions | killed, still growing | 27,234,570 after 4 min, queue 5.34M | |
+| `NonTxn`, `TID_MAX = 2`, `CSN_MAX = 35`, two sessions | killed, still growing | 59,047,617 after 9 min, queue 7.45M | |
+| `NonTxnF4` | RED on `NoLostVisibleData` | 74,225 | 2 s |
+| `NonTxnF5` | RED on `ActiveSetShape` | 106,922 | 1 s |
+| `NonTxnF6`, one session | RED on `Assert_validateInfo` | 113,093 | 1 s |
+| `NonTxnF7` | RED on `Atomicity` | 33,923,157, a first-violation count | |
+| `NonTxnFixed`, one session, `OBSOLETE_IS_ROLLED_BACK = TRUE` | **green**, which is finding F6's fix verified | 841,907 | 8 s |
+| `Base`, after this task | green | 26,839,136 | 3 min 56 s |
+| `Merge`, after this task | green | 5,196,830 | 51 s |
+
+`Base` moves by 6%, from 28,547,508 to 26,839,136, and the move is real rather than noise. Two changes of this
+task touch it. Model defect M13 restored `DropLock`'s `lockParts` guard, which `Base` had lost entirely because
+its `Tasks` is empty, and a guard can only remove states. The visibility oracle gained `h.abandoned`, which
+makes a statement-rolled-back part invisible to its creator as the code makes it, and which both removes states
+and adds a view field. `Merge` does not move at all, to the state: its `Tasks` is a singleton, so the
+quantifier defect was invisible there, and its count is 5,196,830 before and after.
+
+### Properties this scenario does not check, and why {#nontxn-properties-absent}
+
+Four of `Base`'s properties are not in `MC_NonTxn.cfg`, and none of them is absent for convenience.
+
+`StableRead` is falsified on the baseline by a non-transactional `INSERT` between two reads of one transaction,
+which is real and by design. `NoLostRead` and `NoFutureRead` are falsified by a non-transactional write landing
+during a read, which is model defect M14: both compare a read against the oracle in the state where the read
+finishes rather than the state where it started. `NoLostVisibleData` is falsified by the removal batch and is
+finding F4, shown in `MC_NonTxnF4`. Spec defect S13 is the qualifier the isolation section owes; the scenario
+matrix's `NonTxn` row already names none of the four.
+
+Three more come out for findings of their own, each with a module that produces it: `ActiveSetShape` for F5
+(`MC_NonTxnF5`), `Assert_validateInfo` and `NoAvoidableTermination` for F6 (`MC_NonTxnF6`, which checks both,
+because the same violating record is an assertion inside `NOEXCEPT_SCOPE` and therefore a process termination
+as well), and `Atomicity` for F7 (`MC_NonTxnF7`). Of the three only F6 has a fix verified in the tree:
+`MC_NonTxnFixed` runs the same configuration with `OBSOLETE_IS_ROLLED_BACK = TRUE` green.
 
 ## Reproducing {#reproducing}
 

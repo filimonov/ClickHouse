@@ -118,7 +118,8 @@ not results.
 | `AckedWriteIsDurable` | `CommitAck` moved before `CommitCreateCSN` and a `Fail` allowed after it | `Crash` | plan 3 |
 | `ActiveSetShape`, reservation clause | two tasks reserving the same source | a second background task; the `Merge` scenario has one covering part and therefore one merge, so the clause is vacuous there | plan 4, with the `MergeMutation` scenario, where a merge and a mutation run side by side |
 | `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
-| `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | `NtInsert` and the non-transactional batch, so that a part carries a record the two exemptions are about | task 4 of this plan, with the `NonTxn` scenario |
+| `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | a part that is BOTH involved in a transaction and carries a deferred record, which `NonTxn` cannot build: see the `NonTxn` section below | plan 3, with the `NonTxnCrash` scenario |
+| `NtBatchDone` | `NtBatchStore` updates `mem` and skips the store for the covered parts of a non-transactional merge, which is the pre-fix defect of `ba2ee3239b8d` | `Restart*`, because the spec states the property on the stored record and the scenario it names is `NonTxnCrash` | plan 3 |
 
 `NoDoubleRead` and `ActiveSetShape` came off this table with the `Merge` scenario, which is the first with a covering relation; both are red there and both have rows below. What stays of `ActiveSetShape` is its second clause, which one task cannot falsify.
 
@@ -347,6 +348,64 @@ and `SNAPSHOT_TARGETS` is empty here, so they are vacuous in `Merge` and are ver
 them. `TypeOK`, `RollbackNoLeak` and `NoTaskDrivenRollback` have no witness by design: the first is a type
 invariant, the second is the debt `FINDINGS.md` section 3 records, and the third is a bound guard rather than a
 property of the server.
+
+## Witnesses of the `NonTxn` scenario {#witnesses-nontxn}
+
+`NonTxn` is two sessions, `Parts = {P1, P2, E}`, `Tasks = {}`, `TID_MAX = 2`, `CSN_MAX = 35`,
+`SYMMETRY SymSessions`, `VIEW NonTxnView`, no faults. Why the bounds are those and not the matrix's
+`TID_MAX = 3` is in `STATE_SPACE.md`; the reduction's cost is debt B4.
+
+Two witnesses are the scenario's own, and one of them is a two-change witness.
+
+| Property | Witness name | The model change | Result | States | Time |
+|---|---|---|---|---|---|
+| `NtBatchRefusedUnchanged` | `NtBatchRefusedUnchanged` | `NtBatchStore` fires in the `Lock` phase on a target that has just been locked, so the batch stores and unlocks as it goes instead of storing after the whole lock loop, and a conflict on a later target then refuses a batch whose earlier members are already removed | RED | 264,818 | 5 s |
+| `NtRefusalJustified` | `NtRefusalJustified` | `CreatedByUncommitted` decides from `mem.creation_csn = 0` alone, without asking the transaction log, which is the pre-`65e4e2b5bf69` form | RED | 53,807 | 3 s |
+| `Assert_validateInfo` | `Assert_validateInfo_nocreation` | two changes: `NtBatchPreflight` skips the uncommitted-creator refusal and `StoreRead` skips the `creation_in_flight` refusal of `setAndStoreRemovalTID`, so a non-transactional removal stores `removal_csn = NonTransactionalCSN` on a part whose `creation_csn` is zero | RED, in `MC_NonTxnWitness` | 43,851 | 2 s |
+| | `Assert_validateInfo_nocreation_only1` | the skipped preflight refusal alone | does not finish, debt B5 | 24,335,282 after 240 s, no violation | |
+| | `Assert_validateInfo_nocreation_only2` | the skipped store refusal alone | does not finish, debt B5 | 24,546,344 after 240 s, no violation | |
+
+`Assert_validateInfo` is the one row that needs a second module. It is violated on the `NonTxn` baseline by
+finding F6, so every witness run of it in `MC_NonTxn` is trivially red and says nothing. `MC_NonTxnWitness` is
+the same scenario with F6's fix applied (`OBSOLETE_IS_ROLLED_BACK = TRUE`), where the property is green again
+and the hooks can be shown to falsify it. An exhaustive run there does not finish, which is exactly the
+exhaustive-versus-witness split of spec defect S7.
+
+### The sweep at these bounds {#witnesses-nontxn-sweep}
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 65,913 | 4 s |
+| `SingleRemover` | `SingleRemover` | RED | 611,359 | 10 s |
+| `LockConsistent` | `LockConsistent` | RED | 59,879 | 4 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 462,289 | 8 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 243,311 | 7 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 6,530 | 2 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 6,762 | 2 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | **does not finish**, debt B4 | 44,213,335 after 600 s | |
+| `NoPrematureDelete` | `NoPrematureDelete` | RED | 629,800 | 7 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 56,003 | 3 s |
+| `NtBatchRefusedUnchanged` | `NtBatchRefusedUnchanged` | RED | 264,818 | 5 s |
+| `NtRefusalJustified` | `NtRefusalJustified` | RED | 53,807 | 3 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 41,585 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 39,785 | 2 s |
+
+`NoDoubleRead` and `NoFalseCorruption` are in the scenario's cfg and have no row: `NoDoubleRead`'s run was
+killed at 69.8 million distinct states, which is a budget verdict rather than a witness verdict, and
+`NoFalseCorruption`'s run collided with another on its own output directory and produced nothing. Both are
+owed to the next round on this scenario.
+
+`NoFalseCorruption` is worth a note whatever that round finds, because the witness the spec names is not
+reachable here at all and the reason is structural. Its target is "a never-transactional part removed
+non-transactionally, whose record is deferred". Such a part has `creation_tid = NonTransactionalTID` and
+`removal_csn = NonTransactionalCSN`, which is exactly the shape `VersionInfo::wasInvolvedInTransaction`
+(`src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:58`) answers no to, and
+`IMergeTreeDataPart::assertHasValidVersionMetadata` returns true for such a part before it validates anything.
+The witness needs a part that is BOTH involved in a transaction and carries a deferred record, and no action of
+this plan produces one: `deferrable` survives only a store whose result is uninvolved, so the store that would
+make the part involved is the same store that writes the record to disk. `Crash` and `Restart*` can separate
+the two, which is why the deferred table sends the row to plan 3 and the `NonTxnCrash` scenario.
+
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 

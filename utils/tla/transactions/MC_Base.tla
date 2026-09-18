@@ -21,7 +21,7 @@ BaseView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,
-       h.rolled_back, h.removers, h.creator, h.down_cause>>,
+       h.rolled_back, h.removers, h.creator, h.abandoned, h.down_cause>>,
      [p \in Parts |-> <<part[p].pstate, part[p].mem, part[p].lock, part[p].deferrable,
                         part[p].deferred_on, part[p].deferred, { FrameKey(f) : f \in part[p].frames }>>],
      <<tlog.tid_start, tlog.tid_to_csn, tlog.latest_snapshot, tlog.local_tid_counter,

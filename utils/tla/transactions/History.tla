@@ -7,7 +7,10 @@ EXTENDS Types
 VARIABLE h
 
 Outcomes == {"None", "Acked", "Error", "UnknownStatus"}
-NoBatch == [targets |-> {}, before |-> <<>>]
+\* h.batch is the snapshot NtBatchStart records: which parts the batch targets, and, per part, the in-memory
+\* record, the stored record and the removal lock as they stood when the batch was constructed. The two batch
+\* properties compare against it, so it carries every field they read and no other.
+NoBatch == [targets |-> {}, before |-> [p \in Parts |-> <<EmptyInfo, EmptyInfo, EmptyTID>>]]
 
 HistoryInit == h = [
   outcome     |-> [t \in Tids |-> "None"],
@@ -25,6 +28,7 @@ HistoryInit == h = [
   selected    |-> {},
   content     |-> [t \in Tids |-> {}],
   truncated   |-> {},
+  abandoned   |-> {},
   batch       |-> NoBatch,
   batch_outcome |-> "None",
   prepared_files |-> {},
@@ -46,6 +50,9 @@ HistoryTypeOK ==
   /\ h.selected \subseteq (Mutations \X Parts \X BOOLEAN)
   /\ h.content \in [Tids -> SUBSET (Parts \X Nat)]
   /\ h.truncated \subseteq Tids
+  /\ h.abandoned \subseteq Parts
+  /\ h.batch.targets \subseteq Parts
+  /\ h.batch.before \in [Parts -> (VersionInfoType \X VersionInfoType \X AllTids)]
   /\ h.batch_outcome \in {"None", "Done", "Refused"}
   /\ h.prepared_files \subseteq Mutations
   /\ h.down_cause \in {"None", "StoreFault", "RetryExhausted", "Other"}
@@ -54,6 +61,14 @@ HistoryTypeOK ==
 OracleVisible(p, s, u) ==
   LET c == h.creator[p] IN
   /\ c /= EmptyTID
+  \* h.abandoned is the parts a statement rollback stamped with RolledBackCSN. For a transactional creator the
+  \* clause below already excludes them, because a rolled-back transaction is not in h.committed and the
+  \* properties that read the oracle quantify over running transactions (finding F3). A non-transactional
+  \* creator has no such handle: without this exclusion the c = NonTransactionalTID clause says the empty part
+  \* of a refused DROP PARTITION is visible to everyone, when VersionInfo::isVisible returns false for it on
+  \* snapshot_version < creation_csn (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:167) and
+  \* RolledBackCSN is above every snapshot. That is F3's counterexample in its non-transactional form.
+  /\ p \notin h.abandoned
   /\ \/ c = u
      \/ c = NonTransactionalTID
      \/ (c \in h.committed /\ h.csn[c] <= s)

@@ -37,7 +37,7 @@ MergeView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,
-       h.rolled_back, h.removers, h.creator, h.down_cause, h.content, h.truncated>>,
+       h.rolled_back, h.removers, h.creator, h.abandoned, h.down_cause, h.content, h.truncated>>,
      [p \in Parts |-> <<part[p].pstate, part[p].mem, part[p].lock, part[p].deferrable,
                         part[p].deferred_on, part[p].deferred, part[p].pins, part[p].payload,
                         { FrameKey(f) : f \in part[p].frames }>>],

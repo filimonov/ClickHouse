@@ -28,7 +28,9 @@ AbsentTxn == [state |-> "Absent", csn |-> UnknownCSN, snapshot |-> UnknownCSN, p
 ClientPcs == {"Idle", "InsertWrite", "InsertPreActive", "PublishStart", "PublishEnrol", "PublishStore", "PublishFlip",
               "SelectCheck", "DropWait", "DropEnrol", "DropStore", "DropOutdate",
               "MutPrepareWrite", "MutPrepareAttach", "MutRegister",
-              "Commit", "Rollback", "RollbackWait", "KillWait", "Refuse", "StmtRollbackMark", "StmtRollbackDrop"}
+              "Commit", "Rollback", "RollbackWait", "KillWait", "Refuse", "StmtRollbackMark", "StmtRollbackDrop",
+              \* the non-transactional queries: an INSERT and the three steps of a DROP PARTITION
+              "NtInsertWrite", "NtDropWrite", "NtDropFlip", "NtDropUnwindMark", "NtDropUnwindDrop"}
 \* a read: the visible parts and the fragments they expand to, tagged with the visible root they came through
 ReadType == [parts : SUBSET Parts, frags : SUBSET (Parts \X Parts \X (0..3))]
 NoRead == [parts |-> {}, frags |-> {}]
@@ -64,8 +66,15 @@ TaskRecord == [kind : {"Idle", "Merge", "Mutation"}, pc : TaskPcs,
 IdleTask == [kind |-> "Idle", pc |-> "Idle", txn |-> EmptyTID, mutation |-> "None", source |-> "None",
              result |-> "None", reserved |-> {}]
 
-BatchType == [active : BOOLEAN, targets : Seq(Parts), cursor : 0..(Cardinality(Parts) + 1), phase : {"Lock", "Store"}, locked : SUBSET Parts, skipped : SUBSET Parts]
-NoBatchRec == [active |-> FALSE, targets |-> <<>>, cursor |-> 0, phase |-> "Lock", locked |-> {}, skipped |-> {}]
+\* One NonTransactionalRemovalLocks object. `owner` is the actor whose thread runs the batch, which is the
+\* frame owner of every store the batch starts; it is read only while `active`.
+\* One object, not a function of actors, because a batch runs under lockParts from end to end: both callers
+\* hold it (removePartsFromWorkingSet takes an acquired_lock at MergeTreeData.cpp:7034, Transaction::commit
+\* takes one at :11219), so two batches can never overlap.
+BatchType == [active : BOOLEAN, targets : Seq(Parts), cursor : 0..(Cardinality(Parts) + 1), phase : {"Lock", "Store"},
+              locked : SUBSET Parts, skipped : SUBSET Parts, owner : FrameOwners]
+NoBatchRec == [active |-> FALSE, targets |-> <<>>, cursor |-> 0, phase |-> "Lock", locked |-> {}, skipped |-> {},
+               owner |-> <<"Cleanup", 0>>]
 
 TLogRecord == [tid_start : [Tids -> AllCSNs], tid_to_csn : [Tids -> AllCSNs], latest_snapshot : LogCSNs,
                local_tid_counter : 0..TID_MAX, last_loaded_entry : LogCSNs, running_list : SUBSET Tids,
@@ -187,13 +196,27 @@ EnrolRefused(t, q) ==
 EnrolError(t) == IF txn[t].state = "RolledBack" THEN "INVALID_TRANSACTION" ELSE "SERIALIZATION_ERROR"
 
 \* the NOEXCEPT_SCOPE state loop of Transaction::commit (MergeTreeData.cpp:11288-11356)
+\* OBSOLETE_IS_ROLLED_BACK is finding F6's fix: the obsolete part is stamped RolledBackCSN as well as moved to
+\* Outdated, which is what makes it invisible to its own creator and removable by the cleanup thread. It is
+\* written as a direct change to mem rather than as a store of its own, which is a refinement: the C++ would
+\* call setAndStoreCreationCSN and go through the three steps. That costs nothing here, because RolledBackCSN in
+\* memory over any stored record is exempt in both ValidateMetadataOK and RealDisagreement, and it keeps the fix
+\* variant to one line; the plan that adopts the fix owes the steps.
 PublishFlipEffect(a, p, C) ==
   LET obsolete == CoveringNow(p) /= {} IN
-  /\ part' = [q \in Parts |-> IF q = p THEN [part[q] EXCEPT !.pstate = IF obsolete THEN "Outdated" ELSE "Active"]
-                              ELSE IF q \in C /\ ~Witness("ActiveSetShape") THEN [part[q] EXCEPT !.pstate = "Outdated"]
-                              ELSE part[q]]
+  /\ part' = [q \in Parts |->
+                IF q = p
+                THEN [part[q] EXCEPT !.pstate = IF obsolete THEN "Outdated" ELSE "Active",
+                                     !.mem = IF obsolete /\ OBSOLETE_IS_ROLLED_BACK
+                                             THEN [@ EXCEPT !.ccsn = RolledBackCSN] ELSE @]
+                ELSE IF q \in C /\ ~Witness("ActiveSetShape") THEN [part[q] EXCEPT !.pstate = "Outdated"]
+                ELSE part[q]]
   /\ stmt' = [stmt EXCEPT ![a] = NoStmt]
   /\ sys' = [sys EXCEPT !.parts_lock = NoActor]
+  \* Under the fix the obsolete part is abandoned, so the visibility oracle must stop calling it visible: it is
+  \* invisible to its creator and to everyone else, which is the whole point of the stamp. In the baseline it
+  \* stays visible to its creator, which is what finding F6 is about, so the ghost is written only under the fix.
+  /\ h' = IF obsolete /\ OBSOLETE_IS_ROLLED_BACK THEN [h EXCEPT !.abandoned = @ \cup {p}] ELSE h
 
 \* the commit point: TransactionLog::commitTransaction's one sequential create
 CommitCreateEffect(t) ==
@@ -247,9 +270,12 @@ StmtRollbackMarkStart(a, p) ==
   /\ ~HasFrame(p, a) /\ part[p].mem.ccsn /= RolledBackCSN
   /\ part' = StartFrame(p, a, "CreationCSN", RolledBackCSN, TRUE)
 StmtRollbackMarkDone(a) == \A q \in stmt[a].precommitted : FrameDone(q, a, "CreationCSN", RolledBackCSN)
+\* h.abandoned records that these parts' creation was rolled back, which is the RolledBackCSN the marking phase
+\* has just stored on each of them. The visibility oracle reads it; see History.tla.
 StmtRollbackDropEffect(a) ==
   /\ part' = [p \in Parts |-> IF p \in stmt[a].precommitted THEN [part[p] EXCEPT !.pstate = "Outdated"] ELSE part[p]]
   /\ stmt' = [stmt EXCEPT ![a] = NoStmt]
+  /\ h' = [h EXCEPT !.abandoned = @ \cup stmt[a].precommitted]
 
 \* ============================================================ client: begin, set snapshot
 Begin(k) ==
@@ -375,7 +401,7 @@ PublishFlip(k) ==
   /\ client[k].pc = "PublishFlip" /\ sys.parts_lock = Sess(k)
   /\ PublishFlipEffect(Sess(k), client[k].part, stmt[Sess(k)].covered)
   /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
-  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, mut, task>>
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, mut, task>>
 
 \* MergeTreeData::Transaction::rollback (src/Storages/MergeTree/MergeTreeData.cpp:11122): creation_csn :=
 \* RolledBackCSN for every part of precommitted_parts, then removePartsFromWorkingSet for all of them under
@@ -401,7 +427,7 @@ StmtRollbackDrop(k) ==
   /\ client[k].pc = "StmtRollbackDrop" /\ sys.parts_lock = NoActor
   /\ StmtRollbackDropEffect(Sess(k))
   /\ client' = [client EXCEPT ![k].pc = "Rollback"]
-  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, mut, task>>
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, sys, mut, task>>
 
 \* ============================================================ client: select
 SelectCapture(k) ==
@@ -437,7 +463,14 @@ DropStart(k) ==     \* stopMergesAndWait: take the blocker, then wait
   /\ client' = [client EXCEPT ![k].pc = "DropWait", ![k].holds_blocker = TRUE]
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, stmt, mut, task>>
 DropLock(k) ==      \* reservations drained, lockParts, the visible parts of the partition
-  /\ client[k].pc = "DropWait" /\ \A i \in Tasks : task[i].reserved = {} /\ sys.parts_lock = NoActor
+  \* The three conjuncts are written out rather than run together on one line: a \A body extends as far to the
+  \* right as it can, so "\A i \in Tasks : task[i].reserved = {} /\ sys.parts_lock = NoActor" puts the parts-lock
+  \* test INSIDE the quantifier, where an empty Tasks makes it vacuous and the action loses its lockParts guard
+  \* altogether. That is model defect M13; it was invisible in Merge, whose Tasks is a singleton, and in Base,
+  \* where nothing else held the parts lock long enough to collide, and the NonTxn batch found it at once.
+  /\ client[k].pc = "DropWait"
+  /\ (\A i \in Tasks : task[i].reserved = {})
+  /\ sys.parts_lock = NoActor
   /\ LET t == Cur(k)
          V == { p \in Parts : part[p].pstate \in {"Active", "Outdated"} /\ Visible(p, t) } IN
      /\ sys' = [sys EXCEPT !.parts_lock = Sess(k)]
@@ -937,7 +970,7 @@ MergePublishFlip(i) ==
   /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "PublishFlip" /\ sys.parts_lock = Tsk(i)
   /\ PublishFlipEffect(Tsk(i), task[i].result, stmt[Tsk(i)].covered)
   /\ task' = [task EXCEPT ![i].pc = "Commit"]
-  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, client, mut>>
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, client, mut>>
 
 \* TransactionLog::commitTransaction(txn_, throw_on_unknown_status = false), MergePlainMergeTreeTask.cpp:195
 MergeCommitBefore(i) ==
@@ -1024,16 +1057,21 @@ MergeStmtRollbackDrop(i) ==
   /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "StmtRollbackDrop" /\ sys.parts_lock = NoActor
   /\ StmtRollbackDropEffect(Tsk(i))
   /\ task' = [task EXCEPT ![i].pc = "Unwind"]
-  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, mut>>
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, sys, client, mut>>
 \* the tagger releases the reservation and the source parts, and MergeTreeTransactionHolder's destructor calls
 \* TransactionLog::rollbackTransaction, whose compare_exchange in MergeTreeTransaction::rollback
 \* (src/Interpreters/MergeTreeTransaction.cpp:382) it loses to a KILL that got there first. Winning it makes the
 \* task the rollback driver, and the rollback machine's steps are all session-shaped, so the winning branch is
 \* not yet executable; NoTaskDrivenRollback is the invariant that says so rather than letting it wedge quietly.
-\* It is unreachable here because every trigger of MergeFail but the store-error one means a KILL has already
-\* won, and the store-error one needs a second frame on a part of the task's, which no session can reach: the
-\* result is the task's alone, and DropLock waits for every task's reserved set to drain before it takes the
-\* parts lock, so no client removal can start on a source while the merge holds it.
+\* It is unreachable here, for two reasons rather than one. The triggers that read the transaction's state -- a
+\* RolledBack transaction at PublishStart or Commit, and the RolledBack disjunct of EnrolRefused -- do mean a
+\* KILL has already won. The other two say nothing about the transaction: EnrolRefused's second disjunct, a
+\* source that is locked or already carries a removal CSN, and a store of the task's own ending in an error.
+\* What excludes those is the reservation: the result is the task's alone, MergeSelect takes each source with
+\* lock = EmptyTID, and DropLock waits for every task's reserved set to drain before it takes the parts lock, so
+\* no client removal can start on a source while the merge holds it. Nothing else clears a removal lock in this
+\* scenario: a commit leaves it set, a rollback clears the removal TID with it, and the non-transactional batch,
+\* which does clear it, is not enabled in Merge.
 MergeUnwind(i) ==
   /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Unwind"
   /\ LET t == task[i].txn
@@ -1048,6 +1086,224 @@ MergeUnwind(i) ==
      /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {Tsk(i)}]]
      /\ task' = [task EXCEPT ![i] = IdleTask]
   /\ UNCHANGED <<zk, disk, mdisk, tlog, sys, client, stmt, mut>>
+
+
+\* ============================================================ non-transactional queries and the removal batch
+\* A query that runs with no transaction writes Tx::NonTransactionalTID into the parts it creates and removes.
+\* The removals go through NonTransactionalRemovalLocks (src/Interpreters/MergeTreeTransaction.cpp:106-160),
+\* which exists because such a removal cannot be rolled back: the whole batch is locked first and written
+\* afterwards, so a conflict on one covered part cannot leave the earlier ones durably removed by a statement
+\* that then fails. Four upstream fixes are about exactly that (ab40e11d3c73, f8f46fb1eb14, 86b6861a1a8e, and
+\* ba2ee3239b8d for the memory-only stamp), and NtBatchRefusedUnchanged is what they buy.
+
+\* VersionInfo::isRemoved, src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:199
+InfoIsRemoved(info) == info.rtid = NonTransactionalTID \/ info.ccsn = RolledBackCSN \/ info.rcsn /= UnknownCSN
+
+\* VersionMetadata::isCreatedByUncommittedTransaction, VersionMetadata.cpp:137: a missing creation CSN is not
+\* enough, the transaction log decides (upstream 65e4e2b5bf69). The witness of NtRefusalJustified is exactly the
+\* pre-fix form, which trusts mem.creation_csn alone. The two Assert_validateInfo_nocreation names disable the
+\* refusal entirely, which is that witness's first change.
+CreatedByUncommitted(p) ==
+  /\ ~Witness("Assert_validateInfo_nocreation") /\ ~Witness("Assert_validateInfo_nocreation_only1")
+  /\ part[p].mem.ccsn = UnknownCSN
+  /\ part[p].mem.ctid \in Tids
+  /\ (Witness("NtRefusalJustified") \/ LookupCsn(part[p].mem.ctid) = UnknownCSN)
+
+BatchTarget(p) == LET b == sys.nt_batch IN
+  b.active /\ b.cursor \in 1..Len(b.targets) /\ b.targets[b.cursor] = p
+
+\* NonTransactionalRemovalLocks constructed and its lock() loop about to start over B, on actor a. The parts
+\* lock is taken here rather than by the caller, because every caller of a batch holds lockParts in the code:
+\* removePartsFromWorkingSet (MergeTreeData.cpp:7034) takes an acquired_lock and Transaction::commit
+\* (MergeTreeData.cpp:11219) takes one. Writing it here keeps the one sys' assignment an action may have.
+\* An empty B is the code's empty parts_to_remove: lock() and store() both do nothing and the batch is done,
+\* so it starts in the Store phase with the cursor already past the end and NtBatchEnd is its only step.
+StartBatch(a, B) ==
+  /\ sys' = [sys EXCEPT !.parts_lock = a,
+                        !.nt_batch = [active |-> TRUE, targets |-> SetToSeq(B),
+                                      cursor |-> IF B = {} THEN 0 ELSE 1,
+                                      phase |-> IF B = {} THEN "Store" ELSE "Lock",
+                                      locked |-> {}, skipped |-> {}, owner |-> a]]
+  /\ h' = [h EXCEPT !.batch = [targets |-> B,
+                               before |-> [p \in Parts |-> <<part[p].mem, StoredRecord(p), part[p].lock>>]],
+                    !.batch_outcome = "None"]
+
+\* The refusal branch shared by NtBatchPreflight and NtBatchLock: the destructor releases every lock the batch
+\* still holds (NonTransactionalRemovalLocks::~NonTransactionalRemovalLocks, MergeTreeTransaction.cpp:106,
+\* upstream 86b6861a1a8e) and nothing that was stored is undone, because store() drains as it goes.
+RefuseBatch ==
+  /\ part' = [q \in Parts |-> IF q \in sys.nt_batch.locked THEN [part[q] EXCEPT !.lock = EmptyTID] ELSE part[q]]
+  /\ sys' = [sys EXCEPT !.nt_batch = NoBatchRec]
+  /\ h' = [h EXCEPT !.batch_outcome = "Refused"]
+
+\* NonTransactionalRemovalLocks::lock, MergeTreeTransaction.cpp:121-146, the two branches that are steps: the
+\* already-removed skip (:131) and the uncommitted-creator refusal (:139). The third outcome, "proceed to
+\* lockRemovalTID", is not a step of its own; NtBatchLock carries its guard.
+\* At the end of the lock phase the target list is replaced by the locked list, because store() drains
+\* locked_parts and never revisits a target the preflight skipped; it drains from the back
+\* (MergeTreeTransaction.cpp:153-155), so the cursor counts down.
+NtBatchPreflight(p) ==
+  /\ Up /\ sys.nt_batch.phase = "Lock" /\ BatchTarget(p)
+  /\ LET b == sys.nt_batch
+         last == b.cursor = Len(b.targets) IN
+     \/ /\ InfoIsRemoved(part[p].mem)
+        /\ sys' = [sys EXCEPT !.nt_batch = [b EXCEPT !.skipped = @ \cup {p},
+                                                     !.phase = IF last THEN "Store" ELSE "Lock",
+                                                     !.targets = IF last THEN SetToSeq(b.locked) ELSE @,
+                                                     !.cursor = IF last THEN Cardinality(b.locked) ELSE b.cursor + 1]]
+        /\ UNCHANGED <<part, h>>
+     \/ /\ ~InfoIsRemoved(part[p].mem) /\ CreatedByUncommitted(p)
+        /\ RefuseBatch
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, client, stmt, mut, task>>
+
+\* lockRemovalTID, VersionMetadata.cpp:195: a held lock or a non-zero removal CSN is SERIALIZATION_ERROR. The
+\* removal-CSN half is already excluded by InfoIsRemoved above, so what is left here is the held lock.
+NtBatchLock(p) ==
+  /\ Up /\ sys.nt_batch.phase = "Lock" /\ BatchTarget(p)
+  /\ ~InfoIsRemoved(part[p].mem) /\ ~CreatedByUncommitted(p)
+  /\ LET b == sys.nt_batch
+         last == b.cursor = Len(b.targets)
+         nlocked == b.locked \cup {p} IN
+     \/ /\ part[p].lock /= EmptyTID
+        /\ RefuseBatch
+     \/ /\ part[p].lock = EmptyTID
+        /\ part' = [part EXCEPT ![p].lock = NonTransactionalTID]
+        /\ sys' = [sys EXCEPT !.nt_batch = [b EXCEPT !.locked = nlocked,
+                                                     !.phase = IF last THEN "Store" ELSE "Lock",
+                                                     !.targets = IF last THEN SetToSeq(nlocked) ELSE @,
+                                                     !.cursor = IF last THEN Cardinality(nlocked) ELSE b.cursor + 1]]
+        /\ UNCHANGED h
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, client, stmt, mut, task>>
+
+\* NonTransactionalRemovalLocks::store, MergeTreeTransaction.cpp:150: pop the back, setAndStoreRemovalTID
+\* through the three-step store, unlock in the SCOPE_EXIT. The tid is written before the unlock, which is what
+\* the NonTransactionalTID clause of LockConsistent is stated over.
+\* The witness of NtBatchRefusedUnchanged is the shape the class exists to prevent, and it is the whole of the
+\* difference between store() after lock() and a store folded into the lock loop: under it a target is stored
+\* and unlocked as soon as it is locked, so a conflict on a later target refuses a batch whose earlier members
+\* are already durably removed. The cursor is deliberately left alone there, because the lock phase is still
+\* walking the target list.
+NtBatchStore(p) ==
+  /\ Up /\ sys.nt_batch.active /\ p \in sys.nt_batch.locked
+  /\ LET b == sys.nt_batch
+         a == b.owner
+         early == Witness("NtBatchRefusedUnchanged") /\ b.phase = "Lock" IN
+     /\ (b.phase = "Store" => BatchTarget(p))
+     /\ (b.phase = "Lock" => early)
+     /\ \/ /\ ~HasFrame(p, a) /\ ApplyOp("RemovalTID", NonTransactionalTID, part[p].mem) /= part[p].mem
+           /\ part' = StartFrame(p, a, "RemovalTID", NonTransactionalTID, FALSE)
+           /\ UNCHANGED <<sys, h>>
+        \/ /\ FrameDone(p, a, "RemovalTID", NonTransactionalTID)
+           /\ part' = [part EXCEPT ![p].lock = EmptyTID]
+           /\ sys' = [sys EXCEPT !.nt_batch = [b EXCEPT !.locked = @ \ {p},
+                                                         !.cursor = IF early THEN @ ELSE @ - 1]]
+           /\ h' = [h EXCEPT !.removers[p] = @ \cup {NonTransactionalTID}]
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, client, stmt, mut, task>>
+
+NtBatchEnd ==
+  /\ sys.nt_batch.active /\ sys.nt_batch.phase = "Store" /\ sys.nt_batch.cursor = 0
+  /\ sys' = [sys EXCEPT !.nt_batch = NoBatchRec]
+  /\ h' = [h EXCEPT !.batch_outcome = "Done"]
+  /\ UNCHANGED <<zk, disk, mdisk, part, tlog, txn, client, stmt, mut, task>>
+
+\* INSERT outside a transaction: setAndStoreCreationTID(Tx::NonTransactionalTID), which sets creation_csn to
+\* NonTransactionalCSN in the same update function (VersionMetadata.cpp:261). A base part covers nothing, so
+\* getActivePartsToReplace returns nothing and Transaction::commit runs no batch; the two steps are the write
+\* and the publication under lockParts.
+\* deferrable stays TRUE: a never-transactional part with no txn_version.txt defers the record, which is the
+\* shape NoFalseCorruption's witness is about.
+NtInsertWrite(k, p) ==
+  /\ Up /\ ~HasTxn(k) /\ client[k].pc = "Idle"
+  /\ part[p].pstate = "Absent" /\ IsBase(p)
+  /\ disk' = DiskWithDir(p)
+  /\ part' = [StartFrame(p, Sess(k), "CreateTID", NonTransactionalTID, FALSE) EXCEPT ![p].pstate = "Temporary"]
+  /\ h' = [h EXCEPT !.creator[p] = NonTransactionalTID]
+  /\ client' = [client EXCEPT ![k].pc = "NtInsertWrite", ![k].part = p]
+  /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, stmt, mut, task>>
+\* renameTempPartAndReplace and Transaction::commit under one lockParts, collapsed into one step because the
+\* batch is empty and there is nothing to interleave with between them. PublishFlipEffect is the same commit
+\* body a transactional publication runs, and it is used rather than an unconditional "Active" for its covering
+\* branch: a part that already has a covering part is marked Outdated instead (MergeTreeData.cpp:11282, :11316),
+\* which is what happens to an INSERT whose publication loses to a DROP PARTITION that covered its range while
+\* it was writing. Setting "Active" instead made the empty part and the inserted one both Active over the same
+\* range, which is the "Part {} intersects part {}" LOGICAL_ERROR of ActiveSetShape.
+NtInsertPublish(k, p) ==
+  /\ client[k].pc = "NtInsertWrite" /\ client[k].part = p /\ sys.parts_lock = NoActor
+  /\ FrameDone(p, Sess(k), "CreateTID", NonTransactionalTID)
+  /\ PublishFlipEffect(Sess(k), p, {})
+  /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, mut, task>>
+
+\* DROP PARTITION without a transaction (the spec's NtDropCover), written as the three steps the query has:
+\* StorageMergeTree::dropPartition's else branch (src/Storages/StorageMergeTree.cpp:3186) makes an empty part
+\* covering the partition with initCoverageWithNewEmptyParts, then renameAndCommitEmptyParts renames it and
+\* calls MergeTreeData::Transaction::commit with a null transaction, which locks the covered parts as one batch
+\* and flips the states once the batch is stored.
+NtDropWrite(k, e) ==
+  /\ Up /\ ~HasTxn(k) /\ client[k].pc = "Idle"
+  /\ Covers[e] /= {} /\ part[e].pstate = "Absent"
+  /\ \E q \in Covers[e] : part[q].pstate = "Active"
+  /\ disk' = DiskWithDir(e)
+  /\ part' = [StartFrame(e, Sess(k), "CreateTID", NonTransactionalTID, FALSE) EXCEPT
+                ![e].pstate = "Temporary", ![e].payload = [ver |-> 0, tomb |-> TRUE]]
+  /\ h' = [h EXCEPT !.creator[e] = NonTransactionalTID]
+  /\ client' = [client EXCEPT ![k].pc = "NtDropWrite", ![k].part = e]
+  /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, stmt, mut, task>>
+
+\* The covered set is getActivePartsToReplace's output and nothing else. The covered OUTDATED parts that a
+\* transactional publication also collects are inside the `if (txn)` at MergeTreeData.cpp:11248, so a
+\* non-transactional commit never touches them; CoveredNow, which PublishStartEffect uses, is the transactional
+\* shape and is deliberately not reused here. removePartsFromWorkingSet, the batch's other caller, additionally
+\* filters out a part whose creation_csn is RolledBackCSN (MergeTreeData.cpp:7043-7045); Transaction::commit
+\* does not, and such a part is skipped by InfoIsRemoved in the preflight instead.
+\* Covering the Outdated ones as well was tried as a fix for finding F5 and does not close it; the finding's
+\* entry in FINDINGS.md says why, and why the fix has to be at publication time rather than in the batch.
+NtDropPublish(k, e) ==
+  /\ client[k].pc = "NtDropWrite" /\ client[k].part = e /\ sys.parts_lock = NoActor
+  /\ FrameDone(e, Sess(k), "CreateTID", NonTransactionalTID)
+  /\ LET C == { q \in Parts : q \in Expand({e}) /\ q /= e /\ part[q].pstate = "Active" } IN
+     /\ part' = [part EXCEPT ![e].pstate = "PreActive"]
+     /\ stmt' = [stmt EXCEPT ![Sess(k)].precommitted = {e}, ![Sess(k)].covered = C]
+     /\ StartBatch(Sess(k), C)
+     /\ client' = [client EXCEPT ![k].pc = "NtDropFlip"]
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, mut, task>>
+
+\* The batch ended. On Done the NOEXCEPT_SCOPE of Transaction::commit flips the states; on Refused the
+\* exception leaves Transaction::commit with the acquired_parts_lock, the query fails with SERIALIZATION_ERROR,
+\* and MergeTreeData::Transaction's destructor then runs the statement rollback, which is the two steps below.
+NtDropFlip(k, e) ==
+  /\ client[k].pc = "NtDropFlip" /\ client[k].part = e /\ ~sys.nt_batch.active
+  /\ \/ /\ h.batch_outcome = "Done"
+        /\ PublishFlipEffect(Sess(k), e, stmt[Sess(k)].covered)
+        /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
+     \/ /\ h.batch_outcome = "Refused"
+        /\ sys' = [sys EXCEPT !.parts_lock = IF @ = Sess(k) THEN NoActor ELSE @]
+        /\ client' = [client EXCEPT ![k].pc = "NtDropUnwindMark", ![k].last_error = "SERIALIZATION_ERROR"]
+        /\ UNCHANGED <<part, stmt, h>>
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, mut, task>>
+
+\* MergeTreeData::Transaction::rollback (MergeTreeData.cpp:11122) on the empty part the refused DROP wrote:
+\* setAndStoreCreationCSN(RolledBackCSN) at :11126, then removePartsFromWorkingSet under lockParts at :11181.
+\* The first step is the one transition VersionMetadata::setAndStoreCreationCSN's chassert exempts by name
+\* (VersionMetadata.cpp:125-130, "a temporary empty part with NO_TRANSACTION_PTR ... added to a Transaction and
+\* immediately rolled back"), which is exactly this shape: RolledBackCSN written over NonTransactionalCSN.
+\* Leaving it out is not a harmless simplification. RolledBackCSN is what makes the abandoned empty part
+\* invisible to everybody (isVisible returns false on snapshot < creation_csn) and removable by the cleanup
+\* thread; without it the part sits Outdated, still visible, and a later transactional DROP PARTITION enrols it
+\* and restores it to Active on rollback, over the parts it covers.
+NtDropUnwindMark(k, e) ==
+  /\ client[k].pc = "NtDropUnwindMark" /\ e \in stmt[Sess(k)].precommitted
+  /\ \/ /\ StmtRollbackMarkStart(Sess(k), e)
+        /\ UNCHANGED client
+     \/ /\ FrameDone(e, Sess(k), "CreationCSN", RolledBackCSN) /\ StmtRollbackMarkDone(Sess(k))
+        /\ client' = [client EXCEPT ![k].pc = "NtDropUnwindDrop"]
+        /\ UNCHANGED part
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, stmt, mut, task>>
+NtDropUnwindDrop(k) ==
+  /\ client[k].pc = "NtDropUnwindDrop" /\ sys.parts_lock = NoActor
+  /\ StmtRollbackDropEffect(Sess(k))
+  /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, sys, mut, task>>
 
 \* ============================================================ stubs for later plans
 UpdReconnect == FALSE
@@ -1069,13 +1325,6 @@ KillRemoveFile(m) == FALSE
 KillMutation(k, m) == FALSE
 RollbackKill(k, t, m) == FALSE
 CommitStoreMutation(k, m) == FALSE
-NtInsert(p) == FALSE
-NtBatchStart(B) == FALSE
-NtBatchPreflight(p) == FALSE
-NtBatchLock(p) == FALSE
-NtBatchStore(p) == FALSE
-NtBatchEnd == FALSE
-NtDropCover == FALSE
 StoreRetry(p, o) == FALSE
 KillRetry(m) == FALSE
 Crash == FALSE

@@ -14,7 +14,8 @@ Actors == { <<"Session", k>> : k \in Sessions } \cup { <<"Task", i>> : i \in Tas
 FrameOwners == Actors \cup {<<"Updater", 0>>, <<"Cleanup", 0>>, <<"Restart", 0>>}
 StoreOps == {"CreateTID", "CreationCSN", "RemovalTID", "RemovalCSN"}
 FrameType == [owner : FrameOwners, op : StoreOps, val : AllTids \cup AllCSNs, tentative : VersionInfoType,
-              pc : {"Read", "Persist", "Publish", "Error"}, err : {"None", "LOGICAL_ERROR", "STALE_VERSION", "IO"},
+              pc : {"Read", "Persist", "Publish", "Error"},
+              err : {"None", "LOGICAL_ERROR", "STALE_VERSION", "SERIALIZATION_ERROR", "IO"},
               retries : 0..MAX_STORE_RETRIES, interferences : 0..MAX_STORE_RETRIES, interfered : BOOLEAN,
               noexcept_retries : 0..NOEXCEPT_RETRY_BUDGET, noexcept_owner : BOOLEAN]
 PayloadType == [ver : 0..3, tomb : BOOLEAN]
@@ -185,6 +186,25 @@ RealDisagreement(p) ==
   \/ (have /\ r.rcsn /= UnknownCSN /\ r.rtid = EmptyTID)
   \/ (~have /\ DiskDirExists(p) /\ ~DummyRolledBackShape(m))
 
+\* VersionMetadata::setAndStoreRemovalTID, src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:161: a
+\* non-transactional removal of an object whose transactional creation has not committed is refused with
+\* SERIALIZATION_ERROR, because removal_csn becomes NonTransactionalCSN in the same update function while
+\* creation_csn is still zero, which is the shape validateInfo rejects and a restart cannot repair (upstream
+\* 6e5114d9739c). The predicate is read twice. Once outside the metadata update lock, on the in-memory record,
+\* through isCreatedByUncommittedTransaction (:172), which consults the transaction log rather than trusting
+\* creation_csn alone (upstream 65e4e2b5bf69); and once inside the update function, on the record that attempt
+\* read (:179). The model re-evaluates the outer half on every attempt where the C++ computes it once before the
+\* first; both read the same record on attempt 1, and a creation can only become committed, so the two agree on
+\* every behaviour of this plan. They come apart once the truncation pass can take a commit back out of
+\* tid_to_csn, which is model defect M12.
+CreationInFlight(p, f, base) ==
+  /\ f.op = "RemovalTID" /\ f.val = NonTransactionalTID
+  /\ part[p].mem.ccsn = UnknownCSN /\ part[p].mem.ctid \in Tids
+  /\ LookupCsn(part[p].mem.ctid) = UnknownCSN
+  /\ base.ccsn = UnknownCSN /\ base.ctid \in Tids
+  /\ ~Witness("Assert_validateInfo_nocreation_only2")
+  /\ ~Witness("Assert_validateInfo_nocreation")
+
 \* ---- the three-step store (updateInfoWithRefreshDataThenStoreAndSetMetadata); each step is an action of the root
 \* StoreRead: getInfo on attempt 1, loadMetadata on a retry (or the witness's getInfo), the op applied, updateCSNIfNeeded,
 \* validateInfo. A validation failure parks the frame in Error(LOGICAL_ERROR) for the owner to consume.
@@ -196,6 +216,10 @@ StoreReadStep(p, o) ==
   IN /\ f.pc = "Read"
      /\ IF applied = base
         THEN part' = WithFrame(p, [f EXCEPT !.tentative = base, !.pc = "Publish"])      \* nothing to store
+        \* the refusal lives in the update function, which runs before updateCSNIfNeeded and validateInfo
+        \* (VersionMetadata.cpp:334-346) and after its own no-op early return (:177)
+        ELSE IF CreationInFlight(p, f, base)
+        THEN part' = WithFrame(p, [f EXCEPT !.pc = "Error", !.err = "SERIALIZATION_ERROR"])
         ELSE IF upd.status = "Retry"
         THEN IF f.retries < MAX_STORE_RETRIES
              THEN part' = WithFrame(p, [f EXCEPT !.retries = @ + 1])
