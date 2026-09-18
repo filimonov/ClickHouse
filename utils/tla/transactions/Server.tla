@@ -106,6 +106,7 @@ ServerInit ==
 
 \* ============================================================ helpers
 Sess(k) == <<"Session", k>>
+Tsk(i) == <<"Task", i>>
 Up == sys.server = "TableUp"
 Cur(k) == client[k].current
 HasTxn(k) == client[k].current /= EmptyTID
@@ -138,6 +139,82 @@ NextRollbackWork(t, after) ==
     [] after = "RollbackOutdateCreated" -> txn[t].removing
     [] after = "RollbackRestore"       -> txn[t].removing
     [] after = "RollbackUnlock"        -> <<>>
+
+\* ============================================================ actor-generic bodies
+\* A session is not the only actor that publishes a part and commits a transaction: a background merge does both
+\* on its own thread, with the same C++ functions underneath. The bodies below are those functions, constraining
+\* only the shared variables and taking the actor `a` where the session-shaped versions read `Sess(k)`. Each
+\* client action is that body plus the session's guard and its `client'` clause; each merge action is the same
+\* body plus the task's guard and its `task'` clause.
+
+\* MergeTreeData::Transaction::commit (src/Storages/MergeTree/MergeTreeData.cpp:11219), first half under
+\* lockParts: the covered parts are collected at :11246 and addNewPartAndRemoveCovered attaches p to the outer
+\* transaction at :11280.
+PublishStartEffect(a, t, p) ==
+  LET C == CoveredNow(p, t) IN
+  /\ sys' = [sys EXCEPT !.parts_lock = a]
+  /\ stmt' = [stmt EXCEPT ![a].covered = C, ![a].attached = @ \cup {p}, ![a].work = SetToSeq(C)]
+  /\ txn' = [txn EXCEPT ![t].creating = Append(@, p)]
+  /\ h' = [h EXCEPT !.creating[t] = @ \cup {p}]
+  /\ part' = [part EXCEPT ![p].pins = @ \cup {<<"Txn", t>>}]
+
+\* MergeTreeTransaction::removeOldPart (src/Interpreters/MergeTreeTransaction.cpp:213), the granting branch:
+\* the transaction's mutex, lockRemovalTID, the enrolment into removing_parts, and the start of the
+\* removal-TID store. EnrolRefused and EnrolError are the two refusing branches.
+EnrolGrantEffect(a, t, q) ==
+  /\ part' = [StartFrame(q, a, "RemovalTID", t, FALSE) EXCEPT ![q].lock = t, ![q].pins = @ \cup {<<"Txn", t>>}]
+  /\ txn' = [txn EXCEPT ![t].mutex = a, ![t].removing = Append(@, q)]
+  /\ h' = [h EXCEPT !.removing[t] = @ \cup {q}]
+EnrolRefused(t, q) ==
+  \/ txn[t].state = "RolledBack"
+  \/ ((part[q].lock /= EmptyTID \/ part[q].mem.rcsn /= UnknownCSN) /\ ~Witness("SingleRemover"))
+EnrolError(t) == IF txn[t].state = "RolledBack" THEN "INVALID_TRANSACTION" ELSE "SERIALIZATION_ERROR"
+
+\* the NOEXCEPT_SCOPE state loop of Transaction::commit (MergeTreeData.cpp:11288-11356)
+PublishFlipEffect(a, p, C) ==
+  /\ part' = [q \in Parts |-> IF q = p THEN [part[q] EXCEPT !.pstate = "Active"]
+                              ELSE IF q \in C /\ ~Witness("ActiveSetShape") THEN [part[q] EXCEPT !.pstate = "Outdated"]
+                              ELSE part[q]]
+  /\ stmt' = [stmt EXCEPT ![a] = NoStmt]
+  /\ sys' = [sys EXCEPT !.parts_lock = NoActor]
+
+\* the commit point: TransactionLog::commitTransaction's one sequential create
+CommitCreateEffect(t) ==
+  /\ KeeperCanAppend /\ zk.session = "Alive"
+  /\ zk' = KeeperAppended(t)
+  /\ h' = [h EXCEPT !.committed = @ \cup {t}, !.csn[t] = KeeperNextCsn,
+                    !.removers = [p \in Parts |-> IF p \in h.removing[t] THEN @[p] \cup {t} ELSE @[p]]]
+  /\ txn' = [txn EXCEPT ![t].pc = FirstCommitPc(t), ![t].work = FirstCommitWork(t)]
+
+\* afterCommit: one setAndStoreCreationCSN / setAndStoreRemovalCSN per part; start the frame, then advance
+CommitStoreEffect(a, t, p, op, phase) ==
+  LET val == IF Witness("Assert_validateInfo_creator") /\ op = "CreationCSN" THEN h.csn[t] + 1
+             ELSE IF Witness("Assert_validateInfo_order") /\ op = "CreationCSN" THEN CSN_MAX
+             ELSE h.csn[t]
+      skip == (Witness("Assert_isVisible_fast") \/ Witness("Assert_isVisible_fast_only1"))
+              /\ op = "CreationCSN" /\ p \in h.removing[t] IN
+  /\ txn[t].pc = phase /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
+  /\ \/ /\ ~skip /\ ~HasFrame(p, a) /\ ApplyOp(op, val, part[p].mem) /= part[p].mem
+        /\ part' = StartFrame(p, a, op, val, TRUE)
+        /\ UNCHANGED txn
+     \/ /\ (skip \/ FrameDone(p, a, op, val))
+        /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN NextCommitWork(t, phase) ELSE Tail(@),
+                               ![t].pc = IF Tail(txn[t].work) = <<>> THEN NextCommitPc(t, phase) ELSE phase]
+        /\ UNCHANGED part
+
+CommitFlipEffect(t) ==
+  txn' = [txn EXCEPT ![t].state = "Committed", ![t].csn = h.csn[t], ![t].csn_notified = TRUE,
+                      ![t].pc = "CommitFinalize", ![t].work = <<>>]
+
+\* afterFinalize. `a` is the holder this step destroys: NoActor for a session, whose
+\* MergeTreeTransactionHolder outlives the commit and is released at CommitAck, and Tsk(i) for a merge task,
+\* whose holder is destroyed with the task. Removing NoActor from a set of actors is a no-op, and so is
+\* removing it from a set of pins.
+CommitFinalizeEffect(a, t) ==
+  /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN]
+  /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].creating = <<>>, ![t].removing = <<>>, ![t].mutations = {},
+                         ![t].holders = @ \ {a}]
+  /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {<<"Txn", t>>, a}]]
 
 \* ============================================================ client: begin, set snapshot
 Begin(k) ==
@@ -219,34 +296,24 @@ InsertPreActive(k, p) ==
 PublishStart(k, p) ==
   /\ client[k].pc = "PublishStart" /\ client[k].part = p /\ p \in stmt[Sess(k)].precommitted
   /\ sys.parts_lock = NoActor /\ txn[Cur(k)].state = "Running"
-  /\ LET t == Cur(k)
-         C == CoveredNow(p, t) IN
-     /\ sys' = [sys EXCEPT !.parts_lock = Sess(k)]
-     /\ stmt' = [stmt EXCEPT ![Sess(k)].covered = C, ![Sess(k)].attached = @ \cup {p}, ![Sess(k)].work = SetToSeq(C)]
-     /\ txn' = [txn EXCEPT ![t].creating = Append(@, p)]
-     /\ h' = [h EXCEPT !.creating[t] = @ \cup {p}]
-     /\ part' = [part EXCEPT ![p].pins = @ \cup {<<"Txn", t>>}]
-     /\ client' = [client EXCEPT ![k].pc = IF C = {} THEN "PublishFlip" ELSE "PublishEnrol"]
+  /\ LET t == Cur(k) IN
+     /\ PublishStartEffect(Sess(k), t, p)
+     /\ client' = [client EXCEPT ![k].pc = IF CoveredNow(p, t) = {} THEN "PublishFlip" ELSE "PublishEnrol"]
   /\ UNCHANGED <<zk, disk, mdisk, tlog, mut, task>>
 
 \* removeOldPart, first half (shared by Drop and Publish): mutex, checkIsNotCancelled, lockRemovalTID, enrol
 \* nextpc is the client pc after success; on refusal the client goes to Refuse with last_error set
 EnrolBody(k, q, nextpc) ==
-  LET t == Cur(k)
-      enrolled == StartFrame(q, Sess(k), "RemovalTID", t, FALSE) IN
+  LET t == Cur(k) IN
   /\ txn[t].mutex = NoActor
   /\ \/ /\ txn[t].state = "RolledBack"
-        /\ client' = [client EXCEPT ![k].last_error = "INVALID_TRANSACTION", ![k].pc = "Refuse"]
+        /\ client' = [client EXCEPT ![k].last_error = EnrolError(t), ![k].pc = "Refuse"]
         /\ UNCHANGED <<txn, part, h>>
-     \/ /\ txn[t].state = "Running"
-        /\ (part[q].lock /= EmptyTID \/ part[q].mem.rcsn /= UnknownCSN) /\ ~Witness("SingleRemover")
-        /\ client' = [client EXCEPT ![k].last_error = "SERIALIZATION_ERROR", ![k].pc = "Refuse"]
+     \/ /\ txn[t].state = "Running" /\ EnrolRefused(t, q)
+        /\ client' = [client EXCEPT ![k].last_error = EnrolError(t), ![k].pc = "Refuse"]
         /\ UNCHANGED <<txn, part, h>>
-     \/ /\ txn[t].state = "Running"
-        /\ (part[q].lock = EmptyTID /\ part[q].mem.rcsn = UnknownCSN) \/ Witness("SingleRemover")
-        /\ part' = [enrolled EXCEPT ![q].lock = t, ![q].pins = @ \cup {<<"Txn", t>>}]
-        /\ txn' = [txn EXCEPT ![t].mutex = Sess(k), ![t].removing = Append(@, q)]
-        /\ h' = [h EXCEPT !.removing[t] = @ \cup {q}]
+     \/ /\ txn[t].state = "Running" /\ ~EnrolRefused(t, q)
+        /\ EnrolGrantEffect(Sess(k), t, q)
         /\ client' = [client EXCEPT ![k].pc = nextpc]
 
 \* removeOldPart, second half: the store ran, release the mutex, next part or the phase's end
@@ -269,17 +336,10 @@ PublishStore(k, q) ==
      /\ stmt' = [stmt EXCEPT ![Sess(k)].work = w]
      /\ client' = [client EXCEPT ![k].pc = IF w = <<>> THEN "PublishFlip" ELSE "PublishEnrol"]
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, mut, task>>
-\* the NOEXCEPT_SCOPE state loop of Transaction::commit
 PublishFlip(k) ==
   /\ client[k].pc = "PublishFlip" /\ sys.parts_lock = Sess(k)
-  /\ LET p == client[k].part
-         C == stmt[Sess(k)].covered IN
-     /\ part' = [q \in Parts |-> IF q = p THEN [part[q] EXCEPT !.pstate = "Active"]
-                                 ELSE IF q \in C /\ ~Witness("ActiveSetShape") THEN [part[q] EXCEPT !.pstate = "Outdated"]
-                                 ELSE part[q]]
-     /\ stmt' = [stmt EXCEPT ![Sess(k)] = NoStmt]
-     /\ sys' = [sys EXCEPT !.parts_lock = NoActor]
-     /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
+  /\ PublishFlipEffect(Sess(k), client[k].part, stmt[Sess(k)].covered)
+  /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, mut, task>>
 
 \* MergeTreeData::Transaction::rollback (src/Storages/MergeTree/MergeTreeData.cpp:11122): creation_csn :=
@@ -385,12 +445,8 @@ CommitError(k) ==
 \* the commit point: one sequential create (Ok outcome; faults are plan 3's)
 CommitCreateCSN(k) ==
   /\ LET t == Cur(k) IN
-     /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitCreateCSN" /\ KeeperCanAppend /\ zk.session = "Alive"
-     /\ LET c == KeeperNextCsn IN
-        /\ zk' = KeeperAppended(t)
-        /\ h' = [h EXCEPT !.committed = @ \cup {t}, !.csn[t] = c,
-                          !.removers = [p \in Parts |-> IF p \in h.removing[t] THEN @[p] \cup {t} ELSE @[p]]]
-        /\ txn' = [txn EXCEPT ![t].pc = FirstCommitPc(t), ![t].work = FirstCommitWork(t)]
+     /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitCreateCSN"
+     /\ CommitCreateEffect(t)
   /\ UNCHANGED <<disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
 \* the isReadOnly branch: csn := snapshot, no Keeper request
 CommitReadOnly(k) ==
@@ -399,22 +455,9 @@ CommitReadOnly(k) ==
      /\ txn' = [txn EXCEPT ![t].state = "Committed", ![t].csn = txn[t].snapshot, ![t].csn_notified = TRUE, ![t].pc = "CommitFinalize"]
      /\ h' = [h EXCEPT !.csn[t] = txn[t].snapshot]
   /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
-\* afterCommit: one setAndStoreCreationCSN / setAndStoreRemovalCSN per part; start the frame, then advance when it is done
 CommitStore(k, p, op, phase) ==
-  LET t == Cur(k)
-      val == IF Witness("Assert_validateInfo_creator") /\ op = "CreationCSN" THEN h.csn[t] + 1
-             ELSE IF Witness("Assert_validateInfo_order") /\ op = "CreationCSN" THEN CSN_MAX
-             ELSE h.csn[t]
-      skip == (Witness("Assert_isVisible_fast") \/ Witness("Assert_isVisible_fast_only1"))
-              /\ op = "CreationCSN" /\ p \in h.removing[t] IN
-  /\ client[k].pc = "Commit" /\ txn[t].pc = phase /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
-  /\ \/ /\ ~skip /\ ~HasFrame(p, Sess(k)) /\ ApplyOp(op, val, part[p].mem) /= part[p].mem
-        /\ part' = StartFrame(p, Sess(k), op, val, TRUE)
-        /\ UNCHANGED txn
-     \/ /\ (skip \/ FrameDone(p, Sess(k), op, val))
-        /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN NextCommitWork(t, phase) ELSE Tail(@),
-                               ![t].pc = IF Tail(txn[t].work) = <<>> THEN NextCommitPc(t, phase) ELSE phase]
-        /\ UNCHANGED part
+  /\ client[k].pc = "Commit"
+  /\ CommitStoreEffect(Sess(k), Cur(k), p, op, phase)
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
 CommitStoreCreation(k, p) == CommitStore(k, p, "CreationCSN", "CommitStoreCreation")
 CommitStoreRemoval(k, p) == CommitStore(k, p, "RemovalCSN", "CommitStoreRemoval")
@@ -422,14 +465,12 @@ CommitFlip(k) ==
   /\ LET t == Cur(k) IN
      /\ client[k].pc = "Commit" /\ Effects(t) /\ txn[t].state = "Committing"
      /\ (txn[t].pc = "CommitFlip" \/ (Witness("FlipAfterStores") /\ txn[t].pc \in {"CommitStoreCreation", "CommitStoreRemoval"}))
-     /\ txn' = [txn EXCEPT ![t].state = "Committed", ![t].csn = h.csn[t], ![t].csn_notified = TRUE, ![t].pc = "CommitFinalize", ![t].work = <<>>]
+     /\ CommitFlipEffect(t)
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, client, stmt, mut, task>>
 CommitFinalize(k) ==
   /\ LET t == Cur(k) IN
      /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitFinalize"
-     /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN]
-     /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].creating = <<>>, ![t].removing = <<>>, ![t].mutations = {}]
-     /\ part' = PinsWithout(<<"Txn", t>>)
+     /\ CommitFinalizeEffect(NoActor, t)
      /\ client' = [client EXCEPT ![k].waiting = IF WAIT_MODE = "ASYNC" THEN "None" ELSE "ForLoad"]
   /\ UNCHANGED <<zk, disk, mdisk, h, sys, stmt, mut, task>>
 CommitAck(k) ==
