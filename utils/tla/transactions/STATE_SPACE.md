@@ -257,30 +257,33 @@ The three changes, together worth nothing measurable:
 began above it can move at all, so two transactions holding moved snapshots is already close to unreachable and
 the constraint has almost nothing to prune. A bound that buys 1.5% is not worth the sentence it costs.
 
-### The two reduced configurations, and why neither is committed {#setsnapshot-bounds}
+### The bounds, and why there are two sets {#setsnapshot-bounds}
 
-Both finish comfortably. Both break the witness contract, which allows a reduction below the matrix bounds only
-while every witness of every property the scenario checks stays red.
+The scenario is checked exhaustively at `TID_MAX = 2`, `CSN_MAX = 35`, two sessions, and its witnesses are shown
+at the scenario matrix's `TID_MAX = 3`, `CSN_MAX = 36` in `MC_SetSnapshotWitness`. A witness run stops at the
+first violation and can afford bounds an exhaustive run cannot, which is the general point recorded as spec
+defect S7 in `FINDINGS.md`; plan 1 deleted `MC_BaseWitness` for having this shape, and needing it again one task
+later is what settled the question.
 
 | Configuration | Distinct states | Time | Result |
 |---|---|---|---|
-| `TID_MAX = 2`, `CSN_MAX = 35`, two sessions | 7,420,069 | 1 min 05 s | green |
-| `MC_SetSnapshotFixed`, same bounds | 7,291,861 | 1 min 03 s | green |
-| `TID_MAX = 3`, `CSN_MAX = 36`, one session | 1,271,599 | 10 s | green |
+| `SetSnapshot`, `TID_MAX = 2`, `CSN_MAX = 35`, two sessions | 7,420,004 | 1 min 05 s | green, **committed** |
+| `SetSnapshotFixed`, same bounds | 7,291,951 | 1 min 04 s | green, **committed** |
+| `SetSnapshot`, `TID_MAX = 3`, `CSN_MAX = 36`, two sessions | 56,968,754 after 8 min, queue 4.47M | killed, five times | does not finish; witness bounds only |
+| `SetSnapshot`, `TID_MAX = 3`, `CSN_MAX = 36`, one session | 1,271,599 | 10 s | green, rejected |
+| `Base`, for scale, `TID_MAX = 2`, `CSN_MAX = 35` | 2,163,747 | 19 s | the 3.4x factor comes from this pair |
 
-At `TID_MAX = 2` four witnesses go green: `SingleRemover`, `NoUncommittedRead`, `NoLostRead` and, worst of all,
-`Assert_getOldestSnapshot`, which is the witness this scenario exists to fire. `WITNESSES.md` has the sweep. The
-reason the last one needs three transactions is the shape of the violation: the sortedness clause is broken only
-when a *later* transaction holds a *lower* entry, so an earlier transaction has to have begun above `FirstCSN`,
-which costs one committed transaction before either of the two that run concurrently.
+Five witnesses are not red at the exhaustive bounds, which is debt B1 in `FINDINGS.md`. Four of the five are
+`Base` witnesses that `Base` already verifies at `TID_MAX = 3`: `SingleRemover`, `NoUncommittedRead`,
+`NoLostRead` and `Assert_validateInfo_removal`, all four for the reason plan 1 documented, that the shape needs
+a third transaction. The fifth is the sortedness conjunct of `Assert_getOldestSnapshot`, which is the property
+this scenario adds and which `Base` cannot verify because `Base` does not enable `SetSnapshot`. That one is what
+`MC_SetSnapshotWitness` exists for, and it is red there in four seconds. The property's other two conjuncts have
+witnesses of their own and are red at the exhaustive bounds.
 
-The one-session configuration is cheaper still and worse: a session runs one transaction at a time, so two
-transactions are never running together and `Assert_getOldestSnapshot` cannot be falsified at all.
-
-So the committed configuration is the matrix bounds, where every witness is red and the run does not finish.
-That is the open item this scenario hands on: either a reduction nobody has found yet, or a ruling that a
-15-minute scenario is acceptable, or an action-level bound on the truncation pass. It is recorded as `M4` in
-`FINDINGS.md`.
+The one-session configuration is cheaper still and was rejected outright: a session runs one transaction at a
+time, so two transactions are never running together and `Assert_getOldestSnapshot` cannot be falsified at all,
+at any `TID_MAX`.
 
 ## Reproducing {#reproducing}
 

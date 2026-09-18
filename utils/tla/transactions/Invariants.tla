@@ -94,12 +94,21 @@ Assert_isVisible_fast == \A p \in Parts : LET m == part[p].mem IN
   /\ (m.rcsn /= UnknownCSN => m.ccsn /= UnknownCSN)
   /\ m.ccsn \in {UnknownCSN, NonTransactionalCSN, RolledBackCSN} \cup RealCSNs
   /\ m.rcsn \in {UnknownCSN, NonTransactionalCSN} \cup RealCSNs
-\* TransactionLog::getOldestSnapshot, src/Interpreters/TransactionLog.cpp:677-686: the running list and the
-\* snapshot bag have the same members, each entry is the value beginTransaction inserted, and the bag is sorted.
-\* snapshots_in_use is a list in insertion order and Begin draws tids from a monotone counter while
-\* latest_snapshot never decreases, so "sorted" is "non-decreasing in the tid order". Under SET_SNAPSHOT_PROTECTS
-\* the proposed fix re-inserts the entry at its sorted position, so the tid order is no longer the list order and
-\* the clause does not apply; the C++ assertion still does.
+\* TransactionLog::getOldestSnapshot, src/Interpreters/TransactionLog.cpp:677-686. Three conjuncts, one per
+\* witness name; the witness table lists them as Assert_getOldestSnapshot_size, _entry and the bare name.
+\*   1. the running list and the snapshot bag have the same members, which is
+\*      chassert(running_list.size() == snapshots_in_use.size()).
+\*   2. each entry is the value beginTransaction inserted. This one has no C++ counterpart: protected_snapshot
+\*      is a model ghost, and the clause is what makes "the entry did not follow the snapshot" observable.
+\*   3. the bag is sorted. snapshots_in_use is a list in insertion order and Begin draws tids from a monotone
+\*      counter while latest_snapshot never decreases, so "sorted" is "non-decreasing in the tid order".
+\* Conjunct 3 is deliberately STRONGER than the assertion it comes from: the chassert compares the first two
+\* elements only, snapshots_in_use.front() <= *++snapshots_in_use.begin(). The model checks the property that
+\* assertion approximates, over every pair, and that is what licenses OldestSnapshot == Min(...) (Parts.tla) as
+\* a model of front(): front() is the minimum exactly when the list is sorted.
+\* Under SET_SNAPSHOT_PROTECTS the proposed fix re-inserts the entry at its sorted position, so the tid order is
+\* no longer the list order and conjunct 3 does not apply; the C++ assertion still does. That leaves the fix
+\* variant with nothing checking that front() stays the minimum, which is recorded in FINDINGS.md section 2.
 Assert_getOldestSnapshot ==
   /\ tlog.running_list = { t \in Tids : tlog.snapshots_in_use[t] /= UnknownCSN }
   /\ \A t \in tlog.running_list : tlog.snapshots_in_use[t] = txn[t].protected_snapshot

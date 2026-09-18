@@ -137,59 +137,96 @@ absent.
 
 ## Witnesses of the `SetSnapshot` scenario {#witnesses-setsnapshot}
 
-`SetSnapshot` checks `Base`'s properties plus `Assert_TailPtrNotRegressing`, and it is where
-`Assert_getOldestSnapshot` finally gets the witness `WITNESSES.md` had deferred. Both rows below were run at the
-scenario's committed bounds, `TID_MAX = 3`, `CSN_MAX = 36`, two sessions. A witness run stops at the first
-violation, so it finishes even though a full run of this scenario does not.
+This scenario has **two sets of bounds**, and the reason is in `FINDINGS.md` as spec defect S7. An exhaustive
+run at the scenario matrix's `TID_MAX = 3` does not finish, so `MC_SetSnapshot` and `MC_SetSnapshotFixed` are
+checked exhaustively at `TID_MAX = 2`, `CSN_MAX = 35`, two sessions, in about 65 seconds. A witness run stops at
+the first violation and can afford bounds an exhaustive run cannot, so the witnesses that need a third
+transaction are run against `MC_SetSnapshotWitness`, which is the same module at `TID_MAX = 3`, `CSN_MAX = 36`.
+The gap between the two is debt B1.
 
-| Property | Witness name | The model change | Result | States | Time |
-|---|---|---|---|---|---|
-| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the `snapshots_in_use` entry, which is the same object in the C++ | RED | 442,867 | 5 s |
-| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot` | the same change; the next `removeOldEntries` then computes a `getOldestSnapshot` below the `tail_ptr` it has already stored | RED | 568,869 | 6 s |
+`Assert_getOldestSnapshot` has three conjuncts and therefore three witness names, the way
+`Assert_validateInfo` has three. Two of the three are red at the exhaustive bounds; the third is the one that
+needs the third transaction.
 
-The second row shares the first row's witness rather than having one of its own, which the witness contract
-allows: the change is a single named one and the property it is being run against is named on the command line.
-There is no separate hook, because the only way to make the stored tail regress is to lower a running
-transaction's entry, which is exactly what this witness does.
+| Conjunct | Witness name | The model change | Bounds | Result | States | Time |
+|---|---|---|---|---|---|---|
+| the running list and the snapshot bag have the same members | `Assert_getOldestSnapshot_size` | `Begin` joins `running_list` without writing `snapshots_in_use`, breaking at one site the lockstep `beginTransaction` keeps under one lock | exhaustive | RED | 2 | 1 s |
+| each entry is the value `beginTransaction` inserted | `Assert_getOldestSnapshot_entry` | `SetSnapshot` moves the `snapshots_in_use` entry and leaves `protected_snapshot` where it was | exhaustive | RED | 14,478 | 2 s |
+| the bag is sorted | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the entry, which is the change the design document names | witness | RED | 438,838 | 4 s |
 
-`NoOutdatedLookup` is defined in `Invariants.tla` and is **not** in `MC_SetSnapshot.cfg`. It is vacuous here,
+The third row is the only one that exercises a C++ assertion end to end, and it is the one that cannot be shown
+at the exhaustive bounds: breaking sortedness needs a transaction that began above `FirstCSN`, so a committed
+transaction has to precede the two that run concurrently. The second row's clause has no C++ counterpart at
+all, because `protected_snapshot` is a model ghost; it is what makes "the entry did not follow the snapshot"
+observable, and it must not be read as evidence that the first-class clause is reachable at two transactions.
+
+| Property | Witness name | The model change | Bounds | Result | States | Time |
+|---|---|---|---|---|---|---|
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | the entry moves below the stored tail, and the next `removeOldEntries` computes a `getOldestSnapshot` below the `tail_ptr` it has already stored | exhaustive | RED | 153,609 | 3 s |
+
+It shares a witness rather than having one of its own, which the contract allows: the change is a single named
+one and the property it runs against is named on the command line. There is no separate hook, because the only
+way to make the stored tail regress is to lower a running transaction's entry.
+
+### The full sweep at the exhaustive bounds {#witnesses-setsnapshot-exhaustive}
+
+Every witness of every property `MC_SetSnapshot.cfg` checks, at `TID_MAX = 2`, `CSN_MAX = 35`. Eighteen runs.
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 45,066 | 2 s |
+| `SingleRemover` | `SingleRemover` | **GREEN**, debt B1 | 7,420,048 | 53 s |
+| `LockConsistent` | `LockConsistent` | RED | 183,212 | 3 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 226,752 | 3 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 432,161 | 5 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 6,199 | 2 s |
+| `StableRead` | `StableRead` | RED | 233,924 | 4 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 6,387 | 2 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B1 | 7,419,992 | 53 s |
+| `NoFutureRead` | `NoFutureRead` | RED | 26,447 | 2 s |
+| `NoLostRead` | `NoLostRead` | **GREEN**, debt B1 | 6,815,478 | 50 s |
+| `Atomicity` | `Atomicity` | RED | 306,925 | 4 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 23,535 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 23,492 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | **did not finish**, debt B1; 41,169,992 distinct after 4 min and still growing | — | killed at 300 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 129,849 | 2 s |
+| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 5,661,854 | 43 s |
+| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 7,420,024 | 54 s |
+| `Assert_getOldestSnapshot` | `_size`, `_entry`, sortedness | two RED here, one at the witness bounds | see above | |
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | RED | 153,609 | 3 s |
+
+`Assert_validateInfo_removal` is worth a note. It is not slow; it explores more than the scenario itself does,
+because the witness removes a wait and the truncation actions then multiply the behaviours it opens. It reached
+41 million distinct states in four minutes on a scenario whose own state space is 7.4 million. Plan 1 found the
+same witness needs three transactions, so it is expected green here and it is in B1 with the other three.
+
+`TypeOK`, `RollbackNoLeak`, `AckedWriteIsDurable`, `ActiveSetShape`, `NoAvoidableTermination`,
+`KillerNotStranded` and `NoDoubleRead` have no witness in this scenario for the reasons the two tables above
+this section already give; none of those reasons changes here.
+
+### The witness bounds {#witnesses-setsnapshot-witness-bounds}
+
+`MC_SetSnapshotWitness`, `TID_MAX = 3`, `CSN_MAX = 36`. Only for witnesses; an exhaustive run there does not
+finish, which is model defect M4.
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 438,838 | 4 s |
+| `SingleRemover` | `SingleRemover` | RED | 7,261,414 | 48 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | RED | 2,909,770 | 20 s |
+| `NoLostRead` | `NoLostRead` | RED | 1,313,160 | 10 s |
+
+The last three are `Base` rows, already red in `Base` at the same `TID_MAX`; they are listed because B1 names
+them, and because running them here shows the scenario's extra actions do not get in their way.
+
+`NoOutdatedLookup` is defined in `Invariants.tla` and is **not** in any `SetSnapshot` cfg. It is vacuous here,
 and by inspection rather than by search: `UpdFinalizeUnknown(t)` is `FALSE` in this plan, so
 `NoOutdatedLookupStep` is an implication with a false antecedent in every step. `assertTIDIsNotOutdated` is
 reached only from `tryFinalizeUnknownStateTransactions` (`src/Interpreters/TransactionLog.cpp:387`) and from
 `getCSNAndAssert` (`:645`), which has no caller in the tree, so no scenario without the unknown-state group can
 falsify it. The design document lists it among the `SetSnapshot` scenario's properties anyway, which is spec
-defect S6 in `FINDINGS.md`.
-
-### The sweep at `TID_MAX = 2`, and why that bound was rejected {#witnesses-setsnapshot-tid2}
-
-The scenario finishes in 65 seconds at `TID_MAX = 2`, `CSN_MAX = 35`, so the bound was measured against the
-witness contract before being discarded. Fourteen witnesses, one run each.
-
-| Property | Result at `TID_MAX = 2` | States | Time |
-|---|---|---|---|
-| `ErrorIsAbsent` | RED | 46,290 | 2 s |
-| `SingleRemover` | **GREEN** | 7,420,073 | 55 s |
-| `LockConsistent` | RED | 187,101 | 4 s |
-| `NoSpuriousStaleVersion` | RED | 218,745 | 3 s |
-| `RollbackRestores` | RED | 460,885 | 5 s |
-| `FlipAfterStores` | RED | 6,436 | 2 s |
-| `StableRead` | RED | 229,506 | 4 s |
-| `ReadYourWrites` | RED | 5,916 | 2 s |
-| `NoUncommittedRead` | **GREEN** | 7,419,925 | 53 s |
-| `NoFutureRead` | RED | 25,801 | 2 s |
-| `NoLostRead` | **GREEN** | 6,815,382 | 49 s |
-| `Atomicity` | RED | 305,075 | 5 s |
-| `Assert_getOldestSnapshot` | **GREEN** | 7,399,399 | 54 s |
-
-Four green, so the bound fails the contract. Three of them are the same three `Base` found could not reach
-their target at two transactions, which is why `Base` carries the matrix bounds. The fourth is the witness this
-task exists to fire. All four are red again at `TID_MAX = 3`: `SingleRemover` at 7,159,902 states in 46 s,
-`NoUncommittedRead` at 2,976,961 in 20 s, `NoLostRead` at 1,345,642 in 11 s, and `Assert_getOldestSnapshot` in
-the table above.
-
-The nine red rows stay red at `TID_MAX = 3` without being re-run, and that needs no measurement: raising
-`TID_MAX` only adds behaviours, and a behaviour that uses two transactions is still a behaviour of the model
-that allows three.
+defect S6. `NoLostVisibleData` and `VisibleFrags` are likewise defined and in no cfg; the task that adds the
+cleanup group adds both the property and its witness.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
@@ -205,6 +242,6 @@ After the `SetSnapshot` work, which changed `Types.tla`, `Parts.tla`, `Server.tl
 | Scenario | Result | Distinct states | Time |
 |---|---|---|---|
 | `BaseSmall` | green | 47,381 | 1 s |
-| `Base` | green | 28,553,303 | 4 min 12 s |
-| `SetSnapshot` | did not finish | 56,968,754 after 8 min, queue 4.47M | killed |
-| `SetSnapshotFixed` | did not finish at the committed bounds; green at `TID_MAX = 2` | 7,291,861 there | 1 min 03 s |
+| `Base` | green | 28,553,090 | 4 min 11 s |
+| `SetSnapshot` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 7,420,004 | 1 min 05 s |
+| `SetSnapshotFixed` | green at the same bounds | 7,291,951 | 1 min 04 s |

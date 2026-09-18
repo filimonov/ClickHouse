@@ -145,8 +145,11 @@ Begin(k) ==
   /\ tlog.local_tid_counter < TID_MAX
   /\ LET t == tlog.local_tid_counter + 1
          s == tlog.latest_snapshot IN
+     \* beginTransaction pushes onto running_list and snapshots_in_use under one lock and keeps the iterator
+     \* (src/Interpreters/TransactionLog.cpp:216-226), so the two move together. The witness of
+     \* Assert_getOldestSnapshot's first conjunct breaks that lockstep at this one site.
      /\ tlog' = [tlog EXCEPT !.local_tid_counter = t, !.tid_start[t] = s, !.running_list = @ \cup {t},
-                             !.snapshots_in_use[t] = s]
+                             !.snapshots_in_use[t] = IF Witness("Assert_getOldestSnapshot_size") THEN @ ELSE s]
      /\ txn' = [txn EXCEPT ![t] = [AbsentTxn EXCEPT !.state = "Running", !.snapshot = s, !.protected_snapshot = s,
                                      !.holders = {Sess(k)}]]
      /\ client' = [client EXCEPT ![k].current = t, ![k].first_read = NoRead, ![k].last_read = NoRead]
@@ -159,6 +162,11 @@ Begin(k) ==
 \* MergeTreeTransaction::setSnapshot (src/Interpreters/MergeTreeTransaction.cpp:52): one relaxed store into
 \* `snapshot`. `protected_snapshot` and the snapshots_in_use entry are deliberately left alone, which is the
 \* behaviour NoPrematureDelete is expected to catch; SET_SNAPSHOT_PROTECTS is the proposed fix (FINDINGS F2).
+\* The `Running` guard is a narrowing: executeSetSnapshot checks only that a transaction exists, unlike
+\* executeCommit and executeRollback just above it, so the code accepts the statement on a transaction another
+\* session has already killed. Modelling that would add a snapshot write on a transaction whose entry the
+\* finalizers have already cleared, which is a rollback-path question rather than a snapshot one; it is left to
+\* the plan that enables asynchronous kill against this action.
 SetSnapshot(k, c) ==
   /\ Up /\ HasTxn(k) /\ client[k].pc = "Idle" /\ txn[Cur(k)].state = "Running"
   /\ c \in SNAPSHOT_TARGETS
@@ -167,11 +175,18 @@ SetSnapshot(k, c) ==
   \* every idle point of every running transaction and, because it also restarts the read baseline below, each
   \* of those no-ops produces a state.
   /\ c /= txn[Cur(k)].snapshot
+  \* Two witnesses, because Assert_getOldestSnapshot states three things. `moves_protected` is the change the
+  \* design document names, the fix applied to both halves of the same C++ object, and it falsifies the
+  \* sortedness clause, which needs a transaction that began above FirstCSN and therefore a third transaction.
+  \* `moves_entry` moves only the snapshots_in_use entry and leaves protected_snapshot, the ghost recording
+  \* what beginTransaction inserted, where it was; that falsifies the per-entry clause with one transaction and
+  \* the tail-pointer property with two, which is what makes both reachable at this scenario's bounds.
   /\ LET t == Cur(k)
-         moves == SET_SNAPSHOT_PROTECTS \/ Witness("Assert_getOldestSnapshot") IN
+         moves_protected == SET_SNAPSHOT_PROTECTS \/ Witness("Assert_getOldestSnapshot")
+         moves_entry == moves_protected \/ Witness("Assert_getOldestSnapshot_entry") IN
      /\ (SET_SNAPSHOT_PROTECTS => c >= tlog.tail_ptr)
-     /\ txn' = [txn EXCEPT ![t].snapshot = c, ![t].protected_snapshot = IF moves THEN c ELSE @]
-     /\ tlog' = [tlog EXCEPT !.snapshots_in_use[t] = IF moves THEN c ELSE @]
+     /\ txn' = [txn EXCEPT ![t].snapshot = c, ![t].protected_snapshot = IF moves_protected THEN c ELSE @]
+     /\ tlog' = [tlog EXCEPT !.snapshots_in_use[t] = IF moves_entry THEN c ELSE @]
      /\ h' = [h EXCEPT !.content[t] = Frags({ r \in Parts : part[r].pstate \in {"Active", "Outdated"}
                                                            /\ OracleVisible(r, c, t) })]
      \* The read baseline restarts, exactly as it does at Begin. StableRead compares a read against the first
@@ -640,7 +655,9 @@ UpdRemoveOldEntriesDelete(c) ==
      /\ h' = [h EXCEPT !.truncated = @ \cup {t}]
   /\ UNCHANGED <<disk, mdisk, part, txn, sys, client, stmt, mut, task>>
 
-\* the removal loop ends and the thread leaves removeOldEntries (src/Interpreters/TransactionLog.cpp:341)
+\* the removal loop ends and the thread leaves removeOldEntries (src/Interpreters/TransactionLog.cpp:341).
+\* Unguarded, so the model can end a pass with entries the code's loop would still have removed. That widens
+\* the behaviour set, which is safe for every safety property here; see FINDINGS.md section 2, M3.
 UpdRemoveOldEntriesDone ==
   /\ sys.updater_pc = "Delete"
   /\ sys' = [sys EXCEPT !.updater_pc = "Idle"]

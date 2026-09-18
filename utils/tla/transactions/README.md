@@ -68,8 +68,9 @@ the three-step metadata store. Every other action of the design document is pres
 `run_tlc.sh` runs `MC_<Scenario>` with `-workers auto` unless a second argument overrides it. The scenarios that
 exist today are `Schema` (one state, a type check), `BaseSmall` (one session), `Base` (two sessions, the
 matrix bounds), `SetSnapshot` (`Base` plus `SET TRANSACTION SNAPSHOT`, the cleanup group and the updater's GC
-group) and `SetSnapshotFixed` (the same with `SET_SNAPSHOT_PROTECTS = TRUE`, the model variant of the fix
-proposed in `FINDINGS.md`, finding F2). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
+group), `SetSnapshotFixed` (the same with `SET_SNAPSHOT_PROTECTS = TRUE`, the model variant of the fix proposed
+in `FINDINGS.md`, finding F2) and `SetSnapshotWitness` (the same as `SetSnapshot` at the scenario matrix's
+bounds, for `witness.sh` only; an exhaustive run there does not finish). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
 45-minute `timeout`.
 
 Output goes under `tmp/tla/<Scenario>/`: the full TLC log is `tlc.log`, and a counterexample is additionally
@@ -86,10 +87,9 @@ Exit codes:
 | 2 | a parse or configuration error, a missing `MC_<Scenario>` module, a missing tool, or a timeout |
 
 A timeout is not something to wait out. A run that passes 45 minutes, or 30 million distinct states, is a defect
-of the model or of the bounds: kill it, record what it reached, and reduce. `SetSnapshot` is currently in that
-state and is the exception on the run table below: it is committed at the matrix bounds, where its witnesses are
-red and the run does not finish, because both bounds that do finish turn witnesses green. See `FINDINGS.md`,
-`M4`. The `Base` scenario reached
+of the model or of the bounds: kill it, record what it reached, and reduce. `SetSnapshot` hit that limit and is the reason
+scenarios can now carry two sets of bounds: exhaustive bounds, where the scenario is checked, and witness
+bounds, where a run that stops at the first violation can afford more. See `FINDINGS.md`, `M4`, `B1` and `S7`. The `Base` scenario reached
 115,663,927 distinct states without finishing when it was first written, and the three model corrections that
 fixed that are in `STATE_SPACE.md`.
 
@@ -235,11 +235,12 @@ discarded.
 | `Schema` | 2026-09-18 | the final-review fix commit | 1 | 1 s | green |
 | `Schema` | 2026-09-18 | the `SetSnapshot` commit | 1 | 1 s | green |
 | `BaseSmall` | 2026-09-18 | the `SetSnapshot` commit | 47,381 | 1 s | green |
-| `Base` | 2026-09-18 | the `SetSnapshot` commit | 28,553,303 | 4 min 12 s | green; 28,553,114 before the shared-module changes, which is the multi-worker counting noise |
-| `SetSnapshot` | 2026-09-18 | the `SetSnapshot` commit | 56,968,754 after 8 min, queue 4.47M | killed | did not finish at the matrix bounds; model defect `M4`, and `STATE_SPACE.md` has the four runs and the reductions |
-| `SetSnapshot` | 2026-09-18 | the `SetSnapshot` commit | 7,420,069 | 1 min 05 s | green at `TID_MAX = 2`, `CSN_MAX = 35`, a bound that four witnesses reject |
-| `SetSnapshotFixed` | 2026-09-18 | the `SetSnapshot` commit | 7,291,861 | 1 min 03 s | green at the same reduced bound |
-| `SetSnapshot` witnesses, 2 rows | 2026-09-18 | the `SetSnapshot` commit | 568,869 for the larger | 11 s in total | both red at the matrix bounds |
+| `Base` | 2026-09-18 | the `SetSnapshot` commit | 28,553,090 | 4 min 11 s | green; 28,553,114 before the shared-module changes, which is the multi-worker counting noise |
+| `SetSnapshot` | 2026-09-18 | the `SetSnapshot` commit | 7,420,004 | 1 min 05 s | green at the exhaustive bounds `TID_MAX = 2`, `CSN_MAX = 35` |
+| `SetSnapshotFixed` | 2026-09-18 | the `SetSnapshot` commit | 7,291,951 | 1 min 04 s | green at the same bounds |
+| `SetSnapshot` | 2026-09-18 | the `SetSnapshot` commit | 56,968,754 after 8 min, queue 4.47M | killed, five times | an exhaustive run at the matrix bounds does not finish; model defect `M4` |
+| `SetSnapshot` witness sweep, 18 rows | 2026-09-18 | the `SetSnapshot` commit | 7,420,048 for the largest completed row | ≈ 5 min in total | red except the five of debt `B1` |
+| `SetSnapshotWitness` witnesses, 4 rows | 2026-09-18 | the `SetSnapshot` commit | 7,261,414 for the largest | 1 min 22 s in total | all four red at the matrix bounds |
 | `BaseSmall` | 2026-09-18 | the final-review fix commit | 47,381 | 1 s | green |
 | `Base` | 2026-09-18 | the final-review fix commit | 28,552,935 | 4 min 06 s | green at the matrix bounds |
 | witness `FlipAfterStores` | 2026-09-18 | the final-review fix commit | 8,017 | 2 s | red, as required |

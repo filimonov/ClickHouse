@@ -62,7 +62,9 @@ run_one() {
   local rc=$? secs=$((SECONDS - t0))
   rm -rf "$out/states"
   local distinct
-  distinct=$(grep -oE '[0-9]+ distinct states found' "$out/tlc.log" | tail -1 | grep -oE '^[0-9]+')
+  # TLC prints the final count bare and the Progress counts with thousands separators; accept both, so that a
+  # run that did not finish reports what it reached rather than the tail of a grouped number.
+  distinct=$(grep -oE '[0-9][0-9,]* distinct states found' "$out/tlc.log" | tail -1 | grep -oE '^[0-9][0-9,]*' | tr -d ',')
   [ -n "${distinct:-}" ] || distinct=0
 
   if grep -qE "^Error: (Invariant|Action property) $PROPERTY is violated" "$out/tlc.log"; then
