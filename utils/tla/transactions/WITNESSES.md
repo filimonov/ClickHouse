@@ -116,10 +116,11 @@ not results.
 | Property | Witness the design document names | Action it needs | Deferred to |
 |---|---|---|---|
 | `AckedWriteIsDurable` | `CommitAck` moved before `CommitCreateCSN` and a `Fail` allowed after it | `Crash` | plan 3 |
-| `NoDoubleRead` | `SelectCheck` ignores `removal_csn` and `removal_tid` | `Merge` | plan 2 |
-| `ActiveSetShape` | `PublishFlip` does not outdate the covered parts | `Merge`; the `Base` universe has no covering relation, so no two parts can be related | plan 2 |
+| `ActiveSetShape`, reservation clause | two tasks reserving the same source | a second background task; the `Merge` scenario has one covering part and therefore one merge, so the clause is vacuous there | plan 4, with the `MergeMutation` scenario, where a merge and a mutation run side by side |
 | `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
 | `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | `NtInsert` and the non-transactional batch, so that a part carries a record the two exemptions are about | task 4 of this plan, with the `NonTxn` scenario |
+
+`NoDoubleRead` and `ActiveSetShape` came off this table with the `Merge` scenario, which is the first with a covering relation; both are red there and both have rows below. What stays of `ActiveSetShape` is its second clause, which one task cannot falsify.
 
 `Assert_getOldestSnapshot` came off this table with the `SetSnapshot` scenario: the action its witness needs
 now exists, and the row is in the scenario's own table below.
@@ -261,13 +262,83 @@ later task could change without noticing that nothing was checking it.
 `NoFalseCorruption` is **vacuously green** in `SetSnapshotFixed` and in `SetSnapshotF2Fixed`: no
 `CleanupDeleteFail` step is reachable in either, because a validation refusal needs a disagreement between the
 in-memory and the stored record that no action of this plan can produce, and the filesystem-error disjunct is
-`FALSE` until plan 5. The green says nothing about the property, and its only content is the witness, which is
+`FALSE` until plan 5. The parts-lock conjunct the review round added to `CleanupDeleteFail` narrows the
+property's antecedent, since `NoFalseCorruptionStep` is an implication whose antecedent is that action; that is
+fidelity to `rollbackDeletingParts` taking `lockParts` at `MergeTreeData.cpp:4207`, not a weakening, and here it
+changes nothing because the antecedent was already unreachable. The green says nothing about the property, and its only content is the witness, which is
 deferred to task 4 of this plan and is in the deferred table above.
 
 The state counts in the table above are **first-violation counts and are not reproducible**: a witness run
 stops at the first violation, and how many states it has fingerprinted by then depends on how the workers
 raced. A reviewer's re-run of the same three gave 259,738, 235,808 and 29,910. They are recorded to show the
 order of magnitude, not as figures to match.
+
+
+## Witnesses of the `Merge` scenario {#witnesses-merge}
+
+`Merge` is one session, `Parts = {P1, P2, M12}`, `Tasks = {i1}`, `TID_MAX = 3`, `CSN_MAX = 36`, `SYMMETRY
+SymSessions`, `VIEW MergeView`, no faults. One set of bounds, not two: the scenario finishes exhaustively at
+them in 49 seconds, so the witnesses run against the same configuration the green run uses. Why the bounds are
+those and not the matrix's two sessions is in `STATE_SPACE.md`.
+
+The four rows the scenario matrix names for `Merge`, and the two the deferred table above owed it:
+
+| Property | Witness name | The model change | Result | States | Time |
+|---|---|---|---|---|---|
+| `NoDoubleRead` | `NoDoubleRead` | the two removal tests of `isVisible`'s fast path and the removal lookup of its slow path are skipped, so a reader sees `M12` and the sources it covers at once | RED | 1,270,978 | 10 s |
+| `ActiveSetShape` | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts, so the merge result goes `Active` over sources that are still `Active` | RED | 263,245 | 5 s |
+| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | RED | 2,666,265 | 20 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl` | RED | 431,931 | 5 s |
+
+`NoDoubleRead` and `ActiveSetShape` are the two rows this scenario exists to pay. Neither is writable in `Base`,
+where `Covers` is empty and no two parts are related. `NoPrematureDelete` is red here without the lowered
+snapshot `SetSnapshotF2Fixed` needs: a merge gives a running reader a part that is `Outdated` and removable
+while it is still visible at the reader's own snapshot, which is a shape two sessions inserting and dropping
+cannot build.
+
+### The full sweep at these bounds {#witnesses-merge-full}
+
+Every witness of every property `MC_Merge.cfg` checks. Nineteen runs, about nine minutes in all, of which one
+row is five.
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 13,914 | 2 s |
+| `SingleRemover` | `SingleRemover` | RED | 4,568,647 | 35 s |
+| `LockConsistent` | `LockConsistent` | RED | 45,237 | 2 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | **GREEN**, debt B3 | 5,921,770 | 44 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 254,238 | 4 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 1,862 | 1 s |
+| `StableRead` | `StableRead` | RED | 1,898,738 | 15 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 2,315 | 1 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B3 | 5,196,830 | 39 s |
+| `NoFutureRead` | `NoFutureRead` | RED | 1,248,697 | 10 s |
+| `NoLostRead` | `NoLostRead` | RED | 794,561 | 8 s |
+| `NoDoubleRead` | `NoDoubleRead` | RED | 1,270,978 | 10 s |
+| `Atomicity` | `Atomicity` | RED | 2,666,265 | 20 s |
+| `ActiveSetShape` | `ActiveSetShape` | RED | 263,245 | 5 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | RED | 431,931 | 5 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 7,088 | 2 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | RED | 3,173,837 | 23 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 5,643 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 6,386 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | **GREEN**, debt B3 | 38,568,430 | 4 min 51 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 30,588 | 2 s |
+| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 3,892,113 | 31 s |
+| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 5,196,830 | 39 s |
+
+`NoLostRead` and `SingleRemover` are worth a note, because both are green at `SetSnapshot`'s reduced bounds and
+red here at bounds that are reduced too. The merge task is why: it is a second actor that removes parts and
+outdates them without being a second session, so the shapes those two witnesses need are reachable with one
+session and three transactions where two sessions and two transactions could not build them.
+
+Three properties have no witness in this scenario and are not debts of it. `NoFalseCorruption` is the deferred
+task-4 row; `AckedWriteIsDurable`, `NoAvoidableTermination` and `KillerNotStranded` are the deferred plan-3 and
+plan-5 rows; `Assert_getOldestSnapshot` and `Assert_TailPtrNotRegressing` both need the `SetSnapshot` action,
+and `SNAPSHOT_TARGETS` is empty here, so they are vacuous in `Merge` and are verified in the scenario that owns
+them. `TypeOK`, `RollbackNoLeak` and `NoTaskDrivenRollback` have no witness by design: the first is a type
+invariant, the second is the debt `FINDINGS.md` section 3 records, and the third is a bound guard rather than a
+property of the server.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
@@ -286,3 +357,18 @@ After the `SetSnapshot` work, which changed `Types.tla`, `Parts.tla`, `Server.tl
 | `Base` | green | 28,553,090 | 4 min 11 s |
 | `SetSnapshot` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 7,420,004 | 1 min 05 s |
 | `SetSnapshotFixed` | green at the same bounds | 7,291,951 | 1 min 04 s |
+
+After the merge work, which changed `Parts.tla`, `Server.tla`, `Invariants.tla` and `MergeTreeTransactions.tla`:
+
+| Scenario | Result | Distinct states | Time |
+|---|---|---|---|
+| `BaseSmall` | green | 47,381 | 1 s |
+| `Base` | green | 28,547,508 | 4 min 12 s |
+| `SetSnapshot` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 13,622,631 | 2 min 01 s |
+| `SetSnapshotFixed` | green at the same bounds | 13,092,635 | 2 min 02 s |
+| `SetSnapshotF2Fixed` | green | 367,183 | 4 s |
+| `Merge` | green at one session, `TID_MAX = 3`, `CSN_MAX = 36` | 5,196,830 | 49 s |
+
+`SetSnapshotF2` is still red on `NoPrematureDelete`, and the three cleanup witnesses are still red, which is
+what had to be shown after that property's antecedent was narrowed to the transactions that can still read.
+`FINDINGS.md`, finding F3, carries the narrowing and its argument.

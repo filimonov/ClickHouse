@@ -30,9 +30,17 @@ UpdaterNext == UpdLoadEntriesMap \/ UpdPublishSnapshot
 UpdaterGCNext == UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
 UpdaterUnknownNext == UpdReconnect \/ UpdSwapUnknownLists \/ (\E t \in Tids : UpdFinalizeUnknown(t))
 CleanupNext == \E p \in Parts : CleanupGrab(p) \/ CleanupValidate(p) \/ CleanupDeleteOk(p) \/ CleanupDeleteFail(p)
-TaskNext == \E i \in Tasks : MergeBegin(i) \/ MergeSelect(i) \/ MergeWrite(i) \/ MergeRename(i) \/ MergeFail(i) \/ MutFail(i)
-                             \/ (\E m \in Mutations, p \in Parts : MutSelect(i, m, p) \/ MutWrite(i, m, p) \/ MutRename(i, m, p))
-                             \/ (\E m \in Mutations : KillCancelTask(m, i))
+TaskNext == \E i \in Tasks :
+  \/ MergeBegin(i) \/ MergeSelect(i) \/ MergeWrite(i) \/ MergeRename(i)
+  \/ MergePublishStart(i) \/ MergePublishFlip(i)
+  \/ MergeCommitBefore(i) \/ MergeCommitCreateCSN(i) \/ MergeCommitReadOnly(i)
+  \/ MergeCommitFlip(i) \/ MergeCommitFinalize(i)
+  \/ MergeFail(i) \/ MergeStmtRollbackDrop(i) \/ MergeUnwind(i)
+  \/ (\E q \in Parts : MergePublishEnrol(i, q) \/ MergePublishStore(i, q) \/ MergeStmtRollbackMark(i, q)
+                       \/ MergeCommitStoreCreation(i, q) \/ MergeCommitStoreRemoval(i, q))
+  \/ MutFail(i)
+  \/ (\E m \in Mutations, p \in Parts : MutSelect(i, m, p) \/ MutWrite(i, m, p) \/ MutRename(i, m, p))
+  \/ (\E m \in Mutations : KillCancelTask(m, i))
 MutationNext == \E m \in Mutations : MutDestroyOwner(m) \/ KillUnregister(m) \/ KillRollbackTxn(m) \/ KillRemoveFile(m) \/ KillRetry(m)
 NtNext == \/ (\E p \in Parts : NtInsert(p) \/ NtBatchPreflight(p) \/ NtBatchLock(p) \/ NtBatchStore(p))
           \/ (\E B \in SUBSET Parts : NtBatchStart(B))
@@ -53,4 +61,8 @@ BaseSpec == Init /\ [][BaseNext]_vars
 \* the SetSnapshot scenario (spec matrix): Base + SetSnapshot + Cleanup* + Updater+GC
 SetSnapshotNext == BaseNext \/ UpdaterGCNext \/ CleanupNext
 SetSnapshotSpec == Init /\ [][SetSnapshotNext]_vars
+
+\* the Merge scenario (spec matrix): Base + Merge* + Cleanup* + Updater+GC
+MergeNext == BaseNext \/ TaskNext \/ CleanupNext \/ UpdaterGCNext
+MergeSpec == Init /\ [][MergeNext]_vars
 ====

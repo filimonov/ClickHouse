@@ -80,8 +80,24 @@ LockConsistent == \A p \in Parts :
   /\ (l \in Tids => m.rtid \in {EmptyTID, l})
   /\ (l = NonTransactionalTID => m.rtid \in {EmptyTID, NonTransactionalTID})
   /\ (l = EmptyTID => m.rtid = EmptyTID \/ m.rcsn /= UnknownCSN)
+\* Three clauses. The first is the "Part {} intersects part {}" LOGICAL_ERROR of the active parts set and is the
+\* one the ActiveSetShape witness attacks. The second is CurrentlyMergingPartsTagger's "Tagging already tagged
+\* part" (src/Storages/StorageMergeTree.cpp:918-921); it is vacuous at one task and is checked in the scenario
+\* that runs a merge and a mutation side by side. The third is grabOldParts' rule at MergeTreeData.cpp:4158,
+\* "First remove all covered parts, then remove covering empty part": an empty covering part must not be Active
+\* over a part it covers that is still Active. It is implied by the first while Covers is two levels deep, and
+\* it is written anyway because it is a rule of its own that a deeper covering relation would separate.
 ActiveSetShape == /\ \A p, q \in Parts : part[p].pstate = "Active" /\ part[q].pstate = "Active" => ~Overlap(p, q)
                   /\ \A i, j \in Tasks : i /= j => task[i].reserved \cap task[j].reserved = {}
+                  /\ \A p \in Parts : part[p].pstate = "Active" /\ part[p].payload.tomb =>
+                       \A q \in Expand({p}) \ {p} : part[q].pstate /= "Active"
+\* Not a property of the server: a bound guard. MergeUnwind can in principle win the compare-and-exchange in
+\* MergeTreeTransaction::rollback and become the rollback driver, and every step of the rollback machine is
+\* session-shaped, so the transaction would sit in RollbackCopyLists with nothing able to advance it. No
+\* scenario of this plan reaches it, because the task's own steps can only find the transaction already rolled
+\* back, and this invariant says so instead of letting the search wedge without a word. The plan that enables a
+\* fault on a background task owes the task-driven rollback steps and takes this out.
+NoTaskDrivenRollback == \A t \in Tids : \A i \in Tasks : txn[t].rb_driver /= Tsk(i)
 
 \* ---- code assertions (spec #invariants-code)
 \* validateInfo is a chassert, so both the record a part carries and the record a store computed before it
@@ -158,8 +174,17 @@ NoLostVisibleData == [][NoLostVisibleDataStep]_vars
 \* ---- the cleanup thread (spec #invariants-cleanup)
 \* Stated over the oracle, not over VersionMetadata::canBeRemoved, so that a wrong canBeRemoved is caught rather
 \* than assumed; the snapshot is the actual one a running transaction reads at, not the protected one.
+\* The quantifier is over the transactions that can still issue a read, not over every entry of running_list.
+\* A transaction whose state is RolledBack is still in running_list until RollbackFinalize, and it still holds
+\* the oldest snapshot back, but it can no longer read: SelectCapture requires `Running`, which is
+\* InterpreterSelectQuery being refused with "Cannot execute query because current transaction failed"
+\* (the QueryOnCancelled action). Without the guard the oracle's "a transaction sees what it created" clause
+\* fires for the creator of a part whose creation was rolled back, which is a part the C++ makes invisible to
+\* everyone, its creator included: VersionInfo::isVisible returns false on `snapshot_version < creation_csn`
+\* (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:167) and RolledBackCSN is above every snapshot.
+\* Counterexample F3.
 NoPrematureDeleteStep == \A p \in Parts : CleanupGrab(p) =>
-  \A u \in tlog.running_list : ~OracleVisible(p, txn[u].snapshot, u)
+  \A u \in tlog.running_list : txn[u].state = "Running" => ~OracleVisible(p, txn[u].snapshot, u)
 NoPrematureDelete == [][NoPrematureDeleteStep]_vars
 \* isSharedPtrUnique, MergeTreeData.cpp:4150, as a property rather than only as the guard of the action.
 PinnedNotDeletedStep == \A p \in Parts : CleanupGrab(p) => part[p].pins = {}

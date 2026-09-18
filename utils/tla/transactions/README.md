@@ -72,7 +72,7 @@ group), `SetSnapshotFixed` (the same with `SET_SNAPSHOT_PROTECTS = TRUE`, the mo
 in `FINDINGS.md`, finding F2) `SetSnapshotWitness` (the same as `SetSnapshot` at the scenario matrix's
 bounds, for `witness.sh` only; an exhaustive run there does not finish), and the pair `SetSnapshotF2` and
 `SetSnapshotF2Fixed` (one session, one part, three transactions and the snapshot target 34, the configuration
-that reaches finding F2; the first is expected red on `NoPrematureDelete` and the second is green). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
+that reaches finding F2; the first is expected red on `NoPrematureDelete` and the second is green), and `Merge` (one session, `P1`, `P2` and the covering `M12`, one background task, plus the cleanup group and the updater's GC group). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
 45-minute `timeout`.
 
 Output goes under `tmp/tla/<Scenario>/`: the full TLC log is `tlc.log`, and a counterexample is additionally
@@ -186,8 +186,26 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 |---|---|---|---|
 | `CleanupGrab(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4074) | one part moves from `Outdated` to `Deleting` under `lockParts`: its version `canBeRemoved` (:4140), nobody else holds it (`isSharedPtrUnique`, :4150), and it is not an empty part still covering an `Outdated` one (:4158). The code grabs a set under one lock and the model one part per step; the removal-time and mutation-parent conditions at :4167 are time and zero-copy-replication bookkeeping, which `force` covers |
 | `CleanupValidate(p)` | `src/Storages/MergeTree/IMergeTreeDataPart.cpp` | `IMergeTreeDataPart::remove` (:2928) through `assertHasValidVersionMetadata` (:2863) and `VersionMetadata::hasValidMetadata` | the `chassert` on the grabbed part passes, on the path `clearPartsFromFilesystemAndRollbackIfError` (`MergeTreeData.cpp:4566`) takes for each grabbed part. This row and the validation half of `CleanupDeleteFail` model a `DEBUG_OR_SANITIZER_BUILD`: in release `chassert` is `(void)sizeof(!(x))` (`base/base/defines.h:84-102`) and does not evaluate its argument, so nothing validates and nothing refuses |
-| `CleanupDeleteOk(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `clearPartsFromFilesystemAndRollbackIfError` (:4566) and `removePartsFinally` (:4217-4240), under `lockParts` | the directory is gone in both disk layers and the part leaves `data_parts_indexes` |
-| `CleanupDeleteFail(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `rollbackDeletingParts` (:4204-4215), under `lockParts` | the part goes back to `Outdated`. Two producers: the `CORRUPTED_DATA` `hasValidMetadata` raises, and a filesystem error in `clearPartsFromFilesystemImpl`. The second needs a disk fault, so its disjunct is `FALSE` until plan 5 raises `DISK_FAULTS_MAX` |
+| `CleanupDeleteOk(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `clearPartsFromFilesystemAndRollbackIfError` (:4566) and `removePartsFinally` (:4217-4240), whose `lockParts` is at :4223 | the directory is gone in both disk layers and the part leaves `data_parts_indexes` |
+| `CleanupDeleteFail(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `rollbackDeletingParts` (:4205-4215), whose `lockParts` is at :4207 | the part goes back to `Outdated`. Two producers: the `CORRUPTED_DATA` `hasValidMetadata` raises, and a filesystem error in `clearPartsFromFilesystemImpl`. The second needs a disk fault, so its disjunct is `FALSE` until plan 5 raises `DISK_FAULTS_MAX` |
+
+### Background merge task {#code-map-merge}
+
+`Tsk(i)` is the actor, the counterpart of `Sess(k)`. Every publication and commit step is the actor-generic body
+a session's action uses, with the task's guard and its `task'` clause around it; the bodies are the `*Effect`
+operators in `Server.tla`.
+
+| Action | C++ file | Function | Step boundary |
+|---|---|---|---|
+| `MergeBegin(i)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::scheduleDataProcessingJob` (:2203) | `beginTransaction` (:2226) and the `MergeTreeTransactionHolder` with `autocommit = false` (:2227), under the `transactions_enabled` gate. `sys.merges_blocker` is the `merges_blocker.isCancelled()` check at :2240 |
+| `MergeSelect(i)` | `src/Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.cpp` | the predicate `constructPreconditionsPredicate` builds (:80), from `StorageMergeTree::selectPartsToMerge` (:1680) | each source is visible at the merge's snapshot with the **empty** tid (:88), is not locked for removal (:91), and passes `canUsePartInMerges` (:98). The reservation and the pins are `CurrentlyMergingPartsTagger`'s constructor (`StorageMergeTree.cpp:867`), whose `Tagging already tagged part` `LOGICAL_ERROR` (:918-921) is the reservation clause of `ActiveSetShape` |
+| `MergeWrite(i)` | `src/Storages/MergeTree/MergePlainMergeTreeTask.cpp` | `MergePlainMergeTreeTask::prepare` (:92) through `mergePartsToTemporaryPart` (:137) | `setAndStoreCreationTID` on the result, which becomes `Temporary`. The task holds it from here, first through `merge_task` and then through `new_part` (:156) |
+| `MergeRename(i)` | `src/Storages/MergeTree/MergeTreeDataMergerMutator.cpp` | `MergeTreeDataMergerMutator::renameMergedTemporaryPart` (:526), called from `MergePlainMergeTreeTask::finish` (:160) | the result is `PreActive` and is in the statement transaction's `precommitted_parts` |
+| `MergePublishStart(i)`, `MergePublishEnrol(i, q)`, `MergePublishStore(i, q)`, `MergePublishFlip(i)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::commit` (:11219), called at `MergePlainMergeTreeTask.cpp:161` | the same four steps a session's `Publish*` takes, with the sources as the covered parts. `reserved[i]` is **not** released here |
+| `MergeCommitBefore(i)` … `MergeCommitFinalize(i)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::commitTransaction(txn, throw_on_unknown_status = false)`, called at `MergePlainMergeTreeTask.cpp:195` | the same `Commit*` steps. `MergeCommitFinalize` also runs `merge_mutate_entry->finalize()` (:200), which releases the reservation, the source pins and the transaction holder |
+| `MergeFail(i)` | `src/Storages/MergeTree/MergePlainMergeTreeTask.cpp` | `MergePlainMergeTreeTask::executeStep` rethrowing (:70-74) | what the query holds is released: the transaction mutex, the parts lock and the task's frames. `MergeFailTrigger` enumerates the three triggers that are live without an injected fault |
+| `MergeStmtRollbackMark(i, p)`, `MergeStmtRollbackDrop(i)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::rollback` (:11122) | the same two halves the client's `StmtRollback*` takes: `setAndStoreCreationCSN(RolledBackCSN)` per precommitted part (:11126), then `removePartsFromWorkingSet` for the set under `lockParts` (:11181) |
+| `MergeUnwind(i)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::rollback` (:377), reached from `MergeTreeTransactionHolder`'s destructor | the tagger releases the reservation and the source pins, and the holder's `rollbackTransaction` either wins the compare-and-exchange at :382 or finds that a `KILL` already did |
 
 ### The metadata store {#code-map-store}
 
@@ -209,7 +227,6 @@ the one that implements the action, from the plan's "Plans that follow this one"
 
 | Action | Plan |
 |---|---|
-| `MergeBegin(i)`, `MergeSelect(i)`, `MergeWrite(i)`, `MergeRename(i)`, `MergeFail(i)` | plan 2 |
 | `NtInsert(p)`, `NtBatchStart(B)`, `NtBatchPreflight(p)`, `NtBatchLock(p)`, `NtBatchStore(p)`, `NtBatchEnd`, `NtDropCover` | plan 2 |
 | `CommitUnknown(k)` | plan 3 |
 | `UpdReconnect`, `UpdSwapUnknownLists`, `UpdFinalizeUnknown(t)` | plan 3 |
@@ -265,6 +282,17 @@ discarded.
 | cleanup witnesses, 3 rows | 2026-09-18 | the cleanup-thread commit | 243,397 for the largest, all first-violation counts | 10 s in total | all three red |
 | witnesses `NoPrematureDelete` and `NoLostVisibleData` in `SetSnapshotFixed` | 2026-09-18 | the cleanup-thread commit | 13,664,284 and 13,664,666 | 96 s and 98 s | green, which is debt `B2` |
 
+| `BaseSmall` | 2026-09-18 | the merge commit | 47,381 | 1 s | green |
+| `Base` | 2026-09-18 | the merge commit | 28,547,508 | 4 min 12 s | green at the matrix bounds; 28,552,913 on the tree before, the net of two changes described below |
+| `SetSnapshot` | 2026-09-18 | the merge commit | 13,622,631 | 2 min 01 s | green at the exhaustive bounds |
+| `SetSnapshotFixed` | 2026-09-18 | the merge commit | 13,092,635 | 2 min 02 s | green at the same bounds |
+| `SetSnapshotF2` | 2026-09-18 | the merge commit | a first-violation count | 3 s | **red on `NoPrematureDelete`**, still finding F2 after the property's antecedent was narrowed |
+| `SetSnapshotF2Fixed` | 2026-09-18 | the merge commit | 367,183 | 4 s | green |
+| cleanup witnesses, 3 rows | 2026-09-18 | the merge commit | 259,148 for the largest | 8 s in total | all three still red |
+| `Merge` | 2026-09-18 | the merge commit | 44,277,426 after 8 min, queue 4.7M and growing | killed twice | two sessions: an exhaustive run at the matrix bounds does not finish |
+| `Merge` | 2026-09-18 | the merge commit | 5,196,830 | 49 s | green at one session, which is the committed configuration |
+| `Merge` witness sweep, 22 rows | 2026-09-18 | the merge commit | 38,568,430 for the largest | ≈ 9 min in total, 4 min 51 s for that row | red except the three of debt `B3`; both minimality halves green |
+
 The commits are `885a5c382cab` (Task 1, the modules and the runner), `5260d5d44f67` and `53814c46e7e5`
 (Task 3, the state-space budget and the rollback-driver correction), `bea5c15bf346` and `ad432095717a` (Task 2,
 the witness runner and the witness table), `40ba930673fd` and `5aaefae31249` (Task 5, the matrix bounds, the
@@ -280,6 +308,15 @@ disables `Fail`, and an empty `Covers` leaves `PublishEnrol` unreachable, so no 
 `stmt.precommitted` is non-empty. Plan 2 gives the sibling scenario a covering relation and the path goes live
 there. The two witness counts moved more than that, from 7,541 and 64,365, because a witness run stops at the
 first violation and how many states it has fingerprinted by then depends on the worker scheduling.
+
+`Base` moved by more than the counting noise for the first time, from 28,552,913 to 28,547,508, and the two
+changes behind it pull in opposite directions. The `attached` component left `stmt`, which is in `BaseView`, and
+that merges states which differed only in a ghost no action read. The holder discipline moved the removal of a
+holder from `RollbackFinalize` to the owners that destroy it, `RollbackReturn` and the detaching branch of
+`RollbackStart`, and that splits states, because a rolled-back transaction now keeps its holder for a step or
+two longer. The net is 5,405 fewer, about 0.02%, which says the merge is worth slightly more than the split. The
+direction was expected to be the other one; what it shows is that the two are of the same small size, not that
+either is negligible.
 
 ## 5. Witnesses {#witnesses}
 
@@ -297,7 +334,7 @@ Constants where the model deliberately runs a smaller value than the server, and
 |---|---|---|---|
 | `MAX_STORE_RETRIES` | 2 | 20 (`MAX_RETRIES`, a file-scope constant at `src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:30`) | the second collision already exhibits every distinct interleaving of two frames on one part; further retries repeat the same shapes at a linear cost in states |
 | `NOEXCEPT_RETRY_BUDGET` | 2 | a 60-second budget | the design's budget is a time, not a count. A counter is what keeps the retry loop finite, and two retries reach both ends of it, the retry that succeeds and the budget that is exhausted |
-| `Tasks` | `{}` in `Base` | up to 2 background tasks | `Base` enables neither merges nor the mutation executor, so no task can act; the set is empty rather than unused so that quantifiers over it are trivially true |
+| `Tasks` | `{}` in `Base`, `{i1}` in `Merge` | up to 2 background tasks | `Base` enables neither merges nor the mutation executor, so no task can act; the set is empty rather than unused so that quantifiers over it are trivially true. `Merge` has one covering part and therefore one possible merge, so a second task could only contend for the same two sources, which the reservation excludes |
 | `Mutations` | `{}` in `Base` | one or more per scenario | same reason: the mutation actions are stubs until plan 4 |
 | `TID_MAX` | 3 in `Base`, 2 in `BaseSmall` | the matrix asks for 3 | `Begin` draws from a monotone counter capped at this value, so the state space is finite by construction rather than cut by a constraint. Three is what three of the witnesses need to reach their target at all, and it is what produced the model's first counterexample |
 | `CSN_MAX` | 36 in `Base`, 35 in `BaseSmall` | unbounded | real CSNs start at `FirstCSN = 33` and `KeeperCanAppend` requires `zk.seq < CSN_MAX`, so each unit above 33 buys one commit. It is set to the smallest value that lets every transaction commit; raising it to 38 changed the total by 0.002%, inside the counting noise |

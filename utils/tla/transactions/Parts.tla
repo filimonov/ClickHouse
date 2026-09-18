@@ -34,7 +34,11 @@ PartsTypeOK == /\ part \in [Parts -> PartRecord]
 \* replaces a root by a covering one without losing a fragment, so a property stated over fragments survives it
 \* where one stated over roots does not. It lives here rather than in Invariants.tla because Begin and
 \* SetSnapshot capture h.content with it.
-Frags(V) == { <<q, part[q].payload.ver>> : q \in Expand(V) }
+\* FragsOf is one root's contribution, and it is empty for an empty part, whose rows_count is zero: that is what
+\* a non-transactional DROP PARTITION publishes over the partition it drops, and an empty covering part covers
+\* rows that no longer exist. No part is a tombstone before the non-transactional task, so this is a no-op here.
+FragsOf(c) == IF part[c].payload.tomb THEN {} ELSE { <<q, part[q].payload.ver>> : q \in Expand({c}) }
+Frags(V) == UNION { FragsOf(c) : c \in V }
 
 \* ---- transaction log lookups (TransactionLog::getCSN, getOldestSnapshot, tryGetCSN)
 LookupCsn(t) == IF t = NonTransactionalTID THEN NonTransactionalCSN
@@ -50,8 +54,12 @@ InfoIsVisible(info, s, u) ==
   ELSE IF u = NonTransactionalTID THEN (IF info.rtid = EmptyTID THEN "TRUE" ELSE "FALSE")
   ELSE IF s = EverythingVisibleCSN THEN "TRUE"
   ELSE IF info.ccsn /= UnknownCSN /\ s < info.ccsn THEN "FALSE"
-  ELSE IF info.rcsn /= UnknownCSN /\ info.rcsn <= s THEN "FALSE"
-  ELSE IF u /= EmptyTID /\ info.rtid = u THEN "FALSE"
+  \* The NoDoubleRead witness is the spec's row, "SelectCheck ignores removal_csn and removal_tid": with the two
+  \* removal tests of the fast path and the removal lookup of the slow path gone, a reader sees a merge result
+  \* and the sources it covers at once. The first line above is deliberately left alone: removing it would also
+  \* change what a non-transactional removal means, and the non-transactional task needs that path honest.
+  ELSE IF info.rcsn /= UnknownCSN /\ info.rcsn <= s /\ ~Witness("NoDoubleRead") THEN "FALSE"
+  ELSE IF u /= EmptyTID /\ info.rtid = u /\ ~Witness("NoDoubleRead") THEN "FALSE"
   ELSE IF info.ccsn /= UnknownCSN /\ info.ccsn <= s /\ info.rtid = EmptyTID THEN "TRUE"
   ELSE IF info.ccsn /= UnknownCSN /\ info.ccsn <= s /\ info.rcsn /= UnknownCSN /\ s < info.rcsn THEN "TRUE"
   ELSE IF u /= EmptyTID /\ info.ctid = u /\ ~Witness("ReadYourWrites") THEN "TRUE"
@@ -68,7 +76,8 @@ IsVisibleImpl(p, s, u) ==
                       ELSE IF Witness("Atomicity") THEN UnknownCSN
                       ELSE LookupCsn(info.ctid)
           IN IF ccsn = UnknownCSN THEN FALSE
-             ELSE LET rcsn == IF info.rtid = EmptyTID THEN info.rcsn
+             ELSE LET rcsn == IF Witness("NoDoubleRead") THEN UnknownCSN
+                              ELSE IF info.rtid = EmptyTID THEN info.rcsn
                               ELSE IF Witness("Atomicity") THEN info.rcsn
                               ELSE LookupCsn(info.rtid)
                   IN ccsn <= s /\ (rcsn = UnknownCSN \/ s < rcsn)

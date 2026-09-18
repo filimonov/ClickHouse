@@ -160,6 +160,16 @@ workers can fingerprint the same state before either has inserted it.
 | `Base` | `TID_MAX = 3`, `CSN_MAX = 36` | 67,864,730 | 28,553,114 | 4 min 08 s |
 | `Base`, after the final-review fix | `TID_MAX = 3`, `CSN_MAX = 36` | 67,864,300 | 28,552,935 | 4 min 06 s |
 | `Base`, superseded | `TID_MAX = 2`, `CSN_MAX = 35` | 5,138,339 | 2,163,747 | 19 s |
+| `Base`, after the merge commit | `TID_MAX = 3`, `CSN_MAX = 36` | 67,850,038 | 28,547,508 | 4 min 12 s |
+
+The merge commit is the first change to move `Base` by more than the counting noise: 28,547,508 against
+28,552,913, which is 5,405 fewer, about 0.02%. Two changes of the same small size pull against each other. The
+`attached` component left `stmt`, which is in `BaseView`, so states that differed only in a ghost no action read
+now merge; and a holder is now removed by the owner that destroys it, `RollbackReturn` or the detaching branch
+of `RollbackStart`, rather than by `RollbackFinalize`, so a rolled-back transaction keeps its holder for a step
+or two longer and states that were equal now split. The merge is worth slightly more than the split. `holders`
+is no longer a write-only ghost either: every step of the merge task reads it through `Holds(i)`, which is the
+shared pointer that keeps the transaction alive.
 
 The final-review fix commit, which made the statement rollback act on every precommitted part and routed
 `Refuse` to it whenever the statement transaction is non-empty, left the count where it was: 28,552,935 against
@@ -274,7 +284,14 @@ coarse.
 | `SetSnapshotFixed` with it | 13,104,416 | 2 min 01 s |
 
 Both stay well inside the 30 million distinct states and 10 minutes a scenario is budgeted, so no further
-reduction was sought. The two factors are not separable by these runs: the actions and the two view fields
+reduction was sought.
+
+The review round that followed added a parts-lock conjunct to `CleanupDeleteOk` and `CleanupDeleteFail`, because
+`removePartsFinally` and `rollbackDeletingParts` both run under `lockParts`. A conjunct can only restrict, so it
+cannot add states, and the pair moved from 13,634,354 and 13,104,253 to 13,634,229 and 13,104,416: down 125 in
+one and **up 163** in the other. The 163 is not a state the conjunct created. It is the multi-worker counting
+noise this file already records elsewhere, in which two workers can fingerprint the same state before either has
+inserted it; the band is a few hundred states at this size, and both differences are inside it. The two factors are not separable by these runs: the actions and the two view fields
 arrived together, and a run with the actions and the old view would be unsound to compare against.
 
 ### The `SetSnapshotF2` pair {#setsnapshotf2}
@@ -326,6 +343,60 @@ witnesses of their own and are red at the exhaustive bounds.
 The one-session configuration is cheaper still and was rejected outright: a session runs one transaction at a
 time, so two transactions are never running together and `Assert_getOldestSnapshot` cannot be falsified at all,
 at any `TID_MAX`.
+
+## The `Merge` scenario {#merge}
+
+`Merge` is `Base` plus the background merge task, the cleanup group and the updater's truncation pass, over a
+part universe of three: `P1`, `P2` and `M12`, which covers them. It is the first scenario with an actor that is
+not a session, and the first with a non-empty covering relation.
+
+### Bounds, and why one session {#merge-bounds}
+
+The scenario matrix's bounds are `TID_MAX = 3`, `CSN_MAX = 36` and two sessions, and at two sessions it does not
+finish. Two runs were killed. The first reached 51,147,824 distinct states in 9 minutes at breadth-first level
+54, with 5.2 million queued; the second, on the tree this section is committed with, reached 44,277,426 in 8
+minutes at level 53, with 4.7 million queued and the queue growing by about 430,000 a minute. A run past 30
+million distinct that is still growing is a defect of the configuration rather than something to wait for, which
+is the rule `SetSnapshot` established.
+
+The reduction is one session, and it is the second rung of the ladder rather than the first because the first
+buys nothing here. `TID_MAX` stays at 3: `MergeBegin` draws from the same counter as `Begin`, so the scenario
+trades a client transaction for the merge and runs at two client transactions plus one merge. Raising it to 4
+would make the run larger, not smaller. The third candidate, a constraint bounding the scenario to one live
+covering part, is already implied by the universe, which has exactly one, and would prune nothing.
+
+| Configuration | Distinct states | Time | Result |
+|---|---|---|---|
+| `Merge`, two sessions | 44,277,426 after 8 min, queue 4.7M and growing | killed twice | does not finish |
+| `Merge`, one session | 5,196,830 | 49 s | green, **committed** |
+
+One session is sound for what this scenario is for, and the merge task is the reason. `Merge`'s own properties,
+`NoDoubleRead`, `ActiveSetShape` and `NoPrematureDelete`, are about a reader against a merge and a cleanup
+thread against a merge, not about two readers; the second actor those races need is the task, which is there at
+any number of sessions. The `KILL TRANSACTION` race that made `Base` expensive is also still there, because a
+single session can kill its own transaction and can kill the merge's. What one session does cost is checked
+rather than assumed: every witness the scenario runs is in `WITNESSES.md` with its verdict at these bounds, and
+the four the scenario matrix names for it are red.
+
+One task, not the matrix's two, for a reason of the universe rather than of the budget. There is exactly one
+covering part, so there is exactly one merge; a second task could only contend for the same two sources, which
+the reservation excludes, and it would add idle-state permutations and no interleaving. The consequence is that
+the reservation clause of `ActiveSetShape` is vacuous here. It is checked in the scenario that runs a merge and
+a mutation side by side, and the debt is in `WITNESSES.md`'s deferred table with that scenario as its
+destination.
+
+### What the view keeps {#merge-view}
+
+`MergeView` is `BaseView` plus every field the three additions read or write, and minus one of `BaseView`'s
+three justifications. `task`, `part.payload`, `part.pins`, `h.content`, `h.truncated`, `tlog.tail_ptr`,
+`tlog.updated_tail_ptr`, `sys.cleanup_pc` and `sys.cleanup_part` are in, for the reasons the `SetSnapshot`
+section already gives for the last six.
+
+The justification that does not survive is `BaseView`'s "a read's frags are a function of its parts". It held
+because `Covers` was empty and every payload constant, so every root expanded to itself. With `M12` covering
+`P1` and `P2` a read of `{M12}` and a read of `{P1, P2}` have the same fragments and different parts, and
+`NoDoubleRead` is stated over fragments alone. `client[k].first_read.frags` and `client[k].last_read.frags` are
+therefore in the fingerprint.
 
 ## Reproducing {#reproducing}
 

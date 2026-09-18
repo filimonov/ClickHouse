@@ -42,11 +42,13 @@ IdleClient == [current |-> EmptyTID, outcome |-> "None", outcome_tid |-> EmptyTI
                first_read |-> NoRead, last_read |-> NoRead, capture |-> {}, captured0 |-> {}, checked |-> {}, batch |-> {},
                waiting |-> "None", pc |-> "Idle", work |-> <<>>, part |-> "None", stale_interferences |-> 0, rb_detach |-> FALSE, holds_blocker |-> FALSE]
 
-\* attached: the precommitted parts addNewPartAndRemoveCovered has already put into the outer transaction's
-\* creating_parts. Written by PublishStart and read by no action since the statement rollback stopped
-\* excluding them, the same ghost-field shape as txn.holders; plan 2 owns both.
-StmtRecord == [precommitted : SUBSET Parts, covered : SUBSET Parts, attached : SUBSET Parts, work : Seq(Parts)]
-NoStmt == [precommitted |-> {}, covered |-> {}, attached |-> {}, work |-> <<>>]
+\* The `attached` component is gone. It recorded the precommitted parts addNewPartAndRemoveCovered had already
+\* put into the outer transaction's creating_parts, and it was written by PublishStart and read by no action
+\* once the statement rollback stopped excluding them: MergeTreeData::Transaction::rollback
+\* (src/Storages/MergeTree/MergeTreeData.cpp:11126) marks and removes every part of precommitted_parts, attached
+\* or not, which is model defect M2's closure and holds for the merge task's unwind as well as for the client's.
+StmtRecord == [precommitted : SUBSET Parts, covered : SUBSET Parts, work : Seq(Parts)]
+NoStmt == [precommitted |-> {}, covered |-> {}, work |-> <<>>]
 
 MutStates == {"Absent", "Written", "Attached", "Registered", "Unregistered", "Killed"}
 MutRecord == [mstate : MutStates, tasks : SUBSET Tasks, tid : AllTids, csn : AllCSNs,
@@ -54,10 +56,13 @@ MutRecord == [mstate : MutStates, tasks : SUBSET Tasks, tid : AllTids, csn : All
 AbsentMutRecord == [mstate |-> "Absent", tasks |-> {}, tid |-> EmptyTID, csn |-> UnknownCSN,
                     fail_reason |-> "None", file_owner |-> {}, kill_retries |-> 0]
 
-TaskRecord == [kind : {"Idle", "Merge", "Mutation"}, pc : {"Idle", "Select", "Write", "Rename", "Publish", "Commit", "Fail"},
+TaskPcs == {"Idle", "Select", "Write", "Rename", "PublishStart", "PublishEnrol", "PublishStore", "PublishFlip",
+            "Commit", "Fail", "StmtRollbackMark", "StmtRollbackDrop", "Unwind"}
+TaskRecord == [kind : {"Idle", "Merge", "Mutation"}, pc : TaskPcs,
                txn : Tids \cup {EmptyTID}, mutation : Mutations \cup {"None"}, source : Parts \cup {"None"},
-               reserved : SUBSET Parts]
-IdleTask == [kind |-> "Idle", pc |-> "Idle", txn |-> EmptyTID, mutation |-> "None", source |-> "None", reserved |-> {}]
+               result : Parts \cup {"None"}, reserved : SUBSET Parts]
+IdleTask == [kind |-> "Idle", pc |-> "Idle", txn |-> EmptyTID, mutation |-> "None", source |-> "None",
+             result |-> "None", reserved |-> {}]
 
 BatchType == [active : BOOLEAN, targets : Seq(Parts), cursor : 0..(Cardinality(Parts) + 1), phase : {"Lock", "Store"}, locked : SUBSET Parts, skipped : SUBSET Parts]
 NoBatchRec == [active |-> FALSE, targets |-> <<>>, cursor |-> 0, phase |-> "Lock", locked |-> {}, skipped |-> {}]
@@ -116,6 +121,13 @@ SnapshotFor(t) == IF Witness("StableRead") THEN tlog.latest_snapshot ELSE txn[t]
 \* getActivePartsToReplace plus getCoveredOutdatedParts filtered by visibility
 CoveredNow(p, t) == { q \in Parts : q \in Expand({p}) /\ q /= p /\ part[q].pstate \in {"Active", "Outdated"}
                                     /\ (part[q].pstate = "Active" \/ Visible(q, t)) }
+\* getActivePartsToReplace's other output, the covering part: an Active part that already contains p's range.
+\* Transaction::commit computes it twice, once before the NOEXCEPT_SCOPE (MergeTreeData.cpp:11246) and once
+\* inside it (:11298), and on a non-empty answer it skips addNewPartAndRemoveCovered (:11282) and marks p
+\* Outdated instead of Active (:11316). Both calls are under the same acquired_parts_lock, so they agree; the
+\* window the check exists for is the one between renameTempPartAndReplace, which leaves p PreActive without
+\* the lock, and the commit that takes it.
+CoveringNow(p) == { c \in Parts : c /= p /\ part[c].pstate = "Active" /\ p \in Expand({c}) }
 PinsWithout(pin) == [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {pin}]]
 StartFrame(p, o, op, val, nx) == WithFrame(p, NewFrame(o, op, val, nx))
 \* the next phase of the commit machine, skipping empty lists
@@ -150,13 +162,17 @@ NextRollbackWork(t, after) ==
 \* MergeTreeData::Transaction::commit (src/Storages/MergeTree/MergeTreeData.cpp:11219), first half under
 \* lockParts: the covered parts are collected at :11246 and addNewPartAndRemoveCovered attaches p to the outer
 \* transaction at :11280.
+\* A part that already has a covering part is not attached to the outer transaction at all: the loop at :11279
+\* calls addNewPartAndRemoveCovered only when covering_parts[idx] is null, so nothing enrols its covered parts,
+\* nothing appends it to creating_parts, and afterCommit never stamps a creation CSN on it.
 PublishStartEffect(a, t, p) ==
-  LET C == CoveredNow(p, t) IN
+  LET obsolete == CoveringNow(p) /= {}
+      C == IF obsolete THEN {} ELSE CoveredNow(p, t) IN
   /\ sys' = [sys EXCEPT !.parts_lock = a]
-  /\ stmt' = [stmt EXCEPT ![a].covered = C, ![a].attached = @ \cup {p}, ![a].work = SetToSeq(C)]
-  /\ txn' = [txn EXCEPT ![t].creating = Append(@, p)]
-  /\ h' = [h EXCEPT !.creating[t] = @ \cup {p}]
-  /\ part' = [part EXCEPT ![p].pins = @ \cup {<<"Txn", t>>}]
+  /\ stmt' = [stmt EXCEPT ![a].covered = C, ![a].work = SetToSeq(C)]
+  /\ txn' = IF obsolete THEN txn ELSE [txn EXCEPT ![t].creating = Append(@, p)]
+  /\ h' = IF obsolete THEN h ELSE [h EXCEPT !.creating[t] = @ \cup {p}]
+  /\ part' = IF obsolete THEN part ELSE [part EXCEPT ![p].pins = @ \cup {<<"Txn", t>>}]
 
 \* MergeTreeTransaction::removeOldPart (src/Interpreters/MergeTreeTransaction.cpp:213), the granting branch:
 \* the transaction's mutex, lockRemovalTID, the enrolment into removing_parts, and the start of the
@@ -172,7 +188,8 @@ EnrolError(t) == IF txn[t].state = "RolledBack" THEN "INVALID_TRANSACTION" ELSE 
 
 \* the NOEXCEPT_SCOPE state loop of Transaction::commit (MergeTreeData.cpp:11288-11356)
 PublishFlipEffect(a, p, C) ==
-  /\ part' = [q \in Parts |-> IF q = p THEN [part[q] EXCEPT !.pstate = "Active"]
+  LET obsolete == CoveringNow(p) /= {} IN
+  /\ part' = [q \in Parts |-> IF q = p THEN [part[q] EXCEPT !.pstate = IF obsolete THEN "Outdated" ELSE "Active"]
                               ELSE IF q \in C /\ ~Witness("ActiveSetShape") THEN [part[q] EXCEPT !.pstate = "Outdated"]
                               ELSE part[q]]
   /\ stmt' = [stmt EXCEPT ![a] = NoStmt]
@@ -215,6 +232,24 @@ CommitFinalizeEffect(a, t) ==
   /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].creating = <<>>, ![t].removing = <<>>, ![t].mutations = {},
                          ![t].holders = @ \ {a}]
   /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {<<"Txn", t>>, a}]]
+
+\* MergeTreeData::Transaction::rollback (src/Storages/MergeTree/MergeTreeData.cpp:11122), which is what the
+\* destructor of the statement transaction runs, in two halves: the per-part setAndStoreCreationCSN of
+\* RolledBackCSN at :11126, and removePartsFromWorkingSet for the same set under lockParts at :11181. Both
+\* loops run over the whole of precommitted_parts, including a part addNewPartAndRemoveCovered has already
+\* attached to the outer transaction, because precommitted_parts is emptied only by clear() at the end of
+\* commit. The marking phase is a set-membership test plus a barrier rather than the work-queue idiom every
+\* other multi-part loop uses: the C++ loop is synchronous and ordered, and the two shapes differ only when
+\* more than one part is precommitted at once. No scenario through this plan reaches that, because a statement
+\* publishes one part and a merge publishes one result; the queue conversion belongs to the first scenario in
+\* which a statement can publish several, which is the mutation task of a later plan.
+StmtRollbackMarkStart(a, p) ==
+  /\ ~HasFrame(p, a) /\ part[p].mem.ccsn /= RolledBackCSN
+  /\ part' = StartFrame(p, a, "CreationCSN", RolledBackCSN, TRUE)
+StmtRollbackMarkDone(a) == \A q \in stmt[a].precommitted : FrameDone(q, a, "CreationCSN", RolledBackCSN)
+StmtRollbackDropEffect(a) ==
+  /\ part' = [p \in Parts |-> IF p \in stmt[a].precommitted THEN [part[p] EXCEPT !.pstate = "Outdated"] ELSE part[p]]
+  /\ stmt' = [stmt EXCEPT ![a] = NoStmt]
 
 \* ============================================================ client: begin, set snapshot
 Begin(k) ==
@@ -356,20 +391,16 @@ PublishFlip(k) ==
 \* enabled at once for a part already at RolledBackCSN, and RollbackOutdateCreated leaves an Outdated part alone.
 StmtRollbackMark(k, p) ==
   /\ client[k].pc = "StmtRollbackMark" /\ p \in stmt[Sess(k)].precommitted
-  /\ \/ /\ ~HasFrame(p, Sess(k)) /\ part[p].mem.ccsn /= RolledBackCSN
-        /\ part' = StartFrame(p, Sess(k), "CreationCSN", RolledBackCSN, TRUE)
+  /\ \/ /\ StmtRollbackMarkStart(Sess(k), p)
         /\ UNCHANGED client
-     \/ /\ FrameDone(p, Sess(k), "CreationCSN", RolledBackCSN)
-        /\ \A q \in stmt[Sess(k)].precommitted : FrameDone(q, Sess(k), "CreationCSN", RolledBackCSN)
+     \/ /\ FrameDone(p, Sess(k), "CreationCSN", RolledBackCSN) /\ StmtRollbackMarkDone(Sess(k))
         /\ client' = [client EXCEPT ![k].pc = "StmtRollbackDrop"]
         /\ UNCHANGED part
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, stmt, mut, task>>
 StmtRollbackDrop(k) ==
   /\ client[k].pc = "StmtRollbackDrop" /\ sys.parts_lock = NoActor
-  /\ LET R == stmt[Sess(k)].precommitted IN
-     /\ part' = [p \in Parts |-> IF p \in R THEN [part[p] EXCEPT !.pstate = "Outdated"] ELSE part[p]]
-     /\ stmt' = [stmt EXCEPT ![Sess(k)] = NoStmt]
-     /\ client' = [client EXCEPT ![k].pc = "Rollback"]
+  /\ StmtRollbackDropEffect(Sess(k))
+  /\ client' = [client EXCEPT ![k].pc = "Rollback"]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, mut, task>>
 
 \* ============================================================ client: select
@@ -388,8 +419,12 @@ SelectCheck(k, p) ==
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, sys, stmt, mut, task>>
 SelectFinish(k) ==
   /\ client[k].pc = "SelectCheck" /\ client[k].checked = client[k].captured0
+  \* An empty root contributes nothing, for FragsOf's reason; the tuples keep the root they came through, so
+  \* that NoDoubleRead can ask whether one fragment arrived through two of them.
   /\ LET V == client[k].capture
-         R == [parts |-> V, frags |-> UNION { { <<c, q, part[q].payload.ver>> : q \in Expand({c}) } : c \in V }] IN
+         R == [parts |-> V,
+               frags |-> UNION { IF part[c].payload.tomb THEN {}
+                                 ELSE { <<c, q, part[q].payload.ver>> : q \in Expand({c}) } : c \in V }] IN
      /\ client' = [client EXCEPT ![k].first_read = IF @ = NoRead THEN R ELSE @, ![k].last_read = R,
                                  ![k].capture = {}, ![k].captured0 = {}, ![k].checked = {}, ![k].pc = "Idle"]
      /\ part' = PinsWithout(<<"Select", k>>)
@@ -533,7 +568,8 @@ RollbackStart(k) ==
            /\ client' = [client EXCEPT ![k].pc = "RollbackWait", ![k].rb_detach = TRUE]
         \/ /\ txn[t].state = "RolledBack"                                   \* already rolled back: detach now
            /\ client' = [client EXCEPT ![k].current = EmptyTID]
-           /\ UNCHANGED <<txn, h>>
+           /\ txn' = [txn EXCEPT ![t].holders = @ \ {Sess(k)}]              \* the holder's destructor
+           /\ UNCHANGED h
         \/ /\ txn[t].state = "Committing"                                   \* LOGICAL_ERROR, no detach
            /\ client' = [client EXCEPT ![k].last_error = "LOGICAL_ERROR"]
            /\ UNCHANGED <<txn, h>>
@@ -555,7 +591,10 @@ RollbackOnException(k) ==
 RollbackReturn(k) ==
   /\ client[k].pc = "RollbackWait" /\ txn[Cur(k)].pc = "Idle"
   /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].current = IF client[k].rb_detach THEN EmptyTID ELSE @, ![k].rb_detach = FALSE]
-  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, sys, stmt, mut, task>>
+  \* the explicit ROLLBACK detaches the session, which destroys its MergeTreeTransactionHolder; the rollback
+  \* driven by a failed query does not, because the session keeps the transaction bound until it detaches
+  /\ txn' = [txn EXCEPT ![Cur(k)].holders = IF client[k].rb_detach THEN @ \ {Sess(k)} ELSE @]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, stmt, mut, task>>
 \* KILL TRANSACTION: the CAS, then the killer drives the rollback steps. The killer is a session running a
 \* query, so it is between statements of its own (executeQuery); InterpreterKillQueryQuery looks the victim up
 \* by tid hash and calls onException on whatever it finds, so the victim may be the killer's own transaction,
@@ -625,8 +664,13 @@ RollbackUnlock(k, t, p) ==
 RollbackFinalize(k, t) ==
   /\ Drives(k, t) /\ txn[t].pc = "RollbackFinalize"
   /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN]
+  \* holders is deliberately left alone. MergeTreeTransaction::rollback destroys no shared_ptr: the holder goes
+  \* away when its owner's MergeTreeTransactionHolder is destroyed, which is RollbackReturn and the detaching
+  \* branch of RollbackStart for a session, and MergeCommitFinalize or MergeUnwind for a background task. With
+  \* sessions alone that was invisible, because the session's next step detached anyway; a merge task holds its
+  \* transaction across the rollback it does not drive, and clearing the set here would lose that.
   /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].creating = <<>>, ![t].removing = <<>>, ![t].mutations = {},
-                         ![t].holders = {}, ![t].rb_driver = NoActor]
+                         ![t].rb_driver = NoActor]
   /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {<<"Txn", t>>, <<"Rollback", t>>}]]
   /\ h' = [h EXCEPT !.rolled_back[t] = TRUE]
   /\ UNCHANGED <<zk, disk, mdisk, sys, client, stmt, mut, task>>
@@ -755,7 +799,7 @@ CleanupValidate(p) ==
 \* removePartsFinally (MergeTreeData.cpp:4217-4240) erases the part from data_parts_indexes under lockParts.
 CleanupDeleteOk(p) ==
   /\ Up /\ sys.cleanup_pc = "Delete" /\ sys.cleanup_part = p
-  /\ sys.parts_lock = NoActor                                 \* removePartsFinally takes lockParts at :4222
+  /\ sys.parts_lock = NoActor                                 \* removePartsFinally takes lockParts at :4223
   /\ disk' = DiskWithoutDir(p)
   /\ part' = [part EXCEPT ![p].pstate = "Deleted", ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo]
   /\ sys' = [sys EXCEPT !.cleanup_pc = "Idle", !.cleanup_part = "None"]
@@ -766,22 +810,240 @@ CleanupDeleteOk(p) ==
 \* fault, which is plan 5's; until then the disjunct is FALSE and is written out so the action is complete.
 CleanupDeleteFail(p) ==
   /\ Up /\ sys.cleanup_part = p
-  /\ sys.parts_lock = NoActor                                 \* rollbackDeletingParts takes lockParts at :4206
+  /\ sys.parts_lock = NoActor                                 \* rollbackDeletingParts takes lockParts at :4207
   /\ \/ (sys.cleanup_pc = "Validate" /\ ~ValidateMetadataOK(p))
      \/ (sys.cleanup_pc = "Delete" /\ FALSE)      \* the filesystem-error path: plan 5, DISK_FAULTS_MAX > 0
   /\ part' = [part EXCEPT ![p].pstate = "Outdated"]
   /\ sys' = [sys EXCEPT !.cleanup_pc = "Idle", !.cleanup_part = "None"]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, client, stmt, mut, task>>
 
+\* ============================================================ the background merge task
+\* A merge is the first actor that is not a session. It owns its transaction outright: a
+\* MergeTreeTransactionHolder built with autocommit = false (StorageMergeTree.cpp:2226-2227), so Tsk(i) is the
+\* whole of txn[t].holders; it issues no SELECT; and it commits with throw_on_unknown_status = false
+\* (MergePlainMergeTreeTask.cpp:195), which matters only from the Keeper-fault plan on.
+\* Holds(i) is the shared_ptr that keeps the transaction alive. Every step of the task reads it, which is what
+\* makes txn.holders a field the model uses rather than only writes.
+Holds(i) == Tsk(i) \in txn[task[i].txn].holders
+
+\* StorageMergeTree::scheduleDataProcessingJob (src/Storages/StorageMergeTree.cpp:2203): beginTransaction at
+\* :2226 under the transactions_enabled gate. sys.merges_blocker is the merges_blocker.isCancelled() check at
+\* :2240, which a transactional DROP PARTITION holds through stopMergesAndWait.
+MergeBegin(i) ==
+  /\ Up /\ task[i].kind = "Idle" /\ task[i].pc = "Idle"
+  /\ sys.merges_blocker = 0
+  /\ tlog.local_tid_counter < TID_MAX
+  /\ LET t == tlog.local_tid_counter + 1
+         s == tlog.latest_snapshot IN
+     /\ tlog' = [tlog EXCEPT !.local_tid_counter = t, !.tid_start[t] = s, !.running_list = @ \cup {t},
+                             !.snapshots_in_use[t] = s]
+     /\ txn' = [txn EXCEPT ![t] = [AbsentTxn EXCEPT !.state = "Running", !.snapshot = s,
+                                     !.protected_snapshot = s, !.holders = {Tsk(i)}]]
+     /\ task' = [task EXCEPT ![i].kind = "Merge", ![i].txn = t, ![i].pc = "Select"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, sys, client, stmt, mut>>
+
+\* selectPartsToMerge with a transaction (StorageMergeTree.cpp:1680) through the predicate of
+\* Compaction/PartsCollectors/MergeTreePartsCollector.cpp:85-92: every source must be visible at the merge's
+\* snapshot with the EMPTY tid rather than the merge's own, must not be locked for removal, and must pass
+\* canUsePartInMerges (:98), which is where currently_merging_mutating_parts excludes a part another task has
+\* reserved. The reservation itself is taken by CurrentlyMergingPartsTagger's constructor
+\* (StorageMergeTree.cpp:918-923), whose LOGICAL_ERROR "Tagging already tagged part" is the reservation clause
+\* of ActiveSetShape.
+\* The universe gives each covering part exactly one source set, so the merge is always the full cover.
+MergeSelect(i) ==
+  /\ Up /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Select" /\ sys.merges_blocker = 0
+  /\ \E r \in Parts :
+     /\ Covers[r] /= {} /\ part[r].pstate = "Absent"
+     /\ \A q \in Covers[r] :
+        /\ part[q].pstate \in {"Active", "Outdated"}
+        /\ IsVisibleImpl(q, txn[task[i].txn].snapshot, EmptyTID)
+        /\ part[q].lock = EmptyTID
+        /\ \A j \in Tasks : q \notin task[j].reserved
+     /\ task' = [task EXCEPT ![i].pc = "Write", ![i].reserved = Covers[r], ![i].result = r]
+     /\ part' = [q \in Parts |-> IF q \in Covers[r] THEN [part[q] EXCEPT !.pins = @ \cup {Tsk(i)}] ELSE part[q]]
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, stmt, mut>>
+
+\* MergeTask: setAndStoreCreationTID on the result. Its payload is empty of its own: a covering part's content
+\* is its sources', read through Expand, so only `tomb` matters and a merge result is not a tombstone.
+MergeWrite(i) ==
+  /\ Up /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Write"
+  /\ LET r == task[i].result IN
+     /\ part[r].pstate = "Absent"
+     /\ disk' = DiskWithDir(r)
+     \* the task holds the result from here on: mergePartsToTemporaryPart's part through merge_task, and then
+     \* MergePlainMergeTreeTask::new_part (src/Storages/MergeTree/MergePlainMergeTreeTask.cpp:156), until the
+     \* task object is destroyed. That is what isSharedPtrUnique (MergeTreeData.cpp:4150) sees, and without it
+     \* the cleanup thread can take a result the statement rollback has just outdated while the task still
+     \* holds it.
+     /\ part' = [StartFrame(r, Tsk(i), "CreateTID", task[i].txn, FALSE) EXCEPT
+                   ![r].pstate = "Temporary", ![r].deferrable = FALSE, ![r].pins = @ \cup {Tsk(i)}]
+     /\ h' = [h EXCEPT !.creator[r] = task[i].txn]
+     /\ task' = [task EXCEPT ![i].pc = "Rename"]
+  /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, client, stmt, mut>>
+
+\* renameMergedTemporaryPart (src/Storages/MergeTree/MergeTreeDataMergerMutator.cpp:526), called from
+\* MergePlainMergeTreeTask::finish (:160): the result enters the statement transaction as PreActive.
+MergeRename(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Rename"
+  /\ LET r == task[i].result IN
+     /\ FrameDone(r, Tsk(i), "CreateTID", task[i].txn)
+     /\ sys.parts_lock = NoActor
+     /\ part' = [part EXCEPT ![r].pstate = "PreActive"]
+     /\ stmt' = [stmt EXCEPT ![Tsk(i)].precommitted = @ \cup {r}]
+     /\ task' = [task EXCEPT ![i].pc = "PublishStart"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, mut>>
+
+\* transaction.commit() at MergePlainMergeTreeTask.cpp:161, which is the same Transaction::commit a session's
+\* INSERT runs. The Running guard is addNewPart's checkIsNotCancelled (MergeTreeTransaction.cpp:207): on a
+\* transaction a KILL has already rolled back this action is disabled and MergeFail takes the task instead.
+MergePublishStart(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "PublishStart"
+  /\ sys.parts_lock = NoActor /\ txn[task[i].txn].state = "Running"
+  /\ LET r == task[i].result IN
+     /\ r \in stmt[Tsk(i)].precommitted
+     /\ PublishStartEffect(Tsk(i), task[i].txn, r)
+     /\ task' = [task EXCEPT ![i].pc = IF CoveringNow(r) = {} /\ CoveredNow(r, task[i].txn) /= {}
+                                       THEN "PublishEnrol" ELSE "PublishFlip"]
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, client, mut>>
+
+MergePublishEnrol(i, q) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "PublishEnrol" /\ sys.parts_lock = Tsk(i)
+  /\ stmt[Tsk(i)].work /= <<>> /\ Head(stmt[Tsk(i)].work) = q
+  /\ LET t == task[i].txn IN
+     /\ txn[t].mutex = NoActor
+     /\ \/ /\ EnrolRefused(t, q)
+           /\ task' = [task EXCEPT ![i].pc = "Fail"]
+           /\ UNCHANGED <<txn, part, h>>
+        \/ /\ ~EnrolRefused(t, q) /\ txn[t].state = "Running"
+           /\ EnrolGrantEffect(Tsk(i), t, q)
+           /\ task' = [task EXCEPT ![i].pc = "PublishStore"]
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, sys, stmt, client, mut>>
+
+MergePublishStore(i, q) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "PublishStore" /\ sys.parts_lock = Tsk(i)
+  /\ stmt[Tsk(i)].work /= <<>> /\ Head(stmt[Tsk(i)].work) = q
+  /\ LET t == task[i].txn IN
+     /\ (FrameDone(q, Tsk(i), "RemovalTID", t) \/ Witness("Assert_validateInfo_removal"))
+     /\ txn' = [txn EXCEPT ![t].mutex = NoActor]
+  /\ LET w == Tail(stmt[Tsk(i)].work) IN
+     /\ stmt' = [stmt EXCEPT ![Tsk(i)].work = w]
+     /\ task' = [task EXCEPT ![i].pc = IF w = <<>> THEN "PublishFlip" ELSE "PublishEnrol"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, client, mut>>
+
+\* reserved[i] is NOT released here: CurrentlyMergingPartsTagger::finalize runs at the end of
+\* MergePlainMergeTreeTask::finish (:200), after transaction.commit() at :161 and after commitTransaction at
+\* :195. That is spec defect S5's shape on the merge side.
+MergePublishFlip(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "PublishFlip" /\ sys.parts_lock = Tsk(i)
+  /\ PublishFlipEffect(Tsk(i), task[i].result, stmt[Tsk(i)].covered)
+  /\ task' = [task EXCEPT ![i].pc = "Commit"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, client, mut>>
+
+\* TransactionLog::commitTransaction(txn_, throw_on_unknown_status = false), MergePlainMergeTreeTask.cpp:195
+MergeCommitBefore(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit"
+  /\ txn[task[i].txn].pc = "Idle" /\ txn[task[i].txn].state = "Running"
+  /\ LET t == task[i].txn IN
+     /\ txn' = [txn EXCEPT ![t].state = "Committing", ![t].csn = CommittingCSN, ![t].csn_notified = FALSE,
+                            ![t].pc = IF Effects(t) THEN "CommitCreateCSN" ELSE "CommitFlip"]
+     /\ h' = [h EXCEPT !.snapshot[t] = txn[t].snapshot]
+  /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
+MergeCommitCreateCSN(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit" /\ txn[task[i].txn].pc = "CommitCreateCSN"
+  /\ CommitCreateEffect(task[i].txn)
+  /\ UNCHANGED <<disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
+MergeCommitStore(i, p, op, phase) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit"
+  /\ CommitStoreEffect(Tsk(i), task[i].txn, p, op, phase)
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
+MergeCommitStoreCreation(i, p) == MergeCommitStore(i, p, "CreationCSN", "CommitStoreCreation")
+MergeCommitStoreRemoval(i, p) == MergeCommitStore(i, p, "RemovalCSN", "CommitStoreRemoval")
+MergeCommitFlip(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit"
+  /\ Effects(task[i].txn) /\ txn[task[i].txn].state = "Committing"
+  /\ (txn[task[i].txn].pc = "CommitFlip"
+      \/ (Witness("FlipAfterStores") /\ txn[task[i].txn].pc \in {"CommitStoreCreation", "CommitStoreRemoval"}))
+  /\ CommitFlipEffect(task[i].txn)
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, client, stmt, mut, task>>
+MergeCommitReadOnly(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit"
+  /\ txn[task[i].txn].pc = "CommitFlip" /\ ~Effects(task[i].txn) /\ txn[task[i].txn].state = "Committing"
+  /\ LET t == task[i].txn IN
+     /\ txn' = [txn EXCEPT ![t].state = "Committed", ![t].csn = txn[t].snapshot, ![t].csn_notified = TRUE,
+                            ![t].pc = "CommitFinalize"]
+     /\ h' = [h EXCEPT !.csn[t] = txn[t].snapshot]
+  /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
+\* merge_mutate_entry->finalize() at the end of MergePlainMergeTreeTask::finish (:200): the reservation, the
+\* source parts the future part held, and the transaction holder all go here, not at the publication.
+MergeCommitFinalize(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit" /\ txn[task[i].txn].pc = "CommitFinalize"
+  /\ CommitFinalizeEffect(Tsk(i), task[i].txn)
+  /\ task' = [task EXCEPT ![i] = IdleTask]
+  /\ UNCHANGED <<zk, disk, mdisk, h, sys, client, stmt, mut>>
+
+\* An exception on the merge's own thread. MergePlainMergeTreeTask::executeStep rethrows (:70-74) and the task
+\* object is destroyed, which runs the statement transaction's rollback, then the tagger's release and then
+\* MergeTreeTransactionHolder's destructor. Three triggers are live in this plan:
+\*   - removeOldPart refused, which is checkIsNotCancelled (MergeTreeTransaction.cpp:219) or lockRemovalTID
+\*     (:221) throwing, and which MergePublishEnrol routes to the Fail counter;
+\*   - the same checkIsNotCancelled reached through addNewPart (:207) from Transaction::commit, and the failed
+\*     compare-and-exchange of beforeCommit (:308) reached through commitTransaction, both of which show up as
+\*     a task parked at PublishStart or Commit on a transaction a KILL has already rolled back;
+\*   - a metadata store of the task's own that ended in an error, which is FrameFail's shape for a session.
+\* An injected exception at an arbitrary other point needs QUERY_FAULTS_MAX > 0 and belongs to the fault plan.
+MergeFailTrigger(i) ==
+  LET t == task[i].txn IN
+  \/ task[i].pc = "Fail"
+  \/ (task[i].pc \in {"PublishStart", "Commit"} /\ txn[t].state = "RolledBack")
+  \/ (task[i].pc \in {"Select", "Write", "Rename", "PublishStart", "PublishEnrol", "PublishStore",
+                      "PublishFlip", "Commit"}
+      /\ \E p \in Parts : FrameError(p, Tsk(i)) /\ ~FrameOf(p, Tsk(i)).noexcept_owner)
+MergeFail(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ MergeFailTrigger(i)
+  /\ LET t == task[i].txn IN
+     \* what the query holds; the source parts stay pinned until the tagger is finalized in MergeUnwind
+     /\ txn' = [txn EXCEPT ![t].mutex = IF @ = Tsk(i) THEN NoActor ELSE @]
+     /\ sys' = [sys EXCEPT !.parts_lock = IF @ = Tsk(i) THEN NoActor ELSE @]
+     /\ part' = [p \in Parts |-> [part[p] EXCEPT !.frames = { f \in @ : f.owner /= Tsk(i) }]]
+     /\ task' = [task EXCEPT ![i].pc = IF stmt[Tsk(i)].precommitted /= {} THEN "StmtRollbackMark" ELSE "Unwind"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, client, stmt, mut>>
+MergeStmtRollbackMark(i, p) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "StmtRollbackMark" /\ p \in stmt[Tsk(i)].precommitted
+  /\ \/ /\ StmtRollbackMarkStart(Tsk(i), p)
+        /\ UNCHANGED task
+     \/ /\ FrameDone(p, Tsk(i), "CreationCSN", RolledBackCSN) /\ StmtRollbackMarkDone(Tsk(i))
+        /\ task' = [task EXCEPT ![i].pc = "StmtRollbackDrop"]
+        /\ UNCHANGED part
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, stmt, mut>>
+MergeStmtRollbackDrop(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "StmtRollbackDrop" /\ sys.parts_lock = NoActor
+  /\ StmtRollbackDropEffect(Tsk(i))
+  /\ task' = [task EXCEPT ![i].pc = "Unwind"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, mut>>
+\* the tagger releases the reservation and the source parts, and MergeTreeTransactionHolder's destructor calls
+\* TransactionLog::rollbackTransaction, whose compare_exchange in MergeTreeTransaction::rollback
+\* (src/Interpreters/MergeTreeTransaction.cpp:382) it loses to a KILL that got there first. Winning it makes the
+\* task the rollback driver, and the rollback machine's steps are all session-shaped, so the winning branch is
+\* not yet executable; NoTaskDrivenRollback is the invariant that says so rather than letting it wedge quietly.
+MergeUnwind(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Unwind"
+  /\ LET t == task[i].txn
+         won == txn[t].state = "Running" IN
+     /\ txn' = [txn EXCEPT ![t].state = IF won THEN "RolledBack" ELSE @,
+                            ![t].csn = IF won THEN RolledBackCSN ELSE @,
+                            ![t].csn_notified = IF won THEN TRUE ELSE @,
+                            ![t].pc = IF won THEN "RollbackCopyLists" ELSE @,
+                            ![t].rb_driver = IF won THEN Tsk(i) ELSE @,
+                            ![t].holders = @ \ {Tsk(i)}]
+     /\ h' = [h EXCEPT !.snapshot[t] = IF won THEN txn[t].snapshot ELSE @]
+     /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {Tsk(i)}]]
+     /\ task' = [task EXCEPT ![i] = IdleTask]
+  /\ UNCHANGED <<zk, disk, mdisk, tlog, sys, client, stmt, mut>>
+
 \* ============================================================ stubs for later plans
 UpdReconnect == FALSE
 UpdSwapUnknownLists == FALSE
 UpdFinalizeUnknown(t) == FALSE
-MergeBegin(i) == FALSE
-MergeSelect(i) == FALSE
-MergeWrite(i) == FALSE
-MergeRename(i) == FALSE
-MergeFail(i) == FALSE
 MutPrepareWrite(k, m) == FALSE
 MutPrepareAttach(k, m) == FALSE
 MutRegister(k, m) == FALSE
