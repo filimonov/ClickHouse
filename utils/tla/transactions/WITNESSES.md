@@ -37,46 +37,54 @@ in the modules, runs both, and requires both to be green. That is the minimality
 
 ## Scenarios used {#scenarios-used}
 
-`Base` is the scenario the properties are checked in: `Sessions = {k1, k2}`, `Parts = {P1, P2}`, `TID_MAX = 2`,
-`CSN_MAX = 35`, `SYMMETRY SymSessions`, `VIEW BaseView`, no faults.
+`Base` is the scenario every witness below runs in: `Sessions = {k1, k2}`, `Parts = {P1, P2}`, `TID_MAX = 3`,
+`CSN_MAX = 36`, `SYMMETRY SymSessions`, `VIEW BaseView`, no faults.
 
-`BaseWitness` is the same set of actions with `TID_MAX = 3` and `CSN_MAX = 38`. It is never run green; it exists
-because three `Base` witnesses cannot reach their target at `TID_MAX = 2`. The part universe starts empty, so a
-part that a transaction other than its creator can see costs one transaction to create and commit, and two
-transactions then leave exactly one where a second remover, an uncommitted removal observed by a third party, and
-a read taken after a commit that followed another transaction's start each need two. The scenario matrix names
-`TID_MAX = 3` for every scenario, and the bound contract allows the reduction to 2 only while every witness of
-every property `Base` checks stays red, so `Base` at `TID_MAX = 2` does not currently satisfy that contract for
-those three properties. Raising `Base` itself is a bounds decision: at `TID_MAX = 2` the green run is 2.16
-million distinct states in 19 seconds, and the cost at 3 has not been measured.
+It ran at `TID_MAX = 2` and `CSN_MAX = 35` until this round, and three of the witnesses below could not reach
+their target there. The part universe starts empty, so a part that a transaction other than its creator can see
+costs one transaction to create and commit, which leaves exactly one where a second remover, an uncommitted
+removal observed by a third party, and a read taken after a commit that followed another transaction's start
+each need two. Those three ran in a separate `BaseWitness` scenario, identical but for the bounds. That is the
+bound contract not being met: the contract allows a reduction below the matrix's `TID_MAX = 3` only while every
+witness of every property the scenario checks stays red, and for those three it did not. `Base` now carries the
+matrix bounds, `BaseWitness` is deleted, and its three rows are ordinary `Base` rows.
+
+A fourth witness was distorted by the reduced bound rather than blocked by it. `Assert_validateInfo_removal` was
+built as a two-change witness because the one change the design document names left the run green at
+`TID_MAX = 2`. At three that change is red on its own, so the witness is now the one-change witness the document
+describes and its minimality halves are gone.
+
+The cost of the third transaction is a factor of 13, from 2.16 million distinct states in 19 seconds to
+28.6 million in about 4 minutes, and it bought a counterexample as well as the contract: `Atomicity` went red on
+the first `Base` run at the new bounds. See `FINDINGS.md`, findings F1 and section 3, and `STATE_SPACE.md` for
+the bounds argument.
 
 ## Witnesses of the Base properties {#witnesses-of-the-base-properties}
 
 `States` is distinct states, `Time` wall clock, both from the run of 2026-09-18 on the tree this file is
-committed with.
+committed with. Every figure is approximate (multi-worker): under `-workers auto` two workers can fingerprint the
+same state before either has inserted it, so consecutive runs of the same witness differ by a few states.
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `ReadYourWrites` | `ReadYourWrites` | the `creation_tid = current_tid` clause is removed from the fast path of `isVisible`, so a transaction stops seeing the parts it created | `Base` | RED | 2,917 | 2 s |
-| `StableRead` | `StableRead` | `SelectCheck` reads at `tlog.latest_snapshot` instead of the transaction's own snapshot | `Base` | RED | 95,571 | 2 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | the slow path of `isVisible` treats an unknown creation CSN as the reader's snapshot instead of looking the creator up in `tid_to_csn` | `BaseWitness` | RED | 1,096,164 | 9 s |
-| `NoFutureRead` | `NoFutureRead` | `SelectCheck` compares against `tlog.latest_snapshot` when the part's creation CSN is unknown | `Base` | RED | 10,177 | 2 s |
-| `NoLostRead` | `NoLostRead` | `SelectCapture` captures only `Active` parts, skipping the `Outdated` ones a transactional `DROP` has in flight | `BaseWitness` | RED | 540,353 | 6 s |
-| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | `Base` | RED | 124,757 | 3 s |
-| `ErrorIsAbsent` | `ErrorIsAbsent` | `RollbackOutdateCreated` leaves a part the rolled-back transaction created `Active` | `Base` | RED | 25,502 | 2 s |
-| `RollbackRestores` | `RollbackRestores` | `RollbackRestore` leaves a part the transaction had outdated `Outdated` | `Base` | RED | 154,636 | 3 s |
-| `SingleRemover` | `SingleRemover` | the compare-and-set in `DropEnrol` becomes an unconditional write of `lock`, so a second transaction overwrites a remover's lock and enrols its own removal | `BaseWitness` | RED | 2,574,008 | 19 s |
-| `LockConsistent` | `LockConsistent` | `RollbackUnlock` clears the lock before the removal TID is cleared | `Base` | RED | 78,105 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | `CommitStoreCreation` stores `h.csn[t] + 1` instead of the transaction's CSN | `Base` | RED | 11,525 | 1 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | `CommitStoreCreation` stores `CSN_MAX`, so a later committed removal carries a smaller CSN | `Base` | RED | 9,992 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_removal` | two changes: `DropEnrol` takes the lock without starting the removal-TID store, and `DropStore` does not wait for that store, so `CommitStoreRemoval` later computes a removal CSN on a record with no removal TID | `Base` | RED | 43,866 | 1 s |
-| | `Assert_validateInfo_removal_only1` | the enrolment change alone: the drop then waits forever for a store that was never started | `Base` | GREEN, as minimality requires | 234,326 | 4 s |
-| | `Assert_validateInfo_removal_only2` | the wait change alone: the store still runs and still writes the removal TID | `Base` | GREEN, as minimality requires | 37,784,778 | 255 s |
-| `Assert_isVisible_fast` | `Assert_isVisible_fast` | two changes: `CommitStoreCreation` is skipped for a part the transaction both creates and removes, and `StoreRead` skips `validateInfo`, so `CommitStoreRemoval` publishes a removal CSN over an unknown creation CSN | `Base` | RED | 47,558 | 2 s |
-| | `Assert_isVisible_fast_only1` | the skipped creation store alone | `Base` | GREEN, as minimality requires | 1,654,789 | 14 s |
-| | `Assert_isVisible_fast_only2` | the skipped validation alone | `Base` | GREEN, as minimality requires | 2,163,670 | 17 s |
-| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED | 2,758 | 1 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | `StoreRead` on a retry re-reads memory instead of the stored record, so an attempt that met no interference still sees a stale version | `Base` | RED | 88,217 | 3 s |
+| `ReadYourWrites` | `ReadYourWrites` | the `creation_tid = current_tid` clause is removed from the fast path of `isVisible`, so a transaction stops seeing the parts it created | `Base` | RED | 8,216 | 1 s |
+| `StableRead` | `StableRead` | `SelectCheck` reads at `tlog.latest_snapshot` instead of the transaction's own snapshot | `Base` | RED | 375,186 | 5 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | the slow path of `isVisible` treats an unknown creation CSN as the reader's snapshot instead of looking the creator up in `tid_to_csn` | `Base` | RED | 1,135,111 | 9 s |
+| `NoFutureRead` | `NoFutureRead` | `SelectCheck` compares against `tlog.latest_snapshot` when the part's creation CSN is unknown | `Base` | RED | 32,748 | 2 s |
+| `NoLostRead` | `NoLostRead` | `SelectCapture` captures only `Active` parts, skipping the `Outdated` ones a transactional `DROP` has in flight | `Base` | RED | 514,938 | 6 s |
+| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | `Base` | RED | 550,880 | 6 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | `RollbackOutdateCreated` leaves a part the rolled-back transaction created `Active` | `Base` | RED | 64,365 | 2 s |
+| `RollbackRestores` | `RollbackRestores` | `RollbackRestore` leaves a part the transaction had outdated `Outdated` | `Base` | RED | 751,590 | 7 s |
+| `SingleRemover` | `SingleRemover` | the compare-and-set in `DropEnrol` becomes an unconditional write of `lock`, so a second transaction overwrites a remover's lock and enrols its own removal | `Base` | RED | 2,462,558 | 18 s |
+| `LockConsistent` | `LockConsistent` | `RollbackUnlock` clears the lock before the removal TID is cleared | `Base` | RED | 288,159 | 4 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | `CommitStoreCreation` stores `h.csn[t] + 1` instead of the transaction's CSN | `Base` | RED | 35,093 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | `CommitStoreCreation` stores `CSN_MAX`, so a later committed removal carries a smaller CSN | `Base` | RED | 34,843 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | `StoreDoneBody` lets `removeOldPart` return without waiting for the removal-TID store it started, so a rollback can clear the removal TID under a later remover and `CommitStoreRemoval` then computes a removal CSN on a record that has none | `Base` | RED | 53,133,545 | 5 min 21 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | two changes: `CommitStoreCreation` is skipped for a part the transaction both creates and removes, and `StoreRead` skips `validateInfo`, so `CommitStoreRemoval` publishes a removal CSN over an unknown creation CSN | `Base` | RED | 196,417 | 3 s |
+| | `Assert_isVisible_fast_only1` | the skipped creation store alone | `Base` | GREEN, as minimality requires | 22,554,686 | 2 min 51 s |
+| | `Assert_isVisible_fast_only2` | the skipped validation alone | `Base` | GREEN, as minimality requires | 28,553,258 | 3 min 34 s |
+| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED | 7,541 | 1 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | `StoreRead` on a retry re-reads memory instead of the stored record, so an attempt that met no interference still sees a stale version | `Base` | RED | 368,402 | 4 s |
 
 ## Witnesses deferred to a later plan {#witnesses-deferred-to-a-later-plan}
 
@@ -90,22 +98,27 @@ not results.
 | `AckedWriteIsDurable` | `CommitAck` moved before `CommitCreateCSN` and a `Fail` allowed after it | `Crash` | plan 3 |
 | `NoDoubleRead` | `SelectCheck` ignores `removal_csn` and `removal_tid` | `Merge` | plan 2 |
 | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts | `Merge`; the `Base` universe has no covering relation, so no two parts can be related | plan 2 |
-| `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5 |
+| `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
 | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot` | `SetSnapshot` | plan 2 |
 
-Two further properties checked in `Base` have no witness row in the design document at all, so none was invented
-here. They are listed so the gap is visible rather than silently absent.
+Two further properties checked in `Base` are not in the design document at all: not as a witness row, and not
+as properties either. The witness contract says a property without a passing witness is not accepted into
+`Invariants.tla`, so both were admitted against it. They stay, and the ruling and the witnesses the next spec
+revision owes them are in `FINDINGS.md`, section 3. They are listed here so the gap is visible rather than
+silently absent.
 
 | Property | Status |
 |---|---|
-| `RollbackNoLeak` | no witness in the design document, in `Base` or in any other scenario |
-| `KillerNotStranded` | no witness in the design document; the property was added with the rollback-driver change of task 3 |
+| `RollbackNoLeak` | the property appears nowhere in the design document; added by task 1. A witness is writable within `Base` and belongs with the plan that next touches the rollback actions |
+| `KillerNotStranded` | the property appears nowhere in the design document; added with the rollback-driver change of task 3. Its witness needs a rollback step that starts and never completes, so it goes to plan 5 |
 
 `TypeOK` is a type invariant, not a behavioural property, and has no witness by design.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
+Both on the tree this file is committed with, at the bounds above.
+
 | Scenario | Result | Distinct states | Time |
 |---|---|---|---|
 | `BaseSmall` | green | 47,381 | 1 s |
-| `Base` | green | 2,163,765 | 19 s |
+| `Base` | green | 28,553,114 | 4 min 08 s |

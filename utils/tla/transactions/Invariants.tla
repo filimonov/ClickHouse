@@ -34,7 +34,9 @@ ReadOK(k, R) ==
   /\ \* Atomicity
      \A u \in h.committed : h.loaded[u] /\ s >= h.csn[u] /\ u /= t =>
        LET V == R.parts
-           C == { p \in h.creating[u] \ h.removing[u] : ~\E r \in h.removers[p] \ {u} : h.csn[r] <= s }
+           C == { p \in h.creating[u] \ h.removing[u] :
+                    /\ ~\E r \in h.removers[p] \ {u} : h.csn[r] <= s
+                    /\ p \notin h.removing[t] }
            Rm == h.removing[u] \ h.creating[u] IN
        /\ (C \subseteq V /\ V \cap Rm = {}) \/ (C \cap V = {} /\ Rm \subseteq V)
        /\ V \cap (h.creating[u] \cap h.removing[u]) = {}
@@ -62,11 +64,20 @@ NoLostRead == [][NoLostReadStep]_vars
 NoDoubleReadStep == \A k \in Sessions : SelectFinish(k) =>
   \A f1, f2 \in client'[k].last_read.frags : f1[2] = f2[2] => f1[1] = f2[1]
 NoDoubleRead == [][NoDoubleReadStep]_vars
+\* spec #invariants-isolation, the `Atomicity` row. The row builds C from the parts the committed writer u
+\* created and did not itself remove, minus those a later committed transaction visible to the reader removed,
+\* "which the code hides by giving own removal priority". That priority is the reader's too: VersionInfo::isVisible
+\* (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:171) returns false for removal_tid == current_tid before
+\* ever reaching the creation clause at :182, so a part the reader is itself dropping is invisible to it however
+\* the writer that created it committed. The reader's own removals are therefore out of C as well. The row states
+\* only the writer's half; see FINDINGS.md section 3.
 AtomicityStep == \A k \in Sessions : SelectFinish(k) => LET t == Cur(k)
                                                              s == txn[t].snapshot
                                                              V == client'[k].last_read.parts IN s /= EverythingVisibleCSN /\ txn[t].state = "Running" =>
   \A u \in h.committed : h.loaded[u] /\ s >= h.csn[u] /\ u /= t =>
-    LET C == { p \in h.creating[u] \ h.removing[u] : ~\E r \in h.removers[p] \ {u} : h.csn[r] <= s }
+    LET C == { p \in h.creating[u] \ h.removing[u] :
+                 /\ ~\E r \in h.removers[p] \ {u} : h.csn[r] <= s
+                 /\ p \notin h.removing[t] }
         Rm == h.removing[u] \ h.creating[u] IN
     /\ (C \subseteq V /\ V \cap Rm = {}) \/ (C \cap V = {} /\ Rm \subseteq V)
     /\ V \cap (h.creating[u] \cap h.removing[u]) = {}

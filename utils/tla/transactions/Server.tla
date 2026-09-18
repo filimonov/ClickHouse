@@ -186,10 +186,7 @@ PublishStart(k, p) ==
 \* nextpc is the client pc after success; on refusal the client goes to Refuse with last_error set
 EnrolBody(k, q, nextpc) ==
   LET t == Cur(k)
-      \* the Assert_validateInfo_removal witness skips the removal-TID store of removeOldPart, so the lock is
-      \* held in memory only and CommitStoreRemoval later stores a removal CSN on a record with no removal TID
-      nostore == Witness("Assert_validateInfo_removal") \/ Witness("Assert_validateInfo_removal_only1")
-      enrolled == IF nostore THEN part ELSE StartFrame(q, Sess(k), "RemovalTID", t, FALSE) IN
+      enrolled == StartFrame(q, Sess(k), "RemovalTID", t, FALSE) IN
   /\ txn[t].mutex = NoActor
   /\ \/ /\ txn[t].state = "RolledBack"
         /\ client' = [client EXCEPT ![k].last_error = "INVALID_TRANSACTION", ![k].pc = "Refuse"]
@@ -208,8 +205,10 @@ EnrolBody(k, q, nextpc) ==
 \* removeOldPart, second half: the store ran, release the mutex, next part or the phase's end
 StoreDoneBody(k, q) ==
   LET t == Cur(k) IN
-  /\ (FrameDone(q, Sess(k), "RemovalTID", t) \/ Witness("Assert_validateInfo_removal")
-                                             \/ Witness("Assert_validateInfo_removal_only2"))
+  \* the Assert_validateInfo_removal witness lets removeOldPart return without waiting for the removal-TID store
+  \* it started, so a rollback can clear the removal TID under a later remover and CommitStoreRemoval then stores
+  \* a removal CSN on a record that has none
+  /\ (FrameDone(q, Sess(k), "RemovalTID", t) \/ Witness("Assert_validateInfo_removal"))
   /\ txn' = [txn EXCEPT ![t].mutex = NoActor]
 
 PublishEnrol(k, q) ==

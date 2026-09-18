@@ -12,6 +12,9 @@ SymSessions == Permutations(Sessions)
 \* tail-pointer and unknown-state parts of tlog, the fault counters and loading fields of sys, a frame's
 \* noexcept_retries).
 \* Each of the three depends on the configuration below, so a scenario with other constants needs its own view.
+\* What each of them depends on, though, is only which actions are enabled and which properties are checked, so
+\* raising TID_MAX or CSN_MAX alone leaves the argument intact: the same actions run, the same properties are
+\* checked, and the fields left out are left out for the same reasons.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
 BaseView ==

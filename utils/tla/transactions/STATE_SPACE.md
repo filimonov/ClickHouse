@@ -1,6 +1,8 @@
 # State-space budget for the `Base` scenario {#state-space}
 
-`Base` runs two sessions (`Sessions = {k1, k2}`) over two parts with `TID_MAX = 2`. As first written it did not
+`Base` runs two sessions (`Sessions = {k1, k2}`) over two parts. It ran at `TID_MAX = 2` while the measurements
+below were taken and now runs at `TID_MAX = 3`, the transaction count the scenario matrix asks for; the
+"Where `Base` stands" section records both. As first written it did not
 finish: TLC was killed after 20 minutes with 628,420,984 states generated, 115,663,927 distinct and 17.6M still
 on the queue, while the one-session `BaseSmall` finished in about a second at 24,667 distinct states. This file
 records where the states come from, which model corrections and which fingerprint reduction closed that gap, and
@@ -127,35 +129,56 @@ shared module keeps one `StoreNext`.
 
 No state constraint is applied. The two that the plan held in reserve were measured and are not needed: bounding
 the concurrently open store frames to 2 left a two-session run at 8,678,732 distinct states after three minutes
-and still growing, and `TID_MAX = 2` already bounds the transactions that can reach `CommitAck` or
-`RollbackFinalize` to two, because `Begin` draws from a monotone counter capped at `TID_MAX`, which makes that
-constraint vacuous.
+and still growing, and `TID_MAX` already bounds the transactions that can reach `CommitAck` or
+`RollbackFinalize`, because `Begin` draws from a monotone counter capped at it, which makes that constraint
+vacuous at any value of the bound.
 
 A third candidate, outside the plan's list, was built and measured too: restricting the kill to a session that
 holds no transaction of its own. It reached 23,908,162 distinct states after three minutes and was still growing,
 and it would also have cost the case where the kill lands while two transactions are live, so it was discarded on
 both counts.
 
-`CSN_MAX = 35` is a bound and is the smallest one that works: real commit sequence numbers start at
-`FirstCSN = 33`, the log starts with one entry there, and two transactions can commit, so the sequence reaches
-35. Lowering it would disable `CommitCreateCSN` for the second commit.
+`CSN_MAX` is a bound and is set to the smallest one that works. Real commit sequence numbers start at
+`FirstCSN = 33`, the log starts with one entry there, and `KeeperCanAppend` requires `zk.seq < CSN_MAX`, so each
+unit above 33 buys one commit. At `TID_MAX = 2` the value was 35, for two commits; at `TID_MAX = 3` it is 36,
+for three. Lowering it would disable `CommitCreateCSN` for the last commit, and raising it buys nothing, because
+`TID_MAX` already caps the transactions that can reach `CommitCreateCSN`. That last point was measured rather
+than assumed: the same modules at `CSN_MAX = 38`, which allows five commits, reach 28,553,697 distinct states
+against 28,553,007 at 36, a difference of 0.002%, entirely inside the multi-worker counting noise.
 
 ## Where `Base` stands {#final}
 
-Both scenarios green, `-workers auto` on 32 cores, one run at a time.
+Both scenarios green, `-workers auto` on 32 cores, one run at a time, `-Xmx16g` as `run_tlc.sh` sets it. Every
+count here is approximate: under `-workers auto` the totals move by a few states between runs, because two
+workers can fingerprint the same state before either has inserted it.
 
-| Scenario | States generated | Distinct states | Time |
-|---|---|---|---|
-| `BaseSmall` | 66,399 | 47,381 | 1 s |
-| `Base` | 5,138,339 | 2,163,747 | 19 s |
+| Scenario | Bounds | States generated | Distinct states | Time |
+|---|---|---|---|---|
+| `BaseSmall` | `TID_MAX = 2`, `CSN_MAX = 35` | 66,399 | 47,381 | 1 s |
+| `Base` | `TID_MAX = 3`, `CSN_MAX = 36` | 67,864,730 | 28,553,114 | 4 min 08 s |
+| `Base`, superseded | `TID_MAX = 2`, `CSN_MAX = 35` | 5,138,339 | 2,163,747 | 19 s |
 
-Under `-workers auto` the counts move by a few states between runs, because two workers can fingerprint the same
-state before either has inserted it.
+The third transaction is worth a factor of 13 in states and 13 in time, and takes the complete search depth to
+117. It was taken anyway: the scenario matrix names `TID_MAX = 3` for every scenario, and the bound contract
+allows a reduction only while every witness of every property the scenario checks stays red. Three witnesses
+could not reach their target at `TID_MAX = 2` and needed a separate `BaseWitness` scenario to be shown at all,
+which is exactly the contract not being met. `BaseWitness` is gone and its three rows are `Base` rows now.
 
-Both figures are above the measurement tables above, and for one reason: those were taken while a session could
-not kill its own transaction. Allowing it, which is what the C++ does, takes `Base` from 1,814,603 to 2,163,747
-on the same modules, and takes `BaseSmall` from 24,667 to 47,381, because with one session that is now the only
-way a transaction is ever killed. Everything else the corrections and the view do is unchanged by it.
+Raising the bound also produced the model's first counterexample on a baseline run: `Atomicity` went red at
+7,982,042 distinct states, on a read a transaction takes while dropping a part another transaction created and
+committed under it. Three transactions are the fewest that can build that shape. The trace, the C++ it was
+judged against and the property correction are in `FINDINGS.md`, finding F1.
+
+It also settled an open question about a witness. `Assert_validateInfo_removal` had to be built as a two-change
+witness at `TID_MAX = 2`, because the one change the design document names left the run green there. At three it
+is red on its own, so the witness is now the one-change witness the document always described. `FINDINGS.md`,
+section 3, has the trace shape and why three transactions are the fewest that reach it.
+
+The `TID_MAX = 2` figures are above the measurement tables further up, and for one reason: those were taken
+while a session could not kill its own transaction. Allowing it, which is what the C++ does, takes `Base` from
+1,814,603 to 2,163,747 on the same modules, and takes `BaseSmall` from 24,667 to 47,381, because with one
+session that is now the only way a transaction is ever killed. Everything else the corrections and the view do
+is unchanged by it.
 
 ## Reproducing {#reproducing}
 
