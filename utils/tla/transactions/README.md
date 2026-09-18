@@ -72,7 +72,8 @@ matrix bounds). It downloads `tla2tools.jar` into `tmp/` if it is missing, and i
 
 Output goes under `tmp/tla/<Scenario>/`: the full TLC log is `tlc.log`, and a counterexample is additionally
 extracted to `trace.txt`. The metadir lives in `tmp/tla/<Scenario>/states` while the run lasts and is removed
-afterwards, so two runs never share a state directory. Nothing under `tmp/` is committed.
+afterwards, so runs of two different scenarios never share a state directory. Two concurrent runs of the same
+scenario do share it, and must not be started; `witness.sh` is the one that is per-run. Nothing under `tmp/` is committed.
 
 Exit codes:
 
@@ -98,14 +99,18 @@ One row per action of `Server.tla` and `Parts.tla`. The C++ column names the fil
 boundary the action stands for: what has happened when the action fires, and what the next action of the same
 machine picks up. Line numbers are of the baseline tree.
 
-Three rows have no single C++ counterpart and say so: `Fail` is an injected exception, `SelectFinish` records
-the read into a monitor the server does not have, and `Fsync` is the page cache becoming durable.
+Three rows have no single C++ counterpart and say so: `Fail` is an injected exception, `Refuse` bundles the
+unwinding an exception does on its way out of a query, and `Fsync` is the page cache becoming durable.
+`SelectFinish` also records the read into a monitor the server does not have, but returning a read set and
+dropping the pins on it is a counterpart.
 
 Where a row disagrees with the design document's action table, the row follows the code and the disagreement is
 recorded in `FINDINGS.md`, section 3. Two rows do: `UpdLoadEntriesMap` (`S3`) and `CommitError` (`S4`). Four
 actions also have no row of their own in that table, because it is coarser there: `DropLock` and
 `StmtRollbackDrop` are the second halves of its `DropStart` and `StmtRollback` rows, and `RollbackReturn` and
-`KillReturn` are the returns of calls it treats as atomic. `FINDINGS.md` says why each split was made.
+`KillReturn` are the returns of calls it treats as atomic. `FINDINGS.md`, section 3, says why the `DropStart`
+and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillReturn`, that
+`TransactionLog::rollbackTransaction` runs on the caller's thread, is in section 8 below.
 
 ### Client and session {#code-map-client}
 
@@ -222,18 +227,31 @@ discarded.
 | `BaseSmall` | 2026-09-18 | `5aaefae31249` | 47,381 | 1 s | green |
 | `Base` | 2026-09-18 | `5aaefae31249` | 28,553,114 | 4 min 08 s | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` |
 | witness sweep, 18 rows | 2026-09-18 | `5aaefae31249` | 53,133,545 for the largest single row | ≈ 15 min in total, 5 min 21 s for that row | every witness red, both minimality halves green |
+| `Schema` | 2026-09-18 | the final-review fix commit | 1 | 1 s | green |
+| `BaseSmall` | 2026-09-18 | the final-review fix commit | 47,381 | 1 s | green |
+| `Base` | 2026-09-18 | the final-review fix commit | 28,552,935 | 4 min 06 s | green at the matrix bounds |
+| witness `FlipAfterStores` | 2026-09-18 | the final-review fix commit | 8,017 | 2 s | red, as required |
+| witness `ErrorIsAbsent` | 2026-09-18 | the final-review fix commit | 64,836 | 2 s | red, as required |
 
 The commits are `885a5c382cab` (Task 1, the modules and the runner), `5260d5d44f67` and `53814c46e7e5`
 (Task 3, the state-space budget and the rollback-driver correction), `bea5c15bf346` and `ad432095717a` (Task 2,
 the witness runner and the witness table), `40ba930673fd` and `5aaefae31249` (Task 5, the matrix bounds, the
-`Atomicity` correction and the findings file).
+`Atomicity` correction and the findings file), and the final-review fix commit, which is the last of plan 1 and
+names itself in its own message rather than by a hash it cannot yet know.
+
+`Base` did not move when the statement rollback was corrected, and 28,552,935 against 28,553,114 is the
+multi-worker noise, not a change. The corrected actions are unreachable in `Base`: `QUERY_FAULTS_MAX = 0`
+disables `Fail`, and an empty `Covers` leaves `PublishEnrol` unreachable, so no refusal can happen while
+`stmt.precommitted` is non-empty. Plan 2 gives the sibling scenario a covering relation and the path goes live
+there. The two witness counts moved more than that, from 7,541 and 64,365, because a witness run stops at the
+first violation and how many states it has fingerprinted by then depends on the worker scheduling.
 
 ## 5. Witnesses {#witnesses}
 
 A property no run can falsify proves nothing, so every property in `Invariants.tla` has a witness: one named
 change to the model that must make that property fail. The table of them, with the change each one makes, the
 scenario, the result and the cost, is `WITNESSES.md`. That file also lists the five witnesses whose change needs
-an action `Base` does not enable, deferred with the plan that adds it, and the two properties that entered
+an action `Base` does not enable, deferred with the plan that adds it, and the one property that entered
 `Invariants.tla` without a design-document row at all.
 
 ## 6. Refinement parameters {#refinement-parameters}
@@ -242,7 +260,7 @@ Constants where the model deliberately runs a smaller value than the server, and
 
 | Parameter | Model | C++ or design | Why |
 |---|---|---|---|
-| `MAX_STORE_RETRIES` | 2 | 20 (`VersionMetadata::MAX_RETRIES`) | the second collision already exhibits every distinct interleaving of two frames on one part; further retries repeat the same shapes at a linear cost in states |
+| `MAX_STORE_RETRIES` | 2 | 20 (`MAX_RETRIES`, a file-scope constant at `src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:30`) | the second collision already exhibits every distinct interleaving of two frames on one part; further retries repeat the same shapes at a linear cost in states |
 | `NOEXCEPT_RETRY_BUDGET` | 2 | a 60-second budget | the design's budget is a time, not a count. A counter is what keeps the retry loop finite, and two retries reach both ends of it, the retry that succeeds and the budget that is exhausted |
 | `Tasks` | `{}` in `Base` | up to 2 background tasks | `Base` enables neither merges nor the mutation executor, so no task can act; the set is empty rather than unused so that quantifiers over it are trivially true |
 | `Mutations` | `{}` in `Base` | one or more per scenario | same reason: the mutation actions are stubs until plan 4 |
@@ -342,9 +360,10 @@ before `storeInfo`, not on the in-memory record at rest. The invariant is theref
 tentative record too; an invariant over memory alone would miss every record the code rejects before publishing
 it, which is the whole point of the assertion.
 
-**`StmtRollbackMark` marks only the parts not yet attached to the outer transaction.**
-`MergeTreeData::Transaction::rollback` (:11122) marks every part in `precommitted_parts`, including one that
-`addNewPartAndRemoveCovered` has already attached to the outer transaction. The model leaves the attached part
-to the outer rollback, which reaches it through `creating_parts`. The two agree on the outcome for the parts the
-modelled scenarios produce, because a client `INSERT` publishes one part at a time; a scenario that publishes
-several parts in one statement would need this revisited.
+**`KillTransaction` is disabled while the victim is `Committing`.** The action requires
+`txn[t].state = "Running"`, so the model has no step for a `KILL TRANSACTION` that lands between `beforeCommit`
+and the flip. The server runs that query: `InterpreterKillQueryQuery` finds the victim and calls `onException`,
+`MergeTreeTransaction::rollback` (:377) loses the `compare_exchange_strong` against the `CommittingCSN` that
+`beforeCommit` (:308) installed, and the `KILL` reports `CancelCannotBeSent` while the commit proceeds. The two
+are stutter-equivalent: nothing in the model's state changes and the victim's outcome is the same. Plan 4 puts
+`KILL MUTATION` into exactly that window, where the equivalence has to be re-derived rather than assumed.

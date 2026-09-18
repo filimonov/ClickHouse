@@ -4,7 +4,6 @@
 \* Baseline C++: upstream ClickHouse master 2c24b6b9291e
 EXTENDS Server
 
-IsoApplies(k) == Cur(k) /= EmptyTID /\ txn[Cur(k)].snapshot /= EverythingVisibleCSN
 Frags(V) == { <<q, part[q].payload.ver>> : q \in Expand(V) }
 Proj(F) == { <<f[2], f[3]>> : f \in F }      \* drop the root of a fragment tuple
 
@@ -12,34 +11,6 @@ Proj(F) == { <<f[2], f[3]>> : f \in F }      \* drop the root of a fragment tupl
 \* read that step produces (client'[k].last_read) and the history as of that step. A read taken earlier is
 \* not re-judged after the reader's own later effects, which is what a state invariant would wrongly do.
 Own(t) == h.creating[t] \cup h.removing[t]
-ReadOK(k, R) ==
-  LET t == Cur(k)
-      s == txn[t].snapshot IN
-  txn[t].snapshot /= EverythingVisibleCSN /\ txn[t].state = "Running" =>
-  /\ \* StableRead
-     (client[k].first_read /= NoRead =>
-        (Proj(client[k].first_read.frags) \ Frags(Own(t))) = (Proj(R.frags) \ Frags(Own(t))))
-  /\ \* ReadYourWrites
-     /\ \A p \in h.creating[t] \ h.removing[t] : part[p].pstate \in {"Active", "Outdated"} => p \in R.parts
-     /\ \A p \in h.removing[t] : p \notin R.parts
-  /\ \* NoUncommittedRead
-     \A p \in R.parts : h.creator[p] \in h.committed \cup {t, NonTransactionalTID}
-  /\ \* NoFutureRead
-     \A p \in R.parts : OracleVisible(p, s, t)
-  /\ \* NoLostRead
-     \A p \in Parts : (part[p].pstate \in {"Active", "Outdated"} /\ OracleVisible(p, s, t))
-        => (p \in R.parts \/ \E c \in R.parts : p \in Expand({c}) /\ OracleVisible(c, s, t))
-  /\ \* NoDoubleRead
-     \A f1, f2 \in R.frags : f1[2] = f2[2] => f1[1] = f2[1]
-  /\ \* Atomicity
-     \A u \in h.committed : h.loaded[u] /\ s >= h.csn[u] /\ u /= t =>
-       LET V == R.parts
-           C == { p \in h.creating[u] \ h.removing[u] :
-                    /\ ~\E r \in h.removers[p] \ {u} : h.csn[r] <= s
-                    /\ p \notin h.removing[t] }
-           Rm == h.removing[u] \ h.creating[u] IN
-       /\ (C \subseteq V /\ V \cap Rm = {}) \/ (C \cap V = {} /\ Rm \subseteq V)
-       /\ V \cap (h.creating[u] \cap h.removing[u]) = {}
 \* one action property per named property, so that a violation names the property
 StableReadStep == \A k \in Sessions : SelectFinish(k) => LET t == Cur(k) IN
   txn[t].snapshot /= EverythingVisibleCSN /\ txn[t].state = "Running" /\ client[k].first_read /= NoRead =>
@@ -86,10 +57,17 @@ RollbackNoLeak == \A k \in Sessions : \A t \in Tids : Cur(k) /= EmptyTID /\ Cur(
   client[k].last_read.parts \cap h.creating[t] = {}
 
 \* ---- durability (Durable disk mode in Base)
-AckedWriteIsDurable == \A t \in Tids : h.outcome[t] = "Acked" /\ (h.creating[t] \cup h.removing[t]) /= {} =>
+\* The antecedent is the spec row's h_effects, which includes the mutations a transaction registered; the
+\* mutation disjunct is vacuous while Mutations = {} and live from plan 4.
+\* The Outdated case is weaker than the spec's row, which admits Outdated only for a committed removal
+\* (h_removers[p] /= {}). A removal merely in flight, that is part[p].lock /= EmptyTID, is admitted here too,
+\* because DropOutdate outdates a part before the transaction that drops it commits, and the literal row is
+\* therefore red on the baseline. Recorded as spec defect S5 in FINDINGS.md, section 3.
+AckedWriteIsDurable == \A t \in Tids :
+  h.outcome[t] = "Acked" /\ ((h.creating[t] \cup h.removing[t]) /= {} \/ h.mutations[t] /= {}) =>
   /\ t \in h.committed
   /\ \A p \in h.creating[t] : \/ part[p].pstate = "Active"
-                             \/ (part[p].pstate = "Outdated" /\ (part[p].lock /= EmptyTID \/ h.removers[p] /= {}))   \* removal in flight or committed
+                             \/ (part[p].pstate = "Outdated" /\ (part[p].lock /= EmptyTID \/ h.removers[p] /= {}))   \* S5: removal in flight or committed
                              \/ (part[p].pstate \in {"Deleting", "Deleted"} /\ h.removers[p] /= {})
   /\ \A p \in h.removing[t] : part[p].pstate /= "Active"
 ErrorIsAbsent == \A t \in Tids : h.outcome[t] = "Error" =>
@@ -136,5 +114,7 @@ RollbackRestores == [][RollbackRestoresStep]_vars
 FlipAfterStoresStep == \A k \in Sessions : CommitFlip(k) =>
   LET t == Cur(k) IN /\ \A p \in h.creating[t] : part[p].mem.ccsn = h.csn[t]
                      /\ \A p \in h.removing[t] : part[p].mem.rcsn = h.csn[t]
+                     \* the spec row's third conjunct; vacuous while Mutations = {}, live from plan 4
+                     /\ \A m \in h.mutations[t] : mut[m].mstate /= "Killed" => mut[m].csn = h.csn[t]
 FlipAfterStores == [][FlipAfterStoresStep]_vars
 ====

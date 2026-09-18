@@ -21,7 +21,7 @@ Baseline C++ throughout is upstream `master` `2c24b6b9291e`, checked out in this
 
 | Id | Scenario, bounds | Property | Action sequence (short) | Classification | Resolution | Proposed code fix |
 |---|---|---|---|---|---|---|
-| F1 | `Base` at `TID_MAX = 3`, `CSN_MAX = 38`, the first run at the transaction count the scenario matrix asks for | `Atomicity` | `t1` inserts `P1` and commits at CSN 34; `t2` takes snapshot 34, drops `P1`, inserts `P2`, and `CommitCreateCSN` writes CSN 35 into the log, which the updater loads while `t2` is still storing; `t3` takes snapshot 35, locks and stores its own removal of `P2`; `t3`'s `SELECT` then reads `{}` | `property` | `AtomicityStep` and the `ReadOK` mirror now exclude the reader's own removals, `h.removing[t]`, from `C`. The design document's row states only the writer's half of the same precedence, recorded in section 3 as S1 | none, the code is right |
+| F1 | `Base` at `TID_MAX = 3`, `CSN_MAX = 38`, the first run at the transaction count the scenario matrix asks for | `Atomicity` | `t1` inserts `P1` and commits at CSN 34; `t2` takes snapshot 34, drops `P1`, inserts `P2`, and `CommitCreateCSN` writes CSN 35 into the log, which the updater loads while `t2` is still storing; `t3` takes snapshot 35, locks and stores its own removal of `P2`; `t3`'s `SELECT` then reads `{}` | `property` | `AtomicityStep` now excludes the reader's own removals, `h.removing[t]`, from `C`. The design document's row states only the writer's half of the same precedence, recorded in section 3 as S1 | none, the code is right |
 
 ### F1 in full {#f1}
 
@@ -85,7 +85,9 @@ C == { p \in h.creating[u] \ h.removing[u] :
          /\ p \notin h.removing[t] }
 ```
 
-in both `AtomicityStep` and the `ReadOK` mirror. Nothing else moved. The `Rm \subseteq V` branch, the
+in `AtomicityStep`. A collected copy of the isolation properties, the operator `ReadOK`, carried the same
+clause until the final review of plan 1 deleted it: no `.cfg` named it and no operator used it, so TLC never
+evaluated it and a correction applied to one copy and not the other would have been silent. Nothing else moved. The `Rm \subseteq V` branch, the
 `V \cap Rm = {}` branch and the `V \cap (h.creating[u] \cap h.removing[u]) = {}` conjunct are untouched, and the
 `Atomicity` witness is still red, so the property still has teeth.
 
@@ -94,6 +96,9 @@ in both `AtomicityStep` and the `ReadOK` mirror. Nothing else moved. The `Rm \su
 | Id | Defect | Effect if left | Placement |
 |---|---|---|---|
 | M1 | `LegacyPartRecord` gives a legacy part `mem.sv = 0` (`Parts.tla:26`) while its disk record is `Legacy` (`Disk.tla:20`), which is not `Info`, so `DiskHasInfo` is false (`Disk.tla:42`) and `StoredRecord` falls back to `EmptyInfo` with `sv = -1` (`Parts.tla:128`) | Every store on a legacy part compares an expected `-1` against a tentative `sv` of 0 in `StorePersistStep` (`Parts.tla:153`), takes the `TOO_OLD_VERSION` branch, retries `MAX_STORE_RETRIES` times and ends in `STALE_VERSION`. No legacy part can ever be written, so plan 3's `Crash` runs with a non-empty `LEGACY_PARTS` would be vacuous | plan 3, the task that enables `LEGACY_PARTS` |
+| M2 | `StmtRollbackMark` and `StmtRollbackDrop` acted on `stmt.precommitted \ stmt.attached`, and `Refuse` routed to them only when that difference was non-empty (`Server.tla`, the statement-rollback actions) | The statement rollback skipped a part that `addNewPartAndRemoveCovered` had already attached to the outer transaction, where `MergeTreeData::Transaction::rollback` (`src/Storages/MergeTree/MergeTreeData.cpp:11122`) marks and removes every part of `precommitted_parts`; and a `Refuse` whose precommitted set was entirely attached left the `stmt` record standing, so the leak outlived the statement. Both are dead in `Base`, which has `QUERY_FAULTS_MAX = 0` and an empty `Covers`, so neither `Fail` nor `PublishEnrol` can refuse with a non-empty `stmt.precommitted`; plan 2 gives the sibling scenario a covering relation, which makes `PublishEnrol` live and a `SERIALIZATION_ERROR` between `PublishStart` and `PublishFlip` reachable, and both would have gone live there at once | closed by the final-review fix commit of plan 1 |
+
+`M2` was closed rather than placed. `Refuse` now routes to `StmtRollbackMark` whenever `stmt.precommitted` is non-empty, which is what `MergeTreeData::Transaction::isEmpty` (`src/Storages/MergeTree/MergeTreeData.h:391`) tests, and both statement-rollback actions act on the whole of `stmt.precommitted`. The attached part keeps its entry in `txn[t].creating` and in `h.creating[t]`, because `MergeTreeTransaction::creating_parts` keeps its entry too; `Refuse` always ends at the outer rollback, and that rollback's second stamp of `RolledBackCSN` and second removal from the working set are both no-ops in the C++ and in the model. The entry `README.md`, section 8, used to carry for this divergence is gone with it. Nothing in `Base` changed state: the count stayed at the figure the run table records, for the reason the row above gives.
 
 The C++ settles which side of the comparison is wrong. A part with no `txn_version.txt` is loaded by
 `VersionMetadataOnDisk::loadMetadata` (`src/Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.cpp:49`),
@@ -119,6 +124,7 @@ with the correction the next revision folds in.
 | S2 | the `NoAvoidableTermination` witness row | The row names scenario `Base`, but the witness it describes needs a `Fail` inside `afterCommit` that takes the server down, which requires `ProcessDown`, an action `Base` does not enable. `WITNESSES.md` defers the witness to plan 5. One of the two statements has to give | Move the row's scenario to the first one that enables `ProcessDown`. The property itself stays in `Base`, where it is checked but not yet falsifiable |
 | S3 | `UpdLoadEntriesMap`, section "Updating thread" | The row puts the action at "`loadEntries` up to the `NOEXCEPT_SCOPE_STRICT` block", and then says that block is where the batch enters `tid_to_csn` under `TransactionLog::mutex`. The two halves contradict each other, and the code settles it: `TransactionLog::loadEntries` (`src/Interpreters/TransactionLog.cpp:161`) fills `tid_to_csn` and advances `last_loaded_entry` *inside* the `NOEXCEPT_SCOPE_STRICT` block, and only the block after it, under `running_list_mutex` (`:174`), moves `latest_snapshot`. An action that stopped before the block would publish nothing | Restate the boundary as "`loadEntries` through the `NOEXCEPT_SCOPE_STRICT` block". `README.md`, section 3, carries the corrected row |
 | S4 | `CommitError`, section "Client and session" | The row attributes the `INVALID_TRANSACTION` of a `COMMIT` on a cancelled transaction to `beforeCommit`. `InterpreterTransactionControlQuery::executeCommit` (`src/Interpreters/InterpreterTransactionControlQuery.cpp:64`) refuses it earlier, on `getState() != RUNNING`, before `commitTransaction` is called at all, and that is the guard the model's action has. `beforeCommit`'s failed compare-and-exchange (`src/Interpreters/MergeTreeTransaction.cpp:308`) raises the same error only for a kill that lands after the interpreter's guard | Name the interpreter guard as the action's site and `beforeCommit` as the racing one. `README.md`, section 3, carries the corrected row |
+| S5 | `AckedWriteIsDurable`, section "Invariants and properties" | The row admits a created part in `Outdated` only when the removal is committed, `h_removers[p] /= {}`. `DropOutdate` outdates a part under the parts lock, long before the transaction that drops it commits, so a part created by an acknowledged transaction and dropped by a still-running one is `Outdated` with no committed remover, and the literal row is red on the baseline. `Invariants.tla` therefore also admits a removal merely in flight, `part[p].lock /= EmptyTID`. The row's antecedent is also `h_effects`, which includes mutations, while the property tested only `h.creating` and `h.removing` | Admit an in-flight removal in the row, with the `DropOutdate` boundary as the reason. `Invariants.tla` carries the relaxation and cites this id; its antecedent now includes `h.mutations`, and `FlipAfterStoresStep` carries the row's mutation conjunct, both vacuous while `Mutations = {}` |
 
 Two more rows of the "Client and session" table are coarser than the model rather than wrong: `DropStart`
 bundles `stopMergesAndWait`, the wait, `lockParts` and the selection of the visible parts into one row, which the
@@ -148,22 +154,25 @@ So the row was right and the model's witness was over-specified. `Assert_validat
 one-change witness the row names, the `_only1` and `_only2` hooks are gone with the minimality check they
 existed for, and nothing is owed to the next spec revision here.
 
-### Two properties admitted without a spec row {#properties-without-a-row}
+### `RollbackNoLeak` and `KillerNotStranded` {#properties-without-a-row}
 
 `RollbackNoLeak`, added by task 1, and `KillerNotStranded`, added by task 3, are both in `MC_Base.cfg`'s
-`INVARIANTS` list, and neither appears anywhere in the design document: not as a property, not as a witness row.
-The witness contract says a property without a passing witness is not accepted into `Invariants.tla`, so these
-two were admitted against it.
+`INVARIANTS` list without a witness, which the witness contract does not allow. They are not the same case.
 
-The ruling recorded here is that they stay. Each states something the model would otherwise not check at all,
-each holds on every baseline run, and removing them would lose coverage to satisfy a bookkeeping rule. What the
-next spec revision owes them is a row each, with the witness that row implies:
+`RollbackNoLeak` does have a spec row. The design document's `RollbackRestores` row states two things: the
+action property on `RollbackFinalize`, which `RollbackRestoresStep` implements, and, "as a state invariant, no
+part of `h_creating[t]` is ever in the visible-parts set of a read by a transaction other than `t`".
+`RollbackNoLeak` is that second half, stated more strongly: the model quantifies over every transaction that is
+not in `h.committed`, not only over the rolled-back ones the row speaks of. So it is rostered, and what it owes
+is a witness of its own rather than a row. A witness is writable within `Base`, a rollback that leaves a created
+part visible to another session's read, and it belongs with the plan that next touches the rollback actions.
 
-- `RollbackNoLeak` — a witness is writable within `Base`: a rollback that leaves a created part visible to
-  another session's read. It belongs with the plan that next touches the rollback actions.
-- `KillerNotStranded` — the witness needs a rollback step that starts and never completes, so that a killer
-  parked at `KillWait` is never released. `Base` has no such step, so this one goes to plan 5, alongside the
-  other liveness witnesses.
+`KillerNotStranded` appears nowhere in the design document: not as a property, not as a witness row. The ruling
+recorded here is that it stays. It states something the model would otherwise not check at all, it holds on
+every baseline run, and removing it would lose coverage to satisfy a bookkeeping rule. What the next spec
+revision owes it is a row, with the witness that row implies: a rollback step that starts and never completes,
+so that a killer parked at `KillWait` is never released. `Base` has no such step, so that witness goes to plan 5
+alongside the other liveness witnesses.
 
-Until those rows exist, both properties are checked without ever having been shown to be falsifiable. That is a
-debt, recorded here and in the gap table of `WITNESSES.md`, not a result.
+Until those two witnesses exist, both properties are checked without ever having been shown to be falsifiable.
+That is a debt, recorded here and in the gap table of `WITNESSES.md`, not a result.

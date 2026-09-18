@@ -55,14 +55,16 @@ select or a drop. A session executes one query at a time, so the action now requ
 **B. The `KILL` query returns only when the rollback it started has finished.** `onException` runs
 `rollbackTransaction` synchronously on the killer's own thread, so the killer cannot start another statement
 while the rollback runs. `KillTransaction` now parks the killer at the new program counter `KillWait`, and the
-new action `KillReturn` releases it once the transaction it drove no longer lists it as a holder.
+new action `KillReturn` releases it once no transaction names it as its rollback driver.
 
 **C. A rollback body has exactly one driver.** `MergeTreeTransaction::rollback` opens with a
 `compare_exchange_strong` on `csn` and returns `false` to every caller that loses it, so the body that marks the
 created parts, outdates them, restores the removed ones and unlocks their removal `TID` runs on exactly one
-thread. The model added the killer to `holders` while leaving the owner there, and `Drives(k, t)` lets any holder
+thread. The model added the killer to `holders` while leaving the owner there, and `Drives(k, t)` let any holder
 take the next rollback step, so the owner and the killer could alternate arbitrarily across the whole body. The
-kill now sets `holders` to the killer alone, which is the caller that won the compare-and-exchange.
+kill now names the winner of the compare-and-exchange in `txn[t].rb_driver` and leaves `holders` alone, which is
+what the code does: a `KILL` destroys no `MergeTreeTransactionPtr`, so it acquires no holder. `Drives(k, t)`
+reads `rb_driver`.
 
 None of the three removes a race between the killer and the owner: the kill can still land at any point of the
 owner's statement, and the owner still unwinds concurrently with the rollback. What they remove is a killer that
@@ -156,7 +158,15 @@ workers can fingerprint the same state before either has inserted it.
 |---|---|---|---|---|
 | `BaseSmall` | `TID_MAX = 2`, `CSN_MAX = 35` | 66,399 | 47,381 | 1 s |
 | `Base` | `TID_MAX = 3`, `CSN_MAX = 36` | 67,864,730 | 28,553,114 | 4 min 08 s |
+| `Base`, after the final-review fix | `TID_MAX = 3`, `CSN_MAX = 36` | 67,864,300 | 28,552,935 | 4 min 06 s |
 | `Base`, superseded | `TID_MAX = 2`, `CSN_MAX = 35` | 5,138,339 | 2,163,747 | 19 s |
+
+The final-review fix commit, which made the statement rollback act on every precommitted part and routed
+`Refuse` to it whenever the statement transaction is non-empty, left the count where it was: 28,552,935 against
+28,553,114 is the multi-worker noise. `stmt` is in `BaseView`, so a reachable change there would have shown. It
+is not reachable in `Base`: `QUERY_FAULTS_MAX = 0` disables `Fail`, and with an empty `Covers` there is no
+`PublishEnrol`, so no refusal can arrive while `stmt.precommitted` is non-empty. Plan 2's covering relation is
+what makes the path live, and the count has to be re-measured there.
 
 The third transaction is worth a factor of 13 in states and 13 in time, and takes the complete search depth to
 117. It was taken anyway: the scenario matrix names `TID_MAX = 3` for every scenario, and the bound contract

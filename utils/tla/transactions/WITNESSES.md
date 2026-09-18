@@ -70,9 +70,11 @@ the bounds argument.
 
 ## Witnesses of the Base properties {#witnesses-of-the-base-properties}
 
-`States` is distinct states, `Time` wall clock, both from the run of 2026-09-18 on the tree this file is
-committed with. Every figure is approximate (multi-worker): under `-workers auto` two workers can fingerprint the
-same state before either has inserted it, so consecutive runs of the same witness differ by a few states.
+`States` is distinct states, `Time` wall clock. Every figure is approximate: a witness run stops at the first
+violation, and how many states it has fingerprinted by then depends on the worker scheduling, so two runs of one
+witness differ by more than the few states a green run differs by. The two rows marked `(re-run)` were taken on
+the tree this file is committed with, after the final-review fix; the rest were taken on the tree of the witness
+sweep, before it, and the fix changes no reachable `Base` state.
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
@@ -82,7 +84,7 @@ same state before either has inserted it, so consecutive runs of the same witnes
 | `NoFutureRead` | `NoFutureRead` | `SelectCheck` compares against `tlog.latest_snapshot` when the part's creation CSN is unknown | `Base` | RED | 32,748 | 2 s |
 | `NoLostRead` | `NoLostRead` | `SelectCapture` captures only `Active` parts, skipping the `Outdated` ones a transactional `DROP` has in flight | `Base` | RED | 514,938 | 6 s |
 | `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | `Base` | RED | 550,880 | 6 s |
-| `ErrorIsAbsent` | `ErrorIsAbsent` | `RollbackOutdateCreated` leaves a part the rolled-back transaction created `Active` | `Base` | RED | 64,365 | 2 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | `RollbackOutdateCreated` leaves a part the rolled-back transaction created `Active` | `Base` | RED (re-run) | 64,836 | 2 s |
 | `RollbackRestores` | `RollbackRestores` | `RollbackRestore` leaves a part the transaction had outdated `Outdated` | `Base` | RED | 751,590 | 7 s |
 | `SingleRemover` | `SingleRemover` | the compare-and-set in `DropEnrol` becomes an unconditional write of `lock`, so a second transaction overwrites a remover's lock and enrols its own removal | `Base` | RED | 2,462,558 | 18 s |
 | `LockConsistent` | `LockConsistent` | `RollbackUnlock` clears the lock before the removal TID is cleared | `Base` | RED | 288,159 | 4 s |
@@ -92,8 +94,17 @@ same state before either has inserted it, so consecutive runs of the same witnes
 | `Assert_isVisible_fast` | `Assert_isVisible_fast` | two changes: `CommitStoreCreation` is skipped for a part the transaction both creates and removes, and `StoreRead` skips `validateInfo`, so `CommitStoreRemoval` publishes a removal CSN over an unknown creation CSN | `Base` | RED | 196,417 | 3 s |
 | | `Assert_isVisible_fast_only1` | the skipped creation store alone | `Base` | GREEN, as minimality requires | 22,554,686 | 2 min 51 s |
 | | `Assert_isVisible_fast_only2` | the skipped validation alone | `Base` | GREEN, as minimality requires | 28,553,258 | 3 min 34 s |
-| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED | 7,541 | 1 s |
+| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED (re-run) | 8,017 | 2 s |
 | `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | `StoreRead` on a retry re-reads memory instead of the stored record, so an attempt that met no interference still sees a stale version | `Base` | RED | 368,402 | 4 s |
+
+
+`RollbackNoLeak` has no row of its own because it is not a property of its own: the design document's
+`RollbackRestores` row states an action property on `RollbackFinalize` and, as a state invariant, that no
+part of `h_creating[t]` is ever in the visible-parts set of a read by another transaction.
+`RollbackRestoresStep` is the first half and `RollbackNoLeak` is the second, stated more strongly, over
+every uncommitted transaction rather than only the rolled-back ones. The row's witness, `RollbackRestore`
+skipped, falsifies the first half; a witness for the second is writable within `Base` and belongs with the
+plan that next touches the rollback actions. `FINDINGS.md`, section 3, carries the ruling.
 
 ## Witnesses deferred to a later plan {#witnesses-deferred-to-a-later-plan}
 
@@ -110,15 +121,14 @@ not results.
 | `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
 | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot` | `SetSnapshot` | plan 2 |
 
-Two further properties checked in `Base` are not in the design document at all: not as a witness row, and not
-as properties either. The witness contract says a property without a passing witness is not accepted into
-`Invariants.tla`, so both were admitted against it. They stay, and the ruling and the witnesses the next spec
-revision owes them are in `FINDINGS.md`, section 3. They are listed here so the gap is visible rather than
-silently absent.
+One further property checked in `Base` is not in the design document at all: not as a witness row, and not as a
+property either. The witness contract says a property without a passing witness is not accepted into
+`Invariants.tla`, so it was admitted against it. It stays, and the ruling and the witness the next spec
+revision owes it are in `FINDINGS.md`, section 3. It is listed here so the gap is visible rather than silently
+absent.
 
 | Property | Status |
 |---|---|
-| `RollbackNoLeak` | the property appears nowhere in the design document; added by task 1. A witness is writable within `Base` and belongs with the plan that next touches the rollback actions |
 | `KillerNotStranded` | the property appears nowhere in the design document; added with the rollback-driver change of task 3. Its witness needs a rollback step that starts and never completes, so it goes to plan 5 |
 
 `TypeOK` is a type invariant, not a behavioural property, and has no witness by design.
@@ -130,4 +140,4 @@ Both on the tree this file is committed with, at the bounds above.
 | Scenario | Result | Distinct states | Time |
 |---|---|---|---|
 | `BaseSmall` | green | 47,381 | 1 s |
-| `Base` | green | 28,553,114 | 4 min 08 s |
+| `Base` | green | 28,552,935 | 4 min 06 s |

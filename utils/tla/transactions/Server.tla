@@ -42,6 +42,9 @@ IdleClient == [current |-> EmptyTID, outcome |-> "None", outcome_tid |-> EmptyTI
                first_read |-> NoRead, last_read |-> NoRead, capture |-> {}, captured0 |-> {}, checked |-> {}, batch |-> {},
                waiting |-> "None", pc |-> "Idle", work |-> <<>>, part |-> "None", stale_interferences |-> 0, rb_detach |-> FALSE, holds_blocker |-> FALSE]
 
+\* attached: the precommitted parts addNewPartAndRemoveCovered has already put into the outer transaction's
+\* creating_parts. Written by PublishStart and read by no action since the statement rollback stopped
+\* excluding them, the same ghost-field shape as txn.holders; plan 2 owns both.
 StmtRecord == [precommitted : SUBSET Parts, covered : SUBSET Parts, attached : SUBSET Parts, work : Seq(Parts)]
 NoStmt == [precommitted |-> {}, covered |-> {}, attached |-> {}, work |-> <<>>]
 
@@ -235,19 +238,31 @@ PublishFlip(k) ==
      /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, mut, task>>
 
-\* MergeTreeData::Transaction::rollback: creation_csn := RolledBackCSN per precommitted part, then outdate under lockParts
+\* MergeTreeData::Transaction::rollback (src/Storages/MergeTree/MergeTreeData.cpp:11122): creation_csn :=
+\* RolledBackCSN for every part of precommitted_parts, then removePartsFromWorkingSet for all of them under
+\* lockParts. Both loops run over the whole set, including a part that addNewPartAndRemoveCovered has already
+\* attached to the outer transaction: precommitted_parts is emptied only by clear() at the end of commit.
+\* The attached part stays in txn[t].creating and in h.creating[t], because MergeTreeTransaction::creating_parts
+\* keeps its entry too, and nothing but afterFinalize clears it. That entry is harmless: Refuse always ends at
+\* the outer rollback, whose MergeTreeTransaction::rollback (src/Interpreters/MergeTreeTransaction.cpp:377)
+\* re-stores RolledBackCSN over the same creating_parts list, which
+\* VersionMetadata::setAndStoreCreationCSN (VersionMetadata.cpp:123) turns into a no-op when the value already
+\* stands, and re-calls removePartsFromWorkingSet, which the code documents as doing nothing for a part already
+\* out of the working set. The model reproduces both no-ops: RollbackMarkCreated's FrameDone disjunct is
+\* enabled at once for a part already at RolledBackCSN, and RollbackOutdateCreated leaves an Outdated part alone.
 StmtRollbackMark(k, p) ==
-  /\ client[k].pc = "StmtRollbackMark" /\ p \in stmt[Sess(k)].precommitted \ stmt[Sess(k)].attached
+  /\ client[k].pc = "StmtRollbackMark" /\ p \in stmt[Sess(k)].precommitted
   /\ \/ /\ ~HasFrame(p, Sess(k)) /\ part[p].mem.ccsn /= RolledBackCSN
         /\ part' = StartFrame(p, Sess(k), "CreationCSN", RolledBackCSN, TRUE)
         /\ UNCHANGED client
      \/ /\ FrameDone(p, Sess(k), "CreationCSN", RolledBackCSN)
+        /\ \A q \in stmt[Sess(k)].precommitted : FrameDone(q, Sess(k), "CreationCSN", RolledBackCSN)
         /\ client' = [client EXCEPT ![k].pc = "StmtRollbackDrop"]
         /\ UNCHANGED part
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, stmt, mut, task>>
 StmtRollbackDrop(k) ==
   /\ client[k].pc = "StmtRollbackDrop" /\ sys.parts_lock = NoActor
-  /\ LET R == stmt[Sess(k)].precommitted \ stmt[Sess(k)].attached IN
+  /\ LET R == stmt[Sess(k)].precommitted IN
      /\ part' = [p \in Parts |-> IF p \in R THEN [part[p] EXCEPT !.pstate = "Outdated"] ELSE part[p]]
      /\ stmt' = [stmt EXCEPT ![Sess(k)] = NoStmt]
      /\ client' = [client EXCEPT ![k].pc = "Rollback"]
@@ -392,16 +407,19 @@ FrameFail(k) ==
         /\ client' = [client EXCEPT ![k].last_error = f.err, ![k].stale_interferences = f.interferences, ![k].pc = "Refuse"]
         /\ part' = WithoutFrame(p, Sess(k))
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, stmt, mut, task>>
-\* Refuse: release what the query holds, statement rollback if needed, then the transaction rollback
+\* Refuse: release what the query holds, statement rollback if needed, then the transaction rollback.
+\* The statement rollback runs whenever the statement transaction is non-empty, because
+\* MergeTreeData::Transaction::rollback (src/Storages/MergeTree/MergeTreeData.cpp:11122) is what the destructor
+\* of that object runs, and isEmpty tests precommitted_parts, not the parts still unattached to the outer
+\* transaction.
 Refuse(k) ==
   /\ client[k].pc = "Refuse" /\ HasTxn(k)
-  /\ LET t == Cur(k)
-         unattached == stmt[Sess(k)].precommitted \ stmt[Sess(k)].attached IN
+  /\ LET t == Cur(k) IN
      /\ txn' = [txn EXCEPT ![t].mutex = IF @ = Sess(k) THEN NoActor ELSE @]
      /\ sys' = [sys EXCEPT !.parts_lock = IF @ = Sess(k) THEN NoActor ELSE @,
                            !.merges_blocker = IF client[k].holds_blocker THEN @ - 1 ELSE @]
      /\ part' = [p \in Parts |-> [part[p] EXCEPT !.frames = { f \in @ : f.owner /= Sess(k) }, !.pins = @ \ {<<"Select", k>>}]]
-     /\ client' = [client EXCEPT ![k].pc = IF unattached /= {} THEN "StmtRollbackMark" ELSE "Rollback",
+     /\ client' = [client EXCEPT ![k].pc = IF stmt[Sess(k)].precommitted /= {} THEN "StmtRollbackMark" ELSE "Rollback",
                                  ![k].work = <<>>, ![k].batch = {}, ![k].capture = {}, ![k].captured0 = {}, ![k].checked = {},
                                  ![k].holds_blocker = FALSE]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, stmt, mut, task>>
