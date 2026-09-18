@@ -163,7 +163,8 @@ workers can fingerprint the same state before either has inserted it.
 
 The final-review fix commit, which made the statement rollback act on every precommitted part and routed
 `Refuse` to it whenever the statement transaction is non-empty, left the count where it was: 28,552,935 against
-28,553,114 is the multi-worker noise. `stmt` is in `BaseView`, so a reachable change there would have shown. It
+28,553,114 is the multi-worker noise, which the cleanup task later confirmed by re-running an unmodified
+`630d8ad28674` and getting 28,553,740. `stmt` is in `BaseView`, so a reachable change there would have shown. It
 is not reachable in `Base`: `QUERY_FAULTS_MAX = 0` disables `Fail`, and with an empty `Covers` there is no
 `PublishEnrol`, so no refusal can arrive while `stmt.precommitted` is non-empty. Plan 2's covering relation is
 what makes the path live, and the count has to be re-measured there.
@@ -193,10 +194,10 @@ is unchanged by it.
 ## The `SetSnapshot` scenario {#setsnapshot}
 
 `SetSnapshot` is `Base` plus three things: the action `SetSnapshot`, the updater's truncation pass
-(`UpdRemoveOldEntriesSetTail`, `UpdRemoveOldEntriesDelete`, `UpdRemoveOldEntriesDone`), and the cleanup group,
-which is still a set of `FALSE` stubs and contributes nothing until the task that fills it in. Its bounds are
-`Base`'s, with two constants added: `SNAPSHOT_TARGETS = {33}` and `SET_SNAPSHOT_PROTECTS = FALSE`.
-`MC_SetSnapshotFixed` is the same scenario with `SET_SNAPSHOT_PROTECTS = TRUE`.
+(`UpdRemoveOldEntriesSetTail`, `UpdRemoveOldEntriesDelete`, `UpdRemoveOldEntriesDone`), and the cleanup group
+(`CleanupGrab`, `CleanupValidate`, `CleanupDeleteOk`, `CleanupDeleteFail`). Its bounds are `Base`'s, with two
+constants added: `SNAPSHOT_TARGETS = {33}` and `SET_SNAPSHOT_PROTECTS = FALSE`. `MC_SetSnapshotFixed` is the
+same scenario with `SET_SNAPSHOT_PROTECTS = TRUE`.
 
 **It does not finish inside the budget, and that is the scenario's open problem.** Four runs at the matrix
 bounds were killed; none of them was converging. The state count is not a mystery and not a defect of any one
@@ -244,9 +245,9 @@ The three changes, together worth nothing measurable:
    baseline there, so without the guard every idle point of every running transaction produced a state. This
    is a model correction, not a bound.
 2. **`h.content` left `SetSnapshotView`.** It is captured history rather than a function of the current state,
-   so it splits states that are otherwise equal. No property in this configuration reads it, because
-   `NoLostVisibleData` is not checked here yet. The task that adds that property has to put the field back and
-   re-make the view argument.
+   so it splits states that are otherwise equal. No property read it while `NoLostVisibleData` was not checked.
+   Both it and `part.pins` are back in the projection now that the cleanup group exists; what that cost is
+   measured in the next section.
 3. **The truncation pass got the updater's program counter.** `removeOldEntries` runs on one thread and never
    interleaves with itself, so `SetTail` takes `sys.updater_pc` from `"Idle"` to `"Delete"`, each removal is a
    step of the `"Delete"` phase, and `UpdRemoveOldEntriesDone` ends the pass. This is the more faithful shape,
@@ -256,6 +257,41 @@ The three changes, together worth nothing measurable:
 `AtMostOneSetSnapshot` was measured at 1.5% and **not applied**. With a single target only a transaction that
 began above it can move at all, so two transactions holding moved snapshots is already close to unreachable and
 the constraint has almost nothing to prune. A bound that buys 1.5% is not worth the sentence it costs.
+
+### What the cleanup group cost {#setsnapshot-cleanup-cost}
+
+Adding the four cleanup actions and putting `part.pins` and `h.content` back into `SetSnapshotView` roughly
+doubles the scenario at its exhaustive bounds. Both fields had to come back: `CleanupGrab` reads `part[p].pins`
+in its `isSharedPtrUnique` guard, so two states differing only in a pin no longer have the same successors, and
+`NoLostVisibleData` reads `h.content`. Leaving either out would make the view unsound rather than merely
+coarse.
+
+| Configuration | Distinct states | Time |
+|---|---|---|
+| `SetSnapshot` before the cleanup group | 7,420,004 | 1 min 05 s |
+| `SetSnapshot` with it | 13,634,354 | 2 min 01 s |
+| `SetSnapshotFixed` before | 7,291,951 | 1 min 04 s |
+| `SetSnapshotFixed` with it | 13,104,253 | 2 min 02 s |
+
+Both stay well inside the 30 million distinct states and 10 minutes a scenario is budgeted, so no further
+reduction was sought. The two factors are not separable by these runs: the actions and the two view fields
+arrived together, and a run with the actions and the old view would be unsound to compare against.
+
+### The `SetSnapshotF2` pair {#setsnapshotf2}
+
+`MC_SetSnapshotF2` and `MC_SetSnapshotF2Fixed` are one session, one part, `TID_MAX = 3`, `CSN_MAX = 35`,
+`SNAPSHOT_TARGETS = {34}`, with the same view and the same action set. They exist because the violating
+behaviour of finding F2 is a single sequential run of three transactions, and breadth is the wrong resource for
+reaching it: at the witness bounds with two sessions and two parts the search reached 46.7 million distinct
+states at depth 43 in five minutes without arriving at the violation, which is at depth 45. Cutting the
+universe to what the trace uses puts it at 177,195 distinct states and three seconds.
+
+| Configuration | Distinct states | Time | Result |
+|---|---|---|---|
+| `SetSnapshotF2` | 177,195 | 3 s | red on `NoPrematureDelete`, 45 states |
+| `SetSnapshotF2Fixed` | 367,183 | 4 s | green |
+
+The `Fixed` run is larger than the red one because it finishes; the red one stops at the first violation.
 
 ### The bounds, and why there are two sets {#setsnapshot-bounds}
 

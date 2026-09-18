@@ -119,6 +119,7 @@ not results.
 | `NoDoubleRead` | `SelectCheck` ignores `removal_csn` and `removal_tid` | `Merge` | plan 2 |
 | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts | `Merge`; the `Base` universe has no covering relation, so no two parts can be related | plan 2 |
 | `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
+| `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | `NtInsert` and the non-transactional batch, so that a part carries a record the two exemptions are about | task 4 of this plan, with the `NonTxn` scenario |
 
 `Assert_getOldestSnapshot` came off this table with the `SetSnapshot` scenario: the action its witness needs
 now exists, and the row is in the scenario's own table below.
@@ -156,9 +157,13 @@ needs the third transaction.
 
 The third row is the only one that exercises a C++ assertion end to end, and it is the one that cannot be shown
 at the exhaustive bounds: breaking sortedness needs a transaction that began above `FirstCSN`, so a committed
-transaction has to precede the two that run concurrently. The second row's clause has no C++ counterpart at
-all, because `protected_snapshot` is a model ghost; it is what makes "the entry did not follow the snapshot"
+transaction has to precede the two that run concurrently. The second row's *clause* has no C++ counterpart,
+because `protected_snapshot` is a model ghost; it is what makes "the entry did not follow the snapshot"
 observable, and it must not be read as evidence that the first-class clause is reachable at two transactions.
+Its *hook* is a different matter and is not ghost-only: moving the `snapshots_in_use` entry down while the
+transaction's own snapshot moves with it is exactly what an in-place `setSnapshot`, one that writes the list
+entry and does not re-sort, would do in the C++. That is why the same hook falsifies
+`Assert_TailPtrNotRegressing`, which is a `LOGICAL_ERROR` on a modelled path rather than a ghost.
 
 | Property | Witness name | The model change | Bounds | Result | States | Time |
 |---|---|---|---|---|---|---|
@@ -225,8 +230,32 @@ and by inspection rather than by search: `UpdFinalizeUnknown(t)` is `FALSE` in t
 reached only from `tryFinalizeUnknownStateTransactions` (`src/Interpreters/TransactionLog.cpp:387`) and from
 `getCSNAndAssert` (`:645`), which has no caller in the tree, so no scenario without the unknown-state group can
 falsify it. The design document lists it among the `SetSnapshot` scenario's properties anyway, which is spec
-defect S6. `NoLostVisibleData` and `VisibleFrags` are likewise defined and in no cfg; the task that adds the
-cleanup group adds both the property and its witness.
+defect S6. `NoLostVisibleData` is now in the `Fixed` configurations and has its
+witness in the cleanup section below; it is deliberately not in `MC_SetSnapshot.cfg`, which exists to produce
+finding F2 and would otherwise stop on whichever property fires first.
+
+## Witnesses of the cleanup thread {#witnesses-cleanup}
+
+The cleanup thread adds three properties. Two of them need a shape the `SetSnapshot` bounds cannot build, so
+they are shown in `SetSnapshotF2Fixed`: one session, one part, `TID_MAX = 3`, `CSN_MAX = 35`,
+`SNAPSHOT_TARGETS = {34}`, `SET_SNAPSHOT_PROTECTS = TRUE`. That is the configuration finding F2 needed, and the
+reason is the same one: a part still visible to a running transaction at a lowered snapshot takes three
+transactions and a target above `FirstCSN`. The gap is debt B2 in `FINDINGS.md`. All three witnesses run
+against a `Fixed` configuration, so that the `SET TRANSACTION SNAPSHOT` defect does not fire first.
+
+| Property | Witness name | The model change | Scenario | Result | States | Time |
+|---|---|---|---|---|---|---|
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 236,828 | 3 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupGrab` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 31,862 | 2 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 229,640 | 3 s |
+
+`PinnedNotDeleted` is red at the exhaustive bounds because it needs no visible part at all: a `SELECT` pin on an
+`Outdated` part whose removal has committed is enough, and two transactions produce that. The other two were
+run at the exhaustive bounds first and are green there, 13,664,284 and 13,664,666 distinct states in 96 and
+98 seconds, which is what debt B2 records.
+
+`NoFalseCorruption`'s witness is deferred to task 4 of this plan and is in the deferred table above. The
+property itself is checked, green, in `SetSnapshotFixed` and `SetSnapshotF2Fixed`.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 

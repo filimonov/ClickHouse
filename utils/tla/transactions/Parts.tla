@@ -73,18 +73,20 @@ IsVisibleImpl(p, s, u) ==
                               ELSE LookupCsn(info.rtid)
                   IN ccsn <= s /\ (rcsn = UnknownCSN \/ s < rcsn)
 
-\* ---- VersionMetadata::canBeRemoved
-CanBeRemovedImpl(p) ==
+\* ---- VersionMetadata::canBeRemoved, with the snapshot it compares against as a parameter, so that the
+\* cleanup thread can be given a different one (the NoPrematureDelete witness passes tlog.latest_snapshot).
+CanBeRemovedWith(p, oldest) ==
   LET info == part[p].mem IN
   IF info.rtid = NonTransactionalTID THEN TRUE
   ELSE IF info.ccsn = RolledBackCSN THEN TRUE
   ELSE IF info.rtid = EmptyTID THEN FALSE
   ELSE LET ccsn == IF info.ccsn /= UnknownCSN THEN info.ccsn ELSE LookupCsn(info.ctid) IN
        IF ccsn = UnknownCSN THEN FALSE
-       ELSE IF OldestSnapshot < ccsn THEN FALSE
-       ELSE IF info.rcsn /= UnknownCSN /\ info.rcsn <= OldestSnapshot THEN TRUE
+       ELSE IF oldest < ccsn THEN FALSE
+       ELSE IF info.rcsn /= UnknownCSN /\ info.rcsn <= oldest THEN TRUE
        ELSE LET rcsn == IF info.rcsn /= UnknownCSN THEN info.rcsn ELSE LookupCsn(info.rtid) IN
-            rcsn /= UnknownCSN /\ rcsn <= OldestSnapshot
+            rcsn /= UnknownCSN /\ rcsn <= oldest
+CanBeRemovedImpl(p) == CanBeRemovedWith(p, OldestSnapshot)
 
 \* ---- VersionMetadata::validateInfo (the exempt shape included); txn[t].csn is the transaction object's csn
 ValidateInfoOK(info) ==
@@ -133,6 +135,46 @@ FrameDone(p, o, op, val) == ~HasFrame(p, o) /\ ApplyOp(op, val, part[p].mem) = p
 FrameError(p, o) == HasFrame(p, o) /\ FrameOf(p, o).pc = "Error"
 StoredRecord(p) == IF part[p].deferred_on THEN part[p].deferred
                    ELSE IF DiskHasInfo(p) THEN DiskInfo(p) ELSE EmptyInfo
+
+\* No txn_version.txt and no deferred record: readMetadata would throw CANNOT_OPEN_FILE.
+NoStoredRecord(p) == ~part[p].deferred_on /\ ~DiskHasInfo(p)
+\* The shape loadMetadata case 2 produces, short-circuited by both validateInfo and hasValidMetadata.
+DummyRolledBackShape(info) ==
+  info.ccsn = RolledBackCSN /\ info.ctid = DummyTID /\ info.rtid = EmptyTID /\ info.rcsn = UnknownCSN
+
+\* VersionMetadata::hasValidMetadata, src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:632-721, reached
+\* through IMergeTreeDataPart::assertHasValidVersionMetadata (IMergeTreeDataPart.cpp:2863), which returns true
+\* for a part that was never involved in a transaction and for a Temporary one. A mismatch throws CORRUPTED_DATA;
+\* a CANNOT_OPEN_FILE whose directory is gone is accepted (:706).
+\* The NoFalseCorruption witness removes two exemptions the spec's row names: the deferred record counts as a
+\* stored record, and a NonTransactionalCSN held only in memory is transient.
+ValidateMetadataOK(p) ==
+  LET m == part[p].mem
+      r == StoredRecord(p)
+      have == IF Witness("NoFalseCorruption") THEN DiskHasInfo(p) ELSE ~NoStoredRecord(p) IN
+  \/ ~Involved(m)
+  \/ part[p].pstate = "Temporary"
+  \/ DummyRolledBackShape(m)
+  \/ (~have /\ ~DiskDirExists(p))
+  \/ /\ have
+     /\ m.ctid = r.ctid
+     /\ (m.rtid = r.rtid \/ m.rtid = NonTransactionalTID)
+     /\ (m.ccsn = r.ccsn \/ m.ccsn = RolledBackCSN \/ r.ccsn = UnknownCSN)
+     /\ (m.rcsn = r.rcsn \/ (m.rcsn = NonTransactionalCSN /\ ~Witness("NoFalseCorruption")) \/ r.rcsn = UnknownCSN)
+     /\ ~(r.rcsn /= UnknownCSN /\ r.rtid = EmptyTID)
+
+\* spec #invariants-cleanup, NoFalseCorruption: the disagreements history says cannot be transient. It keeps both
+\* exemptions unconditionally, which is what makes the witness above red rather than merely different.
+RealDisagreement(p) ==
+  LET m == part[p].mem
+      r == StoredRecord(p)
+      have == ~NoStoredRecord(p) IN
+  \/ (have /\ m.ctid /= r.ctid)
+  \/ (have /\ m.rtid /= r.rtid /\ m.rtid /= NonTransactionalTID)
+  \/ (have /\ m.ccsn /= r.ccsn /\ m.ccsn /= RolledBackCSN /\ r.ccsn /= UnknownCSN)
+  \/ (have /\ m.rcsn /= r.rcsn /\ m.rcsn /= NonTransactionalCSN /\ r.rcsn /= UnknownCSN)
+  \/ (have /\ r.rcsn /= UnknownCSN /\ r.rtid = EmptyTID)
+  \/ (~have /\ DiskDirExists(p) /\ ~DummyRolledBackShape(m))
 
 \* ---- the three-step store (updateInfoWithRefreshDataThenStoreAndSetMetadata); each step is an action of the root
 \* StoreRead: getInfo on attempt 1, loadMetadata on a retry (or the witness's getInfo), the op applied, updateCSNIfNeeded,

@@ -1,10 +1,16 @@
----- MODULE MC_SetSnapshotFixed ----
+---- MODULE MC_SetSnapshotF2Fixed ----
 EXTENDS MergeTreeTransactions
-\* MC_SetSnapshot with SET_SNAPSHOT_PROTECTS = TRUE: the model variant of the C++ fix proposed in FINDINGS.md,
-\* finding F2. Everything else, the view included, is identical.
+\* MC_SetSnapshotF2 with SET_SNAPSHOT_PROTECTS = TRUE: the model variant of the C++ fix proposed in FINDINGS.md,
+\* finding F2, at the one configuration that reaches the defect. Everything else, the view included, is
+\* identical, and it checks the cleanup properties as well, so the run is both the fix's acquittal on
+\* NoPrematureDelete and the exhaustive check of PinnedNotDeleted, NoLostVisibleData and NoFalseCorruption at a
+\* configuration that reaches the cleanup thread's deep states.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 
+\* The view is MC_SetSnapshot's, verbatim. What it depends on is which actions are enabled and which
+\* properties are checked; the same actions are enabled here and the properties checked are the cleanup ones,
+\* whose two fields part.pins and h.content the projection keeps. Only the constants below differ.
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is BaseView plus the fields
 \* SET TRANSACTION SNAPSHOT and log truncation make live: h.truncated, tlog.tail_ptr, tlog.updated_tail_ptr,
 \* zk.tail, sys.cleanup_pc and sys.cleanup_part. zk as a whole was already kept, so zk.tail comes with it; the

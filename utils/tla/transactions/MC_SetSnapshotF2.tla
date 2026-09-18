@@ -1,10 +1,21 @@
----- MODULE MC_SetSnapshotFixed ----
+---- MODULE MC_SetSnapshotF2 ----
 EXTENDS MergeTreeTransactions
-\* MC_SetSnapshot with SET_SNAPSHOT_PROTECTS = TRUE: the model variant of the C++ fix proposed in FINDINGS.md,
-\* finding F2. Everything else, the view included, is identical.
+\* The configuration that exhibits finding F2, the premature delete SET TRANSACTION SNAPSHOT allows.
+\* MC_SetSnapshot cannot: the shape needs a part created by one committed transaction, removed by a second
+\* committed one, and a third transaction running with its snapshot lowered between the two CSNs, which is three
+\* transactions, while the exhaustive bounds give two. It also needs a snapshot target at which something is
+\* visible: SNAPSHOT_TARGETS = {33} is FirstCSN, which is latest_snapshot at init, and the first commit takes
+\* CSN 34 (Keeper.tla: zk.seq starts at FirstCSN), so no part is ever visible at 33 and the property is
+\* vacuously true there however deep the search goes. This module raises TID_MAX to 3, lowers the target to 34,
+\* and cuts the scenario to one session and one part, because the shape is sequential: the same session runs the
+\* three transactions in turn, so a second session and a second part only add breadth the violation does not need.
+\* MC_SetSnapshotF2Fixed is the same configuration with SET_SNAPSHOT_PROTECTS = TRUE and is green.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 
+\* The view is MC_SetSnapshot's, verbatim. What it depends on is which actions are enabled and which
+\* properties are checked; the same actions are enabled here and the properties checked are the cleanup ones,
+\* whose two fields part.pins and h.content the projection keeps. Only the constants below differ.
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is BaseView plus the fields
 \* SET TRANSACTION SNAPSHOT and log truncation make live: h.truncated, tlog.tail_ptr, tlog.updated_tail_ptr,
 \* zk.tail, sys.cleanup_pc and sys.cleanup_part. zk as a whole was already kept, so zk.tail comes with it; the

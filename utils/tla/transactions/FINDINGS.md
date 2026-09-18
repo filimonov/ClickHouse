@@ -21,38 +21,65 @@ Baseline C++ throughout is upstream `master` `2c24b6b9291e`, checked out in this
 
 | Id | Scenario, bounds | Property | Action sequence (short) | Classification | Resolution | Proposed code fix |
 |---|---|---|---|---|---|---|
-| F2 | `SetSnapshot` at `TID_MAX = 3`, `CSN_MAX = 36`, `SNAPSHOT_TARGETS = {33}` | `NoPrematureDelete` (predicted; the property and the cleanup thread it needs arrive in the next task) | a transaction begins at a snapshot, `SET TRANSACTION SNAPSHOT` lowers its read snapshot, its entry in `snapshots_in_use` stays where `beginTransaction` put it, and `grabOldParts` removes a part the transaction can still read | `code` | the model variant `SET_SNAPSHOT_PROTECTS` encodes the proposed fix and `MC_SetSnapshotFixed` runs it | `TransactionLog` gains a method that moves the entry under `running_list_mutex` and refuses a target below `tail_ptr`; see below |
+| F2 | `SetSnapshotF2`: one session, one part, `TID_MAX = 3`, `CSN_MAX = 35`, `SNAPSHOT_TARGETS = {34}` | `NoPrematureDelete` | `t1` inserts `P1` and commits at CSN 34; `t2` takes snapshot 34, drops `P1` and commits at CSN 35; `t3` begins at snapshot 35 and `SET TRANSACTION SNAPSHOT 34` lowers its read snapshot without moving its `snapshots_in_use` entry; `CleanupGrab` moves `P1` to `Deleting` while `t3` can still read it | `code` | the model variant `SET_SNAPSHOT_PROTECTS` encodes the proposed fix and `MC_SetSnapshotF2Fixed` runs the same configuration green | split `getOldestSnapshot` into a locked entry point and an unlocked body, give `TransactionLog` a `setSnapshotForRunningTransaction` that moves the entry under `running_list_mutex` and refuses a target below `tail_ptr`, and hold that mutex in `removeOldEntries` from the oldest-snapshot read through the `tail_ptr` store; see below |
 | F1 | `Base` at `TID_MAX = 3`, `CSN_MAX = 38`, the first run at the transaction count the scenario matrix asks for | `Atomicity` | `t1` inserts `P1` and commits at CSN 34; `t2` takes snapshot 34, drops `P1`, inserts `P2`, and `CommitCreateCSN` writes CSN 35 into the log, which the updater loads while `t2` is still storing; `t3` takes snapshot 35, locks and stores its own removal of `P2`; `t3`'s `SELECT` then reads `{}` | `property` | `AtomicityStep` now excludes the reader's own removals, `h.removing[t]`, from `C`. The design document's row states only the writer's half of the same precedence, recorded in section 3 as S1 | none, the code is right |
 
 ### F2 in full {#f2}
 
-**State of the evidence.** This entry is a prediction with a fix, not a trace. The property that names the
-defect, `NoPrematureDelete`, quantifies over parts entering `Deleting`, and only `CleanupGrab` moves a part
-there. `CleanupGrab`, `CleanupValidate`, `CleanupDeleteOk` and `CleanupDeleteFail` are still `FALSE` in
-`Server.tla`, so `MC_SetSnapshot` cannot reach a single `Deleting` part and the property has nothing to
-falsify; it is therefore not in `MC_SetSnapshot.cfg`. The scenario is green on everything it does check. What
-task 1 does establish by running is the defect's mechanism, one layer below the property:
+**Trace**: `traces/f2-set-snapshot-premature-delete.txt`, 45 states, found after 177,195 distinct states in
+three seconds. Scenario `SetSnapshotF2`, classification `code`.
 
-- `witness.sh SetSnapshot Assert_getOldestSnapshot` is red, at 442,867 distinct states in 5 seconds. The witness is `SetSnapshot` also moving
-  `protected_snapshot` and the `snapshots_in_use` entry, which is the fix; the model's tid-ordered proxy for
-  the C++ sortedness assertion is what goes red under it, not the C++ assertion. It confirms that the
-  scenario reaches a state in which one running transaction's read snapshot is below another's, which is the
-  precondition of the whole defect.
-- `witness.sh SetSnapshot Assert_TailPtrNotRegressing Assert_getOldestSnapshot` is red, at 568,869 distinct states in 6 seconds: once the entry does
-  move down, the very next `removeOldEntries` computes a `getOldestSnapshot` below the `tail_ptr` it has
-  already stored, which is the `LOGICAL_ERROR` at `src/Interpreters/TransactionLog.cpp:312`. That is the
-  reason the fix must also refuse a target below `tail_ptr`, and it is why the fix variant carries that
-  refusal.
-- `MC_SetSnapshotFixed`, the same scenario with `SET_SNAPSHOT_PROTECTS = TRUE`, is green on every property
-  `MC_SetSnapshot` checks, so the variant that encodes the fix does not break anything the baseline holds.
-  That run is at `TID_MAX = 2`, where it explores 7,291,861 distinct states in 63 seconds; at the committed
-  bounds neither scenario finishes, which is model defect M4.
+**Action sequence.** `Begin`, `InsertWrite`, the three store steps, `InsertPreActive`, `PublishStart`,
+`PublishFlip`, `CommitBefore`, `CommitCreateCSN`, `CommitStoreCreation` with its store steps, `CommitFlip`,
+`CommitFinalize`, `UpdLoadEntriesMap`, `UpdPublishSnapshot`, `CommitAck` give `t1` a committed `P1` at CSN 34
+and leave `tlog.latest_snapshot` at 34. `Begin`, `DropStart`, `DropLock`, `DropEnrol` with its store steps,
+`DropStore`, `DropOutdate`, `CommitBefore`, `CommitCreateCSN`, `CommitStoreRemoval` with its store steps,
+`CommitFlip`, `CommitFinalize`, `UpdLoadEntriesMap`, `UpdPublishSnapshot`, `CommitAck` give `t2` a committed
+removal at CSN 35 and leave `P1` `Outdated`, unpinned and `latest_snapshot` at 35. Then `Begin` starts `t3` at
+snapshot 35, `SetSnapshot` lowers it to 34, and `CleanupGrab` fires.
 
-**What task 2 owes this entry**: `CleanupGrab` and its siblings, `NoPrematureDelete`, `PinnedNotDeleted` and
-`NoLostVisibleData` added to `MC_SetSnapshot.cfg`, and the run. The expected outcome is red on
-`NoPrematureDelete` in `MC_SetSnapshot` and green in `MC_SetSnapshotFixed`; the trace belongs in
-`traces/` and its state count and action sequence belong in the row above. If the baseline run is green
-instead, the prediction below is wrong and that is the finding.
+**The state in which the grab happened.** `txn[3].snapshot = 34`, `txn[3].protected_snapshot = 35`,
+`tlog.snapshots_in_use[3] = 35` and `tlog.running_list = {3}`, so `OldestSnapshot` is 35. `P1` carries
+`mem = [ctid |-> 1, ccsn |-> 34, rtid |-> 2, rcsn |-> 35]`, is `Outdated` with `pins = {}` and no frames.
+`CanBeRemovedImpl(P1)` is therefore true on the last clause, `rcsn <= OldestSnapshot`, that is `35 <= 35`, while
+`OracleVisible(P1, 34, 3)` is true: the creator committed at 34, which is at or below 34, and the only remover
+committed at 35, which is above it. The part `t3` is about to read is the part the cleanup thread just took.
+
+**The C++ call sequence.** `InterpreterTransactionControlQuery::executeSetSnapshot`
+(`src/Interpreters/InterpreterTransactionControlQuery.cpp:138`) calls `MergeTreeTransaction::setSnapshot`
+(`src/Interpreters/MergeTreeTransaction.cpp:52`), which writes `snapshot` and nothing else; the background
+cleanup task reaches `MergeTreeData::grabOldParts` (`src/Storages/MergeTree/MergeTreeData.cpp:4074`), which asks
+`VersionMetadata::canBeRemoved` (`src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:272`) at `:4140`;
+`canBeRemoved` calls `TransactionLog::getOldestSnapshot` (`src/Interpreters/TransactionLog.cpp:677`), which
+returns `snapshots_in_use.front()`, still the snapshot `beginTransaction` inserted; the part moves to `Deleting`
+and `clearPartsFromFilesystemAndRollbackIfError` (`:4566`) deletes its directory.
+
+**Why `MC_SetSnapshot` is green and `MC_SetSnapshotF2` is not.** The scenario that owns
+`SET TRANSACTION SNAPSHOT` cannot reach this shape, for two independent reasons, and both are configuration
+rather than model.
+
+The first is the number of transactions. The shape needs a part created by one committed transaction, removed
+by a second committed one, and a third transaction running with its snapshot lowered between the two commit
+CSNs. It cannot be fewer: while the remover is still running the part is pinned by its own `<<"Txn", t>>` entry
+and `mem.rcsn` is still `UnknownCSN`, so `CleanupGrab` is disabled twice over, and once the remover has
+committed, `OracleVisible` excludes it anyway, because the part is in its own `h.removing`. Three transactions
+is above the exhaustive bound `TID_MAX = 2` that model defect `M4` forced on this scenario.
+
+The second is the snapshot target. `SNAPSHOT_TARGETS = {33}` is `FirstCSN`, which is `tlog.latest_snapshot` at
+initialisation, while `zk.seq` also starts at `FirstCSN` (`Keeper.tla`) so the first commit takes CSN 34. No
+part is ever visible at snapshot 33, and `NoPrematureDelete` is vacuously true there however deep the search
+runs: a run at the witness bounds with the target left at 33 was green, and one at those bounds with the target
+at 34 reached 46.7 million distinct states at depth 43 in five minutes without reaching the violation, which
+lies at depth 45. Breadth is the wrong resource here; the violating behaviour is a single sequential run of
+three transactions.
+
+`MC_SetSnapshotF2` is that configuration: one session, one part, `TID_MAX = 3`, `CSN_MAX = 35`,
+`SNAPSHOT_TARGETS = {34}`. A second session and a second part add only breadth the violation does not use, and
+removing them puts the trace within reach of a three-second run. `MC_SetSnapshotF2Fixed` is the same
+configuration with `SET_SNAPSHOT_PROTECTS = TRUE` and is green on `NoPrematureDelete`, `PinnedNotDeleted`,
+`NoLostVisibleData` and `NoFalseCorruption` over 367,183 distinct states. `MC_SetSnapshot` and
+`MC_SetSnapshotFixed` keep their bounds and their target: 33 is what the `Assert_getOldestSnapshot` and
+`Assert_TailPtrNotRegressing` witnesses need, and neither of those needs a visible part.
 
 **The mechanism.** `InterpreterTransactionControlQuery::executeSetSnapshot`
 (`src/Interpreters/InterpreterTransactionControlQuery.cpp:138`) validates the requested CSN and calls
@@ -82,36 +109,46 @@ guarantee `SET TRANSACTION SNAPSHOT` exists to provide.
 too-high value lets the log entries of that era be truncated while a transaction is still reading at a
 snapshot below the new `tail_ptr`.
 
-**Proposed fix, applicable to upstream `master`.** Give `TransactionLog` a method that changes a running
-transaction's snapshot, and have `executeSetSnapshot` call it instead of `MergeTreeTransaction::setSnapshot`:
+**Proposed fix, applicable to upstream `master`.** Four functions change, and one member declaration.
 
-- refuse with `INVALID_TRANSACTION` when the requested snapshot is below `tail_ptr`, because the log entries
-  needed to resolve the parts of that era may already be gone and `assertTIDIsNotOutdated` would raise a
-  `LOGICAL_ERROR` on the first lookup that needs one;
-- otherwise erase the transaction's `snapshot_in_use_it` from `snapshots_in_use`, re-insert the new value at
-  the position it sorts to, store the returned iterator back into `snapshot_in_use_it`, and only then store
-  the new value into `snapshot`.
+`TransactionLog::getOldestSnapshot` (`src/Interpreters/TransactionLog.cpp:677`) splits in two. The body, with
+the two `chassert`s and the `snapshots_in_use.front()` it returns, becomes a private
+`getOldestSnapshotLocked() const TSA_REQUIRES(running_list_mutex)`; `getOldestSnapshot` keeps its signature and
+becomes the entry point that takes `std::lock_guard lock{running_list_mutex}` and calls it. The split is what
+makes the rest possible: `running_list_mutex` is a plain `std::mutex` (`src/Interpreters/TransactionLog.h:184`)
+and the current `getOldestSnapshot` locks it itself, so no caller can hold it across the call.
 
-Two things the obvious version of that gets wrong.
+`TransactionLog::removeOldEntries` (`:284`) takes `running_list_mutex` itself, before it reads the `tail_ptr`
+znode at `:311`, and holds it through `tail_ptr.store(new_tail_ptr)` at `:321`, calling `getOldestSnapshotLocked`
+in place of `getOldestSnapshot` at `:312`. Its cost is one ZooKeeper `get` and one `set` inside that critical section,
+which is the price of making the computation of the new tail and its publication one step.
 
-**The refusal races the tail.** Holding `running_list_mutex` across the check is not enough.
-`removeOldEntries` computes the new tail inside `getOldestSnapshot`, which takes that mutex, but stores it into
-`tail_ptr` at `TransactionLog.cpp:316`, after releasing it. A `SET TRANSACTION SNAPSHOT` that reads `tail_ptr`
-under the mutex and passes can therefore find the tail above its snapshot a moment later, which is the state the
-refusal exists to prevent. The check and the advance have to exclude each other: either `removeOldEntries` holds
-`running_list_mutex` from `getOldestSnapshot` through the `tail_ptr.store`, which is the smaller change and
-costs the updating thread one more critical section, or the new method re-reads `tail_ptr` after its entry is in
-`snapshots_in_use` at the new value and rolls the entry back if the tail has moved past it. The first is
-preferable: the second leaves a window in which `getOldestSnapshot` reports a value below a tail that has
-already been published.
+`TransactionLog` gains `setSnapshotForRunningTransaction(MergeTreeTransaction & txn, CSN new_snapshot)`, which
+takes `running_list_mutex` and, under it, refuses with `INVALID_TRANSACTION` when `new_snapshot < tail_ptr`,
+because the log entries needed to resolve the parts of that era may already be gone and
+`assertTIDIsNotOutdated` (`:656`) would raise a `LOGICAL_ERROR` on the first lookup that needs one; otherwise it
+erases the transaction's `snapshot_in_use_it` from `snapshots_in_use`, re-inserts `new_snapshot` at the position
+it sorts to, stores the returned iterator back into `snapshot_in_use_it`, and only then calls
+`MergeTreeTransaction::setSnapshot`. Reading `tail_ptr` under `running_list_mutex` is sound only because
+`removeOldEntries` now publishes it under the same mutex: without that, a check that passes can find the tail
+above its snapshot a moment later, which is exactly the state the refusal exists to prevent.
 
-**`snapshot_in_use_it` is `const` today** (`src/Interpreters/MergeTreeTransaction.h:134`,
-`const std::list<CSN>::iterator`). The fix reassigns it, so the declaration loses the `const`.
+`InterpreterTransactionControlQuery::executeSetSnapshot`
+(`src/Interpreters/InterpreterTransactionControlQuery.cpp:138`) calls that method instead of
+`MergeTreeTransaction::setSnapshot`. `setSnapshot` itself does not change; it is now called only from under the
+mutex.
 
-`getOldestSnapshot` then returns `snapshots_in_use.front()` as before, and both of its `chassert`s still hold:
-the list keeps one entry per running transaction, and re-inserting at the sorted position keeps it sorted.
-Every consumer of `getOldestSnapshot`, `canBeRemoved` and `removeOldEntries` among them, is protected without
-being changed.
+`MergeTreeTransaction::snapshot_in_use_it` is declared `const std::list<CSN>::iterator`
+(`src/Interpreters/MergeTreeTransaction.h:134`). The fix reassigns it, so the declaration loses the `const`.
+
+The alternative to the second change, having the new method re-read `tail_ptr` after its entry is already in
+`snapshots_in_use` at the new value and roll the entry back if the tail moved past it, keeps `removeOldEntries`
+as it is but leaves a window in which `getOldestSnapshot` reports a value below a tail that has already been
+published, so it is worse.
+
+`getOldestSnapshot` still returns `snapshots_in_use.front()`, and both of its `chassert`s still hold: the list
+keeps one entry per running transaction, and re-inserting at the sorted position keeps it sorted. Every consumer
+of `getOldestSnapshot`, `canBeRemoved` and `removeOldEntries` among them, is protected without being changed.
 
 **The model variant.** `SET_SNAPSHOT_PROTECTS` in `Types.tla` is that fix: `SetSnapshot` in `Server.tla` moves
 `protected_snapshot` and the `snapshots_in_use` entry with the snapshot, and refuses a target below
@@ -194,7 +231,7 @@ evaluated it and a correction applied to one copy and not the other would have b
 |---|---|---|---|
 | M1 | `LegacyPartRecord` gives a legacy part `mem.sv = 0` (`Parts.tla:26`) while its disk record is `Legacy` (`Disk.tla:20`), which is not `Info`, so `DiskHasInfo` is false (`Disk.tla:42`) and `StoredRecord` falls back to `EmptyInfo` with `sv = -1` (`Parts.tla:128`) | Every store on a legacy part compares an expected `-1` against a tentative `sv` of 0 in `StorePersistStep` (`Parts.tla:153`), takes the `TOO_OLD_VERSION` branch, retries `MAX_STORE_RETRIES` times and ends in `STALE_VERSION`. No legacy part can ever be written, so plan 3's `Crash` runs with a non-empty `LEGACY_PARTS` would be vacuous | plan 3, the task that enables `LEGACY_PARTS` |
 | M2 | `StmtRollbackMark` and `StmtRollbackDrop` acted on `stmt.precommitted \ stmt.attached`, and `Refuse` routed to them only when that difference was non-empty (`Server.tla`, the statement-rollback actions) | The statement rollback skipped a part that `addNewPartAndRemoveCovered` had already attached to the outer transaction, where `MergeTreeData::Transaction::rollback` (`src/Storages/MergeTree/MergeTreeData.cpp:11122`) marks and removes every part of `precommitted_parts`; and a `Refuse` whose precommitted set was entirely attached left the `stmt` record standing, so the leak outlived the statement. Both are dead in `Base`, which has `QUERY_FAULTS_MAX = 0` and an empty `Covers`, so neither `Fail` nor `PublishEnrol` can refuse with a non-empty `stmt.precommitted`; plan 2 gives the sibling scenario a covering relation, which makes `PublishEnrol` live and a `SERIALIZATION_ERROR` between `PublishStart` and `PublishFlip` reachable, and both would have gone live there at once | closed by the final-review fix commit of plan 1 |
-| M3 | `UpdRemoveOldEntriesDelete` re-reads `tlog.tid_to_csn` and `tlog.latest_snapshot` on every iteration, while `TransactionLog::removeOldEntries` (`src/Interpreters/TransactionLog.cpp:319-323`) snapshots both once and then loops over the copy | `latest_snapshot` only grows, so the model can delete an entry the C++ would have kept as "the latest one we fetched". The behaviour set is widened, not narrowed, which is safe for every property of plan 2: the only property that reads `h.truncated` is `LogEntryNeeded`, which is plan 3's The same action also erases `tid_to_csn[t]` in the step that removes the znode, while the code collects `removed_entries` and erases them after the loop under `mutex`, so the model never has the code's window in which the znode is gone and the local lookup still succeeds; and `UpdRemoveOldEntriesDone` is unguarded, so a pass can end with entries the code's loop would still have removed. Both widen the behaviour set in the same direction as the re-read | plan 3, the task that enables `Crash`, either narrows all three to the code's shape or argues the widening is still sound for `LogEntryNeeded` |
+| M3 | `UpdRemoveOldEntriesDelete` re-reads `tlog.tid_to_csn` and `tlog.latest_snapshot` on every iteration, while `TransactionLog::removeOldEntries` (`src/Interpreters/TransactionLog.cpp:319-323`) snapshots both once and then loops over the copy | `latest_snapshot` only grows, so the model can delete an entry the C++ would have kept as "the latest one we fetched". The behaviour set is widened, not narrowed, which is safe for every property of plan 2: the only property that reads `h.truncated` is `LogEntryNeeded`, which is plan 3's. The same action also erases `tid_to_csn[t]` in the step that removes the znode, while the code collects `removed_entries` and erases them after the loop under `mutex`, so the model never has the code's window in which the znode is gone and the local lookup still succeeds; and `UpdRemoveOldEntriesDone` is unguarded, so a pass can end with entries the code's loop would still have removed. Both widen the behaviour set in the same direction as the re-read | plan 3, the task that enables `Crash`, either narrows all three to the code's shape or argues the widening is still sound for `LogEntryNeeded` |
 | M4 | An exhaustive run of `MC_SetSnapshot` at the bounds the scenario matrix gives it does not finish: five runs at `TID_MAX = 3`, `CSN_MAX = 36` were killed, the last at 56,968,754 distinct states after 8 minutes with 4.47 million still queued. The scenario is 3.4 times `Base` at equal bounds, which puts it near 98 million and about 15 minutes | The scenario is checked exhaustively at `TID_MAX = 2`, `CSN_MAX = 35` instead, in 65 seconds, and its witnesses are shown at the matrix bounds in `MC_SetSnapshotWitness`, where a run stops at the first violation. What that costs is debt B1 below | the task that owns the state-space budget; a `VIEW` or `CONSTRAINT` that closes the gap would let the two bound sets become one again. The measurements, the three reductions applied and the one measured and rejected are in `STATE_SPACE.md`, section "The `SetSnapshot` scenario" |
 | M5 | `UpdRemoveOldEntriesSetTail` sets `tlog.updated_tail_ptr` inside the branch where the tail actually moves, while `TransactionLog::removeOldEntries` stores `true` at `:302`, before it reads the znode and before the `new == old` early return | The async-loading gate stays armed in the model after a pass the code would have disarmed. Dead here: `sys.completely_started` is `TRUE` at init and `sys.async_loading_jobs` is `0` at init, and no action of this plan writes either, so the gate is a constant. It is not a one-line reorder, because the model has no action for a pass that ran and moved nothing, and adding one would add states for a behaviour nothing yet observes | plan 3, the task that enables restarts and table loading, which is what makes both gates variable |
 | M6 | Under `SET_SNAPSHOT_PROTECTS` the sortedness conjunct of `Assert_getOldestSnapshot` is switched off, while `OldestSnapshot` is still `Min({...})` (`Parts.tla`) | Nothing in `MC_SetSnapshotFixed` checks that the fix keeps `front()` equal to the minimum, which is the one thing the sorted re-insert exists to preserve. The model cannot state it as written, because `Min` encodes the answer rather than the list | the task that gives `snapshots_in_use` an ordered encoding, if one is ever needed; until then `MC_SetSnapshotFixed` verifies that the fix breaks nothing, not that it preserves `front()` |
@@ -223,11 +260,19 @@ bound or dropping the property.
 | Id | Scenario | What is not verified at the exhaustive bounds | Where it is verified instead |
 |---|---|---|---|
 | B1 | `SetSnapshot` and `SetSnapshotFixed` at `TID_MAX = 2`, `CSN_MAX = 35` | Five witnesses are green or do not finish there: `SingleRemover`, `NoUncommittedRead`, `NoLostRead`, `Assert_validateInfo_removal` and `Assert_getOldestSnapshot`'s sortedness conjunct | See the two paragraphs below |
+| B2 | `SetSnapshot` and `SetSnapshotFixed` at `TID_MAX = 2`, `CSN_MAX = 35` | The witnesses of `NoPrematureDelete` and of `NoLostVisibleData`, both of which change `CleanupGrab` to compare against `tlog.latest_snapshot` instead of `getOldestSnapshot`, are green there: 13,664,284 and 13,664,666 distinct states, 96 and 98 seconds, no violation | `SetSnapshotF2Fixed`, where both are red in three seconds |
 
 The first four are `Base` properties and `Base` verifies all four at `TID_MAX = 3`: three of them are the three
 rows `WITNESSES.md` already explains need a third transaction, and `Assert_validateInfo_removal` is the fourth,
 which plan 1 found needs three transactions too. They are not re-verified in `SetSnapshot`, and nothing about
 this scenario changes the actions those witnesses mutate.
+
+`B2` has the same cause as `F2` and the paragraph above it: the shape both witnesses need is a part still
+visible to a running transaction at a lowered snapshot, which takes three transactions and a snapshot target
+above `FirstCSN`. The exhaustive bounds of `SetSnapshot` give two transactions and the target 33, so a
+`CleanupGrab` that consults `latest_snapshot` grabs nothing it should not have. `SetSnapshotF2Fixed` is the
+configuration that has the shape, and both witnesses are red there. The third cleanup witness,
+`PinnedNotDeleted`, does not need the shape and is red at the exhaustive bounds in two seconds.
 
 The fifth is different, and it is the reason `MC_SetSnapshotWitness` exists. `Assert_getOldestSnapshot` is the
 property this scenario adds: `Base` does not enable `SetSnapshot`, so there is nowhere else its witness can be
@@ -249,7 +294,6 @@ with the correction the next revision folds in.
 | S4 | `CommitError`, section "Client and session" | The row attributes the `INVALID_TRANSACTION` of a `COMMIT` on a cancelled transaction to `beforeCommit`. `InterpreterTransactionControlQuery::executeCommit` (`src/Interpreters/InterpreterTransactionControlQuery.cpp:64`) refuses it earlier, on `getState() != RUNNING`, before `commitTransaction` is called at all, and that is the guard the model's action has. `beforeCommit`'s failed compare-and-exchange (`src/Interpreters/MergeTreeTransaction.cpp:308`) raises the same error only for a kill that lands after the interpreter's guard | Name the interpreter guard as the action's site and `beforeCommit` as the racing one. `README.md`, section 3, carries the corrected row |
 | S5 | `AckedWriteIsDurable`, section "Invariants and properties" | The row admits a created part in `Outdated` only when the removal is committed, `h_removers[p] /= {}`. `DropOutdate` outdates a part under the parts lock, long before the transaction that drops it commits, so a part created by an acknowledged transaction and dropped by a still-running one is `Outdated` with no committed remover, and the literal row is red on the baseline. `Invariants.tla` therefore also admits a removal merely in flight, `part[p].lock /= EmptyTID`. The row's antecedent is also `h_effects`, which includes mutations, while the property tested only `h.creating` and `h.removing` | Admit an in-flight removal in the row, with the `DropOutdate` boundary as the reason. `Invariants.tla` carries the relaxation and cites this id; its antecedent now includes `h.mutations`, and `FlipAfterStoresStep` carries the row's mutation conjunct, both vacuous while `Mutations = {}` |
 | S6 | the `SetSnapshot` row of the scenario matrix | The row lists `NoOutdatedLookup` among the properties the `SetSnapshot` scenario checks. `assertTIDIsNotOutdated` (`src/Interpreters/TransactionLog.cpp:656`) has exactly two call sites: `tryFinalizeUnknownStateTransactions` (`:387`), which is the action `UpdFinalizeUnknown`, and `getCSNAndAssert` (`:645`), which has no caller anywhere in the tree. The `SetSnapshot` scenario is `Base` plus `SetSnapshot`, the cleanup group and the updater's GC group, and enables neither, so the property is vacuous there whatever the trace. Its own witness row names scenario `Keeper`, which does enable the unknown-state group, so the two rows of the document disagree | Drop `NoOutdatedLookup` from the `SetSnapshot` row and keep it in `Keeper` and `SnapshotCrash`, which enable `UpdFinalizeUnknown`. `NoOutdatedLookup` is defined in `Invariants.tla` and is not in `MC_SetSnapshot.cfg`; `WITNESSES.md` records the vacuous run |
-
 | S7 | the bound contract, section "Scenario matrix" | The contract gives each scenario one set of bounds and requires both that the scenario be checked exhaustively at them and that every witness be red at them. `SetSnapshot` cannot have both: exhaustive at the matrix bounds does not finish, and every bound that does finish loses a witness. The two jobs have different costs, because a witness run stops at the first violation and an exhaustive run does not, so one number cannot serve both | Give each scenario two sets of bounds, exhaustive and witness, with the rule that the witness bounds are at least the exhaustive ones and that every witness is red at the witness bounds. `MC_SetSnapshotWitness` is the first instance. Plan 1 deleted `MC_BaseWitness` for having exactly this shape, which was premature: the right correction there was to name the pattern, not to remove it |
 | S8 | `StableRead`, section "Invariants and properties" | The row states that the first and last read of `t` differ only by fragments of parts in `h_creating[t]` or `h_removing[t]`, with no qualifier about the snapshot those reads were taken at. `SET TRANSACTION SNAPSHOT` makes a transaction read at a different snapshot, so a read before it and a read after it are reads at two different snapshots and the literal row is red on the baseline for the statement working as intended. `SetSnapshot` in `Server.tla` therefore restarts the read baseline, which narrows the property to the span between two `SET TRANSACTION SNAPSHOT` statements | Qualify the row by snapshot. This is a property decision, not a transcription: `MergeTreeTransaction::setSnapshot` (`src/Interpreters/MergeTreeTransaction.cpp:52`) stores one value and resets nothing, so there is no code to cite for the reset. What it models is that the row's "first read" means the first read judged at the snapshot the last read is judged at |
 

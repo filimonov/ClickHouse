@@ -69,8 +69,10 @@ the three-step metadata store. Every other action of the design document is pres
 exist today are `Schema` (one state, a type check), `BaseSmall` (one session), `Base` (two sessions, the
 matrix bounds), `SetSnapshot` (`Base` plus `SET TRANSACTION SNAPSHOT`, the cleanup group and the updater's GC
 group), `SetSnapshotFixed` (the same with `SET_SNAPSHOT_PROTECTS = TRUE`, the model variant of the fix proposed
-in `FINDINGS.md`, finding F2) and `SetSnapshotWitness` (the same as `SetSnapshot` at the scenario matrix's
-bounds, for `witness.sh` only; an exhaustive run there does not finish). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
+in `FINDINGS.md`, finding F2) `SetSnapshotWitness` (the same as `SetSnapshot` at the scenario matrix's
+bounds, for `witness.sh` only; an exhaustive run there does not finish), and the pair `SetSnapshotF2` and
+`SetSnapshotF2Fixed` (one session, one part, three transactions and the snapshot target 34, the configuration
+that reaches finding F2; the first is expected red on `NoPrematureDelete` and the second is green). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
 45-minute `timeout`.
 
 Output goes under `tmp/tla/<Scenario>/`: the full TLC log is `tlc.log`, and a counterexample is additionally
@@ -178,6 +180,15 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 | `UpdRemoveOldEntriesSetTail` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | everything up to and including `tail_ptr.store` (:316): the `isServerCompletelyStarted` gate, the `asyncTablesLoadingJobNumber` gate that applies only while `updated_tail_ptr` is false, the read of the `tail_ptr` znode, `getOldestSnapshot`, the `LOGICAL_ERROR` when the new value is below the old one, the early return when they are equal, and the `set` of the znode |
 | `UpdRemoveOldEntriesDelete(c)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | one iteration of the removal loop (:319-341): one `tryRemove` of the log znode and one `tid_to_csn` erase, for an entry whose `tid.start_csn` is below the new tail and whose CSN is not the latest loaded one. `ZNONODE` counts as removed |
 
+### Outdated-parts cleanup thread {#code-map-cleanup}
+
+| Action | C++ file | Function | Step boundary |
+|---|---|---|---|
+| `CleanupGrab(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4074) | one part moves from `Outdated` to `Deleting` under `lockParts`: its version `canBeRemoved` (:4140), nobody else holds it (`isSharedPtrUnique`, :4150), and it is not an empty part still covering an `Outdated` one (:4158). The code grabs a set under one lock and the model one part per step; the removal-time and mutation-parent conditions at :4167 are time and zero-copy-replication bookkeeping, which `force` covers |
+| `CleanupValidate(p)` | `src/Storages/MergeTree/IMergeTreeDataPart.cpp` | `IMergeTreeDataPart::remove` (:2928) through `assertHasValidVersionMetadata` (:2863) and `VersionMetadata::hasValidMetadata` | the `chassert` on the grabbed part passes, on the path `clearPartsFromFilesystemAndRollbackIfError` (`MergeTreeData.cpp:4566`) takes for each grabbed part |
+| `CleanupDeleteOk(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `clearPartsFromFilesystemAndRollbackIfError` (:4566) and `removePartsFinally` (:4217) | the directory is gone in both disk layers and the part leaves `data_parts_indexes` |
+| `CleanupDeleteFail(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `rollbackDeletingParts` (:4205) | the part goes back to `Outdated`. Two producers: the `CORRUPTED_DATA` `hasValidMetadata` raises, and a filesystem error in `clearPartsFromFilesystemImpl`. The second needs a disk fault, so its disjunct is `FALSE` until plan 5 raises `DISK_FAULTS_MAX` |
+
 ### The metadata store {#code-map-store}
 
 `updateInfoWithRefreshDataThenStoreAndSetMetadata` is three actions per caller, because `persisted_info_mutex`
@@ -198,7 +209,6 @@ the one that implements the action, from the plan's "Plans that follow this one"
 
 | Action | Plan |
 |---|---|
-| `CleanupGrab(p)`, `CleanupValidate(p)`, `CleanupDeleteOk(p)`, `CleanupDeleteFail(p)` | plan 2 |
 | `MergeBegin(i)`, `MergeSelect(i)`, `MergeWrite(i)`, `MergeRename(i)`, `MergeFail(i)` | plan 2 |
 | `NtInsert(p)`, `NtBatchStart(B)`, `NtBatchPreflight(p)`, `NtBatchLock(p)`, `NtBatchStore(p)`, `NtBatchEnd`, `NtDropCover` | plan 2 |
 | `CommitUnknown(k)` | plan 3 |
@@ -245,6 +255,15 @@ discarded.
 | `Base` | 2026-09-18 | the final-review fix commit | 28,552,935 | 4 min 06 s | green at the matrix bounds |
 | witness `FlipAfterStores` | 2026-09-18 | the final-review fix commit | 8,017 | 2 s | red, as required |
 | witness `ErrorIsAbsent` | 2026-09-18 | the final-review fix commit | 64,836 | 2 s | red, as required |
+| `Schema` | 2026-09-18 | the cleanup-thread commit | 1 | 1 s | green |
+| `BaseSmall` | 2026-09-18 | the cleanup-thread commit | 47,381 | 1 s | green |
+| `Base` | 2026-09-18 | the cleanup-thread commit | 28,552,285 | 4 min 11 s | green at the matrix bounds; an unmodified `630d8ad28674` re-run in the same session gave 28,553,740, so the spread is run-to-run counting noise and not this change |
+| `SetSnapshot` | 2026-09-18 | the cleanup-thread commit | 13,634,354 | 2 min 01 s | green at the exhaustive bounds; the cleanup group and the two view fields roughly double it |
+| `SetSnapshotFixed` | 2026-09-18 | the cleanup-thread commit | 13,104,253 | 2 min 02 s | green at the same bounds |
+| `SetSnapshotF2` | 2026-09-18 | the cleanup-thread commit | 177,195 | 3 s | **red on `NoPrematureDelete`**, 45 states, which is finding F2 |
+| `SetSnapshotF2Fixed` | 2026-09-18 | the cleanup-thread commit | 367,183 | 4 s | green on the four cleanup-scenario properties |
+| cleanup witnesses, 3 rows | 2026-09-18 | the cleanup-thread commit | 236,828 for the largest | 8 s in total | all three red |
+| witnesses `NoPrematureDelete` and `NoLostVisibleData` in `SetSnapshotFixed` | 2026-09-18 | the cleanup-thread commit | 13,664,284 and 13,664,666 | 96 s and 98 s | green, which is debt `B2` |
 
 The commits are `885a5c382cab` (Task 1, the modules and the runner), `5260d5d44f67` and `53814c46e7e5`
 (Task 3, the state-space budget and the rollback-driver correction), `bea5c15bf346` and `ad432095717a` (Task 2,
@@ -253,7 +272,10 @@ the witness runner and the witness table), `40ba930673fd` and `5aaefae31249` (Ta
 names itself in its own message rather than by a hash it cannot yet know.
 
 `Base` did not move when the statement rollback was corrected, and 28,552,935 against 28,553,114 is the
-multi-worker noise, not a change. The corrected actions are unreachable in `Base`: `QUERY_FAULTS_MAX = 0`
+multi-worker noise, not a change. The cleanup task settled that by measurement rather than by argument: it
+re-ran `Base` from an unmodified checkout of `630d8ad28674` in the same session as its own run and got
+28,553,740 against 28,552,285, a wider spread than any change has ever produced here, with the generated count
+moving too. The count is a property of how the workers race, not of the behaviour set. The corrected actions are unreachable in `Base`: `QUERY_FAULTS_MAX = 0`
 disables `Fail`, and an empty `Covers` leaves `PublishEnrol` unreachable, so no refusal can happen while
 `stmt.precommitted` is non-empty. Plan 2 gives the sibling scenario a covering relation and the path goes live
 there. The two witness counts moved more than that, from 7,541 and 64,365, because a witness run stops at the
@@ -299,13 +321,14 @@ green, and any red on a `Base` run is a finding to be explained rather than a re
 |---|---|---|
 | `NoAvoidableTermination` | `DiskFault` under `Terminate` | a transient store fault inside a `noexcept` callback terminates the process, which is the first defect Altinity PR 2396 addresses |
 | `NoAvoidableTermination` | `Mutation` | `KILL MUTATION` in the commit window makes `setMutationCSN` raise a `LOGICAL_ERROR` inside `noexcept`, the second defect of that PR |
-| `NoPrematureDelete` | `SetSnapshot` | a snapshot set by `SET TRANSACTION SNAPSHOT` does not enter `snapshots_in_use`, so cleanup can delete a part the transaction can still read. Not yet reached: the property needs `CleanupGrab` to move a part to `Deleting`, and the cleanup group is still a stub, so `MC_SetSnapshot` is green and the red is owed by the task that fills those actions in. `FINDINGS.md`, finding F2, carries the mechanism, the proposed fix and what remains to be run |
+| `NoPrematureDelete` | `SetSnapshotF2` | a snapshot set by `SET TRANSACTION SNAPSHOT` does not enter `snapshots_in_use`, so cleanup can delete a part the transaction can still read. Red, 45 states: `traces/f2-set-snapshot-premature-delete.txt`. `SetSnapshot` itself is green, because the shape needs three transactions and a snapshot target above `FirstCSN` and its exhaustive bounds give neither; `FINDINGS.md`, finding F2, has the argument, the trace and the proposed code fix |
 | `MutationRecoveredStrict` | `MutationCrash` | the `writeCSN` append is not synced, so a truncation that follows a termination can lose a committed mutation's CSN |
 
 What the model has actually found is in `FINDINGS.md`: counterexamples on baseline runs with their
 classification and resolution, defects of the model itself with the plan that fixes each, and the rows of the
 design document the model contradicts. Plan 1 produced one counterexample, `F1`, which turned out to be a
-property defect rather than a code defect, and two spec defects.
+property defect rather than a code defect, and two spec defects. The cleanup task produced `F2`, which is a code
+defect with a proposed upstream fix.
 
 ## 8. Model decisions {#model-decisions}
 

@@ -155,6 +155,19 @@ NoLostVisibleDataStep ==
     (h.content[t]' \ Frags(h.removing[t])') \subseteq VisibleFrags(t)'
 NoLostVisibleData == [][NoLostVisibleDataStep]_vars
 
+\* ---- the cleanup thread (spec #invariants-cleanup)
+\* Stated over the oracle, not over VersionMetadata::canBeRemoved, so that a wrong canBeRemoved is caught rather
+\* than assumed; the snapshot is the actual one a running transaction reads at, not the protected one.
+NoPrematureDeleteStep == \A p \in Parts : CleanupGrab(p) =>
+  \A u \in tlog.running_list : ~OracleVisible(p, txn[u].snapshot, u)
+NoPrematureDelete == [][NoPrematureDeleteStep]_vars
+\* isSharedPtrUnique, MergeTreeData.cpp:4150, as a property rather than only as the guard of the action.
+PinnedNotDeletedStep == \A p \in Parts : CleanupGrab(p) => part[p].pins = {}
+PinnedNotDeleted == [][PinnedNotDeletedStep]_vars
+\* the validation refusal is justified only by a disagreement history says cannot be transient
+NoFalseCorruptionStep == \A p \in Parts : CleanupDeleteFail(p) => RealDisagreement(p)
+NoFalseCorruption == [][NoFalseCorruptionStep]_vars
+
 RollbackRestoresStep == \A k \in Sessions, t \in Tids : RollbackFinalize(k, t) =>
   \A p \in h.removing[t] \ h.creating[t] :
     part'[p].pstate = "Active" \/ part[p].lock \notin {EmptyTID, t} \/ (h.removers[p] \ {t}) /= {}

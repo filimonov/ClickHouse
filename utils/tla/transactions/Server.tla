@@ -77,9 +77,9 @@ SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_
               query_faults : 0..QUERY_FAULTS_MAX, merges_blocker : 0..Cardinality(Sessions),
               parts_lock : Actors \cup {NoActor}, nt_batch : BatchType,
               updater_pc : {"Idle", "PublishSnapshot", "SetTail", "Delete", "Swap", "Finalize"},
-              \* cleanup_part is the part MergeTreeData::grabOldParts has grabbed; written by the cleanup
-              \* actions, which plan 2's next task adds. It is declared here so that the SetSnapshot view,
-              \* which keeps it, does not have to change when those actions arrive.
+              \* cleanup_part is the part MergeTreeData::grabOldParts has grabbed; "None" while the cleanup
+              \* thread holds nothing. cleanup_pc is where that one grabbed part is in
+              \* clearOldPartsFromFilesystem: "Validate" before assertHasValidVersionMetadata, "Delete" after it.
               cleanup_pc : {"Idle", "Validate", "Delete"}, cleanup_part : Parts \cup {"None"}]
 SysInit == [server |-> "TableUp", completely_started |-> TRUE, async_loading_jobs |-> 0,
             loaded_parts |-> Parts, loaded_mutations |-> Mutations, restarts |-> 0, keeper_faults |-> 0,
@@ -673,14 +673,60 @@ StorePublish(p, o) == /\ Up /\ HasFrame(p, o) /\ StorePublishStep(p, o)
 Fsync(p) == /\ Layered /\ disk' = DiskWithMetaSynced(p)
             /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
 
+\* ============================================================ the cleanup thread
+\* MergeTreeData::grabOldParts, src/Storages/MergeTree/MergeTreeData.cpp:4074, under lockParts: an Outdated part
+\* whose version canBeRemoved (:4140), that nobody else holds (isSharedPtrUnique, :4150), and that is not an
+\* empty part still covering an Outdated one (:4158, "First remove all covered parts, then remove covering empty
+\* part"), moves to Deleting. The removal-time and mutation-parent conditions at :4167 are time and
+\* zero-copy-replication bookkeeping and are not modelled; `force` covers them.
+\* The model grabs one part per action where the code grabs a set under one lock. The only cross-part coupling
+\* the lock provides is the atomicity of the state change, and no property of this plan reads the set of parts in
+\* Deleting, so the refinement is recorded rather than removed. Placement if it ever matters: the plan that adds
+\* a property over Deleting parts.
+CleanupGrab(p) ==
+  /\ Up /\ sys.cleanup_pc = "Idle" /\ sys.parts_lock = NoActor
+  /\ part[p].pstate = "Outdated"
+  /\ (IF Witness("NoPrematureDelete") \/ Witness("NoLostVisibleData")
+      THEN CanBeRemovedWith(p, tlog.latest_snapshot) ELSE CanBeRemovedImpl(p))
+  /\ (part[p].pins = {} \/ Witness("PinnedNotDeleted"))
+  /\ part[p].frames = {}
+  /\ ~(part[p].payload.tomb /\ \E q \in Expand({p}) \ {p} : part[q].pstate = "Outdated")
+  /\ part' = [part EXCEPT ![p].pstate = "Deleting"]
+  /\ sys' = [sys EXCEPT !.cleanup_pc = "Validate", !.cleanup_part = p]
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, client, stmt, mut, task>>
+
+\* chassert(assertHasValidVersionMetadata()) in IMergeTreeDataPart::remove, IMergeTreeDataPart.cpp:2928, on the
+\* path clearPartsFromFilesystemAndRollbackIfError (MergeTreeData.cpp:4566) takes for each grabbed part.
+CleanupValidate(p) ==
+  /\ Up /\ sys.cleanup_pc = "Validate" /\ sys.cleanup_part = p
+  /\ ValidateMetadataOK(p)
+  /\ sys' = [sys EXCEPT !.cleanup_pc = "Delete"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+
+\* the success path of clearPartsFromFilesystemAndRollbackIfError: the directory is gone in both layers and
+\* removePartsFinally (MergeTreeData.cpp:4217) erases the part from data_parts_indexes.
+CleanupDeleteOk(p) ==
+  /\ Up /\ sys.cleanup_pc = "Delete" /\ sys.cleanup_part = p
+  /\ disk' = DiskWithoutDir(p)
+  /\ part' = [part EXCEPT ![p].pstate = "Deleted", ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo]
+  /\ sys' = [sys EXCEPT !.cleanup_pc = "Idle", !.cleanup_part = "None"]
+  /\ UNCHANGED <<zk, mdisk, h, tlog, txn, client, stmt, mut, task>>
+
+\* rollbackDeletingParts, MergeTreeData.cpp:4205: back to Outdated. Two producers: the CORRUPTED_DATA that
+\* hasValidMetadata throws, and the filesystem error of clearPartsFromFilesystemImpl. The second needs a disk
+\* fault, which is plan 5's; until then the disjunct is FALSE and is written out so the action is complete.
+CleanupDeleteFail(p) ==
+  /\ Up /\ sys.cleanup_part = p
+  /\ \/ (sys.cleanup_pc = "Validate" /\ ~ValidateMetadataOK(p))
+     \/ (sys.cleanup_pc = "Delete" /\ FALSE)      \* the filesystem-error path: plan 5, DISK_FAULTS_MAX > 0
+  /\ part' = [part EXCEPT ![p].pstate = "Outdated"]
+  /\ sys' = [sys EXCEPT !.cleanup_pc = "Idle", !.cleanup_part = "None"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, client, stmt, mut, task>>
+
 \* ============================================================ stubs for later plans
 UpdReconnect == FALSE
 UpdSwapUnknownLists == FALSE
 UpdFinalizeUnknown(t) == FALSE
-CleanupGrab(p) == FALSE
-CleanupValidate(p) == FALSE
-CleanupDeleteOk(p) == FALSE
-CleanupDeleteFail(p) == FALSE
 MergeBegin(i) == FALSE
 MergeSelect(i) == FALSE
 MergeWrite(i) == FALSE

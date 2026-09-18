@@ -8,10 +8,7 @@ SymSessions == Permutations(Sessions)
 \* zk.tail, sys.cleanup_pc and sys.cleanup_part. zk as a whole was already kept, so zk.tail comes with it; the
 \* rest are named below. Three kinds of field are left out:
 \* fields no action and no property of this scenario reads (h.snapshot, txn.csn_notified, client.outcome,
-\* client.outcome_tid, part.pins, and last_error beyond the one value NoSpuriousStaleVersion tests; h.content
-\* is out for the same reason only while NoLostVisibleData is not checked, and part.pins only while the cleanup
-\* actions and PinnedNotDeleted are absent: the task that adds those properties has to put both fields back into
-\* the view and re-make this argument), fields that are a function
+\* client.outcome_tid, and last_error beyond the one value NoSpuriousStaleVersion tests), fields that are a function
 \* of the kept ones (the durable layer, which equals the cached layer under DISK_MODE = "Durable", and a read's
 \* frags, which Covers = empty and a constant payload make a function of its parts), and fields that no enabled
 \* action writes (mdisk, mut, task, part.payload, the mutation and non-transactional parts of h, the
@@ -20,15 +17,22 @@ SymSessions == Permutations(Sessions)
 \* Each of the three depends on the configuration below, so a scenario with other constants needs its own view.
 \* What each of them depends on, though, is only which actions are enabled and which properties are checked, so
 \* raising TID_MAX or CSN_MAX alone leaves the argument intact.
+\* part.pins and h.content are back in the projection, and they are the two fields the cleanup thread makes
+\* live. part.pins is read by CleanupGrab's isSharedPtrUnique guard and by PinnedNotDeleted, so two states that
+\* differ only in a pin no longer have the same successors; h.content is read by NoLostVisibleData, which the
+\* Fixed and Witness configurations check. Both were left out while neither the actions nor the properties
+\* existed, and the argument for leaving them out was explicitly conditioned on that, so it is the condition
+\* that changed, not the argument. Their cost is measured in STATE_SPACE.md.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
 SetSnapshotView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,
-       h.rolled_back, h.removers, h.creator, h.down_cause, h.truncated>>,
+       h.rolled_back, h.removers, h.creator, h.down_cause, h.truncated, h.content>>,
      [p \in Parts |-> <<part[p].pstate, part[p].mem, part[p].lock, part[p].deferrable,
-                        part[p].deferred_on, part[p].deferred, { FrameKey(f) : f \in part[p].frames }>>],
+                        part[p].deferred_on, part[p].deferred, part[p].pins,
+                        { FrameKey(f) : f \in part[p].frames }>>],
      <<tlog.tid_start, tlog.tid_to_csn, tlog.latest_snapshot, tlog.local_tid_counter,
        tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use,
        tlog.tail_ptr, tlog.updated_tail_ptr>>,
