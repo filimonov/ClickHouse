@@ -84,6 +84,11 @@ NonTxnSpec == Init /\ [][NonTxnNext]_vars
 \* behaviour that needs both, which is finding F5's route 2 and is produced by MC_NonTxnF5 instead.
 NonTxnDropNext == BaseNext \/ NtDropNext \/ CleanupNext
 NonTxnDropSpec == Init /\ [][NonTxnDropNext]_vars
+\* The drop half at two transactions, without the cleanup thread. The half with the cleanup thread does not
+\* finish at two transactions, and the witnesses that need a second transaction are exactly the ones it loses;
+\* this is where they are shown. The cleanup properties are then out of its roster rather than vacuous in it.
+NonTxnDropTwoNext == BaseNext \/ NtDropNext
+NonTxnDropTwoSpec == Init /\ [][NonTxnDropTwoNext]_vars
 NonTxnInsertNext == BaseNext \/ NtInsertNext \/ CleanupNext
 NonTxnInsertSpec == Init /\ [][NonTxnInsertNext]_vars
 ====

@@ -385,6 +385,17 @@ the reservation clause of `ActiveSetShape` is vacuous here. It is checked in the
 a mutation side by side, and the debt is in `WITNESSES.md`'s deferred table with that scenario as its
 destination.
 
+### The witness bounds, at two sessions {#merge-witness-bounds}
+
+What one session costs was measured rather than argued, and three witnesses go green at it, which is debt B3.
+`MC_MergeWitness` is the same module at two sessions, used by `witness.sh` only, and it is the second set of
+bounds spec defect `S7` allows: a witness run stops at the first violation, so it can afford a configuration no
+exhaustive run finishes at. Two of the three fire there, `NoSpuriousStaleVersion` in 14 seconds and
+`NoUncommittedRead` in 46; the third, `Assert_validateInfo_removal`, was killed unfired at 34,184,268 distinct
+states and is placed in plan 5's budget and calibration task. The view is `MergeView`'s, renamed, because what a
+projection depends on is which actions are enabled and which properties are checked, and neither differs from
+`MC_Merge`.
+
 ### Was the growth a model defect? {#merge-growth-not-a-defect}
 
 Asked before the bound was reduced, because a scenario that does not finish is more often a model defect than a
@@ -472,10 +483,11 @@ The cost of the reduction is the usual one, and it is recorded as a bound-contra
 the witnesses that need a third transaction are the four `Base` already verifies at `TID_MAX = 3`.
 
 **And it does not finish there either.** At `TID_MAX = 2` the run was killed at 59,047,617 distinct states
-after nine minutes with 7.45 million queued and the queue growing by about 650,000 a minute. The ladder has no
-further rung that keeps the scenario's subject: one session removes the overlap between a transaction and a
-non-transactional query, which is what every race here is, and the part universe is already the three the
-covering relation needs. A part universe of two with `Covers[E] = {P1}` was considered and rejected without
+after nine minutes with 7.45 million queued and the queue growing by about 650,000 a minute. The session count
+has no further rung: one session removes the overlap between a transaction and a non-transactional query, which
+is what every race here is, and the part universe is already the three the covering relation needs. What is
+left is the transaction count and the action groups, and those are the two levers the split and the drop-half
+budget below use: one transaction with the cleanup group, two without it. A part universe of two with `Covers[E] = {P1}` was considered and rejected without
 measuring it: with a single covered part a batch has one target, and `NtBatchRefusedUnchanged`'s subject -- a
 refusal after an earlier target was already stamped -- cannot exist, so its witness would go green and the
 bound contract would break in the one place this scenario is about.
@@ -494,23 +506,72 @@ Both are at `TID_MAX = 2`, `CSN_MAX = 34`, two sessions, three parts. `CSN_MAX` 
 undivided figure because 34 is the smallest value that allows the two commits `TID_MAX = 2` permits, and every
 unit above `FirstCSN = 33` costs states.
 
-`NonTxnInsert` finishes green. `NonTxnDrop` does not, at any configuration tried: 32.5 million and 44.1 million
-distinct at `CSN_MAX = 35`, and 56,703,779 after 9 min 30 s at `CSN_MAX = 34` with 3.39 million queued and the
-queue still growing by about 110,000 a minute. It is converging, but far past the 30-million budget, and every
-rung of the ladder that keeps the scenario's subject has been used. So the half that contains the removal batch
-still has no finishing configuration; that is model defect `M15`, and the budget for it belongs to task 5, which
-owns the state-space work. What the scenario delivers meanwhile is four red modules, one per finding, and a
-green fix variant for the one finding whose fix is established; the witness sweep runs against the scenario's
-own bounds and every witness that finishes is red.
+`NonTxnInsert` finishes green. `NonTxnDrop` did not, at any configuration tried while the scenario was
+written: 32.5 million and 44.1 million distinct at `CSN_MAX = 35`, and 56,703,779 after 9 min 30 s at
+`CSN_MAX = 34` with 3.39 million queued and the queue still growing by about 110,000 a minute. That was model
+defect `M15` and debt `B4`, and the budget for it belonged to task 5.
+
+### The budget of the drop half {#nontxn-drop-budget}
+
+Task 5 re-measured the committed configuration first, with the `NonTxnDropView` the split had added, and it
+still does not finish: killed at 32,818,006 distinct states after five minutes, at breadth-first level 66, with
+2.71 million queued and the queue growing by about 260,000 a minute.
+
+The first lever tried was the one the task named: a ghost counter of the non-transactional queries a behaviour
+has issued, with a `CONSTRAINT` allowing one. It was measured rather than assumed, and it is **rejected**: at
+one query per behaviour the run reached 32,216,335 distinct states in the same five minutes with the queue at
+2.70 million and still growing, a cut of about two per cent. A second `DROP PARTITION` needs the first one to
+have been refused and unwound before the empty part is `Absent` again, so there are few behaviours with two of
+them and bounding them buys nothing. The counter was reverted with the constraint, because a ghost field that
+buys nothing is a field a later reader has to account for.
+
+What the space is made of is transactions, not queries. Cutting `TID_MAX` from 2 to 1 takes the half from over
+32 million to **1,112,076 distinct states in 11 seconds**, a factor of thirty, and that is the committed
+exhaustive configuration of `NonTxnDrop`: two sessions, three parts, `TID_MAX = 1`, `CSN_MAX = 34`. It is a
+**bound**, not a reduction that costs nothing, and what it costs is stated as one: with a single transaction in
+the behaviour, seven witnesses of the half's own roster go green, and they are the rows the second
+configuration below and `MC_NonTxnWitness` exist to pay.
+
+One transaction still keeps the subject. The batch refuses on a target that is locked or whose creator has not
+committed, and one transaction can hold either; both batch witnesses, `NtBatchRefusedUnchanged` and
+`NtRefusalJustified`, are red at these bounds, as is `Assert_validateInfo_nocreation`, the two-change witness
+whose minimality debt `B5` is paid here.
+
+### The second drop configuration, at two transactions {#nontxn-drop-two}
+
+`NonTxnDropTwo` is `BaseNext \/ NtDropNext`, the drop half **without the cleanup group**, at `TID_MAX = 2`,
+`CSN_MAX = 34`, two sessions and three parts. It finishes green at **47,958,711 distinct states in 7 min 34 s**.
+
+That is above the 30-million heuristic, and it is accepted anyway, because the heuristic is about runs that do
+not converge rather than about a number: the queue of this run peaked at 1.21 million at level 72 and then
+drained to zero, which is the opposite of what every killed run above did. The pair is what the half needs:
+the cleanup thread and a second transaction each cost more than the budget allows together, and each of the two
+configurations pays the witnesses the other one loses. The cleanup properties -- `NoPrematureDelete`,
+`PinnedNotDeleted`, `NoFalseCorruption` -- are out of `NonTxnDropTwo`'s roster rather than vacuous in it, and
+the four rows that need a second transaction are in it.
+
+Two rows are paid by neither, because they need the cleanup thread **and** a second transaction:
+`Assert_validateInfo_order` and `SingleRemover`, and both are red in `MC_NonTxnWitness`, the undivided module at
+witness bounds, which is what the two-bound-sets rule of spec defect `S7` is for. `NoDoubleRead` and
+`NoUncommittedRead` are red in neither and in no configuration that finishes; they are what is left of `B4`,
+with the counts they reached, and they are placed in plan 5's budget and calibration task.
 
 ### What the view keeps {#nontxn-view}
 
-`NonTxnView` is `MergeView`'s shape, because `Covers` is non-empty here too and a read's fragments are
-therefore not a function of its parts. Three changes. `task` is dropped, because `Tasks = {}`.
-`tlog.tail_ptr`, `tlog.updated_tail_ptr` and `h.truncated` are dropped, because the matrix does not give
-`NonTxn` the truncation pass and no action writes them. `sys.nt_batch`, `h.batch` and `h.batch_outcome` are
-added, because the batch actions read all three and the two batch properties read the last two. `h.abandoned`
-is in every view in the tree, `BaseView` included, from this task on: the visibility oracle reads it.
+There is no `NonTxnView`: the undivided scenario has no exhaustive configuration, and each committed module
+carries its own projection. `NonTxnDropView`, `NonTxnDropTwoView` and `NonTxnInsertView` are the same shape and
+the paragraph below is their common argument; `MC_NonTxnF2` has a fourth, `NonTxnF2View`, which is
+`SetSnapshotView` verbatim because that module has no batch and an empty covering relation.
+
+The shape is `MergeView`'s, because `Covers` is non-empty here too and a read's fragments are therefore not a
+function of its parts. Three changes. `task` is dropped, because `Tasks = {}`. `tlog.tail_ptr`,
+`tlog.updated_tail_ptr` and `h.truncated` are dropped, because the matrix does not give `NonTxn` the truncation
+pass and no action writes them. `sys.nt_batch`, `h.batch` and `h.batch_outcome` are added, because the batch
+actions read all three and the two batch properties read the last two. `h.abandoned` is in every view in the
+tree, `BaseView` included, from this task on: the visibility oracle reads it. `NonTxnDropTwoView` keeps
+`sys.cleanup_pc` and `sys.cleanup_part` although its cleanup group is off, so that the two drop modules differ
+in their constants and their `Next` and not in their projection; a field no enabled action writes is constant
+and costs nothing to keep.
 
 ### The runs {#nontxn-runs}
 
@@ -519,7 +580,11 @@ is in every view in the tree, `BaseView` included, from this task on: the visibi
 | `NonTxn`, `TID_MAX = 3`, `CSN_MAX = 36`, two sessions | killed, still growing | 27,234,570 after 4 min, queue 5.34M | |
 | `NonTxn`, `TID_MAX = 2`, `CSN_MAX = 35`, two sessions | killed, still growing | 59,047,617 after 9 min, queue 7.45M | |
 | `NonTxnDrop`, `CSN_MAX = 35` | killed, still growing | 32,491,000 and 44,148,000 on two runs | |
-| `NonTxnDrop`, `CSN_MAX = 34`, **committed** | killed, still growing, model defect `M15` | 56,703,779 after 9 min 30 s, queue 3.39M | |
+| `NonTxnDrop`, `CSN_MAX = 34`, `TID_MAX = 2` | killed, still growing, model defect `M15` | 56,703,779 after 9 min 30 s, queue 3.39M | |
+| `NonTxnDrop`, `CSN_MAX = 34`, `TID_MAX = 2`, with `NonTxnDropView`, re-measured in task 5 | killed, still growing | 32,818,006 after 5 min, queue 2.71M | |
+| the same, with a `CONSTRAINT` of one non-transactional query per behaviour | killed, still growing; lever rejected and reverted | 32,216,335 after 5 min, queue 2.70M | |
+| `NonTxnDrop`, `CSN_MAX = 34`, `TID_MAX = 1`, **committed** | **green** | 1,112,076 | 11 s |
+| `NonTxnDropTwo`, `CSN_MAX = 34`, `TID_MAX = 2`, no cleanup group, **committed** | **green**, queue peaked at 1.21M and drained | 47,958,711 | 7 min 34 s |
 | `NonTxnInsert`, `CSN_MAX = 34`, **committed** | **green** | 15,787,889 | 2 min 33 s |
 | `NonTxnF4` | RED on `NoLostVisibleData` | 74,225 | 2 s |
 | `NonTxnF5` | RED on `ActiveSetShape` | 106,922 | 1 s |
@@ -548,6 +613,19 @@ makes a statement-rolled-back part invisible to its creator as the code makes it
 and adds a view field. `Merge` does not move at all, to the state: its `Tasks` is a singleton, so the
 quantifier defect was invisible there, and its count is 5,196,830 before and after.
 
+### The F2 probe with a non-transactional creator {#nontxnf2}
+
+`MC_NonTxnF2` is the insert half plus `SET TRANSACTION SNAPSHOT` and the cleanup thread, at one session, one
+part, `TID_MAX = 2`, `CSN_MAX = 35` and `SNAPSHOT_TARGETS = {33, 34}`. It exists to pay debt B2, and its state
+space is 9,132 distinct states at the first violation, which is small because the shape is sequential: the
+creator is a query rather than a transaction, so the behaviour needs one session issuing an `INSERT`, a
+transactional `DROP PARTITION` and a reader in turn.
+
+Its view is `SetSnapshotView` verbatim, which is sound here for the same two reasons that view gives: `Covers`
+is empty in this module, so a read's fragments are a function of its parts, and no enabled action writes a
+field it leaves out. The batch fields are among those left out because there is no `DROP PARTITION` without a
+transaction here and therefore no batch.
+
 ### Properties this scenario does not check, and why {#nontxn-properties-absent}
 
 Four of `Base`'s properties are not in either half's cfg, and none of them is absent for convenience.
@@ -560,21 +638,24 @@ finding F4, shown in `MC_NonTxnF4`. Spec defect S13 is the qualifier the isolati
 matrix's `NonTxn` row already names none of the four.
 
 Two more come out for findings of their own, each with a module that produces it: `ActiveSetShape` for F5
-(`MC_NonTxnF5`) and `Assert_validateInfo` and `NoAvoidableTermination` for F6 (`MC_NonTxnF6`, which checks both,
+(`MC_NonTxnF5`; it is in the insert half's roster, where it is vacuous because part `E` is never created there,
+and `WITNESSES.md` carries the measured green that says so) and `Assert_validateInfo` and `NoAvoidableTermination` for F6 (`MC_NonTxnF6`, which checks both,
 because the same violating record is an assertion inside `NOEXCEPT_SCOPE` and therefore a process termination as
 well). Of the two only F6 has a fix verified in the tree, and both halves are therefore run with
 `OBSOLETE_IS_ROLLED_BACK = TRUE`, the variant `MC_NonTxnFixed` verifies green at one session; without it the
 baseline is unrunnable as a roster, because F6 stops every run on the first property that fires.
 
-`ActiveSetShape` is in `MC_NonTxnInsert.cfg` and not in `MC_NonTxnDrop.cfg`. F5's routes all need the empty
+`ActiveSetShape` is in `MC_NonTxnInsert.cfg` and in neither of the two drop configurations. F5's routes all need the empty
 covering part that only a non-transactional `DROP PARTITION` writes, so the property is unfalsifiable in the
 insert half and live and unfixed in the drop half. The three batch properties are the mirror image: they are in
 both rosters, and in `MC_NonTxnInsert` they are vacuous, because that half has no batch. They are kept there so
 that the two cfgs differ in exactly the one row that has a reason.
 
-`Atomicity` is checked in both halves. It was the property finding F7 was reported on, and the withdrawal of
-that finding leaves it green in every configuration of this scenario, for the reason `FINDINGS.md` gives: it is
-stated over a committed writer, and a non-transactional statement has none.
+`Atomicity` is checked in every configuration of this scenario. It was the property finding F7 was reported on,
+and the withdrawal of that finding leaves its **baseline** green everywhere here, for the reason `FINDINGS.md`
+gives: it is stated over a committed writer, and a non-transactional statement has none. Its witness is a
+different matter and is red in both halves, at 168,614 distinct states in `MC_NonTxnDropTwo` and 486,689 in
+`MC_NonTxnInsert`, so the property is falsifiable here and the green is a result rather than a vacuity.
 
 ## Reproducing {#reproducing}
 

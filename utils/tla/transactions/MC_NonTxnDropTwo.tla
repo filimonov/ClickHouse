@@ -1,4 +1,4 @@
----- MODULE MC_NonTxnDrop ----
+---- MODULE MC_NonTxnDropTwo ----
 EXTENDS MergeTreeTransactions
 \* The three part names, declared so that CoversDef can spell them; the cfg binds each to the model value of
 \* the same name that Parts is built from.
@@ -9,14 +9,17 @@ CONSTANTS P1, P2, E
 CoversDef == [p \in Parts |-> IF p = E THEN {P1, P2} ELSE {}]
 SymSessions == Permutations(Sessions)
 
-\* NonTxnDrop is Base + the non-transactional DROP PARTITION and its removal batch + the cleanup group, at two
-\* sessions, three parts and TID_MAX = 1. One transaction is a bound, not a free reduction: the same
-\* configuration at two does not finish (STATE_SPACE.md), and seven witnesses of this roster go green here for
-\* want of the second transaction. MC_NonTxnDropTwo pays four of them, MC_NonTxnWitness two, and the last two
-\* are placed in plan 5. What one transaction keeps is the subject: the batch refuses on a target locked by a
-\* transaction or created by one that has not committed, and one transaction can be either. ActiveSetShape is NOT in its roster: finding F5's route 1 is live here and unfixed,
-\* and MC_NonTxnF5 is the module that produces it. Everything else the scenario matrix names for NonTxn is
-\* checked, at OBSOLETE_IS_ROLLED_BACK = TRUE, because finding F6 makes the baseline unrunnable as a roster.
+\* NonTxnDropTwo is Base + the non-transactional DROP PARTITION and its removal batch, WITHOUT the cleanup
+\* group, at two sessions, three parts and TID_MAX = 2. It is the second half of the drop budget: the same
+\* actions with the cleanup group do not finish at two transactions, and MC_NonTxnDrop runs them at one
+\* transaction instead. What this module pays for is the witnesses that need the second transaction, Atomicity
+\* first among them; the three cleanup properties are out of its roster rather than vacuous in it, because no
+\* CleanupGrab step is enabled. ActiveSetShape is NOT in its roster either: finding F5's route 1 is live here
+\* and unfixed, and MC_NonTxnF5 is the module that produces it. OBSOLETE_IS_ROLLED_BACK = TRUE is finding F6's
+\* fix, without which the baseline stops on that finding rather than on the property under test.
+\* The view keeps sys.cleanup_pc and sys.cleanup_part although the cleanup group is off, so that the two drop
+\* modules differ in their constants and their Next and not in their projection; a field no enabled action
+\* writes is constant and costs nothing to keep.
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is MergeView's shape, because Covers
 \* is non-empty here too and a read's frags are therefore not a function of its parts, with three changes:
 \*   - `task` is dropped, because Tasks = {} and no action of this scenario writes it;
@@ -29,7 +32,7 @@ SymSessions == Permutations(Sessions)
 \* "SERIALIZATION_ERROR" into it, and no action and no property of this scenario reads that value.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-NonTxnDropView ==
+NonTxnDropTwoView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

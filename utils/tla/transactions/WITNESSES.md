@@ -141,6 +141,14 @@ absent.
 
 `TypeOK` is a type invariant, not a behavioural property, and has no witness by design.
 
+Four rows of this table are in the rosters of the `NonTxn` halves as well, and are deferred there for the same
+reasons rather than silently absent: `AckedWriteIsDurable` and `NtBatchDone` to plan 3, `NoAvoidableTermination`
+to plan 5, and `NoFalseCorruption` to plan 3, the last with an argument of its own in the `NonTxn` section
+below. `NoAvoidableTermination` is worth naming twice, because it is checked in both halves and in every other
+scenario of this plan and is nowhere falsifiable: its witness needs `ProcessDown`, which no scenario before
+plan 5 enables, so what the invariant does until then is state that no modelled path terminates the server.
+`RollbackNoLeak` and `KillerNotStranded` are the two rows below, and both are in the halves' rosters too.
+
 ## Witnesses of the `SetSnapshot` scenario {#witnesses-setsnapshot}
 
 This scenario has **two sets of bounds**, and the reason is in `FINDINGS.md` as spec defect S7. An exhaustive
@@ -222,12 +230,23 @@ finish, which is model defect M4.
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
 | `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 407,927 | 4 s |
-| `SingleRemover` | `SingleRemover` | RED | 8,159,425 | 51 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | RED | 3,086,497 | 21 s |
-| `NoLostRead` | `NoLostRead` | RED | 1,357,615 | 10 s |
+| `SingleRemover` | `SingleRemover` | RED | 7,913,163 | 50 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | RED | 2,948,589 | 20 s |
+| `NoLostRead` | `NoLostRead` | RED | 1,315,030 | 9 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | **killed unfired**, 108,439,476 distinct after 674 s | — | |
 
-The last three are `Base` rows, already red in `Base` at the same `TID_MAX`; they are listed because B1 names
-them, and because running them here shows the scenario's extra actions do not get in their way.
+The middle three are `Base` rows, already red in `Base` at the same `TID_MAX`; they are listed because B1 names
+them, and because running them here shows the scenario's extra actions do not get in their way. The three
+counts are task 5's re-runs on the committed tree, and they are a few per cent below the figures the scenario's
+own task measured -- 8,159,425, 3,086,497 and 1,357,615 -- which is the direction model defect `M13`'s repair
+predicts.
+
+The last row is the one of B1's five that is still not paid. `Assert_validateInfo_removal` removes a wait, and
+the truncation actions this scenario enables multiply the behaviours that opens: at the exhaustive bounds it
+reached 40 million distinct states without firing, and here, at the witness bounds, 108 million in eleven
+minutes. It is red in `Base`, at three transactions and the same witness, so the property is falsifiable and
+the hook works; what is not shown is that it is falsifiable **in this scenario**. That is what moves to plan 5's
+budget and calibration task, with the count.
 
 `NoOutdatedLookup` is defined in `Invariants.tla` and is **not** in any `SetSnapshot` cfg. It is vacuous here,
 and by inspection rather than by search: `UpdFinalizeUnknown(t)` is `FALSE` in this plan, so
@@ -339,6 +358,25 @@ row is five.
 | | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 3,892,113 | 31 s |
 | | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 5,196,830 | 39 s |
 
+### The witness bounds, at two sessions {#witnesses-merge-witness-bounds}
+
+`MC_MergeWitness` is `MC_Merge` at two sessions, for witness runs only; an exhaustive run there does not finish,
+which is why the scenario itself is one session. It exists to pay debt B3, which is the three witnesses the one
+session loses.
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 1,766,818 | 14 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | RED | 6,065,808 | 46 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | **killed unfired**, 34,184,268 distinct after 279 s | — | |
+
+`NoSpuriousStaleVersion` is the row that mattered most, because at one session the store-interference machinery
+is not exercised at all rather than merely under-exercised. A second session gives the second storer, and the
+witness fires in fourteen seconds. `NoUncommittedRead` needs the third client transaction the merge task takes
+away at one session, and a second session gives it too. `Assert_validateInfo_removal` is the expensive row
+again, killed by the same rule as everywhere else; it is red in `Base` and it is placed in plan 5's budget and
+calibration task with the count above.
+
 `NoLostRead` and `SingleRemover` are worth a note, because both are green at `SetSnapshot`'s reduced bounds and
 red here at bounds that are reduced too. The merge task is why: it is a second actor that removes parts and
 outdates them without being a second session, so the shapes those two witnesses need are reachable with one
@@ -354,67 +392,124 @@ property of the server.
 
 ## Witnesses of the `NonTxn` scenario {#witnesses-nontxn}
 
-`NonTxn` is two sessions, `Parts = {P1, P2, E}`, `Tasks = {}`, `SYMMETRY SymSessions`, no faults. No
-exhaustive run of the undivided scenario finishes, so it is committed as two halves, `NonTxnDrop` and
-`NonTxnInsert`, both at `TID_MAX = 2`, `CSN_MAX = 34` and both with `OBSOLETE_IS_ROLLED_BACK = TRUE`.
-`STATE_SPACE.md` carries the split and the bounds argument. The drop half still does not finish at those
-bounds, which is model defect `M15`, and what that costs the witnesses is debt B4.
+`NonTxn` is two sessions, `Parts = {P1, P2, E}`, `Tasks = {}`, `SYMMETRY SymSessions`, no faults. No exhaustive
+run of the undivided scenario finishes, so it is checked as three committed configurations, and the witnesses
+are run in all three plus the undivided witness module. `STATE_SPACE.md` carries the bounds and the argument
+for each:
 
-The sweep below was run against the undivided `MC_NonTxn`, the module the first commit of this scenario
-carried, and it is **not re-run after the split**. The half that every witness of this scenario needs is
-`MC_NonTxnDrop`, because it is the half that has the removal batch, and that half has no finishing
-configuration: a witness removes a guard, which widens the space a scenario already over budget, so the five
-rows that were attempted there were killed unfired rather than turning red. Those five are named in debt B4
-with the counts they reached, and B4 is closed in task 5 of this plan. Every other figure in the tables below
-is the undivided module's, carried rather than re-measured, and the module no longer exists, so none of them
-is reproducible as it stands; what a reader can reproduce is the verdict column, by re-running the row against
-whatever configuration task 5 makes finish.
+- `MC_NonTxnDrop`: the drop half with the cleanup group, `TID_MAX = 1`, `CSN_MAX = 34`, green at 1,112,076
+  distinct states. The full roster, including the three cleanup properties.
+- `MC_NonTxnDropTwo`: the drop half without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, green at
+  47,958,711. The roster minus the three cleanup properties.
+- `MC_NonTxnInsert`: the insert half with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, green at
+  15,787,838.
+- `MC_NonTxnWitness`: the undivided scenario at `TID_MAX = 2`, `CSN_MAX = 35`, for witness runs only, which is
+  the two-bound-sets rule of spec defect `S7`. It is where the rows that need the cleanup group **and** a
+  second transaction are shown.
 
-Two witnesses are the scenario's own, and one of them is a two-change witness.
+All four carry `OBSOLETE_IS_ROLLED_BACK = TRUE`, finding F6's fix, because the baseline is red on
+`Assert_validateInfo` without it and every witness run would stop there instead of on its own subject.
 
-| Property | Witness name | The model change | Result | States | Time |
-|---|---|---|---|---|---|
-| `NtBatchRefusedUnchanged` | `NtBatchRefusedUnchanged` | `NtBatchStore` fires in the `Lock` phase on a target that has just been locked, so the batch stores and unlocks as it goes instead of storing after the whole lock loop, and a conflict on a later target then refuses a batch whose earlier members are already removed | RED | 264,818 | 5 s |
-| `NtRefusalJustified` | `NtRefusalJustified` | `CreatedByUncommitted` decides from `mem.creation_csn = 0` alone, without asking the transaction log, which is the pre-`65e4e2b5bf69` form | RED | 53,807 | 3 s |
-| `Assert_validateInfo` | `Assert_validateInfo_nocreation` | two changes: `NtBatchPreflight` skips the uncommitted-creator refusal and `StoreRead` skips the `creation_in_flight` refusal of `setAndStoreRemovalTID`, so a non-transactional removal stores `removal_csn = NonTransactionalCSN` on a part whose `creation_csn` is zero | RED, in `MC_NonTxnWitness` | 43,851 | 2 s |
-| | `Assert_validateInfo_nocreation_only1` | the skipped preflight refusal alone | does not finish, debt B5 | 24,335,282 after 240 s, no violation | |
-| | `Assert_validateInfo_nocreation_only2` | the skipped store refusal alone | does not finish, debt B5 | 24,546,344 after 240 s, no violation | |
+The sweep below **replaces** the one the first commit of this scenario took against the undivided `MC_NonTxn`,
+which no longer exists; none of those figures was reproducible and they are not carried.
 
-`Assert_validateInfo` is the one row that needs a second module, and the reason is now a different one from
-the reason the first commit gave. It was that finding F6 violates the property on the baseline, so a witness run
-would be trivially red and say nothing; both committed halves carry F6's fix, so that reason has lapsed and the
-witness could run in `MC_NonTxnDrop`. What `MC_NonTxnWitness` still is, is the **undivided** scenario with the
-fix applied, at `CSN_MAX = 35` rather than the halves' 34, and the witness is run there because that is the
-configuration debt B5 is stated at: its two minimality halves are the runs that did not finish, and retrying
-them anywhere else would not pay the debt. An exhaustive run there does not finish either, which is exactly the
-exhaustive-versus-witness split of spec defect S7.
+### The drop half with the cleanup group {#witnesses-nontxn-drop}
 
-### The sweep at these bounds {#witnesses-nontxn-sweep}
+`MC_NonTxnDrop`, every witness of every property its cfg checks. Nineteen runs, under three minutes in all.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 65,913 | 4 s |
-| `SingleRemover` | `SingleRemover` | RED | 611,359 | 10 s |
-| `LockConsistent` | `LockConsistent` | RED | 59,879 | 4 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 462,289 | 8 s |
-| `RollbackRestores` | `RollbackRestores` | RED | 243,311 | 7 s |
-| `FlipAfterStores` | `FlipAfterStores` | RED | 6,530 | 2 s |
-| `ReadYourWrites` | `ReadYourWrites` | RED | 6,762 | 2 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | **does not finish**, debt B4 | 44,213,335 after 600 s | |
-| `NoPrematureDelete` | `NoPrematureDelete` | RED | 629,800 | 7 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 56,003 | 3 s |
-| `NtBatchRefusedUnchanged` | `NtBatchRefusedUnchanged` | RED | 264,818 | 5 s |
-| `NtRefusalJustified` | `NtRefusalJustified` | RED | 53,807 | 3 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 41,585 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 39,785 | 2 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 4,040 | 2 s |
+| `LockConsistent` | `LockConsistent` | RED | 15,257 | 1 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 443 | 1 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 485 | 1 s |
+| `NtRefusalJustified` | `NtRefusalJustified` | RED | 1,831 | 1 s |
+| `NtBatchRefusedUnchanged` | `NtBatchRefusedUnchanged` | RED | 40,682 | 2 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 1,358 | 1 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 445,647 | 5 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 17,630 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 8,016 | 1 s |
+| `Assert_validateInfo` | `Assert_validateInfo_nocreation` | RED | 1,895 | 1 s |
+| | `Assert_validateInfo_nocreation_only1` | GREEN, as minimality requires | 601,859 | 7 s |
+| | `Assert_validateInfo_nocreation_only2` | GREEN, as minimality requires | 1,112,063 | 10 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 10,067 | 2 s |
+| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 907,471 | 9 s |
+| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 1,112,076 | 10 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | GREEN, paid in `MC_NonTxnWitness` | 1,112,076 | 10 s |
+| `SingleRemover` | `SingleRemover` | GREEN, paid in `MC_NonTxnWitness` | 1,112,063 | 10 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | GREEN, paid in `MC_NonTxnWitness` | 1,112,076 | 10 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | GREEN, placed in plan 5 | 1,112,076 | 10 s |
+| `NoDoubleRead` | `NoDoubleRead` | GREEN, placed in plan 5 | 855,691 | 9 s |
+| `Atomicity` | `Atomicity` | GREEN, paid in `MC_NonTxnDropTwo` | 1,112,089 | 10 s |
+| `NoFalseCorruption` | `NoFalseCorruption` | GREEN, structurally; deferred to plan 3 | 1,112,089 | 10 s |
 
-`NoDoubleRead` and `NoFalseCorruption` are in the scenario's cfg and have no row, and neither absence is an
-accident nobody looked at. `NoDoubleRead`'s run was killed at 69.8 million distinct states, which is a budget
-verdict rather than a witness verdict. `NoFalseCorruption`'s run was re-made at the committed bounds and
-reached 16.2 million distinct states in 140 seconds with no violation, and did not finish; that is consistent
-with the structural-unreachability argument below, and it is not a green. Both rows belong to debt B4.
+Every green here is a full exploration of the configuration rather than a run that ran out of budget, so each
+one is a verdict: the witness does not fire at one transaction. That is the price of the bound
+`STATE_SPACE.md` argues, and every row names where it is paid instead.
 
-`NoFalseCorruption` is worth a note whatever that round finds, because the witness the spec names is not
+`Assert_validateInfo_nocreation` is the two-change witness debt B5 was about. Its minimality was unverified
+because both half-runs had to be cut at 24 million distinct states in the undivided module; here the module
+finishes, so both halves are green by exploration and the witness is minimal. B5 is closed.
+
+### The drop half at two transactions {#witnesses-nontxn-drop-two}
+
+`MC_NonTxnDropTwo`, the five rows the one-transaction half lost and this configuration can take.
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `Atomicity` | `Atomicity` | RED | 168,614 | 3 s |
+| `NoDoubleRead` | `NoDoubleRead` | GREEN | 22,070,456 | 181 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | GREEN | 47,958,539 | 395 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | GREEN | 47,958,970 | 413 s |
+| `SingleRemover` | `SingleRemover` | **killed unfired**, 33,336,890 distinct after 252 s | — | |
+
+`Atomicity` is the row this configuration pays outright. The two `Assert_validateInfo_order` and `SingleRemover`
+rows need the cleanup group as well, which this half does not have, and they are red in `MC_NonTxnWitness`
+below. `NoDoubleRead` and `NoUncommittedRead` are green here as fully explored runs and are what is left of
+debt B4.
+
+### The insert half {#witnesses-nontxn-insert}
+
+`MC_NonTxnInsert` is the half with a non-transactional `INSERT` and no removal batch. Two rows were open on it
+and both are now run.
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `Atomicity` | `Atomicity` | RED | 486,689 | 6 s |
+| `ActiveSetShape` | `ActiveSetShape` | GREEN, vacuously | 15,788,005 | 129 s |
+
+`ActiveSetShape`'s green is a statement about the half rather than about the property. `NtInsertWrite` requires
+`IsBase(p)` and the only part with a non-empty `Covers` entry is `E`, which a non-transactional `DROP PARTITION`
+creates and this half has no `DROP PARTITION`: part `E` is never created here, so no two parts ever overlap and
+the invariant is vacuously true whatever the witness does to the publication. The same is true of the two batch
+properties, `NtBatchRefusedUnchanged` and `NtRefusalJustified`: there is no batch in this half, so their
+antecedent never holds. All three are kept in the roster so that the two halves differ only in their `Next`,
+and all three are red in a drop-half configuration. `ActiveSetShape` is also the property finding F5 violates,
+which is why `MC_NonTxnF5` exists and why the property is not in `MC_NonTxnDrop`'s roster.
+
+### The undivided module, at witness bounds {#witnesses-nontxn-witness}
+
+`MC_NonTxnWitness`, `TID_MAX = 2`, `CSN_MAX = 35`, both halves, the cleanup group on. An exhaustive run there
+does not finish, which is the whole point of having two sets of bounds.
+
+| Property | Witness name | Result | States | Time |
+|---|---|---|---|---|
+| `SingleRemover` | `SingleRemover` | RED | 672,101 | 6 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 41,585 | 3 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | RED | 644,152 | 6 s |
+| `NoDoubleRead` | `NoDoubleRead` | **killed unfired**, 40,810,177 distinct after 342 s | — | |
+| `NoUncommittedRead` | `NoUncommittedRead` | **killed unfired**, 33,628,474 distinct after 269 s | — | |
+
+The three red rows are the ones that need a second transaction and the cleanup thread at once, and they fire in
+seconds once they have both.
+
+`NoDoubleRead` and `NoUncommittedRead` are the two rows of this scenario that no configuration pays. Both are
+red in `Base` -- `NoUncommittedRead` at three transactions, `NoDoubleRead` in `Merge`, which is the scenario
+with a covering relation -- so the properties are falsifiable and the hooks work; what is unshown is that they
+are falsifiable with a non-transactional writer in the behaviour. Both are placed in plan 5's budget and
+calibration task with the counts above, and they are the residue of debt B4.
+
+`NoFalseCorruption` is worth a note whatever a later round finds, because the witness the spec names is not
 reachable here at all and the reason is structural. Its target is "a never-transactional part removed
 non-transactionally, whose record is deferred". Such a part has `creation_tid = NonTransactionalTID` and
 `removal_csn = NonTransactionalCSN`, which is exactly the shape `VersionInfo::wasInvolvedInTransaction`
@@ -423,8 +518,8 @@ non-transactionally, whose record is deferred". Such a part has `creation_tid = 
 The witness needs a part that is BOTH involved in a transaction and carries a deferred record, and no action of
 this plan produces one: `deferrable` survives only a store whose result is uninvolved, so the store that would
 make the part involved is the same store that writes the record to disk. `Crash` and `Restart*` can separate
-the two, which is why the deferred table sends the row to plan 3 and the `NonTxnCrash` scenario.
-
+the two, which is why the deferred table sends the row to plan 3 and the `NonTxnCrash` scenario. The green row
+in the drop half is that argument measured, not a witness.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
@@ -478,6 +573,22 @@ the visibility oracle's ghost to the publishing step (`M16`):
 | `Merge` | green at one session | 5,196,830 | 51 s |
 | `NonTxnInsert` | green at `TID_MAX = 2`, `CSN_MAX = 34`, two sessions | 15,787,889 | 2 min 33 s |
 | `NonTxnFixed` | green at one session | 841,907 | 8 s |
+
+
+After the budget and sweep task, which changed no model file and added `MC_MergeWitness`, `MC_NonTxnDropTwo`
+and `MC_NonTxnF2`:
+
+| Scenario | Result | Distinct states | Time |
+|---|---|---|---|
+| `Schema` | green | 1 | 1 s |
+| `BaseSmall` | green | 47,381 | 1 s |
+| `Base` | green | 26,839,128 | 3 min 54 s |
+| `Merge` | green at one session | 5,196,830 | 50 s |
+| `SetSnapshotF2` | **red on `NoPrematureDelete`**, as expected | a first-violation count | 1 s |
+| `NonTxnInsert` | green | 15,788,049 | 2 min 35 s |
+| `NonTxnDrop` | green at `TID_MAX = 1` | 1,112,076 | 11 s |
+| `NonTxnDropTwo` | green at `TID_MAX = 2`, no cleanup group | 47,958,711 | 7 min 34 s |
+| `NonTxnF2` | **red on `NoPrematureDelete`** and, alone, on `NoLostVisibleData` | 9,132 and 9,193 | under 1 s each |
 
 `M13` is why the `SetSnapshot` family had to be re-measured at all, and why its witnesses had to be re-run
 rather than carried over. The guard had been vacuous in every configuration with an empty `Tasks`, which is all

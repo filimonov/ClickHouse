@@ -72,8 +72,20 @@ group), `SetSnapshotFixed` (the same with `SET_SNAPSHOT_PROTECTS = TRUE`, the mo
 in `FINDINGS.md`, finding F2) `SetSnapshotWitness` (the same as `SetSnapshot` at the scenario matrix's
 bounds, for `witness.sh` only; an exhaustive run there does not finish), and the pair `SetSnapshotF2` and
 `SetSnapshotF2Fixed` (one session, one part, three transactions and the snapshot target 34, the configuration
-that reaches finding F2; the first is expected red on `NoPrematureDelete` and the second is green), and `Merge` (one session, `P1`, `P2` and the covering `M12`, one background task, plus the cleanup group and the updater's GC group). It downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a
-45-minute `timeout`.
+that reaches finding F2; the first is expected red on `NoPrematureDelete` and the second is green), `Merge`
+(one session, `P1`, `P2` and the covering `M12`, one background task, plus the cleanup group and the updater's
+GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only).
+
+The non-transactional scenario is four modules, because no exhaustive run of the whole of it finishes:
+`NonTxnDrop` (the `DROP PARTITION` and its removal batch with the cleanup group, one transaction),
+`NonTxnDropTwo` (the same without the cleanup group, two transactions), `NonTxnInsert` (a non-transactional
+`INSERT` with the cleanup group, two transactions) and `NonTxnWitness` (both halves at witness bounds, for
+`witness.sh` only). Five more modules each produce one finding and are expected red or are a verified fix
+variant: `NonTxnF4`, `NonTxnF5`, `NonTxnF6`, `NonTxnFixed` and `NonTxnF2`, the last being finding F2 reproduced
+at two transactions with a non-transactional creator. `STATE_SPACE.md` has the bounds of each and why.
+
+`run_tlc.sh` downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a 45-minute
+`timeout`.
 
 Output goes under `tmp/tla/<Scenario>/`: the full TLC log is `tlc.log`, and a counterexample is additionally
 extracted to `trace.txt`. The metadir lives in `tmp/tla/<Scenario>/states` while the run lasts and is removed
@@ -124,6 +136,7 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 | Action | C++ file | Function | Step boundary |
 |---|---|---|---|
 | `Begin(k)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::beginTransaction` (:399) | one step for the whole body, because the code holds `running_list_mutex` throughout: the snapshot is read, `local_tid_counter` is bumped, the snapshot is inserted into `snapshots_in_use` and the transaction into `running_list` |
+| `SetSnapshot(k, c)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::setSnapshot` (:52), reached from `InterpreterTransactionControlQuery::executeSetSnapshot` (`src/Interpreters/InterpreterTransactionControlQuery.cpp:138`) | one relaxed store into `snapshot`. `protected_snapshot` and the `snapshots_in_use` entry are deliberately left where they were, which is finding F2; `SET_SNAPSHOT_PROTECTS` is the proposed fix. The model guards the action on a `Running` transaction, which is narrower than the code, and `FINDINGS.md` says why |
 | `InsertWrite(k, p)` | `src/Storages/MergeTree/MergedBlockOutputStream.cpp` | the `MergedBlockOutputStream` constructor (:74) | the part directory exists and `setAndStoreCreationTID(tid)` has opened its store frame; the part is `Temporary` and the frame has not finished |
 | `InsertPreActive(k, p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::renameTempPartAndReplaceImpl` (:6924) through `MergeTreeData::preparePartForCommit` (:6859) | the creation-TID store has finished; under `lockParts` the part becomes `PreActive` and `Transaction::addPart` puts it in `precommitted_parts` |
 | `PublishStart(k, p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::commit(DataPartsLock &)` (:11219) | the parts lock is taken and held; `getActivePartsToReplace` plus `getCoveredOutdatedParts` filtered by `filterVisibleDataParts` give the covered set; `addNewPartAndRemoveCovered` has run its `MergeTreeTransaction::addNewPart`, so the part is in `creating_parts`, and the per-covered `removeOldPart` calls have not started |
@@ -207,6 +220,26 @@ operators in `Server.tla`.
 | `MergeStmtRollbackMark(i, p)`, `MergeStmtRollbackDrop(i)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::rollback` (:11122) | the same two halves the client's `StmtRollback*` takes: `setAndStoreCreationCSN(RolledBackCSN)` per precommitted part (:11126), then `removePartsFromWorkingSet` for the set under `lockParts` (:11181) |
 | `MergeUnwind(i)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::rollback` (:377), reached from `MergeTreeTransactionHolder`'s destructor | the tagger releases the reservation and the source pins, and the holder's `rollbackTransaction` either wins the compare-and-exchange at :382 or finds that a `KILL` already did |
 
+### Non-transactional queries and the removal batch {#code-map-nontxn}
+
+A query outside a transaction has no commit point: the publication is the moment its work takes effect. The
+batch is `NonTransactionalRemovalLocks`, whose lock loop and store loop are separate phases, which is what
+`NtBatchRefusedUnchanged` is about.
+
+| Action | C++ file | Function | Step boundary |
+|---|---|---|---|
+| `NtInsertWrite(k, p)` | `src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp` | `VersionMetadata::setAndStoreCreationTID` with `Tx::NonTransactionalTID` (:261), from the `MergedBlockOutputStream` constructor | the part directory exists, the creation record names the non-transactional TID and carries `NonTransactionalCSN` in the same update, and the part is `Temporary`. `deferrable` stays true: a never-transactional part writes no `txn_version.txt` |
+| `NtInsertPublish(k, p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `renameTempPartAndReplace` and `MergeTreeData::Transaction::commit` (:11219) with a null transaction, under one `lockParts` | the part is published. It goes `Active`, or `Outdated` if a covering part appeared while it was being written (:11282, :11316), which is the branch that keeps `ActiveSetShape` from firing on an `INSERT` that lost to a `DROP PARTITION`. A base part covers nothing, so the batch is empty and there is nothing to interleave with between the two calls |
+| `NtDropWrite(k, e)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::dropPartition`, the branch without a transaction (:3186), through `initCoverageWithNewEmptyParts` | the empty tombstone part `e` covering the partition is written and `Temporary`, with `setAndStoreCreationTID(Tx::NonTransactionalTID)` open on it |
+| `NtDropPublish(k, e)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `renameAndCommitEmptyParts` into `MergeTreeData::Transaction::commit` (:11219) | the parts lock is taken, `getActivePartsToReplace` has given the covered set, and the removal batch over that set starts. The covered `Outdated` parts a transactional publication also collects are inside the `if (txn)` at :11248 and are deliberately not collected here |
+| `NtBatchPreflight(p)` | `src/Interpreters/MergeTreeTransaction.cpp` | `NonTransactionalRemovalLocks::lock` (:121-146) | one target is classified before the lock is attempted: already removed, so skipped (:131), or created by a transaction that has not committed, so the whole batch is refused (:139). The third outcome, proceed to `lockRemovalTID`, is `NtBatchLock`'s guard rather than a step |
+| `NtBatchLock(p)` | `src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp` | `VersionMetadata::lockRemovalTID` (:195) | the removal lock on one target is taken, or the batch is refused with `SERIALIZATION_ERROR` because another actor holds it. At the end of the lock phase the target list becomes the locked list |
+| `NtBatchStore(p)` | `src/Interpreters/MergeTreeTransaction.cpp` | `NonTransactionalRemovalLocks::store` (:150) | one target's `removal_tid` is stored and its lock released in the `SCOPE_EXIT`, draining the locked list from the back (:153-155). The store phase begins only after the whole lock loop has finished, which is the class's reason to exist |
+| `NtBatchEnd` | `src/Interpreters/MergeTreeTransaction.cpp` | `NonTransactionalRemovalLocks::store` (:150), returning | the locked list is empty and the batch is done |
+| `NtDropFlip(k, e)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::commit` (:11219), its `NOEXCEPT_SCOPE`, or the exception path out of it | on a done batch the states flip: the empty part goes `Active` and every covered part `Outdated`. On a refused batch the query fails with `SERIALIZATION_ERROR`, the parts lock is released, and `MergeTreeData::Transaction`'s destructor runs the statement rollback below |
+| `NtDropUnwindMark(k, e)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::rollback` (:11122) | `setAndStoreCreationCSN(Tx::RolledBackCSN)` on the empty part (:11126). This is the one transition `setAndStoreCreationCSN`'s `chassert` exempts by name, and it is what makes the abandoned empty part invisible and removable |
+| `NtDropUnwindDrop(k)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::rollback` (:11122) | the parts lock is taken and `removePartsFromWorkingSet` (:11181) drops the empty part out of the working set |
+
 ### The metadata store {#code-map-store}
 
 `updateInfoWithRefreshDataThenStoreAndSetMetadata` is three actions per caller, because `persisted_info_mutex`
@@ -225,9 +258,13 @@ covers only the middle one and `version_info_mutex` only the last. The `Server.t
 Defined with the body `FALSE` so that a later plan can fill them in without renaming anything. The plan number is
 the one that implements the action, from the plan's "Plans that follow this one" section.
 
+The non-transactional group this table used to carry for plan 2 is implemented and has its own section above.
+The design document's separate `NtBatchStart(B)` action is not among them: its targets are computed by the
+caller under the same parts lock, so the model folds it into `NtDropPublish` through the operator `StartBatch`,
+and nothing observable happens between the two.
+
 | Action | Plan |
 |---|---|
-| `NtInsert(p)`, `NtBatchStart(B)`, `NtBatchPreflight(p)`, `NtBatchLock(p)`, `NtBatchStore(p)`, `NtBatchEnd`, `NtDropCover` | plan 2 |
 | `CommitUnknown(k)` | plan 3 |
 | `UpdReconnect`, `UpdSwapUnknownLists`, `UpdFinalizeUnknown(t)` | plan 3 |
 | `Crash` | plan 3 |
@@ -334,6 +371,24 @@ two longer. The net is 5,405 fewer, about 0.02%, which says the merge is worth s
 direction was expected to be the other one; what it shows is that the two are of the same small size, not that
 either is negligible.
 
+| `NonTxnDrop`, `TID_MAX = 2` | 2026-09-21 | the budget commit | 32,818,006 after 5 min, queue 2.71M | killed | the committed configuration re-measured with its own view; still growing, so still no exhaustive run |
+| `NonTxnDrop`, `TID_MAX = 2`, one non-transactional query per behaviour | 2026-09-21 | the budget commit | 32,216,335 after 5 min, queue 2.70M | killed | the `CONSTRAINT` lever measured and **rejected**: a two per cent cut. Reverted with its ghost counter |
+| `NonTxnDrop`, `TID_MAX = 1`, **committed** | 2026-09-21 | the budget commit | 1,112,076 | 11 s | green; the exhaustive configuration of the drop half, with the cleanup group |
+| `NonTxnDropTwo`, `TID_MAX = 2`, no cleanup group, **committed** | 2026-09-21 | the budget commit | 47,958,711 | 7 min 34 s | green; the queue peaked at 1.21M and drained, which is why a count above 30 million is accepted here |
+| `NonTxnF2` | 2026-09-21 | the budget commit | 9,132 and 9,193 | under 1 s each | **red on `NoPrematureDelete` and on `NoLostVisibleData`**: finding F2 at two transactions with a non-transactional creator, which closes debt `B2` |
+| `NonTxnDrop` witness sweep, 22 rows | 2026-09-21 | the budget commit | 1,112,089 for the largest | under 3 min in total | twelve red, including both batch witnesses and the `Assert_validateInfo_nocreation` minimality halves, which closes `B5`; seven green, each named where it is paid |
+| `NonTxnDropTwo` witnesses, 5 rows | 2026-09-21 | the budget commit | 47,958,970 for the largest | 21 min in total | `Atomicity` red; three green by full exploration; `SingleRemover` killed unfired at 33,336,890 |
+| `NonTxnWitness` witnesses, 5 rows | 2026-09-21 | the budget commit | 672,101 for the largest red row | 11 min in total | three red, two killed unfired at 40.8M and 33.6M, which is what is left of `B4` |
+| `NonTxnInsert` witnesses, 2 rows | 2026-09-21 | the budget commit | 15,788,005 | 2 min 15 s in total | `Atomicity` red; `ActiveSetShape` green because part `E` is never created in that half |
+| `SetSnapshotWitness` witnesses, 4 rows | 2026-09-21 | the budget commit | 7,913,163 for the largest red row | 12 min in total | three red, `Assert_validateInfo_removal` killed unfired at 108,439,476, which is what is left of `B1` |
+| `MergeWitness` witnesses, 3 rows | 2026-09-21 | the budget commit | 6,065,808 for the largest red row | 6 min in total | two red, including `NoSpuriousStaleVersion`, `Assert_validateInfo_removal` killed unfired at 34,184,268; that is `B3` |
+| `Schema` | 2026-09-21 | the budget commit | 1 | 1 s | green |
+| `BaseSmall` | 2026-09-21 | the budget commit | 47,381 | 1 s | green |
+| `Merge` | 2026-09-21 | the budget commit | 5,196,830 | 50 s | green at one session |
+| `SetSnapshotF2` | 2026-09-21 | the budget commit | a first-violation count | 1 s | **red on `NoPrematureDelete`**, as it is expected to be |
+| `NonTxnInsert` | 2026-09-21 | the budget commit | 15,788,049 | 2 min 35 s | green; 15,787,838 and 15,787,889 on the two earlier runs, which is the counting noise |
+| `Base` | 2026-09-21 | the budget commit | 26,839,128 | 3 min 54 s | green at the matrix bounds; 26,839,136 on the previous commit |
+
 ## 5. Witnesses {#witnesses}
 
 A property no run can falsify proves nothing, so every property in `Invariants.tla` has a witness: one named
@@ -352,12 +407,15 @@ Constants where the model deliberately runs a smaller value than the server, and
 | `NOEXCEPT_RETRY_BUDGET` | 2 | a 60-second budget | the design's budget is a time, not a count. A counter is what keeps the retry loop finite, and two retries reach both ends of it, the retry that succeeds and the budget that is exhausted |
 | `Tasks` | `{}` in `Base`, `{i1}` in `Merge` | up to 2 background tasks | `Base` enables neither merges nor the mutation executor, so no task can act; the set is empty rather than unused so that quantifiers over it are trivially true. `Merge` has one covering part and therefore one possible merge, so a second task could only contend for the same two sources, which the reservation excludes |
 | `Mutations` | `{}` in `Base` | one or more per scenario | same reason: the mutation actions are stubs until plan 4 |
-| `TID_MAX` | 3 in `Base`, 2 in `BaseSmall` | the matrix asks for 3 | `Begin` draws from a monotone counter capped at this value, so the state space is finite by construction rather than cut by a constraint. Three is what three of the witnesses need to reach their target at all, and it is what produced the model's first counterexample |
+| `TID_MAX` | 3 in `Base`, 2 in `BaseSmall`, 2 in `SetSnapshot` and the `NonTxn` modules, 1 in `NonTxnDrop` | the matrix asks for 3 | `Begin` draws from a monotone counter capped at this value, so the state space is finite by construction rather than cut by a constraint. Three is what three of the witnesses need to reach their target at all, and it is what produced the model's first counterexample |
 | `CSN_MAX` | 36 in `Base`, 35 in `BaseSmall` | unbounded | real CSNs start at `FirstCSN = 33` and `KeeperCanAppend` requires `zk.seq < CSN_MAX`, so each unit above 33 buys one commit. It is set to the smallest value that lets every transaction commit; raising it to 38 changed the total by 0.002%, inside the counting noise |
 | `Sessions` | `{k1, k2}` in `Base` | 2 | `SYMMETRY SymSessions` halves the fingerprints. Parts cannot join the symmetry: `SetToSeq` is a `CHOOSE`, so the next-state relation is not equivariant under a permutation of `Parts` |
 
-No `CONSTRAINT` is applied. Two bounds were held in reserve by the plan and both turned out to be unnecessary or
-vacuous: bounding the concurrently open store frames left a two-session run growing past 8.6 million states, and
+No `CONSTRAINT` is applied. A fourth was built and measured for the `NonTxnDrop` half, a ghost counter of the
+non-transactional queries a behaviour issues with a constraint allowing one, and it was rejected and reverted
+because it cut two per cent of a space that was fifty per cent over budget; what that half needed was a
+transaction fewer, not a query fewer. Two other bounds were held in reserve by the plan and both turned out to
+be unnecessary or vacuous: bounding the concurrently open store frames left a two-session run growing past 8.6 million states, and
 bounding the transactions that reach `CommitAck` or `RollbackFinalize` is already implied by `TID_MAX`. A third,
 restricting the kill to a session that holds no transaction, was built, measured and discarded because it both
 failed to bound the run and lost the case the scenario exists for. `STATE_SPACE.md`, section "Bounds", has the
