@@ -319,6 +319,8 @@ discarded.
 | cleanup witnesses, 3 rows | 2026-09-18 | the cleanup-thread commit | 243,397 for the largest, all first-violation counts | 10 s in total | all three red |
 | witnesses `NoPrematureDelete` and `NoLostVisibleData` in `SetSnapshotFixed` | 2026-09-18 | the cleanup-thread commit | 13,664,284 and 13,664,666 | 96 s and 98 s | green, which is debt `B2` |
 
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
 | `BaseSmall` | 2026-09-18 | the merge commit | 47,381 | 1 s | green |
 | `Base` | 2026-09-18 | the merge commit | 28,547,508 | 4 min 12 s | green at the matrix bounds; 28,552,913 on the tree before, the net of two changes described below |
 | `SetSnapshot` | 2026-09-18 | the merge commit | 13,622,631 | 2 min 01 s | green at the exhaustive bounds |
@@ -332,6 +334,8 @@ discarded.
 | `Base` witness sweep, 18 rows | 2026-09-18 | the fix-round commit | 53,619,513 for the largest | ≈ 14 min in total, 5 min 31 s for that row | every row red, both minimality halves green, after the extraction moved six of the hooked operators |
 | `Merge` | 2026-09-18 | the fix-round commit | 5,196,830 | 49 s | green after `FlipAfterStores` gained its task conjunct |
 
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
 | `BaseSmall` | 2026-09-18 | the non-transactional commit | 47,381 | 1 s | green |
 | `Base` | 2026-09-18 | the non-transactional commit | 26,839,136 | 3 min 56 s | green; it moves by 6% because model defect `M13` restored `DropLock`'s `lockParts` guard, which an empty `Tasks` had made vacuous |
 | `NonTxn`, undivided | 2026-09-18 | the non-transactional commit | 27,234,570 at the matrix bounds and 59,047,617 at `TID_MAX = 2` | killed, twice | an exhaustive run does not finish at any bounds that keep the scenario's subject |
@@ -339,6 +343,8 @@ discarded.
 | `NonTxnFixed` | 2026-09-18 | the non-transactional commit | 841,907 | 8 s | green, which is finding F6's fix verified |
 | `NonTxn` witness sweep, 14 rows | 2026-09-18 | the non-transactional commit | 44,213,335 for the one that does not finish | ≈ 11 min in total | red except `NoUncommittedRead`, which is debt `B4` |
 
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
 | `NonTxnInsert` | 2026-09-20 | the review fix-round commit | 15,787,889, and 15,787,838 on the closing re-run of the committed tree | 2 min 33 s | green; the half of the split scenario that keeps the non-transactional `INSERT` |
 | `NonTxnDrop` | 2026-09-20 | the review fix-round commit | 56,703,779 after 9 min 30 s, queue 3.39M | killed, three times | the half that keeps the removal batch; no finishing configuration, model defect `M15` |
 | `NonTxnF7` | 2026-09-20 | the review fix-round commit | 75.3 million after 600 s | no violation | the ghost-lag fix of `M16` withdraws finding F7; the module is deleted |
@@ -371,13 +377,15 @@ two longer. The net is 5,405 fewer, about 0.02%, which says the merge is worth s
 direction was expected to be the other one; what it shows is that the two are of the same small size, not that
 either is negligible.
 
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
 | `NonTxnDrop`, `TID_MAX = 2` | 2026-09-21 | the budget commit | 32,818,006 after 5 min, queue 2.71M | killed | the committed configuration re-measured with its own view; still growing, so still no exhaustive run |
 | `NonTxnDrop`, `TID_MAX = 2`, one non-transactional query per behaviour | 2026-09-21 | the budget commit | 32,216,335 after 5 min, queue 2.70M | killed | the `CONSTRAINT` lever measured and **rejected**: a two per cent cut. Reverted with its ghost counter |
-| `NonTxnDrop`, `TID_MAX = 1`, **committed** | 2026-09-21 | the budget commit | 1,112,076 | 11 s | green; the exhaustive configuration of the drop half, with the cleanup group |
+| `NonTxnDrop`, `TID_MAX = 1`, **committed** | 2026-09-21 | the budget commit | 1,112,063 | 11 s | green; the exhaustive configuration of the drop half, with the cleanup group |
 | `NonTxnDropTwo`, `TID_MAX = 2`, no cleanup group, **committed** | 2026-09-21 | the budget commit | 47,958,711 | 7 min 34 s | green; the queue peaked at 1.21M and drained, which is why a count above 30 million is accepted here |
-| `NonTxnF2` | 2026-09-21 | the budget commit | 9,132 and 9,193 | under 1 s each | **red on `NoPrematureDelete` and on `NoLostVisibleData`**: finding F2 at two transactions with a non-transactional creator, which closes debt `B2` |
-| `NonTxnDrop` witness sweep, 22 rows | 2026-09-21 | the budget commit | 1,112,089 for the largest | under 3 min in total | twelve red, including both batch witnesses and the `Assert_validateInfo_nocreation` minimality halves, which closes `B5`; seven green, each named where it is paid |
-| `NonTxnDropTwo` witnesses, 5 rows | 2026-09-21 | the budget commit | 47,958,970 for the largest | 21 min in total | `Atomicity` red; three green by full exploration; `SingleRemover` killed unfired at 33,336,890 |
+| `NonTxnF2` | 2026-09-21 | the budget commit | 9,132 and 9,193, first-violation counts; a re-run gave 10,233 for the first | under 1 s each | **red on `NoPrematureDelete` and on `NoLostVisibleData`**: finding F2 at two transactions with a non-transactional creator, which closes debt `B2` |
+| `NonTxnDrop` witness sweep, 27 rows | 2026-09-21 | the budget commit and the fix round | 25,686,095 for the largest | about 7 min in total | thirteen red, including both batch witnesses, `Assert_getOldestSnapshot_size` and the `Assert_validateInfo_nocreation` minimality halves, which closes `B5`; fourteen green by full exploration, each named where it is paid or placed |
+| `NonTxnDropTwo` witnesses, 5 rows | 2026-09-21 | the budget commit and the fix round | 65,525,357 for the largest | 30 min in total | `Atomicity` red; three green by full exploration; `SingleRemover` killed unfired at 65,525,357 with the queue growing, and paid in `MC_NonTxnWitness` |
 | `NonTxnWitness` witnesses, 5 rows | 2026-09-21 | the budget commit | 672,101 for the largest red row | 11 min in total | three red, two killed unfired at 40.8M and 33.6M, which is what is left of `B4` |
 | `NonTxnInsert` witnesses, 2 rows | 2026-09-21 | the budget commit | 15,788,005 | 2 min 15 s in total | `Atomicity` red; `ActiveSetShape` green because part `E` is never created in that half |
 | `SetSnapshotWitness` witnesses, 4 rows | 2026-09-21 | the budget commit | 7,913,163 for the largest red row | 12 min in total | three red, `Assert_validateInfo_removal` killed unfired at 108,439,476, which is what is left of `B1` |
@@ -411,11 +419,12 @@ Constants where the model deliberately runs a smaller value than the server, and
 | `CSN_MAX` | 36 in `Base`, 35 in `BaseSmall` | unbounded | real CSNs start at `FirstCSN = 33` and `KeeperCanAppend` requires `zk.seq < CSN_MAX`, so each unit above 33 buys one commit. It is set to the smallest value that lets every transaction commit; raising it to 38 changed the total by 0.002%, inside the counting noise |
 | `Sessions` | `{k1, k2}` in `Base` | 2 | `SYMMETRY SymSessions` halves the fingerprints. Parts cannot join the symmetry: `SetToSeq` is a `CHOOSE`, so the next-state relation is not equivariant under a permutation of `Parts` |
 
-No `CONSTRAINT` is applied. A fourth was built and measured for the `NonTxnDrop` half, a ghost counter of the
+No `CONSTRAINT` is applied in any committed configuration. Four were built or held in reserve and all four
+were dropped. The first was built and measured for the `NonTxnDrop` half, a ghost counter of the
 non-transactional queries a behaviour issues with a constraint allowing one, and it was rejected and reverted
 because it cut two per cent of a space that was fifty per cent over budget; what that half needed was a
-transaction fewer, not a query fewer. Two other bounds were held in reserve by the plan and both turned out to
-be unnecessary or vacuous: bounding the concurrently open store frames left a two-session run growing past 8.6 million states, and
+transaction fewer, not a query fewer. Two more were held in reserve by the plan and both turned out to be
+unnecessary or vacuous: bounding the concurrently open store frames left a two-session run growing past 8.6 million states, and
 bounding the transactions that reach `CommitAck` or `RollbackFinalize` is already implied by `TID_MAX`. A third,
 restricting the kill to a session that holds no transaction, was built, measured and discarded because it both
 failed to bound the run and lost the case the scenario exists for. `STATE_SPACE.md`, section "Bounds", has the

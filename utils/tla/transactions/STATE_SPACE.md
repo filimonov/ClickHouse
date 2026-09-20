@@ -528,9 +528,14 @@ buys nothing is a field a later reader has to account for.
 What the space is made of is transactions, not queries. Cutting `TID_MAX` from 2 to 1 takes the half from over
 32 million to **1,112,076 distinct states in 11 seconds**, a factor of thirty, and that is the committed
 exhaustive configuration of `NonTxnDrop`: two sessions, three parts, `TID_MAX = 1`, `CSN_MAX = 34`. It is a
-**bound**, not a reduction that costs nothing, and what it costs is stated as one: with a single transaction in
-the behaviour, seven witnesses of the half's own roster go green, and they are the rows the second
-configuration below and `MC_NonTxnWitness` exist to pay.
+**bound**, not a reduction that costs nothing, and what it costs is stated as one. Ten witnesses of the half's
+own roster are green there, and they divide three ways: seven for want of the second transaction
+(`Assert_validateInfo_order`, `SingleRemover`, `NoPrematureDelete`, `NoUncommittedRead`, `NoDoubleRead`,
+`Atomicity` and `Assert_validateInfo_removal`), which are the rows the second configuration below,
+`MC_NonTxnWitness` and plan 5 pay; two vacuously, the two `Assert_getOldestSnapshot` witnesses whose hook is in
+`SetSnapshot`, which an empty `SNAPSHOT_TARGETS` disables; and one structurally, `NoFalseCorruption`, which
+plan 3 owes. An eleventh rostered property, `NoNtStoreError`, has no witness hook anywhere in the tree and is
+deferred to plan 5 with the fault that would falsify it.
 
 One transaction still keeps the subject. The batch refuses on a target that is locked or whose creator has not
 committed, and one transaction can hold either; both batch witnesses, `NtBatchRefusedUnchanged` and
