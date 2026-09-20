@@ -219,6 +219,17 @@ NtBatchRefusedUnchangedStep ==
       /\ (part'[p].mem.rtid = NonTransactionalTID => h.batch.before[p][1].rtid = NonTransactionalTID)
       /\ (StoredRecord(p)'.rtid = NonTransactionalTID => h.batch.before[p][2].rtid = NonTransactionalTID)
       /\ part'[p].lock /= NonTransactionalTID
+      \* The one field of the spec row's equality that no concurrent actor can write, restored here because
+      \* spec defect S12's argument does not reach it. A creation TID is written only by the "CreateTID" op,
+      \* and every action that issues one -- InsertWrite, MergeWrite, NtInsertWrite, NtDropWrite -- requires
+      \* an Absent part, which a batch target is not. The clause is therefore a tautology today and is kept
+      \* so that an action that did write it would be caught here.
+      \* The other fields of the spec row stay out, and not for convenience: MergeTreeTransaction::rollback
+      \* runs beside a batch without taking lockParts, and it writes ccsn (RolledBackCSN) and, through the
+      \* store it performs, sv. Requiring equality on either would make this property state something the
+      \* server does not promise, which is what S12 records.
+      /\ part'[p].mem.ctid = h.batch.before[p][1].ctid
+      /\ StoredRecord(p)'.ctid = h.batch.before[p][2].ctid
 NtBatchRefusedUnchanged == [][NtBatchRefusedUnchangedStep]_vars
 
 \* A refusal is justified by an uncommitted creator as the transaction log sees it, or by a lock somebody else
@@ -233,7 +244,7 @@ NtRefusalJustified == [][NtRefusalJustifiedStep]_vars
 
 \* Not a property of the server: a bound guard, of the shape NoTaskDrivenRollback has. NtBatchStore has no
 \* branch that consumes a frame parked in Error, so a store that failed would leave the batch with nothing able
-\* to advance it. In the C++ such an exception leaves store(), the SCOPE_EXIT and the destructor release the
+\* to advance it. In the C++ such an exception leaves store, the SCOPE_EXIT and the destructor release the
 \* locks, and the parts already drained keep their stored removal -- which is a half-applied batch and would be
 \* a finding, not a refusal. No behaviour of this plan's scenario reaches it: the preflight refuses every
 \* creation still in flight before anything is locked, so the SERIALIZATION_ERROR of setAndStoreRemovalTID

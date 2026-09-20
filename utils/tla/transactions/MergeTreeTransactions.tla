@@ -44,12 +44,13 @@ TaskNext == \E i \in Tasks :
 MutationNext == \E m \in Mutations : MutDestroyOwner(m) \/ KillUnregister(m) \/ KillRollbackTxn(m) \/ KillRemoveFile(m) \/ KillRetry(m)
 \* The target set of a batch is always computed by its caller, never chosen: an "\E B \in SUBSET Parts" would
 \* give the model 2^|Parts| branches the code does not have. NtDropPublish computes it and starts the batch.
-NtNext == \/ (\E k \in Sessions, p \in Parts : NtInsertWrite(k, p) \/ NtInsertPublish(k, p)
-                                               \/ NtDropWrite(k, p) \/ NtDropPublish(k, p) \/ NtDropFlip(k, p)
-                                               \/ NtDropUnwindMark(k, p))
-          \/ (\E k \in Sessions : NtDropUnwindDrop(k))
-          \/ (\E p \in Parts : NtBatchPreflight(p) \/ NtBatchLock(p) \/ NtBatchStore(p))
-          \/ NtBatchEnd
+NtInsertNext == \E k \in Sessions, p \in Parts : NtInsertWrite(k, p) \/ NtInsertPublish(k, p)
+NtDropNext == \/ (\E k \in Sessions, p \in Parts : NtDropWrite(k, p) \/ NtDropPublish(k, p) \/ NtDropFlip(k, p)
+                                                   \/ NtDropUnwindMark(k, p))
+              \/ (\E k \in Sessions : NtDropUnwindDrop(k))
+              \/ (\E p \in Parts : NtBatchPreflight(p) \/ NtBatchLock(p) \/ NtBatchStore(p))
+              \/ NtBatchEnd
+NtNext == NtInsertNext \/ NtDropNext
 FaultNext == Crash \/ NoexceptFrameDown \/ (\E c \in {"StoreFault", "RetryExhausted", "Other"} : ProcessDown(c))
 RestartNext == RestartLoadLog \/ RestartTableStart \/ RestartTablePublished \/ RestartOutdatedDone \/ RestartDone
                \/ (\E p \in Parts : RestartLoadPart(p))
@@ -71,7 +72,18 @@ SetSnapshotSpec == Init /\ [][SetSnapshotNext]_vars
 MergeNext == BaseNext \/ TaskNext \/ CleanupNext \/ UpdaterGCNext
 MergeSpec == Init /\ [][MergeNext]_vars
 
-\* the NonTxn scenario (spec matrix): Base + NtInsert, NtBatch*, NtDropCover + Cleanup*
+\* the NonTxn scenario (spec matrix): Base + NtInsert, NtBatch*, NtDropCover + Cleanup*. It is kept for the
+\* modules that produce findings F4 to F7, which need both halves in one behaviour; no exhaustive run of it
+\* finishes, which is why the scenario is checked as the two halves below.
 NonTxnNext == BaseNext \/ NtNext \/ CleanupNext
 NonTxnSpec == Init /\ [][NonTxnNext]_vars
+
+\* The two halves the scenario is checked as. Each is a strict sub-scenario of NonTxn, so neither loses a race
+\* to a bound reduction: NonTxnDrop keeps the whole of the removal batch and the transaction it races, and
+\* NonTxnInsert keeps a non-transactional INSERT racing a transaction. What only the whole scenario has is a
+\* behaviour that needs both, which is finding F5's route 2 and is produced by MC_NonTxnF5 instead.
+NonTxnDropNext == BaseNext \/ NtDropNext \/ CleanupNext
+NonTxnDropSpec == Init /\ [][NonTxnDropNext]_vars
+NonTxnInsertNext == BaseNext \/ NtInsertNext \/ CleanupNext
+NonTxnInsertSpec == Init /\ [][NonTxnInsertNext]_vars
 ====

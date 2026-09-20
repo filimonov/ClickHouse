@@ -1,4 +1,4 @@
----- MODULE MC_NonTxn ----
+---- MODULE MC_NonTxnDrop ----
 EXTENDS MergeTreeTransactions
 \* The three part names, declared so that CoversDef can spell them; the cfg binds each to the model value of
 \* the same name that Parts is built from.
@@ -9,6 +9,10 @@ CONSTANTS P1, P2, E
 CoversDef == [p \in Parts |-> IF p = E THEN {P1, P2} ELSE {}]
 SymSessions == Permutations(Sessions)
 
+\* NonTxnDrop is Base + the non-transactional DROP PARTITION and its removal batch + the cleanup group, at two
+\* sessions and three parts. ActiveSetShape is NOT in its roster: finding F5's route 1 is live here and unfixed,
+\* and MC_NonTxnF5 is the module that produces it. Everything else the scenario matrix names for NonTxn is
+\* checked, at OBSOLETE_IS_ROLLED_BACK = TRUE, because finding F6 makes the baseline unrunnable as a roster.
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is MergeView's shape, because Covers
 \* is non-empty here too and a read's frags are therefore not a function of its parts, with three changes:
 \*   - `task` is dropped, because Tasks = {} and no action of this scenario writes it;
@@ -21,7 +25,7 @@ SymSessions == Permutations(Sessions)
 \* "SERIALIZATION_ERROR" into it, and no action and no property of this scenario reads that value.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-NonTxnView ==
+NonTxnDropView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

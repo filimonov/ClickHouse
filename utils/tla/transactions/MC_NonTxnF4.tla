@@ -10,7 +10,9 @@ CoversDef == [p \in Parts |-> IF p = E THEN {P1, P2} ELSE {}]
 SymSessions == Permutations(Sessions)
 
 \* This module exists to produce finding F4 and nothing else: it is the NonTxn scenario cut to one session and
-\* two transactions, checking only NoLostVisibleData, and it is deliberately RED. MC_NonTxn is the green run.
+\* two transactions, checking only NoLostVisibleData, and it is deliberately RED. The green runs of the
+\* scenario are MC_NonTxnDrop and MC_NonTxnInsert, the two halves it is checked as, and neither carries
+\* NoLostVisibleData: spec defect S13 is why.
 \* The shape is the one MC_SetSnapshotF2 has for finding F2, and for the same reason: the violating behaviour
 \* is a single sequential run and breadth is the wrong resource for reaching it.
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is MergeView's shape, because Covers

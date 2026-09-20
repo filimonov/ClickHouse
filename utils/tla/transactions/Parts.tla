@@ -254,9 +254,20 @@ StorePersistStep(p, o) ==
              /\ part' = [part EXCEPT ![p].frames = keep \cup bumped \cup {[f EXCEPT !.pc = "Publish", !.tentative = newinfo]},
                                      ![p].deferrable = FALSE, ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo]
 
-\* StorePublish: setInfo under version_info_mutex, ignored if the stored version is lower than the current one
+\* StorePublish: setInfo under version_info_mutex, ignored if the stored version is lower than the current one.
+\* A non-transactional removal has no commit point: the record becoming visible IS the removal taking effect,
+\* because VersionInfo::isVisible tests removal_tid = NonTransactionalTID before it looks at any snapshot
+\* (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:142). The oracle's ghost is therefore written here,
+\* in the step that publishes the record, and not by the batch a step later. A transactional removal's ghost is
+\* written at CommitCreateEffect for the same reason: that is the step at which it becomes visible to others.
+\* Writing it a step late made every property that reads the oracle blind for one step, which is what produced
+\* the Atomicity counterexample this task first reported as finding F7.
 StorePublishStep(p, o) ==
-  LET f == FrameOf(p, o) IN
+  LET f == FrameOf(p, o)
+      newmem == IF f.tentative.sv < part[p].mem.sv THEN part[p].mem ELSE f.tentative IN
   /\ f.pc = "Publish"
-  /\ part' = [WithoutFrame(p, o) EXCEPT ![p].mem = IF f.tentative.sv < part[p].mem.sv THEN part[p].mem ELSE f.tentative]
+  /\ part' = [WithoutFrame(p, o) EXCEPT ![p].mem = newmem]
+  /\ h' = IF newmem.rtid = NonTransactionalTID /\ part[p].mem.rtid /= NonTransactionalTID
+          THEN [h EXCEPT !.removers[p] = @ \cup {NonTransactionalTID}]
+          ELSE h
 ====

@@ -10,10 +10,11 @@ CoversDef == [p \in Parts |-> IF p = E THEN {P1, P2} ELSE {}]
 SymSessions == Permutations(Sessions)
 
 \* The witness configuration, in the sense of spec defect S7: the NonTxn scenario at two sessions with
-\* OBSOLETE_IS_ROLLED_BACK = TRUE. Assert_validateInfo cannot be witnessed in MC_NonTxn, because finding F6
-\* violates it on the baseline there and every witness run is then trivially red; with F6's fix applied the
-\* property is green again and the hooks can be shown to falsify it. An exhaustive run here does not finish,
-\* which is what makes this a witness configuration rather than a scenario.
+\* OBSOLETE_IS_ROLLED_BACK = TRUE, at CSN_MAX = 35 rather than the halves' 34. It is the UNDIVIDED scenario:
+\* the two halves the scenario is checked as carry F6's fix themselves, so Assert_validateInfo could be
+\* witnessed in MC_NonTxnDrop, but the minimality halves of Assert_validateInfo_nocreation are stated at this
+\* configuration and are debt B5, so retrying them anywhere else would not pay the debt. An exhaustive run
+\* here does not finish, which is what makes this a witness configuration rather than a scenario.
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is MergeView's shape, because Covers
 \* is non-empty here too and a read's frags are therefore not a function of its parts, with three changes:
 \*   - `task` is dropped, because Tasks = {} and no action of this scenario writes it;

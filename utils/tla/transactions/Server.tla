@@ -787,7 +787,7 @@ StoreRead(p, o) == /\ Up /\ HasFrame(p, o) /\ StoreReadStep(p, o)
 StorePersist(p, o) == /\ Up /\ HasFrame(p, o) /\ StorePersistStep(p, o)
                       /\ UNCHANGED <<zk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
 StorePublish(p, o) == /\ Up /\ HasFrame(p, o) /\ StorePublishStep(p, o)
-                      /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
+                      /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, sys, client, stmt, mut, task>>
 Fsync(p) == /\ Layered /\ disk' = DiskWithMetaSynced(p)
             /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
 
@@ -1112,11 +1112,11 @@ CreatedByUncommitted(p) ==
 BatchTarget(p) == LET b == sys.nt_batch IN
   b.active /\ b.cursor \in 1..Len(b.targets) /\ b.targets[b.cursor] = p
 
-\* NonTransactionalRemovalLocks constructed and its lock() loop about to start over B, on actor a. The parts
+\* NonTransactionalRemovalLocks constructed and its lock loop about to start over B, on actor a. The parts
 \* lock is taken here rather than by the caller, because every caller of a batch holds lockParts in the code:
 \* removePartsFromWorkingSet (MergeTreeData.cpp:7034) takes an acquired_lock and Transaction::commit
 \* (MergeTreeData.cpp:11219) takes one. Writing it here keeps the one sys' assignment an action may have.
-\* An empty B is the code's empty parts_to_remove: lock() and store() both do nothing and the batch is done,
+\* An empty B is the code's empty parts_to_remove: lock and store both do nothing and the batch is done,
 \* so it starts in the Store phase with the cursor already past the end and NtBatchEnd is its only step.
 StartBatch(a, B) ==
   /\ sys' = [sys EXCEPT !.parts_lock = a,
@@ -1130,7 +1130,7 @@ StartBatch(a, B) ==
 
 \* The refusal branch shared by NtBatchPreflight and NtBatchLock: the destructor releases every lock the batch
 \* still holds (NonTransactionalRemovalLocks::~NonTransactionalRemovalLocks, MergeTreeTransaction.cpp:106,
-\* upstream 86b6861a1a8e) and nothing that was stored is undone, because store() drains as it goes.
+\* upstream 86b6861a1a8e) and nothing that was stored is undone, because store drains as it goes.
 RefuseBatch ==
   /\ part' = [q \in Parts |-> IF q \in sys.nt_batch.locked THEN [part[q] EXCEPT !.lock = EmptyTID] ELSE part[q]]
   /\ sys' = [sys EXCEPT !.nt_batch = NoBatchRec]
@@ -1139,7 +1139,7 @@ RefuseBatch ==
 \* NonTransactionalRemovalLocks::lock, MergeTreeTransaction.cpp:121-146, the two branches that are steps: the
 \* already-removed skip (:131) and the uncommitted-creator refusal (:139). The third outcome, "proceed to
 \* lockRemovalTID", is not a step of its own; NtBatchLock carries its guard.
-\* At the end of the lock phase the target list is replaced by the locked list, because store() drains
+\* At the end of the lock phase the target list is replaced by the locked list, because store drains
 \* locked_parts and never revisits a target the preflight skipped; it drains from the back
 \* (MergeTreeTransaction.cpp:153-155), so the cursor counts down.
 NtBatchPreflight(p) ==
@@ -1179,7 +1179,7 @@ NtBatchLock(p) ==
 \* through the three-step store, unlock in the SCOPE_EXIT. The tid is written before the unlock, which is what
 \* the NonTransactionalTID clause of LockConsistent is stated over.
 \* The witness of NtBatchRefusedUnchanged is the shape the class exists to prevent, and it is the whole of the
-\* difference between store() after lock() and a store folded into the lock loop: under it a target is stored
+\* difference between store after lock and a store folded into the lock loop: under it a target is stored
 \* and unlocked as soon as it is locked, so a conflict on a later target refuses a batch whose earlier members
 \* are already durably removed. The cursor is deliberately left alone there, because the lock phase is still
 \* walking the target list.
@@ -1193,11 +1193,13 @@ NtBatchStore(p) ==
      /\ \/ /\ ~HasFrame(p, a) /\ ApplyOp("RemovalTID", NonTransactionalTID, part[p].mem) /= part[p].mem
            /\ part' = StartFrame(p, a, "RemovalTID", NonTransactionalTID, FALSE)
            /\ UNCHANGED <<sys, h>>
+        \* h.removers[p] is NOT written here. StorePublish writes it, in the step that publishes the record,
+        \* because that is the step at which the removal takes effect for a reader.
         \/ /\ FrameDone(p, a, "RemovalTID", NonTransactionalTID)
            /\ part' = [part EXCEPT ![p].lock = EmptyTID]
            /\ sys' = [sys EXCEPT !.nt_batch = [b EXCEPT !.locked = @ \ {p},
                                                          !.cursor = IF early THEN @ ELSE @ - 1]]
-           /\ h' = [h EXCEPT !.removers[p] = @ \cup {NonTransactionalTID}]
+           /\ UNCHANGED h
   /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, client, stmt, mut, task>>
 
 NtBatchEnd ==

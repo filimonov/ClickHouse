@@ -446,6 +446,12 @@ in 5 min 21 s before, so the extraction moved neither the hook nor the shape. Th
 non-transactional `DROP PARTITION` publishes over them. It is the first scenario in which a writer that is not
 a transaction changes the active parts set.
 
+No exhaustive run of the whole scenario finishes, so it is checked as two halves, `NonTxnDrop` and
+`NonTxnInsert`. Each is a strict sub-scenario of it and keeps two sessions and all three parts; what only the
+undivided scenario has is a behaviour that needs both halves at once, which is finding F5's route 2 and is
+produced by `MC_NonTxnF5` instead. `NonTxnSpec` itself stays in `MergeTreeTransactions.tla`, because the
+modules that produce findings F4 to F6 need both halves in one behaviour.
+
 ### Bounds, and why `TID_MAX = 2` {#nontxn-bounds}
 
 The scenario matrix asks for `TID_MAX = 3`, `CSN_MAX = 36` and two sessions, and at those bounds it does not
@@ -469,10 +475,33 @@ the witnesses that need a third transaction are the four `Base` already verifies
 after nine minutes with 7.45 million queued and the queue growing by about 650,000 a minute. The ladder has no
 further rung that keeps the scenario's subject: one session removes the overlap between a transaction and a
 non-transactional query, which is what every race here is, and the part universe is already the three the
-covering relation needs. `NonTxn` therefore has no exhaustive run, which is model defect `M4`'s shape and is
-recorded as `M16`. What the scenario delivers instead is five red modules, one per finding, and a green fix
-variant for the one finding whose fix is established; the witness sweep runs against the scenario's own bounds
-and every witness that finishes is red.
+covering relation needs. A part universe of two with `Covers[E] = {P1}` was considered and rejected without
+measuring it: with a single covered part a batch has one target, and `NtBatchRefusedUnchanged`'s subject -- a
+refusal after an earlier target was already stamped -- cannot exist, so its witness would go green and the
+bound contract would break in the one place this scenario is about.
+
+### The split {#nontxn-split}
+
+What is left is to check less than the whole scenario in one run. `NtNext` is divided into `NtInsertNext` and
+`NtDropNext`, and two configurations are committed:
+
+- `NonTxnDrop` is `BaseNext \/ NtDropNext \/ CleanupNext`: the non-transactional `DROP PARTITION` and the whole
+  of the removal batch, racing the transactions of two sessions. This is the half the task is about.
+- `NonTxnInsert` is `BaseNext \/ NtInsertNext \/ CleanupNext`: a non-transactional `INSERT` racing a
+  transaction.
+
+Both are at `TID_MAX = 2`, `CSN_MAX = 34`, two sessions, three parts. `CSN_MAX` comes down by one from the
+undivided figure because 34 is the smallest value that allows the two commits `TID_MAX = 2` permits, and every
+unit above `FirstCSN = 33` costs states.
+
+`NonTxnInsert` finishes green. `NonTxnDrop` does not, at any configuration tried: 32.5 million and 44.1 million
+distinct at `CSN_MAX = 35`, and 56,703,779 after 9 min 30 s at `CSN_MAX = 34` with 3.39 million queued and the
+queue still growing by about 110,000 a minute. It is converging, but far past the 30-million budget, and every
+rung of the ladder that keeps the scenario's subject has been used. So the half that contains the removal batch
+still has no finishing configuration; that is model defect `M15`, and the budget for it belongs to task 5, which
+owns the state-space work. What the scenario delivers meanwhile is four red modules, one per finding, and a
+green fix variant for the one finding whose fix is established; the witness sweep runs against the scenario's
+own bounds and every witness that finishes is red.
 
 ### What the view keeps {#nontxn-view}
 
@@ -489,13 +518,28 @@ is in every view in the tree, `BaseView` included, from this task on: the visibi
 |---|---|---|---|
 | `NonTxn`, `TID_MAX = 3`, `CSN_MAX = 36`, two sessions | killed, still growing | 27,234,570 after 4 min, queue 5.34M | |
 | `NonTxn`, `TID_MAX = 2`, `CSN_MAX = 35`, two sessions | killed, still growing | 59,047,617 after 9 min, queue 7.45M | |
+| `NonTxnDrop`, `CSN_MAX = 35` | killed, still growing | 32,491,000 and 44,148,000 on two runs | |
+| `NonTxnDrop`, `CSN_MAX = 34`, **committed** | killed, still growing, model defect `M15` | 56,703,779 after 9 min 30 s, queue 3.39M | |
+| `NonTxnInsert`, `CSN_MAX = 34`, **committed** | **green** | 15,787,889 | 2 min 33 s |
 | `NonTxnF4` | RED on `NoLostVisibleData` | 74,225 | 2 s |
 | `NonTxnF5` | RED on `ActiveSetShape` | 106,922 | 1 s |
 | `NonTxnF6`, one session | RED on `Assert_validateInfo` | 113,093 | 1 s |
-| `NonTxnF7` | RED on `Atomicity` | 33,923,157, a first-violation count | |
+| `NonTxnF7` after the `M16` ghost fix | **no violation**, the module is deleted and F7 is withdrawn | 75.3 million after 600 s | |
 | `NonTxnFixed`, one session, `OBSOLETE_IS_ROLLED_BACK = TRUE` | **green**, which is finding F6's fix verified | 841,907 | 8 s |
 | `Base`, after this task | green | 26,839,136 | 3 min 56 s |
 | `Merge`, after this task | green | 5,196,830 | 51 s |
+| `SetSnapshot`, re-measured after `M13` | green | 12,766,799 | 1 min 55 s |
+| `SetSnapshotFixed`, re-measured after `M13` | green | 12,236,834 | 1 min 52 s |
+| `SetSnapshotF2Fixed`, re-measured after `M13` | green | 367,183 | 4 s |
+
+`NonTxnInsert`'s count is reproducible to the multi-worker counting noise the run table already documents: a
+second run of the committed configuration gave 15,787,914 and the closing re-run of the tree this is committed
+with gave 15,787,838, a spread of 76 states across three runs.
+
+The two `SetSnapshot` rows are the re-measurement model defect `M13` forces. Restoring `DropLock`'s `lockParts`
+guard narrows the scenario by about 6%, from 13,622,631 and 13,092,635, which is the same direction and roughly
+the same size as the move it made in `Base`. Both are still green, and the whole `SetSnapshot` witness sweep was
+re-run with them; `WITNESSES.md` carries the verdicts, which are unchanged.
 
 `Base` moves by 6%, from 28,547,508 to 26,839,136, and the move is real rather than noise. Two changes of this
 task touch it. Model defect M13 restored `DropLock`'s `lockParts` guard, which `Base` had lost entirely because
@@ -506,7 +550,7 @@ quantifier defect was invisible there, and its count is 5,196,830 before and aft
 
 ### Properties this scenario does not check, and why {#nontxn-properties-absent}
 
-Four of `Base`'s properties are not in `MC_NonTxn.cfg`, and none of them is absent for convenience.
+Four of `Base`'s properties are not in either half's cfg, and none of them is absent for convenience.
 
 `StableRead` is falsified on the baseline by a non-transactional `INSERT` between two reads of one transaction,
 which is real and by design. `NoLostRead` and `NoFutureRead` are falsified by a non-transactional write landing
@@ -515,11 +559,22 @@ finishes rather than the state where it started. `NoLostVisibleData` is falsifie
 finding F4, shown in `MC_NonTxnF4`. Spec defect S13 is the qualifier the isolation section owes; the scenario
 matrix's `NonTxn` row already names none of the four.
 
-Three more come out for findings of their own, each with a module that produces it: `ActiveSetShape` for F5
-(`MC_NonTxnF5`), `Assert_validateInfo` and `NoAvoidableTermination` for F6 (`MC_NonTxnF6`, which checks both,
-because the same violating record is an assertion inside `NOEXCEPT_SCOPE` and therefore a process termination
-as well), and `Atomicity` for F7 (`MC_NonTxnF7`). Of the three only F6 has a fix verified in the tree:
-`MC_NonTxnFixed` runs the same configuration with `OBSOLETE_IS_ROLLED_BACK = TRUE` green.
+Two more come out for findings of their own, each with a module that produces it: `ActiveSetShape` for F5
+(`MC_NonTxnF5`) and `Assert_validateInfo` and `NoAvoidableTermination` for F6 (`MC_NonTxnF6`, which checks both,
+because the same violating record is an assertion inside `NOEXCEPT_SCOPE` and therefore a process termination as
+well). Of the two only F6 has a fix verified in the tree, and both halves are therefore run with
+`OBSOLETE_IS_ROLLED_BACK = TRUE`, the variant `MC_NonTxnFixed` verifies green at one session; without it the
+baseline is unrunnable as a roster, because F6 stops every run on the first property that fires.
+
+`ActiveSetShape` is in `MC_NonTxnInsert.cfg` and not in `MC_NonTxnDrop.cfg`. F5's routes all need the empty
+covering part that only a non-transactional `DROP PARTITION` writes, so the property is unfalsifiable in the
+insert half and live and unfixed in the drop half. The three batch properties are the mirror image: they are in
+both rosters, and in `MC_NonTxnInsert` they are vacuous, because that half has no batch. They are kept there so
+that the two cfgs differ in exactly the one row that has a reason.
+
+`Atomicity` is checked in both halves. It was the property finding F7 was reported on, and the withdrawal of
+that finding leaves it green in every configuration of this scenario, for the reason `FINDINGS.md` gives: it is
+stated over a committed writer, and a non-transactional statement has none.
 
 ## Reproducing {#reproducing}
 

@@ -295,6 +295,20 @@ discarded.
 | `Base` witness sweep, 18 rows | 2026-09-18 | the fix-round commit | 53,619,513 for the largest | ≈ 14 min in total, 5 min 31 s for that row | every row red, both minimality halves green, after the extraction moved six of the hooked operators |
 | `Merge` | 2026-09-18 | the fix-round commit | 5,196,830 | 49 s | green after `FlipAfterStores` gained its task conjunct |
 
+| `BaseSmall` | 2026-09-18 | the non-transactional commit | 47,381 | 1 s | green |
+| `Base` | 2026-09-18 | the non-transactional commit | 26,839,136 | 3 min 56 s | green; it moves by 6% because model defect `M13` restored `DropLock`'s `lockParts` guard, which an empty `Tasks` had made vacuous |
+| `NonTxn`, undivided | 2026-09-18 | the non-transactional commit | 27,234,570 at the matrix bounds and 59,047,617 at `TID_MAX = 2` | killed, twice | an exhaustive run does not finish at any bounds that keep the scenario's subject |
+| `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | 2026-09-18 | the non-transactional commit | 74,225, 106,922 and 113,093, all first-violation counts | 4 s in total | one red module per finding, traces in `traces/` |
+| `NonTxnFixed` | 2026-09-18 | the non-transactional commit | 841,907 | 8 s | green, which is finding F6's fix verified |
+| `NonTxn` witness sweep, 14 rows | 2026-09-18 | the non-transactional commit | 44,213,335 for the one that does not finish | ≈ 11 min in total | red except `NoUncommittedRead`, which is debt `B4` |
+
+| `NonTxnInsert` | 2026-09-20 | the review fix-round commit | 15,787,889, and 15,787,838 on the closing re-run of the committed tree | 2 min 33 s | green; the half of the split scenario that keeps the non-transactional `INSERT` |
+| `NonTxnDrop` | 2026-09-20 | the review fix-round commit | 56,703,779 after 9 min 30 s, queue 3.39M | killed, three times | the half that keeps the removal batch; no finishing configuration, model defect `M15` |
+| `NonTxnF7` | 2026-09-20 | the review fix-round commit | 75.3 million after 600 s | no violation | the ghost-lag fix of `M16` withdraws finding F7; the module is deleted |
+| `SetSnapshot` and `SetSnapshotFixed` | 2026-09-20 | the review fix-round commit | 12,766,799 and 12,236,834 | 1 min 55 s and 1 min 52 s | green; the `M13` re-measurement, about 6% below the pre-fix figures |
+| `SetSnapshot` witness sweep, the full table | 2026-09-20 | the review fix-round commit | 40,439,049 for `Assert_validateInfo_removal`, which does not finish and is debt `B1` | ≈ 11 min in total | re-run after `M13`; every verdict unchanged |
+| `Base` witness sweep, the full table | 2026-09-20 | the review fix-round commit | 51,268,074 for `Assert_validateInfo_removal`, the largest | ≈ 15 min in total | re-run after `M13`; every verdict unchanged |
+
 The commits are `885a5c382cab` (Task 1, the modules and the runner), `5260d5d44f67` and `53814c46e7e5`
 (Task 3, the state-space budget and the rollback-driver correction), `bea5c15bf346` and `ad432095717a` (Task 2,
 the witness runner and the witness table), `40ba930673fd` and `5aaefae31249` (Task 5, the matrix bounds, the

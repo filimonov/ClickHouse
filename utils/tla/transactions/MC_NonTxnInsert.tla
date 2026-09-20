@@ -1,4 +1,4 @@
----- MODULE MC_NonTxnF7 ----
+---- MODULE MC_NonTxnInsert ----
 EXTENDS MergeTreeTransactions
 \* The three part names, declared so that CoversDef can spell them; the cfg binds each to the model value of
 \* the same name that Parts is built from.
@@ -9,8 +9,9 @@ CONSTANTS P1, P2, E
 CoversDef == [p \in Parts |-> IF p = E THEN {P1, P2} ELSE {}]
 SymSessions == Permutations(Sessions)
 
-\* This module exists to produce finding F7 and nothing else: the NonTxn scenario checking only Atomicity, and
-\* deliberately RED. No fix variant is shipped with it; the finding says what the fix would be.
+\* NonTxnInsert is Base + the non-transactional INSERT + the cleanup group, at two sessions and three parts.
+\* It carries ActiveSetShape, which NonTxnDrop cannot: finding F5's routes need the empty covering part that
+\* only a non-transactional DROP writes, and this half has no NtDrop action.
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is MergeView's shape, because Covers
 \* is non-empty here too and a read's frags are therefore not a function of its parts, with three changes:
 \*   - `task` is dropped, because Tasks = {} and no action of this scenario writes it;
@@ -23,7 +24,7 @@ SymSessions == Permutations(Sessions)
 \* "SERIALIZATION_ERROR" into it, and no action and no property of this scenario reads that value.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-NonTxnF7View ==
+NonTxnInsertView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

@@ -72,30 +72,33 @@ the bounds argument.
 
 `States` is distinct states, `Time` wall clock. Every figure is approximate: a witness run stops at the first
 violation, and how many states it has fingerprinted by then depends on the worker scheduling, so two runs of one
-witness differ by more than the few states a green run differs by. The two rows marked `(re-run)` were taken on
-the tree this file is committed with, after the final-review fix; the rest were taken on the tree of the witness
-sweep, before it, and the fix changes no reachable `Base` state.
+witness differ by more than the few states a green run differs by. Every figure here was re-taken on the tree
+this file is committed with: model defect `M13` restored a guard that had been vacuous in `Base`, so the whole
+sweep had to be run again rather than carried over. Every verdict held, and the counts came down by a few per
+cent, which is the direction a restored guard predicts. The `Assert_isVisible_fast_only2` row is worth a glance
+for a second reason: it explores the whole of `Base`, and 26,839,098 against the scenario's own 26,839,136 is
+the multi-worker counting noise, so it doubles as a check that the run table's figure is where it says it is.
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `ReadYourWrites` | `ReadYourWrites` | the `creation_tid = current_tid` clause is removed from the fast path of `isVisible`, so a transaction stops seeing the parts it created | `Base` | RED | 8,216 | 1 s |
-| `StableRead` | `StableRead` | `SelectCheck` reads at `tlog.latest_snapshot` instead of the transaction's own snapshot | `Base` | RED | 375,186 | 5 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | the slow path of `isVisible` treats an unknown creation CSN as the reader's snapshot instead of looking the creator up in `tid_to_csn` | `Base` | RED | 1,135,111 | 9 s |
-| `NoFutureRead` | `NoFutureRead` | `SelectCheck` compares against `tlog.latest_snapshot` when the part's creation CSN is unknown | `Base` | RED | 32,748 | 2 s |
-| `NoLostRead` | `NoLostRead` | `SelectCapture` captures only `Active` parts, skipping the `Outdated` ones a transactional `DROP` has in flight | `Base` | RED | 514,938 | 6 s |
-| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | `Base` | RED | 550,880 | 6 s |
-| `ErrorIsAbsent` | `ErrorIsAbsent` | `RollbackOutdateCreated` leaves a part the rolled-back transaction created `Active` | `Base` | RED (re-run) | 64,836 | 2 s |
-| `RollbackRestores` | `RollbackRestores` | `RollbackRestore` leaves a part the transaction had outdated `Outdated` | `Base` | RED | 751,590 | 7 s |
-| `SingleRemover` | `SingleRemover` | the compare-and-set in `DropEnrol` becomes an unconditional write of `lock`, so a second transaction overwrites a remover's lock and enrols its own removal | `Base` | RED | 2,462,558 | 18 s |
-| `LockConsistent` | `LockConsistent` | `RollbackUnlock` clears the lock before the removal TID is cleared | `Base` | RED | 288,159 | 4 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | `CommitStoreCreation` stores `h.csn[t] + 1` instead of the transaction's CSN | `Base` | RED | 35,093 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | `CommitStoreCreation` stores `CSN_MAX`, so a later committed removal carries a smaller CSN | `Base` | RED | 34,843 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_removal` | `StoreDoneBody` lets `removeOldPart` return without waiting for the removal-TID store it started, so a rollback can clear the removal TID under a later remover and `CommitStoreRemoval` then computes a removal CSN on a record that has none | `Base` | RED | 53,133,545 | 5 min 21 s |
-| `Assert_isVisible_fast` | `Assert_isVisible_fast` | two changes: `CommitStoreCreation` is skipped for a part the transaction both creates and removes, and `StoreRead` skips `validateInfo`, so `CommitStoreRemoval` publishes a removal CSN over an unknown creation CSN | `Base` | RED | 196,417 | 3 s |
-| | `Assert_isVisible_fast_only1` | the skipped creation store alone | `Base` | GREEN, as minimality requires | 22,554,686 | 2 min 51 s |
-| | `Assert_isVisible_fast_only2` | the skipped validation alone | `Base` | GREEN, as minimality requires | 28,553,258 | 3 min 34 s |
-| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED | 6,883 | 2 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | `StoreRead` on a retry re-reads memory instead of the stored record, so an attempt that met no interference still sees a stale version | `Base` | RED | 368,402 | 4 s |
+| `ReadYourWrites` | `ReadYourWrites` | the `creation_tid = current_tid` clause is removed from the fast path of `isVisible`, so a transaction stops seeing the parts it created | `Base` | RED | 8,513 | 1 s |
+| `StableRead` | `StableRead` | `SelectCheck` reads at `tlog.latest_snapshot` instead of the transaction's own snapshot | `Base` | RED | 366,278 | 5 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | the slow path of `isVisible` treats an unknown creation CSN as the reader's snapshot instead of looking the creator up in `tid_to_csn` | `Base` | RED | 1,020,241 | 8 s |
+| `NoFutureRead` | `NoFutureRead` | `SelectCheck` compares against `tlog.latest_snapshot` when the part's creation CSN is unknown | `Base` | RED | 34,402 | 2 s |
+| `NoLostRead` | `NoLostRead` | `SelectCapture` captures only `Active` parts, skipping the `Outdated` ones a transactional `DROP` has in flight | `Base` | RED | 501,796 | 5 s |
+| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | `Base` | RED | 471,091 | 5 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | `RollbackOutdateCreated` leaves a part the rolled-back transaction created `Active` | `Base` | RED | 60,192 | 2 s |
+| `RollbackRestores` | `RollbackRestores` | `RollbackRestore` leaves a part the transaction had outdated `Outdated` | `Base` | RED | 697,099 | 6 s |
+| `SingleRemover` | `SingleRemover` | the compare-and-set in `DropEnrol` becomes an unconditional write of `lock`, so a second transaction overwrites a remover's lock and enrols its own removal | `Base` | RED | 2,260,914 | 17 s |
+| `LockConsistent` | `LockConsistent` | `RollbackUnlock` clears the lock before the removal TID is cleared | `Base` | RED | 276,590 | 3 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | `CommitStoreCreation` stores `h.csn[t] + 1` instead of the transaction's CSN | `Base` | RED | 27,447 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | `CommitStoreCreation` stores `CSN_MAX`, so a later committed removal carries a smaller CSN | `Base` | RED | 33,350 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | `StoreDoneBody` lets `removeOldPart` return without waiting for the removal-TID store it started, so a rollback can clear the removal TID under a later remover and `CommitStoreRemoval` then computes a removal CSN on a record that has none | `Base` | RED | 51,268,074 | 5 min 13 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | two changes: `CommitStoreCreation` is skipped for a part the transaction both creates and removes, and `StoreRead` skips `validateInfo`, so `CommitStoreRemoval` publishes a removal CSN over an unknown creation CSN | `Base` | RED | 170,287 | 3 s |
+| | `Assert_isVisible_fast_only1` | the skipped creation store alone | `Base` | GREEN, as minimality requires | 21,097,806 | 2 min 42 s |
+| | `Assert_isVisible_fast_only2` | the skipped validation alone | `Base` | GREEN, as minimality requires | 26,839,098 | 3 min 23 s |
+| `FlipAfterStores` | `FlipAfterStores` | `CommitFlip` may run while the store loops are still going | `Base` | RED | 7,710 | 1 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | `StoreRead` on a retry re-reads memory instead of the stored record, so an attempt that met no interference still sees a stale version | `Base` | RED | 337,861 | 4 s |
 
 
 `RollbackNoLeak` has no row of its own because it is not a property of its own: the design document's
@@ -154,8 +157,8 @@ needs the third transaction.
 | Conjunct | Witness name | The model change | Bounds | Result | States | Time |
 |---|---|---|---|---|---|---|
 | the running list and the snapshot bag have the same members | `Assert_getOldestSnapshot_size` | `Begin` joins `running_list` without writing `snapshots_in_use`, breaking at one site the lockstep `beginTransaction` keeps under one lock | exhaustive | RED | 2 | 1 s |
-| each entry is the value `beginTransaction` inserted | `Assert_getOldestSnapshot_entry` | `SetSnapshot` moves the `snapshots_in_use` entry and leaves `protected_snapshot` where it was | exhaustive | RED | 14,478 | 2 s |
-| the bag is sorted | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the entry, which is the change the design document names | witness | RED | 438,838 | 4 s |
+| each entry is the value `beginTransaction` inserted | `Assert_getOldestSnapshot_entry` | `SetSnapshot` moves the `snapshots_in_use` entry and leaves `protected_snapshot` where it was | exhaustive | RED | 14,408 | 2 s |
+| the bag is sorted | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the entry, which is the change the design document names | witness | RED | 407,927 | 4 s |
 
 The third row is the only one that exercises a C++ assertion end to end, and it is the one that cannot be shown
 at the exhaustive bounds: breaking sortedness needs a transaction that began above `FirstCSN`, so a committed
@@ -181,30 +184,30 @@ Every witness of every property `MC_SetSnapshot.cfg` checks, at `TID_MAX = 2`, `
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 45,066 | 2 s |
-| `SingleRemover` | `SingleRemover` | **GREEN**, debt B1 | 7,420,048 | 53 s |
-| `LockConsistent` | `LockConsistent` | RED | 183,212 | 3 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 226,752 | 3 s |
-| `RollbackRestores` | `RollbackRestores` | RED | 432,161 | 5 s |
-| `FlipAfterStores` | `FlipAfterStores` | RED | 6,199 | 2 s |
-| `StableRead` | `StableRead` | RED | 233,924 | 4 s |
-| `ReadYourWrites` | `ReadYourWrites` | RED | 6,387 | 2 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B1 | 7,419,992 | 53 s |
-| `NoFutureRead` | `NoFutureRead` | RED | 26,447 | 2 s |
-| `NoLostRead` | `NoLostRead` | **GREEN**, debt B1 | 6,815,478 | 50 s |
-| `Atomicity` | `Atomicity` | RED | 306,925 | 4 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 23,535 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 23,492 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_removal` | **did not finish**, debt B1; 41,169,992 distinct after 4 min and still growing | — | killed at 300 s |
-| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 129,849 | 2 s |
-| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 5,661,854 | 43 s |
-| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 7,420,024 | 54 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 39,745 | 2 s |
+| `SingleRemover` | `SingleRemover` | **GREEN**, debt B1 | 12,766,764 | 1 min 26 s |
+| `LockConsistent` | `LockConsistent` | RED | 181,555 | 3 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 228,776 | 3 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 430,129 | 5 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 6,203 | 2 s |
+| `StableRead` | `StableRead` | RED | 239,629 | 3 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 5,857 | 1 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B1 | 12,766,806 | 1 min 28 s |
+| `NoFutureRead` | `NoFutureRead` | RED | 25,443 | 2 s |
+| `NoLostRead` | `NoLostRead` | **GREEN**, debt B1 | 12,191,660 | 1 min 24 s |
+| `Atomicity` | `Atomicity` | RED | 322,895 | 4 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 23,120 | 1 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 23,472 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | **did not finish**, debt B1; 40,439,049 distinct after 5 min and still growing | — | killed at 301 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 123,021 | 3 s |
+| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 9,311,054 | 1 min 05 s |
+| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 12,766,746 | 1 min 27 s |
 | `Assert_getOldestSnapshot` | `_size`, `_entry`, sortedness | two RED here, one at the witness bounds | see above | |
-| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | RED | 153,609 | 3 s |
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | RED | 147,288 | 2 s |
 
 `Assert_validateInfo_removal` is worth a note. It is not slow; it explores more than the scenario itself does,
 because the witness removes a wait and the truncation actions then multiply the behaviours it opens. It reached
-41 million distinct states in four minutes on a scenario whose own state space is 7.4 million. Plan 1 found the
+40 million distinct states in five minutes on a scenario whose own state space is 12.8 million. Plan 1 found the
 same witness needs three transactions, so it is expected green here and it is in B1 with the other three.
 
 `TypeOK`, `RollbackNoLeak`, `AckedWriteIsDurable`, `ActiveSetShape`, `NoAvoidableTermination`,
@@ -218,10 +221,10 @@ finish, which is model defect M4.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 438,838 | 4 s |
-| `SingleRemover` | `SingleRemover` | RED | 7,261,414 | 48 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | RED | 2,909,770 | 20 s |
-| `NoLostRead` | `NoLostRead` | RED | 1,313,160 | 10 s |
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 407,927 | 4 s |
+| `SingleRemover` | `SingleRemover` | RED | 8,159,425 | 51 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | RED | 3,086,497 | 21 s |
+| `NoLostRead` | `NoLostRead` | RED | 1,357,615 | 10 s |
 
 The last three are `Base` rows, already red in `Base` at the same `TID_MAX`; they are listed because B1 names
 them, and because running them here shows the scenario's extra actions do not get in their way.
@@ -247,9 +250,9 @@ against a `Fixed` configuration, so that the `SET TRANSACTION SNAPSHOT` defect d
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 238,916 | 3 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupGrab` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 30,526 | 3 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 243,397 | 4 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 248,909 | 3 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupGrab` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 30,635 | 2 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 241,736 | 3 s |
 
 `PinnedNotDeleted` is red at the exhaustive bounds because it needs no visible part at all: a `SELECT` pin on an
 `Outdated` part whose removal has committed is enough, and two transactions produce that. The other two were
@@ -351,9 +354,21 @@ property of the server.
 
 ## Witnesses of the `NonTxn` scenario {#witnesses-nontxn}
 
-`NonTxn` is two sessions, `Parts = {P1, P2, E}`, `Tasks = {}`, `TID_MAX = 2`, `CSN_MAX = 35`,
-`SYMMETRY SymSessions`, `VIEW NonTxnView`, no faults. Why the bounds are those and not the matrix's
-`TID_MAX = 3` is in `STATE_SPACE.md`; the reduction's cost is debt B4.
+`NonTxn` is two sessions, `Parts = {P1, P2, E}`, `Tasks = {}`, `SYMMETRY SymSessions`, no faults. No
+exhaustive run of the undivided scenario finishes, so it is committed as two halves, `NonTxnDrop` and
+`NonTxnInsert`, both at `TID_MAX = 2`, `CSN_MAX = 34` and both with `OBSOLETE_IS_ROLLED_BACK = TRUE`.
+`STATE_SPACE.md` carries the split and the bounds argument. The drop half still does not finish at those
+bounds, which is model defect `M15`, and what that costs the witnesses is debt B4.
+
+The sweep below was run against the undivided `MC_NonTxn`, the module the first commit of this scenario
+carried, and it is **not re-run after the split**. The half that every witness of this scenario needs is
+`MC_NonTxnDrop`, because it is the half that has the removal batch, and that half has no finishing
+configuration: a witness removes a guard, which widens the space a scenario already over budget, so the five
+rows that were attempted there were killed unfired rather than turning red. Those five are named in debt B4
+with the counts they reached, and B4 is closed in task 5 of this plan. Every other figure in the tables below
+is the undivided module's, carried rather than re-measured, and the module no longer exists, so none of them
+is reproducible as it stands; what a reader can reproduce is the verdict column, by re-running the row against
+whatever configuration task 5 makes finish.
 
 Two witnesses are the scenario's own, and one of them is a two-change witness.
 
@@ -365,10 +380,13 @@ Two witnesses are the scenario's own, and one of them is a two-change witness.
 | | `Assert_validateInfo_nocreation_only1` | the skipped preflight refusal alone | does not finish, debt B5 | 24,335,282 after 240 s, no violation | |
 | | `Assert_validateInfo_nocreation_only2` | the skipped store refusal alone | does not finish, debt B5 | 24,546,344 after 240 s, no violation | |
 
-`Assert_validateInfo` is the one row that needs a second module. It is violated on the `NonTxn` baseline by
-finding F6, so every witness run of it in `MC_NonTxn` is trivially red and says nothing. `MC_NonTxnWitness` is
-the same scenario with F6's fix applied (`OBSOLETE_IS_ROLLED_BACK = TRUE`), where the property is green again
-and the hooks can be shown to falsify it. An exhaustive run there does not finish, which is exactly the
+`Assert_validateInfo` is the one row that needs a second module, and the reason is now a different one from
+the reason the first commit gave. It was that finding F6 violates the property on the baseline, so a witness run
+would be trivially red and say nothing; both committed halves carry F6's fix, so that reason has lapsed and the
+witness could run in `MC_NonTxnDrop`. What `MC_NonTxnWitness` still is, is the **undivided** scenario with the
+fix applied, at `CSN_MAX = 35` rather than the halves' 34, and the witness is run there because that is the
+configuration debt B5 is stated at: its two minimality halves are the runs that did not finish, and retrying
+them anywhere else would not pay the debt. An exhaustive run there does not finish either, which is exactly the
 exhaustive-versus-witness split of spec defect S7.
 
 ### The sweep at these bounds {#witnesses-nontxn-sweep}
@@ -390,10 +408,11 @@ exhaustive-versus-witness split of spec defect S7.
 | `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 41,585 | 2 s |
 | `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 39,785 | 2 s |
 
-`NoDoubleRead` and `NoFalseCorruption` are in the scenario's cfg and have no row: `NoDoubleRead`'s run was
-killed at 69.8 million distinct states, which is a budget verdict rather than a witness verdict, and
-`NoFalseCorruption`'s run collided with another on its own output directory and produced nothing. Both are
-owed to the next round on this scenario.
+`NoDoubleRead` and `NoFalseCorruption` are in the scenario's cfg and have no row, and neither absence is an
+accident nobody looked at. `NoDoubleRead`'s run was killed at 69.8 million distinct states, which is a budget
+verdict rather than a witness verdict. `NoFalseCorruption`'s run was re-made at the committed bounds and
+reached 16.2 million distinct states in 140 seconds with no violation, and did not finish; that is consistent
+with the structural-unreachability argument below, and it is not a green. Both rows belong to debt B4.
 
 `NoFalseCorruption` is worth a note whatever that round finds, because the witness the spec names is not
 reachable here at all and the reason is structural. Its target is "a never-transactional part removed
@@ -445,3 +464,26 @@ it doubles as a check that the scenario's own count is where the run table says 
 `SetSnapshotF2` is still red on `NoPrematureDelete`, and the three cleanup witnesses are still red, which is
 what had to be shown after that property's antecedent was narrowed to the transactions that can still read.
 `FINDINGS.md`, finding F3, carries the narrowing and its argument.
+
+After the non-transactional work, which restored `DropLock`'s `lockParts` guard (model defect `M13`) and moved
+the visibility oracle's ghost to the publishing step (`M16`):
+
+| Scenario | Result | Distinct states | Time |
+|---|---|---|---|
+| `BaseSmall` | green | 47,381 | 1 s |
+| `Base` | green | 26,839,136 | 3 min 56 s |
+| `SetSnapshot` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 12,766,799 | 1 min 55 s |
+| `SetSnapshotFixed` | green at the same bounds | 12,236,834 | 1 min 52 s |
+| `SetSnapshotF2Fixed` | green | 367,183 | 4 s |
+| `Merge` | green at one session | 5,196,830 | 51 s |
+| `NonTxnInsert` | green at `TID_MAX = 2`, `CSN_MAX = 34`, two sessions | 15,787,889 | 2 min 33 s |
+| `NonTxnFixed` | green at one session | 841,907 | 8 s |
+
+`M13` is why the `SetSnapshot` family had to be re-measured at all, and why its witnesses had to be re-run
+rather than carried over. The guard had been vacuous in every configuration with an empty `Tasks`, which is all
+three `SetSnapshot` modules, so every one of their runs had explored behaviours the code forbids. A green
+survives that narrowing, but a **red witness** does not: a witness that fired only through an interleaving the
+guard excludes would be green on the repaired model, and that is an unverified property rather than a stale
+number. Both sweeps were therefore re-run in full. Every verdict held: no witness that was red went green, and
+no witness that was green went red. The counts moved by a few per cent, in the direction the narrowing
+predicts, and the new ones are in the two sweep tables above.
