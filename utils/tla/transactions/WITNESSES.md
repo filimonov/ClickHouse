@@ -141,7 +141,6 @@ not results.
 | `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
 | `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | a part that is BOTH involved in a transaction and carries a deferred record, which `NonTxn` cannot build: see the `NonTxn` section below | plan 3, with the `NonTxnCrash` scenario |
 | `NtBatchDone` | `NtBatchStore` updates `mem` and skips the store for the covered parts of a non-transactional merge, which is the pre-fix defect of `ba2ee3239b8d` | `Restart*`, because the spec states the property on the stored record and the scenario it names is `NonTxnCrash` | plan 3 |
-| `NoNtStoreError` | a store of the batch's own ending in `Error` while the batch is in its store phase, which is what the invariant forbids | a fault on the batch's store: `StoreRetry` or a query fault raised inside `NonTransactionalRemovalLocks::store`, and no scenario before plan 5 raises either | plan 5, the plan that gives the batch a disk or query fault; that plan owes the action, and the invariant comes out when it lands |
 
 `NoDoubleRead` and `ActiveSetShape` came off this table with the `Merge` scenario, which is the first with a covering relation; both are red there and both have rows below. What stays of `ActiveSetShape` is its second clause, which one task cannot falsify.
 
@@ -157,15 +156,6 @@ absent.
 | Property | Status |
 |---|---|
 | `KillerNotStranded` | the property appears nowhere in the design document; added with the rollback-driver change of task 3. Its witness needs a rollback step that starts and never completes, so it goes to plan 5 |
-
-`NoNtStoreError` is in that table rather than among the properties with a witness, and the reason is the one
-its own comment in `Invariants.tla` gives: it is a bound guard of the shape `NoTaskDrivenRollback` has, not a
-property of the server. `NtBatchStore` has no branch that consumes a frame parked in `Error`, so a store that
-failed would leave the batch with nothing able to advance it and the search would wedge without a word. A hook
-that falsified it would have to inject a store failure, which is the fault action plan 5 owns; a hook that
-merely wrote an error into a frame would correspond to no line of C++, which the witness contract does not
-accept. Until that plan, the invariant is checked in three configurations and is known to be unfalsifiable
-there, which is stated here rather than left implicit.
 
 `TypeOK` is a type invariant, not a behavioural property, and has no witness by design.
 
@@ -364,8 +354,8 @@ the session conjunct removed, so that only the `Tasks` half is checked, is red u
 
 ### The full sweep at these bounds {#witnesses-merge-full}
 
-Every witness of every property `MC_Merge.cfg` checks. Nineteen runs, about nine minutes in all, of which one
-row is five.
+Every witness of every property `MC_Merge.cfg` checks: the twenty runs of the table below, about nine minutes
+in all, of which one row is five.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
@@ -389,6 +379,7 @@ row is five.
 | `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 5,643 | 2 s |
 | `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 6,386 | 2 s |
 | `Assert_validateInfo` | `Assert_validateInfo_removal` | **GREEN**, debt B3 | 38,568,430 | 4 min 51 s |
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_size` | RED | 2 | 1 s |
 | `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 30,588 | 2 s |
 | | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 3,892,113 | 31 s |
 | | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 5,196,830 | 39 s |
@@ -422,9 +413,8 @@ task-4 row; `AckedWriteIsDurable`, `NoAvoidableTermination` and `KillerNotStrand
 plan-5 rows; `Assert_getOldestSnapshot` and `Assert_TailPtrNotRegressing` both need the `SetSnapshot` action,
 and `SNAPSHOT_TARGETS` is empty here, so the two `SetSnapshot`-sited witnesses are vacuous in `Merge` and are
 verified in the scenario that owns them. `Assert_getOldestSnapshot`'s third witness, `_size`, is not one of
-those: its hook is in `Begin`, so it is live wherever a transaction begins, and it is red in the `SetSnapshot`
-family and in the drop half. It is not run here, which is a row this scenario's sweep owes rather than a
-vacuity. `TypeOK`, `RollbackNoLeak` and `NoTaskDrivenRollback` have no witness by design: the first is a type
+those: its hook is in `Begin`, so it is live wherever a transaction begins. It is red here in two states, and
+the row is in the sweep table above; it is also red in the `SetSnapshot` family and in the drop half. `TypeOK`, `RollbackNoLeak` and `NoTaskDrivenRollback` have no witness by design: the first is a type
 invariant, the second is the debt `FINDINGS.md` section 3 records, and the third is a bound guard rather than a
 property of the server.
 
@@ -453,9 +443,11 @@ which no longer exists; none of those figures was reproducible and they are not 
 
 ### The drop half with the cleanup group {#witnesses-nontxn-drop}
 
-`MC_NonTxnDrop`, every witness of every property its cfg checks: twenty-seven runs, one per
-`tmp/tla/w_NonTxnDrop_*` directory. Twenty-six of them take under three minutes in all; the twenty-seventh is
-`Assert_validateInfo_removal`, which explores twenty-three times the scenario's own space.
+`MC_NonTxnDrop`, every witness of every property its cfg checks: the twenty-eight runs of the table below.
+Twenty-seven of them take under three minutes in all; the twenty-eighth is `Assert_validateInfo_removal`, which
+explores twenty-three times the scenario's own space. The count to quote is the table's: `witness.sh` names its
+output directory after the witness, so `tmp/tla/w_<Scenario>_*` also holds any probe a reviewer ran by hand and
+is not a census of the sweep.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
@@ -482,6 +474,7 @@ which no longer exists; none of those figures was reproducible and they are not 
 | `NoDoubleRead` | `NoDoubleRead` | GREEN, placed in plan 5 | 855,691 | 9 s |
 | `Atomicity` | `Atomicity` | GREEN, paid in `MC_NonTxnDropTwo` | 1,112,089 | 10 s |
 | `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_size` | RED | 2 | 1 s |
+| `NoNtStoreError` | `NoNtStoreError`, an alias of `Assert_validateInfo_nocreation_only1` | RED | 2,466 | 2 s |
 | `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_entry` | GREEN, vacuously: the hook is in `SetSnapshot` and `SNAPSHOT_TARGETS` is empty here | 1,112,076 | 10 s |
 | `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | GREEN, vacuously, same reason | 1,112,063 | 10 s |
 | `Assert_validateInfo` | `Assert_validateInfo_removal` | GREEN over the whole witness-mutated space; placed in plan 5 | 25,686,095 | 3 min 16 s |
@@ -491,7 +484,14 @@ Every green here is a full exploration rather than a run that ran out of budget,
 witness does not fire at one transaction. That is the price of the bound `STATE_SPACE.md` argues, and every row
 names where it is paid instead.
 
-Three of the rows are worth a word. `Assert_getOldestSnapshot` has three witnesses and only one of them is live
+`NoNtStoreError` is the row that had no witness at all until the re-review found one. It is a bound guard
+rather than a property of the server, and the change that falsifies it is one the sweep already carries: with
+`NtBatchPreflight`'s uncommitted-creator refusal removed, which is `Assert_validateInfo_nocreation_only1`, a
+target whose creation is still in flight reaches the store phase, where `setAndStoreRemovalTID` refuses it
+instead and parks the batch's frame in `Error`. One change, two properties, two routes, so the witness is an
+alias on that one site rather than a hook of its own, and `witness.sh NonTxnDrop NoNtStoreError` runs it.
+
+Three more of the rows are worth a word. `Assert_getOldestSnapshot` has three witnesses and only one of them is live
 here: `_size`'s hook is in `Begin`, so it fires in two states, while the other two are inside `SetSnapshot`,
 which an empty `SNAPSHOT_TARGETS` disables. Their greens are vacuities and say nothing about the property;
 both are red in the scenario that owns the action. `Assert_validateInfo_removal` is the row that explores far
@@ -519,8 +519,9 @@ finishes, so both halves are green by exploration and the witness is minimal. B5
 `SingleRemover`'s row was first cut at 33,336,890 states, which was premature: a witness on a scenario that
 finishes may legitimately explore the whole of it, and this one finishes at 47,958,711. The re-run with a
 fifteen-minute allowance settles it the other way: the witness-mutated space is **larger** than the scenario's,
-and at 65.5 million the queue was still growing, so this is a witness that widens the space rather than one
-that is about to fire. The row is paid in `MC_NonTxnWitness`, where the same witness is red in six seconds.
+and at 65,525,357 the queue was still growing, so the mutated space does not finish either. The row is a
+placement in plan 5 with that count. It is red in `MC_NonTxnWitness` in six seconds and in `Base`, so what is
+owed is the two-transaction drop configuration, not the property.
 
 `Atomicity` is the row this configuration pays outright. The two `Assert_validateInfo_order` and `SingleRemover`
 rows need the cleanup group as well, which this half does not have, and they are red in `MC_NonTxnWitness`

@@ -534,8 +534,8 @@ own roster are green there, and they divide three ways: seven for want of the se
 `Atomicity` and `Assert_validateInfo_removal`), which are the rows the second configuration below,
 `MC_NonTxnWitness` and plan 5 pay; two vacuously, the two `Assert_getOldestSnapshot` witnesses whose hook is in
 `SetSnapshot`, which an empty `SNAPSHOT_TARGETS` disables; and one structurally, `NoFalseCorruption`, which
-plan 3 owes. An eleventh rostered property, `NoNtStoreError`, has no witness hook anywhere in the tree and is
-deferred to plan 5 with the fault that would falsify it.
+plan 3 owes. The eleventh rostered property, `NoNtStoreError`, is red here through an alias on the hook
+`Assert_validateInfo_nocreation_only1` already carries.
 
 One transaction still keeps the subject. The batch refuses on a target that is locked or whose creator has not
 committed, and one transaction can hold either; both batch witnesses, `NtBatchRefusedUnchanged` and

@@ -12,11 +12,13 @@ SymSessions == Permutations(Sessions)
 \* NonTxnDrop is Base + the non-transactional DROP PARTITION and its removal batch + the cleanup group, at two
 \* sessions, three parts and TID_MAX = 1. One transaction is a bound, not a free reduction: the same
 \* configuration at two does not finish (STATE_SPACE.md), and seven witnesses of this roster go green here for
-\* want of the second transaction; two more are vacuous here because SNAPSHOT_TARGETS is empty, and
-\* NoFalseCorruption is green structurally. MC_NonTxnDropTwo pays one of them, Atomicity; MC_NonTxnWitness pays three,
-\* SingleRemover, Assert_validateInfo_order and NoPrematureDelete; NoDoubleRead and NoUncommittedRead are
-\* placed in plan 5; and NoFalseCorruption is not a budget row at all, because it is structurally unreachable
-\* here and is deferred to plan 3 with the NonTxnCrash scenario. What one transaction keeps is the subject: the batch refuses on a target locked by a
+\* want of the second transaction. All seven are accounted for: MC_NonTxnDropTwo pays Atomicity;
+\* MC_NonTxnWitness pays SingleRemover, Assert_validateInfo_order and NoPrematureDelete; NoDoubleRead,
+\* NoUncommittedRead and Assert_validateInfo_removal are placed in plan 5, the last of them as a finished green
+\* over 25.7M states rather than an unfired kill. Two further greens are vacuous here, the two
+\* Assert_getOldestSnapshot witnesses whose hook is in SetSnapshot, which an empty SNAPSHOT_TARGETS disables,
+\* and NoFalseCorruption is green structurally and deferred to plan 3.
+\* What one transaction keeps is the subject: the batch refuses on a target locked by a
 \* transaction or created by one that has not committed, and one transaction can be either. ActiveSetShape is NOT in its roster: finding F5's route 1 is live here and unfixed,
 \* and MC_NonTxnF5 is the module that produces it. Everything else the scenario matrix names for NonTxn is
 \* checked, at OBSOLETE_IS_ROLLED_BACK = TRUE, because finding F6 makes the baseline unrunnable as a roster.

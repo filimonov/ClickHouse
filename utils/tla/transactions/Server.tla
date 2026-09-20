@@ -1103,8 +1103,15 @@ InfoIsRemoved(info) == info.rtid = NonTransactionalTID \/ info.ccsn = RolledBack
 \* enough, the transaction log decides (upstream 65e4e2b5bf69). The witness of NtRefusalJustified is exactly the
 \* pre-fix form, which trusts mem.creation_csn alone. The two Assert_validateInfo_nocreation names disable the
 \* refusal entirely, which is that witness's first change.
+\* NoNtStoreError is a third name on the same one-site change, and it is an alias rather than a hook of its own
+\* because the same removed refusal falsifies both properties by two different routes: with the preflight
+\* refusal gone, a target whose creation is still in flight reaches the store phase, where setAndStoreRemovalTID
+\* refuses it instead (the CreationInFlight branch of StoreReadStep) and parks the batch's frame in Error. That
+\* is the state NoNtStoreError forbids, and it is what the guard exists to say cannot happen while the refusal
+\* is where the code puts it.
 CreatedByUncommitted(p) ==
   /\ ~Witness("Assert_validateInfo_nocreation") /\ ~Witness("Assert_validateInfo_nocreation_only1")
+  /\ ~Witness("NoNtStoreError")
   /\ part[p].mem.ccsn = UnknownCSN
   /\ part[p].mem.ctid \in Tids
   /\ (Witness("NtRefusalJustified") \/ LookupCsn(part[p].mem.ctid) = UnknownCSN)
