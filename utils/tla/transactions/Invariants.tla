@@ -61,6 +61,23 @@ Atomicity == [][AtomicityStep]_vars
 RollbackNoLeak == \A k \in Sessions : \A t \in Tids : Cur(k) /= EmptyTID /\ Cur(k) /= t /\ t \notin h.committed =>
   client[k].last_read.parts \cap h.creating[t] = {}
 
+\* ---- the part-state preamble (spec, "Invariants and properties")
+\* A part-state clause is evaluated on part[p].pstate while p \in sys.loaded_parts and on the durable layer of
+\* disk[p] otherwise. A durable committed or non-transactional removal counts as Outdated; a durable rolled-back
+\* creation, and a missing directory, count as Absent. Before the first crash loaded_parts is the whole
+\* universe, so every scenario without one is unaffected.
+DurableRecord(p) ==
+  IF disk[p].durable.kind = "Info" THEN disk[p].durable.info
+  ELSE IF disk[p].durable.kind = "Legacy" THEN LegacyInfo
+  ELSE EmptyInfo
+DurablePState(p) ==
+  IF ~disk[p].dir_durable THEN "Absent"
+  ELSE LET r == DurableRecord(p) IN
+       IF r.ccsn = RolledBackCSN THEN "Absent"
+       ELSE IF r.rcsn /= UnknownCSN \/ r.rtid = NonTransactionalTID THEN "Outdated"
+       ELSE "Active"
+PState(p) == IF p \in sys.loaded_parts THEN part[p].pstate ELSE DurablePState(p)
+
 \* ---- durability (Durable disk mode in Base)
 \* The antecedent is the spec row's h_effects, which includes the mutations a transaction registered; the
 \* mutation disjunct is vacuous while Mutations = {} and live from plan 4.
@@ -68,15 +85,20 @@ RollbackNoLeak == \A k \in Sessions : \A t \in Tids : Cur(k) /= EmptyTID /\ Cur(
 \* (h_removers[p] /= {}). A removal merely in flight, that is part[p].lock /= EmptyTID, is admitted here too,
 \* because DropOutdate outdates a part before the transaction that drops it commits, and the literal row is
 \* therefore red on the baseline. Recorded as spec defect S5 in FINDINGS.md, section 3.
+\* These two read PState and every other property reads part[p].pstate, because every other property is about
+\* what an actor of the running server does, and an actor cannot act while the server is down.
+\* The in-flight disjunct the S5 relaxation adds reads part[p].lock, which is meaningless for an unloaded part,
+\* so it is guarded on the part having been loaded.
 AckedWriteIsDurable == \A t \in Tids :
   h.outcome[t] = "Acked" /\ ((h.creating[t] \cup h.removing[t]) /= {} \/ h.mutations[t] /= {}) =>
   /\ t \in h.committed
-  /\ \A p \in h.creating[t] : \/ part[p].pstate = "Active"
-                             \/ (part[p].pstate = "Outdated" /\ (part[p].lock /= EmptyTID \/ h.removers[p] /= {}))   \* S5: removal in flight or committed
-                             \/ (part[p].pstate \in {"Deleting", "Deleted"} /\ h.removers[p] /= {})
-  /\ \A p \in h.removing[t] : part[p].pstate /= "Active"
+  /\ \A p \in h.creating[t] : \/ PState(p) = "Active"
+                             \/ (PState(p) = "Outdated"                                                          \* S5: removal in flight or committed
+                                 /\ ((p \in sys.loaded_parts /\ part[p].lock /= EmptyTID) \/ h.removers[p] /= {}))
+                             \/ (PState(p) \in {"Deleting", "Deleted"} /\ h.removers[p] /= {})
+  /\ \A p \in h.removing[t] : PState(p) /= "Active"
 ErrorIsAbsent == \A t \in Tids : h.outcome[t] = "Error" =>
-  t \notin h.committed /\ (h.rolled_back[t] => \A p \in h.creating[t] : part[p].pstate /= "Active")
+  t \notin h.committed /\ (h.rolled_back[t] => \A p \in h.creating[t] : PState(p) /= "Active")
 
 \* ---- conflicts (spec #invariants-conflicts)
 SingleRemover == \A p \in Parts : Cardinality(h.removers[p]) <= 1

@@ -64,7 +64,7 @@ NtDropNext == \/ (\E k \in Sessions, p \in Parts : NtDropWrite(k, p) \/ NtDropPu
               \/ (\E p \in Parts : NtBatchPreflight(p) \/ NtBatchLock(p) \/ NtBatchStore(p))
               \/ NtBatchEnd
 NtNext == NtInsertNext \/ NtDropNext
-FaultNext == Crash \/ NoexceptFrameDown \/ (\E c \in {"StoreFault", "RetryExhausted", "Other"} : ProcessDown(c))
+FaultNext == Crash \/ ProcessDown("Other")
 RestartNext == RestartLoadLog \/ RestartTableStart \/ RestartTablePublished \/ RestartOutdatedDone \/ RestartDone
                \/ (\E p \in Parts : RestartLoadPart(p))
                \/ (\E m \in Mutations : RestartLoadMutation(m))
@@ -74,7 +74,7 @@ AllNext == ClientNext \/ StoreNext \/ UpdaterNext \/ UpdaterGCNext \/ UpdaterUnk
 Spec == Init /\ [][AllNext]_vars
 
 \* the Base scenario (spec matrix): client, store, updater load/publish, noexcept termination
-BaseNext == ClientNext \/ StoreNext \/ UpdaterNext \/ NoexceptFrameDown
+BaseNext == ClientNext \/ StoreNext \/ UpdaterNext \/ ProcessDown("Other")
 BaseSpec == Init /\ [][BaseNext]_vars
 
 \* the SetSnapshot scenario (spec matrix): Base + SetSnapshot + Cleanup* + Updater+GC

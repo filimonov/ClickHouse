@@ -102,6 +102,8 @@ EmptyInfo == [ctid |-> EmptyTID, ccsn |-> UnknownCSN, rtid |-> EmptyTID, rcsn |-
 Involved(info) == \/ info.ctid /= NonTransactionalTID
                   \/ (info.rcsn = UnknownCSN /\ info.rtid \notin {NonTransactionalTID, EmptyTID})
                   \/ info.rcsn \notin {NonTransactionalCSN, UnknownCSN}
+\* VersionInfo::isRemoved, src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:199
+InfoIsRemoved(info) == info.rtid = NonTransactionalTID \/ info.ccsn = RolledBackCSN \/ info.rcsn /= UnknownCSN
 
 Max(S) == CHOOSE x \in S : \A y \in S : y <= x
 Min(S) == CHOOSE x \in S : \A y \in S : y >= x

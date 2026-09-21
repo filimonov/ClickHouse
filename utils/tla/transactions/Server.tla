@@ -131,12 +131,21 @@ SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_
               \* cleanup_part is the part MergeTreeData::grabOldParts has grabbed; "None" while the cleanup
               \* thread holds nothing. cleanup_pc is where that one grabbed part is in
               \* clearOldPartsFromFilesystem: "Validate" before assertHasValidVersionMetadata, "Delete" after it.
-              cleanup_pc : {"Idle", "Grab", "Validate", "Delete"}, cleanup_part : Parts \cup {"None"}]
+              cleanup_pc : {"Idle", "Grab", "Validate", "Delete"}, cleanup_part : Parts \cup {"None"},
+              \*  load_queue: the roots of the coverage tree still to load as Active candidates, which is what
+              \*    loadDataPartsFromDisk walks (src/Storages/MergeTree/MergeTreeData.cpp:2771), pushing a
+              \*    non-active root's children back onto it (:2831-2835).
+              \*  outdated_queue: the covered children left for loadOutdatedDataParts (:3539), the asynchronous
+              \*    pass async_loading_jobs counts.
+              \*  mut_queue: the mutation files StorageMergeTree::loadMutations (StorageMergeTree.cpp:1619)
+              \*    still has to read.
+              load_queue : SUBSET Parts, outdated_queue : SUBSET Parts, mut_queue : SUBSET Mutations]
 SysInit == [server |-> "TableUp", completely_started |-> TRUE, async_loading_jobs |-> 0,
             loaded_parts |-> Parts, loaded_mutations |-> Mutations, restarts |-> 0, keeper_faults |-> 0,
             disk_faults |-> 0, query_faults |-> 0, merges_blocker |-> 0, parts_lock |-> NoActor, nt_batch |-> NoBatchRec,
             updater_pc |-> "Idle", load_since_swap |-> FALSE,
-            cleanup_pc |-> "Idle", cleanup_part |-> "None"]
+            cleanup_pc |-> "Idle", cleanup_part |-> "None",
+            load_queue |-> {}, outdated_queue |-> {}, mut_queue |-> {}]
 
 ServerTypeOK ==
   /\ txn \in [Tids -> TxnRecord]
@@ -927,12 +936,172 @@ RollbackFinalizeA(a, t) ==
   /\ UNCHANGED <<zk, disk, mdisk, sys, client, stmt, mut, task>>
 RollbackFinalize(k, t) == RollbackFinalizeA(Sess(k), t)
 UpdRollbackFinalize(t) == RollbackFinalizeA(Upd, t)
-\* a noexcept frame (afterCommit / rollback) ended in Error: the process terminates (Terminate policy)
-NoexceptFrameDown ==
+\* ============================================================ the server going down, and the restart
+\* Crash discards every in-memory variable of the server and every cached disk layer. Keeper, the durable
+\* layers and the history module survive (spec #failures-crash).
+\* local_tid_counter is the one field that does NOT go back to its initial value, although
+\* TransactionLog::loadLogFromZooKeeper sets it to Tx::MaxReservedLocalTID (src/Interpreters/TransactionLog.cpp:219).
+\* The code may reuse a local number because a TID is (start_csn, local_tid, host) and loadLogFromZooKeeper
+\* creates a placeholder znode first (:190), which raises latest_snapshot, so every transaction begun after a
+\* restart has a start CSN above every one begun before it. The model's Tids ARE the distinct transactions, so
+\* reusing one would merge two of them; keeping the counter monotone is the same set of transactions under a
+\* different naming. Recorded as model defect M17, with the placement: the plan that needs a restart to produce
+\* more transactions than TID_MAX allows, which is none of them.
+CrashEffect ==
+  /\ disk' = DiskAfterCrash
+  /\ mdisk' = MutDiskAfterCrash
+  /\ part' = [p \in Parts |-> AbsentPartRecord]
+  /\ txn' = [t \in Tids |-> AbsentTxn]
+  /\ tlog' = [TLogInit EXCEPT !.local_tid_counter = tlog.local_tid_counter]
+  /\ client' = [k \in Sessions |-> IdleClient]
+  /\ stmt' = [a \in Actors |-> NoStmt]
+  /\ mut' = [m \in Mutations |-> AbsentMutRecord]
+  /\ task' = [i \in Tasks |-> IdleTask]
+SysDown == [SysInit EXCEPT !.server = "Down", !.completely_started = FALSE, !.async_loading_jobs = 0,
+                           !.loaded_parts = {}, !.loaded_mutations = {},
+                           !.keeper_faults = sys.keeper_faults, !.disk_faults = sys.disk_faults,
+                           !.query_faults = sys.query_faults]
+
+Crash ==
+  /\ sys.server /= "Down" /\ sys.restarts < RESTARTS_MAX
+  /\ CrashEffect
+  /\ sys' = [SysDown EXCEPT !.restarts = sys.restarts + 1]
+  /\ UNCHANGED <<zk, h>>
+
+\* ProcessDown (spec #failures-disk): the effect of Crash plus down_cause, and it does not consume a restart.
+\* Only the `Other` cause is produced in this plan: a Refuse-class exception raised inside a noexcept call site,
+\* which in the model is a frame parked in Error whose owner is one. StoreFault and RetryExhausted need
+\* StorePersist to fault, which is plan 5's.
+ProcessDown(cause) ==
+  /\ cause = "Other" /\ sys.server /= "Down"
   /\ \E p \in Parts, o \in FrameOwners : FrameError(p, o) /\ FrameOf(p, o).noexcept_owner
-  /\ h' = [h EXCEPT !.down_cause = "Other"]
-  /\ sys' = [sys EXCEPT !.server = "Down"]
+  /\ CrashEffect
+  /\ sys' = SysDown
+  /\ h' = [h EXCEPT !.down_cause = cause]
+  /\ UNCHANGED zk
+
+\* TransactionLog::loadLogFromZooKeeper (src/Interpreters/TransactionLog.cpp:180): the placeholder csn- znode
+\* (:190), tid_to_csn and latest_snapshot from the children list (:213-216), tail_ptr from its znode (:221). The
+\* updating thread starts here (:72), which is why UpdLoadEntriesMap, UpdSwapUnknownLists and UpdFinalizeUnknown
+\* run in LogUp while UpdRemoveOldEntries* waits for server_completely_started.
+RestartLoadLog ==
+  /\ sys.server = "Down"
+  /\ zk.session = "Alive" /\ KeeperCanAppend
+  /\ LET newzk == KeeperAppended(EmptyTID)
+         ph == KeeperNextCsn IN
+     /\ zk' = newzk
+     /\ tlog' = [tlog EXCEPT
+          !.tid_to_csn = [t \in Tids |-> IF \E c \in DOMAIN newzk.log : newzk.log[c] = t
+                                         THEN CHOOSE c \in DOMAIN newzk.log : newzk.log[c] = t
+                                         ELSE UnknownCSN],
+          !.latest_snapshot = ph, !.last_loaded_entry = ph,
+          !.tail_ptr = zk.tail, !.updated_tail_ptr = FALSE]
+     /\ h' = [h EXCEPT !.loaded = [t \in Tids |-> @[t] \/ KeeperHas(t)]]
+  /\ sys' = [sys EXCEPT !.server = "LogUp"]
+  /\ UNCHANGED <<disk, mdisk, part, txn, client, stmt, mut, task>>
+
+\* the storage constructor begins (StorageMergeTree.cpp:238 calls loadMutations; loadDataParts builds the
+\* coverage tree from the part names on disk). No client, merge, mutation or cleanup action is enabled in
+\* TableLoading, which the Up guard already gives.
+RestartTableStart ==
+  /\ sys.server = "LogUp"
+  /\ sys' = [sys EXCEPT !.server = "TableLoading",
+                        !.load_queue = { p \in Parts : DiskRoot(p) },
+                        !.outdated_queue = { p \in Parts : OnDisk(p) /\ ~DiskRoot(p) },
+                        !.mut_queue = { m \in Mutations : mdisk[m].file_cached }]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+
+\* every root and every mutation file processed: the table is published while the covered children keep loading
+RestartTablePublished ==
+  /\ sys.server = "TableLoading" /\ sys.load_queue = {} /\ sys.mut_queue = {}
+  /\ sys' = [sys EXCEPT !.server = "TableUp",
+                        !.async_loading_jobs = IF sys.outdated_queue = {} THEN 0 ELSE 1]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+RestartOutdatedDone ==
+  /\ sys.server = "TableUp" /\ sys.outdated_queue = {} /\ sys.async_loading_jobs = 1
+  /\ sys' = [sys EXCEPT !.async_loading_jobs = 0]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+\* isServerCompletelyStarted does not wait for the outdated pass, which is the race the async_loading_jobs gate
+\* of removeOldEntries (TransactionLog.cpp:296-301) exists for.
+RestartDone ==
+  /\ sys.server = "TableUp" /\ ~sys.completely_started
+  /\ sys' = [sys EXCEPT !.completely_started = TRUE]
+  /\ h' = [h EXCEPT !.down_cause = "None"]
   /\ UNCHANGED <<zk, disk, mdisk, part, tlog, txn, client, stmt, mut, task>>
+
+\* MergeTreeData::loadDataPart (src/Storages/MergeTree/MergeTreeData.cpp:2591) for one part, on either pass:
+\* the active pass of loadDataPartsFromDisk (:2771) or the asynchronous outdated pass (:3539). It calls
+\* loadAndUpdateMetadata (VersionMetadata.cpp:601: loadMetadata, updateCSNIfNeeded, validateInfo, and storeInfo
+\* when the update changed something) and then decides the state at :2686-2691.
+\* Refinement, stated here because it is the one place this action departs from the store machinery: the load's
+\* own store is a single step, not the three-step frame every other store uses. The loader is the only actor
+\* that can touch the part (the table is not published for an active-pass part, and an outdated-pass part is not
+\* in the working set yet), so no second frame can interleave and the frame would add states without adding
+\* behaviours. deferrable is recomputed from whether a metadata file exists, which is what the
+\* VersionMetadataOnDisk constructor does at VersionMetadataOnDisk.cpp:44.
+\* UpdateCsnIfNeeded can return status "Retry", the stale-removal-lock case, and it cannot here: part[p].lock is
+\* EmptyTID for an unloaded part, and the Retry arm needs a non-empty lock that disagrees with the record. Hence
+\* the .info projection rather than a branch nothing can take.
+\* validateInfo (VersionMetadata.cpp:612) throws on a record that fails it, and the code then marks the part
+\* broken and detaches it. The model has no detach; Assert_validateInfo quantifies over every part whose pstate
+\* is not Absent, so a load that produced an invalid record is reported as an assertion violation instead. That
+\* is the honest treatment and it is stronger, not weaker.
+\* preparePartForRemoval's own LOGICAL_ERROR (:2527) is not transcribed: on the modelled paths every part that
+\* reaches it satisfies the condition.
+RestartLoadPart(p) ==
+  /\ \/ (sys.server = "TableLoading" /\ p \in sys.load_queue)
+     \/ (sys.server = "TableUp" /\ p \in sys.outdated_queue)
+  /\ LET active_pass == p \in sys.load_queue
+         raw == LoadedRecord(p)
+         upd == UpdateCsnIfNeeded(p, raw).info
+         \* loadDataPart:2686-2691, "deactivate part if creation was not committed or if removal was"
+         dead == Involved(upd) /\ (upd.ccsn = RolledBackCSN \/ upd.rcsn /= UnknownCSN)
+         st == IF active_pass /\ ~dead THEN "Active" ELSE "Outdated"
+         \* preparePartForRemoval (:2516): an Outdated part with no removal at all gets a non-transactional one
+         final == IF st = "Outdated" /\ ~InfoIsRemoved(upd)
+                  THEN ApplyOp("RemovalTID", NonTransactionalTID, upd) ELSE upd
+         wrote == final /= raw
+         defer == wrote /\ ~DiskHasInfo(p) /\ ~Involved(final)
+         sv1 == IF wrote THEN StoredRecord(p).sv + 1 ELSE raw.sv
+         rec == [final EXCEPT !.sv = sv1]
+         kids == IF active_pass /\ st /= "Active" THEN Covers[p] ELSE {} IN
+     /\ part' = [part EXCEPT ![p] = [AbsentPartRecord EXCEPT
+                   !.pstate = st, !.mem = rec, !.payload = h.payload[p],
+                   !.deferrable = ~DiskHasInfo(p) /\ ~wrote,
+                   !.deferred_on = defer, !.deferred = IF defer THEN rec ELSE EmptyInfo]]
+     \* loadMetadata removes the tmp file whether or not a record was found, which is the third arm; where the
+     \* record came from a tmp-only directory and was written, DiskWithInfo has already cleared tmp_cached.
+     /\ disk' = IF wrote /\ ~defer THEN DiskWithInfo(p, rec)
+                ELSE IF disk[p].tmp_cached THEN DiskWithoutTmp(p) ELSE disk
+     /\ sys' = [sys EXCEPT !.loaded_parts = @ \cup {p},
+                           !.load_queue = (@ \ {p}) \cup kids,
+                           !.outdated_queue = (@ \ {p}) \ kids]
+  /\ UNCHANGED <<zk, mdisk, h, tlog, txn, client, stmt, mut, task>>
+
+\* StorageMergeTree::loadMutations (src/Storages/StorageMergeTree.cpp:1619): a transactional entry with no csn
+\* gets the log's value written to it (:1645) or the file is removed (:1654); a non-transactional entry is
+\* registered unconditionally, which is the pre-fix behaviour of upstream 2903f6d48693. Vacuous while
+\* Mutations = {}.
+RestartLoadMutation(m) ==
+  /\ sys.server = "TableLoading" /\ m \in sys.mut_queue
+  /\ LET tid == mdisk[m].tid
+         csn == IF mdisk[m].csn_cached /= UnknownCSN THEN mdisk[m].csn_cached ELSE LookupCsn(tid)
+         keep == tid = NonTransactionalTID \/ csn /= UnknownCSN IN
+     /\ IF keep
+        THEN /\ mut' = [mut EXCEPT ![m] = [AbsentMutRecord EXCEPT !.mstate = "Registered", !.tid = tid,
+                                             !.csn = csn, !.file_owner = {"Map"}]]
+             /\ mdisk' = [mdisk EXCEPT ![m].csn_cached = csn]
+        ELSE /\ mut' = [mut EXCEPT ![m] = AbsentMutRecord]
+             /\ mdisk' = [mdisk EXCEPT ![m].file_cached = FALSE, ![m].file_durable = FALSE]
+     /\ sys' = [sys EXCEPT !.mut_queue = @ \ {m},
+                           !.loaded_mutations = IF keep THEN @ \cup {m} ELSE @]
+  /\ UNCHANGED <<zk, disk, h, part, tlog, txn, client, stmt, task>>
+
+\* The other half of Fsync: the directory entry and the rename. storeInfoToDataPartStorage takes a directory
+\* sync guard only when fsync_part_directory is on (VersionMetadataOnDisk.cpp:361-363), so without it the rename
+\* reaches the durable layer only through a later sync, which is this action.
+FsyncDir(p) == /\ Layered /\ disk' = DiskWithDirSynced(p)
+               /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
 
 \* ============================================================ updating thread
 \* The getChildren of loadNewEntries throws on an expired session and the catch skips the whole iteration,
@@ -1501,9 +1670,6 @@ MergeUnwind(i) ==
 \* that then fails. Four upstream fixes are about exactly that (ab40e11d3c73, f8f46fb1eb14, 86b6861a1a8e, and
 \* ba2ee3239b8d for the memory-only stamp), and NtBatchRefusedUnchanged is what they buy.
 
-\* VersionInfo::isRemoved, src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:199
-InfoIsRemoved(info) == info.rtid = NonTransactionalTID \/ info.ccsn = RolledBackCSN \/ info.rcsn /= UnknownCSN
-
 \* VersionMetadata::isCreatedByUncommittedTransaction, VersionMetadata.cpp:137: a missing creation CSN is not
 \* enough, the transaction log decides (upstream 65e4e2b5bf69). The witness of NtRefusalJustified is exactly the
 \* pre-fix form, which trusts mem.creation_csn alone. The two Assert_validateInfo_nocreation names disable the
@@ -1738,13 +1904,4 @@ RollbackKill(k, t, m) == FALSE
 CommitStoreMutation(k, m) == FALSE
 StoreRetry(p, o) == FALSE
 KillRetry(m) == FALSE
-Crash == FALSE
-ProcessDown(cause) == FALSE
-RestartLoadLog == FALSE
-RestartTableStart == FALSE
-RestartLoadPart(p) == FALSE
-RestartLoadMutation(m) == FALSE
-RestartTablePublished == FALSE
-RestartOutdatedDone == FALSE
-RestartDone == FALSE
 ====
