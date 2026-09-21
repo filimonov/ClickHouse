@@ -205,7 +205,7 @@ is unchanged by it.
 
 `SetSnapshot` is `Base` plus three things: the action `SetSnapshot`, the updater's truncation pass
 (`UpdRemoveOldEntriesSetTail`, `UpdRemoveOldEntriesDelete`, `UpdRemoveOldEntriesDone`), and the cleanup group
-(`CleanupGrab`, `CleanupValidate`, `CleanupDeleteOk`, `CleanupDeleteFail`). Its bounds are `Base`'s, with two
+(`CleanupDecide`, `CleanupGrab`, `CleanupAbandon`, `CleanupValidate`, `CleanupDeleteOk`, `CleanupDeleteFail`). Its bounds are `Base`'s, with two
 constants added: `SNAPSHOT_TARGETS = {33}` and `SET_SNAPSHOT_PROTECTS = FALSE`. `MC_SetSnapshotFixed` is the
 same scenario with `SET_SNAPSHOT_PROTECTS = TRUE`.
 
@@ -270,8 +270,8 @@ the constraint has almost nothing to prune. A bound that buys 1.5% is not worth 
 
 ### What the cleanup group cost {#setsnapshot-cleanup-cost}
 
-Adding the four cleanup actions and putting `part.pins` and `h.content` back into `SetSnapshotView` roughly
-doubles the scenario at its exhaustive bounds. Both fields had to come back: `CleanupGrab` reads `part[p].pins`
+Adding the cleanup actions and putting `part.pins` and `h.content` back into `SetSnapshotView` roughly
+doubles the scenario at its exhaustive bounds. Both fields had to come back: `CleanupDecide` reads `part[p].pins`
 in its `isSharedPtrUnique` guard, so two states differing only in a pin no longer have the same successors, and
 `NoLostVisibleData` reads `h.content`. Leaving either out would make the view unsound rather than merely
 coarse.
@@ -293,6 +293,31 @@ one and **up 163** in the other. The 163 is not a state the conjunct created. It
 noise this file already records elsewhere, in which two workers can fingerprint the same state before either has
 inserted it; the band is a few hundred states at this size, and both differences are inside it. The two factors are not separable by these runs: the actions and the two view fields
 arrived together, and a run with the actions and the old view would be unsound to compare against.
+
+### What the cleanup split cost {#setsnapshot-cleanup-split}
+
+The final-review fix commit split the cleanup grab in two: `CleanupDecide` takes the parts lock and accepts a
+part, `CleanupGrab` moves it to `Deleting` and releases the lock, and `CleanupAbandon` is the pass letting it
+go. The reason is fidelity rather than budget, and it is in `FINDINGS.md`, finding F2's second shape:
+`canBeRemoved` reads the oldest snapshot under `running_list_mutex` and releases it, and the state change
+happens at the end of the pass, so a `SET TRANSACTION SNAPSHOT` fits between them.
+
+The cost is one extra step per removed part, and it is about ten per cent everywhere it applies.
+
+| Configuration | Before the split | After | Change |
+|---|---|---|---|
+| `SetSnapshot` | 12,766,799 | 14,289,218 | +11.9% |
+| `SetSnapshotFixed` | 12,236,834 | 13,607,829 | +11.2% |
+| `SetSnapshotF2Fixed` | 367,183 | 411,641 | +12.1% |
+| `Merge` | 5,196,830 | 6,124,691 | +17.9% |
+| `NonTxnDrop` | 1,112,076 | 1,246,158 | +12.1% |
+| `NonTxnInsert` | 15,788,049 | 16,969,251 | +7.5% |
+| `NonTxnFixed` | 841,907 | 1,029,281 | +22.3% |
+
+`Base`, `BaseSmall` and `NonTxnDropTwo` do not move, because none of them enables the cleanup group, and that is
+the control this table needs: the split touches exactly the scenarios that run the cleanup thread. Every one of
+them is still green and every finding module still produces its finding. The largest of them, `NonTxnInsert` at
+17.0 million, stays inside the budget, so no reduction was sought.
 
 ### The `SetSnapshotF2` pair {#setsnapshotf2}
 
@@ -564,6 +589,11 @@ Two rows are paid by neither, because they need the cleanup thread **and** a sec
 witness bounds, which is what the two-bound-sets rule of spec defect `S7` is for. `NoDoubleRead` and
 `NoUncommittedRead` are red in neither and in no configuration that finishes; they are what is left of `B4`,
 with the counts they reached, and they are placed in plan 5, task 4 (budget and calibration).
+
+What the pair is **not** is an exhaustive run of the drop half. No finishing configuration has the cleanup
+thread and the second transaction at once, so the conjunction of the two is a bound rather than a covered case,
+and finding F2 is the standing demonstration that cleanup beside one more transaction can be decisive. That is
+model defect `M15`, which is an open bound placed in plan 5, task 4 (budget and calibration), and not a closure.
 
 ### What the view keeps {#nontxn-view}
 

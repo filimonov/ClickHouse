@@ -29,7 +29,8 @@ StoreNext == \E p \in Parts : \/ Fsync(p)
 UpdaterNext == UpdLoadEntriesMap \/ UpdPublishSnapshot
 UpdaterGCNext == UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
 UpdaterUnknownNext == UpdReconnect \/ UpdSwapUnknownLists \/ (\E t \in Tids : UpdFinalizeUnknown(t))
-CleanupNext == \E p \in Parts : CleanupGrab(p) \/ CleanupValidate(p) \/ CleanupDeleteOk(p) \/ CleanupDeleteFail(p)
+CleanupNext == \E p \in Parts : CleanupDecide(p) \/ CleanupGrab(p) \/ CleanupAbandon(p)
+                                 \/ CleanupValidate(p) \/ CleanupDeleteOk(p) \/ CleanupDeleteFail(p)
 TaskNext == \E i \in Tasks :
   \/ MergeBegin(i) \/ MergeSelect(i) \/ MergeWrite(i) \/ MergeRename(i)
   \/ MergePublishStart(i) \/ MergePublishFlip(i)

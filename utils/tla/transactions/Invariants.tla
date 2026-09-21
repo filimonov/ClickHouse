@@ -184,7 +184,7 @@ NoLostVisibleData == [][NoLostVisibleDataStep]_vars
 \* (the QueryOnCancelled action). A read already IN FLIGHT when the KILL lands is a different matter, and it is
 \* not this property that protects it: SelectCheck and SelectFinish carry no state guard, so such a read runs to
 \* completion. What protects it is the pin. SelectCapture pins every captured part with <<"Select", k>> and
-\* releases them only at SelectFinish or Refuse, and CleanupGrab requires part[p].pins = {}, which is
+\* releases them only at SelectFinish or Refuse, and CleanupDecide requires part[p].pins = {}, which is
 \* isSharedPtrUnique at MergeTreeData.cpp:4150 and is what PinnedNotDeleted states. So the narrowing gives up
 \* nothing: the in-flight read was never covered by this property and is covered by another one.
 \* Without the narrowing the oracle's "a transaction sees what it created" clause fires for the creator of a
@@ -192,10 +192,15 @@ NoLostVisibleData == [][NoLostVisibleDataStep]_vars
 \* included: VersionInfo::isVisible returns false on `snapshot_version < creation_csn`
 \* (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:167) and RolledBackCSN is above every snapshot.
 \* Counterexample F3.
+\* Stated on CleanupGrab, the step that moves the part to Deleting, and not on CleanupDecide, which only
+\* accepts it: the guarantee is about the moment the data goes, and a SET TRANSACTION SNAPSHOT between the two
+\* is finding F2's second shape.
 NoPrematureDeleteStep == \A p \in Parts : CleanupGrab(p) =>
   \A u \in tlog.running_list : txn[u].state = "Running" => ~OracleVisible(p, txn[u].snapshot, u)
 NoPrematureDelete == [][NoPrematureDeleteStep]_vars
-\* isSharedPtrUnique, MergeTreeData.cpp:4150, as a property rather than only as the guard of the action.
+\* isSharedPtrUnique, MergeTreeData.cpp:4150, as a property rather than only as the guard of the action. It is
+\* stated on the grab although the guard is in CleanupDecide, which is strictly stronger and still holds: no pin
+\* can appear in between, because SelectCapture needs the parts lock and CleanupDecide holds it until the grab.
 PinnedNotDeletedStep == \A p \in Parts : CleanupGrab(p) => part[p].pins = {}
 PinnedNotDeleted == [][PinnedNotDeletedStep]_vars
 \* the validation refusal is justified only by a disagreement history says cannot be transient

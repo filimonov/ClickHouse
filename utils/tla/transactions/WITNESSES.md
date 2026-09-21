@@ -5,6 +5,15 @@ a single named change to the model, guarded by `Witness("<name>")` in the action
 property fail. `witness.sh` applies one witness, checks that one property and nothing else, and reports whether
 the property went red.
 
+**Figures taken before the cleanup split are marked where they are load-bearing and are otherwise
+order-of-magnitude.** The final-review fix commit split `CleanupGrab` into `CleanupDecide`, `CleanupGrab` and
+`CleanupAbandon`, which moves every count in a scenario that enables the cleanup group by about ten per cent.
+The rows re-run after the split are the three cleanup witnesses above, the new `SnapshotEntryOnly` row, and the
+exhaustive runs in `README.md`'s last table. The rest of this file's counts are from before the split and were
+**not** re-run. The verdicts are carried rather than re-derived, and carrying them is not free: the split holds
+the parts lock across two steps, which removes interleavings, so a red row could in principle have become green.
+That is debt `B6` in `FINDINGS.md`, placed in plan 3, task 5 (budget, witness sweep, documents, debts).
+
 The witness contract is stated in the design document, section "Invariants and properties": the witness changes
 one or two named actions, the run checks only the target property, other properties are expected to fail too and
 are not the subject of the run, and a two-change witness must be minimal, meaning that restoring either change
@@ -293,9 +302,10 @@ against a `Fixed` configuration, so that the `SET TRANSACTION SNAPSHOT` defect d
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 248,909 | 3 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupGrab` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 30,635 | 2 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 241,736 | 3 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 280,340 | 4 s |
+| `NoPrematureDelete` | `SnapshotEntryOnly` | `CleanupGrab` skips the revalidation `SET_SNAPSHOT_PROTECTS` adds, which reduces finding F2's fix to its `snapshots_in_use` half, the half the entry first proposed | `SetSnapshotF2Fixed` | RED | 280,957 | 4 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupDecide` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 39,613 | 2 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 261,531 | 3 s |
 
 `PinnedNotDeleted` is red at the exhaustive bounds because it needs no visible part at all: a `SELECT` pin on an
 `Outdated` part whose removal has committed is enough, and two transactions produce that. The other two were
@@ -305,8 +315,15 @@ are from the tree before `DropLock`'s `lockParts` guard was restored, on a scena
 12,766,799 rather than 13,622,631. What they say is still the reason B2 existed, and B2 is closed by
 `MC_NonTxnF2` rather than by re-taking them.
 
-`PinnedNotDeleted` restates `CleanupGrab`'s own guard, so in every non-witness run it is a tautology and its
-only content is the witness row above. It is stated anyway because the guard is a refinement decision that a
+`SnapshotEntryOnly` is the second witness of `NoPrematureDelete` and is not a minimality half of the first: it
+removes the second half of the proposed fix rather than a guard of the baseline, and its red is finding F2's
+second shape, the trace `traces/f2-cleanup-decision-grab-window.txt`. `FINDINGS.md`, finding F2, has the
+argument.
+
+`PinnedNotDeleted` restates `CleanupDecide`'s own guard, and the guard and the state change are now two steps,
+so the property says the part had no pin at the moment it moved to `Deleting`. No pin can appear in between:
+`SelectCapture` requires the parts lock free and `CleanupDecide` holds it until the grab. In every non-witness
+run it is still a tautology and its only content is the witness row above. It is stated anyway because the guard is a refinement decision that a
 later task could change without noticing that nothing was checking it.
 
 `NoFalseCorruption` is **vacuously green** in `SetSnapshotFixed` and in `SetSnapshotF2Fixed`: no
@@ -545,11 +562,14 @@ and both are now run.
 `ActiveSetShape`'s green is a statement about the half rather than about the property. `NtInsertWrite` requires
 `IsBase(p)` and the only part with a non-empty `Covers` entry is `E`, which a non-transactional `DROP PARTITION`
 creates and this half has no `DROP PARTITION`: part `E` is never created here, so no two parts ever overlap and
-the invariant is vacuously true whatever the witness does to the publication. The same is true of the three batch
-properties, `NtBatchRefusedUnchanged`, `NtRefusalJustified` and `NoNtStoreError`: all three read `sys.nt_batch`
-in their antecedent, and `NonTxnInsertNext` enables no `NtDrop*` step, so the batch never becomes active and
-none of them can fail here. `NoNtStoreError` is witnessed in `NonTxnDrop` instead, red at 2,466 distinct
-states. All three are kept in the roster so that the two halves differ only in their `Next`,
+the invariant is vacuously true whatever the witness does to the publication. The same is true of the two batch
+properties `NtBatchRefusedUnchanged` and `NtRefusalJustified`: both read `sys.nt_batch` in their antecedent, and
+`NonTxnInsertNext` enables no `NtDrop*` step, so the batch never becomes active and neither can fail here.
+`NoNtStoreError` was in this roster for the same reason and has been **removed from `MC_NonTxnInsert.cfg`**: a
+structurally vacuous invariant in an exhaustive configuration is the silent green the witness contract exists to
+prevent, and unlike the two above it has a witness that fires in the sibling half, red at 2,466 distinct states
+in `NonTxnDrop`. The two that stay are kept so that the halves differ only in their `Next`, and their vacuity is
+recorded here. All three are kept in the roster so that the two halves differ only in their `Next`,
 and all three are red in a drop-half configuration. `ActiveSetShape` is also the property finding F5 violates,
 which is why `MC_NonTxnF5` exists and why the property is not in `MC_NonTxnDrop`'s roster.
 

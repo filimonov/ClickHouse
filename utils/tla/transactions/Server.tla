@@ -89,12 +89,14 @@ SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_
               async_loading_jobs : 0..1, loaded_parts : SUBSET Parts, loaded_mutations : SUBSET Mutations,
               restarts : 0..RESTARTS_MAX, keeper_faults : 0..KEEPER_FAULTS_MAX, disk_faults : 0..DISK_FAULTS_MAX,
               query_faults : 0..QUERY_FAULTS_MAX, merges_blocker : 0..Cardinality(Sessions),
-              parts_lock : Actors \cup {NoActor}, nt_batch : BatchType,
+              \* FrameOwners rather than Actors: the cleanup thread holds lockParts across its pass too,
+              \* which Actors, the set of the two clients' shapes, does not contain.
+              parts_lock : FrameOwners \cup {NoActor}, nt_batch : BatchType,
               updater_pc : {"Idle", "PublishSnapshot", "SetTail", "Delete", "Swap", "Finalize"},
               \* cleanup_part is the part MergeTreeData::grabOldParts has grabbed; "None" while the cleanup
               \* thread holds nothing. cleanup_pc is where that one grabbed part is in
               \* clearOldPartsFromFilesystem: "Validate" before assertHasValidVersionMetadata, "Delete" after it.
-              cleanup_pc : {"Idle", "Validate", "Delete"}, cleanup_part : Parts \cup {"None"}]
+              cleanup_pc : {"Idle", "Grab", "Validate", "Delete"}, cleanup_part : Parts \cup {"None"}]
 SysInit == [server |-> "TableUp", completely_started |-> TRUE, async_loading_jobs |-> 0,
             loaded_parts |-> Parts, loaded_mutations |-> Mutations, restarts |-> 0, keeper_faults |-> 0,
             disk_faults |-> 0, query_faults |-> 0, merges_blocker |-> 0, parts_lock |-> NoActor, nt_batch |-> NoBatchRec,
@@ -121,6 +123,7 @@ ServerInit ==
 \* ============================================================ helpers
 Sess(k) == <<"Session", k>>
 Tsk(i) == <<"Task", i>>
+Cln == <<"Cleanup", 0>>
 Up == sys.server = "TableUp"
 Cur(k) == client[k].current
 HasTxn(k) == client[k].current /= EmptyTID
@@ -794,6 +797,12 @@ Fsync(p) == /\ Layered /\ disk' = DiskWithMetaSynced(p)
             /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
 
 \* ============================================================ the cleanup thread
+\* canBeRemoved (VersionMetadata.cpp:272) as the cleanup pass asks it, with the two witness hooks that raise the
+\* snapshot it is compared against.
+CleanupWouldRemove(p) ==
+  IF Witness("NoPrematureDelete") \/ Witness("NoLostVisibleData")
+  THEN CanBeRemovedWith(p, tlog.latest_snapshot) ELSE CanBeRemovedImpl(p)
+
 \* MergeTreeData::grabOldParts, src/Storages/MergeTree/MergeTreeData.cpp:4074, under lockParts: an Outdated part
 \* whose version canBeRemoved (:4140), that nobody else holds (isSharedPtrUnique, :4150), and that is not an
 \* empty part still covering an Outdated one (:4158, "First remove all covered parts, then remove covering empty
@@ -801,19 +810,50 @@ Fsync(p) == /\ Layered /\ disk' = DiskWithMetaSynced(p)
 \* zero-copy-replication bookkeeping and are not modelled; `force` covers them.
 \* The model grabs one part per action where the code grabs a set under one lock. The only cross-part coupling
 \* the lock provides is the atomicity of the state change, and no property of this plan reads the set of parts in
-\* Deleting, so the refinement is recorded rather than removed. Placement if it ever matters: plan 5, task 3
-\* (liveness), whose OutdatedEventuallyDeleted is the first property stated over parts on their way out.
-CleanupGrab(p) ==
+\* Deleting, so the refinement is recorded rather than removed. Model defect M23 places it in plan 5, task 4.
+\*
+\* The decision and the state change are TWO actions, because they are two moments in the C++ and a
+\* SET TRANSACTION SNAPSHOT can land between them. canBeRemoved (:4141) calls TransactionLog::getOldestSnapshot,
+\* which takes running_list_mutex, reads snapshots_in_use.front() and RELEASES it (TransactionLog.cpp:677);
+\* modifyPartState(..., Deleting, parts_lock) runs at the end of the pass (:4190-4194). Only lockParts is held
+\* across the two, and MergeTreeTransaction::setSnapshot and the proposed setSnapshotForRunningTransaction take
+\* no parts lock at all, so nothing orders a snapshot lowering against the interval. Finding F2's second shape
+\* is exactly that interleaving. CleanupDecide therefore takes the parts lock and records the candidate, and
+\* CleanupGrab moves it; the pins and metadata tests stay in CleanupDecide, which is where the code makes them.
+CleanupDecide(p) ==
   /\ Up /\ sys.cleanup_pc = "Idle" /\ sys.parts_lock = NoActor
   /\ part[p].pstate = "Outdated"
-  /\ (IF Witness("NoPrematureDelete") \/ Witness("NoLostVisibleData")
-      THEN CanBeRemovedWith(p, tlog.latest_snapshot) ELSE CanBeRemovedImpl(p))
+  /\ CleanupWouldRemove(p)
   /\ (part[p].pins = {} \/ Witness("PinnedNotDeleted"))
   /\ part[p].frames = {}
   /\ ~(part[p].payload.tomb /\ \E q \in Expand({p}) \ {p} : part[q].pstate = "Outdated")
+  /\ sys' = [sys EXCEPT !.cleanup_pc = "Grab", !.cleanup_part = p, !.parts_lock = Cln]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+
+\* modifyPartState(it_to_delete, DataPartState::Deleting, parts_lock), MergeTreeData.cpp:4194, and the release
+\* of lockParts with the enclosing block. Under SET_SNAPSHOT_PROTECTS the removal decision is re-evaluated here,
+\* in the same step as the state change: that is the model's encoding of a fix that holds one guard from the
+\* oldest-snapshot read through modifyPartState. Without it the decision stands however the snapshots moved,
+\* which is what upstream does today.
+\* The witness SnapshotEntryOnly keeps the snapshots_in_use half of the fix and removes this half, which is the
+\* fix as FINDINGS first proposed it. It must be red on NoPrematureDelete: that is finding F2's second shape.
+CleanupGrab(p) ==
+  /\ Up /\ sys.cleanup_pc = "Grab" /\ sys.cleanup_part = p
+  /\ part[p].pstate = "Outdated"
+  /\ (SET_SNAPSHOT_PROTECTS /\ ~Witness("SnapshotEntryOnly") => CleanupWouldRemove(p))
   /\ part' = [part EXCEPT ![p].pstate = "Deleting"]
-  /\ sys' = [sys EXCEPT !.cleanup_pc = "Validate", !.cleanup_part = p]
+  /\ sys' = [sys EXCEPT !.cleanup_pc = "Validate", !.parts_lock = NoActor]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, client, stmt, mut, task>>
+
+\* The pass leaves the part where it is and releases the lock. Under the fix this is the revalidation refusing;
+\* under the baseline it is only reachable if the part left Outdated under the lock, which nothing here does.
+\* Without it the cleanup thread would hold the parts lock for ever whenever the revalidation fails.
+CleanupAbandon(p) ==
+  /\ Up /\ sys.cleanup_pc = "Grab" /\ sys.cleanup_part = p
+  /\ ~(part[p].pstate = "Outdated"
+       /\ (SET_SNAPSHOT_PROTECTS /\ ~Witness("SnapshotEntryOnly") => CleanupWouldRemove(p)))
+  /\ sys' = [sys EXCEPT !.cleanup_pc = "Idle", !.cleanup_part = "None", !.parts_lock = NoActor]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
 
 \* chassert(assertHasValidVersionMetadata()) in IMergeTreeDataPart::remove, IMergeTreeDataPart.cpp:2928, on the
 \* path clearPartsFromFilesystemAndRollbackIfError (MergeTreeData.cpp:4566) takes for each grabbed part.
