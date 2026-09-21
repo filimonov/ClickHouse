@@ -98,14 +98,16 @@ ActiveSetShape == /\ \A p, q \in Parts : part[p].pstate = "Active" /\ part[q].ps
                   /\ \A p \in Parts : part[p].pstate = "Active" /\ part[p].payload.tomb =>
                        \A q \in Expand({p}) \ {p} : part[q].pstate /= "Active"
 \* Not a property of the server: a bound guard. MergeUnwind can in principle win the compare-and-exchange in
-\* MergeTreeTransaction::rollback and become the rollback driver, and every step of the rollback machine is
-\* session-shaped, so the transaction would sit in RollbackCopyLists with nothing able to advance it. No
+\* MergeTreeTransaction::rollback and become the rollback driver. Every step of the machine takes its driver as
+\* an argument, and the wrappers that exist are the session's and the updating thread's; no disjunct of any
+\* Next instantiates a step with Tsk(i), so the transaction would sit in RollbackCopyLists with nothing able to
+\* advance it. No
 \* scenario of this plan reaches it: the two triggers that read the transaction's state can only find it already
 \* rolled back, and the two that do not -- a source locked or already removed, and a store of the task's own in
 \* error -- are excluded by the reservation, which keeps every other actor off the task's parts. Model defect
 \* M11 in FINDINGS.md carries the argument. This invariant says so instead of letting the search wedge without a
 \* word. The plan that enables a fault on a background task owes the task-driven rollback steps and takes this
-\* out.
+\* out, by adding the task wrappers rather than by changing the bodies.
 NoTaskDrivenRollback == \A t \in Tids : \A i \in Tasks : txn[t].rb_driver /= Tsk(i)
 
 \* ---- code assertions (spec #invariants-code)

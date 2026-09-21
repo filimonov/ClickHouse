@@ -704,8 +704,10 @@ CommitUnknown(k) ==
 \* waitStateChange returned (WAIT_UNKNOWN only): the updater has finalized the transaction or rolled it back
 \* and notified. executeCommit then returns normally, or the query ends with "Transaction was rolled back",
 \* which is the CommitError the spec's row names for this path.
-\* CommitAck's waitForCSNLoaded guard is deliberately not applied here: executeCommit with WAIT_UNKNOWN returns
-\* once the state changed, and the CSN it would wait for is the one the updater has just loaded by construction.
+\* CommitAck's waitForCSNLoaded guard is not repeated here, although executeCommit reaches waitForCSNLoaded on
+\* this path too: the CSN it would wait for is the one the updater has just loaded by construction. The swap
+\* requires sys.updater_pc = "Idle", which UpdPublishSnapshot is what restores, so tlog.latest_snapshot is
+\* already at or above txn[t].csn wherever this action is enabled.
 \* Acked is delivered only for state = "Committed", which UpdCommitFlip sets after every per-part store, so
 \* AckedWriteIsDurable's antecedent cannot be reached before those stores.
 CommitUnknownResolved(k) ==
@@ -913,8 +915,12 @@ NoexceptFrameDown ==
   /\ UNCHANGED <<zk, disk, mdisk, part, tlog, txn, client, stmt, mut, task>>
 
 \* ============================================================ updating thread
+\* The getChildren of loadNewEntries throws on an expired session and the catch skips the whole iteration,
+\* removeOldEntries and tryFinalizeUnknownStateTransactions included (src/Interpreters/TransactionLog.cpp:255),
+\* so a live session is a precondition of every step of the loop body and not of the truncation pass alone.
 UpdLoadEntriesMap ==
   /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
+  /\ zk.session = "Alive"
   /\ LET new == { c \in DOMAIN zk.log : c > tlog.last_loaded_entry } IN
      /\ new /= {}
      /\ tlog' = [tlog EXCEPT !.tid_to_csn = [t \in Tids |-> IF \E c \in new : zk.log[c] = t THEN CHOOSE c \in new : zk.log[c] = t ELSE @[t]],
@@ -929,6 +935,7 @@ UpdLoadEntriesMap ==
 \* scenario that runs the updating thread without one.
 UpdLoadNothing ==
   /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
+  /\ zk.session = "Alive"
   /\ { c \in DOMAIN zk.log : c > tlog.last_loaded_entry } = {}
   /\ ~sys.load_since_swap
   /\ sys' = [sys EXCEPT !.load_since_swap = TRUE]
@@ -1409,8 +1416,9 @@ MergeStmtRollbackDrop(i) ==
 \* the tagger releases the reservation and the source parts, and MergeTreeTransactionHolder's destructor calls
 \* TransactionLog::rollbackTransaction, whose compare_exchange in MergeTreeTransaction::rollback
 \* (src/Interpreters/MergeTreeTransaction.cpp:382) it loses to a KILL that got there first. Winning it makes the
-\* task the rollback driver, and the rollback machine's steps are all session-shaped, so the winning branch is
-\* not yet executable; NoTaskDrivenRollback is the invariant that says so rather than letting it wedge quietly.
+\* task the rollback driver. Every step of the machine takes its driver as an argument, but no disjunct of any
+\* Next instantiates one with Tsk(i), so the winning branch is not yet executable; NoTaskDrivenRollback is the
+\* invariant that says so rather than letting it wedge quietly.
 \* It is unreachable here, for two reasons rather than one. The triggers that read the transaction's state -- a
 \* RolledBack transaction at PublishStart or Commit, and the RolledBack disjunct of EnrolRefused -- do mean a
 \* KILL has already won. The other two say nothing about the transaction: EnrolRefused's second disjunct, a

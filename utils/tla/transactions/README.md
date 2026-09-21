@@ -138,6 +138,10 @@ One row per action of `Server.tla` and `Parts.tla`. The C++ column names the fil
 boundary the action stands for: what has happened when the action fires, and what the next action of the same
 machine picks up. Line numbers are of the baseline tree.
 
+Citations into the model's own files name the operator, never a line number: an operator name survives an
+insertion above it and a line number does not. Line numbers are used for the C++, whose baseline tree does not
+move under the model.
+
 Three rows have no single C++ counterpart and say so: `Fail` is an injected exception, `Refuse` bundles the
 unwinding an exception does on its way out of a query, and `Fsync` is the page cache becoming durable.
 `SelectFinish` also records the read into a monitor the server does not have, but returning a read set and
@@ -433,6 +437,9 @@ either is negligible.
 | `BaseSmall` | 2026-09-21 | the fix-round commit | 47,381 | 1 s | green, unchanged |
 | `Keeper` | 2026-09-21 | the fix-round commit | 30,544,101 | 5 min 07 s | green, unchanged after the updating thread's holder release and the three cleanup properties left the roster |
 | `KeeperUnknownWait` | 2026-09-21 | the fix-round commit | 71,323,386 | 11 min 57 s | green, unchanged; the generated count is unchanged too, which is what a relabelling of the graph looks like |
+| `BaseSmall` | 2026-09-21 | the review fix-round commit | 47,381 | 1 s | green, unchanged |
+| `Keeper` | 2026-09-21 | the review fix-round commit | 29,274,410 | 4 min 53 s | green; 4.2% below 30,544,101 because the updating thread's two load actions gained the live-session guard the truncation pass already had |
+| `KeeperUnknownWait` | 2026-09-21 | the review fix-round commit | 71,209,832 | 11 min 53 s | green; 0.16% below 71,323,386, the same guard against a session that is parked for most of the expiry window |
 
 Every `NonTxn*` row of these tables, the witness sweeps included, was measured with
 `OBSOLETE_IS_ROLLED_BACK = TRUE`, and the two drop configurations without `ActiveSetShape`. Section 2 says what
@@ -451,8 +458,8 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 | `SetSnapshotF2` | nothing: it stops at the first violation, which is finding `F2` | everything else; it is a reproducer, not a check | `FINDINGS.md`, finding `F2` |
 | `SetSnapshotF2Fixed` | one session, one part, `TID_MAX = 3`, 309,987 states, over five properties | the properties outside those four; the truncation tail, which the model publishes in one step, so the green verifies the refusal and not the publication; and any window between the revalidation and the state change, which are one action here | `FINDINGS.md`, finding `F2` and model defects `M18` and `M19` |
 | `Merge` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, 6,124,691 states, the whole roster | the second session: an exhaustive run at two does not finish, two witnesses fire only in `MergeWitness`, and `Assert_validateInfo_removal` fires in neither | `FINDINGS.md`, `B3`; `STATE_SPACE.md`, the `Merge` section |
-| `Keeper` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, 30,544,101 states, `Merge`'s roster less the three cleanup properties, plus `UnknownResolvesByLog` and `NoOutdatedLookup` | the second session and the second fault; the roster's witness sweep, which is `Merge`'s twenty-four rows over a scenario six times its size | `STATE_SPACE.md`, the `Keeper` section; `WITNESSES.md`, the `Keeper` witnesses |
-| `KeeperUnknownWait` | one session, `TID_MAX = 2`, `CSN_MAX = 35`, 71,323,386 states, the same roster under `WAIT_MODE = "WAIT_UNKNOWN"` | the third transaction, and with it the four witnesses that need one | `FINDINGS.md`, `B8`; `STATE_SPACE.md`, the `Keeper` section |
+| `Keeper` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, 29,274,410 states, `Merge`'s roster less the three cleanup properties, plus `UnknownResolvesByLog` and `NoOutdatedLookup` | the second session and the second fault; the roster's witness sweep, which is `Merge`'s twenty-four rows over a scenario six times its size | `STATE_SPACE.md`, the `Keeper` section; `WITNESSES.md`, the `Keeper` witnesses |
+| `KeeperUnknownWait` | one session, `TID_MAX = 2`, `CSN_MAX = 35`, 71,209,832 states, the same roster under `WAIT_MODE = "WAIT_UNKNOWN"` | the third transaction, and with it the four witnesses that need one | `FINDINGS.md`, `B8`; `STATE_SPACE.md`, the `Keeper` section |
 | `NonTxnDrop` | one transaction with the cleanup group, `TID_MAX = 1`, 1,246,158 states | the second transaction; `ActiveSetShape`, which finding `F5` falsifies; the four snapshot-isolation rows of spec defect `S13`; and `F6`'s fix is assumed rather than tested | `FINDINGS.md`, `B4`, `M15`, `S13`, findings `F5` and `F6` |
 | `NonTxnDropTwo` | two transactions without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 47,958,711 states, unchanged by the cleanup split | the cleanup group, so no finishing configuration checks the removal batch beside two transactions and cleanup at once, which is the open bound of `M15`; `SingleRemover` unfired at 65,525,357; the same properties as the row above | `FINDINGS.md`, `B4` and `M15` |
 | `NonTxnInsert` | two transactions with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 16,969,548 states | the removal batch; `ActiveSetShape` is on the roster but vacuous, because part `E` is never created here; the `S13` rows; `F6`'s fix is assumed | `FINDINGS.md`, `B4` and `S13`; `WITNESSES.md`, the `NonTxn` section |

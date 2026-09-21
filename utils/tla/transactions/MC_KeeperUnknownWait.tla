@@ -28,9 +28,15 @@ SymSessions == Permutations(Sessions)
 \*      writes the other in the same record.
 \*   3. Fields no action of this scenario writes: mdisk, mut, the mutation and non-transactional parts of h,
 \*      the loading fields of sys, a frame's noexcept_retries. The unknown-state part of tlog and the
-\*      keeper_faults counter have LEFT this group, because this scenario writes both; the first is in the
-\*      projection and the second is a function of the faults already taken, which zk.session and the
-\*      unknown-state fields record.
+\*      keeper_faults counter have LEFT this group, because this scenario writes both. The first is in the
+\*      projection. The second is not, and the reason is not that it is a function of what is: an expiry
+\*      followed by a reconnect restores zk.session and touches nothing else in the projection, so two states
+\*      with the same view really can differ in how many faults remain. What makes the omission sound is that
+\*      the twin with the lower count is an ancestor two steps up, which a breadth-first search reaches first,
+\*      and every action enabled at the higher count is enabled at the lower one, so the successors of the
+\*      state TLC discards are a subset of those it has already explored. Every other producer of a fault
+\*      leaves a permanent mark in the projection -- txn.pc, h.outcome, h.unknown, h.rolled_back, zk.log --
+\*      so no other collision of this shape arises.
 \* MergeView's correction about frags stands unchanged: with M12 covering P1 and P2 a read's fragments are not
 \* a function of its parts, so both first_read.frags and last_read.frags are in the fingerprint.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,

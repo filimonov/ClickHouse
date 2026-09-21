@@ -822,8 +822,8 @@ added the three `MC_Keeper*` modules:
 | `BaseSmall` | green | 47,381 | 1 s |
 | `Base` | green | 26,839,116 | 4 min 01 s |
 | `Merge` | green at one session | 6,124,691 | 56 s |
-| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 30,544,101 | 5 min 07 s |
-| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,323,386 | 11 min 57 s |
+| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 29,274,410 | 4 min 53 s |
+| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,209,832 | 11 min 53 s |
 | `NonTxnDrop` | green at `TID_MAX = 1` | 1,246,158 | 12 s |
 | `NonTxnDropTwo` | green at `TID_MAX = 2`, no cleanup group | 47,958,902 | 7 min 29 s |
 | `NonTxnInsert` | green | 16,969,548 | 2 min 42 s |
