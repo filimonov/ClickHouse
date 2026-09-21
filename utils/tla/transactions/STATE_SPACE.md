@@ -662,7 +662,7 @@ and costs nothing to keep.
 | the same, with a `CONSTRAINT` of one non-transactional query per behaviour | killed, still growing; lever rejected and reverted | 32,216,335 after 5 min, queue 2.70M | |
 | `NonTxnDrop`, `CSN_MAX = 34`, `TID_MAX = 1`, **committed** | **green** | 1,112,076 | 11 s |
 | `NonTxnDropTwo`, `CSN_MAX = 34`, `TID_MAX = 2`, no cleanup group, **committed** | **green**, queue peaked at 1.21M and drained | 47,958,711 | 7 min 34 s |
-| `NonTxnInsert`, `CSN_MAX = 34`, **committed** | **green** | 15,787,889 | 2 min 33 s |
+| `NonTxnInsert`, `CSN_MAX = 34`, **committed** | **green** | 15,787,889 when taken; 16,969,548 when the layered-disk task re-ran it, and 16,969,487 on that task's starting commit | 2 min 33 s; 2 min 45 s |
 | `NonTxnF4` | RED on `NoLostVisibleData` | 74,225 | 2 s |
 | `NonTxnF5` | RED on `ActiveSetShape` | 106,922 | 1 s |
 | `NonTxnF6`, one session | RED on `Assert_validateInfo` | 113,093 | 1 s |
@@ -674,9 +674,16 @@ and costs nothing to keep.
 | `SetSnapshotFixed`, re-measured after `M13` | green | 12,236,834 | 1 min 52 s |
 | `SetSnapshotF2Fixed`, re-measured after `M13` | green | 367,183 | 4 s |
 
-`NonTxnInsert`'s count is reproducible to the multi-worker counting noise the run table already documents: a
-second run of the committed configuration gave 15,787,914 and the closing re-run of the tree this is committed
-with gave 15,787,838, a spread of 76 states across three runs.
+`NonTxnInsert`'s count was reproducible to the multi-worker counting noise the run table already documents when
+it was taken: a second run of the committed configuration gave 15,787,914 and the closing re-run of the tree it
+was committed with gave 15,787,838, a spread of 76 states across three runs.
+
+It has since moved, and the move is not the layered-disk task's. That task re-ran it as its gate and measured
+16,969,548; the same configuration, rebuilt from the commit that task started at, measured 16,969,487, a spread
+of 61 states. Both figures are 7.5% above the three recorded above, so the change that moved it lies between the
+commit those were taken on and the start of the layered-disk task, and nothing in the `StoredRecord` rewrite
+touches a live branch of this configuration, whose `LEGACY_PARTS` is empty. Which change it was has not been
+bisected.
 
 The two `SetSnapshot` rows are the re-measurement model defect `M13` forces. Restoring `DropLock`'s `lockParts`
 guard narrows the scenario by about 6%, from 13,622,631 and 13,092,635, which is the same direction and roughly

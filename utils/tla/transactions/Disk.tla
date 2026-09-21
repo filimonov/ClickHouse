@@ -52,6 +52,8 @@ DiskWithDir(p) ==
   IF Layered THEN [disk EXCEPT ![p].dir_cached = TRUE]
   ELSE [disk EXCEPT ![p].dir_cached = TRUE, ![p].dir_durable = TRUE]
 DiskWithoutDir(p) == [disk EXCEPT ![p] = AbsentPartDisk]
+\* loadMetadata removes the tmp file it found (VersionMetadataOnDisk.cpp:58-60, removeTmpMetadataFile at :297)
+DiskWithoutTmp(p) == [disk EXCEPT ![p].tmp_cached = FALSE, ![p].tmp_durable = FALSE]
 \* fsync of one file: the metadata record only
 DiskWithMetaSynced(p) == [disk EXCEPT ![p].durable = disk[p].cached, ![p].tmp_durable = FALSE]
 \* directory fsync: the directory entry and the rename

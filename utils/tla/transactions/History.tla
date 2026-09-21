@@ -25,6 +25,11 @@ HistoryInit == h = [
   unknown     |-> [t \in Tids |-> "None"],
   removers    |-> [p \in Parts |-> {}],
   creator     |-> [p \in Parts |-> IF p \in LEGACY_PARTS THEN NonTransactionalTID ELSE EmptyTID],
+  \* A ghost for convenience, not an abstraction. The data files are written and fsynced before the directory
+  \* is renamed into place, so a directory that survives a crash carries its payload; giving the disk record a
+  \* payload field of its own would double every disk value for a quantity no action ever changes after
+  \* creation. The four actions that create a part write it beside h.creator, and RestartLoadPart reads it.
+  payload     |-> [p \in Parts |-> [ver |-> 0, tomb |-> FALSE]],
   selected    |-> {},
   content     |-> [t \in Tids |-> {}],
   truncated   |-> {},
@@ -47,6 +52,7 @@ HistoryTypeOK ==
   /\ h.unknown \in [Tids -> {"None", "Committed", "RolledBack"}]
   /\ h.removers \in [Parts -> SUBSET (Tids \cup {NonTransactionalTID})]
   /\ h.creator \in [Parts -> AllTids]
+  /\ h.payload \in [Parts -> [ver : 0..3, tomb : BOOLEAN]]
   /\ h.selected \subseteq (Mutations \X Parts \X BOOLEAN)
   /\ h.content \in [Tids -> SUBSET (Parts \X Nat)]
   /\ h.truncated \subseteq Tids

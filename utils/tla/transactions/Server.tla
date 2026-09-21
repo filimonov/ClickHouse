@@ -430,7 +430,7 @@ InsertWrite(k, p) ==
   /\ part[p].pstate = "Absent" /\ IsBase(p)
   /\ disk' = DiskWithDir(p)
   /\ part' = [StartFrame(p, Sess(k), "CreateTID", Cur(k), FALSE) EXCEPT ![p].pstate = "Temporary", ![p].deferrable = FALSE]
-  /\ h' = [h EXCEPT !.creator[p] = Cur(k)]
+  /\ h' = [h EXCEPT !.creator[p] = Cur(k), !.payload[p] = [ver |-> 0, tomb |-> FALSE]]
   /\ client' = [client EXCEPT ![k].pc = "InsertWrite", ![k].part = p]
   /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, stmt, mut, task>>
 
@@ -1294,7 +1294,7 @@ MergeWrite(i) ==
      \* holds it.
      /\ part' = [StartFrame(r, Tsk(i), "CreateTID", task[i].txn, FALSE) EXCEPT
                    ![r].pstate = "Temporary", ![r].deferrable = FALSE, ![r].pins = @ \cup {Tsk(i)}]
-     /\ h' = [h EXCEPT !.creator[r] = task[i].txn]
+     /\ h' = [h EXCEPT !.creator[r] = task[i].txn, !.payload[r] = [ver |-> 0, tomb |-> FALSE]]
      /\ task' = [task EXCEPT ![i].pc = "Rename"]
   /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, client, stmt, mut>>
 
@@ -1631,7 +1631,7 @@ NtInsertWrite(k, p) ==
   /\ part[p].pstate = "Absent" /\ IsBase(p)
   /\ disk' = DiskWithDir(p)
   /\ part' = [StartFrame(p, Sess(k), "CreateTID", NonTransactionalTID, FALSE) EXCEPT ![p].pstate = "Temporary"]
-  /\ h' = [h EXCEPT !.creator[p] = NonTransactionalTID]
+  /\ h' = [h EXCEPT !.creator[p] = NonTransactionalTID, !.payload[p] = [ver |-> 0, tomb |-> FALSE]]
   /\ client' = [client EXCEPT ![k].pc = "NtInsertWrite", ![k].part = p]
   /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, stmt, mut, task>>
 \* renameTempPartAndReplace and Transaction::commit under one lockParts, collapsed into one step because the
@@ -1660,7 +1660,7 @@ NtDropWrite(k, e) ==
   /\ disk' = DiskWithDir(e)
   /\ part' = [StartFrame(e, Sess(k), "CreateTID", NonTransactionalTID, FALSE) EXCEPT
                 ![e].pstate = "Temporary", ![e].payload = [ver |-> 0, tomb |-> TRUE]]
-  /\ h' = [h EXCEPT !.creator[e] = NonTransactionalTID]
+  /\ h' = [h EXCEPT !.creator[e] = NonTransactionalTID, !.payload[e] = [ver |-> 0, tomb |-> TRUE]]
   /\ client' = [client EXCEPT ![k].pc = "NtDropWrite", ![k].part = e]
   /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, stmt, mut, task>>
 

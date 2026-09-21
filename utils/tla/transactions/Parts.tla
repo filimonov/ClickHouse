@@ -24,8 +24,13 @@ PartRecord == [pstate : PStates, mem : VersionInfoType, lock : AllTids,
                pins : SUBSET Pins, frames : SUBSET FrameType, payload : PayloadType]
 AbsentPartRecord == [pstate |-> "Absent", mem |-> EmptyInfo, lock |-> EmptyTID, deferrable |-> TRUE,
                      deferred_on |-> FALSE, deferred |-> EmptyInfo, pins |-> {}, frames |-> {}, payload |-> [ver |-> 0, tomb |-> FALSE]]
-LegacyPartRecord == [AbsentPartRecord EXCEPT !.pstate = "Active", !.deferrable = FALSE,
-                     !.mem = [EmptyInfo EXCEPT !.ctid = NonTransactionalTID, !.ccsn = NonTransactionalCSN, !.sv = 0]]
+\* The record VersionInfo::readFromMultiLineBuffer produces for the pre-storing_version format (upstream
+\* aea1c111e0a8): a non-transactional creation. Its storing_version is 0 and not -1, because the FILE EXISTS;
+\* -1 is the value StoredRecord returns when there is no record at all. Model defect M1 was exactly this
+\* confusion: a legacy part carried mem.sv = 0 while StoredRecord fell through to EmptyInfo with sv = -1, so
+\* every store on it took TOO_OLD_VERSION and ended in STALE_VERSION, and no legacy part could ever be written.
+LegacyInfo == [EmptyInfo EXCEPT !.ctid = NonTransactionalTID, !.ccsn = NonTransactionalCSN, !.sv = 0]
+LegacyPartRecord == [AbsentPartRecord EXCEPT !.pstate = "Active", !.deferrable = FALSE, !.mem = LegacyInfo]
 
 PartsInit == part = [p \in Parts |-> IF p \in LEGACY_PARTS THEN LegacyPartRecord ELSE AbsentPartRecord]
 PartsTypeOK == /\ part \in [Parts -> PartRecord]
@@ -153,10 +158,26 @@ WithoutFrame(p, o) == [part EXCEPT ![p].frames = { g \in @ : g.owner /= o }]
 FrameDone(p, o, op, val) == ~HasFrame(p, o) /\ ApplyOp(op, val, part[p].mem) = part[p].mem
 FrameError(p, o) == HasFrame(p, o) /\ FrameOf(p, o).pc = "Error"
 StoredRecord(p) == IF part[p].deferred_on THEN part[p].deferred
-                   ELSE IF DiskHasInfo(p) THEN DiskInfo(p) ELSE EmptyInfo
+                   ELSE IF DiskHasInfo(p) THEN DiskInfo(p)
+                   ELSE IF disk[p].cached.kind = "Legacy" THEN LegacyInfo
+                   ELSE EmptyInfo
+\* No txn_version.txt of any format and no deferred record: readMetadata would throw CANNOT_OPEN_FILE.
+NoStoredRecord(p) == ~part[p].deferred_on /\ disk[p].cached.kind = "None"
 
-\* No txn_version.txt and no deferred record: readMetadata would throw CANNOT_OPEN_FILE.
-NoStoredRecord(p) == ~part[p].deferred_on /\ ~DiskHasInfo(p)
+\* the part directories the loader can see, and the roots of the coverage tree it builds from their names
+\* (MergeTreeData::loadDataParts, src/Storages/MergeTree/MergeTreeData.cpp:2857 region)
+OnDisk(p) == disk[p].dir_cached
+DiskRoot(p) == OnDisk(p) /\ ~\E c \in Parts : c /= p /\ OnDisk(c) /\ p \in Expand({c})
+
+\* VersionMetadataOnDisk::loadMetadata (src/Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.cpp:49) and
+\* its four cases: the record that is there (:63-67); the legacy format, which the model carries as its own disk
+\* kind; the tmp-only directory, which becomes DummyTID with RolledBackCSN (:77-84) after the tmp file is
+\* removed (:58-60); and the directory with neither, which becomes a non-transactional creation (:90-93).
+LoadedRecord(p) ==
+  IF DiskHasInfo(p) THEN DiskInfo(p)
+  ELSE IF disk[p].cached.kind = "Legacy" THEN LegacyInfo
+  ELSE IF disk[p].tmp_cached THEN [EmptyInfo EXCEPT !.ctid = DummyTID, !.ccsn = RolledBackCSN, !.sv = -1]
+  ELSE [EmptyInfo EXCEPT !.ctid = NonTransactionalTID, !.ccsn = NonTransactionalCSN, !.sv = -1]
 \* The shape loadMetadata case 2 produces, short-circuited by both validateInfo and hasValidMetadata.
 DummyRolledBackShape(info) ==
   info.ccsn = RolledBackCSN /\ info.ctid = DummyTID /\ info.rtid = EmptyTID /\ info.rcsn = UnknownCSN
