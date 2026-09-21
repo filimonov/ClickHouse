@@ -679,11 +679,11 @@ it was taken: a second run of the committed configuration gave 15,787,914 and th
 was committed with gave 15,787,838, a spread of 76 states across three runs.
 
 It has since moved, and the move is not the layered-disk task's. That task re-ran it as its gate and measured
-16,969,548; the same configuration, rebuilt from the commit that task started at, measured 16,969,487, a spread
-of 61 states. Both figures are 7.5% above the three recorded above, so the change that moved it lies between the
-commit those were taken on and the start of the layered-disk task, and nothing in the `StoredRecord` rewrite
-touches a live branch of this configuration, whose `LEGACY_PARTS` is empty. Which change it was has not been
-bisected.
+16,969,548; the same configuration, rebuilt from `3e54ef87ffd0`, the commit that task started at, measured
+16,969,487, a spread of 61 states. Both figures are 7.5% above the three recorded above, so the change that
+moved it lies between the commit those were taken on and `3e54ef87ffd0`, and nothing in the `StoredRecord`
+rewrite touches a live branch of this configuration, whose `LEGACY_PARTS` is empty. Which change it was is not
+bisected here; the bisection is placed in plan 3, task 5 (budget, witness sweep, documents and debts).
 
 The two `SetSnapshot` rows are the re-measurement model defect `M13` forces. Restoring `DropLock`'s `lockParts`
 guard narrows the scenario by about 6%, from 13,622,631 and 13,092,635, which is the same direction and roughly
