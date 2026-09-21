@@ -734,6 +734,94 @@ gives: it is stated over a committed writer, and a non-transactional statement h
 different matter and is red in both halves, at 168,614 distinct states in `MC_NonTxnDropTwo` and 486,689 in
 `MC_NonTxnInsert`, so the property is falsifiable here and the green is a result rather than a vacuity.
 
+## The `Keeper` scenario {#keeper}
+
+`Keeper` is `Base` plus the merge task, the updater's truncation pass, the updater's unknown-state pass and
+the two Keeper faults, over the same part universe as `Merge`. It does not enable the cleanup group, which is
+what makes three of its inherited properties vacuous; `WITNESSES.md` names them. It is the first scenario with a fault of any
+kind, and the first in which `NoOutdatedLookup` has a step to judge.
+
+### Bounds {#keeper-bounds}
+
+`MC_Keeper` runs at the scenario matrix's bounds and finishes there, which is the first scenario since `Base`
+that needs no reduction at all.
+
+| Configuration | Distinct states | Time | Result |
+|---|---|---|---|
+| `Keeper`, one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, **committed** | 30,544,101 | 5 min 15 s | green, queue drained |
+
+The count is above the thirty million at which a growing run is killed, and the rule is about a run that is
+still growing: the queue peaked at about 0.8 million and drained, which is the same reading `NonTxnDropTwo`
+was accepted under.
+
+One session rather than the matrix's two, and one task rather than two, for the reasons the `Merge` section
+gives: there is exactly one covering part, so exactly one merge, and the races this scenario adds are between
+a committing actor and the updating thread rather than between two sessions. `KEEPER_FAULTS_MAX = 1` means a
+behaviour has either a lost commit response or a session expiry, not both; what that costs is a behaviour with
+both, and plan 3, task 5 (budget, sweep and debts) measures whether 2 fits.
+
+### The second configuration, and what `WAIT_UNKNOWN` costs {#keeper-unknown-wait}
+
+`MC_KeeperUnknownWait` differs from `MC_Keeper` in one constant. It is the configuration in which
+`CommitUnknownResolved` is live, because with `throw_on_unknown_status` true the session blocks in
+`waitStateChange` instead of being told `UNKNOWN_STATUS_OF_TRANSACTION` and detaching. It does not finish at
+the matrix bounds, and the reduction ladder behaved unlike every earlier scenario's.
+
+| Configuration | Distinct states | Time | Result |
+|---|---|---|---|
+| matrix bounds, `TID_MAX = 3`, `CSN_MAX = 36` | 60,249,422, queue 9.18M and growing | killed at 6 min | does not finish |
+| `CSN_MAX = 35` | 31,195,881, queue 5.24M and growing | killed at 5 min | does not finish |
+| `Tasks = {}`, `Parts = {P1, P2}`, matrix bounds otherwise | 70,335,132 | 10 min 01 s | green |
+| `TID_MAX = 2`, `CSN_MAX = 35`, merge kept, **committed** | 71,323,386 | 12 min 28 s | green |
+
+The ladder's third rung, dropping the merge task, buys 1.4 per cent: 70,335,132 against 71,323,386. So the
+cost is `WAIT_MODE` itself and neither the merge nor the transaction count, and the rung that would have been
+taken on the ladder's own ordering is the wrong one here. The committed configuration is the ladder's first two
+rungs, which keep the merge task and therefore keep `MergeCommitKeeperFault` and `MergeCommitUnknown`
+reachable; those two actions exist in no other module, and rung three would have deleted them from the only
+scenario that runs them while saving nothing.
+
+Why the constant costs so much is the session's freedom. Under `WAIT` the catch block detaches the session at
+once, so it can `Begin` its next transaction and the `TID_MAX` counter drains while the unknown-state pass is
+still working. Under `WAIT_UNKNOWN` the session is parked until the updater resolves the transaction, so the
+merge task, the truncation pass and the cleanup thread explore fully against a parked client that still has
+transaction budget left. That is the server's behaviour and not a model defect.
+
+### The two model defects the first run found {#keeper-model-defects}
+
+The first exhaustive run of `Keeper` was red on `UnknownResolvesByLog` at 12,081 distinct states, on the
+baseline. It was model defect `M26`: the updating thread's three passes each start from `sys.updater_pc =
+"Idle"` and were otherwise unordered, so the model could run `UpdSwapUnknownLists` twice with no
+`UpdLoadEntriesMap` between, which is the one thing the two-list scheme rules out. `FINDINGS.md` carries the
+correction and the check that it does not over-fix.
+
+`M27` was found while measuring the `WAIT_UNKNOWN` blow-up and is not what caused it: `CommitAck` and
+`CommitUnknownResolved` were both enabled on a parked session, so one return of `executeCommit` was two model
+transitions. Removing the duplicate left the distinct count of `KeeperUnknownWait` exactly where it was,
+71,323,386, and took the generated count from 336,015,390 to 330,565,902. A duplicate edge between states that
+already exist costs transitions and not states, which is what those two numbers say.
+
+### What the view keeps {#keeper-view}
+
+`KeeperView` is `MergeView` plus the four unknown-state fields of `tlog` and `h.unknown`. `zk` is kept whole in
+`BaseView`, so `zk.session` comes with it, and `h.outcome` and `client.waiting` were already in `MergeView`.
+Two members leave `MergeView`'s third justification, the fields no action of the scenario writes: the
+unknown-state part of `tlog`, which is now in the projection, and the `keeper_faults` counter, which is a
+function of the faults already taken. `sys.load_since_swap` is in the projection because it decides whether
+`UpdSwapUnknownLists` is enabled; it is absent from `BaseView` and `MergeView`, where `UpdLoadEntriesMap`
+writes it and nothing reads it.
+
+`txn.csn_notified` moves from the first justification to the second. `CommitUnknownResolved` reads it, so it is
+no longer a field no action reads; it is a function of `txn.state`, which the projection keeps, because every
+action that writes one writes the other in the same record.
+
+### The regression the scenario did not cause {#keeper-regression}
+
+`Base` is 26,839,116 against 26,839,061 on the base commit, and `BaseSmall` and `Merge` are unchanged at 47,381
+and 6,124,691. The rollback machine's actor parameter, the two new `tlog` fields and `sys.load_since_swap` are
+invisible to those scenarios: the first is a renaming with wrappers, and the other three are written by actions
+they enable but read by none, so their projections merge the states that differ only in them.
+
 ## Reproducing {#reproducing}
 
 ```bash

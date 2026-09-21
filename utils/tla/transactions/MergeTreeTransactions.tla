@@ -11,7 +11,8 @@ Init == KeeperInit /\ DiskInit /\ HistoryInit /\ PartsInit /\ ServerInit
 \* ---- action groups (scenario modules compose their own Next from these)
 ClientNext == \E k \in Sessions :
   \/ Begin(k) \/ CommitBefore(k) \/ CommitError(k) \/ CommitCreateCSN(k) \/ CommitReadOnly(k) \/ CommitFlip(k)
-  \/ CommitFinalize(k) \/ CommitAck(k) \/ CommitUnknown(k) \/ FrameFail(k) \/ Refuse(k) \/ Fail(k)
+  \/ CommitFinalize(k) \/ CommitAck(k) \/ CommitUnknown(k) \/ CommitUnknownResolved(k)
+  \/ FrameFail(k) \/ Refuse(k) \/ Fail(k)
   \/ RollbackStart(k) \/ KillReturn(k) \/ RollbackOnException(k) \/ RollbackReturn(k) \/ QueryOnCancelled(k) \/ SelectCapture(k) \/ SelectFinish(k) \/ PublishFlip(k) \/ StmtRollbackDrop(k)
   \/ DropStart(k) \/ DropLock(k) \/ DropOutdate(k)
   \/ (\E p \in Parts : InsertWrite(k, p) \/ InsertPreActive(k, p) \/ PublishStart(k, p) \/ PublishEnrol(k, p)
@@ -28,14 +29,24 @@ StoreNext == \E p \in Parts : \/ Fsync(p)
                               \/ (\E o \in FrameOwners : StoreRead(p, o) \/ StorePersist(p, o) \/ StorePublish(p, o) \/ StoreRetry(p, o))
 UpdaterNext == UpdLoadEntriesMap \/ UpdPublishSnapshot
 UpdaterGCNext == UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
-UpdaterUnknownNext == UpdReconnect \/ UpdSwapUnknownLists \/ (\E t \in Tids : UpdFinalizeUnknown(t))
+UpdaterUnknownNext ==
+  \/ UpdReconnect \/ UpdLoadNothing \/ UpdSwapUnknownLists \/ UpdFinalizeDone
+  \/ (\E t \in Tids : UpdFinalizeUnknown(t) \/ UpdCommitFlip(t) \/ UpdCommitFinalize(t)
+                      \/ UpdRollbackCopyLists(t) \/ UpdRollbackFinalize(t)
+                      \/ (\E p \in Parts : UpdCommitStoreCreation(t, p) \/ UpdCommitStoreRemoval(t, p)
+                                           \/ UpdRollbackMarkCreated(t, p) \/ UpdRollbackOutdateCreated(t, p)
+                                           \/ UpdRollbackRestore(t, p) \/ UpdRollbackUnlock(t, p)))
+KeeperFaultNext ==
+  \/ KeeperSessionExpire
+  \/ (\E k \in Sessions, b \in BOOLEAN : CommitKeeperFault(k, b))
+  \/ (\E i \in Tasks, b \in BOOLEAN : MergeCommitKeeperFault(i, b))
 CleanupNext == \E p \in Parts : CleanupDecide(p) \/ CleanupGrab(p) \/ CleanupAbandon(p)
                                  \/ CleanupValidate(p) \/ CleanupDeleteOk(p) \/ CleanupDeleteFail(p)
 TaskNext == \E i \in Tasks :
   \/ MergeBegin(i) \/ MergeSelect(i) \/ MergeWrite(i) \/ MergeRename(i)
   \/ MergePublishStart(i) \/ MergePublishFlip(i)
   \/ MergeCommitBefore(i) \/ MergeCommitCreateCSN(i) \/ MergeCommitReadOnly(i)
-  \/ MergeCommitFlip(i) \/ MergeCommitFinalize(i)
+  \/ MergeCommitFlip(i) \/ MergeCommitFinalize(i) \/ MergeCommitUnknown(i)
   \/ MergeFail(i) \/ MergeStmtRollbackDrop(i) \/ MergeUnwind(i)
   \/ (\E q \in Parts : MergePublishEnrol(i, q) \/ MergePublishStore(i, q) \/ MergeStmtRollbackMark(i, q)
                        \/ MergeCommitStoreCreation(i, q) \/ MergeCommitStoreRemoval(i, q))
@@ -58,7 +69,7 @@ RestartNext == RestartLoadLog \/ RestartTableStart \/ RestartTablePublished \/ R
                \/ (\E m \in Mutations : RestartLoadMutation(m))
 
 AllNext == ClientNext \/ StoreNext \/ UpdaterNext \/ UpdaterGCNext \/ UpdaterUnknownNext \/ CleanupNext
-           \/ TaskNext \/ MutationNext \/ NtNext \/ FaultNext \/ RestartNext
+           \/ TaskNext \/ MutationNext \/ NtNext \/ FaultNext \/ RestartNext \/ KeeperFaultNext
 Spec == Init /\ [][AllNext]_vars
 
 \* the Base scenario (spec matrix): client, store, updater load/publish, noexcept termination
@@ -72,6 +83,10 @@ SetSnapshotSpec == Init /\ [][SetSnapshotNext]_vars
 \* the Merge scenario (spec matrix): Base + Merge* + Cleanup* + Updater+GC
 MergeNext == BaseNext \/ TaskNext \/ CleanupNext \/ UpdaterGCNext
 MergeSpec == Init /\ [][MergeNext]_vars
+
+\* the Keeper scenario (spec matrix): Base + Merge* + Updater+GC + Updater+Unknown, Keeper faults
+KeeperNext == BaseNext \/ TaskNext \/ UpdaterGCNext \/ UpdaterUnknownNext \/ KeeperFaultNext
+KeeperSpec == Init /\ [][KeeperNext]_vars
 
 \* the NonTxn scenario (spec matrix): Base + NtInsert, NtBatch*, NtDropCover + Cleanup*. It is kept for the
 \* modules that produce findings F4 to F7, which need both halves in one behaviour; no exhaustive run of it

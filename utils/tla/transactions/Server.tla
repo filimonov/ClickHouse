@@ -120,6 +120,14 @@ SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_
               \* which Actors, the set of the two clients' shapes, does not contain.
               parts_lock : FrameOwners \cup {NoActor}, nt_batch : BatchType,
               updater_pc : {"Idle", "PublishSnapshot", "SetTail", "Delete", "Swap", "Finalize"},
+              \* loadNewEntries has completed since the last unknown-state swap. The updating thread runs
+              \* `loadNewEntries(); removeOldEntries(); tryFinalizeUnknownStateTransactions();` as one loop
+              \* body (src/Interpreters/TransactionLog.cpp:252-254), and that ordering is the whole of what
+              \* the two-list scheme buys: a transaction appended to unknown_state_list waits for an iteration
+              \* whose load ran after the append before it can be resolved. The three passes are separate
+              \* actions here, so without this bit the model can swap twice with no load between and roll a
+              \* committed transaction back.
+              load_since_swap : BOOLEAN,
               \* cleanup_part is the part MergeTreeData::grabOldParts has grabbed; "None" while the cleanup
               \* thread holds nothing. cleanup_pc is where that one grabbed part is in
               \* clearOldPartsFromFilesystem: "Validate" before assertHasValidVersionMetadata, "Delete" after it.
@@ -127,7 +135,8 @@ SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_
 SysInit == [server |-> "TableUp", completely_started |-> TRUE, async_loading_jobs |-> 0,
             loaded_parts |-> Parts, loaded_mutations |-> Mutations, restarts |-> 0, keeper_faults |-> 0,
             disk_faults |-> 0, query_faults |-> 0, merges_blocker |-> 0, parts_lock |-> NoActor, nt_batch |-> NoBatchRec,
-            updater_pc |-> "Idle", cleanup_pc |-> "Idle", cleanup_part |-> "None"]
+            updater_pc |-> "Idle", load_since_swap |-> FALSE,
+            cleanup_pc |-> "Idle", cleanup_part |-> "None"]
 
 ServerTypeOK ==
   /\ txn \in [Tids -> TxnRecord]
@@ -628,13 +637,92 @@ CommitFinalize(k) ==
 CommitAck(k) ==
   /\ LET t == Cur(k) IN
      /\ client[k].pc = "Commit" /\ txn[t].state = "Committed" /\ txn[t].pc = "Idle"
+     \* A session parked in waitStateChange returns through CommitUnknownResolved, which is the other half of
+     \* executeCommit. Without this the two actions model one return and every unknown resolution is explored
+     \* twice. Only CommitUnknown sets "ForState", so no scenario without a Keeper fault is affected.
+     /\ client[k].waiting /= "ForState"
      /\ (client[k].waiting = "ForLoad" => tlog.latest_snapshot >= txn[t].csn)      \* waitForCSNLoaded
      /\ client' = [client EXCEPT ![k].outcome = "Acked", ![k].outcome_tid = t, ![k].current = EmptyTID,
                                  ![k].waiting = "None", ![k].pc = "Idle"]
      /\ txn' = [txn EXCEPT ![t].holders = @ \ {Sess(k)}]
      /\ h' = [h EXCEPT !.outcome[t] = "Acked"]
   /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, stmt, mut, task>>
-CommitUnknown(k) == FALSE
+\* The failing outcomes of the sequential create. `lost` is the spec's LostAfter: the znode is there and the
+\* response is not, which is what the fail point transaction_force_unknown_state_after_commit
+\* (src/Interpreters/TransactionLog.cpp:450) injects and what the two-list scheme in
+\* tryFinalizeUnknownStateTransactions exists to survive. ~lost is FailBefore: nothing was appended. Both take
+\* the catch at :459, so both park the transaction at CommitUnknown; the catch and the fault are two actions
+\* because after a LostAfter the znode exists and the updating thread may load it before the catch has run.
+\* An expired session is a hardware error by itself and does not consume the fault budget again; with the
+\* session expired the request cannot have reached Keeper, so only FailBefore is possible.
+CommitKeeperFaultEffect(t, lost) ==
+  /\ (zk.session = "Expired" \/ sys.keeper_faults < KEEPER_FAULTS_MAX)
+  /\ (lost => zk.session = "Alive" /\ KeeperCanAppend)
+  /\ sys' = [sys EXCEPT !.keeper_faults = IF zk.session = "Expired" THEN @ ELSE @ + 1]
+  /\ IF lost
+     THEN /\ zk' = KeeperAppended(t)
+          /\ h' = [h EXCEPT !.committed = @ \cup {t}, !.csn[t] = KeeperNextCsn,
+                            !.removers = [p \in Parts |-> IF p \in h.removing[t] THEN @[p] \cup {t} ELSE @[p]]]
+     ELSE /\ UNCHANGED <<zk, h>>
+  /\ txn' = [txn EXCEPT ![t].pc = "CommitUnknown"]
+
+CommitKeeperFault(k, lost) ==
+  /\ LET t == Cur(k) IN
+     /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitCreateCSN"
+     /\ CommitKeeperFaultEffect(t, lost)
+  /\ UNCHANGED <<disk, mdisk, part, tlog, client, stmt, mut, task>>
+
+\* The Keeper session expiring on its own, which is the other producer of the catch block. It shares the fault
+\* budget with the commit fault, so at KEEPER_FAULTS_MAX = 1 a behaviour has one or the other.
+KeeperSessionExpire ==
+  /\ sys.keeper_faults < KEEPER_FAULTS_MAX /\ zk.session = "Alive"
+  /\ zk' = KeeperExpired
+  /\ sys' = [sys EXCEPT !.keeper_faults = @ + 1]
+  /\ UNCHANGED <<disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+
+\* The catch at TransactionLog.cpp:459: under running_list_mutex the transaction and its state guard go into
+\* unknown_state_list (:467-468); then either UNKNOWN_STATUS_OF_TRANSACTION is thrown (:472) or, with
+\* throw_on_unknown_status = false, CommittingCSN is returned (:477). The transaction keeps state Committing
+\* and csn CommittingCSN, and csn_notified stays FALSE, which is what blocks the WAIT_UNKNOWN client.
+\* Upd joins holders because the list holds a MergeTreeTransactionPtr; with WAIT_UNKNOWN the session keeps its
+\* own holder and blocks, otherwise it is told UnknownStatus and detaches.
+CommitUnknown(k) ==
+  /\ LET t == Cur(k) IN
+     /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitUnknown"
+     /\ tlog' = [tlog EXCEPT !.unknown_state_list = @ \cup {t}]
+     /\ txn' = [txn EXCEPT ![t].pc = "Idle",
+                            ![t].holders = IF WAIT_MODE = "WAIT_UNKNOWN" THEN @ \cup {Upd}
+                                           ELSE (@ \cup {Upd}) \ {Sess(k)}]
+     /\ IF WAIT_MODE = "WAIT_UNKNOWN"
+        THEN /\ client' = [client EXCEPT ![k].waiting = "ForState"]
+             /\ UNCHANGED h
+        ELSE /\ client' = [client EXCEPT ![k].outcome = "UnknownStatus", ![k].outcome_tid = t,
+                                         ![k].current = EmptyTID, ![k].pc = "Idle", ![k].waiting = "None"]
+             /\ h' = [h EXCEPT !.outcome[t] = "UnknownStatus"]
+  /\ UNCHANGED <<zk, disk, mdisk, part, sys, stmt, mut, task>>
+
+\* waitStateChange returned (WAIT_UNKNOWN only): the updater has finalized the transaction or rolled it back
+\* and notified. executeCommit then returns normally, or the query ends with "Transaction was rolled back",
+\* which is the CommitError the spec's row names for this path.
+\* CommitAck's waitForCSNLoaded guard is deliberately not applied here: executeCommit with WAIT_UNKNOWN returns
+\* once the state changed, and the CSN it would wait for is the one the updater has just loaded by construction.
+\* Acked is delivered only for state = "Committed", which UpdCommitFlip sets after every per-part store, so
+\* AckedWriteIsDurable's antecedent cannot be reached before those stores.
+CommitUnknownResolved(k) ==
+  /\ WAIT_MODE = "WAIT_UNKNOWN"
+  /\ LET t == Cur(k) IN
+     /\ client[k].pc = "Commit" /\ client[k].waiting = "ForState"
+     /\ txn[t].csn_notified /\ txn[t].state \in {"Committed", "RolledBack"}
+     /\ txn' = [txn EXCEPT ![t].holders = @ \ {Sess(k)}]
+     /\ \/ /\ txn[t].state = "Committed"
+           /\ client' = [client EXCEPT ![k].outcome = "Acked", ![k].outcome_tid = t, ![k].current = EmptyTID,
+                                       ![k].waiting = "None", ![k].pc = "Idle"]
+           /\ h' = [h EXCEPT !.outcome[t] = "Acked"]
+        \/ /\ txn[t].state = "RolledBack"
+           /\ client' = [client EXCEPT ![k].outcome = "Error", ![k].outcome_tid = t, ![k].current = EmptyTID,
+                                       ![k].waiting = "None", ![k].pc = "Idle", ![k].last_error = "INVALID_TRANSACTION"]
+           /\ h' = [h EXCEPT !.outcome[t] = "Error"]
+  /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, stmt, mut, task>>
 
 \* ============================================================ client: refuse, fail, rollback, kill
 \* a frame owned by the session ended in Error: the query fails with that error
@@ -826,8 +914,19 @@ UpdLoadEntriesMap ==
      /\ tlog' = [tlog EXCEPT !.tid_to_csn = [t \in Tids |-> IF \E c \in new : zk.log[c] = t THEN CHOOSE c \in new : zk.log[c] = t ELSE @[t]],
                              !.last_loaded_entry = Max(new)]
      /\ h' = [h EXCEPT !.loaded = [t \in Tids |-> @[t] \/ \E c \in new : zk.log[c] = t]]
-     /\ sys' = [sys EXCEPT !.updater_pc = "PublishSnapshot"]
+     /\ sys' = [sys EXCEPT !.updater_pc = "PublishSnapshot", !.load_since_swap = TRUE]
   /\ UNCHANGED <<zk, disk, mdisk, part, txn, client, stmt, mut, task>>
+\* loadNewEntries with nothing new: the getChildren read happens and loadEntries is called over an empty range
+\* (src/Interpreters/TransactionLog.cpp:277-278), so the only thing it leaves behind is the fact that the
+\* iteration's load has run. It is an action of the unknown-state group alone, because that is the only group
+\* whose steps depend on the iteration boundary, and adding it to the plain updater group would change every
+\* scenario that runs the updating thread without one.
+UpdLoadNothing ==
+  /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
+  /\ { c \in DOMAIN zk.log : c > tlog.last_loaded_entry } = {}
+  /\ ~sys.load_since_swap
+  /\ sys' = [sys EXCEPT !.load_since_swap = TRUE]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
 UpdPublishSnapshot ==
   /\ sys.updater_pc = "PublishSnapshot"
   /\ tlog' = [tlog EXCEPT !.latest_snapshot = tlog.last_loaded_entry]
@@ -885,6 +984,85 @@ UpdRemoveOldEntriesDone ==
   /\ sys.updater_pc = "Delete"
   /\ sys' = [sys EXCEPT !.updater_pc = "Idle"]
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+
+\* ============================================================ the unknown-state pass
+\* runUpdatingThread, the branch taken when the session has expired (src/Interpreters/TransactionLog.cpp:238-250): a new session and a
+\* sync. The model has one Keeper, so sync is a no-op and only the session state moves.
+UpdReconnect ==
+  /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
+  /\ zk.session = "Expired"
+  /\ zk' = KeeperRenewed
+  /\ UNCHANGED <<disk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
+
+\* tryFinalizeUnknownStateTransactions, the two swaps (src/Interpreters/TransactionLog.cpp:374-375). The local
+\* list takes the PREVIOUS iteration's unknown_state_list_loaded, and unknown_state_list_loaded takes the
+\* current unknown_state_list, which is what makes a transaction wait one whole iteration before it can be
+\* resolved: by then every entry that existed when it was appended has been loaded. Collapsing the two lists is
+\* the witness of UnknownResolvesByLog.
+UpdSwapUnknownLists ==
+  /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
+  /\ tlog.unknown_ready = {} /\ tlog.finalizing = EmptyTID
+  /\ (tlog.unknown_state_list \cup tlog.unknown_state_list_loaded) /= {}
+  \* the iteration's loadNewEntries ran before this swap, which is what makes the second list a delay of one
+  \* whole iteration rather than of one action
+  /\ sys.load_since_swap
+  /\ IF Witness("UnknownResolvesByLog")
+     THEN tlog' = [tlog EXCEPT !.unknown_ready = tlog.unknown_state_list \cup tlog.unknown_state_list_loaded,
+                               !.unknown_state_list_loaded = {}, !.unknown_state_list = {}]
+     ELSE tlog' = [tlog EXCEPT !.unknown_ready = tlog.unknown_state_list_loaded,
+                               !.unknown_state_list_loaded = tlog.unknown_state_list,
+                               !.unknown_state_list = {}]
+  /\ sys' = [sys EXCEPT !.updater_pc = "Finalize", !.load_since_swap = FALSE]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, txn, client, stmt, mut, task>>
+
+\* One transaction of the local list (TransactionLog.cpp:378-391). getCSN decides. A CSN means
+\* finalizeCommittedTransaction, which runs afterCommit ON THE UPDATING THREAD, so the per-part CSN stores that
+\* follow are frames owned by Upd. No CSN means assertTIDIsNotOutdated (:387), then `state_guard = {}` (:388),
+\* which CASes csn from CommittingCSN back to UnknownCSN and notifies, and then rollbackTransaction (:389).
+\* The model writes RolledBackCSN with csn_notified in one step: the reset and the CAS that follows it are two
+\* writes of the same atomic, and waitStateChange is gated on the notification that both carry, so no actor can
+\* observe the intermediate value.
+UpdFinalizeUnknown(t) ==
+  /\ sys.updater_pc = "Finalize" /\ tlog.finalizing = EmptyTID
+  /\ t \in tlog.unknown_ready
+  /\ \/ /\ LookupCsn(t) /= UnknownCSN
+        /\ tlog' = [tlog EXCEPT !.unknown_ready = @ \ {t}, !.finalizing = t]
+        /\ txn' = [txn EXCEPT ![t].pc = FirstCommitPc(t), ![t].work = FirstCommitWork(t)]
+        /\ h' = [h EXCEPT !.unknown[t] = "Committed"]
+     \/ /\ LookupCsn(t) = UnknownCSN
+        /\ tlog' = [tlog EXCEPT !.unknown_ready = @ \ {t}, !.finalizing = t]
+        /\ txn' = [txn EXCEPT ![t].state = "RolledBack", ![t].csn = RolledBackCSN, ![t].csn_notified = TRUE,
+                               ![t].pc = "RollbackCopyLists", ![t].rb_driver = Upd]
+        /\ h' = [h EXCEPT !.unknown[t] = "RolledBack", !.snapshot[t] = txn[t].snapshot]
+  /\ UNCHANGED <<zk, disk, mdisk, part, sys, client, stmt, mut, task>>
+
+\* the pass ends and the thread leaves tryFinalizeUnknownStateTransactions
+UpdFinalizeDone ==
+  /\ sys.updater_pc = "Finalize" /\ tlog.unknown_ready = {} /\ tlog.finalizing = EmptyTID
+  /\ sys' = [sys EXCEPT !.updater_pc = "Idle"]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, client, stmt, mut, task>>
+
+\* afterCommit and the rest of finalizeCommittedTransaction, run by the updating thread on the transaction it
+\* is finalizing. Each is the actor-generic body the commit machine already has, with Upd for the actor.
+\* UpdCommitFinalize needs no sys': CommitFinalizeEffect clears tlog.finalizing, and UpdFinalizeDone returns the
+\* thread to Idle once the list is empty. The Effects(t) branch that CommitReadOnly covers for a session cannot
+\* arise here, because a read-only transaction never reaches CommitCreateCSN and so never enters the list.
+UpdCommitStore(t, p, op, phase) ==
+  /\ tlog.finalizing = t
+  /\ CommitStoreEffect(Upd, t, p, op, phase)
+  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
+UpdCommitStoreCreation(t, p) == UpdCommitStore(t, p, "CreationCSN", "CommitStoreCreation")
+UpdCommitStoreRemoval(t, p) == UpdCommitStore(t, p, "RemovalCSN", "CommitStoreRemoval")
+UpdCommitFlip(t) ==
+  /\ tlog.finalizing = t /\ Effects(t) /\ txn[t].state = "Committing"
+  /\ (txn[t].pc = "CommitFlip"
+      \/ (Witness("FlipAfterStores") /\ txn[t].pc \in {"CommitStoreCreation", "CommitStoreRemoval"}))
+  /\ CommitFlipEffect(t)
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, client, stmt, mut, task>>
+UpdCommitFinalize(t) ==
+  /\ tlog.finalizing = t /\ txn[t].pc = "CommitFinalize"
+  /\ CommitFinalizeEffect(Upd, t)
+  /\ UNCHANGED <<zk, disk, mdisk, h, sys, client, stmt, mut, task>>
 
 \* ============================================================ store steps as root actions
 StoreRead(p, o) == /\ Up /\ HasFrame(p, o) /\ StoreReadStep(p, o)
@@ -1161,6 +1339,26 @@ MergeCommitFinalize(i) ==
   /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit" /\ txn[task[i].txn].pc = "CommitFinalize"
   /\ CommitFinalizeEffect(Tsk(i), task[i].txn)
   /\ task' = [task EXCEPT ![i] = IdleTask]
+  /\ UNCHANGED <<zk, disk, mdisk, h, sys, client, stmt, mut>>
+
+\* The two failing outcomes of the merge's own commit request; the effect is the session's.
+MergeCommitKeeperFault(i, lost) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit"
+  /\ txn[task[i].txn].pc = "CommitCreateCSN"
+  /\ CommitKeeperFaultEffect(task[i].txn, lost)
+  /\ UNCHANGED <<disk, mdisk, part, tlog, client, stmt, mut, task>>
+
+\* MergePlainMergeTreeTask.cpp:195 commits with throw_on_unknown_status = false, so the task simply continues:
+\* the tagger releases the reservation and the source pins, the holder is destroyed, and the transaction stays
+\* in the list with Upd as its only holder. The task does NOT run CommitFinalizeEffect: the transaction is still
+\* in running_list and still holds its snapshot, which is the whole point of the unknown state.
+MergeCommitUnknown(i) ==
+  /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Commit" /\ txn[task[i].txn].pc = "CommitUnknown"
+  /\ LET t == task[i].txn IN
+     /\ tlog' = [tlog EXCEPT !.unknown_state_list = @ \cup {t}]
+     /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].holders = (@ \cup {Upd}) \ {Tsk(i)}]
+     /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {Tsk(i)}]]
+     /\ task' = [task EXCEPT ![i] = IdleTask]
   /\ UNCHANGED <<zk, disk, mdisk, h, sys, client, stmt, mut>>
 
 \* An exception on the merge's own thread. MergePlainMergeTreeTask::executeStep rethrows (:70-74) and the task
@@ -1459,9 +1657,6 @@ NtDropUnwindDrop(k) ==
   /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, sys, mut, task>>
 
 \* ============================================================ stubs for later plans
-UpdReconnect == FALSE
-UpdSwapUnknownLists == FALSE
-UpdFinalizeUnknown(t) == FALSE
 MutPrepareWrite(k, m) == FALSE
 MutPrepareAttach(k, m) == FALSE
 MutRegister(k, m) == FALSE

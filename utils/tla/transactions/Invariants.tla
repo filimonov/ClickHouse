@@ -179,6 +179,16 @@ NoOutdatedLookupStep == \A t \in Tids : UpdFinalizeUnknown(t) =>
   (tlog.tid_to_csn[t] /= UnknownCSN \/ tlog.tail_ptr <= tlog.tid_start[t])
 NoOutdatedLookup == [][NoOutdatedLookupStep]_vars
 
+\* spec #invariants-durability, UnknownResolvesByLog. Stated on the step that decides: the decision the pass
+\* takes for t agrees with whether t is in h.committed, which is the fact the two-list scheme buys. It is the
+\* property the comment at TransactionLog.cpp:360-372 argues for in prose.
+\* A red here has two possible causes and they are different findings: the swap resolved a transaction whose
+\* entry was not yet loaded (the two-list scheme), or the truncation pass removed the entry of a committed one
+\* before the pass read it, which NoOutdatedLookup also reports. Read the trace for which before classifying.
+UnknownResolvesByLogStep == \A t \in Tids :
+  UpdFinalizeUnknown(t) => ((h'.unknown[t] = "Committed") <=> (t \in h.committed))
+UnknownResolvesByLog == [][UnknownResolvesByLogStep]_vars
+
 \* spec #invariants-isolation, NoLostVisibleData. The fragments visible to a running transaction at its own
 \* snapshot never shrink, except by its own drops; SetSnapshot recaptures h.content, so a transaction that
 \* deliberately reads an older snapshot is judged against that snapshot's content, not against its first one.

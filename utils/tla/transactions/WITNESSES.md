@@ -670,6 +670,63 @@ make the part involved is the same store that writes the record to disk. `Crash`
 the two, which is why the deferred table sends the row to plan 3 and the `NonTxnCrash` scenario. The green row
 in the drop half is that argument measured, not a witness.
 
+## Witnesses of the `Keeper` scenario {#witnesses-keeper}
+
+`Keeper` is `Base` plus the merge task, the updater's truncation pass, the updater's unknown-state pass and the
+two Keeper faults. `MC_Keeper` is one session, `Parts = {P1, P2, M12}`, `Tasks = {i1}`, `TID_MAX = 3`,
+`CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, `WAIT_MODE = "WAIT"`, `SYMMETRY SymSessions`, `VIEW KeeperView`. It
+finishes exhaustively at the matrix bounds, so no bound-contract debt is incurred for it.
+`MC_KeeperUnknownWait` is the same module with `WAIT_MODE = "WAIT_UNKNOWN"`, which is the configuration in
+which the session blocks in `waitStateChange` rather than being told `UNKNOWN_STATUS_OF_TRANSACTION`; it does
+not finish at the matrix bounds and is committed at `TID_MAX = 2`, `CSN_MAX = 35`, which is debt `B8`.
+`MC_KeeperWitness` is `MC_Keeper` at two sessions, for `witness.sh` only.
+
+The two properties this scenario adds:
+
+| Property | Witness name | The model change | Scenario | Result | States | Time |
+|---|---|---|---|---|---|---|
+| `UnknownResolvesByLog` | `UnknownResolvesByLog` | `UpdSwapUnknownLists` collapses the two lists into one, so a transaction can be resolved in the same pass that received it | `Keeper` | RED | 17,718 | 2 s |
+| `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperUnknownWait` | RED | 5,626 | 1 s |
+| `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperWitness` | RED | 279,143 | 4 s |
+| `NoOutdatedLookup` | `NoOutdatedLookup` | `UpdRemoveOldEntriesSetTail` publishes `tlog.latest_snapshot` instead of `RetentionHorizon`, so the tail passes the start CSN of a transaction still in the unknown-state list | `Keeper` | RED | 545,592 | 5 s |
+| `NoOutdatedLookup` | `NoOutdatedLookup` | the same change | `KeeperUnknownWait` | RED | 2,496,715 | 18 s |
+
+`NoOutdatedLookup` is the row that retires the vacuity half of spec defect `S6`. Both call sites of
+`TransactionLog::assertTIDIsNotOutdated` were unreachable in every scenario before this one, so the property
+was green for want of a step to judge; `UpdFinalizeUnknown` is that step, the property is on `MC_Keeper.cfg`'s
+roster, and its witness fires. What keeps it green on the baseline is the retention horizon: a transaction in
+the unknown-state list is still in `running_list`, so `RetentionHorizon` is at or below its start CSN and
+`UpdRemoveOldEntriesDelete`'s `tlog.tid_start[t] < tlog.tail_ptr` can never hold for it. The witness removes
+exactly that and the property goes red.
+
+`UnknownResolvesByLog` is the property the comment at `TransactionLog.cpp:360-372` argues for in prose, and its
+witness is the collapse that comment forbids. It is what caught model defect `M26`: on the first exhaustive run
+of this scenario the property was red on the baseline, at 12,081 distinct states, because the model's three
+updater passes were unordered and could swap twice with no `loadNewEntries` between. That is not a property of
+the server, and `FINDINGS.md` carries it as a model defect with the correction. After the correction the
+witness still fires, which is the check that the correction did not simply make the property true.
+
+`AckedWriteIsDurable` has no witness here. Its row in the deferred table above names scenario `Crash` and plan
+3, task 2 (the layered disk, `Fsync`, `Crash`, `ProcessDown`, the restart loader), because the change it
+describes moves `CommitAck` before `CommitCreateCSN` and allows a fault after it, and no module defines a
+`Witness("AckedWriteIsDurable")` hook. What this scenario does check is the property itself, on
+`MC_Keeper.cfg`'s and `MC_KeeperUnknownWait.cfg`'s rosters, green in both: the unknown-state path never
+acknowledges a write before the commit point, because `CommitUnknownResolved` delivers `Acked` only for
+`state = "Committed"`, which `UpdCommitFlip` sets after every per-part store.
+
+Three properties on the roster are vacuous here and are named rather than left to be discovered.
+`KeeperNext` is `BaseNext \/ TaskNext \/ UpdaterGCNext \/ UpdaterUnknownNext \/ KeeperFaultNext`, which does not
+include the cleanup group, while the roster is `MC_Merge`'s. `NoPrematureDelete` and `PinnedNotDeleted` are
+stated on `CleanupGrab` and `NoFalseCorruption` on `CleanupDeleteFail`, and no step of either is reachable, so
+all three are green for want of a step to judge. They are kept on the roster so that the two configurations
+differ from `MC_Merge`'s in the scenario and not in what is checked; each is red in `Merge`, which does enable
+the group. Removing them, or adding the cleanup group to the scenario, is a decision for plan 3, task 5 (budget,
+sweep and debts).
+
+The rest of `MC_Keeper.cfg`'s roster is not swept in this task. Its other properties are `Merge`'s, its
+witnesses are the twenty-four rows of the `Merge` sweep above plus the two here, and a sweep of a
+30-million-state scenario is its own piece of work; it is placed in the same task.
+
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
 Both on the tree this file is committed with, at the bounds above.
@@ -757,6 +814,18 @@ After the cleanup split, which is the re-run this file's opening records, on the
 | `SetSnapshotF2` | **red on `NoPrematureDelete`**, as expected | a first-violation count | 3 s |
 | `SetSnapshotF2Fixed` | green | 411,641 | 4 s |
 | `Merge` | green at one session | 6,124,691 | 56 s |
+
+
+After the Keeper-faults work, which changed `Server.tla`, `Invariants.tla` and `MergeTreeTransactions.tla` and
+added the three `MC_Keeper*` modules:
+
+| Scenario | Result | Distinct states | Time |
+|---|---|---|---|
+| `BaseSmall` | green | 47,381 | 1 s |
+| `Base` | green | 26,839,116 | 4 min 01 s |
+| `Merge` | green at one session | 6,124,691 | 56 s |
+| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 30,544,101 | 5 min 15 s |
+| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,323,386 | 12 min 28 s |
 | `NonTxnDrop` | green at `TID_MAX = 1` | 1,246,158 | 12 s |
 | `NonTxnDropTwo` | green at `TID_MAX = 2`, no cleanup group | 47,958,902 | 7 min 29 s |
 | `NonTxnInsert` | green | 16,969,548 | 2 min 42 s |

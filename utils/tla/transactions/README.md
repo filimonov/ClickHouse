@@ -74,7 +74,10 @@ bounds, for `witness.sh` only; an exhaustive run there does not finish), and the
 `SetSnapshotF2Fixed` (one session, one part, three transactions and the snapshot target 34, the configuration
 that reaches finding F2; the first is expected red on `NoPrematureDelete` and the second is green), `Merge`
 (one session, `P1`, `P2` and the covering `M12`, one background task, plus the cleanup group and the updater's
-GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only).
+GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only), `Keeper` (`Merge` without the
+cleanup group, plus the updater's unknown-state pass and the two Keeper faults, at the matrix bounds),
+`KeeperUnknownWait` (the same with `WAIT_MODE = "WAIT_UNKNOWN"`, one transaction lower because it does not
+finish at the matrix bounds) and `KeeperWitness` (the same at two sessions, for `witness.sh` only).
 
 Five more modules belong to the `SetSnapshot` family and carry the two reserved snapshots
 `SET TRANSACTION SNAPSHOT` accepts beside an ordinary CSN, `NonTransactionalCSN = 1` and
@@ -416,6 +419,18 @@ either is negligible.
 | `NonTxnInsert` | 2026-09-21 | the budget commit | 15,788,049 | 2 min 35 s | green under `OBSOLETE_IS_ROLLED_BACK = TRUE`, finding `F6`'s unmerged fix; 15,787,838 and 15,787,889 on the two earlier runs, which is the counting noise |
 | `Base` | 2026-09-21 | the budget commit | 26,839,128 | 3 min 54 s | green at the matrix bounds; 26,839,136 on the previous commit |
 
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
+| `BaseSmall` | 2026-09-21 | the Keeper-faults commit | 47,381 | 1 s | green, unchanged |
+| `Base` | 2026-09-21 | the Keeper-faults commit | 26,839,116 | 4 min 01 s | green at the matrix bounds; 26,839,061 on the base commit, which is the multi-worker counting noise |
+| `Merge` | 2026-09-21 | the Keeper-faults commit | 6,124,691 | 56 s | green at one session, unchanged |
+| `Keeper` | 2026-09-21 | the Keeper-faults commit | 12,081, a first-violation count | 1 s | **red on `UnknownResolvesByLog` on the baseline**, which is model defect `M26`, the updating thread's unordered passes |
+| `Keeper` | 2026-09-21 | the Keeper-faults commit | 30,544,101 | 5 min 15 s | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36`, after `M26`; the queue peaked near 0.8M and drained |
+| `KeeperUnknownWait` | 2026-09-21 | the Keeper-faults commit | 60,249,422 after 6 min, queue 9.18M and growing | killed | `WAIT_MODE = "WAIT_UNKNOWN"` at the matrix bounds does not finish |
+| `KeeperUnknownWait` | 2026-09-21 | the Keeper-faults commit | 71,323,386 | 12 min 28 s | green at `TID_MAX = 2`, `CSN_MAX = 35`, with the merge task kept, which is debt `B8`; dropping the merge instead buys 1.4% |
+| `Keeper` and `KeeperUnknownWait` witnesses, 5 rows | 2026-09-21 | the Keeper-faults commit | 2,496,715 for the largest | 30 s in total | every row red, including both configurations of each new property and one row on `MC_KeeperWitness` |
+| witness `RollbackRestores` in `Base` | 2026-09-21 | the Keeper-faults commit | 689,452 | 7 s | red, as required, after the rollback machine took its driver as an argument; 745,525 on the base commit |
+
 Every `NonTxn*` row of these tables, the witness sweeps included, was measured with
 `OBSOLETE_IS_ROLLED_BACK = TRUE`, and the two drop configurations without `ActiveSetShape`. Section 2 says what
 that costs; it is repeated here because a result cell is what a reader quotes.
@@ -433,6 +448,8 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 | `SetSnapshotF2` | nothing: it stops at the first violation, which is finding `F2` | everything else; it is a reproducer, not a check | `FINDINGS.md`, finding `F2` |
 | `SetSnapshotF2Fixed` | one session, one part, `TID_MAX = 3`, 309,987 states, over five properties | the properties outside those four; the truncation tail, which the model publishes in one step, so the green verifies the refusal and not the publication; and any window between the revalidation and the state change, which are one action here | `FINDINGS.md`, finding `F2` and model defects `M18` and `M19` |
 | `Merge` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, 6,124,691 states, the whole roster | the second session: an exhaustive run at two does not finish, two witnesses fire only in `MergeWitness`, and `Assert_validateInfo_removal` fires in neither | `FINDINGS.md`, `B3`; `STATE_SPACE.md`, the `Merge` section |
+| `Keeper` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, 30,544,101 states, `Merge`'s roster plus `UnknownResolvesByLog` and `NoOutdatedLookup` | the second session and the second fault; the roster's witness sweep, which is `Merge`'s twenty-four rows over a scenario six times its size | `STATE_SPACE.md`, the `Keeper` section; `WITNESSES.md`, the `Keeper` witnesses |
+| `KeeperUnknownWait` | one session, `TID_MAX = 2`, `CSN_MAX = 35`, 71,323,386 states, the same roster under `WAIT_MODE = "WAIT_UNKNOWN"` | the third transaction, and with it the four witnesses that need one | `FINDINGS.md`, `B8`; `STATE_SPACE.md`, the `Keeper` section |
 | `NonTxnDrop` | one transaction with the cleanup group, `TID_MAX = 1`, 1,246,158 states | the second transaction; `ActiveSetShape`, which finding `F5` falsifies; the four snapshot-isolation rows of spec defect `S13`; and `F6`'s fix is assumed rather than tested | `FINDINGS.md`, `B4`, `M15`, `S13`, findings `F5` and `F6` |
 | `NonTxnDropTwo` | two transactions without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 47,958,711 states, unchanged by the cleanup split | the cleanup group, so no finishing configuration checks the removal batch beside two transactions and cleanup at once, which is the open bound of `M15`; `SingleRemover` unfired at 65,525,357; the same properties as the row above | `FINDINGS.md`, `B4` and `M15` |
 | `NonTxnInsert` | two transactions with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 16,969,548 states | the removal batch; `ActiveSetShape` is on the roster but vacuous, because part `E` is never created here; the `S13` rows; `F6`'s fix is assumed | `FINDINGS.md`, `B4` and `S13`; `WITNESSES.md`, the `NonTxn` section |
