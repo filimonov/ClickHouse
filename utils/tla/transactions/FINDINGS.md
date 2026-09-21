@@ -128,7 +128,7 @@ qualifier `!tid.isNonTransactional()`, `VersionMetadata::lockRemovalTID` should 
 when `creation_tid != remover_tid && !isCreationCommitted()`. `SERIALIZATION_ERROR` is retryable and is the
 error its two neighbouring refusals already use. `VersionMetadata::isCreationCommitted` (`:150-159`) is
 already in the file and is already read for this purpose on the non-transactional path, through
-`isCreatedByUncommittedTransaction` and the refusal inside `setAndStoreRemovalTID` (`:178-183`) whose comment
+`isCreatedByUncommittedTransaction` and the refusal inside `setAndStoreRemovalTID` (`:179-184`) whose comment
 gives the same reason: a record `validateInfo` rejects and that cannot be repaired on restart. It answers
 false for both shapes above, a creation still in flight and a creation already rolled back, and covering both
 is what makes the refusal more than the `:7044` skip repeated one frame down: a check written over

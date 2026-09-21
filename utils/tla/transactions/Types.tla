@@ -77,7 +77,7 @@ ASSUME OBSOLETE_IS_ROLLED_BACK \in BOOLEAN
 \* unqualified refusal would throw during part loading. The predicate is
 \* VersionMetadata::isCreationCommitted (:150-159), which the file already has and today reads only on the
 \* non-transactional path, through isCreatedByUncommittedTransaction and the refusal inside
-\* setAndStoreRemovalTID (:178-183). It covers both shapes of the finding, a creation still in flight and a
+\* setAndStoreRemovalTID (:179-184). It covers both shapes of the finding, a creation still in flight and a
 \* creation already rolled back.
 ASSUME REMOVAL_REFUSES_UNCOMMITTED_CREATION \in BOOLEAN
 
