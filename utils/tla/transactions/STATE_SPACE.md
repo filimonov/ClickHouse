@@ -901,6 +901,7 @@ they enable but read by none, so their projections merge the states that differ 
 | Configuration | Result | Distinct states | Time |
 |---|---|---|---|
 | `Crash`, matrix bounds, `FSYNC_PART_DIRECTORY = TRUE`, **committed** | **green** | 47,838,278 | 13 min 27 s |
+| the same, re-taken after the witness hook landed | **green**, identical to the state and to the generated count | 47,838,278 | 13 min 13 s |
 | the same at `TID_MAX = 2` | green | 3,198,920 | 49 s |
 | `CrashF10`, `TID_MAX = 2`, `FSYNC_PART_DIRECTORY = FALSE`, **committed** | **red on `NoPrematureDelete`**, as it is expected to be | 42,035 | 2 s |
 | witness `AckedWriteIsDurable` in `Crash` | red, as required | 2,820 | 1 s |

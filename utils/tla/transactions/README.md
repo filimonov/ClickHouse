@@ -477,6 +477,7 @@ either is negligible.
 | `Merge` | 2026-09-21 | the layered-disk commit | 6,124,691 | 59 s | green, unchanged to the state |
 | `NonTxnInsert` | 2026-09-21 | the layered-disk commit | 16,969,409 | 2 min 48 s | green, unchanged; the figure is 7.5% above the one `STATE_SPACE.md` recorded, and the same configuration rebuilt from the previous commit measures 16,969,487, so the move predates this work |
 | `Crash` | 2026-09-21 | the layered-disk commit | 47,838,278 | 13 min 27 s | green at the matrix bounds with `FSYNC_PART_DIRECTORY = TRUE`; 3,198,920 in 49 s at `TID_MAX = 2`, which is the lever that is costed and not taken |
+| `Crash`, re-taken on the committed tree | 2026-09-21 | the citation commit | 47,838,278 | 13 min 13 s | green; the distinct count and the generated count, 583,693,727, are both identical to the row above, which is what a disjunct guarded by a witness name that is empty predicts |
 | `CrashF10` | 2026-09-21 | the layered-disk commit | 42,035, a first-violation count | 2 s | **red on `NoPrematureDelete`**, as it is expected to be: finding `F10` |
 | witness `AckedWriteIsDurable` in `Crash` | 2026-09-21 | the layered-disk commit | 2,820 | 1 s | red, which closes the last of the deferred `Base` rows |
 
