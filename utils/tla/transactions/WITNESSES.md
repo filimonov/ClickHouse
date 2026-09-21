@@ -402,9 +402,9 @@ The four rows the scenario matrix names for `Merge`, and the two the deferred ta
 
 | Property | Witness name | The model change | Result | States | Time |
 |---|---|---|---|---|---|
-| `NoDoubleRead` | `NoDoubleRead` | the two removal tests of `isVisible`'s fast path and the removal lookup of its slow path are skipped, so a reader sees `M12` and the sources it covers at once | RED | 1,409,859 | 11 s |
-| `ActiveSetShape` | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts, so the merge result goes `Active` over sources that are still `Active` | RED | 291,656 | 4 s |
-| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | RED | 2,891,864 | 21 s |
+| `NoDoubleRead` | `NoDoubleRead` | the two removal tests of `isVisible`'s fast path and the removal lookup of its slow path are skipped, so a reader sees `M12` and the sources it covers at once | RED | 1,436,866 | 12 s |
+| `ActiveSetShape` | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts, so the merge result goes `Active` over sources that are still `Active` | RED | 266,806 | 3 s |
+| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | RED | 3,014,398 | 22 s |
 | `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl` | RED | 509,341 | 5 s |
 
 `NoDoubleRead` and `ActiveSetShape` are the two rows this scenario exists to pay. Neither is writable in `Base`,
@@ -426,32 +426,40 @@ the session conjunct removed, so that only the `Tasks` half is checked, is red u
 Every witness of every property `MC_Merge.cfg` checks: the twenty-four runs of the table below, about eleven
 minutes in all, of which one row is five.
 
+Nineteen of the twenty-four rows were re-run after the `MergeBegin` horizon fix, 5f05d5cc90e5, which was not
+covered by the cleanup-split sweep above it: `ErrorIsAbsent`, `LockConsistent`, `NoSpuriousStaleVersion`,
+`RollbackRestores`, `FlipAfterStores`, `StableRead`, `ReadYourWrites`, `NoUncommittedRead`, `NoFutureRead`,
+`NoLostRead`, `NoDoubleRead`, `Atomicity`, `ActiveSetShape`, `Assert_validateInfo_creator`,
+`Assert_validateInfo_order`, `Assert_validateInfo_removal`, `Assert_isVisible_fast` and its two minimality
+halves. No row changed colour. `SingleRemover`, `NoPrematureDelete`, `PinnedNotDeleted`, `NoLostVisibleData` and
+`Assert_getOldestSnapshot_size` were re-run earlier, against the enrolment skip; see the fix's own report.
+
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 15,261 | 2 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 12,348 | 2 s |
 | `SingleRemover` | `SingleRemover` | RED | 5,191,758 | 36 s |
-| `LockConsistent` | `LockConsistent` | RED | 51,917 | 2 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | **GREEN**, debt B3 | 6,856,950 | 48 s |
-| `RollbackRestores` | `RollbackRestores` | RED | 261,859 | 4 s |
-| `FlipAfterStores` | `FlipAfterStores` | RED | 2,154 | 1 s |
-| `StableRead` | `StableRead` | RED | 2,042,447 | 15 s |
-| `ReadYourWrites` | `ReadYourWrites` | RED | 1,768 | 2 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B3 | 6,124,691 | 43 s |
-| `NoFutureRead` | `NoFutureRead` | RED | 1,374,035 | 10 s |
-| `NoLostRead` | `NoLostRead` | RED | 792,896 | 7 s |
-| `NoDoubleRead` | `NoDoubleRead` | RED | 1,409,859 | 11 s |
-| `Atomicity` | `Atomicity` | RED | 2,891,864 | 21 s |
-| `ActiveSetShape` | `ActiveSetShape` | RED | 291,656 | 4 s |
+| `LockConsistent` | `LockConsistent` | RED | 47,694 | 2 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | **GREEN**, debt B3 | 6,856,950 | 74 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 269,798 | 6 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 1,140 | 2 s |
+| `StableRead` | `StableRead` | RED | 2,068,908 | 19 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 2,032 | 1 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B3 | 6,124,691 | 44 s |
+| `NoFutureRead` | `NoFutureRead` | RED | 1,329,603 | 10 s |
+| `NoLostRead` | `NoLostRead` | RED | 862,674 | 8 s |
+| `NoDoubleRead` | `NoDoubleRead` | RED | 1,436,866 | 12 s |
+| `Atomicity` | `Atomicity` | RED | 3,014,398 | 22 s |
+| `ActiveSetShape` | `ActiveSetShape` | RED | 266,806 | 3 s |
 | `NoPrematureDelete` | `NoPrematureDelete` | RED | 509,341 | 5 s |
 | `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 11,506 | 3 s |
 | `NoLostVisibleData` | `NoLostVisibleData` | RED | 3,771,760 | 27 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 6,450 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 6,300 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_removal` | **GREEN**, debt B3 | 41,978,209 | 5 min 12 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 5,804 | 1 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 6,839 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | **GREEN**, debt B3 | 41,978,209 | 5 min 16 s |
 | `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_size` | RED | 2 | 0 s |
-| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 27,775 | 2 s |
-|  | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 4,532,152 | 34 s |
-|  | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 6,124,691 | 44 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 30,788 | 1 s |
+|  | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 4,532,152 | 35 s |
+|  | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 6,124,691 | 45 s |
 
 ### The witness bounds, at two sessions {#witnesses-merge-witness-bounds}
 
