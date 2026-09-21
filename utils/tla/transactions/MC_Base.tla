@@ -11,6 +11,10 @@ SymSessions == Permutations(Sessions)
 \* no Base action writes (mdisk, mut, task, part.payload, the mutation and non-transactional parts of h, the
 \* tail-pointer and unknown-state parts of tlog, the fault counters and loading fields of sys, a frame's
 \* noexcept_retries).
+\* The two directory-name bits and the payload bit the layered disk adds are in the second group here and in
+\* every module that inherits this argument: under DISK_MODE = "Durable" each durable layer equals its cached
+\* one, disk[p].named_cached holds exactly when part[p].pstate is none of Absent, Temporary and Deleted, which
+\* the projection keeps, and disk[p].payload_durable holds exactly when the part directory exists.
 \* Each of the three depends on the configuration below, so a scenario with other constants needs its own view.
 \* What each of them depends on, though, is only which actions are enabled and which properties are checked, so
 \* raising TID_MAX or CSN_MAX alone leaves the argument intact: the same actions run, the same properties are

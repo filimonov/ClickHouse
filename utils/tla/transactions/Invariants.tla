@@ -71,7 +71,7 @@ DurableRecord(p) ==
   ELSE IF disk[p].durable.kind = "Legacy" THEN LegacyInfo
   ELSE EmptyInfo
 DurablePState(p) ==
-  IF ~disk[p].dir_durable THEN "Absent"
+  IF ~disk[p].named_durable THEN "Absent"
   ELSE LET r == DurableRecord(p) IN
        IF r.ccsn = RolledBackCSN THEN "Absent"
        ELSE IF r.rcsn /= UnknownCSN \/ r.rtid = NonTransactionalTID THEN "Outdated"

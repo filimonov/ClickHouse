@@ -89,7 +89,7 @@ MergeSpec == Init /\ [][MergeNext]_vars
 KeeperNext == BaseNext \/ TaskNext \/ UpdaterGCNext \/ UpdaterUnknownNext \/ KeeperFaultNext
 KeeperSpec == Init /\ [][KeeperNext]_vars
 
-SyncNext == \E p \in Parts : Fsync(p) \/ FsyncDir(p)
+SyncNext == \E p \in Parts : Fsync(p) \/ FsyncDir(p) \/ FsyncParent(p)
 \* the Crash scenario (spec matrix): Base + Merge* + Cleanup* + Updater+GC + Restart*, Layered disk
 CrashNext == BaseNext \/ TaskNext \/ CleanupNext \/ UpdaterGCNext \/ RestartNext \/ FaultNext \/ SyncNext
 CrashSpec == Init /\ [][CrashNext]_vars

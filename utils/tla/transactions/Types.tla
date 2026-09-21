@@ -9,7 +9,7 @@ CONSTANTS
   TID_MAX, CSN_MAX, Covers,
   RESTARTS_MAX, KEEPER_FAULTS_MAX, DISK_FAULTS_MAX, QUERY_FAULTS_MAX,
   MAX_STORE_RETRIES, NOEXCEPT_RETRY_BUDGET, NOEXCEPT_STORE_FAULT_POLICY,
-  DISK_MODE, FSYNC_PART_DIRECTORY, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME,
+  DISK_MODE, FSYNC_PART_DIRECTORY, FSYNC_AFTER_INSERT, FSYNC_OUTER_RENAME, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME,
   SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS, OBSOLETE_IS_ROLLED_BACK,
   REMOVAL_REFUSES_UNCOMMITTED_CREATION
 
@@ -17,6 +17,13 @@ ASSUME Covers \in [Parts -> SUBSET Parts]
 ASSUME NOEXCEPT_STORE_FAULT_POLICY \in {"Terminate", "Retry"}
 ASSUME DISK_MODE \in {"Durable", "Layered"}
 ASSUME WAIT_MODE \in {"WAIT", "WAIT_UNKNOWN", "ASYNC"}
+ASSUME FSYNC_AFTER_INSERT \in BOOLEAN
+\* Upstream gates both part-directory syncs with the one setting fsync_part_directory: the guard inside
+\* storeInfoToDataPartStorage for the txn_version.txt rename, and the guard inside renameTo for the part
+\* directory's own name. The model separates them into FSYNC_PART_DIRECTORY and FSYNC_OUTER_RENAME because the
+\* two renames lose different things and each loss has to be exhibitable on its own; a scenario that means to
+\* model the setting binds both to the same value.
+ASSUME FSYNC_OUTER_RENAME \in BOOLEAN
 ASSUME LEGACY_PARTS \subseteq Parts
 
 Witness(name) == WITNESS_NAME = name

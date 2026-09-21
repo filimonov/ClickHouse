@@ -25,10 +25,10 @@ HistoryInit == h = [
   unknown     |-> [t \in Tids |-> "None"],
   removers    |-> [p \in Parts |-> {}],
   creator     |-> [p \in Parts |-> IF p \in LEGACY_PARTS THEN NonTransactionalTID ELSE EmptyTID],
-  \* A ghost for convenience, not an abstraction. The data files are written and fsynced before the directory
-  \* is renamed into place, so a directory that survives a crash carries its payload; giving the disk record a
-  \* payload field of its own would double every disk value for a quantity no action ever changes after
-  \* creation. The four actions that create a part write it beside h.creator, and RestartLoadPart reads it.
+  \* A ghost for the payload's VALUE, which no action ever changes after creation. Whether the payload survives
+  \* a crash is not a ghost: it is disk[p].payload_durable, and RestartLoadPart refuses a part whose data files
+  \* did not survive rather than restoring this field for it. The four actions that create a part write it
+  \* beside h.creator.
   payload     |-> [p \in Parts |-> [ver |-> 0, tomb |-> FALSE]],
   selected    |-> {},
   content     |-> [t \in Tids |-> {}],

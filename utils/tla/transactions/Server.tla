@@ -447,13 +447,16 @@ InsertWrite(k, p) ==
   /\ client' = [client EXCEPT ![k].pc = "InsertWrite", ![k].part = p]
   /\ UNCHANGED <<zk, mdisk, tlog, txn, sys, stmt, mut, task>>
 
+\* renameTempPartAndReplace: the part directory takes its final name here, which is the first moment the
+\* loader could find it.
 InsertPreActive(k, p) ==
   /\ client[k].pc = "InsertWrite" /\ client[k].part = p /\ FrameDone(p, Sess(k), "CreateTID", Cur(k))
   /\ sys.parts_lock = NoActor
   /\ part' = [part EXCEPT ![p].pstate = "PreActive"]
+  /\ disk' = DiskWithFinalName(p)
   /\ stmt' = [stmt EXCEPT ![Sess(k)].precommitted = @ \cup {p}]
   /\ client' = [client EXCEPT ![k].pc = "PublishStart"]
-  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, mut, task>>
+  /\ UNCHANGED <<zk, mdisk, h, tlog, txn, sys, mut, task>>
 
 \* Transaction::commit, first part under lockParts: covered parts, attach to the outer transaction
 PublishStart(k, p) ==
@@ -947,8 +950,10 @@ RollbackFinalizeA(a, t) ==
 RollbackFinalize(k, t) == RollbackFinalizeA(Sess(k), t)
 UpdRollbackFinalize(t) == RollbackFinalizeA(Upd, t)
 \* ============================================================ the server going down, and the restart
-\* Crash discards every in-memory variable of the server and every cached disk layer. Keeper, the durable
-\* layers and the history module survive (spec #failures-crash).
+\* DownEffect is what both ways of going down have in common: every in-memory variable of the server. Keeper,
+\* the disk and the history module are not in it, and that is where the two differ. Crash is the loss of the
+\* page cache, so it also collapses every cached disk layer onto its durable one; ProcessDown is the process
+\* dying, which the kernel's page cache survives.
 \* local_tid_counter is the one field that does NOT go back to its initial value, although
 \* TransactionLog::loadLogFromZooKeeper sets it to Tx::MaxReservedLocalTID (src/Interpreters/TransactionLog.cpp:219).
 \* The code may reuse a local number because a TID is (start_csn, local_tid, host) and loadLogFromZooKeeper
@@ -957,9 +962,7 @@ UpdRollbackFinalize(t) == RollbackFinalizeA(Upd, t)
 \* reusing one would merge two of them; keeping the counter monotone is the same set of transactions under a
 \* different naming. Recorded as model defect M40, whose placement is the plan that needs a restart to produce
 \* more transactions than TID_MAX allows, which is none of them.
-CrashEffect ==
-  /\ disk' = DiskAfterCrash({ p \in Parts : part[p].pstate = "Temporary" })
-  /\ mdisk' = MutDiskAfterCrash
+DownEffect ==
   /\ part' = [p \in Parts |-> AbsentPartRecord]
   /\ txn' = [t \in Tids |-> AbsentTxn]
   /\ tlog' = [TLogInit EXCEPT !.local_tid_counter = tlog.local_tid_counter]
@@ -974,21 +977,27 @@ SysDown == [SysInit EXCEPT !.server = "Down", !.completely_started = FALSE, !.as
 
 Crash ==
   /\ sys.server /= "Down" /\ sys.restarts < RESTARTS_MAX
-  /\ CrashEffect
+  /\ DownEffect
+  /\ disk' = DiskAfterCrash
+  /\ mdisk' = MutDiskAfterCrash
   /\ sys' = [SysDown EXCEPT !.restarts = sys.restarts + 1]
   /\ UNCHANGED <<zk, h>>
 
-\* ProcessDown (spec #failures-disk): the effect of Crash plus down_cause, and it does not consume a restart.
-\* Only the `Other` cause is produced in this plan: a Refuse-class exception raised inside a noexcept call site,
-\* which in the model is a frame parked in Error whose owner is one. StoreFault and RetryExhausted need
-\* StorePersist to fault, which is plan 5's.
+\* ProcessDown (spec #failures-disk): the server's memory goes and the disk does not. The process dies, and the
+\* kernel keeps its page cache and writes it back, so an unsynced write survives a process death and is lost
+\* only to a loss of the page cache, which is a device-level power loss or an unclean host or kernel reset; the
+\* tree states that distinction in the durability section of the NATS engine's documentation
+\* (src/Storages/NATS/StorageNATS.cpp:1681). It does not consume a restart.
+\* Only the `Other` cause is produced here: a Refuse-class exception raised inside a noexcept call site, which
+\* in the model is a frame parked in Error whose owner is one. StoreFault and RetryExhausted need StorePersist
+\* to fault.
 ProcessDown(cause) ==
   /\ cause = "Other" /\ sys.server /= "Down"
   /\ \E p \in Parts, o \in FrameOwners : FrameError(p, o) /\ FrameOf(p, o).noexcept_owner
-  /\ CrashEffect
+  /\ DownEffect
   /\ sys' = SysDown
   /\ h' = [h EXCEPT !.down_cause = cause]
-  /\ UNCHANGED zk
+  /\ UNCHANGED <<zk, disk, mdisk>>
 
 \* TransactionLog::loadLogFromZooKeeper (src/Interpreters/TransactionLog.cpp:180): the placeholder csn- znode
 \* (:190), tid_to_csn and latest_snapshot from the children list (:213-216), tail_ptr from its znode (:221). The
@@ -1062,6 +1071,13 @@ RestartLoadPart(p) ==
   /\ \/ (sys.server = "TableLoading" /\ p \in sys.load_queue)
      \/ (sys.server = "TableUp" /\ p \in sys.outdated_queue)
   /\ LET active_pass == p \in sys.load_queue
+         \* A part whose data files did not survive is broken: loadColumnsChecksumsIndexes throws and
+         \* mark_broken runs (MergeTreeData.cpp:2618-2676, the call at :2675), so the part never enters the
+         \* working set. The model has no detached area, so it simply stays Absent and is marked processed;
+         \* its children are requeued, because the C++ requeues on `!is_active_part` (:2827, :2831) and a
+         \* broken part is not Active. This is also what licenses restoring h.payload below: the loader only
+         \* reaches that line for a part whose data files are durable.
+         broken == ~disk[p].payload_durable
          raw == LoadedRecord(p)
          upd == UpdateCsnIfNeeded(p, raw).info
          \* loadDataPart:2686-2691, "deactivate part if creation was not committed or if removal was"
@@ -1072,18 +1088,26 @@ RestartLoadPart(p) ==
                   THEN ApplyOp("RemovalTID", NonTransactionalTID, upd) ELSE upd
          wrote == final /= raw
          defer == wrote /\ ~DiskHasInfo(p) /\ ~Involved(final)
+         \* One increment where the outdated pass performs two stores, the CSN update and the removal TID
+         \* preparePartForRemoval adds. Invisible, because the loader is the only actor on the part and mem and
+         \* the disk record take the same value either way.
          sv1 == IF wrote THEN StoredRecord(p).sv + 1 ELSE raw.sv
          rec == [final EXCEPT !.sv = sv1]
          \* the children of a PartLoadingTree node, which are built from the part names on disk: a covered part
          \* whose directory is not there is not a node and is never pushed back onto the queue
-         kids == IF active_pass /\ st /= "Active" THEN { c \in Covers[p] : OnDisk(c) } ELSE {} IN
-     /\ part' = [part EXCEPT ![p] = [AbsentPartRecord EXCEPT
-                   !.pstate = st, !.mem = rec, !.payload = h.payload[p],
-                   !.deferrable = ~DiskHasInfo(p) /\ ~wrote,
-                   !.deferred_on = defer, !.deferred = IF defer THEN rec ELSE EmptyInfo]]
+         kids == IF active_pass /\ (broken \/ st /= "Active") THEN { c \in Covers[p] : OnDisk(c) } ELSE {} IN
+     \* deferrable is cleared by a real write and by nothing else: the deferral branch returns before
+     \* is_persist_deferrable = false (VersionMetadataOnDisk.cpp:206-211 against :241), which is the same
+     \* convention StorePersistStep follows.
+     /\ part' = IF broken THEN part
+                ELSE [part EXCEPT ![p] = [AbsentPartRecord EXCEPT
+                        !.pstate = st, !.mem = rec, !.payload = h.payload[p],
+                        !.deferrable = ~DiskHasInfo(p) /\ ~(wrote /\ ~defer),
+                        !.deferred_on = defer, !.deferred = IF defer THEN rec ELSE EmptyInfo]]
      \* loadMetadata removes the tmp file whether or not a record was found, which is the third arm; where the
      \* record came from a tmp-only directory and was written, DiskWithInfo has already cleared tmp_cached.
-     /\ disk' = IF wrote /\ ~defer THEN DiskWithInfo(p, rec)
+     /\ disk' = IF broken THEN disk
+                ELSE IF wrote /\ ~defer THEN DiskWithInfo(p, rec)
                 ELSE IF disk[p].tmp_cached THEN DiskWithoutTmp(p) ELSE disk
      /\ sys' = [sys EXCEPT !.loaded_parts = @ \cup {p},
                            !.load_queue = (@ \ {p}) \cup kids,
@@ -1094,6 +1118,8 @@ RestartLoadPart(p) ==
 \* gets the log's value written to it (:1645) or the file is removed (:1654); a non-transactional entry is
 \* registered unconditionally, which is the pre-fix behaviour of upstream 2903f6d48693. Vacuous while
 \* Mutations = {}.
+\* The keep path writes csn_cached for a non-transactional entry too, where loadMutations calls writeCSN only
+\* inside the transactional branch. Vacuous here, and it belongs to the plan that gives Mutations members.
 RestartLoadMutation(m) ==
   /\ sys.server = "TableLoading" /\ m \in sys.mut_queue
   /\ LET tid == mdisk[m].tid
@@ -1109,11 +1135,19 @@ RestartLoadMutation(m) ==
                            !.loaded_mutations = IF keep THEN @ \cup {m} ELSE @]
   /\ UNCHANGED <<zk, disk, h, part, tlog, txn, client, stmt, task>>
 
-\* The other half of Fsync: the directory entry and the rename. storeInfoToDataPartStorage takes a directory
-\* sync guard only when fsync_part_directory is on (VersionMetadataOnDisk.cpp:361-363), so without it the rename
-\* reaches the durable layer only through a later sync, which is this action.
-FsyncDir(p) == /\ Layered /\ disk' = DiskWithDirSynced(p)
+\* A sync of the PART's own directory, which is what makes the txn_version.txt rename durable.
+\* storeInfoToDataPartStorage takes that guard only when fsync_part_directory is on
+\* (VersionMetadataOnDisk.cpp:361-363), so without it the rename reaches the durable layer only through a later
+\* sync, which is this action, and a writeback of that directory is one.
+FsyncDir(p) == /\ Layered /\ DiskDirExists(p) /\ disk' = DiskWithDirSynced(p)
                /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
+\* A sync of the PARENT directory, which is what makes the part directory's own name durable, the temporary one
+\* before the rename and the final one after it. renameTo takes that guard only under the same setting
+\* (IMergeTreeDataPart.cpp:2894, DataPartStorageOnDiskBase.cpp:793-800). It is a separate action from the one
+\* above because the two syncs are separate in the C++ and promote different dentries: a parent sync that lands
+\* before the rename makes only the temporary name durable, and the loader skips that name.
+FsyncParent(p) == /\ Layered /\ DiskDirExists(p) /\ disk' = DiskWithParentSynced(p)
+                  /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
 
 \* ============================================================ updating thread
 \* The getChildren of loadNewEntries throws on an expired session and the catch skips the whole iteration,
@@ -1314,7 +1348,11 @@ StorePersist(p, o) == /\ Up /\ HasFrame(p, o) /\ StorePersistStep(p, o)
                       /\ UNCHANGED <<zk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
 StorePublish(p, o) == /\ Up /\ HasFrame(p, o) /\ StorePublishStep(p, o)
                       /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, sys, client, stmt, mut, task>>
-Fsync(p) == /\ Layered /\ disk' = DiskWithMetaSynced(p)
+\* An fsync of the part's files. It promotes their content and cannot promote a rename, which is a dentry and
+\* belongs to one of the two directory syncs below. All three require the part directory to exist, because
+\* there is otherwise nothing to sync; without that guard this one sets a durability bit for files that were
+\* never written, which is a free bit per part in every state where the part is absent.
+Fsync(p) == /\ Layered /\ DiskDirExists(p) /\ disk' = DiskWithFilesSynced(p)
             /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
 
 \* ============================================================ the cleanup thread
@@ -1487,9 +1525,10 @@ MergeRename(i) ==
      /\ FrameDone(r, Tsk(i), "CreateTID", task[i].txn)
      /\ sys.parts_lock = NoActor
      /\ part' = [part EXCEPT ![r].pstate = "PreActive"]
+     /\ disk' = DiskWithFinalName(r)
      /\ stmt' = [stmt EXCEPT ![Tsk(i)].precommitted = @ \cup {r}]
      /\ task' = [task EXCEPT ![i].pc = "PublishStart"]
-  /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, mut>>
+  /\ UNCHANGED <<zk, mdisk, h, tlog, txn, sys, client, mut>>
 
 \* transaction.commit() at MergePlainMergeTreeTask.cpp:161, which is the same Transaction::commit a session's
 \* INSERT runs. The Running guard is addNewPart's checkIsNotCancelled (MergeTreeTransaction.cpp:207): on a
@@ -1823,8 +1862,9 @@ NtInsertPublish(k, p) ==
   /\ client[k].pc = "NtInsertWrite" /\ client[k].part = p /\ sys.parts_lock = NoActor
   /\ FrameDone(p, Sess(k), "CreateTID", NonTransactionalTID)
   /\ PublishFlipEffect(Sess(k), p, {})
+  /\ disk' = DiskWithFinalName(p)
   /\ client' = [client EXCEPT ![k].pc = "Idle", ![k].part = "None"]
-  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, mut, task>>
+  /\ UNCHANGED <<zk, mdisk, tlog, txn, mut, task>>
 
 \* DROP PARTITION without a transaction (the spec's NtDropCover), written as the three steps the query has:
 \* StorageMergeTree::dropPartition's else branch (src/Storages/StorageMergeTree.cpp:3186) makes an empty part
@@ -1855,10 +1895,11 @@ NtDropPublish(k, e) ==
   /\ FrameDone(e, Sess(k), "CreateTID", NonTransactionalTID)
   /\ LET C == { q \in Parts : q \in Expand({e}) /\ q /= e /\ part[q].pstate = "Active" } IN
      /\ part' = [part EXCEPT ![e].pstate = "PreActive"]
+     /\ disk' = DiskWithFinalName(e)
      /\ stmt' = [stmt EXCEPT ![Sess(k)].precommitted = {e}, ![Sess(k)].covered = C]
      /\ StartBatch(Sess(k), C)
      /\ client' = [client EXCEPT ![k].pc = "NtDropFlip"]
-  /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, mut, task>>
+  /\ UNCHANGED <<zk, mdisk, tlog, txn, mut, task>>
 
 \* The batch ended. On Done the NOEXCEPT_SCOPE of Transaction::commit flips the states; on Refused the
 \* exception leaves Transaction::commit with the acquired_parts_lock, the query fails with SERIALIZATION_ERROR,

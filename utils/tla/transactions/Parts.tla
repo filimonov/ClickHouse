@@ -165,8 +165,10 @@ StoredRecord(p) == IF part[p].deferred_on THEN part[p].deferred
 NoStoredRecord(p) == ~part[p].deferred_on /\ disk[p].cached.kind = "None"
 
 \* the part directories the loader can see, and the roots of the coverage tree it builds from their names
-\* (MergeTreeData::loadDataParts, src/Storages/MergeTree/MergeTreeData.cpp:2857 region)
-OnDisk(p) == disk[p].dir_cached
+\* (MergeTreeData::loadDataParts, src/Storages/MergeTree/MergeTreeData.cpp:2857 region). It is the FINAL name
+\* rather than the directory's existence, because the walk skips every directory whose name starts with tmp
+\* (:2964), so a part directory that still carries its temporary name is not a candidate.
+OnDisk(p) == DiskNamed(p)
 DiskRoot(p) == OnDisk(p) /\ ~\E c \in Parts : c /= p /\ OnDisk(c) /\ p \in Expand({c})
 
 \* VersionMetadataOnDisk::loadMetadata (src/Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.cpp:49) and

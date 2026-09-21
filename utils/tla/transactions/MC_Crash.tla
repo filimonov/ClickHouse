@@ -29,14 +29,20 @@ SymSessions == Permutations(Sessions)
 \*      the unknown-state part of tlog, the fault counters of sys, a frame's noexcept_retries. sys.mut_queue
 \*      and sys.loaded_mutations have NOT left this group although the restart writes them, because Mutations
 \*      is empty here and both stay {} in every reachable state.
+\*   4. One field this scenario writes and no property or action of it reads: sys.load_since_swap.
+\*      UpdLoadEntriesMap writes it and SysDown resets it, so group 3 does not cover it; its only two readers,
+\*      UpdSwapUnknownLists and UpdFinalizeUnknown, are in UpdaterUnknownNext, which CrashNext does not
+\*      enable. The view is the fence that decides which counterexamples survive, so the reason is written
+\*      rather than left to the reader.
 \* MergeView's correction about frags stands unchanged: with M12 covering P1 and P2 a read's fragments are not
 \* a function of its parts, so both first_read.frags and last_read.frags are in the fingerprint.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
 CrashView ==
   << zk,
-     [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached,
-                        disk[p].durable, disk[p].tmp_durable, disk[p].dir_durable>>],
+     [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached, disk[p].named_cached,
+                        disk[p].durable, disk[p].tmp_durable, disk[p].dir_durable, disk[p].named_durable,
+                        disk[p].payload_durable>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,
        h.rolled_back, h.removers, h.creator, h.abandoned, h.down_cause, h.content, h.truncated, h.payload>>,
      [p \in Parts |-> <<part[p].pstate, part[p].mem, part[p].lock, part[p].deferrable,

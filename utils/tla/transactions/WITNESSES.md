@@ -765,12 +765,20 @@ other value is `MC_CrashF10`, which is the finding of the same name and is not a
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `AckedWriteIsDurable` | `AckedWriteIsDurable` | `CommitAck` is enabled while the transaction is still `Committing` at `CommitCreateCSN`, so the acknowledgement is delivered before the commit request has returned | `Crash` | RED | 2,820 | 1 s |
+| `AckedWriteIsDurable` | `AckedWriteIsDurable` | `CommitAck` is enabled while the transaction is still `Committing` at `CommitCreateCSN`, so the acknowledgement is delivered before the commit request has returned | `Crash` | RED | 5,017 | 1 s |
 
 That row closes the debt the deferred table carried, and it is a one-change witness where the design document
 names two. The document's row is `CommitAck` moved before `CommitCreateCSN` **and** a `Fail` allowed after it;
 the first change alone is red, so the second is not written, and a one-change witness has no minimality halves.
 `Assert_validateInfo_removal` went the same way when `Base` gained its third transaction.
+
+What the row does not demonstrate is narrower than the property. It fires on the first conjunct,
+`t \in h.committed`, at the `CommitAck` step, so its trace needs no crash at all and it would have been red in
+`Base`. The clauses the layered disk added, `PState` and in particular its `Absent` arm, are therefore not
+exercised by it. What exercises them is `MC_CrashF10`, which is red on the same invariant through the loader
+rather than through the acknowledgement; that is a finding module rather than a witness, so the demonstration
+that those clauses can still fail is evidence and not a witness row. A witness aimed at the `Absent` arm needs
+the unsynced module debt `B9` places in plan 3, task 3 (what a restart must not do).
 
 The rest of the scenario's roster is `Merge`'s, so its witnesses are the `Merge` sweep's rows, and a sweep of a
 47-million-state scenario is its own piece of work. It is placed in plan 3, task 5 (budget, sweep and debts)

@@ -900,41 +900,74 @@ they enable but read by none, so their projections merge the states that differ 
 
 | Configuration | Result | Distinct states | Time |
 |---|---|---|---|
-| `Crash`, matrix bounds, `FSYNC_PART_DIRECTORY = TRUE`, **committed** | **green** | 47,838,278 | 13 min 27 s |
-| the same, re-taken after the witness hook landed | **green**, identical to the state and to the generated count | 47,838,278 | 13 min 13 s |
+| `Crash`, matrix bounds, one durability bit for the part directory | green | 47,838,278 | 13 min 27 s |
+| the same, re-taken after the witness hook landed | green, identical to the state and to the generated count | 47,838,278 | 13 min 13 s |
 | the same at `TID_MAX = 2` | green | 3,198,920 | 49 s |
-| `CrashF10`, `TID_MAX = 2`, `FSYNC_PART_DIRECTORY = FALSE`, **committed** | **red on `NoPrematureDelete`**, as it is expected to be | 42,035 | 2 s |
-| witness `AckedWriteIsDurable` in `Crash` | red, as required | 2,820 | 1 s |
+| `Crash`, after the fix round split the two directory names and added the payload bit, with the three sync actions unguarded | **killed at the 900 s bound**, queue 2.68M and growing | 46,266,705 | 15 min |
+| the same with the sync actions guarded on the directory existing, **committed** | **green** | 48,142,550 | 12 min 28 s |
+| `CrashF10`, `TID_MAX = 2`, metadata rename unsynced, **committed** | **red on `AckedWriteIsDurable`**, as it is expected to be | 395,095 | 5 s |
+| the same at `FSYNC_AFTER_INSERT = FALSE`, so the rows are unsynced too | red on the same invariant, with the part absent rather than reclassified | 494,552 | 6 s |
+| witness `AckedWriteIsDurable` in `Crash` | red, as required | 5,017 | 1 s |
 
-The matrix bounds are kept although 47.8 million is above the thirty million a run here is budgeted, because
+The matrix bounds are kept although 48.1 million is above the thirty million a run here is budgeted, because
 they finish and because a bound below the matrix is a bound-contract debt: the contract allows one only while
 every witness of every property the scenario checks is still red at it, and that sweep is not this task's. The
 `TID_MAX = 2` figure is measured and recorded so that the lever is costed rather than only named. It is worth a
 factor of fifteen, which is the third transaction being what makes the restart interleave with a commit already
 in flight.
 
-### Why the scenario splits at `FSYNC_PART_DIRECTORY` {#crash-fsync-split}
+The three new durability bits cost 0.6%, from 47,838,278 to 48,142,550, which is what they should cost in this
+configuration: with all three settings on, every bit is set at the moment of the operation, so the cached and
+durable layers never come apart and the two directory-name bits are a function of the part's state. The run
+between the two figures is the one worth reading. With the sync actions unguarded it did not finish, and the
+reason was not the bits: `Fsync` was enabled on a part with no directory and set a durability bit for files
+that were never written, a free bit per part in every state where the part is absent. Guarding the three sync
+actions on the directory existing, which is what the C++ cannot do without, returned the scenario to a
+finishing green. The budget rule earned its place there: the first reading was that the bits had bought a
+scenario that no longer fits, and the bits had bought 0.6%.
 
-The constant decides whether the rename in `storeInfoToDataPartStorage` is durable when it is made, and, since
-the layered-disk task, whether the part directory's own rename is. One directory sync guard covers both renames
-in the C++, so one constant covers both here.
+### Why the scenario splits at the fsync settings {#crash-fsync-split}
 
-At `FALSE` nothing on the write path is durable until a free `Fsync` or `FsyncDir` runs, and three properties
-are then false by construction rather than by a defect: `AckedWriteIsDurable`, `NoPrematureDelete` and
-`NoLostVisibleData`. All three are the same window, which finding `F10` describes: a transaction reaches the
-commit point, the crash leaves a tmp-only metadata directory, and the loader reads that as a rolled-back
-creation and lets the cleanup thread remove a part the log records as committed. That is upstream's documented
-default, where neither `fsync_after_insert` nor `fsync_part_directory` is on, so the model cannot assert it
-away. `MC_Crash` therefore runs at `TRUE` with the whole roster and `MC_CrashF10` runs at `FALSE` with those
-three rows as the finding. Spec defect `S19` records that the matrix row asked for both values with one roster.
+Three constants decide what a crash can take, and each corresponds to one sync in the C++.
+`FSYNC_AFTER_INSERT` is whether the data files are durable when the part is finalized. `FSYNC_OUTER_RENAME` is
+whether the part directory's own name is durable when `renameTempPartAndReplace` publishes it.
+`FSYNC_PART_DIRECTORY` is whether the `txn_version.txt` rename is durable when the store makes it. Upstream ties
+the last two to the one setting `fsync_part_directory`; the model separates them because the two renames lose
+different things and each loss has to be exhibitable on its own.
 
-What the `TRUE` variant does not reach is the tmp-only load shape itself, because every store is durable when it
-is made, so `LoadedRecord`'s `DummyTID` arm is dead there. `MC_CrashF10` reaches it, and the task that adds
-`NoResurrection` and `LogEntryNeeded` needs the `FALSE` variant for exactly that reason.
+With any of the three off, properties that say committed or acknowledged data stays are false by construction
+rather than by a defect: `AckedWriteIsDurable`, `NoPrematureDelete` and `NoLostVisibleData`. Finding `F10` is
+that window, and it has two shapes. With the metadata rename unsynced, the part survives under its final name
+holding only a `txn_version.txt.tmp`, and the loader reclassifies it as a rolled-back creation and lets the
+cleanup thread remove it. With the data files unsynced, the part does not survive at all and loads broken. So
+the model cannot assert those three away, because upstream has none of the three settings on by default.
 
-### The model defects the first runs found {#crash-model-defects}
+`MC_Crash` therefore runs with all three on and carries the whole roster. `MC_CrashF10` is the finding module:
+the payload and the outer rename durable, the metadata rename not, and `AckedWriteIsDurable` alone, so that the
+trace it produces is the acknowledged reclassification rather than the shallower plain loss.
 
-Every red before the green was a defect rather than a finding, and each is a row of `FINDINGS.md`
+What the all-on variant does not reach is the tmp-only load shape itself, because every store is durable when it
+is made, so `LoadedRecord`'s `DummyTID` arm is dead there. Debt `B9` places the module that covers the other
+twenty-five rows in the unsynced world, which is where the restart properties will be stated.
+
+### Scenario assumptions {#crash-assumptions}
+
+Two of the loader's simplifications are assumptions about the storage rather than refinements, and they hold
+only for a writable local disk. `RestartLoadPart` always removes a temporary metadata file it finds, where
+`removeTmpMetadataFile` keeps it on a read-only disk (`VersionMetadataOnDisk.cpp:334-337`), and
+`RestartTableStart` always schedules the covered children, where `loadDataParts` skips that pass when every
+disk is read-only or the table is marked read-only (`MergeTreeData.cpp:3223-3225`). Every scenario in this file
+assumes a writable local disk.
+
+The coverage relation is one level deep in every configuration here: `M12` covers `P1` and `P2` and nothing
+covers `M12`. `RestartLoadPart` requeues `{ c \in Covers[p] : OnDisk(c) }`, the direct children that are on
+disk, which is what the `PartLoadingTree` does at this depth. A deeper tree would need the structural rule the
+C++ has, where a surviving descendant attaches under the nearest surviving ancestor even if the intermediate
+directory is gone; direct children are not enough for that, and no configuration here reaches it.
+
+### The model defects the runs found {#crash-model-defects}
+
+Every red before the first green was a defect rather than a finding, and each is a row of `FINDINGS.md`
 section 2 with the C++ that settles it: `M34`, the loader seeing a directory that was never renamed into place,
 red on `NoUncommittedRead` at 18,485 states; `M33`, a metadata record surviving a directory that did not;
 `M38`, `NoLostVisibleData` firing on the step that destroyed the transaction, at 113,976 states; `M36` and
@@ -944,6 +977,12 @@ at 1,047,635 states; and `M35`, the loader pushing covered children that are not
 `AckedWriteIsDurable` at 44,729,071 states. The last one is worth its place in this file rather than only in
 `FINDINGS.md`: it was reached only after the four cheaper ones were closed and only at the matrix bounds, so a
 scenario committed at `TID_MAX = 2` would have carried it.
+
+The fix round added four more, and three of them were found by reading rather than by a red: `M41`, one
+durability bit standing for both the temporary and the final directory name; `M42`, payload durability
+asserted rather than modelled; `M43`, a file fsync promoting a rename; and `M44`, the loader clearing
+`deferrable` on the arm that defers. `M41` is the one that matters for this file, because the first `F10`
+trace went through the shape it made inexpressible.
 
 ### What the view keeps {#crash-view}
 
@@ -962,6 +1001,13 @@ The layered-disk task changes `DiskWithDir`, four creating actions, the invarian
 all of which every other scenario uses, so `Base`, `Merge` and `NonTxnInsert` were re-run after it: 26,839,086,
 6,124,691 and 16,969,409, each within the counting noise of the figure it had before. `Merge` is identical to
 the state.
+
+The fix round touches the disk record itself, so the same three were re-run again, together with `Schema` and
+`BaseSmall`: 26,839,063, 6,124,691, 16,969,516, 1 and 47,381. `Merge` is identical to the state for the second
+time, and the other four are inside their bands. That is the expected result and it has a reason: under
+`DISK_MODE = "Durable"` each new durable bit equals its cached counterpart, `named_cached` holds exactly when
+the part's state is none of `Absent`, `Temporary` and `Deleted`, and `payload_durable` holds exactly when the
+part directory exists, so none of the three splits a state in a scenario that does not crash.
 
 ## Reproducing {#reproducing}
 
