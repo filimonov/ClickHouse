@@ -748,7 +748,7 @@ that needs no reduction at all.
 
 | Configuration | Distinct states | Time | Result |
 |---|---|---|---|
-| `Keeper`, one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, **committed** | 37,785,664 | 6 min 06 s | green, queue drained |
+| `Keeper`, one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, **committed** | 31,042,348 | 5 min 08 s | green, queue drained |
 
 The count is above the thirty million at which a growing run is killed, and the rule is about a run that is
 still growing: the queue peaked at about 0.8 million and drained, which is the same reading `NonTxnDropTwo`
@@ -760,36 +760,35 @@ a committing actor and the updating thread rather than between two sessions. `KE
 behaviour has either a lost commit response or a session expiry, not both; what that costs is a behaviour with
 both, and plan 3, task 5 (budget, sweep and debts) measures whether 2 fits.
 
-### The second configuration, and what `WAIT_UNKNOWN` costs {#keeper-unknown-wait}
+### The second configuration {#keeper-unknown-wait}
 
 `MC_KeeperUnknownWait` differs from `MC_Keeper` in one constant. It is the configuration in which
 `CommitUnknownResolved` is live, because with `throw_on_unknown_status` true the session blocks in
-`waitStateChange` instead of being told `UNKNOWN_STATUS_OF_TRANSACTION` and detaching. It does not finish at
-the matrix bounds, and the reduction ladder behaved unlike every earlier scenario's.
+`waitStateChange` instead of being told `UNKNOWN_STATUS_OF_TRANSACTION` and detaching. It runs at the matrix
+bounds and finishes there.
 
 | Configuration | Distinct states | Time | Result |
 |---|---|---|---|
-| matrix bounds, `TID_MAX = 3`, `CSN_MAX = 36` | 60,249,422, queue 9.18M and growing | killed at 6 min | does not finish |
-| `CSN_MAX = 35` | 31,195,881, queue 5.24M and growing | killed at 5 min | does not finish |
-| `Tasks = {}`, `Parts = {P1, P2}`, matrix bounds otherwise | 70,335,132 | 10 min 01 s | green |
-| `TID_MAX = 2`, `CSN_MAX = 35`, merge kept, **committed** | 71,779,055 | 12 min 01 s | green |
+| `KeeperUnknownWait`, matrix bounds, **committed** | 11,537,098 | 1 min 55 s | green, queue drained |
 
-The ladder's third rung, dropping the merge task, buys 1.4 per cent: 70,335,132 against 71,323,386. Both of
-those were measured before the updating thread's load actions gained their live-session guard, which took the
-committed configuration to 71,209,832; the comparison is between two runs of one tree and stands. So the
-cost is `WAIT_MODE` itself and neither the merge nor the transaction count, and the rung that would have been
-taken on the ladder's own ordering is the wrong one here. The committed configuration is the ladder's first two
-rungs, which keep the merge task and therefore keep `MergeCommitKeeperFault` and `MergeCommitUnknown`
-reachable; those two actions exist in no other module, and rung three would have deleted them from the only
-scenario that runs them while saving nothing.
+It did not always. Three earlier rounds could not make this configuration finish at the matrix bounds and
+committed it one transaction lower, which was recorded as a bound-contract debt; the reduction ladder was
+walked twice, and because dropping the merge task bought 1.4 per cent and lowering `TID_MAX` bought little
+more, the measurements were written up as showing that the cost was `WAIT_MODE` itself.
 
-Why the constant costs so much is the session's freedom. Under `WAIT` the catch block detaches the session at
-once, so it can `Begin` its next transaction and the `TID_MAX` counter drains while the unknown-state pass is
-still working. Under `WAIT_UNKNOWN` the session is parked until the updater resolves the transaction, so the
-merge task, the truncation pass and the cleanup thread explore fully against a parked client that still has
-transaction budget left. That is the server's behaviour and not a model defect.
+That conclusion was wrong, and how it was wrong is the part worth keeping. The cost was a model defect: a
+client parked in `waitStateChange` was not stopped from running the commit machine, so it raced the updating
+thread through every step of a commit the updater was already performing. Under `WAIT` the catch block
+detaches the client and the defect is unreachable, which is why `Keeper` never showed it; under `WAIT_UNKNOWN`
+the client is parked and present, and the duplicated machine was most of the space. With the guard in place the
+same bounds that would not finish at 71 million finish at 11.5 million, and the debt is closed rather than
+placed.
 
-### The two model defects the first run found {#keeper-model-defects}
+The lesson is not about this scenario. A reduction ladder measures what a bound costs, and every rung here
+returned a small number, which reads as "the space is irreducible" and was written up that way. What it
+actually meant was that no bound was responsible, which is the signature of a defect rather than of a budget.
+
+### The model defects the runs found {#keeper-model-defects}
 
 The first exhaustive run of `Keeper` was red on `UnknownResolvesByLog` at 12,081 distinct states, on the
 baseline. It was model defect `M26`: the updating thread's three passes each start from `sys.updater_pc =
@@ -797,11 +796,20 @@ baseline. It was model defect `M26`: the updating thread's three passes each sta
 `UpdLoadEntriesMap` between, which is the one thing the two-list scheme rules out. `FINDINGS.md` carries the
 correction and the check that it does not over-fix.
 
-`M27` was found while measuring the `WAIT_UNKNOWN` blow-up and is not what caused it: `CommitAck` and
-`CommitUnknownResolved` were both enabled on a parked session, so one return of `executeCommit` was two model
-transitions. Removing the duplicate left the distinct count of `KeeperUnknownWait` exactly where it was on that round's
-tree, 71,323,386, and took the generated count from 336,015,390 to 330,565,902. A duplicate edge between states that
-already exist costs transitions and not states, which is what those two numbers say.
+`M27` was found while measuring the `WAIT_UNKNOWN` space: `CommitAck` and `CommitUnknownResolved` were both
+enabled on a parked session, so one return of `executeCommit` was two model transitions. Removing the duplicate
+left the distinct count exactly where it was on that round's tree, 71,323,386, and took the generated count
+from 336,015,390 to 330,565,902. A duplicate edge between states that already exist costs transitions and not
+states, which is what those two numbers say.
+
+`M32` is the same defect class one step further out, and it is what the `WAIT_UNKNOWN` space was made of.
+`CommitAck` was only one of six actions a parked client could run: the two per-part stores, the flip, the
+finalize, the read-only branch and the CSN allocation were all guarded on `client[k].pc = "Commit"` alone.
+Fixing `CommitAck` and stopping there is why three rounds measured a bound instead of finding a defect.
+
+`M31` is the one the re-review found: `UpdRollbackLost` was enabled in the state `UpdRollbackStart` produces,
+so the updating thread could lose a compare-exchange it had just won and release the pass while still driving
+that rollback.
 
 ### The holder release that changed no count {#keeper-holder-release}
 
@@ -825,14 +833,14 @@ verdicts; a first-violation count is not reproducible in any case, while the gre
 ### What the notified `UnknownCSN` window costs {#keeper-unknown-window}
 
 Releasing the state guard is a step of its own, and between it and the CAS that follows the transaction is
-running again, because `getState` reports `RUNNING` at `UnknownCSN`. That window is worth 29 per cent in
-`Keeper`, from 29,274,410 to 37,785,664, and 0.8 per cent under `WAIT_UNKNOWN`, from 71,209,832 to 71,779,055.
+running again, because `getState` reports `RUNNING` at `UnknownCSN`. That window was worth 29 per cent in `Keeper` when it was
+added, from 29,274,410 to 37,785,664, before `M31` took the scenario to 31,042,348.
 
-The gap between the two is what the window admits rather than the window itself. In `Keeper` the catch block
-detaches the session, so the one client is idle and can issue the `KILL TRANSACTION` that wins the rollback
-inside the window; under `WAIT_UNKNOWN` that same client is parked in `waitStateChange` and a second session
-would be needed, which the committed bounds do not have. So the race is covered by `Keeper` and not by
-`KeeperUnknownWait`, and the second configuration pays only for the extra step.
+What the window admits matters more than what it costs. In `Keeper` the catch block detaches the session, so
+the one client is idle and can issue the `KILL TRANSACTION` that wins the rollback inside the window; under
+`WAIT_UNKNOWN` that same client is parked in `waitStateChange`, so the race needs a second session, which
+`MC_KeeperUnknownWait` does not have. `MC_KeeperUnknownWaitWitness` is that second session, and the race is
+covered there by a witness rather than by this argument.
 
 That the race is reached, and not merely permitted, was measured in a scratch copy under `tmp/` at one session,
 one part, `Tasks = {}`, `TID_MAX = 1` and `CSN_MAX = 34`, which was deleted afterwards. An invariant saying no
@@ -858,10 +866,9 @@ other collision of this shape arises. `sys.load_since_swap` is in the projection
 `UpdSwapUnknownLists` is enabled; it is absent from `BaseView` and `MergeView`, where `UpdLoadEntriesMap`
 writes it and nothing reads it.
 
-The live-session guard on the two load actions is worth 4.2 per cent here, from 30,544,101 to 29,274,410, and
-0.16 per cent under `WAIT_UNKNOWN`, from 71,323,386 to 71,209,832. The gap between the two is the parked
-session: under `WAIT` the client detaches at the catch and keeps working while the session is expired, and
-those are the iterations the guard removes.
+The live-session guard on the two load actions was worth 4.2 per cent when it was measured, from 30,544,101 to
+29,274,410, and 0.16 per cent under `WAIT_UNKNOWN`, from 71,323,386 to 71,209,832. Both figures are of that
+round's tree, before the two lifecycle fixes and before `M31` and `M32`.
 
 `txn.csn_notified` moves from the first justification to the second. `CommitUnknownResolved` reads it, so it is
 no longer a field no action reads; it is a function of `txn.state`, which the projection keeps, because every
@@ -869,7 +876,7 @@ action that writes one writes the other in the same record.
 
 ### The regression the scenario did not cause {#keeper-regression}
 
-`Base` is 26,839,116 against 26,839,061 on the base commit, and `BaseSmall` and `Merge` are unchanged at 47,381
+`Base` is 26,839,116 against 26,839,061 on the base commit, measured when this section was written, and `BaseSmall` and `Merge` are unchanged at 47,381
 and 6,124,691. The fifty-five states are the multi-worker counting noise this file documents at hundreds, not a
 residue of the change: two workers can fingerprint one state before either has inserted it, so consecutive runs
 of one configuration differ by a few states. The rollback machine's actor parameter, the two new `tlog` fields and `sys.load_since_swap` are

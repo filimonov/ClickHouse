@@ -677,8 +677,9 @@ two Keeper faults. `MC_Keeper` is one session, `Parts = {P1, P2, M12}`, `Tasks =
 `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, `WAIT_MODE = "WAIT"`, `SYMMETRY SymSessions`, `VIEW KeeperView`. It
 finishes exhaustively at the matrix bounds, so no bound-contract debt is incurred for it.
 `MC_KeeperUnknownWait` is the same module with `WAIT_MODE = "WAIT_UNKNOWN"`, which is the configuration in
-which the session blocks in `waitStateChange` rather than being told `UNKNOWN_STATUS_OF_TRANSACTION`; it does
-not finish at the matrix bounds and is committed at `TID_MAX = 2`, `CSN_MAX = 35`, which is debt `B8`.
+which the session blocks in `waitStateChange` rather than being told `UNKNOWN_STATUS_OF_TRANSACTION`; it
+finishes at the matrix bounds too. The reduction three earlier rounds committed it at was a symptom of a model
+defect rather than a budget, and debt `B8` is closed rather than placed.
 `MC_KeeperWitness` is `MC_Keeper` at two sessions, for `witness.sh` only, and
 `MC_KeeperUnknownWaitWitness` is the `WAIT_UNKNOWN` module at two sessions and bounds cut to the one row it
 exists for.
@@ -687,13 +688,13 @@ The two properties this scenario adds:
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `UnknownResolvesByLog` | `UnknownResolvesByLog` | `UpdSwapUnknownLists` collapses the two lists into one, so a transaction can be resolved in the same pass that received it | `Keeper` | RED | 17,718 | 2 s |
-| `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperUnknownWait` | RED | 5,626 | 1 s |
+| `UnknownResolvesByLog` | `UnknownResolvesByLog` | `UpdSwapUnknownLists` collapses the two lists into one, so a transaction can be resolved in the same pass that received it | `Keeper` | RED | 13,207 | 2 s |
+| `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperUnknownWait` | RED | 13,511 | 1 s |
 | `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperWitness` | RED | 279,143 | 4 s |
-| `NoOutdatedLookup` | `NoOutdatedLookup` | `UpdRemoveOldEntriesSetTail` publishes `tlog.latest_snapshot` instead of `RetentionHorizon`, so the tail passes the start CSN of a transaction still in the unknown-state list | `Keeper` | RED | 545,592 | 5 s |
-| `NoOutdatedLookup` | `NoOutdatedLookup` | the same change | `KeeperUnknownWait` | RED | 2,496,715 | 18 s |
-| `RollbackRestores`, second conjunct | `RollbackRestoresUpd` | `RollbackRestoreA` does not restore a part when the driver is `Upd`, and restores it for every other driver | `Keeper` | RED | 4,852,299 | 34 s |
-| `RollbackRestores`, the race the guard release opens | `RollbackRestoresKillRace` | `RollbackRestoreA` does not restore a part when the driver is not `Upd` and the unknown-state pass had decided to roll the transaction back | `KeeperUnknownWaitWitness` | RED | 1,161,476 | 8 s |
+| `NoOutdatedLookup` | `NoOutdatedLookup` | `UpdRemoveOldEntriesSetTail` publishes `tlog.latest_snapshot` instead of `RetentionHorizon`, so the tail passes the start CSN of a transaction still in the unknown-state list | `Keeper` | RED | 536,421 | 6 s |
+| `NoOutdatedLookup` | `NoOutdatedLookup` | the same change | `KeeperUnknownWait` | RED | 2,542,841 | 19 s |
+| `RollbackRestores`, second conjunct | `RollbackRestoresUpd` | `RollbackRestoreA` does not restore a part when the driver is `Upd`, and restores it for every other driver | `Keeper` | RED | 4,204,536 | 31 s |
+| `RollbackRestores`, the race the guard release opens | `RollbackRestoresKillRace` | `RollbackRestoreA` does not restore a part when the driver is not `Upd` and the unknown-state pass had decided to roll the transaction back | `KeeperUnknownWaitWitness` | RED | 565,949 | 6 s |
 
 `NoOutdatedLookup` is the row that retires the vacuity half of spec defect `S6`. Both call sites of
 `TransactionLog::assertTIDIsNotOutdated` were unreachable in every scenario before this one, so the property
@@ -723,8 +724,8 @@ only be the other session's `KILL`. The counterexample is that sequence: `UpdFin
 `KillTransaction`, then the session driving the rollback to `RollbackFinalizeA`.
 
 Its bounds are cut to its subject rather than inherited. At `MC_KeeperWitness`'s bounds, three parts, a merge
-task and three transactions, the same witness did not fire within 900 seconds, reaching 52,217,501 distinct
-states with the queue growing. One part, no task and two transactions is the shape the row needs -- one
+task and three transactions, the same witness does not fire: 53,932,357 distinct states in 600 seconds with
+the queue growing, re-measured on the tree that carries every fix of this task. One part, no task and two transactions is the shape the row needs -- one
 transaction to create the part, one to drop it, lose its commit response and be killed inside the window --
 and it fires in eight seconds. A witness run stops at the first violation, which is what licenses bounds
 chosen for it.
@@ -752,8 +753,8 @@ green for want of a step to judge. A property that cannot fire says nothing abou
 the roster rather than on it with a footnote; all three are red in `Merge`, which does enable the group.
 
 The rest of `MC_Keeper.cfg`'s roster is not swept in this task. Its other properties are `Merge`'s, its
-witnesses are the twenty-four rows of the `Merge` sweep above plus the two here, and a sweep of a
-30-million-state scenario is its own piece of work; it is placed in the same task.
+witnesses are the twenty-four rows of the `Merge` sweep above plus the four here, and a sweep of a
+31-million-state scenario is its own piece of work; it is placed in the same task.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
@@ -852,8 +853,8 @@ added the three `MC_Keeper*` modules:
 | `BaseSmall` | green | 47,381 | 1 s |
 | `Base` | green | 26,839,116 | 4 min 01 s |
 | `Merge` | green at one session | 6,124,691 | 56 s |
-| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 37,785,664 | 6 min 06 s |
-| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,779,055 | 12 min 01 s |
+| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 31,042,348 | 5 min 08 s |
+| `KeeperUnknownWait` | green at the same bounds | 11,537,098 | 1 min 55 s |
 | `NonTxnDrop` | green at `TID_MAX = 1` | 1,246,158 | 12 s |
 | `NonTxnDropTwo` | green at `TID_MAX = 2`, no cleanup group | 47,958,902 | 7 min 29 s |
 | `NonTxnInsert` | green | 16,969,548 | 2 min 42 s |

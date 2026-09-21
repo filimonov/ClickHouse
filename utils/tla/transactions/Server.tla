@@ -161,6 +161,10 @@ Sess(k) == <<"Session", k>>
 Tsk(i) == <<"Task", i>>
 Cln == <<"Cleanup", 0>>
 Up == sys.server = "TableUp"
+\* The session is inside executeCommit and running it, rather than blocked in waitStateChange. A client that
+\* took the CommittingCSN return is parked at InterpreterTransactionControlQuery.cpp:90 until the updating
+\* thread decides, and every step of the commit machine after that point is the updater's, not the client's.
+InCommit(k) == client[k].pc = "Commit" /\ client[k].waiting /= "ForState"
 Cur(k) == client[k].current
 HasTxn(k) == client[k].current /= EmptyTID
 Effects(t) == txn[t].creating /= <<>> \/ txn[t].removing /= <<>> \/ txn[t].mutations /= {}
@@ -606,41 +610,37 @@ CommitError(k) ==
 \* the commit point: one sequential create (Ok outcome; faults are plan 3's)
 CommitCreateCSN(k) ==
   /\ LET t == Cur(k) IN
-     /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitCreateCSN"
+     /\ InCommit(k) /\ txn[t].pc = "CommitCreateCSN"
      /\ CommitCreateEffect(t)
   /\ UNCHANGED <<disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
 \* the isReadOnly branch: csn := snapshot, no Keeper request
 CommitReadOnly(k) ==
   /\ LET t == Cur(k) IN
-     /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitFlip" /\ ~Effects(t) /\ txn[t].state = "Committing"
+     /\ InCommit(k) /\ txn[t].pc = "CommitFlip" /\ ~Effects(t) /\ txn[t].state = "Committing"
      /\ txn' = [txn EXCEPT ![t].state = "Committed", ![t].csn = txn[t].snapshot, ![t].csn_notified = TRUE, ![t].pc = "CommitFinalize"]
      /\ h' = [h EXCEPT !.csn[t] = txn[t].snapshot]
   /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
 CommitStore(k, p, op, phase) ==
-  /\ client[k].pc = "Commit"
+  /\ InCommit(k)
   /\ CommitStoreEffect(Sess(k), Cur(k), p, op, phase)
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
 CommitStoreCreation(k, p) == CommitStore(k, p, "CreationCSN", "CommitStoreCreation")
 CommitStoreRemoval(k, p) == CommitStore(k, p, "RemovalCSN", "CommitStoreRemoval")
 CommitFlip(k) ==
   /\ LET t == Cur(k) IN
-     /\ client[k].pc = "Commit" /\ Effects(t) /\ txn[t].state = "Committing"
+     /\ InCommit(k) /\ Effects(t) /\ txn[t].state = "Committing"
      /\ (txn[t].pc = "CommitFlip" \/ (Witness("FlipAfterStores") /\ txn[t].pc \in {"CommitStoreCreation", "CommitStoreRemoval"}))
      /\ CommitFlipEffect(t)
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, sys, client, stmt, mut, task>>
 CommitFinalize(k) ==
   /\ LET t == Cur(k) IN
-     /\ client[k].pc = "Commit" /\ txn[t].pc = "CommitFinalize"
+     /\ InCommit(k) /\ txn[t].pc = "CommitFinalize"
      /\ CommitFinalizeEffect(NoActor, t)
      /\ client' = [client EXCEPT ![k].waiting = IF WAIT_MODE = "ASYNC" THEN "None" ELSE "ForLoad"]
   /\ UNCHANGED <<zk, disk, mdisk, h, sys, stmt, mut, task>>
 CommitAck(k) ==
   /\ LET t == Cur(k) IN
-     /\ client[k].pc = "Commit" /\ txn[t].state = "Committed" /\ txn[t].pc = "Idle"
-     \* A session parked in waitStateChange returns through CommitUnknownResolved, which is the other half of
-     \* executeCommit. Without this the two actions model one return and every unknown resolution is explored
-     \* twice. Only CommitUnknown sets "ForState", so no scenario without a Keeper fault is affected.
-     /\ client[k].waiting /= "ForState"
+     /\ InCommit(k) /\ txn[t].state = "Committed" /\ txn[t].pc = "Idle"
      /\ (client[k].waiting = "ForLoad" => tlog.latest_snapshot >= txn[t].csn)      \* waitForCSNLoaded
      /\ client' = [client EXCEPT ![k].outcome = "Acked", ![k].outcome_tid = t, ![k].current = EmptyTID,
                                  ![k].waiting = "None", ![k].pc = "Idle"]
@@ -900,13 +900,15 @@ RollbackUnlockA(a, t, p) ==
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
 RollbackUnlock(k, t, p) == RollbackUnlockA(Sess(k), t, p)
 UpdRollbackUnlock(t, p) == RollbackUnlockA(Upd, t, p)
-\* The `finalizing` clause is the counterpart of CommitFinalizeEffect's: the unknown-state pass learns here that
-\* the transaction it rolled back is done. It is a no-op for every other driver.
+\* The `finalizing` clause is the counterpart of CommitFinalizeEffect's, and it is the updating thread's own
+\* release: the pass learns here that the transaction it drove is done. A driver that won the CAS inside the
+\* window the guard release opens does NOT clear it, because the pass is not that driver's to release;
+\* UpdRollbackLost is where the pass notices and lets go.
 RollbackFinalizeA(a, t) ==
   /\ DrivesA(a, t) /\ txn[t].pc = "RollbackFinalize"
   /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN,
                           !.retention_in_use[t] = UnknownCSN,
-                          !.finalizing = IF @ = t THEN EmptyTID ELSE @]
+                          !.finalizing = IF @ = t /\ a = Upd THEN EmptyTID ELSE @]
   \* A session's or a task's holder is deliberately left alone. MergeTreeTransaction::rollback destroys no
   \* shared_ptr: the holder goes away when its owner's MergeTreeTransactionHolder is destroyed, which is
   \* RollbackReturn and the detaching branch of RollbackStart for a session, and MergeCommitFinalize or
@@ -1082,13 +1084,19 @@ UpdRollbackStart(t) ==
 
 \* the same CAS failing: somebody else rolled the transaction back in the window the guard release opened, so
 \* rollbackTransaction returns at TransactionLog.cpp:544-548 and the pass goes on to its next entry. The
-\* transaction is left to whoever won; that driver's RollbackFinalizeA clears nothing here, because this step
-\* has already released the pass.
+\* transaction is left to whoever won.
+\* The rb_driver conjunct is what makes this "somebody else": without it the step is enabled in the state
+\* UpdRollbackStart produces, so the thread would lose a CAS it had just won and release the pass while still
+\* driving that rollback, which is one thread doing two things.
+\* The holder goes here for the same reason it goes in RollbackFinalizeA on the other path: it is the
+\* MergeTreeTransactionPtr the pass's local list owns, and the pass is done with this entry whoever won.
 UpdRollbackLost(t) ==
   /\ tlog.finalizing = t /\ txn[t].state /= "Running"
   /\ txn[t].csn = RolledBackCSN
+  /\ txn[t].rb_driver /= Upd
   /\ tlog' = [tlog EXCEPT !.finalizing = EmptyTID]
-  /\ UNCHANGED <<zk, disk, mdisk, h, part, txn, sys, client, stmt, mut, task>>
+  /\ txn' = [txn EXCEPT ![t].holders = @ \ {Upd}]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, sys, client, stmt, mut, task>>
 
 \* the pass ends and the thread leaves tryFinalizeUnknownStateTransactions
 UpdFinalizeDone ==
