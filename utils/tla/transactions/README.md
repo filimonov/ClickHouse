@@ -642,6 +642,10 @@ sanity runs on that tree.
 | `CrashLegacy` | 2026-09-21 | the restart-properties commit | 20,580,014 | 7 min 23 s | green with `LegacyLoads` on the roster; it is smaller than `Crash` because `P1` exists at init and cannot be inserted |
 | `CrashUnsyncedFixed`, history-free rows added | 2026-09-21 | the restart-properties commit | 36,755,726 | 8 min 48 s | green; the payment of debt `B9` |
 | `CrashHarm` | 2026-09-21 | the restart-properties commit | 106,627, a first-violation count | 9 s | **red on `F11Harm`**, which is finding `F11`'s harm at `RESTARTS_MAX = 2` |
+| `CrashUnsynced` | 2026-09-21 | the fix-round commit | 28,844, a first-violation count | 3 s | **red on `LogEntryNeeded`**, the same 22 states, after the variant was re-derived from observable state |
+| `CrashUnsyncedFixed` | 2026-09-21 | the fix-round commit | 37,303,778 | 8 min 44 s | green over the whole roster under the re-derived variant; 1.5% above 36,755,726, which is the new part field |
+| `CrashHarm` | 2026-09-21 | the fix-round commit | 125,290, a first-violation count | 9 s | **red on `F11Harm`**, 25 states |
+| `CrashLegacy` | 2026-09-21 | the fix-round commit | 20,580,014 | 7 min 18 s | green, identical to the state and to the generated count; the control that the new part field costs an all-synced module nothing |
 
 `Crash`'s row is the control that matters. The round added four properties, one action and, after the unsynced
 world found them, two disk-model repairs, and the scenario did not move by a state. A property cannot move it,

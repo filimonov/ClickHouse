@@ -19,11 +19,17 @@ FrameType == [owner : FrameOwners, op : StoreOps, val : AllTids \cup AllCSNs, te
               retries : 0..MAX_STORE_RETRIES, interferences : 0..MAX_STORE_RETRIES, interfered : BOOLEAN,
               noexcept_retries : 0..NOEXCEPT_RETRY_BUDGET, noexcept_owner : BOOLEAN]
 PayloadType == [ver : 0..3, tomb : BOOLEAN]
+\* meta_unsynced is the bit the server itself can keep: this part's record was written to txn_version.txt and
+\* the rename that publishes it was not fsynced, because storeInfoToDataPartStorage takes its directory guard
+\* only under fsync_part_directory (VersionMetadataOnDisk.cpp:360-362). It is in-memory state, so DownEffect
+\* clears it with the rest of the part record, and FsyncDir is what clears it while the server lives.
 PartRecord == [pstate : PStates, mem : VersionInfoType, lock : AllTids,
                deferrable : BOOLEAN, deferred_on : BOOLEAN, deferred : VersionInfoType,
-               pins : SUBSET Pins, frames : SUBSET FrameType, payload : PayloadType]
+               pins : SUBSET Pins, frames : SUBSET FrameType, payload : PayloadType,
+               meta_unsynced : BOOLEAN]
 AbsentPartRecord == [pstate |-> "Absent", mem |-> EmptyInfo, lock |-> EmptyTID, deferrable |-> TRUE,
-                     deferred_on |-> FALSE, deferred |-> EmptyInfo, pins |-> {}, frames |-> {}, payload |-> [ver |-> 0, tomb |-> FALSE]]
+                     deferred_on |-> FALSE, deferred |-> EmptyInfo, pins |-> {}, frames |-> {},
+                     payload |-> [ver |-> 0, tomb |-> FALSE], meta_unsynced |-> FALSE]
 \* The record VersionInfo::readFromMultiLineBuffer produces for the pre-storing_version format (upstream
 \* aea1c111e0a8): a non-transactional creation. Its storing_version is 0 and not -1, because the FILE EXISTS;
 \* -1 is the value StoredRecord returns when there is no record at all. Model defect M1 was exactly this
@@ -251,6 +257,10 @@ CreationInFlight(p, f, base) ==
   /\ ~Witness("Assert_validateInfo_nocreation_only2")
   /\ ~Witness("Assert_validateInfo_nocreation")
 
+\* The record was written and the rename that publishes it is not durable yet. It is the same condition
+\* DiskWithInfo branches on, read from the settings rather than from the disk, which is what the server knows.
+MetaLeftUnsynced == Layered /\ ~FSYNC_PART_DIRECTORY
+
 \* ---- the three-step store (updateInfoWithRefreshDataThenStoreAndSetMetadata); each step is an action of the root
 \* StoreRead: getInfo on attempt 1, loadMetadata on a retry (or the witness's getInfo), the op applied, updateCSNIfNeeded,
 \* validateInfo. A validation failure parks the frame in Error(LOGICAL_ERROR) for the owner to consume.
@@ -298,7 +308,8 @@ StorePersistStep(p, o) ==
         ELSE \* the write; every other persisting frame on p learns of the interference
              /\ disk' = DiskWithInfo(p, newinfo)
              /\ part' = [part EXCEPT ![p].frames = keep \cup bumped \cup {[f EXCEPT !.pc = "Publish", !.tentative = newinfo]},
-                                     ![p].deferrable = FALSE, ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo]
+                                     ![p].deferrable = FALSE, ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo,
+                                     ![p].meta_unsynced = MetaLeftUnsynced]
 
 \* StorePublish: setInfo under version_info_mutex, ignored if the stored version is lower than the current one.
 \* A non-transactional removal has no commit point: the record becoming visible IS the removal taking effect,

@@ -804,6 +804,15 @@ additionally carries every row of the `Crash` roster that reads no history varia
 roster that world can honestly check. Rows that read `h` stay off, and the one sentence that covers all of them
 is the one above.
 
+Read that green for what it is. `MC_CrashUnsyncedFixed` runs under `ENTRY_KEPT_UNTIL_CSN_DURABLE`, which no
+upstream server has, so those rows are verified against the **fixed** system. The unsynced default is
+`MC_CrashUnsynced`, and a module that stops at its first violation checks nothing else.
+
+`LogEntryNeeded` is green on the baseline `MC_Crash`, and that green is **not vacuous**: with `h.truncated = {}`
+added as an invariant, `MC_Crash` is red in 19 states, so the truncation the property is about is reachable at
+that scenario's bounds. The measurement is the task-3 review's; it is recorded here because a green nobody has
+shown non-vacuous is the class of result this file exists to prevent.
+
 ### The restart properties, and the five rows they owe {#witnesses-crash-restart}
 
 Four properties entered `Invariants.tla` with this scenario and all four witnesses are red.
@@ -831,7 +840,7 @@ states.
 `AckedWriteIsDurable`'s row above is the fifth of the five the dispatch names, and it is the one that is
 already run and red.
 
-Three of the four run in `Crash` and none needed a second session, so `MC_CrashWitness` was not called on.
+Two of the four run in `Crash` and none needed a second session, so `MC_CrashWitness` was not called on.
 `LegacyLoads` runs in `CrashLegacy`, which is the only module with a legacy part, and
 `Assert_IsNonTransactionalDomain` in `CrashUnsyncedFixed` for the reason above.
 

@@ -46,7 +46,7 @@ CrashView ==
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,
        h.rolled_back, h.removers, h.creator, h.abandoned, h.down_cause, h.content, h.truncated, h.payload>>,
      [p \in Parts |-> <<part[p].pstate, part[p].mem, part[p].lock, part[p].deferrable,
-                        part[p].deferred_on, part[p].deferred, part[p].pins, part[p].payload,
+                        part[p].deferred_on, part[p].deferred, part[p].pins, part[p].payload, part[p].meta_unsynced,
                         { FrameKey(f) : f \in part[p].frames }>>],
      <<tlog.tid_start, tlog.tid_to_csn, tlog.latest_snapshot, tlog.local_tid_counter,
        tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use, tlog.retention_in_use,

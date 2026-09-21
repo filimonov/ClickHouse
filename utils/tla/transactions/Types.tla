@@ -92,9 +92,12 @@ ASSUME REMOVAL_REFUSES_UNCOMMITTED_CREATION \in BOOLEAN
 \* it with the CSNs a startup writes into data parts. Those writes are not fsynced, so an entry can be pruned
 \* while the only durable copy of its CSN is still the record without one. TRUE is the fix proposed by finding
 \* F11 and by the code's own TODO at :305-307, "keep outdated entries for a while": the removal loop skips an
-\* entry whose transaction some part's in-memory record still names with a CSN the disk does not carry. It is
-\* stated on the removal rather than on the tail because holding the tail back would need the start CSN of a
-\* transaction the model does not recover across a restart, which is model defect M47.
+\* entry whose CSN is carried only by a record the server has written and not yet made durable, which it knows
+\* from part[p].mem and the part's meta_unsynced bit and from nothing else. It is stated on the removal rather
+\* than on the tail because holding the tail back would need the start CSN of a transaction the model does not
+\* recover across a restart, which is model defect M47. Setting fsync_part_directory also closes the window,
+\* but that is finding F10's mitigation: it is off by default and it syncs every metadata store, where this
+\* keeps the entry until the one store that matters has reached the disk.
 ASSUME ENTRY_KEPT_UNTIL_CSN_DURABLE \in BOOLEAN
 
 \* Covering relation: Covers[p] = direct children of p. Expand gives the base parts under a set.

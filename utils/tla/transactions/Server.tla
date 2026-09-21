@@ -1107,7 +1107,10 @@ RestartLoadPart(p) ==
                 ELSE [part EXCEPT ![p] = [AbsentPartRecord EXCEPT
                         !.pstate = st, !.mem = rec, !.payload = h.payload[p],
                         !.deferrable = ~DiskHasInfo(p) /\ ~(wrote /\ ~defer),
-                        !.deferred_on = defer, !.deferred = IF defer THEN rec ELSE EmptyInfo]]
+                        !.deferred_on = defer, !.deferred = IF defer THEN rec ELSE EmptyInfo,
+                        \* the startup repair the comment at TransactionLog.cpp:288-289 relies on, recorded
+                        \* because that write is no more durable than any other one
+                        !.meta_unsynced = wrote /\ ~defer /\ MetaLeftUnsynced]]
      \* loadMetadata removes the tmp file whether or not a record was found, which is the third arm; where the
      \* record came from a tmp-only directory and was written, DiskWithInfo has already cleared tmp_cached.
      /\ disk' = IF broken THEN disk
@@ -1144,7 +1147,10 @@ RestartLoadMutation(m) ==
 \* (VersionMetadataOnDisk.cpp:361-363), so without it the rename reaches the durable layer only through a later
 \* sync, which is this action, and a writeback of that directory is one.
 FsyncDir(p) == /\ Layered /\ DiskDirExists(p) /\ disk' = DiskWithDirSynced(p)
-               /\ UNCHANGED <<zk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
+               \* This sync is what publishes the txn_version.txt rename, so it is what the server would clear
+               \* the bit on: after it, the record the loader will read carries what memory carries.
+               /\ part' = [part EXCEPT ![p].meta_unsynced = FALSE]
+               /\ UNCHANGED <<zk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
 \* A sync of the PARENT directory, which is what makes the part directory's own name durable, the temporary one
 \* before the rename and the final one after it. renameTo takes that guard only under the same setting
 \* (IMergeTreeDataPart.cpp:2894, DataPartStorageOnDiskBase.cpp:793-800). It is a separate action from the one
@@ -1234,14 +1240,16 @@ UpdRemoveOldEntriesSetTail ==
 \* The C++ snapshots tid_to_csn and latest_snapshot once and then loops; the model re-reads them per iteration,
 \* so it can delete an entry the C++ would have kept as "the latest one we fetched". That widens the behaviour
 \* set; see FINDINGS.md section 2, model defect M3, for why it is sound here and where it gets settled.
-\* The transactions whose CSN a part holds in memory and the disk does not. MergeTreeData can report this set:
-\* it is the parts whose creation_csn or removal_csn is set in VersionMetadata while txn_version.txt still
-\* carries the record without it. Under ENTRY_KEPT_UNTIL_CSN_DURABLE the removal loop keeps their entries, which
-\* is finding F11's fix.
+\* The transactions whose CSN is carried only by a record the server has written and not yet made durable.
+\* Everything here is state the process holds: the in-memory record and the bit set when the write left the
+\* rename unsynced. It deliberately does NOT read the durable layer, which is the layer a crash keeps and which
+\* no running server can inspect; a set derived from that layer would be an oracle rather than a fix.
+\* Under ENTRY_KEPT_UNTIL_CSN_DURABLE the removal loop keeps these entries, which is finding F11's fix.
 UnsyncedCsnOwners ==
   { t \in Tids : \E p \in Parts :
-      \/ (part[p].mem.ctid = t /\ part[p].mem.ccsn /= UnknownCSN /\ DurableRecord(p).ccsn = UnknownCSN)
-      \/ (part[p].mem.rtid = t /\ part[p].mem.rcsn /= UnknownCSN /\ DurableRecord(p).rcsn = UnknownCSN) }
+      /\ part[p].meta_unsynced
+      /\ \/ (part[p].mem.ctid = t /\ part[p].mem.ccsn /= UnknownCSN)
+         \/ (part[p].mem.rtid = t /\ part[p].mem.rcsn /= UnknownCSN) }
 
 UpdRemoveOldEntriesDelete(c) ==
   /\ sys.updater_pc = "Delete"

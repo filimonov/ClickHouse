@@ -954,6 +954,27 @@ scenario that no longer fits, and the bits had bought 0.6%.
 | `CrashHarm`, `RESTARTS_MAX = 2`, one property | **red on `F11Harm`**, 26 states, which is finding `F11`'s harm end to end | 106,627, a first-violation count | 9 s |
 | `CrashUnsyncedFixed` with model defect `M48` restored, `DurabilityMonotone` alone, on a scratch copy | **red on `DurabilityMonotone`**, which is the new clause shown to fence something | 1,043 | 1 s |
 
+The fix round re-derived finding `F11`'s variant from observable state. The first form of `UnsyncedCsnOwners`
+compared the in-memory record against `disk[p].durable`, the layer a crash keeps, which no running server can
+read: at the removal step of the finding's own trace the process's `txn_version.txt` already carries the CSN,
+so a set built that way is empty and the entry is pruned exactly as it is today. The variant now reads
+`part[p].mem` and a per-part bit recording that the record was written with the directory guard skipped, which
+is state the process holds. `StorePersistStep` and `RestartLoadPart` set it, `FsyncDir` clears it, and
+`MetaLeftUnsynced` is the settings condition `DiskWithInfo` already branches on.
+
+| Configuration | Result | Distinct states | Time |
+|---|---|---|---|
+| `CrashUnsynced`, re-derived variant | **red on `LogEntryNeeded`**, the same 22 states | 28,844, a first-violation count | 3 s |
+| `CrashUnsyncedFixed`, re-derived variant, **committed** | **green** over the whole roster | 37,303,778 | 8 min 44 s |
+| `CrashHarm`, re-derived variant | **red on `F11Harm`**, 25 states | 125,290, a first-violation count | 9 s |
+| `CrashLegacy`, the all-synced control | green, **identical to the state and to the generated count**, 220,640,720 | 20,580,014 | 7 min 18 s |
+
+The new part field costs the unsynced module 1.5%, from 36,755,726 to 37,303,778. It costs the all-synced
+modules nothing and cannot: `MetaLeftUnsynced` is `DISK_MODE = "Layered" /\ ~FSYNC_PART_DIRECTORY`, so with
+`FSYNC_PART_DIRECTORY` on the bit is `FALSE` in every reachable state of `Crash`, `CrashLegacy` and their
+siblings, and a field that never varies cannot split a fingerprint. `CrashLegacy` is the control that says so
+by measurement rather than by that argument.
+
 Two of these rows are the ones worth reading.
 
 The first `Crash` row is a control and not a measurement. Four properties and one new action were added, and the
@@ -986,12 +1007,19 @@ Measured red, in the order the runs produced them, before the enumeration replac
 and `NoFutureRead`, through a lost removal. Those are on top of `AckedWriteIsDurable`, `NoPrematureDelete` and
 `NoLostVisibleData`, which the debt already named. Predicted by the same argument and **not run**, which is
 said here rather than counted as evidence: `Atomicity`, through the same lost creation as `NoLostRead`;
-`NoDoubleRead` and `ActiveSetShape`, through a lost removal leaving a merge source `Active` beside the result
-that covers it; and `NoUncommittedRead` and `RollbackNoLeak`, through a lost rollback stamp.
+`NoDoubleRead`, through a lost removal leaving a merge source readable beside the result that covers it; and
+`NoUncommittedRead` and `RollbackNoLeak`, through a lost rollback stamp.
 
-`MC_CrashUnsynced` and `MC_CrashUnsyncedFixed` are therefore finding modules and not coverage modules. They
-carry `TypeOK`, `LogEntryNeeded` and `DurabilityMonotone`, which is the shape `MC_CrashF10` has: a reproducer
-and its verified fix. `B9` is **not paid**, and what it should ask instead is in `FINDINGS.md`.
+`ActiveSetShape` was predicted with them and the prediction was **wrong**. It is green on
+`MC_CrashUnsyncedFixed`, and the reason is structural rather than lucky: `RestartTableStart` puts every covered
+part in `outdated_queue`, and `RestartLoadPart` gives an outdated-pass part `Outdated` unconditionally, so the
+loader's two-pass shape cannot produce a covered part and its covering part `Active` at once, however the
+removal was lost.
+
+`MC_CrashUnsynced` is therefore a finding module and not a coverage module: `TypeOK`, `LogEntryNeeded` and
+`DurabilityMonotone`, which is the shape `MC_CrashF10` has. `MC_CrashUnsyncedFixed` is its verified fix, and it
+is where `B9` is **paid**: it carries, beside those three, every row of the `Crash` roster that reads no
+history variable. What that payment is and is not evidence for is in `FINDINGS.md`, `B9`.
 
 ### The model defects the unsynced world found {#crash-unsynced-defects}
 
