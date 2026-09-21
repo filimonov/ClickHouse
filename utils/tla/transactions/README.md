@@ -84,6 +84,14 @@ The non-transactional scenario is four modules, because no exhaustive run of the
 variant: `NonTxnF4`, `NonTxnF5`, `NonTxnF6`, `NonTxnFixed` and `NonTxnF2`, the last being finding F2 reproduced
 at two transactions with a non-transactional creator. `STATE_SPACE.md` has the bounds of each and why.
 
+Every configuration of that scenario runs with `OBSOLETE_IS_ROLLED_BACK = TRUE`, and that has to be read with
+its greens. The constant is finding `F6`'s proposed fix, which is **not** in upstream `master`: without it the
+scenario is red on `Assert_validateInfo`, which is what `MC_NonTxnF6` shows. `MC_NonTxnDrop` and
+`MC_NonTxnDropTwo` additionally leave `ActiveSetShape` out of their `INVARIANTS`, because finding `F5`
+falsifies it and `MC_NonTxnF5` is where that is shown; `MC_NonTxnInsert` keeps it. So the greens of this
+scenario are greens against a patched `master` with one known violation off the roster, not against `master` as
+it stands. `FINDINGS.md`, findings `F5` and `F6`, and `STATE_SPACE.md` carry the detail.
+
 `run_tlc.sh` downloads `tla2tools.jar` into `tmp/` if it is missing, and it uses `-Xmx16g` and a 45-minute
 `timeout`.
 
@@ -154,7 +162,7 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 | `DropStore(k, q)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::removeOldPart` (:213) | `setAndStoreRemovalTID(tid)` has finished and the `mutex` scope ends; the loop moves to the next part of the batch |
 | `DropOutdate(k)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::removePartsFromWorkingSet` (:7034) | the state loop after the removal metadata of the whole batch is written: every part of the batch becomes `Outdated`, still under the acquired parts lock. The model releases the merge blocker here; in the code the blocker's `ActionLock` is released a little later, when `dropPartition`'s scope ends |
 | `CommitBefore(k)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::beforeCommit` (:284) | `waitForMutation` has returned for every attached mutation and the CAS `UnknownCSN -> CommittingCSN` has succeeded; no Keeper request has been made |
-| `CommitError(k)` | `src/Interpreters/InterpreterTransactionControlQuery.cpp` | `InterpreterTransactionControlQuery::executeCommit` (:55) | the `getState() != RUNNING` guard (:64) refuses a `COMMIT` on a transaction that `KILL TRANSACTION` already rolled back, with `INVALID_TRANSACTION`, before `commitTransaction` is called. The same error comes from the failed CAS in `beforeCommit` (:308) when the kill lands after the guard |
+| `CommitError(k)` | `src/Interpreters/InterpreterTransactionControlQuery.cpp` | `InterpreterTransactionControlQuery::executeCommit` (:55) | the guard at (:64), which unless `getState` is `RUNNING` refuses a `COMMIT` on a transaction that `KILL TRANSACTION` already rolled back, with `INVALID_TRANSACTION`, before `commitTransaction` is called. The same error comes from the failed CAS in `beforeCommit` (:308) when the kill lands after the guard |
 | `CommitCreateCSN(k)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::commitTransaction` (:419) | the commit point: the `multi` whose last request is the sequential `csn-` create has returned, and the allocated CSN is deserialized inside `NOEXCEPT_SCOPE_STRICT`. The two other outcomes of that request belong to plan 3 |
 | `CommitReadOnly(k)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::commitTransaction` (:419) | the `isReadOnly` branch: no Keeper request at all, and `finalizeCommittedTransaction` takes the transaction's own snapshot as the commit timestamp |
 | `CommitStoreCreation(k, p)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::afterCommit` (:321) | one `setAndStoreCreationCSN(assigned_csn)` of the loop over `created_parts`. The action is two steps, one that opens the store frame and one that consumes it |
@@ -210,12 +218,12 @@ operators in `Server.tla`.
 
 | Action | C++ file | Function | Step boundary |
 |---|---|---|---|
-| `MergeBegin(i)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::scheduleDataProcessingJob` (:2203) | `beginTransaction` (:2226) and the `MergeTreeTransactionHolder` with `autocommit = false` (:2227), under the `transactions_enabled` gate. `sys.merges_blocker` is the `merges_blocker.isCancelled()` check at :2240 |
+| `MergeBegin(i)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::scheduleDataProcessingJob` (:2203) | `beginTransaction` (:2226) and the `MergeTreeTransactionHolder` with `autocommit = false` (:2227), under the `transactions_enabled` gate. `sys.merges_blocker` is the `merges_blocker.isCancelled` check at :2240 |
 | `MergeSelect(i)` | `src/Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.cpp` | the predicate `constructPreconditionsPredicate` builds (:80), from `StorageMergeTree::selectPartsToMerge` (:1680) | each source is visible at the merge's snapshot with the **empty** tid (:88), is not locked for removal (:91), and passes `canUsePartInMerges` (:98). The reservation and the pins are `CurrentlyMergingPartsTagger`'s constructor (`StorageMergeTree.cpp:867`), whose `Tagging already tagged part` `LOGICAL_ERROR` (:918-921) is the reservation clause of `ActiveSetShape` |
 | `MergeWrite(i)` | `src/Storages/MergeTree/MergePlainMergeTreeTask.cpp` | `MergePlainMergeTreeTask::prepare` (:92) through `mergePartsToTemporaryPart` (:137) | `setAndStoreCreationTID` on the result, which becomes `Temporary`. The task holds it from here, first through `merge_task` and then through `new_part` (:156) |
 | `MergeRename(i)` | `src/Storages/MergeTree/MergeTreeDataMergerMutator.cpp` | `MergeTreeDataMergerMutator::renameMergedTemporaryPart` (:526), called from `MergePlainMergeTreeTask::finish` (:160) | the result is `PreActive` and is in the statement transaction's `precommitted_parts` |
 | `MergePublishStart(i)`, `MergePublishEnrol(i, q)`, `MergePublishStore(i, q)`, `MergePublishFlip(i)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::commit` (:11219), called at `MergePlainMergeTreeTask.cpp:161` | the same four steps a session's `Publish*` takes, with the sources as the covered parts. `reserved[i]` is **not** released here |
-| `MergeCommitBefore(i)` … `MergeCommitFinalize(i)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::commitTransaction(txn, throw_on_unknown_status = false)`, called at `MergePlainMergeTreeTask.cpp:195` | the same `Commit*` steps. `MergeCommitFinalize` also runs `merge_mutate_entry->finalize()` (:200), which releases the reservation, the source pins and the transaction holder |
+| `MergeCommitBefore(i)` … `MergeCommitFinalize(i)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::commitTransaction(txn, throw_on_unknown_status = false)`, called at `MergePlainMergeTreeTask.cpp:195` | the same `Commit*` steps. `MergeCommitFinalize` also runs `merge_mutate_entry->finalize` (:200), which releases the reservation, the source pins and the transaction holder |
 | `MergeFail(i)` | `src/Storages/MergeTree/MergePlainMergeTreeTask.cpp` | `MergePlainMergeTreeTask::executeStep` rethrowing (:70-74) | what the query holds is released: the transaction mutex, the parts lock and the task's frames. `MergeFailTrigger` enumerates the three triggers that are live without an injected fault |
 | `MergeStmtRollbackMark(i, p)`, `MergeStmtRollbackDrop(i)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::Transaction::rollback` (:11122) | the same two halves the client's `StmtRollback*` takes: `setAndStoreCreationCSN(RolledBackCSN)` per precommitted part (:11126), then `removePartsFromWorkingSet` for the set under `lockParts` (:11181) |
 | `MergeUnwind(i)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::rollback` (:377), reached from `MergeTreeTransactionHolder`'s destructor | the tagger releases the reservation and the source pins, and the holder's `rollbackTransaction` either wins the compare-and-exchange at :382 or finds that a `KILL` already did |
@@ -340,12 +348,12 @@ discarded.
 | `Base` | 2026-09-18 | the non-transactional commit | 26,839,136 | 3 min 56 s | green; it moves by 6% because model defect `M13` restored `DropLock`'s `lockParts` guard, which an empty `Tasks` had made vacuous |
 | `NonTxn`, undivided | 2026-09-18 | the non-transactional commit | 27,234,570 at the matrix bounds and 59,047,617 at `TID_MAX = 2` | killed, twice | an exhaustive run does not finish at any bounds that keep the scenario's subject |
 | `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | 2026-09-18 | the non-transactional commit | 74,225, 106,922 and 113,093, all first-violation counts | 4 s in total | one red module per finding, traces in `traces/` |
-| `NonTxnFixed` | 2026-09-18 | the non-transactional commit | 841,907 | 8 s | green, which is finding F6's fix verified |
+| `NonTxnFixed` | 2026-09-18 | the non-transactional commit | 841,907 | 8 s | green, which is finding F6's fix verified; `MC_NonTxnFixed` is the undivided module with `OBSOLETE_IS_ROLLED_BACK = TRUE` |
 | `NonTxn` witness sweep, 14 rows | 2026-09-18 | the non-transactional commit | 44,213,335 for the one that does not finish | ≈ 11 min in total | red except `NoUncommittedRead`, which is debt `B4` |
 
 | Scenario | Date | Commit | Distinct states | Time | Result |
 |---|---|---|---|---|---|
-| `NonTxnInsert` | 2026-09-20 | the review fix-round commit | 15,787,889, and 15,787,838 on the closing re-run of the committed tree | 2 min 33 s | green; the half of the split scenario that keeps the non-transactional `INSERT` |
+| `NonTxnInsert` | 2026-09-20 | the review fix-round commit | 15,787,889, and 15,787,838 on the closing re-run of the committed tree | 2 min 33 s | green under `OBSOLETE_IS_ROLLED_BACK = TRUE`, finding `F6`'s unmerged fix; the half of the split scenario that keeps the non-transactional `INSERT` |
 | `NonTxnDrop` | 2026-09-20 | the review fix-round commit | 56,703,779 after 9 min 30 s, queue 3.39M | killed, three times | the half that keeps the removal batch; no finishing configuration, model defect `M15` |
 | `NonTxnF7` | 2026-09-20 | the review fix-round commit | 75.3 million after 600 s | no violation | the ghost-lag fix of `M16` withdraws finding F7; the module is deleted |
 | `SetSnapshot` and `SetSnapshotFixed` | 2026-09-20 | the review fix-round commit | 12,766,799 and 12,236,834 | 1 min 55 s and 1 min 52 s | green; the `M13` re-measurement, about 6% below the pre-fix figures |
@@ -381,8 +389,8 @@ either is negligible.
 |---|---|---|---|---|---|
 | `NonTxnDrop`, `TID_MAX = 2` | 2026-09-21 | the budget commit | 32,818,006 after 5 min, queue 2.71M | killed | the committed configuration re-measured with its own view; still growing, so still no exhaustive run |
 | `NonTxnDrop`, `TID_MAX = 2`, one non-transactional query per behaviour | 2026-09-21 | the budget commit | 32,216,335 after 5 min, queue 2.70M | killed | the `CONSTRAINT` lever measured and **rejected**: a two per cent cut. Reverted with its ghost counter |
-| `NonTxnDrop`, `TID_MAX = 1`, **committed** | 2026-09-21 | the budget commit | 1,112,063 | 11 s | green; the exhaustive configuration of the drop half, with the cleanup group |
-| `NonTxnDropTwo`, `TID_MAX = 2`, no cleanup group, **committed** | 2026-09-21 | the budget commit | 47,958,711 | 7 min 34 s | green; the queue peaked at 1.21M and drained, which is why a count above 30 million is accepted here |
+| `NonTxnDrop`, `TID_MAX = 1`, **committed** | 2026-09-21 | the budget commit | 1,112,063 | 11 s | green under `OBSOLETE_IS_ROLLED_BACK = TRUE`, finding `F6`'s unmerged fix, and with `ActiveSetShape` off the roster, which finding `F5` falsifies; the exhaustive configuration of the drop half, with the cleanup group |
+| `NonTxnDropTwo`, `TID_MAX = 2`, no cleanup group, **committed** | 2026-09-21 | the budget commit | 47,958,711 | 7 min 34 s | green under `OBSOLETE_IS_ROLLED_BACK = TRUE`, finding `F6`'s unmerged fix, and with `ActiveSetShape` off the roster, which finding `F5` falsifies; the queue peaked at 1.21M and drained, which is why a count above 30 million is accepted here |
 | `NonTxnF2` | 2026-09-21 | the budget commit | 9,132 and 9,193, first-violation counts; a re-run gave 10,233 for the first | under 1 s each | **red on `NoPrematureDelete` and on `NoLostVisibleData`**: finding F2 at two transactions with a non-transactional creator, which closes debt `B2` |
 | `NonTxnDrop` witness sweep, 28 rows | 2026-09-21 | the budget commit and the two fix rounds | 25,686,095 for the largest | about 7 min in total | fourteen red, including both batch witnesses, `Assert_getOldestSnapshot_size`, `NoNtStoreError` and the `Assert_validateInfo_nocreation` minimality halves, which closes `B5`; fourteen green by full exploration, each named where it is paid or placed |
 | `NonTxnDropTwo` witnesses, 5 rows | 2026-09-21 | the budget commit and the two fix rounds | 65,525,357 for the largest | 30 min in total | `Atomicity` red; three green by full exploration; `SingleRemover` killed unfired at 65,525,357 with the queue growing, and placed in plan 5 |
@@ -394,8 +402,32 @@ either is negligible.
 | `BaseSmall` | 2026-09-21 | the budget commit | 47,381 | 1 s | green |
 | `Merge` | 2026-09-21 | the budget commit | 5,196,830 | 50 s | green at one session |
 | `SetSnapshotF2` | 2026-09-21 | the budget commit | a first-violation count | 1 s | **red on `NoPrematureDelete`**, as it is expected to be |
-| `NonTxnInsert` | 2026-09-21 | the budget commit | 15,788,049 | 2 min 35 s | green; 15,787,838 and 15,787,889 on the two earlier runs, which is the counting noise |
+| `NonTxnInsert` | 2026-09-21 | the budget commit | 15,788,049 | 2 min 35 s | green under `OBSOLETE_IS_ROLLED_BACK = TRUE`, finding `F6`'s unmerged fix; 15,787,838 and 15,787,889 on the two earlier runs, which is the counting noise |
 | `Base` | 2026-09-21 | the budget commit | 26,839,128 | 3 min 54 s | green at the matrix bounds; 26,839,136 on the previous commit |
+
+Every `NonTxn*` row of these tables, the witness sweeps included, was measured with
+`OBSOLETE_IS_ROLLED_BACK = TRUE`, and the two drop configurations without `ActiveSetShape`. Section 2 says what
+that costs; it is repeated here because a result cell is what a reader quotes.
+
+### Per-scenario assurance {#per-scenario-assurance}
+
+What each committed configuration verifies and what it gives up, so that a green can be read without assembling
+it from three files. "Exhaustive" means TLC drained the queue at those bounds.
+
+| Configuration | Verified exhaustively | Given up | Where the gap is recorded |
+|---|---|---|---|
+| `BaseSmall` | one session, `TID_MAX = 2`, `CSN_MAX = 35`, 47,381 states, the whole roster | every interleaving of two sessions | `STATE_SPACE.md`, "Where `Base` stands" |
+| `Base` | two sessions at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36`, 26,839,128 states, the whole roster | nothing of its own slice; the cleanup thread, the merge task, the non-transactional queries and `SET TRANSACTION SNAPSHOT` are all stubs here | section 3, the stub table |
+| `SetSnapshot`, `SetSnapshotFixed` | `TID_MAX = 2`, `CSN_MAX = 35`, 12,766,799 and 12,236,834 states, the whole roster | the matrix bounds: an exhaustive run at `TID_MAX = 3` does not finish, so three witnesses are shown at the witness bounds instead and one, `Assert_validateInfo_removal`, is not shown at all | `FINDINGS.md`, `M4` and `B1`; `STATE_SPACE.md`, the `SetSnapshot` section |
+| `SetSnapshotF2` | nothing: it stops at the first violation, which is finding `F2` | everything else; it is a reproducer, not a check | `FINDINGS.md`, finding `F2` |
+| `SetSnapshotF2Fixed` | one session, one part, `TID_MAX = 3`, 367,183 states, over four properties | the properties outside those four; and the fix's other half, because the model publishes the truncation tail in one step, so the green verifies the refusal and not the publication | `FINDINGS.md`, finding `F2` and model defect `M18` |
+| `Merge` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, 5,196,830 states, the whole roster | the second session: an exhaustive run at two does not finish, two witnesses fire only in `MergeWitness`, and `Assert_validateInfo_removal` fires in neither | `FINDINGS.md`, `B3`; `STATE_SPACE.md`, the `Merge` section |
+| `NonTxnDrop` | one transaction with the cleanup group, `TID_MAX = 1`, 1,112,063 states | the second transaction; `ActiveSetShape`, which finding `F5` falsifies; the four snapshot-isolation rows of spec defect `S13`; and `F6`'s fix is assumed rather than tested | `FINDINGS.md`, `B4`, `M15`, `S13`, findings `F5` and `F6` |
+| `NonTxnDropTwo` | two transactions without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 47,958,711 states | the cleanup group, so no finishing configuration checks the removal batch beside two transactions and cleanup at once; `SingleRemover` unfired at 65,525,357; the same properties as the row above | `FINDINGS.md`, `B4` and `M15` |
+| `NonTxnInsert` | two transactions with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 15,788,049 states | the removal batch; `ActiveSetShape` is on the roster but vacuous, because part `E` is never created here; the `S13` rows; `F6`'s fix is assumed | `FINDINGS.md`, `B4` and `S13`; `WITNESSES.md`, the `NonTxn` section |
+| `NonTxnFixed` | the undivided scenario at one session with `OBSOLETE_IS_ROLLED_BACK = TRUE`, 841,907 states | the two-session interleavings the split modules cover | `FINDINGS.md`, finding `F6` |
+| `NonTxnF2`, `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, section 1 |
+| `SetSnapshotWitness`, `MergeWitness`, `NonTxnWitness` | nothing: `witness.sh` only, one property at a time, stopping at the first violation | exhaustive coverage at those bounds, by construction | `WITNESSES.md` |
 
 ## 5. Witnesses {#witnesses}
 
@@ -434,8 +466,9 @@ counted, not which behaviours the model has.
 ## 7. Expected-red findings {#expected-red-findings}
 
 The design document names four properties that are expected red on the baseline, each in a scenario later plans
-build. None of them is in plan 1's slice, so plan 1 has no expected red at all: every property of `Base` is
-green, and any red on a `Base` run is a finding to be explained rather than a result to be accepted.
+build. One of the four is built and red today: `NoPrematureDelete` in `SetSnapshotF2`, which is finding `F2`.
+The other three need scenarios plans 3 to 5 add, so they are neither built nor run. Outside those rows a red is
+a finding to be explained rather than a result to be accepted: every property of `Base` is green.
 
 | Property | Scenario | Why it is expected red |
 |---|---|---|

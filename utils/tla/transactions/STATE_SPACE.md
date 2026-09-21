@@ -1,4 +1,4 @@
-# State-space budget for the `Base` scenario {#state-space}
+# State-space budgets of the scenarios {#state-space}
 
 `Base` runs two sessions (`Sessions = {k1, k2}`) over two parts. It ran at `TID_MAX = 2` while the measurements
 below were taken and now runs at `TID_MAX = 3`, the transaction count the scenario matrix asks for; the
@@ -392,7 +392,7 @@ What one session costs was measured rather than argued, and three witnesses go g
 bounds spec defect `S7` allows: a witness run stops at the first violation, so it can afford a configuration no
 exhaustive run finishes at. Two of the three fire there, `NoSpuriousStaleVersion` in 14 seconds and
 `NoUncommittedRead` in 46; the third, `Assert_validateInfo_removal`, was killed unfired at 34,184,268 distinct
-states and is placed in plan 5's budget and calibration task. The view is `MergeView`'s, renamed, because what a
+states and is placed in plan 5, task 4 (budget and calibration). The view is `MergeView`'s, renamed, because what a
 projection depends on is which actions are enabled and which properties are checked, and neither differs from
 `MC_Merge`.
 
@@ -422,10 +422,11 @@ is where the report stops, not where the search does.) An actor that could resta
 terminate at any session count. The growth is the ordinary product of a third part, a task with thirteen program
 counters, a fourth actor's worth of commits and the cleanup thread crossing the whole of `Base`.
 
-The exhaustive-versus-witness split of spec defect `S7` is therefore not used here and there is no
-`MC_MergeWitness`. That pattern exists for a scenario whose exhaustive run does not finish at bounds its
-witnesses need; `Merge` finishes at 49 seconds at the bounds every one of its witnesses runs at, which is the
-condition `S7` asks for when it can be met.
+The exhaustive-versus-witness split of spec defect `S7` is therefore not needed for the exhaustive run here:
+`Merge` finishes at 49 seconds at one session, which is the condition `S7` asks for when it can be met. It is
+needed for three of the witnesses, which are green at one session and fire only at two. `MC_MergeWitness` is
+that configuration, for `witness.sh` only, and the section "The witness bounds, at two sessions" above has its
+figures.
 
 ### What the view keeps {#merge-view}
 
@@ -502,9 +503,12 @@ What is left is to check less than the whole scenario in one run. `NtNext` is di
 - `NonTxnInsert` is `BaseNext \/ NtInsertNext \/ CleanupNext`: a non-transactional `INSERT` racing a
   transaction.
 
-Both are at `TID_MAX = 2`, `CSN_MAX = 34`, two sessions, three parts. `CSN_MAX` comes down by one from the
-undivided figure because 34 is the smallest value that allows the two commits `TID_MAX = 2` permits, and every
-unit above `FirstCSN = 33` costs states.
+Both were written at `TID_MAX = 2`, `CSN_MAX = 34`, two sessions, three parts. `CSN_MAX` comes down by one from
+the undivided figure because 34 is the smallest value that allows the two commits `TID_MAX = 2` permits, and
+every unit above `FirstCSN = 33` costs states. `NonTxnInsert` still runs at those bounds; the committed
+`NonTxnDrop` does not. Task 5 brought it to `TID_MAX = 1` to make it finish and added `MC_NonTxnDropTwo`, the
+same half at `TID_MAX = 2` without the cleanup group. The two sections below, "The budget of the drop half" and
+"The second drop configuration, at two transactions", have both figures.
 
 `NonTxnInsert` finishes green. `NonTxnDrop` did not, at any configuration tried while the scenario was
 written: 32.5 million and 44.1 million distinct at `CSN_MAX = 35`, and 56,703,779 after 9 min 30 s at
@@ -559,7 +563,7 @@ Two rows are paid by neither, because they need the cleanup thread **and** a sec
 `Assert_validateInfo_order` and `SingleRemover`, and both are red in `MC_NonTxnWitness`, the undivided module at
 witness bounds, which is what the two-bound-sets rule of spec defect `S7` is for. `NoDoubleRead` and
 `NoUncommittedRead` are red in neither and in no configuration that finishes; they are what is left of `B4`,
-with the counts they reached, and they are placed in plan 5's budget and calibration task.
+with the counts they reached, and they are placed in plan 5, task 4 (budget and calibration).
 
 ### What the view keeps {#nontxn-view}
 

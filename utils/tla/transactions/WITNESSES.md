@@ -125,7 +125,8 @@ part of `h_creating[t]` is ever in the visible-parts set of a read by another tr
 `RollbackRestoresStep` is the first half and `RollbackNoLeak` is the second, stated more strongly, over
 every uncommitted transaction rather than only the rolled-back ones. The row's witness, `RollbackRestore`
 skipped, falsifies the first half; a witness for the second is writable within `Base` and belongs with the
-plan that next touches the rollback actions. `FINDINGS.md`, section 3, carries the ruling.
+task that next rewrites the rollback actions, which is plan 3, task 1 (Keeper faults at commit, the unknown-state pass, updater-driven commit and rollback).
+`FINDINGS.md`, section 3, carries the ruling.
 
 ## Witnesses deferred to a later plan {#witnesses-deferred-to-a-later-plan}
 
@@ -136,11 +137,11 @@ not results.
 
 | Property | Witness the design document names | Action it needs | Deferred to |
 |---|---|---|---|
-| `AckedWriteIsDurable` | `CommitAck` moved before `CommitCreateCSN` and a `Fail` allowed after it | `Crash` | plan 3 |
-| `ActiveSetShape`, reservation clause | two tasks reserving the same source | a second background task; the `Merge` scenario has one covering part and therefore one merge, so the clause is vacuous there | plan 4, with the `MergeMutation` scenario, where a merge and a mutation run side by side |
-| `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
-| `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | a part that is BOTH involved in a transaction and carries a deferred record, which `NonTxn` cannot build: see the `NonTxn` section below | plan 3, with the `NonTxnCrash` scenario |
-| `NtBatchDone` | `NtBatchStore` updates `mem` and skips the store for the covered parts of a non-transactional merge, which is the pre-fix defect of `ba2ee3239b8d` | `Restart*`, because the spec states the property on the stored record and the scenario it names is `NonTxnCrash` | plan 3 |
+| `AckedWriteIsDurable` | `CommitAck` moved before `CommitCreateCSN` and a `Fail` allowed after it | `Crash` | plan 3, task 2 (the layered disk, `Fsync`, `Crash`, `ProcessDown`, the restart loader), which adds `Crash` |
+| `ActiveSetShape`, reservation clause | two tasks reserving the same source | a second background task; the `Merge` scenario has one covering part and therefore one merge, so the clause is vacuous there | plan 4, task 4 (merges with mutations and the covering relation in range shape), which builds the `MergeMutation` scenario, where a merge and a mutation run side by side |
+| `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5, task 2 (`ProcessDown` policies `Terminate` versus `Retry`, `NoAvoidableTermination`, `KillRetry`, `Implicit`), which adds `ProcessDown`; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
+| `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | a part that is BOTH involved in a transaction and carries a deferred record, which `NonTxn` cannot build: see the `NonTxn` section below | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which builds the `NonTxnCrash` scenario |
+| `NtBatchDone` | `NtBatchStore` updates `mem` and skips the store for the covered parts of a non-transactional merge, which is the pre-fix defect of `ba2ee3239b8d` | `Restart*`, because the spec states the property on the stored record and the scenario it names is `NonTxnCrash` | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`) |
 
 `NoDoubleRead` and `ActiveSetShape` came off this table with the `Merge` scenario, which is the first with a covering relation; both are red there and both have rows below. What stays of `ActiveSetShape` is its second clause, which one task cannot falsify.
 
@@ -160,11 +161,12 @@ absent.
 `TypeOK` is a type invariant, not a behavioural property, and has no witness by design.
 
 Four rows of this table are in the rosters of the `NonTxn` halves as well, and are deferred there for the same
-reasons rather than silently absent: `AckedWriteIsDurable` and `NtBatchDone` to plan 3, `NoAvoidableTermination`
-to plan 5, and `NoFalseCorruption` to plan 3, the last with an argument of its own in the `NonTxn` section
-below. `NoAvoidableTermination` is worth naming twice, because it is checked in both halves and in every other
+reasons rather than silently absent: `AckedWriteIsDurable` to plan 3, task 2 (the layered disk, `Fsync`, `Crash`, `ProcessDown`, the restart loader),
+`NtBatchDone` and `NoFalseCorruption` to plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), and
+`NoAvoidableTermination` to plan 5, task 2 (`ProcessDown` policies `Terminate` versus `Retry`, `NoAvoidableTermination`, `KillRetry`, `Implicit`),
+the third with an argument of its own in the `NonTxn` section below. `NoAvoidableTermination` is worth naming twice, because it is checked in both halves and in every other
 scenario of this plan and is nowhere falsifiable: its witness needs `ProcessDown`, which no scenario before
-plan 5 enables, so what the invariant does until then is state that no modelled path terminates the server.
+plan 5, task 2 (`ProcessDown` policies `Terminate` versus `Retry`, `NoAvoidableTermination`, `KillRetry`, `Implicit`) enables, so what the invariant does until then is state that no modelled path terminates the server.
 `RollbackNoLeak` and `KillerNotStranded` are the two rows below, and both are in the halves' rosters too.
 
 ## Witnesses of the `SetSnapshot` scenario {#witnesses-setsnapshot}
@@ -267,8 +269,8 @@ The last row is the one of B1's five that is still not paid. `Assert_validateInf
 the truncation actions this scenario enables multiply the behaviours that opens: at the exhaustive bounds it
 reached 40 million distinct states without firing, and here, at the witness bounds, 108 million in eleven
 minutes. It is red in `Base`, at three transactions and the same witness, so the property is falsifiable and
-the hook works; what is not shown is that it is falsifiable **in this scenario**. That is what moves to plan 5's
-budget and calibration task, with the count.
+the hook works; what is not shown is that it is falsifiable **in this scenario**. That is what moves to
+plan 5, task 4 (budget and calibration), with the count.
 
 `NoOutdatedLookup` is defined in `Invariants.tla` and is **not** in any `SetSnapshot` cfg. It is vacuous here,
 and by inspection rather than by search: `UpdFinalizeUnknown(t)` is `FALSE` in this plan, so
@@ -325,9 +327,11 @@ order of magnitude, not as figures to match.
 ## Witnesses of the `Merge` scenario {#witnesses-merge}
 
 `Merge` is one session, `Parts = {P1, P2, M12}`, `Tasks = {i1}`, `TID_MAX = 3`, `CSN_MAX = 36`, `SYMMETRY
-SymSessions`, `VIEW MergeView`, no faults. One set of bounds, not two: the scenario finishes exhaustively at
-them in 49 seconds, so the witnesses run against the same configuration the green run uses. Why the bounds are
-those and not the matrix's two sessions is in `STATE_SPACE.md`.
+SymSessions`, `VIEW MergeView`, no faults. The scenario finishes exhaustively at them in 49
+seconds, so the sweep below runs against the same configuration the green run uses. Three of its witnesses are
+green there and fire only at two sessions; `MC_MergeWitness` is that configuration, for `witness.sh` only,
+which is debt `B3` and the section after the sweep. Why the exhaustive bounds are one session and not the
+matrix's two is in `STATE_SPACE.md`.
 
 The four rows the scenario matrix names for `Merge`, and the two the deferred table above owed it:
 
@@ -354,8 +358,8 @@ the session conjunct removed, so that only the `Tasks` half is checked, is red u
 
 ### The full sweep at these bounds {#witnesses-merge-full}
 
-Every witness of every property `MC_Merge.cfg` checks: the twenty runs of the table below, about nine minutes
-in all, of which one row is five.
+Every witness of every property `MC_Merge.cfg` checks: the twenty-four runs of the table below, about nine
+minutes in all, of which one row is five.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
@@ -408,7 +412,7 @@ red here at bounds that are reduced too. The merge task is why: it is a second a
 outdates them without being a second session, so the shapes those two witnesses need are reachable with one
 session and three transactions where two sessions and two transactions could not build them.
 
-Three properties have no witness in this scenario and are not debts of it. `NoFalseCorruption` is the deferred
+Four properties have no witness in this scenario and are not debts of it. `NoFalseCorruption` is the deferred
 task-4 row; `AckedWriteIsDurable`, `NoAvoidableTermination` and `KillerNotStranded` are the deferred plan-3 and
 plan-5 rows; `Assert_getOldestSnapshot` and `Assert_TailPtrNotRegressing` both need the `SetSnapshot` action,
 and `SNAPSHOT_TARGETS` is empty here, so the two `SetSnapshot`-sited witnesses are vacuous in `Merge` and are
@@ -541,9 +545,11 @@ and both are now run.
 `ActiveSetShape`'s green is a statement about the half rather than about the property. `NtInsertWrite` requires
 `IsBase(p)` and the only part with a non-empty `Covers` entry is `E`, which a non-transactional `DROP PARTITION`
 creates and this half has no `DROP PARTITION`: part `E` is never created here, so no two parts ever overlap and
-the invariant is vacuously true whatever the witness does to the publication. The same is true of the two batch
-properties, `NtBatchRefusedUnchanged` and `NtRefusalJustified`: there is no batch in this half, so their
-antecedent never holds. All three are kept in the roster so that the two halves differ only in their `Next`,
+the invariant is vacuously true whatever the witness does to the publication. The same is true of the three batch
+properties, `NtBatchRefusedUnchanged`, `NtRefusalJustified` and `NoNtStoreError`: all three read `sys.nt_batch`
+in their antecedent, and `NonTxnInsertNext` enables no `NtDrop*` step, so the batch never becomes active and
+none of them can fail here. `NoNtStoreError` is witnessed in `NonTxnDrop` instead, red at 2,466 distinct
+states. All three are kept in the roster so that the two halves differ only in their `Next`,
 and all three are red in a drop-half configuration. `ActiveSetShape` is also the property finding F5 violates,
 which is why `MC_NonTxnF5` exists and why the property is not in `MC_NonTxnDrop`'s roster.
 

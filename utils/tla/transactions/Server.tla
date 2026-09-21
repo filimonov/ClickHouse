@@ -201,7 +201,8 @@ EnrolError(t) == IF txn[t].state = "RolledBack" THEN "INVALID_TRANSACTION" ELSE 
 \* written as a direct change to mem rather than as a store of its own, which is a refinement: the C++ would
 \* call setAndStoreCreationCSN and go through the three steps. That costs nothing here, because RolledBackCSN in
 \* memory over any stored record is exempt in both ValidateMetadataOK and RealDisagreement, and it keeps the fix
-\* variant to one line; the plan that adopts the fix owes the steps.
+\* variant to one line; plan 5, task 4 (budget and calibration), which re-runs the calibration against the
+\* upstream fixes, owes the steps if the fix is adopted.
 PublishFlipEffect(a, p, C) ==
   LET obsolete == CoveringNow(p) /= {} IN
   /\ part' = [q \in Parts |->
@@ -304,7 +305,8 @@ Begin(k) ==
 \* executeCommit and executeRollback just above it, so the code accepts the statement on a transaction another
 \* session has already killed. Modelling that would add a snapshot write on a transaction whose entry the
 \* finalizers have already cleared, which is a rollback-path question rather than a snapshot one; it is left to
-\* the plan that enables asynchronous kill against this action.
+\* plan 3, task 1 (Keeper faults at commit, the unknown-state pass, updater-driven commit and rollback), which
+\* is where a transaction reaches the model in an unknown or rolled-back state. Model defect M17 records it.
 SetSnapshot(k, c) ==
   /\ Up /\ HasTxn(k) /\ client[k].pc = "Idle" /\ txn[Cur(k)].state = "Running"
   /\ c \in SNAPSHOT_TARGETS
@@ -799,8 +801,8 @@ Fsync(p) == /\ Layered /\ disk' = DiskWithMetaSynced(p)
 \* zero-copy-replication bookkeeping and are not modelled; `force` covers them.
 \* The model grabs one part per action where the code grabs a set under one lock. The only cross-part coupling
 \* the lock provides is the atomicity of the state change, and no property of this plan reads the set of parts in
-\* Deleting, so the refinement is recorded rather than removed. Placement if it ever matters: the plan that adds
-\* a property over Deleting parts.
+\* Deleting, so the refinement is recorded rather than removed. Placement if it ever matters: plan 5, task 3
+\* (liveness), whose OutdatedEventuallyDeleted is the first property stated over parts on their way out.
 CleanupGrab(p) ==
   /\ Up /\ sys.cleanup_pc = "Idle" /\ sys.parts_lock = NoActor
   /\ part[p].pstate = "Outdated"
