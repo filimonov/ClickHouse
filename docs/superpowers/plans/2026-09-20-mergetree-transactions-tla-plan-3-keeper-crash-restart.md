@@ -1208,6 +1208,13 @@ still be wrong against one while another subsystem acts, and both are deliberate
   `MC_NonTxnCrashWitness.{tla,cfg}`
 - Modify: `WITNESSES.md`, `STATE_SPACE.md`, `FINDINGS.md`
 
+**Carried into this task by controller rulings (2026-09-21):** model defect `M3` (the truncation pass captures the
+candidate map and the latest CSN once, deletes per znode, erases the local map once, and reports `Done` only
+after the captured traversal) and `M17` (a rolled-back transaction may still issue `SET TRANSACTION SNAPSHOT`
+through the `ASTTransactionControl` exemption; under `SET_SNAPSHOT_PROTECTS` this is the erase-a-gone-iterator
+hazard, so the scenario that models it is `SetSnapshotFixed`). Both rows in `FINDINGS.md` §2 carry the sizing;
+close each naming the commit, or send the controller the reason it does not fit before placing it elsewhere.
+
 **Interfaces:**
 - Produces: `NtBatchDone`; the two scenario specs.
 - Consumes: `PState`, `DurableRecord`, `NoResurrection`, `NoOutdatedLookup`, `StoredRecord`, `RealDisagreement`,
@@ -1366,7 +1373,42 @@ git commit -m "tla(transactions): the SnapshotCrash and NonTxnCrash scenarios" -
 
 ---
 
-### Task 5: Budget, witness sweep, documents and debts {#task-5}
+### Task 5: Part incarnation (model defect `M37`) {#task-5}
+
+Added during execution (controller ruling of 2026-09-21, after task 3 sized the defect). The permanent
+`h.creator[p] = EmptyTID` guard on the four creating actions (`InsertWrite`, `MergeWrite`, `NtInsertWrite`,
+`NtDropWrite`, plus the merge-result site) hides real part-name reuse after a restart: `StorageMergeTree`
+rebuilds the block-number allocator from the parts it loaded, so a name whose part was physically removed and
+that no higher part outlives can be reissued. The shape is reachable in `Crash` at `RESTARTS_MAX = 1`.
+
+**Files:**
+- Modify: `utils/tla/transactions/History.tla` (every `Parts`-keyed field of `h`: `removers`, `creator`,
+  `payload`, `abandoned`, `content`, `selected`, `batch.targets`, `batch.before`; `HistoryInit`, `HistoryTypeOK`)
+- Modify: `utils/tla/transactions/Server.tla` (the four guarded creators and the merge-result site; a part
+  incarnation counter bumped at each creation of a name)
+- Modify: `utils/tla/transactions/Invariants.tla` (`OracleVisible` and the seven properties reading it say which
+  incarnation they mean)
+- Modify: every `MC_*.tla` `VIEW` that projects a `Parts`-keyed field (thirty-one modules at the time of the ruling)
+- Modify: `WITNESSES.md`, `STATE_SPACE.md`, `FINDINGS.md` (close `M37` naming the commit)
+
+**Interfaces:**
+- Produces: the incarnation-keyed history; `Incarnation(p)`.
+- Consumes: everything task 3 left; task 6 re-measures every scenario and witness row once, after this task.
+
+- [ ] **Step 1: State the sound key.** Histories are keyed by `(name, incarnation)`; the incarnation of a name is
+  the number of creations of that name so far. The oracle's visibility of a fragment is the visibility of its
+  own incarnation's creator; a later incarnation is a new fragment.
+- [ ] **Step 2: Failing test first.** Drop the permanent guard in `InsertWrite` only and run `Crash` at the matrix
+  bounds under `timeout 1200`: expected RED (a property confuses the two incarnations) — commit the trace as the
+  `M37` evidence.
+- [ ] **Step 3: Rekey `h` and the properties**, restore the creators without the guard, rewrite the `VIEW`s.
+- [ ] **Step 4: Run** `Schema`, `BaseSmall`, `Base`, `Merge`, `Crash`, `CrashUnsynced` at their committed bounds;
+  every one must return to green with its count recorded; the `Crash` count is expected to GROW (reuse is now
+  reachable) — record the new figure, not a bound change.
+- [ ] **Step 5: Commit**, close `M37` in `FINDINGS.md` §2, and hand task 6 the list of modules whose witness rows
+  must be re-run.
+
+### Task 6: Budget, witness sweep, documents and debts {#task-6}
 
 **Files:**
 - Modify: every `MC_*.cfg` whose bounds moved
