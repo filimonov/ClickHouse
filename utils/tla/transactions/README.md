@@ -77,7 +77,8 @@ that reaches finding F2; the first is expected red on `NoPrematureDelete` and th
 GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only), `Keeper` (`Merge` without the
 cleanup group, plus the updater's unknown-state pass and the two Keeper faults, at the matrix bounds),
 `KeeperUnknownWait` (the same with `WAIT_MODE = "WAIT_UNKNOWN"`, one transaction lower because it does not
-finish at the matrix bounds) and `KeeperWitness` (the same at two sessions, for `witness.sh` only).
+finish at the matrix bounds) `KeeperWitness` (the same at two sessions, for `witness.sh` only) and `KeeperUnknownWaitWitness` (two sessions
+under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only).
 
 Five more modules belong to the `SetSnapshot` family and carry the two reserved snapshots
 `SET TRANSACTION SNAPSHOT` accepts beside an ordinary CSN, `NonTransactionalCSN = 1` and

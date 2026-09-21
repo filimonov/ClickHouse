@@ -872,9 +872,15 @@ RollbackRestoreA(a, t, p) ==
   /\ sys.parts_lock = NoActor
   \* The second hook disables restoration on the updater's path alone, which is what isolates the second
   \* conjunct of RollbackRestoresStep: the bare name falsifies the session conjunct first.
+  \* The third disables it on the other side of the same race, a driver that is not the updating thread rolling
+  \* back a transaction the unknown-state pass had decided to roll back. It is red only where a session wins the
+  \* CAS inside the window the guard release opens, so it is the coverage of that window rather than an
+  \* argument about it.
   /\ part' = [part EXCEPT ![p].pstate = IF p \notin Range(txn[t].creating) /\ @ = "Outdated"
                                            /\ ~Witness("RollbackRestores")
                                            /\ ~(Witness("RollbackRestoresUpd") /\ a = Upd)
+                                           /\ ~(Witness("RollbackRestoresKillRace") /\ a /= Upd
+                                                 /\ h.unknown[t] = "RolledBack")
                                         THEN "Active" ELSE @]
   /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN NextRollbackWork(t, "RollbackRestore") ELSE Tail(@),
                          ![t].pc = IF Tail(txn[t].work) = <<>> THEN NextRollbackPc(t, "RollbackRestore") ELSE @]

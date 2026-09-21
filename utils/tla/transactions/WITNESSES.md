@@ -679,7 +679,9 @@ finishes exhaustively at the matrix bounds, so no bound-contract debt is incurre
 `MC_KeeperUnknownWait` is the same module with `WAIT_MODE = "WAIT_UNKNOWN"`, which is the configuration in
 which the session blocks in `waitStateChange` rather than being told `UNKNOWN_STATUS_OF_TRANSACTION`; it does
 not finish at the matrix bounds and is committed at `TID_MAX = 2`, `CSN_MAX = 35`, which is debt `B8`.
-`MC_KeeperWitness` is `MC_Keeper` at two sessions, for `witness.sh` only.
+`MC_KeeperWitness` is `MC_Keeper` at two sessions, for `witness.sh` only, and
+`MC_KeeperUnknownWaitWitness` is the `WAIT_UNKNOWN` module at two sessions and bounds cut to the one row it
+exists for.
 
 The two properties this scenario adds:
 
@@ -691,6 +693,7 @@ The two properties this scenario adds:
 | `NoOutdatedLookup` | `NoOutdatedLookup` | `UpdRemoveOldEntriesSetTail` publishes `tlog.latest_snapshot` instead of `RetentionHorizon`, so the tail passes the start CSN of a transaction still in the unknown-state list | `Keeper` | RED | 545,592 | 5 s |
 | `NoOutdatedLookup` | `NoOutdatedLookup` | the same change | `KeeperUnknownWait` | RED | 2,496,715 | 18 s |
 | `RollbackRestores`, second conjunct | `RollbackRestoresUpd` | `RollbackRestoreA` does not restore a part when the driver is `Upd`, and restores it for every other driver | `Keeper` | RED | 4,852,299 | 34 s |
+| `RollbackRestores`, the race the guard release opens | `RollbackRestoresKillRace` | `RollbackRestoreA` does not restore a part when the driver is not `Upd` and the unknown-state pass had decided to roll the transaction back | `KeeperUnknownWaitWitness` | RED | 1,161,476 | 8 s |
 
 `NoOutdatedLookup` is the row that retires the vacuity half of spec defect `S6`. Both call sites of
 `TransactionLog::assertTIDIsNotOutdated` were unreachable in every scenario before this one, so the property
@@ -704,6 +707,27 @@ exactly that and the property goes red.
 bare `RollbackRestores` hook disables restoration for every driver, so the session conjunct falsifies first and
 the updater one is never the reason for the red; the second hook leaves the session path alone. It is red only
 in a scenario that has an updater-driven rollback, which is this one.
+
+`RollbackRestoresKillRace` is the coverage of the window the state-guard release opens, under the wait mode
+where the window is hardest to reach. Releasing the guard puts the transaction back at `UnknownCSN`, where
+`getState` reports it `RUNNING`, so another session can take it through `tryGetRunningTransaction` and win the
+rollback with `KILL TRANSACTION`. Under `WAIT` the catch block detaches the session and that session is idle
+and can issue the `KILL`, so `Keeper` covers the race; under `WAIT_UNKNOWN` the owning client is parked in
+`waitStateChange` and a second session is needed, which `MC_KeeperUnknownWait` does not have. `MC_KeeperUnknownWaitWitness`
+is that second session, for `witness.sh` only.
+
+The witness is red only through the race, which is what makes it the coverage rather than a near miss.
+`h.unknown[t]` is written by `UpdFinalizeUnknown` alone, the owning client is parked so neither `RollbackStart`
+nor `RollbackOnException` is enabled for it, and the module has no tasks, so a driver that is not `Upd` can
+only be the other session's `KILL`. The counterexample is that sequence: `UpdFinalizeUnknown`, then
+`KillTransaction`, then the session driving the rollback to `RollbackFinalizeA`.
+
+Its bounds are cut to its subject rather than inherited. At `MC_KeeperWitness`'s bounds, three parts, a merge
+task and three transactions, the same witness did not fire within 900 seconds, reaching 52,217,501 distinct
+states with the queue growing. One part, no task and two transactions is the shape the row needs -- one
+transaction to create the part, one to drop it, lose its commit response and be killed inside the window --
+and it fires in eight seconds. A witness run stops at the first violation, which is what licenses bounds
+chosen for it.
 
 `UnknownResolvesByLog` is the property the comment at `TransactionLog.cpp:360-372` argues for in prose, and its
 witness is the collapse that comment forbids. It is what caught model defect `M26`: on the first exhaustive run
