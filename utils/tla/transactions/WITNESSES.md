@@ -5,14 +5,27 @@ a single named change to the model, guarded by `Witness("<name>")` in the action
 property fail. `witness.sh` applies one witness, checks that one property and nothing else, and reports whether
 the property went red.
 
-**Figures taken before the cleanup split are marked where they are load-bearing and are otherwise
-order-of-magnitude.** The final-review fix commit split `CleanupGrab` into `CleanupDecide`, `CleanupGrab` and
-`CleanupAbandon`, which moves every count in a scenario that enables the cleanup group by about ten per cent.
-The rows re-run after the split are the three cleanup witnesses above, the new `SnapshotEntryOnly` row, and the
-exhaustive runs in `README.md`'s last table. The rest of this file's counts are from before the split and were
-**not** re-run. The verdicts are carried rather than re-derived, and carrying them is not free: the split holds
-the parts lock across two steps, which removes interleavings, so a red row could in principle have become green.
-That is debt `B6` in `FINDINGS.md`, placed in plan 3, task 5 (budget, witness sweep, documents, debts).
+**Every row below was re-run after the cleanup split, on 2026-09-21.** The final-review fix commit split
+`CleanupGrab` into `CleanupDecide`, `CleanupGrab` and `CleanupAbandon`, which moves every count in a scenario
+that enables the cleanup group by about ten per cent, and the split holds the parts lock across two steps,
+which removes interleavings, so a row that was red before it was not thereby red after it. The verdicts had to
+be re-derived rather than carried, and that was debt `B6` in `FINDINGS.md`. The sweep re-ran 83 rows, the
+cleanup-enabled scenarios `SetSnapshot`, `SetSnapshotWitness`, `SetSnapshotFixed`, `SetSnapshotF2Fixed`,
+`Merge`, `MergeWitness`, `NonTxnDrop`, `NonTxnInsert` and `NonTxnWitness`, together with the minimality halves
+of the three two-change witnesses. `NonTxnDropTwo` enables no cleanup group and its four rows were re-run as
+the control the split needs, unchanged in colour and within a few hundred states of their recorded counts.
+**No row changed colour**, and the counts and times in every table below are from that sweep. `Base` and
+`BaseSmall` enable no cleanup group either, and their rows were not re-run.
+
+Counts vary by a few hundred states between runs of the same configuration, which is visible in the control
+rows and in the exhaustive figures; it is well below the ten per cent the split costs and it is not a change of
+verdict.
+
+The five rows the tables record as **killed unfired** or as **not finishing** were not re-run: they are stopped
+by budget rather than by a verdict, they keep their documented counts, and they stay at their documented
+placement in plan 5, task 4 (budget and calibration). They are `Assert_validateInfo_removal` in `SetSnapshot`,
+in `SetSnapshotWitness` and in `MergeWitness`, `SingleRemover` in `NonTxnDropTwo`, and `NoDoubleRead` and
+`NoUncommittedRead` in `NonTxnWitness`.
 
 The witness contract is stated in the design document, section "Invariants and properties": the witness changes
 one or two named actions, the run checks only the target property, other properties are expected to fail too and
@@ -182,7 +195,7 @@ plan 5, task 2 (`ProcessDown` policies `Terminate` versus `Retry`, `NoAvoidableT
 
 This scenario has **two sets of bounds**, and the reason is in `FINDINGS.md` as spec defect S7. An exhaustive
 run at the scenario matrix's `TID_MAX = 3` does not finish, so `MC_SetSnapshot` and `MC_SetSnapshotFixed` are
-checked exhaustively at `TID_MAX = 2`, `CSN_MAX = 35`, two sessions, in about 65 seconds. A witness run stops at
+checked exhaustively at `TID_MAX = 2`, `CSN_MAX = 35`, two sessions, in about two minutes. A witness run stops at
 the first violation and can afford bounds an exhaustive run cannot, so the witnesses that need a third
 transaction are run against `MC_SetSnapshotWitness`, which is the same module at `TID_MAX = 3`, `CSN_MAX = 36`.
 The gap between the two is debt B1.
@@ -194,8 +207,8 @@ needs the third transaction.
 | Conjunct | Witness name | The model change | Bounds | Result | States | Time |
 |---|---|---|---|---|---|---|
 | the running list and the snapshot bag have the same members | `Assert_getOldestSnapshot_size` | `Begin` joins `running_list` without writing `snapshots_in_use`, breaking at one site the lockstep `beginTransaction` keeps under one lock | exhaustive | RED | 2 | 1 s |
-| each entry is the value `beginTransaction` inserted | `Assert_getOldestSnapshot_entry` | `SetSnapshot` moves the `snapshots_in_use` entry and leaves `protected_snapshot` where it was | exhaustive | RED | 14,408 | 2 s |
-| the bag is sorted | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the entry, which is the change the design document names | witness | RED | 407,927 | 3 s |
+| each entry is the value `beginTransaction` inserted | `Assert_getOldestSnapshot_entry` | `SetSnapshot` moves the `snapshots_in_use` entry and leaves `protected_snapshot` where it was | exhaustive | RED | 15,249 | 2 s |
+| the bag is sorted | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the entry, which is the change the design document names | witness | RED | 425,291 | 4 s |
 
 The third row is the only one that exercises a C++ assertion end to end, and it is the one that cannot be shown
 at the exhaustive bounds: breaking sortedness needs a transaction that began above `FirstCSN`, so a committed
@@ -209,7 +222,7 @@ entry and does not re-sort, would do in the C++. That is why the same hook falsi
 
 | Property | Witness name | The model change | Bounds | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | the entry moves below the stored tail, and the next `removeOldEntries` computes a `getOldestSnapshot` below the `tail_ptr` it has already stored | exhaustive | RED | 153,609 | 3 s |
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | the entry moves below the stored tail, and the next `removeOldEntries` computes a `getOldestSnapshot` below the `tail_ptr` it has already stored | exhaustive | RED | 149,488 | 2 s |
 
 It shares a witness rather than having one of its own, which the contract allows: the change is a single named
 one and the property it runs against is named on the command line. There is no separate hook, because the only
@@ -221,26 +234,26 @@ Every witness of every property `MC_SetSnapshot.cfg` checks, at `TID_MAX = 2`, `
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 39,745 | 2 s |
-| `SingleRemover` | `SingleRemover` | **GREEN**, debt B1 | 12,766,764 | 1 min 26 s |
-| `LockConsistent` | `LockConsistent` | RED | 181,555 | 3 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 228,776 | 3 s |
-| `RollbackRestores` | `RollbackRestores` | RED | 430,129 | 5 s |
-| `FlipAfterStores` | `FlipAfterStores` | RED | 6,203 | 2 s |
-| `StableRead` | `StableRead` | RED | 239,629 | 3 s |
-| `ReadYourWrites` | `ReadYourWrites` | RED | 5,857 | 1 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B1 | 12,766,806 | 1 min 28 s |
-| `NoFutureRead` | `NoFutureRead` | RED | 25,443 | 2 s |
-| `NoLostRead` | `NoLostRead` | **GREEN**, debt B1 | 12,191,660 | 1 min 24 s |
-| `Atomicity` | `Atomicity` | RED | 322,895 | 4 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 23,120 | 1 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 23,472 | 2 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 40,999 | 2 s |
+| `SingleRemover` | `SingleRemover` | **GREEN**, debt B1 | 14,289,634 | 2 min 58 s |
+| `LockConsistent` | `LockConsistent` | RED | 185,335 | 3 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 229,632 | 4 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 483,866 | 7 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 5,159 | 2 s |
+| `StableRead` | `StableRead` | RED | 232,658 | 5 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 6,159 | 3 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B1 | 14,288,648 | 1 min 40 s |
+| `NoFutureRead` | `NoFutureRead` | RED | 22,260 | 3 s |
+| `NoLostRead` | `NoLostRead` | **GREEN**, debt B1 | 13,828,282 | 1 min 34 s |
+| `Atomicity` | `Atomicity` | RED | 311,788 | 7 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 26,440 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 24,272 | 2 s |
 | `Assert_validateInfo` | `Assert_validateInfo_removal` | **did not finish**, debt B1; 40,439,049 distinct after 5 min and still growing | — | killed at 301 s |
-| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 123,021 | 3 s |
-| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 9,311,054 | 1 min 05 s |
-| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 12,766,746 | 1 min 27 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 120,274 | 3 s |
+|  | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 10,365,309 | 1 min 24 s |
+|  | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 14,289,268 | 2 min 15 s |
 | `Assert_getOldestSnapshot` | `_size`, `_entry`, sortedness | two RED here, one at the witness bounds | see above | |
-| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | RED | 147,288 | 2 s |
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | RED | 149,488 | 2 s |
 
 `Assert_validateInfo_removal` is worth a note. It is not slow; it explores more than the scenario itself does,
 because the witness removes a wait and the truncation actions then multiply the behaviours it opens. It reached
@@ -258,10 +271,10 @@ finish, which is model defect M4.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 407,927 | 4 s |
-| `SingleRemover` | `SingleRemover` | RED | 7,913,163 | 50 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | RED | 2,948,589 | 20 s |
-| `NoLostRead` | `NoLostRead` | RED | 1,315,030 | 9 s |
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 425,291 | 4 s |
+| `SingleRemover` | `SingleRemover` | RED | 8,511,843 | 55 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | RED | 3,170,252 | 21 s |
+| `NoLostRead` | `NoLostRead` | RED | 1,310,488 | 10 s |
 | `Assert_validateInfo` | `Assert_validateInfo_removal` | **killed unfired**, 108,439,476 distinct after 674 s | — | |
 
 The sortedness row is the one figure in this table that is not from the budget task's sweep: it was taken
@@ -302,10 +315,10 @@ against a `Fixed` configuration, so that the `SET TRANSACTION SNAPSHOT` defect d
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 280,340 | 4 s |
-| `NoPrematureDelete` | `SnapshotEntryOnly` | `CleanupGrab` skips the revalidation `SET_SNAPSHOT_PROTECTS` adds, which reduces finding F2's fix to its `snapshots_in_use` half, the half the entry first proposed | `SetSnapshotF2Fixed` | RED | 280,957 | 4 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupDecide` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 39,613 | 2 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 261,531 | 3 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 272,238 | 3 s |
+| `NoPrematureDelete` | `SnapshotEntryOnly` | `CleanupGrab` skips the revalidation `SET_SNAPSHOT_PROTECTS` adds, which reduces finding F2's fix to its `snapshots_in_use` half, the half the entry first proposed | `SetSnapshotF2Fixed` | RED | 274,730 | 3 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupDecide` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 41,909 | 3 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 276,396 | 3 s |
 
 `PinnedNotDeleted` is red at the exhaustive bounds because it needs no visible part at all: a `SELECT` pin on an
 `Outdated` part whose removal has committed is enough, and two transactions produce that. The other two were
@@ -354,10 +367,10 @@ The four rows the scenario matrix names for `Merge`, and the two the deferred ta
 
 | Property | Witness name | The model change | Result | States | Time |
 |---|---|---|---|---|---|
-| `NoDoubleRead` | `NoDoubleRead` | the two removal tests of `isVisible`'s fast path and the removal lookup of its slow path are skipped, so a reader sees `M12` and the sources it covers at once | RED | 1,270,978 | 10 s |
-| `ActiveSetShape` | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts, so the merge result goes `Active` over sources that are still `Active` | RED | 263,245 | 5 s |
-| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | RED | 2,666,265 | 20 s |
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupGrab` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl` | RED | 431,931 | 5 s |
+| `NoDoubleRead` | `NoDoubleRead` | the two removal tests of `isVisible`'s fast path and the removal lookup of its slow path are skipped, so a reader sees `M12` and the sources it covers at once | RED | 1,409,859 | 11 s |
+| `ActiveSetShape` | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts, so the merge result goes `Active` over sources that are still `Active` | RED | 291,656 | 4 s |
+| `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | RED | 2,891,864 | 21 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl` | RED | 497,729 | 6 s |
 
 `NoDoubleRead` and `ActiveSetShape` are the two rows this scenario exists to pay. Neither is writable in `Base`,
 where `Covers` is empty and no two parts are related. `NoPrematureDelete` is red here without the lowered
@@ -375,35 +388,35 @@ the session conjunct removed, so that only the `Tasks` half is checked, is red u
 
 ### The full sweep at these bounds {#witnesses-merge-full}
 
-Every witness of every property `MC_Merge.cfg` checks: the twenty-four runs of the table below, about nine
+Every witness of every property `MC_Merge.cfg` checks: the twenty-four runs of the table below, about eleven
 minutes in all, of which one row is five.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 13,914 | 2 s |
-| `SingleRemover` | `SingleRemover` | RED | 4,568,647 | 35 s |
-| `LockConsistent` | `LockConsistent` | RED | 45,237 | 2 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | **GREEN**, debt B3 | 5,921,770 | 44 s |
-| `RollbackRestores` | `RollbackRestores` | RED | 254,238 | 4 s |
-| `FlipAfterStores` | `FlipAfterStores` | RED | 2,119 | 1 s |
-| `StableRead` | `StableRead` | RED | 1,898,738 | 15 s |
-| `ReadYourWrites` | `ReadYourWrites` | RED | 2,315 | 1 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B3 | 5,196,830 | 39 s |
-| `NoFutureRead` | `NoFutureRead` | RED | 1,248,697 | 10 s |
-| `NoLostRead` | `NoLostRead` | RED | 794,561 | 8 s |
-| `NoDoubleRead` | `NoDoubleRead` | RED | 1,270,978 | 10 s |
-| `Atomicity` | `Atomicity` | RED | 2,666,265 | 20 s |
-| `ActiveSetShape` | `ActiveSetShape` | RED | 263,245 | 5 s |
-| `NoPrematureDelete` | `NoPrematureDelete` | RED | 431,931 | 5 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 7,088 | 2 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | RED | 3,173,837 | 23 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 5,643 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 6,386 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_removal` | **GREEN**, debt B3 | 38,568,430 | 4 min 51 s |
-| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_size` | RED | 2 | 1 s |
-| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 30,588 | 2 s |
-| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 3,892,113 | 31 s |
-| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 5,196,830 | 39 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 15,261 | 2 s |
+| `SingleRemover` | `SingleRemover` | RED | 5,277,051 | 37 s |
+| `LockConsistent` | `LockConsistent` | RED | 51,917 | 2 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | **GREEN**, debt B3 | 6,856,950 | 48 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 261,859 | 4 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 2,154 | 1 s |
+| `StableRead` | `StableRead` | RED | 2,042,447 | 15 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 1,768 | 2 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | **GREEN**, debt B3 | 6,124,691 | 43 s |
+| `NoFutureRead` | `NoFutureRead` | RED | 1,374,035 | 10 s |
+| `NoLostRead` | `NoLostRead` | RED | 792,896 | 7 s |
+| `NoDoubleRead` | `NoDoubleRead` | RED | 1,409,859 | 11 s |
+| `Atomicity` | `Atomicity` | RED | 2,891,864 | 21 s |
+| `ActiveSetShape` | `ActiveSetShape` | RED | 291,656 | 4 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | RED | 497,729 | 6 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 9,196 | 1 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | RED | 3,726,200 | 27 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 6,450 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 6,300 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | **GREEN**, debt B3 | 41,978,209 | 5 min 12 s |
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_size` | RED | 2 | 0 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 27,775 | 2 s |
+|  | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 4,532,152 | 34 s |
+|  | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 6,124,691 | 44 s |
 
 ### The witness bounds, at two sessions {#witnesses-merge-witness-bounds}
 
@@ -413,8 +426,8 @@ session loses.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 1,766,818 | 14 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | RED | 6,065,808 | 46 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 1,751,581 | 14 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | RED | 6,164,810 | 46 s |
 | `Assert_validateInfo` | `Assert_validateInfo_removal` | **killed unfired**, 34,184,268 distinct after 279 s | — | |
 
 `NoSpuriousStaleVersion` is the row that mattered most, because at one session the store-interference machinery
@@ -446,12 +459,12 @@ run of the undivided scenario finishes, so it is checked as three committed conf
 are run in all three plus the undivided witness module. `STATE_SPACE.md` carries the bounds and the argument
 for each:
 
-- `MC_NonTxnDrop`: the drop half with the cleanup group, `TID_MAX = 1`, `CSN_MAX = 34`, green at 1,112,076
+- `MC_NonTxnDrop`: the drop half with the cleanup group, `TID_MAX = 1`, `CSN_MAX = 34`, green at 1,246,158
   distinct states. The full roster, including the three cleanup properties.
 - `MC_NonTxnDropTwo`: the drop half without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, green at
   47,958,711. The roster minus the three cleanup properties.
 - `MC_NonTxnInsert`: the insert half with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, green at
-  15,787,838.
+  16,969,548.
 - `MC_NonTxnWitness`: the undivided scenario at `TID_MAX = 2`, `CSN_MAX = 35`, for witness runs only, which is
   the two-bound-sets rule of spec defect `S7`. It is where the rows that need the cleanup group **and** a
   second transaction are shown.
@@ -472,34 +485,34 @@ is not a census of the sweep.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 4,040 | 2 s |
-| `LockConsistent` | `LockConsistent` | RED | 15,257 | 1 s |
-| `FlipAfterStores` | `FlipAfterStores` | RED | 443 | 1 s |
-| `ReadYourWrites` | `ReadYourWrites` | RED | 485 | 1 s |
-| `NtRefusalJustified` | `NtRefusalJustified` | RED | 1,831 | 1 s |
-| `NtBatchRefusedUnchanged` | `NtBatchRefusedUnchanged` | RED | 40,682 | 2 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 1,358 | 1 s |
-| `RollbackRestores` | `RollbackRestores` | RED | 445,647 | 5 s |
-| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 17,630 | 2 s |
-| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 8,016 | 1 s |
-| `Assert_validateInfo` | `Assert_validateInfo_nocreation` | RED | 1,895 | 1 s |
-| | `Assert_validateInfo_nocreation_only1` | GREEN, as minimality requires | 601,859 | 7 s |
-| | `Assert_validateInfo_nocreation_only2` | GREEN, as minimality requires | 1,112,063 | 10 s |
-| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 10,067 | 2 s |
-| | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 907,471 | 9 s |
-| | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 1,112,076 | 10 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | GREEN, paid in `MC_NonTxnWitness` | 1,112,076 | 10 s |
-| `SingleRemover` | `SingleRemover` | GREEN, paid in `MC_NonTxnWitness` | 1,112,063 | 10 s |
-| `NoPrematureDelete` | `NoPrematureDelete` | GREEN, paid in `MC_NonTxnWitness` | 1,112,076 | 10 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | GREEN, placed in plan 5 | 1,112,076 | 10 s |
-| `NoDoubleRead` | `NoDoubleRead` | GREEN, placed in plan 5 | 855,691 | 9 s |
-| `Atomicity` | `Atomicity` | GREEN, paid in `MC_NonTxnDropTwo` | 1,112,089 | 10 s |
+| `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 4,501 | 1 s |
+| `LockConsistent` | `LockConsistent` | RED | 14,251 | 2 s |
+| `FlipAfterStores` | `FlipAfterStores` | RED | 449 | 1 s |
+| `ReadYourWrites` | `ReadYourWrites` | RED | 490 | 0 s |
+| `NtRefusalJustified` | `NtRefusalJustified` | RED | 2,000 | 2 s |
+| `NtBatchRefusedUnchanged` | `NtBatchRefusedUnchanged` | RED | 39,292 | 2 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 2,173 | 1 s |
+| `RollbackRestores` | `RollbackRestores` | RED | 469,898 | 5 s |
+| `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | RED | 18,513 | 1 s |
+| `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 7,501 | 2 s |
+| `Assert_validateInfo` | `Assert_validateInfo_nocreation` | RED | 1,961 | 1 s |
+|  | `Assert_validateInfo_nocreation_only1` | GREEN, as minimality requires | 658,225 | 7 s |
+|  | `Assert_validateInfo_nocreation_only2` | GREEN, as minimality requires | 1,246,158 | 11 s |
+| `Assert_isVisible_fast` | `Assert_isVisible_fast` | RED | 10,856 | 2 s |
+|  | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 1,023,745 | 9 s |
+|  | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 1,246,141 | 12 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | GREEN, paid in `MC_NonTxnWitness` | 1,246,124 | 11 s |
+| `SingleRemover` | `SingleRemover` | GREEN, paid in `MC_NonTxnWitness` | 1,246,158 | 11 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | GREEN, paid in `MC_NonTxnWitness` | 1,246,158 | 11 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | GREEN, placed in plan 5 | 1,246,158 | 11 s |
+| `NoDoubleRead` | `NoDoubleRead` | GREEN, placed in plan 5 | 966,300 | 9 s |
+| `Atomicity` | `Atomicity` | GREEN, paid in `MC_NonTxnDropTwo` | 1,246,107 | 11 s |
 | `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_size` | RED | 2 | 1 s |
-| `NoNtStoreError` | `NoNtStoreError`, an alias of `Assert_validateInfo_nocreation_only1` | RED | 2,466 | 2 s |
-| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_entry` | GREEN, vacuously: the hook is in `SetSnapshot` and `SNAPSHOT_TARGETS` is empty here | 1,112,076 | 10 s |
-| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | GREEN, vacuously, same reason | 1,112,063 | 10 s |
-| `Assert_validateInfo` | `Assert_validateInfo_removal` | GREEN over the whole witness-mutated space; placed in plan 5 | 25,686,095 | 3 min 16 s |
-| `NoFalseCorruption` | `NoFalseCorruption` | GREEN, structurally; deferred to plan 3 | 1,112,089 | 10 s |
+| `NoNtStoreError` | `NoNtStoreError`, an alias of `Assert_validateInfo_nocreation_only1` | RED | 2,286 | 1 s |
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot_entry` | GREEN, vacuously: the hook is in `SetSnapshot` and `SNAPSHOT_TARGETS` is empty here | 1,246,158 | 11 s |
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | GREEN, vacuously, same reason | 1,246,141 | 12 s |
+| `Assert_validateInfo` | `Assert_validateInfo_removal` | GREEN over the whole witness-mutated space; placed in plan 5 | 26,978,659 | 3 min 28 s |
+| `NoFalseCorruption` | `NoFalseCorruption` | GREEN, structurally; deferred to plan 3 | 1,246,141 | 11 s |
 
 Every green here is a full exploration rather than a run that ran out of budget, so each one is a verdict: the
 witness does not fire at one transaction. That is the price of the bound `STATE_SPACE.md` argues, and every row
@@ -517,9 +530,10 @@ here: `_size`'s hook is in `Begin`, so it fires in two states, while the other t
 which an empty `SNAPSHOT_TARGETS` disables. Their greens are vacuities and say nothing about the property;
 both are red in the scenario that owns the action. `Assert_validateInfo_removal` is the row that explores far
 past the configuration it belongs to: the witness removes a wait, and the behaviours that opens take it to
-25,686,095 distinct states on a scenario whose own space is 1.1 million. It finished, with nothing left on the
+26,978,659 distinct states on a scenario whose own space is 1.2 million. It finished, with nothing left on the
 queue, so its green is a verdict too, and the reason is the one `Base` already found: the shape needs three
-transactions. It is placed in plan 5 with that count.
+transactions. It is placed in plan 5 with that count, which the cleanup-split re-run moved from 25,686,095 without moving
+the verdict.
 
 `Assert_validateInfo_nocreation` is the two-change witness debt B5 was about. Its minimality was unverified
 because both half-runs had to be cut at 24 million distinct states in the undivided module; here the module
@@ -531,10 +545,10 @@ finishes, so both halves are green by exploration and the witness is minimal. B5
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `Atomicity` | `Atomicity` | RED | 168,614 | 3 s |
-| `NoDoubleRead` | `NoDoubleRead` | GREEN | 22,070,456 | 181 s |
-| `NoUncommittedRead` | `NoUncommittedRead` | GREEN | 47,958,539 | 395 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | GREEN | 47,958,970 | 413 s |
+| `Atomicity` | `Atomicity` | RED | 168,130 | 4 s |
+| `NoDoubleRead` | `NoDoubleRead` | GREEN | 22,070,439 | 2 min 59 s |
+| `NoUncommittedRead` | `NoUncommittedRead` | GREEN | 47,958,942 | 6 min 33 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | GREEN | 47,958,749 | 6 min 37 s |
 | `SingleRemover` | `SingleRemover` | **killed unfired**, 65,525,357 distinct after 540 s, queue 4.17M and growing | — | |
 
 `SingleRemover`'s row was first cut at 33,336,890 states, which was premature: a witness on a scenario that
@@ -556,8 +570,8 @@ and both are now run.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `Atomicity` | `Atomicity` | RED | 486,689 | 6 s |
-| `ActiveSetShape` | `ActiveSetShape` | GREEN, vacuously | 15,788,005 | 129 s |
+| `Atomicity` | `Atomicity` | RED | 481,158 | 5 s |
+| `ActiveSetShape` | `ActiveSetShape` | GREEN, vacuously | 16,969,569 | 2 min 20 s |
 
 `ActiveSetShape`'s green is a statement about the half rather than about the property. `NtInsertWrite` requires
 `IsBase(p)` and the only part with a non-empty `Covers` entry is `E`, which a non-transactional `DROP PARTITION`
@@ -567,7 +581,7 @@ properties `NtBatchRefusedUnchanged` and `NtRefusalJustified`: both read `sys.nt
 `NonTxnInsertNext` enables no `NtDrop*` step, so the batch never becomes active and neither can fail here.
 `NoNtStoreError` was in this roster for the same reason and has been **removed from `MC_NonTxnInsert.cfg`**: a
 structurally vacuous invariant in an exhaustive configuration is the silent green the witness contract exists to
-prevent, and unlike the two above it has a witness that fires in the sibling half, red at 2,466 distinct states
+prevent, and unlike the two above it has a witness that fires in the sibling half, red at 2,286 distinct states
 in `NonTxnDrop`. The two that stay are kept so that the halves differ only in their `Next`, and their vacuity is
 recorded here. All three are kept in the roster so that the two halves differ only in their `Next`,
 and all three are red in a drop-half configuration. `ActiveSetShape` is also the property finding F5 violates,
@@ -580,9 +594,9 @@ does not finish, which is the whole point of having two sets of bounds.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `SingleRemover` | `SingleRemover` | RED | 672,101 | 6 s |
-| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 41,585 | 3 s |
-| `NoPrematureDelete` | `NoPrematureDelete` | RED | 644,152 | 6 s |
+| `SingleRemover` | `SingleRemover` | RED | 628,262 | 6 s |
+| `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 43,037 | 3 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | RED | 795,095 | 7 s |
 | `NoDoubleRead` | `NoDoubleRead` | **killed unfired**, 40,810,177 distinct after 342 s | — | |
 | `NoUncommittedRead` | `NoUncommittedRead` | **killed unfired**, 33,628,474 distinct after 269 s | — | |
 
@@ -684,3 +698,26 @@ guard excludes would be green on the repaired model, and that is an unverified p
 number. Both sweeps were therefore re-run in full. Every verdict held: no witness that was red went green, and
 no witness that was green went red. The counts moved by a few per cent, in the direction the narrowing
 predicts, and the new ones are in the two sweep tables above.
+
+After the cleanup split, which is the re-run this file's opening records, on the tree that closes debt `B6`:
+
+| Scenario | Result | Distinct states | Time |
+|---|---|---|---|
+| `SetSnapshot` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 14,289,310 | 2 min 03 s |
+| `SetSnapshotFixed` | green at the same bounds | 13,607,915 | 2 min 02 s |
+| `SetSnapshotF2` | **red on `NoPrematureDelete`**, as expected | a first-violation count | 3 s |
+| `SetSnapshotF2Fixed` | green | 411,641 | 4 s |
+| `Merge` | green at one session | 6,124,691 | 56 s |
+| `NonTxnDrop` | green at `TID_MAX = 1` | 1,246,158 | 12 s |
+| `NonTxnDropTwo` | green at `TID_MAX = 2`, no cleanup group | 47,958,902 | 7 min 29 s |
+| `NonTxnInsert` | green | 16,969,548 | 2 min 42 s |
+| `NonTxnF2` | **red on `NoPrematureDelete`** | a first-violation count | 2 s |
+| `NonTxnF4` | **red on `NoLostVisibleData`** | a first-violation count | 2 s |
+| `NonTxnF5` | **red on `ActiveSetShape`** | a first-violation count | 2 s |
+| `NonTxnF6` | **red on `Assert_validateInfo`** | a first-violation count | 3 s |
+
+The cleanup split is the same kind of change `M13` was, and it got the same treatment: the split holds the
+parts lock from `CleanupDecide` to `CleanupGrab`, which removes interleavings, so a red witness that fired only
+through one of them would be green on the split model. The whole sweep of every cleanup-enabled scenario was
+therefore re-run rather than carried. Every verdict held: no witness that was red went green, and no witness
+that was green went red. The counts moved by about ten per cent, in the direction the extra step predicts.

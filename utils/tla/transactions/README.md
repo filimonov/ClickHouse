@@ -420,13 +420,13 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 |---|---|---|---|
 | `BaseSmall` | one session, `TID_MAX = 2`, `CSN_MAX = 35`, 47,381 states, the whole roster | every interleaving of two sessions | `STATE_SPACE.md`, "Where `Base` stands" |
 | `Base` | two sessions at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36`, 26,839,128 states, the whole roster | nothing of its own slice; the cleanup thread, the merge task, the non-transactional queries and `SET TRANSACTION SNAPSHOT` are all stubs here | section 3, the stub table |
-| `SetSnapshot`, `SetSnapshotFixed` | `TID_MAX = 2`, `CSN_MAX = 35`, 14,289,218 and 13,607,829 states, the whole roster | the matrix bounds: an exhaustive run at `TID_MAX = 3` does not finish, so three witnesses are shown at the witness bounds instead and one, `Assert_validateInfo_removal`, is not shown at all | `FINDINGS.md`, `M4` and `B1`; `STATE_SPACE.md`, the `SetSnapshot` section |
+| `SetSnapshot`, `SetSnapshotFixed` | `TID_MAX = 2`, `CSN_MAX = 35`, 14,289,310 and 13,607,915 states, the whole roster | the matrix bounds: an exhaustive run at `TID_MAX = 3` does not finish, so three witnesses are shown at the witness bounds instead and one, `Assert_validateInfo_removal`, is not shown at all | `FINDINGS.md`, `M4` and `B1`; `STATE_SPACE.md`, the `SetSnapshot` section |
 | `SetSnapshotF2` | nothing: it stops at the first violation, which is finding `F2` | everything else; it is a reproducer, not a check | `FINDINGS.md`, finding `F2` |
 | `SetSnapshotF2Fixed` | one session, one part, `TID_MAX = 3`, 411,641 states, over four properties | the properties outside those four; the truncation tail, which the model publishes in one step, so the green verifies the refusal and not the publication; and any window between the revalidation and the state change, which are one action here | `FINDINGS.md`, finding `F2` and model defects `M18` and `M19` |
 | `Merge` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, 6,124,691 states, the whole roster | the second session: an exhaustive run at two does not finish, two witnesses fire only in `MergeWitness`, and `Assert_validateInfo_removal` fires in neither | `FINDINGS.md`, `B3`; `STATE_SPACE.md`, the `Merge` section |
 | `NonTxnDrop` | one transaction with the cleanup group, `TID_MAX = 1`, 1,246,158 states | the second transaction; `ActiveSetShape`, which finding `F5` falsifies; the four snapshot-isolation rows of spec defect `S13`; and `F6`'s fix is assumed rather than tested | `FINDINGS.md`, `B4`, `M15`, `S13`, findings `F5` and `F6` |
 | `NonTxnDropTwo` | two transactions without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 47,958,711 states, unchanged by the cleanup split | the cleanup group, so no finishing configuration checks the removal batch beside two transactions and cleanup at once, which is the open bound of `M15`; `SingleRemover` unfired at 65,525,357; the same properties as the row above | `FINDINGS.md`, `B4` and `M15` |
-| `NonTxnInsert` | two transactions with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 16,969,251 states | the removal batch; `ActiveSetShape` is on the roster but vacuous, because part `E` is never created here; the `S13` rows; `F6`'s fix is assumed | `FINDINGS.md`, `B4` and `S13`; `WITNESSES.md`, the `NonTxn` section |
+| `NonTxnInsert` | two transactions with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 16,969,548 states | the removal batch; `ActiveSetShape` is on the roster but vacuous, because part `E` is never created here; the `S13` rows; `F6`'s fix is assumed | `FINDINGS.md`, `B4` and `S13`; `WITNESSES.md`, the `NonTxn` section |
 | `NonTxnFixed` | the undivided scenario at one session with `OBSOLETE_IS_ROLLED_BACK = TRUE`, 1,029,281 states | the two-session interleavings the split modules cover | `FINDINGS.md`, finding `F6` |
 | `NonTxnF2`, `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, section 1 |
 | `SetSnapshotWitness`, `MergeWitness`, `NonTxnWitness` | nothing: `witness.sh` only, one property at a time, stopping at the first violation | exhaustive coverage at those bounds, by construction | `WITNESSES.md` |
@@ -435,20 +435,27 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 |---|---|---|---|---|---|
 | `Schema` | 2026-09-21 | the cleanup-split commit | 1 | 0 s | green |
 | `BaseSmall` | 2026-09-21 | the cleanup-split commit | 47,381 | 1 s | green; `Base` and `BaseSmall` enable no cleanup group, so the split does not reach them |
-| `SetSnapshot` | 2026-09-21 | the cleanup-split commit | 14,289,218 | 2 min 04 s | green at the exhaustive bounds; 12,766,799 before the split, which is the cost of the extra step |
-| `SetSnapshotFixed` | 2026-09-21 | the cleanup-split commit | 13,607,829 | 2 min 01 s | green; 12,236,834 before the split |
+| `SetSnapshot` | 2026-09-21 | the cleanup-split commit | 14,289,310 | 2 min 03 s | green at the exhaustive bounds; 12,766,799 before the split, which is the cost of the extra step |
+| `SetSnapshotFixed` | 2026-09-21 | the cleanup-split commit | 13,607,915 | 2 min 02 s | green; 12,236,834 before the split |
 | `SetSnapshotF2` | 2026-09-21 | the cleanup-split commit | a first-violation count | 1 s | **red on `NoPrematureDelete`**, finding F2's first shape, unchanged |
 | `SetSnapshotF2Fixed` | 2026-09-21 | the cleanup-split commit | 411,641 | 4 s | green with both halves of the fix; 367,183 before the split |
 | witness `SnapshotEntryOnly` on `SetSnapshotF2Fixed` | 2026-09-21 | the cleanup-split commit | 280,957 | 4 s | **red on `NoPrematureDelete`**: finding F2's second shape, the fix reduced to its `snapshots_in_use` half |
 | the three cleanup witnesses | 2026-09-21 | the cleanup-split commit | 280,340, 39,613 and 261,531 | 9 s in total | all three still red |
 | `Merge` | 2026-09-21 | the cleanup-split commit | 6,124,691 | 56 s | green at one session; 5,196,830 before the split |
 | `NonTxnDrop` | 2026-09-21 | the cleanup-split commit | 1,246,158 | 12 s | green; 1,112,076 before the split |
-| `NonTxnInsert` | 2026-09-21 | the cleanup-split commit | 16,969,251 | 2 min 43 s | green; 15,788,049 before the split |
+| `NonTxnInsert` | 2026-09-21 | the cleanup-split commit | 16,969,548 | 2 min 42 s | green; 15,788,049 before the split |
 | `NonTxnFixed` | 2026-09-21 | the cleanup-split commit | 1,029,281 | 9 s | green; 841,907 before the split |
 | `NonTxnF2`, `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | 2026-09-21 | the cleanup-split commit | first-violation counts | 4 s in total | each still produces its own finding |
 
 `NonTxnDropTwo` is not in this table: it enables no cleanup group, so the split cannot move it, and its
-47,958,711 stands. The witness sweeps were not re-run at the new action set, which is debt `B6`.
+47,958,711 stands; re-run as the control of that claim it gave 47,958,902 in 7 min 29 s.
+
+The figures above are the re-measurement that closed debt `B6`. That debt was the witness sweeps, which had not
+been re-run at the new action set: the split holds the parts lock from `CleanupDecide` to `CleanupGrab`, which
+removes interleavings, so a witness that was red before it was not thereby red after it. All 83 rows of the
+cleanup-enabled scenarios were re-run, together with the minimality halves of the three two-change witnesses,
+and **no row changed colour**. The five rows the tables record as killed unfired keep their counts and their
+placement in plan 5, task 4 (budget and calibration). `WITNESSES.md` carries the sweep.
 
 ## 5. Witnesses {#witnesses}
 

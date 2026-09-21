@@ -306,18 +306,24 @@ The cost is one extra step per removed part, and it is about ten per cent everyw
 
 | Configuration | Before the split | After | Change |
 |---|---|---|---|
-| `SetSnapshot` | 12,766,799 | 14,289,218 | +11.9% |
-| `SetSnapshotFixed` | 12,236,834 | 13,607,829 | +11.2% |
+| `SetSnapshot` | 12,766,799 | 14,289,310 | +11.9% |
+| `SetSnapshotFixed` | 12,236,834 | 13,607,915 | +11.2% |
 | `SetSnapshotF2Fixed` | 367,183 | 411,641 | +12.1% |
 | `Merge` | 5,196,830 | 6,124,691 | +17.9% |
 | `NonTxnDrop` | 1,112,076 | 1,246,158 | +12.1% |
-| `NonTxnInsert` | 15,788,049 | 16,969,251 | +7.5% |
+| `NonTxnInsert` | 15,788,049 | 16,969,548 | +7.5% |
 | `NonTxnFixed` | 841,907 | 1,029,281 | +22.3% |
 
+The "after" column is the re-measurement that closed debt `B6`, on 2026-09-21. `Merge`, `NonTxnDrop` and
+`SetSnapshotF2Fixed` reproduced their first post-split figures exactly; the three larger configurations landed
+within a few hundred states of them, which is the run-to-run variation of a multi-worker run and not a change
+in the space.
+
 `Base`, `BaseSmall` and `NonTxnDropTwo` do not move, because none of them enables the cleanup group, and that is
-the control this table needs: the split touches exactly the scenarios that run the cleanup thread. Every one of
-them is still green and every finding module still produces its finding. The largest of them, `NonTxnInsert` at
-17.0 million, stays inside the budget, so no reduction was sought.
+the control this table needs: the split touches exactly the scenarios that run the cleanup thread. `NonTxnDropTwo`
+re-measured at 47,958,902 in 7 min 29 s against 47,958,711, which is that variation again and not a move. Every
+one of them is still green and every finding module still produces its finding. The largest of them,
+`NonTxnInsert` at 17.0 million, stays inside the budget, so no reduction was sought.
 
 ### The `SetSnapshotF2` pair {#setsnapshotf2}
 
