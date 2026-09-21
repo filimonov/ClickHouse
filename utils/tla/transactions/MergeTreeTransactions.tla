@@ -28,7 +28,8 @@ ClientNext == \E k \in Sessions :
 StoreNext == \E p \in Parts : \/ Fsync(p)
                               \/ (\E o \in FrameOwners : StoreRead(p, o) \/ StorePersist(p, o) \/ StorePublish(p, o) \/ StoreRetry(p, o))
 UpdaterNext == UpdLoadEntriesMap \/ UpdPublishSnapshot
-UpdaterGCNext == UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
+UpdaterGCNext == UpdRemoveOldEntriesArm \/ UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone
+                 \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
 UpdaterUnknownNext ==
   \/ UpdReconnect \/ UpdLoadNothing \/ UpdSwapUnknownLists \/ UpdFinalizeDone
   \/ (\E t \in Tids : UpdFinalizeUnknown(t) \/ UpdRollbackStart(t) \/ UpdRollbackLost(t)

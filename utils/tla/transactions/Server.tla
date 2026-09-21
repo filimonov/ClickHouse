@@ -1078,7 +1078,11 @@ RestartLoadPart(p) ==
          \* broken part is not Active. This is also what licenses restoring h.payload below: the loader only
          \* reaches that line for a part whose data files are durable.
          broken == ~disk[p].payload_durable
-         raw == LoadedRecord(p)
+         \* The LegacyLoads witness is the loader treating a legacy record as a parse failure: the shape
+         \* loadMetadata produces for a tmp-only directory, in place of the old-format record.
+         raw == IF Witness("LegacyLoads") /\ disk[p].cached.kind = "Legacy"
+                THEN [EmptyInfo EXCEPT !.ctid = DummyTID, !.ccsn = RolledBackCSN, !.sv = -1]
+                ELSE LoadedRecord(p)
          upd == UpdateCsnIfNeeded(p, raw).info
          \* loadDataPart:2686-2691, "deactivate part if creation was not committed or if removal was"
          dead == Involved(upd) /\ (upd.ccsn = RolledBackCSN \/ upd.rcsn /= UnknownCSN)
@@ -1193,11 +1197,28 @@ UpdPublishSnapshot ==
 \* what the counter removes is a second pass starting inside the first, which the C++ cannot do.
 \* The removal loop runs only when the tail actually moved: removeOldEntries returns at :317 when the new value
 \* equals the old one, before the loop is reached.
+\* removeOldEntries up to the early return (src/Interpreters/TransactionLog.cpp:290-316).
+\* updated_tail_ptr is stored at :302, before the znode read and before the `new == old` return at :315-316, so
+\* a pass that finds the tail unchanged still disarms the async-loading gate. That is the whole content of this
+\* action, and it is why it is separate from SetTail, which carries its own store of the same flag.
+\* The tail-unchanged guard is the early return itself, so this action and SetTail partition the passes that
+\* get past the gate rather than overlapping: without it the action would also stand for a pass that moved the
+\* tail, which the code has no counterpart for, and it would disarm the gate a pass early.
+UpdRemoveOldEntriesArm ==
+  /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
+  /\ zk.session = "Alive"
+  /\ sys.completely_started /\ ~tlog.updated_tail_ptr /\ sys.async_loading_jobs = 0
+  /\ RetentionHorizon = zk.tail
+  /\ tlog' = [tlog EXCEPT !.updated_tail_ptr = TRUE]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, txn, sys, client, stmt, mut, task>>
+
 UpdRemoveOldEntriesSetTail ==
   /\ sys.server \in {"LogUp", "TableLoading", "TableUp"} /\ sys.updater_pc = "Idle"
   /\ zk.session = "Alive"
   /\ sys.completely_started
-  /\ (tlog.updated_tail_ptr \/ sys.async_loading_jobs = 0)
+  \* The LogEntryNeeded witness removes the async-loading gate, so the tail advances while covered parts are
+  \* still loading, which is the race the gate was added for.
+  /\ (Witness("LogEntryNeeded") \/ tlog.updated_tail_ptr \/ sys.async_loading_jobs = 0)
   \* the retention horizon, not the cleanup one: see Parts.tla and finding F2
   /\ LET nt == IF Witness("NoOutdatedLookup") THEN tlog.latest_snapshot ELSE RetentionHorizon IN
      /\ nt /= zk.tail

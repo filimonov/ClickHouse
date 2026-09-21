@@ -60,8 +60,12 @@ OldestSnapshot == IF tlog.running_list = {} THEN tlog.latest_snapshot
 \* the two horizons are equal in every reachable state, because nothing moves a registry entry after Begin.
 RetentionHorizon == IF tlog.running_list = {} THEN tlog.latest_snapshot
                     ELSE Min({ tlog.retention_in_use[t] : t \in tlog.running_list })
+\* The NoResurrection witness is the spec's row: a tid absent from the log resolves to unknown rather than
+\* rolled back, so a part whose creating transaction never committed loads Active instead of dead.
 TryGetCsn(t) == IF LookupCsn(t) /= UnknownCSN THEN LookupCsn(t)
-                ELSE IF t \in tlog.running_list THEN UnknownCSN ELSE RolledBackCSN
+                ELSE IF t \in tlog.running_list THEN UnknownCSN
+                ELSE IF Witness("NoResurrection") THEN UnknownCSN
+                ELSE RolledBackCSN
 
 \* ---- VersionInfo::isVisible fast path: "TRUE" | "FALSE" | "UNKNOWN"
 InfoIsVisible(info, s, u) ==
@@ -161,6 +165,12 @@ StoredRecord(p) == IF part[p].deferred_on THEN part[p].deferred
                    ELSE IF DiskHasInfo(p) THEN DiskInfo(p)
                    ELSE IF disk[p].cached.kind = "Legacy" THEN LegacyInfo
                    ELSE EmptyInfo
+\* The same read against the layer a crash keeps. It is what the invariant preamble judges an unloaded part by
+\* and what the truncation pass consults under TAIL_WAITS_FOR_DURABLE_CSN; the deferred record is deliberately
+\* not consulted, because a record that was never written to a file cannot survive anything.
+DurableRecord(p) == IF disk[p].durable.kind = "Info" THEN disk[p].durable.info
+                    ELSE IF disk[p].durable.kind = "Legacy" THEN LegacyInfo
+                    ELSE EmptyInfo
 \* No txn_version.txt of any format and no deferred record: readMetadata would throw CANNOT_OPEN_FILE.
 NoStoredRecord(p) == ~part[p].deferred_on /\ disk[p].cached.kind = "None"
 

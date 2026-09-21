@@ -66,10 +66,6 @@ RollbackNoLeak == \A k \in Sessions : \A t \in Tids : Cur(k) /= EmptyTID /\ Cur(
 \* disk[p] otherwise. A durable committed or non-transactional removal counts as Outdated; a durable rolled-back
 \* creation, and a missing directory, count as Absent. Before the first crash loaded_parts is the whole
 \* universe, so every scenario without one is unaffected.
-DurableRecord(p) ==
-  IF disk[p].durable.kind = "Info" THEN disk[p].durable.info
-  ELSE IF disk[p].durable.kind = "Legacy" THEN LegacyInfo
-  ELSE EmptyInfo
 DurablePState(p) ==
   \* Not durably active without its rows: a part whose data files did not survive is broken at load
   \* (MergeTreeData.cpp:2618-2676) and never enters the working set, which is what RestartLoadPart's broken
@@ -127,6 +123,59 @@ DurabilityMonotoneStep ==
       /\ disk[q].dir_durable => disk'[q].dir_durable
       /\ disk[q].named_durable => disk'[q].named_durable
 DurabilityMonotone == [][DurabilityMonotoneStep]_vars
+
+\* ---- what a restart must not do (spec #invariants-cleanup, #invariants-code)
+\* NoResurrection is stated on the load step and over history, not over the durable record, so that a wrong
+\* updateCSNIfNeeded is caught rather than assumed: a part must not come back Active if anybody committed its
+\* removal, if a non-transactional removal took effect, or if its creator never committed. The removal clause
+\* covers both, because h.removers carries NonTransactionalTID beside the committed transactional removers.
+NoResurrectionStep == \A p \in Parts : RestartLoadPart(p) =>
+  (part'[p].pstate = "Active" =>
+     /\ h.removers[p] = {}
+     /\ (h.creator[p] \in Tids => h.creator[p] \in h.committed))
+NoResurrection == [][NoResurrectionStep]_vars
+
+\* LogEntryNeeded is a state invariant rather than an action property: the obligation is about the world after
+\* the entry is gone, and h.truncated only grows. It is the property the TODO in
+\* TransactionLog::removeOldEntries (src/Interpreters/TransactionLog.cpp:305-307) says the code does not yet
+\* keep: "we write CSNs into data parts without fsync, so it's theoretically possible that we wrote CSN,
+\* finished transaction, removed its entry from the log, but after that server restarts and CSN is not actually
+\* saved to metadata on disk. We should store a bit more entries in ZK and keep outdated entries for a while."
+\* The antecedent is the part a restart would read and load. The final name has to have survived, because
+\* MergeTreeData::loadDataParts skips a directory that kept only its temporary one, and the data files have to
+\* have survived, because a part without them is broken at load and never enters the working set. A record no
+\* loader will read owes nothing to the log, and that is the whole of what the two bits exclude: a durable
+\* record inside a directory the crash takes is not evidence of anything.
+LogEntryNeeded == \A t \in h.truncated : \A p \in Parts :
+  disk[p].named_durable /\ disk[p].payload_durable =>
+    LET r == DurableRecord(p) IN
+    /\ ~(r.ctid = t /\ r.ccsn = UnknownCSN)
+    /\ ~(r.rtid = t /\ r.rcsn = UnknownCSN)
+
+\* LegacyLoads: a part whose stored record is the pre-storing_version format loads Active with a
+\* non-transactional creation. VersionInfo::readFromMultiLineBuffer takes the old-format branch when the header
+\* is followed by creation_tid rather than storing_version, and gives the record Tx::NonTransactionalTID with
+\* Tx::NonTransactionalCSN (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:106-113).
+LegacyLoadsStep == \A p \in Parts :
+  (RestartLoadPart(p) /\ disk[p].cached.kind = "Legacy" /\ p \in sys.load_queue) =>
+    (part'[p].pstate = "Active" /\ part'[p].mem.ctid = NonTransactionalTID)
+LegacyLoads == [][LegacyLoadsStep]_vars
+
+\* Assert_IsNonTransactionalDomain: every step that evaluates isNonTransactional sees a tid in the predicate's
+\* domain, which on the baseline includes the exact DummyTID. TransactionID::isNonTransactional
+\* (src/Common/TransactionID.h:88-103) asserts that a non-transactional local id and the non-transactional start
+\* CSN go together, and exempts {NonTransactionalCSN, DummyLocalTID, Nil} by name, which is the shape
+\* VersionMetadataOnDisk::loadMetadata produces for a tmp-only directory. The three evaluating sites are
+\* RestartLoadPart, validateInfo inside StoreRead, and NtBatchPreflight; the model states it over the one the
+\* tmp-only shape reaches. It is a tautology on the model's type, and WITNESSES.md says what its witness really
+\* shows instead.
+IsNonTransactionalDomain(t) ==
+  \/ t = DummyTID
+  \/ t = NonTransactionalTID
+  \/ t \in Tids \cup {EmptyTID}
+Assert_IsNonTransactionalDomainStep == \A p \in Parts : RestartLoadPart(p) =>
+  (IsNonTransactionalDomain(LoadedRecord(p).ctid) /\ IsNonTransactionalDomain(LoadedRecord(p).rtid))
+Assert_IsNonTransactionalDomain == [][Assert_IsNonTransactionalDomainStep]_vars
 
 \* ---- conflicts (spec #invariants-conflicts)
 SingleRemover == \A p \in Parts : Cardinality(h.removers[p]) <= 1

@@ -154,7 +154,7 @@ part of `h_creating[t]` is ever in the visible-parts set of a read by another tr
 `RollbackRestoresStep` is the first half and `RollbackNoLeak` is the second, stated more strongly, over
 every uncommitted transaction rather than only the rolled-back ones. The row's witness, `RollbackRestore`
 skipped, falsifies the first half; a witness for the second is writable within `Base` and belongs with the
-task that gives it a visibility hook, which is plan 3, task 5 (budget, sweep and debts).
+task that gives it a visibility hook, which is plan 3, task 6 (budget, witness sweep, documents and debts).
 `FINDINGS.md`, section 3, carries the ruling and the argument for the re-placement.
 
 ## Witnesses deferred to a later plan {#witnesses-deferred-to-a-later-plan}
@@ -786,7 +786,7 @@ that those clauses can still fail is evidence and not a witness row. A witness a
 the unsynced module debt `B9` places in plan 3, task 3 (what a restart must not do).
 
 The rest of the scenario's roster is `Merge`'s, so its witnesses are the `Merge` sweep's rows, and a sweep of a
-47-million-state scenario is its own piece of work. It is placed in plan 3, task 5 (budget, sweep and debts)
+47-million-state scenario is its own piece of work. It is placed in plan 3, task 6 (budget, witness sweep, documents and debts)
 together with the `Keeper` roster's, which is placed there for the same reason.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}

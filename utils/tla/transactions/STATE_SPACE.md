@@ -683,7 +683,7 @@ It has since moved, and the move is not the layered-disk task's. That task re-ra
 16,969,487, a spread of 61 states. Both figures are 7.5% above the three recorded above, so the change that
 moved it lies between the commit those were taken on and `3e54ef87ffd0`, and nothing in the `StoredRecord`
 rewrite touches a live branch of this configuration, whose `LEGACY_PARTS` is empty. Which change it was is not
-bisected here; the bisection is placed in plan 3, task 5 (budget, witness sweep, documents and debts).
+bisected here; the bisection is placed in plan 3, task 6 (budget, witness sweep, documents and debts).
 
 The two `SetSnapshot` rows are the re-measurement model defect `M13` forces. Restoring `DropLock`'s `lockParts`
 guard narrows the scenario by about 6%, from 13,622,631 and 13,092,635, which is the same direction and roughly
@@ -765,7 +765,7 @@ One session rather than the matrix's two, and one task rather than two, for the 
 gives: there is exactly one covering part, so exactly one merge, and the races this scenario adds are between
 a committing actor and the updating thread rather than between two sessions. `KEEPER_FAULTS_MAX = 1` means a
 behaviour has either a lost commit response or a session expiry, not both; what that costs is a behaviour with
-both, and plan 3, task 5 (budget, sweep and debts) measures whether 2 fits.
+both, and plan 3, task 6 (budget, witness sweep, documents and debts) measures whether 2 fits.
 
 ### The second configuration {#keeper-unknown-wait}
 
@@ -957,8 +957,15 @@ the payload and the outer rename durable, the metadata rename not, and `AckedWri
 trace it produces is the acknowledged reclassification rather than the shallower plain loss.
 
 What the all-on variant does not reach is the tmp-only load shape itself, because every store is durable when it
-is made, so `LoadedRecord`'s `DummyTID` arm is dead there. Debt `B9` places the module that covers the other
-twenty-five rows in the unsynced world, which is where the restart properties will be stated.
+is made, so `LoadedRecord`'s `DummyTID` arm is dead there. `MC_CrashUnsynced` is the module that reaches it: all
+three settings off, which is what upstream runs by default, and the roster with the rows that world falsifies by
+construction named rather than silently absent. That is debt `B9`, and the section below is its payment.
+
+`MC_CrashLegacy` is a third split, and not at the fsync settings: it is `MC_Crash`'s constants with
+`LEGACY_PARTS = {P1}`, so that the loader is exercised against the pre-`storing_version` metadata format with
+every durability bit set. Putting the legacy part in the unsynced world instead would make the module red on
+`AckedWriteIsDurable` for finding `F10`'s reason, which has nothing to do with the format the loader is reading.
+`MC_CrashWitness` is `MC_Crash` at two sessions, for `witness.sh` only.
 
 ### Reading the counts in this section {#crash-counts}
 
