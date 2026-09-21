@@ -78,11 +78,13 @@ NoBatchRec == [active |-> FALSE, targets |-> <<>>, cursor |-> 0, phase |-> "Lock
 
 TLogRecord == [tid_start : [Tids -> AllCSNs], tid_to_csn : [Tids -> AllCSNs], latest_snapshot : LogCSNs,
                local_tid_counter : 0..TID_MAX, last_loaded_entry : LogCSNs, running_list : SUBSET Tids,
-               snapshots_in_use : [Tids -> AllCSNs], tail_ptr : LogCSNs, updated_tail_ptr : BOOLEAN,
+               snapshots_in_use : [Tids -> AllCSNs], retention_in_use : [Tids -> AllCSNs],
+               tail_ptr : LogCSNs, updated_tail_ptr : BOOLEAN,
                unknown_state_list : SUBSET Tids, unknown_state_list_loaded : SUBSET Tids]
 TLogInit == [tid_start |-> [t \in Tids |-> UnknownCSN], tid_to_csn |-> [t \in Tids |-> UnknownCSN],
              latest_snapshot |-> FirstCSN, local_tid_counter |-> 0, last_loaded_entry |-> FirstCSN, running_list |-> {},
-             snapshots_in_use |-> [t \in Tids |-> UnknownCSN], tail_ptr |-> MaxReservedCSN, updated_tail_ptr |-> FALSE,
+             snapshots_in_use |-> [t \in Tids |-> UnknownCSN], retention_in_use |-> [t \in Tids |-> UnknownCSN],
+             tail_ptr |-> MaxReservedCSN, updated_tail_ptr |-> FALSE,
              unknown_state_list |-> {}, unknown_state_list_loaded |-> {}]
 
 SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_started : BOOLEAN,
@@ -255,7 +257,8 @@ CommitFlipEffect(t) ==
 \* whose holder is destroyed with the task. Removing NoActor from a set of actors is a no-op, and so is
 \* removing it from a set of pins.
 CommitFinalizeEffect(a, t) ==
-  /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN]
+  /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN,
+                          !.retention_in_use[t] = UnknownCSN]
   /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].creating = <<>>, ![t].removing = <<>>, ![t].mutations = {},
                          ![t].holders = @ \ {a}]
   /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {<<"Txn", t>>, a}]]
@@ -291,7 +294,10 @@ Begin(k) ==
      \* (src/Interpreters/TransactionLog.cpp:216-226), so the two move together. The witness of
      \* Assert_getOldestSnapshot's first conjunct breaks that lockstep at this one site.
      /\ tlog' = [tlog EXCEPT !.local_tid_counter = t, !.tid_start[t] = s, !.running_list = @ \cup {t},
-                             !.snapshots_in_use[t] = IF Witness("Assert_getOldestSnapshot_size") THEN @ ELSE s]
+                             !.snapshots_in_use[t] = IF Witness("Assert_getOldestSnapshot_size") THEN @ ELSE s,
+                             \* the retention horizon of a new transaction is the snapshot it began at, which is
+                             \* the era of log entries it may still have to resolve
+                             !.retention_in_use[t] = s]
      /\ txn' = [txn EXCEPT ![t] = [AbsentTxn EXCEPT !.state = "Running", !.snapshot = s, !.protected_snapshot = s,
                                      !.holders = {Sess(k)}]]
      /\ client' = [client EXCEPT ![k].current = t, ![k].first_read = NoRead, ![k].last_read = NoRead]
@@ -327,9 +333,23 @@ SetSnapshot(k, c) ==
   /\ LET t == Cur(k)
          moves_protected == SET_SNAPSHOT_PROTECTS \/ Witness("Assert_getOldestSnapshot")
          moves_entry == moves_protected \/ Witness("Assert_getOldestSnapshot_entry") IN
-     /\ (SET_SNAPSHOT_PROTECTS => c >= tlog.tail_ptr)
+     \* The refusal is the log-retention one and applies to an ordinary CSN only. executeSetSnapshot accepts
+     \* NonTransactionalCSN and EverythingVisibleCSN by name
+     \* (src/Interpreters/InterpreterTransactionControlQuery.cpp:144), and a fix that refused them would be a
+     \* compatibility change rather than a fix. They are accepted and they move the cleanup horizon, which is
+     \* what protects what they can read; they do not move the retention horizon, which would regress the tail.
+     /\ (SET_SNAPSHOT_PROTECTS => (IsSpecialSnapshot(c) \/ c >= tlog.tail_ptr))
      /\ txn' = [txn EXCEPT ![t].snapshot = c, ![t].protected_snapshot = IF moves_protected THEN c ELSE @]
-     /\ tlog' = [tlog EXCEPT !.snapshots_in_use[t] = IF moves_entry THEN c ELSE @]
+     \* The retention entry is lowered and never raised. beginTransaction registers latest_snapshot
+     \* (src/Interpreters/TransactionLog.cpp:403) and getOldestSnapshot falls back to latest_snapshot on an
+     \* empty list (:679-680), so today every entry is at or below latest_snapshot and the tail can never
+     \* exceed it. A fix that registered an accepted target above latest_snapshot would break that: the tail
+     \* would follow the entry up, and the pass after that transaction ends would compute a lower tail and
+     \* raise "Got unexpected tail_ptr" (:313). That is finding F2's third shape, trace
+     \* traces/f2-future-target-tail-regression.txt, and Min is what closes it.
+     /\ tlog' = [tlog EXCEPT !.snapshots_in_use[t] = IF moves_entry THEN c ELSE @,
+                             !.retention_in_use[t] = IF moves_entry /\ ~IsSpecialSnapshot(c)
+                                                     THEN Min({@, c}) ELSE @]
      /\ h' = [h EXCEPT !.content[t] = Frags({ r \in Parts : part[r].pstate \in {"Active", "Outdated"}
                                                            /\ OracleVisible(r, c, t) })]
      \* The read baseline restarts, exactly as it does at Begin. StableRead compares a read against the first
@@ -701,7 +721,8 @@ RollbackUnlock(k, t, p) ==
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
 RollbackFinalize(k, t) ==
   /\ Drives(k, t) /\ txn[t].pc = "RollbackFinalize"
-  /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN]
+  /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN,
+                          !.retention_in_use[t] = UnknownCSN]
   \* holders is deliberately left alone. MergeTreeTransaction::rollback destroys no shared_ptr: the holder goes
   \* away when its owner's MergeTreeTransactionHolder is destroyed, which is RollbackReturn and the detaching
   \* branch of RollbackStart for a session, and MergeCommitFinalize or MergeUnwind for a background task. With
@@ -752,7 +773,8 @@ UpdRemoveOldEntriesSetTail ==
   /\ zk.session = "Alive"
   /\ sys.completely_started
   /\ (tlog.updated_tail_ptr \/ sys.async_loading_jobs = 0)
-  /\ LET nt == IF Witness("NoOutdatedLookup") THEN tlog.latest_snapshot ELSE OldestSnapshot IN
+  \* the retention horizon, not the cleanup one: see Parts.tla and finding F2
+  /\ LET nt == IF Witness("NoOutdatedLookup") THEN tlog.latest_snapshot ELSE RetentionHorizon IN
      /\ nt /= zk.tail
      /\ zk' = KeeperWithTail(nt)
      /\ tlog' = [tlog EXCEPT !.tail_ptr = nt, !.updated_tail_ptr = TRUE]

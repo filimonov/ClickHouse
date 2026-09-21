@@ -29,6 +29,8 @@ transaction holds locked, is a design change and not a patch that can be written
 
 | Id | Scenario, bounds | Property | Action sequence (short) | Classification | Resolution | Proposed code fix |
 |---|---|---|---|---|---|---|
+| F9 | `SetSnapshotF9`: one session, one part, `TID_MAX = 2`, `CSN_MAX = 35`, `SNAPSHOT_TARGETS = {3}`, `SET_SNAPSHOT_PROTECTS = TRUE` | `Assert_validateInfo` | `t1` inserts `P1` and is rolled back, so `P1` carries `creation_csn = RolledBackCSN` and sits `Outdated`; `t2` lowers its snapshot to `EverythingVisibleCSN`, which makes every part visible to it, `P1` included; `t2` drops the partition, which enrols `P1` and locks its removal, and nothing on the transactional removal path refuses a rolled-back creation; `t2` commits, `afterCommit` stamps a real removal CSN, and `validateInfo` raises `LOGICAL_ERROR` on `creation_csn > removal_csn` inside a `noexcept` frame, which terminates the process | `code` | `MC_SetSnapshotF9` produces it, trace `traces/f9-everything-visible-removal-validateinfo.txt`, 33 states. The same shape falsifies `ErrorIsAbsent` and `NoAvoidableTermination`, which are the termination the assertion produces; those three rows are out of `MC_SetSnapshotF2SpecialEV`'s roster for this reason. See below | refuse the removal rather than the read: `MergeTreeTransaction::removeOldPart` must skip, and `VersionMetadata::lockRemovalTID` must refuse with `SERIALIZATION_ERROR`, a part whose creation is rolled back, the way `setAndStoreRemovalTID` already refuses a non-transactional removal of an uncommitted creation (`VersionMetadata.cpp:172-184`). See below |
+| F8 | `SetSnapshotF8`: the same configuration with the whole roster | `RollbackNoLeak` | `t1` inserts `P1` and is rolled back; `t2` lowers its snapshot to `EverythingVisibleCSN` and its `SELECT` returns `P1`, a part no committed transaction ever created | `property` | the C++ does exactly this, and by design: `VersionInfo::isVisible` returns true for every part at that snapshot before it looks at any CSN (`src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158`, "Special snapshot for introspection purposes"). `MC_SetSnapshotF8` produces it, trace `traces/f8-everything-visible-rollback-leak.txt`, 25 states. The design document's isolation and rollback rows carry no qualifier for it, which is spec defect S18 | none for the read itself; what needs the fix is the write path, which is `F9` |
 | F6 | `NonTxnF6`: one session, `Parts = {P1, P2, E}`, `TID_MAX = 2`, `CSN_MAX = 35` | `Assert_validateInfo` | a non-transactional `DROP PARTITION` publishes the empty part `E` `Active`; `t1`, which had `P2` precommitted, publishes it and `Transaction::commit` finds `E` covering it, so `P2` goes `Outdated` and is never attached to `t1`; `t1` then drops the partition transactionally, and `P2` is visible to it through its own `creation_tid`, so the drop enrols it; `t1` commits, `afterCommit` stores `removal_csn` on a record whose `creation_csn` is still zero, and `validateInfo` raises `LOGICAL_ERROR` inside `MergeTreeTransaction::afterCommit`, which is declared `noexcept` (`src/Interpreters/MergeTreeTransaction.cpp:321`), so the process terminates | `code` | the model variant `OBSOLETE_IS_ROLLED_BACK` encodes the proposed fix and `MC_NonTxnFixed` runs the same configuration with it; `MC_NonTxnF6` produces the finding, trace `traces/f6-obsolete-part-removal-csn-noexcept.txt`, 44 states; 120,405 distinct on the run that produced it and 117,204 on a re-run, a first-violation count | stamp the obsolete part `RolledBackCSN` the way `MergeTreeData::Transaction::rollback` stamps a part that does not make it in, in the pre-`NOEXCEPT_SCOPE` loop that already knows the covering part (`src/Storages/MergeTree/MergeTreeData.cpp:11278-11282`) and **not** in the obsolete branch itself (`:11305-11317`), which is inside the scope. See below |
 | F5 | `NonTxnF5`: one session, `Parts = {P1, P2, E}`, `TID_MAX = 2`, `CSN_MAX = 35` | `ActiveSetShape` | a non-transactional `INSERT` publishes `P1`; a non-transactional `DROP PARTITION` publishes the empty part `E` over it and removes `P1` through the batch; a second non-transactional `INSERT` of `P2` is published while `E` is `Active`, so `Transaction::commit`'s covering branch marks `P2` `Outdated` instead; `t1` then runs a transactional `DROP PARTITION`, which sees `E` and `P2` (both visible) and enrols both; `ROLLBACK` restores both to `Active`, and `E` covers `P2` | `code` | recorded, not fixed: the obvious local fix trades this violation for a `RollbackRestores` one, which is what makes the finding interesting. Trace `traces/f5-rollback-restores-into-covered-range.txt`, 42 states; 106,922 distinct on the run that produced it and 99,234 on a re-run, a first-violation count. See below | `MergeTreeData::restoreAndActivatePart` (`src/Storages/MergeTree/MergeTreeData.cpp:7325`) must not reactivate blindly; the prevention belongs at publication time. See below |
 | F4 | `NonTxnF4`: two sessions, `Parts = {P1, P2, E}`, `TID_MAX = 2`, `CSN_MAX = 35` | `NoLostVisibleData` | a non-transactional `INSERT` publishes `P1`; a non-transactional `DROP PARTITION` writes `E`, publishes it and locks `P1` in its removal batch; `t1` begins, capturing `P1`'s fragment as its content; the batch then stores `removal_tid = NonTransactionalTID` on `P1`, which makes it invisible to `t1` at once | `property` | the C++ produces exactly what the trace shows; the row states a guarantee the feature does not give against a non-transactional writer. Spec defect S13 is the qualifier it needs. Trace `traces/f4-nontxn-drop-loses-visible-data.txt`, 17 states; 51,572 distinct on the run that produced it and 52,002 on a re-run, which is the first-violation noise every such count carries | none, and none is available inside the design: a non-transactional removal has no CSN for a snapshot to be compared against, so the row changes, not the code |
@@ -65,6 +67,51 @@ did state it -- a read never contains a strict, non-empty subset of the targets 
 is owed to plan 4, task 5 (isolation properties revisited with mutations), which is the task that
 next restates the properties over what a read captured; until it exists, the mechanism is recorded and
 unchecked.
+
+### F9 and F8 in full: the introspection snapshot {#f9}
+
+`SET TRANSACTION SNAPSHOT 3` is not a point on the CSN line. `Tx::EverythingVisibleCSN`
+(`src/Common/TransactionID.h:41`) makes `VersionInfo::isVisible` return true for every part before it looks at
+a creation or a removal CSN (`VersionInfo.cpp:157-158`), under a comment that says what it is for: "Special
+snapshot for introspection purposes". `executeSetSnapshot` accepts it by name
+(`src/Interpreters/InterpreterTransactionControlQuery.cpp:144`). Two things follow, and the second is a
+termination.
+
+**`F8`, the read.** Everything means everything, the parts a rolled-back transaction created included. Such a
+part keeps `creation_csn = Tx::RolledBackCSN` and sits `Outdated`;
+`getVisibleDataPartsVectorForInternalUsage` collects `Active` and `Outdated` alike and filters by `isVisible`,
+which says yes. So a transaction at this snapshot reads data that no committed transaction ever produced. The
+model states that as `RollbackNoLeak`, and it is red. The classification is `property` rather than `code`: the
+comment beside the line says this is deliberate, so what is wrong is the design document, whose isolation and
+rollback rows are stated without the qualifier. That is spec defect `S18`.
+
+**`F9`, the write.** The same reader can remove what it sees, and that is not introspection. A
+`DROP PARTITION` in that transaction enrols the rolled-back part, because the enrolment set is the visible set.
+The transactional removal path has no guard against it: `VersionMetadata::setAndStoreRemovalTID`'s refusal is
+for a **non-transactional** remover of a creation that has not committed (`VersionMetadata.cpp:172-184`), and
+`isCreationCommitted` (`:150-158`), which would answer false here, is read by
+`isCreatedByUncommittedTransaction` on that same non-transactional path only. So the removal TID is taken, and
+the commit stamps a real removal CSN on a record whose creation CSN is `RolledBackCSN`, which is
+`numeric_limits<CSN>::max`. `validateInfo` rejects it: "creation_csn {} should not be greater than
+removal_csn {}" (`VersionMetadata.cpp:561-565`). It throws rather than asserting, and `afterCommit` is
+`noexcept` (`MergeTreeTransaction.cpp:321`), so the process terminates. It is `F6`'s shape reached by a
+different route, and it is worth saying that `F6`'s own fix does not close it: a part stamped `RolledBackCSN`
+is invisible at every ordinary snapshot and visible again at this one.
+
+**The fix.** Refuse the removal, not the read. `VersionMetadata::lockRemovalTID` should refuse a part whose
+creation is rolled back with `SERIALIZATION_ERROR`, which is retryable and is the error the neighbouring
+refusal already uses, and `MergeTreeTransaction::removeOldPart` should skip such a part rather than enrol it.
+The alternative, making `isVisible` hide a rolled-back creation at `EverythingVisibleCSN` too, closes `F8` and
+`F9` together and is one line, but it changes what the introspection snapshot shows, which is a product
+decision rather than a bug fix. Neither is modelled: no `Fixed` variant is claimed for `F9`, and what the
+model carries is the two modules that produce the two findings.
+
+**Why the two special modules keep their rosters apart.** `MC_SetSnapshotF2SpecialEV` verifies the `F2` fix at
+this snapshot and leaves out exactly the four rows these two findings falsify, `RollbackNoLeak`,
+`Assert_validateInfo`, `ErrorIsAbsent` and `NoAvoidableTermination`, each named in the module header with the
+finding that owns it. That is the treatment `MC_NonTxnDrop` already gets for `ActiveSetShape` and finding `F5`:
+a property a known finding falsifies is left out of the module that is verifying something else, and shown red
+in the module that owns it.
 
 ### F6 in full {#f6}
 
@@ -301,7 +348,7 @@ committed at 35, which is above it. The part `t3` is about to read is the part t
 (`src/Interpreters/InterpreterTransactionControlQuery.cpp:138`) calls `MergeTreeTransaction::setSnapshot`
 (`src/Interpreters/MergeTreeTransaction.cpp:52`), which writes `snapshot` and nothing else; the background
 cleanup task reaches `MergeTreeData::grabOldParts` (`src/Storages/MergeTree/MergeTreeData.cpp:4074`), which asks
-`VersionMetadata::canBeRemoved` (`src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:272`) at `:4140`;
+`VersionMetadata::canBeRemoved` (`src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:272`) at `:4142`;
 `canBeRemoved` calls `TransactionLog::getOldestSnapshot` (`src/Interpreters/TransactionLog.cpp:677`), which
 returns `snapshots_in_use.front`, still the snapshot `beginTransaction` inserted; the part moves to `Deleting`
 and `clearPartsFromFilesystemAndRollbackIfError` (`:4566`) deletes its directory.
@@ -354,7 +401,7 @@ with. `TransactionLog::getOldestSnapshot` (`src/Interpreters/TransactionLog.cpp:
 From there the part is lost in three steps. `VersionMetadata::canBeRemoved`
 (`src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:272`) compares the removal CSN against
 `getOldestSnapshot` and answers `true` for a part removed after the lowered snapshot but before the protected
-one. `MergeTreeData::grabOldParts` (`src/Storages/MergeTree/MergeTreeData.cpp:4140`) asks exactly that
+one. `MergeTreeData::grabOldParts` (`src/Storages/MergeTree/MergeTreeData.cpp:4142`) asks exactly that
 question, and on `true` moves the part out of `Outdated` and schedules its directory for removal. The running
 transaction's next `SELECT` then loses the rows it could read a moment earlier, which is the isolation
 guarantee `SET TRANSACTION SNAPSHOT` exists to provide.
@@ -363,7 +410,10 @@ guarantee `SET TRANSACTION SNAPSHOT` exists to provide.
 too-high value lets the log entries of that era be truncated while a transaction is still reading at a
 snapshot below the new `tail_ptr`.
 
-**Proposed fix, applicable to upstream `master`.** Four functions change, and one member declaration.
+**Proposed fix, applicable to upstream `master`.** Five functions change, one member declaration, and one
+member is added. The count is worth stating, because the first version of this entry said four and named only
+the snapshot-registry half; the cleanup half, which is what closes the second shape, adds `grabOldParts` and a
+way for it to ask for the oldest snapshot without relocking.
 
 `TransactionLog::getOldestSnapshot` (`src/Interpreters/TransactionLog.cpp:677`) splits in two. The body, with
 the two `chassert`s and the `snapshots_in_use.front` it returns, becomes a private
@@ -397,8 +447,38 @@ it sorts to, stores the returned iterator back into `snapshot_in_use_it`, and on
 `removeOldEntries` now publishes it under the same mutex: without that, a check that passes can find the tail
 above its snapshot a moment later, which is exactly the state the refusal exists to prevent.
 
-**The rolled-back transaction, which the new method must refuse.** `SET TRANSACTION SNAPSHOT` is reachable on
-a transaction that has already been rolled back, and the fix has to survive that. `executeSetSnapshot`
+**The two reserved snapshots, which the refusal must not reject.** The refusal above is about log retention,
+and it must not be applied to the two values `executeSetSnapshot` accepts by name,
+`Tx::NonTransactionalCSN = 1` and `Tx::EverythingVisibleCSN = 3`
+(`src/Interpreters/InterpreterTransactionControlQuery.cpp:144`, `src/Common/TransactionID.h:38,41`). Both are
+below any real `tail_ptr`, which is at least `MaxReservedCSN`, so a blanket `new_snapshot < tail_ptr` refusal
+rejects two statements the server accepts today; that is a compatibility change and not a fix.
+
+They cannot simply be registered either. `removeOldEntries` computes the new tail from the registry and raises
+`LOGICAL_ERROR` when it is below the old one (`src/Interpreters/TransactionLog.cpp:313`), so an entry at 1 or 3
+takes the server down on the next truncation pass. The fix therefore keeps **two horizons** on the same
+registry entry:
+
+- the **cleanup horizon**, what `canBeRemoved` compares a removal CSN against, takes the new value, special
+  values included. That is what protects what the transaction can read: at `EverythingVisibleCSN` every part is
+  visible (`VersionInfo::isVisible` returns true before any CSN test,
+  `src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158`), so nothing may be deleted under it, and a
+  horizon of 3 refuses every real removal CSN, which is exactly that.
+- the **retention horizon**, what `removeOldEntries` may move `tail_ptr` to, keeps the era the transaction
+  began in. A special value never enters it.
+
+The retention horizon also has to be *lowered and never raised*. `beginTransaction` registers
+`latest_snapshot` (`TransactionLog.cpp:403`) and `getOldestSnapshot` falls back to `getLatestSnapshot` on an
+empty list (`:679-680`), so today every entry is at or below `latest_snapshot` and the tail can never pass it.
+A fix that registered an accepted target above `latest_snapshot` — the code accepts any CSN above
+`MaxReservedCSN`, a future one included — would break that: the tail would follow the entry up, and the first
+pass after that transaction ended would compute a lower tail and raise "Got unexpected tail_ptr" at `:313`.
+That is **finding `F2`'s third shape**, produced by the model before the variant was corrected, trace
+`traces/f2-future-target-tail-regression.txt`, nine states. `std::min` on the retention value is what closes
+it.
+
+**The transaction that is no longer registered, which the new method must refuse.** `SET TRANSACTION SNAPSHOT`
+is reachable on a transaction that has already been rolled back, and the fix has to survive that. `executeSetSnapshot`
 (`src/Interpreters/InterpreterTransactionControlQuery.cpp:138-149`) tests only that a transaction exists and
 that the target is not a reserved CSN; it carries no state check, unlike `executeCommit` and `executeRollback`
 beside it. `executeQueryImpl`'s refusal of a query on a failed transaction
@@ -409,12 +489,17 @@ transaction can still be rolled back, and `SET TRANSACTION SNAPSHOT` is one of t
 `MergeTreeTransaction::setSnapshot` writes one atomic and touches no list. Under the fix it is not:
 `setSnapshotForRunningTransaction` erases and re-inserts `snapshot_in_use_it`, and erasing an iterator that
 `rollbackTransaction` has already erased is undefined behaviour. The method must therefore verify, under
-`running_list_mutex` and before it touches `snapshot_in_use_it`, that the transaction is still in
-`running_list`, and refuse with `INVALID_TRANSACTION` when it is not. The check belongs under that mutex rather
+`running_list_mutex` and before it touches `snapshot_in_use_it`, that the transaction is still **registered**,
+that is still in `running_list`, and refuse with `INVALID_TRANSACTION` when it is not. Registered is the word:
+the state becomes `ROLLED_BACK` at `src/Interpreters/MergeTreeTransaction.cpp:382` and the registry entry is
+erased only later, at `src/Interpreters/TransactionLog.cpp:578`, so a membership test still accepts a
+transaction that is already rolled back. That is enough for the iterator, which is what the check is for;
+refusing every state that is not `RUNNING` would need the transaction's state read under the same mutex, and
+`MergeTreeTransaction::getState` does not take it. The check belongs under that mutex rather
 than in the interpreter: a state test taken before the lock leaves the same window it exists to close.
 
 The model does not reach that path. `SetSnapshot` is guarded on `txn[Cur(k)].state = "Running"`
-(`Server.tla:311`), so no behaviour offers the statement to a transaction another session has already killed,
+(`Server.tla:320`), so no behaviour offers the statement to a transaction another session has already killed,
 and the refusal above is checked by inspection rather than by search. That narrowing is model defect `M17`.
 
 `InterpreterTransactionControlQuery::executeSetSnapshot`
@@ -434,7 +519,7 @@ published, so it is worse.
 entry under `running_list_mutex` makes every cleanup decision taken *after* the move see the lowered snapshot.
 It does not cover a decision already taken, and that is enough to lose the part.
 `MergeTreeData::grabOldParts` holds `lockParts` across its whole pass, but it asks `canBeRemoved`
-(`src/Storages/MergeTree/MergeTreeData.cpp:4141`), which takes `running_list_mutex` for the length of
+(`src/Storages/MergeTree/MergeTreeData.cpp:4142`), which takes `running_list_mutex` for the length of
 `getOldestSnapshot` and **releases** it (`TransactionLog.cpp:677`), and it moves the parts it accepted to
 `Deleting` only at the end of the pass (`:4190-4194`). Neither `MergeTreeTransaction::setSnapshot` nor the
 proposed `setSnapshotForRunningTransaction` takes a parts lock, so nothing orders a snapshot lowering against
@@ -455,7 +540,32 @@ change: `grabOldParts` must not act on a decision the snapshot registry has sinc
 cleanup half is what makes the decision in flight correct. `SET_SNAPSHOT_PROTECTS` encodes both halves: the
 `SetSnapshot` action moves the entry and refuses a target below the tail, and `CleanupGrab` re-evaluates the
 removal condition in the same step as the state change, which is the model's way of writing "under one guard".
-`MC_SetSnapshotF2Fixed` is green at 411,641 distinct states with both halves and red with only the first.
+**The cleanup half, concretely.** `grabOldParts` already holds `lockParts` for its whole pass. Inside it, and
+after the candidates have been collected, it acquires an opaque registry guard from `TransactionLog` —
+a small RAII type that holds `running_list_mutex` and exposes `getOldestSnapshotLocked` — obtains the oldest
+snapshot through it without relocking, revalidates every candidate against that value, moves the ones that
+still pass to `Deleting`, and only then releases the guard. `canBeRemoved` needs an overload that takes the
+oldest snapshot rather than fetching it, or the revalidation has to be written out at the call site; either
+way the decision and the state change are under one guard, which is what the second shape requires.
+
+Its cost is the mirror of the first half's, and it is larger. `running_list_mutex` is held for the length of
+the final phase of a `grabOldParts` pass rather than for one lookup, and `beginTransaction`,
+`commitTransaction` and `rollbackTransaction` all take that mutex, so a cleanup pass blocks every
+transaction-control statement while it finishes. It is deadlock-free: no `running_list_mutex` critical section
+in `TransactionLog.cpp` calls into `MergeTreeData` or takes `lockParts`, so the acquisition order
+`lockParts` then `running_list_mutex` is the only one that exists. Contention, not inversion, is the design
+question a reviewer has to weigh, and it is why this is filed as an issue with a synchronisation requirement
+rather than as a patch.
+
+**What the green runs establish, exactly.** `MC_SetSnapshotF2Fixed` is green at 309,987 distinct states and red
+under `SnapshotEntryOnly`, which is the fix reduced to its registry half. That covers both shapes of `F2` at an
+ordinary target, at one session, one part, `TID_MAX = 3` and `SNAPSHOT_TARGETS = {34}`, against an abstraction
+in which the registry move is one step and the revalidation is in the same step as the state change. It does
+**not** establish the tail-publication mutex (model defect `M18`), the sorted re-insert (`M6`), a C++
+revalidation that is not atomic with the state change (`M19`), or the special snapshots. The special values are
+covered by two modules of their own: `MC_SetSnapshotF2Special` at `NonTransactionalCSN` beside an ordinary
+target, green over 116,020 states with the whole roster, and `MC_SetSnapshotF2SpecialEV` at
+`EverythingVisibleCSN`, green over 134,553 states with the four rows findings `F8` and `F9` falsify left out.
 
 One refinement survives, and it is the limit of what a two-step model can say: the re-evaluation and the state
 change are one action here, so the model checks a fix in which nothing can intervene between them. A C++ fix
@@ -475,7 +585,7 @@ re-sorted at insertion and the assertion holds, while the model's tid-ordered pr
 two clauses, the equal membership and the per-entry equality, are checked under both variants.
 
 **What `MC_SetSnapshotF2Fixed`'s green covers, and what it does not.** It covers the refusal. It does not cover
-the publication that refusal's soundness rests on. `UpdRemoveOldEntriesSetTail` (`Server.tla:747-758`) reads
+the publication that refusal's soundness rests on. `UpdRemoveOldEntriesSetTail` (`Server.tla:771-782`) reads
 `OldestSnapshot` and writes `zk.tail` and `tlog.tail_ptr` in one step, where the C++ has a real window between
 `getOldestSnapshot` (`TransactionLog.cpp:312`) and `tail_ptr.store(new_tail_ptr)` (`:321`); `SetSnapshot` is
 likewise one step here. The model therefore cannot tell a fix that holds `running_list_mutex` across the
@@ -622,13 +732,13 @@ paragraph is the record that it was looked for and not found.
 | M14 | `NoLostRead` and `NoFutureRead` compare a read against the oracle in the state where `SelectFinish` runs, not in the state where `SelectCapture` took the parts | Among transactions the two states agree, because nothing another transaction does between them can change what is visible at the reader's fixed snapshot. A non-transactional writer can: a part inserted after the read started is oracle-visible and legitimately absent from it (`NoLostRead`), and a part removed after `SelectCheck` decided it is legitimately still in it (`NoFutureRead`). Neither is a lost or a future read; both are the properties reading the wrong instant | plan 4, task 5 (isolation properties revisited with mutations), which names itself the owner of `M14`: give `SelectCapture` a ghost of the parts that were `Active` or `Outdated` when it ran and state both properties over it. Both witnesses survive the change, because neither hook is about which parts existed. Until then the two properties are not checked in `NonTxn`, which `WITNESSES.md` records |
 | M15 | The `NonTxn` scenario has no exhaustive run, and after the split only half of it had one. `MC_NonTxnInsert` finishes green at 15,787,838 distinct states; `MC_NonTxnDrop` did not, at any configuration tried in the task that wrote it: 32.5 and 44.1 million distinct at `CSN_MAX = 35`, and 56,703,779 after 9 min 30 s at `TID_MAX = 2`, `CSN_MAX = 34`, with the queue growing throughout | The half of the scenario that contains the removal batch was not verified exhaustively at all | **not closed: a coverage decomposition**, placed in plan 5, task 4 (budget and calibration). Task 5 gave the half two finishing configurations rather than one: `MC_NonTxnDrop` at `TID_MAX = 1` with the cleanup group, green at 1,112,076 distinct states in 11 seconds, and `MC_NonTxnDropTwo` at `TID_MAX = 2` without it, green at 47,958,711 in 7 min 34 s. The lever the task was told to try first, a `CONSTRAINT` bounding the non-transactional queries a behaviour issues, was measured and rejected: it cut two per cent. What each pair of bounds costs the witnesses is in debt `B4` and in `STATE_SPACE.md`. What the pair does not do is exhaust their conjunction: no finishing run has the cleanup group and the second transaction at once, and `F2` is the standing demonstration that cleanup beside one more transaction can be decisive. The conjunction is therefore an open bound, stated on the `NonTxnDropTwo` row of `README.md`'s assurance table and in `STATE_SPACE.md`, and its budget is plan 5, task 4 (budget and calibration) |
 | M16 | `NtBatchStore` wrote `h.removers[p]` in its own step, one or more steps after `StorePublish` published the record that makes the removal visible | Every property that reads the visibility oracle was blind for that window, which produced a counterexample on `Atomicity` that this task first reported as code finding F7. A non-transactional removal has no commit point, so the publication IS the moment it takes effect | **fixed in this round**: `StorePublishStep` writes the ghost when it publishes a record whose `removal_tid` is `NonTransactionalTID`, which is the same rule `CommitCreateEffect` follows for a transactional removal |
-| M17 | `SetSnapshot` is guarded on `txn[Cur(k)].state = "Running"` (`Server.tla:311`), while `executeSetSnapshot` (`src/Interpreters/InterpreterTransactionControlQuery.cpp:138-149`) has no state check and `executeQueryImpl` exempts `ASTTransactionControl` from its refusal of a query on a failed transaction (`src/Interpreters/executeQuery.cpp:2690-2695`), so the C++ accepts the statement on a rolled-back transaction | The model cannot reach `SET TRANSACTION SNAPSHOT` on a transaction whose `snapshot_in_use_it` `rollbackTransaction` has already erased (`src/Interpreters/TransactionLog.cpp:583`). That is the path on which finding `F2`'s proposed `setSnapshotForRunningTransaction` would erase an iterator that is gone, so the running-list check the fix needs is checked by inspection and not by search | plan 3, task 1 (Keeper faults at commit, the unknown-state pass, updater-driven commit and rollback), whose unknown-state and rolled-back pass is what first offers an action to a transaction that is no longer running |
-| M18 | `UpdRemoveOldEntriesSetTail` (`Server.tla:747-758`) reads `OldestSnapshot` and publishes `zk.tail` and `tlog.tail_ptr` in one step, where `TransactionLog::removeOldEntries` has a window between `getOldestSnapshot` (`src/Interpreters/TransactionLog.cpp:312`) and `tail_ptr.store(new_tail_ptr)` (`:321`) | `MC_SetSnapshotF2Fixed` cannot distinguish a fix that holds `running_list_mutex` across the truncation pass from one that does not, so its green verifies `SetSnapshot`'s refusal of a target below the tail and not the publication that refusal's soundness rests on. Finding `F2`'s fix argument turns on exactly that mutex extension | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), where the truncation pass runs beside the non-transactional batch and the tail is what a `Crash` can interrupt; splitting the action into a read step and a publish step belongs with it |
-| M19 | `CleanupGrab` re-evaluates the removal condition and moves the part to `Deleting` in one action (`Server.tla`), so the model checks a fix in which nothing can intervene between the re-check and the state change | The decision and the grab are now two actions, which is what finding `F2`'s second shape needed, but the re-check inside the grab is still atomic with it. A C++ fix that revalidated `canBeRemoved` and then took a different lock to change the state would have the same window one level down, and the model would report it green | plan 3, task 1 (Keeper faults at commit, the unknown-state pass, updater-driven commit and rollback), which is where the cleanup pass first runs beside an actor that can fail part-way; until then the fix `SET_SNAPSHOT_PROTECTS` encodes is read as "one guard across both", which is what `FINDINGS.md`'s `F2` entry proposes |
-| M20 | `NtDropWrite` (`Server.tla:1253`) writes the empty part first and the batch refuses only later, in `NtBatchPreflight`, while `StorageMergeTree::dropPartitionImpl` calls `checkPartsCanBeRemovedNonTransactionally` (`src/Storages/StorageMergeTree.cpp:3204`) before `createEmptyDataParts` (`:3214`) | The model can write and publish an empty part for a conflict the code refuses before anything is written. Nothing of this plan reads it, because no property here is stated over a write that is later abandoned; it becomes observable as soon as a `Crash` can land between the write and the refusal | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which puts the layered disk and `Crash` around exactly these steps: it adds the early refusal as a step of its own and keeps the later recomputation, so that a conflict appearing after the check stays reachable |
-| M21 | `MergeBegin` (`Server.tla:867`) requires `sys.merges_blocker` already clear, while `StorageMergeTree::scheduleDataProcessingJob` calls `beginTransaction` (`src/Storages/StorageMergeTree.cpp:2222`) before it tests `merges_blocker.isCancelled` (`:2240`) and returns | The model has no transient read-only transaction that begins, finds the blocker set and is rolled back at once. Such a transaction holds an entry in `snapshots_in_use` while it lives, so it can hold `getOldestSnapshot` back and delay a cleanup or a truncation the model performs immediately | plan 5, task 1 (disk write faults in the store frames, `StoreRetry`, `NoSpuriousStaleVersion` under faults, the task-driven rollback machine), which is where a background task first fails part-way and the transient transaction of a refused merge becomes a shape worth having |
+| M17 | `SetSnapshot` is guarded on `txn[Cur(k)].state = "Running"` (`Server.tla:320`), while `executeSetSnapshot` (`src/Interpreters/InterpreterTransactionControlQuery.cpp:138-149`) has no state check and `executeQueryImpl` exempts `ASTTransactionControl` from its refusal of a query on a failed transaction (`src/Interpreters/executeQuery.cpp:2690-2695`), so the C++ accepts the statement on a rolled-back transaction | The model cannot reach `SET TRANSACTION SNAPSHOT` on a transaction whose `snapshot_in_use_it` `rollbackTransaction` has already erased (`src/Interpreters/TransactionLog.cpp:583`). That is the path on which finding `F2`'s proposed `setSnapshotForRunningTransaction` would erase an iterator that is gone, so the running-list check the fix needs is checked by inspection and not by search | plan 3, task 1 (Keeper faults at commit, the unknown-state pass, updater-driven commit and rollback), whose unknown-state and rolled-back pass is what first offers an action to a transaction that is no longer running |
+| M18 | `UpdRemoveOldEntriesSetTail` (`Server.tla:771-782`) reads `OldestSnapshot` and publishes `zk.tail` and `tlog.tail_ptr` in one step, where `TransactionLog::removeOldEntries` has a window between `getOldestSnapshot` (`src/Interpreters/TransactionLog.cpp:312`) and `tail_ptr.store(new_tail_ptr)` (`:321`) | `MC_SetSnapshotF2Fixed` cannot distinguish a fix that holds `running_list_mutex` across the truncation pass from one that does not, so its green verifies `SetSnapshot`'s refusal of a target below the tail and not the publication that refusal's soundness rests on. Finding `F2`'s fix argument turns on exactly that mutex extension | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), where the truncation pass runs beside the non-transactional batch and the tail is what a `Crash` can interrupt; splitting the action into a read step and a publish step belongs with it |
+| M19 | `CleanupGrab` re-evaluates the removal condition and moves the part to `Deleting` in one action (`Server.tla`), so the model checks a fix in which nothing can intervene between the re-check and the state change | The decision and the grab are now two actions, which is what finding `F2`'s second shape needed, but the re-check inside the grab is still atomic with it. A C++ fix that revalidated `canBeRemoved` and then took a different lock to change the state would have the same window one level down, and the model would report it green | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which is the task `F2`'s own text names as resting on this variant and the first that interrupts the cleanup pass part-way; until then the fix `SET_SNAPSHOT_PROTECTS` encodes is read as "one guard across both", which is what `FINDINGS.md`'s `F2` entry proposes |
+| M20 | `NtDropWrite` (`Server.tla:1315`) writes the empty part first and the batch refuses only later, in `NtBatchPreflight`, while `StorageMergeTree::dropPartitionImpl` calls `checkPartsCanBeRemovedNonTransactionally` (`src/Storages/StorageMergeTree.cpp:3204`) before `createEmptyDataParts` (`:3214`) | The model can write and publish an empty part for a conflict the code refuses before anything is written. Nothing of this plan reads it, because no property here is stated over a write that is later abandoned; it becomes observable as soon as a `Crash` can land between the write and the refusal | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which puts the layered disk and `Crash` around exactly these steps: it adds the early refusal as a step of its own and keeps the later recomputation, so that a conflict appearing after the check stays reachable |
+| M21 | `MergeBegin` (`Server.tla:929`) requires `sys.merges_blocker` already clear, while `StorageMergeTree::scheduleDataProcessingJob` calls `beginTransaction` (`src/Storages/StorageMergeTree.cpp:2222`) before it tests `merges_blocker.isCancelled` (`:2240`) and returns | The model has no transient read-only transaction that begins, finds the blocker set and is rolled back at once. Such a transaction holds an entry in `snapshots_in_use` while it lives, so it can hold `getOldestSnapshot` back and delay a cleanup or a truncation the model performs immediately | plan 5, task 1 (disk write faults in the store frames, `StoreRetry`, `NoSpuriousStaleVersion` under faults, the task-driven rollback machine), which is where a background task first fails part-way and the transient transaction of a refused merge becomes a shape worth having |
 | M23 | `CleanupDecide` and `CleanupGrab` take one part per pass, where `MergeTreeData::grabOldParts` collects every removable part under one `lockParts` (`src/Storages/MergeTree/MergeTreeData.cpp:4126-4194`) and moves them together | The model interleaves other actors between two grabs of one pass, which the code's lock forbids, and it has no state in which several parts are `Deleting` from the same pass. No property of this plan reads the set of parts in `Deleting`, so nothing sees it today | plan 5, task 4 (budget and calibration), which owns the budget: taking the set per pass multiplies the states of every cleanup-enabled scenario, so the change and the budget have to be decided together |
-| M22 | The batch rebuilds its remaining targets with `SetToSeq(b.locked)` and `SetToSeq(nlocked)` (`Server.tla:1163`, `:1184`), and `SetToSeq` (`Types.tla:83`) is a `CHOOSE` over every bijection, so the rebuilt order need not agree with the order the targets were locked in, where the C++ walks its `locked_parts` vector in that order | Nothing of this plan reads the order: every property over the batch is stated over the set of targets. It becomes observable when a `Crash` can interrupt the batch part-way, because which targets were stored before the interruption then depends on the order | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which is where the batch is first interrupted; it either carries the order in the frame or states the property over the set and says so |
+| M22 | The batch rebuilds its remaining targets with `SetToSeq(b.locked)` and `SetToSeq(nlocked)` (`Server.tla:1223`, `:1244`), and `SetToSeq` (`Types.tla:83`) is a `CHOOSE` over every bijection, so the rebuilt order need not agree with the order the targets were locked in, where the C++ walks its `locked_parts` vector in that order | Nothing of this plan reads the order: every property over the batch is stated over the set of targets. It becomes observable when a `Crash` can interrupt the batch part-way, because which targets were stored before the interruption then depends on the order | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which is where the batch is first interrupted; it either carries the order in the frame or states the property over the set and says so |
 
 ## 2a. Bound-contract debts {#bound-contract-debts}
 
@@ -637,7 +747,8 @@ scenario checks stays red. Where that does not hold, the gap is recorded here ra
 bound or dropping the property.
 
 Task 5 of this plan closed every row of this table with a run, or moved what is left of it into a named later
-task. A row closed by an argument is not closed: what pays a debt is a witness that fires at some stated
+task; the final-review dispatch then reopened `B2` as a placed coverage debt and added `B6`, so the table below
+is not the one task 5 left. A row closed by an argument is not closed: what pays a debt is a witness that fires at some stated
 bounds, a model change, or a bound documented as a bound with the witnesses verified at it.
 
 | Id | Scenario | What was not verified at the exhaustive bounds | Outcome |
@@ -709,13 +820,14 @@ splits into `StmtRollbackMark` and `StmtRollbackDrop` for the same reason. The d
 |---|---|---|---|
 | S12 | `NtBatchRefusedUnchanged`, section "Invariants and properties" | The row states that on a refusal "every target's `mem`, stored record and `lock` equal their values recorded in `h_batch` at `NtBatchStart`". That is a statement about the whole world, and a concurrent actor falsifies it without the batch having written anything: `MergeTreeTransaction::rollback` clears a removal lock and stores `RolledBackCSN` without taking `lockParts`, so it runs beside a batch that holds it. The first `NonTxn` run was red on exactly that | State it over what the batch can write: no target carries a non-transactional removal it did not already carry, in memory or in the stored record, and no target is still locked by the batch. Equality is kept on the one field of the row a concurrent rollback cannot reach, the creation TID, which is written only on an `Absent` part; `ccsn` and `sv` come out, because the rollback writes both |
 | S13 | the "Snapshot isolation" section, and the `NonTxn` row of the scenario matrix | The section is qualified only by "for transactions whose snapshot is not `EverythingVisibleCSN`". Concurrent non-transactional writes falsify four of its rows on the baseline: `StableRead` (a non-transactional `INSERT` between two reads of one transaction is visible to both), `NoLostRead` and `NoFutureRead` (model defect M14), and `NoLostVisibleData` (finding F4). The matrix's `NonTxn` row already does not name any of them, which is consistent with the section needing the qualifier and not with the section as written | Qualify the section: the isolation rows hold among transactional actors, and a concurrent non-transactional write is outside them. Say which rows survive unqualified, which are `ReadYourWrites`, `NoUncommittedRead` and `NoDoubleRead`, and name the scenario each of the other four is shown in. `Atomicity` is a fifth case and needs its own sentence: it survives unqualified, and only because it cannot see a non-transactional statement at all, being stated over a committed writer `u` that such a statement does not have. The qualifier the section owes it is therefore not an exemption but an admission -- no row here states that a non-transactional statement is atomic to readers, and the code does not make it one; see the withdrawal of F7 |
+| S18 | the "Snapshot isolation" section and the `RollbackRestores` row | Both are stated over a transaction's snapshot without a qualifier for `Tx::EverythingVisibleCSN`, which `SET TRANSACTION SNAPSHOT` accepts and which makes `VersionInfo::isVisible` return true for every part before it looks at any CSN (`src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158`). A transaction at that snapshot reads uncommitted and rolled-back data by design, which finding `F8` shows | Qualify both: the isolation guarantees and the rollback-visibility guarantee hold at an ordinary snapshot, and `EverythingVisibleCSN` is an introspection escape hatch outside them. The model states it by leaving `RollbackNoLeak` out of the roster of the module that uses that target, and by `MC_SetSnapshotF8`, which shows the read |
 
 ### A spec row that was wrongly doubted {#withdrawn}
 
 The `validateInfo, removal` witness row was on this list until the bounds changed, and it comes off it.
 
 The row names one change, "`DropStore` skipped". At `TID_MAX = 2` that change alone left the run green, and the
-witness was built as a two-change one, the second change stopping `EnrolBody` (`Server.tla:189`) from starting
+witness was built as a two-change one, the second change stopping `EnrolBody` (`Server.tla:392`) from starting
 the removal-TID store at all. `WITNESSES.md` described the two-change witness and both of its minimality halves
 were green, so the row looked wrong.
 

@@ -14,7 +14,7 @@ SymSessions == Permutations(Sessions)
 \* actions with the cleanup group do not finish at two transactions, and MC_NonTxnDrop runs them at one
 \* transaction instead. What this module pays for is the witnesses that need the second transaction, Atomicity
 \* first among them; the three cleanup properties are out of its roster rather than vacuous in it, because no
-\* CleanupGrab step is enabled. ActiveSetShape is NOT in its roster either: finding F5's route 1 is live here
+\* CleanupDecide step is enabled. ActiveSetShape is NOT in its roster either: finding F5's route 1 is live here
 \* and unfixed, and MC_NonTxnF5 is the module that produces it. OBSOLETE_IS_ROLLED_BACK = TRUE is finding F6's
 \* fix, without which the baseline stops on that finding rather than on the property under test.
 \* The view keeps sys.cleanup_pc and sys.cleanup_part although the cleanup group is off, so that the two drop
@@ -42,7 +42,7 @@ NonTxnDropTwoView ==
                         part[p].deferred_on, part[p].deferred, part[p].pins, part[p].payload,
                         { FrameKey(f) : f \in part[p].frames }>>],
      <<tlog.tid_start, tlog.tid_to_csn, tlog.latest_snapshot, tlog.local_tid_counter,
-       tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use>>,
+       tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use, tlog.retention_in_use>>,
      [t \in Tids |-> <<txn[t].state, txn[t].csn, txn[t].snapshot, txn[t].protected_snapshot,
                        txn[t].creating, txn[t].removing, txn[t].mutations, txn[t].holders,
                        txn[t].rb_driver, txn[t].mutex, txn[t].pc, txn[t].work>>],

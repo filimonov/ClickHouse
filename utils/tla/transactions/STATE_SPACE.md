@@ -302,7 +302,8 @@ go. The reason is fidelity rather than budget, and it is in `FINDINGS.md`, findi
 `canBeRemoved` reads the oldest snapshot under `running_list_mutex` and releases it, and the state change
 happens at the end of the pass, so a `SET TRANSACTION SNAPSHOT` fits between them.
 
-The cost is one extra step per removed part, and it is about ten per cent everywhere it applies.
+The cost is one extra step per removed part: 7 to 22 per cent, depending on how much of the scenario the
+cleanup thread reaches.
 
 | Configuration | Before the split | After | Change |
 |---|---|---|---|
@@ -324,6 +325,28 @@ the control this table needs: the split touches exactly the scenarios that run t
 re-measured at 47,958,902 in 7 min 29 s against 47,958,711, which is that variation again and not a move. Every
 one of them is still green and every finding module still produces its finding. The largest of them,
 `NonTxnInsert` at 17.0 million, stays inside the budget, so no reduction was sought.
+
+### The two horizons and the modules that check them {#setsnapshot-horizons}
+
+The `SET TRANSACTION SNAPSHOT` fix variant keeps two values per running transaction rather than one: the
+cleanup horizon, which `canBeRemoved` compares a removal CSN against and which takes whatever the statement
+set, and the retention horizon, which `removeOldEntries` may move `tail_ptr` to and which never takes one of
+the two reserved snapshots and is never raised. `FINDINGS.md`, finding `F2`, has why. The field costs nothing
+where the two are equal, which is every scenario outside the `SetSnapshot` family and every state of
+`SetSnapshot` itself, whose target is `FirstCSN`: 14,289,328 against 14,289,310 is the counting noise.
+
+Three small modules check it, all at `TID_MAX = 2`, one session, one part, and all finishing in a second.
+
+| Module | Targets | Distinct states | Result |
+|---|---|---|---|
+| `MC_SetSnapshotF2Special` | `{1, 34}` | 116,020 | green, whole roster |
+| `MC_SetSnapshotF2SpecialEV` | `{3, 34}` | 134,553 | green, without the four rows findings `F8` and `F9` falsify |
+| `MC_SetSnapshotF9` | `{3}` | first-violation | red on `Assert_validateInfo`, which is finding `F9`; `MC_SetSnapshotF8` is the same shape one property earlier |
+
+`MC_SetSnapshotF2Fixed` also lost states to the change, 411,641 to 309,987, and the reason is worth recording
+because it is not a reduction: the retention entry no longer follows a target above `latest_snapshot`, so the
+tail cannot advance past it and the states in which it had are gone. They were the states of finding `F2`'s
+third shape.
 
 ### The `SetSnapshotF2` pair {#setsnapshotf2}
 

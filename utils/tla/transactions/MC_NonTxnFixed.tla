@@ -31,7 +31,7 @@ NonTxnFixedView ==
                         part[p].deferred_on, part[p].deferred, part[p].pins, part[p].payload,
                         { FrameKey(f) : f \in part[p].frames }>>],
      <<tlog.tid_start, tlog.tid_to_csn, tlog.latest_snapshot, tlog.local_tid_counter,
-       tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use>>,
+       tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use, tlog.retention_in_use>>,
      [t \in Tids |-> <<txn[t].state, txn[t].csn, txn[t].snapshot, txn[t].protected_snapshot,
                        txn[t].creating, txn[t].removing, txn[t].mutations, txn[t].holders,
                        txn[t].rb_driver, txn[t].mutex, txn[t].pc, txn[t].work>>],

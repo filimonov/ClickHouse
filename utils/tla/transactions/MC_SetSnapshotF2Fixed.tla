@@ -26,7 +26,7 @@ SymSessions == Permutations(Sessions)
 \* What each of them depends on, though, is only which actions are enabled and which properties are checked, so
 \* raising TID_MAX or CSN_MAX alone leaves the argument intact.
 \* part.pins and h.content are back in the projection, and they are the two fields the cleanup thread makes
-\* live. part.pins is read by CleanupGrab's isSharedPtrUnique guard and by PinnedNotDeleted, so two states that
+\* live. part.pins is read by CleanupDecide's isSharedPtrUnique guard and by PinnedNotDeleted, so two states that
 \* differ only in a pin no longer have the same successors; h.content is read by NoLostVisibleData, which the
 \* Fixed and Witness configurations check. Both were left out while neither the actions nor the properties
 \* existed, and the argument for leaving them out was explicitly conditioned on that, so it is the condition
@@ -42,7 +42,7 @@ SetSnapshotView ==
                         part[p].deferred_on, part[p].deferred, part[p].pins,
                         { FrameKey(f) : f \in part[p].frames }>>],
      <<tlog.tid_start, tlog.tid_to_csn, tlog.latest_snapshot, tlog.local_tid_counter,
-       tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use,
+       tlog.last_loaded_entry, tlog.running_list, tlog.snapshots_in_use, tlog.retention_in_use,
        tlog.tail_ptr, tlog.updated_tail_ptr>>,
      [t \in Tids |-> <<txn[t].state, txn[t].csn, txn[t].snapshot, txn[t].protected_snapshot,
                        txn[t].creating, txn[t].removing, txn[t].mutations, txn[t].holders,

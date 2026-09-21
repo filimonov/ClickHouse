@@ -76,6 +76,13 @@ that reaches finding F2; the first is expected red on `NoPrematureDelete` and th
 (one session, `P1`, `P2` and the covering `M12`, one background task, plus the cleanup group and the updater's
 GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only).
 
+Four more modules belong to the `SetSnapshot` family and carry the two reserved snapshots
+`SET TRANSACTION SNAPSHOT` accepts beside an ordinary CSN, `NonTransactionalCSN = 1` and
+`EverythingVisibleCSN = 3`. `SetSnapshotF2Special` is the fix variant at 1 and is green with the whole roster;
+`SetSnapshotF2SpecialEV` is the fix variant at 3 and is green with the four rows findings `F8` and `F9`
+falsify left out; `SetSnapshotF8` and `SetSnapshotF9` are those two findings, expected red on `RollbackNoLeak`
+and on `Assert_validateInfo`. `FINDINGS.md` has both.
+
 The non-transactional scenario is four modules, because no exhaustive run of the whole of it finishes:
 `NonTxnDrop` (the `DROP PARTITION` and its removal batch with the cleanup group, one transaction),
 `NonTxnDropTwo` (the same without the cleanup group, two transactions), `NonTxnInsert` (a non-transactional
@@ -422,13 +429,16 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 | `Base` | two sessions at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36`, 26,839,128 states, the whole roster | nothing of its own slice; the cleanup thread, the merge task, the non-transactional queries and `SET TRANSACTION SNAPSHOT` are all stubs here | section 3, the stub table |
 | `SetSnapshot`, `SetSnapshotFixed` | `TID_MAX = 2`, `CSN_MAX = 35`, 14,289,310 and 13,607,915 states, the whole roster | the matrix bounds: an exhaustive run at `TID_MAX = 3` does not finish, so three witnesses are shown at the witness bounds instead and one, `Assert_validateInfo_removal`, is not shown at all | `FINDINGS.md`, `M4` and `B1`; `STATE_SPACE.md`, the `SetSnapshot` section |
 | `SetSnapshotF2` | nothing: it stops at the first violation, which is finding `F2` | everything else; it is a reproducer, not a check | `FINDINGS.md`, finding `F2` |
-| `SetSnapshotF2Fixed` | one session, one part, `TID_MAX = 3`, 411,641 states, over four properties | the properties outside those four; the truncation tail, which the model publishes in one step, so the green verifies the refusal and not the publication; and any window between the revalidation and the state change, which are one action here | `FINDINGS.md`, finding `F2` and model defects `M18` and `M19` |
+| `SetSnapshotF2Fixed` | one session, one part, `TID_MAX = 3`, 309,987 states, over five properties | the properties outside those four; the truncation tail, which the model publishes in one step, so the green verifies the refusal and not the publication; and any window between the revalidation and the state change, which are one action here | `FINDINGS.md`, finding `F2` and model defects `M18` and `M19` |
 | `Merge` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, 6,124,691 states, the whole roster | the second session: an exhaustive run at two does not finish, two witnesses fire only in `MergeWitness`, and `Assert_validateInfo_removal` fires in neither | `FINDINGS.md`, `B3`; `STATE_SPACE.md`, the `Merge` section |
 | `NonTxnDrop` | one transaction with the cleanup group, `TID_MAX = 1`, 1,246,158 states | the second transaction; `ActiveSetShape`, which finding `F5` falsifies; the four snapshot-isolation rows of spec defect `S13`; and `F6`'s fix is assumed rather than tested | `FINDINGS.md`, `B4`, `M15`, `S13`, findings `F5` and `F6` |
 | `NonTxnDropTwo` | two transactions without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 47,958,711 states, unchanged by the cleanup split | the cleanup group, so no finishing configuration checks the removal batch beside two transactions and cleanup at once, which is the open bound of `M15`; `SingleRemover` unfired at 65,525,357; the same properties as the row above | `FINDINGS.md`, `B4` and `M15` |
 | `NonTxnInsert` | two transactions with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 16,969,548 states | the removal batch; `ActiveSetShape` is on the roster but vacuous, because part `E` is never created here; the `S13` rows; `F6`'s fix is assumed | `FINDINGS.md`, `B4` and `S13`; `WITNESSES.md`, the `NonTxn` section |
 | `NonTxnFixed` | the undivided scenario at one session with `OBSOLETE_IS_ROLLED_BACK = TRUE`, 1,029,281 states | the two-session interleavings the split modules cover | `FINDINGS.md`, finding `F6` |
 | `NonTxnF2`, `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, section 1 |
+| `SetSnapshotF2Special` | one session, one part, `TID_MAX = 2`, `SNAPSHOT_TARGETS = {1, 34}`, 116,020 states, the whole roster | everything above `TID_MAX = 2`; it is about the reserved target, not about the three-transaction shape | `FINDINGS.md`, finding `F2`, "the two reserved snapshots" |
+| `SetSnapshotF2SpecialEV` | the same at `SNAPSHOT_TARGETS = {3, 34}`, 134,553 states | `RollbackNoLeak`, `Assert_validateInfo`, `ErrorIsAbsent` and `NoAvoidableTermination`, which findings `F8` and `F9` falsify at this target | `FINDINGS.md`, findings `F8` and `F9` |
+| `SetSnapshotF8`, `SetSnapshotF9` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, findings `F8` and `F9` |
 | `SetSnapshotWitness`, `MergeWitness`, `NonTxnWitness` | nothing: `witness.sh` only, one property at a time, stopping at the first violation | exhaustive coverage at those bounds, by construction | `WITNESSES.md` |
 
 | Scenario | Date | Commit | Distinct states | Time | Result |
@@ -442,9 +452,9 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 | witness `SnapshotEntryOnly` on `SetSnapshotF2Fixed` | 2026-09-21 | the cleanup-split commit | 280,957 | 4 s | **red on `NoPrematureDelete`**: finding F2's second shape, the fix reduced to its `snapshots_in_use` half |
 | the three cleanup witnesses | 2026-09-21 | the cleanup-split commit | 280,340, 39,613 and 261,531 | 9 s in total | all three still red |
 | `Merge` | 2026-09-21 | the cleanup-split commit | 6,124,691 | 56 s | green at one session; 5,196,830 before the split |
-| `NonTxnDrop` | 2026-09-21 | the cleanup-split commit | 1,246,158 | 12 s | green; 1,112,076 before the split |
-| `NonTxnInsert` | 2026-09-21 | the cleanup-split commit | 16,969,548 | 2 min 42 s | green; 15,788,049 before the split |
-| `NonTxnFixed` | 2026-09-21 | the cleanup-split commit | 1,029,281 | 9 s | green; 841,907 before the split |
+| `NonTxnDrop` | 2026-09-21 | the cleanup-split commit | 1,246,158 | 12 s | green under `OBSOLETE_IS_ROLLED_BACK = TRUE` and with `ActiveSetShape` off the roster, as every `NonTxn*` row of every table here is; 1,112,076 before the split |
+| `NonTxnInsert` | 2026-09-21 | the cleanup-split commit | 16,969,548 | 2 min 42 s | green under `OBSOLETE_IS_ROLLED_BACK = TRUE`, finding `F6`'s unmerged fix; 15,788,049 before the split |
+| `NonTxnFixed` | 2026-09-21 | the cleanup-split commit | 1,029,281 | 9 s | green; `OBSOLETE_IS_ROLLED_BACK = TRUE` is what this module verifies; 841,907 before the split |
 | `NonTxnF2`, `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | 2026-09-21 | the cleanup-split commit | first-violation counts | 4 s in total | each still produces its own finding |
 
 `NonTxnDropTwo` is not in this table: it enables no cleanup group, so the split cannot move it, and its
@@ -456,6 +466,30 @@ removes interleavings, so a witness that was red before it was not thereby red a
 cleanup-enabled scenarios were re-run, together with the minimality halves of the three two-change witnesses,
 and **no row changed colour**. The five rows the tables record as killed unfired keep their counts and their
 placement in plan 5, task 4 (budget and calibration). `WITNESSES.md` carries the sweep.
+
+The last table is the two-horizon change: `SET TRANSACTION SNAPSHOT` at the two reserved snapshots, which
+separates the cleanup horizon from the log-retention horizon. It moves the `SetSnapshot` family and nothing
+else, because the two registries are equal in every state the other scenarios reach.
+
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
+| `Schema` | 2026-09-21 | the two-horizon commit | 1 | 0 s | green |
+| `BaseSmall` | 2026-09-21 | the two-horizon commit | 47,381 | 1 s | green |
+| `SetSnapshot` | 2026-09-21 | the two-horizon commit | 14,289,328 | 2 min 04 s | green; 14,289,310 on the previous commit, which is the counting noise |
+| `SetSnapshotFixed` | 2026-09-21 | the two-horizon commit | 13,607,839 | 2 min 05 s | green; 13,607,915 before |
+| `SetSnapshotF2` | 2026-09-21 | the two-horizon commit | a first-violation count | 1 s | **red on `NoPrematureDelete`**, finding `F2`'s first shape |
+| `SetSnapshotF2Fixed` | 2026-09-21 | the two-horizon commit | 309,987 | 3 s | green, and now with `Assert_TailPtrNotRegressing` on its roster; 411,641 before, and the drop is the retention entry no longer following a target above `latest_snapshot` |
+| `SetSnapshotF2Special` | 2026-09-21 | the two-horizon commit | 116,020 | 1 s | green; the fix at `NonTransactionalCSN` beside an ordinary target, whole roster |
+| `SetSnapshotF2SpecialEV` | 2026-09-21 | the two-horizon commit | 134,553 | 1 s | green; the fix at `EverythingVisibleCSN`, without the four rows findings `F8` and `F9` falsify |
+| `SetSnapshotF8` | 2026-09-21 | the two-horizon commit | a first-violation count | 1 s | **red on `RollbackNoLeak`**, which is finding `F8` |
+| `SetSnapshotF9` | 2026-09-21 | the two-horizon commit | a first-violation count | 1 s | **red on `Assert_validateInfo`**, which is finding `F9` |
+| the four `SetSnapshot`-sited witnesses | 2026-09-21 | the two-horizon commit | 2, 15,371, 14,042,565 and 152,085 | 1 min 45 s in total | `_size`, `_entry` and `Assert_TailPtrNotRegressing` red; the sortedness witness green at the exhaustive bounds, as documented, and red at the witness bounds at 436,697 |
+| the three cleanup witnesses and `SnapshotEntryOnly` | 2026-09-21 | the two-horizon commit | 201,730, 38,466, 205,039 and 202,222 | 11 s in total | all four red |
+| `NonTxnDrop` | 2026-09-21 | the two-horizon commit | 1,246,141 | 12 s | green; the control for the claim above |
+
+Finding `F2`'s third shape came out of these runs. `MC_SetSnapshotF2Special` was red on
+`Assert_TailPtrNotRegressing` before the variant separated the two horizons, on a nine-state trace, which is
+why that property is now on `MC_SetSnapshotF2Fixed`'s roster as well.
 
 ## 5. Witnesses {#witnesses}
 

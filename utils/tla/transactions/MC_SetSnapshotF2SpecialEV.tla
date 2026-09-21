@@ -1,15 +1,17 @@
----- MODULE MC_SetSnapshotF2 ----
+---- MODULE MC_SetSnapshotF2SpecialEV ----
 EXTENDS MergeTreeTransactions
-\* The configuration that exhibits finding F2, the premature delete SET TRANSACTION SNAPSHOT allows.
-\* MC_SetSnapshot cannot: the shape needs a part created by one committed transaction, removed by a second
-\* committed one, and a third transaction running with its snapshot lowered between the two CSNs, which is three
-\* transactions, while the exhaustive bounds give two. It also needs a snapshot target at which something is
-\* visible: SNAPSHOT_TARGETS = {33} is FirstCSN, which is latest_snapshot at init, and the first commit takes
-\* CSN 34 (Keeper.tla: zk.seq starts at FirstCSN), so no part is ever visible at 33 and the property is
-\* vacuously true there however deep the search goes. This module raises TID_MAX to 3, raises the target to 34,
-\* and cuts the scenario to one session and one part, because the shape is sequential: the same session runs the
-\* three transactions in turn, so a second session and a second part only add breadth the violation does not need.
-\* MC_SetSnapshotF2Fixed is the same configuration with SET_SNAPSHOT_PROTECTS = TRUE and is green.
+\* The fix variant at EverythingVisibleCSN, the other reserved snapshot executeSetSnapshot accepts. It needs
+\* its own module rather than another target in the one above, because a transaction reading at this snapshot
+\* sees every part, rolled-back creations included (VersionInfo::isVisible returns true at once,
+\* src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158), and that falsifies four rows of the roster
+\* through findings F8 and F9: RollbackNoLeak, Assert_validateInfo, and the ErrorIsAbsent and
+\* NoAvoidableTermination that the refused store produces. Those four are out of the roster here and are shown
+\* in MC_SetSnapshotF8 and MC_SetSnapshotF9; what this module checks is the half it was built for, that the
+\* cleanup horizon protects what this snapshot can read and that the retention horizon keeps the tail where it
+\* was. Expected green.
+\* NoOutdatedLookup is on the roster and is vacuous here, as it is everywhere in this plan: UpdFinalizeUnknown
+\* is FALSE until plan 3 adds the unknown-state pass, so its antecedent never holds. It is checked so that the
+\* module states the tail-side roster in full; spec defect S6 records the vacuity.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 
@@ -38,7 +40,7 @@ SymSessions == Permutations(Sessions)
 \* that changed, not the argument. Their cost is measured in STATE_SPACE.md.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-SetSnapshotView ==
+SetSnapshotF2SpecialEVView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

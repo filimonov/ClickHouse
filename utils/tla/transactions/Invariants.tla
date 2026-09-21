@@ -128,9 +128,21 @@ Assert_isVisible_fast == \A p \in Parts : LET m == part[p].mem IN
 \* Under SET_SNAPSHOT_PROTECTS the proposed fix re-inserts the entry at its sorted position, so the tid order is
 \* no longer the list order and conjunct 3 does not apply; the C++ assertion still does. That leaves the fix
 \* variant with nothing checking that front() stays the minimum, which is recorded in FINDINGS.md section 2.
+\* The fourth conjunct is about the second registry the fix adds, the retention horizon. It has no C++
+\* assertion of its own; it states the construction the fix depends on, that every running transaction has a
+\* retention value, that the value is never one of the two special snapshots, that it never exceeds
+\* latest_snapshot, which is what makes getOldestSnapshot's empty-list fallback (TransactionLog.cpp:679-680)
+\* safe and is the clause finding F2's third shape falsified, and that it never sits above the cleanup horizon.
+\* Under the baseline the two registries are equal everywhere, so the conjunct is free there.
 Assert_getOldestSnapshot ==
   /\ tlog.running_list = { t \in Tids : tlog.snapshots_in_use[t] /= UnknownCSN }
   /\ \A t \in tlog.running_list : tlog.snapshots_in_use[t] = txn[t].protected_snapshot
+  /\ \A t \in tlog.running_list :
+       /\ tlog.retention_in_use[t] /= UnknownCSN
+       /\ ~IsSpecialSnapshot(tlog.retention_in_use[t])
+       /\ tlog.retention_in_use[t] <= tlog.latest_snapshot
+       /\ (~IsSpecialSnapshot(tlog.snapshots_in_use[t]) =>
+             tlog.retention_in_use[t] <= tlog.snapshots_in_use[t])
   /\ ~SET_SNAPSHOT_PROTECTS =>
        \A t1, t2 \in tlog.running_list : t1 < t2 => tlog.snapshots_in_use[t1] <= tlog.snapshots_in_use[t2]
 NoAvoidableTermination == h.down_cause \in {"None", "RetryExhausted"}
@@ -145,7 +157,11 @@ KillerNotStranded == \A k \in Sessions : client[k].pc = "KillWait" =>
 \* ---- action properties
 \* removeOldEntries, src/Interpreters/TransactionLog.cpp:312-314: "Got unexpected tail_ptr {}, oldest snapshot is
 \* {}, it's a bug". A LOGICAL_ERROR on a modelled path is an invariant, not a precondition (spec, "Actions").
-TailPtrNotRegressingStep == UpdRemoveOldEntriesSetTail => OldestSnapshot >= zk.tail
+\* Stated over the retention horizon, which is the value removeOldEntries publishes. Under the baseline it is
+\* the cleanup horizon, so this is the same statement the property carried before; under the fix the two come
+\* apart at a special snapshot, and the second conjunct is what forbids such a value ever reaching the tail.
+TailPtrNotRegressingStep == UpdRemoveOldEntriesSetTail =>
+  (RetentionHorizon >= zk.tail /\ ~IsSpecialSnapshot(RetentionHorizon))
 Assert_TailPtrNotRegressing == [][TailPtrNotRegressingStep]_vars
 
 \* TransactionLog::assertTIDIsNotOutdated, src/Interpreters/TransactionLog.cpp:656-675: the LOGICAL_ERROR
@@ -199,8 +215,23 @@ NoPrematureDeleteStep == \A p \in Parts : CleanupGrab(p) =>
   \A u \in tlog.running_list : txn[u].state = "Running" => ~OracleVisible(p, txn[u].snapshot, u)
 NoPrematureDelete == [][NoPrematureDeleteStep]_vars
 \* isSharedPtrUnique, MergeTreeData.cpp:4150, as a property rather than only as the guard of the action. It is
-\* stated on the grab although the guard is in CleanupDecide, which is strictly stronger and still holds: no pin
-\* can appear in between, because SelectCapture needs the parts lock and CleanupDecide holds it until the grab.
+\* stated on the grab although the guard is in CleanupDecide, which is strictly stronger, and what makes it
+\* hold is what canBeRemoved accepts rather than the parts lock. Three actions add pins and only one of them
+\* takes that lock:
+\*   SelectCapture does take it (it requires sys.parts_lock = NoActor), so it cannot run inside the hold.
+\*   MergeSelect does not, and it judges its sources visible at the merge's snapshot with the empty TID and
+\*     refuses a removal-locked one. A part canBeRemoved accepts has a removal committed at or below the oldest
+\*     snapshot, or a creation stamped RolledBackCSN, and neither is visible to any running transaction, so a
+\*     merge cannot select it.
+\*   RollbackCopyLists does not either, and it pins the whole of a transaction's creating and removing lists at
+\*     the START of the rollback, before the marking phase stamps RolledBackCSN. So by the time the rolled-back
+\*     creation makes the part removable, the pin is already on it and CleanupDecide refuses.
+\* The argument is about the snapshot the cleanup compares against, so the NoPrematureDelete and
+\* NoLostVisibleData witnesses, which make CleanupDecide read latest_snapshot instead of OldestSnapshot, break
+\* it: they let a part still visible to a running transaction be accepted, and a MergeSelect between the
+\* decision and the grab could then pin it. Those two witnesses do not check this property, and a witness that
+\* raised the snapshot while checking it would be red for a reason the C++'s single lockParts forbids. Model
+\* defect M23 is where the one-part-per-pass abstraction that permits it is placed.
 PinnedNotDeletedStep == \A p \in Parts : CleanupGrab(p) => part[p].pins = {}
 PinnedNotDeleted == [][PinnedNotDeletedStep]_vars
 \* the validation refusal is justified only by a disagreement history says cannot be transient

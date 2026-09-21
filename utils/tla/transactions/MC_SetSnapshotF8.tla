@@ -1,15 +1,9 @@
----- MODULE MC_SetSnapshotF2 ----
+---- MODULE MC_SetSnapshotF8 ----
 EXTENDS MergeTreeTransactions
-\* The configuration that exhibits finding F2, the premature delete SET TRANSACTION SNAPSHOT allows.
-\* MC_SetSnapshot cannot: the shape needs a part created by one committed transaction, removed by a second
-\* committed one, and a third transaction running with its snapshot lowered between the two CSNs, which is three
-\* transactions, while the exhaustive bounds give two. It also needs a snapshot target at which something is
-\* visible: SNAPSHOT_TARGETS = {33} is FirstCSN, which is latest_snapshot at init, and the first commit takes
-\* CSN 34 (Keeper.tla: zk.seq starts at FirstCSN), so no part is ever visible at 33 and the property is
-\* vacuously true there however deep the search goes. This module raises TID_MAX to 3, raises the target to 34,
-\* and cuts the scenario to one session and one part, because the shape is sequential: the same session runs the
-\* three transactions in turn, so a second session and a second part only add breadth the violation does not need.
-\* MC_SetSnapshotF2Fixed is the same configuration with SET_SNAPSHOT_PROTECTS = TRUE and is green.
+\* Finding F8: a transaction that lowers its snapshot to EverythingVisibleCSN reads the parts a rolled-back
+\* transaction created. VersionInfo::isVisible returns true for every part at that snapshot before it looks at
+\* any CSN (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158), so RollbackNoLeak is falsified by
+\* the code doing what the comment beside that line says it does. Expected red on RollbackNoLeak.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 
@@ -38,7 +32,7 @@ SymSessions == Permutations(Sessions)
 \* that changed, not the argument. Their cost is measured in STATE_SPACE.md.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-SetSnapshotView ==
+SetSnapshotF8View ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

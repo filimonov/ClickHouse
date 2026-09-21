@@ -44,6 +44,15 @@ RealCSNs             == FirstCSN..CSN_MAX
 AllCSNs              == {UnknownCSN, NonTransactionalCSN, CommittingCSN, EverythingVisibleCSN, RolledBackCSN} \cup RealCSNs
 LogCSNs              == MaxReservedCSN..CSN_MAX      \* values tail_ptr / latest_snapshot can take
 
+\* The two reserved CSNs SET TRANSACTION SNAPSHOT accepts. They are not points on the CSN line: reading at
+\* EverythingVisibleCSN makes every part visible (VersionInfo::isVisible returns true at once,
+\* src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158), and reading at NonTransactionalCSN leaves a
+\* non-transactionally created part visible until a transaction's removal of it commits. Both therefore have to
+\* hold the cleanup thread back, and neither may be used as the log's retention horizon, because a tail at 1 or
+\* 3 is below every log entry and removeOldEntries raises a LOGICAL_ERROR on a tail that regresses
+\* (src/Interpreters/TransactionLog.cpp:313).
+IsSpecialSnapshot(c) == c \in {NonTransactionalCSN, EverythingVisibleCSN}
+
 \* SET TRANSACTION SNAPSHOT refuses a reserved CSN other than these two
 \* (InterpreterTransactionControlQuery::executeSetSnapshot, src/Interpreters/InterpreterTransactionControlQuery.cpp:144).
 \* The set is a scenario bound, not a refinement: the code accepts any CSN above MaxReservedCSN.

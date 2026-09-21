@@ -44,8 +44,17 @@ Frags(V) == UNION { FragsOf(c) : c \in V }
 \* ---- transaction log lookups (TransactionLog::getCSN, getOldestSnapshot, tryGetCSN)
 LookupCsn(t) == IF t = NonTransactionalTID THEN NonTransactionalCSN
                 ELSE IF t \in Tids THEN tlog.tid_to_csn[t] ELSE UnknownCSN
+\* The cleanup horizon: getOldestSnapshot as canBeRemoved asks it (TransactionLog.cpp:677). It may be one of
+\* the two special snapshots, which is what protects a part a transaction can still see at one of them.
 OldestSnapshot == IF tlog.running_list = {} THEN tlog.latest_snapshot
                   ELSE Min({ tlog.snapshots_in_use[t] : t \in tlog.running_list })
+\* The retention horizon: the value removeOldEntries may move tail_ptr to. It is NOT the cleanup horizon, and
+\* separating the two is the second half of finding F2's fix. A transaction reading at a special snapshot still
+\* needs the log entries of the era it began in, and a tail at NonTransactionalCSN or EverythingVisibleCSN
+\* would regress past every entry, which TransactionLog.cpp:313 raises a LOGICAL_ERROR for. Under the baseline
+\* the two horizons are equal in every reachable state, because nothing moves a registry entry after Begin.
+RetentionHorizon == IF tlog.running_list = {} THEN tlog.latest_snapshot
+                    ELSE Min({ tlog.retention_in_use[t] : t \in tlog.running_list })
 TryGetCsn(t) == IF LookupCsn(t) /= UnknownCSN THEN LookupCsn(t)
                 ELSE IF t \in tlog.running_list THEN UnknownCSN ELSE RolledBackCSN
 

@@ -1,15 +1,13 @@
----- MODULE MC_SetSnapshotF2 ----
+---- MODULE MC_SetSnapshotF9 ----
 EXTENDS MergeTreeTransactions
-\* The configuration that exhibits finding F2, the premature delete SET TRANSACTION SNAPSHOT allows.
-\* MC_SetSnapshot cannot: the shape needs a part created by one committed transaction, removed by a second
-\* committed one, and a third transaction running with its snapshot lowered between the two CSNs, which is three
-\* transactions, while the exhaustive bounds give two. It also needs a snapshot target at which something is
-\* visible: SNAPSHOT_TARGETS = {33} is FirstCSN, which is latest_snapshot at init, and the first commit takes
-\* CSN 34 (Keeper.tla: zk.seq starts at FirstCSN), so no part is ever visible at 33 and the property is
-\* vacuously true there however deep the search goes. This module raises TID_MAX to 3, raises the target to 34,
-\* and cuts the scenario to one session and one part, because the shape is sequential: the same session runs the
-\* three transactions in turn, so a second session and a second part only add breadth the violation does not need.
-\* MC_SetSnapshotF2Fixed is the same configuration with SET_SNAPSHOT_PROTECTS = TRUE and is green.
+\* Finding F9: the same reader can REMOVE what it sees. A part whose creation was rolled back carries
+\* creation_csn = RolledBackCSN, nothing on the transactional removal path refuses it
+\* (setAndStoreRemovalTID's refusal is for a non-transactional remover of an uncommitted creation,
+\* src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:172-184), and the commit stamps a real removal CSN
+\* on it, which validateInfo rejects with "creation_csn should not be greater than removal_csn" (:561-565)
+\* inside the noexcept afterCommit. RollbackNoLeak is out of the roster so that the assertion is what fires;
+\* the same shape also falsifies ErrorIsAbsent and NoAvoidableTermination, which are the termination the
+\* assertion produces. Expected red on Assert_validateInfo.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 
@@ -38,7 +36,7 @@ SymSessions == Permutations(Sessions)
 \* that changed, not the argument. Their cost is measured in STATE_SPACE.md.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-SetSnapshotView ==
+SetSnapshotF9View ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

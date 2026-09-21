@@ -17,6 +17,13 @@ the control the split needs, unchanged in colour and within a few hundred states
 **No row changed colour**, and the counts and times in every table below are from that sweep. `Base` and
 `BaseSmall` enable no cleanup group either, and their rows were not re-run.
 
+The round after it separated the cleanup horizon from the log-retention horizon, which is the second half of
+finding `F2`'s fix. That change is confined to the `SetSnapshot` family: outside it the two registries hold the
+same value in every reachable state, and `NonTxnDrop` re-run as the control gave 1,246,141, inside the noise.
+Six rows were re-taken there and none changed colour: the three cleanup witnesses and `SnapshotEntryOnly` in
+the tables below, `Assert_TailPtrNotRegressing` under `Assert_getOldestSnapshot_entry`, and the sortedness
+witness at the witness bounds.
+
 Counts vary by a few hundred states between runs of the same configuration, which is visible in the control
 rows and in the exhaustive figures; it is well below the ten per cent the split costs and it is not a change of
 verdict.
@@ -253,7 +260,7 @@ Every witness of every property `MC_SetSnapshot.cfg` checks, at `TID_MAX = 2`, `
 |  | `Assert_isVisible_fast_only1` | GREEN, as minimality requires | 10,365,309 | 1 min 24 s |
 |  | `Assert_isVisible_fast_only2` | GREEN, as minimality requires | 14,289,268 | 2 min 15 s |
 | `Assert_getOldestSnapshot` | `_size`, `_entry`, sortedness | two RED here, one at the witness bounds | see above | |
-| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | RED | 149,488 | 2 s |
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | RED | 152,085 | 3 s |
 
 `Assert_validateInfo_removal` is worth a note. It is not slow; it explores more than the scenario itself does,
 because the witness removes a wait and the truncation actions then multiply the behaviours it opens. It reached
@@ -271,7 +278,7 @@ finish, which is model defect M4.
 
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
-| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 425,291 | 4 s |
+| `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 436,697 | 5 s |
 | `SingleRemover` | `SingleRemover` | RED | 8,511,843 | 55 s |
 | `NoUncommittedRead` | `NoUncommittedRead` | RED | 3,170,252 | 21 s |
 | `NoLostRead` | `NoLostRead` | RED | 1,310,488 | 10 s |
@@ -315,10 +322,10 @@ against a `Fixed` configuration, so that the `SET TRANSACTION SNAPSHOT` defect d
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 272,238 | 3 s |
-| `NoPrematureDelete` | `SnapshotEntryOnly` | `CleanupGrab` skips the revalidation `SET_SNAPSHOT_PROTECTS` adds, which reduces finding F2's fix to its `snapshots_in_use` half, the half the entry first proposed | `SetSnapshotF2Fixed` | RED | 274,730 | 3 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupDecide` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 41,909 | 3 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 276,396 | 3 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 201,730 | 3 s |
+| `NoPrematureDelete` | `SnapshotEntryOnly` | `CleanupGrab` skips the revalidation `SET_SNAPSHOT_PROTECTS` adds, which reduces finding F2's fix to its `snapshots_in_use` half, the half the entry first proposed | `SetSnapshotF2Fixed` | RED | 202,222 | 3 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupDecide` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 38,466 | 2 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 205,039 | 3 s |
 
 `PinnedNotDeleted` is red at the exhaustive bounds because it needs no visible part at all: a `SELECT` pin on an
 `Outdated` part whose removal has committed is enough, and two transactions produce that. The other two were
@@ -334,9 +341,16 @@ second shape, the trace `traces/f2-cleanup-decision-grab-window.txt`. `FINDINGS.
 argument.
 
 `PinnedNotDeleted` restates `CleanupDecide`'s own guard, and the guard and the state change are now two steps,
-so the property says the part had no pin at the moment it moved to `Deleting`. No pin can appear in between:
-`SelectCapture` requires the parts lock free and `CleanupDecide` holds it until the grab. In every non-witness
-run it is still a tautology and its only content is the witness row above. It is stated anyway because the guard is a refinement decision that a
+so the property says the part had no pin at the moment it moved to `Deleting`. What keeps that true is not the
+parts lock. Three actions add pins and only `SelectCapture` needs the lock; `MergeSelect` and
+`RollbackCopyLists` do not. The reason they cannot pin a part between the decision and the grab is what
+`canBeRemoved` accepts: a part whose removal committed at or below the oldest snapshot, or whose creation
+carries `RolledBackCSN`, is invisible to every running transaction, so no merge can select it, and
+`RollbackCopyLists` pins a transaction's lists at the start of the rollback, before the stamp that makes the
+part removable. A witness that raises the snapshot the decision compares against, which is what the
+`NoPrematureDelete` and `NoLostVisibleData` hooks do, breaks that argument; neither of them checks this
+property. In every non-witness run it is still a tautology and its only content is the witness row above.
+`Invariants.tla` carries the same argument beside the property. It is stated anyway because the guard is a refinement decision that a
 later task could change without noticing that nothing was checking it.
 
 `NoFalseCorruption` is **vacuously green** in `SetSnapshotFixed` and in `SetSnapshotF2Fixed`: no
