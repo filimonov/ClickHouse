@@ -26,7 +26,7 @@ ClientNext == \E k \in Sessions :
                                            \/ RollbackRestore(k, t, p) \/ RollbackUnlock(k, t, p))
                       \/ (\E m \in Mutations : RollbackKill(k, t, m)))
 StoreNext == \E p \in Parts : \/ Fsync(p)
-                              \/ (\E o \in FrameOwners : StoreRead(p, o) \/ StorePersist(p, o) \/ StorePublish(p, o) \/ StoreRetry(p, o))
+                              \/ (\E o \in FrameOwners : StoreRead(p, o) \/ StorePersist(p, o) \/ StoreRename(p, o) \/ StorePublish(p, o) \/ StoreRetry(p, o))
 UpdaterNext == UpdLoadEntriesMap \/ UpdPublishSnapshot
 UpdaterGCNext == UpdRemoveOldEntriesArm \/ UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone
                  \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))

@@ -81,6 +81,14 @@ DiskInfo(p) == disk[p].cached.info
 \* express, because it has no torn write; what it does not make durable is either name. So the durable layer
 \* does not move at all there, and a crash can leave the part directory holding neither name, which is the
 \* fourth arm of LoadedRecordFrom. Model defect M50 was this operator promoting tmp_durable instead.
+\* createFile plus the write plus buf->sync (VersionMetadataOnDisk.cpp:352-357): txn_version.txt.tmp exists and
+\* its CONTENT is durable, which this model does not track because it has no torn write. Its NAME is a dentry in
+\* the part's own directory and is durable only once that directory is synced, so the durable layer does not
+\* move. The model does not carry the tmp file's content either: loadMetadata does not read it, because it
+\* cannot trust it ("Content of *.tmp file may be broken, just use fake TID", VersionMetadataOnDisk.cpp:79-83).
+\* In Durable mode the two layers are one, so the tmp name is durable the moment it exists; in Layered mode
+\* the durable bit is left where it was, because only a directory sync can raise it.
+DiskWithTmp(p) == [disk EXCEPT ![p].tmp_cached = TRUE, ![p].tmp_durable = IF ~Layered THEN TRUE ELSE @]
 DiskWithInfo(p, info) ==
   IF Layered /\ ~FSYNC_PART_DIRECTORY
   THEN [disk EXCEPT ![p].cached = InfoRec(info), ![p].tmp_cached = FALSE]

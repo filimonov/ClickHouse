@@ -1385,6 +1385,8 @@ StoreRead(p, o) == /\ Up /\ HasFrame(p, o) /\ StoreReadStep(p, o)
                    /\ UNCHANGED <<zk, disk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
 StorePersist(p, o) == /\ Up /\ HasFrame(p, o) /\ StorePersistStep(p, o)
                       /\ UNCHANGED <<zk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
+StoreRename(p, o) == /\ Up /\ HasFrame(p, o) /\ StoreRenameStep(p, o)
+                     /\ UNCHANGED <<zk, mdisk, h, tlog, txn, sys, client, stmt, mut, task>>
 StorePublish(p, o) == /\ Up /\ HasFrame(p, o) /\ StorePublishStep(p, o)
                       /\ UNCHANGED <<zk, disk, mdisk, tlog, txn, sys, client, stmt, mut, task>>
 \* An fsync of the part's files. It promotes their content and cannot promote a rename, which is a dentry and

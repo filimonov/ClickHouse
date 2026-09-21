@@ -657,6 +657,23 @@ sanity runs on that tree.
 | `CrashF12Fixed` | 2026-09-21 | the round 1b commit | 21,804,360 | 3 min 24 s | green under `CREATION_TID_STORE_SYNCS_DIR`, finding `F12`'s fix |
 | `Crash`, with `NoNonTxnRebirth` added | 2026-09-21 | the round 1b commit | 48,142,550 | 17 min 25 s | green, identical to the state and to the generated count for the fifth round; the proof that finding `F12`'s shape needs the unsynced defaults |
 
+The last round split the store's disk effect in two, so a directory sync or a crash can land between writing
+`txn_version.txt.tmp` and renaming it over `txn_version.txt`. Every figure below is on that tree, and every
+`Layered` scenario moves, which is the restored window and not bookkeeping.
+
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
+| `BaseSmall` | 2026-09-21 | the store-split commit | 53,836 | 1 s | green; 14% above 47,381, which is the new frame state |
+| `Merge` | 2026-09-21 | the store-split commit | 6,586,069 | 1 min | green; 8% above 6,124,691. It was **red on `Assert_validateInfo`** at 1,533,844 before the split took `persisted_info_mutex` with it |
+| `CrashF10` | 2026-09-21 | the store-split commit | 106,207, a first-violation count | 2 s | **red on `AckedWriteIsDurable`**, 25 states, through the tmp-only shape its entry describes |
+| `CrashF12` | 2026-09-21 | the store-split commit | 2,222, a first-violation count | 1 s | **red on `NoNonTxnRebirth`**, 14 states |
+| `CrashF12Fixed` | 2026-09-21 | the store-split commit | 63,191,040 | 10 min 05 s | green; 21,804,360 before the split, and the difference is the window |
+| `CrashUnsynced` | 2026-09-21 | the store-split commit | 46,758, a first-violation count | 3 s | **red on `LogEntryNeeded`**, 23 states |
+| `CrashHarm` | 2026-09-21 | the store-split commit | 125,920, a first-violation count | 10 s | **red on `F11Harm`**, 26 states |
+| `Crash` | 2026-09-21 | the store-split commit | 55,424,992 | 19 min 31 s | green; 15% above 48,142,550, the new frame state, and the largest run in this directory |
+| `CrashLegacy` | 2026-09-21 | the store-split commit | 23,759,704 | 8 min 52 s | green; 15% above 20,580,014 |
+| `CrashUnsyncedFixed` | 2026-09-21 | the store-split commit | 87,275,779, queue 3.68M | killed at 21 min | did not finish; it was green at 37,271,456 before the split, and the difference is the restored window. Debt `B9`'s payment goes back to plan 3, task 6 with that count |
+
 `Crash`'s row is the control that matters. The round added four properties, one action and, after the unsynced
 world found them, two disk-model repairs, and the scenario did not move by a state. A property cannot move it,
 `UpdRemoveOldEntriesArm` is dead there for the reason `FINDINGS.md` gives under `M5`, and the two repairs are

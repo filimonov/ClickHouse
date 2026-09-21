@@ -824,17 +824,10 @@ Four properties entered `Invariants.tla` with this scenario and all four witness
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `NoResurrection` | `NoResurrection` | the third arm of `TryGetCsn` answers `UnknownCSN` instead of `RolledBackCSN`, so a tid absent from the log leaves a creation unresolved and the part loads `Active` | `Crash` | RED | 4,902 | 1 s |
-| `LogEntryNeeded` | `LogEntryNeeded` | the async-loading gate of `UpdRemoveOldEntriesSetTail` is removed, so the tail advances while covered parts are still loading | `Crash` | RED | 6,522,375 | 62 s |
-| `LegacyLoads` | `LegacyLoads` | the loader treats a legacy record as a parse failure, taking the shape `loadMetadata` produces for a tmp-only directory | `CrashLegacy` | RED | 499 | 1 s |
-| `Assert_IsNonTransactionalDomain` | `Assert_IsNonTransactionalDomain` | `IsNonTransactionalDomain` loses its `DummyTID` disjunct, which is the predicate before `TransactionID::isNonTransactional` exempted that shape by name | `CrashUnsyncedFixed` | RED | 1,683 | 1 s |
-
-**The `Assert_IsNonTransactionalDomain` row is currently green and is a debt, not a result.** Model defect
-`M50` corrected the disk model so that an unsynced store no longer asserts the temporary file's name durable,
-and a consequence is that the temporary file cannot exist in the model at all until the store's disk effect is
-split, which is model defect `M51`. The `DummyTID` arm this row probes is therefore unreachable and the witness
-is green over the whole of `MC_CrashUnsyncedFixed`, 37,271,456 states, where it was red at 1,570 before. The
-row is kept, with that measurement, rather than removed: what it is waiting for is `M51`'s split.
+| `NoResurrection` | `NoResurrection` | the third arm of `TryGetCsn` answers `UnknownCSN` instead of `RolledBackCSN`, so a tid absent from the log leaves a creation unresolved and the part loads `Active` | `Crash` | RED | 6,539 | 2 s |
+| `LogEntryNeeded` | `LogEntryNeeded` | the async-loading gate of `UpdRemoveOldEntriesSetTail` is removed, so the tail advances while covered parts are still loading | `Crash` | RED | 8,163,777 | 80 s |
+| `LegacyLoads` | `LegacyLoads` | the loader treats a legacy record as a parse failure, taking the shape `loadMetadata` produces for a tmp-only directory | `CrashLegacy` | RED | 555 | 1 s |
+| `Assert_IsNonTransactionalDomain` | `Assert_IsNonTransactionalDomain` | `IsNonTransactionalDomain` loses its `DummyTID` disjunct, which is the predicate before `TransactionID::isNonTransactional` exempted that shape by name | `CrashUnsyncedFixed` | RED | 3,424 | 2 s |
 
 `Assert_IsNonTransactionalDomain` is **reachability coverage and not an assertion check**, and the row is
 here under the name the design document gives it. The property is a tautology on the model's type: `AllTids`

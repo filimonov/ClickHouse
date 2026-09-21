@@ -996,13 +996,49 @@ the proof that the shape needs the unsynced defaults, and off both unsynced rost
 With it added, `Crash` is green at 48,142,550, identical to the state and to the generated count for the fifth
 round running.
 
-The same correction cost the model the temporary file, and that cost is recorded rather than absorbed. With
-`tmp_durable` no longer promoted by a store, every assignment to the two temporary-file bits is a constant
-FALSE or a copy of the other and both start FALSE, so the file is unreachable and `LoadedRecordFrom`'s tmp-only
-arm is dead. The third durable outcome an unsynced store really has, the temporary name surviving and the final
-one not, needs a writeback landing between `createFile` and `replaceFile`, and the model's store is one action.
-That is model defect `M51`, and until it is fixed `MC_CrashF10` produces the shallower shape rather than the
-one finding `F10`'s entry was written from.
+The same correction cost the model the temporary file, and round 2 gave it back properly. With `tmp_durable`
+no longer promoted by a store, every assignment to the two temporary-file bits was a constant FALSE or a copy
+of the other, so the file was unreachable and `LoadedRecordFrom`'s tmp-only arm was dead. The third durable
+outcome an unsynced store really has, the temporary name surviving and the final one not, needs a writeback
+landing between `createFile` and `replaceFile`, and the store was one action. That is model defect `M51`, and
+the fix is the split below.
+
+### The store's two steps {#crash-store-split}
+
+`StorePersistStep` writes the temporary file and `StoreRenameStep` renames it over `txn_version.txt`, so a
+directory sync or a crash can land between them. `MC_CrashF10`'s trace goes through that window and ends with
+the temporary name durable and the final one not, which is the shape its entry was written from, and
+`Assert_IsNonTransactionalDomain`'s witness is red again at 3,424 states.
+
+The split had to take `persisted_info_mutex` with it, and that was not foreseen. Without a guard stopping a
+second store entering the window, a frame parked at the rename wrote a record it had computed long before over
+a newer one. `MC_Merge` caught it as a red on `Assert_validateInfo` at 1,533,844 distinct states, on a
+fifty-nine-step trace where a frame sat at the rename from step 23 to step 41. `VersionMetadataOnDisk::storeInfo`
+holds that mutex across the whole of `storeInfoUnlocked` (`:281-284`), so the guard is the code's own and not a
+patch to make a red go away. That red is the best evidence the split is worth having: the window it opens is
+real enough to break something.
+
+| Configuration | Result | Distinct states | Time |
+|---|---|---|---|
+| `BaseSmall` | green | 53,836 | 1 s |
+| `Merge`, before the mutex guard | **red on `Assert_validateInfo`**, 59 states | 1,533,844 | — |
+| `Merge`, with it | green | 6,586,069 | 1 min |
+| `CrashF10` | **red on `AckedWriteIsDurable`**, 25 states, the tmp-only shape again | 106,207 | 2 s |
+| `CrashF12` | **red on `NoNonTxnRebirth`**, 14 states | 2,222 | 1 s |
+| `CrashF12Fixed` | green | 63,191,040 | 10 min 05 s |
+| `CrashUnsynced` | **red on `LogEntryNeeded`**, 23 states | 46,758 | 3 s |
+| `CrashHarm` | **red on `F11Harm`**, 26 states | 125,920 | 10 s |
+| `Crash` | green | 55,424,992 | 19 min 31 s |
+| `CrashLegacy` | green | 23,759,704 | 8 min 52 s |
+| `CrashUnsyncedFixed` | **killed past the budget**, queue 3.68M | 87,275,779 | 21 min |
+
+The split costs `BaseSmall` 14%, `Merge` 8%, `Crash` 15% and `CrashLegacy` 15%, which is the new frame state.
+It costs the unsynced world far more, `CrashF12Fixed` going from 21,804,360 to 63,191,040, and that is the
+restored window rather than bookkeeping: with nothing synced, the temporary file's two bits vary independently
+across the rename and the three sync actions can land on either side of it. `Crash` at 55,424,992 in 19 min 31 s
+is the largest run in this file and it drains its queue; it is above the thirty million a run here is budgeted,
+for the reason the scenario's own section gives, and it is now close enough to the wall clock that the next
+change to the `Layered` family should be costed before it is made.
 
 The new part field costs the unsynced module 1.5%, from 36,755,726 to 37,303,778. It costs the all-synced
 modules nothing and cannot: `MetaLeftUnsynced` is `DISK_MODE = "Layered" /\ ~FSYNC_PART_DIRECTORY`, so with

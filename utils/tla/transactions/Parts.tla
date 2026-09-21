@@ -14,7 +14,7 @@ Actors == { <<"Session", k>> : k \in Sessions } \cup { <<"Task", i>> : i \in Tas
 FrameOwners == Actors \cup {<<"Updater", 0>>, <<"Cleanup", 0>>, <<"Restart", 0>>}
 StoreOps == {"CreateTID", "CreationCSN", "RemovalTID", "RemovalCSN"}
 FrameType == [owner : FrameOwners, op : StoreOps, val : AllTids \cup AllCSNs, tentative : VersionInfoType,
-              pc : {"Read", "Persist", "Publish", "Error"},
+              pc : {"Read", "Persist", "Rename", "Publish", "Error"},
               err : {"None", "LOGICAL_ERROR", "STALE_VERSION", "SERIALIZATION_ERROR", "IO"},
               retries : 0..MAX_STORE_RETRIES, interferences : 0..MAX_STORE_RETRIES, interfered : BOOLEAN,
               noexcept_retries : 0..NOEXCEPT_RETRY_BUDGET, noexcept_owner : BOOLEAN]
@@ -293,6 +293,10 @@ StorePersistStep(p, o) ==
       bumped == { [g EXCEPT !.interfered = TRUE] : g \in others }
       keep == { g \in part[p].frames : g.owner /= o /\ g.pc /= "Persist" }
   IN /\ f.pc = "Persist"
+     \* persisted_info_mutex is held across the whole of storeInfoUnlocked, the tmp write and the rename alike
+     \* (VersionMetadataOnDisk.cpp:281-284 taking it before the call), so no second store may enter the window
+     \* another store is in. What may land there is a crash or a directory writeback, which are not stores.
+     /\ ~\E g \in part[p].frames : g.pc = "Rename"
      /\ IF part[p].deferrable /\ ~Involved(f.tentative)
         THEN \* deferred persistence: no file, the record lives in deferred
              /\ part' = [WithFrame(p, [f EXCEPT !.pc = "Publish", !.tentative = newinfo]) EXCEPT ![p].deferred_on = TRUE, ![p].deferred = newinfo]
@@ -305,14 +309,29 @@ StorePersistStep(p, o) ==
                 ELSE part' = WithFrame(p, [f EXCEPT !.pc = "Error", !.err = "STALE_VERSION",
                                                     !.interferences = IF f.interfered THEN @ + 1 ELSE @])
              /\ UNCHANGED disk
-        ELSE \* the write; every other persisting frame on p learns of the interference
-             \* Under CREATION_TID_STORE_SYNCS_DIR the store that writes the creation TID syncs the part's own
-             \* directory, so the record it leaves cannot be the one the loader misreads as pre-transactional.
-             /\ disk' = IF CREATION_TID_STORE_SYNCS_DIR /\ f.op = "CreateTID"
-                        THEN DiskWithInfoSynced(p, newinfo) ELSE DiskWithInfo(p, newinfo)
-             /\ part' = [part EXCEPT ![p].frames = keep \cup bumped \cup {[f EXCEPT !.pc = "Publish", !.tentative = newinfo]},
-                                     ![p].deferrable = FALSE, ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo,
-                                     ![p].meta_unsynced = MetaLeftUnsynced]
+        ELSE \* the tmp file is written; the rename that publishes it is the next action
+             /\ disk' = DiskWithTmp(p)
+             /\ part' = WithFrame(p, [f EXCEPT !.pc = "Rename", !.tentative = newinfo])
+
+\* storeInfoToDataPartStorage's replaceFile (VersionMetadataOnDisk.cpp:363), as a step of its own so that a
+\* directory sync or a crash can land between writing the temporary file and renaming it over txn_version.txt.
+\* That window is the third durable outcome of an unsynced store, the temporary name surviving and the final one
+\* not, and it is what loadMetadata's DummyTID arm reads. Collapsing it into the write was model defect M51.
+\* Every other persisting frame on p learns of the interference here rather than at the write, because the
+\* rename is what changes what StoredRecord returns.
+\* Under CREATION_TID_STORE_SYNCS_DIR the store that writes the creation TID takes the directory guard whatever
+\* the setting says, so the record it leaves cannot be the one the loader misreads as pre-transactional.
+StoreRenameStep(p, o) ==
+  LET f == FrameOf(p, o)
+      others == { g \in part[p].frames : g.owner /= o /\ g.pc = "Persist" }
+      bumped == { [g EXCEPT !.interfered = TRUE] : g \in others }
+      keep == { g \in part[p].frames : g.owner /= o /\ g.pc /= "Persist" }
+  IN /\ f.pc = "Rename"
+     /\ disk' = IF CREATION_TID_STORE_SYNCS_DIR /\ f.op = "CreateTID"
+                THEN DiskWithInfoSynced(p, f.tentative) ELSE DiskWithInfo(p, f.tentative)
+     /\ part' = [part EXCEPT ![p].frames = keep \cup bumped \cup {[f EXCEPT !.pc = "Publish"]},
+                             ![p].deferrable = FALSE, ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo,
+                             ![p].meta_unsynced = MetaLeftUnsynced]
 
 \* StorePublish: setInfo under version_info_mutex, ignored if the stored version is lower than the current one.
 \* A non-transactional removal has no commit point: the record becoming visible IS the removal taking effect,
