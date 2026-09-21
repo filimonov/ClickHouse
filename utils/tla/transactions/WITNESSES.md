@@ -690,6 +690,7 @@ The two properties this scenario adds:
 | `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperWitness` | RED | 279,143 | 4 s |
 | `NoOutdatedLookup` | `NoOutdatedLookup` | `UpdRemoveOldEntriesSetTail` publishes `tlog.latest_snapshot` instead of `RetentionHorizon`, so the tail passes the start CSN of a transaction still in the unknown-state list | `Keeper` | RED | 545,592 | 5 s |
 | `NoOutdatedLookup` | `NoOutdatedLookup` | the same change | `KeeperUnknownWait` | RED | 2,496,715 | 18 s |
+| `RollbackRestores`, second conjunct | `RollbackRestoresUpd` | `RollbackRestoreA` does not restore a part when the driver is `Upd`, and restores it for every other driver | `Keeper` | RED | 4,852,299 | 34 s |
 
 `NoOutdatedLookup` is the row that retires the vacuity half of spec defect `S6`. Both call sites of
 `TransactionLog::assertTIDIsNotOutdated` were unreachable in every scenario before this one, so the property
@@ -698,6 +699,11 @@ roster, and its witness fires. What keeps it green on the baseline is the retent
 the unknown-state list is still in `running_list`, so `RetentionHorizon` is at or below its start CSN and
 `UpdRemoveOldEntriesDelete`'s `tlog.tid_start[t] < tlog.tail_ptr` can never hold for it. The witness removes
 exactly that and the property goes red.
+
+`RollbackRestoresUpd` is what makes the second conjunct of `RollbackRestoresStep` carry its own weight. The
+bare `RollbackRestores` hook disables restoration for every driver, so the session conjunct falsifies first and
+the updater one is never the reason for the red; the second hook leaves the session path alone. It is red only
+in a scenario that has an updater-driven rollback, which is this one.
 
 `UnknownResolvesByLog` is the property the comment at `TransactionLog.cpp:360-372` argues for in prose, and its
 witness is the collapse that comment forbids. It is what caught model defect `M26`: on the first exhaustive run
@@ -822,8 +828,8 @@ added the three `MC_Keeper*` modules:
 | `BaseSmall` | green | 47,381 | 1 s |
 | `Base` | green | 26,839,116 | 4 min 01 s |
 | `Merge` | green at one session | 6,124,691 | 56 s |
-| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 29,274,410 | 4 min 53 s |
-| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,209,832 | 11 min 53 s |
+| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 37,785,664 | 6 min 06 s |
+| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,779,055 | 12 min 01 s |
 | `NonTxnDrop` | green at `TID_MAX = 1` | 1,246,158 | 12 s |
 | `NonTxnDropTwo` | green at `TID_MAX = 2`, no cleanup group | 47,958,902 | 7 min 29 s |
 | `NonTxnInsert` | green | 16,969,548 | 2 min 42 s |

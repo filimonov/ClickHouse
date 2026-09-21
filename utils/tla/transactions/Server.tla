@@ -702,8 +702,15 @@ CommitUnknown(k) ==
   /\ UNCHANGED <<zk, disk, mdisk, part, sys, stmt, mut, task>>
 
 \* waitStateChange returned (WAIT_UNKNOWN only): the updater has finalized the transaction or rolled it back
-\* and notified. executeCommit then returns normally, or the query ends with "Transaction was rolled back",
-\* which is the CommitError the spec's row names for this path.
+\* and notified. executeCommit then returns normally, or throws "Transaction {} was rolled back"
+\* (InterpreterTransactionControlQuery.cpp:102-103).
+\* The two branches differ in whether the session detaches, and that is the whole of the difference. The throw
+\* at :103 is BEFORE setCurrentTransaction(NO_TRANSACTION_PTR) at :114, and the onException the exception then
+\* reaches (executeQuery.cpp:3396-3398) loses its CAS, so TransactionLog::rollbackTransaction returns at
+\* :544-548 without touching the session. The transaction stays bound and the client has to issue ROLLBACK,
+\* which is RollbackStart's already-rolled-back branch.
+\* The action is not enabled at the intermediate UnknownCSN, where the state is Running again: that is the
+\* second waitStateChange at :98, and the guard on the state is what represents it.
 \* CommitAck's waitForCSNLoaded guard is not repeated here, although executeCommit reaches waitForCSNLoaded on
 \* this path too: the CSN it would wait for is the one the updater has just loaded by construction. The swap
 \* requires sys.updater_pc = "Idle", which UpdPublishSnapshot is what restores, so tlog.latest_snapshot is
@@ -715,13 +722,14 @@ CommitUnknownResolved(k) ==
   /\ LET t == Cur(k) IN
      /\ client[k].pc = "Commit" /\ client[k].waiting = "ForState"
      /\ txn[t].csn_notified /\ txn[t].state \in {"Committed", "RolledBack"}
-     /\ txn' = [txn EXCEPT ![t].holders = @ \ {Sess(k)}]
+     \* the holder goes with the detach, and only the committed branch detaches
+     /\ txn' = [txn EXCEPT ![t].holders = IF txn[t].state = "Committed" THEN @ \ {Sess(k)} ELSE @]
      /\ \/ /\ txn[t].state = "Committed"
            /\ client' = [client EXCEPT ![k].outcome = "Acked", ![k].outcome_tid = t, ![k].current = EmptyTID,
                                        ![k].waiting = "None", ![k].pc = "Idle"]
            /\ h' = [h EXCEPT !.outcome[t] = "Acked"]
         \/ /\ txn[t].state = "RolledBack"
-           /\ client' = [client EXCEPT ![k].outcome = "Error", ![k].outcome_tid = t, ![k].current = EmptyTID,
+           /\ client' = [client EXCEPT ![k].outcome = "Error", ![k].outcome_tid = t,
                                        ![k].waiting = "None", ![k].pc = "Idle", ![k].last_error = "INVALID_TRANSACTION"]
            /\ h' = [h EXCEPT !.outcome[t] = "Error"]
   /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, stmt, mut, task>>
@@ -862,7 +870,11 @@ UpdRollbackOutdateCreated(t, p) == RollbackOutdateCreatedA(Upd, t, p)
 RollbackRestoreA(a, t, p) ==
   /\ DrivesA(a, t) /\ txn[t].pc = "RollbackRestore" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
   /\ sys.parts_lock = NoActor
-  /\ part' = [part EXCEPT ![p].pstate = IF p \notin Range(txn[t].creating) /\ @ = "Outdated" /\ ~Witness("RollbackRestores")
+  \* The second hook disables restoration on the updater's path alone, which is what isolates the second
+  \* conjunct of RollbackRestoresStep: the bare name falsifies the session conjunct first.
+  /\ part' = [part EXCEPT ![p].pstate = IF p \notin Range(txn[t].creating) /\ @ = "Outdated"
+                                           /\ ~Witness("RollbackRestores")
+                                           /\ ~(Witness("RollbackRestoresUpd") /\ a = Upd)
                                         THEN "Active" ELSE @]
   /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN NextRollbackWork(t, "RollbackRestore") ELSE Tail(@),
                          ![t].pc = IF Tail(txn[t].work) = <<>> THEN NextRollbackPc(t, "RollbackRestore") ELSE @]
@@ -1028,13 +1040,18 @@ UpdSwapUnknownLists ==
   /\ sys' = [sys EXCEPT !.updater_pc = "Finalize", !.load_since_swap = FALSE]
   /\ UNCHANGED <<zk, disk, mdisk, h, part, txn, client, stmt, mut, task>>
 
-\* One transaction of the local list (TransactionLog.cpp:378-391). getCSN decides. A CSN means
-\* finalizeCommittedTransaction, which runs afterCommit ON THE UPDATING THREAD, so the per-part CSN stores that
-\* follow are frames owned by Upd. No CSN means assertTIDIsNotOutdated (:387), then `state_guard = {}` (:388),
-\* which CASes csn from CommittingCSN back to UnknownCSN and notifies, and then rollbackTransaction (:389).
-\* The model writes RolledBackCSN with csn_notified in one step: the reset and the CAS that follows it are two
-\* writes of the same atomic, and waitStateChange is gated on the notification that both carry, so no actor can
-\* observe the intermediate value.
+\* One transaction of the local list (TransactionLog.cpp:378-391). getCSN decides, and the decision is this one
+\* action so that the two properties stated on it see every outcome. A CSN means finalizeCommittedTransaction,
+\* which runs afterCommit ON THE UPDATING THREAD, so the per-part CSN stores that follow are frames owned by
+\* Upd. No CSN means assertTIDIsNotOutdated (:387) and then `state_guard = {}` (:388), whose lambda CASes csn
+\* from CommittingCSN back to UnknownCSN and notifies (MergeTreeTransaction.cpp:315-317).
+\* That intermediate value is observable and is not folded away. getState reports RUNNING at UnknownCSN
+\* (MergeTreeTransaction.cpp:59-61), so between the guard release and the CAS that follows it the transaction
+\* is running again: the waiting client sees UnknownCSN and waits a second time
+\* (InterpreterTransactionControlQuery.cpp:93-100), and another session can find it through
+\* tryGetRunningTransaction and win the rollback with KILL TRANSACTION
+\* (InterpreterKillQueryQuery.cpp:404-407). UpdRollbackStart is the CAS the updater attempts next, and
+\* UpdRollbackLost is that CAS failing because somebody else got there first.
 UpdFinalizeUnknown(t) ==
   /\ sys.updater_pc = "Finalize" /\ tlog.finalizing = EmptyTID
   /\ t \in tlog.unknown_ready
@@ -1044,10 +1061,28 @@ UpdFinalizeUnknown(t) ==
         /\ h' = [h EXCEPT !.unknown[t] = "Committed"]
      \/ /\ LookupCsn(t) = UnknownCSN
         /\ tlog' = [tlog EXCEPT !.unknown_ready = @ \ {t}, !.finalizing = t]
-        /\ txn' = [txn EXCEPT ![t].state = "RolledBack", ![t].csn = RolledBackCSN, ![t].csn_notified = TRUE,
-                               ![t].pc = "RollbackCopyLists", ![t].rb_driver = Upd]
-        /\ h' = [h EXCEPT !.unknown[t] = "RolledBack", !.snapshot[t] = txn[t].snapshot]
+        /\ txn' = [txn EXCEPT ![t].state = "Running", ![t].csn = UnknownCSN, ![t].csn_notified = TRUE]
+        /\ h' = [h EXCEPT !.unknown[t] = "RolledBack"]
   /\ UNCHANGED <<zk, disk, mdisk, part, sys, client, stmt, mut, task>>
+
+\* rollbackTransaction on the transaction the pass has just released the guard on (TransactionLog.cpp:389):
+\* MergeTreeTransaction::rollback CASes UnknownCSN to RolledBackCSN and notifies (MergeTreeTransaction.cpp:381-389).
+UpdRollbackStart(t) ==
+  /\ tlog.finalizing = t /\ txn[t].state = "Running" /\ txn[t].pc = "Idle"
+  /\ txn' = [txn EXCEPT ![t].state = "RolledBack", ![t].csn = RolledBackCSN, ![t].csn_notified = TRUE,
+                         ![t].pc = "RollbackCopyLists", ![t].rb_driver = Upd]
+  /\ h' = [h EXCEPT !.snapshot[t] = txn[t].snapshot]
+  /\ UNCHANGED <<zk, disk, mdisk, part, tlog, sys, client, stmt, mut, task>>
+
+\* the same CAS failing: somebody else rolled the transaction back in the window the guard release opened, so
+\* rollbackTransaction returns at TransactionLog.cpp:544-548 and the pass goes on to its next entry. The
+\* transaction is left to whoever won; that driver's RollbackFinalizeA clears nothing here, because this step
+\* has already released the pass.
+UpdRollbackLost(t) ==
+  /\ tlog.finalizing = t /\ txn[t].state /= "Running"
+  /\ txn[t].csn = RolledBackCSN
+  /\ tlog' = [tlog EXCEPT !.finalizing = EmptyTID]
+  /\ UNCHANGED <<zk, disk, mdisk, h, part, txn, sys, client, stmt, mut, task>>
 
 \* the pass ends and the thread leaves tryFinalizeUnknownStateTransactions
 UpdFinalizeDone ==

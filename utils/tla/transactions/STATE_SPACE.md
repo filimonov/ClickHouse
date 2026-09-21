@@ -748,7 +748,7 @@ that needs no reduction at all.
 
 | Configuration | Distinct states | Time | Result |
 |---|---|---|---|
-| `Keeper`, one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, **committed** | 29,274,410 | 4 min 53 s | green, queue drained |
+| `Keeper`, one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, **committed** | 37,785,664 | 6 min 06 s | green, queue drained |
 
 The count is above the thirty million at which a growing run is killed, and the rule is about a run that is
 still growing: the queue peaked at about 0.8 million and drained, which is the same reading `NonTxnDropTwo`
@@ -772,7 +772,7 @@ the matrix bounds, and the reduction ladder behaved unlike every earlier scenari
 | matrix bounds, `TID_MAX = 3`, `CSN_MAX = 36` | 60,249,422, queue 9.18M and growing | killed at 6 min | does not finish |
 | `CSN_MAX = 35` | 31,195,881, queue 5.24M and growing | killed at 5 min | does not finish |
 | `Tasks = {}`, `Parts = {P1, P2}`, matrix bounds otherwise | 70,335,132 | 10 min 01 s | green |
-| `TID_MAX = 2`, `CSN_MAX = 35`, merge kept, **committed** | 71,209,832 | 11 min 53 s | green |
+| `TID_MAX = 2`, `CSN_MAX = 35`, merge kept, **committed** | 71,779,055 | 12 min 01 s | green |
 
 The ladder's third rung, dropping the merge task, buys 1.4 per cent: 70,335,132 against 71,323,386. Both of
 those were measured before the updating thread's load actions gained their live-session guard, which took the
@@ -821,6 +821,25 @@ whole space, 4,676 distinct with the queue drained, and red at 3,137 when the cl
 that had never failed would not have shown that. The three runs were repeated on the tree that carries the
 updating thread's live-session guard, and the earlier round measured 2,940, 4,897 and 3,252 with the same three
 verdicts; a first-violation count is not reproducible in any case, while the green one is a full exploration.
+
+### What the notified `UnknownCSN` window costs {#keeper-unknown-window}
+
+Releasing the state guard is a step of its own, and between it and the CAS that follows the transaction is
+running again, because `getState` reports `RUNNING` at `UnknownCSN`. That window is worth 29 per cent in
+`Keeper`, from 29,274,410 to 37,785,664, and 0.8 per cent under `WAIT_UNKNOWN`, from 71,209,832 to 71,779,055.
+
+The gap between the two is what the window admits rather than the window itself. In `Keeper` the catch block
+detaches the session, so the one client is idle and can issue the `KILL TRANSACTION` that wins the rollback
+inside the window; under `WAIT_UNKNOWN` that same client is parked in `waitStateChange` and a second session
+would be needed, which the committed bounds do not have. So the race is covered by `Keeper` and not by
+`KeeperUnknownWait`, and the second configuration pays only for the extra step.
+
+That the race is reached, and not merely permitted, was measured in a scratch copy under `tmp/` at one session,
+one part, `Tasks = {}`, `TID_MAX = 1` and `CSN_MAX = 34`, which was deleted afterwards. An invariant saying no
+session ever drives the rollback of a transaction the pass released the guard on is violated at 1,715 distinct
+states, and the trace is two steps: `UpdFinalizeUnknown` and then `KillTransaction`. An invariant saying the
+updating thread is never left holding a transaction another driver has rolled back is violated at 1,689, which
+is the step `UpdRollbackLost` stands for.
 
 ### What the view keeps {#keeper-view}
 

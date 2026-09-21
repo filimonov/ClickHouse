@@ -31,7 +31,8 @@ UpdaterNext == UpdLoadEntriesMap \/ UpdPublishSnapshot
 UpdaterGCNext == UpdRemoveOldEntriesSetTail \/ UpdRemoveOldEntriesDone \/ (\E c \in RealCSNs : UpdRemoveOldEntriesDelete(c))
 UpdaterUnknownNext ==
   \/ UpdReconnect \/ UpdLoadNothing \/ UpdSwapUnknownLists \/ UpdFinalizeDone
-  \/ (\E t \in Tids : UpdFinalizeUnknown(t) \/ UpdCommitFlip(t) \/ UpdCommitFinalize(t)
+  \/ (\E t \in Tids : UpdFinalizeUnknown(t) \/ UpdRollbackStart(t) \/ UpdRollbackLost(t)
+                      \/ UpdCommitFlip(t) \/ UpdCommitFinalize(t)
                       \/ UpdRollbackCopyLists(t) \/ UpdRollbackFinalize(t)
                       \/ (\E p \in Parts : UpdCommitStoreCreation(t, p) \/ UpdCommitStoreRemoval(t, p)
                                            \/ UpdRollbackMarkCreated(t, p) \/ UpdRollbackOutdateCreated(t, p)

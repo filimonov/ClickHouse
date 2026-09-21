@@ -217,6 +217,23 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 | `UpdRemoveOldEntriesSetTail` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | everything up to and including `tail_ptr.store` (:321): the `isServerCompletelyStarted` gate, the `asyncTablesLoadingJobNumber` gate that applies only while `updated_tail_ptr` is false, the read of the `tail_ptr` znode, `getOldestSnapshot`, the `LOGICAL_ERROR` when the new value is below the old one, the early return when they are equal, and the `set` of the znode |
 | `UpdRemoveOldEntriesDelete(c)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::removeOldEntries` (:284) | one iteration of the removal loop (:319-341): one `tryRemove` of the log znode and one `tid_to_csn` erase, for an entry whose `tid.start_csn` is below the new tail and whose CSN is not the latest loaded one. `ZNONODE` counts as removed |
 
+### Keeper faults and the unknown-state pass {#code-map-keeper}
+
+| Action | C++ file | Function | Step boundary |
+|---|---|---|---|
+| `CommitKeeperFault(k, lost)`, `MergeCommitKeeperFault(i, lost)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::commitTransaction` (:419) | the `multi` (:446) failed with a hardware error, in one of the two ways the spec names: `lost` is the response lost after the `csn-` znode was created, which the fail point at :450 injects, and `~lost` is nothing appended. The catch at :459 has not run yet, which is why this is a step of its own: after a lost response the znode exists and the updating thread may load it first |
+| `KeeperSessionExpire` | `src/Common/ZooKeeper` | the session | the Keeper session expires on its own. It shares `KEEPER_FAULTS_MAX` with the commit fault |
+| `CommitUnknown(k)`, `MergeCommitUnknown(i)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::commitTransaction` (:459-477) | the catch block: under `running_list_mutex` the transaction and its state guard go into `unknown_state_list` (:467-468), then `UNKNOWN_STATUS_OF_TRANSACTION` is thrown (:472) or `CommittingCSN` returned (:477). The transaction keeps `Committing` and `CommittingCSN`, and stays in `running_list` |
+| `CommitUnknownResolved(k)` | `src/Interpreters/InterpreterTransactionControlQuery.cpp` | `InterpreterTransactionControlQuery::executeCommit` (:84-115) | `waitStateChange` returned with a decided state. The committed branch reaches `setCurrentTransaction(NO_TRANSACTION_PTR)` at :114; the rolled-back branch throws at :103 before it, so the session stays bound |
+| `UpdReconnect` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::runUpdatingThread` (:238-250) | the expired session is replaced and `sync` has run. One Keeper here, so only the session state moves |
+| `UpdLoadNothing` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::loadNewEntries` (:272) | the `getChildren` happened and `loadEntries` was called over an empty range (:277-278). All it leaves behind is that the iteration's load has run |
+| `UpdSwapUnknownLists` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::tryFinalizeUnknownStateTransactions` (:355) | the two swaps under `running_list_mutex` (:374-375). The local list takes the previous iteration's loaded list, which is the delay of one whole iteration the scheme exists for |
+| `UpdFinalizeUnknown(t)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::tryFinalizeUnknownStateTransactions` (:378-391) | `getCSN` decided for one entry. A CSN starts `finalizeCommittedTransaction`; no CSN runs `assertTIDIsNotOutdated` (:387) and then releases the state guard (:388), which CASes the CSN back to `UnknownCSN` and notifies. The transaction is `RUNNING` again at that value |
+| `UpdRollbackStart(t)`, `UpdRollbackLost(t)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::rollbackTransaction` (:538) | the CAS of `UnknownCSN` to `RolledBackCSN` (`MergeTreeTransaction.cpp:381-382`), won or lost. Lost means a `KILL TRANSACTION` got there in the window the guard release opened, and the pass returns at :544-548 and goes on |
+| `UpdFinalizeDone` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::tryFinalizeUnknownStateTransactions` (:391-392) | the loop ended and the thread leaves the function |
+| `UpdCommitStoreCreation(t, p)`, `UpdCommitStoreRemoval(t, p)`, `UpdCommitFlip(t)`, `UpdCommitFinalize(t)` | `src/Interpreters/TransactionLog.cpp` | `TransactionLog::finalizeCommittedTransaction` (:490) | the same steps a session's commit runs, on the updating thread, because that is the thread `afterCommit` runs on here |
+| `UpdRollbackCopyLists(t)`, `UpdRollbackMarkCreated(t, p)`, `UpdRollbackOutdateCreated(t, p)`, `UpdRollbackRestore(t, p)`, `UpdRollbackUnlock(t, p)`, `UpdRollbackFinalize(t)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::rollback` (:377) | the rollback machine with the updating thread as its driver. Each is the session's step with `Upd` for the actor |
+
 ### Outdated-parts cleanup thread {#code-map-cleanup}
 
 | Action | C++ file | Function | Step boundary |
@@ -284,15 +301,15 @@ covers only the middle one and `version_info_mutex` only the last. The `Server.t
 Defined with the body `FALSE` so that a later plan can fill them in without renaming anything. The plan number is
 the one that implements the action, from the plan's "Plans that follow this one" section.
 
-The non-transactional group this table used to carry for plan 2 is implemented and has its own section above.
+The non-transactional group this table used to carry for plan 2 is implemented and has its own section above,
+and so is the unknown-state group it carried for plan 3: `CommitUnknown`, `UpdReconnect`, `UpdSwapUnknownLists`
+and `UpdFinalizeUnknown` are live and are in the code map with the rest of the Keeper-fault actions.
 The design document's separate `NtBatchStart(B)` action is not among them: its targets are computed by the
 caller under the same parts lock, so the model folds it into `NtDropPublish` through the operator `StartBatch`,
 and nothing observable happens between the two.
 
 | Action | Plan |
 |---|---|
-| `CommitUnknown(k)` | plan 3 |
-| `UpdReconnect`, `UpdSwapUnknownLists`, `UpdFinalizeUnknown(t)` | plan 3 |
 | `Crash` | plan 3 |
 | `RestartLoadLog`, `RestartTableStart`, `RestartLoadPart(p)`, `RestartTablePublished`, `RestartOutdatedDone`, `RestartDone` | plan 3 |
 | `MutPrepareWrite(k, m)`, `MutPrepareAttach(k, m)`, `MutRegister(k, m)`, `MutSelect(i, m, p)`, `MutWrite(i, m, p)`, `MutRename(i, m, p)`, `MutWait(k, m)`, `MutFail(i)`, `MutDestroyOwner(m)` | plan 4 |
@@ -440,6 +457,10 @@ either is negligible.
 | `BaseSmall` | 2026-09-21 | the review fix-round commit | 47,381 | 1 s | green, unchanged |
 | `Keeper` | 2026-09-21 | the review fix-round commit | 29,274,410 | 4 min 53 s | green; 4.2% below 30,544,101 because the updating thread's two load actions gained the live-session guard the truncation pass already had |
 | `KeeperUnknownWait` | 2026-09-21 | the review fix-round commit | 71,209,832 | 11 min 53 s | green; 0.16% below 71,323,386, the same guard against a session that is parked for most of the expiry window |
+| `BaseSmall`, `Merge` | 2026-09-21 | the lifecycle commit | 47,381 and 6,124,691 | 1 s and 57 s | green, unchanged |
+| `Keeper` | 2026-09-21 | the lifecycle commit | 37,785,664 | 6 min 06 s | green; 29% above 29,274,410, which is the notified `UnknownCSN` window and the `KILL TRANSACTION` that can win inside it |
+| `KeeperUnknownWait` | 2026-09-21 | the lifecycle commit | 71,779,055 | 12 min 01 s | green; 0.8% above 71,209,832, because at one session the only client is parked in `waitStateChange` and cannot issue the `KILL` |
+| `Keeper` witnesses, 3 rows | 2026-09-21 | the lifecycle commit | 4,852,299 for the largest | 42 s in total | all red, including the new `RollbackRestoresUpd` |
 
 Every `NonTxn*` row of these tables, the witness sweeps included, was measured with
 `OBSOLETE_IS_ROLLED_BACK = TRUE`, and the two drop configurations without `ActiveSetShape`. Section 2 says what
@@ -458,8 +479,8 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 | `SetSnapshotF2` | nothing: it stops at the first violation, which is finding `F2` | everything else; it is a reproducer, not a check | `FINDINGS.md`, finding `F2` |
 | `SetSnapshotF2Fixed` | one session, one part, `TID_MAX = 3`, 309,987 states, over five properties | the properties outside those four; the truncation tail, which the model publishes in one step, so the green verifies the refusal and not the publication; and any window between the revalidation and the state change, which are one action here | `FINDINGS.md`, finding `F2` and model defects `M18` and `M19` |
 | `Merge` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, 6,124,691 states, the whole roster | the second session: an exhaustive run at two does not finish, two witnesses fire only in `MergeWitness`, and `Assert_validateInfo_removal` fires in neither | `FINDINGS.md`, `B3`; `STATE_SPACE.md`, the `Merge` section |
-| `Keeper` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, 29,274,410 states, `Merge`'s roster less the three cleanup properties, plus `UnknownResolvesByLog` and `NoOutdatedLookup` | the second session and the second fault; the roster's witness sweep, which is `Merge`'s twenty-four rows over a scenario six times its size | `STATE_SPACE.md`, the `Keeper` section; `WITNESSES.md`, the `Keeper` witnesses |
-| `KeeperUnknownWait` | one session, `TID_MAX = 2`, `CSN_MAX = 35`, 71,209,832 states, the same roster under `WAIT_MODE = "WAIT_UNKNOWN"` | the third transaction, and with it the four witnesses that need one | `FINDINGS.md`, `B8`; `STATE_SPACE.md`, the `Keeper` section |
+| `Keeper` | one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, 37,785,664 states, `Merge`'s roster less the three cleanup properties, plus `UnknownResolvesByLog` and `NoOutdatedLookup` | the second session and the second fault; the roster's witness sweep, which is `Merge`'s twenty-four rows over a scenario six times its size | `STATE_SPACE.md`, the `Keeper` section; `WITNESSES.md`, the `Keeper` witnesses |
+| `KeeperUnknownWait` | one session, `TID_MAX = 2`, `CSN_MAX = 35`, 71,779,055 states, the same roster under `WAIT_MODE = "WAIT_UNKNOWN"` | the third transaction, and with it the four witnesses that need one | `FINDINGS.md`, `B8`; `STATE_SPACE.md`, the `Keeper` section |
 | `NonTxnDrop` | one transaction with the cleanup group, `TID_MAX = 1`, 1,246,158 states | the second transaction; `ActiveSetShape`, which finding `F5` falsifies; the four snapshot-isolation rows of spec defect `S13`; and `F6`'s fix is assumed rather than tested | `FINDINGS.md`, `B4`, `M15`, `S13`, findings `F5` and `F6` |
 | `NonTxnDropTwo` | two transactions without the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 47,958,711 states, unchanged by the cleanup split | the cleanup group, so no finishing configuration checks the removal batch beside two transactions and cleanup at once, which is the open bound of `M15`; `SingleRemover` unfired at 65,525,357; the same properties as the row above | `FINDINGS.md`, `B4` and `M15` |
 | `NonTxnInsert` | two transactions with the cleanup group, `TID_MAX = 2`, `CSN_MAX = 34`, 16,969,548 states | the removal batch; `ActiveSetShape` is on the roster but vacuous, because part `E` is never created here; the `S13` rows; `F6`'s fix is assumed | `FINDINGS.md`, `B4` and `S13`; `WITNESSES.md`, the `NonTxn` section |
