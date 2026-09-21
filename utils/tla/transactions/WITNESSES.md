@@ -154,8 +154,8 @@ part of `h_creating[t]` is ever in the visible-parts set of a read by another tr
 `RollbackRestoresStep` is the first half and `RollbackNoLeak` is the second, stated more strongly, over
 every uncommitted transaction rather than only the rolled-back ones. The row's witness, `RollbackRestore`
 skipped, falsifies the first half; a witness for the second is writable within `Base` and belongs with the
-task that next rewrites the rollback actions, which is plan 3, task 1 (Keeper faults at commit, the unknown-state pass, updater-driven commit and rollback).
-`FINDINGS.md`, section 3, carries the ruling.
+task that gives it a visibility hook, which is plan 3, task 5 (budget, sweep and debts).
+`FINDINGS.md`, section 3, carries the ruling and the argument for the re-placement.
 
 ## Witnesses deferred to a later plan {#witnesses-deferred-to-a-later-plan}
 
