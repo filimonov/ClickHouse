@@ -113,10 +113,13 @@ with no data-parts lock held (`:412-417`), while the skip and the store are two 
 version metadata. The trace is `traces/f9-rollback-after-skip-window.txt`, 29 states, produced on
 `SetSnapshotF9SiblingFixed` under the witness `F9FixInFlightOnly`, which narrows the fix below to the
 in-flight half alone: red on `Assert_validateInfo` at 417,821 distinct. The frame the assertion fires on is
-`op |-> "RemovalCSN"`, `err |-> "LOGICAL_ERROR"`, `noexcept_owner |-> TRUE`, which is exactly the guard of
-`NoexceptFrameDown`, the step that sets `h.down_cause` and so falsifies `NoAvoidableTermination`; the
-assertion fires one step before that, at the frame, which is why the last state of the trace still has
-`down_cause |-> "None"`. Both rows are on `MC_SetSnapshotF9SiblingFixed`'s roster. The witness therefore
+`op |-> "RemovalCSN"`, `err |-> "LOGICAL_ERROR"`, `noexcept_owner |-> TRUE`, which is the guard of
+`NoexceptFrameDown`, the one step that writes `h.down_cause`. That the shape terminates is a verdict and not
+an inference from the frame: the same witness checked against `NoAvoidableTermination` alone is **red at
+493,742 distinct in 5 s**, on a thirty-state behaviour of the same shape whose last step is
+`NoexceptFrameDown`, leaving `down_cause |-> "Other"` and the server `Down`. The 29-state trace is one step
+shorter because it stops at the assertion, which is why its last state still reads `down_cause |-> "None"`.
+Both rows are on `MC_SetSnapshotF9SiblingFixed`'s roster. The witness therefore
 carries two things at once: the second shape of this finding, and the argument that a fix narrowed to the
 in-flight half alone is not enough.
 

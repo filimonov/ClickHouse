@@ -321,13 +321,16 @@ narrowed fix is not enough.
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
 | `Assert_validateInfo` | `F9FixInFlightOnly` | the refusal `EnrolRefused` gains under the fix drops its `RolledBackCSN` half and refuses only a creation still in flight | `SetSnapshotF9SiblingFixed` | RED | 417,821 | 4 s |
+| `NoAvoidableTermination` | `F9FixInFlightOnly` | the same change, checked against the termination row instead of the assertion | `SetSnapshotF9SiblingFixed` | RED | 493,742 | 5 s |
 
 The trace is `traces/f9-rollback-after-skip-window.txt`, 29 states: the creator rolls back after `DropLock` has
 read its creation CSN and before the enrolment stores the removal TID, and the remover's commit then stamps a
 removal CSN under a creation CSN of `RolledBackCSN`, inside the `noexcept` frame. It is not a minimality half
 of any other witness; it is the argument for the predicate the fix uses, `isCreationCommitted`, rather than
-the narrower "has not committed yet". The same trace is where finding `F9`'s second shape, the one that
-terminates rather than raising to the client, is shown; `FINDINGS.md` has it.
+the narrower "has not committed yet". The same change is where finding `F9`'s second shape, the one that
+terminates rather than raising to the client, is shown, and the second row above is that termination as a
+verdict: the behaviour runs one step further, into `NoexceptFrameDown`, and `h.down_cause` is written.
+`FINDINGS.md` has it.
 
 ## Witnesses of the cleanup thread {#witnesses-cleanup}
 
