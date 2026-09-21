@@ -1234,6 +1234,15 @@ UpdRemoveOldEntriesSetTail ==
 \* The C++ snapshots tid_to_csn and latest_snapshot once and then loops; the model re-reads them per iteration,
 \* so it can delete an entry the C++ would have kept as "the latest one we fetched". That widens the behaviour
 \* set; see FINDINGS.md section 2, model defect M3, for why it is sound here and where it gets settled.
+\* The transactions whose CSN a part holds in memory and the disk does not. MergeTreeData can report this set:
+\* it is the parts whose creation_csn or removal_csn is set in VersionMetadata while txn_version.txt still
+\* carries the record without it. Under ENTRY_KEPT_UNTIL_CSN_DURABLE the removal loop keeps their entries, which
+\* is finding F11's fix.
+UnsyncedCsnOwners ==
+  { t \in Tids : \E p \in Parts :
+      \/ (part[p].mem.ctid = t /\ part[p].mem.ccsn /= UnknownCSN /\ DurableRecord(p).ccsn = UnknownCSN)
+      \/ (part[p].mem.rtid = t /\ part[p].mem.rcsn /= UnknownCSN /\ DurableRecord(p).rcsn = UnknownCSN) }
+
 UpdRemoveOldEntriesDelete(c) ==
   /\ sys.updater_pc = "Delete"
   /\ zk.session = "Alive"
@@ -1241,6 +1250,7 @@ UpdRemoveOldEntriesDelete(c) ==
   /\ \E t \in Tids :
      /\ tlog.tid_to_csn[t] = c
      /\ tlog.tid_start[t] < tlog.tail_ptr
+     /\ ~(ENTRY_KEPT_UNTIL_CSN_DURABLE /\ t \in UnsyncedCsnOwners)
      /\ zk' = KeeperRemoved(c)
      /\ tlog' = [tlog EXCEPT !.tid_to_csn[t] = UnknownCSN]
      /\ h' = [h EXCEPT !.truncated = @ \cup {t}]

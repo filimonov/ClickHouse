@@ -21,7 +21,7 @@ RC=$?
 rm -rf "$OUT/states"
 if grep -qE '^Error: (Invariant|Action property|Temporal properties)' "$OUT/tlc.log"; then
   awk '/^Error: /,0' "$OUT/tlc.log" > "$OUT/trace.txt"
-  echo "VIOLATION scenario=$SCENARIO $(grep -oE 'Error: (Invariant|Action property) [A-Za-z_]+' "$OUT/tlc.log" | head -1) (trace: $OUT/trace.txt)"
+  echo "VIOLATION scenario=$SCENARIO $(grep -oE 'Error: (Invariant|Action property) [A-Za-z_0-9]+' "$OUT/tlc.log" | head -1) (trace: $OUT/trace.txt)"
   exit 1
 fi
 if grep -q 'Model checking completed. No error has been found' "$OUT/tlc.log"; then

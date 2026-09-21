@@ -185,11 +185,15 @@ DiskRoot(p) == OnDisk(p) /\ ~\E c \in Parts : c /= p /\ OnDisk(c) /\ p \in Expan
 \* its four cases: the record that is there (:63-67); the legacy format, which the model carries as its own disk
 \* kind; the tmp-only directory, which becomes DummyTID with RolledBackCSN (:77-84) after the tmp file is
 \* removed (:58-60); and the directory with neither, which becomes a non-transactional creation (:90-93).
-LoadedRecord(p) ==
-  IF DiskHasInfo(p) THEN DiskInfo(p)
-  ELSE IF disk[p].cached.kind = "Legacy" THEN LegacyInfo
-  ELSE IF disk[p].tmp_cached THEN [EmptyInfo EXCEPT !.ctid = DummyTID, !.ccsn = RolledBackCSN, !.sv = -1]
+\* Taken against a layer rather than against the part, so that the invariant preamble can ask the same question
+\* of the layer a crash keeps and cannot answer it differently from the loader.
+LoadedRecordFrom(r, tmp) ==
+  IF r.kind = "Info" THEN r.info
+  ELSE IF r.kind = "Legacy" THEN LegacyInfo
+  ELSE IF tmp THEN [EmptyInfo EXCEPT !.ctid = DummyTID, !.ccsn = RolledBackCSN, !.sv = -1]
   ELSE [EmptyInfo EXCEPT !.ctid = NonTransactionalTID, !.ccsn = NonTransactionalCSN, !.sv = -1]
+LoadedRecord(p) == LoadedRecordFrom(disk[p].cached, disk[p].tmp_cached)
+DurableLoadedRecord(p) == LoadedRecordFrom(disk[p].durable, disk[p].tmp_durable)
 \* The shape loadMetadata case 2 produces, short-circuited by both validateInfo and hasValidMetadata.
 DummyRolledBackShape(info) ==
   info.ccsn = RolledBackCSN /\ info.ctid = DummyTID /\ info.rtid = EmptyTID /\ info.rcsn = UnknownCSN

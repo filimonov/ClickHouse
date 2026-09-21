@@ -1,4 +1,4 @@
----- MODULE MC_CrashF10 ----
+---- MODULE MC_CrashUnsyncedFixed ----
 EXTENDS MergeTreeTransactions
 \* The three part names, declared so that CoversDef can spell them; the cfg binds each to the model value of
 \* the same name that Parts is built from.

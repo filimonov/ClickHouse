@@ -789,6 +789,52 @@ The rest of the scenario's roster is `Merge`'s, so its witnesses are the `Merge`
 47-million-state scenario is its own piece of work. It is placed in plan 3, task 6 (budget, witness sweep, documents and debts)
 together with the `Keeper` roster's, which is placed there for the same reason.
 
+### What `MC_CrashUnsynced` can carry, and what it cannot {#witnesses-crash-unsynced-roster}
+
+The unsynced world is where `LoadedRecord`'s tmp-only arm lives, and it is the configuration upstream runs by
+default, so it is where the restart properties are stated. It is also a world where every property saying
+**committed data stays readable** is false by construction rather than by a defect: an unsynced metadata write
+can be lost, and losing it loses data in either direction, a creation CSN that makes committed rows unreadable
+or a removal that makes removed rows readable again. Finding `F10` is that window and `F11` is what the
+truncation pass does on top of it.
+
+`MC_CrashUnsynced` and `MC_CrashUnsyncedFixed` therefore carry `TypeOK`, `LogEntryNeeded` and
+`DurabilityMonotone`, which is `MC_CrashF10`'s shape: a reproducer and its verified fix. `MC_CrashUnsyncedFixed`
+additionally carries every row of the `Crash` roster that reads no history variable, which is the part of the
+roster that world can honestly check. Rows that read `h` stay off, and the one sentence that covers all of them
+is the one above.
+
+### The restart properties, and the five rows they owe {#witnesses-crash-restart}
+
+Four properties entered `Invariants.tla` with this scenario and all four witnesses are red.
+
+| Property | Witness name | The model change | Scenario | Result | States | Time |
+|---|---|---|---|---|---|---|
+| `NoResurrection` | `NoResurrection` | the third arm of `TryGetCsn` answers `UnknownCSN` instead of `RolledBackCSN`, so a tid absent from the log leaves a creation unresolved and the part loads `Active` | `Crash` | RED | 4,902 | 1 s |
+| `LogEntryNeeded` | `LogEntryNeeded` | the async-loading gate of `UpdRemoveOldEntriesSetTail` is removed, so the tail advances while covered parts are still loading | `Crash` | RED | 6,522,375 | 62 s |
+| `LegacyLoads` | `LegacyLoads` | the loader treats a legacy record as a parse failure, taking the shape `loadMetadata` produces for a tmp-only directory | `CrashLegacy` | RED | 499 | 1 s |
+| `Assert_IsNonTransactionalDomain` | `Assert_IsNonTransactionalDomain` | `IsNonTransactionalDomain` loses its `DummyTID` disjunct, which is the predicate before `TransactionID::isNonTransactional` exempted that shape by name | `CrashUnsyncedFixed` | RED | 1,683 | 1 s |
+
+`Assert_IsNonTransactionalDomain` needs two sentences of its own. The property is a **tautology on the model's
+type**: `AllTids` is exactly the domain the predicate admits, and no record can carry anything else. What its
+witness really shows is that a tmp-only directory is loaded at all, which is the reachability a calibration row
+needs; it does not show that the assertion can be reached with a tid outside the domain, because in this model
+there is no such tid.
+
+Its row is also the one that moved scenario, and the move is the point rather than a convenience. In `Crash` the
+witness is **green over the whole 48,142,550-state space**, in 520 seconds, because every store there is durable
+when it is made, so `LoadedRecord`'s `DummyTID` arm is dead and no tmp-only directory is ever loaded. That is
+the sentence the state-space document already carried as an argument, now measured. The row therefore runs in
+`CrashUnsyncedFixed`, the finishing module of the world where that arm is live, and is red there in 1,683
+states.
+
+`AckedWriteIsDurable`'s row above is the fifth of the five the dispatch names, and it is the one that is
+already run and red.
+
+Three of the four run in `Crash` and none needed a second session, so `MC_CrashWitness` was not called on.
+`LegacyLoads` runs in `CrashLegacy`, which is the only module with a legacy part, and
+`Assert_IsNonTransactionalDomain` in `CrashUnsyncedFixed` for the reason above.
+
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 
 Both on the tree this file is committed with, at the bounds above.

@@ -628,6 +628,25 @@ sanity runs on that tree.
 | `SetSnapshotF2` | 2026-09-21 | the closing commit | a first-violation count | 3 s | **red on `NoPrematureDelete`**, finding `F2`'s first shape |
 | `Merge` | 2026-09-21 | the closing commit | 6,124,691 | 56 s | green, unchanged |
 
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
+| `Schema`, `BaseSmall` | 2026-09-21 | the restart-properties commit | 1 and 47,381 | 1 s each | green, unchanged |
+| `Merge` | 2026-09-21 | the restart-properties commit | 6,124,691 | 1 min 00 s | green, identical to the state and to the generated count |
+| `Crash` | 2026-09-21 | the restart-properties commit | 48,142,550 | 15 min 41 s | green with the four new rows; the distinct count and the generated count, 495,201,353, are both identical to the previous figure, which is what an added property and a dead action predict |
+| `CrashUnsynced` | 2026-09-21 | the restart-properties commit | 29,484, a first-violation count | 3 s | **red on `LogEntryNeeded`**, which is finding `F11` |
+| `CrashUnsyncedFixed` | 2026-09-21 | the restart-properties commit | 36,755,726 | 7 min 34 s | green under `ENTRY_KEPT_UNTIL_CSN_DURABLE`, finding `F11`'s fix |
+| `Crash`, re-taken after `M48` and `M49` | 2026-09-21 | the restart-properties commit | 48,142,550 | 16 min 17 s | green, identical to the state and to the generated count for the third round running |
+| `CrashLegacy` | 2026-09-21 | the restart-properties commit | 20,580,014 | 7 min 23 s | green with `LegacyLoads` on the roster; it is smaller than `Crash` because `P1` exists at init and cannot be inserted |
+| `CrashUnsyncedFixed`, history-free rows added | 2026-09-21 | the restart-properties commit | 36,755,726 | 8 min 48 s | green; the payment of debt `B9` |
+| `CrashHarm` | 2026-09-21 | the restart-properties commit | 106,627, a first-violation count | 9 s | **red on `F11Harm`**, which is finding `F11`'s harm at `RESTARTS_MAX = 2` |
+
+`Crash`'s row is the control that matters. The round added four properties, one action and, after the unsynced
+world found them, two disk-model repairs, and the scenario did not move by a state. A property cannot move it,
+`UpdRemoveOldEntriesArm` is dead there for the reason `FINDINGS.md` gives under `M5`, and the two repairs are
+dead in a configuration where every durability bit is set at the moment of the operation. `BaseSmall` and
+`Merge` are the same control in `Durable` mode, where `DiskTypeOK` pins the new `payload_cached` bit to its
+durable counterpart.
+
 ## 5. Witnesses {#witnesses}
 
 A property no run can falsify proves nothing, so every property in `Invariants.tla` has a witness: one named

@@ -936,6 +936,71 @@ actions on the directory existing, which is what the C++ cannot do without, retu
 finishing green. The budget rule earned its place there: the first reading was that the bits had bought a
 scenario that no longer fits, and the bits had bought 0.6%.
 
+### The restart-properties round {#crash-restart-properties}
+
+| Configuration | Result | Distinct states | Time |
+|---|---|---|---|
+| `Crash`, the four new rows added, before `M48` and `M49` | green, **identical to the state and to the generated count**, 495,201,353 | 48,142,550 | 15 min 41 s |
+| `Merge`, control for `UpdRemoveOldEntriesArm` without the early-return guard | green | 7,604,942 | 1 min 16 s |
+| `Merge`, the same with the guard, **committed** | green, identical to the state | 6,124,691 | 1 min 00 s |
+| `CrashUnsynced`, `TID_MAX = 2` | **red on `LogEntryNeeded`**, 22 states, which is finding `F11` | 152,974, a first-violation count | 3 s |
+| `CrashUnsyncedFixed`, `TID_MAX = 2` | killed past the budget, queue 8.19M and growing | 49,913,211 | 7 min |
+| `CrashUnsynced`, `TID_MAX = 1`, **committed** | **red on `LogEntryNeeded`**, the same 22 states | 29,484, a first-violation count | 3 s |
+| `CrashUnsyncedFixed`, `TID_MAX = 1`, **committed** | **green**, finding `F11`'s fix verified | 36,755,726 | 7 min 34 s |
+| `BaseSmall`, `Merge`, controls after `M48` and `M49` | green, both identical to the state and to the generated count | 47,381 and 6,124,691 | 1 s and 1 min 00 s |
+| `Crash`, re-taken after `M48` and `M49` | green, identical to the state and to the generated count for the third round running | 48,142,550 | 16 min 17 s |
+| `CrashLegacy`, `LEGACY_PARTS = {P1}`, **committed** | green, with `LegacyLoads` on the roster | 20,580,014 | 7 min 23 s |
+| `CrashUnsyncedFixed` with the history-free rows added, **committed** | green, identical to the state and to the generated count | 36,755,726 | 8 min 48 s |
+| `CrashHarm`, `RESTARTS_MAX = 2`, one property | **red on `F11Harm`**, 26 states, which is finding `F11`'s harm end to end | 106,627, a first-violation count | 9 s |
+| `CrashUnsyncedFixed` with model defect `M48` restored, `DurabilityMonotone` alone, on a scratch copy | **red on `DurabilityMonotone`**, which is the new clause shown to fence something | 1,043 | 1 s |
+
+Two of these rows are the ones worth reading.
+
+The first `Crash` row is a control and not a measurement. Four properties and one new action were added, and the
+distinct count and the generated count are both unchanged from the figure the run table already carried. For
+the properties that is expected, since a property does not change the next-state relation. For
+`UpdRemoveOldEntriesArm` it is the evidence that the action is behaviourally dead here, and the `Merge` pair
+above it is the same evidence taken twice: without the early-return guard the action costs 24%, with it the
+scenario is identical to the state. The discriminator is in `M5`.
+
+The `CrashUnsyncedFixed` pair is the budget rule applied. At `TID_MAX = 2` the run passed 30 million with a
+growing queue and was killed at 49,913,211. The rung that owns the size is not the transaction count on its own
+but the per-part durability state: with all three settings off, the record, the temporary file, the two
+directory names and the payload each have an independent cached and durable bit, and the three sync actions can
+fire between any two steps, so each part carries a combinatorial factor the synced world does not have. One
+transaction was enough for the finding, because the restart's own placeholder znode supplies the entry above
+the one being pruned, which is what `removeOldEntries` needs in order not to keep it as the latest. 36.7 million
+is above the thirty million a run here is budgeted and it drains its queue, which is the same justification the
+`Crash` and `NonTxnDropTwo` rows carry.
+
+### What the unsynced world can and cannot check {#crash-unsynced-roster}
+
+Debt `B9` asked for the roster minus three rows. The runs say the roster is much smaller than that, and the
+reason is structural rather than a matter of which rows were tried. An unsynced metadata write can be lost in
+**either** direction: a lost creation CSN makes committed data unreadable, and a lost removal makes removed data
+readable again. Every property that relates the history variables to what the server holds is therefore
+falsified in that world by construction.
+
+Measured red, in the order the runs produced them, before the enumeration replaced the discovery:
+`NoLostRead`, through a lost creation CSN leaving the loader with a tmp-only directory, then `NoResurrection`
+and `NoFutureRead`, through a lost removal. Those are on top of `AckedWriteIsDurable`, `NoPrematureDelete` and
+`NoLostVisibleData`, which the debt already named. Predicted by the same argument and **not run**, which is
+said here rather than counted as evidence: `Atomicity`, through the same lost creation as `NoLostRead`;
+`NoDoubleRead` and `ActiveSetShape`, through a lost removal leaving a merge source `Active` beside the result
+that covers it; and `NoUncommittedRead` and `RollbackNoLeak`, through a lost rollback stamp.
+
+`MC_CrashUnsynced` and `MC_CrashUnsyncedFixed` are therefore finding modules and not coverage modules. They
+carry `TypeOK`, `LogEntryNeeded` and `DurabilityMonotone`, which is the shape `MC_CrashF10` has: a reproducer
+and its verified fix. `B9` is **not paid**, and what it should ask instead is in `FINDINGS.md`.
+
+### The model defects the unsynced world found {#crash-unsynced-defects}
+
+Three, and two of them were fixed here. `M48`, an `Fsync` raising `payload_durable` on a part whose data files
+the crash had taken, which is the `M43` and `M45` class at a third site and produced a false red that read as
+finding `F11`'s fix failing. `M49`, the invariant preamble not computing what the loader computes, which is the
+`M46` class. `M47`, the restart not rebuilding `tlog.tid_start`, recorded and not fixed, because the fix is one
+line and the re-measurement is every scenario. `FINDINGS.md` has all three with the C++ that settles each.
+
 ### Why the scenario splits at the fsync settings {#crash-fsync-split}
 
 Three constants decide what a crash can take, and each corresponds to one sync in the C++.

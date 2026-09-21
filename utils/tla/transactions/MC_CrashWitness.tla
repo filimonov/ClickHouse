@@ -43,7 +43,7 @@ CrashView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached, disk[p].named_cached,
                         disk[p].durable, disk[p].tmp_durable, disk[p].dir_durable, disk[p].named_durable,
-                        disk[p].payload_durable>>],
+                        disk[p].payload_durable, disk[p].payload_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,
        h.rolled_back, h.removers, h.creator, h.abandoned, h.down_cause, h.content, h.truncated, h.payload>>,
      [p \in Parts |-> <<part[p].pstate, part[p].mem, part[p].lock, part[p].deferrable,

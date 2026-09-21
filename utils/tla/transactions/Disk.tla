@@ -22,24 +22,28 @@ InfoRec(i) == [kind |-> "Info", info |-> i]
 \*     that lands before it preserves only the tmp_ name, which MergeTreeData::loadDataParts skips
 \*     (src/Storages/MergeTree/MergeTreeData.cpp:2964). Both bits are dentries in the PARENT directory, so a
 \*     parent sync promotes them and a sync of the part's own directory does not.
-\*   payload_durable: the data files. finalizePartAsync takes fsync_after_insert
+\*   payload_durable/payload_cached: the data files. finalizePartAsync takes fsync_after_insert
 \*     (src/Storages/MergeTree/MergeTreeDataWriter.cpp:1176-1179), which is a setting of its own and defaults to
 \*     false (MergeTreeSettings.cpp:642). A part whose data files did not survive is broken at load
-\*     (MergeTreeData.cpp:2618-2676), which is why the loader reads this bit.
+\*     (MergeTreeData.cpp:2618-2676), which is why the loader reads this bit. The payload has a cached layer for
+\*     the same reason the other three do: after a crash there is nothing left in the page cache to write back,
+\*     so a later sync must not be able to bring the rows back.
 PartDiskType == [durable : DiskRec, cached : DiskRec,
                  tmp_durable : BOOLEAN, tmp_cached : BOOLEAN,
                  dir_durable : BOOLEAN, dir_cached : BOOLEAN,
                  named_durable : BOOLEAN, named_cached : BOOLEAN,
-                 payload_durable : BOOLEAN]
+                 payload_durable : BOOLEAN, payload_cached : BOOLEAN]
 MutDiskType == [file_durable : BOOLEAN, file_cached : BOOLEAN,
                 tid : AllTids, csn_durable : AllCSNs, csn_cached : AllCSNs]
 
 AbsentPartDisk == [durable |-> NoRecord, cached |-> NoRecord, tmp_durable |-> FALSE, tmp_cached |-> FALSE,
                    dir_durable |-> FALSE, dir_cached |-> FALSE,
-                   named_durable |-> FALSE, named_cached |-> FALSE, payload_durable |-> FALSE]
+                   named_durable |-> FALSE, named_cached |-> FALSE,
+                   payload_durable |-> FALSE, payload_cached |-> FALSE]
 LegacyPartDisk == [durable |-> Legacy, cached |-> Legacy, tmp_durable |-> FALSE, tmp_cached |-> FALSE,
                    dir_durable |-> TRUE, dir_cached |-> TRUE,
-                   named_durable |-> TRUE, named_cached |-> TRUE, payload_durable |-> TRUE]
+                   named_durable |-> TRUE, named_cached |-> TRUE,
+                   payload_durable |-> TRUE, payload_cached |-> TRUE]
 AbsentMutDisk == [file_durable |-> FALSE, file_cached |-> FALSE, tid |-> EmptyTID,
                   csn_durable |-> UnknownCSN, csn_cached |-> UnknownCSN]
 
@@ -57,6 +61,7 @@ DiskTypeOK ==
                                   /\ disk[p].dir_durable = disk[p].dir_cached
                                   /\ disk[p].named_durable = disk[p].named_cached
                                   /\ disk[p].payload_durable = disk[p].dir_cached
+                                  /\ disk[p].payload_cached = disk[p].payload_durable
 
 DiskRead(p) == disk[p].cached
 DiskDurable(p) == disk[p].durable
@@ -80,6 +85,7 @@ DiskWithInfo(p, info) ==
 DiskWithDir(p) ==
   [disk EXCEPT ![p].dir_cached = TRUE,
                ![p].dir_durable = ~Layered,
+               ![p].payload_cached = TRUE,
                ![p].payload_durable = ~Layered \/ FSYNC_AFTER_INSERT]
 \* renameTempPartAndReplace: the part directory takes its final name. renameTo syncs the moved directory and
 \* then its parents (DataPartStorageOnDiskBase.cpp:786-800), so under the settings this promotes both the
@@ -99,7 +105,9 @@ DiskWithoutTmp(p) == [disk EXCEPT ![p].tmp_cached = FALSE, ![p].tmp_durable = FA
 \* cannot unpublish the tmp file either. Writing tmp_durable = tmp_cached here was the second half of M43: after
 \* a store has renamed the tmp file away, tmp_cached is FALSE while tmp_durable is TRUE, so the assignment
 \* LOWERED it and a data-file fsync silently discarded the one thing a crash could still have recovered.
-DiskWithFilesSynced(p) == [disk EXCEPT ![p].payload_durable = TRUE]
+\* The operator assigns payload_durable from the cached layer rather than setting it true, which is what stops a
+\* sync after a crash from bringing back rows the crash took: model defect M48.
+DiskWithFilesSynced(p) == [disk EXCEPT ![p].payload_durable = disk[p].payload_cached]
 \* A sync of the PART's directory: the dentries inside it, which is the txn_version.txt rename. It moves the
 \* pair <<durable, tmp_durable>> to its cached value in one step, which is why lowering tmp_durable is right
 \* here and wrong above: the rename becoming durable is what removes the tmp file from the post-crash state.
@@ -119,7 +127,8 @@ DiskAfterCrash ==
                   ELSE [disk[p] EXCEPT !.cached = disk[p].durable,
                                        !.tmp_cached = disk[p].tmp_durable,
                                        !.dir_cached = disk[p].dir_durable,
-                                       !.named_cached = disk[p].named_durable]]
+                                       !.named_cached = disk[p].named_durable,
+                                       !.payload_cached = disk[p].payload_durable]]
 MutDiskAfterCrash == [m \in Mutations |-> [mdisk[m] EXCEPT !.file_cached = mdisk[m].file_durable,
                                                            !.csn_cached = mdisk[m].csn_durable]]
 ====

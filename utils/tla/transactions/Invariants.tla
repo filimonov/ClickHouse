@@ -71,7 +71,12 @@ DurablePState(p) ==
   \* (MergeTreeData.cpp:2618-2676) and never enters the working set, which is what RestartLoadPart's broken
   \* arm does. The clause is dead wherever FSYNC_AFTER_INSERT is on and live in the unsynced world.
   IF ~disk[p].named_durable \/ ~disk[p].payload_durable THEN "Absent"
-  ELSE LET r == DurableRecord(p) IN
+  \* The record the loader would read, resolved the way the loader resolves it, and not the stored record as it
+  \* stands. RestartLoadPart reads the temporary metadata file when there is no txn_version.txt and then runs
+  \* updateCSNIfNeeded over what it read, so a preamble that skipped either step answered differently from the
+  \* loader for the same part: a tmp-only directory came out durably Active, and so did a creation whose CSN the
+  \* log resolves to RolledBackCSN. Model defect M49.
+  ELSE LET r == UpdateCsnIfNeeded(p, DurableLoadedRecord(p)).info IN
        IF r.ccsn = RolledBackCSN THEN "Absent"
        ELSE IF r.rcsn /= UnknownCSN \/ r.rtid = NonTransactionalTID THEN "Outdated"
        ELSE "Active"
@@ -119,6 +124,10 @@ DurabilityMonotoneStep ==
   (\E p \in Parts : Fsync(p) \/ FsyncDir(p) \/ FsyncParent(p)) =>
     \A q \in Parts :
       /\ RecoveredRecord(q)' \in {RecoveredRecord(q), CachedRecord(q)'}
+      \* The payload takes the same treatment as the record, and for the same reason: a sync publishes what the
+      \* page cache holds, so the durable bit may rise to the cached one and to nothing else. Setting it
+      \* unconditionally let a sync after a crash bring back rows the crash had taken, which is model defect M48.
+      /\ disk'[q].payload_durable \in {disk[q].payload_durable, disk'[q].payload_cached}
       /\ disk[q].payload_durable => disk'[q].payload_durable
       /\ disk[q].dir_durable => disk'[q].dir_durable
       /\ disk[q].named_durable => disk'[q].named_durable
@@ -169,13 +178,31 @@ LegacyLoads == [][LegacyLoadsStep]_vars
 \* RestartLoadPart, validateInfo inside StoreRead, and NtBatchPreflight; the model states it over the one the
 \* tmp-only shape reaches. It is a tautology on the model's type, and WITNESSES.md says what its witness really
 \* shows instead.
+\* The witness is the predicate before the exemption was added, which asserted on DummyTID itself.
 IsNonTransactionalDomain(t) ==
-  \/ t = DummyTID
+  \/ (t = DummyTID /\ ~Witness("Assert_IsNonTransactionalDomain"))
   \/ t = NonTransactionalTID
   \/ t \in Tids \cup {EmptyTID}
 Assert_IsNonTransactionalDomainStep == \A p \in Parts : RestartLoadPart(p) =>
   (IsNonTransactionalDomain(LoadedRecord(p).ctid) /\ IsNonTransactionalDomain(LoadedRecord(p).rtid))
 Assert_IsNonTransactionalDomain == [][Assert_IsNonTransactionalDomainStep]_vars
+
+\* The harm LogEntryNeeded's obligation stands in for, stated end to end so that the finding does not rest on
+\* argument alone: the loader stamps RolledBackCSN over a creation whose transaction committed, because the log
+\* entry carrying its CSN was pruned while the only durable record still lacked it. It needs a second restart,
+\* so it is checked in its own module and nowhere else.
+\* The record has to NAME the committed creator and carry no CSN, and the resolution has to be what turns that
+\* into RolledBackCSN. Without those two conjuncts the property also fires on finding F10's tmp-only shape,
+\* whose RolledBackCSN comes from the DummyTID record rather than from the pruned entry, and the trace would
+\* pin a bystander instead of this finding.
+F11HarmStep == \A p \in Parts : RestartLoadPart(p) =>
+  LET raw == LoadedRecord(p) IN
+  ~( h.creator[p] \in h.committed
+     /\ h.creator[p] \in h.truncated
+     /\ raw.ctid = h.creator[p]
+     /\ raw.ccsn = UnknownCSN
+     /\ UpdateCsnIfNeeded(p, raw).info.ccsn = RolledBackCSN )
+F11Harm == [][F11HarmStep]_vars
 
 \* ---- conflicts (spec #invariants-conflicts)
 SingleRemover == \A p \in Parts : Cardinality(h.removers[p]) <= 1

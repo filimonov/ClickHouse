@@ -11,7 +11,7 @@ CONSTANTS
   MAX_STORE_RETRIES, NOEXCEPT_RETRY_BUDGET, NOEXCEPT_STORE_FAULT_POLICY,
   DISK_MODE, FSYNC_PART_DIRECTORY, FSYNC_AFTER_INSERT, FSYNC_OUTER_RENAME, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME,
   SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS, OBSOLETE_IS_ROLLED_BACK,
-  REMOVAL_REFUSES_UNCOMMITTED_CREATION
+  REMOVAL_REFUSES_UNCOMMITTED_CREATION, ENTRY_KEPT_UNTIL_CSN_DURABLE
 
 ASSUME Covers \in [Parts -> SUBSET Parts]
 ASSUME NOEXCEPT_STORE_FAULT_POLICY \in {"Terminate", "Retry"}
@@ -87,6 +87,15 @@ ASSUME OBSOLETE_IS_ROLLED_BACK \in BOOLEAN
 \* setAndStoreRemovalTID (:179-184). It covers both shapes of the finding, a creation still in flight and a
 \* creation already rolled back.
 ASSUME REMOVAL_REFUSES_UNCOMMITTED_CREATION \in BOOLEAN
+\* FALSE is the baseline: TransactionLog::removeOldEntries prunes every entry below the new tail
+\* (src/Interpreters/TransactionLog.cpp:333-347), and the comment at :286-289 calls that almost safe, qualifying
+\* it with the CSNs a startup writes into data parts. Those writes are not fsynced, so an entry can be pruned
+\* while the only durable copy of its CSN is still the record without one. TRUE is the fix proposed by finding
+\* F11 and by the code's own TODO at :305-307, "keep outdated entries for a while": the removal loop skips an
+\* entry whose transaction some part's in-memory record still names with a CSN the disk does not carry. It is
+\* stated on the removal rather than on the tail because holding the tail back would need the start CSN of a
+\* transaction the model does not recover across a restart, which is model defect M47.
+ASSUME ENTRY_KEPT_UNTIL_CSN_DURABLE \in BOOLEAN
 
 \* Covering relation: Covers[p] = direct children of p. Expand gives the base parts under a set.
 RECURSIVE ExpandSeen(_, _)
