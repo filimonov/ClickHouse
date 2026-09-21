@@ -303,9 +303,15 @@ NtRefusalJustified == [][NtRefusalJustifiedStep]_vars
 NoNtStoreError == sys.nt_batch.active /\ sys.nt_batch.phase = "Store" =>
   \A p \in Parts : ~FrameError(p, sys.nt_batch.owner)
 
-RollbackRestoresStep == \A k \in Sessions, t \in Tids : RollbackFinalize(k, t) =>
+\* One conjunct per actor that can reach RollbackFinalizeA, the way FlipAfterStoresStep has one per actor that
+\* can reach CommitFlipEffect. The updating thread drives a rollback of its own out of the unknown-state pass,
+\* and quantifying over Sessions alone would leave that one unobserved.
+RollbackRestoresOn(t) ==
   \A p \in h.removing[t] \ h.creating[t] :
     part'[p].pstate = "Active" \/ part[p].lock \notin {EmptyTID, t} \/ (h.removers[p] \ {t}) /= {}
+RollbackRestoresStep ==
+  /\ \A k \in Sessions, t \in Tids : RollbackFinalize(k, t) => RollbackRestoresOn(t)
+  /\ \A t \in Tids : UpdRollbackFinalize(t) => RollbackRestoresOn(t)
 RollbackRestores == [][RollbackRestoresStep]_vars
 \* afterCommit stores every CSN before the state flip, and it does so on whatever thread is committing. The
 \* property therefore has one conjunct per actor that can reach CommitFlipEffect: a session through CommitFlip

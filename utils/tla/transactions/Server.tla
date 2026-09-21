@@ -8,17 +8,31 @@ vars == <<zk, disk, mdisk, h, part, tlog, txn, sys, client, stmt, mut, task>>
 
 \* ============================================================ records
 TxnStates == {"Absent", "Running", "Committing", "Committed", "RolledBack"}
-Holders == Actors
+\* The updating thread and the restart loader are frame owners but not holders of anything and not sessions;
+\* Parts.tla already declares both in FrameOwners. Upd is an actor here for two reasons the C++ forces:
+\* finalizeCommittedTransaction runs afterCommit on the updating thread, so the per-part CSN stores of a
+\* transaction resolved from unknown_state_list are that thread's frames, and rollbackTransaction called from
+\* the same place makes the thread the rollback driver.
+\* They are defined here rather than beside Sess(k) and Tsk(i) because Holders below already names Upd.
+Upd == <<"Updater", 0>>
+Rst == <<"Restart", 0>>
+\* unknown_state_list holds a MergeTreeTransactionPtr (src/Interpreters/TransactionLog.cpp:468), a real
+\* shared_ptr, so a transaction in the list has a holder even after its session or its merge task is gone.
+Holders == Actors \cup {Upd}
+\* The driver of the rollback machine is not a holder of anything: it is the caller that won the
+\* compare_exchange. The two sets coincide today and are named apart because they are different things.
+RbDrivers == Actors \cup {Upd}
 TxnPcs == {"Idle", "CommitCreateCSN", "CommitStoreCreation", "CommitStoreRemoval", "CommitStoreMutation",
-           "CommitFlip", "CommitFinalize", "RollbackCopyLists", "RollbackKill", "RollbackMarkCreated",
-           "RollbackOutdateCreated", "RollbackRestore", "RollbackUnlock", "RollbackFinalize"}
+           "CommitFlip", "CommitFinalize", "CommitUnknown", "RollbackCopyLists", "RollbackKill",
+           "RollbackMarkCreated", "RollbackOutdateCreated", "RollbackRestore", "RollbackUnlock",
+           "RollbackFinalize"}
 \* holders: the pointer holders, Session(k) for the client's MergeTreeTransactionHolder and Task(i) for a
 \* background task. rb_driver: the caller that won the compare_exchange in MergeTreeTransaction::rollback and
 \* therefore runs the rollback body. They are different things: a KILL wins the exchange, it destroys no
 \* shared_ptr, so it must name a driver and leave the holders alone.
 TxnRecord == [state : TxnStates, csn : AllCSNs, snapshot : AllCSNs, protected_snapshot : AllCSNs,
               creating : Seq(Parts), removing : Seq(Parts), mutations : SUBSET Mutations,
-              holders : SUBSET Holders, rb_driver : Holders \cup {NoActor},
+              holders : SUBSET Holders, rb_driver : RbDrivers \cup {NoActor},
               mutex : Holders \cup {NoActor}, csn_notified : BOOLEAN,
               pc : TxnPcs, work : Seq(Parts)]
 AbsentTxn == [state |-> "Absent", csn |-> UnknownCSN, snapshot |-> UnknownCSN, protected_snapshot |-> UnknownCSN,
@@ -80,12 +94,23 @@ TLogRecord == [tid_start : [Tids -> AllCSNs], tid_to_csn : [Tids -> AllCSNs], la
                local_tid_counter : 0..TID_MAX, last_loaded_entry : LogCSNs, running_list : SUBSET Tids,
                snapshots_in_use : [Tids -> AllCSNs], retention_in_use : [Tids -> AllCSNs],
                tail_ptr : LogCSNs, updated_tail_ptr : BOOLEAN,
-               unknown_state_list : SUBSET Tids, unknown_state_list_loaded : SUBSET Tids]
+               \*  unknown_state_list, unknown_state_list_loaded: the two lists of
+               \*    tryFinalizeUnknownStateTransactions (src/Interpreters/TransactionLog.cpp:373-375).
+               \*  unknown_ready: the local `list` the swap leaves on the stack (:358, :374-375), which is what
+               \*    the pass actually walks. It is a field rather than a local because the pass is several
+               \*    model steps: each transaction it finalizes runs the whole commit or rollback machine
+               \*    before the next one starts.
+               \*  finalizing: the transaction the pass is inside. The C++ has no such variable; the loop body
+               \*    is one iteration, and the model needs a name for "the updater is in the middle of this
+               \*    transaction's afterCommit" because those stores are steps.
+               unknown_state_list : SUBSET Tids, unknown_state_list_loaded : SUBSET Tids,
+               unknown_ready : SUBSET Tids, finalizing : Tids \cup {EmptyTID}]
 TLogInit == [tid_start |-> [t \in Tids |-> UnknownCSN], tid_to_csn |-> [t \in Tids |-> UnknownCSN],
              latest_snapshot |-> FirstCSN, local_tid_counter |-> 0, last_loaded_entry |-> FirstCSN, running_list |-> {},
              snapshots_in_use |-> [t \in Tids |-> UnknownCSN], retention_in_use |-> [t \in Tids |-> UnknownCSN],
              tail_ptr |-> MaxReservedCSN, updated_tail_ptr |-> FALSE,
-             unknown_state_list |-> {}, unknown_state_list_loaded |-> {}]
+             unknown_state_list |-> {}, unknown_state_list_loaded |-> {},
+             unknown_ready |-> {}, finalizing |-> EmptyTID]
 
 SysRecord == [server : {"Down", "LogUp", "TableLoading", "TableUp"}, completely_started : BOOLEAN,
               async_loading_jobs : 0..1, loaded_parts : SUBSET Parts, loaded_mutations : SUBSET Mutations,
@@ -279,9 +304,12 @@ CommitFlipEffect(t) ==
 \* MergeTreeTransactionHolder outlives the commit and is released at CommitAck, and Tsk(i) for a merge task,
 \* whose holder is destroyed with the task. Removing NoActor from a set of actors is a no-op, and so is
 \* removing it from a set of pins.
+\* The `finalizing` clause is how the unknown-state pass learns that the transaction it was finalizing is done;
+\* it is a no-op for a session's or a task's own commit.
 CommitFinalizeEffect(a, t) ==
   /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN,
-                          !.retention_in_use[t] = UnknownCSN]
+                          !.retention_in_use[t] = UnknownCSN,
+                          !.finalizing = IF @ = t THEN EmptyTID ELSE @]
   /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].creating = <<>>, ![t].removing = <<>>, ![t].mutations = {},
                          ![t].holders = @ \ {a}]
   /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {<<"Txn", t>>, a}]]
@@ -706,54 +734,71 @@ KillReturn(k) ==
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, sys, stmt, mut, task>>
 
 \* the rollback machine: driven by the one caller that won the compare_exchange in MergeTreeTransaction::rollback
-Drives(k, t) == txn[t].rb_driver = Sess(k)
-RollbackCopyLists(k, t) ==
-  /\ Drives(k, t) /\ txn[t].pc = "RollbackCopyLists" /\ txn[t].mutex = NoActor
+\* Each step takes its driver as an argument, because the updating thread drives one too: the rollback branch of
+\* tryFinalizeUnknownStateTransactions (src/Interpreters/TransactionLog.cpp:389) calls rollbackTransaction on
+\* that thread. The session-shaped names are wrappers, and the Upd* names are the same bodies with Upd.
+DrivesA(a, t) == txn[t].rb_driver = a
+Drives(k, t) == DrivesA(Sess(k), t)
+RollbackCopyListsA(a, t) ==
+  /\ DrivesA(a, t) /\ txn[t].pc = "RollbackCopyLists" /\ txn[t].mutex = NoActor
   /\ part' = [p \in Parts |-> IF p \in Range(txn[t].creating) \cup Range(txn[t].removing)
                               THEN [part[p] EXCEPT !.pins = @ \cup {<<"Rollback", t>>}] ELSE part[p]]
   /\ txn' = [txn EXCEPT ![t].pc = NextRollbackPc(t, "RollbackCopyLists"), ![t].work = NextRollbackWork(t, "RollbackCopyLists")]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
+RollbackCopyLists(k, t) == RollbackCopyListsA(Sess(k), t)
+UpdRollbackCopyLists(t) == RollbackCopyListsA(Upd, t)
 \* per-part phases: start a frame or a state change, advance when done
-RollbackMarkCreated(k, t, p) ==
-  /\ Drives(k, t) /\ txn[t].pc = "RollbackMarkCreated" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
-  /\ \/ /\ ~HasFrame(p, Sess(k)) /\ part[p].mem.ccsn /= RolledBackCSN
-        /\ part' = StartFrame(p, Sess(k), "CreationCSN", RolledBackCSN, TRUE)
+RollbackMarkCreatedA(a, t, p) ==
+  /\ DrivesA(a, t) /\ txn[t].pc = "RollbackMarkCreated" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
+  /\ \/ /\ ~HasFrame(p, a) /\ part[p].mem.ccsn /= RolledBackCSN
+        /\ part' = StartFrame(p, a, "CreationCSN", RolledBackCSN, TRUE)
         /\ UNCHANGED txn
-     \/ /\ FrameDone(p, Sess(k), "CreationCSN", RolledBackCSN)
+     \/ /\ FrameDone(p, a, "CreationCSN", RolledBackCSN)
         /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN NextRollbackWork(t, "RollbackMarkCreated") ELSE Tail(@),
                                ![t].pc = IF Tail(txn[t].work) = <<>> THEN NextRollbackPc(t, "RollbackMarkCreated") ELSE @]
         /\ UNCHANGED part
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
-RollbackOutdateCreated(k, t, p) ==
-  /\ Drives(k, t) /\ txn[t].pc = "RollbackOutdateCreated" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
+RollbackMarkCreated(k, t, p) == RollbackMarkCreatedA(Sess(k), t, p)
+UpdRollbackMarkCreated(t, p) == RollbackMarkCreatedA(Upd, t, p)
+RollbackOutdateCreatedA(a, t, p) ==
+  /\ DrivesA(a, t) /\ txn[t].pc = "RollbackOutdateCreated" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
   /\ sys.parts_lock = NoActor
   /\ part' = [part EXCEPT ![p].pstate = IF @ \in {"Active", "PreActive"} /\ ~Witness("ErrorIsAbsent") THEN "Outdated" ELSE @]
   /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN NextRollbackWork(t, "RollbackOutdateCreated") ELSE Tail(@),
                          ![t].pc = IF Tail(txn[t].work) = <<>> THEN NextRollbackPc(t, "RollbackOutdateCreated") ELSE @]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
-RollbackRestore(k, t, p) ==
-  /\ Drives(k, t) /\ txn[t].pc = "RollbackRestore" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
+RollbackOutdateCreated(k, t, p) == RollbackOutdateCreatedA(Sess(k), t, p)
+UpdRollbackOutdateCreated(t, p) == RollbackOutdateCreatedA(Upd, t, p)
+RollbackRestoreA(a, t, p) ==
+  /\ DrivesA(a, t) /\ txn[t].pc = "RollbackRestore" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
   /\ sys.parts_lock = NoActor
   /\ part' = [part EXCEPT ![p].pstate = IF p \notin Range(txn[t].creating) /\ @ = "Outdated" /\ ~Witness("RollbackRestores")
                                         THEN "Active" ELSE @]
   /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN NextRollbackWork(t, "RollbackRestore") ELSE Tail(@),
                          ![t].pc = IF Tail(txn[t].work) = <<>> THEN NextRollbackPc(t, "RollbackRestore") ELSE @]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
+RollbackRestore(k, t, p) == RollbackRestoreA(Sess(k), t, p)
+UpdRollbackRestore(t, p) == RollbackRestoreA(Upd, t, p)
 \* setAndStoreRemovalTID(EmptyTID) then unlockRemovalTID (the witness unlocks first)
-RollbackUnlock(k, t, p) ==
-  /\ Drives(k, t) /\ txn[t].pc = "RollbackUnlock" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
-  /\ \/ /\ ~HasFrame(p, Sess(k)) /\ part[p].mem.rtid /= EmptyTID
-        /\ part' = [StartFrame(p, Sess(k), "RemovalTID", EmptyTID, TRUE) EXCEPT ![p].lock = IF Witness("LockConsistent") THEN EmptyTID ELSE @]
+RollbackUnlockA(a, t, p) ==
+  /\ DrivesA(a, t) /\ txn[t].pc = "RollbackUnlock" /\ txn[t].work /= <<>> /\ Head(txn[t].work) = p
+  /\ \/ /\ ~HasFrame(p, a) /\ part[p].mem.rtid /= EmptyTID
+        /\ part' = [StartFrame(p, a, "RemovalTID", EmptyTID, TRUE) EXCEPT ![p].lock = IF Witness("LockConsistent") THEN EmptyTID ELSE @]
         /\ UNCHANGED txn
-     \/ /\ FrameDone(p, Sess(k), "RemovalTID", EmptyTID)
+     \/ /\ FrameDone(p, a, "RemovalTID", EmptyTID)
         /\ part' = [part EXCEPT ![p].lock = EmptyTID]
         /\ txn' = [txn EXCEPT ![t].work = IF Tail(@) = <<>> THEN <<>> ELSE Tail(@),
                                ![t].pc = IF Tail(txn[t].work) = <<>> THEN "RollbackFinalize" ELSE @]
   /\ UNCHANGED <<zk, disk, mdisk, h, tlog, sys, client, stmt, mut, task>>
-RollbackFinalize(k, t) ==
-  /\ Drives(k, t) /\ txn[t].pc = "RollbackFinalize"
+RollbackUnlock(k, t, p) == RollbackUnlockA(Sess(k), t, p)
+UpdRollbackUnlock(t, p) == RollbackUnlockA(Upd, t, p)
+\* The `finalizing` clause is the counterpart of CommitFinalizeEffect's: the unknown-state pass learns here that
+\* the transaction it rolled back is done. It is a no-op for every other driver.
+RollbackFinalizeA(a, t) ==
+  /\ DrivesA(a, t) /\ txn[t].pc = "RollbackFinalize"
   /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN,
-                          !.retention_in_use[t] = UnknownCSN]
+                          !.retention_in_use[t] = UnknownCSN,
+                          !.finalizing = IF @ = t THEN EmptyTID ELSE @]
   \* holders is deliberately left alone. MergeTreeTransaction::rollback destroys no shared_ptr: the holder goes
   \* away when its owner's MergeTreeTransactionHolder is destroyed, which is RollbackReturn and the detaching
   \* branch of RollbackStart for a session, and MergeCommitFinalize or MergeUnwind for a background task. With
@@ -764,6 +809,8 @@ RollbackFinalize(k, t) ==
   /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {<<"Txn", t>>, <<"Rollback", t>>}]]
   /\ h' = [h EXCEPT !.rolled_back[t] = TRUE]
   /\ UNCHANGED <<zk, disk, mdisk, sys, client, stmt, mut, task>>
+RollbackFinalize(k, t) == RollbackFinalizeA(Sess(k), t)
+UpdRollbackFinalize(t) == RollbackFinalizeA(Upd, t)
 \* a noexcept frame (afterCommit / rollback) ended in Error: the process terminates (Terminate policy)
 NoexceptFrameDown ==
   /\ \E p \in Parts, o \in FrameOwners : FrameError(p, o) /\ FrameOf(p, o).noexcept_owner
