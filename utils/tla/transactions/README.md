@@ -77,7 +77,15 @@ that reaches finding F2; the first is expected red on `NoPrematureDelete` and th
 GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only), `Keeper` (`Merge` without the
 cleanup group, plus the updater's unknown-state pass and the two Keeper faults, at the matrix bounds),
 `KeeperUnknownWait` (the same with `WAIT_MODE = "WAIT_UNKNOWN"`), `KeeperWitness` (the same at two sessions, for `witness.sh` only) and `KeeperUnknownWaitWitness` (two sessions
-under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only).
+under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only), and the pair `Crash` and `CrashF10`.
+
+`Crash` is `Merge` plus the restart group, the two fsync actions and the two ways the server goes down, on a
+`Layered` disk at `RESTARTS_MAX = 1`, at the matrix bounds. It runs with `FSYNC_PART_DIRECTORY = TRUE` and is
+green with the whole roster. `CrashF10` is the same configuration at `FALSE` and is expected red: with nothing
+on the write path fsynced, a crash can leave a tmp-only metadata directory that the loader reads as a
+rolled-back creation, so a part the log records as committed is deleted. `FINDINGS.md`, finding `F10`, and
+`STATE_SPACE.md` carry why the scenario splits at that constant rather than carrying one roster at both
+values.
 
 Five more modules belong to the `SetSnapshot` family and carry the two reserved snapshots
 `SET TRANSACTION SNAPSHOT` accepts beside an ordinary CSN, `NonTransactionalCSN = 1` and
@@ -465,6 +473,12 @@ either is negligible.
 | `KeeperUnknownWait` | 2026-09-21 | the pass-ownership commit | 11,537,098 | 1 min 55 s | green **at the matrix bounds**, where 71 million had not finished: a parked client was running the commit machine beside the updating thread. That closes debt `B8` |
 | `Keeper`, `KeeperUnknownWait` and `KeeperUnknownWaitWitness` witnesses, 6 rows | 2026-09-21 | the pass-ownership commit | 4,204,536 for the largest | 65 s in total | all red; the sixth, `RollbackRestoresKillRace`, runs only on the witness-bounds module |
 | `Keeper` witnesses, 3 rows | 2026-09-21 | the lifecycle commit | 4,852,299 for the largest | 42 s in total | all red, including the new `RollbackRestoresUpd` |
+| `Base` | 2026-09-21 | the layered-disk commit | 26,839,086 | 4 min 03 s | green, unchanged |
+| `Merge` | 2026-09-21 | the layered-disk commit | 6,124,691 | 59 s | green, unchanged to the state |
+| `NonTxnInsert` | 2026-09-21 | the layered-disk commit | 16,969,409 | 2 min 48 s | green, unchanged; the figure is 7.5% above the one `STATE_SPACE.md` recorded, and the same configuration rebuilt from the previous commit measures 16,969,487, so the move predates this work |
+| `Crash` | 2026-09-21 | the layered-disk commit | 47,838,278 | 13 min 27 s | green at the matrix bounds with `FSYNC_PART_DIRECTORY = TRUE`; 3,198,920 in 49 s at `TID_MAX = 2`, which is the lever that is costed and not taken |
+| `CrashF10` | 2026-09-21 | the layered-disk commit | 42,035, a first-violation count | 2 s | **red on `NoPrematureDelete`**, as it is expected to be: finding `F10` |
+| witness `AckedWriteIsDurable` in `Crash` | 2026-09-21 | the layered-disk commit | 2,820 | 1 s | red, which closes the last of the deferred `Base` rows |
 
 Every `NonTxn*` row of these tables, the witness sweeps included, was measured with
 `OBSOLETE_IS_ROLLED_BACK = TRUE`, and the two drop configurations without `ActiveSetShape`. Section 2 says what

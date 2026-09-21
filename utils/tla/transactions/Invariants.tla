@@ -76,7 +76,11 @@ DurablePState(p) ==
        IF r.ccsn = RolledBackCSN THEN "Absent"
        ELSE IF r.rcsn /= UnknownCSN \/ r.rtid = NonTransactionalTID THEN "Outdated"
        ELSE "Active"
-PState(p) == IF p \in sys.loaded_parts THEN part[p].pstate ELSE DurablePState(p)
+\* The in-memory record is authoritative wherever the running server holds one, and not only for a part the
+\* loader reached: a part created after the restart is not in loaded_parts and its durable layer says nothing
+\* about the state it is in.
+InMemory(p) == p \in sys.loaded_parts \/ part[p].pstate /= "Absent"
+PState(p) == IF InMemory(p) THEN part[p].pstate ELSE DurablePState(p)
 
 \* ---- durability (Durable disk mode in Base)
 \* The antecedent is the spec row's h_effects, which includes the mutations a transaction registered; the
@@ -87,15 +91,18 @@ PState(p) == IF p \in sys.loaded_parts THEN part[p].pstate ELSE DurablePState(p)
 \* therefore red on the baseline. Recorded as spec defect S5 in FINDINGS.md, section 3.
 \* These two read PState and every other property reads part[p].pstate, because every other property is about
 \* what an actor of the running server does, and an actor cannot act while the server is down.
-\* The in-flight disjunct the S5 relaxation adds reads part[p].lock, which is meaningless for an unloaded part,
-\* so it is guarded on the part having been loaded.
+\* The in-flight disjunct the S5 relaxation adds reads part[p].lock, which is meaningless for a part the
+\* server does not hold in memory, so it is guarded on InMemory.
 AckedWriteIsDurable == \A t \in Tids :
   h.outcome[t] = "Acked" /\ ((h.creating[t] \cup h.removing[t]) /= {} \/ h.mutations[t] /= {}) =>
   /\ t \in h.committed
   /\ \A p \in h.creating[t] : \/ PState(p) = "Active"
                              \/ (PState(p) = "Outdated"                                                          \* S5: removal in flight or committed
-                                 /\ ((p \in sys.loaded_parts /\ part[p].lock /= EmptyTID) \/ h.removers[p] /= {}))
-                             \/ (PState(p) \in {"Deleting", "Deleted"} /\ h.removers[p] /= {})
+                                 /\ ((InMemory(p) /\ part[p].lock /= EmptyTID) \/ h.removers[p] /= {}))
+                             \* The durable layer has no Deleted: a part the cleanup thread removed before a
+                             \* crash reads back as Absent, so the arm that admits a removed part admits that
+                             \* too. What separates it from a part the crash lost is the committed remover.
+                             \/ (PState(p) \in {"Deleting", "Deleted", "Absent"} /\ h.removers[p] /= {})
   /\ \A p \in h.removing[t] : PState(p) /= "Active"
 ErrorIsAbsent == \A t \in Tids : h.outcome[t] = "Error" =>
   t \notin h.committed /\ (h.rolled_back[t] => \A p \in h.creating[t] : PState(p) /= "Active")
@@ -225,8 +232,13 @@ UnknownResolvesByLog == [][UnknownResolvesByLogStep]_vars
 \* A merge transaction, which never reads, has h.content = {} and is therefore vacuously covered.
 VisibleFrags(t) == Frags({ r \in Parts : part[r].pstate \in {"Active", "Outdated"}
                                         /\ OracleVisible(r, txn[t].snapshot, t) })
+\* The post-state `Absent` clause voids the promise on the one step that destroys the transaction rather than
+\* shrinking its view: a transaction a crash took with it has no view left to preserve, and h.content is a
+\* ghost the crash does not clear. Nothing but CrashEffect puts a live transaction into `Absent`, so the clause
+\* costs no other step.
 NoLostVisibleDataStep ==
-  \A t \in Tids : (txn[t].state = "Running" /\ txn[t].snapshot /= EverythingVisibleCSN) =>
+  \A t \in Tids : (txn[t].state = "Running" /\ txn[t].snapshot /= EverythingVisibleCSN
+                   /\ txn'[t].state /= "Absent") =>
     (h.content[t]' \ Frags(h.removing[t])') \subseteq VisibleFrags(t)'
 NoLostVisibleData == [][NoLostVisibleDataStep]_vars
 

@@ -89,6 +89,11 @@ MergeSpec == Init /\ [][MergeNext]_vars
 KeeperNext == BaseNext \/ TaskNext \/ UpdaterGCNext \/ UpdaterUnknownNext \/ KeeperFaultNext
 KeeperSpec == Init /\ [][KeeperNext]_vars
 
+SyncNext == \E p \in Parts : Fsync(p) \/ FsyncDir(p)
+\* the Crash scenario (spec matrix): Base + Merge* + Cleanup* + Updater+GC + Restart*, Layered disk
+CrashNext == BaseNext \/ TaskNext \/ CleanupNext \/ UpdaterGCNext \/ RestartNext \/ FaultNext \/ SyncNext
+CrashSpec == Init /\ [][CrashNext]_vars
+
 \* the NonTxn scenario (spec matrix): Base + NtInsert, NtBatch*, NtDropCover + Cleanup*. It is kept for the
 \* modules that produce findings F4 to F7, which need both halves in one behaviour; no exhaustive run of it
 \* finishes, which is why the scenario is checked as the two halves below.

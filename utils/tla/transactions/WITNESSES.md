@@ -166,7 +166,6 @@ not results.
 
 | Property | Witness the design document names | Action it needs | Deferred to |
 |---|---|---|---|
-| `AckedWriteIsDurable` | `CommitAck` moved before `CommitCreateCSN` and a `Fail` allowed after it | `Crash` | plan 3, task 2 (the layered disk, `Fsync`, `Crash`, `ProcessDown`, the restart loader), which adds `Crash` |
 | `ActiveSetShape`, reservation clause | two tasks reserving the same source | a second background task; the `Merge` scenario has one covering part and therefore one merge, so the clause is vacuous there | plan 4, task 4 (merges with mutations and the covering relation in range shape), which builds the `MergeMutation` scenario, where a merge and a mutation run side by side |
 | `NoAvoidableTermination` | `Fail` allowed inside `afterCommit`, taking the server down with `down_cause = Other` | `ProcessDown` | plan 5, task 2 (`ProcessDown` policies `Terminate` versus `Retry`, `NoAvoidableTermination`, `KillRetry`, `Implicit`), which adds `ProcessDown`; the design document's row names scenario `Base`, which does not enable `ProcessDown`, recorded as spec defect S2 in `FINDINGS.md` |
 | `NoFalseCorruption` | `CleanupValidate` treats the deferred record as absent and a `NonTransactionalCSN` held only in memory as a disagreement, which is the `Witness("NoFalseCorruption")` hook in `ValidateMetadataOK` | a part that is BOTH involved in a transaction and carries a deferred record, which `NonTxn` cannot build: see the `NonTxn` section below | plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which builds the `NonTxnCrash` scenario |
@@ -189,8 +188,8 @@ absent.
 
 `TypeOK` is a type invariant, not a behavioural property, and has no witness by design.
 
-Four rows of this table are in the rosters of the `NonTxn` halves as well, and are deferred there for the same
-reasons rather than silently absent: `AckedWriteIsDurable` to plan 3, task 2 (the layered disk, `Fsync`, `Crash`, `ProcessDown`, the restart loader),
+Three rows of this table are in the rosters of the `NonTxn` halves as well, and are deferred there for the same
+reasons rather than silently absent:
 `NtBatchDone` and `NoFalseCorruption` to plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), and
 `NoAvoidableTermination` to plan 5, task 2 (`ProcessDown` policies `Terminate` versus `Retry`, `NoAvoidableTermination`, `KillRetry`, `Implicit`),
 the third with an argument of its own in the `NonTxn` section below. `NoAvoidableTermination` is worth naming twice, because it is checked in both halves and in every other
@@ -267,9 +266,10 @@ because the witness removes a wait and the truncation actions then multiply the 
 40 million distinct states in five minutes on a scenario whose own state space is 12.8 million. Plan 1 found the
 same witness needs three transactions, so it is expected green here and it is in B1 with the other three.
 
-`TypeOK`, `RollbackNoLeak`, `AckedWriteIsDurable`, `ActiveSetShape`, `NoAvoidableTermination`,
+`TypeOK`, `RollbackNoLeak`, `ActiveSetShape`, `NoAvoidableTermination`,
 `KillerNotStranded` and `NoDoubleRead` have no witness in this scenario for the reasons the two tables above
-this section already give; none of those reasons changes here.
+this section already give; none of those reasons changes here. `AckedWriteIsDurable` is on this scenario's
+roster too and is witnessed in `Crash`.
 
 ### The witness bounds {#witnesses-setsnapshot-witness-bounds}
 
@@ -492,8 +492,8 @@ outdates them without being a second session, so the shapes those two witnesses 
 session and three transactions where two sessions and two transactions could not build them.
 
 Four properties have no witness in this scenario and are not debts of it. `NoFalseCorruption` is the deferred
-task-4 row; `AckedWriteIsDurable`, `NoAvoidableTermination` and `KillerNotStranded` are the deferred plan-3 and
-plan-5 rows; `Assert_getOldestSnapshot` and `Assert_TailPtrNotRegressing` both need the `SetSnapshot` action,
+task-4 row; `AckedWriteIsDurable` is witnessed in the `Crash` scenario, whose table is below, and
+`NoAvoidableTermination` and `KillerNotStranded` are the deferred plan-5 rows; `Assert_getOldestSnapshot` and `Assert_TailPtrNotRegressing` both need the `SetSnapshot` action,
 and `SNAPSHOT_TARGETS` is empty here, so the two `SetSnapshot`-sited witnesses are vacuous in `Merge` and are
 verified in the scenario that owns them. `Assert_getOldestSnapshot`'s third witness, `_size`, is not one of
 those: its hook is in `Begin`, so it is live wherever a transaction begins. It is red here in two states, and
@@ -737,10 +737,9 @@ updater passes were unordered and could swap twice with no `loadNewEntries` betw
 the server, and `FINDINGS.md` carries it as a model defect with the correction. After the correction the
 witness still fires, which is the check that the correction did not simply make the property true.
 
-`AckedWriteIsDurable` has no witness here. Its row in the deferred table above names scenario `Crash` and plan
-3, task 2 (the layered disk, `Fsync`, `Crash`, `ProcessDown`, the restart loader), because the change it
-describes moves `CommitAck` before `CommitCreateCSN` and allows a fault after it, and no module defines a
-`Witness("AckedWriteIsDurable")` hook. What this scenario does check is the property itself, on
+`AckedWriteIsDurable` has no witness here, because the change it needs moves `CommitAck` before
+`CommitCreateCSN` and the hook is exercised in the `Crash` scenario, whose table is below. What this scenario
+does check is the property itself, on
 `MC_Keeper.cfg`'s and `MC_KeeperUnknownWait.cfg`'s rosters, green in both: the unknown-state path never
 acknowledges a write before the commit point, because `CommitUnknownResolved` delivers `Acked` only for
 `state = "Committed"`, which `UpdCommitFlip` sets after every per-part store.
@@ -757,6 +756,25 @@ witnesses are the twenty-four rows of the `Merge` sweep above plus the three of 
 it, and a sweep of a 31-million-state scenario is its own piece of work; it is placed in the same task.
 `RollbackRestoresKillRace` is not one of them: it runs on `MC_KeeperUnknownWaitWitness` alone and fires in
 neither exhaustive configuration.
+
+## Witnesses of the `Crash` scenario {#witnesses-crash}
+
+`Crash` is `Merge` plus the restart group, the two fsync actions and the two ways the server goes down, on a
+`Layered` disk at `RESTARTS_MAX = 1` and `FSYNC_PART_DIRECTORY = TRUE`, at the matrix bounds. The constant's
+other value is `MC_CrashF10`, which is the finding of the same name and is not a witness module.
+
+| Property | Witness name | The model change | Scenario | Result | States | Time |
+|---|---|---|---|---|---|---|
+| `AckedWriteIsDurable` | `AckedWriteIsDurable` | `CommitAck` is enabled while the transaction is still `Committing` at `CommitCreateCSN`, so the acknowledgement is delivered before the commit request has returned | `Crash` | RED | 2,820 | 1 s |
+
+That row closes the debt the deferred table carried, and it is a one-change witness where the design document
+names two. The document's row is `CommitAck` moved before `CommitCreateCSN` **and** a `Fail` allowed after it;
+the first change alone is red, so the second is not written, and a one-change witness has no minimality halves.
+`Assert_validateInfo_removal` went the same way when `Base` gained its third transaction.
+
+The rest of the scenario's roster is `Merge`'s, so its witnesses are the `Merge` sweep's rows, and a sweep of a
+47-million-state scenario is its own piece of work. It is placed in plan 3, task 5 (budget, sweep and debts)
+together with the `Keeper` roster's, which is placed there for the same reason.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 

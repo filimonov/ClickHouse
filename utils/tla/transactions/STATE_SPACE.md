@@ -890,6 +890,78 @@ of one configuration differ by a few states. The rollback machine's actor parame
 invisible to those scenarios: the first is a renaming with wrappers, and the other three are written by actions
 they enable but read by none, so their projections merge the states that differ only in them.
 
+## The `Crash` scenario {#crash}
+
+`MC_Crash` is `Merge` plus the restart group, the two fsync actions and the two ways the server goes down, on a
+`Layered` disk at `RESTARTS_MAX = 1`. It keeps the matrix bounds, one session, `Parts = {P1, P2, M12}`,
+`Tasks = {i1}`, `TID_MAX = 3`, `CSN_MAX = 36`, and it finishes green.
+
+### The runs {#crash-runs}
+
+| Configuration | Result | Distinct states | Time |
+|---|---|---|---|
+| `Crash`, matrix bounds, `FSYNC_PART_DIRECTORY = TRUE`, **committed** | **green** | 47,838,278 | 13 min 27 s |
+| the same at `TID_MAX = 2` | green | 3,198,920 | 49 s |
+| `CrashF10`, `TID_MAX = 2`, `FSYNC_PART_DIRECTORY = FALSE`, **committed** | **red on `NoPrematureDelete`**, as it is expected to be | 42,035 | 2 s |
+| witness `AckedWriteIsDurable` in `Crash` | red, as required | 2,820 | 1 s |
+
+The matrix bounds are kept although 47.8 million is above the thirty million a run here is budgeted, because
+they finish and because a bound below the matrix is a bound-contract debt: the contract allows one only while
+every witness of every property the scenario checks is still red at it, and that sweep is not this task's. The
+`TID_MAX = 2` figure is measured and recorded so that the lever is costed rather than only named. It is worth a
+factor of fifteen, which is the third transaction being what makes the restart interleave with a commit already
+in flight.
+
+### Why the scenario splits at `FSYNC_PART_DIRECTORY` {#crash-fsync-split}
+
+The constant decides whether the rename in `storeInfoToDataPartStorage` is durable when it is made, and, since
+the layered-disk task, whether the part directory's own rename is. One directory sync guard covers both renames
+in the C++, so one constant covers both here.
+
+At `FALSE` nothing on the write path is durable until a free `Fsync` or `FsyncDir` runs, and three properties
+are then false by construction rather than by a defect: `AckedWriteIsDurable`, `NoPrematureDelete` and
+`NoLostVisibleData`. All three are the same window, which finding `F10` describes: a transaction reaches the
+commit point, the crash leaves a tmp-only metadata directory, and the loader reads that as a rolled-back
+creation and lets the cleanup thread remove a part the log records as committed. That is upstream's documented
+default, where neither `fsync_after_insert` nor `fsync_part_directory` is on, so the model cannot assert it
+away. `MC_Crash` therefore runs at `TRUE` with the whole roster and `MC_CrashF10` runs at `FALSE` with those
+three rows as the finding. Spec defect `S19` records that the matrix row asked for both values with one roster.
+
+What the `TRUE` variant does not reach is the tmp-only load shape itself, because every store is durable when it
+is made, so `LoadedRecord`'s `DummyTID` arm is dead there. `MC_CrashF10` reaches it, and the task that adds
+`NoResurrection` and `LogEntryNeeded` needs the `FALSE` variant for exactly that reason.
+
+### The model defects the first runs found {#crash-model-defects}
+
+Every red before the green was a defect rather than a finding, and each is a row of `FINDINGS.md`
+section 2 with the C++ that settles it: `M34`, the loader seeing a directory that was never renamed into place,
+red on `NoUncommittedRead` at 18,485 states; `M33`, a metadata record surviving a directory that did not;
+`M38`, `NoLostVisibleData` firing on the step that destroyed the transaction, at 113,976 states; `M36` and
+`M37` together, the preamble reading the durable layer for a part created after the restart and a part name
+being issued twice, red on `ErrorIsAbsent` at 438,654 states; `M39`, the removed-part arm not covering `Absent`,
+at 1,047,635 states; and `M35`, the loader pushing covered children that are not on disk, red on
+`AckedWriteIsDurable` at 44,729,071 states. The last one is worth its place in this file rather than only in
+`FINDINGS.md`: it was reached only after the four cheaper ones were closed and only at the matrix bounds, so a
+scenario committed at `TID_MAX = 2` would have carried it.
+
+### What the view keeps {#crash-view}
+
+`CrashView` is `MergeView` plus the three durable disk layers, `h.payload`, and the phase, the loading queues,
+`loaded_parts` and the restart counter in `sys`. `MergeView`'s second justification is the one that dies:
+"fields that are a function of the ones kept: the durable layer, which `DISK_MODE = \"Durable\"` keeps equal to
+the cached layer". This scenario is `Layered`, so `Fsync` and `FsyncDir` move one layer without the other and
+the durable layer is what the crash keeps and what the invariant preamble reads for an unloaded part. The disk
+row of the projection is the clause that replaces it. `sys.mut_queue` and `sys.loaded_mutations` stay out, and
+not because they are a function of what is kept: `Mutations` is empty here, so both are `{}` in every reachable
+state.
+
+### The counts the regression check reads {#crash-regression}
+
+The layered-disk task changes `DiskWithDir`, four creating actions, the invariant preamble and two properties,
+all of which every other scenario uses, so `Base`, `Merge` and `NonTxnInsert` were re-run after it: 26,839,086,
+6,124,691 and 16,969,409, each within the counting noise of the figure it had before. `Merge` is identical to
+the state.
+
 ## Reproducing {#reproducing}
 
 ```bash

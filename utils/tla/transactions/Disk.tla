@@ -48,8 +48,10 @@ DiskWithInfo(p, info) ==
   IF Layered /\ ~FSYNC_PART_DIRECTORY
   THEN [disk EXCEPT ![p].cached = InfoRec(info), ![p].tmp_cached = FALSE, ![p].tmp_durable = TRUE]
   ELSE [disk EXCEPT ![p].cached = InfoRec(info), ![p].durable = InfoRec(info), ![p].tmp_cached = FALSE, ![p].tmp_durable = FALSE]
+\* renameTempPartAndReplace, and the same setting that decides the metadata rename: one directory sync guard
+\* covers both renames, so with fsync_part_directory on the part directory is in place durably at once.
 DiskWithDir(p) ==
-  IF Layered THEN [disk EXCEPT ![p].dir_cached = TRUE]
+  IF Layered /\ ~FSYNC_PART_DIRECTORY THEN [disk EXCEPT ![p].dir_cached = TRUE]
   ELSE [disk EXCEPT ![p].dir_cached = TRUE, ![p].dir_durable = TRUE]
 DiskWithoutDir(p) == [disk EXCEPT ![p] = AbsentPartDisk]
 \* loadMetadata removes the tmp file it found (VersionMetadataOnDisk.cpp:58-60, removeTmpMetadataFile at :297)
@@ -59,10 +61,15 @@ DiskWithMetaSynced(p) == [disk EXCEPT ![p].durable = disk[p].cached, ![p].tmp_du
 \* directory fsync: the directory entry and the rename
 DiskWithDirSynced(p) == [disk EXCEPT ![p].dir_durable = disk[p].dir_cached, ![p].durable = disk[p].cached,
                                      ![p].tmp_durable = disk[p].tmp_cached]
-\* after a crash the cached layers are the durable ones
-DiskAfterCrash == [p \in Parts |-> [disk[p] EXCEPT !.cached = disk[p].durable,
-                                                   !.tmp_cached = disk[p].tmp_durable,
-                                                   !.dir_cached = disk[p].dir_durable]]
+\* After a crash the cached layers are the durable ones, and two kinds of part keep nothing at all.
+\* A part whose directory did not survive loses its metadata file with it, because the file is inside the
+\* directory. A part in `unnamed` has not been renamed into place, so what survives carries a tmp_ name that
+\* MergeTreeData::loadDataParts never loads; the crash is where the model discards it.
+DiskAfterCrash(unnamed) ==
+  [p \in Parts |-> IF ~disk[p].dir_durable \/ p \in unnamed THEN AbsentPartDisk
+                  ELSE [disk[p] EXCEPT !.cached = disk[p].durable,
+                                       !.tmp_cached = disk[p].tmp_durable,
+                                       !.dir_cached = disk[p].dir_durable]]
 MutDiskAfterCrash == [m \in Mutations |-> [mdisk[m] EXCEPT !.file_cached = mdisk[m].file_durable,
                                                            !.csn_cached = mdisk[m].csn_durable]]
 ====

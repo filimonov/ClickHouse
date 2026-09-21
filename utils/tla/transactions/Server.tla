@@ -434,9 +434,13 @@ SetSnapshot(k, c) ==
   /\ UNCHANGED <<zk, disk, mdisk, part, sys, stmt, mut, task>>
 
 \* ============================================================ client: insert and publication
+\* A part name is issued once. Before a crash part[p].pstate = "Absent" already says the name was never used,
+\* because a used name never returns to Absent; the crash resets every part record, so without h.creator the
+\* name of a part the cleanup thread had deleted could be issued again, and every history-indexed property is
+\* keyed by the name.
 InsertWrite(k, p) ==
   /\ Up /\ HasTxn(k) /\ client[k].pc = "Idle" /\ txn[Cur(k)].state = "Running"
-  /\ part[p].pstate = "Absent" /\ IsBase(p)
+  /\ part[p].pstate = "Absent" /\ h.creator[p] = EmptyTID /\ IsBase(p)
   /\ disk' = DiskWithDir(p)
   /\ part' = [StartFrame(p, Sess(k), "CreateTID", Cur(k), FALSE) EXCEPT ![p].pstate = "Temporary", ![p].deferrable = FALSE]
   /\ h' = [h EXCEPT !.creator[p] = Cur(k), !.payload[p] = [ver |-> 0, tomb |-> FALSE]]
@@ -647,9 +651,15 @@ CommitFinalize(k) ==
      /\ CommitFinalizeEffect(NoActor, t)
      /\ client' = [client EXCEPT ![k].waiting = IF WAIT_MODE = "ASYNC" THEN "None" ELSE "ForLoad"]
   /\ UNCHANGED <<zk, disk, mdisk, h, sys, stmt, mut, task>>
+\* The witness of AckedWriteIsDurable is the design document's row with its second change dropped: the
+\* acknowledgement is delivered while the commit request is still outstanding, so the client is told the write
+\* is durable before anything has made it so. The row also allows a Fail after the ack; the first change alone
+\* is red, so the second is not written.
 CommitAck(k) ==
   /\ LET t == Cur(k) IN
-     /\ InCommit(k) /\ txn[t].state = "Committed" /\ txn[t].pc = "Idle"
+     /\ InCommit(k)
+     /\ \/ (txn[t].state = "Committed" /\ txn[t].pc = "Idle")
+        \/ (Witness("AckedWriteIsDurable") /\ txn[t].state = "Committing" /\ txn[t].pc = "CommitCreateCSN")
      /\ (client[k].waiting = "ForLoad" => tlog.latest_snapshot >= txn[t].csn)      \* waitForCSNLoaded
      /\ client' = [client EXCEPT ![k].outcome = "Acked", ![k].outcome_tid = t, ![k].current = EmptyTID,
                                  ![k].waiting = "None", ![k].pc = "Idle"]
@@ -945,10 +955,10 @@ UpdRollbackFinalize(t) == RollbackFinalizeA(Upd, t)
 \* creates a placeholder znode first (:190), which raises latest_snapshot, so every transaction begun after a
 \* restart has a start CSN above every one begun before it. The model's Tids ARE the distinct transactions, so
 \* reusing one would merge two of them; keeping the counter monotone is the same set of transactions under a
-\* different naming. Recorded as model defect M17, with the placement: the plan that needs a restart to produce
+\* different naming. Recorded as model defect M40, whose placement is the plan that needs a restart to produce
 \* more transactions than TID_MAX allows, which is none of them.
 CrashEffect ==
-  /\ disk' = DiskAfterCrash
+  /\ disk' = DiskAfterCrash({ p \in Parts : part[p].pstate = "Temporary" })
   /\ mdisk' = MutDiskAfterCrash
   /\ part' = [p \in Parts |-> AbsentPartRecord]
   /\ txn' = [t \in Tids |-> AbsentTxn]
@@ -1064,7 +1074,9 @@ RestartLoadPart(p) ==
          defer == wrote /\ ~DiskHasInfo(p) /\ ~Involved(final)
          sv1 == IF wrote THEN StoredRecord(p).sv + 1 ELSE raw.sv
          rec == [final EXCEPT !.sv = sv1]
-         kids == IF active_pass /\ st /= "Active" THEN Covers[p] ELSE {} IN
+         \* the children of a PartLoadingTree node, which are built from the part names on disk: a covered part
+         \* whose directory is not there is not a node and is never pushed back onto the queue
+         kids == IF active_pass /\ st /= "Active" THEN { c \in Covers[p] : OnDisk(c) } ELSE {} IN
      /\ part' = [part EXCEPT ![p] = [AbsentPartRecord EXCEPT
                    !.pstate = st, !.mem = rec, !.payload = h.payload[p],
                    !.deferrable = ~DiskHasInfo(p) /\ ~wrote,
@@ -1454,7 +1466,7 @@ MergeSelect(i) ==
 MergeWrite(i) ==
   /\ Up /\ task[i].kind = "Merge" /\ Holds(i) /\ task[i].pc = "Write"
   /\ LET r == task[i].result IN
-     /\ part[r].pstate = "Absent"
+     /\ part[r].pstate = "Absent" /\ h.creator[r] = EmptyTID
      /\ disk' = DiskWithDir(r)
      \* the task holds the result from here on: mergePartsToTemporaryPart's part through merge_task, and then
      \* MergePlainMergeTreeTask::new_part (src/Storages/MergeTree/MergePlainMergeTreeTask.cpp:156), until the
@@ -1794,7 +1806,7 @@ NtBatchEnd ==
 \* shape NoFalseCorruption's witness is about.
 NtInsertWrite(k, p) ==
   /\ Up /\ ~HasTxn(k) /\ client[k].pc = "Idle"
-  /\ part[p].pstate = "Absent" /\ IsBase(p)
+  /\ part[p].pstate = "Absent" /\ h.creator[p] = EmptyTID /\ IsBase(p)
   /\ disk' = DiskWithDir(p)
   /\ part' = [StartFrame(p, Sess(k), "CreateTID", NonTransactionalTID, FALSE) EXCEPT ![p].pstate = "Temporary"]
   /\ h' = [h EXCEPT !.creator[p] = NonTransactionalTID, !.payload[p] = [ver |-> 0, tomb |-> FALSE]]
@@ -1821,7 +1833,7 @@ NtInsertPublish(k, p) ==
 \* and flips the states once the batch is stored.
 NtDropWrite(k, e) ==
   /\ Up /\ ~HasTxn(k) /\ client[k].pc = "Idle"
-  /\ Covers[e] /= {} /\ part[e].pstate = "Absent"
+  /\ Covers[e] /= {} /\ part[e].pstate = "Absent" /\ h.creator[e] = EmptyTID
   /\ \E q \in Covers[e] : part[q].pstate = "Active"
   /\ disk' = DiskWithDir(e)
   /\ part' = [StartFrame(e, Sess(k), "CreateTID", NonTransactionalTID, FALSE) EXCEPT
