@@ -5,9 +5,9 @@ EXTENDS MergeTreeTransactions
 \* waitStateChange and KillTransaction needs an idle one, so this module has two.
 \* The bounds are cut to the shape that row needs rather than inherited: one part, no merge task and two
 \* transactions, which is one transaction to create the part and one to drop it, lose its commit response and
-\* be killed inside the window. The same configuration at the exhaustive bounds was run first and did not
-\* fire within 900 seconds, at 52,217,501 distinct states with the queue growing; a witness run stops at the
-\* first violation, so bounds cut to its subject are what it is for. No exhaustive run of this module is
+\* be killed inside the window. The same witness at the inherited bounds does not fire: 53,932,357 distinct
+\* states in 600 seconds with the queue growing, re-measured on the tree that carries every fix of this task.
+\* A witness run stops at the first violation, so bounds cut to its subject are what it is for. No exhaustive run of this module is
 \* intended. A witness run stops at the first violation and can afford
 \* bounds an exhaustive run cannot, which is the two-bound-sets rule of spec defect S7; this module is those
 \* witness bounds. run_tlc.sh is not meant to be pointed at it.

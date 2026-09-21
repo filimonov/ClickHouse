@@ -690,7 +690,7 @@ The two properties this scenario adds:
 |---|---|---|---|---|---|---|
 | `UnknownResolvesByLog` | `UnknownResolvesByLog` | `UpdSwapUnknownLists` collapses the two lists into one, so a transaction can be resolved in the same pass that received it | `Keeper` | RED | 13,207 | 2 s |
 | `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperUnknownWait` | RED | 13,511 | 1 s |
-| `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperWitness` | RED | 279,143 | 4 s |
+| `UnknownResolvesByLog` | `UnknownResolvesByLog` | the same change | `KeeperWitness` | RED | 279,143, measured before the pass-ownership fix | 4 s |
 | `NoOutdatedLookup` | `NoOutdatedLookup` | `UpdRemoveOldEntriesSetTail` publishes `tlog.latest_snapshot` instead of `RetentionHorizon`, so the tail passes the start CSN of a transaction still in the unknown-state list | `Keeper` | RED | 536,421 | 6 s |
 | `NoOutdatedLookup` | `NoOutdatedLookup` | the same change | `KeeperUnknownWait` | RED | 2,542,841 | 19 s |
 | `RollbackRestores`, second conjunct | `RollbackRestoresUpd` | `RollbackRestoreA` does not restore a part when the driver is `Upd`, and restores it for every other driver | `Keeper` | RED | 4,204,536 | 31 s |
@@ -753,8 +753,10 @@ green for want of a step to judge. A property that cannot fire says nothing abou
 the roster rather than on it with a footnote; all three are red in `Merge`, which does enable the group.
 
 The rest of `MC_Keeper.cfg`'s roster is not swept in this task. Its other properties are `Merge`'s, its
-witnesses are the twenty-four rows of the `Merge` sweep above plus the four here, and a sweep of a
-31-million-state scenario is its own piece of work; it is placed in the same task.
+witnesses are the twenty-four rows of the `Merge` sweep above plus the three of the table here that run on
+it, and a sweep of a 31-million-state scenario is its own piece of work; it is placed in the same task.
+`RollbackRestoresKillRace` is not one of them: it runs on `MC_KeeperUnknownWaitWitness` alone and fires in
+neither exhaustive configuration.
 
 ## Baseline after the witness work {#baseline-after-the-witness-work}
 

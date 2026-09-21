@@ -463,7 +463,7 @@ either is negligible.
 | `BaseSmall`, `Merge` | 2026-09-21 | the pass-ownership commit | 47,381 and 6,124,691 | 1 s and 58 s | green, unchanged |
 | `Keeper` | 2026-09-21 | the pass-ownership commit | 31,042,348 | 5 min 08 s | green; 18% below 37,785,664, which is the updating thread no longer losing a compare-exchange it had won |
 | `KeeperUnknownWait` | 2026-09-21 | the pass-ownership commit | 11,537,098 | 1 min 55 s | green **at the matrix bounds**, where 71 million had not finished: a parked client was running the commit machine beside the updating thread. That closes debt `B8` |
-| `Keeper` and `KeeperUnknownWait` witnesses, 6 rows | 2026-09-21 | the pass-ownership commit | 4,204,536 for the largest | 65 s in total | all red |
+| `Keeper`, `KeeperUnknownWait` and `KeeperUnknownWaitWitness` witnesses, 6 rows | 2026-09-21 | the pass-ownership commit | 4,204,536 for the largest | 65 s in total | all red; the sixth, `RollbackRestoresKillRace`, runs only on the witness-bounds module |
 | `Keeper` witnesses, 3 rows | 2026-09-21 | the lifecycle commit | 4,852,299 for the largest | 42 s in total | all red, including the new `RollbackRestoresUpd` |
 
 Every `NonTxn*` row of these tables, the witness sweeps included, was measured with
