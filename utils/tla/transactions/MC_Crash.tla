@@ -12,7 +12,7 @@ CoversDef == [p \in Parts |-> IF p = M12 THEN {P1, P2} ELSE {}]
 SymSessions == Permutations(Sessions)
 
 \* Fingerprint projection for this scenario only; see STATE_SPACE.md. It is MergeView plus everything the
-\* crash, the two fsync actions and the restart loader read or write: the durable disk layers, h.payload, and
+\* crash, the three sync actions and the restart loader read or write: the durable disk layers, h.payload, and
 \* the phase, the loading queues and the restart counter in sys. tlog.last_loaded_entry was already in
 \* MergeView, which RestartLoadLog rewrites.
 \*

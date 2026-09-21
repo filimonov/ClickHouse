@@ -71,7 +71,10 @@ DurableRecord(p) ==
   ELSE IF disk[p].durable.kind = "Legacy" THEN LegacyInfo
   ELSE EmptyInfo
 DurablePState(p) ==
-  IF ~disk[p].named_durable THEN "Absent"
+  \* Not durably active without its rows: a part whose data files did not survive is broken at load
+  \* (MergeTreeData.cpp:2618-2676) and never enters the working set, which is what RestartLoadPart's broken
+  \* arm does. The clause is dead wherever FSYNC_AFTER_INSERT is on and live in the unsynced world.
+  IF ~disk[p].named_durable \/ ~disk[p].payload_durable THEN "Absent"
   ELSE LET r == DurableRecord(p) IN
        IF r.ccsn = RolledBackCSN THEN "Absent"
        ELSE IF r.rcsn /= UnknownCSN \/ r.rtid = NonTransactionalTID THEN "Outdated"
@@ -106,6 +109,24 @@ AckedWriteIsDurable == \A t \in Tids :
   /\ \A p \in h.removing[t] : PState(p) /= "Active"
 ErrorIsAbsent == \A t \in Tids : h.outcome[t] = "Error" =>
   t \notin h.committed /\ (h.rolled_back[t] => \A p \in h.creating[t] : PState(p) /= "Active")
+
+\* A sync publishes what is already written; it never makes the post-crash state worse. Stated over the three
+\* sync actions and over nothing else, which is what it checks and all of it: a store, the loader's removal of
+\* a tmp file, and a deletion all lower durable bits legitimately and are outside it.
+\* The metadata record and the tmp file move as a PAIR, because publishing the rename is exactly "the record
+\* becomes durable and the tmp file stops existing", so the clause admits the cached value of the pair and its
+\* old value and nothing between. That is what separates FsyncDir, which may lower tmp_durable, from an fsync
+\* of the data files, which may not: model defect M43.
+RecoveredRecord(p) == <<disk[p].durable, disk[p].tmp_durable>>
+CachedRecord(p) == <<disk[p].cached, disk[p].tmp_cached>>
+DurabilityMonotoneStep ==
+  (\E p \in Parts : Fsync(p) \/ FsyncDir(p) \/ FsyncParent(p)) =>
+    \A q \in Parts :
+      /\ RecoveredRecord(q)' \in {RecoveredRecord(q), CachedRecord(q)'}
+      /\ disk[q].payload_durable => disk'[q].payload_durable
+      /\ disk[q].dir_durable => disk'[q].dir_durable
+      /\ disk[q].named_durable => disk'[q].named_durable
+DurabilityMonotone == [][DurabilityMonotoneStep]_vars
 
 \* ---- conflicts (spec #invariants-conflicts)
 SingleRemover == \A p \in Parts : Cardinality(h.removers[p]) <= 1

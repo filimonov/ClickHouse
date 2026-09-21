@@ -759,13 +759,18 @@ neither exhaustive configuration.
 
 ## Witnesses of the `Crash` scenario {#witnesses-crash}
 
-`Crash` is `Merge` plus the restart group, the two fsync actions and the two ways the server goes down, on a
+`Crash` is `Merge` plus the restart group, the three sync actions and the two ways the server goes down, on a
 `Layered` disk at `RESTARTS_MAX = 1` and `FSYNC_PART_DIRECTORY = TRUE`, at the matrix bounds. The constant's
 other value is `MC_CrashF10`, which is the finding of the same name and is not a witness module.
 
+The count is a first-violation count and does not reproduce: three runs of this row gave 3,317, 3,567 and
+5,017, the middle one on the tree this table is committed with. That is the same caveat the `Base` table's
+preamble gives, and it is worth repeating here because two of those figures were taken by different readers of
+the same row.
+
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `AckedWriteIsDurable` | `AckedWriteIsDurable` | `CommitAck` is enabled while the transaction is still `Committing` at `CommitCreateCSN`, so the acknowledgement is delivered before the commit request has returned | `Crash` | RED | 5,017 | 1 s |
+| `AckedWriteIsDurable` | `AckedWriteIsDurable` | `CommitAck` is enabled while the transaction is still `Committing` at `CommitCreateCSN`, so the acknowledgement is delivered before the commit request has returned | `Crash` | RED | 3,567 | 2 s |
 
 That row closes the debt the deferred table carried, and it is a one-change witness where the design document
 names two. The document's row is `CommitAck` moved before `CommitCreateCSN` **and** a `Fail` allowed after it;

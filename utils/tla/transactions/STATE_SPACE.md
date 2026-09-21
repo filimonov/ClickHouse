@@ -892,7 +892,7 @@ they enable but read by none, so their projections merge the states that differ 
 
 ## The `Crash` scenario {#crash}
 
-`MC_Crash` is `Merge` plus the restart group, the two fsync actions and the two ways the server goes down, on a
+`MC_Crash` is `Merge` plus the restart group, the three sync actions and the two ways the server goes down, on a
 `Layered` disk at `RESTARTS_MAX = 1`. It keeps the matrix bounds, one session, `Parts = {P1, P2, M12}`,
 `Tasks = {i1}`, `TID_MAX = 3`, `CSN_MAX = 36`, and it finishes green.
 
@@ -904,10 +904,12 @@ they enable but read by none, so their projections merge the states that differ 
 | the same, re-taken after the witness hook landed | green, identical to the state and to the generated count | 47,838,278 | 13 min 13 s |
 | the same at `TID_MAX = 2` | green | 3,198,920 | 49 s |
 | `Crash`, after the fix round split the two directory names and added the payload bit, with the three sync actions unguarded | **killed at the 900 s bound**, queue 2.68M and growing | 46,266,705 | 15 min |
-| the same with the sync actions guarded on the directory existing, **committed** | **green** | 48,142,550 | 12 min 28 s |
-| `CrashF10`, `TID_MAX = 2`, metadata rename unsynced, **committed** | **red on `AckedWriteIsDurable`**, as it is expected to be | 395,095 | 5 s |
-| the same at `FSYNC_AFTER_INSERT = FALSE`, so the rows are unsynced too | red on the same invariant, with the part absent rather than reclassified | 494,552 | 6 s |
-| witness `AckedWriteIsDurable` in `Crash` | red, as required | 5,017 | 1 s |
+| the same with the sync actions guarded on the directory existing | **green** | 48,142,550 | 12 min 28 s |
+| the same after the second fix round, with `DurabilityMonotone` on the roster, **committed** | **green** | 48,142,550 | 15 min 19 s |
+| `CrashF10`, `TID_MAX = 2`, metadata rename unsynced, **committed** | **red on `AckedWriteIsDurable`**, as it is expected to be | 97,483, 141,070 and 395,095 on three runs; a first-violation count is not reproducible | 5 s |
+| the same at `FSYNC_AFTER_INSERT = FALSE`, so the rows are unsynced too | red on the same invariant, with the part absent rather than reclassified | 494,552, the same kind of count | 6 s |
+| witness `AckedWriteIsDurable` in `Crash` | red, as required | 3,317, 3,567 and 5,017 on three runs, the same kind of count | 1 s |
+| `CrashF10` with model defect `M45` restored | **red on `DurabilityMonotone`**, which is that fence shown to fence something | 461 | 1 s |
 
 The matrix bounds are kept although 48.1 million is above the thirty million a run here is budgeted, because
 they finish and because a bound below the matrix is a bound-contract debt: the contract allows one only while
@@ -915,6 +917,14 @@ every witness of every property the scenario checks is still red at it, and that
 `TID_MAX = 2` figure is measured and recorded so that the lever is costed rather than only named. It is worth a
 factor of fifteen, which is the third transaction being what makes the restart interleave with a commit already
 in flight.
+
+The second fix round changed no reachable state of this scenario: 48,142,550 distinct and 495,201,353
+generated, both identical to the run before it. That is the expected result and it is the review's own
+prediction. Lowering `tmp_durable` in an fsync of the data files is a no-op where every store leaves both tmp
+bits FALSE, and `payload_durable` is TRUE from creation, so `M45` and `M46` are live only in the unsynced
+world. What the round did cost is wall clock: `DurabilityMonotone` is an action property evaluated on every
+step, and it took the run from 12 min 28 s to 15 min 19 s, about 23%, for an unchanged state space. The
+900-second bound the earlier runs used no longer holds it.
 
 The three new durability bits cost 0.6%, from 47,838,278 to 48,142,550, which is what they should cost in this
 configuration: with all three settings on, every bit is set at the moment of the operation, so the cached and
@@ -949,6 +959,15 @@ trace it produces is the acknowledged reclassification rather than the shallower
 What the all-on variant does not reach is the tmp-only load shape itself, because every store is durable when it
 is made, so `LoadedRecord`'s `DummyTID` arm is dead there. Debt `B9` places the module that covers the other
 twenty-five rows in the unsynced world, which is where the restart properties will be stated.
+
+### Reading the counts in this section {#crash-counts}
+
+A green figure is the whole state space and reproduces to a few hundred states. A red figure is a
+first-violation count and does not: TLC stops at the first violation any worker reaches, so which branch has
+been fingerprinted by then depends on scheduling. The three runs of `CrashF10` above span 97,483 to 395,095 for
+one unchanged module, a factor of four, and the reviewer's independent run of an earlier revision gave 141,070
+where this file had recorded 395,095. Every red count in this file and in `README.md` is that kind of number
+and is a witness that the violation is reachable, not a measurement of where.
 
 ### Scenario assumptions {#crash-assumptions}
 

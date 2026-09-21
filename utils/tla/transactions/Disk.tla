@@ -14,7 +14,7 @@ InfoRec(i) == [kind |-> "Info", info |-> i]
 \*   durable/cached: the record readable as txn_version.txt. The rename that publishes it is a dentry in the
 \*     PART's own directory, so only a sync of that directory promotes it.
 \*   tmp_durable/tmp_cached: txn_version.txt.tmp. Its content is fsynced by storeInfoToDataPartStorage itself
-\*     (buf->sync(), VersionMetadataOnDisk.cpp:355-357).
+\*     (buf->sync, VersionMetadataOnDisk.cpp:355-357).
 \*   dir_durable/dir_cached: the part directory exists, under whatever name.
 \*   named_durable/named_cached: the part directory exists under its FINAL name. Separate from dir, because
 \*     renameTempPartAndReplace is a second operation (IMergeTreeDataPart::renameTo at
@@ -94,10 +94,16 @@ DiskWithFinalName(p) ==
 DiskWithoutDir(p) == [disk EXCEPT ![p] = AbsentPartDisk]
 \* loadMetadata removes the tmp file it found (VersionMetadataOnDisk.cpp:58-60, removeTmpMetadataFile at :297)
 DiskWithoutTmp(p) == [disk EXCEPT ![p].tmp_cached = FALSE, ![p].tmp_durable = FALSE]
-\* An fsync of the part's files: content only. It cannot promote a rename, which is a dentry and belongs to the
-\* directory syncs below; the record's own durability is therefore untouched here.
-DiskWithFilesSynced(p) == [disk EXCEPT ![p].payload_durable = TRUE, ![p].tmp_durable = disk[p].tmp_cached]
-\* A sync of the PART's directory: the dentries inside it, which is the txn_version.txt rename.
+\* An fsync of the part's data files. It touches the metadata record's durability in neither direction: it
+\* cannot publish the txn_version.txt rename, which is a dentry belonging to the directory sync below, and it
+\* cannot unpublish the tmp file either. Writing tmp_durable = tmp_cached here was the second half of M43: after
+\* a store has renamed the tmp file away, tmp_cached is FALSE while tmp_durable is TRUE, so the assignment
+\* LOWERED it and a data-file fsync silently discarded the one thing a crash could still have recovered.
+DiskWithFilesSynced(p) == [disk EXCEPT ![p].payload_durable = TRUE]
+\* A sync of the PART's directory: the dentries inside it, which is the txn_version.txt rename. It moves the
+\* pair <<durable, tmp_durable>> to its cached value in one step, which is why lowering tmp_durable is right
+\* here and wrong above: the rename becoming durable is what removes the tmp file from the post-crash state.
+\* DurabilityMonotone is the fence over that distinction.
 DiskWithDirSynced(p) == [disk EXCEPT ![p].durable = disk[p].cached, ![p].tmp_durable = disk[p].tmp_cached]
 \* A sync of the PARENT directory: the dentries naming the part directory itself, both the temporary name and,
 \* once the rename has happened, the final one.

@@ -79,7 +79,7 @@ cleanup group, plus the updater's unknown-state pass and the two Keeper faults, 
 `KeeperUnknownWait` (the same with `WAIT_MODE = "WAIT_UNKNOWN"`), `KeeperWitness` (the same at two sessions, for `witness.sh` only) and `KeeperUnknownWaitWitness` (two sessions
 under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only), and the pair `Crash` and `CrashF10`.
 
-`Crash` is `Merge` plus the restart group, the three fsync actions and the two ways the server goes down, on a
+`Crash` is `Merge` plus the restart group, the three sync actions and the two ways the server goes down, on a
 `Layered` disk at `RESTARTS_MAX = 1`, at the matrix bounds. It runs with `FSYNC_AFTER_INSERT`,
 `FSYNC_OUTER_RENAME` and `FSYNC_PART_DIRECTORY` all on and is green with the whole roster. `CrashF10` is the
 same configuration with the `txn_version.txt` rename left unsynced and is expected red on
@@ -487,8 +487,13 @@ either is negligible.
 | `NonTxnInsert` | 2026-09-21 | the fix-round commit | 16,969,516 | 2 min 51 s | green, unchanged |
 | `Crash`, with the three sync actions unguarded | 2026-09-21 | the fix-round commit | 46,266,705, queue 2.68M and growing | killed at 15 min | did not finish; the cause was `Fsync` setting a durability bit on a part with no directory, not the new bits |
 | `Crash` | 2026-09-21 | the fix-round commit | 48,142,550 | 12 min 28 s | green at the matrix bounds with all three settings on; 0.6% above 47,838,278, which is what the three new durability bits cost when every one of them is set at the moment of the operation |
-| `CrashF10` | 2026-09-21 | the fix-round commit | 395,095, a first-violation count | 5 s | **red on `AckedWriteIsDurable`**, the acknowledged shape of finding `F10`; 494,552 with the data files unsynced as well, where the part is absent rather than reclassified |
-| witness `AckedWriteIsDurable` in `Crash` | 2026-09-21 | the fix-round commit | 5,017 | 1 s | red, as required; 2,820 before the disk record gained its three bits |
+| `Crash` | 2026-09-21 | the second fix-round commit | 48,142,550 | 15 min 19 s | green; the distinct count and the generated count, 495,201,353, are both identical to the row above, so neither of that round's two model fixes changes a reachable state here. The 23% of extra wall clock is `DurabilityMonotone`, an action property evaluated on every step |
+| `CrashF10` | 2026-09-21 | the second fix-round commit | 97,483, a first-violation count | 5 s | **red on `AckedWriteIsDurable`**, the acknowledged shape unchanged at twenty-five steps |
+| `CrashF10` with model defect `M45` restored | 2026-09-21 | the second fix-round commit | 461 | 1 s | **red on `DurabilityMonotone`**, which is that fence shown to fence something |
+| `BaseSmall` | 2026-09-21 | the second fix-round commit | 47,381 | 1 s | green, unchanged |
+| witness `AckedWriteIsDurable` in `Crash` | 2026-09-21 | the second fix-round commit | 3,567, a first-violation count | 2 s | red, as required |
+| `CrashF10` | 2026-09-21 | the fix-round commit | 395,095, a first-violation count and therefore not reproducible | 5 s | **red on `AckedWriteIsDurable`**, the acknowledged shape of finding `F10`; 494,552 with the data files unsynced as well, where the part is absent rather than reclassified |
+| witness `AckedWriteIsDurable` in `Crash` | 2026-09-21 | the fix-round commit | 5,017, a first-violation count | 1 s | red, as required; 2,820 before the disk record gained its three bits |
 | `CrashF10` | 2026-09-21 | the layered-disk commit | 42,035, a first-violation count | 2 s | **red on `NoPrematureDelete`**, as it is expected to be: finding `F10` |
 | witness `AckedWriteIsDurable` in `Crash` | 2026-09-21 | the layered-disk commit | 2,820 | 1 s | red, which closes the last of the deferred `Base` rows |
 
