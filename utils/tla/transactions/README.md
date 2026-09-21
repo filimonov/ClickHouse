@@ -77,8 +77,8 @@ that reaches finding F2; the first is expected red on `NoPrematureDelete` and th
 GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only), `Keeper` (`Merge` without the
 cleanup group, plus the updater's unknown-state pass and the two Keeper faults, at the matrix bounds),
 `KeeperUnknownWait` (the same with `WAIT_MODE = "WAIT_UNKNOWN"`), `KeeperWitness` (the same at two sessions, for `witness.sh` only) and `KeeperUnknownWaitWitness` (two sessions
-under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only), and the five of the `Crash` family: `Crash`,
-`CrashUnsynced`, `CrashLegacy`, `CrashF10` and `CrashWitness`.
+under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only), and the seven of the `Crash` family: `Crash`,
+`CrashUnsynced`, `CrashUnsyncedFixed`, `CrashLegacy`, `CrashHarm`, `CrashF10` and `CrashWitness`.
 
 `Crash` is `Merge` plus the restart group, the three sync actions and the two ways the server goes down, on a
 `Layered` disk at `RESTARTS_MAX = 1`, at the matrix bounds. It runs with `FSYNC_AFTER_INSERT`,
@@ -91,9 +91,12 @@ the scenario splits at those constants rather than carrying one roster at all va
 also states the two storage assumptions the restart loader makes, a writable local disk and a coverage
 relation one level deep.
 
-`CrashUnsynced` is the same scenario with all three settings off, which is the upstream default, and it is the
-configuration the restart properties are stated over. It carries the whole roster less the rows that world
-falsifies by construction, and `STATE_SPACE.md` names each of them with its finding. `CrashLegacy` is `Crash`
+`CrashUnsynced` is the same scenario with all three settings off, which is the upstream default. It is a
+finding module rather than a coverage one, expected red on `LogEntryNeeded`, which is finding `F11`;
+`CrashUnsyncedFixed` is the same configuration under that finding's fix variant and is where the rows of the
+`Crash` roster that read no history variable are checked. `CrashHarm` is `CrashUnsynced` at `RESTARTS_MAX = 2`
+checking `F11Harm` alone, which is that finding's harm end to end and is expected red. `STATE_SPACE.md` says
+why the unsynced world cannot carry the rest of the roster. `CrashLegacy` is `Crash`
 with `LEGACY_PARTS = {P1}` and the property `LegacyLoads`, the run that checks the pre-`storing_version`
 metadata format through the loader. `CrashWitness` is `Crash` at two sessions, for `witness.sh` only.
 
