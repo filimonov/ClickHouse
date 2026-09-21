@@ -813,11 +813,14 @@ failing to take: nothing else can remove `Upd` from a rolled-back unknown-state 
 state that carried it had a twin without it, and the clause relabels the reachable graph instead of splitting
 or merging it.
 
-That the clause is live was measured rather than inferred, in a scratch copy under `tmp/` at one transaction
-and one part. An invariant forbidding the shape at all, `h.unknown[t] = "RolledBack"` with `h.rolled_back[t]`,
-is violated at 2,940 distinct states, so the updater-driven rollback does finalize there. An invariant saying
-`Upd` is gone afterwards is green over that whole space, 4,897 distinct with the queue drained, and red at
-3,252 when the clause alone is removed. A fence that had never failed would not have shown that.
+That the clause is live was measured rather than inferred, in a scratch copy under `tmp/` at one session, one
+part, `Tasks = {}`, `TID_MAX = 1` and `CSN_MAX = 34`. An invariant forbidding the shape at all,
+`h.unknown[t] = "RolledBack"` with `h.rolled_back[t]`, is violated at 3,160 distinct states, so the
+updater-driven rollback does finalize there. An invariant saying `Upd` is gone afterwards is green over that
+whole space, 4,676 distinct with the queue drained, and red at 3,137 when the clause alone is removed. A fence
+that had never failed would not have shown that. The three runs were repeated on the tree that carries the
+updating thread's live-session guard, and the earlier round measured 2,940, 4,897 and 3,252 with the same three
+verdicts; a first-violation count is not reproducible in any case, while the green one is a full exploration.
 
 ### What the view keeps {#keeper-view}
 
