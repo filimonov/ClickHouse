@@ -344,7 +344,7 @@ a second; the last two are two sessions, which is what finding `F9` needs.
 | `MC_SetSnapshotF2SpecialEV` | `{3, 34}` | 125,673 | green, without `RollbackNoLeak`, the one row finding `F8` falsifies |
 | `MC_SetSnapshotF8` | `{3}` | first-violation | red on `RollbackNoLeak`, which is finding `F8` |
 | `MC_SetSnapshotF9Sibling` | `{3}` | first-violation | red on `Assert_validateInfo`, which is finding `F9` |
-| `MC_SetSnapshotF9SiblingFixed` | `{3}` | 1,858,362 | green under `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, finding `F9`'s fix |
+| `MC_SetSnapshotF9SiblingFixed` | `{3}` | 1,858,346 and 1,858,364 on the two runs of the closing round | green under `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, finding `F9`'s fix, on the roster `MC_SetSnapshotF2SpecialEV` carries less `ErrorIsAbsent` |
 
 `MC_SetSnapshotF2SpecialEV` lost states to the round that re-derived `F9`, 134,553 to 125,673. The reason is the
 enrolment skip `DropLock` now carries: a transactional `DROP PARTITION` no longer walks a part whose creation

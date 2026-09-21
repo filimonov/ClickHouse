@@ -222,17 +222,20 @@ NoPrematureDeleteStep == \A p \in Parts : CleanupGrab(p) =>
 NoPrematureDelete == [][NoPrematureDeleteStep]_vars
 \* isSharedPtrUnique, MergeTreeData.cpp:4150, as a property rather than only as the guard of the action. It is
 \* stated on the grab although the guard is in CleanupDecide, which is strictly stronger, and what makes it
-\* hold is what canBeRemoved accepts rather than the parts lock. Three actions add pins and only one of them
-\* takes that lock:
-\*   SelectCapture does take it (it requires sys.parts_lock = NoActor), so it cannot run inside the hold.
-\*   MergeSelect does not, and it judges its sources visible at the merge's snapshot with the empty TID and
-\*     refuses a removal-locked one. A part canBeRemoved accepts has a removal committed at or below the oldest
+\* hold is what canBeRemoved accepts rather than the parts lock. Six actions add pins, and four of them
+\* cannot reach a part the cleanup has accepted:
+\*   SelectCapture requires sys.parts_lock = NoActor, so it cannot run inside the hold. PublishStart requires
+\*     the same, and every caller of EnrolGrantEffect requires the parts lock to be its own, so none of those
+\*     can run inside it either. MergeWrite pins its result part, which it requires to be Absent, where the
+\*     cleanup's candidate is Outdated. The two that remain are the ones the argument is about:
+\*   MergeSelect does not take the lock, and it judges its sources visible at the merge's snapshot with the
+\*     empty TID and refuses a removal-locked one. A part canBeRemoved accepts has a removal committed at or below the oldest
 \*     snapshot, or a creation stamped RolledBackCSN, and neither is visible at an ORDINARY snapshot. The
 \*     merge's snapshot is always an ordinary one, because MergeBegin registers latest_snapshot as Begin does,
 \*     so a merge cannot select it. The qualifier is what finding F8 costs this argument: at
 \*     EverythingVisibleCSN a rolled-back creation is visible, and a SELECT there does capture it. That reader
-\*     is SelectCapture, the one action of the three that takes the parts lock, so it cannot run inside the
-\*     hold, and what it captured before the hold it pinned.
+\*     is SelectCapture, which takes the parts lock, so it cannot run inside the hold, and what it captured
+\*     before the hold it pinned.
 \*   RollbackCopyLists does not either, and it pins the whole of a transaction's creating and removing lists at
 \*     the START of the rollback, before the marking phase stamps RolledBackCSN. So by the time the rolled-back
 \*     creation makes the part removable, the pin is already on it and CleanupDecide refuses.

@@ -5,10 +5,16 @@ EXTENDS MergeTreeTransactions
 \* RolledBackCSN (src/Storages/MergeTree/MergeTreeData.cpp:7044-7046) and a creation that has not finished
 \* carries Tx::UnknownCSN, so the skip does not apply; at this snapshot isVisible returns true before it looks
 \* at any CSN (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158), so the reader does not take the
-\* std::nullopt wait an ordinary snapshot takes; and lockRemovalTID refuses only a removal already locked or
-\* already committed (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:195-247), never a creation that
-\* has not committed. The creator then rolls back under the held lock and stamps RolledBackCSN, and the
-\* remover's commit stamps a real removal CSN over it.
+\* log lookup an ordinary snapshot makes, which answers invisible while the creation CSN is unknown; and
+\* lockRemovalTID refuses only a removal already locked or already committed
+\* (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:195-248), never a creation that has not
+\* committed.
+\* The trace this module produces is the finding's first shape and stops at the validation error, which is
+\* where the C++ raises it: setAndStoreRemovalTID validates the record before storing it, so nothing is
+\* written, and the LOGICAL_ERROR leaves DROP PARTITION as an exception to the client, because the store sits
+\* outside removeOldPart's NOEXCEPT_SCOPE. The second shape, where the creator rolls back between the skip and
+\* the store and the remover's commit then raises inside the noexcept afterCommit, is reached under the
+\* F9FixInFlightOnly witness on MC_SetSnapshotF9SiblingFixed and is that trace, not this one.
 \* Two sessions, because the shape needs a creator that is still Running while another transaction drops;
 \* TID_MAX = 2, one part, and SNAPSHOT_TARGETS = {3}. SET_SNAPSHOT_PROTECTS is FALSE, the baseline, so that a
 \* red here is a red of the code as it stands and not of finding F2's fix variant.

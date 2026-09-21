@@ -2,9 +2,14 @@
 EXTENDS MergeTreeTransactions
 \* MC_SetSnapshotF9Sibling's configuration with finding F9's fix, REMOVAL_REFUSES_UNCOMMITTED_CREATION: the
 \* enrolment refuses a part whose creation has not committed with SERIALIZATION_ERROR, exempting the remover's
-\* own creation. The refusal is an ordinary query failure, so ErrorIsAbsent is not on the roster here either;
-\* the rows the finding falsifies, Assert_validateInfo and NoAvoidableTermination, are, and they are expected
-\* green.
+\* own creation. Expected green.
+\* The roster is MC_SetSnapshotF2SpecialEV's, less ErrorIsAbsent, which the fix's own refusal falsifies. This
+\* is the only two-session exhaustive run at SNAPSHOT_TARGETS = {3} in the tree, so the narrow roster the red
+\* module needs would give up coverage nothing else here provides. RollbackNoLeak is off for the reason it is
+\* off there: finding F8 falsifies it at this target, and MC_SetSnapshotF8 is the module that owns it.
+\* The two rows the finding falsifies, Assert_validateInfo and NoAvoidableTermination, are on the roster, and
+\* the F9FixInFlightOnly witness runs against this module: it narrows the fix to the in-flight half and is red
+\* on Assert_validateInfo, which is the finding's second shape.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 

@@ -326,7 +326,8 @@ The trace is `traces/f9-rollback-after-skip-window.txt`, 29 states: the creator 
 read its creation CSN and before the enrolment stores the removal TID, and the remover's commit then stamps a
 removal CSN under a creation CSN of `RolledBackCSN`, inside the `noexcept` frame. It is not a minimality half
 of any other witness; it is the argument for the predicate the fix uses, `isCreationCommitted`, rather than
-the narrower "has not committed yet".
+the narrower "has not committed yet". The same trace is where finding `F9`'s second shape, the one that
+terminates rather than raising to the client, is shown; `FINDINGS.md` has it.
 
 ## Witnesses of the cleanup thread {#witnesses-cleanup}
 
@@ -359,15 +360,17 @@ argument.
 
 `PinnedNotDeleted` restates `CleanupDecide`'s own guard, and the guard and the state change are now two steps,
 so the property says the part had no pin at the moment it moved to `Deleting`. What keeps that true is not the
-parts lock. Three actions add pins and only `SelectCapture` needs the lock; `MergeSelect` and
-`RollbackCopyLists` do not. The reason those two cannot pin a part between the decision and the grab is what
+parts lock. Six actions add pins, and `MergeSelect` and `RollbackCopyLists` are the only two that
+can reach a part the cleanup has accepted: `SelectCapture` and `PublishStart` require the parts lock to be
+free, every caller of `EnrolGrantEffect` requires it to be their own, and `MergeWrite` pins a result part it
+requires to be `Absent`, where the cleanup's candidate is `Outdated`. The reason those two cannot pin a part between the decision and the grab is what
 `canBeRemoved` accepts: a part whose removal committed at or below the oldest snapshot, or whose creation
 carries `RolledBackCSN`. Such a part is invisible at every **ordinary** snapshot, and a merge always reads at
 one, because `MergeBegin` registers `latest_snapshot` the way a session's `Begin` does, so no merge can select
 it; and `RollbackCopyLists` pins a transaction's lists at the start of the rollback, before the stamp that
 makes the part removable. The qualifier is what finding `F8` costs the argument: at `EverythingVisibleCSN` a
-rolled-back creation **is** visible, and a `SELECT` there does see it. That reader is the third action, the
-one that takes the parts lock, so it cannot run inside the cleanup's hold, and whatever it captured before the
+rolled-back creation **is** visible, and a `SELECT` there does see it. That reader is `SelectCapture`,
+which takes the parts lock, so it cannot run inside the cleanup's hold, and whatever it captured before the
 hold it pinned, which is what `CleanupDecide` then refuses on. A witness that raises the snapshot the decision compares against, which is what the
 `NoPrematureDelete` and `NoLostVisibleData` hooks do, breaks that argument; neither of them checks this
 property. In every non-witness run it is still a tautology and its only content is the witness row above.

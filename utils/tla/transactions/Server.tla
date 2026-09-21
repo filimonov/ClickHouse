@@ -196,17 +196,19 @@ EnrolGrantEffect(a, t, q) ==
   /\ txn' = [txn EXCEPT ![t].mutex = a, ![t].removing = Append(@, q)]
   /\ h' = [h EXCEPT !.removing[t] = @ \cup {q}]
 \* The third disjunct is finding F9's fix and is off under the baseline. lockRemovalTID grants the lock on a
-\* part whose creation has not committed, and setAndStoreRemovalTID then stores creation_csn = 0 beside a
+\* part whose creation has not committed, and setAndStoreRemovalTID then validates creation_csn = 0 beside a
 \* removal_tid that is not the creation_tid, which validateInfo raises LOGICAL_ERROR on
 \* (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:555-557). The condition is exactly
-\* VersionMetadata::isCreationCommitted (:149-158), which the file already computes and today reads on the
+\* VersionMetadata::isCreationCommitted (:150-159), which the file already computes and today reads on the
 \* non-transactional path alone: the creation CSN in memory, or the log's answer for the creating TID, and a
 \* creation is committed only if that value is set and is not RolledBackCSN. Both halves are load-bearing. An
 \* unset value is the shape above; RolledBackCSN is the shape the skip at MergeTreeData.cpp:7044-7046 was
 \* meant to catch and lets through when the creator rolls back after the skip has read the value, which
 \* MergeTreeTransaction::rollback can do at any moment because it stamps the CSN without the parts lock
 \* (src/Interpreters/MergeTreeTransaction.cpp:412-417). The remover's own creation is exempt, because there
-\* creation_tid = removal_tid and the shape validateInfo sees is valid.
+\* creation_tid = removal_tid and the shape validateInfo sees is valid. The disjunct is on the transactional
+\* enrolment paths only, which is the qualifier !tid.isNonTransactional() the upstream refusal needs: the
+\* non-transactional batch tolerates a rolled-back creation and has its own guard in NtBatchPreflight.
 EnrolRefused(t, q) ==
   \/ txn[t].state = "RolledBack"
   \/ ((part[q].lock /= EmptyTID \/ part[q].mem.rcsn /= UnknownCSN) /\ ~Witness("SingleRemover"))

@@ -32,7 +32,7 @@ transaction holds locked, is a design change and not a patch that can be written
 
 | Id | Scenario, bounds | Property | Action sequence (short) | Classification | Resolution | Proposed code fix |
 |---|---|---|---|---|---|---|
-| F9 | `SetSnapshotF9Sibling`: two sessions, one part, `TID_MAX = 2`, `CSN_MAX = 35`, `SNAPSHOT_TARGETS = {3}`, `SET_SNAPSHOT_PROTECTS = FALSE`, the baseline | `Assert_validateInfo` | `t1` inserts `P1` and stays `Running`, so `P1` is `Active` with `creation_csn` unset; `t2` lowers its snapshot to `EverythingVisibleCSN`, which makes `P1` visible to it without the wait an ordinary snapshot takes; `t2` drops the partition, the skip in `removePartsFromWorkingSet` does not apply because the creation is unset rather than rolled back, `lockRemovalTID` grants the lock, and `setAndStoreRemovalTID` stores `removal_tid = t2` beside `creation_csn = 0`, which `validateInfo` rejects with `LOGICAL_ERROR`, "creation_csn is not set while removal_tid is not ..." | `code` | `MC_SetSnapshotF9Sibling` produces it, trace `traces/f9-uncommitted-creation-removal-validateinfo.txt`, 15 states; 20,161, 21,580 and 20,545 distinct on three runs, a first-violation count. The fix variant `REMOVAL_REFUSES_UNCOMMITTED_CREATION` runs the same configuration green in `MC_SetSnapshotF9SiblingFixed`, 1,858,350 and 1,858,362 distinct. See below | refuse the removal rather than the read: `VersionMetadata::lockRemovalTID` must refuse with `SERIALIZATION_ERROR` a part whose creation is not committed in the sense of the neighbouring `isCreationCommitted`, exempting the remover's own creation. See below |
+| F9 | `SetSnapshotF9Sibling`: two sessions, one part, `TID_MAX = 2`, `CSN_MAX = 35`, `SNAPSHOT_TARGETS = {3}`, `SET_SNAPSHOT_PROTECTS = FALSE`, the baseline | `Assert_validateInfo` | `t1` inserts `P1` and stays `Running`, so `P1` is `Active` with `creation_csn` unset; `t2` lowers its snapshot to `EverythingVisibleCSN`, which makes `P1` visible to it at once, where at an ordinary snapshot `VersionMetadata::isVisible` asks the log and answers invisible while the creation CSN is unknown; `t2` drops the partition, the skip in `removePartsFromWorkingSet` does not apply because the creation is unset rather than rolled back, `lockRemovalTID` grants the lock, and `setAndStoreRemovalTID` validates `removal_tid = t2` beside `creation_csn = 0`, which `validateInfo` rejects with `LOGICAL_ERROR`, "creation_csn is not set while removal_tid is not ...", before anything is stored. The finding has two shapes: a client exception on this one, and a termination on the second, where the creator stamps `RolledBackCSN` between the skip and the store, the store succeeds, and the remover's commit raises inside the `noexcept` `afterCommit` | `code` | `MC_SetSnapshotF9Sibling` produces it, trace `traces/f9-uncommitted-creation-removal-validateinfo.txt`, 15 states; 20,161, 21,580, 20,545, 22,609 and 22,618 distinct on five runs, a first-violation count. The second shape's trace is `traces/f9-rollback-after-skip-window.txt`, 29 states. The fix variant `REMOVAL_REFUSES_UNCOMMITTED_CREATION` runs the same configuration green in `MC_SetSnapshotF9SiblingFixed`, 1,858,364 and 1,858,346 distinct on two runs with the restored roster, which is the counting noise this module shows on every run. See below | refuse the removal rather than the read: for a transactional remover, `!tid.isNonTransactional()`, `VersionMetadata::lockRemovalTID` must throw `SERIALIZATION_ERROR` when `creation_tid != remover_tid && !isCreationCommitted()`, which covers a creation still in flight and a creation already rolled back alike. See below |
 | F8 | `SetSnapshotF8`: one session, one part, `TID_MAX = 2`, `CSN_MAX = 35`, `SNAPSHOT_TARGETS = {3}`, the whole roster | `RollbackNoLeak` | `t1` inserts `P1` and is rolled back; `t2` lowers its snapshot to `EverythingVisibleCSN` and its `SELECT` returns `P1`, a part no committed transaction ever created | `property` | the C++ does exactly this, and by design: `VersionInfo::isVisible` returns true for every part at that snapshot before it looks at any CSN (`src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158`, "Special snapshot for introspection purposes"). `MC_SetSnapshotF8` produces it, trace `traces/f8-everything-visible-rollback-leak.txt`, 24 states. The design document's isolation and rollback rows carry no qualifier for it, which is spec defect S18 | none for the read itself; what needs the fix is the write path, which is `F9` |
 | F6 | `NonTxnF6`: one session, `Parts = {P1, P2, E}`, `TID_MAX = 2`, `CSN_MAX = 35` | `Assert_validateInfo` | a non-transactional `DROP PARTITION` publishes the empty part `E` `Active`; `t1`, which had `P2` precommitted, publishes it and `Transaction::commit` finds `E` covering it, so `P2` goes `Outdated` and is never attached to `t1`; `t1` then drops the partition transactionally, and `P2` is visible to it through its own `creation_tid`, so the drop enrols it; `t1` commits, `afterCommit` stores `removal_csn` on a record whose `creation_csn` is still zero, and `validateInfo` raises `LOGICAL_ERROR` inside `MergeTreeTransaction::afterCommit`, which is declared `noexcept` (`src/Interpreters/MergeTreeTransaction.cpp:321`), so the process terminates | `code` | the model variant `OBSOLETE_IS_ROLLED_BACK` encodes the proposed fix and `MC_NonTxnFixed` runs the same configuration with it; `MC_NonTxnF6` produces the finding, trace `traces/f6-obsolete-part-removal-csn-noexcept.txt`, 44 states; 120,405 distinct on the run that produced it and 117,204 on a re-run, a first-violation count | stamp the obsolete part `RolledBackCSN` the way `MergeTreeData::Transaction::rollback` stamps a part that does not make it in, in the pre-`NOEXCEPT_SCOPE` loop that already knows the covering part (`src/Storages/MergeTree/MergeTreeData.cpp:11278-11282`) and **not** in the obsolete branch itself (`:11305-11317`), which is inside the scope. See below |
 | F5 | `NonTxnF5`: one session, `Parts = {P1, P2, E}`, `TID_MAX = 2`, `CSN_MAX = 35` | `ActiveSetShape` | a non-transactional `INSERT` publishes `P1`; a non-transactional `DROP PARTITION` publishes the empty part `E` over it and removes `P1` through the batch; a second non-transactional `INSERT` of `P2` is published while `E` is `Active`, so `Transaction::commit`'s covering branch marks `P2` `Outdated` instead; `t1` then runs a transactional `DROP PARTITION`, which sees `E` and `P2` (both visible) and enrols both; `ROLLBACK` restores both to `Active`, and `E` covers `P2` | `code` | recorded, not fixed: the obvious local fix trades this violation for a `RollbackRestores` one, which is what makes the finding interesting. Trace `traces/f5-rollback-restores-into-covered-range.txt`, 42 states; 106,922 distinct on the run that produced it and 99,234 on a re-run, a first-violation count. See below | `MergeTreeData::restoreAndActivatePart` (`src/Storages/MergeTree/MergeTreeData.cpp:7325`) must not reactivate blindly; the prevention belongs at publication time. See below |
@@ -80,48 +80,81 @@ snapshot for introspection purposes". `executeSetSnapshot` accepts it by name
 (`src/Interpreters/InterpreterTransactionControlQuery.cpp:144`). Two things follow. The read is `F8` below and
 is intended. The write is this finding and is not.
 
-**The route.** A transaction at that snapshot sees a part whose creating transaction is still running: for
-every other snapshot `isVisible` would reach the creation test, find no CSN and ask the log, and the answer
-for a running creator is "not yet visible"; here it never gets that far. `DROP PARTITION` in that transaction
+**The route.** A transaction at that snapshot sees a part whose creating transaction is still running. At
+every other snapshot `VersionInfo::isVisible` answers `std::nullopt` for a part with no CSN, and its caller
+`VersionMetadata::isVisible` then asks the log and returns invisible while the answer is `Tx::UnknownCSN`
+(`VersionMetadata.cpp:86-87`); it does not wait for the creator. Here it
+never gets that far. `DROP PARTITION` in that transaction
 collects `Active` and `Outdated` visible parts (`src/Storages/MergeTree/MergeTreeData.cpp:8241-8255`) and
 hands them to `removePartsFromWorkingSet`, whose enrolment loop skips a part whose `creation_csn` is
 `Tx::RolledBackCSN` (`:7044-7046`) — and an unfinished creation carries `Tx::UnknownCSN`, not
 `Tx::RolledBackCSN`, so the skip does not apply. `MergeTreeTransaction::removeOldPart` then calls
 `lockRemovalTID`, which refuses a removal already locked or already committed and nothing else
-(`VersionMetadata.cpp:195-247`), and `setAndStoreRemovalTID`, which validates the record it is about to store
-(`:345`). That record has `creation_csn = 0` and a `removal_tid` that is not the `creation_tid`, and
-`validateInfo` raises `LOGICAL_ERROR`, "creation_csn is not set while removal_tid is not {}" (`:555-557`).
+(`VersionMetadata.cpp:195-248`), and `setAndStoreRemovalTID`, which validates the record it is about to store.
+That record has `creation_csn = 0` and a `removal_tid` that is not the `creation_tid`, and `validateInfo`
+raises `LOGICAL_ERROR`, "creation_csn is not set while removal_tid is not {}" (`:555-557`). The invalid record
+is never written: `validateInfo` runs before `storeInfo` (`:345-347`).
 
-The store is outside the `NOEXCEPT_SCOPE` in `removeOldPart` (`MergeTreeTransaction.cpp:213-228`), so what the
-user gets is an exception out of `DROP PARTITION` rather than a termination. It is still a logical error
-reached by two ordinary statements, and it leaves the part in the transaction's `removing_parts` with the
-removal lock taken, because the `NOEXCEPT_SCOPE` ran first.
+**Shape 1, an exception to the client.** The store is outside the `NOEXCEPT_SCOPE` in `removeOldPart`, which
+covers the two enrolment vectors and nothing else (`MergeTreeTransaction.cpp:222-225`), so the `LOGICAL_ERROR`
+leaves `DROP PARTITION` as an ordinary query failure: the query's exception callback calls `txn->onException`
+(`executeQuery.cpp:3372`) and the error reaches the client. It is still a logical error reached by two
+ordinary statements, and it leaves the part in the transaction's `removing_parts` with the removal lock taken,
+because the `NOEXCEPT_SCOPE` ran first. `MC_SetSnapshotF9Sibling` produces it, trace
+`traces/f9-uncommitted-creation-removal-validateinfo.txt`, 15 states.
 
-**The same defect one window later.** If the creating transaction rolls back between the `:7044` skip reading
-its `creation_csn` and the store reading it again, the stored record is `creation_csn = RolledBackCSN` beside
-`removal_tid = t2`, which `validateInfo` accepts, since `removal_csn` is not set yet. The remover's commit
-then stamps a real removal CSN over it, and `creation_csn > removal_csn` (`:561-565`) raises inside the
-`noexcept` `afterCommit` (`MergeTreeTransaction.cpp:321`), which terminates the process. The window is real:
-`MergeTreeTransaction::rollback` stamps the CSN through `setAndStoreCreationCSN` with no data-parts lock held
-(`:412-417`), while the skip and the store are two separate reads of the same version metadata. The witness
-`F9FixInFlightOnly`, which narrows the fix below to the in-flight half alone, produces exactly that trace:
-`traces/f9-rollback-after-skip-window.txt`, 29 states, red on `Assert_validateInfo` at 417,821 distinct with
-the frame's `noexcept_owner` set, which is the termination.
+**Shape 2, a termination.** If the creating transaction rolls back between the `:7044` skip reading its
+`creation_csn` and the store reading it again, the record is `creation_csn = RolledBackCSN` beside
+`removal_tid = t2`, which `validateInfo` accepts, since `removal_csn` is not set yet, and which is therefore
+stored. The remover's commit then stamps a real removal CSN over it, and `creation_csn > removal_csn`
+(`:561-565`) raises inside the `noexcept` `afterCommit` (`MergeTreeTransaction.cpp:321`), which terminates the
+process. The window is real: `MergeTreeTransaction::rollback` stamps the CSN through `setAndStoreCreationCSN`
+with no data-parts lock held (`:412-417`), while the skip and the store are two separate reads of the same
+version metadata. The trace is `traces/f9-rollback-after-skip-window.txt`, 29 states, produced on
+`SetSnapshotF9SiblingFixed` under the witness `F9FixInFlightOnly`, which narrows the fix below to the
+in-flight half alone: red on `Assert_validateInfo` at 417,821 distinct. The frame the assertion fires on is
+`op |-> "RemovalCSN"`, `err |-> "LOGICAL_ERROR"`, `noexcept_owner |-> TRUE`, which is exactly the guard of
+`NoexceptFrameDown`, the step that sets `h.down_cause` and so falsifies `NoAvoidableTermination`; the
+assertion fires one step before that, at the frame, which is why the last state of the trace still has
+`down_cause |-> "None"`. Both rows are on `MC_SetSnapshotF9SiblingFixed`'s roster. The witness therefore
+carries two things at once: the second shape of this finding, and the argument that a fix narrowed to the
+in-flight half alone is not enough.
 
-**The fix.** Refuse the removal, not the read. `VersionMetadata::lockRemovalTID` should refuse with
-`SERIALIZATION_ERROR` — retryable, and the error its two neighbouring refusals already use — a part whose
-creation is not committed, unless the remover created it itself. "Not committed" is
-`VersionMetadata::isCreationCommitted` (`:149-158`), which is already in the file and is already read for this
-purpose on the non-transactional path, through `isCreatedByUncommittedTransaction` and the refusal inside
-`setAndStoreRemovalTID` (`:160-184`) whose comment gives the same reason: a record `validateInfo` rejects and
-that cannot be repaired on restart. It answers false for both halves of this finding, a creation still in
-flight and a creation already rolled back, and the second half is what makes it more than the `:7044` skip
-repeated one frame down. The exemption is necessary: a transaction that inserts a part and then drops it has
-`creation_tid = removal_tid` and `creation_csn = 0`, which `validateInfo` accepts and which
-`isCreationCommitted` alone would refuse.
+**The fix.** Refuse the removal, not the read. For a transactional remover, and only for one, which is the
+qualifier `!tid.isNonTransactional()`, `VersionMetadata::lockRemovalTID` should throw `SERIALIZATION_ERROR`
+when `creation_tid != remover_tid && !isCreationCommitted()`. `SERIALIZATION_ERROR` is retryable and is the
+error its two neighbouring refusals already use. `VersionMetadata::isCreationCommitted` (`:150-159`) is
+already in the file and is already read for this purpose on the non-transactional path, through
+`isCreatedByUncommittedTransaction` and the refusal inside `setAndStoreRemovalTID` (`:178-183`) whose comment
+gives the same reason: a record `validateInfo` rejects and that cannot be repaired on restart. It answers
+false for both shapes above, a creation still in flight and a creation already rolled back, and covering both
+is what makes the refusal more than the `:7044` skip repeated one frame down: a check written over
+`isCreatedByUncommittedTransaction` instead would answer false for a creation already rolled back and so would
+miss shape 2, the window that terminates. The own-creation exemption is necessary: a transaction that inserts
+a part and then drops it has `creation_tid = removal_tid` and `creation_csn = 0`, which `validateInfo`
+accepts.
 
-The model variant is `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, a disjunct of `EnrolRefused` (`Server.tla:210-223`),
-and `MC_SetSnapshotF9SiblingFixed` runs `MC_SetSnapshotF9Sibling`'s configuration green under it. The
+The qualifier is load-bearing too. `lockRemovalTID` has two non-transactional callers,
+`NonTransactionalRemovalLocks::lock` (`MergeTreeTransaction.cpp:145`) and
+`VersionMetadataOnDisk::setAndStoreNonTransactionalRemovalTID` (`VersionMetadataOnDisk.cpp:103`), and that
+path tolerates a rolled-back creation deliberately: `preparePartForRemoval` lets a part whose `creation_csn`
+is `Tx::RolledBackCSN` past its own check and gives it a non-transactional removal TID while parts are being
+loaded (`src/Storages/MergeTree/MergeTreeData.cpp:2516-2542`). An unqualified refusal would start throwing
+there.
+
+Refusing rather than waiting for the creator to finish, because a wait would happen with the data-parts lock
+and the remover's transaction mutex both held, would need cancellation handling, and would have to
+re-evaluate committed against rolled back after waking anyway. Refusing is what the optimistic conflict
+handling around it already does.
+
+The model variant is `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, a disjunct of `EnrolRefused` in `Server.tla`, and
+it matches that policy: it is on the transactional enrolment paths only, it exempts a non-transactional
+creation and a creation the remover made itself, and it refuses when the effective creation CSN — the one in
+memory, or the log's answer for the creating TID — is `UnknownCSN` or `RolledBackCSN`, which is
+`!isCreationCommitted` written out. `MC_SetSnapshotF9SiblingFixed` runs `MC_SetSnapshotF9Sibling`'s
+configuration green under it. What the variant does not model is what a literal change to `lockRemovalTID`
+would do to the non-transactional batch, which has a `CreatedByUncommitted` guard of its own in
+`NtBatchPreflight`. The
 alternative, making `isVisible` hide a rolled-back or uncommitted creation at `EverythingVisibleCSN` too,
 closes `F8` and `F9` together and is one line, but it changes what the introspection snapshot shows, which is a
 product decision rather than a bug fix.
@@ -129,7 +162,7 @@ product decision rather than a bug fix.
 **What this finding was in round 3b and is not now.** It was stated over a part whose creation had *already*
 been rolled back when the drop enrolled it, and that shape is unreachable: the `:7044` skip catches it. The
 model enrolled every visible part with no creation test, which was the asymmetry — the same skip was cited at
-`NtDropWrite` for the non-transactional batch and missing from `DropLock`. `DropLock` (`Server.tla:511-531`)
+`NtDropWrite` for the non-transactional batch and missing from `DropLock`. `DropLock` in `Server.tla`
 now carries it, `MC_SetSnapshotF9` no longer produces anything and is deleted, and the finding is the sibling
 the round-3b reviewers pointed at, re-derived and confirmed at the bounds above.
 
@@ -792,8 +825,8 @@ scenario checks stays red. Where that does not hold, the gap is recorded here ra
 bound or dropping the property.
 
 Task 5 of this plan closed every row of this table with a run, or moved what is left of it into a named later
-task; the final-review dispatch then reopened `B2` as a placed coverage debt and added `B6`, so the table below
-is not the one task 5 left. A row closed by an argument is not closed: what pays a debt is a witness that fires at some stated
+task; the final-review dispatch then reopened `B2` as a placed coverage debt and added `B6`, and the closing
+round added `B7`, so the table below is not the one task 5 left. A row closed by an argument is not closed: what pays a debt is a witness that fires at some stated
 bounds, a model change, or a bound documented as a bound with the witnesses verified at it.
 
 | Id | Scenario | What was not verified at the exhaustive bounds | Outcome |
@@ -803,6 +836,7 @@ bounds, a model change, or a bound documented as a bound with the witnesses veri
 | B3 | `Merge` at one session | Three witnesses were green there: `NoUncommittedRead`, `Assert_validateInfo_removal` and `NoSpuriousStaleVersion` | **closed but for one row**, in commit `8477e3a08794`. `MC_MergeWitness` is `MC_Merge` at two sessions, for witness runs only: `NoSpuriousStaleVersion` red at 1,766,818 distinct states in 14 s, which is the row that was a real coverage loss rather than a missing transaction, and `NoUncommittedRead` red at 6,065,808 in 46 s. `Assert_validateInfo_removal` did not fire: killed at 34,184,268 after 279 s, **placed in plan 5, task 4 (budget and calibration)** |
 | B4 | `NonTxnDrop` at `TID_MAX = 2`, `CSN_MAX = 34`, two sessions | The half that carries the removal batch had no finishing configuration, so its witnesses were unfired rather than red, and the rest of the `NonTxn` sweep was the undivided module's, carried and not reproducible | **closed but for four rows**, in commit `8477e3a08794` and the fix rounds after it. The half now has two finishing configurations, `MC_NonTxnDrop` at one transaction with the cleanup group and `MC_NonTxnDropTwo` at two without it (see `M15`), and the whole sweep was re-run at them: twelve witnesses red in the first, `Atomicity` red in the second, and the three rows that need the cleanup group and a second transaction at once, `SingleRemover`, `Assert_validateInfo_order` and `NoPrematureDelete`, red in `MC_NonTxnWitness` at 672,101, 41,585 and 644,152 distinct states. `NoDoubleRead` and `NoUncommittedRead` fire in no configuration that finishes: green by full exploration in both drop configurations and killed unfired in `MC_NonTxnWitness` at 40,810,177 and 33,628,474 distinct states. Both are **placed in plan 5, task 4 (budget and calibration)**, with those counts. The fix rounds added the five rows the first sweep had missed: `Assert_getOldestSnapshot_size` red at 2 states, its two `SetSnapshot`-sited siblings vacuously green, `NoNtStoreError` red at 2,466 through an alias on an existing one-site hook, and `Assert_validateInfo_removal` green over the whole witness-mutated space at 25,686,095 distinct states with nothing left on the queue, which is a verdict and a third placement for this debt. The fourth is `SingleRemover` on `NonTxnDropTwo`, whose witness-mutated space is larger than that scenario's own and was still growing at 65,525,357 when it was stopped. `NoFalseCorruption` is not a budget row: it is structurally unreachable here and is deferred to plan 3, task 4 (`SnapshotCrash` and `NonTxnCrash`), which builds the `NonTxnCrash` scenario |
 | B6 | Every scenario that enables the cleanup group, after the cleanup decision and grab were split into two actions in the final-review fix commit | The witness sweeps were not re-run at the new action set. The split holds the parts lock from `CleanupDecide` to `CleanupGrab`, which removes interleavings, so a row that was red before it is not thereby red after it | **closed**, in the sweep commit that re-ran it. Every row of every cleanup-enabled scenario was re-run: 83 witness rows across `SetSnapshot`, `SetSnapshotWitness`, `SetSnapshotFixed`, `SetSnapshotF2Fixed`, `Merge`, `MergeWitness`, `NonTxnDrop`, `NonTxnInsert` and `NonTxnWitness`, plus the minimality halves of the three two-change witnesses, and the four rows of `NonTxnDropTwo` as the control that a scenario without the cleanup group does not move. **No row changed colour**: 63 red rows stayed red, 20 green rows stayed green, and all six minimality halves stayed green. The twelve exhaustive runs were re-run with them, all green or still producing their finding. The counts moved by about ten per cent in the direction the extra step predicts, and they are in `WITNESSES.md` and in `README.md`'s last table. The five rows the sweep records as **killed unfired** were not re-run, because a budget stop is not a verdict to re-derive: `Assert_validateInfo_removal` in `SetSnapshot`, in `SetSnapshotWitness` and in `MergeWitness`, `SingleRemover` in `NonTxnDropTwo`, and `NoDoubleRead` and `NoUncommittedRead` in `NonTxnWitness`. All five keep their documented counts, and the four of them that carry a plan 5, task 4 (budget and calibration) placement stay at it |
+| B7 | `MergeWitness`, after `MergeBegin` gained the retention-registry entry | The two-session witness table's three rows, `NoSpuriousStaleVersion`, `NoUncommittedRead` and `Assert_validateInfo_removal`, were not re-run at the changed action. The one-session `Merge` sweep was re-run in full afterwards and no row changed colour, which is evidence about the change and not about this module | **placed in plan 5, task 4 (budget and calibration)**, the task that already owns this module's `Assert_validateInfo_removal` row. The three rows keep the counts `B3` records, and those counts are from before the horizon change |
 | B5 | `NonTxnWitness` at `TID_MAX = 2`, `CSN_MAX = 35`, two sessions | The two-change witness `Assert_validateInfo_nocreation` was red, but its minimality was unverified: both half-runs were cut at 24.3 and 24.5 million distinct states with no violation | **closed** in commit `8477e3a08794`. The witness was re-run in `MC_NonTxnDrop`, which finishes: red at 1,895 distinct states, and both halves green by **full exploration** at 601,859 and 1,112,063, which is a verdict rather than a run that ran out of budget. The witness is minimal |
 
 What plan 5, task 4 (budget and calibration) inherits is **eight** rows, two from B2, one from B1, one from B3 and four

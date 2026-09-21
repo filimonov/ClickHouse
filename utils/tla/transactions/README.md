@@ -440,7 +440,7 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 | `NonTxnF2`, `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, section 1 |
 | `SetSnapshotF2Special` | one session, one part, `TID_MAX = 2`, `SNAPSHOT_TARGETS = {1, 34}`, 116,020 states, the whole roster | everything above `TID_MAX = 2`; it is about the reserved target, not about the three-transaction shape | `FINDINGS.md`, finding `F2`, "the two reserved snapshots" |
 | `SetSnapshotF2SpecialEV` | the same at `SNAPSHOT_TARGETS = {3, 34}`, 125,673 states | `RollbackNoLeak`, which finding `F8` falsifies at this target | `FINDINGS.md`, finding `F8` |
-| `SetSnapshotF9SiblingFixed` | two sessions, one part, `TID_MAX = 2`, `SNAPSHOT_TARGETS = {3}` under `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, 1,858,362 states | everything but the three rows on its roster; it is about one enrolment refusal, not about coverage | `FINDINGS.md`, finding `F9` |
+| `SetSnapshotF9SiblingFixed` | two sessions, one part, `TID_MAX = 2`, `SNAPSHOT_TARGETS = {3}` under `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, about 1,858,350 states, the roster `SetSnapshotF2SpecialEV` carries less `ErrorIsAbsent`, which the fix's own refusal falsifies | `ErrorIsAbsent` and `RollbackNoLeak`, the latter for finding `F8`'s reason; and everything above `TID_MAX = 2` | `FINDINGS.md`, findings `F8` and `F9` |
 | `SetSnapshotF8`, `SetSnapshotF9Sibling` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, findings `F8` and `F9` |
 | `SetSnapshotWitness`, `MergeWitness`, `NonTxnWitness` | nothing: `witness.sh` only, one property at a time, stopping at the first violation | exhaustive coverage at those bounds, by construction | `WITNESSES.md` |
 
@@ -523,6 +523,20 @@ and the finding moved from a shape the code cannot reach to one it can, which ne
 was not re-run when the retention registry was added, so the previous commit carried a red it did not know
 about. It was reproduced deliberately, on a scratch copy of the directory with the `MergeBegin` line reverted,
 before the fix was accepted.
+
+The closing round changed no action and no property. It rewrote finding `F9`'s entry over its two shapes and
+put `MC_SetSnapshotF2SpecialEV`'s roster, less `ErrorIsAbsent`, on `MC_SetSnapshotF9SiblingFixed`, which was
+the only two-session exhaustive run at `SNAPSHOT_TARGETS = {3}` and was carrying three rows. These are the
+sanity runs on that tree.
+
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
+| `Schema` | 2026-09-21 | the closing commit | 1 | 1 s | green |
+| `BaseSmall` | 2026-09-21 | the closing commit | 47,381 | 1 s | green |
+| `SetSnapshotF9Sibling` | 2026-09-21 | the closing commit | a first-violation count, 22,609 and 22,618 on two runs | 2 s | **red on `Assert_validateInfo`**, which is finding `F9` |
+| `SetSnapshotF9SiblingFixed` | 2026-09-21 | the closing commit | 1,858,364 and 1,858,346 on two runs | 15 s | green on the restored roster; the spread is the counting noise every run of this module shows |
+| `SetSnapshotF2` | 2026-09-21 | the closing commit | a first-violation count | 3 s | **red on `NoPrematureDelete`**, finding `F2`'s first shape |
+| `Merge` | 2026-09-21 | the closing commit | 6,124,691 | 56 s | green, unchanged |
 
 ## 5. Witnesses {#witnesses}
 

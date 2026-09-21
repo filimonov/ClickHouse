@@ -69,12 +69,15 @@ ASSUME SET_SNAPSHOT_PROTECTS \in BOOLEAN
 \* MergeTreeData::Transaction::rollback stamps a part that does not make it in.
 ASSUME OBSOLETE_IS_ROLLED_BACK \in BOOLEAN
 \* FALSE is the baseline: VersionMetadata::lockRemovalTID refuses a removal already locked or already
-\* committed and nothing else (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:195-247), so a
+\* committed and nothing else (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:195-248), so a
 \* transactional remover may lock a part whose creation is not committed. TRUE is the fix proposed by finding
-\* F9: refuse that with SERIALIZATION_ERROR unless the remover created the part itself. The predicate is
-\* VersionMetadata::isCreationCommitted (:149-158), which the file already has and today reads only on the
+\* F9: for a transactional remover, and only for one, throw SERIALIZATION_ERROR when the creating TID is not
+\* the removing TID and the creation is not committed. The qualifier matters: lockRemovalTID's two other
+\* callers pass Tx::NonTransactionalTID, and that path tolerates a rolled-back creation on purpose, so an
+\* unqualified refusal would throw during part loading. The predicate is
+\* VersionMetadata::isCreationCommitted (:150-159), which the file already has and today reads only on the
 \* non-transactional path, through isCreatedByUncommittedTransaction and the refusal inside
-\* setAndStoreRemovalTID (:160-184). It covers both halves of the finding, a creation still in flight and a
+\* setAndStoreRemovalTID (:178-183). It covers both shapes of the finding, a creation still in flight and a
 \* creation already rolled back.
 ASSUME REMOVAL_REFUSES_UNCOMMITTED_CREATION \in BOOLEAN
 
