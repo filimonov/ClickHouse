@@ -214,8 +214,8 @@ needs the third transaction.
 | Conjunct | Witness name | The model change | Bounds | Result | States | Time |
 |---|---|---|---|---|---|---|
 | the running list and the snapshot bag have the same members | `Assert_getOldestSnapshot_size` | `Begin` joins `running_list` without writing `snapshots_in_use`, breaking at one site the lockstep `beginTransaction` keeps under one lock | exhaustive | RED | 2 | 1 s |
-| each entry is the value `beginTransaction` inserted | `Assert_getOldestSnapshot_entry` | `SetSnapshot` moves the `snapshots_in_use` entry and leaves `protected_snapshot` where it was | exhaustive | RED | 15,249 | 2 s |
-| the bag is sorted | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the entry, which is the change the design document names | witness | RED | 425,291 | 4 s |
+| each entry is the value `beginTransaction` inserted | `Assert_getOldestSnapshot_entry` | `SetSnapshot` moves the `snapshots_in_use` entry and leaves `protected_snapshot` where it was | exhaustive | RED | 12,594 | 2 s |
+| the bag is sorted | `Assert_getOldestSnapshot` | `SetSnapshot` also rewrites `protected_snapshot`, and with it the entry, which is the change the design document names | witness | RED | 406,870 | 4 s |
 
 The third row is the only one that exercises a C++ assertion end to end, and it is the one that cannot be shown
 at the exhaustive bounds: breaking sortedness needs a transaction that began above `FirstCSN`, so a committed
@@ -229,7 +229,7 @@ entry and does not re-sort, would do in the C++. That is why the same hook falsi
 
 | Property | Witness name | The model change | Bounds | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | the entry moves below the stored tail, and the next `removeOldEntries` computes a `getOldestSnapshot` below the `tail_ptr` it has already stored | exhaustive | RED | 149,488 | 2 s |
+| `Assert_TailPtrNotRegressing` | `Assert_getOldestSnapshot_entry` | the entry moves below the stored tail, and the next `removeOldEntries` computes a `getOldestSnapshot` below the `tail_ptr` it has already stored | exhaustive | RED | 148,291 | 3 s |
 
 It shares a witness rather than having one of its own, which the contract allows: the change is a single named
 one and the property it runs against is named on the command line. There is no separate hook, because the only
@@ -279,7 +279,7 @@ finish, which is model defect M4.
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
 | `Assert_getOldestSnapshot` | `Assert_getOldestSnapshot` | RED | 436,697 | 5 s |
-| `SingleRemover` | `SingleRemover` | RED | 8,511,843 | 55 s |
+| `SingleRemover` | `SingleRemover` | RED | 8,193,903 | 53 s |
 | `NoUncommittedRead` | `NoUncommittedRead` | RED | 3,170,252 | 21 s |
 | `NoLostRead` | `NoLostRead` | RED | 1,310,488 | 10 s |
 | `Assert_validateInfo` | `Assert_validateInfo_removal` | **killed unfired**, 108,439,476 distinct after 674 s | — | |
@@ -311,6 +311,23 @@ defect S6. `NoLostVisibleData` is now in the `Fixed` configurations and has its
 witness in the cleanup section below; it is deliberately not in `MC_SetSnapshot.cfg`, which exists to produce
 finding F2 and would otherwise stop on whichever property fires first.
 
+### The fix variant of finding `F9` {#witnesses-f9-fix}
+
+`REMOVAL_REFUSES_UNCOMMITTED_CREATION` is a fix variant rather than a baseline guard, and a fix variant that
+does more than it needs to is as much a defect as one that does too little. The witness below is the second
+kind of check: it narrows the fix to the half the finding's first shape alone would suggest and shows that the
+narrowed fix is not enough.
+
+| Property | Witness name | The model change | Scenario | Result | States | Time |
+|---|---|---|---|---|---|---|
+| `Assert_validateInfo` | `F9FixInFlightOnly` | the refusal `EnrolRefused` gains under the fix drops its `RolledBackCSN` half and refuses only a creation still in flight | `SetSnapshotF9SiblingFixed` | RED | 417,821 | 4 s |
+
+The trace is `traces/f9-rollback-after-skip-window.txt`, 29 states: the creator rolls back after `DropLock` has
+read its creation CSN and before the enrolment stores the removal TID, and the remover's commit then stamps a
+removal CSN under a creation CSN of `RolledBackCSN`, inside the `noexcept` frame. It is not a minimality half
+of any other witness; it is the argument for the predicate the fix uses, `isCreationCommitted`, rather than
+the narrower "has not committed yet".
+
 ## Witnesses of the cleanup thread {#witnesses-cleanup}
 
 The cleanup thread adds three properties. Two of them need a shape the `SetSnapshot` bounds cannot build, so
@@ -322,10 +339,10 @@ against a `Fixed` configuration, so that the `SET TRANSACTION SNAPSHOT` defect d
 
 | Property | Witness name | The model change | Scenario | Result | States | Time |
 |---|---|---|---|---|---|---|
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 201,730 | 3 s |
-| `NoPrematureDelete` | `SnapshotEntryOnly` | `CleanupGrab` skips the revalidation `SET_SNAPSHOT_PROTECTS` adds, which reduces finding F2's fix to its `snapshots_in_use` half, the half the entry first proposed | `SetSnapshotF2Fixed` | RED | 202,222 | 3 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupDecide` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 38,466 | 2 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 205,039 | 3 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl`, which is `canBeRemoved` reading `getLatestSnapshot` where the code reads `getOldestSnapshot` | `SetSnapshotF2Fixed` | RED | 196,609 | 3 s |
+| `NoPrematureDelete` | `SnapshotEntryOnly` | `CleanupGrab` skips the revalidation `SET_SNAPSHOT_PROTECTS` adds, which reduces finding F2's fix to its `snapshots_in_use` half, the half the entry first proposed | `SetSnapshotF2Fixed` | RED | 205,424 | 3 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | `CleanupDecide` drops the `part[p].pins = {}` guard, which is `grabOldParts` skipping the `isSharedPtrUnique` check at `MergeTreeData.cpp:4150` | `SetSnapshotFixed` | RED | 38,655 | 2 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | the same `latest_snapshot` change at the same site, observed as content a running transaction could read and then could not | `SetSnapshotF2Fixed` | RED | 208,181 | 3 s |
 
 `PinnedNotDeleted` is red at the exhaustive bounds because it needs no visible part at all: a `SELECT` pin on an
 `Outdated` part whose removal has committed is enough, and two transactions produce that. The other two were
@@ -343,11 +360,15 @@ argument.
 `PinnedNotDeleted` restates `CleanupDecide`'s own guard, and the guard and the state change are now two steps,
 so the property says the part had no pin at the moment it moved to `Deleting`. What keeps that true is not the
 parts lock. Three actions add pins and only `SelectCapture` needs the lock; `MergeSelect` and
-`RollbackCopyLists` do not. The reason they cannot pin a part between the decision and the grab is what
+`RollbackCopyLists` do not. The reason those two cannot pin a part between the decision and the grab is what
 `canBeRemoved` accepts: a part whose removal committed at or below the oldest snapshot, or whose creation
-carries `RolledBackCSN`, is invisible to every running transaction, so no merge can select it, and
-`RollbackCopyLists` pins a transaction's lists at the start of the rollback, before the stamp that makes the
-part removable. A witness that raises the snapshot the decision compares against, which is what the
+carries `RolledBackCSN`. Such a part is invisible at every **ordinary** snapshot, and a merge always reads at
+one, because `MergeBegin` registers `latest_snapshot` the way a session's `Begin` does, so no merge can select
+it; and `RollbackCopyLists` pins a transaction's lists at the start of the rollback, before the stamp that
+makes the part removable. The qualifier is what finding `F8` costs the argument: at `EverythingVisibleCSN` a
+rolled-back creation **is** visible, and a `SELECT` there does see it. That reader is the third action, the
+one that takes the parts lock, so it cannot run inside the cleanup's hold, and whatever it captured before the
+hold it pinned, which is what `CleanupDecide` then refuses on. A witness that raises the snapshot the decision compares against, which is what the
 `NoPrematureDelete` and `NoLostVisibleData` hooks do, breaks that argument; neither of them checks this
 property. In every non-witness run it is still a tautology and its only content is the witness row above.
 `Invariants.tla` carries the same argument beside the property. It is stated anyway because the guard is a refinement decision that a
@@ -384,7 +405,7 @@ The four rows the scenario matrix names for `Merge`, and the two the deferred ta
 | `NoDoubleRead` | `NoDoubleRead` | the two removal tests of `isVisible`'s fast path and the removal lookup of its slow path are skipped, so a reader sees `M12` and the sources it covers at once | RED | 1,409,859 | 11 s |
 | `ActiveSetShape` | `ActiveSetShape` | `PublishFlip` does not outdate the covered parts, so the merge result goes `Active` over sources that are still `Active` | RED | 291,656 | 4 s |
 | `Atomicity` | `Atomicity` | the slow path of `isVisible` decides from `mem` alone, skipping both `tid_to_csn` lookups | RED | 2,891,864 | 21 s |
-| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl` | RED | 497,729 | 6 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | `CleanupDecide` asks `CanBeRemovedWith(p, tlog.latest_snapshot)` instead of `CanBeRemovedImpl` | RED | 509,341 | 5 s |
 
 `NoDoubleRead` and `ActiveSetShape` are the two rows this scenario exists to pay. Neither is writable in `Base`,
 where `Covers` is empty and no two parts are related. `NoPrematureDelete` is red here without the lowered
@@ -408,7 +429,7 @@ minutes in all, of which one row is five.
 | Property | Witness name | Result | States | Time |
 |---|---|---|---|---|
 | `ErrorIsAbsent` | `ErrorIsAbsent` | RED | 15,261 | 2 s |
-| `SingleRemover` | `SingleRemover` | RED | 5,277,051 | 37 s |
+| `SingleRemover` | `SingleRemover` | RED | 5,191,758 | 36 s |
 | `LockConsistent` | `LockConsistent` | RED | 51,917 | 2 s |
 | `NoSpuriousStaleVersion` | `NoSpuriousStaleVersion` | **GREEN**, debt B3 | 6,856,950 | 48 s |
 | `RollbackRestores` | `RollbackRestores` | RED | 261,859 | 4 s |
@@ -421,9 +442,9 @@ minutes in all, of which one row is five.
 | `NoDoubleRead` | `NoDoubleRead` | RED | 1,409,859 | 11 s |
 | `Atomicity` | `Atomicity` | RED | 2,891,864 | 21 s |
 | `ActiveSetShape` | `ActiveSetShape` | RED | 291,656 | 4 s |
-| `NoPrematureDelete` | `NoPrematureDelete` | RED | 497,729 | 6 s |
-| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 9,196 | 1 s |
-| `NoLostVisibleData` | `NoLostVisibleData` | RED | 3,726,200 | 27 s |
+| `NoPrematureDelete` | `NoPrematureDelete` | RED | 509,341 | 5 s |
+| `PinnedNotDeleted` | `PinnedNotDeleted` | RED | 11,506 | 3 s |
+| `NoLostVisibleData` | `NoLostVisibleData` | RED | 3,771,760 | 27 s |
 | `Assert_validateInfo` | `Assert_validateInfo_creator` | RED | 6,450 | 2 s |
 | `Assert_validateInfo` | `Assert_validateInfo_order` | RED | 6,300 | 2 s |
 | `Assert_validateInfo` | `Assert_validateInfo_removal` | **GREEN**, debt B3 | 41,978,209 | 5 min 12 s |

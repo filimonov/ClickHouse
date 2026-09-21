@@ -1,17 +1,22 @@
----- MODULE MC_SetSnapshotF2SpecialEV ----
+---- MODULE MC_SetSnapshotF9Sibling ----
 EXTENDS MergeTreeTransactions
-\* The fix variant at EverythingVisibleCSN, the other reserved snapshot executeSetSnapshot accepts. It needs
-\* its own module rather than another target in the one above, because a transaction reading at this snapshot
-\* sees every part, rolled-back creations included (VersionInfo::isVisible returns true at once,
-\* src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158), and that falsifies RollbackNoLeak through
-\* finding F8. That one row is out of the roster here and is shown in MC_SetSnapshotF8; the termination rows
-\* Assert_validateInfo, ErrorIsAbsent and NoAvoidableTermination are on it, because finding F9 needs a second
-\* session to hold a creation open while another transaction drops it and this module has one. What the module
-\* checks is the half it was built for, that the cleanup horizon protects what this snapshot can read and that
-\* the retention horizon keeps the tail where it was. Expected green.
-\* NoOutdatedLookup is on the roster and is vacuous here, as it is everywhere in this plan: UpdFinalizeUnknown
-\* is FALSE until plan 3 adds the unknown-state pass, so its antecedent never holds. It is checked so that the
-\* module states the tail-side roster in full; spec defect S6 records the vacuity.
+\* Finding F9: a transactional DROP PARTITION at EverythingVisibleCSN removes a part whose creation is still
+\* in flight. The skip removePartsFromWorkingSet applies before enrolment tests creation_csn against
+\* RolledBackCSN (src/Storages/MergeTree/MergeTreeData.cpp:7044-7046) and a creation that has not finished
+\* carries Tx::UnknownCSN, so the skip does not apply; at this snapshot isVisible returns true before it looks
+\* at any CSN (src/Interpreters/MergeTreeTransaction/VersionInfo.cpp:157-158), so the reader does not take the
+\* std::nullopt wait an ordinary snapshot takes; and lockRemovalTID refuses only a removal already locked or
+\* already committed (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:195-247), never a creation that
+\* has not committed. The creator then rolls back under the held lock and stamps RolledBackCSN, and the
+\* remover's commit stamps a real removal CSN over it.
+\* Two sessions, because the shape needs a creator that is still Running while another transaction drops;
+\* TID_MAX = 2, one part, and SNAPSHOT_TARGETS = {3}. SET_SNAPSHOT_PROTECTS is FALSE, the baseline, so that a
+\* red here is a red of the code as it stands and not of finding F2's fix variant.
+\* The roster is the three rows the shape is about: TypeOK, Assert_validateInfo and the NoAvoidableTermination
+\* that the assertion inside the noexcept afterCommit produces. RollbackNoLeak is left out because finding F8
+\* falsifies it at this target for a different reason, and ErrorIsAbsent because an ordinary SERIALIZATION_ERROR
+\* between the two sessions would fire it first and hide the row the module is for.
+\* Expected red on Assert_validateInfo.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 
@@ -40,7 +45,7 @@ SymSessions == Permutations(Sessions)
 \* that changed, not the argument. Their cost is measured in STATE_SPACE.md.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-SetSnapshotF2SpecialEVView ==
+SetSnapshotF9SiblingView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

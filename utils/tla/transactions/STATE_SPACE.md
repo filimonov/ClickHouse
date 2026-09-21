@@ -335,13 +335,22 @@ the two reserved snapshots and is never raised. `FINDINGS.md`, finding `F2`, has
 where the two are equal, which is every scenario outside the `SetSnapshot` family and every state of
 `SetSnapshot` itself, whose target is `FirstCSN`: 14,289,328 against 14,289,310 is the counting noise.
 
-Three small modules check it, all at `TID_MAX = 2`, one session, one part, and all finishing in a second.
+Five small modules check it, all at `TID_MAX = 2` and one part. The first three are one session and finish in
+a second; the last two are two sessions, which is what finding `F9` needs.
 
 | Module | Targets | Distinct states | Result |
 |---|---|---|---|
 | `MC_SetSnapshotF2Special` | `{1, 34}` | 116,020 | green, whole roster |
-| `MC_SetSnapshotF2SpecialEV` | `{3, 34}` | 134,553 | green, without the four rows findings `F8` and `F9` falsify |
-| `MC_SetSnapshotF9` | `{3}` | first-violation | red on `Assert_validateInfo`, which is finding `F9`; `MC_SetSnapshotF8` is the same shape one property earlier |
+| `MC_SetSnapshotF2SpecialEV` | `{3, 34}` | 125,673 | green, without `RollbackNoLeak`, the one row finding `F8` falsifies |
+| `MC_SetSnapshotF8` | `{3}` | first-violation | red on `RollbackNoLeak`, which is finding `F8` |
+| `MC_SetSnapshotF9Sibling` | `{3}` | first-violation | red on `Assert_validateInfo`, which is finding `F9` |
+| `MC_SetSnapshotF9SiblingFixed` | `{3}` | 1,858,362 | green under `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, finding `F9`'s fix |
+
+`MC_SetSnapshotF2SpecialEV` lost states to the round that re-derived `F9`, 134,553 to 125,673. The reason is the
+enrolment skip `DropLock` now carries: a transactional `DROP PARTITION` no longer walks a part whose creation
+was rolled back, so the store frames that enrolment produced are gone. The two sibling modules are bigger than
+the one-session ones by two orders of magnitude for the ordinary reason, a second session and a second
+transaction running at the same time.
 
 `MC_SetSnapshotF2Fixed` also lost states to the change, 411,641 to 309,987, and the reason is worth recording
 because it is not a reduction: the retention entry no longer follows a target above `latest_snapshot`, so the

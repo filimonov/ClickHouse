@@ -1,13 +1,10 @@
----- MODULE MC_SetSnapshotF9 ----
+---- MODULE MC_SetSnapshotF9SiblingFixed ----
 EXTENDS MergeTreeTransactions
-\* Finding F9: the same reader can REMOVE what it sees. A part whose creation was rolled back carries
-\* creation_csn = RolledBackCSN, nothing on the transactional removal path refuses it
-\* (setAndStoreRemovalTID's refusal is for a non-transactional remover of an uncommitted creation,
-\* src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:172-184), and the commit stamps a real removal CSN
-\* on it, which validateInfo rejects with "creation_csn should not be greater than removal_csn" (:561-565)
-\* inside the noexcept afterCommit. RollbackNoLeak is out of the roster so that the assertion is what fires;
-\* the same shape also falsifies ErrorIsAbsent and NoAvoidableTermination, which are the termination the
-\* assertion produces. Expected red on Assert_validateInfo.
+\* MC_SetSnapshotF9Sibling's configuration with finding F9's fix, REMOVAL_REFUSES_UNCOMMITTED_CREATION: the
+\* enrolment refuses a part whose creation has not committed with SERIALIZATION_ERROR, exempting the remover's
+\* own creation. The refusal is an ordinary query failure, so ErrorIsAbsent is not on the roster here either;
+\* the rows the finding falsifies, Assert_validateInfo and NoAvoidableTermination, are, and they are expected
+\* green.
 CoversDef == [p \in Parts |-> {}]
 SymSessions == Permutations(Sessions)
 
@@ -36,7 +33,7 @@ SymSessions == Permutations(Sessions)
 \* that changed, not the argument. Their cost is measured in STATE_SPACE.md.
 FrameKey(f) == <<f.owner, f.op, f.val, f.tentative, f.pc, f.err, f.retries, f.interferences, f.interfered,
                  f.noexcept_owner>>
-SetSnapshotF9View ==
+SetSnapshotF9SiblingFixedView ==
   << zk,
      [p \in Parts |-> <<disk[p].cached, disk[p].tmp_cached, disk[p].dir_cached>>],
      <<h.outcome, h.committed, h.csn, h.loaded, h.creating, h.removing,

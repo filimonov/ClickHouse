@@ -76,12 +76,14 @@ that reaches finding F2; the first is expected red on `NoPrematureDelete` and th
 (one session, `P1`, `P2` and the covering `M12`, one background task, plus the cleanup group and the updater's
 GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only).
 
-Four more modules belong to the `SetSnapshot` family and carry the two reserved snapshots
+Five more modules belong to the `SetSnapshot` family and carry the two reserved snapshots
 `SET TRANSACTION SNAPSHOT` accepts beside an ordinary CSN, `NonTransactionalCSN = 1` and
 `EverythingVisibleCSN = 3`. `SetSnapshotF2Special` is the fix variant at 1 and is green with the whole roster;
-`SetSnapshotF2SpecialEV` is the fix variant at 3 and is green with the four rows findings `F8` and `F9`
-falsify left out; `SetSnapshotF8` and `SetSnapshotF9` are those two findings, expected red on `RollbackNoLeak`
-and on `Assert_validateInfo`. `FINDINGS.md` has both.
+`SetSnapshotF2SpecialEV` is the fix variant at 3 and is green with `RollbackNoLeak` left out, which is the one
+row finding `F8` falsifies; `SetSnapshotF8` is that finding, expected red on `RollbackNoLeak`.
+`SetSnapshotF9Sibling` is finding `F9` at two sessions, expected red on `Assert_validateInfo`, and
+`SetSnapshotF9SiblingFixed` is the same configuration under that finding's fix variant, expected green.
+`FINDINGS.md` has both findings.
 
 The non-transactional scenario is four modules, because no exhaustive run of the whole of it finishes:
 `NonTxnDrop` (the `DROP PARTITION` and its removal batch with the cleanup group, one transaction),
@@ -164,7 +166,7 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 | `SelectCheck(k, p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::filterVisibleDataParts` (:9819) | one `VersionMetadata::isVisible(snapshot, tid)` call for one captured part, with no lock held, which is why any other action may run between two checks |
 | `SelectFinish(k)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::filterVisibleDataParts` (:9819) | the `std::erase_if` has run over every captured part, so the read set is fixed and the pins are dropped. Recording that set into the read monitor is the model's own step; the server keeps no such record |
 | `DropStart(k)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::stopMergesAndWait` (:2775), from `StorageMergeTree::dropPartition` | the merge blocker is taken; the wait on `currently_merging_mutating_parts` has not finished |
-| `DropLock(k)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::dropPartition`, the branch taken when the query has a transaction | the wait is over; `lockParts` is taken and `getVisibleDataPartsVectorInPartition` under that lock has produced the set of parts to remove |
+| `DropLock(k)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::dropPartition`, the branch taken when the query has a transaction | the wait is over; `lockParts` is taken and `getVisibleDataPartsVectorInPartition` under that lock has produced the set of parts to remove. The action splits it in two, as the two loops of `removePartsFromWorkingSet` do: the enrolment walks the parts whose `creation_csn` is not `Tx::RolledBackCSN` (`src/Storages/MergeTree/MergeTreeData.cpp:7044-7046`), and the whole set is outdated afterwards |
 | `DropEnrol(k, q)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::removeOldPart` (:213), reached from `MergeTreeData::removePartsFromWorkingSet` (:7034) | `mutex` taken, `checkIsNotCancelled` passed, `lockRemovalTID` won, `q` pushed to `removing_parts`; `setAndStoreRemovalTID` has not started |
 | `DropStore(k, q)` | `src/Interpreters/MergeTreeTransaction.cpp` | `MergeTreeTransaction::removeOldPart` (:213) | `setAndStoreRemovalTID(tid)` has finished and the `mutex` scope ends; the loop moves to the next part of the batch |
 | `DropOutdate(k)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::removePartsFromWorkingSet` (:7034) | the state loop after the removal metadata of the whole batch is written: every part of the batch becomes `Outdated`, still under the acquired parts lock. The model releases the merge blocker here; in the code the blocker's `ActionLock` is released a little later, when `dropPartition`'s scope ends |
@@ -212,9 +214,9 @@ and `StmtRollback` splits were made; the reason for `RollbackReturn` and `KillRe
 
 | Action | C++ file | Function | Step boundary |
 |---|---|---|---|
-| `CleanupDecide(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4074) | `lockParts` is taken and one part is accepted for removal: its version `canBeRemoved` (:4141), which reads `getOldestSnapshot` under `running_list_mutex` and releases it, nobody else holds it (`isSharedPtrUnique`, :4150), and it is not an empty part still covering an `Outdated` one (:4158). The part does not move yet. The code grabs a set under one lock and the model one part per pass, which is model defect `M23`; the removal-time and mutation-parent conditions at :4167 are time and zero-copy-replication bookkeeping, which `force` covers |
+| `CleanupDecide(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4074) | `lockParts` is taken and one part is accepted for removal: its version `canBeRemoved` (:4142), which reads `getOldestSnapshot` under `running_list_mutex` and releases it, nobody else holds it (`isSharedPtrUnique`, :4150), and it is not an empty part still covering an `Outdated` one (:4158). The part does not move yet. The code grabs a set under one lock and the model one part per pass, which is model defect `M23`; the removal-time and mutation-parent conditions at :4167 are time and zero-copy-replication bookkeeping, which `force` covers |
 | `CleanupGrab(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4190-4194) | `modifyPartState(..., Deleting, parts_lock)` and the release of `lockParts` with the enclosing block. It is a step of its own because a `SET TRANSACTION SNAPSHOT` can land between the decision and it, which is finding F2's second shape. Under `SET_SNAPSHOT_PROTECTS` the removal condition is re-evaluated here, which is the model's form of the fix |
-| `CleanupAbandon(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4141-4160) | the pass leaves the part where it is and releases the lock: the accepted part is skipped rather than moved. Reachable only under the fix, where it is the revalidation refusing |
+| `CleanupAbandon(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `MergeTreeData::grabOldParts` (:4142-4160) | the pass leaves the part where it is and releases the lock: the accepted part is skipped rather than moved. Reachable only under the fix, where it is the revalidation refusing |
 | `CleanupValidate(p)` | `src/Storages/MergeTree/IMergeTreeDataPart.cpp` | `IMergeTreeDataPart::remove` (:2928) through `assertHasValidVersionMetadata` (:2863) and `VersionMetadata::hasValidMetadata` | the `chassert` on the grabbed part passes, on the path `clearPartsFromFilesystemAndRollbackIfError` (`MergeTreeData.cpp:4566`) takes for each grabbed part. This row and the validation half of `CleanupDeleteFail` model a `DEBUG_OR_SANITIZER_BUILD`: in release `chassert` is `(void)sizeof(!(x))` (`base/base/defines.h:84-102`) and does not evaluate its argument, so nothing validates and nothing refuses |
 | `CleanupDeleteOk(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `clearPartsFromFilesystemAndRollbackIfError` (:4566) and `removePartsFinally` (:4217-4240), whose `lockParts` is at :4223 | the directory is gone in both disk layers and the part leaves `data_parts_indexes` |
 | `CleanupDeleteFail(p)` | `src/Storages/MergeTree/MergeTreeData.cpp` | `rollbackDeletingParts` (:4205-4215), whose `lockParts` is at :4207 | the part goes back to `Outdated`. Two producers: the `CORRUPTED_DATA` `hasValidMetadata` raises, and a filesystem error in `clearPartsFromFilesystemImpl`. The second needs a disk fault, so its disjunct is `FALSE` until plan 5 raises `DISK_FAULTS_MAX` |
@@ -227,7 +229,7 @@ operators in `Server.tla`.
 
 | Action | C++ file | Function | Step boundary |
 |---|---|---|---|
-| `MergeBegin(i)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::scheduleDataProcessingJob` (:2203) | `beginTransaction` (:2226) and the `MergeTreeTransactionHolder` with `autocommit = false` (:2227), under the `transactions_enabled` gate. `sys.merges_blocker` is the `merges_blocker.isCancelled` check at :2240 |
+| `MergeBegin(i)` | `src/Storages/StorageMergeTree.cpp` | `StorageMergeTree::scheduleDataProcessingJob` (:2203) | `beginTransaction` (:2226) and the `MergeTreeTransactionHolder` with `autocommit = false` (:2227), under the `transactions_enabled` gate. It is the same `TransactionLog::beginTransaction` a session's `Begin` calls, so it registers the merge transaction in both the snapshot and the retention registry. `sys.merges_blocker` is the `merges_blocker.isCancelled` check at :2240 |
 | `MergeSelect(i)` | `src/Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.cpp` | the predicate `constructPreconditionsPredicate` builds (:80), from `StorageMergeTree::selectPartsToMerge` (:1680) | each source is visible at the merge's snapshot with the **empty** tid (:88), is not locked for removal (:91), and passes `canUsePartInMerges` (:98). The reservation and the pins are `CurrentlyMergingPartsTagger`'s constructor (`StorageMergeTree.cpp:867`), whose `Tagging already tagged part` `LOGICAL_ERROR` (:918-921) is the reservation clause of `ActiveSetShape` |
 | `MergeWrite(i)` | `src/Storages/MergeTree/MergePlainMergeTreeTask.cpp` | `MergePlainMergeTreeTask::prepare` (:92) through `mergePartsToTemporaryPart` (:137) | `setAndStoreCreationTID` on the result, which becomes `Temporary`. The task holds it from here, first through `merge_task` and then through `new_part` (:156) |
 | `MergeRename(i)` | `src/Storages/MergeTree/MergeTreeDataMergerMutator.cpp` | `MergeTreeDataMergerMutator::renameMergedTemporaryPart` (:526), called from `MergePlainMergeTreeTask::finish` (:160) | the result is `PreActive` and is in the statement transaction's `precommitted_parts` |
@@ -437,8 +439,9 @@ it from three files. "Exhaustive" means TLC drained the queue at those bounds.
 | `NonTxnFixed` | the undivided scenario at one session with `OBSOLETE_IS_ROLLED_BACK = TRUE`, 1,029,281 states | the two-session interleavings the split modules cover | `FINDINGS.md`, finding `F6` |
 | `NonTxnF2`, `NonTxnF4`, `NonTxnF5`, `NonTxnF6` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, section 1 |
 | `SetSnapshotF2Special` | one session, one part, `TID_MAX = 2`, `SNAPSHOT_TARGETS = {1, 34}`, 116,020 states, the whole roster | everything above `TID_MAX = 2`; it is about the reserved target, not about the three-transaction shape | `FINDINGS.md`, finding `F2`, "the two reserved snapshots" |
-| `SetSnapshotF2SpecialEV` | the same at `SNAPSHOT_TARGETS = {3, 34}`, 134,553 states | `RollbackNoLeak`, `Assert_validateInfo`, `ErrorIsAbsent` and `NoAvoidableTermination`, which findings `F8` and `F9` falsify at this target | `FINDINGS.md`, findings `F8` and `F9` |
-| `SetSnapshotF8`, `SetSnapshotF9` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, findings `F8` and `F9` |
+| `SetSnapshotF2SpecialEV` | the same at `SNAPSHOT_TARGETS = {3, 34}`, 125,673 states | `RollbackNoLeak`, which finding `F8` falsifies at this target | `FINDINGS.md`, finding `F8` |
+| `SetSnapshotF9SiblingFixed` | two sessions, one part, `TID_MAX = 2`, `SNAPSHOT_TARGETS = {3}` under `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, 1,858,362 states | everything but the three rows on its roster; it is about one enrolment refusal, not about coverage | `FINDINGS.md`, finding `F9` |
+| `SetSnapshotF8`, `SetSnapshotF9Sibling` | nothing: each stops at the first violation it was built to produce | everything else | `FINDINGS.md`, findings `F8` and `F9` |
 | `SetSnapshotWitness`, `MergeWitness`, `NonTxnWitness` | nothing: `witness.sh` only, one property at a time, stopping at the first violation | exhaustive coverage at those bounds, by construction | `WITNESSES.md` |
 
 | Scenario | Date | Commit | Distinct states | Time | Result |
@@ -490,6 +493,36 @@ else, because the two registries are equal in every state the other scenarios re
 Finding `F2`'s third shape came out of these runs. `MC_SetSnapshotF2Special` was red on
 `Assert_TailPtrNotRegressing` before the variant separated the two horizons, on a nine-state trace, which is
 why that property is now on `MC_SetSnapshotF2Fixed`'s roster as well.
+
+The last table is the round that re-derived finding `F9`. `DropLock` gained the enrolment skip
+`removePartsFromWorkingSet` applies, `MergeBegin` gained the retention entry a session's `Begin` already wrote,
+and the finding moved from a shape the code cannot reach to one it can, which needs two sessions.
+
+| Scenario | Date | Commit | Distinct states | Time | Result |
+|---|---|---|---|---|---|
+| `Schema` | 2026-09-21 | the `F9` re-derivation commit | 1 | 1 s | green |
+| `BaseSmall` | 2026-09-21 | the `F9` re-derivation commit | 47,381 | 1 s | green |
+| `SetSnapshot` | 2026-09-21 | the `F9` re-derivation commit | 14,289,315 | 2 min 05 s | green; 14,289,328 before, the counting noise |
+| `SetSnapshotFixed` | 2026-09-21 | the `F9` re-derivation commit | 13,607,899 | 2 min 04 s | green; 13,607,839 before |
+| `SetSnapshotF2` | 2026-09-21 | the `F9` re-derivation commit | a first-violation count | 3 s | **red on `NoPrematureDelete`**, finding `F2`'s first shape |
+| `SetSnapshotF2Fixed` | 2026-09-21 | the `F9` re-derivation commit | 309,987 | 4 s | green, unchanged |
+| `SetSnapshotF2Special` | 2026-09-21 | the `F9` re-derivation commit | 116,020 | 2 s | green, unchanged; the enrolment skip cannot fire at `NonTransactionalCSN` |
+| `SetSnapshotF2SpecialEV` | 2026-09-21 | the `F9` re-derivation commit | 125,673 | 2 s | green with the three termination rows back on its roster; 134,553 before, and the drop is the enrolment the skip removed |
+| `SetSnapshotF8` | 2026-09-21 | the `F9` re-derivation commit | a first-violation count | 2 s | **red on `RollbackNoLeak`**, which is finding `F8` |
+| `SetSnapshotF9Sibling` | 2026-09-21 | the `F9` re-derivation commit | a first-violation count | 2 s | **red on `Assert_validateInfo`**, which is finding `F9` |
+| `SetSnapshotF9SiblingFixed` | 2026-09-21 | the `F9` re-derivation commit | 1,858,362 | 14 s | green under `REMOVAL_REFUSES_UNCOMMITTED_CREATION`, finding `F9`'s fix |
+| `Merge` | 2026-09-21 | the `F9` re-derivation commit | 6,124,691 | 58 s | green; **red on `Assert_getOldestSnapshot` in 28 states on the previous commit**, where `MergeBegin` left the merge transaction's retention entry unset |
+| `NonTxnDrop` | 2026-09-21 | the `F9` re-derivation commit | 1,246,158 | 13 s | green; the `VIEW` counting noise the previous tables document |
+| the five `Merge`-sited witnesses that touch enrolment or snapshots | 2026-09-21 | the `F9` re-derivation commit | 5,191,758, 2, 509,341, 11,506 and 3,771,760 | 1 min 12 s in total | all five red; `SingleRemover` and `NoPrematureDelete` moved with the enrolment skip |
+| the four `SetSnapshot`-sited witnesses | 2026-09-21 | the `F9` re-derivation commit | 2, 12,594, 148,291 and 406,870 | 12 s in total | `_size`, `_entry` and `Assert_TailPtrNotRegressing` red; the sortedness witness at the witness bounds |
+| the three cleanup witnesses and `SnapshotEntryOnly` | 2026-09-21 | the `F9` re-derivation commit | 196,609, 38,655, 208,181 and 205,424 | 11 s in total | all four red |
+| `SingleRemover` in `SetSnapshotWitness` | 2026-09-21 | the `F9` re-derivation commit | 8,193,903 | 53 s | red, which is the witness bounds paying debt `B1`; 8,511,843 before |
+| `F9FixInFlightOnly` in `SetSnapshotF9SiblingFixed` | 2026-09-21 | the `F9` re-derivation commit | 417,821 | 4 s | red, which is what the fix variant's second half is for |
+
+`Merge`'s row is the one that mattered. `Assert_getOldestSnapshot` is on `MC_Merge`'s roster and the scenario
+was not re-run when the retention registry was added, so the previous commit carried a red it did not know
+about. It was reproduced deliberately, on a scratch copy of the directory with the `MergeBegin` line reverted,
+before the fix was accepted.
 
 ## 5. Witnesses {#witnesses}
 

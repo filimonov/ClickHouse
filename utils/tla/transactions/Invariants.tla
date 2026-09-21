@@ -52,6 +52,12 @@ AtomicityStep == \A k \in Sessions : SelectFinish(k) => LET t == Cur(k)
     /\ (C \subseteq V /\ V \cap Rm = {}) \/ (C \cap V = {} /\ Rm \subseteq V)
     /\ V \cap (h.creating[u] \cap h.removing[u]) = {}
 Atomicity == [][AtomicityStep]_vars
+\* Stated without an exemption for EverythingVisibleCSN, unlike AtomicityStep above, and deliberately so: at
+\* that snapshot the code really does return the parts a rolled-back transaction created, and the design
+\* document's isolation and rollback rows promise otherwise. Finding F8 is that disagreement and spec defect
+\* S18 is the row it belongs to, so the property is left stating what the document says and the modules that
+\* run the introspection target leave the row off their roster rather than the property losing it. What is
+\* asserted here therefore still holds, and is checked, at every ordinary snapshot.
 RollbackNoLeak == \A k \in Sessions : \A t \in Tids : Cur(k) /= EmptyTID /\ Cur(k) /= t /\ t \notin h.committed =>
   client[k].last_read.parts \cap h.creating[t] = {}
 
@@ -221,8 +227,12 @@ NoPrematureDelete == [][NoPrematureDeleteStep]_vars
 \*   SelectCapture does take it (it requires sys.parts_lock = NoActor), so it cannot run inside the hold.
 \*   MergeSelect does not, and it judges its sources visible at the merge's snapshot with the empty TID and
 \*     refuses a removal-locked one. A part canBeRemoved accepts has a removal committed at or below the oldest
-\*     snapshot, or a creation stamped RolledBackCSN, and neither is visible to any running transaction, so a
-\*     merge cannot select it.
+\*     snapshot, or a creation stamped RolledBackCSN, and neither is visible at an ORDINARY snapshot. The
+\*     merge's snapshot is always an ordinary one, because MergeBegin registers latest_snapshot as Begin does,
+\*     so a merge cannot select it. The qualifier is what finding F8 costs this argument: at
+\*     EverythingVisibleCSN a rolled-back creation is visible, and a SELECT there does capture it. That reader
+\*     is SelectCapture, the one action of the three that takes the parts lock, so it cannot run inside the
+\*     hold, and what it captured before the hold it pinned.
 \*   RollbackCopyLists does not either, and it pins the whole of a transaction's creating and removing lists at
 \*     the START of the rollback, before the marking phase stamps RolledBackCSN. So by the time the rolled-back
 \*     creation makes the part removable, the pin is already on it and CleanupDecide refuses.

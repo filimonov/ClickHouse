@@ -195,9 +195,30 @@ EnrolGrantEffect(a, t, q) ==
   /\ part' = [StartFrame(q, a, "RemovalTID", t, FALSE) EXCEPT ![q].lock = t, ![q].pins = @ \cup {<<"Txn", t>>}]
   /\ txn' = [txn EXCEPT ![t].mutex = a, ![t].removing = Append(@, q)]
   /\ h' = [h EXCEPT !.removing[t] = @ \cup {q}]
+\* The third disjunct is finding F9's fix and is off under the baseline. lockRemovalTID grants the lock on a
+\* part whose creation has not committed, and setAndStoreRemovalTID then stores creation_csn = 0 beside a
+\* removal_tid that is not the creation_tid, which validateInfo raises LOGICAL_ERROR on
+\* (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:555-557). The condition is exactly
+\* VersionMetadata::isCreationCommitted (:149-158), which the file already computes and today reads on the
+\* non-transactional path alone: the creation CSN in memory, or the log's answer for the creating TID, and a
+\* creation is committed only if that value is set and is not RolledBackCSN. Both halves are load-bearing. An
+\* unset value is the shape above; RolledBackCSN is the shape the skip at MergeTreeData.cpp:7044-7046 was
+\* meant to catch and lets through when the creator rolls back after the skip has read the value, which
+\* MergeTreeTransaction::rollback can do at any moment because it stamps the CSN without the parts lock
+\* (src/Interpreters/MergeTreeTransaction.cpp:412-417). The remover's own creation is exempt, because there
+\* creation_tid = removal_tid and the shape validateInfo sees is valid.
 EnrolRefused(t, q) ==
   \/ txn[t].state = "RolledBack"
   \/ ((part[q].lock /= EmptyTID \/ part[q].mem.rcsn /= UnknownCSN) /\ ~Witness("SingleRemover"))
+  \/ /\ REMOVAL_REFUSES_UNCOMMITTED_CREATION
+     /\ part[q].mem.ctid /= NonTransactionalTID
+     /\ part[q].mem.ctid /= t
+     \* The RolledBackCSN half is dropped by the witness, which leaves the fix refusing only a creation still
+     \* in flight. That is the narrower fix the finding's first shape alone would suggest, and the witness
+     \* shows it is not enough: the window MergeTreeData.cpp:7044-7046 leaves open is still there.
+     /\ LET ccsn == IF part[q].mem.ccsn /= UnknownCSN THEN part[q].mem.ccsn
+                    ELSE LookupCsn(part[q].mem.ctid) IN
+        ccsn \in (IF Witness("F9FixInFlightOnly") THEN {UnknownCSN} ELSE {UnknownCSN, RolledBackCSN})
 EnrolError(t) == IF txn[t].state = "RolledBack" THEN "INVALID_TRANSACTION" ELSE "SERIALIZATION_ERROR"
 
 \* the NOEXCEPT_SCOPE state loop of Transaction::commit (MergeTreeData.cpp:11288-11356)
@@ -496,10 +517,18 @@ DropLock(k) ==      \* reservations drained, lockParts, the visible parts of the
   /\ client[k].pc = "DropWait"
   /\ (\A i \in Tasks : task[i].reserved = {})
   /\ sys.parts_lock = NoActor
+  \* V is what getVisibleDataPartsVectorInPartition returns under the transaction: Active and Outdated alike,
+  \* filtered by isVisible (src/Storages/MergeTree/MergeTreeData.cpp:8241-8255). E is what the enrolment loop
+  \* actually walks: removePartsFromWorkingSet skips a part whose creation_csn is RolledBackCSN before it calls
+  \* MergeTreeTransaction::removeOldPart (src/Storages/MergeTree/MergeTreeData.cpp:7044-7046), and that test
+  \* sits outside the `if (txn)` one frame down, so it applies to the transactional remover too. The batch that
+  \* is outdated afterwards is still the whole of V: the second loop of removePartsFromWorkingSet, which moves
+  \* the parts out of the working set, carries no such filter.
   /\ LET t == Cur(k)
-         V == { p \in Parts : part[p].pstate \in {"Active", "Outdated"} /\ Visible(p, t) } IN
+         V == { p \in Parts : part[p].pstate \in {"Active", "Outdated"} /\ Visible(p, t) }
+         E == { p \in V : part[p].mem.ccsn /= RolledBackCSN } IN
      /\ sys' = [sys EXCEPT !.parts_lock = Sess(k)]
-     /\ client' = [client EXCEPT ![k].pc = IF V = {} THEN "DropOutdate" ELSE "DropEnrol", ![k].work = SetToSeq(V), ![k].batch = V]
+     /\ client' = [client EXCEPT ![k].pc = IF E = {} THEN "DropOutdate" ELSE "DropEnrol", ![k].work = SetToSeq(E), ![k].batch = V]
   /\ UNCHANGED <<zk, disk, mdisk, h, part, tlog, txn, stmt, mut, task>>
 DropEnrol(k, q) ==
   /\ client[k].pc = "DropEnrol" /\ sys.parts_lock = Sess(k) /\ client[k].work /= <<>> /\ Head(client[k].work) = q
@@ -835,7 +864,7 @@ CleanupWouldRemove(p) ==
 \* Deleting, so the refinement is recorded rather than removed. Model defect M23 places it in plan 5, task 4.
 \*
 \* The decision and the state change are TWO actions, because they are two moments in the C++ and a
-\* SET TRANSACTION SNAPSHOT can land between them. canBeRemoved (:4141) calls TransactionLog::getOldestSnapshot,
+\* SET TRANSACTION SNAPSHOT can land between them. canBeRemoved (:4142) calls TransactionLog::getOldestSnapshot,
 \* which takes running_list_mutex, reads snapshots_in_use.front() and RELEASES it (TransactionLog.cpp:677);
 \* modifyPartState(..., Deleting, parts_lock) runs at the end of the pass (:4190-4194). Only lockParts is held
 \* across the two, and MergeTreeTransaction::setSnapshot and the proposed setSnapshotForRunningTransaction take
@@ -932,8 +961,10 @@ MergeBegin(i) ==
   /\ tlog.local_tid_counter < TID_MAX
   /\ LET t == tlog.local_tid_counter + 1
          s == tlog.latest_snapshot IN
+     \* The merge task calls the same TransactionLog::beginTransaction as a session does
+     \* (src/Interpreters/TransactionLog.cpp:399), so both registries get an entry, exactly as Begin above.
      /\ tlog' = [tlog EXCEPT !.local_tid_counter = t, !.tid_start[t] = s, !.running_list = @ \cup {t},
-                             !.snapshots_in_use[t] = s]
+                             !.snapshots_in_use[t] = s, !.retention_in_use[t] = s]
      /\ txn' = [txn EXCEPT ![t] = [AbsentTxn EXCEPT !.state = "Running", !.snapshot = s,
                                      !.protected_snapshot = s, !.holders = {Tsk(i)}]]
      /\ task' = [task EXCEPT ![i].kind = "Merge", ![i].txn = t, ![i].pc = "Select"]

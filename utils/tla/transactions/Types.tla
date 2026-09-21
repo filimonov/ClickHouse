@@ -10,7 +10,8 @@ CONSTANTS
   RESTARTS_MAX, KEEPER_FAULTS_MAX, DISK_FAULTS_MAX, QUERY_FAULTS_MAX,
   MAX_STORE_RETRIES, NOEXCEPT_RETRY_BUDGET, NOEXCEPT_STORE_FAULT_POLICY,
   DISK_MODE, FSYNC_PART_DIRECTORY, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME,
-  SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS, OBSOLETE_IS_ROLLED_BACK
+  SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS, OBSOLETE_IS_ROLLED_BACK,
+  REMOVAL_REFUSES_UNCOMMITTED_CREATION
 
 ASSUME Covers \in [Parts -> SUBSET Parts]
 ASSUME NOEXCEPT_STORE_FAULT_POLICY \in {"Terminate", "Retry"}
@@ -51,6 +52,10 @@ LogCSNs              == MaxReservedCSN..CSN_MAX      \* values tail_ptr / latest
 \* hold the cleanup thread back, and neither may be used as the log's retention horizon, because a tail at 1 or
 \* 3 is below every log entry and removeOldEntries raises a LOGICAL_ERROR on a tail that regresses
 \* (src/Interpreters/TransactionLog.cpp:313).
+\* What the cleanup horizon protects at EverythingVisibleCSN is the committed parts the snapshot reads, and only
+\* those. A part whose creation was rolled back is visible at that snapshot and is removable all the same:
+\* canBeRemoved returns true on creation_csn = RolledBackCSN before it looks at the horizon at all
+\* (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:280-282), which CanBeRemovedWith reproduces.
 IsSpecialSnapshot(c) == c \in {NonTransactionalCSN, EverythingVisibleCSN}
 
 \* SET TRANSACTION SNAPSHOT refuses a reserved CSN other than these two
@@ -63,6 +68,15 @@ ASSUME SET_SNAPSHOT_PROTECTS \in BOOLEAN
 \* creation_csn = 0 for ever. TRUE is the fix proposed by finding F6: stamp it RolledBackCSN there, the way
 \* MergeTreeData::Transaction::rollback stamps a part that does not make it in.
 ASSUME OBSOLETE_IS_ROLLED_BACK \in BOOLEAN
+\* FALSE is the baseline: VersionMetadata::lockRemovalTID refuses a removal already locked or already
+\* committed and nothing else (src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp:195-247), so a
+\* transactional remover may lock a part whose creation is not committed. TRUE is the fix proposed by finding
+\* F9: refuse that with SERIALIZATION_ERROR unless the remover created the part itself. The predicate is
+\* VersionMetadata::isCreationCommitted (:149-158), which the file already has and today reads only on the
+\* non-transactional path, through isCreatedByUncommittedTransaction and the refusal inside
+\* setAndStoreRemovalTID (:160-184). It covers both halves of the finding, a creation still in flight and a
+\* creation already rolled back.
+ASSUME REMOVAL_REFUSES_UNCOMMITTED_CREATION \in BOOLEAN
 
 \* Covering relation: Covers[p] = direct children of p. Expand gives the base parts under a set.
 RECURSIVE ExpandSeen(_, _)
