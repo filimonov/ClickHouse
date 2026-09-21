@@ -887,13 +887,19 @@ RollbackFinalizeA(a, t) ==
   /\ tlog' = [tlog EXCEPT !.running_list = @ \ {t}, !.snapshots_in_use[t] = UnknownCSN,
                           !.retention_in_use[t] = UnknownCSN,
                           !.finalizing = IF @ = t THEN EmptyTID ELSE @]
-  \* holders is deliberately left alone. MergeTreeTransaction::rollback destroys no shared_ptr: the holder goes
-  \* away when its owner's MergeTreeTransactionHolder is destroyed, which is RollbackReturn and the detaching
-  \* branch of RollbackStart for a session, and MergeCommitFinalize or MergeUnwind for a background task. With
-  \* sessions alone that was invisible, because the session's next step detached anyway; a merge task holds its
-  \* transaction across the rollback it does not drive, and clearing the set here would lose that.
+  \* A session's or a task's holder is deliberately left alone. MergeTreeTransaction::rollback destroys no
+  \* shared_ptr: the holder goes away when its owner's MergeTreeTransactionHolder is destroyed, which is
+  \* RollbackReturn and the detaching branch of RollbackStart for a session, and MergeCommitFinalize or
+  \* MergeUnwind for a background task. With sessions alone that was invisible, because the session's next step
+  \* detached anyway; a merge task holds its transaction across the rollback it does not drive, and clearing
+  \* the set here would lose that.
+  \* The updating thread's holder is different and is released here, which is what CommitFinalizeEffect does on
+  \* the other branch of the same pass: it comes from the unknown_state_list entry rather than from a holder
+  \* object, and the pass owns it. Both branches therefore release it at the transaction's finalize, where the
+  \* C++ releases it when the pass's local list is destroyed; nothing between the two reads a holder set.
   /\ txn' = [txn EXCEPT ![t].pc = "Idle", ![t].creating = <<>>, ![t].removing = <<>>, ![t].mutations = {},
-                         ![t].rb_driver = NoActor]
+                         ![t].rb_driver = NoActor,
+                         ![t].holders = IF a = Upd THEN @ \ {Upd} ELSE @]
   /\ part' = [p \in Parts |-> [part[p] EXCEPT !.pins = @ \ {<<"Txn", t>>, <<"Rollback", t>>}]]
   /\ h' = [h EXCEPT !.rolled_back[t] = TRUE]
   /\ UNCHANGED <<zk, disk, mdisk, sys, client, stmt, mut, task>>

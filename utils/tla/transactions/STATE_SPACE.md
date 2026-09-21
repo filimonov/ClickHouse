@@ -738,7 +738,7 @@ different matter and is red in both halves, at 168,614 distinct states in `MC_No
 
 `Keeper` is `Base` plus the merge task, the updater's truncation pass, the updater's unknown-state pass and
 the two Keeper faults, over the same part universe as `Merge`. It does not enable the cleanup group, which is
-what makes three of its inherited properties vacuous; `WITNESSES.md` names them. It is the first scenario with a fault of any
+why three of `MC_Merge`'s properties are off its roster rather than vacuous on it; `WITNESSES.md` names them. It is the first scenario with a fault of any
 kind, and the first in which `NoOutdatedLookup` has a step to judge.
 
 ### Bounds {#keeper-bounds}
@@ -748,7 +748,7 @@ that needs no reduction at all.
 
 | Configuration | Distinct states | Time | Result |
 |---|---|---|---|
-| `Keeper`, one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, **committed** | 30,544,101 | 5 min 15 s | green, queue drained |
+| `Keeper`, one session, `TID_MAX = 3`, `CSN_MAX = 36`, `KEEPER_FAULTS_MAX = 1`, **committed** | 30,544,101 | 5 min 07 s | green, queue drained |
 
 The count is above the thirty million at which a growing run is killed, and the rule is about a run that is
 still growing: the queue peaked at about 0.8 million and drained, which is the same reading `NonTxnDropTwo`
@@ -772,7 +772,7 @@ the matrix bounds, and the reduction ladder behaved unlike every earlier scenari
 | matrix bounds, `TID_MAX = 3`, `CSN_MAX = 36` | 60,249,422, queue 9.18M and growing | killed at 6 min | does not finish |
 | `CSN_MAX = 35` | 31,195,881, queue 5.24M and growing | killed at 5 min | does not finish |
 | `Tasks = {}`, `Parts = {P1, P2}`, matrix bounds otherwise | 70,335,132 | 10 min 01 s | green |
-| `TID_MAX = 2`, `CSN_MAX = 35`, merge kept, **committed** | 71,323,386 | 12 min 28 s | green |
+| `TID_MAX = 2`, `CSN_MAX = 35`, merge kept, **committed** | 71,323,386 | 11 min 57 s | green |
 
 The ladder's third rung, dropping the merge task, buys 1.4 per cent: 70,335,132 against 71,323,386. So the
 cost is `WAIT_MODE` itself and neither the merge nor the transaction count, and the rung that would have been
@@ -800,6 +800,21 @@ correction and the check that it does not over-fix.
 transitions. Removing the duplicate left the distinct count of `KeeperUnknownWait` exactly where it was,
 71,323,386, and took the generated count from 336,015,390 to 330,565,902. A duplicate edge between states that
 already exist costs transitions and not states, which is what those two numbers say.
+
+### The holder release that changed no count {#keeper-holder-release}
+
+`RollbackFinalizeA` releases the updating thread's holder when the driver is `Upd`, which is what
+`CommitFinalizeEffect(Upd, t)` does on the other branch of the same pass. Both exhaustive runs came back with
+the counts they had before it, 30,544,101 and 71,323,386, and the generated counts too. That is not the change
+failing to take: nothing else can remove `Upd` from a rolled-back unknown-state transaction's holder set, so no
+state that carried it had a twin without it, and the clause relabels the reachable graph instead of splitting
+or merging it.
+
+That the clause is live was measured rather than inferred, in a scratch copy under `tmp/` at one transaction
+and one part. An invariant forbidding the shape at all, `h.unknown[t] = "RolledBack"` with `h.rolled_back[t]`,
+is violated at 2,940 distinct states, so the updater-driven rollback does finalize there. An invariant saying
+`Upd` is gone afterwards is green over that whole space, 4,897 distinct with the queue drained, and red at
+3,252 when the clause alone is removed. A fence that had never failed would not have shown that.
 
 ### What the view keeps {#keeper-view}
 

@@ -714,14 +714,12 @@ describes moves `CommitAck` before `CommitCreateCSN` and allows a fault after it
 acknowledges a write before the commit point, because `CommitUnknownResolved` delivers `Acked` only for
 `state = "Committed"`, which `UpdCommitFlip` sets after every per-part store.
 
-Three properties on the roster are vacuous here and are named rather than left to be discovered.
-`KeeperNext` is `BaseNext \/ TaskNext \/ UpdaterGCNext \/ UpdaterUnknownNext \/ KeeperFaultNext`, which does not
-include the cleanup group, while the roster is `MC_Merge`'s. `NoPrematureDelete` and `PinnedNotDeleted` are
-stated on `CleanupGrab` and `NoFalseCorruption` on `CleanupDeleteFail`, and no step of either is reachable, so
-all three are green for want of a step to judge. They are kept on the roster so that the two configurations
-differ from `MC_Merge`'s in the scenario and not in what is checked; each is red in `Merge`, which does enable
-the group. Removing them, or adding the cleanup group to the scenario, is a decision for plan 3, task 5 (budget,
-sweep and debts).
+Three of `MC_Merge`'s properties are absent from all three `MC_Keeper*` rosters, and the reason is the action
+group. `KeeperNext` is `BaseNext \/ TaskNext \/ UpdaterGCNext \/ UpdaterUnknownNext \/ KeeperFaultNext`, which
+does not include the cleanup group. `NoPrematureDelete` and `PinnedNotDeleted` are stated on `CleanupGrab` and
+`NoFalseCorruption` on `CleanupDeleteFail`, and no step of any of the three is reachable, so each would be
+green for want of a step to judge. A property that cannot fire says nothing about the scenario, so it is off
+the roster rather than on it with a footnote; all three are red in `Merge`, which does enable the group.
 
 The rest of `MC_Keeper.cfg`'s roster is not swept in this task. Its other properties are `Merge`'s, its
 witnesses are the twenty-four rows of the `Merge` sweep above plus the two here, and a sweep of a
@@ -824,8 +822,8 @@ added the three `MC_Keeper*` modules:
 | `BaseSmall` | green | 47,381 | 1 s |
 | `Base` | green | 26,839,116 | 4 min 01 s |
 | `Merge` | green at one session | 6,124,691 | 56 s |
-| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 30,544,101 | 5 min 15 s |
-| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,323,386 | 12 min 28 s |
+| `Keeper` | green at the matrix bounds `TID_MAX = 3`, `CSN_MAX = 36` | 30,544,101 | 5 min 07 s |
+| `KeeperUnknownWait` | green at `TID_MAX = 2`, `CSN_MAX = 35` | 71,323,386 | 11 min 57 s |
 | `NonTxnDrop` | green at `TID_MAX = 1` | 1,246,158 | 12 s |
 | `NonTxnDropTwo` | green at `TID_MAX = 2`, no cleanup group | 47,958,902 | 7 min 29 s |
 | `NonTxnInsert` | green | 16,969,548 | 2 min 42 s |
