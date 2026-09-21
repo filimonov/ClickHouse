@@ -77,8 +77,9 @@ that reaches finding F2; the first is expected red on `NoPrematureDelete` and th
 GC group) and `MergeWitness` (the same at two sessions, for `witness.sh` only), `Keeper` (`Merge` without the
 cleanup group, plus the updater's unknown-state pass and the two Keeper faults, at the matrix bounds),
 `KeeperUnknownWait` (the same with `WAIT_MODE = "WAIT_UNKNOWN"`), `KeeperWitness` (the same at two sessions, for `witness.sh` only) and `KeeperUnknownWaitWitness` (two sessions
-under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only), and the seven of the `Crash` family: `Crash`,
-`CrashUnsynced`, `CrashUnsyncedFixed`, `CrashLegacy`, `CrashHarm`, `CrashF10` and `CrashWitness`.
+under `WAIT_UNKNOWN`, one part, no task, for `witness.sh` only), and the nine of the `Crash` family: `Crash`,
+`CrashUnsynced`, `CrashUnsyncedFixed`, `CrashLegacy`, `CrashHarm`, `CrashF10`, `CrashF12`, `CrashF12Fixed` and
+`CrashWitness`.
 
 `Crash` is `Merge` plus the restart group, the three sync actions and the two ways the server goes down, on a
 `Layered` disk at `RESTARTS_MAX = 1`, at the matrix bounds. It runs with `FSYNC_AFTER_INSERT`,
@@ -95,7 +96,10 @@ relation one level deep.
 finding module rather than a coverage one, expected red on `LogEntryNeeded`, which is finding `F11`;
 `CrashUnsyncedFixed` is the same configuration under that finding's fix variant and is where the rows of the
 `Crash` roster that read no history variable are checked. `CrashHarm` is `CrashUnsynced` at `RESTARTS_MAX = 2`
-checking `F11Harm` alone, which is that finding's harm end to end and is expected red. `STATE_SPACE.md` says
+checking `F11Harm` alone, which is that finding's harm end to end and is expected red. `CrashF12` is the same
+configuration checking `NoNonTxnRebirth` alone and is expected red: it is where a part directory survives a
+crash holding no metadata at all and the loader calls the part ancient. `CrashF12Fixed` is that finding's fix
+variant and is green. `STATE_SPACE.md` says
 why the unsynced world cannot carry the rest of the roster. `CrashLegacy` is `Crash`
 with `LEGACY_PARTS = {P1}` and the property `LegacyLoads`, the run that checks the pre-`storing_version`
 metadata format through the loader. `CrashWitness` is `Crash` at two sessions, for `witness.sh` only.
@@ -646,6 +650,12 @@ sanity runs on that tree.
 | `CrashUnsyncedFixed` | 2026-09-21 | the fix-round commit | 37,303,778 | 8 min 44 s | green over the whole roster under the re-derived variant; 1.5% above 36,755,726, which is the new part field |
 | `CrashHarm` | 2026-09-21 | the fix-round commit | 125,290, a first-violation count | 9 s | **red on `F11Harm`**, 25 states |
 | `CrashLegacy` | 2026-09-21 | the fix-round commit | 20,580,014 | 7 min 18 s | green, identical to the state and to the generated count; the control that the new part field costs an all-synced module nothing |
+| `CrashF12` | 2026-09-21 | the round 1b commit | 1,979, a first-violation count | 1 s | **red on `NoNonTxnRebirth`**, 13 states, which is finding `F12` |
+| `CrashUnsyncedFixed` | 2026-09-21 | the round 1b commit | 37,271,456 | 9 min 11 s | green with `NoDoubleRead` and `NoFalseCorruption` added and the temporary file's name no longer assumed durable |
+| `CrashLegacy`, `Merge`, `BaseSmall` | 2026-09-21 | the round 1b commit | 20,580,014, 6,124,691, 47,381 | 7 min 24 s, 1 min 01 s, 1 s | green, each identical to the state and to the generated count |
+| `CrashF12` | 2026-09-21 | the round 1b commit | 1,731, a first-violation count | 1 s | **red on `NoNonTxnRebirth`**, 13 states |
+| `CrashF12Fixed` | 2026-09-21 | the round 1b commit | 21,804,360 | 3 min 24 s | green under `CREATION_TID_STORE_SYNCS_DIR`, finding `F12`'s fix |
+| `Crash`, with `NoNonTxnRebirth` added | 2026-09-21 | the round 1b commit | 48,142,550 | 17 min 25 s | green, identical to the state and to the generated count for the fifth round; the proof that finding `F12`'s shape needs the unsynced defaults |
 
 `Crash`'s row is the control that matters. The round added four properties, one action and, after the unsynced
 world found them, two disk-model repairs, and the scenario did not move by a state. A property cannot move it,

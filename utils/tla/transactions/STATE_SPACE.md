@@ -969,6 +969,41 @@ is state the process holds. `StorePersistStep` and `RestartLoadPart` set it, `Fs
 | `CrashHarm`, re-derived variant | **red on `F11Harm`**, 25 states | 125,290, a first-violation count | 9 s |
 | `CrashLegacy`, the all-synced control | green, **identical to the state and to the generated count**, 220,640,720 | 20,580,014 | 7 min 18 s |
 
+Round 1b corrected the disk model again, and the correction produced a finding. `DiskWithInfo` set
+`tmp_durable` in the unsynced case, which asserts that the temporary file's **name** survives a crash. It does
+not: `createFile` is `open` plus `close` and `buf->sync` is `fdatasync` on the descriptor, so the content is
+durable and neither name is, and both names are dentries in the part's own directory, which only the
+`fsync_part_directory` guard syncs. The durable layer now does not move at all there, which makes the fourth
+arm of `LoadedRecordFrom` reachable: a part directory that survived under its final name holding no metadata
+at all. That arm is finding `F12`.
+
+| Configuration | Result | Distinct states | Time |
+|---|---|---|---|
+| the no-metadata arm, as a scratch invariant on `CrashUnsynced` | **red**, so the arm is reachable rather than a dead branch | 1,009 | 1 s |
+| `CrashF12`, **committed** | **red on `NoNonTxnRebirth`**, 13 states | 1,979, a first-violation count | 1 s |
+| `CrashUnsynced` | **red on `LogEntryNeeded`**, the same 22 states | see the round's table | |
+| `CrashUnsyncedFixed`, with `NoDoubleRead` and `NoFalseCorruption` added | **green** | 37,271,456 | 9 min 11 s |
+| `CrashLegacy`, `Merge`, `BaseSmall`, the controls | green, each identical to the state and to the generated count | 20,580,014, 6,124,691, 47,381 | 7 min 24 s, 1 min 01 s, 1 s |
+
+The controls are identical because the branch that changed is the one `DISK_MODE = "Durable"` and
+`FSYNC_PART_DIRECTORY = TRUE` never take. The two rows added to `MC_CrashUnsyncedFixed` are green over the new
+arm as well, so neither is falsified by it.
+
+`F12` has a fix variant of its own, `CREATION_TID_STORE_SYNCS_DIR`, which takes the directory guard for the
+store that writes the creation TID whatever `fsync_part_directory` says. `MC_CrashF12` is red at 1,731 distinct
+states and `MC_CrashF12Fixed` green at 21,804,360 in 3 min 24 s. `NoNonTxnRebirth` is on `MC_Crash`'s roster as
+the proof that the shape needs the unsynced defaults, and off both unsynced rosters because it is the finding.
+With it added, `Crash` is green at 48,142,550, identical to the state and to the generated count for the fifth
+round running.
+
+The same correction cost the model the temporary file, and that cost is recorded rather than absorbed. With
+`tmp_durable` no longer promoted by a store, every assignment to the two temporary-file bits is a constant
+FALSE or a copy of the other and both start FALSE, so the file is unreachable and `LoadedRecordFrom`'s tmp-only
+arm is dead. The third durable outcome an unsynced store really has, the temporary name surviving and the final
+one not, needs a writeback landing between `createFile` and `replaceFile`, and the model's store is one action.
+That is model defect `M51`, and until it is fixed `MC_CrashF10` produces the shallower shape rather than the
+one finding `F10`'s entry was written from.
+
 The new part field costs the unsynced module 1.5%, from 36,755,726 to 37,303,778. It costs the all-synced
 modules nothing and cannot: `MetaLeftUnsynced` is `DISK_MODE = "Layered" /\ ~FSYNC_PART_DIRECTORY`, so with
 `FSYNC_PART_DIRECTORY` on the bit is `FALSE` in every reachable state of `Crash`, `CrashLegacy` and their

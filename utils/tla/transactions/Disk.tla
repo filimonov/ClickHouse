@@ -72,13 +72,23 @@ DiskTmpOnly(p) == disk[p].cached.kind = "None" /\ disk[p].tmp_cached
 DiskHasInfo(p) == disk[p].cached.kind = "Info"
 DiskInfo(p) == disk[p].cached.info
 
-\* storeInfoToDataPartStorage: write tmp, fsync tmp, rename. The renamed file is cached; it is durable at once
-\* in Durable mode or with FSYNC_PART_DIRECTORY, whose guard spans the replaceFile
-\* (VersionMetadataOnDisk.cpp:361-363); otherwise the tmp file is durable and the rename is not.
+\* storeInfoToDataPartStorage: create the tmp file, write it, fdatasync it, rename it over txn_version.txt
+\* (VersionMetadataOnDisk.cpp:348-363). Both names are dentries in the PART's own directory, and in the
+\* unsynced case nothing here syncs that directory: createFile is open plus close
+\* (src/Common/filesystemHelpers.cpp:319-325), buf->sync is fdatasync on the descriptor
+\* (src/IO/WriteBufferFromFileDescriptor.cpp:121), and the directory guard at :360-362 is taken only under
+\* fsync_part_directory. fdatasync makes the tmp file's CONTENT durable, which is not a fact this model can
+\* express, because it has no torn write; what it does not make durable is either name. So the durable layer
+\* does not move at all there, and a crash can leave the part directory holding neither name, which is the
+\* fourth arm of LoadedRecordFrom. Model defect M50 was this operator promoting tmp_durable instead.
 DiskWithInfo(p, info) ==
   IF Layered /\ ~FSYNC_PART_DIRECTORY
-  THEN [disk EXCEPT ![p].cached = InfoRec(info), ![p].tmp_cached = FALSE, ![p].tmp_durable = TRUE]
+  THEN [disk EXCEPT ![p].cached = InfoRec(info), ![p].tmp_cached = FALSE]
   ELSE [disk EXCEPT ![p].cached = InfoRec(info), ![p].durable = InfoRec(info), ![p].tmp_cached = FALSE, ![p].tmp_durable = FALSE]
+\* The same write with the directory guard taken whatever the setting says, which is finding F12's fix applied
+\* to the store that writes the creation TID.
+DiskWithInfoSynced(p, info) ==
+  [disk EXCEPT ![p].cached = InfoRec(info), ![p].durable = InfoRec(info), ![p].tmp_cached = FALSE, ![p].tmp_durable = FALSE]
 \* createDirectories plus the data files: the part directory exists, under a TEMPORARY name, and its content is
 \* durable only under FSYNC_AFTER_INSERT. The directory's own dentry is durable only once the parent is synced,
 \* which under FSYNC_OUTER_RENAME the rename below does.

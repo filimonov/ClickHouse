@@ -170,8 +170,14 @@ LegacyLoadsStep == \A p \in Parts :
     (part'[p].pstate = "Active" /\ part'[p].mem.ctid = NonTransactionalTID)
 LegacyLoads == [][LegacyLoadsStep]_vars
 
-\* Assert_IsNonTransactionalDomain: every step that evaluates isNonTransactional sees a tid in the predicate's
-\* domain, which on the baseline includes the exact DummyTID. TransactionID::isNonTransactional
+\* Assert_IsNonTransactionalDomain is REACHABILITY coverage, not an assertion check, and the name is the one
+\* the design document gives it. AllTids has no malformed member, so no reachable state can put a tid outside
+\* the predicate's domain and the property is green by construction. What it covers is that the branch the
+\* assertion exempts is taken at all: the tmp-only arm of loadMetadata produces DummyTID, and
+\* TransactionID::isNonTransactional exempts exactly that shape by name. Widening the domain to malformed
+\* serialized TIDs is what would turn it into a check, and no scenario here reads a serialized TID.
+\* Every step that evaluates isNonTransactional sees a tid in the predicate's domain, which on the baseline
+\* includes the exact DummyTID. TransactionID::isNonTransactional
 \* (src/Common/TransactionID.h:88-103) asserts that a non-transactional local id and the non-transactional start
 \* CSN go together, and exempts {NonTransactionalCSN, DummyLocalTID, Nil} by name, which is the shape
 \* VersionMetadataOnDisk::loadMetadata produces for a tmp-only directory. The three evaluating sites are
@@ -203,6 +209,15 @@ F11HarmStep == \A p \in Parts : RestartLoadPart(p) =>
      /\ raw.ccsn = UnknownCSN
      /\ UpdateCsnIfNeeded(p, raw).info.ccsn = RolledBackCSN )
 F11Harm == [][F11HarmStep]_vars
+
+\* A part a transaction created must not come back as an ancient non-transactional one. loadMetadata's last
+\* arm gives a part directory with no txn_version.txt and no temporary file the shape upstream uses for parts
+\* written before transactions existed (VersionMetadataOnDisk.cpp:87-93), which carries NonTransactionalCSN and
+\* is therefore visible at every snapshot. Reaching it needs the part directory to have survived a crash while
+\* neither metadata name did, which is finding F12.
+NoNonTxnRebirthStep == \A p \in Parts : RestartLoadPart(p) =>
+  ~(h.creator[p] \in Tids /\ part'[p].mem.ctid = NonTransactionalTID)
+NoNonTxnRebirth == [][NoNonTxnRebirthStep]_vars
 
 \* ---- conflicts (spec #invariants-conflicts)
 SingleRemover == \A p \in Parts : Cardinality(h.removers[p]) <= 1

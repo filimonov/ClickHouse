@@ -804,6 +804,11 @@ additionally carries every row of the `Crash` roster that reads no history varia
 roster that world can honestly check. Rows that read `h` stay off, and the one sentence that covers all of them
 is the one above.
 
+`NoNonTxnRebirth` is off both unsynced rosters and on `MC_Crash`'s, which is the way round it has to be. It is
+finding `F12`, so it is red in the unsynced world by construction, and `MC_CrashF12` is its reproducer with
+`MC_CrashF12Fixed` the verified fix. Its place on `MC_Crash` is the proof that the shape needs the unsynced
+defaults: with all three settings on it is green over that scenario's whole space.
+
 Read that green for what it is. `MC_CrashUnsyncedFixed` runs under `ENTRY_KEPT_UNTIL_CSN_DURABLE`, which no
 upstream server has, so those rows are verified against the **fixed** system. The unsynced default is
 `MC_CrashUnsynced`, and a module that stops at its first violation checks nothing else.
@@ -824,11 +829,19 @@ Four properties entered `Invariants.tla` with this scenario and all four witness
 | `LegacyLoads` | `LegacyLoads` | the loader treats a legacy record as a parse failure, taking the shape `loadMetadata` produces for a tmp-only directory | `CrashLegacy` | RED | 499 | 1 s |
 | `Assert_IsNonTransactionalDomain` | `Assert_IsNonTransactionalDomain` | `IsNonTransactionalDomain` loses its `DummyTID` disjunct, which is the predicate before `TransactionID::isNonTransactional` exempted that shape by name | `CrashUnsyncedFixed` | RED | 1,683 | 1 s |
 
-`Assert_IsNonTransactionalDomain` needs two sentences of its own. The property is a **tautology on the model's
-type**: `AllTids` is exactly the domain the predicate admits, and no record can carry anything else. What its
-witness really shows is that a tmp-only directory is loaded at all, which is the reachability a calibration row
-needs; it does not show that the assertion can be reached with a tid outside the domain, because in this model
-there is no such tid.
+**The `Assert_IsNonTransactionalDomain` row is currently green and is a debt, not a result.** Model defect
+`M50` corrected the disk model so that an unsynced store no longer asserts the temporary file's name durable,
+and a consequence is that the temporary file cannot exist in the model at all until the store's disk effect is
+split, which is model defect `M51`. The `DummyTID` arm this row probes is therefore unreachable and the witness
+is green over the whole of `MC_CrashUnsyncedFixed`, 37,271,456 states, where it was red at 1,570 before. The
+row is kept, with that measurement, rather than removed: what it is waiting for is `M51`'s split.
+
+`Assert_IsNonTransactionalDomain` is **reachability coverage and not an assertion check**, and the row is
+here under the name the design document gives it. The property is a tautology on the model's type: `AllTids`
+has no malformed member, so no reachable state can put a tid outside the predicate's domain. What the witness
+shows is that the branch the C++ assertion exempts is taken at all, which is the calibration a row like this
+is worth. Turning it into a check would mean giving the model malformed serialized TIDs, which no scenario
+here reads.
 
 Its row is also the one that moved scenario, and the move is the point rather than a convenience. In `Crash` the
 witness is **green over the whole 48,142,550-state space**, in 520 seconds, because every store there is durable

@@ -11,7 +11,8 @@ CONSTANTS
   MAX_STORE_RETRIES, NOEXCEPT_RETRY_BUDGET, NOEXCEPT_STORE_FAULT_POLICY,
   DISK_MODE, FSYNC_PART_DIRECTORY, FSYNC_AFTER_INSERT, FSYNC_OUTER_RENAME, LEGACY_PARTS, WAIT_MODE, WITNESS_NAME,
   SNAPSHOT_TARGETS, SET_SNAPSHOT_PROTECTS, OBSOLETE_IS_ROLLED_BACK,
-  REMOVAL_REFUSES_UNCOMMITTED_CREATION, ENTRY_KEPT_UNTIL_CSN_DURABLE
+  REMOVAL_REFUSES_UNCOMMITTED_CREATION, ENTRY_KEPT_UNTIL_CSN_DURABLE,
+  CREATION_TID_STORE_SYNCS_DIR
 
 ASSUME Covers \in [Parts -> SUBSET Parts]
 ASSUME NOEXCEPT_STORE_FAULT_POLICY \in {"Terminate", "Retry"}
@@ -99,6 +100,13 @@ ASSUME REMOVAL_REFUSES_UNCOMMITTED_CREATION \in BOOLEAN
 \* but that is finding F10's mitigation: it is off by default and it syncs every metadata store, where this
 \* keeps the entry until the one store that matters has reached the disk.
 ASSUME ENTRY_KEPT_UNTIL_CSN_DURABLE \in BOOLEAN
+\* FALSE is the baseline: storeInfoToDataPartStorage takes its directory guard only under fsync_part_directory
+\* (VersionMetadataOnDisk.cpp:360-362), so the creation record's two names are dentries in the part's own
+\* directory that nothing syncs, and a crash can leave the directory holding neither. TRUE is the fix proposed
+\* by finding F12: take that guard unconditionally for the store that writes the creation TID, which is the one
+\* whose absence the loader reads as a part older than transactions. It is narrower than turning
+\* fsync_part_directory on, which syncs every metadata store; this syncs the one dentry whose loss is
+\* misread.
 
 \* Covering relation: Covers[p] = direct children of p. Expand gives the base parts under a set.
 RECURSIVE ExpandSeen(_, _)

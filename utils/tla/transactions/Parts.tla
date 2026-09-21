@@ -306,7 +306,10 @@ StorePersistStep(p, o) ==
                                                     !.interferences = IF f.interfered THEN @ + 1 ELSE @])
              /\ UNCHANGED disk
         ELSE \* the write; every other persisting frame on p learns of the interference
-             /\ disk' = DiskWithInfo(p, newinfo)
+             \* Under CREATION_TID_STORE_SYNCS_DIR the store that writes the creation TID syncs the part's own
+             \* directory, so the record it leaves cannot be the one the loader misreads as pre-transactional.
+             /\ disk' = IF CREATION_TID_STORE_SYNCS_DIR /\ f.op = "CreateTID"
+                        THEN DiskWithInfoSynced(p, newinfo) ELSE DiskWithInfo(p, newinfo)
              /\ part' = [part EXCEPT ![p].frames = keep \cup bumped \cup {[f EXCEPT !.pc = "Publish", !.tentative = newinfo]},
                                      ![p].deferrable = FALSE, ![p].deferred_on = FALSE, ![p].deferred = EmptyInfo,
                                      ![p].meta_unsynced = MetaLeftUnsynced]
