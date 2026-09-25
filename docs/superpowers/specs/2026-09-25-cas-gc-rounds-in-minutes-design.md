@@ -90,7 +90,7 @@ On a stand with ≥100k condemned entries and a fresh leader (empty memo):
 
 ### B1. Discovery without the global LIST {#b1-discovery}
 
-`listRefPrefix` today is one LIST of `<prefix>/cas/ns/stream/`, O(all `_log` keys). Its consumers (see `tmp/otel_cas/gc_cost_map.md`, question 1) are the DEFER signal (`changedRows`), `fold_ref_group` (the per-life `ref_tables`), `cleanupRefObjects` (below-floor keys) and the `dead_life_debris` counter. `fold_ref_intake` does not use it: it walks by exact key from the cursor, forward only.
+`listRefPrefix` today is one LIST of `<prefix>/cas/ns/stream/`, O(all `_log` keys). Its consumers (see `docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit/gc-cost-map.md`, question 1) are the DEFER signal (`changedRows`), `fold_ref_group` (the per-life `ref_tables`), `cleanupRefObjects` (below-floor keys) and the `dead_life_debris` counter. `fold_ref_intake` does not use it: it walks by exact key from the cursor, forward only.
 
 Replacement, per round:
 

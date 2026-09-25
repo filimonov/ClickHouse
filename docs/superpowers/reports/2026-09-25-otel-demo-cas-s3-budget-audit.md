@@ -358,7 +358,7 @@ is the only large `CASRootList` producer besides F15/F16.
 ### F25. `metric_log` and `asynchronous_metric_log` over the week: which CAS signals are worth watching {#f25}
 Inventory: 184 `ProfileEvent_CAS*` and 9 `CurrentMetric_CAS*` columns in `metric_log` (one row per second), 8
 `CASGC*` metrics in `asynchronous_metric_log` (4 families × 2 disks). 85 counters moved during the week, 99 stayed
-at zero. Weekly totals in `tmp/otel_cas/pe_stats.tsv`.
+at zero. Weekly totals in `2026-09-25-otel-demo-cas-s3-budget-audit/cas-profile-events-week.tsv` next to this report.
 
 **Useful, worth a dashboard row.**
 - `CASRefQueueWaitMicroseconds` (2.0 × 10¹² µs in the week, ~3.3 waiting threads on average) and the ratio
