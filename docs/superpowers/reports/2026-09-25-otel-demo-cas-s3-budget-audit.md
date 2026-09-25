@@ -198,7 +198,7 @@ Listed keys 4,576,640 (08:32) then 4,584,514 (13:29) while three rounds deleted 
 be 0 for this family; the cleanup is batch deletes (200k keys in 200 s), so an unbounded pass over 4.6M keys is
 about 75 minutes once, not a risk.
 
-### F15. CONFIRMED. Every restart issues one S3 LIST per part file: 77k LISTs in three minutes, S3 answers `503 Slow Down` {#f15}
+### F15. CONFIRMED. Every restart issues one S3 LIST per part file: 77k LISTs in three minutes, S3 answers `503 Slow Down` (issue #2439) {#f15}
 Restart of 2026-09-25 15:38 (and the one of 09-24 16:41, same 61k-LIST burst in `metric_log`): `S3ListObjects`
 19k + 40k + 18k in 15:40-15:42, all `CASRootList`; 537 `503 Slow Down` / `Service Unavailable` lines, 139 failed
 uploads in `blob_storage_log` (108 of them ref-lane writes), `Ready for connections` 2 min 11 s after start.
