@@ -317,6 +317,44 @@ three catalog reads per table per minute). Together with F20 these three callers
 `CASOtherGet` volume. Fix family as F15/F16: a directory probe on a namespace this node holds no runtime for
 should be answered from a per-node catalog snapshot with etag revalidation, not two fresh GETs per probe.
 
+### F22. `cas_log` over the week: no correctness signal, but the audit log is 10% of the stand's write volume {#f22}
+55.7M rows in eight days, ~8M per day, 45-52 namespaces (both replicas' tables, the leader's GC logs both). Zero
+rows of `read_missing`, `dangling_access`, `corrupt_dangle`, `corrupt_decode`, `snap_journal_incoherent`,
+`exception`; `anomalies` and `fence_outs` are zero in every GC round. Rare events are all explained: 357 `blob_put`
+"present but `Condemned` after mandatory HEAD" (writer resurrections, the protocol's designed path), 219
+`gc_recheck_verdict spared`, 144 `blob_retire_replaced`, 13 `blob_delete replaced`, 7 `build_abort` and 1
+`precommit_reclaim` at the two restarts, 2 `watermark_renew recovered` (`committed_after_retry`, 2-3 attempts, right
+after the restarts while S3 answered 503).
+
+Composition per day: `ref_resolve` 1.34M (17%), `manifest_delete` 1.06M, `root_add` + `root_remove` 1.44M, the
+four rows of a part publish (`build_start`, `precommit`, `manifest_put`, `build_publish`) 4 × 570k, the three rows
+of a condemn (`indegree_zero`, `gc_retire_observe`, `blob_retire`) 3 × 340k, `gc_recheck_verdict` + `blob_delete`
+2 × 330k, `blob_reuse_adopt` 200k. Two observations:
+- `ref_resolve` is 83% background and its callers are `unlinkFile` ← `removeSharedFiles` ← `clearDirectory` ←
+  `DataPartStorageOnDiskBase::remove`: part removal resolves the ref once per file it unlinks (~6 rows per removed
+  part). It is an in-memory lookup logged as an audit row; the row has no audit value.
+- A garbage blob produces five rows over its life and a part publish four; `root_add`/`root_remove` are one row per
+  edge. The table `system.cas_log` itself is the stand's second-largest part producer: 10.9k parts, 350 MB of new
+  parts and 2.7-3.4 GB of merge writes per day, on the CAS disk, ~10% of all blob bytes uploaded. Candidates: demote
+  `ref_resolve` (and the per-edge `root_*` rows) to a trace level or a counter, collapse the three condemn rows into
+  one, and document that `cas_log` on a CAS default disk feeds the pool it audits.
+
+### F23. The 09-21 16:00 burst is replica 0-1's `system.metric_log` mass removal, seen through the leader's GC {#f23}
+`root_remove` 151k in one hour (median 28k), `root_add` 103k, `blob_reuse_adopt` 16.7k. 111k of the removals are in
+namespace `chi-otel-otel-0-1/store/db3/db325bd8...`, which is `system.metric_log` on the other replica; this host's
+own `part_log` shows a normal hour (6.2k new parts, 2.5k merges, 8.5k removals). The rows are GC fold events, so
+they record what replica 0-1 did, most likely dropping a backlog of outdated parts after it came back from the
+outage that day. Not a CAS anomaly; it is the reason the 09-21 GC rounds folded more than usual.
+
+### F24. GC round `ProfileEvents` over the week: nothing anomalous, two curiosities {#f24}
+Sum over 377 `Finish` rows: `CASRefManifestBodyFoldGets` = `CASRefEmittedEdges` = 14.7M (F4), `CASGCReadAheadHit`
+24.2M against `Miss` 65k and `Wasted` 126k (0.5%, the pinned-window item of spec A2 is small here),
+`S3SingleAttemptRetryConsultations` 2.8k, `DiskConnectionsReset` 70k against 5.5M reused (1.3%). Curiosities:
+`GlobalThreadPoolJobs` = `LocalThreadPoolExpansions` = `CASGCEnumerationPages` = 674k: the S3 async iterator
+schedules one global-pool job per LIST page, so a 4.6M-key listing spawns ~1,500 short-lived threads per round;
+harmless next to the LIST latency, gone with spec B1. And `CASRootList` 674k ≈ pages, confirming that the GC's LIST
+is the only large `CASRootList` producer besides F15/F16.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
