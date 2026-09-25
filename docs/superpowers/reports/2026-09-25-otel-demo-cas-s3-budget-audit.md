@@ -549,8 +549,18 @@ Result: a publish is blob PUTs, one manifest PUT, two `_log` PUTs and two `_ckpt
 round trips instead of four. On F30's numbers that is 125 ms of the 389 ms directly and about half of the 249 ms
 lane wait indirectly, roughly a 2× faster publish with nothing changed in what is written or when.
 
-To verify before implementing: that `CasDecommission` and `CasFsck` never move another node's live catalog row
-to `Removing` without fencing that node's mount (they read the catalog; the audit did not read their write paths).
+Verified: no such path exists. `CasDecommission` impersonates the victim through the ordinary mount-lease claim
+(`Pool::openForDecommission`, `CasPool.cpp:904`, which calls `mountWritable`, `CasPool.cpp:568`), and that claim
+fails closed with `ABORTED` the instant the victim's lease looks live (`CasPool.cpp:754`-`769`) — it never reaches
+a catalog write for a live node. The sole `Live`-to-`Removing` transition, `CasRefCatalog::beginRemoving`
+(`CasRefCatalog.cpp:382`), is reachable only from `CasRefLedger::dropNamespaceImpl` (`CasRefLedger.cpp:5204`),
+called only by a node's own write path on its own mounted namespace (`ContentAddressedTransaction.cpp:1108`,
+`:1134`, `:1142`, `:1327`; `PartFolderAccess.cpp:683`) or by `CasDecommission` after that claim already succeeded,
+and there only for entries the pre-impersonation catalog cut proved victim-owned before any mutation
+(`CasDecommission.cpp:204`-`215`). `CasFsck` issues no catalog writes at all — every catalog access in it is
+`CasRefCatalog::read` (`CasFsck.cpp:483`, `:559`). `Gc/CatalogLifecycleReconciler.cpp`'s `selectEligible`
+(`:33`-`43`) only ever selects rows already `Removing` to delete them; it never transitions a `Live` row, and
+`Gc/CasNamespaceJanitor.cpp` only reads the catalog.
 Scope: writer-side, outside the GC spec; sits next to F2 (repoint elision) as the second writer package.
 
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
@@ -571,22 +581,26 @@ itself. Ranked by what the number says about the system, not by its size.
 | # | number | what it means | proposal | where it lives |
 |---|---|---|---|---|
 | 1 | 748 ms of an 887 ms insert is ref-lane queue wait; lane at 100% | the write protocol, not GC, is the user-visible ceiling: one `_log` plus one `_ckpt` PUT per flush, a repoint per part removal | F2 repoint elision (writer task, schedule next to stage A); F5 lazy `_ckpt` (owner decision on recovery bound N) | outside the GC spec |
-| 2 | 880k new `_log` keys/day vs 600k deleted under a 200k cap; cleanup costs ~1 ms per key and $0 | budgets were set by phase name, not by unit cost; the cap on the cheapest family caused the loop | stand: `cas_gc_round_ref_cleanup_budget = 0` now; product: spec C2 removes the cap; rule: every budget carries its unit cost next to it | stand config + spec C2 |
-| 3 | `pending_deletes` 44 ms per blob, serial, 52% of a healthy day | three requests for one DELETE, no parallelism; the "healthy" state was already at the edge | spec A3 (fan-out, PR #2351); F7 `If-Match` DELETE and batched meta deletes (owner decision) | spec A3, open question |
-| 4 | 7,100 of 8,800 s of `fold_reduce` are an inline GET that a persisted flag would remove | `marker_confirmed` exists in the run format but is never set on carry; in-process memory hid a durable-state gap | spec A0, one line | spec A0 |
-| 5 | 3.3 GET per log in intake, 2.2 of them manifest bodies read up to four times per part lifetime; 29% of all GETs | structural and self-reinforcing: the longer the round, the more publish/repoint/drop of one part share a round | spec A4 (per-round body memo); F2 removes half the reads at the source | spec A4 + writer task |
-| 6 | 88 ms per LIST request, ~3 requests per 1000-key page | if confirmed, every LIST in the system is 3x, including the janitor and stage B's per-life lists | verify `max_keys` in `S3ObjectStorage::iterate` before B | spec verification item |
-| 7 | 77k LISTs and `503 Slow Down` on every restart | one S3 LIST per part file at load, a classifier fall-through (F15); the same path is the constant 155 LIST / 10 min (F16) | `PartFile` shape answered from the part-folder view; cache namespace files | writer/disk task, outside the GC spec |
-| 8 | one catalog GET per ref-lane flush, 470k/day, a third serial round trip on the lane (F20); GC round memory O(listed keys), resident max 3.7 → 4.7 GiB over the week (F19) | the lane's throughput bound is three serial S3 round trips per flush; a GC round on a backlogged pool can reach the memory limit of a small node | F20 licence candidates for the owner; F19 closed by spec B1 | owner decision; spec B1 |
-| 9 | `pending_reclaim = -388,242` | the only backlog column an operator has is process-local and goes negative after a restart | spec C5 (from the seal's `CondemnedSummary`) | spec C5 |
+| 2 | a part publish spends 125 ms in 5 S3 reads and 249 ms of lane wait, of 389 ms total (F30); F31 verified: the writer-side reads never guard a cross-node race, and none of them can move another node's live catalog row (`CasDecommission`, `CasFsck` fence the victim's mount before any catalog write, `CasPool.cpp:754`-`769`) | four of the five reads only re-check a race the same writer already closed in-process, or re-fetch bytes it already holds | drop the catalog GET (F20), cache the `_ckpt` etag/body and write optimistically, re-read the manifest only on `Unresolved`, seed the folder view from memory after commit | writer task (F31 + F2), parallel with stage A |
+| 3 | 880k new `_log` keys/day vs 600k deleted under a 200k cap; cleanup costs ~1 ms per key and $0 | budgets were set by phase name, not by unit cost; the cap on the cheapest family caused the loop | stand: `cas_gc_round_ref_cleanup_budget = 0` now; product: spec C2 removes the cap; rule: every budget carries its unit cost next to it | stand config + spec C2 |
+| 4 | `pending_deletes` 44 ms per blob, serial, 52% of a healthy day | three requests for one DELETE, no parallelism; the "healthy" state was already at the edge | spec A3 (fan-out, PR #2351); F7 `If-Match` DELETE and batched meta deletes (owner decision) | spec A3, open question |
+| 5 | 7,100 of 8,800 s of `fold_reduce` are an inline GET that a persisted flag would remove | `marker_confirmed` exists in the run format but is never set on carry; in-process memory hid a durable-state gap | spec A0, one line | spec A0 |
+| 6 | 3.3 GET per log in intake, 2.2 of them manifest bodies read up to four times per part lifetime; 29% of all GETs | structural and self-reinforcing: the longer the round, the more publish/repoint/drop of one part share a round | spec A4 (per-round body memo); F2 removes half the reads at the source | spec A4 + writer task |
+| 7 | 88 ms per LIST request, ~3 requests per 1000-key page | if confirmed, every LIST in the system is 3x, including the janitor and stage B's per-life lists | verify `max_keys` in `S3ObjectStorage::iterate` before B | spec verification item |
+| 8 | 77k LISTs and `503 Slow Down` on every restart | one S3 LIST per part file at load, a classifier fall-through (F15); the same path is the constant 155 LIST / 10 min (F16) | `PartFile` shape answered from the part-folder view; cache namespace files | writer/disk task, outside the GC spec |
+| 9 | one catalog GET per ref-lane flush, 470k/day, a third serial round trip on the lane (F20); GC round memory O(listed keys), resident max 3.7 → 4.7 GiB over the week (F19) | the lane's throughput bound is three serial S3 round trips per flush; a GC round on a backlogged pool can reach the memory limit of a small node | F20 licence candidates for the owner; F19 closed by spec B1 | owner decision; spec B1 |
+| 10 | `pending_reclaim = -388,242` | the only backlog column an operator has is process-local and goes negative after a restart | spec C5 (from the seal's `CondemnedSummary`) | spec C5 |
+| 11 | LIST 7.6× its week-wide baseline in the 952 s that carried an S3 throttling event (537 throttling events in the week) | plausible, not proven: the GC round's 13k-request LIST may be degrading writer latency through S3 throttling on top of the LIST's own cost | measure `S3ReadRequestsThrottling`/`S3WriteRequestsThrottling` before and after spec B1 removes the round's LIST | spec B1 before/after measurement |
+| 12 | one new TLS connection per ~98 requests, 109k/day (`DiskConnectionsCreated`) | looks like a per-connection request cap near 100, client or store side; a handshake on the ref lane's critical path every ~30 flushes | verify `http_keep_alive_max_requests` against S3's own `Connection: close` behavior before acting | verification item |
 
 Not a concern: $16/day, 70% of GC dollars in condemn-marker PUTs, HEAD-before-PUT misses. Protocol by design, and it
 held: `dangling = 0`, invariants clean, no loss in a week of deliberate churn.
 
-Writer package (owner decision 2026-09-25, F31 + F2): remove the five reads of a part publish from the common path and elide the `delete_tmp` repoint; together they halve publish latency and cut ~30% of PUTs, independent of the GC spec.
+Writer package (owner decision 2026-09-25, F31 + F2): remove the five reads of a part publish from the common path and elide the `delete_tmp` repoint; together they halve publish latency and cut ~30% of PUTs, independent of the GC spec. F31's one open question is closed: no code path lets `CasDecommission`, `CasFsck` or GC's `CatalogLifecycleReconciler` move another node's live catalog row to `Removing` without first claiming that node's own mount lease, and that claim itself fails closed while the node is live (`CasPool.cpp:754`-`769`, `CasDecommission.cpp:204`-`215`).
 
-Order of execution proposed: (2) stand config today; (4) A0 and (5) A4 as the first two stage-A tasks; (3) A3 with
-PR #2351; F2 as a writer task in parallel with stage A; then B, C; F5 and F7 after the owner decides.
+Order of execution proposed: (3) stand config today; (5) A0 and (6) A4 as the first two stage-A tasks; (4) A3 with
+PR #2351; the writer package (F31 + F2) as a track parallel to stage A; then B, C; F5 and F7 after the owner
+decides.
 
 ## 6. Verification items {#verification-items}
 
