@@ -30,6 +30,46 @@ infrastructure, the soak/chaos harness, and testing-methodology rules.
   2. `isEntityTooLargeError`'s specific S3 error name (`EntityTooLarge`) is untested by name, though the `||` chain mechanism is proven via its `MalformedXML`/`AccessDenied` siblings;
   3. `makeCasWriteRetryLaterExceptionPtr` (`CasRequests.h:89`) has no direct test against its direct-throw twin `throwCasWriteRetryLater`.
   Fix: add the three tests next to `gtest_cas_requests.cpp`'s existing siblings; add a direct classification test next to `CASWriteResult.OrThrowMapsEveryAlternative`.
+- **[gate-filter-countingbackendshape-escape] ✅ CLOSED by renaming the suite to `CASCountingBackendShape` (`683b68606e2`, 2026-08-24)** — TEST/INFRA — The strict `CAS*` gate then passed `2141/2141` Debug tests from `298` suites and `2140/2140` ASan tests from `297` suites with zero sanitizer, leak, logical, fatal, or signal markers. The generator now emits the same `298`-suite strict set with the three remaining generic-infrastructure exclusions.
+
+### `[cas-tests-unchecked-optional-deref]` A test that dereferences a disengaged optional takes every later test in the binary with it {#cas-tests-unchecked-optional-deref}
+
+A gtest that dereferences a disengaged `std::optional` does not fail — it aborts the process, and
+every test scheduled after it in the same binary never runs. The gate then reports a smaller total
+that still reads as green, so the regression that emptied the optional is invisible twice over: once
+as its own missing failure, once as the suites it silently deleted from the run. This bit three times
+in one night, each time presenting as "a suite disappeared" rather than as a failure.
+
+The shape to write instead depends on the enclosing function's return type, and this is the part that
+makes a blind `EXPECT_TRUE` → `ASSERT_TRUE` sweep wrong:
+
+- **`void` test body** — `ASSERT_TRUE(x.has_value())` is correct and sufficient; `ASSERT_*` returns.
+- **non-`void` helper** — `ASSERT_*` does not compile there (it expands to a bare `return;`). The
+  helper must expect and then bail on its own: `EXPECT_TRUE(x.has_value()); if (!x) return {};`, or
+  fold the guard into the value expression, `return x ? x->field : Field{};`. Both shapes already
+  exist in the suite — `sealedCursorOf` and `holdOf` in `gtest_cas_gc_hold_grammar.cpp`, and
+  `relinkTokenOf` in `gtest_cas_confirm_exact_ref.cpp` — and their comments state the reason.
+
+**Measured on the branch at the time of writing**, not recalled: a scan for `const auto x = …`
+followed within four lines by `x->` or `x.value()` with no intervening guard reports **13 candidate
+sites** across 9 files, the largest groups being `gtest_ca_wiring.cpp`,
+`gtest_cas_gc_frontier_gate.cpp`, `gtest_cas_orphan_nomination.cpp` and `gtest_cas_ref_writer.cpp`
+(2 each). A first, naive version of the same scan reported 52 — the difference is entirely false
+positives from shapes that ARE guarded: `if (const auto got = backend.get(…))`, and
+`pending = e && e->delete_pending`. Any sweep must therefore be eyeballed per site, and the 13 are
+candidates rather than confirmed defects; three were confirmed by reading
+(`gtest_cas_lifecycle_condition.cpp:40`, `gtest_cas_orphan_nomination.cpp:180` and `:184`, each an
+`EXPECT_TRUE` immediately followed by an unguarded `->`).
+
+Separately, `EXPECT_TRUE(x.has_value())` appears 9 times against 401 `ASSERT_TRUE(x.has_value())`.
+The `EXPECT` form is not wrong by itself — in a non-`void` helper it is the only option — but it is
+the marker worth grepping for, because it is exactly where the author needed a guard and may have
+stopped at the expectation.
+
+The durable fix is not a one-off sweep: a sweep fixes today's sites and the next test written
+reintroduces the class. What would actually close it is making the deref fail loudly at the point of
+use — a checked accessor the CA test helpers use in place of `->` — so the shape is unavailable
+rather than merely discouraged.
 
 ## Stateless and integration lanes {#stateless-integration-lanes}
 
@@ -47,6 +87,81 @@ infrastructure, the soak/chaos harness, and testing-methodology rules.
 - **[soak-harness-minors] soak-harness minors** — INFRA — Two open sub-points: the S01 scratch high-water sampler's coverage of the OPTIMIZE-FINAL spike is unconfirmed, and the `s3cache` scenario's positive-cache-hit assertion is unverified (the scenario file itself could not be located, possibly retired alongside S24). Resolved and dropped: `run_24h.sh` now archives prior-run logs under `logs/prev_<ts>` (`0cd9fc6cfff`); scenario cards no longer say `root_shards`; `pool_objects`/`pool_bytes` being `None` is a documented design choice, not an unreliability bug (`utils/ca-soak/soak/pool.py`). **OBSOLETE:** S24's pre-agreement `SYSTEM SYNC REPLICA` ask — S24 itself was retired 2026-08-22 (the conditional-blob-publication protocol it tested was superseded).
 - **[soak-lock-hold-wait-metric] soak phase-3 lock-hold/wait metric sampling + budget gate** — DESIRABLE — `utils/ca-soak/scenarios/framework/sampler.py` still has no lock-hold/wait fields, only memory/pool-size/container samples.
 - **[s23-soak-profiler-firehose-contamination] S23 soak memory-gate profiler-firehose contamination** — MINOR — Still unfixed; independently re-confirmed with more detail by `docs/superpowers/cas/2026-08-31-scenario-repair-ledger.md`: a 64 MiB threshold on S23's idle pool mostly measures ~176 MB/hour of the server's own telemetry.
+
+### `[s27-list-anomaly-aimed-at-a-retired-path]` ✅ CLOSED by `d6986f799f4` (`cas-gc-rebuild` only): S27 re-aimed at the prefixes GC actually pages {#s27-list-anomaly-aimed-at-a-retired-path}
+
+**Found by the full scenario sweep (2026-08-31). S27 FAILED, and it failed for the right reason.**
+
+The card injects LIST anomalies — pagination ambiguity, duplicate and missing pages — on
+`cas/refs/` and checks that discovery survives them. Its verdict was:
+
+> LIST anomalies were injected on cas/refs/ (test not vacuous): expected > 0 perturbed LISTs,
+> observed 0 — proxy perturbed 0 LISTs — discovery may not have re-listed cas/refs/
+
+Discovery does not list that prefix any more, and has not since discovery authority moved to the
+pool-wide `cas/ref_catalog` object. The registry records the change in as many words: "Value 10 is
+retired: discovery authority is the pool-wide `cas/ref_catalog` object rather than a roots registry
+object or a physical stream listing." A grep of the CAS tree finds no listing of `cas/refs/` at all.
+
+**The card did the right thing.** It carries a not-vacuous guard, and that guard is what fired: rather
+than reporting a serene PASS for an injection that reached nothing, it failed and said the injection
+reached nothing. A scenario without that guard would have been quietly reporting success against a
+retired code path for as long as the path has been retired.
+
+**The subject is not gone, only moved.** LIST is still load-bearing, for GC rather than discovery:
+`CasNamespaceJanitor` pages `namespaceRootPrefix()`, `CasOrphanManifestSweep` pages
+`casManifestsPrefix()`, and `CasGc` pages its own prefix. Pagination ambiguity on any of those is
+exactly the hazard S27 was written for, and none of them is covered today.
+
+**Fix direction:** re-aim the injection at the prefixes GC actually pages, and assert on GC's
+outcome — no object deleted that a complete listing would have shown as reachable — rather than on
+discovery's. Retiring the card instead would drop a real hazard class on the floor.
+
+**Closed.** `d6986f799f4` re-aimed S27 at `cas/ns/stream/` (`Layout::casRefsPrefix` /
+`Gc::enumerateRefPrefix`), matching this fix direction exactly; the card's comment
+(`s23_s27_misc.py:583-589`) confirms the old `cas/refs/` target no longer exists in the layout.
+
+### `[s45-drop-member-sweep-untested]` GC wins S45's race, so `cas-drop-member`'s own sweep path is never exercised {#s45-drop-member-sweep-untested}
+
+**Found while triaging an S45 soak failure during the wire-keys proof phase (2026-08-30).**
+
+S45 exists to prove that decommissioning a member does not leave its `Removing` catalog rows behind
+as permanent debris, and it asserted that `cas-drop-member` reported `namespaces_removed >= 3`. It
+reported zero, deterministically, including on the seed that passed on 2026-08-03.
+
+The card cannot win the race it depends on. `cas-drop-member` refuses to run while the victim's mount
+lease is alive, so the card must wait for the lease to lapse — and the SURVIVOR is the pool's GC
+leader, which retires `Removing` namespaces pool-wide during exactly that wait. Instrumenting the
+catalog on both sides of the wait showed it plainly: three victim and three survivor `removing` rows
+right after the kill, and none of the six by the time the tool returned. The survivor's own rows went
+too, and the tool never touches those, so GC — not the tool — did the sweeping. The tool then
+correctly reported nothing to remove, with `slot_removed=true`.
+
+The verdict has been rewritten to assert the invariant the scenario actually protects (no victim rows
+survive the decommission) plus a precondition check that the hidden rows existed at the kill. **What
+that loses is the only coverage of the tool's own sweep path.** When GC wins, that path never runs, so
+a regression in `cas-drop-member`'s namespace sweeping would not be caught by any scenario.
+
+**Fix direction:** give S45 a compose variant with `cas_gc_enabled` off on the survivor, so the
+`Removing` rows persist through the lease-lapse wait and the tool is the only thing that can sweep
+them. That makes the premise holdable by construction instead of by luck, and restores the assertion
+that `namespaces_removed` matches the table count.
+
+### `[soak-predown-textlog-scope]` `predown_dump.sh` only captures error-shaped `text_log` rows {#soak-predown-textlog-scope}
+
+**Found by the T8 criterion-4 anomaly-arm injection** (Stage-B soak, `2026-08-03-stage-b-RESULTS.md`
+`{#criterion-4-evidence}`): the GC round's own `INFORMATION`-level narration line — the exact text
+explaining why destructive work was suppressed for that round, plus phase narration and hold-cause
+detail generally — is not captured anywhere `predown_dump.sh` writes, because its `text_log` extract
+(`text_log_error_shapes.tsv`) is scoped to error-shaped rows only. Once the cluster is torn down (or, as
+here, simply reset for the next run), that narration is gone for good; the round's own structured
+`system.content_addressed_garbage_collection_log` phase rows survived and carried the criterion, but the
+human-readable confirmation did not.
+
+**Fix direction:** `predown_dump.sh` should also capture `system.text_log` rows from the CAS loggers at
+`Information` level, bounded by a time window and/or row cap (an unbounded dump risks turning the predown
+step itself into the next `cas_log.tsv`-sized artifact). Not attempted here — recorded as a tooling gap
+so the next investigation that needs this evidence doesn't rediscover the gap the hard way.
 
 ## Sanitizer lanes {#sanitizer-lanes}
 
