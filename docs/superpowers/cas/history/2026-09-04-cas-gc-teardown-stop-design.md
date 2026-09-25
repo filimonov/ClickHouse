@@ -1,11 +1,29 @@
 ---
-description: 'Design for a content-addressed disk teardown that no longer waits out a GC round: the open request plane carries a teardown fence, so an in-flight round is refused at its next request, its next retry sleep or its next streamed body chunk, and the round is recorded as Stopped rather than Aborted'
-sidebar_label: 'CAS GC teardown stop'
-sidebar_position: 10
-slug: /superpowers/specs/cas-gc-teardown-stop-design
-title: 'CAS GC does not hold up teardown'
-doc_type: 'design'
+description: 'History: design for a content-addressed disk teardown that no longer waits out a GC round, implemented and merged as a4b3cbc1b1d ("cas: a disk''s teardown no longer waits out a GC round"), landed on both cas-gc-rebuild and altinity/antalya-26.6'
+sidebar_label: 'CAS GC teardown stop (history)'
+sidebar_position: 2
+slug: /superpowers/cas/history/cas-gc-teardown-stop-design
+title: 'CAS history: GC does not hold up teardown'
+doc_type: 'reference'
 ---
+
+> **Implemented (moved to history):** landed as commit `a4b3cbc1b1d` ("cas: a disk's teardown no longer
+> waits out a GC round"), an ancestor of both `cas-gc-rebuild` and `altinity/antalya-26.6`. Unit gate
+> `CAS*` 2367/2367 at merge; the eight (now nine) tests in `src/Disks/tests/gtest_cas_gc_teardown_stop.cpp`
+> pin the mechanism on both branches. The three deviations from rev.4 are recorded under
+> [Implementation record](#implementation-record): `SYSTEM CAS FORGET` left the scope, a `Stopped` row
+> does not survive the restart that produced it, and T8 was dropped / T9 reshaped into a soak-only proof.
+> The two things this design explicitly left open — `SYSTEM CAS GC STOP` / `SYSTEM CAS FORGET`
+> round-scoped cancellation, and the durable `gc/state` lease not being released on a clean stop — are
+> tracked in `docs/superpowers/cas/BACKLOG/operability-and-introspection.md`
+> `{#lifecycle-verbs-wait-out-uncancellable-scans}` (CAS-049) and
+> `docs/superpowers/cas/BACKLOG/gc.md` `{#gc-lease-not-released-on-clean-stop}` (CAS-099), not here.
+> The companion implementation plan (`docs/superpowers/plans/2026-09-04-cas-gc-teardown-stop.md`) is
+> deleted: it is a step-by-step task checklist whose every fact (test names, task-to-decision mapping)
+> is recoverable from this design and from the merged test file, and its own Task 7/8 sections are
+> stale against the implementation record below (the integration test was dropped and the soak case
+> reshaped).
+
 
 # CAS GC does not hold up teardown {#cas-gc-teardown-stop-design}
 
