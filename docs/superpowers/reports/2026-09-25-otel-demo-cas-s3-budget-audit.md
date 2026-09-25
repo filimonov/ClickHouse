@@ -355,6 +355,61 @@ schedules one global-pool job per LIST page, so a 4.6M-key listing spawns ~1,500
 harmless next to the LIST latency, gone with spec B1. And `CASRootList` 674k ≈ pages, confirming that the GC's LIST
 is the only large `CASRootList` producer besides F15/F16.
 
+### F25. `metric_log` and `asynchronous_metric_log` over the week: which CAS signals are worth watching {#f25}
+Inventory: 184 `ProfileEvent_CAS*` and 9 `CurrentMetric_CAS*` columns in `metric_log` (one row per second), 8
+`CASGC*` metrics in `asynchronous_metric_log` (4 families × 2 disks). 85 counters moved during the week, 99 stayed
+at zero. Weekly totals in `tmp/otel_cas/pe_stats.tsv`.
+
+**Useful, worth a dashboard row.**
+- `CASRefQueueWaitMicroseconds` (2.0 × 10¹² µs in the week, ~3.3 waiting threads on average) and the ratio
+  `CASRefBatchedMutations / CASRefBatchFlushes` (3.1 in steady state, up to 34 in a removal burst): the insert
+  latency source and the lane's batching efficiency. `CASRefBatchFlushes` per second (≤5) is the lane's bound.
+- `CASConditionalWriteAttempts` / `Committed` / `Unresolved` / `CASRequestResolveRead`: 14.79M / 14.78M / 7.6k / 7.6k.
+  Every ambiguous write was resolved by a read; 0.05% unresolved is the S3 timeout rate. This is the write-safety
+  health line.
+- `CASGCRetiredCondemned` / `Graduated` / `Redeleted` (2.38M / 2.30M / 2.19M): the three GC stages; cumulative
+  differences are the durable backlog and do not go negative, unlike `CASGCPendingReclaim`.
+- `CASRootPut` (ref-log keys written, 3.48M) against `CASRefCleanupObjectsDeleted` (2.67M): the F14 balance, in
+  one subtraction.
+- `CASGCReadAheadHit` / `Miss` / `Wasted` (25.1M / 90k / 126k) and `CASGCEnumerationPages` (692k): fold read-ahead
+  efficiency and LIST size per round.
+- `CASBlobHeadMiss` (new blobs, 1.37M) and `CASBlobPutDeduplicated` (3,654): the real content-dedup rate on this
+  workload is 0.27%. `CASBlobAdoptTrusted` (1.49M) is not dedup; it counts the `delete_tmp` repoint re-adopting a
+  part's own blobs (F2).
+- `CASMountRenewalAttempts` / `Retries` / `Recovered` / `CASMountLeaseLost` (66.5k / 3 / 2 / 0), `CASRequestReissue`
+  (3.3k, bursts of 107/s during 503 storms), `CASRootCompareSwapConflict` = `CASRequestConflictPause` (2.7k, the two
+  replicas racing on `_ckpt`).
+- Generic: `S3ListObjects` per second (14/s steady, 2,000+/s at every restart, F15), `CurrentMetric_MemoryTracking`
+  (the ~1.2 GiB saw-tooth per GC round, F19), `S3ReadRequestsThrottling` + `S3WriteRequestsThrottling` (537 in the
+  week, all at restarts).
+
+**Useless or noisy.**
+- 99 of 184 counters never moved: the `CASServer*` verb family, `CASHotKey*` (the hot-key lane never engaged
+  here), most `CASRelinkConfirmRefused*`, `CASRefRecovery*`, `CASRefAppend*`. Correct as code, but 54% of the
+  metric surface is dead weight on a dashboard; a "nonzero only" view is needed.
+- `CASRequestAttempt` (72.5M) and `CASPartFolderViewHits` (35M) say nothing on their own.
+- `CASRefSnapshotPutBytes` is a byte volume exposed as an event counter.
+- The `_cas_cache` copies of every `CASGC*` asynchronous metric: the cache disk has no GC; each value appears
+  twice and a sum over disks doubles the backlog.
+- `S3ReadRequestsErrors` / `DiskS3ReadRequestsErrors` equal `CASBlobHeadMiss` second by second: the protocol's
+  HEAD-before-PUT misses are counted as read errors, so on a CAS disk this counter cannot alert on anything.
+  `S3WriteRequestsErrors` mixes 412 (6,389, conditional-write collisions, benign), 409 (953, concurrent conditional
+  PUTs on one key), 503 (2,379, restarts) and 500 (29); only the last two are errors.
+
+**Incorrect or misleading.**
+- `CASGCPendingReclaim` (F13): process-local, went to −388,242 after the restart and reads 0 now.
+- `CASGCLastSuccessAgeSeconds`: 0 since the 15:38 restart while no round has succeeded in this process for over
+  three hours; 0 means both "just succeeded" and "never in this process". A follower shows 0 as well. It should
+  derive from the durable `gc/state` timestamp or report NULL.
+- `CASGCRetiredGraduated` is incremented in bulk at the seal (200,000 in one second), so per-second rates spike
+  and phase attribution is lost; `CASGCRetiredCondemned` and `Redeleted` increment as the work happens.
+- Per-second `CASRefQueueWaitMicroseconds` sums the waits of mutations that completed in that second: the weekly
+  maximum, 133 s in one second on 09-18 18:01:17, is 641 mutations finishing together after ~200 ms each, a
+  removal burst, not a stall. Read it as a rate over minutes, not as a per-second gauge.
+- `CASManifestDecodeCacheBytes` sits at its 128 MiB cap (`manifest_decode_cache_bytes`) all week with 1.9-3.3k
+  entries, so the part-folder view rebuilds of F9 partly come from decode-cache eviction; the metric is right, the
+  default is small for 1,700 parts of 7-17 KB manifests plus both replicas' manifests read by GC.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
