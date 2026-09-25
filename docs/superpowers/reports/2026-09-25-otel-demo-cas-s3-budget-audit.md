@@ -471,6 +471,35 @@ Prometheus / Grafana / Loki from dashboards. `AWSClient` lines per day: 409 Conf
 conditional writes on one key), 412 Precondition Failed (dedup and CAS collisions, expected), 503 only at
 restarts, 500 Internal Server Error about one per day, spread evenly, S3-side.
 
+### F29. `blob_storage_log` over the week: sizes, errors and the snapshot run's growth with the backlog {#f29}
+30.0M rows, all `disk_name = 'cas'`, bucket `bvt-cas-test`, no `Read` rows (read logging off), no `local_path`.
+
+Object sizes: blobs 1.29M uploads, 237.5 GiB, p50 9.75 KiB, p99 1.4 MiB, max 32 MiB (138 multipart uploads);
+54% of blobs are under 16 KiB and carry 1% of the bytes, the 128 KiB-1 MiB bucket carries half. Manifests
+3.93M, 26.9 GiB, p50 2.27 KiB, p99 68 KiB, max 912 KiB. The ref lane's objects are tiny: `_log` p50 252 B (894 MiB
+in 3.3M PUTs), `_ckpt` 176 B (559 MiB in 3.3M PUTs), `.meta` 90 B (308 MiB in 3.7M PUTs). Per day ~31 GiB of
+blobs, 3.5 GiB of manifests, 0.2 GiB of refs, 40 MiB of meta: 90% of bytes are blobs but 63% of PUT requests are
+the three tiny families.
+
+`error` column: 7.5k "errors" in the week are protocol outcomes, not failures: 3,673 `PreconditionFailed` on
+`.meta` are dedup hits (all from merges, equal to `CASBlobPutDeduplicated`), 3,786 on `_ckpt` are the two
+replicas' conditional writes racing (`PreconditionFailed` + `ConditionalRequestConflict`, ~115/day of the latter).
+Real failures: `Please reduce your request rate` only inside the four restart windows (throttled attempts that
+succeed on retry are not logged here; the metric of F26 counts every 503), S3 `internal error` ~1/day, timeouts
+2-5/day, three blob `Delete` errors (two timeouts, one already-absent key after a timed-out retry). Same
+conclusion as F25: the `error` column cannot alert on a CAS disk without filtering 412/409 out.
+
+Spikes: only `.meta` uploads (4× the median in the hour of the 200k-graduation round: condemn markers) and the
+restart bursts; every writer family is flat within ±40% hour to hour.
+
+The GC generation snapshot (`gc/gen/<g>/attempt/<a>/blob_target`, 6 objects per round, up to 32 MiB multipart)
+grew from 11-12 MiB per round on 09-18..20 to 43 MiB on 09-22, 83 on 09-23 and 125 MiB on 09-24, tracking the
+retired-entry carry (F3, F19): the run holds the whole condemned backlog and is rewritten and re-read every round.
+1.0 → 2.6 GiB per day of snapshot writes while rounds per day fell 4×. Once the backlog drains it should return to
+~12 MiB; under spec C's short rounds the per-round rewrite is paid many more times per day, which is the
+`[gc-snapshot-log-structured-runs]` backlog item's cost line. At this pool's size it is seconds per round; at
+100M blobs the O(universe) rewrite would be the round's floor.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
