@@ -17,7 +17,7 @@ refactoring work (no behavior change), documentation debt, and minor/polish item
 - **[refactor: CasGc split]** — KEEP — Split scan/reachability/deletion/cursor/budget out of `Gc/CasGc.cpp` (4861 lines today, grew since last review); keep `Gc` as pure orchestration. Tracked at [PR #2286](https://github.com/Altinity/ClickHouse/pull/2286) (open).
 - **[refactor: Store de-god-classing]** — KEEP — `Cas::Store` was renamed to `Cas::Pool` (old name is dead). `Pool/CasPool.cpp`+`.h` is now 3461 lines; caches and the ref-log lane already split out into `CasManifestReader`/`CasRefLedger`, but the remount thread is still inline. Two small extraction candidates remain unclaimed: `listNamespaces`/`listMirroredChildren` (~112 lines, `CasPool.h:618,624`) and the anomaly-policy pair `reportImpossibleInterference`/`peekForeignRefLogHeader` (~113 lines, `CasPool.h:933`), deliberately kept inline by the mount plan. Extracting both would land near 3236 lines, still dominated by the mount protocol; low priority, the composition root is sound as-is (formerly `[source-layout-casstore-followups]`).
 - **[DiskSelector per-disk isolation]** — KEEP, upstream — `DiskSelector::initialize` (`src/Disks/DiskSelector.cpp:92-141`) has no per-disk try/catch inside its `for` loop; one unreachable disk still aborts disk-selector init server-wide (confirmed unchanged on `cas-gc-rebuild` and `altinity/antalya-26.6`). Pre-existing upstream gap; carve to Group G.
-- **[Group G] carve generic Ring-2 fixes into separate upstream PRs** — {#refactor-group-g} — KEEP (fork hygiene) — Shrinks the fork's long-term conflict surface: `ThreadStatus parent_thread_group` (B90), `ReadBufferFromFileView` (B115), `ReadBufferFromS3` cancel-stop (B117), `LocalObjectStorage` TOCTOU (B38), `MergeTreeDeduplicationLog` null-writer (B37), `copyS3File message_format_string`, `Expect:100-continue` opt-in, `S3Exception::isPreconditionFailed`, GCS conditional dialect + GOOG4 signer, generic conditional-S3-write plumbing, and the `clickhouse-disks --query` non-interactive exit-code contract change (`f85cb4330c8`, still rides in the CAS branch — full record at `BACKLOG.md#disks-exit-code-upstream`). Non-blocking.
+- **[Group G] carve generic Ring-2 fixes into separate upstream PRs** — {#refactor-group-g} — KEEP (fork hygiene) — Shrinks the fork's long-term conflict surface: `ThreadStatus parent_thread_group` (B90), `ReadBufferFromFileView` (B115), `ReadBufferFromS3` cancel-stop (B117), `LocalObjectStorage` TOCTOU (B38), `MergeTreeDeduplicationLog` null-writer (B37), `copyS3File message_format_string`, `Expect:100-continue` opt-in, `S3Exception::isPreconditionFailed`, GCS conditional dialect + GOOG4 signer, generic conditional-S3-write plumbing, and the `clickhouse-disks --query` non-interactive exit-code contract change (`f85cb4330c8`, still rides in the CAS branch — full record at `operability-and-introspection.md#disks-exit-code-upstream`). Non-blocking.
 
 ## Refactoring candidates, derived from what actually broke {#refactor-candidates-from-defects}
 
@@ -39,6 +39,9 @@ shapes, `b5c812ba56a`, `src/Disks/tests/cas_test_helpers.h:1109` `namespace fixt
 - **[stale-recover-ref-table-comments]** — KEEP — Comments still name the dead `recoverRefTable`/`recoverRefTableDetailed` at `Gc/CasOrphanManifestSweep.cpp:35,172` and `Gc/CasGc.cpp:84` (drifted from `:32/:167/:80`); the real function is `recoverRefTableDetailedFromAuthority`. Comment-only fix.
 - **[fsck-short-keys-spell-out]** — KEEP, USER DECISION pending — short keys `ns`/`me`/`p`/`ha` in `CasEvent::detail`/fsck-report maps still undecided (spell-out vs keep).
 - **[prev-indeg-rename-never-happened]** — record, no action — commit `60691b11e7f`'s message claims a `prev_indeg`→`prev_indegree` rename that never happened (the key had no emitter); commit messages are immutable, this entry is the durable pointer.
+- **[casrequestcontrol-comment-settings-stale] OBSOLETE: `CasRequestControl` deleted wholesale (`7f2a3b03a460`, `cas-gc-rebuild` only; the file still exists on `antalya-26.6`)** — DOC — Found during the Task 12 fix round: the header comments name `cas_s3_retry_initial_backoff_ms`/`cas_s3_retry_max_backoff_ms` as if they were configurable settings; they exist only in the comment text — the real budget is hardcoded in `CasRequestBudget`. Either implement the settings or fix the comments to stop implying a configuration surface that isn't there. `CasRequestControl.{h,cpp}` and its dedicated test are deleted on `cas-gc-rebuild`, so the stale comments no longer exist there; the item stays open on `antalya-26.6`, where the file is unchanged.
+- **[s3cache-config-comment-stale] stale comment in `utils/ca-soak/configs/storage_conf_s3cache_ch1.xml`** — MINOR — The comment claims cache-over-CA fails with `NOT_IMPLEMENTED`; this was fixed by `3ed0e5f5030` (2026-07-08) and the cache-over-CA path is now live-validated (see the quick-start cache example, `380688e8a66`). Remove the stale comment.
+- **[part-folder-validate-never-gating] ✅ CLOSED by the retirement of `part_folder_validate` (`66b480241b7`, 2026-09-03)** — HARD (user settings-policy direction) — The setting this item demanded a gate for no longer exists: the manifest-cache-by-id work retired `part_folder_validate` entirely, so there is no `never` value left to silently accept. `RetiredPartFolderValidateIsRejected` pins that loading the retired name now throws `UNKNOWN_SETTING`.
 
 ## Source-layout refactoring residue (2026-07-16) {#source-layout-residue}
 
@@ -117,6 +120,13 @@ diffing all 31 `DECLARE(...)` names against `configuration.md`'s table).
   `read-path.md`, `replication.md`, `garbage-collection.md` (×3), `roadmap.md`, `manifests-and-refs.md` (×2).
 
 P2, and cheap: one docs pass. Nothing here is tracked elsewhere (`deferred-docs-fixes.md` is still empty).
+
+### `[system-md-missing-cas-verbs]` ✅ CLOSED by `ada2908ac7a` (`cas-gc-rebuild` only) — `SYSTEM CAS` verbs missing from `docs/en/sql-reference/statements/system.md`
+
+DOC — Found during Task 12 (operations runbooks): `SYSTEM CAS FSCK`/`FORGET`/`GC STOP`/`GC START` (and
+siblings) are documented in the CAS-specific pages but absent from the generic `SYSTEM` statement
+reference, where a user would naturally look first. `docs/en/sql-reference/statements/system.md` now
+documents every `SYSTEM CAS` verb.
 
 ## Retry-later class has no ProfileEvent (umbrella review M13) {#retry-later-no-profile-event}
 
