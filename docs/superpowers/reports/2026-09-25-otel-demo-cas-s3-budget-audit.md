@@ -40,12 +40,14 @@ Total ≈ $16/day for 43 MB/day of user data. Per part publish the pool pays ~16
 
 Labels: CONFIRMED = read in code and matched by counters; PLAUSIBLE = counters fit, code path not fully read.
 
-### F1. CONFIRMED. System log tables on the CAS disk are 86% of all parts {#f1}
+### F1. CONFIRMED, deliberate on this stand. System log tables on the CAS disk are 86% of all parts {#f1}
 `system.blob_storage_log`, `part_log`, `cas_log`, `trace_log`, `metric_log`, ... each ~11k parts/day. Every flush is a
 manifest, a ref-log append, a `_ckpt` overwrite, blob PUTs with HEAD-before-PUT, then two removals (merge source, then
 `delete_tmp` repoint), then GC work on all of it. `cas_log` logging CAS events onto CAS is an amplifier.
-Saves: ~85% of parts, ref mutations, manifests and GC work on this stand. Action: `<storage_policy>` for system logs on a
-local disk (the backlog already recommends it for CI lanes). Operational, no code.
+On otel.demo this is deliberate: the stand exists to push CAS and GC with a tiny-part churn workload, so the logs stay
+where they are. The finding is a product note, not a stand action: a production deployment that uses CAS as the default
+disk inherits this churn for free, so the documentation should recommend a local `<storage_policy>` for `system.*` log
+tables (the backlog already recommends it for CI lanes), and the stand's numbers are the argument.
 
 ### F2. CONFIRMED. `delete_tmp` repoint on every part removal (backlog `[PART-REMOVAL-REPOINT]`) {#f2}
 190,853 repoints/day, all on `delete_tmp_*`. Each costs: 1 manifest PUT (0 entries, ~6.5 KB), 1 ref-log append

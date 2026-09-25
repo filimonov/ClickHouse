@@ -2929,7 +2929,7 @@ of a cheap agent's time. Zero risk to the tree if step 2's revert check is honou
 Report: `docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md`. Spec that absorbs the GC-side items:
 `docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md` (A0 = F3, A4 = F4, verification F6/F8, open
 questions F5/F7/F2). Stand: 2.3M PUT, 6.4M GET, 384k LIST per day on one replica for 43 MB/day of user data; 86% of
-parts are `system.*` log tables on the CAS disk (F1, configuration); `delete_tmp` repoints 191k/day (F2,
+parts are `system.*` log tables on the CAS disk (F1, deliberate on the stand, a docs note for production); `delete_tmp` repoints 191k/day (F2,
 `[PART-REMOVAL-REPOINT]`, now with a full cost line); carried condemned rows never persist `marker_confirmed` (F3,
 one-line GC fix); one manifest body GET per edge with no per-round reuse (F4, 29% of GETs); `_ckpt` PUT per flush (F5,
 21% of PUTs, owner decision); ~3 S3 LIST requests per 1000-key page (F6, verify); six GC requests per garbage blob (F7).
