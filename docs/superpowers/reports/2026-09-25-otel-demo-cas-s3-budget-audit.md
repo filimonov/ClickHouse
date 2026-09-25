@@ -440,6 +440,37 @@ The 409 responses (953) and the 412s (6,389) are accounted for: 3,654 blob `If-N
 (`CASBlobPutDeduplicated`) and 2,735 control-key conflicts between the replicas (`CASRequestConflictPause`,
 `_ckpt` CAS), the rest inside the 503 windows.
 
+### F28. `text_log` over the week: CAS is nearly silent at the configured level, and the one recurring warning is benign {#f28}
+`text_log` keeps Information and above (no Debug or Trace rows), 2.7-4.8k rows per day, 15k on the two days of the
+`backup_actions` incident. Four restarts in the week (09-22 12:30, 09-23 10:00, 09-24 16:41, 09-25 15:38), each
+producing the same four CAS lines: `CasRequestBudget`, the stale-looking lease observation (~36.5 s),
+"predecessor whose death was not proven clean", and the mount. Every restart in the week was an unclean one.
+
+CAS-attributed rows in eight days: 113 warnings, all one shape, `CasPool: CAS ref table '<ns>': refusing snapshot
+publication while the append lane is not Ready (state 1)`; 14 per day, spread over 19 tables (system logs and
+`claude_otel`), never more than 14 for one table in the week. State 1 is `RefLaneState::Writing`
+(`CasRefLedger.h`): the snapshot publisher found the lane mid-append, backed off (`advancePublishBackoff`,
+`CASRefSnapshotPublishBackoff` 113 in the week, the same number) and retried later. 113 refusals against 13.6k
+snapshot publications is 0.8%; no lane was `Wedged` or `NeedsRecovery` all week. Benign, and arguably not a
+warning: an ordinary race with the writer, at Warning level with no rate limit.
+
+What the log does not show at this level: no GC round summaries (the scheduler logs a round only when it is stopped
+by teardown or blocked by another leader; the fold has two `LOG_INFO` sites for rare paths), no cleanup stop
+reasons (`authorityHolds` logs at Debug), no lease renewal retries (Debug), no per-phase timings. Of the CAS code's
+73 log sites in `Gc/` and `Pool/`, 12 are Info, 29 Warning, 7 Error, 25 Debug/Trace. An operator at the default
+level sees the mount events, this snapshot warning, and `AWSClient` status lines. Everything in this audit came
+from `cas_gc_log`, `cas_log`, `metric_log` and `trace_log`, not from the log; a one-line Info summary per GC round
+(round, duration, keys listed, deleted, carried, deadline hit) would be the cheapest observability win.
+
+Non-CAS noise worth knowing about: 20,724 errors between 09-22 12:33 and 09-23 10:00 are one message, `Load job
+'startup table system.backup_actions' ... URL "http://127.0.0.1:7171/backup/actions" is not allowed in
+configuration file, see <remote_url_allow_hosts>`: the `url()` access limitation applied on 09-21 broke a
+URL-engine system table at the next restart and every query that waited on the startup job failed until the
+restart after. The 09-19 burst (SSL certificate verify failed, connection refused, timeouts) is `url()` queries to
+Prometheus / Grafana / Loki from dashboards. `AWSClient` lines per day: 409 Conflict ~110 (the two replicas'
+conditional writes on one key), 412 Precondition Failed (dedup and CAS collisions, expected), 503 only at
+restarts, 500 Internal Server Error about one per day, spread evenly, S3-side.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
