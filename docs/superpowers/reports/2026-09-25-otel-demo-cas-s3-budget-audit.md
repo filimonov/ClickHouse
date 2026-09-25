@@ -64,6 +64,45 @@ does not change volume; on the write side F2 (repoint elision) and F5 (lazy `_ck
 which is where three quarters of the dollars are. The condemn-marker PUT per garbage blob (327k/day, 15% of PUTs) is
 the one GC PUT and is protocol.
 
+## 2b. GC cost per phase {#gc-cost-per-phase}
+
+Phase rows carry only the round thread's ProfileEvents (`[gc-phase-rows-lose-worker-requests]`); the worker side is
+filled in from the day's semantic counters: read-ahead GETs (`CASRefLogBodyGets`, `CASRefManifestBodyFoldGets`,
+`CASGCReadAheadHit`), condemn HEADs (`candidates_marked`), condemn-marker PUTs (`CASMetaCompareSwap`), meta deletes
+(`entries_redeleted`), and the LIST, which the S3 iterator issues off-thread (`S3ListObjects` minus the 22k/day
+baseline). Prices: PUT and LIST $0.005 per 1000, GET and HEAD $0.0004 per 1000, DELETE free.
+
+Healthy day, 09-15: 360 rounds, 778k blobs condemned, 964k `_log` keys and 1.07M manifests deleted.
+
+| phase | wall s | share | requests | per unit | $ |
+|---|---|---|---|---|---|
+| `pending_deletes` | 33,358 | 52% | 765k HEAD + 765k DELETE + 765k meta DELETE | 44 ms per blob, serial | 0.31 |
+| `fold_ref_intake` | 19,326 | 30% | 3.18M GET (0.97M logs, 2.14M manifest bodies) | 20 ms per log, 3.3 GET per log | 1.27 |
+| `fold_reduce` | 5,363 | 8% | 778k HEAD (read-ahead) + 779k marker PUT + 35k GET | 6.9 ms per condemned blob | 4.21 |
+| `ref_object_cleanup` | 4,095 | 6% | 3.7k batch DELETE + 40k GET (2 revalidation reads per chunk) | ~1 ms per key | 0.02 |
+| `manifest_deletes` | 1,079 | 2% | 1.25k batch DELETE | ~1 ms per key | 0 |
+| `defer_decision` | 1,057 | 2% | 34k LIST | 94 pages per round | 0.17 |
+| other 12 phases | 340 | <1% | ~6k GET | | 0 |
+| **round total** | **64,580** | 75% duty | **~9.5M** | | **6.0** |
+
+Degraded day, 09-23: 28 rounds, 327k condemned, caps at 5000, 4.3M keys in the LIST.
+
+| phase | wall s | share | requests | per unit | $ |
+|---|---|---|---|---|---|
+| `defer_decision` | 31,868 | 42% | 362k LIST | 13.4k requests per round, 88 ms each | 1.81 |
+| `fold_ref_intake` | 27,736 | 37% | 3.08M GET (0.96M logs, 2.12M manifests) | 29 ms per log | 1.23 |
+| `fold_reduce` | 8,800 | 12% | 327k HEAD + 327k marker PUT + 285k graduation GET | 27 ms per condemned; ~7,100 s of it is the inline graduation GET (F3) | 1.89 |
+| `pending_deletes` | 6,226 | 8% | 135k HEAD + 135k DELETE + 135k meta DELETE | 46 ms per blob | 0.05 |
+| `manifest_deletes` | 1,008 | 1% | 1.08k batch DELETE (1.06M keys) | | 0 |
+| `ref_object_cleanup` | 226 | <1% | 227 batch DELETE (135k keys, capped) + 824 GET | | 0 |
+| **round total** | **75,909** | 88% duty | **~4.6M** | | **5.0** |
+
+Reading: time and money sit in different phases. Money is the condemn-marker PUT (70% of GC dollars on the healthy
+day, protocol) and the intake GETs; time is the serial `pending_deletes` on a healthy day and the LIST plus the
+inline graduation GET on a degraded one. The write-once batch families (`ref_object_cleanup`, `manifest_deletes`) are
+free in both. Per garbage blob on the healthy day GC spends ~9 requests: 3.3 GET of intake, 1 HEAD + 1 PUT to
+condemn, 1 HEAD + 1 DELETE + 1 meta DELETE to reclaim.
+
 ## 3. Findings, ranked by what they save {#findings}
 
 Labels: CONFIRMED = read in code and matched by counters; PLAUSIBLE = counters fit, code path not fully read.
