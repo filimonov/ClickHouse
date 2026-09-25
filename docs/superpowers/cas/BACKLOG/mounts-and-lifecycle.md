@@ -67,6 +67,25 @@ and CA disk lifecycle: startup, decommission, and pool bootstrap.
   `CasRequests`/`CasOperation`"). Needs re-grounding against the current `CasRequests`/`CasOperation`
   API before implementation.
 
+### `[resolved-by-get-unbounds-clone-overlap]` Exact-byte resolution lets lockstep clones both stay authoritative indefinitely {#resolved-by-get-clone-overlap}
+
+Found 2026-09-01, same design work. Not a fix this release needs; recorded because two successive
+revisions of that design asserted the opposite baseline and were wrong.
+
+A VM snapshot restored twice gives two runtimes with the same `server_uuid`, the same
+`MountLeaseKeeper` state and the same `thread_local_rng` state, so they mint the same
+`write_attempt_id` (`UUID.cpp:11`). Where their other body inputs also stay in lockstep — wall time,
+hostname, PID, `seq`, watermark — they build **byte-identical** renewal bodies. One lands; the other
+loses its `If-Match`, and `putOverwriteControlled`'s resolve-by-get sees identical bytes at a changed
+token and reports `Committed` to it too (`CasRequestControl.cpp:678-687`). Both extend local authority,
+and the cycle can repeat.
+
+So the intuition that the token guard fences whichever clone loses, bounding the overlap to about one
+renew period, is false: `resolved_by_get` is what removes the bound. Cloning a running server that holds
+a CAS mount is outside supported operation, so this is a documentation and threat-model item rather than
+a fix — but the mount documentation should say it, and any future argument that reasons from "the store
+serialises us" should not assume a bound that is not there.
+
 ## CAS disk lifecycle rev.8 round (FORGET-only) — residuals {#disk-lifecycle-rev8-closure}
 
 Round rev.8 (FORGET-only) resolved goals G1-G5 (isolation fix, throw-not-abort, GC self-exit on
@@ -166,6 +185,45 @@ short of making concurrent decommission-vs-recreate airtight". P2. Reproducing i
 that restarts the victim between the recheck and the CAS. Loosely adjacent: 2031-triage CAS-063 and
 CAS-007 below.
 
+### `[decommission-waits-on-the-wrong-predicate]` `cas_mounts` liveness and `NoWait` decommission disagree about what "dead" means {#decommission-wrong-predicate}
+
+`SYSTEM CAS DROP POOL MEMBER` under the `NoWait` policy refused a genuinely dead node in CI
+(`test_cas_drop_pool_member::test_drop_dead_pool_member_heals_the_pool`, PR 2073, integration
+amd_tsan 4/6), 15.5 seconds AFTER the target's lease wall-clock expiry:
+
+```
+CAS decommission 'node2': pool member is alive or contended -- mount lease held by
+uuid=... epoch=1 pid=10 hostname=node2 (expires_at_ms=1785811895007). Refusing ...
+```
+
+This is not a stuck lease. The two sides use different definitions of dead, and each is right on its
+own terms:
+
+- **The observable one** is wall-clock: `CasServerRoot.cpp:236` computes `live = !gc_fenced &&
+  expires_at_ms > now_ms`, and that is what a `cas_mounts` reader sees. The same file's own operator
+  text carries a `CLOCK SKEW CAVEAT` about precisely this comparison.
+- **The one reclaim requires** refuses that comparison outright. `claimMount`'s comment
+  (`CasServerRoot.cpp:410-424`) says a same-uuid/different-epoch lease is reclaimed "ONLY on a
+  certificate of death that needs no fresh wall-clock trust -- never by comparing `expires_at_ms`
+  against `now_ms`": `gc_fenced`, the clean marker, or a `proven_dead_token`. A `kill=True` stop
+  leaves none of the three, and `NoWait` passes an empty `proven_dead_token` (`CasPool.cpp:668`),
+  skipping the observation wait that would mint one.
+
+So the only route to `NoWait` success for a hard-killed node is a GC round fencing the dead mount
+first. In the failing run GC rounds were executing on their ~1s cadence but reporting
+`deferred`/`candidates=0` — the fence had not happened yet. The test's precondition polls
+`cas_mounts.state != 'live'` for up to 90s, which the wall-clock definition satisfies on its own, so
+passing that gate does not establish what the call it guards actually needs.
+
+**Not yet decided, and the decision is the work here:** whether this is a test that waits on the wrong
+predicate (fix: wait for the fence, or use the waiting policy), or a product gap (fix: `NoWait`
+decommission should accept a hard-killed member without requiring GC to get there first, or say in
+its refusal what the operator must wait for). Do not "fix" it by weakening the certificate-of-death
+rule — that rule is what keeps a live twin from being decommissioned across two clocks.
+
+Falsification: if a rerun passes on unchanged code, it is a cadence race rather than a deterministic
+gap, which changes the fix but not the mismatch.
+
 ## `createNamespaceStep1` is the one writer-plane durable write without a fence check {#create-namespace-step1-unfenced}
 
 **KEEP**, confirmed unchanged: `createNamespaceStep1` (`Pool/CasRefCatalog.cpp`) is still the only
@@ -212,8 +270,8 @@ test exists for it today. Lower-confidence secondary: the abort-path `deleteExac
   `MidRetirementCrashResumesViaMountLeaseFallback`). Both P3, observability-only. Owed (small): a
   `state` word distinguishing `unknown`/`retiring` from a genuinely empty listing, or a nullable
   `mount_list_error` column. Related:
-  [`[decommission-waits-on-the-wrong-predicate]`](../BACKLOG.md#decommission-wrong-predicate) in
-  `BACKLOG.md` (`cas_mounts` liveness vs `NoWait` decommission disagreeing about "dead").
+  [`[decommission-waits-on-the-wrong-predicate]`](#decommission-wrong-predicate)
+  (`cas_mounts` liveness vs `NoWait` decommission disagreeing about "dead").
 - **KEEP: `decodeServerEpoch` accepts `nwe = 0`, and `MountFence` carries two never-read identity
   fields.** {#server-epoch-zero-and-dead-fence-identity} Both confirmed unchanged, neither a live
   defect (both fail loud or are inert): (1) `Formats/CasServerRootFormats.cpp`'s `decodeServerEpoch`
