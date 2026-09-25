@@ -322,9 +322,7 @@ Details: docs/superpowers/cas/2031-triage.md#cas-117
 
 ### Write-path allocation and ref-table commit-path cost (2026-07-16, TXN-Final campaign) {#writepath-cost-txn-final} — KEEP
 
-- **[write-path-alloc-audit]** — TXN-Final's allocation trace showed the write path
-  (`tryCreateWriteBuffer`/`writeFile`/`CaInlineWriteBuffer`/`CaContentWriteBuffer`) dominating memory, clean
-  on CPU. **Confirmed and quantified by audit
+- **[write-path-alloc-audit]** — During the TXN-Final full CA-default stateless run, `system.trace_log` showed the CA write path dominates the Memory (allocation-sampling) trace: `ContentAddressedTransaction::tryCreateWriteBuffer` (~489k samples) + `writeFile` (~488k), then `CaInlineWriteBuffer` (~322k) and `CaContentWriteBuffer` (~165k). CPU was clean (NO CAS symbol in the top-15 CPU stacks) — so this is NOT a CPU or correctness issue, purely an allocation-volume observation. **Confirmed and quantified by audit
   [F18](/superpowers/reports/otel-demo-cas-s3-budget-audit#f18)**: every stream double-allocates its write
   buffer (content + spill sink) for parts with a 10 KB/1.5 KB median size — tracked live as
   `[ca-write-buffer-allocation-concentration]` and `umbrella-roadmap.md` §2 "Write buffers for tiny parts."
@@ -356,12 +354,11 @@ O(N)-amplification findings for the capacity model / future S3-budget push:
 
 - **[idle-scratch-debris]** MINOR — idle GC leaves local scratch files uncollected (1→21 MiB over an idle
   window with zero inserts).
-- **[scratch=full-part]** DESIRABLE — a 100 GiB merge spills 93 GiB to local scratch before upload; largely
-  addressed by opt-in S3-native staging, local path still doesn't stream-hash.
+- **[scratch=full-part]** DESIRABLE — a 100 GiB merge spills 93 GiB to local scratch before upload; a part larger than local free scratch cannot be written. Largely addressed by opt-in S3-native staging, local path still doesn't stream-hash. (An orphaned 2026-08-04-triage finding covers the same cas_scratch spill class, citable across 3 sources — folded in as confirmation.)
 - **[replicated double-spill]** DESIRABLE — a replica re-merges and re-spills its own full scratch instead of
-  adopting the leader's uploaded blob (186 GiB for one deduped 100 GiB blob).
-- **[wide-part O(columns)]** DESIRABLE — a 20000-column `OPTIMIZE FINAL` stalled in an S3 retry storm from
-  ephemeral-port exhaustion. Not covered by the 2026-09-25 audit (different workload shape).
+  adopting the leader's uploaded blob (186 GiB for one deduped 100 GiB blob). (An orphaned 2026-08-04-triage finding covers the same shared-pool `OPTIMIZE FINAL` re-merge/re-spill class — folded in as confirmation.)
+- **[wide-part O(columns)]** DESIRABLE — S07 20000-col `OPTIMIZE FINAL` stalled in an S3 retry storm from
+  ephemeral-port exhaustion. Not covered by the 2026-09-25 audit (different workload shape). (An orphaned 2026-08-04-triage finding covers the same S07 20000-column finding verbatim — folded in as confirmation.)
 - **[partitioned-INSERT O(partitions)]** DESIRABLE — ~10s per 256-partition insert; related to the postponed
   stage 2, not resolved by its postponement.
 - **[S11 capacity]** WATCH — GC doesn't reclaim during the delete phase; same O(N)-GC-lag family as
