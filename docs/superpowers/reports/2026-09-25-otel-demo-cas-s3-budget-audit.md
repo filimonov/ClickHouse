@@ -527,6 +527,32 @@ one round trip per flush saved; (b) seed the part-folder view from the staged ma
 after promote, one GET per part; (c) F20 for the catalog GET. Together they take a flush from four round trips to
 two and a publish from five reads to at most two, without touching what is written or when.
 
+### F31. OWNER DECISION 2026-09-25. All five reads of a part publish leave the common path {#f31}
+The owner's reading of F30, confirmed against the code: a namespace is node-owned (`liveNamespace` =
+`<server_root_id>/store/<uuid>@cas@`), and every writer of a life's `_ckpt` is this node (writer flushes, the
+snapshot publisher, recovery, `completeCreation`; `CasRefCkpt.cpp`, `CasRefLedger.cpp`, `CasRefCatalog.cpp`).
+The other replica never touches these keys. Therefore:
+
+1. The catalog GET per flush (`commitRefChunk`, F20) guards a race only this process can create (its own DROP),
+   which is already closed in-process by `removal_admission_closed` under `ref_queue_mutex` and
+   `invalidateRemovedCatalogLife`; a stale predecessor is fenced by the writer epoch on every conditional write;
+   an external tool must fence the mount first. Remove from the common path.
+2. The `_ckpt` GET per flush (`publishCkpt` is `readModifyWrite`) races only with this process's own snapshot
+   publisher (the 115 conflicts per day). Keep the last etag and body per life in memory, write optimistically,
+   re-read on 412 only.
+3. `PartWriteTxn::promote` re-reads the manifest this writer just staged; read only when the staging PUT ended
+   `Unresolved` (0.05% of conditional writes), otherwise trust the committed etag.
+4. After the commit, seed the part-folder view from the manifest bytes in memory instead of invalidating and
+   re-reading (F9).
+
+Result: a publish is blob PUTs, one manifest PUT, two `_log` PUTs and two `_ckpt` PUTs, no GET; a flush is two
+round trips instead of four. On F30's numbers that is 125 ms of the 389 ms directly and about half of the 249 ms
+lane wait indirectly, roughly a 2× faster publish with nothing changed in what is written or when.
+
+To verify before implementing: that `CasDecommission` and `CasFsck` never move another node's live catalog row
+to `Removing` without fencing that node's mount (they read the catalog; the audit did not read their write paths).
+Scope: writer-side, outside the GC spec; sits next to F2 (repoint elision) as the second writer package.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
@@ -556,6 +582,8 @@ itself. Ranked by what the number says about the system, not by its size.
 
 Not a concern: $16/day, 70% of GC dollars in condemn-marker PUTs, HEAD-before-PUT misses. Protocol by design, and it
 held: `dangling = 0`, invariants clean, no loss in a week of deliberate churn.
+
+Writer package (owner decision 2026-09-25, F31 + F2): remove the five reads of a part publish from the common path and elide the `delete_tmp` repoint; together they halve publish latency and cut ~30% of PUTs, independent of the GC spec.
 
 Order of execution proposed: (2) stand config today; (4) A0 and (5) A4 as the first two stage-A tasks; (3) A3 with
 PR #2351; F2 as a writer task in parallel with stage A; then B, C; F5 and F7 after the owner decides.
