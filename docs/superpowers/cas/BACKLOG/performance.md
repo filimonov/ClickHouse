@@ -45,12 +45,18 @@ benchmark, human-accepted.
   `fff1c21989d6` + `4829435a157b` (cas-gc-rebuild only, not on antalya-26.6). Residual = stage 2 (postponed)
   and dedup HEAD/GET traffic (`[B121/B202]` below).
 - **[TXN-ONE-PIPELINE]** — KEEP, HARD/structural. Single `dispatch` funnel + `precommit()`/`commit()`
-  two-phase contract, replacing the two staging pipelines that caused the `01603` abort-ordering bug. Not
-  landed on either branch (`CasImplicitPrecommitInCommit`, the acceptance marker, absent from both). Lands
-  before codecs v3.
+  two-phase contract, replacing the two staging pipelines that caused the `01603` abort-ordering bug; the
+  correct invariant is per-state-domain, not a total order. `commit` implicitly running `precommit` when not
+  called (with `CasImplicitPrecommitInCommit` observability), plus a de-patching pass removing accumulated
+  eager-dispatch/read-your-writes workarounds from non-CA files (`docs/superpowers/cas/upstream-patch-inventory.md`).
+  Not landed on either branch (`CasImplicitPrecommitInCommit`, the acceptance marker, absent from both). Lands
+  before codecs v3 and the source-layout refactoring.
 - **[B121/B202/one-GET-open] read request-count reduction** — KEEP, design pass. Inline-by-size (drop the
-  file-type predicate, inline < ~512 KiB), a per-blob-GET cost cut, one-GET part open. Not landed on either
-  branch. Related, not superseding: audit F9 (view rebuild) and F15/F16 (LIST on directory probes) below.
+  file-type predicate, inline < ~512 KiB, weigh the wide-part-medium-column regression, `.bin` carve-out), a
+  per-blob-GET cost cut, one-GET part open. Companion to the (landed, opt-in) file-cache disk for re-read-heavy
+  workloads. (An orphaned 2026-08-04-triage finding covers the same class via a measured DownloadPart/
+  relink-fetch dominant read cost — folded in as confirmation.) Not landed on either branch. Related, not
+  superseding: audit F9 (view rebuild) and F15/F16 (LIST on directory probes) below.
 - **[B98]/[promote-recreate]** — DONE (provenance only). Unconditional streaming `publishBlob` removed the
   conditional-overwrite API and the tokened promote gate. Evidence: `940b1685bf96` (both cas-gc-rebuild and
   antalya-26.6). Emulated materialization remains tracked separately under
@@ -58,11 +64,16 @@ benchmark, human-accepted.
 - **[R1/X1] ephemeral reader pin** — KEEP, design-only/VERIFY. Cross-node GC fence for a ref-less reader;
   audit whether such a reader path exists at all before building it.
 - **[ch128ctx] slot-bound blob-hash middle tier** — KEEP, small spec. `cityHash128(content) ∥
-  xxh3_64(part_name, file_name) ∥ size` closes the cross-slot dedup-collision vector at ~zero cost. Not
-  landed on either branch. Origin: `10-backups.md §multi-disk`.
-- **[codex-26] `casAppendObject` before any concurrent appender** — KEEP, LOW/latent. Not reachable today
-  (single production appender, single-writer lease); the gap is documented in-code
-  (`Pool/CasPlainObjects.cpp:16`, both branches) but not closed.
+  xxh3_64(part_name, file_name) ∥ size` (256-bit; variable-width `BlobDigest` already supports it) closes the
+  cross-slot dedup-collision vector at ~zero cost. Every load-bearing dedup survives: relink/carry-forward are
+  reference-based; retry idempotency, same-name replica writes, and snapshot-upload→TTL-move prepayment are
+  same-slot; only cross-slot content coincidence is lost (an explicit non-goal, `01 §what-it-does-not-buy`).
+  Main touch: the staged-blob hasher/request construction needs `(part_name, file_name)` context before
+  `ensureBlobPresent`. Not landed on either branch. Origin: `10-backups.md §multi-disk` (2026-07-14).
+- **[codex-26] `casAppendObject` before any concurrent appender** — KEEP, LOW/latent. A fresh-token/
+  stale-payload lost-update shape (2026-07-17 codex-review triage, finding №26). Not reachable today
+  (single production appender, `MergeTreeMutationEntry::writeCSN`; single-writer lease); the gap is documented
+  in-code (`Pool/CasPlainObjects.cpp:16`, both branches) but not closed.
 
 ### Every committed ref chunk re-GETs and rescans the pool-global ref catalog (2031-triage CAS-112) {#ref-catalog-read-per-commit}
 
@@ -102,11 +113,14 @@ Reports: `docs/superpowers/reports/2026-07-23-cas-wide-insert-baseline.md` (base
 `docs/superpowers/reports/2026-07-24-cas-wide-insert-stage1-effect.md` (stage-1 effect). The older 268.8
 `HEAD`/part estimate predates the unconditional-publication rewrite.
 
-1. **S3-native staging on the wide-insert profile** — MEASURE. Feature exists, opt-in; flip the setting and
-   compare.
+1. **S3-native staging on the wide-insert profile** — MEASURE. Feature exists (opt-in, native-only same-store
+   copy on the first absent publication). Local staging then upload moves every blob's bytes twice; native
+   staging may cut wall on S3 backends. Flip the setting and compare.
 2. **S3 client concurrency/connection tuning** — MEASURE. 16-33 concurrent PUT threads may be client-capped.
-3. **Inline-placement threshold tuning** — INVESTIGATE THEN MEASURE. ~239 PUT/part; a higher threshold could
-   fold the small tail into the manifest.
+3. **Inline-placement threshold tuning** — INVESTIGATE THEN MEASURE. Small part files inline into the manifest
+   (`CaInlinePlacement` machinery). ~239 PUT/part; first verify the threshold is a setting (not a pinned
+   format constant), then measure PUT-count and wall deltas; a higher threshold could fold the small tail
+   (marks, minor streams) into the manifest.
 
 - (5) **Unconditional manifest `GET` on promote** — part of the 108.7 `GET`/part during insert;
   separate long-standing item. Verification semantics of the write path → under the spirit of the
@@ -158,6 +172,8 @@ whole-namespace re-encodes at once. Fail-soft (retried on next trigger, per-tabl
 correctness item. Owed: a pool-wide limiter under the existing per-table gate. (A previously-claimed
 pending-count leak here does not exist — closed by `829ad698ef6`.) Confirmed still open on antalya-26.6.
 
+Details: docs/superpowers/cas/2031-triage.md#cas-051
+
 ### Standalone write on a committed part pays a second, throwaway manifest body (2031-triage CAS-056) {#standalone-write-scratch-manifest-cost} — KEEP
 
 A single-file write/unlink on a committed part stages a scratch manifest for the EDGE-BEFORE-OBSERVE closure,
@@ -176,6 +192,8 @@ Details: docs/superpowers/cas/2031-triage.md#cas-056
 small: a 3000-file part costs single-digit ms of string compares against 3000 blob PUTs on the same path. P3,
 owed only if file-count-per-part grows an order of magnitude: index `entries` by path. Confirmed unfixed on
 antalya-26.6 (same struct shape, no index).
+
+Details: docs/superpowers/cas/2031-triage.md#cas-116
 
 ### Conditional-write lane: no jitter, excluded from cross-thread retry pacing (2031-triage CAS-119) {#conditional-write-retry-pacing-and-jitter} — KEEP
 
@@ -264,6 +282,8 @@ reaches object storage. Fix: derive one view/`Route` once in `prepareRead` and p
 after the request-count items above. Adjacent to the owner-decided view-seeding fix in
 `{#ref-catalog-read-per-commit}` (which reduces rebuild frequency, not per-open re-derivation).
 
+Details: docs/superpowers/cas/2031-triage.md#cas-118
+
 ### `readLine` assembles every decoded record byte-at-a-time (2031-triage CAS-127) {#readline-per-byte-per-record-string} — KEEP
 
 `Cas::readLine`, the sole line reader for every v3 text format (ref snapshot, log, manifest, fold seal, ref
@@ -325,6 +345,8 @@ correctness/bloat defect, just avoidable memory + a double write for wide indexe
 `c623713479f`; confirmed still missing on antalya-26.6. Fix: add the default names to the allowlist; log when
 an unknown extension takes the buffered path. Cross-referenced by `BACKLOG/formats-and-storage.md` and
 `umbrella-roadmap.md` §3.
+
+Details: docs/superpowers/cas/2031-triage.md#cas-014
 
 ## Later / design questions {#later-design-questions}
 
