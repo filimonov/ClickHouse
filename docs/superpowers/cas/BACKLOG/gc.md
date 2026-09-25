@@ -22,7 +22,7 @@ Fully covered by the spec, text removed here:
 
 - **[gc-frontier-one-list]** — spec [B1](/superpowers/specs/cas-gc-rounds-in-minutes-design#b1-discovery): a per-life exact-GET probe plus a bounded per-life LIST only on change, stronger than either proposed lever.
 - **[GC-DEFER-DECISION-LIST-COST]** {#gc-defer-decision-list-cost} — same spec section (B1). Was the largest GC cost item in this file (79% of GC wall time on the 2026-08 measurement; audit re-measures 30-42%).
-- **`{#ref-cleanup-whole-catalog-token-stillness}`** (CAS-079) — spec [B3](/superpowers/specs/cas-gc-rounds-in-minutes-design#b3-cleanup-licence), named explicitly as absorbing CAS-079 (per-row licensing, per-namespace refusal, adjudicated not yet built). The write-hotspot context it cited, `{#ref-catalog-write-hotspot}` (`BACKLOG.md`/`performance.md`), still applies.
+- **`{#ref-cleanup-whole-catalog-token-stillness}`** (CAS-079) — spec [B3](/superpowers/specs/cas-gc-rounds-in-minutes-design#b3-cleanup-licence), named explicitly as absorbing CAS-079 (per-row licensing, per-namespace refusal, adjudicated not yet built). The write-hotspot context it cited, `{#ref-catalog-write-hotspot}` (`performance.md`), still applies.
 
 Partially covered, full text kept under their own topic below:
 
@@ -57,10 +57,135 @@ Partially covered, full text kept under their own topic below:
 - **[SUPPRESSED-HANDOFF-CONSUMPTION]** {#suppressed-handoff-consumption} — KEEP, minor bounded leak — A suppressed round's hand-off reclaim (`Gc/CasGc.cpp:1034-1059`) drops rather than defers a skipped generation; left to fsck. Reframed 2026-09-25: fires now only when `suppress_destructive` is true for a narrower reason (unproven frontier, lost CAS, a held namespace) since `kDefault` flipped — see `{#stage-b-7b-sequencing}` below — rarer, not gone. Pinned by `CasGcFrontierGate.TheHandOffReclaimIsInertUnderSuppression`.
 - **[STAGE-B-7B-SEQUENCING]** {#stage-b-7b-sequencing} — DONE, kept for provenance — `bf396ffa50d1` re-keyed the fold-seal cursor to catalog incarnation, `58fd482a8008` flipped `kDefault = Authoritative` (both verified on `cas-gc-rebuild`, absent from `antalya-26.6`; `kDefault = Authoritative` re-confirmed live at `Gc/CasGc.h:65`, 2026-09-25). Was a HARD CONSTRAINT preventing a recreated-namespace edge miss; closed before the flip. One stale comment remains at `Gc/CasGc.cpp:2877-2878`.
 
+### `[write-token-provenance-not-in-the-api]` ✅ CLOSED by the request engine's `resolved_by_read` (`996b61e04da6`, `adc0fa7007a3`) {#write-token-provenance}
+
+**Closed.** Superseded by the `CasRequests`/`CasOperation` engine rewrite, not a direct response to this item: `996b61e04da6` removes the fallback `HEAD` for a write response carrying an incarnation slot, and `adc0fa7007a3` puts provenance in the API type itself (`Committed.resolved_by_read`, `Backend/CasWriteResult.h:42`). `Gc::acquireOrRenewLease` (`Gc/CasGc.cpp:4732`) now resolves through `CasOperation::readModifyWrite`, closing the GC-lease hazard described below. Tests: `resolved_by_read` in `gtest_cas_requests.cpp`, `gtest_cas_slot_occupy.cpp`, `gtest_cas_heartbeat.cpp`. `cas-gc-rebuild` only. The rest of this entry is kept as the record of the hazard that motivated the fix.
+
+Found 2026-09-01 while designing self-authored mount reclaim; it is the blocker that killed revision 4
+of `docs/superpowers/specs/2026-09-01-cas-self-authored-mount-reclaim-design.md`.
+
+`ObjectStorageBackend::tokenFromWriteResult` decides how much to trust the token of a successful
+conditional write, and the two dialects disagree about what to do when the response carries none:
+
+- **Generation (GCS)** throws `CORRUPTED_DATA`, on the stated grounds that "there is no follow-up HEAD,
+  so a broken or lying response can never be silently patched over by a later, **unrelated** read"
+  (`CasObjectStorageBackend.h:187-193`);
+- **ETag, and any backend with no write-time token at all** issues exactly that later, unrelated read —
+  a fresh `HEAD` whose result is returned as if it were the write's token
+  (`CasObjectStorageBackend.cpp:860-865`).
+
+This is a deliberate scope boundary, not an oversight: `tokenFromWriteResult` was introduced by
+`9b887ac8886` "Bind GCS CAS writes to exact response generations" (2026-08-21), whose own message says
+"every other dialect keeps the pre-existing HEAD-fallback behavior unchanged". The GCS work saw the
+attribution problem and fixed it only where it was working.
+
+**The hazard.** Our write commits, the response carries no ETag, our fallback `HEAD` stalls, another
+writer claims and arms authority, and our `HEAD` returns *their* token — which we then hold as the
+token of our own write.
+
+**There is already a consumer where this is not fail-safe.** `Gc::acquireOrRenewLease` takes its
+`state_token` straight from the write result (`CasGc.cpp:4397`, `:4418` — both `casPut` results), and the round commit CASes
+`gc/state` against it (`CasGc.cpp:944`). So a GC leader whose acquire response carried no ETag, and
+whose fallback `HEAD` returned a *successor* leader's token, holds a token that matches the successor's
+state — and its round commit succeeds over a leader that believes it holds the lease. The failing CAS
+that is supposed to stop a displaced leader does not fail.
+
+`MountLeaseKeeper::last_token` is the milder case: there the value is only an `If-Match` precondition,
+so a wrong token costs a failed renewal and a fence rather than a wrong action — though even there the
+containment is a property of the mount controller's own gates, not of the token. Nothing at the type
+level distinguishes the two situations, and a consumer that treats the token as *identifying* our body
+rather than merely *conditioning* the next write turns it into an overwrite of a live holder. Revision 4
+of the reclaim design was exactly that consumer, which is how this was found.
+
+(An earlier version of this entry claimed every current consumer was fail-safe. The GC lease path
+refutes that; corrected 2026-09-02.)
+
+**Fix direction: put provenance in `PutResult`, do not make the ETag path throw.** A `nullopt` is
+structural for backends with no write-time token (local files, a non-S3 `IObjectStorage`), so throwing
+would break them. Aligning the API means making "attributed to this write" versus "observed afterwards"
+a fact the caller can see, after which each dialect maps onto it honestly and each consumer decides:
+GCS keeps throwing (a missing generation there is a genuine anomaly), ETag and the token-less backends
+return committed-with-unattributed-token.
+
+Then revisit `MountLeaseKeeper::last_token`: an unattributed token is a guess, and the keeper might
+better treat its own write as unresolved and re-resolve than store one.
+
+Related: `[empty-token-unconditional-write-guard]` covers the *empty* token this same fallback can
+produce; this item is about a *wrong* one. Both come from the same three lines.
+
+### `[gc-mf-cleanup-durable-retry]` Manifest-cleanup GC phase needs durable retry, not a cap {#gc-mf-cleanup-durable-retry}
+
+**Found by a 24h soak (`soak-t6b-report.md`) after `gc_round_manifest_cleanup_budget` landed as one of
+T6b's per-round work-envelope caps; the setting was removed entirely rather than tuned.**
+
+The post-CAS `manifest_deletes` phase (`Gc::runRegularRound`, `Gc/CasGc.cpp`) is a **one-shot pipeline**:
+the ref-log intake cursor that discovers each owner-removed manifest's `-1` edge commits in the SAME
+round's CAS that produces the `mf_cleanup` set, before the deletes run. A cap on this phase does not defer
+the excess to a later round of the same pipeline — a cap-declined entry is never re-derived, because the
+cursor that would re-derive it has already moved past the log that produced it. The only remaining
+reclaimer is the (much slower) orphan-manifest sweep backstop, which drains roughly 100 objects per round
+and cannot keep pace with a real burst.
+
+Soak evidence: run-1 (cap=5000) left 112,518 entries skipped, of which 110,218 were still unreachable at
+checkpoint time (checkpoint FAIL). Run-2 (cap disabled) fully drained all 223,714 entries in-round with
+zero left unreachable (PASS). The user decision was that the knob must not exist at all — a cap here
+converts a bounded burst into a permanent leak, which is worse than no cap.
+
+**Fix direction, when someone takes it:** real bounding needs the edge-consumption point moved to AFTER
+the delete succeeds (durable retry), not before it, so a cap-declined entry stays discoverable by the next
+round's intake instead of being silently dropped. This is a natural fit for a future
+`gc-frontier-one-list` focused session (post-Stage-B), since it touches the same intake/cursor machinery.
+
+### `[gc-reduce-zero-marker-dropped-on-carry]` a blob published during the reduce phase and then rolled back leaks until a rebuild {#gc-reduce-zero-marker-dropped-on-carry}
+
+Raised by the head read-ahead consults (`docs/superpowers/worklogs/2026-09-03-cas-gc-head-read-ahead-consult.md`)
+and NOT introduced by them. A blob observed absent when its `HEAD` is taken but present by the time the
+merge closes it is not condemned that round, and the zero marker recording that is per-generation and
+dropped on carry, so no later round re-examines the blob unless a delta touches it again. For ordinary
+garbage this is correct: present-at-the-merge implies a publisher and therefore an edge. The residue is
+a publication that lands mid-phase and then rolls back — that body has no edge and is never revisited.
+The read-ahead widens the window quantitatively; it does not open the class. **Not sized**, and the fix
+is a carried marker or a sweep concern rather than anything in the fold.
+
 ## GC cost and throughput {#gc-cost-and-throughput}
 
 - **GC throughput collapse under a mass-DROP burst** {#gc-throughput-collapse-2026-07-25} — KEEP, historical RCA — Unbudgeted serial rounds diverge once DROP arrivals exceed one round's service rate (20s→1716s over 6 rounds, 188→20,046 candidates). Three defects: zero-depth meta-pool queue; permanent tombstones under the globally-enumerated ref prefix; `system.remote_data_paths` has no `disk_name` pushdown (tracked in `testing-and-ci.md`). The first two are the shape spec [Stage A](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-a)/[B](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-b) now re-derive from fresh data; kept as this incident's historical record.
 - **[janitor-page-hardcoded]** {#janitor-page-hardcoded} CAS-034 — KEEP, partially covered — Hardcoded 1000-key page over the WHOLE `namespaceRootPrefix()` (`Gc/CasGc.cpp:470`): post-DROP erase is O(all namespace objects), not O(debris) — latency, not loss. Spec [B4](/superpowers/specs/cas-gc-rounds-in-minutes-design#b4-janitor) makes page count/size real settings; does NOT narrow the LIST scope to the removed namespace — still open.
+
+### `[gc-namespace-janitor-one-page-per-round-cannot-keep-up]` The namespace janitor examines one 1000-key page per round, so dead namespaces accumulate and every round's ref-prefix LIST grows with them {#gc-namespace-janitor-one-page-per-round}
+
+Measured live (2026-09-04, `system.cas_gc_log` of the parallel stateless lane on the `cas_s3` disk,
+`cas_gc_interval_sec = 5`, minio backend). Every regular round pays one LIST of `cas/ns/stream/` inside
+`defer_decision` (three `system.stack_trace` samples of `CasGcSched` all sat in
+`ObjectStorageBackend::listUnder`); the round is never `Deferred` on this disk, so
+`[gc-deferred-round-pays-full-list]` does not apply — this is the FOLD round's fixed cost:
+
+| window | rounds | avg `defer_decision` | keys listed | namespaces listed |
+|---|---|---|---|---|
+| 21:10 | 74 | 673 ms | 3 247 | 95 |
+| 21:30 | 33 | 6 883 ms | 24 873 | 520 |
+| 21:50 | 13 | 19 678 ms | 69 952 | 1 436 |
+
+About 0.28 ms per key, i.e. ~280 ms per 1000-key page. At the end of the window 40 `MergeTree` tables
+were alive while the LIST returned 1 404 namespaces with ~49 `_log` keys each: the prefix is almost
+entirely dead namespaces of dropped test tables. `namespace_cleanup` (`runNamespaceJanitorPage`,
+`janitor.runOnePage`) examines exactly one page per round (`janitor_pages = 1`, `janitor_keys = 1000`)
+and deleted 150–300 keys per round, while the lane added ~27 000 keys per 10 minutes. Totals over the
+46-minute run for `cas_s3`: `defer_decision` 889 s of ~1 830 s of GC wall time, then `fold_reduce`
+393 s and `pending_deletes` 191 s. The pause between rounds (5 s) only divides the LIST count; the
+janitor's page bound is what lets the LIST grow.
+
+Proposed:
+
+1. Give the janitor more than one page per round when the listing says the pool is debris-heavy —
+   e.g. keep taking pages while the round's `namespaces_seen` exceeds the live-namespace count by an
+   order of magnitude, bounded by a request budget, so a quiet pool still pays one page.
+2. Lane config: raise `cas_gc_interval_sec` from 5 to 20 in (done 2026-09-04)
+   `tests/config/config.d/cas_s3_storage_policy_for_merge_tree_by_default.xml` and
+   `cas_storage_policy_for_merge_tree_by_default.xml`. The interval is a pause after the round, not
+   a period; with 10 s rounds the scheduler ran two thirds of the time. Tests that need GC call
+   `SYSTEM CAS GC` explicitly (18 tests) or configure their own disks with a 1 s interval, so they
+   are unaffected. The product default (60 s) stays.
 - **[fold-edge-run-memory]** {#fold-edge-run-memory} CAS-035 — KEEP — `foldDeltasIntoGeneration` holds two full in-memory copies of the whole shard edge-run (`Gc/CasBlobInDegree.cpp:389,678-681`; the whole pool at default `gc_shards=1`). Same O(pool)-per-round class as `[Lever B]`/`[gc-snapshot-log-structured-runs]` below. Its "can't skip the enumeration, the defer signal comes from it" caveat is pre-spec-B1 and needs re-examination once B1 lands (distinct from audit `#f19`'s LIST-memory cost, which B1 does fix).
 - **[gc-snapshot-log-structured-runs]** {#gc-snapshot-log-structured-runs} hot-pool snapshot rewrite is O(edges) per pass — DESIRABLE — Dominant remaining byte cost; streaming reads/reference-parent runs (T2/T0) are DONE, log-structured incremental runs are not. Spec [C4](/superpowers/specs/cas-gc-rounds-in-minutes-design#c4-not-in-c) defers a graduation-cursor variant. Audit `#f29`: run size 11→125 MiB/round as backlog grew; Stage C's shorter rounds pay this more often per day.
 - **[Lever B]** Incremental point-updatable in-degree — DESIRABLE — Makes a non-idle small-delta round O(delta); removes the O(shards) per-round ref-prefix LIST. Measured: 87ms@400 parts → 93s@10k tables → 398s@100k parts. Not touched by the spec (scoped to O(new), not a point-updatable structure).
@@ -76,6 +201,255 @@ Partially covered, full text kept under their own topic below:
 - **[CA-LOG-TABLES-RESTART-COST]** {#ca-log-tables-restart-cost} — A 6/40 soak restart took 178.9s against a 180s gate, 138.1s reloading CA log tables' Outdated parts. Direction: TTL/partitioning, bounded churn, lazy load. Audit `#f1` confirms the same class on otel.demo (`system.*` = 86% of parts) and recommends a local storage policy — cross-check `operability-and-introspection.md`.
 - **[gc-checkpoint-timeout-tsan]** soak GC-checkpoint timeout assumes normal-speed throughput — MINOR, green-debt — Can blow its budget under TSan overhead while genuinely converging. Fix: sanitizer-aware multiplier.
 
+### `[gc-multidelete-conditional-gap]` batch `DeleteObjects` cannot replace GC's exact-token deletes as-is {#gc-multidelete-conditional-gap}
+
+T9's destructive-baseline soak measured **944,155** individual `DiskS3DeleteObjects` calls across a
+single 90-minute specimen's four destructive families (`pending_deletes`, `manifest_deletes`,
+`ref_object_cleanup`, generation pruning inside `round_commit`) — every one a single-key
+`removeObjectIfTokenMatches` call (`Backend::deleteExact`, `Backend/CasObjectStorageBackend.cpp:955`)
+carrying an `If-Match` ETag precondition, the exact-token-match safety property that stops GC from
+deleting a body a writer has already displaced (the CAS resurrection-safety invariant). ClickHouse
+already has a working batch-delete path — `deleteFilesFromS3` (`IO/S3/deleteFileFromS3.cpp:80`,
+default batch 1000, `IO/S3Defines.h:48`), reachable via `S3ObjectStorage::removeObjectsImpl` — but
+no CAS delete-family call site uses it, including `deletePrefixWholesale`, which already LISTs a
+whole prefix in pages and still deletes each listed key one at a time
+(`Gc/CasGc.cpp:3563-3570`). The reason is not an oversight: the batch `DeleteObjects` request only
+sets `Key` per `Aws::S3::Model::ObjectIdentifier` (`deleteFileFromS3.cpp:118-122`) — AWS's batch API
+has no per-key conditional precondition, so wiring GC's existing calls to it as-is means dropping
+the exact-token check, which is a correctness regression, not an optimization.
+
+**Ceiling, if the conditional gap is ever closed** (e.g. a design that proves a delete cohort
+collision-free at round-commit time without a per-key check): `944,155 → ⌈944,155/1000⌉ = 945`
+batch requests, a >99.9% cut in delete request count. This is a REQUEST-COUNT ceiling, not a
+wall-time prediction — the soak's backend (RustFS) measures ~650–700µs mean per-delete latency
+(`DiskS3WriteMicroseconds`/`DiskS3DeleteObjects` ≈ 645µs for `pending_deletes` alone), far below
+real S3 RTT, so the wall-time win against AWS S3 is unmeasured by this specimen and likely larger
+than what RustFS would show.
+
+**Falsification:** if no design can prove a cohort of exact-token deletes collision-free without a
+per-key conditional (i.e. the safety property is fundamentally incompatible with a keys-only batch
+API), this item stays permanently blocked and the correct scope is delete-side concurrency
+(`[gc-delete-concurrency-serial]`) instead. Full measurement:
+`docs/superpowers/reports/2026-08-04-gc-destructive-baseline-perf.md#opp-multidelete`.
+
+**Closed by construction for the three write-once families** (manifest bodies, ref `_log`, ref `_snap`):
+see `[gc-manifests-are-immutable-so-reduce-and-deletes-can-be-cheap]` and the design it points to. The
+gap remains exactly as stated for blobs.
+
+### `[gc-pending-deletes-fan-out]` (formerly `[gc-delete-concurrency-serial]`) GC's destructive deletes run with almost no overlap {#gc-pending-deletes-fan-out}
+
+The same T9 baseline measured `pending_deletes` and `manifest_deletes` running near-serially
+despite already dispatching through a thread pool: `pending_deletes` wall (208.77s, ch1) is 87% of
+the SUM of its individual requests' `DiskS3WriteMicroseconds` (181.3s) — the requests overlap very
+little. `manifest_deletes` shows the same shape (409.52s wall vs. 368.56s summed, 90%). Together
+these two phases are 618.29s of ch1's 4352.1s total phase wall (14.2%) in this specimen. A bounded
+worker pool issuing K concurrent conditional deletes (same shape as the existing `meta_pool`) could
+plausibly cut this toward `wall/K`, independent of `[gc-multidelete-conditional-gap]` — the two
+levers compose (concurrent batch calls) rather than compete, once/if the conditional gap closes.
+
+**Falsification:** if concurrent deletes against the same backend/prefix trigger throttling
+(RustFS or S3 `SlowDown`/503) at a K nobody has tried yet, the real win is smaller than linear —
+this baseline never issued concurrent deletes and cannot rule that out. Full measurement:
+`docs/superpowers/reports/2026-08-04-gc-destructive-baseline-perf.md#opp-delete-concurrency`.
+
+**Merged: `[gc-delete-concurrency-serial]` (the measurement below) + `[gc-pending-deletes-fan-out]` (the task that acts on it) into one entry, keeping the newer id/anchor.**
+
+#### TASK `[gc-pending-deletes-fan-out]` Fan the blob `pending_deletes` loop out over a bounded worker pool; each blob keeps its exact-token HEAD + conditional DELETE
+
+**Measured 2026-09-04, real-AWS smoke soak:** `pending_deletes` 351 s for 1261 blobs and 246 s for 882
+(one HEAD ≈100 ms plus one single-key conditional `DeleteObjects` ≈150 ms per blob, serial, ~0.28 s per
+blob); with `fold_reduce` above, these two phases made the 427 s and 328 s rounds that the soak harness'
+300 s fixpoint bound cannot survive (`history=[3517, 2779]`). GCS run 2 showed the same at 551 s for
+2731 blobs (`[gc-blob-pending-deletes-now-dominant]`); the T9 baseline showed it at 208 s
+(`[gc-delete-concurrency-serial]`). Those two entries are the measurement; this is the task.
+
+**Task.** The loop at `Gc/CasGc.cpp:700` does per blob: `op.head` → token compare → `op.remove(key,
+observed etag)` → event, outcome row, meta scheduling. The network pair is independent per key and its
+safety is per key (I5: exact-token delete; a resurrected blob mismatches and is left alone), so
+concurrency changes nothing about safety. Shape: chunks of N = `cas_gc_read_concurrency` entries from
+`redelete_now`; each worker runs head → compare → remove through an operation resumed under the round's
+admitted generation, exactly as `GcReadAhead` workers do, so a fence that moves under the round fails the
+worker's request the way it fails the main one; the worker returns `(Removal, observed)`; the owning
+thread then runs the existing bookkeeping serially in the original order. `authority_held` is checked
+before each chunk, as the serial loop checks it per entry. Not the read-ahead: that design never runs
+the destructive decision, and this task keeps that rule (the decision and the delete run in the worker
+only because they are one exact-token request; nothing is prefetched). Tests: a gtest with an
+instrumented backend asserting that N deletes overlap, that a fence mid-chunk stops the remaining
+chunks with no delete issued after it, that a mismatch during the chunk is `Replaced` and leaves the
+object, and that outcomes/events/meta calls are identical to the serial loop's; the `CAS*` gate; a
+soak round with mass removal reading `pending_deletes` from `system.cas_gc_log`. Acceptance: phase wall
+≤ 2 × (serial wall / N) on the AWS stand; no change in `objects_deleted`/`spared`/`replaced` counts
+for the same input. Falsification stays as in `[gc-delete-concurrency-serial]`: SlowDown/503 at a
+concurrency nobody has tried; start with N = 8 and measure.
+
+**Worth checking first, separately:** AWS added conditional deletes; if `DeleteObjects` accepts a
+per-key ETag condition that general-purpose buckets enforce, the whole phase becomes one request per
+1000 blobs. A store capability, so it would have to be proven by the capability probe the way the
+exact-token DELETE 412 is proven today; not assumed.
+
+### `[gc-fold-intake-readbuffer-head]` ✅ CLOSED by the request contract's read path (`e272e18f02c`, 2026-09-03) {#gc-fold-intake-readbuffer-head}
+
+**Closed.** The backend's `read` no longer HEADs before it GETs: it goes through
+`readSmallObjectAndGetObjectMetadata`, one `GetObject` whose own response carries the etag. The
+2026-09-01 soak still shows the 1:1 pairing because its binary predates that commit; the first soak
+against a later build is the confirmation. The rest of this entry is kept as the record of how the
+pairing was found.
+
+T9's baseline found `fold_ref_intake` — the single largest wall-time phase in a destructive round
+(2303.0s of ch1's 4352.1s phase wall, 52.9%) — issuing `DiskS3GetObject` and `DiskS3HeadObject` in
+an exact 1:1 pairing (1,183,381 each). This is NOT a regression of the predecessor's
+`{#opp-fold-head}` (drop the HEAD in `foldManifestEdges`), which is confirmed delivered — the
+source comment at `Gc/CasGc.cpp:1301-1312` states the HEAD was removed because the following GET
+already carries the absence signal. The HEAD still visible here is a different, generic one:
+`ReadBufferFromS3::getObjectSizeFromS3` (`IO/ReadBufferFromS3.cpp:463-469`) issues a `HeadObject`
+to learn `Content-Length` before every ranged `GetObject`, for every S3 disk read in ClickHouse —
+not CAS-specific.
+
+**Not yet sized.** This entry only establishes that the pairing exists and where it comes from;
+whether an existing known-size read-buffer constructor already avoids it on some call paths, and
+what the real win would be, is unmeasured. **Falsification:** if the size-probe HEAD is required
+for correctness on every generic S3 disk consumer (e.g. detecting a truncated/resized object
+mid-read), this is a ClickHouse-wide question and does not belong on this CAS backlog at all. Full
+measurement: `docs/superpowers/reports/2026-08-04-gc-destructive-baseline-perf.md#opp-fold-head-successor`.
+
+### `[gc-intake-manifest-edge-serial-chain]` one manifest round trip per ref log is what `fold_ref_intake` still cannot overlap {#gc-intake-manifest-edge-serial-chain}
+
+Measured (`docs/superpowers/worklogs/2026-09-04-cas-gc-fold-read-ahead-measurement.md`): with the fold
+read-ahead on, `fold_ref_intake` improves by about 2.4x against a fixed per-request latency and then
+stops, and the reason is a one-to-one count — 83 ref-log GETs against 83 manifest GETs in the measured
+round. Ref-log keys are arithmetic, so the lookahead knows the next window of them before reading any;
+a manifest key is named by the decoded body of the log that owns it, so the earliest the round can know
+manifest N's key is after log N has been read AND decoded. Hinting "all the edges of this log" hints one
+key whenever a log names one edge, which overlaps nothing with itself.
+
+The fix needs a different mechanism than key arithmetic: decode an ALREADY-FETCHED later log purely to
+learn its manifest keys and hint them, leaving the fold's own decode, its order and every decision
+exactly where they are. That means a peek on the read-ahead that does not consume, and a speculative
+decode whose failure must be discarded rather than acted on — the real decode still runs in order and
+still holds the namespace at the right position. **Not sized**, and it is a design question rather than
+a tactical one, which is why it is not part of the read-ahead change.
+
+### `[gc-reduce-confirm-marker-read-ahead]` the graduation gate's meta re-check is the last serial read of `fold_reduce` {#gc-reduce-confirm-marker-read-ahead}
+
+The fold's read-ahead (`GcReadAhead`, `cas_gc_read_concurrency`) now covers the checkpoints, the ref
+logs, the manifest edges and the fresh zero-in-degree `HEAD`s. What remains serial in the reduce phase
+is the graduation gate's `loadMeta` re-check, issued per carried condemned entry that has no in-process
+confirmation — which, after a restart or a leadership change, is every entry graduating that round.
+Its candidates are known only from the prior run's condemned sentinel rows, which the merge streams, so
+hinting them needs a lookahead on the run cursor rather than a pre-pass over anything already in
+memory. **Now sized enough to rank it:** with the zero-in-degree `HEAD`s read ahead, `fold_reduce` still
+improves only about 1.2x against a fixed per-request latency, and this re-check is what it spends the
+rest on (`docs/superpowers/worklogs/2026-09-04-cas-gc-fold-read-ahead-measurement.md`).
+
+### `[gc-round-budgets-are-not-backpressure]` Round budgets throttle the consumer while the producer is unaware — the real fix is a time deadline {#gc-round-budgets-not-backpressure}
+
+> Correction (2031-triage CAS-034, 2026-08-21): the title used to claim "four defaults changed" — those
+> four budgets are still 5000 at HEAD, so the claim was stale and is removed rather than restated.
+
+A per-round count cap is not backpressure. It bounds what GC does in one round while inserts and
+merges — the producers of the work — know nothing about it. If arrival exceeds `budget × rounds/sec`,
+the deficit is not smoothed, it accumulates. Whether that is harmless, degrading, or a leak depends
+entirely on **what happens to the excess**, which turns out to differ per budget. Classified against
+the code, not the names:
+
+**A. Feedback loop (was capped, now unbounded).** `gc_round_graduation_budget`,
+`gc_round_redelete_budget`. Excess is pushed back into `still_retired` "carry UNCHANGED"
+(`CasBlobInDegree.cpp:472`), and the next round reads that list in full — `CasGc.h` marks the cost
+`O(retired)`. So the round's cost grows with the debt while its useful work stays capped: rounds
+lengthen, their rate drops, throughput drops, the debt grows faster. Worse than linear lag.
+
+**B. Genuinely cursor-paced (unchanged, these caps are correct).** `manifest_sweep_list_budget_keys`,
+`manifest_sweep_delete_budget_keys`, `gc_round_sweep_namespace_budget`,
+`gc_round_sweep_recovery_op_budget`, `gc_round_prefix_wholesale_budget`. A cursor advances and never
+regresses; a partially drained page or generation is simply finished next round. Nothing is
+re-read, nothing accumulates. `gc_round_ref_cleanup_budget` is adjacent: it keeps no cursor but
+`planRefCleanup` recomputes the same remaining candidates from durable state, so work is deferred,
+not lost.
+
+**C. A cap on one-shot work, i.e. a leak (was capped, now unbounded).**
+`gc_round_handoff_prefix_wholesale_budget`. The struct's own comment says the hand-off "is a ONE-SHOT
+event with no reclaimer behind it besides `fsck`: a generation it cannot fully reclaim this round is
+never revisited (the parent-seal difference that triggers it does not recur)". This is the same shape
+as the manifest-cleanup cap that was removed outright after a soak proved it leaked permanently.
+
+**D. Audit loss (was capped, now unbounded).** `gc_round_outcome_entry_budget`. Nothing is retried on
+exhaustion because the decision already happened; the only casualty is the audit row explaining it —
+and it is dropped precisely on the busiest rounds, the ones an investigation would need.
+
+**E. Not a throttle at all — an off switch (raised to effectively unbounded).**
+`gc_frontier_probe_budget`. Exhaustion does not defer work: unprobed namespaces are simply unproven,
+and one unproven namespace suppresses ALL destruction for the round (`CasGc.cpp:2047-2048`). It scales
+with namespace count, i.e. with table count, so a value that is ample for ten namespaces becomes a
+permanent GC stop for a large enough pool. **Its `0` cannot be redefined as "unbounded"**: unlike
+every other budget here, `0` means "probe nothing", and the tests drive that exhaustion path
+deliberately — so the default is spelled as a maximum instead. That inconsistency is itself an
+operator trap and wants a proper sentinel.
+
+**F. Memory bound, must stay capped.** `rebuild_edge_budget` — its comment is explicit that memory is
+`O(budget)`, never `O(edges)`.
+
+### What is still missing, and it is the real fix {#gc-budgets-need-a-deadline}
+
+**A GC round has no time deadline anywhere in the code.** The count budgets have been serving as a
+surrogate for one. That is why removing them is not free: a round holds the GC lease, and a round
+that outruns the lease TTL gets fenced — the wedge class already fixed once in P3.1. The correct shape
+is a per-round WALL-CLOCK deadline plus a cursor everywhere class A currently carries a list: the
+round then does as much as it can inside its lease, stops cleanly, and resumes where it stopped
+without re-reading the debt. Until that exists, the unbounded defaults above trade a silent
+accumulation risk for a round-length risk, deliberately and with the user's decision.
+
+Falsification for class A: with the caps off, a sustained-load soak should show round wall time
+tracking arrival rate rather than climbing while `pending_condemned` climbs.
+
+### `[gc-deferred-round-pays-full-list]` A Deferred GC round still pays the full ref-prefix listing — measured at 23% of server CPU under the parallel stateless lane {#gc-deferred-round-pays-full-list}
+
+Measured live (2026-08-04, `system.trace_log` type=CPU, 10-minute window, evidence in the run's
+`build/cpu_trace_diagnosis.md`): `CasGcScheduler::loop` appeared in 479/2097 (22.8%) of all sampled
+CPU stacks and 70% of background-thread CPU. The single chain
+`runRegularRound → enumerateRefPrefix → Backend::list → LocalObjectStorage::listObjects`
+(`readdir`/`lstat`) was 11.7% — larger than any individual test query. Four test disks each ran a GC
+round at ~1 Hz, and ~89% of those rounds finished `Deferred`: the full directory walk was paid every
+second with no payoff.
+
+Two independent contributors, each with its own fix:
+
+1. **The listing is eager even when the round will defer.** The defer decision (fold threshold /
+   nothing changed) is made AFTER enumerating. A cheap staleness probe before the walk — or feeding
+   the defer decision from the previous round's cursor instead of a fresh enumeration — would make a
+   quiet pool cost near nothing per round. This is the durable fix and applies to production pools,
+   not just tests.
+2. **The disks belonged to finished tests.** This is the known disk-lifecycle leak (custom disks are
+   never torn down on `DROP TABLE`), here given a price for the first time: leaked 1 Hz schedulers
+   from completed tests kept scanning for the rest of the run. The lifecycle redesign
+   (`UNMOUNT` stops background work and ejects the disk) subsumes this half.
+
+### TASK `[gc-condemn-head-read-ahead-pinned-window]` Free the condemn-time HEAD read-ahead window when the merge passes hinted keys, so mass-removal rounds stop paying inline HEADs {#gc-condemn-head-read-ahead-pinned-window}
+
+**Measured 2026-09-04, real-AWS smoke soak (`ca_live_20260904_aws_r1`, binary 9bf134686af, `cas_gc_read_concurrency` 16, window 64):**
+
+| round | condemned | inline `HEAD` | `CASGCReadAheadHit` | `Miss` | `Wasted` | `fold_reduce` |
+|---|---|---|---|---|---|---|
+| 20:54 | 1261 | 860 | 2453 | 862 | 64 | 128 s |
+| 20:56 | 882 | 771 | 583 | 774 | 64 | 116 s |
+| 21:09 | 1793 | 882 | 3146 | 4 | 19 | 42 s |
+
+Misses equal the inline HEAD count and `Wasted` is exactly the window: the 64 slots hold hints the
+merge never takes, `topUpHeadHints` (`Gc/CasGc.cpp:1801`, `while (pending() < window())`) hints nothing
+more, and every `takeHead` at `:1828` degrades to a serial HEAD at ~150 ms on AWS. The third round shows
+the same code with a free window: 1793 condemns in 42 s. Same signature as the GCS runs recorded under
+`[gc-manifests-are-immutable-so-reduce-and-deletes-can-be-cheap]` (`Wasted=64` per round,
+`epoch_crossings=0`), so this is the mechanism that pins the window without an epoch crossing.
+
+**Task.** `head_candidates[shard]` is a superset of the keys the merge will actually take, in the
+merge's own ascending key order (comment at `Gc/CasGc.cpp:1790`). A hinted key the merge has already
+passed can never be taken. Rule at the hinting site: before topping up, and on any `takeHead` miss with
+`pending() == window()`, `discardHead` every pending hint whose key sorts before the key being taken
+(the read-ahead counts them as wasted, which is the honest figure). Then top up. Add a gtest that
+builds a candidate superset with gaps and asserts hits/misses/wasted per round against the sequential
+oracle, plus the existing `CAS*` gate. Acceptance: on a mass-removal round `Miss` is within one window
+of zero and `fold_reduce` scales with the read-ahead, not with the inline HEAD count. Expected on the
+AWS figures above: 128 s → ~40 s.
+
 ## GC observability {#gc-observability}
 
 - **[GC round progress observability]** round-duration watchdog + fold-window events — HARD — A wedged round is only visible after the fact. Spec [C5](/superpowers/specs/cas-gc-rounds-in-minutes-design#c5-observability) adds `deadline_hit`/`carry_total`; audit `#f28` recommends a one-line per-round summary. Neither adds the watchdog alert or the fold-begin/end imbalance check.
@@ -85,6 +459,15 @@ Partially covered, full text kept under their own topic below:
 - **[frontier-attribution-taxonomy]** classification taxonomy (6 classes) for unproven namespaces — DESIRABLE — No classification exists for why a frontier proof is missing; design only.
 - **[refplan-dead-drop-counters]** {#refplan-dead-drop-counters} CAS-096 — KEEP, P3 — `dropped_holds`/`dropped_checkpoints` (`Gc/CasGc.h:215-216,298-299`) have no production producer and are always zero; a lost hold rides `dropped_parent_rows` instead. Owed: delete the dead adapters or give them a producer, add the counters to the REBUILD report row. Also: `CASGCUnmatchedAdoptedParentLives`'s description is stale since `4d40d4533473` (`cas-gc-rebuild` only) removed the warning it describes.
 - **[gc-outcome-budget-skews-round-report-counters]** {#gc-outcome-budget-skews-round-report-counters} CAS-101 — KEEP, refinement 1 closed refinement 2 open — Round-report delete counters were tallied from the budget-capped outcome logs; **closed** by spec [C2](/superpowers/specs/cas-gc-rounds-in-minutes-design#c2-budgets-removed) (in-memory tallying). `GcFoldBegin`/`GcFoldEnd` still stamp the previous round number (`Gc/CasGc.cpp:719,756`, confirmed unfixed on both branches, 2026-09-25) — untouched by C2, still open; one-line fix is `new_round` on both events.
+
+### `[gc-phase-rows-lose-worker-requests]` phase rows do not see requests made on worker pools {#gc-phase-rows-lose-worker-requests}
+
+`GcPhaseTimer` diffs the round thread's `ProfileEvents`. Every request a read-ahead worker or a
+`meta_pool` job performs lands on that worker's counters instead, so the S3 verb counts on
+`fold_ref_intake` and `fold_reduce` now under-count by exactly the hinted requests — the same gap
+`meta_pool_wait` has always had. The semantic metrics on those rows are unaffected, and
+`CASGCReadAheadHit`/`Miss`/`Wasted` are on the row because they are incremented at the take site. The
+fix is attribution at the worker boundary, which is a `GcPhaseTimer` change and not a read-ahead one.
 
 ## GC tooling and rebuild {#gc-tooling-and-rebuild}
 
