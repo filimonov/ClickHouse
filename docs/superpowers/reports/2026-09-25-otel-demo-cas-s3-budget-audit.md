@@ -212,12 +212,25 @@ the namespace's verbatim-files prefix. 1,672 parts × ~40 files ≈ 67k LISTs, p
 `existsDirectory` from the part-folder view (`view->hasDirectory(file)`, the same call `ProjectionDir` uses); no LIST.
 A LIST-heavy startup also delays `Ready for connections` and, at 10k tables, would throttle the whole pool.
 
-### F16. CONFIRMED. The constant 155 LISTs per 10 minutes are `clearOldTemporaryDirectories` {#f16}
-`MergeTreeData::clearOldTemporaryDirectories` → `iterateDirectory(table dir)` → `listDirectory` (`TableDir` shape)
-→ `listNamespaceFiles`, once per table per minute: 26 tables ≈ 156 per 10 min, matching the baseline exactly. $0.11/day
-here; at 10k tables it is 60k LISTs per hour. Same fix family as F15: table-level verbatim files change on CREATE /
-ALTER only and can be served from a per-namespace cache invalidated by `putNamespaceFile` / `removeNamespaceFile`,
-or the temporary-directory sweep can ask `listRefs` for `tmp_*` refs instead of listing files.
+### F16. CONFIRMED. The constant 155 LISTs per 10 minutes are `clearOldTemporaryDirectories` listing table-level files {#f16}
+`MergeTreeData::clearOldTemporaryDirectories` → `iterateDirectory(table dir)` → `listDirectory` (`TableDir` shape),
+once per table per minute: 26 tables ≈ 156 per 10 min, matching the baseline exactly. $0.11/day here; at 10k tables
+it is 60k LISTs per hour.
+
+Why a LIST at all: the subdirectories (part names, `detached`) do come from the ref table, `listRefs(ns)`, in memory
+with no request. The LIST is for the other half of the answer, the table-level verbatim files (`format_version.txt`,
+`mutation_*.txt`, `deduplication_logs/...`, TTL and similar). They are plain objects under `roots/<ns>/files/<name>`
+written by `putNamespaceFile`, with no index anywhere, not in manifests and not in `_ckpt`, so `listNamespaceFiles`
+is a LIST of that prefix and `listDirectory` must merge it with the refs on every call. The same call is what F15's
+`TableSubdir` fall-through reaches once per part file.
+
+Fix within the current layout: the namespace includes `server_root_id` (`liveNamespace` =
+`serverPrefix() + mirroredArchiveNamespace(uuid)`), so a table's verbatim files on this node are written only by this
+node. Keep the file-name set in memory per namespace life: one LIST on first use after start, then write-through
+invalidation in `putNamespaceFile` / `removeNamespaceFile`. That removes the baseline LISTs and most of F15's startup
+burst; F15 still needs the `PartFile` shape so a question about a file inside a part never reaches the table-file
+listing. The proper fix, an index of table-level files next to the refs so a cold start needs no LIST either, is a
+format change and stays out of scope by the owner's decision.
 
 ### F17. CONFIRMED. The restart was an immediate termination: two `SIGTERM` 0.4 ms apart {#f17}
 Pod log: `Received termination signal (Terminated)` and `Received second termination signal (Terminated). Immediately
