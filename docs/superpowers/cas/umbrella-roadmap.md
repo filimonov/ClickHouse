@@ -5,8 +5,8 @@ Status as of 2026-09-25. Legend: **now** = in progress or next, **next** = plann
 
 ## 1. Milestones
 
-- **First deployment** — a single customer cluster on CAS as a cold tier. Blocks on: defaults reviewed, monitoring and alerts in place, migration tested at scale in both directions, format frozen.
-- **Format freeze and versioning** — declare the on-S3 formats (manifests, ref logs, checkpoints, `gc/state`, snapshots) v1, add a version marker and a written compatibility policy. Until then the branch is pre-release and breaking changes are allowed.
+- **First deployment** — a single customer cluster on CAS as a cold tier. Blocks on: defaults reviewed, monitoring and alerts in place, migration tested at scale in both directions.
+- **Format compatibility** — the on-S3 formats (manifests, ref logs, checkpoints, `gc/state`, snapshots) are frozen as of `26.6.4.20001.altinityantalya`, the first fixed format version. Every later change ships with a new format version and a compatibility path (read old, write new, documented upgrade order); no more breaking changes.
 - **Backups** — basic `BACKUP`/`RESTORE` works on CAS (server-side copy fix, [PR #2415](https://github.com/Altinity/ClickHouse/pull/2415), tests [PR #2437](https://github.com/Altinity/ClickHouse/pull/2437)); `clickhouse-backup` embedded mode verified; then local point-in-time snapshots, an API to attach them, and remote CAS-to-CAS backup.
 - **More backends** — Azure with azurite; CAS on POSIX-compatible network disks.
 - **Encrypted disks** — CAS under the encrypted disk wrapper.
