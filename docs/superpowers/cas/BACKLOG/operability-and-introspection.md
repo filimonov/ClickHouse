@@ -102,6 +102,13 @@ before the flip (`e337bb2c87d`) and never revisited. Same class as
 `{#fsck-rule-restated-in-unfenceable-prose}`: a rule restated in prose no build can check. Fix the
 sentence; the pointer to the fold seal's hold set and `tables_held` stays useful.
 
+### `[gc-enabled-false-silent]` `gc_enabled=false` accumulates garbage silently {#gc-enabled-false-silent}
+
+HARD (user settings-policy direction) — Disabling the background GC scheduler produces no ongoing
+signal that reclamation has stopped. Add a periodic warning log line plus a metric while
+`gc_enabled=false` and the pool has reclaimable debris, so an operator who disabled GC for a legitimate
+reason (or by mistake) finds out before the pool grows unbounded.
+
 ### `FsckReport::clean` asserts more than the scan checked, including a `--partial` scan (2031-triage CAS-100 / CAS-049 orphan triage) {#fsck-clean-verdict-has-no-coverage-flag}
 
 P3, verdict-honesty only — no scan misclassifies anything, and every skipped family is skipped for a
@@ -329,6 +336,40 @@ after mandatory blob `HEAD`, size validation, metadata classification, and fence
 established a safe present observation (`Pool/CasPartWriteTxn.cpp:399-445`). A `Condemned` body
 proceeds to unconditional publication without incrementing the avoided-body event.
 
+### `[blob-reuse-resurrect-no-emitter]` `BlobReuseResurrect` has no emitter, and the condemned-token re-upload has no positive test {#blob-reuse-resurrect-no-emitter}
+
+**Found while triaging an S16 soak failure during the wire-keys proof phase (2026-08-30).**
+
+`CasEventType::BlobReuseResurrect` is still declared in `Primitives/CasEvent.h` and still maps to the
+string `blob_reuse_resurrect` in `CasEvent.cpp`, but nothing in `src/` raises it — only
+`BlobReuseAdopt` is emitted, from two sites in `Pool/CasPartWriteTxn.cpp`. `git log -S` puts the
+removal at `907c3b5ce7d` ("Publish CAS blobs after mandatory `HEAD`"): once publication became
+unconditional after a mandatory `HEAD`, a writer no longer splits reuse into adopt versus resurrect,
+because it always re-uploads from source.
+
+Two separate things are left over.
+
+**A dead enum member.** It costs nothing at runtime, but it makes the event vocabulary lie: a reader of
+`system.cas_log`'s event set will look for a value that can never appear, which is exactly the trap
+S16 fell into — its verdict required the event and so could not pass at any scale.
+
+**A real coverage gap, which is the part that matters.** S16 was the only positive check that a
+CONDEMNED token specifically forces a re-upload rather than a revival. Its assertion has been replaced
+with one that requires reuse to happen at all, so the resurrect invariant is now guarded only by S16's
+proxy — correct data on every cycle plus no bad CA events. That proxy is genuine but negative: it
+would catch a revival that corrupted data or raised a bad event, and would miss one that happened to
+return the right bytes. Restoring a direct check means finding an observable that distinguishes
+"re-uploaded from writer-owned source" from "revived from the condemned object" under the current
+architecture — a counter, an event, or a fault-injected condemned object that must not be readable.
+
+### `[gc-anomaly-never-emitted]` `CasEventType::GcAnomaly` is defined but never emitted {#gc-anomaly-never-emitted}
+
+MINOR — Found during the deep-verification batch (batch-006): the event type exists in the enum but no
+call site constructs one, so any doc or dashboard describing GC-anomaly events as observable is
+currently wrong. Either wire an emit site or remove the dead enum value. (An orphaned 2026-08-04-triage
+finding on catalog/fold-seal capacity-reservation correctness is adjacent to this GC-observability gap
+— folded in as a related note, not a separate item.)
+
 ### Terminal counters are undocumented and logged below their own severity (opus review M3) {#terminal-counters-undocumented-and-warned}
 
 Both halves reproduce verbatim at HEAD: none of the seven terminal counters appears anywhere in
@@ -469,9 +510,53 @@ through the `shared_ptr` the scan holds. Its only wait was on a GC round; that w
 one request, and the "clean GC completion over fast shutdown" priority it used to document is
 reversed.
 
+### `[damaged-object-diagnose-and-repair]` fsck must diagnose AND repair a damaged rebuildable object; the runbook must say how {#damaged-object-repair}
+
+**Found by the T8 criterion-4 injection** (Stage-B soak; evidence pack
+`.superpowers/sdd/2026-08-02-cas-stage-b-remaining/crit4-injection-evidence/`): a single namespace
+checkpoint (`cas/ns/state/<life>/_ckpt`) was overwritten with garbage under a live writer. The GC fold
+behaved exactly as designed — it detected the damage, classified the namespace as an anomaly/hold and
+suppressed every irreversible family, round after round — but nothing in the product ever repaired the
+object, and the live ref lane went to `CASRefNeedsRecovery` and stayed there for the remaining ~20
+minutes of the run, including after the exact original bytes were restored. Byte-level damage to a
+durable object is outside the trusted-store fault model this design assumes, so this is not a
+correctness defect; it is an OPERABILITY hole: the system fails closed forever and hands the operator
+no lever.
+
+**What is missing, in priority order.**
+
+1. **`ca-fsck` should diagnose the class precisely.** Today a damaged object surfaces as a suppressed
+   GC round plus a counter; fsck's report has no row that says "namespace N's checkpoint is present but
+   undecodable" (as distinct from absent, which is a legal cold-recovery state). Add the distinction:
+   *present-and-undecodable* vs *absent* vs *decodable-but-inconsistent*, per affected object kind
+   (`_ckpt`, fold seal, `gc/state`, catalog), naming the exact key.
+2. **`ca-fsck --repair` (or an explicit sibling verb) should REBUILD what is rebuildable.** The
+   checkpoint is a derived accelerator over the durable ref-log, so a damaged one is reconstructible by
+   the same recovery walk the writer already implements (`recoverRefTableDetailed` / the recovery-epoch
+   seal). The repair verb should: re-derive the object from its authoritative source, publish it by the
+   ordinary CAS write path (no new object kinds, no protocol change), and refuse — loudly — for any
+   object whose content is NOT derivable (a blob body, a committed ref-log record: those are the real
+   data, and their loss is a restore-from-backup situation, not a repair).
+3. **The lane must be able to leave `NeedsRecovery` once the source is sound again.** Our single
+   observation says it did not, even after byte-identical restore. Whether that is a wedge, a
+   remount-only exit, or an artifact of the injected shape is UNVERIFIED — determine it, and if the only
+   exit is a remount, say so in the runbook and consider making recovery retry on its own.
+4. **Runbook section: "a CAS object is damaged".** Operator-facing, in the numbered doc set, covering:
+   how the condition ANNOUNCES itself (suppressed rounds naming the namespace, the fsck row from item 1,
+   the `CASRefNeedsRecovery` counter); why there is no urgency (GC has already frozen everything
+   irreversible — the pool is safe, it is just not reclaiming); the asymmetry an operator must know
+   (an ABSENT checkpoint is a legal state that triggers cold recovery, a CORRUPT one is not — so the
+   fallback of last resort is to DELETE the damaged derived object, never to hand-edit it); the repair
+   sequence once item 2 exists; what NOT to do (`DROP POOL MEMBER` is for dead members, not damaged
+   data; never hand-delete blob bodies or ref-log records; never "restore" bytes from an unofficial
+   copy); and when the answer really is backup/restore because the damaged object is authoritative.
+
+**Note on scope.** Items 1, 2 and 4 are operability work and need no protocol change. Item 3 may reveal
+a real recovery-path defect; treat its outcome as its own item if so.
+
 ### Every CA CLI/DR verb opens the pool through `_pool_meta`, so damage to that one object disables the instruments {#pool-meta-bootstrap-blocks-dr-tools}
 
-Sub-item of [`[damaged-object-diagnose-and-repair]`](../BACKLOG.md#damaged-object-repair) (2031 triage,
+Sub-item of [`[damaged-object-diagnose-and-repair]`](#damaged-object-repair) (2031 triage,
 CAS-061), naming the one object kind
 that item's list (`_ckpt`, fold seal, `gc/state`, catalog) does not: `_pool_meta`. All five CA tools
 (`cas-fsck`, `cas-inspect`, `cas-gc-dryrun`, `cas-gc-rebuild`, `cas-drop-member`) reach the pool only
@@ -539,9 +624,22 @@ QUERYABLE surface listing the currently-wedged namespaces —
 `Pool/CasRefLedger.cpp:1958-1975`, whose own map is keyed by namespace) — which is the
 `per-part/ref system.* views` half of `{#b15-b99-b169-b159-system-views}`.
 
+### [disks-exit-code-upstream] `clickhouse-disks --query` non-interactive exit code — carve-out obligation {#disks-exit-code-upstream}
+
+`DisksApp::main` now returns a failing command's error code as the process exit code for
+non-interactive `--query` runs, so CI and cron can gate on `clickhouse-disks` at all. It **rides in the
+CAS pull request for now** — pre-release, and the gating it enables is needed there — but it is a
+behavior change to a shared tool for every user of it, so it must later be carved out into its own
+upstream PR together with the integration-test fix it forces.
+
+The record lives with the carve inventory, not here: `docs/superpowers/cas/upstream.md`, §G list plus
+the G-item section below it (site, rationale, the two reviewer-facing details, the latent
+`test_replicated_table_structure_alter` defect it exposed with its mechanism, and the blast-radius
+conclusion).
+
 ### `clickhouse-disks` exit code: 8-bit truncation and five undocumented subcommands (opus review M6) {#disks-exit-code-truncation}
 
-The contract change itself is tracked as `{#disks-exit-code-upstream}` (`BACKLOG.md:1223`, a different
+The contract change itself is tracked as `{#disks-exit-code-upstream}` (above, a different
 half — the carve-out obligation to move the "non-interactive runs exit nonzero at all" commit into its
 own upstream PR — no duplication). Confirmed unchanged at HEAD, both branches: (1) `DisksApp::main`
 (`programs/disks/DisksApp.cpp:622-623`) still `return`s the raw ClickHouse error code as a POSIX
