@@ -128,3 +128,17 @@ from the policy (comma-separated `cas_pool_uuid`) and let the sender pick the on
 disk, or defer the advertise until after reservation. Whether the topology is even a supported shape
 is `BACKLOG/formats-and-storage.md`{#orphan-triage-2026-08-04} `[mixed-ca-tiered-topology]`, which
 this item should be ordered after.
+
+## Read-only replicas {#read-only-replicas}
+
+- **[cas-readonly-replica] cross-node read-only replica over a shared CAS pool** — {#cas-readonly-replica} — DESIGN — Design
+  only, not implemented: `docs/superpowers/specs/2026-07-14-cas-readonly-replica-snapshot-pin-design.md`
+  proposes a third `Store::open` mount mode (`reader`, alongside `writer` and `read_only`) that heartbeats
+  a lightweight reader-lease and publishes one durable pin object (`gc/readers/<reader_id>`), reuses the
+  upstream readonly-refresh MergeTree feature for snapshot-sourced part discovery, and adds one opaque
+  `IDataPartStorage::snapshot_pin` handle so a running query's held `DataPart`s float a GC retention floor
+  (`min` over live readers) with no `H_max`/"snapshot too old" cap — retention is bounded by query
+  duration and reader-lease TTL. None of `snapshot_pin`, `gc/readers/`, the `reader` mount mode, or the
+  proposed `CaReadPinCore` TLA+ model exist in the tree. Depends on the ref snapshot+log design and the
+  pool-member decommission design (verify those landed before starting). No live gap forces this today;
+  it is read-scaling, not a bug fix.
