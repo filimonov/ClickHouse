@@ -48,6 +48,7 @@ Status as of 2026-09-25. Legend: **now** = in progress or next, **next** = plann
 - **`cas_log` volume** — 8M rows per day, 10% of the stand's write bytes, on the CAS disk it audits. Demote `ref_resolve` and per-edge rows, collapse the three condemn rows into one.
 - **Simplify the system tables** — fewer columns with clearer names in `cas_mounts`, `cas_gc_log`, `cas_log`; document each with an example query.
 - **Docs for operators** — recommend a local storage policy for `system.*` logs when CAS is the default disk; sizing (decode cache, `cas_gc_concurrency`); what each warning means.
+- **Log noise on conditional writes** — every expected 412 (dedup) or 409 (two replicas on one `_ckpt`) prints three lines: `AWSClient: Response status` (409 at Error), `WriteBufferFromS3: Nothing to abort`, `WriteBufferFromS3 was canceled`; ~3k lines per day, more than half of the server's log. Upstream patches: 409 on a conditional request leveled like 412 and both at Debug; the deliberate cancel pair at Debug. `single-attempt-client-status-error-log-site`.
 - **Snapshot-refusal warning** — `refusing snapshot publication while the append lane is not Ready` is a benign race logged at Warning without a rate limit; make it Debug.
 - `part-file-suffix-allowlist-memory`.
 
