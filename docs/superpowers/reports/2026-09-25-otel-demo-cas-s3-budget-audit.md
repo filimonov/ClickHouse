@@ -36,6 +36,34 @@ Sources: `system.metric_log` (S3 verbs per day), `system.blob_storage_log` 2026-
 
 Total ≈ $16/day for 43 MB/day of user data. Per part publish the pool pays ~16 PUTs including GC's share.
 
+## 2a. Write path versus GC, 09-23, this host {#writer-vs-gc}
+
+Attribution: GC = fold manifest and log body GETs (`CASRefManifestBodyFoldGets`, `CASRefLogBodyGets`), graduation
+meta re-checks (bounded by `entries_graduated`), condemn HEADs (`candidates_marked`, equal to `CASBlobHead`),
+`pending_deletes` HEADs (`entries_redeleted`), condemn-marker PUTs (`CASMetaCompareSwap`), `gc/` objects, the
+ref-prefix LIST (`S3ListObjects` minus the 22k/day `listMounts` baseline), every DELETE request. Write path = the rest:
+part publish and merges (manifest, ref, checkpoint and catalog reads, blob and meta PUTs, HEAD-before-PUT), part-folder
+views, data reads through the cache disk. 28 GC rounds that day, count caps at 5000, rounds ~50 min.
+
+| verb | total | write path | GC | GC share | $ write | $ GC |
+|---|---|---|---|---|---|---|
+| GET | 6.39M | 3.2M | 3.2M (fold manifests 2.12M, fold logs 0.96M, graduation ≤0.14M) | 50% | 1.28 | 1.28 |
+| HEAD | 657k | 194k | 463k (condemn 327k, pending 135k) | 70% | 0.08 | 0.18 |
+| PUT | 2.30M | 1.96M | 337k (condemn markers 327k, `gc/` 10k) | 15% | 9.8 | 1.7 |
+| LIST | 384k | 22k | 362k | 94% | 0.11 | 1.8 |
+| DELETE requests | 271k | 0 | 271k (blobs 135k, meta 135k, ~1.4k batches of manifests and logs) | 100% | 0 | 0 |
+| **requests** | **10.0M** | **5.4M** | **4.6M** | **46%** | **11.3** | **5.0** |
+
+Per part written (197k publishes and merges): the write path spends ~27 requests, GC ~23. Per garbage blob (327k
+condemned that day): GC spends ~14 requests, of which ~9 are its share of intake (manifest and log bodies) and 5-6
+the blob's own lifecycle (F7). In dollars GC is 31%; in requests 46%; in wall-clock it is one thread at 96% duty plus
+16 workers, while the write path's ref lane is at 100% (10-12k queue-seconds per hour, 748 ms of an 887 ms insert).
+
+What moves the ratio: the spec's A4 halves GC GETs (manifest memo), B removes the LIST (GC $ from 5.0 to ~2.2), C
+does not change volume; on the write side F2 (repoint elision) and F5 (lazy `_ckpt`) together remove ~30% of PUTs,
+which is where three quarters of the dollars are. The condemn-marker PUT per garbage blob (327k/day, 15% of PUTs) is
+the one GC PUT and is protocol.
+
 ## 3. Findings, ranked by what they save {#findings}
 
 Labels: CONFIRMED = read in code and matched by counters; PLAUSIBLE = counters fit, code path not fully read.
