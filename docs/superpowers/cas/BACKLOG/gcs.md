@@ -201,6 +201,33 @@ How to stop finding these by inspection:
 [making retry coverage structural](/superpowers/cas/retry-coverage-by-construction) — private virtuals
 plus a controller-only handle, turning a future omission into a compile error.
 
+### `[gcs-conditional-overwrite-rethink]` ✅ CLOSED: blob publication is unconditional and no longer GCS-capped {#gcs-conditional-overwrite-rethink}
+
+Closed by the [unconditional blob-publication design](/superpowers/specs/cas-unconditional-blob-publication-design)
+and its implementation on 2026-08-23. The historical problem was real: GCS does not enforce the
+required destination precondition at multipart completion, so a conditional blob-body design either
+needed a one-part ceiling or a more elaborate compose protocol. The implemented answer removes the
+premise instead. Every blob decision starts with `HEAD`; an absent or `Condemned` body is then
+published unconditionally. Fresh streaming uses ordinary multipart, and the first absent staged
+publication may use native same-store copy. A `Condemned` or subsequent staged attempt retags and
+streams so an already-queued exact delete cannot remove the new incarnation.
+
+Consequently, blob bodies above the former ceiling are supported and do not use
+`gcs_max_conditional_put_bytes`. That setting now applies to every conditional non-blob `PUT`,
+including create-if-absent metadata/control artifacts and conditional replacements.
+Native-conditional plumbing remains for those writes, native-token `HEAD`, and exact deletion; it
+is not a blob-body transport.
+
+Evidence is intentionally not overstated. The [real-storage results](/superpowers/cas/unconditional-blob-publication-live-results)
+record complete test scenarios, but all 25 credentialed GCS cases skipped because credentials and the
+TLS fault driver were unavailable; release readiness is blocked. `test_storage_s3` is also blocked by
+the unavailable `clickhouse/clickhouse-server:23.3.19.33.altinitystable` image. The
+[performance report](/superpowers/cas/unconditional-blob-publication-performance) records passing
+target-only runs, but no matched same-environment pre-change binary; its control-adjusted sequence
+ratios are not a code-version delta, so performance acceptance is also blocked pending a matched pair
+and explicit human acceptance. The earlier cap/compose analysis remains in git history as the decision
+record that led to this simpler protocol.
+
 ## Environment and harness follow-ups {#environment}
 
 - **`[gc-run-connect-failure-propagation]`** — DESIRABLE — a manual `SYSTEM CAS GC RUN`
