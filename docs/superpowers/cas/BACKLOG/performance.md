@@ -132,6 +132,8 @@ is DDL-only, failure is loud. Fix needs a 3-phase caller restructuring (compute 
 publish, re-acquire and re-validate) — a design task, not a code move. Cross-referenced by
 `umbrella-roadmap.md` §2 "Shorter locks in MergeTree".
 
+Details: docs/superpowers/cas/2031-triage.md#cas-048
+
 ### Unbounded pool-wide snapshot-publish fan-out (2031-triage CAS-051) {#snapshot-publish-fanout-unbounded} — KEEP
 
 The single-in-flight gate on background snapshot publishes is per-table only; no pool-wide limiter, so an
@@ -148,6 +150,8 @@ changed file; a mutation multiplies this by part count. Also emits one audit row
 repoint. Fix (protocol-adjacent, needs a go-ahead): stage the merged manifest once via the existing two-phase
 `prepareEntries`+`promote` handle. Distinct from audit F2 (the higher-volume `delete_tmp_*` repoint case).
 
+Details: docs/superpowers/cas/2031-triage.md#cas-056
+
 ### Part staging is a linear-scanned vector, O(F²) path compares (2031-triage CAS-116) {#staging-vector-quadratic-path-scans} — KEEP
 
 `PartStaging::entries` has no by-path index; every stage/move upserts by rescanning the vector. Real but
@@ -158,12 +162,13 @@ antalya-26.6 (same struct shape, no index).
 ### Conditional-write lane: no jitter, excluded from cross-thread retry pacing (2031-triage CAS-119) {#conditional-write-retry-pacing-and-jitter} — KEEP
 
 Two residuals of the (settled) single-attempt design: (1) `backoffBeforeAttempt` is purely deterministic, so
-a store-wide 503 episode produces synchronized reissue waves from one part's fan-out — fix: multiply by a
-`[1, 1+f)` jitter factor, same shape the S3 client already uses. (2) the single-attempt client clone doesn't
-share `next_time_to_retry_after_retryable_error` with the parent, so it neither observes nor contributes to
-the disk's shared slowdown window. Neither is a correctness issue (bounded, `Unresolved`-not-`Committed`).
-Confirmed unfixed on antalya-26.6. Adjacent, not superseding: audit
+a store-wide 503 episode produces synchronized reissue waves from one part's fan-out — fix: jitter the
+backoff, same shape the S3 client already uses. (2) the single-attempt client clone doesn't share the disk's
+shared-slowdown state with the parent. Neither is a correctness issue (bounded,
+`Unresolved`-not-`Committed`). Confirmed unfixed on antalya-26.6. Adjacent: audit
 [F26](/superpowers/reports/otel-demo-cas-s3-budget-audit#f26) (GC LIST bursts correlate with throttling).
+
+Details: docs/superpowers/cas/2031-triage.md#cas-119
 
 ### Blob-upload pool: raw reference outlives it in `clickhouse-local` (umbrella review M6) {#blob-upload-pool-teardown-order} — KEEP
 
@@ -177,21 +182,23 @@ the same as the tracked backpressure item CAS-047.
 
 ### Part-folder view cache byte budget is inoperative (2031-triage CAS-045) {#part-folder-cache-weight-always-256} — KEEP
 
-`PartFolderView::estimatedBytes` returns `256 + manifest_size`, and `manifest_size` is hardwired to 0 by both
-producers (`Pool/CasRefLedger.cpp`) — confirmed still 0 on antalya-26.6 too. So the 64 MiB byte budget
-degenerates to a 262144-entry cap, far above the real 10000-entry cap, and the oversized-entry bypass metric
-can never fire. Memory-accounting only, P2. Owed: weigh the view from its decoded body (path lengths +
-inline bytes) and delete the dead `manifest_size` field. Adjacent, not superseding: audit F9/F31 (view
-rebuild frequency, a different cost dimension) at `{#read-path-repeated-view-lookup-per-open}`.
+`PartFolderView::estimatedBytes` returns `256 + manifest_size`, hardwired to 0 by both producers (also 0 on
+antalya-26.6), so the 64 MiB budget degenerates to a 262144-entry cap, above the real 10000-entry cap, and
+the oversized-entry bypass metric can never fire. Memory-accounting only, P2, no correctness impact. Owed:
+weigh the view from its decoded body, delete the dead `manifest_size` field. Adjacent: audit F9/F31 (view
+rebuild frequency) at `{#read-path-repeated-view-lookup-per-open}`.
+
+Details: docs/superpowers/cas/2031-triage.md#cas-045
 
 ### Ref-table cache budget is admission-only, not tunable, can underflow (2031-triage CAS-053) {#ref-table-cache-budget-admission-only} — KEEP
 
-`enforceRefTableCacheBudget` runs only on cold recovery, never on in-place growth of a resident table — a hot
-table set can sit above the 256 MiB default indefinitely. The setting has no
-`ContentAddressedSettings` entry and no metric. `total -= c.weight` is an unclamped subtraction across two
-passes of the same lock scope that can underflow and evict every idle table in one pass;
-`clampedCounterSub` exists but isn't used here. No correctness impact (an evicted table just re-recovers). P3.
-Confirmed identical and unfixed on antalya-26.6 (`CasRefLedger.cpp:1736` there, same logic).
+`enforceRefTableCacheBudget` runs only on cold recovery, never on in-place growth, so a hot table set can sit
+above the 256 MiB default indefinitely. Untunable (no `ContentAddressedSettings` entry, no metric);
+`total -= c.weight` is an unclamped subtraction that can underflow and evict every idle table in one pass
+(`clampedCounterSub` exists, unused here). No correctness impact (an evicted table just re-recovers). P3.
+Confirmed unfixed on antalya-26.6 (`CasRefLedger.cpp:1736`, antalya-26.6-specific line number).
+
+Details: docs/superpowers/cas/2031-triage.md#cas-053
 
 ### `createHardLink` per-file manifest `HEAD` (2031-triage CAS-055) {#hardlink-per-file-forcefresh-head} — DONE (provenance kept)
 
@@ -201,11 +208,13 @@ antalya-26.6); `Pool/CasManifestReader.cpp:43-65` (`readManifestShared`).
 
 ### File-cache disk over CA never invalidates GC-reclaimed blobs (2031-triage CAS-084) {#file-cache-stale-after-gc-reclaim} — KEEP
 
-The opt-in `<type>cache</type>` wrapper rides the cached router for reads but CA reclamation bypasses it
-(`removeObjectIfTokenMatches` never reaches `CachedObjectStorage::removeCacheIfExists`). Not a correctness
-problem (cache keys are content-addressed, no live ref names a reclaimed blob, cache is size-bounded); the
-residual is degraded hit rate and lingering local bytes until LRU eviction. Confirmed no such hook exists on
-either branch. Fix: a reclamation-side invalidation hook that doesn't route CA deletes through the cache.
+The opt-in `<type>cache</type>` wrapper rides the cached router for reads but CA reclamation bypasses it, so
+a reclaimed blob's cache entry is never invalidated. Not a correctness problem (content-addressed keys, a
+size-bounded cache, LRU eviction); the residual is degraded hit rate and lingering local bytes. Confirmed no
+invalidation hook exists on either branch. Fix: a reclamation-side hook that doesn't route CA deletes through
+the cache.
+
+Details: docs/superpowers/cas/2031-triage.md#cas-084
 
 ### Dedup presence cache charged 64 B/entry against a real ~176 B (2031-triage CAS-115) {#dedup-cache-weight-constant-64} — DONE (provenance kept)
 
@@ -250,12 +259,13 @@ roadmap points back here.
 ### Every blob body has a `.meta` sibling: two objects per part file (2031-triage CAS-117) {#per-blob-meta-sibling-object-count} — KEEP
 
 Every fresh/adopted blob gets a paired `.meta` freshness marker, doubling object count and LIST enumeration
-for `.bin`/`.mrk*`/`primary.idx` (small metadata is inlined and pays nothing). Not "wide part of small files"
-generally — only the forced-blob file classes. P3. Owed: decide whether the marker can be folded (e.g. only
-materialize on `Condemned`) — protocol-adjacent, needs a go-ahead; cheap now: report the body/`.meta` split
-in `SYSTEM CAS FSCK`. GC/delete-side companion: audit
-[F7](/superpowers/reports/otel-demo-cas-s3-budget-audit#f7) ("six GC requests per garbage blob", batched
-`.meta` DELETE), tracked as `umbrella-roadmap.md` §2 GC "Cheaper GC per garbage blob (decide)".
+for `.bin`/`.mrk*`/`primary.idx` (small metadata inlines and pays nothing, so this is not a "wide part of
+small files" issue generally). P3. Owed: decide whether the marker can be folded (e.g. only on `Condemned`) —
+protocol-adjacent, needs a go-ahead; cheap now: report the body/`.meta` split in `SYSTEM CAS FSCK`. GC-side
+companion: audit [F7](/superpowers/reports/otel-demo-cas-s3-budget-audit#f7), tracked as
+`umbrella-roadmap.md` §2 GC "Cheaper GC per garbage blob (decide)".
+
+Details: docs/superpowers/cas/2031-triage.md#cas-117
 
 ## Memory {#memory}
 
