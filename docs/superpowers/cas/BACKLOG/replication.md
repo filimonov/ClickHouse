@@ -72,7 +72,8 @@ The generic escape hatch already exists: `IDataPartStorage::supportsAtomicFileWr
   a lightweight reader-lease and publishes one durable pin object (`gc/readers/<reader_id>`), reuses the
   upstream readonly-refresh MergeTree feature for snapshot-sourced part discovery, and adds one opaque
   `IDataPartStorage::snapshot_pin` handle so a running query's held `DataPart`s float a GC retention floor
-  with no "snapshot too old" cap — retention is bounded by query duration and reader-lease TTL. None of
-  `snapshot_pin`, `gc/readers/`, the `reader` mount mode, or the proposed `CaReadPinCore` TLA+ model exist
-  in the tree. Depends on the ref snapshot+log design and the pool-member decommission design landing
-  first. No live gap forces this today; it is read-scaling, not a bug fix.
+  (`min` over live readers) with no `H_max`/"snapshot too old" cap — retention is bounded by query
+  duration and reader-lease TTL. None of `snapshot_pin`, `gc/readers/`, the `reader` mount mode, or the
+  proposed `CaReadPinCore` TLA+ model exist in the tree. Depends on the ref snapshot+log design and the
+  pool-member decommission design (verify those landed before starting). No live gap forces this today;
+  it is read-scaling, not a bug fix.
