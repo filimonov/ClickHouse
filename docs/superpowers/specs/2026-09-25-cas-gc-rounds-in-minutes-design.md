@@ -164,6 +164,7 @@ If a round ends with `deadline_hit` and a non-empty carry, the scheduler starts 
 
 - A graduation cursor in the seal. The carry costs one streaming GET of the run (~26 MB for 520k entries); the expensive per-entry GET is removed by A1. A cursor is a seal-format change and stays a follow-up gated on a measurement showing the run read dominating.
 - Cutting the intake (section 2).
+- Resuming an interrupted round. The round is one-pass: intake and reduce leave their runs under the attempt prefix, but the only durable record of a completed phase is the fold seal, written after reduce, so a fresh attempt cannot tell a complete set of intake runs from an interrupted one and starts from the parent seal. On otel.demo two restarts during intake or reduce cost four hours each (2026-09-25). Stage C makes that loss small (a round is minutes) but does not resume it; resume needs per-phase completion markers, which are the per-life work units of section 7.
 
 ### C5. Observability {#c5-observability}
 
@@ -194,6 +195,8 @@ If a round ends with `deadline_hit` and a non-empty carry, the scheduler starts 
 Not implemented here. Recorded so that A, B and C do not have to be undone.
 
 Target shape: one logical round, one leader as coordinator, one seal and one `gc/state` CAS. Work splits into three classes with natural keys: per life (frontier probe, intake of one life into per-shard delta runs, cleanup of that life's covered keys), per blob-hash shard (`gc_shards`: reduce, graduation, redelete, outcome logs, condemn markers), and coordinator-only (catalog cut, lease, barriers, seal, CAS, prune, hand-off). Two barriers, "all lives taken in" and "all shards reduced"; the shuffle between them is the existing per-shard delta runs in the attempt prefix. Executors claim work units and report completion inside the attempt prefix, so a failed attempt's debris is never adopted, as today. The claim and done objects are new object kinds and are explicitly outside this spec.
+
+Resume of an interrupted round is the same change as multi-node execution, not a separate one: a per-life completion marker in the attempt prefix ("intake of this life reached frontier X") is both the executor's `done` record and what lets a fresh attempt adopt a predecessor's finished phases instead of restarting from the parent seal. Reduce already has such a record, the fold seal; intake has none. These markers are new write-once object kinds inside the attempt prefix, invisible to older readers, and remain outside this spec by the owner's rule on new object kinds.
 
 Constraints on this spec, all satisfied by the sections above:
 
