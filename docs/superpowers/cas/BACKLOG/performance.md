@@ -164,6 +164,38 @@ publish, re-acquire and re-validate) — a design task, not a code move. Cross-r
 
 Details: docs/superpowers/cas/2031-triage.md#cas-048
 
+### `[cas-part-commit-runs-under-parts-lock]` On a CA disk the whole S3 publish of an inserted part (blob fan-out, manifest staging, ledger append) runs while `MergeTreeSink::commitPart` holds the table's `DataPartsLock`, so concurrent inserts into one table serialize on seconds of S3 I/O {#cas-part-commit-runs-under-parts-lock}
+
+Measured 2026-09-04 on the parallel stateless lane (RustFS, binary 9bf134686af), table `dedup_test` of
+`02434_cancel_insert_when_client_dies` / `02435_rollback_cancelled_queries` (many concurrent inserts into
+one table): 61 inserts averaging 107 s, `PartsLockWaitMicroseconds` 3 528 s against
+`PartsLockHoldMicroseconds` 195 s over a 270 s window, i.e. the lock was held 72% of the window by
+inserts. Where the holder was (`system.trace_log` type `Real`, samples inside `commitPart` without a
+`SharedMutex::lock` frame): `finalizeConditionalWrite < nativeConditionalPut < ... <
+CasRefLedger::stagingPutIfAbsent < PartWriteTxn::stageManifest < ContentAddressedTransaction::publishStaging
+< ContentAddressedTransaction::commit < DiskObjectStorageTransaction::commit <
+DataPartStorageOnDiskFull::commitTransaction < MergeTreeData::Transaction::commit < MergeTreeSink::commitPart`
+(246 samples), the same chain through `CasRefLedger::flushRefBatch` (263), `fanOutBlobUploads <
+uploadPendingBlobs < publishStaging` (140). Of 12 634 samples on the test's query threads, 5 719 waited
+for the lock and 717 held it inside the CAS commit.
+
+Why: `MergeTreeSink::commitPart` takes `lockParts()` (`MergeTreeSink.cpp:376`), calls
+`renameTempPartAndAdd` with `rename_in_transaction=false` and then `transaction.commit(lock)`
+(`:408`) inside the same scope. On a plain object-storage disk that commit is local metadata work; on
+a CA disk `ContentAddressedTransaction::commit` is where the blobs are uploaded (fan-out, HEAD-before-PUT),
+the manifest is staged (conditional PUT) and the ref-ledger append is flushed, about 1 to 3 s per part
+at 54 ms per PUT. Every concurrent insert into the table waits for that. The upstream comment above
+the call says the rename must stay under the lock (covered-parts race with merges), so the lock scope
+itself is not ours to move (upstream-coupling rule).
+
+Fix direction (CAS side only): perform the upload half before the lock. The blob fan-out and the
+manifest staging depend only on the part's content, which is final when the writer finalizes, so they
+can run at write-buffer finalize / `finalizePart` time (before `commitPart` takes the lock), leaving
+only the ledger publish (one combined `_log` write per flush batch) under the lock. Check the
+replicated sink (`ReplicatedMergeTreeSink.cpp:1022-1053`) for the same shape before deciding the
+seam. Verification: rerun the two tests on the lane and read `PartsLockHoldMicroseconds` per insert;
+the general win is every multi-writer table on CA storage, not just these tests.
+
 ### Unbounded pool-wide snapshot-publish fan-out (2031-triage CAS-051) {#snapshot-publish-fanout-unbounded} — KEEP
 
 The single-in-flight gate on background snapshot publishes is per-table only; no pool-wide limiter, so an
@@ -295,9 +327,48 @@ read/decode side, which that item does not mention.
 
 Details: docs/superpowers/cas/2031-triage.md#cas-127
 
+### `[cas-decode-per-row-scratch]` The `cas_run` reader rebuilds its scratch every row; the writer does not — KEEP (scoped: scratch reuse DONE, two sub-issues open) {#cas-decode-per-row-scratch}
+
+**Found while reading the decode path during the wire-keys phase-3 review (2026-08-30).**
+
+Every decoded `cas_run` row allocates a `String` for the line through `readLine`, constructs a
+`JsonObjectReader` — which owns a `std::vector<String> seen_keys` that grows as keys are read — and
+destroys both. The write side already solved this: `SourceEdgeRunWriter` holds a reused
+`CasJsonWriter scratch`, documented as keeping memory bounded by the largest line ever assembled
+rather than by record count. The read side never received the same treatment.
+
+Two related pieces of waste sit in the same place. `JsonObjectReader::nextKey` rejects duplicate keys
+with `std::find` over that vector, comparing whole strings, which is quadratic in the keys on a row;
+since every format's key set is fixed and already enumerated by the shared collectors, the check
+could be a bit per known key, with no allocation and no string comparison. And `readString` returns
+by value, so each wide field is a fresh allocation.
+
+**This is not a regression from the wire-key cut** — it costs the same on both sides and appears in
+no delta. It was in fact the leading pre-measurement hypothesis for where the cut's cost would land,
+and the measurement refuted it: the hypothesis predicts that the format with the most keys per row
+suffers most, and that format (`cas_fold_seal`) decodes 7 points cheaper than its byte growth, the
+best of the five. Worth doing as a straightforward win, not as a fix for anything the cut caused.
+
+**Scoped down, `cas-gc-rebuild` only:** `b55e44595e65`/`13e55acdc950` add `JsonObjectReader::reset()`
+reuse, closing the main ask above. Still open on both branches: `nextKey`'s `std::find(seen_keys...)`
+remains O(keys) (`CasTextFormat.cpp:223-224`); `readString()` still returns by value.
+
+### `[cas-decode-register-pressure]` WITHDRAWN — the finding was a build-flag artifact {#cas-decode-register-pressure}
+
+**Raised 2026-08-30 on an assembly review, withdrawn the same day.**
+
+The item claimed that the wire-key cut raised register pressure in `SourceEdgeRunReader::next`, on
+the evidence that spill density rose from 22.1% to 25.8% with new spills inside the hot loop. That
+comparison was taken across two binaries built with different frame-pointer settings: the after side
+reserved `rbp`, the before side did not. On correctly matched binaries spill density **falls** in
+every decode symbol inspected and does not move in the encode symbol. There is nothing here to fix.
+
+Kept as a withdrawn entry rather than deleted, because the reasoning that produced it was published
+and someone may come looking for it.
+
 ## S3 request budget {#s3-request-budget}
 
-### Pool-wide catalog write hot spot {#ref-catalog-write-hotspot} — KEEP
+### Pool-wide catalog write hot spot {#ref-catalog-write-hotspot} — KEEP (scoped: read-side timeout-cooperation fix DONE, catalog-growth question open)
 
 Every table creation writes the same `cas/ref_catalog` object, serializing a table-creation-heavy lane through
 one CAS loop (137/250 S3 timeouts on the CA-s3 lane named this key). Design isn't wrong (catalog exists
@@ -306,6 +377,74 @@ read-mints; retry deadline vs. contention; sharding without losing single-object
 Write-time counterpart of `{#ref-catalog-read-per-commit}` (audit F20 measures the read side); tracked live
 as `umbrella-roadmap.md` §2 "Catalog write hotspot" (hot-key lane phase B, issue #2343) — not superseded, the
 roadmap points back here.
+
+**Merged in from `[ref-catalog-write-hotspot]` (BACKLOG.md), same anchor, later measurement.**
+
+**Found by the first full local run of the stateless suite on CAS storage (2026-08-30), 11,137 tests.**
+
+One test failed with `Code: 499 ... Timeout ... key cas_s3/cas/ref_catalog, object size 41454`. The
+S3 client retried twice more and both retries timed out at the same size, so this is one logical
+write, not three failures.
+
+What makes it worth recording is the negative half: across 11,137 tests, **`ref_catalog` was the
+only object class whose write ever timed out.** No blob, no manifest, no ref log. The catalog is
+pool-wide, mutable, and rewritten whenever a namespace is created or dropped — and a full stateless
+suite creates and drops tables continuously, so the catalog is both the hottest write in the pool and
+the one that grows with the number of namespaces that have ever existed in it.
+
+This is **not** established as a defect. The run had a load average above 20 with a saturated
+single-node object store, and a 41 KB write timing out under that is plausible on its own. What is
+established is where the pressure lands.
+
+**Worth measuring before deciding anything:** how catalog size and rewrite frequency scale with
+namespace churn, and whether the write is proportional to the whole catalog or to the change. If it
+is the whole catalog on every change, the cost is quadratic in namespace count over a workload's
+lifetime, and a busy pool reaches the timeout on merit rather than by luck.
+
+This finding is the argument for the full lane existing at all: the 41-test CAS selector that stood
+in for it could never have produced this, because it never creates enough namespaces to grow the
+catalog.
+
+**Reads time out too, and the rate grows with the run (measured 2026-09-04, parallel stateless lane
+on RustFS, binary 9bf134686af). Root cause found: the S3 client's adaptive first-attempt timeout.**
+`AWSClient` logged `Failed to make request to ...cas_s3/cas/ref_catalog: will be retried,
+Poco::TimeoutException` for GETs of this one key: 1 222 of 1 233 such lines in a 30-minute window were
+this key; 24, 260, 305, 401, 436, 468, 455 per 10-minute window over the run. The logged stack throws
+in `SocketImpl::receiveBytes` under `HTTPClientSession::receiveResponse`, i.e. waiting for the response
+headers. With `s3_use_adaptive_timeouts` (default on) the first attempt of every request runs under
+`TimeoutsForFirstAttempt`: 200 ms to the first byte for GET (`src/IO/ConnectionTimeouts.cpp`),
+saturated against the request timeout, so the CAS `attempt_timeout_ms` of 5 000 never applies to the
+first try. The catalog is rewritten through conditional PUTs 467 times a minute (hot-key lane submits,
+`CASHotKeyCacheStarts` delta), it had grown to 104 KB / 612 entries, and a PUT on RustFS costs 54 ms
+or more; a GET that lands while the object is being rewritten waits behind it and trips the 200 ms
+fuse. The retry is the CAS engine's own (`Retry::standard`, jittered backoff 0-200 ms first), and it
+succeeds. Cost: every hit shows as exactly 3 `S3ReadRequestsErrors`; `CREATE TABLE` with one hit
+p50 233 ms against 0 ms without (2 731 of 8 943 statements in 30 minutes, 32%), with two hits
+p50 962 ms (57 statements). Not caused by write contention: `PreconditionFailed` on the catalog and
+`CASHotKeyQueueWaitMicroseconds` are flat over the run while the timeout rate grows fivefold; what
+grows is the object and therefore the window a GET spends behind a PUT.
+
+Fix direction (user ruling 2026-09-04: keep the adaptive fuse, it exists to abandon a bad connection
+to real S3 quickly; make the CAS retry cooperate with it instead of fighting it). Today the engine's
+reissue is a brand-new request: `ReadBufferFromS3` starts at attempt 1 (`max_single_read_retries` is 1
+for CAS reads), `PocoHTTPClient` sees `first_attempt` again and applies the 200 ms fuse again, and the
+engine sleeps `Retry::backoff(attempt)` (0-200 ms jitter) before it. Upstream's own retry does the
+opposite: attempt 2 runs on a fresh connection with the full timeouts (`Client.cpp:847` bumps
+`setClickhouseAttemptNumber`). Two changes, both in the CAS engine plus one small seam:
+(1) thread the engine's attempt number into the request — `readSettingsFor(profile, timeout, attempt)`
+and the write twin carry it in `ReadSettings`/`WriteSettings`, `ReadBufferFromS3::sendRequest` /
+the write path seed `setClickhouseAttemptNumber` from it (upstream seam, consult first) — so the
+reissue gets the full `attempt_timeout_ms` on a new connection; (2) classify a first-attempt
+`Poco::TimeoutException` as a connection-quality retry: reissue at once, no backoff, still under the
+deadline gate; backoff stays for attempt ≥ 2 and for every store-side fault. Expected on the lane:
+a hit costs the 200 ms fuse only, the double-hit case (p50 962 ms) disappears. The catalog growth
+itself stays the hotspot above.
+
+**Closed for the timeout-cooperation half, `cas-gc-rebuild` only:** `9a6bcb68aca` plus the CAS R2
+series thread the engine's own attempt number into `ReadBufferFromS3::sendRequest`
+(`src/IO/ReadBufferFromS3.cpp:594`), and `CasRequests.cpp:987-1032` classifies a connect-failure hint
+for immediate reissue. The catalog-growth/quadratic-rewrite question above is untouched on both
+branches.
 
 ### Every blob body has a `.meta` sibling: two objects per part file (2031-triage CAS-117) {#per-blob-meta-sibling-object-count} — KEEP
 
@@ -336,6 +475,73 @@ Details: docs/superpowers/cas/2031-triage.md#cas-117
   branches (`Pool/CasRefLedger.cpp:3130`/`:3170` on cas-gc-rebuild). I/O-bound workloads don't feel it (the
   2026-09-25 audit shows no CAS CPU/mutex hotspot on its stand); a scalability smell for insert/mutation-heavy
   loads. Owed: pass by const-ref / diff incrementally / copy-on-write.
+
+### `[ca-write-buffer-allocation-concentration]` Two write-buffer constructors account for essentially all CAS allocation activity {#ca-write-buffer-allocation-concentration}
+
+**Found by profiling a one-hour chaos soak (2026-08-31) against `system.trace_log`.**
+
+**Read the counts as a ratio, not as a census.** The same export that produced them was
+CAS-filtered (`WHERE stack LIKE '%DB::Cas::%'`), so no non-CAS allocator appears here and this is
+not a ranking of server-wide allocation; and it summed 38 snapshots of a cumulative table, so every
+absolute number is inflated by roughly the number of snapshots a sample survived into. Neither
+defect touches the finding, because both act as a near-uniform multiplier across the frames being
+compared, and the finding is the **200-fold gap between second and third place** — a ratio that no
+plausible per-frame variation in either defect can manufacture. The Memory profile also rests on
+25k-154k samples rather than the CPU profile's few hundred. Do not quote the absolute sample counts
+anywhere; quote the ratio.
+
+Aggregating CAS frames by sample count, the Memory profile is not merely dominated by two frames —
+everything else is invisible next to them:
+
+| frame | Memory samples |
+|---|---:|
+| `CaContentWriteBuffer::CaContentWriteBuffer` | 85,991 |
+| `CaInlineWriteBuffer::CaInlineWriteBuffer` | 35,600 |
+| next entry (`PartWriteTxn::promote`) | 175 |
+
+A factor of 200 between second and third place. Reading the constructor explains it: each content
+write allocates its streaming buffer via `clampCasWriteBufferSize`, and then a **second per-stream
+spill buffer**, and creates a temp directory and a random temp path. Every blob write pays this.
+
+**What this does NOT establish.** These are allocation samples, not time. The Real profile's top is
+the upload wait — `ensureBlobPresent` and `fanOutBlobUploads` at ~116,000 samples each against 3,750
+CPU samples, a ratio near 31:1 — so the write path is overwhelmingly I/O-bound and buffer allocation
+is not visibly on the critical path. A pooling change could remove a great deal of allocation churn
+and move the wall clock by nothing at all.
+
+That caution is not hypothetical: on this same campaign two changes that plainly removed waste
+measured exactly zero, and one that plainly removed a copy measured a reproducible *regression*. The
+one that paid was the one whose mechanism predicted which formats would improve.
+
+**Measure before changing anything:** what fraction of a blob write's wall time is buffer
+construction, from a scoped profile of the write path rather than from the sample counts above. If it
+is under a percent, this entry should be closed as "concentrated but not costly" rather than acted
+on.
+
+**Retracted: there is no usable CPU profile from this soak, so nothing here ranks by CPU.**
+An earlier revision of this entry ranked `ObjectStorageBackend::nativeHead` in "the CPU top" and
+then explained the mechanism. Three defects, each fatal on its own, mean no CPU ranking from this
+run may be cited:
+
+1. **Filtered by construction.** The export ran `WHERE stack LIKE '%DB::Cas::%'`, so every frame not
+   named `DB::Cas::*` — hashing, compression, serialization, the whole of the generic engine — was
+   excluded before aggregation. Asking why checksums are absent from that file is asking why a file
+   does not contain what it was built to exclude.
+2. **No samples to speak of.** Over the hour the `CPU` trace type accrued **369 samples**, against
+   963,049 for `Real`. The CPU profiler fires on thread CPU time, and these threads spent almost
+   none: the workload is S3-bound. A few hundred samples cannot support a ranking.
+3. **Multiply counted.** The dump queried the cumulative `system.trace_log` every ten minutes and
+   the frame aggregate summed 38 such snapshots, so the same sample is counted once per snapshot it
+   survived into. The arithmetic shows it plainly: the retained stacks hold 1,460 samples while the
+   top frame claims 4,713.
+
+The `Real` profile does not share defects 2 and 3's severity — 963k samples — but is subject to
+defect 1, and remains the basis for the only claim worth keeping from this run: the write path waits
+far more than it computes.
+
+**What a real answer needs:** a CPU-bound workload (bulk insert of large parts, where content
+hashing actually has bytes to chew) profiled with an unfiltered query and a single end-of-run
+snapshot. Until that exists, this entry asserts nothing about where CAS spends CPU.
 
 ### Suffix allowlist buffers big index files whole in memory (2031-triage CAS-014) {#part-file-suffix-allowlist-memory} — KEEP
 
