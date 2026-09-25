@@ -22,6 +22,7 @@ protocol: rev.6 lease-boundary exclusivity, ref-log recovery, and the ref-lane s
 
 - **[ORPHANED-ADJUDICATION-COMMENT] a comment documents an adjudication its neighbouring code does not perform** — {#orphaned-adjudication-comment} — MINOR — The `mine | successor's seal | foreign` adjudication comment (its narrow `catch`, absorbing only `CORRUPTED_DATA`/`UNKNOWN_FORMAT_VERSION` so a transient decode failure cannot be laundered into a `Foreign`/mount-fencing verdict) sits above `chainLinkFor` (`CasRefLedger.cpp:123-141`), which does no such thing. It belongs above `classifyRefLogOccupant` (`:179-194`), which actually has that `catch`. Take it with the next sweep that touches the file; re-derive the comment from the code rather than deleting it blind. `chainLinkFor` stays in the anonymous namespace, asserted only through `prepareRefChunk`'s validator.
 - **[PART-WRITE-RELEASE-SEAM] the `PartWriteTxn`/`PreparedPartWrite`/receiver-guard ownership seam needs its own contract spec** — HARD, user-directed extraction (2026-07-29) — Three layers each with their own abort/retry, an overloaded `isTerminal`, nine scattered proven-no-send exits erased into a generic `NETWORK_ERROR`, false ERROR/WARNING log lines on settled-late releases, no exactly-once emission contract for unproven releases. Extract a standalone spec (single-`attempted`-bit proof channel, destructor-owned last-word emission, severity ladder, marker-sync fix) before relink implementation touches this seam. Partial progress: the single-`attempted`-bit channel exists (`publication_attempted`, `CasPartWriteTxn.h:24-40`); no standalone spec exists yet.
+- **[reftxnid-wraparound-guard-missing] `nextRefTxnId` lacks a `UINT64_MAX` wraparound guard** — MINOR — Found during the deep-verification batch (batch-021, cluster C-0514): the sibling counter at `CasRefProtocol.cpp:941` has an explicit wraparound guard; `nextRefTxnId` does not. Add the matching guard or document why it is provably unreachable. (Confirmed 2026-08-04: this is the same finding as orphaned-open cluster C-0514 from the docs-consolidation triage — already tracked, not a separate item.)
 
 ## Ref-ledger follow-ups from the two-model adversarial consult (2026-07-21) {#ref-ledger-consult-followups-2026-07-21}
 
@@ -82,6 +83,48 @@ latch that lives only in memory so a restart clears it). Two genuine residuals r
 
 - **Read path fabricates absence instead of retry-later** — inside the removal-latch window `acquireReadableRefTableRuntime` (`CasRefLedger.cpp:614-634`) returns `nullptr`, which `resolveRef` (`:285-298`) renders as "no such ref", while `appendRefOps` (`:2068`,`:2102`) throws the retry-later class for the identical state. A reader should not see "absent" for "temporarily not admitting".
 - **One `Faulted` arm never fires the anomaly policy** — the "occupant unreadable" arm (`:3793-3823`, `ProfileEvents::CASRefAppendOccupantUnreadable`) sets `Faulted` without invoking `on_impossible_interference`, unlike the sibling `occupant != Occupant::Ours` arm (`:3849-3868`) a few lines below it. That lane alone has no automatic remount and needs an operator.
+
+### [cas-join-set-truncate] `StorageJoin`/`StorageSet::truncate` throw retry-later, self-healing, on a CAS disk {#cas-join-set-truncate}
+
+`StorageJoin::truncate` and `StorageSet::truncate` call `disk->removeRecursive(path)` then immediately
+`disk->createDirectories(path)`. On a content-addressed disk `createDirectories` is a pure admission
+no-op (`ContentAddressedTransaction::createDirectory` never touches the catalog), so the real re-mint
+happens lazily on the first write after `TRUNCATE` returns — that write resolves the namespace through
+`CasRefLedger::namespaceLife`.
+
+**Verdict: TRANSIENT, not permanent.** A unit-level test
+(`CASRefWriterNamespaceRemoval.FilesOnlyNamespaceTruncateThrowsRetryLaterUntilGcReclaimsThenRebirths` in
+`src/Disks/tests/gtest_cas_ref_writer.cpp`) reproduces the exact sequence — birth a files-only
+namespace life (the shape `StorageJoin`/`StorageSet` tables use, no MergeTree part ever published),
+`dropNamespace` it (the `removeRecursive`-shaped call), then immediately call `namespaceLife` again on
+the same name. It throws a typed `NETWORK_ERROR` ("CAS namespace … is Removing: creation waits for its
+terminal fold and catalog removal to complete; retry later"), because the catalog row is still
+`Removing` until a GC round actually deletes it. After draining GC (two rounds, same shape used
+throughout this test file), the identical call mints a fresh incarnation and writes succeed normally —
+self-healing, no operator action required.
+
+Practically: `TRUNCATE` on a `StorageJoin`/`StorageSet` table backed by a CAS disk completes without
+error (`removeRecursive`/`createDirectories` do not themselves touch `namespaceLife`), but the very next
+write to that table (the next `INSERT`, or backup rewrite) throws a retry-later error until the
+background GC round reclaims the just-removed row — a window bounded by GC round latency, not by
+anything the client controls. A client without retry-on-`NETWORK_ERROR` will see the write it issues
+right after `TRUNCATE` fail; retrying it (or simply waiting for the next GC round) succeeds.
+
+**Before the `existsDirectory` fix** (the `DirShape::TableDir` cleanup-completeness probe), the same
+`TRUNCATE` was silently a no-op on these engines: `existsDirectory` never reported the directory present
+in the first place (it only answered "has at least one committed part", and these engines never publish
+one), so `removeRecursive` was skipped entirely and the table kept its old contents. This is a change of
+which wrong thing happens on `TRUNCATE`, not a newly introduced break: the old behavior silently ignored
+the user's `TRUNCATE`; the new one executes it and imposes a bounded retry-later window on the following
+write.
+
+**Direction, not a fix here.** A real fix belongs in the CAS layer's rebirth semantics — either give
+`namespaceLife` a fast, non-error path for "predecessor is provably terminal, just needs its row
+folded" instead of forcing every caller through the GC-latency retry-later window, or have
+`StorageJoin`/`StorageSet::truncate` itself wait for the removal to fully settle before returning
+(mirroring `DROP TABLE ... SYNC`'s own synchronous-completion contract) rather than leaving the very next
+write to discover the window. Out of scope for the fix-verify pass that found this; tracked here as a
+usability rough edge, not a correctness defect.
 
 ## The debug/sanitizer body-counter cross-check restores the O(K·N) replay it was meant to avoid (2031-triage CAS-054) {#debug-body-counter-assert-on-replay}
 
