@@ -208,7 +208,28 @@ about 75 minutes once, not a risk.
 - F1, F2, F4, F5 are request-volume levers outside the spec: F1 is configuration, F2 and F4 are writer/fold changes
   with no protocol impact, F5 and F7 are protocol-step questions for the owner.
 
-## 5. Verification items {#verification-items}
+## 5. Conclusions and proposals {#conclusions}
+
+The pool is correct and expensive where the protocol says so, and slow where nothing says so; the slowness feeds
+itself. Ranked by what the number says about the system, not by its size.
+
+| # | number | what it means | proposal | where it lives |
+|---|---|---|---|---|
+| 1 | 748 ms of an 887 ms insert is ref-lane queue wait; lane at 100% | the write protocol, not GC, is the user-visible ceiling: one `_log` plus one `_ckpt` PUT per flush, a repoint per part removal | F2 repoint elision (writer task, schedule next to stage A); F5 lazy `_ckpt` (owner decision on recovery bound N) | outside the GC spec |
+| 2 | 880k new `_log` keys/day vs 600k deleted under a 200k cap; cleanup costs ~1 ms per key and $0 | budgets were set by phase name, not by unit cost; the cap on the cheapest family caused the loop | stand: `cas_gc_round_ref_cleanup_budget = 0` now; product: spec C2 removes the cap; rule: every budget carries its unit cost next to it | stand config + spec C2 |
+| 3 | `pending_deletes` 44 ms per blob, serial, 52% of a healthy day | three requests for one DELETE, no parallelism; the "healthy" state was already at the edge | spec A3 (fan-out, PR #2351); F7 `If-Match` DELETE and batched meta deletes (owner decision) | spec A3, open question |
+| 4 | 7,100 of 8,800 s of `fold_reduce` are an inline GET that a persisted flag would remove | `marker_confirmed` exists in the run format but is never set on carry; in-process memory hid a durable-state gap | spec A0, one line | spec A0 |
+| 5 | 3.3 GET per log in intake, 2.2 of them manifest bodies read up to four times per part lifetime; 29% of all GETs | structural and self-reinforcing: the longer the round, the more publish/repoint/drop of one part share a round | spec A4 (per-round body memo); F2 removes half the reads at the source | spec A4 + writer task |
+| 6 | 88 ms per LIST request, ~3 requests per 1000-key page | if confirmed, every LIST in the system is 3x, including the janitor and stage B's per-life lists | verify `max_keys` in `S3ObjectStorage::iterate` before B | spec verification item |
+| 7 | `pending_reclaim = -388,242` | the only backlog column an operator has is process-local and goes negative after a restart | spec C5 (from the seal's `CondemnedSummary`) | spec C5 |
+
+Not a concern: $16/day, 70% of GC dollars in condemn-marker PUTs, HEAD-before-PUT misses. Protocol by design, and it
+held: `dangling = 0`, invariants clean, no loss in a week of deliberate churn.
+
+Order of execution proposed: (2) stand config today; (4) A0 and (5) A4 as the first two stage-A tasks; (3) A3 with
+PR #2351; F2 as a writer task in parallel with stage A; then B, C; F5 and F7 after the owner decides.
+
+## 6. Verification items {#verification-items}
 
 - F6: confirm `max_keys` handling in `S3ObjectStorage::iterate` and the disk's `list_object_keys_size`.
 - F8: attribute the ~200k/day unexplained manifest PUTs.
