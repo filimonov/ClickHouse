@@ -1,128 +1,83 @@
 ---
-description: 'Design for the connection churn behind ephemeral-port exhaustion on CAS-over-S3 disks (issue #2243): instrument the pool resets by reason first, run a rate-controlled A/B spike on a verified rustfs stand, and only then ship a CAS client profile with a longer keep-alive, applied where the disk S3 client is created.'
-sidebar_label: 'CAS connection churn'
+description: 'Outcome record for the connection churn behind ephemeral-port exhaustion on CAS-over-S3 disks (issue #2243): the reason-breakdown instrumentation was written, used for one A/B spike, and removed; the spike ran but its baseline did not reproduce port pressure; the keep-alive mitigation shipped as an operator config recommendation, not a code-level client-profile default. The read-path drain (decision 4) is a separate, still-open investigation superseded by `2026-09-15-s3-drain-remainder-research.md`.'
+sidebar_label: 'CAS connection churn (outcome)'
 sidebar_position: 10
 slug: /superpowers/specs/cas-connection-churn-design
-title: 'CAS: connection churn and ephemeral-port exhaustion'
+title: 'CAS: connection churn and ephemeral-port exhaustion — outcome record'
 doc_type: 'design'
 ---
 
-# CAS: connection churn and ephemeral-port exhaustion {#cas-connection-churn-design}
+# CAS: connection churn and ephemeral-port exhaustion — outcome record {#cas-connection-churn-design}
 
-**Status:** DRAFT rev.4 (2026-09-05; rev.4 records the one unreachable reason branch) — rev.3 rev.1 was reviewed by `codex` (`gpt-5.6-sol`, xhigh; records
-`tmp/pr2300-cicd-watch/review/codex_spec3.final.md`, `codex_spec3r2.final.md`): rev.1 had 4 MAJOR — the
-causal reading of `Reset >> Expired`, the placement of CAS defaults after the client exists, a spike
-without a reproduced baseline, and a stale rustfs binary in the workspace; rev.2 = NO MAJOR, its
-MINORs folded here. Spec 3 of the R2 series; the measured part of
-https://github.com/Altinity/ClickHouse/issues/2243 (the CAS backlog entry "Issue #2243 CONFIRMED: local
-port exhaustion fences out the mount lease" lives in the master worktree's `docs/superpowers/cas/BACKLOG.md`).
+**Status:** OUTCOME RECORD (groomed 2026-09-25 from DRAFT rev.4, 2026-09-05). Spec 3 of the R2 series;
+the measured part of https://github.com/Altinity/ClickHouse/issues/2243. Kept as a design/history
+record; the original step-by-step decision text is replaced below by what each step actually did.
+codex review history (`codex_spec3.final.md`, `codex_spec3r2.final.md`) is unchanged from rev.2.
 
 ## What was measured, and what it does and does not say {#measured}
 
 CI, `Stateless tests (amd_asan_ubsan, cas s3 storage, parallel, 2/2)`, `metric_log` per 10 minutes:
 `DiskConnectionsReused` 250–300k, `DiskConnectionsCreated` 5–25k, `Expired` 2–4k, `Reset` up to 22k.
-rustfs logged 1 604 `Connection reset by peer`. The adaptive first-attempt fuse (spec 4) accounted for
-~570 trips in two hours. These are lifecycle counters, not cohorts of one window, and each is composite
-(`HTTPConnectionPool.cpp` ~763, ~871): `Expired` = stored connection older than `0.8 × keep-alive`
-(`0.1 ×` once the shared DISK group passes `disk_connections_soft_limit` = 5 000), or stale (peer FIN/RST),
-or `http_keep_alive_max_requests` reached; `Reset` = returned connection disconnected, or
-`mustReconnect` (Poco: request STARTED more than `0.9 × keep-alive` ago — a 4.5 s request under the
-5 s default returns as `Reset`), or incomplete request/response, or unread buffered bytes, or store
-limit, or a preserve exception. So the numbers show heavy churn; they do not yet say which cause.
+rustfs logged 1 604 `Connection reset by peer`. The adaptive first-attempt fuse (spec 4, landed) accounted
+for ~570 trips in two hours. These are lifecycle counters, not cohorts of one window.
 
 `cas_selects` (regression, three nodes, no system tables collected) hit 970 `EADDRNOTAVAIL` in one
 minute at the start of the concurrent-selects phase. The backlog's #2243 reading (reporter: ~430 GET/s
 × 60 s ≈ 26k of 28 232 ports) fits a TIME_WAIT rate equal to the request rate.
 
-## Decision, in order {#decision}
+## Outcome, by decision {#outcome}
 
-1. **Reset and Expired by reason.** New DISK-only ProfileEvents in `HTTPConnectionPool.cpp`. In
-   `atConnectionDestroy` (returned connections), after the existing `max_requests` check and in this
-   order: `DiskConnectionsResetDisconnected`, `DiskConnectionsResetKeepAliveAge`
-   (`isKeepAliveExpired(getKeepAliveReliability())`, the client's own `0.9 ×` age),
-   `DiskConnectionsResetResponseNotKeepAlive` (the residual `mustReconnect`: server `Connection: close`),
-   `DiskConnectionsResetIncompleteRequestOrResponse`, `DiskConnectionsResetUnreadBufferedData`,
-   `DiskConnectionsResetStoreLimit`, `DiskConnectionsResetPreserveException`; `Expired` from that path
-   is `DiskConnectionsExpiredMaxRequests`. In `wipeExpiredImpl` (stored connections), keeping the
-   existing age-before-stale precedence: `DiskConnectionsExpiredAge`, `DiskConnectionsExpiredStalePeer`.
-   One increment per branch, the aggregate counters untouched. This is the only code change made
-   before the spike.
-2. **The spike, as an A/B with a reproduced baseline.** Stand: the lane's rustfs launched as
-   `clickhouse_proc.py::start_rustfs` does, with `rustfs --version` asserted to be `1.0.0-rc.3` (the
-   workspace's cached `ci/tmp/rustfs` is `1.0.0-beta.9`; the runner downloads only when the file is
-   absent — use a versioned filename and fail closed on mismatch); one server with the lane's CAS disk
-   config, system logs moved to a local disk for the experiment; a `ReplacingMergeTree` table on the CAS
-   disk with JOIN inputs also on CAS; a rate-controlled read load (target: the reporter's ~400 GET/s,
-   reader count found by ramping, not fixed at 32 — S21 shows one-node rustfs throttling ~95% of GETs
-   at 16 readers). Arms: `5 s/100` (default), `30 s/100`, `5 s/10000`, `30 s/10000`, identical data and
-   query seeds, the client pool restarted between arms, plus one arm with a low `disk_connections_soft_limit`
-   to exercise the `0.1 ×` regime. Per arm: cumulative `DiskConnections*` (with the new reasons),
-   `DiskConnectionsTotal/Stored` gauges, `DiskConnectionsErrors`, `ReadBufferSeekCancelConnection`,
-   physical S3 request and retry counts, completed queries, `CASMountRenewal*`/`CASMountLeaseLost`,
-   TIME_WAIT filtered to rustfs's address in the server's network namespace, and `EADDRNOTAVAIL` in
-   the server log; the ephemeral range recorded. Baseline must reproduce port pressure (`EADDRNOTAVAIL`,
-   lease trouble, or filtered TIME_WAIT above a declared fraction of the range); treatment passes with
-   zero `EADDRNOTAVAIL`, zero lease-loss/renewal-deadline events, TIME_WAIT with declared headroom,
-   throughput within ~10% of baseline, and connections created per physical request lower by more than
-   run-to-run variance.
-3. **Ship what the spike proved, where the client is created.** The disk's S3 client is built in
-   `ObjectStorageFactory`'s S3 creator (`ObjectStorageFactory.cpp` ~121-126: `loadFromConfigForObjectStorage`
-   → `getClient`) BEFORE the metadata storage exists, so neither `ObjectStorageBackend` nor the CAS
-   metadata factory can change it. The seam: `RegisterDiskObjectStorage` resolves a `cas` client-profile
-   flag from `metadata_type` before `ObjectStorageFactory::create`; the S3 creator applies the CAS values
-   as DEFAULTS only where the final `S3AuthSettings` fields are unchanged (explicit disk XML and changed
-   `s3_http_keep_alive_*` stay highest precedence); `S3ObjectStorage` keeps the profile and reapplies it
-   after the endpoint/disk merge in `applyNewSettings` before rebuilding the client. The single-attempt
-   CAS client clones the base configuration, so it inherits the values. Which values: `http_keep_alive_timeout`
-   first (candidate 30 s or the backlog's 60 s, chosen from measured inter-request gaps and the
-   verified rustfs cap); `http_keep_alive_max_requests` only if the spike attributes churn to it.
-   Note that Poco caps both from the server's `Keep-Alive` header and `Connection: close` forces a
-   reconnect (`HTTPClientSession.cpp:375`); rustfs's documented HTTP/1 header-read timeout (75 s per its
-   reverse-proxy docs) is to be verified against rc3's actual response headers and a socket-reuse probe
-   across idle intervals before the value is fixed.
-4. **Read path.** A `ReadBufferFromS3` whose HTTP range was fully received releases its connection
-   reusable even if the caller has not consumed every buffered byte; only a buffer destroyed,
-   retargeted or seeked BEFORE the range is fully received leaves an incomplete response and a `Reset`
-   (`ReadBufferFromS3.cpp` ~435, `HTTPConnectionPool.cpp` ~547; `ReadBufferSeekCancelConnection` counts
-   many of those). Whether draining small fixed-length remainders (bounded by bytes and a very short
-   deadline, never in cancellation/shutdown/chunked/unknown-length cases) would help is decided by the
-   reason counters from step 1, not assumed; it stays in the backlog until then.
-5. **Not a fix, but not nothing:** lowering `disk_connections_soft_limit`/`store_limit` does not help
-   (they gate keeping, not creating); the hard limit does stop creation and turns port pressure into
-   `HTTP_CONNECTION_LIMIT_REACHED` — insufficient for lease safety, not ineffective.
-
-## Documentation {#docs}
-
-`docs/en/antalya/cas/configuration.md`: the CAS client profile values, the precedence (explicit disk
-XML > changed `s3_http_keep_alive_*` > CAS defaults), and the effective `0.8 ×` / `0.1 ×` pool ages.
-
-## Tests, in the order they are written and made to pass {#tests}
-
-1. `HTTPConnectionPool.ResetAndExpiredReasonsAreCounted` (pool unit tests): each branch of
-   `atConnectionDestroy` and `wipeExpired` increments exactly its reason counter. Fails until the
-   counters exist. One branch is unreachable from a single-threaded test and is documented in the test
-   instead: `DiskConnectionsResetPreserveException` — `atConnectionDestroy` releases the destroyed
-   connection's own group slot before it creates the storage wrapper, so the wrapper's hard-limit check
-   cannot see the group at the limit; only a cross-thread race or a fault-injection hook could throw
-   there (implementation finding, 2026-09-05).
-2. The spike (step 2), recorded in this spec's implementation record as a before/after table with the
-   reason breakdown; the shipped values are taken from it.
-3. `S3ObjectStorageProfile.CasDefaultsApplyOnlyWhenUnset` (new `src/Disks/tests/gtest_cas_s3_client_profile.cpp`,
-   exercising the public `S3ObjectStorage` configuration — the `src/IO/S3/tests` location would cross
-   the stated boundary): a
-   `metadata_type = cas` disk without the settings gets the profile values; explicit disk values and a
-   changed `s3_http_keep_alive_timeout` win; a non-CAS disk is untouched; `applyNewSettings` preserves
-   the profile.
-4. `RegisterDiskObjectStorage.CasProfileReachesTheS3Creator` (factory wiring): the flag derived from
-   `metadata_type` reaches the creator.
-5. Optional, only if an end-to-end reuse proof is still wanted: an integration test with a short
-   test-specific keep-alive (not a 20 s sleep) showing `DiskConnectionsReused` +1 across an idle gap on
-   the `test_cas_gcs` fake.
+1. **Reset/Expired reason counters — implemented, then reverted; not in `antalya-26.6`.** Ten DISK-only
+   `ProfileEvents` landed on `cas-gc-rebuild` (`054c2b9407a` "cas: count disk connection resets and
+   expiries by reason", with `gtest_connection_pool.cpp` coverage) and were deliberately dropped one
+   commit range later (`2f03984e027`/`5a53310ee82` "cas: drop the connection-pool reason counters"):
+   the maintainer's stated reason is that this diagnostic touched `src/Common/HTTPConnectionPool.*`
+   outside CAS-owned code for a one-time attribution need the shipped fix does not depend on. Neither
+   the add nor the revert reached `altinity/antalya-26.6`. **Consequence:** decision 4 below can no
+   longer be "justified by the reason counters" as originally planned — that dependency is broken; a
+   future read-path investigation needs its own instrumentation or must re-add these events.
+2. **The A/B spike — run, recorded below, baseline invalid.** Ten runs on a real
+   rustfs `1.0.0-rc.3` stand are recorded verbatim in [Implementation record](#implementation-record)
+   below. Verdict reached: `ExpiredMaxRequests` (the 100-request
+   keep-alive rotation) is the dominant, mechanistic cause of the churn, not `Reset`; raising
+   `http_keep_alive_max_requests` to 10000 removes it. But the spec's own strict rule ("baseline is
+   valid only if it reproduces port pressure") was **not met**: zero `EADDRNOTAVAIL`, TIME_WAIT peak
+   ≤ 11.9% of the range, likely because rustfs sat on loopback with `net.ipv4.tcp_tw_reuse=2` masking
+   TIME_WAIT pressure a real network hop would not mask, and because the stand's request rate was one
+   to two orders of magnitude below the reporter's incident. **This is a genuine open point**: nobody
+   has since redone the spike over a non-loopback path at the reporter's rate, and no BACKLOG entry
+   tracks it (see below).
+3. **The keep-alive mitigation shipped — as an operator config recommendation, not as code.** The
+   plan's mechanism (a `S3ClientProfile`/`ObjectStorageCreateHints` default-injection seam in
+   `ObjectStorageFactory`/`RegisterDiskObjectStorage`/`S3ObjectStorage`) was **never implemented**; grep
+   for `S3ClientProfile`, `applyClientProfileDefaults`, `ObjectStorageCreateHints`,
+   `casClientProfileHintFor` in `src/` on both `cas-gc-rebuild` and `altinity/antalya-26.6` returns
+   nothing. Instead, `http_keep_alive_timeout=30` / `http_keep_alive_max_requests=10000` are recommended
+   directly on every CAS S3 disk's own XML (`05e7fc2bdee` "cas: recommend the keep-alive settings on
+   every CAS S3 disk config, in docs and tests", `3517ab72bfd` follow-up), rewriting
+   `docs/en/antalya/cas/configuration.md` §"Recommended keep-alive settings" and every `test_cas_*`
+   config, the stateless lane's `cas_s3_storage_policy_for_merge_tree_by_default.xml`, and
+   `test_cas_mount_renewal_retry`'s `unsafe_remount.xml`. **This has not reached `altinity/antalya-26.6`
+   yet** — only `cas-gc-rebuild` carries it (verified: `05e7fc2bdee` is not an ancestor of
+   `altinity/antalya-26.6`).
+4. **Read path (draining a buffered remainder) — still open, superseded by dedicated research.** The
+   original plan deferred this "until the reason counters justify it"; a candidate patch exists on
+   unmerged branch `fix/antalya-26.6/s3-drain-buffered-remainder` (`3e0dd5e279d`, pushed to filimonov,
+   citing issue #2332), but `docs/superpowers/cas/2026-09-15-s3-drain-remainder-research.md` (Parts 1–2,
+   already in the tree) found the patch as written recovers at most ~7.8 KiB and is expected to convert
+   near-zero of #2332's multi-MiB remainders, because Poco's session buffer is only ever refilled by the
+   header parser and is empty after the first body read. That research ranks "fix the read range"
+   (`MergeTreeReaderStream::adjustRightMark`/`setReadUntilPosition`) above the buffered-only drain. This
+   whole line of work is tracked only by that dated research note and a generic umbrella-roadmap mention
+   of issue #2332 — no `BACKLOG.md`/`BACKLOG/*.md` bracket-id item names it as a live task.
+5. **Not a fix, but not nothing — unchanged, still true.** Lowering `disk_connections_soft_limit`/
+   `store_limit` does not help (they gate keeping, not creating); the hard limit stops creation but
+   turns port pressure into `HTTP_CONNECTION_LIMIT_REACHED`, insufficient for lease safety.
 
 ## Out of scope {#out-of-scope}
 
-Renewal isolation (a dedicated connection with a keep-alive ping was rejected), spec 1, spec 2, spec 4;
-the read-path drain until reason counters justify it.
+Renewal isolation (a dedicated connection with a keep-alive ping was rejected), spec 1, spec 2, spec 4
+(all landed — see their own outcome).
 
 ## Implementation record {#implementation-record}
 
@@ -226,3 +181,12 @@ not left at its default, because the spike attributes the dominant reason (`Expi
 the spec's own condition for changing that setting. 30 s (not the backlog's 60 s) because it is the
 value actually tested here and sits with room to spare under rustfs's verified >= 75 s idle
 tolerance.
+
+## Open points not tracked elsewhere {#open-points}
+
+- A real (non-loopback), reporter-rate redo of the A/B spike, to get a *valid* baseline — no BACKLOG
+  item names this.
+- Porting the shipped keep-alive recommendation (`05e7fc2bdee`, `3517ab72bfd`) from `cas-gc-rebuild` to
+  `altinity/antalya-26.6`.
+- The read-path drain question, now reduced (by the 2026-09-15 research) to "fix the read range" —
+  needs a BACKLOG item of its own; today it lives only in a dated research doc and issue #2332.
