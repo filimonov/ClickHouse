@@ -53,7 +53,8 @@ benchmark, human-accepted.
   branch. Related, not superseding: audit F9 (view rebuild) and F15/F16 (LIST on directory probes) below.
 - **[B98]/[promote-recreate]** — DONE (provenance only). Unconditional streaming `publishBlob` removed the
   conditional-overwrite API and the tokened promote gate. Evidence: `940b1685bf96` (both cas-gc-rebuild and
-  antalya-26.6).
+  antalya-26.6). Emulated materialization remains tracked separately under
+  `[emulated-resurrect-should-spill-to-disk]`.
 - **[R1/X1] ephemeral reader pin** — KEEP, design-only/VERIFY. Cross-node GC fence for a ref-less reader;
   audit whether such a reader path exists at all before building it.
 - **[ch128ctx] slot-bound blob-hash middle tier** — KEEP, small spec. `cityHash128(content) ∥
@@ -97,6 +98,10 @@ Decided 2026-09-25: see the audit F31 (docs/superpowers/reports/2026-09-25-otel-
 Stage 1 took the wide 10M×30col×500part CA-S3 `INSERT` from 58.41s to 30.26s; still ~87% network-bound.
 Remaining candidates:
 
+Reports: `docs/superpowers/reports/2026-07-23-cas-wide-insert-baseline.md` (baseline),
+`docs/superpowers/reports/2026-07-24-cas-wide-insert-stage1-effect.md` (stage-1 effect). The older 268.8
+`HEAD`/part estimate predates the unconditional-publication rewrite.
+
 1. **S3-native staging on the wide-insert profile** — MEASURE. Feature exists, opt-in; flip the setting and
    compare.
 2. **S3 client concurrency/connection tuning** — MEASURE. 16-33 concurrent PUT threads may be client-capped.
@@ -122,6 +127,17 @@ dormant), ~100-150 line patch, full hazard inventory done (shared dedup-cache st
 closed. Not landed on either branch (`max_concurrent_part_commits_per_insert` absent from both); not touched
 by the 2026-09-25 audit. Formerly separate, now folded in as the same requirement:
 **[cas-commit-pool-anti-deadlock]** (a `cas_commit_concurrency`-sized bounded worker pool to avoid deadlock).
+
+Agreed scoping (before postponement): (a) `ReplicatedMergeTreeSink` ONLY (the measured path), then (b) a
+non-replicated leg, then (c) the `MergeTreeSink` counterpart as a follow-up. MUST: `deduplication_async_inserts_cache_version`'s
+per-iteration reset is a shared member (`ReplicatedMergeTreeSink.cpp:455`) and must become per-task before any
+fan-out. MUST-remeasure precondition: even a perfect stage 2 was not expected to reach 1.0x because blob
+presence checks consumed ~12% of wall — that estimate must be remeasured under the current mandatory-`HEAD`
+protocol before this is scheduled again. Full path anatomy, the remaining verification items (shared Keeper
+session, shared dedup caches), the quorum-ordering recommendation, the non-replicated `MergeTreeSink` hazard,
+and the rejected alternatives:
+`docs/superpowers/cas/history/2026-09-26-stage2-concurrent-commitpart-hazards.md`.
+
 Revisit only with an explicit user go-ahead.
 
 ### `DataPartsLock`-held DROP/REPLACE PARTITION covering-part publish (2031-triage CAS-048) {#covering-part-publish-under-datapartslock} — KEEP
@@ -149,6 +165,8 @@ then republishes a second, merged manifest body — 2 manifest PUTs, ~4 ledger a
 changed file; a mutation multiplies this by part count. Also emits one audit row per carried-forward leaf on
 repoint. Fix (protocol-adjacent, needs a go-ahead): stage the merged manifest once via the existing two-phase
 `prepareEntries`+`promote` handle. Distinct from audit F2 (the higher-volume `delete_tmp_*` repoint case).
+Compounds `BACKLOG/gc.md`'s `{#ca-log-tables-restart-cost}` (the same audit-row volume feeds the
+restart-health-gate cost there).
 
 Details: docs/superpowers/cas/2031-triage.md#cas-056
 
@@ -167,6 +185,8 @@ backoff, same shape the S3 client already uses. (2) the single-attempt client cl
 shared-slowdown state with the parent. Neither is a correctness issue (bounded,
 `Unresolved`-not-`Committed`). Confirmed unfixed on antalya-26.6. Adjacent: audit
 [F26](/superpowers/reports/otel-demo-cas-s3-budget-audit#f26) (GC LIST bursts correlate with throttling).
+Related, already tracked: `BACKLOG.md`'s `{#issue-2244-lease-retry-asymmetry}` (the lease/remount ops have
+the OPPOSITE problem — no retries at all) and `[timeout-retry RFC residuals]` in `BACKLOG/ref-protocol.md`.
 
 Details: docs/superpowers/cas/2031-triage.md#cas-119
 
@@ -184,9 +204,15 @@ the same as the tracked backpressure item CAS-047.
 
 `PartFolderView::estimatedBytes` returns `256 + manifest_size`, hardwired to 0 by both producers (also 0 on
 antalya-26.6), so the 64 MiB budget degenerates to a 262144-entry cap, above the real 10000-entry cap, and
-the oversized-entry bypass metric can never fire. Memory-accounting only, P2, no correctness impact. Owed:
-weigh the view from its decoded body, delete the dead `manifest_size` field. Adjacent: audit F9/F31 (view
-rebuild frequency) at `{#read-path-repeated-view-lookup-per-open}`.
+the oversized-entry bypass metric can never fire. Both dead: `CurrentMetrics::CASPartFolderCacheBytes`
+reports the same fiction, and the oversized-entry bypass at `Parts/PartFolderAccess.cpp:226` compares 256
+against `part_folder_cache_max_entry_bytes` so `CASPartFolderViewOversizedBypasses` can only ever be zero.
+Memory-accounting only, P2, no correctness impact. Owed: weigh the view from its decoded body, delete the
+dead `manifest_size` field; a gtest should assert a manifest with a large inline body weighs more than an
+empty one (today `gtest_cas_part_folder_view.cpp:50` passes `manifest_size=1000` by hand, which is why the
+unit tests never noticed). Same family as `formats-and-storage.md`'s
+`{#manifest-inline-budget-no-spill}`. Adjacent: audit F9/F31 (view rebuild frequency) at
+`{#read-path-repeated-view-lookup-per-open}`.
 
 Details: docs/superpowers/cas/2031-triage.md#cas-045
 
@@ -195,7 +221,8 @@ Details: docs/superpowers/cas/2031-triage.md#cas-045
 `enforceRefTableCacheBudget` runs only on cold recovery, never on in-place growth, so a hot table set can sit
 above the 256 MiB default indefinitely. Untunable (no `ContentAddressedSettings` entry, no metric);
 `total -= c.weight` is an unclamped subtraction that can underflow and evict every idle table in one pass
-(`clampedCounterSub` exists, unused here). No correctness impact (an evicted table just re-recovers). P3.
+(`clampedCounterSub` exists, unused here). No correctness impact (an evicted table just re-recovers from the
+durable snapshot+log on next touch — `gtest_cas_ref_writer.cpp:2025` pins this). P3.
 Confirmed unfixed on antalya-26.6 (`CasRefLedger.cpp:1736`, antalya-26.6-specific line number).
 
 Details: docs/superpowers/cas/2031-triage.md#cas-053
@@ -242,7 +269,9 @@ after the request-count items above. Adjacent to the owner-decided view-seeding 
 `Cas::readLine`, the sole line reader for every v3 text format (ref snapshot, log, manifest, fold seal, ref
 catalog, GC outcomes), builds each line with a per-character loop and no `reserve`. Constant factor only, no
 correctness/cap change, but sits on the decode side of every GC round and part-manifest open. Fix: scan for
-`'\n'` and `append` whole chunks, reuse a caller-owned `String&`. Confirmed unfixed on antalya-26.6.
+`'\n'` and `append` whole chunks, reuse a caller-owned `String&`. Confirmed unfixed on antalya-26.6. Related,
+already tracked: `{#writepath-cost-txn-final}` covers the WRITE-side allocation audit; this is the
+read/decode side, which that item does not mention.
 
 ## S3 request budget {#s3-request-budget}
 
@@ -260,10 +289,12 @@ roadmap points back here.
 
 Every fresh/adopted blob gets a paired `.meta` freshness marker, doubling object count and LIST enumeration
 for `.bin`/`.mrk*`/`primary.idx` (small metadata inlines and pays nothing, so this is not a "wide part of
-small files" issue generally). P3. Owed: decide whether the marker can be folded (e.g. only on `Condemned`) —
-protocol-adjacent, needs a go-ahead; cheap now: report the body/`.meta` split in `SYSTEM CAS FSCK`. GC-side
-companion: audit [F7](/superpowers/reports/otel-demo-cas-s3-budget-audit#f7), tracked as
-`umbrella-roadmap.md` §2 GC "Cheaper GC per garbage blob (decide)".
+small files" issue generally). On top of that each body carries a padded envelope, a large relative inflation
+of stored bytes for a tiny `.mrk` file — the envelope's own open question is `formats-and-storage.md`'s
+`{#blob-envelope-never-read-back}`. P3. Owed: decide whether the marker can be folded (e.g. only on
+`Condemned`) — protocol-adjacent, needs a go-ahead; cheap now: report the body/`.meta` split in
+`SYSTEM CAS FSCK`. GC-side companion: audit [F7](/superpowers/reports/otel-demo-cas-s3-budget-audit#f7),
+tracked as `umbrella-roadmap.md` §2 GC "Cheaper GC per garbage blob (decide)".
 
 Details: docs/superpowers/cas/2031-triage.md#cas-117
 
@@ -317,8 +348,11 @@ O(N)-amplification findings for the capacity model / future S3-budget push:
   (live-AWS data point: a round is 30-40s). Audit F29 adds one data point (GC snapshot run growth with
   backlog) but not the requested model.
 - **[physical-footprint amplification]** VERIFY, still needs re-derivation (flagged 2026-08-31): the 400×
-  `pool_bytes`/`logical_bytes` figure is rustfs-specific and tiny-object-specific (S01 full-scale measured
-  1.4× on the same backend); check the pin (`rustfs:1.0.0-rc.3`) against the upstream fix before re-citing.
+  `pool_bytes`/`logical_bytes` figure is blamed on `rustfs#3231` (overwrite-version retention) and is
+  rustfs-specific and tiny-object-specific — a directory plus an `xl.meta`, roughly an 8 KB floor for an
+  800-byte object, is the whole story there. Not a safety issue (dangling=0). It does not generalise: S01
+  full-scale measured ~215 GB of logical content into a 308.8 GB rustfs volume, ~1.4× amplification, on the
+  same backend; check the pin (`rustfs:1.0.0-rc.3`) against the upstream fix before re-citing either figure.
   The 2026-09-25 audit uses a real S3 bucket, not rustfs — neither confirms nor refutes this.
 
 Formerly here, now deleted — **[startup O(refs)]** ("~152k S3 ops to start a 10k-table server"):
