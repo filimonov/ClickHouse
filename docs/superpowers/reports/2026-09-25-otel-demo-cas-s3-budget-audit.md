@@ -299,7 +299,7 @@ allocation, "the final catalog admission observation before id allocation", to c
 actor publishes `Removing`. 70,994 `Real` samples in the week sit in that read, ~470k catalog GETs per day (one per
 flush, `CASRefBatchFlushes`), the bulk of the 480-700k `CASOtherGet` per day. The catalog is 32 KB here (217
 uploads since 09-14, last on 09-16). The cost is not bytes but a third serial round trip on the lane's critical
-path: flush = catalog GET + `_log` PUT + `_ckpt` PUT, which bounds the lane at ~5 flushes/s and is the mechanism
+path: flush = catalog GET + `_ckpt` GET (F30) + `_log` PUT + `_ckpt` PUT, which bounds the lane at ~5 flushes/s and is the mechanism
 behind the 748 ms insert wait. The read is a licence, deliberate per its comment. Candidates for the owner: a
 conditional GET (`If-None-Match` on the cached etag) keeps the observation and drops the body; issuing the catalog
 read concurrently with the `_log` PUT and checking before `_ckpt` keeps the fail-closed order for the checkpoint
@@ -499,6 +499,33 @@ retired-entry carry (F3, F19): the run holds the whole condemned backlog and is 
 ~12 MiB; under spec C's short rounds the per-round rewrite is paid many more times per day, which is the
 `[gc-snapshot-log-structured-runs]` backlog item's cost line. At this pool's size it is seconds per round; at
 100M blobs the O(universe) rewrite would be the round's floor.
+
+### F30. `part_log` over the week: write latency is flat and fully explained; a flush is four round trips, not three {#f30}
+Per day 100-143k `NewPart`, 32-54k `MergeParts`, 132-196k `RemovePart`; `RemovePart` has no duration. Latency did
+not move while GC degraded: `NewPart` p50 364-386 ms, p90 422-456, p99 505-594 every day; `MergeParts` p50
+547-617 ms, p90 804-925. Seven `NewPart` errors in the week, all "The part was deduplicated" (replicated insert
+dedup). One outlier: a 693 s merge of `system.metric_log` (464k rows, 417 MiB, 4,288 GETs, 103 s of S3 read, the
+rest CPU on a two-core box), not CAS.
+
+Where a part publish spends its 389 ms (`ProfileEvents` on the `NewPart` row, weekly averages): 249 ms waiting on
+the ref lane, 125 ms in 5 S3 reads (25 ms each), ~15 ms everything else; the blob PUTs run on fan-out threads and
+are not attributed. The 5 reads, from `trace_log` chains of the writer threads:
+- 2 catalog GETs: the writer thread leads two lane flushes (precommit, promote) and `commitRefChunk` reads the
+  catalog on each (F20).
+- 2 `_ckpt` GETs: `publishCkpt` is `op.readModifyWrite(key, ...)` (`CasRefCkpt.cpp`), a read of the checkpoint
+  before its conditional write, once per flush. So a flush is **four** serial round trips: catalog GET, `_ckpt`
+  GET, `_log` PUT, `_ckpt` PUT; F20 counted three.
+- 1 manifest GET: `PartWriteTxn::promote` re-reads the manifest body this same writer staged seconds earlier
+  ("read + validate the manifest body ONCE", fail-closed on absence), and after the commit the part loader
+  rebuilds the folder view from the manifest again (`getSkipIndicesPackedReader` → `existsFile` → `getView`
+  → `readManifestShared`, F9).
+A merge spends 621 ms: 229 ms on the lane, 291 ms in 11 reads (3 folder-view rebuilds among them).
+
+Candidates, all writer-side and outside the GC spec: (a) cache the last known `_ckpt` etag and body per life and
+write optimistically, re-reading only on 412 (the two replicas conflict ~115 times a day out of 470k flushes),
+one round trip per flush saved; (b) seed the part-folder view from the staged manifest instead of re-reading it
+after promote, one GET per part; (c) F20 for the catalog GET. Together they take a flush from four round trips to
+two and a publish from five reads to at most two, without touching what is written or when.
 
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
