@@ -277,6 +277,47 @@ Verdict: no CAS anomaly in CPU or memory; the Real profile confirms the write pa
 latency and the ref lane's serial flushes, and points at the same levers as F2 and F5 plus the write-buffer sizing.
 
 
+### F19. `trace_log` over the week (09-18 to 09-25): the write path is flat, GC memory is the one trend {#f19}
+Volume: ~6M `Real`, ~1M `Memory`, ~5k `CPU` samples per day. CPU: CAS 10-14% of samples every day, GC 1.5-2%, no
+drift while GC rounds went from 50 min to 5 h; the largest CAS CPU class is `ObjectStorageBackend::readUnder`
+(small-object reads and their decode), 47% of CAS CPU. Real wait classes per day are flat within ±15%:
+ref-lane wait (`appendRefOpsOnRuntime`) 56-73k samples, S3 PUT completion wait (`TaskTracker::waitAll` under a CAS
+frame) 39-50k, blob fan-out wait 12-15k, CAS mutex waits <110, retry sleeps <25. Only `gc_busy` grew (5.9k → 7.9k),
+which is the GC thread's own duty cycle. So the GC degradation did not touch the writers.
+
+Memory is the one weekly trend: tracked average 1.26 → 2.32 GiB, resident average 3.09 → 3.76 GiB, resident
+maximum 3.71 → 4.68 GiB on a 6.3 GiB box with a 5.36 GiB limit. The hourly tracker shape explains it: it rises
+through `defer_decision` and `fold_ref_intake` and drops by ~1.2 GiB at every round boundary (03:00, 08:00, 12:00,
+13:00 on 09-25; today 374 MiB idle at 15:44 → 2.45 GiB in intake at 16:30). The round holds the whole ref-prefix
+listing in memory (`listRefPrefix` retains it for `fold_ref_group`): 4.6M keys × ~250 bytes ≈ 1.2 GiB, plus the
+walk plan and the retired set. GC memory is O(listed keys); spec B1 removes the global listing and with it this
+footprint. Until then a pool with a large `_log` backlog on a small node is one GC round away from the memory limit.
+
+### F20. CONFIRMED. Every ref-lane flush reads the pool catalog {#f20}
+`CasRefLedger::commitRefChunk` (`positive_append` branch) does `CasRefCatalog::read` immediately before id
+allocation, "the final catalog admission observation before id allocation", to close the window in which another
+actor publishes `Removing`. 70,994 `Real` samples in the week sit in that read, ~470k catalog GETs per day (one per
+flush, `CASRefBatchFlushes`), the bulk of the 480-700k `CASOtherGet` per day. The catalog is 32 KB here (217
+uploads since 09-14, last on 09-16). The cost is not bytes but a third serial round trip on the lane's critical
+path: flush = catalog GET + `_log` PUT + `_ckpt` PUT, which bounds the lane at ~5 flushes/s and is the mechanism
+behind the 748 ms insert wait. The read is a licence, deliberate per its comment. Candidates for the owner: a
+conditional GET (`If-None-Match` on the cached etag) keeps the observation and drops the body; issuing the catalog
+read concurrently with the `_log` PUT and checking before `_ckpt` keeps the fail-closed order for the checkpoint
+only; relying on `invalidateRemovedCatalogLife` for the ordinary case and reading only when the runtime is
+older than N seconds bounds the window instead of closing it. Same licence class as B3.
+
+### F21. CONFIRMED. `system.detached_parts` polling reads the catalog twice per table and disk {#f21}
+`MergeTreeData::getDetachedParts` → `existsDirectory(<table>/detached)` → `DetachedContainer` →
+`hasAnyRefWithPrefix` → `acquireReadableRefTableRuntime` cold path (two catalog GETs, first and revalidation) for
+every table on every CAS disk of its policy, whether or not the table lives there. 1,300-2,800 such queries per day,
+none in `query_log` (the `clickhouse_operator` user, 25k HTTP logins per day, log_queries off), 27,632 `Real`
+samples in the week, ~0.9 s per query, ~150-200k catalog GETs per day. The remaining ~37k per day are
+`namespaceStillLogicallyPresent` from `clearOldTemporaryDirectories` (`existsDirectory(<table dir>)`, one to
+three catalog reads per table per minute). Together with F20 these three callers account for the whole
+`CASOtherGet` volume. Fix family as F15/F16: a directory probe on a namespace this node holds no runtime for
+should be answered from a per-node catalog snapshot with etag revalidation, not two fresh GETs per probe.
+
+## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
   post-restart GET storm entirely and should go first.
@@ -300,7 +341,8 @@ itself. Ranked by what the number says about the system, not by its size.
 | 5 | 3.3 GET per log in intake, 2.2 of them manifest bodies read up to four times per part lifetime; 29% of all GETs | structural and self-reinforcing: the longer the round, the more publish/repoint/drop of one part share a round | spec A4 (per-round body memo); F2 removes half the reads at the source | spec A4 + writer task |
 | 6 | 88 ms per LIST request, ~3 requests per 1000-key page | if confirmed, every LIST in the system is 3x, including the janitor and stage B's per-life lists | verify `max_keys` in `S3ObjectStorage::iterate` before B | spec verification item |
 | 7 | 77k LISTs and `503 Slow Down` on every restart | one S3 LIST per part file at load, a classifier fall-through (F15); the same path is the constant 155 LIST / 10 min (F16) | `PartFile` shape answered from the part-folder view; cache namespace files | writer/disk task, outside the GC spec |
-| 8 | `pending_reclaim = -388,242` | the only backlog column an operator has is process-local and goes negative after a restart | spec C5 (from the seal's `CondemnedSummary`) | spec C5 |
+| 8 | one catalog GET per ref-lane flush, 470k/day, a third serial round trip on the lane (F20); GC round memory O(listed keys), resident max 3.7 → 4.7 GiB over the week (F19) | the lane's throughput bound is three serial S3 round trips per flush; a GC round on a backlogged pool can reach the memory limit of a small node | F20 licence candidates for the owner; F19 closed by spec B1 | owner decision; spec B1 |
+| 9 | `pending_reclaim = -388,242` | the only backlog column an operator has is process-local and goes negative after a restart | spec C5 (from the seal's `CondemnedSummary`) | spec C5 |
 
 Not a concern: $16/day, 70% of GC dollars in condemn-marker PUTs, HEAD-before-PUT misses. Protocol by design, and it
 held: `dangling = 0`, invariants clean, no loss in a week of deliberate churn.
