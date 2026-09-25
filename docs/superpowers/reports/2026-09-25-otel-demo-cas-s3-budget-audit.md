@@ -239,8 +239,22 @@ was cancelled, `WriteBufferFromS3 was canceled`), `StatusFile ... unclean restar
 so the new process observed the predecessor's write-token for 36.5 s before reclaiming (15:38:31 → 15:39:11), and the
 mount opened as "predecessor whose death was not proven clean" with a recovery seal. The GC round in progress
 (1383: 2 h 38 min of intake and reduce) was lost, which is inherent to the one-pass round and is what spec C3 bounds.
-Who sends the second signal is not visible from the server: check the pod's `preStop` hook and whether the operator's
-restart path signals the process group as well as PID 1. The `Listen ... Address already in use` warnings at 15:38:10
+Who sends the second signal, resolved from the operator's log (`Logs-2026-09-25 20_17_05.txt`, clickhouse-operator
+0.27.2): the config change marked the host for a software restart (`shouldForceRestartHost: Config change(s) require
+host restart`), the operator excluded the host and waited for queries (15:38:09 to 15:38:27), then ran
+`HostShutdown()` (`schemer.go:188`) at 15:38:27.592, that is `SYSTEM SHUTDOWN` on the host, and logged "software
+shutdown ok" 4 ms later. ClickHouse implements `SYSTEM SHUTDOWN` as `kill(0, SIGTERM)`
+(`InterpreterSystemQuery.cpp:419`), a signal to the whole process group. In the container that group holds the
+watchdog (PID 1, "Will watch for the process with pid 13") and the server; the watchdog forwards every signal it
+receives except `SIGINT` to the child (`BaseDaemon.cpp`, "Forward all signals except INT as it can be sent by
+terminal to the process group ... and we process double delivery of this signal as immediate termination"). So the
+child receives `SIGTERM` twice within a millisecond, once directly and once forwarded, and the second delivery is
+by design an immediate termination (`SignalHandlers.cpp`, `terminate_requested > 1`). Every `SYSTEM SHUTDOWN` under
+the watchdog is therefore an unclean shutdown, on any ClickHouse, not only on CAS; the operator's software-restart
+path triggers it on every config change. Fixes: upstream, `SYSTEM SHUTDOWN` should signal its own pid
+(`kill(getpid(), SIGTERM)`) or the watchdog should skip forwarding a signal whose `si_pid` is the child's; operator
+side, a pod delete (kubelet signals PID 1 only, forwarded once) is graceful where `SYSTEM SHUTDOWN` is not. The
+CAS-side asks stay: drain the ref lane and release the lease on the first `SIGTERM`. The `Listen ... Address already in use` warnings at 15:38:10
 and 15:40:39 are the usual dual-stack artifact (`::` and `0.0.0.0` both configured), not related.
 
 ### F18. `trace_log` review, 37 minutes after the 15:38 restart: CPU, Real, Memory {#f18}
