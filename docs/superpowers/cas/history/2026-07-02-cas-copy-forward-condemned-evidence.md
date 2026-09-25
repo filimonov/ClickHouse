@@ -1,11 +1,22 @@
-# CAS: verified copy-forward for condemned evidence deps — spec + plan
+---
+description: 'History: the 2026-07-02 design and plan for verified copy-forward of condemned evidence blobs, landed the same day and later superseded by the EDGE-BEFORE-OBSERVE redesign folded into CasPartWriteTxn.'
+sidebar_label: 'Copy-forward for condemned evidence (history)'
+sidebar_position: 1
+slug: /superpowers/cas/history/copy-forward-condemned-evidence
+title: 'CAS history: copy-forward for condemned evidence'
+doc_type: 'reference'
+---
+
+> **Superseded (moved to history):** the copy-forward mechanism this document specifies and records as landed (`copyForwardFromCondemned`, `CasEventType::BlobCopyForward`, `ProfileEvents::CasBlobCopyForward`) was later redesigned into the EDGE-BEFORE-OBSERVE / EDGE-BEFORE-TRUST scheme inside `CasPartWriteTxn.cpp` (commits `7d90f7b4812`, `12c5fbe1c99`, `29145ba1c74`, `c2359dfe804`). None of the three identifiers above exist in the current tree. Kept here as the RCA record for the original 2026-07-02 permanently-readonly-replica incident, which is not duplicated elsewhere.
+
+# CAS: verified copy-forward for condemned evidence deps — spec + plan {#cas-verified-copy-forward-for-condemned-evidence-deps}
 
 **Status:** APPROVED 2026-07-02 (user: "Если TLA+ модель подтвердит что это безопасно — ок";
 Task 0 is that gate). **Branch:** `cas-copy-forward` off `cas-gc-snapshot-streaming`.
 **Scope constraint (user, verbatim):** no `ReplicatedMergeTree` changes — the fix lives entirely
 in the CA layer.
 
-## Problem
+## Problem {#problem}
 
 Soak run 3 (2026-07-02): a replica restart leaves a table readonly PERMANENTLY. Chain:
 `ReplicatedMergeTreeAttachThread::runImpl` → `checkParts` → `renameToDetached` (part CA-committed
@@ -21,7 +32,7 @@ attach; the abort is a liveness brick, not a safety save.
 each fail-closed. The "(no source): propagates ABORTED (retryable)" assumption in `observeAndAdmit`
 is false for this caller.
 
-## Rejected alternatives (why copy-forward)
+## Rejected alternatives (why copy-forward) {#rejected-alternatives}
 
 - **Recreate from the writer's local files** — does not exist: a CA part's "files" ARE the pool
   blobs; there is no independent source on the move path.
@@ -33,7 +44,7 @@ is false for this caller.
   `SabotageAdoptRetiredToken`'s counterexample is exactly the prepare→land window around a
   graduating pass. Binding a listed token is never safe.
 
-## Fix: verified copy-forward
+## Fix: verified copy-forward {#fix-verified-copy-forward}
 
 A dep recorded by `adoptEvidence` always originates from a COMMITTED manifest (all four call
 sites: `republishRef`, the fetch receiver, part copy, per-file copy) — the blob is reachable
@@ -57,7 +68,7 @@ aborting and instead **copies the incarnation forward**:
 Sourced paths (`putBlob`, tree recreate) keep re-upload-from-source unchanged. Callers other than
 `adoptEvidence` (bodyless gate deps) keep the abort.
 
-### Invariant amendment (recorded in `feedback_ca_resurrect_invariant` memory + docs)
+### Invariant amendment (recorded in `feedback_ca_resurrect_invariant` memory + docs) {#invariant-amendment}
 
 "Never read/GET a condemned object to revive it" gains one narrow exception: **verified
 copy-forward of a condemned incarnation that is still referenced by a live committed manifest** —
@@ -66,7 +77,7 @@ verification on read (envelope + recomputed logical hash == key hash), (c) token
 `putOverwrite@observed-token`; every failure mode stays fail-closed (`ABORTED`), never a blind PUT,
 never `putIfAbsent` after a lost delete race.
 
-### TLA+ correspondence (Task 0 gate)
+### TLA+ correspondence (Task 0 gate) {#tla-correspondence}
 
 `CaGcAckFloorCore`'s `WPrepare` recreate branch already models "mint a fresh incarnation while the
 entry is visible, bind only the fresh token" — the byte source is below the model's abstraction,
@@ -79,9 +90,9 @@ a `W_CopyForwardHappens` witness. Required results: stage-1 clean run stays clea
 (`INV_NO_DANGLE`, `INV_NO_RETURN`, `INV_ACK_LE_VIEW`), the witness fires, and every existing
 sabotage cfg still produces its counterexample.
 
-## Plan
+## Plan {#plan}
 
-### Task 0 — TLA+ gate
+### Task 0 — TLA+ gate {#task-0-tla-gate}
 - `docs/superpowers/models/CaGcAckFloorCore.tla`: add `copyForwardEver` flag, `WCopyForward(w, b)`
   (guards: live, `wPending = {}`, `nextTok ≤ MaxTok`, `present[b]`, visible entry for the CURRENT
   token; transition: same fresh-mint + bind as the recreate arm), wire into `Next`, add
@@ -90,7 +101,7 @@ sabotage cfg still produces its counterexample.
 - Add `CaGcAckFloorCore_witness_copyforward.cfg`; rerun `run_ackfloor.sh` (stage-1 clean + all
   sabotages + witnesses). Gate: clean stays clean, witness fires, sabotages still fire. Commit.
 
-### Task 1 — failing-first repro (red)
+### Task 1 — failing-first repro (red) {#task-1-failing-first-repro}
 - `src/Disks/tests/gtest_cas_build.cpp`, InMemory backend, mirrors `republishRef` line-for-line:
   publish part A over blob X → run a GC round (edges fold) → `dropRef` A → run rounds until X's
   entry is condemned in the retired list → with a STALE-view store handle, publish part B adopting
@@ -99,7 +110,7 @@ sabotage cfg still produces its counterexample.
   Assert the post-fix contract (promote succeeds; dep token ≠ old token) so the test is red now,
   green after Task 2. Commit as failing (`git commit` with `[expected-red]` note in message).
 
-### Task 2 — implementation (green)
+### Task 2 — implementation (green) {#task-2-implementation}
 - `Core/CasBuild.{h,cpp}`: mark deps recorded by `adoptEvidence` (the existing tokened/tokenless
   distinction in `DepEntry` already separates them — reuse it); in `observeAndAdmit`'s condemned
   branch, tokenless-evidence deps take `copyForwardFromCondemned(kind, hash, key, hr)` (new,
@@ -112,7 +123,7 @@ sabotage cfg still produces its counterexample.
   fsck-style dangle check = 0).
 - Repro from Task 1 green. Full `Cas*` gtest suite green. Commit.
 
-### Task 3 — observability + docs + sweep
+### Task 3 — observability + docs + sweep {#task-3-observability-docs-sweep}
 - `CasEventType::BlobCopyForward` (emitted in the primitive) + `ProfileEvents` counter
   (`CasBlobCopyForward`); extend the `gtest_cas_event_log.cpp` coverage for the new event.
 - Docs: `docs/superpowers/cas/02-write-path.md` (or the invariants section that states INV-1) gets
@@ -121,11 +132,11 @@ sabotage cfg still produces its counterexample.
 - Update `feedback_ca_resurrect_invariant` memory with the exception, `project_ca_gc_ack_floor_fence`
   memory with the outcome. Full suite + full link if `Core` headers changed. Commit.
 
-### Validation (queued, not in this plan)
+### Validation (queued, not in this plan) {#validation}
 Fresh soak run on a clean pool replays the S13-adjacent kill-restart chaos; the attach path must
 recover (grep for `BlobCopyForward` events + zero "table will remain readonly" without recovery).
 
-## Implementation notes (landed 2026-07-02)
+## Implementation notes (landed 2026-07-02) {#implementation-notes}
 
 Landed on `cas-copy-forward` (Tasks 0-3). Deviations and findings, all deliberate:
 
