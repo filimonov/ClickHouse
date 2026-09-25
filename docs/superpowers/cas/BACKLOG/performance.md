@@ -61,14 +61,14 @@ benchmark, human-accepted.
   conditional-overwrite API and the tokened promote gate. Evidence: `940b1685bf96` (both cas-gc-rebuild and
   antalya-26.6). Emulated materialization remains tracked separately under
   `[emulated-resurrect-should-spill-to-disk]`.
-- **[R1/X1] ephemeral reader pin** — KEEP, design-only/VERIFY. Cross-node GC fence for a ref-less reader;
+- **[R1/X1] ephemeral reader pin** — KEEP, design-only/VERIFY. Per-server-owned namespaces narrow the window and a live ref resolving to an absent object surfaces `FILE_DOESNT_EXIST` (`INV-NO-DANGLE`), so for normal MergeTree this is covered by `DataPart` lifetime. Cross-node GC fence for a ref-less reader;
   audit whether such a reader path exists at all before building it.
 - **[ch128ctx] slot-bound blob-hash middle tier** — KEEP, small spec. `cityHash128(content) ∥
   xxh3_64(part_name, file_name) ∥ size` (256-bit; variable-width `BlobDigest` already supports it) closes the
-  cross-slot dedup-collision vector at ~zero cost. Every load-bearing dedup survives: relink/carry-forward are
+  cross-slot dedup-collision vector at ~zero cost. The realistic adversarial dedup vector is attacker-crafted content deduped into a victim's future blob. Every load-bearing dedup survives: relink/carry-forward are
   reference-based; retry idempotency, same-name replica writes, and snapshot-upload→TTL-move prepayment are
   same-slot; only cross-slot content coincidence is lost (an explicit non-goal, `01 §what-it-does-not-buy`).
-  Main touch: the staged-blob hasher/request construction needs `(part_name, file_name)` context before
+  Middle tier of `cityHash128` → `ch128ctx` → `sha256`. Main touch: the staged-blob hasher/request construction needs `(part_name, file_name)` context before
   `ensureBlobPresent`. Not landed on either branch. Origin: `10-backups.md §multi-disk` (2026-07-14).
 - **[codex-26] `casAppendObject` before any concurrent appender** — KEEP, LOW/latent. A fresh-token/
   stale-payload lost-update shape (2026-07-17 codex-review triage, finding №26). Not reachable today
@@ -129,7 +129,7 @@ Reports: `docs/superpowers/reports/2026-07-23-cas-wide-insert-baseline.md` (base
 
   Decided 2026-09-25: see the audit F31 (docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f31); the three items are one owner decision.
 
-One former item here is resolved elsewhere, not by this file: "repoint waste on part removal" is
+One former item here is resolved elsewhere, not by this file: "repoint waste on part removal" (formerly: repoints against `delete_tmp_*` refs ≈ 22% of the writer `PUT` class) is
 superseded by audit [F2](/superpowers/reports/otel-demo-cas-s3-budget-audit#f2) and
 `umbrella-roadmap.md`'s "Remove a part in one transaction" (decided).
 
@@ -292,6 +292,8 @@ correctness/cap change, but sits on the decode side of every GC round and part-m
 `'\n'` and `append` whole chunks, reuse a caller-owned `String&`. Confirmed unfixed on antalya-26.6. Related,
 already tracked: `{#writepath-cost-txn-final}` covers the WRITE-side allocation audit; this is the
 read/decode side, which that item does not mention.
+
+Details: docs/superpowers/cas/2031-triage.md#cas-127
 
 ## S3 request budget {#s3-request-budget}
 
