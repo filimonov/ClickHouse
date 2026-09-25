@@ -198,6 +198,38 @@ Listed keys 4,576,640 (08:32) then 4,584,514 (13:29) while three rounds deleted 
 be 0 for this family; the cleanup is batch deletes (200k keys in 200 s), so an unbounded pass over 4.6M keys is
 about 75 minutes once, not a risk.
 
+### F15. CONFIRMED. Every restart issues one S3 LIST per part file: 77k LISTs in three minutes, S3 answers `503 Slow Down` {#f15}
+Restart of 2026-09-25 15:38 (and the one of 09-24 16:41, same 61k-LIST burst in `metric_log`): `S3ListObjects`
+19k + 40k + 18k in 15:40-15:42, all `CASRootList`; 537 `503 Slow Down` / `Service Unavailable` lines, 139 failed
+uploads in `blob_storage_log` (108 of them ref-lane writes), `Ready for connections` 2 min 11 s after start.
+Call chain from `trace_log` (111 of 116 sampled LIST stacks): `IMergeTreeDataPart::loadColumnsChecksumsIndexes` →
+`checkConsistency` → `MergeTreeDataPartChecksum::checkSize` → `existsDirectory(<part>/<file>)` (upstream asks this
+for every checksum entry to skip projection directories) → `ContentAddressedMetadataStorage::existsDirectory` →
+`classifyDirectory` falls through to `TableSubdir` (a part-file path that is not a projection dir is not returned by
+the part branch, so `parseTableFilePath` matches on the uuid) → `CasPlainObjects::listNamespaceFiles` → one LIST of
+the namespace's verbatim-files prefix. 1,672 parts × ~40 files ≈ 67k LISTs, plus outdated parts loaded by
+`AsyncLoader`. Fix: give `classifyDirectory` a `PartFile` shape for `<table>/<part>/<file>` and answer
+`existsDirectory` from the part-folder view (`view->hasDirectory(file)`, the same call `ProjectionDir` uses); no LIST.
+A LIST-heavy startup also delays `Ready for connections` and, at 10k tables, would throttle the whole pool.
+
+### F16. CONFIRMED. The constant 155 LISTs per 10 minutes are `clearOldTemporaryDirectories` {#f16}
+`MergeTreeData::clearOldTemporaryDirectories` → `iterateDirectory(table dir)` → `listDirectory` (`TableDir` shape)
+→ `listNamespaceFiles`, once per table per minute: 26 tables ≈ 156 per 10 min, matching the baseline exactly. $0.11/day
+here; at 10k tables it is 60k LISTs per hour. Same fix family as F15: table-level verbatim files change on CREATE /
+ALTER only and can be served from a per-namespace cache invalidated by `putNamespaceFile` / `removeNamespaceFile`,
+or the temporary-directory sweep can ask `listRefs` for `tmp_*` refs instead of listing files.
+
+### F17. CONFIRMED. The restart was an immediate termination: two `SIGTERM` 0.4 ms apart {#f17}
+Pod log: `Received termination signal (Terminated)` and `Received second termination signal (Terminated). Immediately
+terminate.` at 15:38:27.595 and 15:38:27.596. Consequences: no shutdown drain (the ref lane's in-flight `_ckpt` write
+was cancelled, `WriteBufferFromS3 was canceled`), `StatusFile ... unclean restart`, the CAS mount lease looked stale
+so the new process observed the predecessor's write-token for 36.5 s before reclaiming (15:38:31 → 15:39:11), and the
+mount opened as "predecessor whose death was not proven clean" with a recovery seal. The GC round in progress
+(1383: 2 h 38 min of intake and reduce) was lost, which is inherent to the one-pass round and is what spec C3 bounds.
+Who sends the second signal is not visible from the server: check the pod's `preStop` hook and whether the operator's
+restart path signals the process group as well as PID 1. The `Listen ... Address already in use` warnings at 15:38:10
+and 15:40:39 are the usual dual-stack artifact (`::` and `0.0.0.0` both configured), not related.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
@@ -221,7 +253,8 @@ itself. Ranked by what the number says about the system, not by its size.
 | 4 | 7,100 of 8,800 s of `fold_reduce` are an inline GET that a persisted flag would remove | `marker_confirmed` exists in the run format but is never set on carry; in-process memory hid a durable-state gap | spec A0, one line | spec A0 |
 | 5 | 3.3 GET per log in intake, 2.2 of them manifest bodies read up to four times per part lifetime; 29% of all GETs | structural and self-reinforcing: the longer the round, the more publish/repoint/drop of one part share a round | spec A4 (per-round body memo); F2 removes half the reads at the source | spec A4 + writer task |
 | 6 | 88 ms per LIST request, ~3 requests per 1000-key page | if confirmed, every LIST in the system is 3x, including the janitor and stage B's per-life lists | verify `max_keys` in `S3ObjectStorage::iterate` before B | spec verification item |
-| 7 | `pending_reclaim = -388,242` | the only backlog column an operator has is process-local and goes negative after a restart | spec C5 (from the seal's `CondemnedSummary`) | spec C5 |
+| 7 | 77k LISTs and `503 Slow Down` on every restart | one S3 LIST per part file at load, a classifier fall-through (F15); the same path is the constant 155 LIST / 10 min (F16) | `PartFile` shape answered from the part-folder view; cache namespace files | writer/disk task, outside the GC spec |
+| 8 | `pending_reclaim = -388,242` | the only backlog column an operator has is process-local and goes negative after a restart | spec C5 (from the seal's `CondemnedSummary`) | spec C5 |
 
 Not a concern: $16/day, 70% of GC dollars in condemn-marker PUTs, HEAD-before-PUT misses. Protocol by design, and it
 held: `dangling = 0`, invariants clean, no loss in a week of deliberate churn.
