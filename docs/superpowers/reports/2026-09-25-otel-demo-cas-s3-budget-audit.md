@@ -120,6 +120,17 @@ repeated deletes; the `deleted_or_absent` outcome cannot distinguish, and does n
 22k LIST/day outside GC from `listMounts` / server-roots walks (`CasServerRoot.cpp:1036, 1140, 1186`) and `rootsPrefix`
 directory listings (`CasPool.cpp:1926`). $0.11/day; only worth a look if `cas_mounts` is polled by a dashboard.
 
+### F13. CONFIRMED. `cas_mounts.pending_reclaim` goes negative after a restart {#f13}
+Observed `-388242` on 2026-09-25 13:37: the counter is condemned minus executed deletes for the current process
+(`CasGcScheduler.h`), and after a restart the process deletes a backlog it never condemned. Spec C5 replaces it with
+the seal's `CondemnedSummary`; until then the column is not a backlog measure.
+
+### F14. CONFIRMED. With `cas_gc_round_ref_cleanup_budget = 200000` the `_log` population still grows
+Listed keys 4,576,640 (08:32) then 4,584,514 (13:29) while three rounds deleted 600k keys: both replicas append
+(~440k/day each on this stand), so ~880k new keys/day against 600k deleted at three rounds per day. The budget must
+be 0 for this family; the cleanup is batch deletes (200k keys in 200 s), so an unbounded pass over 4.6M keys is
+about 75 minutes once, not a risk.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
