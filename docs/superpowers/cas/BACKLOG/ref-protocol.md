@@ -14,165 +14,128 @@ protocol: rev.6 lease-boundary exclusivity, ref-log recovery, and the ref-lane s
 
 ## Rev.6 lease-boundary exclusivity (highest-priority open design) {#ref-protocol-rev6}
 
-- **[Late Predecessor PUT] cross-epoch late-materialization correctness limitation** — HARD — The hazard rev.6 closes: a fenced predecessor's in-flight PUT can materialize below successor snapshot coverage (a missed `−1`/`+1` = data-loss class). Phase-1 documents it; the fix LANDED as the v9 in-band `EpochSeal` (INV-2, Stage A). `CasRefLatePredecessorObserved` (B4) is deleted from the tree (a historical comment in `gtest_cas_ref_writer.cpp` remains); end-to-end LIST-liar fault injection = Stage A T13.
-- **[MOUNT-CLAIM-EPOCH-REGRESSION] should `claimMount` permit epoch regression?** — QUESTION (surfaced by Stage A T12, 2026-07-29) — `claimMount` (`CasServerRoot.cpp` ~:395) reclaims a same-uuid body that is gc_fenced / clean-marked / proven-dead WITHOUT comparing epochs, so a fenced twin holding a HIGHER allocated epoch is legally reclaimable while the fresh writer proceeds with a LOWER `writer_epoch` — an epoch regression at the mount claim. Intersects the same-uuid recreation epoch-counter reset (quiesce = primary defence). Decide: must the claim gate require fresh `writer_epoch` above the reclaimed body's epoch (new `MountClaimResult` field), or is regression benign under the seal grammar? Sharp edge to verify: `prev_epoch_seal` is required iff `writer_epoch > life_epoch`, so a regressed writer may skip the seal obligation — confirm that path cannot readmit a Late-Predecessor window. T12 deliberately did NOT add a `chassert` here (it would abort a path the claim logic permits); surviving guards: unclean-reclaim classification, exhaustive `-Wswitch`, operator log line. (An orphaned 2026-08-04-triage finding — the general case of `claimMount` reclaiming a same-UUID fenced/dead body without epoch comparison — folds in here as the same question stated generally.)
-- **[refsnaplog Phase 2] measured ref-log/snapshot optimizations** — DESIRABLE (measurements-gated) — inline zero-byte log keys; GC-side fallback compaction for never-mounted tables; indexed/chunked multi-object snapshots; lazy snapshot blocks + byte-bounded row cache; per-round ref index; streamed snapshot construction; adaptive thresholds; decoded-body reuse; chunked namespace removal. Plus a **cross-epoch fault-injection integration test** reproducing the late-predecessor counterexample. (An orphaned 2026-08-04-triage finding lists the same Phase-2 optimization candidates verbatim — folded in as confirmation.)
-- **[timeout-retry RFC residuals] bounded lease-aware S3 timeout/retry controller** — PARTIAL — `CasRequestController` (single-attempt conditional non-blob create-if-absent and replacement writes, budget, fence-gating, exact-key resolution) landed for the ref lane. Conditional staged copy was deleted: blob bodies now use mandatory `HEAD` plus unconditional `publishBlob`, outside the conditional non-blob write controller by design. RFC residuals still open: (a) AWS SDK region-redirect retry can bypass `ShouldRetry` when a client is `aws-global` (CAS disks are not `aws-global` today — add a startup guard/probe if that changes); (b) bounded read/`HEAD`/LIST retries plus startup validation for the non-ref plain-object paths (`casPutObject`/`casRemoveObject` still use the disk's default retry policy). The orphaned 2026-08-04 triage finding remains confirmation of those surviving residuals, not of the deleted copy path.
+- **[MOUNT-CLAIM-EPOCH-REGRESSION] should `claimMount` permit epoch regression?** — QUESTION — `claimMount` (`CasServerRoot.cpp:787`) reclaims a same-uuid body that is `gc_fenced`/clean-marked/proven-dead by comparing NOTHING but the epoch's inequality, so a fenced twin holding a HIGHER `writer_epoch` is reclaimable while a fresh writer proceeds with a LOWER one — an epoch regression at the mount claim. `prev_epoch_seal` is required iff `writer_epoch > life_epoch`, so a regressed writer may skip the seal obligation; confirm that path cannot readmit a Late-Predecessor window. Decide: gate the claim on a fresh `writer_epoch` above the reclaimed body's (new `MountClaimResult` field), or accept the regression as benign under the seal grammar.
+- **[refsnaplog Phase 2] measured ref-log/snapshot optimizations** — DESIRABLE, measurements-gated — inline zero-byte log keys; GC-side fallback compaction for never-mounted tables; indexed/chunked multi-object snapshots; lazy snapshot blocks + byte-bounded row cache; per-round ref index; streamed snapshot construction; adaptive thresholds; decoded-body reuse; chunked namespace removal. None of these have landed (checked `src/` and every `docs/superpowers/` topic file for each verbatim name — no hits). The cross-epoch fault-injection test this list used to ask for is done: `src/Disks/tests/gtest_cas_list_liar_end_to_end.cpp` (`CASListLiarEndToEnd` suite, 8 cases).
+- **[timeout-retry RFC residuals] region-redirect retry can bypass the CAS budget** — PARTIAL — Every CAS subsystem, including the plain-object path (`CasPlainObjects::casPutObject`/`casRemoveObject`), now runs through `CasRequests`/`CasOperation` with `Retry::standard()` (90 s budget) — the old `CasRequestController` and the "still on the disk's default retry policy" residual are gone. What remains open: the AWS SDK's region-redirect retry can bypass `ShouldRetry` when a client is `aws-global` (CAS disks are not `aws-global` today — add a startup guard/probe if that ever changes; no such guard exists yet).
 
 ## Ref-ledger internals and lane state machine {#ref-protocol-ledger}
 
-- **[ORPHANED-ADJUDICATION-COMMENT] `CasRefLedger.cpp:108-120` documents an adjudication its neighbouring code does not perform** — {#orphaned-adjudication-comment} — MINOR — A comment describes a `mine | successor's seal | foreign` adjudication with a narrow `catch`, which is NOT what the function beside it does — a comment that misdescribes its neighbour is worse than no comment, and this region is exactly where the next reader will look when INV-2's chain-link grammar is next touched. Take it with the next sweep that reaches the file; re-derive what the comment SHOULD say from the code rather than deleting it blind. Related: `chainLinkFor` stays in an anonymous namespace, so INV-2's grammar cannot be swept in isolation — asserted through `prepareRefChunk`'s validator instead (accepted disposition).
-- **[DEAD-INSTALL-PROBE-AND-STALE-REGION-COUNT] the post-durable install seam has a stale region-count comment** — {#dead-install-probe-and-stale-region-count} — MINOR — The dead-test-hook half is fixed (`gtest_cas_ref_ckpt.cpp`'s carve-time fence now sets the probe). Still open: `CasRefLedger.cpp:1903` says "Post-durable install region 2 of 3" although the restatement deleted the third region, and the fence's own comment now says "BOTH" while this comment still says "2 of 3" — a self-contradiction.
-- **[LANE-TERMINAL-REPORTED-AS-RETRYABLE] ✅ CLOSED at HEAD by `21617aedda2` (verified 2031-triage CAS-017); kept for provenance** — {#lane-terminal-reported-as-retryable} — was MINOR (one-line fix) — `commitRefChunk`'s "lane not `Ready` at new-id allocation" arm sets `RefLaneState::Faulted` but completes survivors with the retry-later exception class, contradicting the stated contract (`Faulted` should map to `CORRUPTED_DATA`). Self-limiting (one spurious retry, not a loop), but a contract worth stating is worth not contradicting in one arm.
-- **[LANE-WITNESS-NAMES-MORE-THAN-IT-PROVES] a lane-battery witness proves less than its name, and one adoption arm has no witness at all** — {#lane-witness-names-more-than-it-proves} — MINOR — `saw_retry_created` witnesses that a retry created durability, not that the adoption install happened, but `CaRefLaneCore_RESULTS.md` calls it "retry-created adoption" — overstated. No witness asserts the `Wedged → Ready` durable-adoption arm at all. Fix: correct the RESULTS wording and add a witness on the adoption install itself. Does not affect the blocker-dissolved verdict.
-- **[PART-WRITE-RELEASE-SEAM] the `PartWriteTxn`/`PreparedPartWrite`/receiver-guard ownership seam needs its own contract spec** — HARD — USER-DIRECTED extraction, 2026-07-29. The relink redesign's review rounds kept grinding on one seam: three layers each with their own abort/retry, an overloaded `isTerminal`, nine scattered proven-no-send exits erased into a generic `NETWORK_ERROR`, false ERROR/WARNING log lines on settled-late releases, and no exactly-once emission contract for unproven releases. Extracted into a standalone spec as relink-independent prerequisite plumbing (single-`attempted`-bit proof channel, destructor-owned last-word emission, severity ladder, marker-sync fix); lands before relink implementation.
+- **[ORPHANED-ADJUDICATION-COMMENT] a comment documents an adjudication its neighbouring code does not perform** — {#orphaned-adjudication-comment} — MINOR — The `mine | successor's seal | foreign` adjudication comment (its narrow `catch`, absorbing only `CORRUPTED_DATA`/`UNKNOWN_FORMAT_VERSION` so a transient decode failure cannot be laundered into a `Foreign`/mount-fencing verdict) sits above `chainLinkFor` (`CasRefLedger.cpp:123-141`), which does no such thing. It belongs above `classifyRefLogOccupant` (`:179-194`), which actually has that `catch`. Take it with the next sweep that touches the file; re-derive the comment from the code rather than deleting it blind. `chainLinkFor` stays in the anonymous namespace, asserted only through `prepareRefChunk`'s validator.
+- **[PART-WRITE-RELEASE-SEAM] the `PartWriteTxn`/`PreparedPartWrite`/receiver-guard ownership seam needs its own contract spec** — HARD, user-directed extraction (2026-07-29) — Three layers each with their own abort/retry, an overloaded `isTerminal`, nine scattered proven-no-send exits erased into a generic `NETWORK_ERROR`, false ERROR/WARNING log lines on settled-late releases, no exactly-once emission contract for unproven releases. Extract a standalone spec (single-`attempted`-bit proof channel, destructor-owned last-word emission, severity ladder, marker-sync fix) before relink implementation touches this seam. Partial progress: the single-`attempted`-bit channel exists (`publication_attempted`, `CasPartWriteTxn.h:24-40`); no standalone spec exists yet.
 
 ## Ref-ledger follow-ups from the two-model adversarial consult (2026-07-21) {#ref-ledger-consult-followups-2026-07-21}
 
 Consult-flagged, controller-verified, deliberately deferred with measurement/design gates. Evidence:
 `docs/superpowers/reports/2026-07-21-reftablestate-experiments.md`, `tmp/consult-gpt56sol-answer.md`.
 
-- **Post-durable-PUT allocation window in the ref-lane flush** — folded into the publish-confirm
-  fetch-handoff work and tracked there, not here; this pointer stays only so the finding isn't
-  rediscovered. Two round-2 nuances not to lose
-  when restructuring: the catch's "permanently unreplayable" framing over-claims (the covered region
-  can throw via `MemoryTracker` limits on a durable+applied transaction); wedge resolution followed
-  by flush is a path `BM_FlushInstall` does not model yet — measure it before changing anything.
-- **Recovery re-runs 3-4 codec passes per snapshot row** (measured, est. 2-3x recovery/GC-rebuild
-  cut) — `recoverRefTableDetailed` decodes, `stateFromSnapshot` re-encodes+re-decodes (hand-built
-  defense), then per-row size helpers re-encode again. Fix: a validated-witness type
-  `decodeRefTableSnapshot` produces that `stateFromSnapshot` accepts without the round-trip.
-- **`precommits` is a plain `std::set`, deep-copied per state scratch copy** — bounded only by the
-  ~64 MiB admission byte budget, not the 1,000-op cap; every shipped "O(1) ~58 ns copy" benchmark
-  used a one-precommit fixture. Do not build a third COW container without a number: extend
-  `BM_ScratchCopy`/`BM_Admits` with a P-sweep (1/100/10,000) first.
-- **GC per-table recovery gate before ref-log fold** (defense-in-depth; mandatory before any
-  multi-writer or rolling-upgrade-skew milestone) — refuted as a live defect today (single
-  lease-holder cannot mint the fabricated history this would catch), but still worth building before
-  that changes. Fix shape: per-table `recoverRefTable(ns)` before folding new logs, `CORRUPTED_DATA`
-  clamps the table (no cursor advance) rather than aborting the round. (An orphaned 2026-08-04-triage
-  finding states this same gate verbatim — folded in as confirmation.)
+- **Post-durable-PUT allocation window in the ref-lane flush** — folded into the publish-confirm fetch-handoff work and tracked there, not here; this pointer stays only so the finding isn't rediscovered. Two nuances not to lose: the catch's "permanently unreplayable" framing over-claims (the covered region can throw via `MemoryTracker` limits on a durable+applied transaction); wedge resolution followed by flush is a path `BM_FlushInstall` does not model yet — measure before changing anything.
+- **Recovery re-runs 3-4 codec passes per snapshot row** (measured, est. 2-3x recovery/GC-rebuild cut) — `stateFromSnapshot` (`CasRefProtocol.cpp:431-432`) still round-trips through `encodeRefTableSnapshot` + `decodeRefTableSnapshot` (hand-built defense) instead of accepting the validated-witness type `decodeRefTableSnapshot` already produces; per-row size helpers then re-encode a third time.
+- **`precommits` is a plain `std::set`, deep-copied per state scratch copy** (`CasRefProtocol.h:254`) — bounded only by the ~64 MiB admission byte budget, not the 1,000-op cap; every shipped "O(1) ~58 ns copy" benchmark used a one-precommit fixture, and no P-sweep (1/100/10,000 precommits) exists in `benchmark_cas_ref_protocol.cpp` — only N-sweeps over row count. Do not build a third COW container without running that P-sweep first.
+- **GC per-table recovery gate before ref-log fold** (defense-in-depth; mandatory before any multi-writer or rolling-upgrade-skew milestone) — refuted as a live defect today (a single lease-holder cannot mint the fabricated history this would catch), but still worth building before that changes: per-table `recoverRefTable(ns)` before folding new logs, `CORRUPTED_DATA` clamps the table (no cursor advance) rather than aborting the round. Not built yet.
 
 ## New findings from the 2026-08-04 orphaned-open triage {#orphan-triage-2026-08-04}
 
-- **[recovery-seal-greatest-applied-gap] recovery can publish a seal without advancing `greatest_applied` to it** — DESIRABLE — Codex review finding: next epoch's first log could use a stale `prev`, letting GC accept a late void log below the cursor. No evidence this specific ordering gap was independently closed by the Stage A/B rework — distinct from the general `committed_through` ceiling proof (verified separately), which does not cover `greatest_applied` specifically.
-- **[recovery-repair-buffer-unbounded] verify recovery-repair memory bound matches the streaming-replay design** — DESIRABLE — Recovery repair buffering allegedly retains a whole omitted transaction (up to 20 MiB) rather than one decoded transaction at a time. Re-check against HEAD's `runRecoveryWalkOnce`/streaming replay path; if the buffering is now bounded, close as done, else this is a real soak-risk on large pools.
+- **[recovery-seal-greatest-applied-gap] recovery can publish a seal without advancing `greatest_applied` to it** — DESIRABLE — Codex review finding: next epoch's first log could use a stale `prev`, letting GC accept a late void log below the cursor. Traced the code: `RefReplayBuilder::applyOne` → `RefTableState::applyTxnInPlace` (`CasRefProtocol.cpp:583,668-687`) advances `greatest_applied` unconditionally after every applied txn, seals included, and recovery's own seal-write arm (`CasRefLedger.cpp:1219-1220`) calls exactly that path. No commit closes the finding outright, so it stays open pending a reviewer's call on whether this trace is sufficient.
 
 ## No query-cancellation checks in the CA tree (2031-triage CAS-015) {#no-query-cancellation-checks}
 
-Every CA wait (ref-lane single flight, leader election, namespace recovery, part-folder single
-flight) is bounded by the I/O underneath it — the `CasRequestController` budget (16 attempts / 90 s),
-the 120 s `recovery_retry_budget_ms`, or a mount-fence loss — so the "hangs forever" framing is
-wrong, and the shutdown drain is explicitly timed (`CasRefLedger.cpp:1877-1895`, `wait_until` on a
-shared deadline, fail-closed). What is genuinely missing: not one wait in the CA tree polls query
-cancellation, so `KILL QUERY` and `max_execution_time` cannot interrupt a query parked behind a slow
-leader, and several bounded operations in sequence can still add up to minutes.
+Every CA wait (ref-lane single flight, leader election, namespace recovery, part-folder single flight) is bounded
+by the I/O underneath it — the CAS request budget (16 attempts / 90 s), the 120 s `recovery_retry_budget_ms`, or a
+mount-fence loss — and the shutdown drain is itself explicitly timed (`CasRefLedger.cpp:1996-2019`, `wait_until` on
+a shared deadline, fail-closed) — so "hangs forever" is the wrong framing. What is genuinely missing: not one wait
+in the CA tree polls query cancellation, so `KILL QUERY` and `max_execution_time` cannot interrupt a query parked
+behind a slow leader, and several bounded operations in sequence can still add up to minutes. Still entirely
+unaddressed (no `isCancelled`/`QueryStatus` reference anywhere in the CA tree).
 
-Fix: thread a cancellation callback (the standard `isCancelled`/`QueryStatus` poll used elsewhere in
-the read path) into the waits that run on a query thread — read/single-flight first, ledger waits
-after. Related, already listed here: `[timeout-retry RFC residuals]` item (c) —
-`PartFolderAccess` single flight rides the disk's default S3 retry profile instead of the CA
-controller.
+Fix: thread a cancellation callback (the standard `isCancelled`/`QueryStatus` poll used elsewhere in the read path)
+into the waits that run on a query thread — read/single-flight first, ledger waits after.
 
 ## Part-folder single flight keyed by ref only, no post-wait manifest check (2031-triage CAS-019) {#part-folder-single-flight-manifest-keying}
 
-`PartFolderAccess`'s single-flight key is `ns+ref` (`Parts/PartFolderAccess.h:34`, `:383-384`) and a
-waiter never re-checks that the view it receives is for the manifest id it resolved
-(`.cpp:277,283,286-287`). Not the mixed-manifest hazard the audit claims: single flight covers only
-the stale-tolerant `CachedForLoad` mode (`.cpp:267-270`), every view is an internally consistent
-single-manifest snapshot, and all read-after-write paths use `ForceFresh`. The real consequence is a
-one-repoint skew — a follower straddling a repoint can get the neighbouring manifest's view and
-surface a spurious `FILE_DOESNT_EXIST`.
+`PartFolderAccess`'s single-flight key is `ns+ref` (`cacheKey()`, `PartFolderAccess.h:34`) and a follower never
+re-checks that the view it receives (`future.get()`, `.cpp:255-256`) is for the manifest id it itself resolved. Not
+the mixed-manifest hazard an earlier audit claimed: single flight covers only the stale-tolerant `CachedForLoad`
+mode, every view is an internally consistent single-manifest snapshot, and all read-after-write paths use
+`ForceFresh`. The real consequence is a one-repoint skew: a follower straddling a repoint can get the neighbouring
+manifest's view and surface a spurious `FILE_DOESNT_EXIST`.
 
-Fix: either key the single flight by `ns+ref+manifest_id`, or add the cheap post-wait check (compare
-the served view's manifest id against the resolved one and re-resolve on mismatch). The second is
-smaller and keeps the sharing benefit. P2.
+Fix: either key the single flight by `ns+ref+manifest_id`, or add the cheap post-wait check (compare the served
+view's manifest id against the resolved one, re-resolve on mismatch). The second is smaller and keeps the sharing
+benefit. P2.
 
 ## Allocation in `noexcept`/destructor paths under a memory limit (2031-triage CAS-018) {#noexcept-allocation-hardening}
 
-The audit's headline (leadership leaked out of the ref queue on a throw) is closed: release is a
-single unconditional authority (`Pool/CasRefLedger.cpp:2019,2022-2029,2039,2099`) and the historic
-stranded-item bug was fixed in `79c07d6cc3d` with regression tests in
-`gtest_cas_ref_lane_exception_safety.cpp`; its "renewal fences the mount" sub-claim is simply false
-(the hook is wrapped, `Pool/CasServerRoot.cpp:1474-1483`). What remains is hardening nits: string
-formatting / container work inside `noexcept` functions and destructors that can throw under a
-memory limit — `Gc/CasGcPhaseTimer.h:52-75`, the `Backend/CasProbe.cpp` cleanup lambdas,
-`Pool/CasMountRuntime.cpp:529-532`, and the fail-closed branch at `CasRefLedger.cpp:2085-2090`.
-P3: wrap or pre-size those, no behaviour change intended.
+The audit's headline (leadership leaked out of the ref queue on a throw) was closed separately (release is a
+single unconditional authority, `CasRefLedger.cpp:2019` area; the historic stranded-item bug was fixed in
+`79c07d6cc3d` with regression tests in `gtest_cas_ref_lane_exception_safety.cpp`); its "renewal fences the mount"
+sub-claim is false (the write is wrapped in `try`/`catch (...)`, `CasServerRoot.cpp:1613-1624`). What remains is
+hardening nits: `GcPhaseTimer`'s destructor (`CasGcPhaseTimer.h:54-75`) still builds a `GcPhaseRecord`, moves a
+`std::map`, and does per-counter `String`/`emplace` work unconditionally, outside its one `try`/`catch` (which
+wraps only the sink call) — same class of issue in `CasProbe.cpp`'s cleanup lambdas, `CasMountRuntime.cpp`, and a
+fail-closed branch in `CasRefLedger.cpp`. P3: wrap or pre-size, no behaviour change intended.
 
 ## Ref-lane residuals from 2031-triage CAS-017 {#lane-residuals-2031-cas-017}
 
-The audit's "a transient backend error leaves the table permanently unusable" is refuted three ways
-at HEAD (the pinned reopen test `PredurableCatalogReadFailureReopensExactLiveLane`, GC reclaim of
-`Removing` per {#cas-join-set-truncate}, and a latch that lives only in memory so a restart clears
-it). Two genuine residuals came out of the check:
+The audit's "a transient backend error leaves the table permanently unusable" is refuted (the pinned reopen test
+`PredurableCatalogReadFailureReopensExactLiveLane`, GC reclaim of `Removing` per {#cas-join-set-truncate}, and a
+latch that lives only in memory so a restart clears it). Two genuine residuals remain:
 
-- **Read path fabricates absence instead of retry-later** — inside the removal-latch window
-  `acquireReadableRefTableRuntime` returns `nullptr`, which the read path renders as "no such ref",
-  while the write path throws the retry-later class for the same state. A reader should not see
-  "absent" for "temporarily not admitting"; make the read path surface the same retry-later class.
-- **One `Faulted` arm never fires the anomaly policy** — the "occupant unreadable" arm sets
-  `Faulted` without invoking the anomaly path, so that lane alone has no automatic remount and
-  needs an operator. Wire it to the same policy the other terminal arms use.
+- **Read path fabricates absence instead of retry-later** — inside the removal-latch window `acquireReadableRefTableRuntime` (`CasRefLedger.cpp:614-634`) returns `nullptr`, which `resolveRef` (`:285-298`) renders as "no such ref", while `appendRefOps` (`:2068`,`:2102`) throws the retry-later class for the identical state. A reader should not see "absent" for "temporarily not admitting".
+- **One `Faulted` arm never fires the anomaly policy** — the "occupant unreadable" arm (`:3793-3823`, `ProfileEvents::CASRefAppendOccupantUnreadable`) sets `Faulted` without invoking `on_impossible_interference`, unlike the sibling `occupant != Occupant::Ours` arm (`:3849-3868`) a few lines below it. That lane alone has no automatic remount and needs an operator.
 
 ## The debug/sanitizer body-counter cross-check restores the O(K·N) replay it was meant to avoid (2031-triage CAS-054) {#debug-body-counter-assert-on-replay}
 
-`RefTableState::debugAssertBodyCounters` (`Pool/CasRefProtocol.cpp:483-504`) recomputes both body-byte
-totals and the `owned_manifests` membership from scratch — two row re-encodes per committed ref plus two
-per precommit — and it runs under `DEBUG_OR_SANITIZER_BUILD` at the end of every `applyTxnInPlace`
-(`:585`) and on every `admits` preview scratch (`:730`). Shipped builds are unaffected and the
-incremental counters themselves are O(1) (`b5f448e9b41`, `13ab814869c`), so this is purely a
-debug/sanitizer cost — but it is the one place where a documented complexity claim is inverted for those
-builds: the in-place apply comment at `:575-578` says a K-transaction replay over an N-row base was
-deliberately dropped from `O(K*N)` to `O(K + N)`, and the per-apply full rescan puts the `O(K*N)` back
-for exactly the builds where the soak and correctness runs execute. Cheapest honest fix: keep the
-cross-check but sample it (every apply on `admits` previews, which are single-op and already scratch-
-scoped; on `applyTxnInPlace` only on the first apply after an install, or under an explicit test-only
-flag), so recovery replay in an ASan/TSan run is not quadratic. Not correctness-affecting either way —
-the assert is a real invariant defence and must not simply be deleted.
+`RefTableState::debugAssertBodyCounters` recomputes body-byte totals and `owned_manifests` membership from scratch
+and still runs unconditionally under `DEBUG_OR_SANITIZER_BUILD` on every `applyTxnInPlace` (`CasRefProtocol.cpp:585`)
+and every `admits` preview (`:730`) — two extra row re-encodes per committed ref plus two per precommit, on top of
+the incremental O(1) counters it is cross-checking (`b5f448e9b41`, `13ab814869c`). Shipped builds are unaffected;
+this is purely a debug/sanitizer-build cost, but it puts the in-place-apply comment's stated `O(K+N)` back to
+`O(K*N)` for exactly the builds the soak and correctness runs execute. Cheapest honest fix: sample it (every apply
+on `admits` previews; on `applyTxnInPlace` only on the first apply after an install, or under an explicit
+test-only flag). Not correctness-affecting either way; the assert itself must not simply be deleted.
 
 ## `precommitAdd` has no guard against a second call on the same `PartWriteTxn` (2031-triage CAS-072) {#precommit-add-single-slot-guard}
 
-`PartWriteTxn` carries exactly ONE precommit binding — the triple
-`precommit_target_ns` / `precommit_final_ref` / `precommit_manifest` plus `precommit_state`
-(`Pool/CasPartWriteTxn.h:383-385`) — and every consumer assumes that: `abandon` appends the exact
-precommit removal for that one binding (`Pool/CasPartWriteTxn.cpp:1338-1352`), the destructor hands the
-mount a cleanup duty for that one binding (`:134-135`), and
-`cleanupStagedManifestDebrisBestEffort` writer-deletes every staged manifest body EXCEPT that one
-(`:1426-1427`). Nothing enforces the assumption: `precommitAdd` (`:910`) plainly overwrites the triple
-on every call, so a second call on the same object would silently orphan the first binding — the first
-manifest body would be writer-deleted while its precommit binding stays live in the ref log, and neither
-`abandon` nor the destructor duty would ever remove that binding.
-
-No production path calls `precommitAdd` twice on one build today: `publishStaging`'s two call sites are
-mutually exclusive branches over one `PartStaging` (`ContentAddressedTransaction.cpp:357` returns before
-`:411`), each `PartStaging` owns its own build (`:148-153`), a failed commit refuses to retry
-(`:436-438`), and `prepareEntries` mints a fresh build per handle (`Parts/PartFolderAccess.cpp:474-485`).
-So this is a latent-invariant item, not a live bug. Cheapest fix: make the invariant executable — reject
-a `precommitAdd` whose `precommit_state != NotAttempted` with `LOGICAL_ERROR` (a programming-invariant
-violation, exactly like the A3 mint-tightening refusal next to it), or, if a build ever legitimately needs
-two bindings, replace the single triple with a container that `abandon`, the destructor duty and the
-debris cleanup all iterate. Also worth deciding while in there: an idempotent re-add (the closure's
-already-committed no-op arm at `:961-975`) still leaves `precommit_state == Durable`, so a subsequent
-`abandon` of that build appends a removal for a binding that never existed and fails loudly under the
-strict arm — fail-closed, but noisy for a path the code deliberately supports.
+`PartWriteTxn` carries exactly ONE precommit binding (`precommit_target_ns`/`precommit_final_ref`/
+`precommit_manifest` + `precommit_state`, `CasPartWriteTxn.h:383-385`), and every consumer (`abandon`, the
+destructor cleanup duty, `cleanupStagedManifestDebrisBestEffort`) assumes it. `precommitAdd`
+(`CasPartWriteTxn.cpp:702`) still unconditionally overwrites the triple on every call with no guard — a second
+call would silently orphan the first binding (its manifest body writer-deleted while its precommit stays live in
+the ref log). No production path calls it twice today (`publishStaging`'s two call sites are mutually exclusive
+branches, a failed commit refuses to retry, `prepareEntries` mints a fresh build per handle) — latent, not live.
+Cheapest fix: reject a `precommitAdd` whose `precommit_state != NotAttempted` with `LOGICAL_ERROR`, or replace the
+single triple with a container all three consumers iterate if a build ever legitimately needs two bindings. Also
+worth deciding while in there: an idempotent re-add (the already-committed no-op arm, `:754-774`) still sets
+`precommit_state == Durable` (`:801`) even though this build never became the precommit owner, so a subsequent
+`abandon` (the `Durable`-strict removal at `:1124-1131`) appends a removal for a binding that never existed and
+fails loudly — fail-closed, but noisy for a path the code deliberately supports.
 
 ## `noexcept` ref-drop helpers allocate outside their `try` (opus review NV-5) {#noexcept-ref-drop-allocates}
 
-`dropRefIfMatches` and `dropRefBestEffort` are `noexcept` and call `eraseView` OUTSIDE their `try`
-(`Parts/PartFolderAccess.cpp:646/705`, `:627/644`). The review asked whether
-`recordDecision`/`CacheBase::remove` allocate — that is the wrong discriminator: `eraseView`'s FIRST
-line builds `String cache_key = key.cacheKey()` (`:308`; `PartFolderAccess.h:34` — two string
-concatenations), so it allocates unconditionally on every call, whatever the cache or explain state
-is. A `bad_alloc` there terminates the process, and this is the rollback path taken under memory
-pressure — exactly when the allocation is most likely to fail. Two-line fix: move the `eraseView`
-calls inside the existing `try`. P2.
+`dropRefBestEffort` (`PartFolderAccess.cpp:598-615`) and `dropRefIfMatches` (`:618-676`) are both `noexcept` and
+both still call `eraseView` AFTER/outside their `try` blocks. `eraseView`'s first line builds
+`key.cacheKey()` (`.h:34`, a string concatenation) unconditionally, so a `bad_alloc` there terminates the process —
+exactly on the rollback path taken under memory pressure, where allocation is most likely to fail. Two-line fix:
+move the `eraseView` calls inside the existing `try`. P2.
 
 ## Shutdown drain ignores pending snapshot publishes (opus review NV-9) {#shutdown-drain-misses-snapshot-publishes}
 
-`drainRefLanesForShutdown` (`Pool/CasRefLedger.cpp:1847-1905`) waits on `pending` and `leader_active`
-only — never on `pending_snapshot_publishes`. This is the mechanical confirmation of the B3+B4 chain
-already queued pre-release ({#detached-pool-outlives-context}, `final-checks-todo.md` item 10): an
-undrained publisher is what lets a detached task be the last `Pool` owner. The needed wait loop
-already exists twice in the same file (`:1705`, `:5102`), so the fix is a transplant with a
-`wait_budget_ms` bound rather than new machinery. P1 as part of that chain.
+`drainRefLanesForShutdown` (`CasRefLedger.cpp:1979-2032`) still waits only on `pending`/`leader_active` and checks
+`lane_state` — never on `pending_snapshot_publishes`. This is the mechanical confirmation of the B3+B4 chain
+already queued pre-release ({#detached-pool-outlives-context}, `final-checks-todo.md` item 10): an undrained
+publisher is what lets a detached task be the last `Pool` owner. The wait-loop pattern to transplant already
+exists twice in the same file (`:1838`, `:4319`), so the fix is a transplant with a `wait_budget_ms` bound rather
+than new machinery. P1 as part of that chain.
+
+## Part publish leaves the common path with zero `GET`s (owner decision 2026-09-25) {#part-publish-zero-gets}
+
+Owner decision, confirmed against the code: a namespace is node-owned, so the per-flush catalog `GET`
+(`commitRefChunk`'s `positive_append` branch, `CasRefLedger.cpp:3425`) guards only a race this same process already
+closes in-process, and can be dropped from the common path; the `_ckpt` `GET` (`publishCkpt`'s `readModifyWrite`)
+races only this process's own snapshot publisher and can become an in-memory etag cache with re-read on 412 only;
+`PartWriteTxn::promote`'s manifest re-read should run only when the staging PUT ended `Unresolved`; the post-commit
+folder-view rebuild should seed from the manifest bytes already in memory. Not implemented yet — all four `GET`s
+are still present at the cited sites. Result when done: a flush goes from four round trips to two, roughly halving
+a part publish's 389 ms. Full analysis and the owner's verified-safe reasoning:
+`docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f31`;
+tracked in `docs/superpowers/cas/umbrella-roadmap.md` §2 ("Publish a part with zero GETs").
