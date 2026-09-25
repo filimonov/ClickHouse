@@ -243,7 +243,40 @@ Who sends the second signal is not visible from the server: check the pod's `pre
 restart path signals the process group as well as PID 1. The `Listen ... Address already in use` warnings at 15:38:10
 and 15:40:39 are the usual dual-stack artifact (`::` and `0.0.0.0` both configured), not related.
 
-## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
+### F18. `trace_log` review, 37 minutes after the 15:38 restart: CPU, Real, Memory {#f18}
+Sampling: query profilers at 1 s, global profilers at 10 s per thread, memory profiler step 4 MiB with
+`max_untracked_memory` 4 MiB, so a `Memory` row is a per-thread batch of small allocations attributed to the
+allocation that crossed the step, not a single allocation. All stacks read through the pre-resolved `symbols` column.
+
+CPU (2,755 samples on the day, 498 with a CAS frame, 77 in GC): no CAS hotspot. The CAS share is S3 client overhead
+for small objects (`readSmallObjectAndGetObjectMetadata` → `ReadBufferFromS3::sendRequest`, request building and
+signing, ~200 samples), conditional deletes (`removeObjectIfTokenMatches`, 40) and HEADs (16). The two-core box is
+mostly idle on CPU; the system is latency-bound, not CPU-bound.
+
+Real (173k samples, 1,084 threads): the write path's time is in two places, both waits.
+- `TaskTracker::waitAll` ← `WriteBufferFromS3::finalizeImpl` ← `ObjectStorageBackend::write` / `publish`: ~1,450
+  samples across `RuntimeData`, `MergeMutate`, `ThreadPool` and fan-out threads, about 6.5 threads permanently
+  waiting for small-object PUT completion (`_log`, `_ckpt`, manifests, `.meta`, blobs).
+- `CasRefLedger::appendRefOpsOnRuntime` condition-variable waits: `PartWriteTxn::promote` 230, `precommitAdd` 181,
+  `dropRef` via `republishRef` / `moveDirectory` 100, about 2.3 threads permanently blocked on the ref lane. A part
+  publish pays two lane trips (precommit, promote), a removal two more (repoint, drop). This is the `748 ms of an
+  887 ms insert` from section 1 seen from the stacks; the lane flushes ~3 mutations per flush.
+- No CAS mutex contention: 4 `pthread_mutex_lock` samples in total. Manifest-read retry sleeps
+  (`sleepInterruptibly` ← `readManifestShared`) 2 samples. Idle CAS threads (`CasLeaseRenewer`, `CasRemount`,
+  `CasGcHeartbeat`) show one sample per 10 s, as expected.
+
+Memory (100 GiB of sampled allocation batches, 77.6 GiB with a CAS frame, 0 in GC): the churn is the part writers,
+`ContentAddressedTransaction::writeFile` ← `tryCreateWriteBuffer` from `MergeTreeWriterStream` and
+`finalizePartAsync`, 16.2k batches on `RuntimeData` (system-log flushes) and `MergeMutate`. Each stream allocates
+its write buffer twice on a CAS disk (the content buffer plus the spill sink of `CaContentWriteBuffer`) for parts
+whose median size is 10 KB (`system.*`) and 1.5 KB (`claude_otel`). Known as `[ca-write-buffer-allocation-concentration]`;
+this is the number behind it. Not a leak: the global tracker averages 1.6 GiB and peaks at 2.3 GiB against a 5.36 GiB
+limit; the 66 MiB allocations and the 2.34 GiB peak at 16:18 belong to a user query, not to CAS.
+
+Verdict: no CAS anomaly in CPU or memory; the Real profile confirms the write path is bound by small-object PUT
+latency and the ref lane's serial flushes, and points at the same levers as F2 and F5 plus the write-buffer sizing.
+
+
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
   post-restart GET storm entirely and should go first.
