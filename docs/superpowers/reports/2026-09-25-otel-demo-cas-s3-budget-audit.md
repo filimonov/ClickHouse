@@ -410,6 +410,36 @@ at zero. Weekly totals in `tmp/otel_cas/pe_stats.tsv`.
   entries, so the part-folder view rebuilds of F9 partly come from decode-cache eviction; the metric is right, the
   default is small for 1,700 parts of 7-17 KB manifests plus both replicas' manifests read by GC.
 
+### F26. PLAUSIBLE, unexplored. S3 write throttling outside restarts coincides with GC LIST bursts {#f26}
+`S3ReadRequestsThrottling` + `S3WriteRequestsThrottling` = 537 in the week; 421 + 116 since the restart, but every
+day has 49-154 events outside any restart (09-23: write throttling in 14 different hours, 1-58 per hour). In the
+952 seconds of the week that carried a throttling event the average request mix was LIST 29.8/s, GET 85/s, PUT
+34/s against a week-wide 3.9 / 69 / 24: LIST is 7.6× its baseline in throttled seconds, the other verbs ~1.3×. S3
+rate-limits LIST far below GET/PUT, per prefix, and the throttled requests are the writers' PUTs (`_log`, `_ckpt`,
+manifests), which then reissue (`CASRequestReissue` 3.3k in the week, `CASRefSnapshotPublishBackoff` 113) and pause
+the lane. Hypothesis: the GC's 13k-request LIST per round degrades writer latency through S3 throttling, on top of
+the LIST's own cost. Not proven (a correlation over 952 seconds); spec B1 removes the LIST, and this counter pair is
+the before/after measurement.
+
+### F27. PLAUSIBLE, unexplored. One new TLS connection per ~98 requests, 109k per day {#f27}
+`DiskConnectionsCreated` 764,574 in the week, `DiskConnectionsReset` 764,224, `DiskConnectionsExpired` 199,
+`DiskConnectionsReused` 74.6M. Every connection is created, reused ~98 times and reset; resets correlate with
+neither 404s (r = 0.04) nor write errors (r = 0.01). That looks like a per-connection request cap near 100, on the
+store side or in the client (`http_keep_alive_max_requests`; the docs' example config sets 10000, the stand's value
+is unverified). Each new connection is a TLS handshake on a request's critical path, 1.3 per second across the
+node; `CASRequestFirstAttemptFuse` 1,042 in the week counts the fresh connections that missed the adaptive
+first-attempt timeout. For the ref lane, whose flush is three serial requests (F20), a handshake every ~30 flushes
+is a visible latency tax. Verify the cap (client setting versus `Connection: close` from S3) before acting.
+
+**Rare counters that moved, all explained by transient S3 windows, and the right canaries to alert on:**
+`CASMetaAdoptBackfill` 95 (adoption found a blob without `.meta`: the window between a writer's blob PUT and its
+meta create, backfilled), `CASRefSnapshotPublishBackoff` 113, `CASGCCondemnMarkerUnconfirmedCarry` 10,
+`CASRefRecoveryEpochSealed` 145 (two restarts × the lives recovered), `CASRequestConnectFailureHint` 3,
+`CASMountRenewalRetries` 3 / `Recovered` 2 (restarts), `CASGCRetireReplaced` 144, `CASGCRetiredSpared` 219 + 23.
+The 409 responses (953) and the 412s (6,389) are accounted for: 3,654 blob `If-None-Match` dedup hits
+(`CASBlobPutDeduplicated`) and 2,735 control-key conflicts between the replicas (`CASRequestConflictPause`,
+`_ckpt` CAS), the rest inside the 503 windows.
+
 ## 4. What the GC stages in the spec fix, and what they do not {#spec-coverage}
 
 - Stage A (parallelism) removes hours from graduation and redelete; F3 is a one-line addition that removes the
