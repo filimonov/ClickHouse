@@ -2923,3 +2923,13 @@ of a cheap agent's time. Zero risk to the tree if step 2's revert check is honou
 **How it can vanish.** `ReplaceFileOperation` of the object-storage metadata backend (`MetadataStorageFromDiskTransactionOperations.cpp:428`) moves the destination aside, then the replacement in; if the second move and its undo both fail, the destination is lost. Today: the server terminates in the callback, restarts, and reloads the part as non-transactional (silently wrong, but every running snapshot died with the process). With the bounded retry from `2026-09-16-transaction-metadata-store-best-effort-design.md` (rev.3e, §5): the retried `setAndStoreRemovalTID(EmptyTID)` reloads the synthesized record, finds the value equal and returns; running snapshots survive, and a snapshot that predates the part's creation can see the part after a re-attach. Found by the codex xhigh review of the branch (`lane-g/tmp/txn_meta_store/branch_review.md` #1, still open in `fixwave_review.md`).
 
 **Fix shape.** Fail closed on reload: if the in-memory info has `storing_version > 0` (a record was stored before) and no file is found, throw (`CORRUPTED_DATA`-class, not `LOGICAL_ERROR`, since it is input-reachable) instead of synthesizing; the retry helper then rethrows after its budget as for any other persistent error, and the load path surfaces the corruption. Needs a fault test for "replacement and undo both fail" on the metadata storage. Generic MergeTree code, upstream-portable; separate PR after the retry branch lands.
+
+## `[otel-demo-s3-budget-audit-2026-09-25]` otel.demo CAS S3 budget audit: twelve ranked findings on repeated and unnecessary work {#otel-demo-s3-budget-audit-2026-09-25}
+
+Report: `docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md`. Spec that absorbs the GC-side items:
+`docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md` (A0 = F3, A4 = F4, verification F6/F8, open
+questions F5/F7/F2). Stand: 2.3M PUT, 6.4M GET, 384k LIST per day on one replica for 43 MB/day of user data; 86% of
+parts are `system.*` log tables on the CAS disk (F1, configuration); `delete_tmp` repoints 191k/day (F2,
+`[PART-REMOVAL-REPOINT]`, now with a full cost line); carried condemned rows never persist `marker_confirmed` (F3,
+one-line GC fix); one manifest body GET per edge with no per-round reuse (F4, 29% of GETs); `_ckpt` PUT per flush (F5,
+21% of PUTs, owner decision); ~3 S3 LIST requests per 1000-key page (F6, verify); six GC requests per garbage blob (F7).

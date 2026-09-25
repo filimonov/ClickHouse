@@ -13,6 +13,7 @@ doc_type: 'reference'
 - Status: design approved in conversation; spec for review before planning
 - Trigger: Altinity/ClickHouse issue #2429 (otel.demo, 2026-09-24): GC rounds grew from 98 s to 2800 s over eight days, deletes pinned at 5000 per round, ~520k retired-but-undeleted blobs, 4.6M ref-log keys listed per round
 - Builds on: PR #2351 (`cas/gc-parallel-delete-blobs`) and its approved rework spec `2026-09-14-cas-gc-round-pool-and-parallel-redelete-design.md` (revision 11)
+- Companion measurement: `docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md` (S3 budget of the stand, findings F1-F12 referenced below)
 - Backlog items absorbed: `[gc-round-budgets-are-not-backpressure]`, `{#gc-backlog-runaway}` ask 3, `[covered-log-cleanup-aborts-on-catalog-etag]`, CAS-079, `[gc-reduce-confirm-marker-read-ahead]`, `[gc-condemn-head-read-ahead-pinned-window]`, `[gc-pending-deletes-fan-out]`, `[gc-deferred-round-pays-full-list]`, `[gc-namespace-janitor-one-page-per-round-cannot-keep-up]` (steps 1 and 2 of its revised order), CAS-101
 
 ## 1. Problem {#problem}
@@ -50,7 +51,11 @@ Non-goals:
 
 ## 3. Stage A: parallelism, no change of decisions {#stage-a}
 
-Base: PR #2351 brought to the shape of its approved rework spec (round-scoped `GcRound` with `io_pool` and `meta_writer`, one disk setting `cas_gc_concurrency` default 16, `pending_deletes` fan-out on by default, every worker failure logged and counted as `redelete_failed` / `CASGCRetiredRedeleteFailed`). Stage A adds three changes on top. Each one moves only the moment of a read, never a decision; the rule that `GcReadAhead` is worth trusting for ("only the moment of the fetch moves") stays the design rule.
+Base: PR #2351 brought to the shape of its approved rework spec (round-scoped `GcRound` with `io_pool` and `meta_writer`, one disk setting `cas_gc_concurrency` default 16, `pending_deletes` fan-out on by default, every worker failure logged and counted as `redelete_failed` / `CASGCRetiredRedeleteFailed`). Stage A adds four changes on top, in this order. Each one moves only the moment of a read or memoizes an immutable body, never a decision; the rule that `GcReadAhead` is worth trusting for ("only the moment of the fetch moves") stays the design rule.
+
+### A0. Persist the marker confirmation on carry {#a0-persist-marker-confirmed}
+
+`settleEntry` (`CasBlobInDegree.cpp`) carries a condemned entry unchanged when `confirm_condemned_marker` succeeded but the graduation budget was exhausted, so the run keeps `marker_confirmed = false` for every carried row and only the in-process memo remembers the confirmation. After a restart or a leadership change every carried row pays the synchronous GET again (audit F3: 200k GETs, four hours, round 1379 on otel.demo). Fix: when the gate confirmed the marker, carry a copy with `marker_confirmed = true`; the run is rewritten anyway. The gate's semantics do not change; only rows condemned since the last successful run still need the re-check. Under stage C the count budget disappears, but the deadline carries rows the same way, so A0 stays necessary.
 
 ### A1. Graduation gate through the read-ahead {#a1-graduation-gate}
 
@@ -66,9 +71,16 @@ Why the memo must stay optional: a leadership change or restart empties it, and 
 
 As in the rework spec 3.3: `redeleteBlobs` over the round's `io_pool`, submission window `2 × concurrency`, outcomes applied on the round thread in index order within a shard, the four safety comments re-attached.
 
-### A4. Acceptance {#a4-acceptance}
+### A4. Manifest bodies read once per round {#a4-manifest-body-memo}
+
+`foldManifestEdges` reads a manifest body once per emitted edge (`CASRefManifestBodyFoldGets == CASRefEmittedEdges`, audit F4). Bodies are immutable at write-once keys, and within one round the same manifest is read for its `+1` and later its `-1` (publish, repoint, drop of one part fall into one round whenever the round is longer than the part's life). Memoize the decoded edge list per `ManifestId` for the duration of the round, bounded by a total edge count; past the bound, evict and re-read. No decision moves: the fold applies the same edges in the same order. Expected on otel.demo: manifest GETs in `fold_ref_intake` halve; together with the `delete_tmp` repoint elision (a writer change outside this spec, audit F2) they quarter.
+
+### A5. Acceptance {#a5-acceptance}
 
 On a stand with ≥100k condemned entries and a fresh leader (empty memo):
+
+- After A0, a restart with N carried condemned rows issues at most (rows condemned in the last round) meta GETs, not N.
+- After A4, `CASRefManifestBodyFoldGets` per round is at most the number of distinct manifests folded, not the number of edges.
 
 - `fold_reduce` and `pending_deletes` wall time scale with `cas_gc_concurrency`; `CASGCReadAheadMiss` on a mass-removal round is within one window of zero.
 - `objects_deleted`, `objects_spared`, `objects_replaced`, `entries_graduated` are identical to a `cas_gc_concurrency = 1` run on the same input.
@@ -227,6 +239,9 @@ Stage C:
 1. B3 is adjudicated, not decided (section 4). Confirmed in conversation.
 2. AWS conditional `DELETE` with `If-Match` on the blob key would make the `pending_deletes` HEAD redundant (412 and 404 give the same classification). This is a protocol-step change under the user's veto on such optimizations for PUT; it is listed here only as a question, not as work.
 3. The default of `cas_gc_round_deadline_sec` (300) is a starting point to be tuned on the stand.
+4. Audit F5: the ref lane overwrites `_ckpt` on every flush (477k PUT/day, 21% of PUTs, one of the two PUTs on the flush's critical path). A checkpoint every N flushes or T seconds bounds the recovery walk by N logs. Protocol-semantics decision for the owner; not part of this spec.
+5. Audit F7: batching the unconditional `.meta` deletes after a successful blob delete through the 1000-key batch path. Free on AWS, saves requests and threads; a protocol-step change for the owner.
+6. Audit F2: the `delete_tmp` repoint elision is the largest writer-side lever (191k repoints/day on the stand, a third of GC intake). It is a writer change outside this spec and should be scheduled next to stage A.
 
 ## 11. Verification items for the plan {#verification-items}
 
@@ -234,4 +249,6 @@ Stage C:
 - `groupRefKeys` and `RefTableListing` behaviour when given a per-life listing that starts at the floor (B1 step 3): confirm nothing below the floor is required for the grouping's validation.
 - The exact key the intake probes for `frontier_proven`, to reuse it verbatim in B1 step 2.
 - `listUnder` `start-after` semantics on GCS and the local backend (the code notes some backends ignore it and the filter keeps the contract).
+- Audit F6: the global LIST costs ~3 S3 requests per 1000-key logical page (`S3ListObjects` 14.4k per round against `CASRefGlobalListPages` 1543). Confirm `max_keys` propagation into `S3ObjectStorage::iterate` before B1/B2 reuse the same path; one request per 1000 keys is the target.
+- Audit F8: ~200k/day manifest PUTs on the stand are unattributed (2 per part publish); attribute before any writer-side change.
 - Where `CondemnedSummary` totals are available to `cas_mounts` without a new read (C5).
