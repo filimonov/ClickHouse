@@ -11,11 +11,11 @@ doc_type: 'design'
 
 Status: **narrowed draft for discussion (2026-08-23)**. This document proposes a follow-up refactor. It does not replace
 the nearly implemented GCS request-isolation design in
-`2026-08-20-cas-gcs-request-isolation-design.md`, and it must not interrupt that design's Task 9
+`2026-08-20-cas-gcs-request-isolation-design.md` (deleted in `e71aa78b8fe`; landed, see `faab6678d8f`, `5d7f26274cb`, `dabf9f514bc`, `8d4ec206fc5`), and it must not interrupt that design's Task 9
 verification or change its wire behavior.
 
 The later
-[unconditional blob-publication design](/superpowers/specs/cas-unconditional-blob-publication-design)
+unconditional blob-publication design (`2026-08-21-cas-unconditional-blob-publication-design.md`, deleted in `e71aa78b8fe`; landed, see `cd4e8358b92`, `2d39604d584`, `e6bd0b5d124`)
 removed conditional blob PUT/copy and their response tokens from the production contract. This
 proposal now applies to every conditional non-blob write, including create-if-absent
 metadata/control artifacts and conditional replacements, plus native-version `HEAD` and
