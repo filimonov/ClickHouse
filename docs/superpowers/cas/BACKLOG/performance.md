@@ -478,9 +478,14 @@ remainders (research 2026-09-15) — pursue fixing the over-long read range in
 
 Source: `tmp/groom/u11-specs-c/reviewed/proposal.md` §4/§6 (u11-specs-c unit).
 
+### `[ref-catalog-cas-starvation-under-parallel-writers]` {#ref-catalog-cas-starvation}
+
+DONE, superseded by the hot-key lane below; kept as a heading so the anchor stays resolvable — still
+cited by `docs/superpowers/plans/2026-09-04-cas-hot-key-lane-phase-a.md:2325` and the design spec.
+
 ### `[hot-key-lane-phase-a-followups]` Phase A of the hot-key lane landed on both `cas-gc-rebuild` and `altinity/antalya-26.6`; what its reviews deferred (2026-09-04) {#hot-key-lane-phase-a-followups}
 
-Formerly `[ref-catalog-cas-starvation-under-parallel-writers]` {#ref-catalog-cas-starvation} — one
+Formerly `[ref-catalog-cas-starvation-under-parallel-writers]` (above) — one
 process's CREATE/DROP writers starved each other on the ref-catalog compare-and-swap. Seen on the local
 CA-s3 stateless lane (run 2, ~10 parallel jobs): `01039_mergetree_exec_time`'s `CREATE TABLE` failed
 after 78.9 s with "CAS ref catalog update: gave up at the policy deadline"; RCA in
