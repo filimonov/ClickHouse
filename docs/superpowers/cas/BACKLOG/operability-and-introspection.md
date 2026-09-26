@@ -535,7 +535,7 @@ P2, operability only — nothing is corrupted or lost, and no data path is block
 `gc_scheduler_mutex`). What is missing is cooperative cancellation:
 
 - **Server shutdown and the storage destructor are DONE**
-  (`docs/superpowers/specs/2026-09-04-cas-gc-teardown-stop-design.md`{#cas-gc-teardown-stop-design},
+  (`docs/superpowers/cas/history/2026-09-04-cas-gc-teardown-stop-design.md`{#cas-gc-teardown-stop-design},
   status "IMPLEMENTED, rev.5"): both arm the pool's teardown flag before the lock or join they would
   otherwise wait behind, the open request plane carries that flag as its fence, and a round in flight
   is refused at its next request. What remains of this item is `SYSTEM CAS GC STOP` and
@@ -793,7 +793,7 @@ doc comment true) or narrow the classifier.
 ### Close the `cas_` config-prefix migration window {#cas-config-prefix-window}
 
 Scheduled removal, not a defect. The CAS disk settings move to a `cas_` config-key prefix
-(`docs/superpowers/specs/2026-08-25-cas-disk-settings-namespace-design.md`), and the unprefixed
+(`docs/superpowers/specs/2026-08-25-cas-disk-settings-namespace-design.md`, deleted in `05b2a33ff32`; landed, see `917600b122b`), and the unprefixed
 spelling is accepted for a bounded period so that configurations already living in external CI/CD
 scripts keep working across a binary upgrade. Confirmed still open, both branches: the migration block
 (legacy-name collection, aggregated `LOG_WARNING`, apply loop) is fully intact in
@@ -951,7 +951,7 @@ silent-refusal upstream bug (below). Items:
 Third incident of the same class (unforwarded `IStorage` virtual / direct cast through the proxy):
 SYSTEM verbs (fixed, 05017), action-lock parking (open), mutations (`checkMutationIsPossible`,
 fixed + 05021). A commissioned audit
-(`docs/superpowers/reports/2026-07-21-storageproxy-forwarding-audit.md`) found **~60 unforwarded
+(`docs/superpowers/reports/2026-07-21-storageproxy-forwarding-audit.md`, deleted in `f5c01e88d01`) found **~60 unforwarded
 virtuals, ~45 of class "must forward"**, including a critical one: `backupData`'s no-op default
 means a BACKUP of a not-yet-materialized lazy table silently contributes NO data. Design findings:
 no compile-time guard exists for "new virtual not forwarded"; swap-on-materialize does NOT fix the
