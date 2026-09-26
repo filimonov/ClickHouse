@@ -59,8 +59,8 @@ benchmark, human-accepted.
   superseding: audit F9 (view rebuild) and F15/F16 (LIST on directory probes) below.
 - **[B98]/[promote-recreate]** — DONE (provenance only). Unconditional streaming `publishBlob` removed the
   conditional-overwrite API and the tokened promote gate. Evidence: `940b1685bf96` (both cas-gc-rebuild and
-  antalya-26.6). Emulated materialization remains tracked separately under
-  `[emulated-resurrect-should-spill-to-disk]`.
+  antalya-26.6). Emulated materialization is also DONE (`fe80d150eec7`, `emuPublishBlobAtomically` now
+  streams instead of materializing the full body).
 - **[R1/X1] ephemeral reader pin** — KEEP, design-only/VERIFY. Per-server-owned namespaces narrow the window and a live ref resolving to an absent object surfaces `FILE_DOESNT_EXIST` (`INV-NO-DANGLE`), so for normal MergeTree this is covered by `DataPart` lifetime. Cross-node GC fence for a ref-less reader;
   audit whether such a reader path exists at all before building it.
 - **[ch128ctx] slot-bound blob-hash middle tier** — KEEP, small spec. `cityHash128(content) ∥

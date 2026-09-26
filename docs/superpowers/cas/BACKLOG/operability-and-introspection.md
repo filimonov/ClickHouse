@@ -1211,8 +1211,8 @@ and `fsck_only_ca.xml` still keep `ca_ro` out of `config.d/` as the only mitigat
 VERIFY — not reproduced since the streaming `publishBlob` path landed; re-run a long soak to confirm
 resolved. Still blocked, confirmed: the 4h continuous-chaos soak that would re-confirm this is itself
 blocked on other soak-infra work per `testing-and-ci.md:22` (compacting object store, streaming fsck,
-TTL-robust oracle). Emulated/local publication still materializes one complete body and is tracked
-separately by `[emulated-resurrect-should-spill-to-disk]`.
+TTL-robust oracle). Emulated/local publication no longer materializes one complete body either
+(`fe80d150eec7`, `emuPublishBlobAtomically` streams into the temporary file).
 
 ### `[B14]` expedited / GDPR right-to-erasure delete {#b14-gdpr-erasure}
 
