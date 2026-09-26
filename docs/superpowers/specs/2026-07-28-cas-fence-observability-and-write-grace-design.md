@@ -1,7 +1,7 @@
 # CAS fence-window observability + opt-in write grace — design
 
 **Status:** DRAFT (2026-07-28), **rev.2 — silent-expiry path**. Spec only; no code landed. Companion
-plan: `docs/superpowers/plans/2026-07-28-cas-fence-observability-and-write-grace.md`.
+plan: `docs/superpowers/plans/2026-07-28-cas-fence-observability-and-write-grace.md` (deleted in `f5c01e88d01`).
 rev.2 folds in verification against the actual msan incident log
 (`tmp/investigate/msan23_server.log`, window 02:02–02:10): the dominant real failure was NOT a
 throwing renewal + self-remount, but a **silently hanging** renewal PUT whose fence deadline expired
@@ -10,7 +10,7 @@ Mode-2 (silent hang/expiry/re-arm) coverage (§A.5); Part B gains the `setMountD
 signaler (§B.2) it needs to actually wake on that path.
 **Branch:** `cas-gc-rebuild`.
 **Relationship to prior work:** builds directly on the fence-not-rescue design
-(`docs/superpowers/specs/2026-07-24-cas-mount-lease-self-race-fix-v2-design.md`, rev.4, IMPLEMENTED)
+(`docs/superpowers/specs/2026-07-24-cas-mount-lease-self-race-fix-v2-design.md`, rev.4, IMPLEMENTED, deleted in `f5c01e88d01`)
 and the mount-lease self-race fix. That work made a lease holder that cannot confirm its renewal
 *fence and self-remount* rather than abort; this work makes that lifecycle **visible** (Part A) and
 lets a durable write **ride out** the fence→remount window instead of failing instantly, when the
