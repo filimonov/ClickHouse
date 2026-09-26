@@ -12,8 +12,8 @@
 **Исторический снимок (2026-08-23).** Этот файл заморожен как аудит указанного выше диапазона и
 датированного HEAD. Старые helper-методы, настройки и conditional blob publication внутри него —
 исторические свидетельства, не current implementation guidance. Текущий контракт задают
-[спецификация](/superpowers/specs/cas-unconditional-blob-publication-design),
-[план реализации](/superpowers/plans/cas-unconditional-blob-publication),
+спецификация (`2026-08-21-cas-unconditional-blob-publication-design.md`, deleted in `e71aa78b8fe`; landed, see `cd4e8358b92`, `2d39604d584`, `e6bd0b5d124`),
+план реализации (`2026-08-22-cas-unconditional-blob-publication.md`, deleted in `e71aa78b8fe`),
 [live backlog](/superpowers/cas/backlog) и [операторская документация](/antalya/cas).
 
 Статусы: **исправлено** · **подтверждено** · **частично** · **не подтвердилось** · **by-design** ·
