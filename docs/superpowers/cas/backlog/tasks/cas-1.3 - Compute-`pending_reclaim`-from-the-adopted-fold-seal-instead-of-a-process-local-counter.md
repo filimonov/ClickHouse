@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:53'
+updated_date: '2026-09-26 06:59'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -15,6 +16,7 @@ labels:
   - 'needs:spec'
   - 'origin:2031-triage'
   - 'origin:otel-demo-audit'
+  - 'origin:canary'
 milestone: m-7
 dependencies: []
 references:

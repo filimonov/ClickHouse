@@ -4,6 +4,7 @@ title: 'Design read-request reduction: inline-by-size placement and one-GET part
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:55'
+updated_date: '2026-09-26 07:01'
 labels:
   - 'area:read-path'
   - 'complexity:large'
@@ -12,6 +13,7 @@ labels:
   - 'needs:spec'
   - 'needs:measurement'
   - 'origin:review'
+  - 'origin:canary'
 dependencies: []
 references:
   - >-
@@ -19,7 +21,7 @@ references:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f9
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md
-priority: medium
+priority: high
 type: design
 ordinal: 22000
 ---

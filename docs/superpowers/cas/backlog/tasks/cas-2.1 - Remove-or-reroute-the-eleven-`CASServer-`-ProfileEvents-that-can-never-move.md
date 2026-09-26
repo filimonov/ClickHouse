@@ -4,6 +4,7 @@ title: Remove or reroute the eleven `CASServer*` ProfileEvents that can never mo
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:53'
+updated_date: '2026-09-26 07:01'
 labels:
   - 'area:observability'
   - 'complexity:small'
@@ -12,6 +13,7 @@ labels:
   - 'needs:decision'
   - 'origin:review'
   - 'origin:otel-demo-audit'
+  - 'origin:canary'
 milestone: m-7
 dependencies: []
 references:
@@ -22,7 +24,7 @@ references:
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md
 parent_task_id: CAS-2
-priority: low
+priority: high
 type: chore
 ordinal: 7000
 ---

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:53'
-updated_date: '2026-09-26 06:53'
+updated_date: '2026-09-26 07:01'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -16,6 +16,7 @@ labels:
   - 'needs:decision'
   - 'origin:review'
   - 'origin:otel-demo-audit'
+  - 'origin:canary'
 milestone: m-7
 dependencies:
   - CAS-1
@@ -26,7 +27,7 @@ documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md
   - docs/superpowers/cas/umbrella-roadmap.md
   - docs/en/antalya/cas/operations/monitoring.md
-priority: medium
+priority: high
 type: task
 ordinal: 10000
 ---

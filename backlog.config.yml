@@ -43,6 +43,7 @@ labels:
   - "needs:repro"
   - "origin:2031-triage"
   - "origin:otel-demo-audit"
+  - "origin:canary"
   - "origin:soak"
   - "origin:review"
   - "origin:issue"

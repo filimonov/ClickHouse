@@ -4,6 +4,7 @@ title: Audit the 183 CAS ProfileEvents so every surviving event has a named read
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:53'
+updated_date: '2026-09-26 07:01'
 labels:
   - 'area:observability'
   - 'complexity:large'
@@ -11,6 +12,7 @@ labels:
   - 'confidence:solid'
   - 'origin:review'
   - 'origin:otel-demo-audit'
+  - 'origin:canary'
 milestone: m-7
 dependencies: []
 references:
@@ -19,7 +21,7 @@ references:
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md
   - docs/superpowers/cas/umbrella-roadmap.md
-priority: medium
+priority: high
 type: chore
 ordinal: 6000
 ---
