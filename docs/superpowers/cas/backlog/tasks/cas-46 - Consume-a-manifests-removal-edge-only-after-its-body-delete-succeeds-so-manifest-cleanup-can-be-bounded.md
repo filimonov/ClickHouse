@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
+updated_date: '2026-09-26 07:14'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -40,6 +41,7 @@ Provenance: BACKLOG/gc.md#gc-mf-cleanup-durable-retry (soak-t6b-report); verifie
 <!-- AC:BEGIN -->
 - [ ] #1 A round cut by the deadline inside manifest cleanup leaves the rest discoverable, and the next round deletes it
 - [ ] #2 A soak burst of 200k owner-removed manifests drains with zero unreachable at checkpoint
+- [ ] #3 A backend error in the post-CAS tail (GC cleanup after the round commit) is recorded and does not fail the committed round
 <!-- AC:END -->
 
 ## Definition of Done

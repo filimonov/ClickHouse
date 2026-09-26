@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 07:03'
+updated_date: '2026-09-26 07:17'
 labels:
   - 'area:gc'
   - 'area:ci'
@@ -18,6 +18,7 @@ labels:
 milestone: m-1
 dependencies:
   - CAS-29.1
+  - CAS-29.10
 references:
   - CA/Gc/CasGc.cpp
   - CA/Pool/CasPool.cpp
