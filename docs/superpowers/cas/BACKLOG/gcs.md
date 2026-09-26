@@ -169,6 +169,49 @@ is Debug since 08c2a2ec25e; `PocoHTTPClient`'s `Response status: 409` stays Erro
 on GCS and zero 409 on AWS for `_ckpt` under the soak's mutations stage; and classify the name
 explicitly (a conflict-in-flight class next to `PreconditionFailed`) so the log says what it is.
 
+## `[single-attempt-client-status-error-log-site]` A single-attempt client's HTTP-status failure (429, 409, 5xx) is still logged at Error by `PocoHTTPClient`; on GCS that is 170 lines per node per 8-minute smoke {#single-attempt-client-status-error-log-site}
+
+Follow-up of `docs/superpowers/cas/2026-09-04-single-attempt-client-log-level-proposal.md`, which
+demoted the thrown-exception path (`Client.cpp` network error, `WriteBufferFromS3` S3Exception) and
+declared the status-code path out of scope until a lane showed it. The GCS smoke of 2026-09-05 showed
+it at once: every 429 on `_ckpt` (see failure class 2 above) is written as
+`<Error> AWSClient: Response status: 429, Too Many Requests` at `src/IO/S3/PocoHTTPClient.cpp:740`,
+the `else if (HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())` branch,
+while the engine resolves and reissues it. On AWS the same hot key produces 409
+`ConditionalRequestConflict`, logged by the same line.
+
+**Sizing (2026-09-05): the same size as the first two sites, about an hour with the run.**
+`PocoHTTPClient` is built from `PocoHTTPClientConfiguration` (constructor at `PocoHTTPClient.cpp:222`),
+which derives from `Aws::Client::ClientConfiguration` and therefore already carries `retryStrategy`;
+the signal is in hand at construction and simply not copied.
+
+1. A `bool single_attempt` member, filled in that constructor next to `s3_use_adaptive_timeouts` by
+   `dynamic_cast<const SingleAttemptRetryStrategy *>(client_configuration.retryStrategy.get())`. The
+   second constructor (from a bare `Aws::Client::ClientConfiguration`, `:240`) leaves it `false`.
+2. In the log branch: `single_attempt` and a retryable status (429, 409, 5xx) → `LOG_DEBUG`; otherwise
+   as today. Other 4xx on a single-attempt client stay Error, they are genuine request errors.
+
+About ten lines of product code. Tests: the `PocoHTTPClient` gtests already drive `TestPocoHTTPServer`
+with a chosen status, so the two cells (single-attempt → Debug, ordinary → Error) on a 429 use the
+same log capture as the two earlier sites. Risk as before: the line's level only; retries and the
+outcome are untouched. Verification: those gtests plus a GCS smoke with zero `Response status: 429`
+at Error and the same 429 count at Debug.
+
+**409 `ConditionalRequestConflict`, two parts; the second matters more and is NOT this item.**
+- Log: 409 joins the retryable list above, so `Response status: 409` goes to Debug for the
+  single-attempt client; the `WriteBufferFromS3: S3Exception name ConditionalRequestConflict` line is
+  Debug already (08c2a2ec25e). Do this together with the site.
+- Classification: the engine does not know the name, treats it as "outcome unknown" and spends a
+  resolve read before reissuing. Safe but imprecise: AWS states the attempt did not apply ("conflicting
+  operation in flight, retry"), so the outcome IS known. The right step is a predicate
+  `isConditionalRequestConflictError` next to `isPreconditionFailedError` in `src/IO/S3` (by exception
+  name, the SDK does not model it) and a "conflict in flight" class in `CasRequests::writeLoop`:
+  reissue with backoff, no resolve read, and a log line that says what it is rather than reading as a
+  refusal. That is a branch in the engine, so by the engine rule: a short spec paragraph, opus review,
+  a gtest on `CasInMemoryBackend` injecting the name. Half a day, not an hour. Placement: under A1 above
+  (`[gcs-hot-control-keys-429]`): the `_ckpt` conflicts disappear with the rewrite
+  rate, and until then the engine copes.
+
 ## Failure class 3: conditional writes that made exactly one attempt (2026-09-02 audit) {#single-attempt-conditional-writes}
 
 **`[cas-uncontrolled-conditional-writes]`** — the twenty-three call sites the
