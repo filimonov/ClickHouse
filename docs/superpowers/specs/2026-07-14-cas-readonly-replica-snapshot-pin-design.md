@@ -13,10 +13,10 @@ doc_type: 'reference'
 **Branch:** `cas-gc-rebuild`
 **Status:** design (brainstormed + section-by-section discussed with user 2026-07-13/14)
 **Depends on / interacts with:** the ref snapshot+log model
-([`2026-07-11-cas-ref-table-snapshot-log-design.md`](2026-07-11-cas-ref-table-snapshot-log-design.md),
-amended by the [rev.6 lease-exclusivity proposal](2026-07-13-cas-ref-lease-exclusivity-rev6-proposal.md)),
+(`2026-07-11-cas-ref-table-snapshot-log-design.md`,
+amended by the rev.6 lease-exclusivity proposal `2026-07-13-cas-ref-lease-exclusivity-rev6-proposal.md`; both deleted in `f5c01e88d01`),
 the pool-member decommission design
-([`2026-07-13-cas-pool-member-decommission-design.md`](2026-07-13-cas-pool-member-decommission-design.md)),
+(`2026-07-13-cas-pool-member-decommission-design.md`, deleted in `f5c01e88d01`),
 and the upstream readonly-refresh MergeTree feature (`refresh_parts_interval` / `MergeTreeData::refreshDataParts`).
 
 ## Motivation {#motivation}
@@ -195,7 +195,7 @@ O(window). A blob is condemnable iff its edge set is empty across `current refs 
 This overlay is the **shared retention primitive**: a pin contributes an edge-set (a snapshot-window here,
 an explicit manifest-closure for a fetch pin) with a liveness owner, and dead-owner pins are dropped
 before the fold. The reader pin is one consumer; the fetch-handoff pin
-([`2026-07-15-cas-fetch-handoff-retention-pin-design.md`](2026-07-15-cas-fetch-handoff-retention-pin-design.md))
+(`2026-07-15-cas-fetch-handoff-retention-pin-design.md`, deleted in `f5c01e88d01`)
 is an independent second consumer built on the same overlay.
 
 ### 5.3 Writer snapshot age-trigger (amendment) {#age-trigger}
@@ -258,7 +258,7 @@ itself). They are therefore specified separately and are **independently shippab
 only the §5.2 primitive, not the reader-mount mode, the snapshot-window pin, the reader-lease, or the
 readonly-refresh reuse.
 
-See [`2026-07-15-cas-fetch-handoff-retention-pin-design.md`](2026-07-15-cas-fetch-handoff-retention-pin-design.md)
+See `2026-07-15-cas-fetch-handoff-retention-pin-design.md` (deleted in `f5c01e88d01`)
 — it owns the fetch protocol, the sender-created / receiver-build-owned pin cleaned by the `min_active`
 heartbeat floor, the bulk write-replica warm-up extension, the interim option-C status, and the detached
 cluster (B66a/B66b).
@@ -355,5 +355,5 @@ arbitrarily long, and GC as folding `current ∪ pinned` edges with incremental 
   deferral within pinned windows.
 - `docs/superpowers/cas/ROADMAP.md` + `BACKLOG.md`: R1/X1 moves from DESIRABLE/VERIFY to in-progress;
   cross-reference the promotion follow-up.
-- `docs/superpowers/specs/2026-07-13-cas-ref-lease-exclusivity-rev6-proposal.md`: note the snapshot
+- `docs/superpowers/specs/2026-07-13-cas-ref-lease-exclusivity-rev6-proposal.md` (deleted in `f5c01e88d01`): note the snapshot
   age-trigger amendment.
