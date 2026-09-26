@@ -50,8 +50,8 @@ fake-GCS liveness case `tests/integration/test_cas_gcs_relink_liveness` (zero re
 both nodes); and now, independently, by
 [Altinity/ClickHouse#2310](/superpowers/cas/backlog/issue-2310) — closed 2026-09-14, gate passed on PR
 #2300 run 10, `cas_alter_attach_1`/`cas_s3_cache_alter_attach_1` 8/8 on x86 and aarch64. Design:
-[relink confirm liveness](/superpowers/specs/cas-relink-confirm-liveness-design), revision 10. Plan:
-[implementation plan](/superpowers/plans/cas-relink-confirm-liveness).
+relink confirm liveness (`docs/superpowers/specs/2026-09-02-cas-relink-confirm-liveness-design.md`), revision 10. Plan:
+implementation plan (`docs/superpowers/plans/2026-09-02-cas-relink-confirm-liveness.md`). Both deleted in `05b2a33ff32`; landed, see `5740d2a2953`, `10d571917c7`.
 
 **Still not closed on its own terms.** The item's stated release gate — a clean ten-minute phase-3 soak
 on the real GCS stand, then a one-time two-hour closing soak — has not been re-run since
@@ -103,6 +103,11 @@ defect it prevents; `CaRelinkConfirmCore_sab_stalecache.cfg:1`'s "lane quiescenc
 matches the rule; `CaRelinkConfirmCore.tla:50`'s "removes exactly ONE load-bearing rule" now invites a
 false partition reading; `:225`'s "same guard as `NsNoise`" is analogous, not identical, and the
 `_sab_nopoison` narrative is loose about where graduation completes. None blocking.
+
+Closed: `[issue-2219-relink-refusal-log-level]` (`{#issue-2219-relink-refusal-log-level}`, formerly in
+`BACKLOG.md`), a relink-confirm refusal classified as `NO_REPLICA_HAS_PART` instead of `NETWORK_ERROR`:
+`081c473904e` (`cas-gc-rebuild`) and `c5ded159345` (branch `cas-relink-refusal-classification` off
+`antalya-26.6`, PR #2159); test `test_confirm_refuses_when_source_dropped_in_window`. See `85eb1f330a8`.
 
 ## Failure class 2: hot control keys and the GCS mutation limit (F3, F12) {#gcs-hot-control-keys-429}
 
@@ -246,7 +251,7 @@ plus a controller-only handle, turning a future omission into a compile error.
 
 ### `[gcs-conditional-overwrite-rethink]` ✅ CLOSED: blob publication is unconditional and no longer GCS-capped {#gcs-conditional-overwrite-rethink}
 
-Closed by the [unconditional blob-publication design](/superpowers/specs/cas-unconditional-blob-publication-design)
+Closed by the unconditional blob-publication design (`docs/superpowers/specs/2026-08-21-cas-unconditional-blob-publication-design.md`, deleted in `e71aa78b8fe`; landed, see `cd4e8358b92`, `2d39604d584`, `e6bd0b5d124`)
 and its implementation on 2026-08-23. The historical problem was real: GCS does not enforce the
 required destination precondition at multipart completion, so a conditional blob-body design either
 needed a one-part ceiling or a more elaborate compose protocol. The implemented answer removes the
