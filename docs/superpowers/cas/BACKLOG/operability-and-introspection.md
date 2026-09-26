@@ -301,9 +301,9 @@ together so downstream names change once. Check `tests/integration` and `tests/q
 names before removing any. Expected result on the order of a third fewer events; the number is not the
 goal, the reader-per-event property is.
 
-Related: `gcs.md` F11 closing checklist item 3 (still unexecuted); `{#gc-backlog-runaway}` (GC phase
-events are the other large family); `umbrella-roadmap.md` §3 and report `{#f25}` for the live-data
-corroboration.
+Related: `gcs.md` F11 closing checklist item 3 (still unexecuted); `BACKLOG/gc.md`'s
+`{#janitor-page-hardcoded}` (GC phase events are the other large family); `umbrella-roadmap.md` §3 and
+report `{#f25}` for the live-data corroboration.
 
 ### ProfileEvents surface residuals {#profileevents-surface-residuals}
 
