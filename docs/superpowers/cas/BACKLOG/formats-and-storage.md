@@ -137,6 +137,32 @@ observability) does not. Items are annotated individually where this applies.
 
   Fix direction: derive the expiry decision from a monotonic, locally-generated stamp (the `queued_at_ns` already recorded) instead of re-reading the storage-supplied etag; or cap `emu_token_state` by size as a backstop. Existing unit coverage (`gtest_cas_backend.cpp:847-919`) already has the injectable clock/etag doubles needed for a failing-first test. Behavior-only, no wire-format change.
 
+## Generic MergeTree follow-ups (not CAS-specific) {#generic-mergetree-followups}
+
+### `[version-metadata-reload-fail-closed-when-record-vanished]` Reload of `txn_version.txt` synthesizes a non-transactional record when a previously stored file has vanished (2026-09-17, follow-up of the transaction metadata retry) {#version-metadata-reload-fail-closed}
+
+**Where.** `VersionMetadataOnDisk::loadMetadata` (`VersionMetadataOnDisk.cpp:86-93`): when neither
+`txn_version.txt` nor its `.tmp` exists, the part gets non-transactional metadata (empty `removal_tid`,
+`NonTransactionalCSN`). That is correct for a part that never had the file and wrong for a part whose
+file was stored before and is gone.
+
+**How it can vanish.** `ReplaceFileOperation` of the object-storage metadata backend
+(`MetadataStorageFromDiskTransactionOperations.cpp:428`) moves the destination aside, then the
+replacement in; if the second move and its undo both fail, the destination is lost. Today: the server
+terminates in the callback, restarts, and reloads the part as non-transactional (silently wrong, but
+every running snapshot died with the process). With the bounded retry from
+`2026-09-16-transaction-metadata-store-best-effort-design.md` (rev.3e, §5): the retried
+`setAndStoreRemovalTID(EmptyTID)` reloads the synthesized record, finds the value equal and returns;
+running snapshots survive, and a snapshot that predates the part's creation can see the part after a
+re-attach. Found by the codex xhigh review of the branch.
+
+**Fix shape.** Fail closed on reload: if the in-memory info has `storing_version > 0` (a record was
+stored before) and no file is found, throw (`CORRUPTED_DATA`-class, not `LOGICAL_ERROR`, since it is
+input-reachable) instead of synthesizing; the retry helper then rethrows after its budget as for any
+other persistent error, and the load path surfaces the corruption. Needs a fault test for "replacement
+and undo both fail" on the metadata storage. Generic MergeTree code, upstream-portable; separate PR
+after the retry branch (issue #2344, PR #2396) lands.
+
 ## Backends (S3, GCS, POSIX, emulated) {#backends}
 
 - **[GATE #1: Azure] real-store GC validation on Azure** — GATE — The earlier AWS + GCS exact-delete/GC validation completed on 2026-07-03. Azure has not started and remains the last leg of that reclaim gate; confirmed no Azure backend code exists under `ContentAddressed/` besides an enum entry. The newer unconditional-publication GCS gate is separate and is still blocked, as recorded in the [2026-08-23 live results](/superpowers/cas/unconditional-blob-publication-live-results). Before implementing Azure CAS, decide whether to introduce the provider-neutral conditional-operations layer described in the [draft proposal](/superpowers/specs/cas-object-storage-conditional-operations-proposal) (confirmed present at `docs/superpowers/specs/2026-08-21-cas-object-storage-conditional-operations-proposal.md`). The refactor is justified primarily if Azure is the next concrete backend.
