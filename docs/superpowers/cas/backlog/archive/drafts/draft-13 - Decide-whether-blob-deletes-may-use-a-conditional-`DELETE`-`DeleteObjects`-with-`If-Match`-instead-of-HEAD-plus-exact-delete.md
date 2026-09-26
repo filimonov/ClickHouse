@@ -6,7 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 08:08'
+updated_date: '2026-09-26 12:20'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -67,4 +67,6 @@ Provenance: BACKLOG/gc.md#gc-multidelete-conditional-gap (blob half) and the 'wo
 
 <!-- SECTION:NOTES:BEGIN -->
 u03-gc-c merged audit F7 (six requests per garbage blob; batched .meta deletes) here, no separate task.
+
+Decided 2026-09-26 by decision-7 (per-object conditional bulk deletes); implementation is CAS-284 with per-store subtasks. Archived.
 <!-- SECTION:NOTES:END -->
