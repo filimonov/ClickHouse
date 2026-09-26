@@ -10,7 +10,7 @@ doc_type: 'reference'
 # CAS backend request contract — implementation rulings {#cas-backend-request-contract-implementation-rulings}
 
 Source: `.superpowers/sdd/2026-09-03-cas-backend-request-contract-plan/progress.md`, the SDD ledger
-for `docs/superpowers/plans/2026-09-03-cas-backend-request-contract-plan.md` against
+for `docs/superpowers/plans/2026-09-03-cas-backend-request-contract-plan.md` (deleted in `05b2a33ff32`) against
 `docs/superpowers/specs/2026-09-02-cas-backend-token-contract-design.md`. Every ruling the ledger
 records, in the form **decision — reason — cost if wrong**, grouped by the area it touched. A ruling
 with "costs nothing" recorded a scan-table finding with no live consequence either way; it is kept
