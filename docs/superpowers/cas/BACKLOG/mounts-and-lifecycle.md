@@ -293,6 +293,166 @@ test exists for it today. Lower-confidence secondary: the abort-path `deleteExac
   `CLOCK_MONOTONIC_COARSE` per-platform shim with a `CLOCK_BOOTTIME` mapping, noting Darwin's
   substitute weakens (does not break) the suspend argument.
 
+## Issue #2243 CONFIRMED: local port exhaustion fences out the mount lease (2026-08-20) {#issue-2243-port-exhaustion-lease}
+
+https://github.com/Altinity/ClickHouse/issues/2243 — read-heavy concurrent `SELECT FINAL` on a CAS
+default-policy disk exhausts the container's ephemeral ports (errno 99 `EADDRNOTAVAIL`), which kills
+the mount-lease renewal → fence → `TransientNotLive` → ~42 s full-disk refusal → self-remount discards
+in-flight `PartWriteTxn`s. CONFIRMED REAL (adjudicated from code; mechanism matches our own S07 finding
+from 2026-07-06). The rev.8 fail-close chain itself worked exactly as designed; the defects are in the
+trigger and its classification. Issue closed 2026-08-20.
+
+Mechanism (verified at file:line): the S3 client keep-alive default is 5 s (`S3Defines.h:12`); pooled
+DISK connections expire at 0.8×5 s idle (0.1×5 s once the group crosses `disk_connections_soft_limit`),
+`mustReconnect` resets any connection whose request STARTED > 4.5 s ago, and `http_keep_alive_max_requests`
+rotates every 100 requests. With P pooled connections and R req/s, reuse survives only while P/R < 4 s —
+concurrent FINAL prefetch puts P in the dead band, so nearly every request connects fresh and the CLIENT
+closes on return → TIME_WAIT at request rate (reporter: ~430 GET/s × 60 s ≈ 26k of 28,232 ports). The
+store honoring keep-alive is irrelevant. Retry amplification: `EADDRNOTAVAIL` is classified as remote
+transient at EVERY layer (Poco → `CoreErrors::NETWORK_CONNECTION` → retryable; CAS controller →
+`Unresolved`); reads ride `s3_retry_attempts=500`. Lease renewal = ONE bare single-attempt PUT per 10 s
+through the same DISK pool (no reserve, no controller budget — WEAKER than any data write); outage length
+is constructive: `mountObservationThresholdMs = ttl + 5% + cadence = 36.5 s` (field answer to
+`[fence-window blast radius]`'s "measure where remount time goes").
+
+Fix directions, in value order:
+- (1) **Classify local socket-resource errors as local** (`EADDRNOTAVAIL`, `EMFILE`, `ENFILE`): hard
+  backoff instead of retry-at-rate. Template = the existing DNS sub-classification branch
+  (`PocoHTTPClient.cpp:840`); CAS side maps it out of `Unresolved`'s full budget. Retry loops are the
+  positive-feedback term — this cuts the amplifier.
+- (2) **Mount-lease resilience**: in-period fast retry (today a failed renewal waits the FULL next
+  period — `CasServerRoot.cpp:1437` `continue` re-enters `wait_for(period)`), and/or reserved
+  connection / dedicated small budget for the renewal PUT. Note the margin arithmetic: ttl=30s /
+  period=10s / margin=2s allows at most TWO ride-out warnings per lease generation, not three. Fix (2)
+  landed with the request-engine migration (`37c9bd4356b`, 2026-09-05), but
+  `[renewal-gives-up-with-budget-left]` below shows a live gap.
+- (3) **Keep-alive defaults for CAS-over-S3 profiles**: 5 s TTL + 100-request rotation is the churn
+  engine under sustained read concurrency; evaluate raising `http_keep_alive_timeout` (60 s) and
+  `http_keep_alive_max_requests` in the CAS disk profile / docs. Caveat: the server-advertised
+  `Keep-Alive: timeout=N` header mins the client value (`HTTPClientSession.cpp:377`) — capture what
+  RustFS advertises first. Diagnostic BEFORE any change: `DiskConnectionsCreated/Reused/Expired/Reset/
+  Preserved` + `DiskConnectionsTotal/Stored` (prediction: Created≈request rate, Expired>>Reset, Stored≈0;
+  if Reset>>Expired the cause is the non-drained-body branch and the fix belongs in the read path). DONE:
+  keep-alive defaults are now documented (`docs/en/antalya/cas/configuration.md:34-35,143,158-159`, 30 s /
+  10000), unblocked by the settings-namespace fix (`[cas-disk-s3-key-whitelist-gap]`).
+- (4) NOT a fix: capping pool limits below the ephemeral range (reporter's #1) — limits gate KEEPING,
+  not CREATING; TIME_WAIT is invisible to them (hence errno 99, never `HTTP_CONNECTION_LIMIT_REACHED`);
+  lower caps flip the pool into the 0.5 s TTL regime sooner and worsen churn.
+
+Housekeeping folded in:
+- **S07 wide-part port-exhaustion finding re-rated**: was closed 2026-07-06 as "cost/latency only, not a
+  data bug" (`BACKLOG/performance.md`, DESIRABLE) — #2243 refutes that scope: the same condition takes the
+  LEASE down and discards in-flight write txns. Availability class, not just cost.
+- **[B196] is stale as written**: `s3_max_connections` is dead code for the disk path (an AWS-SDK
+  `ClientConfiguration` field; `PocoHTTPClient` never reads `maxConnections`) — the disk path is governed
+  by `disk_connections_*` + keep-alive, and NONE of those caps concurrent socket creation either.
+- **Soak-harness blind spot**: `soak/cluster.py` classifies "mount lease not held" as retryable
+  `NETWORK_ERROR` — our own soaks would ride through a #2243 event and score it recoverable; add a
+  lease-loss detector (count `TransientNotLive` windows / `CasMountLeaseKeeper` errors) to checkpoints.
+  Still open at `utils/ca-soak/soak/cluster.py:24-28,201-218`.
+
+## `[renewal-gives-up-with-budget-left]` A renewal stopped with 1,969 ms of confirmed budget unspent, and one attempt burned 23.7 s {#renewal-gives-up-with-budget-left}
+
+**Supersedes an earlier framing of mine that reported known, fixed behaviour as a new defect.** The
+first version of this entry said "a single unresolved heartbeat write costs the mount lease, with no
+retry" — which is exactly what
+[Issue #2244](https://github.com/Altinity/ClickHouse/issues/2244) diagnosed on 2026-08-20 and whose
+minimum fix landed **2026-08-24** (`docs/superpowers/specs/2026-08-23-cas-mount-renewal-retry-design.md`),
+with focused and full TLA+, Release/Debug, proxy-integration and 15-minute S39 gates. Filing it again
+as novel was a duplicate. Issue #2244 and its per-step-remount follow-up are both DONE, closed
+2026-09-14 (`7f932d31352`/`37c9bd4356b`), and carry no topic-file anchor.
+
+**Observed 2026-09-01, S03 at `--scale full`**, which then failed with `Code: 210 ... mount lease not
+held`. Read off `system.ca_event_log`:
+
+| field | ch1 | ch2 |
+|---|---|---|
+| `attempts_sent` | 1 | **1** |
+| `elapsed_ms` | **23,755** | 18,031 |
+| `remaining_confirmed_budget_ms` | 0 | **1,969** |
+| `unresolved_reason` | `deadline_mid_way` | `deadline_mid_way` |
+| `classification` | `external_lease_deadline` | `external_lease_deadline` |
+| `stop_cause` | `continue` | `continue` |
+
+**What is NOT a defect, on the current design.** The implemented protocol retries "within the time
+still justified by its last confirmed lease". ch1 had **zero** budget left, so sending no second
+attempt is the design working, not failing.
+
+**What is worth investigating, and both are separate from #2244's original diagnosis.**
+
+**ch2 stopped with 1,969 ms of confirmed budget remaining** and `stop_cause = continue`, meaning
+nothing asked it to stop — precisely the window in which the 2026-08-24 fix is supposed to retry.
+Either the budget arithmetic, the margin term (`now + margin < confirmed_deadline`), or the loop's
+exit condition keeps a retry from being issued when one is still justified.
+
+**A single attempt consumed 23.7 s against a 30 s TTL.** #2244 describes renewal as "one
+5-second-timeout `PUT` per 10-second period". An attempt running 23.7 s is nearly five times that
+bound, so either the per-attempt timeout is not being applied on this path or the attempt is not the
+`PUT` alone. Whatever the answer, an attempt that can eat 79% of the TTL leaves no room for the retry
+protocol to help — the budget is gone before the second attempt could be considered.
+
+The request-engine migration (`37c9bd4356b`, 2026-09-05) rewrote the retry machinery this sits on
+(`CasRequestBudget.cpp`), but no commit or test specifically targets either gap. `validateCasRequestBudget`
+only validates a budget shape at mount time; it does not bound a live attempt. Needs an S03
+`--scale full` rerun to check whether the migration incidentally closed this. Does not reproduce at
+`dev`/`ci`.
+
+**Why the write did not resolve** is the storage saturation measured the same night: RustFS reporting
+`permits_in_use: 256/256`, 100% queue utilization, answering `503` after ~5 s with its CPU at 0.13%.
+A heartbeat is an ordinary write on that path and gets no privilege.
+
+**Downstream, and correct.** The fenced epoch is terminal, so the self-remount re-claims with a fresh
+`writer_epoch`, finds the previous epoch's slot un-fenced and not proven dead, and refuses under "no
+wall-clock trust" — three `mount_conflict` events with `outcome = live_double_start`, five seconds
+apart. That refusal prevents taking a lease from a possibly-live writer on a clock guess. Do not read
+those conflicts as the fault. Related: issue #2244's still-open per-step remount work (DONE, closed
+2026-09-14, carries no topic-file anchor).
+
+**Reproduction:** S03 at `--scale full`; does not reproduce at `dev` or `ci`. The ten-second span of
+the conflicts is an artifact of when `predown_dump` ran, not the duration of the event.
+
+## Nested `server_root_id` + prefix-based decommission victim selection (2031-triage CAS-007) {#nested-srid-decommission}
+
+`validateServerRootId` accepts slashes (`Pool/CasServerRoot.h:199-229`; `gtest_cas_mount.cpp:97` asserts
+`shard-01/replica-a` valid, and multi-segment srid support was deliberately fixed in `b97847d32f9`),
+while `CasDecommission` picks victims by path prefix (`Tools/CasDecommission.cpp:146,150` +
+prefix-LIST drains of `cas/manifests/<srid>/`, `staging/`, `roots/`). So
+`SYSTEM CAS DROP POOL MEMBER 'a'` destroys the namespaces and control objects of a LIVE member
+`a/b`. Existing test covers only the sibling case (`gtest_cas_decommission.cpp:699-716`). Partial
+mitigation exists in one direction only: mounting `a` when `a/b` already exists fails closed
+(`CasServerRoot.cpp:145-149`); the reverse order is unguarded. Note the asymmetry — relink routing
+compares srid for EXACT equality (`ContentAddressedMetadataStorage.cpp:2021`), i.e. the prefix rule
+is decommission-local.
+
+Fix options (decide at fix time): (1) make decommission victim selection exact-srid + an explicit
+refusal when any other member's srid is prefixed by the victim's, or (2) forbid nesting at validation
+(reject a srid that is a prefix of, or prefixed by, an existing member's) — cheaper but removes the
+multi-segment layouts that were deliberately enabled. Either way add the nesting case to
+`gtest_cas_decommission.cpp`. P2: destructive but operator-initiated and requires a nested-srid
+layout.
+
+## CAS mount protocols run serially on the startup thread (found 2026-09-05, analysed 2026-09-06) {#mount-protocols-serial-startup}
+
+One disk's token-stability observation (~TTL + TTL/20 + poll) blocks the startup thread while
+earlier-mounted disks' leases age; renewers are per-disk and start eagerly, so the exposure is the
+serial `DiskSelector::initialize` → `disk->startup()` → `Pool::open` chain. Trigger is gone on ordinary
+restarts since the farewell-window fix; a genuine hard kill of a multi-disk server still opens it. Fix
+direction: run `Pool::open` per disk on a background task and collect futures after the disk loop
+(touches `DiskSelector`, consult-first). Needs a hard-kill integration step (`stop_clickhouse(kill=True)`
+with two CAS disks) and a spec.
+
+## Mount-lease budget: fewer knobs, derived attempt timeout (2026-09-07, from the PR #2300 run-3 triage) {#mount-lease-budget-derived-timeout}
+
+Today the operator sets TTL, renew period, `cas_attempt_timeout_ms` and margin, and the connect cap is
+`min(connect_timeout_ms, attempt)`; the mount refuses when `period + 2×(attempt + 2×cap) + margin ≥ TTL`
+(a disk with `connect_timeout_ms ≥ 2 s` under the old defaults). Proposed: (1) `cas_attempt_timeout_ms = 0`
+= auto = `(TTL − period − margin)/5 − 2×cap`, i.e. "five full attempts fit in the renewal window" as a
+design constant; the validation then becomes tautological; (2) clamp the connect cap to the lease budget
+instead of refusing the mount, WARN once at mount and show the effective cap in `system.cas_mounts` and
+the "budget in effect" log line; (3) document the fencing-latency trade-off (observation =
+TTL + TTL/20 + period/2; GC fence-out = TTL + TTL/20 + period). Interim fix applied: the `test_cas_s3`
+config keeps `connect_timeout_ms` at 1000 (user chose the smallest change; the default TTL stays 30 s).
+
 ## Closed this round {#closed-this-round}
 
 Verified DONE at HEAD (`cas-gc-rebuild`), removed from the live backlog:
