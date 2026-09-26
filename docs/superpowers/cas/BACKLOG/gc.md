@@ -790,13 +790,17 @@ of zero and `fold_reduce` scales with the read-ahead, not with the inline HEAD c
 AWS figures above: 128 s → ~40 s.
 
 **GCS-side confirmation, and a sibling gap this task does not close (2026-09-04, refined with run-2
-evidence).** The no-chaos GCS soak reproduced the same pattern from ordinary workload backlog alone,
+evidence).** Round 5's 5382 inline HEADs (see the design-closure note above) was the first sighting of
+this pattern. The no-chaos GCS soak reproduced the same pattern from ordinary workload backlog alone,
 without chaos and without a scripted cliff: rounds 23-25 show `CASGCReadAheadMiss` 2534 / 795 / 222
 against inline `HEAD` counts 2530 / 793 / 219, and each round's `Finish` row shows
 `CASGCReadAheadWasted=64` — exactly one window pinned per round, independent of round size. Unlike the
 AWS sighting above, `epoch_crossings=0` on the intake row for all three rounds, so the epoch-crossing
 hypothesis is not the only mechanism that pins the shared read-ahead window on a mass-removal round;
-the discard rule above is still the fix shape once a local reproduction isolates the no-crossing case.
+something else pins it too. Needs a local reproduction that isolates the mechanism without a crossing;
+the fix shape, once found, is still an epoch-crossing-style discard rule applied at the fold's own
+hinting site, `Gc/CasGc.cpp:2512` (possibly the same discard rule the task above already gives, if the
+mechanism turns out to be the same one).
 
 A sibling of the same class, found at the final review of the write-once-key branch, and NOT covered by
 the task above: the shared recovery walk (`Pool/CasRefProtocol.cpp`, `recoverRefTableDetailedFromAuthority`)
