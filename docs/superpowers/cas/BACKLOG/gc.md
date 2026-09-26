@@ -422,6 +422,65 @@ Proposed:
 - **[CA-LOG-TABLES-RESTART-COST]** {#ca-log-tables-restart-cost} — A 6/40 soak restart took 178.9s against a 180s gate, 138.1s reloading CA log tables' Outdated parts. Direction: TTL/partitioning, bounded churn, lazy load. Audit `#f1` confirms the same class on otel.demo (`system.*` = 86% of parts) and recommends a local storage policy — cross-check `operability-and-introspection.md`.
 - **[gc-checkpoint-timeout-tsan]** soak GC-checkpoint timeout assumes normal-speed throughput — MINOR, green-debt — Can blow its budget under TSan overhead while genuinely converging. Fix: sanitizer-aware multiplier.
 
+### `[drop-path-head-of-line-and-repoint-ramp]` A synchronous DROP waits for an unrelated table's batch, and the per-part repoint grows 30-100x over an MSan shard (2026-09-15) {#drop-path-head-of-line-and-repoint-ramp}
+
+Two findings from the T4 msan investigation (`docs/superpowers/cas/2026-09-16-msan-cas-s3-shard-budget-rca.md` §1.7, shard
+`Stateless (amd_msan, cas s3 storage, parallel, 2/3)` of run 10, binary v26.6.4, no hot-key lane phase A). They
+sit on top of `[PART-REMOVAL-REPOINT]` (above: elide the `delete_tmp_*` repoint; parallel removal via
+`concurrent_part_removal_threshold_for_remote_disk=1`) and `[ref-catalog-cas-starvation]` (namespace removal on
+`ref_catalog`, fixed by hot-key phase A, see [`hot-key-lane-phase-a-followups`](performance.md#hot-key-lane-phase-a-followups)),
+and neither of those two closes them.
+
+**1. Head-of-line wait in the catalog drop task (upstream code, small portable fix).** With
+`database_atomic_wait_for_drop_and_detach_synchronously = 1` (the stateless test users config) every `DROP TABLE`
+blocks in `DatabaseCatalog: Waiting for table … to be finally dropped`. `dropTableDataTask`
+(`src/Interpreters/DatabaseCatalog.cpp:1649`) takes the current batch, runs `dropTablesParallel`, waits for the
+whole batch, and only then reschedules; a table enqueued while a batch runs waits for the batch's slowest drop
+whatever `database_catalog_drop_table_concurrency` (256 in CI) allows. Measured: `tab_00718` enqueued 10:36:27,
+reached `dropAllData` 10:42:29, exactly when the previous batch's `badFixedStringSort` (6 parts, 379 s) finished;
+a `File` table with nothing to delete waited 5 min 27 s the same way. 13 of the shard's per-test timeouts had
+`DROP TABLE` as the slowest statement (25-564 s) and none was stuck on a single query. The parallel-removal
+threshold above shortens one table's drop; it does not stop the next table waiting for it. Fix shape: reschedule
+the task while a batch is in flight (or drop per table from `enqueueDroppedTableCleanup` when `ignore_delay`), so
+a synchronous drop only ever waits for its own table. Grade as an upstream patch: compact, motivated by the CAS
+lane, useful outside it. Confirmed unchanged on both `cas-gc-rebuild` and `altinity/antalya-26.6` (2026-09-26).
+
+**2. The per-part repoint cost is not constant: 0.35 s early, 10-37 s late.** `[PART-REMOVAL-REPOINT]` measured
+0.7-1.5 s per part as a flat cost. On the msan shard the drop-task thread's own timestamps give, per part removed
+(`Removing N parts from filesystem (serially)` to the last `Repointed committed ref … delete_tmp_*`): hour 07
+median 0.83 s, 08: 2.38 s, 09: 6.66 s, 10: 10.73 s (p90 23 s, max 37 s); a 7-part table took 3 min 5 s at 10:42.
+What is known about where the time goes, and what is not:
+- The ledger is one per pool (`CasPool.h:1245`, `CasRefLedger ref_ledger`) with one leader-flush queue
+  (`appendRefOpsOnRuntime`); the periodic `system.stack_trace` samples of local runs 7 and 8 show removal threads
+  waiting either in that queue (18 threads at once in one run-7 sample, `IMergeTreeDataPart::remove →
+  moveDirectory → republishRef → precommitAdd → appendRefOps → appendRefOpsOnRuntime`) or as the leader inside
+  the conditional PUT of the `_log` chunk / `_ckpt` (`commitRefChunk`, `publishCkpt` → `finalizeConditionalWrite`
+  → `TaskTracker::waitAll`). Run 8 totals: `CASRefBatchFlushes` 262,468 for `CASRefBatchedMutations` 291,366,
+  i.e. ~1.1 mutations per flush, the combiner almost never fires; `CASRefQueueWaitMicroseconds` 19,889 s.
+- It is NOT raw PUT latency: in the CI log the sampled `WriteBufferFromS3` Create→Close for `_log` / `_ckpt` keys
+  grows only from 22 ms to 81 ms median (p90 58 → 175 ms) between hours 07 and 10, max 12 s once. A 3.7x
+  growth in PUT cannot make a 30-100x growth in repoint unless the queue in front of the PUT is deep or tail
+  PUTs dominate. The CI log is silent inside the gap (no line between the `Removing N parts` and the first
+  `Repointed`), and run 8's `query_log`/`cas_log` were empty, so the split between queue wait and PUT tail was
+  unmeasured at the time.
+- Open (as of the msan investigation): whether the ramp is the pool-wide serial lane saturating under the
+  whole shard's ref traffic (inserts, removals, GC intake all through one queue at ~1 PUT per mutation), or
+  the store's tail latency. This decides whether eliding the repoint halves the cost or removes it.
+
+Next measurement as originally planned (before any code): a run with `query_log`, `cas_log` and
+`system.stack_trace` sampling enabled on a plain disk, then per part removal: `CASRefQueueWaitMicroseconds`
+of the removing thread vs the `_log` PUT latency of the same flush, by hour. One number each answers the
+open question above. Then order the fixes: (1) here, the catalog batch wait; (2) `[PART-REMOVAL-REPOINT]`'s
+elided repoint if the queue dominates, or the store latency work of [`{#janitor-page-hardcoded}`](#janitor-page-hardcoded)
+(above; GC-backlog-runaway measurement) / RustFS knobs if the tail dominates.
+
+**Answered (2026-09-25),** superseding the "next measurement" plan above:
+`docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#conclusions` (finding 1, see also
+`[REF-QUEUE-WAIT-MEASURE]` above) measured it directly: 748 ms of an 887 ms insert is ref-lane queue wait,
+not S3 tail latency — the pool-wide serial ledger queue dominates, the store's tail latency does not. Order
+of fixes: (1) the catalog batch wait above; (2) `[PART-REMOVAL-REPOINT]`'s elided repoint, since the queue
+dominates rather than the store latency.
+
 ### `[gc-multidelete-conditional-gap]` batch `DeleteObjects` cannot replace GC's exact-token deletes as-is {#gc-multidelete-conditional-gap}
 
 T9's destructive-baseline soak measured **944,155** individual `DiskS3DeleteObjects` calls across a
@@ -456,6 +515,20 @@ API), this item stays permanently blocked and the correct scope is delete-side c
 **Closed by construction for the three write-once families** (manifest bodies, ref `_log`, ref `_snap`):
 see `[gc-manifests-are-immutable-so-reduce-and-deletes-can-be-cheap]` and the design it points to. The
 gap remains exactly as stated for blobs.
+
+### `[gc-blob-pending-deletes-now-dominant]` With A-D landed, serial exact-token blob deletes are the largest remaining GC phase on a mass-removal round (2026-09-04) {#gc-blob-pending-deletes-now-dominant}
+
+GCS soak run 2 (`ca_live_20260904_r3`, phase 3, `--no-chaos`): round 25's `pending_deletes` phase
+alone took 551.5 s for 2731 blobs — one `HEAD` plus one conditional `DELETE` per blob, serial
+(about 100 ms each) — against `fold_reduce` 14.7 s, `manifest_deletes` 0.22 s and
+`ref_object_cleanup` 0.22 s in the same round. This is now the largest single-phase cost this
+design's rounds show, larger than any of the phases A-D target. Blobs stay exact-token by design
+(I5: a condemned blob key can be re-uploaded by a writer, so the exact-token delete is what keeps
+that resurrection safe; blobs are explicitly out of `removeManyWriteOnce`'s scope). No delete-concurrency
+mechanism exists on either branch (confirmed 2026-09-26: `grep -i concurr` over `Gc/*.cpp` empty). This
+data point and the T9 baseline's are the measurement behind
+[`[gc-pending-deletes-fan-out]`](#gc-pending-deletes-fan-out) below (formerly co-tracked as
+`[gc-delete-concurrency-serial]`), which is the task that acts on it.
 
 ### `[gc-pending-deletes-fan-out]` (formerly `[gc-delete-concurrency-serial]`) GC's destructive deletes run with almost no overlap {#gc-pending-deletes-fan-out}
 
@@ -671,6 +744,36 @@ oracle, plus the existing `CAS*` gate. Acceptance: on a mass-removal round `Miss
 of zero and `fold_reduce` scales with the read-ahead, not with the inline HEAD count. Expected on the
 AWS figures above: 128 s → ~40 s.
 
+**GCS-side confirmation, and a sibling gap this task does not close (2026-09-04, refined with run-2
+evidence).** The no-chaos GCS soak reproduced the same pattern from ordinary workload backlog alone,
+without chaos and without a scripted cliff: rounds 23-25 show `CASGCReadAheadMiss` 2534 / 795 / 222
+against inline `HEAD` counts 2530 / 793 / 219, and each round's `Finish` row shows
+`CASGCReadAheadWasted=64` — exactly one window pinned per round, independent of round size. Unlike the
+AWS sighting above, `epoch_crossings=0` on the intake row for all three rounds, so the epoch-crossing
+hypothesis is not the only mechanism that pins the shared read-ahead window on a mass-removal round;
+the discard rule above is still the fix shape once a local reproduction isolates the no-crossing case.
+
+A sibling of the same class, found at the final review of the write-once-key branch, and NOT covered by
+the task above: the shared recovery walk (`Pool/CasRefProtocol.cpp`, `recoverRefTableDetailedFromAuthority`)
+discards hinted ref-log ids only at a seal, so its `CORRUPTED_DATA` and decode throws leave up to one
+window pinned, and `planManifestCursorPage` catches per-namespace throws and keeps using the same
+reader for the rest of the page. Throughput only; the `OutstandingHintGuard` shape the sweep's own tail
+walk uses (`Gc/CasOrphanManifestSweep.cpp:305-326`) closes it. Confirmed still absent from
+`recoverRefTableDetailedFromAuthority` on both `cas-gc-rebuild` and `altinity/antalya-26.6` (2026-09-26).
+
+### `[gc-sweep-reads-the-committed-tail-twice]` The orphan sweep walks each namespace's committed tail twice per page (2026-09-04) {#gc-sweep-reads-the-committed-tail-twice}
+
+`activeManifestKeys` (`Gc/CasOrphanManifestSweep.cpp`) first recovers the table through
+`recoverRefTableDetailedFromAuthority`, which replays every log from the checkpoint base to the
+committed frontier, then walks the same range again itself to collect tail-removal targets. On the
+GCS soak both walks read each epoch-2 log once, so every ref log the sweep touches costs two GETs,
+and an epoch crossing costs two windows of read-ahead waste instead of one (the `wasted=127`
+rows). The recovery already decodes every transaction; collecting the `-1` manifest edges during that
+replay would remove the second walk. Small, GC-internal, no protocol change; measure with the sweep's
+`CASRootGet` on the reduce row (814 per round on the 2026-09-04 GCS soak before A to D, still two
+per log after). Confirmed unchanged, structurally identical, on both `cas-gc-rebuild` and
+`altinity/antalya-26.6` (2026-09-26).
+
 ### GC per-disk thread pools → one server-wide pool (2026-09-07) {#gc-per-disk-thread-pools}
 
 `Cas::Gc` owns `read_pool` (`Gc.h:982`, concurrency 16, `max_free` 16) and `GcMetaWriter`'s pool
@@ -799,3 +902,10 @@ Regrouped into [GC correctness and safety](#gc-correctness-and-safety), [GC obse
 ### New findings from the 2026-08-04 orphaned-open triage {#orphan-triage-2026-08-04}
 
 Regrouped into all topic headings above. One item, `[gc-probe-a-counters-durability]`, was removed outright: probe A is fully deleted (`5b775616c36`, `cas-gc-rebuild` only; zero `ProbeA`/`CASGCProbeA` symbols on either branch).
+
+### `[gc-manifests-are-immutable-so-reduce-and-deletes-can-be-cheap]` {#gc-manifests-immutable-cheap-reduce}
+
+Design landed 2026-09-04, see commit `497c521b6dd` (`removeManyWriteOnce`; before/after figures were in
+the spec's `#implementation-record`). Its still-open investigation residue (the shared GC read-ahead
+window pinning on a mass-removal round) is folded into [`[gc-condemn-head-read-ahead-pinned-window]`](#gc-condemn-head-read-ahead-pinned-window).
+Kept here because `docs/superpowers/cas/2026-09-04-gcs-soak-15min.md` cites this anchor directly.
