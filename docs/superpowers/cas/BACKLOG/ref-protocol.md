@@ -227,3 +227,92 @@ are still present at the cited sites. Result when done: a flush goes from four r
 a part publish's 389 ms. Full analysis and the owner's verified-safe reasoning:
 `docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f31`;
 tracked in `docs/superpowers/cas/umbrella-roadmap.md` §2 ("Publish a part with zero GETs").
+
+## `[cas-txn-commit-inside-noexcept-aftercommit]` A CAS transaction over a committed part runs inside `noexcept` MergeTree-transaction callbacks; any throw there is a server abort (2026-09-10) {#cas-txn-commit-inside-noexcept-aftercommit}
+
+**Observed.** PR #2300 CI run 10 (head f377ba3a499, attempt 2), Stateless amd_asan_ubsan cas-s3 2/2: "Server died",
+signal 6, during `01169_old_alter_partition_isolation_stress` on the query `COMMIT`. `clickhouse-server.err.log`:
+`Terminate called for uncaught exception: Code: 210. DB::Exception: CAS write could not be committed (CAS ref-log
+append for namespace 'stateless-ca-s3/store/044/...' txn 1-804 was refused BEFORE any request was sent — the append
+lane is NOT wedged ... and the txn id is not consumed); retrying later. (NETWORK_ERROR)`, thrown by
+`makeCasWriteRetryLaterExceptionPtr` ← `CasRefLedger::commitRefChunk` ← `flushRefBatch` ← `runRefQueueLeader` ←
+`appendRefOpsOnRuntime` ← `Pool::appendRefOps` ← `PartWriteTxn::abandon` ← `ContentAddressedTransaction::publishStaging`
+(the scratch build's abandon right after a successful `repointRef`). The same namespace logged `refusing snapshot
+publication while the append lane is not Ready (state 1)` in the same second: an ordinary transient refusal. The
+reviewer's independent 2026-09-10 report on the PR reached the same root cause and named it the sole merge blocker.
+
+**Why a transient became an abort.** `TransactionLog::finalizeCommittedTransaction` and
+`MergeTreeTransaction::afterCommit` are `noexcept`. `afterCommit` calls `VersionMetadata::setAndStoreRemovalCSN` /
+`setAndStoreCreationCSN` for every part the transaction touched → `updateInfoWithRefreshDataThenStoreAndSetMetadata`
+→ `storeInfo` → `writeFile(txn_version.txt)` into the COMMITTED part directory; no try/catch anywhere on that path
+(`src/Interpreters/MergeTreeTransaction.cpp`, `src/Interpreters/MergeTreeTransaction/VersionMetadata.cpp`).
+`MergeTreeTransaction::rollback() noexcept` does the same with `RolledBackCSN`. On a content-addressed disk a file
+write into a committed part is a transaction over a live ref, and `publishStaging` takes the repoint branch:
+`checkOpAdmitted(Write)` → `getView(ForceFresh)` → `stageManifest` + `precommitAdd` → `fanOutBlobUploads` →
+`repointRef` → hook → scratch-build `abandon`. Every one of those steps throws on a transient refusal or timeout;
+the abandon is merely the one that fired. Upstream has the same contract hole for any object-storage disk
+(`writeFile` can throw inside `noexcept afterCommit`); on local disks it is practically unreachable, on CAS a
+lease-health refusal is routine, so it is reachable under sanitizer load.
+
+**Landed (point fix, not the class).** fix-cicd 25051b967f0 + 8b8cb8a50d9 + be8666f8f06 (denoised 21249fab1ee;
+cas-gc-rebuild 8d68db5e3c1..fb035142262): `ContentAddressedTransaction::abandonBuildBestEffort(ns, ref, st, what)
+noexcept` — try { seam; `st.build->abandon()`; } catch(...) { log inside its own catch } `st.build.reset()`; used
+after the repoint, after `dropRefIfPresent` on the removal path, and in the destructor (which already had this
+tolerance inline). Nothing allocates outside a catch boundary (it runs from the destructor); the message is a
+literal; the strings come by reference from the route. GC accounting is sound (codex verified against
+`CasPartWriteTxn.cpp:152` and `CasPool.cpp:1677`): the reset runs `~PartWriteTxn`, which queues the writer cleanup
+duty for the unsettled precommit without retiring its build sequence; a successor's recovery sweep is the backstop;
+reclamation is delayed, never premature. Test seam `armAbandonFailureForTest` / `takeAbandonFailureForTest`
+(one-shot, inert and allocation-free when unarmed, gated by `hasAbandonFailureForTest`), tests
+`CASCommitRollback.AbandonRefused{AfterRepoint,AfterRefDrop,AfterAbsentRefDrop}DoesNotFailCommit`. Codex: 3 rounds
+(MAJOR:2 → MAJOR:1 + MINOR → clean). Gates: release `CAS*` 2529, ASan 2533, 0 reports; fail-first verified.
+
+**Why abandon is the ONLY point that may be swallowed.** After the repoint (or the ref drop) the durable outcome is
+already recorded in `out_slot`; the abandon is bookkeeping with a documented fallback. Swallowing any of the other
+five steps would silently drop the `txn_version.txt` write itself and tell the caller nothing.
+
+**Options for the class (estimates 2026-09-10).**
+
+| Option | Where | Size | Risk | Estimate |
+|---|---|---|---|---|
+| Catch at each remaining throw point of the repoint branch in CAS | CAS only | ~50 lines | high: hides a lost durable write from a caller that cannot react | do not do |
+| Tolerate a failed CSN store in `afterCommit`/`rollback`: catch, log, keep the in-memory CSN, rely on the TID→CSN lookup `VersionMetadata::isVisible` already performs (`TransactionLog::getCSN(removal_tid)`), and re-persist at the next opportunity (`appendCSNToVersionMetadata` on part load) | `src/Interpreters/MergeTreeTransaction.cpp` (upstream file; fork patch, portable upstream) | ~30–50 lines + a failpoint test: inject a write failure during `COMMIT`, assert no abort, visibility correct, the Keeper transaction log still gets cleaned | medium: the upstream comment says the CSN write is what lets the ZK log be cleaned ("Write allocated CSN, so we will be able to cleanup log in ZK"); must prove a lost write is a bounded leak, not a stuck log | 1–2 days, mostly the semantic proof |
+| Shrink the CAS surface: a single inline entry written into a committed part should not need a scratch build (no `stageManifest`/`precommitAdd`/`abandon`), one `repointRef` RMW instead | CAS | ~100–150 lines, restructure the repoint branch | medium; reduces six throw points to two, does not remove the class | 1 day |
+| Retry these writes under the lease instead of the 90 s policy | CAS | small | turns the abort into a `COMMIT` that hangs for minutes | not a solution |
+
+**Recommendation.** Option 2 as the class fix (it is the right contract for every object-storage disk, not only
+CAS), option 3 as CAS-side surface reduction. Do not patch site by site again: if another `Terminate called` shows
+`ContentAddressedTransaction::commit` under `afterCommit`, `rollback`, or a destructor, this entry is the plan.
+
+**Status (2026-09-26).** The class fix is tracked as open PR Altinity/ClickHouse#2396 (closes #2344), design
+`docs/superpowers/specs/2026-09-16-transaction-metadata-store-best-effort-design.md` rev.3f.
+
+**Related.** `[cas-transient-lease-fence-surfaces-to-clients]` (the same `retrying later` reaching synchronous
+callers); `[ref-catalog-write-hotspot]` and Altinity/ClickHouse#2343 (the load that makes lanes not-Ready);
+`reference_cas_ci_observability_gaps` (the ASan log kept only 12 frames of the exception stack, the terminate stack
+was unsymbolized beyond `terminate_handler`; the chain above was established from the code, the query id and the
+`Child process was terminated by signal 6` line). Evidence: lane-g `tmp/pr2300-cicd-watch/run10/asan_cas_2of2_att2.err.log`
+(line 131680 ff.), `tmp/round9/review/abandon{,2,3}.md`.
+
+## `[cas-transient-lease-fence-surfaces-to-clients]` A transient mount-lease fence surfaces to synchronous client calls as `NETWORK_ERROR` (2026-09-04) {#cas-transient-lease-fence-surfaces-to-clients}
+
+Local CA-s3 stateless lane, run 2 (`docs/superpowers/cas/2026-09-04-stateless-lane-triage.md`, 11137
+tests): under the same S3-endpoint saturation that produces the PUT-timeout class, the renewer logged
+`CAS mount renewal 'stateless-ca-s3' fenced after 3 physical attempts in 9068 ms
+(classification=external_lease_deadline)`; 371 "mount lease not held" lines followed, almost all
+background retries that self-healed (drop retries, merge-tree executor), but two tests surfaced the
+window to a synchronous client call and failed with `Code: 210 … mount lease not held`:
+`01128_generate_random_nested` (the INSERT path's ref-log append: "NEEDS RECOVERY at committed-frontier
+publication fence") and `02581_share_big_sets_between_mutation_tasks` (`StorageMergeTree::waitForMutation`).
+The fence itself is correct and fail-close (unit-tested at `CasServerRoot.cpp`, `gtest_cas_heartbeat.cpp`,
+`gtest_cas_pool.cpp`). The open question is client-facing semantics: whether a query that hits a
+CAS-transient fence should wait for the remount (bounded by the query's own timeout) rather than fail
+with `NETWORK_ERROR`, and where that wait belongs (the ref-lane append, `waitForMutation`, or a
+disk-level "mount recovering" retry). Needs a design call, not a mechanical fix; frequency 2/11137 on
+this lane.
+
+Measured frequencies from the same run for the recorded items: PUT-timeout Error log
+(`{#cas-s3-lane-put-timeout-logged-at-error}`) 42/11137; ref-catalog starvation
+(`{#ref-catalog-cas-starvation}`) 1/11137. Class B (404 on stderr) = 0 after 6830b73af27.
+
+Related: `[cas-txn-commit-inside-noexcept-aftercommit]`.
