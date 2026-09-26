@@ -4,6 +4,7 @@ title: 'Close the review follow-ups of the hot-key write lane, phase A'
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 07:33'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -47,3 +48,9 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-a-followups (alias #ref-ca
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Correction (post-import review): the two task-1-review.md items previously called lost were recovered from tmp/task-1-review.md and imported as CAS-81 (spec overstates hot-key-lane coverage) and CAS-82 (flat conflict pause raises the request ceiling on five off-lane read-modify-write sites).
+<!-- SECTION:NOTES:END -->

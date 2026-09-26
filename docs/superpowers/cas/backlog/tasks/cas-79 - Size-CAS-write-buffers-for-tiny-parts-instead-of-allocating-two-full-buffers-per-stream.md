@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 07:33'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -13,13 +14,14 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:otel-demo-audit'
+  - 'origin:canary'
 dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f18
-priority: low
+priority: high
 type: enhancement
 ordinal: 104000
 ---

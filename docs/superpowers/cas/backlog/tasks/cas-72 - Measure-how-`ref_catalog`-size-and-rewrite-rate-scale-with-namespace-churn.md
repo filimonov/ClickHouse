@@ -4,12 +4,14 @@ title: Measure how `ref_catalog` size and rewrite rate scale with namespace chur
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 07:33'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:plausible'
   - 'needs:measurement'
+  - 'origin:canary'
 dependencies: []
 references:
   - >-
@@ -17,7 +19,7 @@ references:
   - 'https://github.com/Altinity/ClickHouse/issues/2343'
 documentation:
   - docs/superpowers/cas/umbrella-roadmap.md
-priority: medium
+priority: high
 type: research
 ordinal: 97000
 ---

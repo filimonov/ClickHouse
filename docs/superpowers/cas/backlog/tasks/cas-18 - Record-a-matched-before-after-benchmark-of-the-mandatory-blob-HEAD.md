@@ -4,7 +4,7 @@ title: Record a matched before/after benchmark of the mandatory blob HEAD
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:55'
-updated_date: '2026-09-26 07:01'
+updated_date: '2026-09-26 07:33'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -12,7 +12,6 @@ labels:
   - 'confidence:solid'
   - 'needs:measurement'
   - 'origin:review'
-  - 'origin:canary'
 dependencies:
   - CAS-17
 references:
@@ -21,7 +20,7 @@ references:
 documentation:
   - >-
     docs/superpowers/cas/2026-08-22-unconditional-blob-publication-performance.md
-priority: high
+priority: low
 type: research
 ordinal: 24000
 ---
