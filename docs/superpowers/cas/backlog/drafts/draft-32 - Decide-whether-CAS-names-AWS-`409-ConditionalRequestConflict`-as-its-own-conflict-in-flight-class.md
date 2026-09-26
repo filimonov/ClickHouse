@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:42'
+updated_date: '2026-09-26 07:53'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -17,7 +18,8 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
 milestone: m-7
-dependencies: []
+dependencies:
+  - CAS-167
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.cpp

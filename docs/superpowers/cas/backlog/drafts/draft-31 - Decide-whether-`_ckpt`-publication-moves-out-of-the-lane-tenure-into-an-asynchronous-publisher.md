@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:42'
+updated_date: '2026-09-26 07:53'
 labels:
   - 'area:ref-ledger'
   - 'area:gcs'
@@ -15,7 +16,8 @@ labels:
   - 'confidence:speculative'
   - 'needs:measurement'
   - 'needs:decision'
-dependencies: []
+dependencies:
+  - CAS-167
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp
