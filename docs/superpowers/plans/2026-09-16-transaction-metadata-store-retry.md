@@ -48,23 +48,34 @@ section's presence). Only ports, paths and this log are overridden on the comman
 ```bash
 cd /home/mfilimonov/workspace/ClickHouse/lane-g
 D=$PWD/build/srv; mkdir -p $D/data $D/tmp $D/uf $D/caches
+# Users config: a copy of the server's users.xml plus the CI override that disables async inserts
+# (this tree defaults async_insert to 1; async inserts are refused inside transactions). User/profile
+# settings are loaded by AccessControl from the users file, so `--profiles.*` command-line overrides do
+# not reach them; the users file is pointed at with the `users_config` key instead. Nothing is written
+# into programs/server/.
+mkdir -p $D/users/users.d
+cp programs/server/users.xml $D/users/users.xml
+for f in programs/server/users.d/*; do ln -sf "$(readlink -f "$f")" "$D/users/users.d/$(basename "$f")"; done
+ln -sf $PWD/tests/config/users.d/disable_async_inserts.xml $D/users/users.d/disable_async_inserts.xml
 nohup build/programs/clickhouse server --config-file=programs/server/config.xml -- \
   --path=$D/data/ --tmp_path=$D/tmp/ --user_files_path=$D/uf/ --logger.log=$D/server.log --logger.errorlog=$D/server.err.log \
   --tcp_port=19481 --http_port=19482 --interserver_http_port=19483 --mysql_port=0 --postgresql_port=0 --prometheus.port=0 \
   --keeper_server.tcp_port=19484 --keeper_server.raft_configuration.server.port=19485 --zookeeper.node.port=19484 \
   --transactions_info_log=1 --transactions_info_log.database=system --transactions_info_log.table=transactions_info_log --transactions_info_log.flush_interval_milliseconds=7500 \
+  --users_config=$D/users/users.xml \
   --filesystem_caches_path=$D/caches/ --custom_cached_disks_base_directory=$D/caches/ \
   > $D/server.out 2>&1 &
 echo $! > $D/server.pid
 sleep 8
 build/programs/clickhouse client --port 19481 -q "CREATE DATABASE IF NOT EXISTS test"
 build/programs/clickhouse client --port 19481 -q "SELECT count() > 0 FROM system.zookeeper WHERE path = '/'"   # 1: Keeper reachable
-build/programs/clickhouse client --port 19481 -q "SELECT value FROM system.server_settings WHERE name = 'allow_experimental_transactions'" # 42
+build/programs/clickhouse client --port 19481 -q "BEGIN TRANSACTION; ROLLBACK"   # no error: transactions enabled
 build/programs/clickhouse client --port 19481 -q "SYSTEM FLUSH LOGS transactions_info_log; SELECT count() >= 0 FROM system.transactions_info_log"   # 1: the log table exists
+build/programs/clickhouse client --port 19481 -q "SELECT value FROM system.settings WHERE name = 'async_insert'"   # 0: this tree defaults async_insert to 1, CI disables it via users.d/disable_async_inserts.xml, which is not linked locally; async inserts are refused inside transactions
 ```
 
 (Keeper log and snapshot storage default to directories under `--path`, so nothing else needs a path.) If the
-server does not start or one of the three checks fails, read `$D/server.err.log` and `$D/server.out`; if it is not a
+server does not start or one of the four checks fails, read `$D/server.err.log` and `$D/server.out`; if it is not a
 trivial port clash you can resolve by picking other free ports (report the ports you used), report `NEEDS_CONTEXT`
 with the exact error instead of improvising another setup.
 
