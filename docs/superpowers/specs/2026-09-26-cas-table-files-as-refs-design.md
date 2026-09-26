@@ -7,7 +7,7 @@ title: 'CAS table directory entries in the ref log'
 doc_type: 'design'
 ---
 
-# CAS table directory entries in the ref log — rev.2 (2026-09-27) {#cas-table-dir-entries}
+# CAS table directory entries in the ref log — rev.2, closed (2026-09-27) {#cas-table-dir-entries}
 
 Design study, no code. Rev.1 of this file proposed storing table-level file contents as refs and the
 deduplication window as claims in the ref log; codex review round 1
@@ -269,3 +269,31 @@ Against rev.1: no content moves, no per-insert cost, no `MergeTree` change, no c
    the degraded window acceptable?
 5. Is recording directories explicitly (§3.2, `createDirectory` and `removeDirectory` become ops)
    the right semantics, or should a directory entry be implied by its first nested object?
+
+## 8. Conclusion after two review rounds {#conclusion}
+
+Round 2 (`docs/superpowers/reports/2026-09-26-cas-table-files-as-refs-codex-reviews/review_r2.md`)
+found the rev.2 mechanism materially smaller than rev.1 but still larger than the striped cache it
+competes with, and not converging in one revision. The findings that decide it:
+
+- Durability does not remove the same-name serialization the cache needs: the object PUT and
+  DELETE happen outside the ref lane, so a rewrite racing an unlink of the same name, or the mount
+  LIST racing a writer, still needs a stripe held across object I/O and table mutation.
+- Two authorities contradict each other: `DirEntryRemoved` before DELETE plus a LIST-driven resync
+  resurrects a file whose DELETE failed; an explicit empty directory is removed by the next resync
+  because no object supports it. Fixing either needs tombstones or marker objects, that is, more
+  machinery.
+- The format surface is a full generation: ref-log codec, snapshot row grammar (a generation 2
+  build must still read generation 1 snapshots), `applyOp`, scope validation, admission, fsck,
+  inspect, two TLA+ models, `CasFormat.cpp` breaking-change registration, and the floor rule with
+  every state a mount slot can be in.
+- `createDirectories` reaches `createDirectoryRecursive` (`ContentAddressedTransaction.cpp:1015`),
+  not `createDirectory`; `partition_exports` is parsed as a part today (CAS-318 class), so routing
+  changes are required before any directory table can answer for it.
+
+What survives from this study is round 2's own alternative, which is the cache with lazy population
+replaced by population at mount: one LIST per live table before the disk serves any request, the
+names pinned for the mount's lifetime (dropped with the mount runtime on fence loss, rebuilt at
+remount), write-through under a plain mutex with no I/O under it. It keeps the request bound of §2,
+needs no format change, no floor, no resync authority argument and no striped mutex, because no LIST
+ever overlaps a writer. That is the next revision of the competing spec, not of this one.
