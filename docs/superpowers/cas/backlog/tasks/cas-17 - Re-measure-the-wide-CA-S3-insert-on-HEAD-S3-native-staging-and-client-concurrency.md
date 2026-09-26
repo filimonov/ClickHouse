@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-24'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-09-26 14:47'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -54,4 +54,11 @@ Provenance: BACKLOG/performance.md#writepath-candidates-post-stage1 items 1-2. V
 CPU-profile validity (from performance.md #ca-write-buffer-allocation-concentration): the 2026-08-31 soak export was CAS-filtered (WHERE stack LIKE '%DB::Cas::%'), had 369 CPU samples against 963k Real and summed 38 cumulative snapshots; no CPU ranking from it may be cited. A valid CPU profile needs a CPU-bound workload (bulk insert of large parts), an unfiltered query and one end-of-run snapshot.
 
 First recorded: 2026-07-24 (e9e30b5d605, by 'writepath-candidates-post-stage1')
+
+Merged from u19d-soak (Re-measure the wide CA-S3 insert on HEAD: S3-native staging and client concurrency): Facts to add to CAS-17 (2026-07-21 staging measurement on 26.6.1, before stage 1; historical baseline, not current):
+500-partition wide insert (10M rows, 30 columns, 2 replicas): CAS 170.6 s against 22.4 s on plain S3 (7.6x), while CAS issued fewer PUTs (2566 against 6156 per node). The penalty was round-trip count and serialization, not bandwidth.
+Signature to check in the re-measure: `CASRefBatchFlushes` = `CASRefBatchedMutations` = 1026 meant a ref-ledger batch size of exactly 1.0 (513 precommit plus 513 promote appends, each a serial round trip). `CASRefQueueWaitMicroseconds` was 36.2 s. `CASBlobHeadFirst` = `CASBlobHeadMiss` = 498 with `CASBlobBodyPutAvoided` = 0.
+Confirming metric set per INSERT `query_id`: `S3HeadObject`, `S3GetObject`, `CASBlobHeadFirst`, `CASBlobBodyPutAvoided`, `CASRefBatchFlushes` against `CASRefBatchedMutations`, and `CASRefQueueWaitMicroseconds` summed against query wall time.
+Status of the four fix directions: per-blob upload fan-out landed (`fanOutBlobUploads`, `CA/ContentAddressedTransaction.cpp:272-300`); concurrent per-part commit is DRAFT-2; the promote manifest re-read is CAS-176; adaptive HEAD-before-PUT is vetoed by decision-1.
+Source: utils/ca-soak/scenarios/BACKLOG.md:2891.
 <!-- SECTION:NOTES:END -->
