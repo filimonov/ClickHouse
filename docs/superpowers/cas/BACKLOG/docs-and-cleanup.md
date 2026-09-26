@@ -54,12 +54,16 @@ shapes, `b5c812ba56a`, `src/Disks/tests/cas_test_helpers.h:1109` `namespace fixt
   CAS-local predicate and its reason. (Codex production review, 2026-09-03, adjudicated; the review's 3
   confirmed defects were already fixed in the plan's fix round, and its "accepted request costs" bullet is
   recorded in full in that same rulings doc.)
-- **U9 `reconcileMetaClean` comment (CP3/Task 7 review, 2026-09-03).** `Pool/CasPartWriteTxn.cpp`'s
-  `reconcileMetaClean` create-first gate comment over-states what an absent observation implies (an absent
-  blob-body observation does not imply an absent marker).
-- **U6 `CasRefCatalog.cpp` citation (CP3/Task 7 review, 2026-09-03).** `Pool/CasRefCatalog.cpp:655` still
-  cites "the Task 2 review's own note on `casAdmitEntry`" — the header and test-file sweep were cleaned,
-  this `.cpp` site was missed.
+- **U9 prose (units/U9-rereview.md NEW-3):** `Pool/CasPartWriteTxn.cpp`'s `reconcileMetaClean`
+  create-first gate comment over-states what an absent observation implies (an absent body does not
+  imply an absent marker). Was a forbidden file for the source-comment pass; left for the engine-defect
+  pass. (From the CP3/Task 7 review, 2026-09-03. Confirmed still unchanged on both `cas-gc-rebuild` and
+  `altinity/antalya-26.6`, 2026-09-26.)
+- **U6 re-review prose (units/U6-rereview.md F4, `Pool/CasRefCatalog.cpp`):** its two internal-document-reference
+  sites (the header and test-file sweep did not reach `.cpp`, a forbidden file for the source-comment
+  pass); left for the engine-defect pass. Confirmed still open, 2026-09-26: `Pool/CasRefCatalog.cpp:655`
+  still cites "the Task 2 review's own note on `casAdmitEntry`" on both branches (identical line). (From
+  the CP3/Task 7 review, 2026-09-03.)
 - **Prose and spec drift from the engine fix round review, 2026-09-03 (4 sites, `Backend/CasRequests.{h,cpp}`):**
   - `isDefinitelyRefusedWrite`'s doc still says the engine refuses when "there is no reissue left to sign with what it did install" — under `once` no refresh is invoked any more, so that disjunct is unreachable; drop it. (FALSE)
   - `WriteState::any_ambiguous` comment: "an inner write that ended in `Conflict` saw the precondition move" is false of the `!any_ambiguous` arm, which returns `Conflict{NotObserved}` having proved nothing — scope the claim to the ambiguous arm.
