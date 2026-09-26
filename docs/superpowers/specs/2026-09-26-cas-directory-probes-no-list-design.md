@@ -1,5 +1,5 @@
 ---
-description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are listed once per live table at mount, held for the mount and kept current by the two writers, instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.8 replaces the lazily populated striped cache of rev.3 to rev.7 with population at mount.'
+description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are listed once per live table at mount, held for the mount and kept current by the two writers, instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.9 folds in codex review round 7 on the mount-time population of rev.8.'
 sidebar_label: 'CAS directory probes without LIST'
 sidebar_position: 12
 slug: /superpowers/specs/cas-directory-probes-no-list-design
@@ -7,7 +7,7 @@ title: 'CAS directory probes without an S3 LIST'
 doc_type: 'design'
 ---
 
-# CAS directory probes without an S3 LIST — rev.8 (2026-09-27) {#cas-directory-probes-no-list}
+# CAS directory probes without an S3 LIST — rev.9 (2026-09-27) {#cas-directory-probes-no-list}
 
 Mini spec for backlog tasks CAS-95.1 and CAS-95.2 (parent CAS-95, issue
 https://github.com/Altinity/ClickHouse/issues/2439). CAS-95.3 (the `detached` probe's catalog GETs) is
@@ -26,7 +26,11 @@ tests for the rev.6 branches, and fixes test wording. Rev.8 (2026-09-27) replace
 populated, striped cache of rev.3 to rev.7 with population at mount, the alternative that round 2 of
 the separate design study `2026-09-26-cas-table-files-as-refs-design.md` proposed: when no LIST can
 overlap a writer, the stripe, the admission-inside-the-stripe rule, the budget accounting and the
-runtime-lifetime argument all disappear.
+runtime-lifetime argument all disappear. Rev.9 folds in round 7 (`review_r7.md`): the table is
+generation-tagged and every hit, birth and population is admitted on the fence under the mutex; the
+rebuilding LIST waits for in-flight namespace-file requests of the lost generation and, after an
+unclean predecessor, for one attempt envelope; lives are enumerated from one fresh catalog cut;
+decommission and read-only opens never populate.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
 line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`.
@@ -156,86 +160,124 @@ the one switch every other shape uses.
 
 ### 3.2 CAS-95.2: namespace file names listed once at mount {#namespace-file-names}
 
-**The table.** `Pool` gains a `NamespaceFileTable`: `std::map<NamespaceLifeId, std::set<String>>`
-under one `std::mutex`, owned by the mount runtime (`mount_runtime`, the object that tracks the lease
-and is reset by `noteLeaseLost` and rebuilt by the remount path, `Pool/CasPool.cpp:1309`). It holds
-the table-level file names of every life this node can write. No I/O ever runs under its mutex.
+**The table.** `Pool` gains a `NamespaceFileTable`: the fence generation it was built under, and
+`std::map<NamespaceLifePhysicalId, std::set<String>>` (the incarnation is pool-unique,
+`Primitives/CasNamespaceLifeId.h:87`, and `NamespaceLifeId` has no ordering), under one `std::mutex`.
+It holds the table-level file names of every life this node can write. No I/O ever runs under its
+mutex. It exists only on the ordinary writable disk mount: `PoolConfig` gains `namespace_file_table`,
+set by `ContentAddressedMetadataStorage::openPoolView` for a writable open and false for read-only
+opens (`Pool/CasPool.cpp:558-565` skips `mountWritable`) and for `openForDecommission` (`:904`), which
+shares `mountWritable` and the remount path; both keep today's LIST on every call.
 
-**Population.** Inside `Pool::open`, after the mount lease is held and the ref catalog is readable
-and before `open` returns (so before the disk serves any request), and again inside a successful
-remount before the fence is re-armed for writers: for every cataloged `Live` life of this server root
-(`namespaceFilesLifeIfReadable` over the catalog's namespaces of this root), one
-`plain_objects.listNamespaceFiles(life)` and one table entry. A LIST failure propagates and the
-mount fails, as any other mount step does. Cost: one LIST per live table per mount, the bound issue
-#2439 asks for, and no more than today's restart already pays through `listDirectory` of each table
-directory at load.
+**Admission.** Every use of the table takes `mount_requests.admit()` first and, under the mutex,
+requires `op.admitted()` and `op.generation()` equal to the table's generation: a hit, the empty
+entry installed at birth, and the swap-in of a freshly built table. A table of another generation is
+never read or written; it is dropped. This is the engine's own fence check (deadline included,
+`Backend/CasRequests.h:258`), not the disk layer's `checkOpAdmitted`, which accepts a `Live`
+lifecycle without looking at the lease deadline (`ContentAddressedMetadataStorage.cpp:1242-1280`).
 
-**Lives born after mount.** A life is born on this node only through the minting resolution
-`Pool::namespaceLife(ns)` (`Pool/CasPool.cpp:2021`); files are written only under a `Live` life, and
-a life is `Live` from its birth, so no file can exist under a life before this call returns for the
-first time. `namespaceLife` therefore installs an empty set for a life absent from the table, under
-the mutex, before returning. A life that was `Creating` at mount (a crashed birth) has no files for
-the same reason and is covered by the same rule when it is resolved again. Nothing is ever populated
-lazily: every life this node writes is in the table from before its first file.
+**Population.** Inside `mountWritable` (`Pool/CasPool.cpp:844-901`) after `armMountFence` and before
+the pool is returned, and inside the remount path (`:1500-1560`) after `arm_fence` and before
+`publish_live`, that is, at a point where the fence is armed and no writer of this pool can run yet:
 
-**Read path.** `Pool::listNamespaceFiles(life)` (`:1218`): under the mutex, when the life is in the
-table return a sorted copy of its set; otherwise release the mutex and run today's LIST through
-`plain_objects.listNamespaceFiles(life)` without installing anything. Misses are exactly the lives
-this mount does not own: test fixture lives, `openForDecommission` and read-only opens, which have
-no mount runtime and keep today's behaviour unchanged.
+1. Quiescence (§ below).
+2. One fresh `CasRefCatalog::read` under an operation admitted on the armed generation. Select the
+   rows with `state == Live` whose namespace starts with `<server_root_id>/` and whose table segment
+   ends in `@cas@` (`liveNamespace`, `ContentAddressedMetadataStorage.cpp:1399-1404`; this excludes
+   the FREEZE shadow namespaces of `shadowNamespace`, `:1411-1416`, which never hold table-level
+   files), and build each `NamespaceLifeId::fromCatalogEntry(ns, incarnation)` directly. No
+   `namespaceFilesLifeIfReadable` and no ref-table recovery: the catalog read is the one request.
+3. For each selected life, `plain_objects.listNamespaceFiles(life)` (one logical enumeration; the
+   physical request count is one per page of names, `Pool/CasPlainObjects.cpp:54-69`), into a
+   temporary table built outside the mutex.
+4. Swap the temporary table in under the mutex, under the admission rule. A LIST failure, a lost
+   admission or a failed swap fails the mount (or the remount attempt) with the exception; the
+   previous table, if any, was already dropped at the start of the attempt, so no partial table is
+   ever visible.
 
-**Write path.** `Pool::putNamespaceFile` runs `plain_objects.putNamespaceFile` and then, under the
-mutex, inserts the name when the life is in the table. `Pool::removeNamespaceFile` erases the name
-under the mutex first and then runs `plain_objects.removeNamespaceFile`. `dropNamespace` erases the
-life's entry. So a name is present in the table only between a durable PUT and the start of its
-removal: a PUT whose outcome is unknown leaves an object without a name (invisible until the next
-mount, overwritten by the next write of that name, reported by fsck as it is today for any
-`_files/` object the table does not list), and a DELETE whose outcome is unknown leaves at most an
-object without a name. A name without an object cannot arise from a failure.
+Cost: one logical LIST per live table per mount, the bound issue #2439 asks for, and no more than
+today's restart already pays through `listDirectory` of each table directory at load. Memory: the
+full names of all table-level files of this node's live tables (mutation files, `Log` column files),
+outside every cache budget and bounded by what the tables actually hold.
 
-**Same-name concurrency.** Two operations on the same name of one life (a rewrite racing an unlink)
-are not serialized here, exactly as a local disk does not serialize them; `MergeTree` never issues
-them (mutation files are written and removed under the table's mutation lock, deduplication
-segments are created and dropped by one thread under the log's `state_mutex`, `format_version.txt`
-is written once), and the `Log` family holds its table lock across rewrites. Operations on different
-names commute. A LIST never runs concurrently with a writer of the same life: population happens
-before the disk is served, and misses list lives this mount does not write.
+**Quiescence before the rebuilding LIST.** `_files/` writes carry no seal; a PUT or DELETE still in
+flight when the LIST runs can land after it and leave the table naming a missing object (a late
+DELETE) or missing a present one (a late PUT). Two sources, two rules:
 
-**Fence.** A hit is served while the mount runtime holds the lease, the rule the ref table itself
-follows. `noteLeaseLost` clears the table under the mutex, so after the fence trips every call is a
-miss and today's LIST refuses through the engine's admission (`Pool/CasPlainObjects.cpp:58-65`).
-The remount rebuilds the table from fresh LISTs before writers resume.
+- In-process, the requests this pool issued under the lost generation: `Pool` counts in-flight
+  namespace-file requests (incremented before each `plain_objects` call in `putNamespaceFile`,
+  `removeNamespaceFile` and the miss path of `listNamespaceFiles`, decremented when it settles); the
+  remount path waits for zero after `quiesce_ref_tables` and before step 2. The engine refuses those
+  requests once the fence is lost, so the wait is one attempt at most.
+- Cross-process, the requests of a dead predecessor incarnation of this root: for a claim whose
+  `MountPriorState` is `Fenced`, `UncleanObserved` or `UncleanUnsafe` (`:823-829`, no proof of a
+  clean death), population waits one `attemptEnvelopeMs()` (`Backend/CasBackend.h:244`, what one
+  physical attempt can cost end to end) after the claim before step 2; a dead process cannot retry,
+  so after one envelope nothing of it can still land. `Clean` and `None` wait nothing. This
+  reinstates for `_files/` the wait the ref log no longer needs (`:802-817`), for the stated reason
+  that ref-log writes are sealed and `_files/` writes are not.
+
+**Lives born after mount.** Every `_files/` write on this node obtains its life from
+`Pool::namespaceLife(ns)` first (`ContentAddressedTransaction.cpp:836-851`, `:1293-1301`,
+`:1472-1485`), and `CasRefLedger::namespaceLife` returns a life only once it is `Live`
+(`Pool/CasRefLedger.cpp:4919-4969`). A life may also be born by ref publication
+(`acquireMutableRefTableRuntime`, `:678-688`), but no `_files/` object can exist under any life
+before the first `Pool::namespaceLife` call for it on this node. `Pool::namespaceLife` therefore
+installs an empty set for a life absent from the table, under the admission rule. Nothing is ever
+populated lazily.
+
+**Read path.** `Pool::listNamespaceFiles(life)` (`:1218`): admit, lock, and when the life is in the
+table of the admitted generation return a sorted copy; otherwise unlock and run today's LIST through
+`plain_objects.listNamespaceFiles(life)` (counted in flight) without installing anything. Misses are
+the lives this mount does not own: test fixture lives, decommission and read-only opens, and every
+call on a pool whose table is of another generation, which the engine then refuses.
+
+**Write path.** `Pool::putNamespaceFile` runs `plain_objects.putNamespaceFile` (counted) and then,
+under admission and the mutex, inserts the name when the life is in the table.
+`Pool::removeNamespaceFile` erases the name under admission and the mutex first, then runs
+`plain_objects.removeNamespaceFile` (counted). `dropNamespace` erases the life's entry. So a name is
+present only between a durable PUT and the start of its removal: a PUT whose outcome is unknown
+leaves an object without a name (invisible until the next mount's LIST, overwritten by the next
+write of that name), a DELETE whose outcome is unknown leaves at most an object without a name. A
+name without an object cannot arise from a failure.
+
+**Contract.** Each table operation is linearized at its mutex point: insert after the PUT settled,
+erase before the DELETE starts, hit at the read. A directory listing therefore reflects every
+operation that settled before it and none that started after it. It is not identical to an
+instantaneous S3 LIST during a PUT or DELETE, and does not need to be: the callers that write
+table-level files own them (a mutation entry is written and removed by the owner of that
+mutation, `StorageMergeTree.cpp:1005-1015`; deduplication segments by one thread under the log's
+`state_mutex`, `MergeTreeDeduplicationLog.cpp:247-310`; `Log` family files under the table's write
+lock), and no caller races a rewrite of a name against its unlink.
 
 **Why this is safe.**
 
 - Single writer per lease: the namespace is server-root scoped, the mount lease admits one holder
   per generation, and every mutator of a live life's `_files/` on this node is one of the two wrapped
   methods, both of which update the table.
-- No LIST overlaps a writer of the same life, so there is no interleaving to order and no version,
-  stripe or runtime identity to reason about.
+- No LIST overlaps a writer of the same life: population runs before any writer under the armed
+  generation and after the requests of the previous generation and of a dead predecessor can no
+  longer land.
 - Same trust in LIST as today: the mount-time LIST is the recovery-time cold LIST, the trusted kind
   (decision 2); the hot LISTs it replaces were the untrusted ones.
-- Fail-close: unknown write outcomes leave invisible objects, never phantom names; a lost lease turns
-  every read into today's refused LIST; a failed population fails the mount.
-- Memory: names of this node's live tables, a few strings per table, outside every cache budget.
+- Fail-close: unknown write outcomes leave invisible objects, never phantom names; every use of the
+  table is admitted on the fence; a failed population fails the mount attempt.
 
 **Alternatives not taken.**
 
 - A `std::map` inside `CasPlainObjects` or `ContentAddressedMetadataStorage` (round 1): the same
-  table in an object without the mount lifetime; it would need its own clear on lease loss.
+  table in an object without the mount lifetime.
 - A version counter bumped at write start and settle with an install check (rev.2): defeated by PUT
   and DELETE settling out of durable order and by a runtime replaced between LIST and install.
 - A mutex inside each `RefTableRuntime` (rev.3, rev.4), then a fixed bank of striped mutexes in the
-  ledger keyed by the life (rev.5 to rev.7), each held across the populating LIST and every write of
-  that life, with admission re-checked inside the stripe and the names counted in the ref-table
-  budget: all of it existed to order a lazily started LIST against concurrent writers and to survive
-  the runtime's eviction and remount. Population at mount removes the overlap, and ownership by the
-  mount runtime removes the lifetime question.
+  ledger keyed by the life (rev.5 to rev.7), each held across a lazily started LIST and every write
+  of that life: population at mount removes the overlap they existed to order.
 - Durable directory entries in the ref log (the design study, closed after two rounds): a format
   generation, a resync authority argument and still the same-name serialization.
 - One ledger-wide mutex (round 3): serializes the inserts of every deduplicating table behind each
   other's PUT.
-- A per-table cap on the held set (rev.4): exempted an oversized table from the warm-node guarantee.
+- Repairing the table on a read that finds the object gone: the exception would still propagate and
+  the repair is a guess about why the object is gone; the quiescence rules prevent the state instead.
 
 ### 3.3 What stays as it is {#unchanged}
 
@@ -270,41 +312,53 @@ Failing-first order, one test per behaviour. Files are named where they exist on
    before this change.
 
 3.2, in `src/Disks/tests/gtest_cas_namespace_file_request_profile.cpp` (production-born lives on a
-pool opened by `Pool::open`, `CountingBackend`):
+pool opened by `Pool::open`, `CountingBackend`; LIST counts are per `_files/` prefix, since a writable
+open issues control-plane LISTs of its own, `Pool/CasPool.cpp:403-479`):
 
-4. Population: a pool with three live tables holding files is opened; `listTotal()` counts exactly
-   three LISTs of the three `_files/` prefixes during `open`, and `listNamespaceFiles` of each life
-   afterwards issues no LIST and returns the names.
-5. A `putNamespaceFile` and a `removeNamespaceFile` are visible in the next `listNamespaceFiles`
-   without a LIST; the DELETE of the removed name is issued (the erase precedes it).
-6. Birth after mount: `namespaceLife(ns)` of a new namespace installs an empty set; the first
-   `listNamespaceFiles` issues no LIST; files written afterwards are listed.
-7. Miss: a fixture life not owned by the mount lists with one LIST per call and installs nothing
-   (the `DedupLogRotation` gate keeps its counts); an `openForDecommission` pool lists as today.
-8. Ambiguous PUT (the backend lands the object, then fails every attempt past the policy deadline
-   under `FakeClock`): the public call throws and the name is absent from the table; a later write of
-   the same name succeeds and the name appears. Ambiguous DELETE: the name is absent from the table
-   whether or not the object survived.
-9. Fence loss: with a populated table, trip the fence; `listNamespaceFiles` is refused as today and
-   serves no cached answer; after `tryRemountOnce` the table is rebuilt with one LIST per live table
-   and hits resume.
-10. Drop and same-name rebirth: `dropNamespace` erases the entry; the reborn life starts empty and
-    does not see the old names.
-11. Population failure: a backend that fails the LIST of one prefix makes `Pool::open` throw; no
-    partially populated pool is returned.
-12. Destructive consumers on a populated table: `removeRecursive` of a table subdirectory
+4. Population: a pool with three live tables holding files, one shadow (FREEZE) namespace, one
+   `Creating` and one `Removing` row and one foreign-root namespace is opened; exactly the three live
+   tables' `_files/` prefixes are listed once each, the others never; `listNamespaceFiles` of each
+   live life afterwards issues no LIST and returns the names; a paginated prefix (more names than one
+   page) is listed completely.
+5. Admission: with a populated table, let the lease deadline pass without a trip; `listNamespaces`
+   is refused (no cached answer); trip the fence explicitly; the same; after `tryRemountOnce` the
+   table is rebuilt and hits resume under the new generation.
+6. Quiescence, in-process: a DELETE of the lost generation parked in the backend after the fence
+   trip; `tryRemountOnce` does not issue the rebuilding LIST until the DELETE settled (refused);
+   the rebuilt table does not name the object. The same with a parked PUT.
+7. Quiescence, cross-process: a claim over an `UncleanObserved` predecessor with a parked predecessor
+   DELETE in the backend; population issues its LIST only after one attempt envelope under
+   `FakeClock`; with a `Clean` predecessor it issues it immediately.
+8. Birth: `namespaceLife(ns)` of a new namespace installs an empty set under admission; the same
+   call after a fence trip installs nothing; a life born by ref publication gets its entry at its
+   first `namespaceLife` call and before its first file.
+9. Write-through: a `putNamespaceFile` and a `removeNamespaceFile` are visible in the next listing
+   without a LIST; the DELETE of the removed name is issued after the erase.
+10. Miss: a fixture life not owned by the mount lists with one LIST per call and installs nothing
+    (the `DedupLogRotation` gate keeps its counts); `openForDecommission` and a read-only open list
+    as today.
+11. Ambiguous PUT (the backend lands the object, then fails every attempt past the policy deadline
+    under `FakeClock`): the public call throws and the name is absent; a later write of the same
+    name succeeds and the name appears. Ambiguous DELETE: the name is absent whether or not the
+    object survived. Allocation failure in the insert after a durable PUT: the call throws and the
+    name is absent.
+12. Population failure: a backend that fails one prefix's LIST makes `Pool::open` throw and
+    `tryRemountOnce` report failure with the fence closed; the next attempt succeeds cleanly.
+13. Drop and same-name rebirth: `dropNamespace` erases the entry; the reborn life starts empty.
+14. Destructive consumers on a populated table: `removeRecursive` of a table subdirectory
     (`ContentAddressedTransaction.cpp:1164`) removes every file it would have removed with a fresh
     LIST, and a table rename (`:1295`) copies every file, both without a LIST.
-13. Non-MergeTree: a `Log` table on the CAS disk (files at table level rewritten in place) inserts,
-    restarts and appends with zero LIST after mount, per the probe report
-    `docs/superpowers/reports/2026-09-27-cas-non-mergetree-engines-probe.md`.
+15. Non-MergeTree: `Log`, `TinyLog` and `StripeLog` tables on the CAS disk insert, restart, append,
+    truncate, rename and drop with zero LIST after mount, per the probe report
+    `docs/superpowers/reports/2026-09-27-cas-non-mergetree-engines-probe.md`; a post-mount `ATTACH`
+    of a restored table gets its entry at birth.
 
 Integration, new module `tests/integration/test_cas_directory_probes` with GC disabled
 (`gc_enabled = 0`) so no maintenance LIST is counted:
 
-14. Two restarts of one node, first with 2 tables × 20 parts, then with 2 tables × 200 parts;
+16. Two restarts of one node, first with 2 tables × 20 parts, then with 2 tables × 200 parts;
     `system.events` `CASRootList` read after all parts are loaded is equal in both restarts.
-15. After the second restart, the delta of `CASRootList` over two minutes without queries or DDL is
+17. After the second restart, the delta of `CASRootList` over two minutes without queries or DDL is
     zero (covers `clearOldTemporaryDirectories`).
 
 No `LOGICAL_ERROR` is introduced by this change.
@@ -312,9 +366,9 @@ The ASan lane runs for the touched suites.
 
 ## 5. Acceptance {#acceptance}
 
-- CAS-95 acceptance #1: restart LIST count independent of the part count (test 14).
+- CAS-95 acceptance #1: restart LIST count independent of the part count (test 16).
 - CAS-95 acceptance #2 for the `clearOldTemporaryDirectories` half: zero `CASRootList` on a warm node
-  without DDL (test 15). The `system.detached_parts` half stays with CAS-95.3.
+  without DDL (test 17). The `system.detached_parts` half stays with CAS-95.3.
 - Issue #2439 gets before/after `S3ListObjects` numbers from an otel.demo restart.
 
 ## 6. Documentation {#documentation}
