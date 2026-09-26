@@ -4,6 +4,7 @@ title: Stage one merged manifest for a single-file write on a committed part
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:55'
+updated_date: '2026-09-26 07:44'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -49,3 +50,9 @@ Provenance: BACKLOG/performance.md#standalone-write-scratch-manifest-cost (2031-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged from ref-protocol.md #cas-txn-commit-inside-noexcept-aftercommit option 3 (single inline entry without a scratch build): the same change, staging one merged manifest for a single-file write, also removes the scratch build and cuts the six throw points inside the noexcept commit callbacks to two; it is therefore part of the noexcept-abort mitigation, not only a write-path optimisation.
+<!-- SECTION:NOTES:END -->
