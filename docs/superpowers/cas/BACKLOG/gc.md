@@ -149,6 +149,51 @@ a publication that lands mid-phase and then rolls back — that body has no edge
 The read-ahead widens the window quantitatively; it does not open the class. **Not sized**, and the fix
 is a carried marker or a sweep concern rather than anything in the fold.
 
+### `[gc-confirmed-meta-delete-etag-race]` A delayed cleanup job can delete a NEWER incarnation's `Condemned` marker {#gc-confirmed-meta-delete-etag-race}
+
+HARD, P1, data-loss class. `deleteConfirmedMeta` (`Gc/CasGcMetaWriter.cpp:86-92`, identical on
+`cas-gc-rebuild` and `altinity/antalya-26.6`) re-reads the live meta at delete time and deletes by
+whatever `etag` it observes then, not the etag captured when `scheduleConfirmedMetaDelete` (`:160-167`)
+queued the delete. A delayed cleanup job from an old GC leader can therefore delete a NEWER
+incarnation's `Condemned` marker: leader A deletes body `t1` and schedules its meta cleanup; a new
+leader condemns fresh incarnation `t2`; A's delayed job re-reads meta, finds `t2`'s row, and deletes it
+by `t2`'s current etag; a writer then observes absent meta and adopts `t2` without rematerialization,
+and the round's own exact-token delete removes `t2`'s body next. Fix: thread the etag captured at
+schedule time through `scheduleConfirmedMetaDelete` and call `deleteMetaExact` with it, never with a
+fresh `loadMeta` read. First raised (P1#2) in `random/review - stage B (codex).md` (codex, ~2026-08-05).
+
+Note: the same source file's other P1 — a `~Gc`/`meta_pool` destruction-order UAF — is DONE, fixed by
+the `GcMetaWriter` extraction whose jobs now capture only a `shared_ptr<State>`
+(`Gc/CasGcMetaWriter.h:17-23,65-77`; `7a376f141d3` on `cas-gc-rebuild`, 2026-08-24; `7f932d31352` on
+`altinity/antalya-26.6`, 2026-08-25, its own introduction of the file, not a cherry-pick).
+`fable-review-triage.md`'s `{#b1}` section still reads as an open P1 for this same UAF and should be
+refreshed against this extraction by whoever owns that file.
+
+### `[gc-round-duration-superlinear-growth]` GC round finish times grew superlinearly over a two-hour stateless run {#gc-round-duration-superlinear-growth}
+
+KEEP, P2. On PR #2300 CI (2026-09-02, `amd_asan_ubsan cas s3 storage 1/2`), consecutive `cas_s3` GC
+round finish times grew 1.3→12 minutes over rounds 117-128 (round 128: `candidates=7309 deleted=4591
+manifests_deleted=8776`); by the end of a two-hour stateless run every round exceeded ten minutes. The
+shutdown hang this fed (`clickhouse stop --max-tries 300` failing after a >13-minute round) is now
+bounded by `Pool::beginTeardown`'s per-request teardown fence (`Pool/CasPool.cpp:1087-1091,187-200`,
+`c80a00aed71`/`9d7e3931c52`, 2026-09-04) refusing a round's next physical request — but the growth
+itself is untouched, and it's unchecked whether the "Rounds in minutes" spec's stage C deadline
+(`{#gc-rounds-in-minutes}`) will bound it once implemented. Needs: re-run the same load pattern,
+confirm the growth is still superlinear against a fresh trace, and check it against the stage C
+deadline once that lands.
+
+Source: `docs/superpowers/cas/random/pr2300-ci-triage-20260902.md` item 1 (file deleted by the u22
+consolidation pass). Supersedes an earlier draft id `[gc-shutdown-blocks-on-running-round]` (dropped,
+not filed): its "no mid-round stop check exists" diagnosis was stale, since the teardown fence above
+landed 2026-09-04, after the 2026-09-02 CI observation this entry is based on.
+
+### `[gc-terminal-snapshot-fold-intake]` Option C (terminal snapshot at removal) needs a second fold-intake rule for a Removing life plus its own TLA+ safety gate {#gc-terminal-snapshot-fold-intake}
+
+Not scheduled; requires a new fold-intake rule folding a `Removing` life from a terminal snapshot,
+re-proof of fold-seal determinism under crash replay, and writer-side destructive rights
+(`docs/superpowers/specs/2026-09-15-cas-gc-dead-namespace-debris-cleanup-design.md` §C); own spec
+and TLA+ gate before any code.
+
 ## GC cost and throughput {#gc-cost-and-throughput}
 
 - **GC throughput collapse under a mass-DROP burst** {#gc-throughput-collapse-2026-07-25} — KEEP, historical RCA — Unbudgeted serial rounds diverge once DROP arrivals exceed one round's service rate (20s→1716s over 6 rounds, 188→20,046 candidates). Three defects: zero-depth meta-pool queue; permanent tombstones under the globally-enumerated ref prefix; `system.remote_data_paths` has no `disk_name` pushdown (tracked in `testing-and-ci.md`). The first two are the shape spec [Stage A](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-a)/[B](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-b) now re-derive from fresh data; kept as this incident's historical record.
