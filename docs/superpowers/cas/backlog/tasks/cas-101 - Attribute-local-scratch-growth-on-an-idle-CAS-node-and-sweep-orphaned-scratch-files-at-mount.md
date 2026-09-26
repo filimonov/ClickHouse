@@ -3,8 +3,8 @@ id: CAS-101
 title: Attribute local scratch growth on an idle CAS node
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:23'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-07-18'
+updated_date: '2026-09-26 12:35'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -49,4 +49,6 @@ Provenance: BACKLOG/performance.md#scale-findings [idle-scratch-debris]. Verifie
 
 <!-- SECTION:NOTES:BEGIN -->
 The mount-time sweep of orphaned scratch files moved to CAS-125, which carries the same acceptance criterion; this task keeps only the attribution.
+
+First recorded: 2026-07-18 (b22798a24a3, by 'idle-scratch-debris')
 <!-- SECTION:NOTES:END -->

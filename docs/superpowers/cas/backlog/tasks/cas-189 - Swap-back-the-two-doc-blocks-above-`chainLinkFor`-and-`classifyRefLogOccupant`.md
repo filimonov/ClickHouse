@@ -3,7 +3,8 @@ id: CAS-189
 title: Swap back the two doc blocks above `chainLinkFor` and `classifyRefLogOccupant`
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:44'
+created_date: '2026-07-30'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:ref-ledger'
   - 'complexity:trivial'
@@ -40,3 +41,9 @@ Provenance: BACKLOG/ref-protocol.md#orphaned-adjudication-comment. Verified 2026
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-30 (95d974072c4, by 'ORPHANED-ADJUDICATION-COMMENT')
+<!-- SECTION:NOTES:END -->

@@ -3,7 +3,8 @@ id: CAS-43
 title: Count on the writer side each dedup-adopt that raced a GC condemn
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
+created_date: '2026-07-24'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:observability'
   - 'area:write-path'
@@ -45,3 +46,9 @@ Provenance: BACKLOG/gc.md [RECOVERED-INDEGREE-ATTRIBUTION] (residual half; Debug
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-24 (d5be10d4645, by 'RECOVERED-INDEGREE-ATTRIBUTION')
+<!-- SECTION:NOTES:END -->

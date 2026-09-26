@@ -3,8 +3,8 @@ id: CAS-70
 title: 'Close the review follow-ups of the hot-key write lane, phase A'
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 07:33'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -53,4 +53,6 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-a-followups (alias #ref-ca
 
 <!-- SECTION:NOTES:BEGIN -->
 Correction (post-import review): the two task-1-review.md items previously called lost were recovered from tmp/task-1-review.md and imported as CAS-81 (spec overstates hot-key-lane coverage) and CAS-82 (flat conflict pause raises the request ceiling on five off-lane read-modify-write sites).
+
+First recorded: 2026-09-04 (16fd9bc01cd, by 'hot-key-lane-phase-a-followups')
 <!-- SECTION:NOTES:END -->

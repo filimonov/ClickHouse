@@ -1,9 +1,11 @@
 ---
 id: CAS-233
 title: 'Split `CasGc.cpp` into phase units behind equivalence fences, redoing PR #2286'
-status: To Do
-assignee: []
-created_date: '2026-09-26 08:01'
+status: In Progress
+assignee:
+  - '@k-morozov'
+created_date: '2026-07-13'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -48,3 +50,11 @@ Provenance: BACKLOG/docs-and-cleanup.md#refactoring [refactor: CasGc split] and 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-13 (45a6c8ee2b6, by 'refactor: CasGc split')
+
+PR #2286 (open), branch cas/separate_phase_during_round, base antalya-26.6, +278/-209 in `CasGc.cpp`/`CasGc.h` only, no equivalence tests yet (AC #1).
+<!-- SECTION:NOTES:END -->

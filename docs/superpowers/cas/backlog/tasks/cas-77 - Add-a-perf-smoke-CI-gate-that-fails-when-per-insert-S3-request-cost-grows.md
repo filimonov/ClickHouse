@@ -3,8 +3,8 @@ id: CAS-77
 title: Add a perf-smoke CI gate that fails when per-insert S3 request cost grows
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 07:10'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:ci'
   - 'area:testing'
@@ -42,3 +42,9 @@ Provenance: BACKLOG/performance.md#perf-smoke-cost-regression-gate (source doc r
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (93022c446eb, by 'perf-smoke-cost-regression-gate')
+<!-- SECTION:NOTES:END -->

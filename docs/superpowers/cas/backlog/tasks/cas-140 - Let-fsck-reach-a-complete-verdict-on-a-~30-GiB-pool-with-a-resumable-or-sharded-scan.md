@@ -5,8 +5,8 @@ title: >-
   sharded scan
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 08:34'
+created_date: '2026-07-29'
+updated_date: '2026-09-26 12:36'
 labels:
   - 'area:fsck'
   - 'area:soak'
@@ -60,4 +60,6 @@ Provenance: BACKLOG/gc.md#fsck-scale-timeout [FSCK-SCALE-TIMEOUT]. Related: CAS-
 
 <!-- SECTION:NOTES:BEGIN -->
 From testing-and-ci.md (u13 merge): the timed-out pool was 183 GB / 2.14M objects; the cost is discovery (LIST), not the check budget.
+
+First recorded: 2026-07-29 (660aab38fd2, by 'FSCK-SCALE-TIMEOUT')
 <!-- SECTION:NOTES:END -->

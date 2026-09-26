@@ -5,7 +5,8 @@ title: >-
   probe, and fix the probe's 'no override' text
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -50,3 +51,11 @@ Provenance: BACKLOG/formats-and-storage.md#skip-access-check-no-signal (2031-tri
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (00bda042d5d, by 'skip-access-check-no-signal')
+
+2031-triage CAS-029: the `skip_access_check` half. 'Versioning queried only on the GCS dialect; ETag mounts rely on the delete-marker probe' is decided behaviour (2026-09-02), and the post-mount `LOGICAL_ERROR` half is implemented by `654ba3d0aa7` (`CAS_DELETE_MARKER`).
+<!-- SECTION:NOTES:END -->

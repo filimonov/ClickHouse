@@ -3,8 +3,8 @@ id: CAS-103
 title: Make one replica merge and the others relink on a shared CAS pool
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:23'
-updated_date: '2026-09-26 08:14'
+created_date: '2026-07-13'
+updated_date: '2026-09-26 12:35'
 labels:
   - 'area:replication'
   - 'complexity:medium'
@@ -46,3 +46,9 @@ Provenance: BACKLOG/performance.md#scale-findings [replicated double-spill] (+ o
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-13 (45a6c8ee2b6, by 'replicated double-spill')
+<!-- SECTION:NOTES:END -->

@@ -3,7 +3,8 @@ id: DRAFT-3
 title: Slot-bound blob hash `ch128ctx` against cross-slot dedup collisions
 status: Draft
 assignee: []
-created_date: '2026-09-26 06:55'
+created_date: '2026-07-14'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:formats'
   - 'complexity:medium'
@@ -44,3 +45,9 @@ Provenance: BACKLOG/performance.md#read-write [ch128ctx] (origin 10-backups.md m
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-14 (f54ef43ff5a, by 'ch128ctx')
+<!-- SECTION:NOTES:END -->

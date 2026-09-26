@@ -3,8 +3,8 @@ id: CAS-135
 title: Attribute S3 requests made on GC worker pools to the phase that scheduled them
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 07:39'
+created_date: '2026-09-03'
+updated_date: '2026-09-26 12:36'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -53,3 +53,9 @@ Provenance: BACKLOG/gc.md#gc-phase-rows-lose-worker-requests. Verified 2026-09-2
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-03 (db5bb3485c8, by 'gc-phase-rows-lose-worker-requests')
+<!-- SECTION:NOTES:END -->

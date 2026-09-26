@@ -5,7 +5,8 @@ title: >-
   wire bytes instead of a re-encode
 status: Draft
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:formats'
   - 'complexity:medium'
@@ -50,3 +51,9 @@ Provenance: BACKLOG/formats-and-storage.md#manifest-digest-by-reencode (2031-tri
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (4268978c8f7, by 'manifest-digest-by-reencode')
+<!-- SECTION:NOTES:END -->

@@ -5,8 +5,8 @@ title: >-
   A1)
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+created_date: '2026-09-03'
+updated_date: '2026-09-26 12:41'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -59,3 +59,9 @@ Provenance: BACKLOG/gc.md#gc-reduce-confirm-marker-read-ahead. Verified 2026-09-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-03 (db5bb3485c8, by 'gc-reduce-confirm-marker-read-ahead')
+<!-- SECTION:NOTES:END -->

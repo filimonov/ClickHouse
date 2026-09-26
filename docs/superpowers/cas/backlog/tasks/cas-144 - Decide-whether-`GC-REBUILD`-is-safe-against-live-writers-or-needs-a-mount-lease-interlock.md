@@ -5,7 +5,8 @@ title: >-
   mount-lease interlock
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:39'
+created_date: '2026-08-04'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -13,6 +14,7 @@ labels:
   - 'risk:high'
   - 'confidence:contested'
   - 'needs:decision'
+  - 'origin:2031-triage'
 milestone: m-8
 dependencies: []
 references:
@@ -56,3 +58,11 @@ Provenance: BACKLOG/gc.md [gc-rebuild-lease-interlock]. Contested because the SQ
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-04 (f08734d17df, by 'gc-rebuild-lease-interlock')
+
+2031-triage CAS-004: residual = offline `clickhouse-disks cas-gc-rebuild` has no mount-lease interlock against a live writer; the server-side `SYSTEM CAS GC REBUILD` holds the live GC lease and condemns nothing (ledger `docs/superpowers/cas/2031-triage.md#cas-004`).
+<!-- SECTION:NOTES:END -->

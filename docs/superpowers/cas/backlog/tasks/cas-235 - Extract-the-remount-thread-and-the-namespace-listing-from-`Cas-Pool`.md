@@ -3,7 +3,8 @@ id: CAS-235
 title: 'Extract the remount thread and the namespace listing from `Cas::Pool`'
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:02'
+created_date: '2026-07-13'
+updated_date: '2026-09-26 12:39'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -48,3 +49,9 @@ Provenance: BACKLOG/docs-and-cleanup.md#refactoring [refactor: Store de-god-clas
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-13 (45a6c8ee2b6, by 'refactor: Store de-god-classing')
+<!-- SECTION:NOTES:END -->

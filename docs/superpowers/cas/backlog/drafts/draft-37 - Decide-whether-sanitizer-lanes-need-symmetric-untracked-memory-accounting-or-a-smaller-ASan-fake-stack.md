@@ -5,8 +5,8 @@ title: >-
   smaller ASan fake stack
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:57'
-updated_date: '2026-09-26 08:08'
+created_date: '2026-09-16'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:ci'
   - 'area:upstream'
@@ -49,3 +49,9 @@ Provenance: BACKLOG/testing-and-ci.md#asan-memory-tracker-snap candidates (b) an
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-16 (cbf3fe14e36, by 'asan-memory-tracker-snap')
+<!-- SECTION:NOTES:END -->

@@ -5,7 +5,8 @@ title: >-
   explicit-ASSUME-for-empty-sets rule in `models/README.md`
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:57'
+created_date: '2026-07-30'
+updated_date: '2026-09-26 12:39'
 labels:
   - 'area:tooling'
   - 'complexity:small'
@@ -49,3 +50,9 @@ Provenance: BACKLOG/testing-and-ci.md#tla-runner-static-metadir (source's 'mostl
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-30 (d0d73d46835, by 'empty-set-survey-residues')
+<!-- SECTION:NOTES:END -->

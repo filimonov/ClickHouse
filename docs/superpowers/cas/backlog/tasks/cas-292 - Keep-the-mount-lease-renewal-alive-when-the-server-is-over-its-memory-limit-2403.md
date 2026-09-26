@@ -5,7 +5,8 @@ title: >-
   (#2403)
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:33'
+created_date: '2026-09-25'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -60,3 +61,11 @@ Provenance: umbrella-roadmap.md section 4 bullet 'Mount lease under memory press
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-25 (74f60f0a3a5, by 'https://github.com/Altinity/ClickHouse/issues/2403')
+
+Merged from the GitHub reconciliation (u17, would have been a duplicate task for #2403): The renewal thread has no thread group, so its allocations go to the global tracker and can throw `MEMORY_LIMIT_EXCEEDED` whenever the server is above `max_server_memory_usage`. One terminal renewal loses the mount; an exception outside the inner `try` reaches the loop's catch-all (`Pool/CasMountRuntime.cpp:717`, loop at `:643`) and ends the renewal thread for good. A transient memory condition therefore takes down something that must never stop. Unfixed on both branches (no `LockMemoryExceptionInThread` in the file). Each attempt allocates ~1 MiB for the PUT buffer plus ~1 MiB for a settling read; the PUT runs on the remote-FS write pool because `conditionalWriteSettings` (`Backend/CasObjectStorageBackend.cpp:805`) keeps `s3_allow_parallel_part_upload = true`, so a guard on the renewal thread would not cover it. Fix (issue proposal): hold `LockMemoryExceptionInThread(VariableContext::Global)` across a renewal iteration (precedent: `KeeperServer.cpp:397`, `TransactionLog.cpp:491`); disable parallel part upload for control-plane writes with a comment saying why; size control-plane buffers to the payload. The "name the transport error in `GaveUp`" part is CAS-50. Rejected: `MemoryTrackerBlockerInThread` (hides the memory), classifying the limit as deterministic (fails faster), a longer budget. AC to keep: With the global tracker held above its limit, the renewal keeps committing and the mount stays Live; without the change the same test reports a terminal renewal; A fault-injected memory-limit exception on the renewal path neither ends the renewal thread nor trips the fence; The control-plane PUT is issued on the renewal thread, not a remote-FS write-pool thread; The renewal's allocations still show up in server memory accounting
+<!-- SECTION:NOTES:END -->

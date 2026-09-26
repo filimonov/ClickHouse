@@ -5,7 +5,8 @@ title: >-
   a trace line
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:02'
+created_date: '2026-06-07'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:replication'
   - 'area:observability'
@@ -54,3 +55,11 @@ Provenance: BACKLOG/issue-2310.md#open-items [attach-partition-cas-relink-reside
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-06-07 (07a483c65e0, by 'open-items')
+
+Issue #2310 was closed on 2026-09-25 (rule-3 fix released in 26.6.4); this residency `Unknown` is its remaining open cause and is not covered by the closure.
+<!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -50,6 +50,7 @@ Provenance: spec B2, motivated by BACKLOG/gc.md#covered-log-cleanup-aborts-on-ca
 - [ ] #1 Keys below the bound are deleted in batches; a key equal to the checkpoint or above the durable cursor is never deleted
 - [ ] #2 A second round with nothing below the bound issues one LIST per life and no delete
 - [ ] #3 The phase has no input from the fold-time global listing
+- [ ] #4 The `ref_object_cleanup` phase row in `system.cas_gc_log` carries `objects_deleted` and `objects_pending` (issue #2429 observability gap)
 <!-- AC:END -->
 
 ## Definition of Done
@@ -59,3 +60,9 @@ Provenance: spec B2, motivated by BACKLOG/gc.md#covered-log-cleanup-aborts-on-ca
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+<!-- SECTION:NOTES:END -->

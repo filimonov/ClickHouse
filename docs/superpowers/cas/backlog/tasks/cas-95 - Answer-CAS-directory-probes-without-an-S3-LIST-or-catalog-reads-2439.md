@@ -3,7 +3,8 @@ id: CAS-95
 title: Answer CAS directory probes without an S3 LIST or catalog reads (#2439)
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:23'
+created_date: '2026-07-06'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:read-path'
   - 'complexity:medium'
@@ -50,3 +51,9 @@ Provenance: BACKLOG/performance.md#scale-findings [startup O(refs)] (deleted in 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-06 (4abf5b743ed, by 'startup O')
+<!-- SECTION:NOTES:END -->

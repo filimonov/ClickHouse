@@ -5,7 +5,8 @@ title: >-
   reporter's rate
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:10'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -52,3 +53,11 @@ Provenance: BACKLOG/performance.md#cas-connection-churn-spike-redo; roadmap §2 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (597753102a9, by 'cas-connection-churn-spike-redo')
+
+Issue #2243's last comment asks whether to backport upstream https://github.com/ClickHouse/ClickHouse/pull/119078 (`isStoreLimitReached` makes the pool open a fresh socket per request once its store limit is crossed) and whether the keep-alive settings stay after it. The #2332 repro measured 58 pooled connections against a store limit of 10,000, so it did not fence that run; the redo should record whether the limit is crossed.
+<!-- SECTION:NOTES:END -->

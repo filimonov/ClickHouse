@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:20'
+updated_date: '2026-09-26 12:41'
 labels:
   - 'area:gc'
   - 'area:backend'
@@ -57,3 +58,9 @@ Provenance: DRAFT-13 (archived), gc.md#gc-multidelete-conditional-gap, audit F7,
 - [ ] #4 No fallback paths added; failures propagate
 - [ ] #5 Mandatory HEAD-before-PUT on the publish path untouched (decision-1)
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+<!-- SECTION:NOTES:END -->

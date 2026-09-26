@@ -6,8 +6,8 @@ title: >-
   description
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:36'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -52,3 +52,9 @@ Provenance: BACKLOG/gc.md#refplan-dead-drop-counters (2031-triage CAS-096). `4d4
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-096')
+<!-- SECTION:NOTES:END -->

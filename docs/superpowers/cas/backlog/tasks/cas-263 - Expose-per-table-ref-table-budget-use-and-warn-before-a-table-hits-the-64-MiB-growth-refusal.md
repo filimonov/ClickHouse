@@ -5,7 +5,8 @@ title: >-
   growth refusal
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:40'
 labels:
   - 'area:ref-ledger'
   - 'area:observability'
@@ -51,3 +52,9 @@ Provenance: BACKLOG/formats-and-storage.md#ref-table-64mib-admission-ceiling par
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (2583e3427aa, by 'ref-table-64mib-admission-ceiling')
+<!-- SECTION:NOTES:END -->

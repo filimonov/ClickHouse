@@ -5,8 +5,8 @@ title: >-
   carry and whether the deadline was hit
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 08:34'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:41'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -55,3 +55,9 @@ Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F28, one of the 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (83949645ce7, by 'audit F28')
+<!-- SECTION:NOTES:END -->

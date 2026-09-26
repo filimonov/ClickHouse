@@ -5,8 +5,8 @@ title: >-
   `UNKNOWN_FORMAT_VERSION`
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
-updated_date: '2026-09-26 08:34'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:40'
 labels:
   - 'area:replication'
   - 'area:formats'
@@ -50,3 +50,9 @@ Provenance: BACKLOG/replication.md#relink-fallback-unknown-format-version (2031-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (3ff0301f261, by 'relink-fallback-unknown-format-version')
+<!-- SECTION:NOTES:END -->

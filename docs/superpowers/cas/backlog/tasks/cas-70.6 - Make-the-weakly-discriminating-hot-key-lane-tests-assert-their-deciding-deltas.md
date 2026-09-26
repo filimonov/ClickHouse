@@ -4,6 +4,7 @@ title: Make the weakly discriminating hot-key lane tests assert their deciding d
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:testing'
   - 'complexity:small'
@@ -46,3 +47,9 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-a-followups (deferred item
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+<!-- SECTION:NOTES:END -->

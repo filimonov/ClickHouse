@@ -3,8 +3,8 @@ id: CAS-187
 title: 'State what an equality-resolved conditional write proves, in types and docs'
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:44'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-08-20'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:backend'
   - 'area:docs'
@@ -51,3 +51,9 @@ Provenance: BACKLOG/ref-protocol.md#cas-021-followups items (1), (2), (3). Verif
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-20 (99031303637, by 'cas-021-followups')
+<!-- SECTION:NOTES:END -->

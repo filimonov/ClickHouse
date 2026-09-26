@@ -5,8 +5,8 @@ title: >-
   and shed states
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:53'
-updated_date: '2026-09-26 06:59'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:35'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -59,3 +59,9 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-health-zero-is-ambiguous
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (20329364650, by 'gc-health-zero-is-ambiguous')
+<!-- SECTION:NOTES:END -->

@@ -2,9 +2,10 @@
 id: CAS-72
 title: Measure how `ref_catalog` size and rewrite rate scale with namespace churn
 status: To Do
-assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 07:33'
+assignee:
+  - '@filimonov'
+created_date: '2026-07-31'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -48,3 +49,11 @@ Provenance: BACKLOG/performance.md#ref-catalog-write-hotspot (catalog-growth hal
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-31 (eac244a685e, by 'ref-catalog-write-hotspot')
+
+Issue #2343 (assigned filimonov), re-read 2026-09-25: on 26.6.4 with `background_common_pool_size=32` the attach part-3 failure was an ~80 s RustFS stall (5 s timeout × 13 attempts = the 90 s policy). The catalog grew 89 KB → 1.37 MB in 2.5 h (`Removing` rows pruned only by GC), each namespace birth is 3 GETs + 2 conditional PUTs, and one node lost 6,796 conditional catalog PUTs to 412 during the run.
+<!-- SECTION:NOTES:END -->

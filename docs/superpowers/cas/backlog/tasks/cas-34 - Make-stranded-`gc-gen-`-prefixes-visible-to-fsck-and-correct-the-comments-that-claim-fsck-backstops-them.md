@@ -5,8 +5,8 @@ title: >-
   claim fsck backstops them
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -58,4 +58,6 @@ Provenance: BACKLOG/gc.md#stranded-generation-prefix-invisible-to-fsck (2031-tri
 
 <!-- SECTION:NOTES:BEGIN -->
 u03-gc-c merged the hand-off single-crash leak here (no separate task).
+
+First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-074')
 <!-- SECTION:NOTES:END -->

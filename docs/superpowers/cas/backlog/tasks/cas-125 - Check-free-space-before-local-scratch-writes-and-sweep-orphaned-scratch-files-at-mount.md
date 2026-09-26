@@ -6,13 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:25'
-updated_date: '2026-09-26 08:26'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:write-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'origin:2031-triage'
 milestone: m-8
 dependencies: []
 references:
@@ -51,4 +52,8 @@ Provenance: BACKLOG/operability-and-introspection.md#disk-error-audit-followups-
 
 <!-- SECTION:NOTES:BEGIN -->
 Merged from CAS-101: the full-scale campaign saw local scratch grow 1 -> 21 MiB over an idle window with no user inserts (attribution stays in CAS-101). Scratch files are the local-staging spill of `CaContentWriteBuffer` and the inline-overflow spill in `ContentAddressedTransaction.cpp`; each is removed by its writer on success or failure, so only a crashed process leaves them. A test leaves a stale file and remounts.
+
+First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+2031-triage CAS-046: local scratch is unreserved, unaccounted and never swept at startup; the ledger (#cas-046) maps the `statvfs` guard and orphan sweep to this item. Sizing docs half is CAS-102.
 <!-- SECTION:NOTES:END -->

@@ -5,8 +5,8 @@ title: >-
   concurrency
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:55'
-updated_date: '2026-09-26 07:10'
+created_date: '2026-07-24'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/performance.md#writepath-candidates-post-stage1 items 1-2. V
 
 <!-- SECTION:NOTES:BEGIN -->
 CPU-profile validity (from performance.md #ca-write-buffer-allocation-concentration): the 2026-08-31 soak export was CAS-filtered (WHERE stack LIKE '%DB::Cas::%'), had 369 CPU samples against 963k Real and summed 38 cumulative snapshots; no CPU ranking from it may be cited. A valid CPU profile needs a CPU-bound workload (bulk insert of large parts), an unfiltered query and one end-of-run snapshot.
+
+First recorded: 2026-07-24 (e9e30b5d605, by 'writepath-candidates-post-stage1')
 <!-- SECTION:NOTES:END -->

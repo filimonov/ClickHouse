@@ -3,7 +3,8 @@ id: CAS-172
 title: Run or descope every unrun arm of the GCS live release gate
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:42'
+created_date: '2026-09-02'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:gcs'
   - 'area:testing'
@@ -46,3 +47,9 @@ Provenance: BACKLOG/gcs.md#gate [gcs-live-gate-oauth-and-ambiguity] and #gcs-con
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-02 (9f87032fde6, by 'gcs-live-gate-oauth-and-ambiguity')
+<!-- SECTION:NOTES:END -->

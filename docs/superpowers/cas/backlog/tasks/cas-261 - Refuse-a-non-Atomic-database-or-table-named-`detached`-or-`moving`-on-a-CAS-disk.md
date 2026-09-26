@@ -5,7 +5,8 @@ title: >-
   disk
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:40'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -46,3 +47,9 @@ Provenance: BACKLOG/formats-and-storage.md#nonatomic-reserved-name-fold-no-refus
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (c459c34d897, by 'nonatomic-reserved-name-fold-no-refusal')
+<!-- SECTION:NOTES:END -->

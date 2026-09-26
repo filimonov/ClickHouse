@@ -5,7 +5,8 @@ title: >-
   when that path is wired
 status: Draft
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -47,3 +48,11 @@ Provenance: BACKLOG/replication.md#tmp-replacefile-on-committed-part (2031-triag
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (7d57211f229, by 'tmp-replacefile-on-committed-part')
+
+2031-triage CAS-137: the audit re-opens CAS-057 on the claim that `MergeTreeBitmapStore` is a production caller; on both branches neither `MergeTreeBitmapStore` nor `SSTIndexWriter` is referenced outside `src/Storages/MergeTree/UniqueKey/` and tests, so the draft status stands. Extend the scope to `SSTIndexWriter::finalizeToStorage`, which uses the same `.tmp` + `replaceFile` pattern (`src/Storages/MergeTree/UniqueKey/SSTIndexWriter.cpp:256-283`).
+<!-- SECTION:NOTES:END -->

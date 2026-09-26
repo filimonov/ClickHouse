@@ -3,7 +3,8 @@ id: CAS-41
 title: Rewrite the three ack-floor soak cards for the current floor and run them
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
+created_date: '2026-07-13'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -48,3 +49,9 @@ Provenance: BACKLOG/gc.md [ack-floor soak validation]; verified 2026-09-26 again
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-13 (45a6c8ee2b6, by 'ack-floor soak validation')
+<!-- SECTION:NOTES:END -->

@@ -3,7 +3,8 @@ id: DRAFT-48
 title: Publish sub-single-part blobs from memory instead of staging them on disk
 status: Draft
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-07-13'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -40,3 +41,9 @@ Provenance: BACKLOG/formats-and-storage.md [S3-native staging §7]; verified 202
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-13 (45a6c8ee2b6, by 'S3-native staging §7')
+<!-- SECTION:NOTES:END -->

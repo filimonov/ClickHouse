@@ -3,7 +3,8 @@ id: DRAFT-51
 title: Cross-node read-only replicas over a shared CAS pool with a GC snapshot pin
 status: Draft
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-07-14'
+updated_date: '2026-09-26 12:45'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -45,3 +46,9 @@ Provenance: BACKLOG/replication.md#cas-readonly-replica; verified 2026-09-26 aga
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-14 (08e8a5f55ae, by 'cas-readonly-replica')
+<!-- SECTION:NOTES:END -->

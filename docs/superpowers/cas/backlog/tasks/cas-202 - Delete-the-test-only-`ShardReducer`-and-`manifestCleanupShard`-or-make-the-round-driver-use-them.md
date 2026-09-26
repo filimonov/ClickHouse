@@ -5,7 +5,8 @@ title: >-
   round driver use them
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:57'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:gc'
   - 'area:testing'
@@ -50,3 +51,9 @@ Provenance: BACKLOG/testing-and-ci.md#shard-reduce-api-production-dead; verified
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (2583e3427aa, by 'shard-reduce-api-production-dead')
+<!-- SECTION:NOTES:END -->

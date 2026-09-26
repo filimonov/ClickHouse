@@ -5,8 +5,8 @@ title: >-
   (frozen)
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 08:08'
+created_date: '2026-09-16'
+updated_date: '2026-09-26 12:45'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -57,3 +57,9 @@ Provenance: BACKLOG/gc.md#targeted-drain-of-retired-lives; also the open questio
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-16 (cbf3fe14e36, by 'targeted-drain-of-retired-lives')
+<!-- SECTION:NOTES:END -->

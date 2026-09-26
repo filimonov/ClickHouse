@@ -5,7 +5,8 @@ title: >-
   them
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:23'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -52,3 +53,11 @@ Provenance: audit #f16 via BACKLOG/performance.md#scale-findings [startup O(refs
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (27654231df2, by 'scale-findings [startup O')
+
+Issue #2439 proposal 3, not part of this fix: record table-level file names (or the files) in the ref table next to the part refs, so a cold start needs no LIST either. It is an on-S3 format change (decision-4: new format version with a compatibility path), listed by the issue as a design question only.
+<!-- SECTION:NOTES:END -->

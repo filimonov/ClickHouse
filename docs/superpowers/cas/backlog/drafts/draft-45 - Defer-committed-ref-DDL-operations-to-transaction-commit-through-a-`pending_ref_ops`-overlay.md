@@ -5,7 +5,8 @@ title: >-
   `pending_ref_ops` overlay
 status: Draft
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-07-16'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -13,6 +14,7 @@ labels:
   - 'risk:high'
   - 'confidence:speculative'
   - 'needs:decision'
+  - 'origin:2031-triage'
 dependencies: []
 references:
   - >-
@@ -48,3 +50,11 @@ Provenance: BACKLOG/formats-and-storage.md [TXN-ONE-PIPELINE follow-up] (also or
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-16 (03f6da7a1ec, by 'TXN-ONE-PIPELINE follow-up')
+
+2031-triage CAS-005: residual = no multi-ref atomicity, no rollback of a committed-ref repoint, immediate-class DDL ops; the ledger (#cas-005) names this follow-up as the tracking item. The best-effort `noexcept` `dropRefIfMatches` rollback stays documented (`CA/ContentAddressedTransaction.cpp:553-558`); related CAS-180.
+<!-- SECTION:NOTES:END -->

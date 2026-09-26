@@ -5,7 +5,8 @@ title: >-
   line or a message-substring match
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:01'
+created_date: '2026-07-15'
+updated_date: '2026-09-26 12:39'
 labels:
   - 'area:backend'
   - 'area:upstream'
@@ -51,3 +52,9 @@ Provenance: BACKLOG/docs-and-cleanup.md#minor [RUSTFS-ERROR-XML]; narrowed: the 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-15 (db28579459a, by 'RUSTFS-ERROR-XML')
+<!-- SECTION:NOTES:END -->

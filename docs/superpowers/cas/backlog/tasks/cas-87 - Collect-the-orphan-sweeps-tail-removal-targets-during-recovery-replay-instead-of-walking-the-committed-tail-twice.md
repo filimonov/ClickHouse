@@ -5,8 +5,8 @@ title: >-
   of walking the committed tail twice
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -51,3 +51,9 @@ Provenance: BACKLOG/gc.md#gc-sweep-reads-the-committed-tail-twice. Verified 2026
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-04 (2f285dd891e, by 'gc-sweep-reads-the-committed-tail-twice')
+<!-- SECTION:NOTES:END -->

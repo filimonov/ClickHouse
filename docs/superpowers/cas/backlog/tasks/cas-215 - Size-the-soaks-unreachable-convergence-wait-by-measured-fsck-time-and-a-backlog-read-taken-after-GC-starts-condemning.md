@@ -5,8 +5,8 @@ title: >-
   backlog read taken after GC starts condemning
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:57'
-updated_date: '2026-09-26 08:34'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:39'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -50,3 +50,9 @@ Provenance: BACKLOG/testing-and-ci.md#soak-harness-bugs-2026-09-04 bullet 1; ver
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (b33dee93897, by 'soak-harness-bugs-2026-09-04')
+<!-- SECTION:NOTES:END -->

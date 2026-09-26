@@ -5,7 +5,8 @@ title: >-
   one pool
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:40'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -47,3 +48,9 @@ Provenance: BACKLOG/replication.md#same-pool-move-reads-every-byte (2031-triage 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (b9a1774ba4e, by 'same-pool-move-reads-every-byte')
+<!-- SECTION:NOTES:END -->

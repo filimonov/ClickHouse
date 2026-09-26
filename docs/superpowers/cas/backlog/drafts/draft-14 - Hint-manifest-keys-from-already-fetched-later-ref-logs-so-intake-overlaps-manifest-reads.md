@@ -5,7 +5,8 @@ title: >-
   manifest reads
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:17'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -48,3 +49,9 @@ Provenance: BACKLOG/gc.md#gc-intake-manifest-edge-serial-chain.
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-04 (1019b57c810, by 'gc-intake-manifest-edge-serial-chain')
+<!-- SECTION:NOTES:END -->

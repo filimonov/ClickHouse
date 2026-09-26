@@ -3,7 +3,8 @@ id: CAS-20
 title: Bound concurrent ref-snapshot publishes pool-wide
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:55'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -44,3 +45,9 @@ Provenance: BACKLOG/performance.md#snapshot-publish-fanout-unbounded (2031-triag
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (b2a38f0b611, by 'snapshot-publish-fanout-unbounded')
+<!-- SECTION:NOTES:END -->

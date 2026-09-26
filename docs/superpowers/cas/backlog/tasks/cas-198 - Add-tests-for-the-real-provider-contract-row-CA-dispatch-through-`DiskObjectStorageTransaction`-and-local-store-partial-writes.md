@@ -5,13 +5,15 @@ title: >-
   `DiskObjectStorageTransaction`, and local-store partial writes
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:57'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:testing'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:review'
+  - 'origin:2031-triage'
 milestone: m-8
 dependencies: []
 references:
@@ -52,3 +54,11 @@ Provenance: BACKLOG/testing-and-ci.md [review-14-coverage-gaps]; verified 2026-0
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (5245fbc7a76, by 'review-14-coverage-gaps')
+
+2031-triage CAS-065: item 1 (no `Mode::Native` contract-suite row) is the audit's remaining residual. Its other half, a GCS-generation lane, is closed by `4c1916e1a89`: `tests/integration/test_cas_gcs` (24 tests against a fake GCS with disjoint generation and ETag domains, OAuth and HMAC disks), present on both branches.
+<!-- SECTION:NOTES:END -->

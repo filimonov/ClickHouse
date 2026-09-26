@@ -5,8 +5,8 @@ title: >-
   connections
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:23'
-updated_date: '2026-09-26 07:41'
+created_date: '2026-07-06'
+updated_date: '2026-09-26 12:35'
 labels:
   - 'area:read-path'
   - 'area:soak'
@@ -53,4 +53,6 @@ Provenance: BACKLOG/performance.md#scale-findings [wide-part O(columns)] (+ orph
 
 <!-- SECTION:NOTES:BEGIN -->
 Merged from mounts-and-lifecycle.md (#2243 housekeeping, S07 re-rated): the same port-exhaustion condition took the mount lease down and discarded in-flight PartWriteTxns, so S07 is availability class, not cost only.
+
+First recorded: 2026-07-06 (4abf5b743ed, by 'wide-part O')
 <!-- SECTION:NOTES:END -->

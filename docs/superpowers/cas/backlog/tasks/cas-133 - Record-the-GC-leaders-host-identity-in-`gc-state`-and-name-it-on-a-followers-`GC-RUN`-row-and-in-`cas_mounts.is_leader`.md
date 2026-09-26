@@ -4,9 +4,10 @@ title: >-
   Record the GC leader's host identity in `gc/state` and name it on a follower's
   `GC RUN` row and in `cas_mounts.is_leader`
 status: To Do
-assignee: []
-created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 07:39'
+assignee:
+  - '@k-morozov'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -67,3 +68,11 @@ Provenance: BACKLOG/gc.md#issue-2211-gc-run-follower-noop (fix bullets 2-4). Ver
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (50fa0d52a9f, by 'issue-2211-gc-run-follower-noop')
+
+Issue #2211 is assigned to k-morozov (2026-09-26).
+<!-- SECTION:NOTES:END -->

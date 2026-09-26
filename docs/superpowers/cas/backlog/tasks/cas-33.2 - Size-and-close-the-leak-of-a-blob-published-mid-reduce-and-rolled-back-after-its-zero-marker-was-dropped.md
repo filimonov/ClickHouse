@@ -5,7 +5,8 @@ title: >-
   its zero marker was dropped
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -50,3 +51,9 @@ Provenance: BACKLOG/gc.md#gc-reduce-zero-marker-dropped-on-carry; verified 2026-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-04 (cd518660419, by 'gc-reduce-zero-marker-dropped-on-carry')
+<!-- SECTION:NOTES:END -->

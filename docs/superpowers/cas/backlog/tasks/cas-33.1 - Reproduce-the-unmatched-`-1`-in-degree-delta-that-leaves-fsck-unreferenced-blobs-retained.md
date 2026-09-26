@@ -5,7 +5,8 @@ title: >-
   blobs retained
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
+created_date: '2026-07-25'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:gc'
   - 'area:fsck'
@@ -50,3 +51,9 @@ Provenance: BACKLOG/gc.md#fsck-gc-indegree-disagreement-2026-07-25; verified 202
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-25 (51455d6b521, by 'fsck-gc-indegree-disagreement-2026-07-25')
+<!-- SECTION:NOTES:END -->

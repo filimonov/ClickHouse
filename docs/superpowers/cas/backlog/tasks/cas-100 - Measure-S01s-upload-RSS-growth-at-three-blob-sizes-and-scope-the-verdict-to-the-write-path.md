@@ -5,7 +5,8 @@ title: >-
   the write path
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:23'
+created_date: '2026-09-01'
+updated_date: '2026-09-26 12:35'
 labels:
   - 'area:soak'
   - 'area:write-path'
@@ -46,3 +47,9 @@ Provenance: BACKLOG/performance.md#s01-rss-scales. Comparison point Altinity#223
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-01 (9deed66b471, by 's01-rss-scales')
+<!-- SECTION:NOTES:END -->

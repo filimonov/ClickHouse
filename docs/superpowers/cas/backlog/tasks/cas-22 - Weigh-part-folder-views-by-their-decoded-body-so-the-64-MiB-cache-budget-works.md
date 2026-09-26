@@ -3,7 +3,8 @@ id: CAS-22
 title: Weigh part-folder views by their decoded body so the 64 MiB cache budget works
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:55'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:39'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -44,3 +45,9 @@ Provenance: BACKLOG/performance.md#part-folder-cache-weight-always-256 (2031-tri
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (c2af49103dc, by 'part-folder-cache-weight-always-256')
+<!-- SECTION:NOTES:END -->

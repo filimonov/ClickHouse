@@ -3,7 +3,8 @@ id: CAS-138
 title: Remove the `gc/state.retired_refs` references from two GC gtest comments
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:39'
+created_date: '2026-08-04'
+updated_date: '2026-09-26 12:36'
 labels:
   - 'area:testing'
   - 'area:gc'
@@ -41,3 +42,9 @@ Provenance: residue found while verifying BACKLOG/gc.md [retired-refs-map-stalen
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-04 (f08734d17df, by 'retired-refs-map-staleness')
+<!-- SECTION:NOTES:END -->

@@ -4,9 +4,10 @@ title: >-
   Add a sanitizer-only thread-pool profile for the CAS stateless stand so MSan
   and TSan shards fit the 6-hour budget
 status: To Do
-assignee: []
-created_date: '2026-09-26 07:57'
-updated_date: '2026-09-26 08:34'
+assignee:
+  - '@filimonov'
+created_date: '2026-09-16'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:ci'
   - 'complexity:small'
@@ -54,3 +55,11 @@ Provenance: BACKLOG/testing-and-ci.md#sanitizer-cas-thread-pool-profile, plus ca
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-16 (cbf3fe14e36, by 'asan-memory-tracker-snap')
+
+Issue #2298 (assigned filimonov): the ASan half is resolved on antalya-26.6 (test-policy `cas_gc_interval_sec` 5 → 20 in `38661e72127` plus the GC round-cost work; ASan CAS-S3 shards finish in 3.7 h and 2.9 h on the v26.6.4 tag). MSan and TSan shards are what remains. PR #2393 (merged, #2362 workaround) also speeds the sanitizer lanes.
+<!-- SECTION:NOTES:END -->

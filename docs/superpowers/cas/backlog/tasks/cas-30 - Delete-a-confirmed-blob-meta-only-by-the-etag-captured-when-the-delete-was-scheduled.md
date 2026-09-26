@@ -5,7 +5,8 @@ title: >-
   scheduled
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:41'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -54,3 +55,9 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 - [ ] #4 No fallback paths added; failures propagate
 - [ ] #5 Death-test split applies if any new assertion is a `LOGICAL_ERROR`
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (e35929424c6, by 'gc-confirmed-meta-delete-etag-race')
+<!-- SECTION:NOTES:END -->

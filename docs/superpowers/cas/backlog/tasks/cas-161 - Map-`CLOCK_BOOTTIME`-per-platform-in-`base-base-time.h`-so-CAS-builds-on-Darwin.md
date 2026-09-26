@@ -5,13 +5,15 @@ title: >-
   Darwin
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:mounts'
   - 'complexity:trivial'
   - 'risk:low'
   - 'touches:upstream-code'
   - 'confidence:solid'
+  - 'origin:2031-triage'
 milestone: m-4
 dependencies: []
 references:
@@ -50,3 +52,11 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#boottime-not-portable; verified 2026
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (b03f1c765f8, by 'boottime-not-portable')
+
+2031-triage CAS-092: the only surviving half of the audit finding; 'different clocks for fence and request' stays refuted.
+<!-- SECTION:NOTES:END -->

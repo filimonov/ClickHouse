@@ -3,7 +3,8 @@ id: CAS-169
 title: Count S3 throttling (429 / 503 `SlowDown`) on CAS control writes by key class
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:42'
+created_date: '2026-09-02'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:observability'
   - 'area:backend'
@@ -50,3 +51,9 @@ Provenance: BACKLOG/gcs.md#environment [cas-throttling-by-key-class]. Verified 2
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-02 (9f87032fde6, by 'cas-throttling-by-key-class')
+<!-- SECTION:NOTES:END -->

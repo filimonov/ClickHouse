@@ -3,8 +3,8 @@ id: CAS-129
 title: 'Design CAS under the encrypted disk wrapper, including dedup scope per key'
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:25'
-updated_date: '2026-09-26 07:25'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:36'
 labels:
   - 'area:formats'
   - 'area:write-path'
@@ -51,3 +51,9 @@ Provenance: BACKLOG/operability-and-introspection.md#b17-encryption-at-rest ([B1
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (4afa7f68ee1, by 'b17-encryption-at-rest')
+<!-- SECTION:NOTES:END -->

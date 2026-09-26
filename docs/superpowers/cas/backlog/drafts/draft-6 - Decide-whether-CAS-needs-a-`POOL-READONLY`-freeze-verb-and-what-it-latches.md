@@ -3,7 +3,8 @@ id: DRAFT-6
 title: Decide whether CAS needs a `POOL READONLY` freeze verb and what it latches
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:07'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:45'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -52,3 +53,9 @@ Provenance: BACKLOG/operability-and-introspection.md#b197-system-control-surface
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (4afa7f68ee1, by 'b197-system-control-surface')
+<!-- SECTION:NOTES:END -->

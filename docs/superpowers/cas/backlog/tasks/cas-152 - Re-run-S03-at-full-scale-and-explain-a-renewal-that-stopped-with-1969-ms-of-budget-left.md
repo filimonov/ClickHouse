@@ -5,7 +5,8 @@ title: >-
   budget left
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
+created_date: '2026-09-01'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:mounts'
   - 'area:soak'
@@ -55,3 +56,11 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#renewal-gives-up-with-budget-left; v
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-01 (71b002a1047, by 'renewal-gives-up-with-budget-left')
+
+Issue #2431 (open, 2026-09-24) reproduces a renewal giving up with budget left at dev scale on 26.6.4: fenced after 2-2.6 s with ~17 s of `remaining_confirmed_budget_ms`, `classification=external_lease_deadline`. The 'does not reproduce at dev/ci' line no longer holds; the fix is tracked by the u17 task `renewal-fences-with-budget-left`, which this task may close into.
+<!-- SECTION:NOTES:END -->

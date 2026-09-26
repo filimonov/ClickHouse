@@ -5,8 +5,8 @@ title: >-
   the whole snapshot
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+created_date: '2026-08-04'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -54,3 +54,9 @@ Provenance: BACKLOG/gc.md#gc-snapshot-log-structured-runs. Roadmap §2 GC 'Log-s
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-04 (b4420fe512a, by 'gc-snapshot-log-structured-runs')
+<!-- SECTION:NOTES:END -->

@@ -5,7 +5,8 @@ title: >-
   removal-latch window
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:44'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:ref-ledger'
   - 'area:read-path'
@@ -44,3 +45,11 @@ Provenance: BACKLOG/ref-protocol.md#lane-residuals-2031-cas-017 residual 1. Veri
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (7a9b839cd49, by 'lane-residuals-2031-cas-017')
+
+2031-triage CAS-017: residual 1 (read path answers absent instead of retry-later while `dropNamespace` holds the admission latch).
+<!-- SECTION:NOTES:END -->

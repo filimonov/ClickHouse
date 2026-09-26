@@ -3,7 +3,8 @@ id: CAS-157
 title: Stop `SYSTEM CAS DROP POOL MEMBER 'a'` from destroying a live member `a/b`
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -53,3 +54,9 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#nested-srid-decommission (2031-triag
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (69e007cf41e, by 'nested-srid-decommission')
+<!-- SECTION:NOTES:END -->

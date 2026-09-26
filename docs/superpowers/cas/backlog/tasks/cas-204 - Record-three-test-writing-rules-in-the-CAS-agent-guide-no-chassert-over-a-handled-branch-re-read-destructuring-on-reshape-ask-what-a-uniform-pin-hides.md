@@ -5,7 +5,8 @@ title: >-
   handled branch, re-read destructuring on reshape, ask what a uniform pin hides
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:57'
+created_date: '2026-07-30'
+updated_date: '2026-09-26 12:39'
 labels:
   - 'area:docs'
   - 'area:testing'
@@ -47,3 +48,9 @@ Provenance: BACKLOG/testing-and-ci.md#rule-no-chassert-over-handled-branch, #rul
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-30 (ef195461a7a, by 'rule-no-chassert-over-handled-branch')
+<!-- SECTION:NOTES:END -->

@@ -3,8 +3,8 @@ id: CAS-15
 title: Stage one merged manifest for a single-file write on a committed part
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:55'
-updated_date: '2026-09-26 07:44'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/performance.md#standalone-write-scratch-manifest-cost (2031-
 
 <!-- SECTION:NOTES:BEGIN -->
 Merged from ref-protocol.md #cas-txn-commit-inside-noexcept-aftercommit option 3 (single inline entry without a scratch build): the same change, staging one merged manifest for a single-file write, also removes the scratch build and cuts the six throw points inside the noexcept commit callbacks to two; it is therefore part of the noexcept-abort mitigation, not only a write-path optimisation.
+
+First recorded: 2026-08-21 (6e464e597ed, by 'standalone-write-scratch-manifest-cost')
 <!-- SECTION:NOTES:END -->

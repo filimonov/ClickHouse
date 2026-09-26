@@ -5,7 +5,8 @@ title: >-
   digest as a blob of identical bytes on a SHA-256 pool
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:57'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:testing'
   - 'area:write-path'
@@ -48,3 +49,9 @@ Provenance: BACKLOG/testing-and-ci.md [pool-hash-consistency]; verified 2026-09-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (5245fbc7a76, by 'pool-hash-consistency')
+<!-- SECTION:NOTES:END -->

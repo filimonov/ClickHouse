@@ -5,7 +5,8 @@ title: >-
   ordinary retryable errors
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
+created_date: '2026-08-20'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -50,3 +51,9 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#issue-2243-port-exhaustion-lease (ho
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-20 (d61e8ac938c, by 'issue-2243-port-exhaustion-lease')
+<!-- SECTION:NOTES:END -->

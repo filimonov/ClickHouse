@@ -5,7 +5,8 @@ title: >-
   this runtime wrote
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
+created_date: '2026-09-01'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:mounts'
   - 'complexity:large'
@@ -58,3 +59,9 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#self-authored-mount-reclaim; verifie
 - [ ] #4 No fallback paths added; failures propagate
 - [ ] #5 The mount TLA+ model is updated for the new reclaim path and its gate passes
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-01 (2a230dddce4, by 'self-authored-mount-reclaim')
+<!-- SECTION:NOTES:END -->

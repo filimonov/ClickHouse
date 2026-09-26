@@ -5,8 +5,8 @@ title: >-
   instead of failing the write
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
-updated_date: '2026-09-26 08:34'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:40'
 labels:
   - 'area:write-path'
   - 'area:formats'
@@ -54,3 +54,9 @@ Provenance: BACKLOG/formats-and-storage.md#manifest-inline-budget-no-spill (2031
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (bab19a3de54, by 'manifest-inline-budget-no-spill')
+<!-- SECTION:NOTES:END -->

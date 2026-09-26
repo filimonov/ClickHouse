@@ -3,13 +3,15 @@ id: CAS-102
 title: Document local scratch sizing and when to use S3-native staging
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:23'
+created_date: '2026-07-06'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'origin:2031-triage'
 milestone: m-7
 dependencies: []
 references:
@@ -45,3 +47,11 @@ Provenance: BACKLOG/performance.md#scale-findings [scratch=full-part] (+ orphane
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-06 (4abf5b743ed, by 'scratch=full-part')
+
+2031-triage CAS-046: the scratch = full part bytes half (`[scratch=full-part]`); guard and sweep half is CAS-125.
+<!-- SECTION:NOTES:END -->

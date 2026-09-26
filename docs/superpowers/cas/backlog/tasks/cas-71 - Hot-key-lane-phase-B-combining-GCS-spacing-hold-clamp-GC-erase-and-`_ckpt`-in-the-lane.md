@@ -5,8 +5,8 @@ title: >-
   in the lane
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 07:10'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:ref-ledger'
   - 'complexity:epic'
@@ -50,3 +50,11 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b; roadmap §2 'Catalog wr
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-04 (879aadde73a, by 'hot-key-lane-phase-b')
+
+Issue #2343 evidence: `CAS ref catalog 'data/cas/ref_catalog' update: gave up at the policy deadline after zero attempt(s)` — the lane starts the caller's 90 s deadline before queueing (`Backend/CasHotKeys.cpp:62-142`, per the issue), so a waiter behind a stuck holder expires without sending a request. The replication-queue `num_tries` amplifier (charged before `trySchedule`, `ReplicatedMergeTreeQueue.cpp:2019`, unchanged on antalya-26.6) is tracked upstream as https://github.com/ClickHouse/ClickHouse/issues/122106.
+<!-- SECTION:NOTES:END -->

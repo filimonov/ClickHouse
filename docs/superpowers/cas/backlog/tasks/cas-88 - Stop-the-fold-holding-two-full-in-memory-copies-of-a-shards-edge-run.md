@@ -3,8 +3,8 @@ id: CAS-88
 title: Stop the fold holding two full in-memory copies of a shard's edge run
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -12,6 +12,7 @@ labels:
   - 'confidence:solid'
   - 'origin:issue'
   - 'origin:canary'
+  - 'origin:2031-triage'
 dependencies:
   - CAS-29.1
 references:
@@ -49,3 +50,11 @@ Provenance: BACKLOG/gc.md#fold-edge-run-memory (2031-triage CAS-035). Verified 2
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-035')
+
+2031-triage CAS-035: label added; LIST half is CAS-29.1.
+<!-- SECTION:NOTES:END -->

@@ -5,7 +5,8 @@ title: >-
   drop batch (upstream `DatabaseCatalog`)
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:17'
+created_date: '2026-09-16'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -55,3 +56,9 @@ Provenance: BACKLOG/gc.md#drop-path-head-of-line-and-repoint-ramp item 1. Verifi
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-16 (cbf3fe14e36, by 'drop-path-head-of-line-and-repoint-ramp')
+<!-- SECTION:NOTES:END -->

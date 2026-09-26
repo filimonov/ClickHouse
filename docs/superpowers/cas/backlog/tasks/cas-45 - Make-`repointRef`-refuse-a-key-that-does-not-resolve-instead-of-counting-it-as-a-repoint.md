@@ -5,7 +5,8 @@ title: >-
   a repoint
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
+created_date: '2026-07-15'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
@@ -43,3 +44,9 @@ Provenance: BACKLOG/gc.md [repointRef non-resolving-key audit gap]; verified 202
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-15 (6e02e1f77e3, by 'repointRef non-resolving-key audit gap')
+<!-- SECTION:NOTES:END -->

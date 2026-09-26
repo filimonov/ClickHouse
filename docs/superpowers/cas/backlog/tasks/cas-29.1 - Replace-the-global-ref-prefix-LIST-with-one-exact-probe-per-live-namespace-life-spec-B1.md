@@ -5,14 +5,15 @@ title: >-
   life (spec B1)
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 07:17'
+created_date: '2026-07-29'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:gc'
   - 'complexity:large'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
+  - 'origin:2031-triage'
 milestone: m-1
 dependencies: []
 references:
@@ -63,4 +64,8 @@ Provenance: BACKLOG/gc.md#gc-defer-decision-list-cost and [gc-frontier-one-list]
 
 <!-- SECTION:NOTES:BEGIN -->
 Rejected alternative (from gc.md, deferred rounds pay the full LIST): a cross-round index of dead lives does NOT help by itself; S3 still walks their keys, only the parsing is saved.
+
+First recorded: 2026-07-29 (539584ac324, by 'GC-DEFER-DECISION-LIST-COST')
+
+2031-triage CAS-035: the audit's 'a GC round fully lists `cas/ns/stream/` and retains every key in memory, also on rounds that then defer' is this LIST; the edge-run memory half is CAS-88.
 <!-- SECTION:NOTES:END -->

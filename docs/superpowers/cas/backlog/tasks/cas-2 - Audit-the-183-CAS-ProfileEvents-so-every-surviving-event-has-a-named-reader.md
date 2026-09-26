@@ -3,8 +3,8 @@ id: CAS-2
 title: Audit the 183 CAS ProfileEvents so every surviving event has a named reader
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:53'
-updated_date: '2026-09-26 07:01'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:observability'
   - 'complexity:large'
@@ -48,6 +48,7 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-profile-events-audit (2
 - [ ] #2 Each family's renames and removals land in one PR, so downstream names change once
 - [ ] #3 No integration or stateless test references a removed event name
 - [ ] #4 Both subtasks are done
+- [ ] #5 `operations/monitoring.md` names the counter or ratio that answers 'is the conditional-write state plane contended' (lost races per object class, today `CAS*CompareSwapConflict` / `CASRequestConflictPause`), so a reviewer does not read `S3_ERROR` for it (issue #2397 request 3)
 <!-- AC:END -->
 
 ## Definition of Done
@@ -57,3 +58,9 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-profile-events-audit (2
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (9e105470c4a, by 'profileevents-surface-residuals')
+<!-- SECTION:NOTES:END -->

@@ -3,7 +3,8 @@ id: DRAFT-18
 title: Decide whether to quarantine `lazy_load_tables` or fund its proxy remediation
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:25'
+created_date: '2026-07-21'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -51,3 +52,9 @@ Provenance: BACKLOG/operability-and-introspection.md#lazy-load-tables-decision-2
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-21 (3b96172df7d, by 'lazy-load-tables-decision-2026-07-21')
+<!-- SECTION:NOTES:END -->

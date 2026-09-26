@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:07'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -47,3 +48,11 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-settings-not-reloadable
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+2031-triage CAS-107: the removed-disk half (mount lease renewed until restart); reload half is CAS-66. Audit ranks CAS-107 #5 in 'Where to start'.
+<!-- SECTION:NOTES:END -->

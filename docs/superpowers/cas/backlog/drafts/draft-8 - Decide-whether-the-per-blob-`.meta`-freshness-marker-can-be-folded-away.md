@@ -3,8 +3,8 @@ id: DRAFT-8
 title: Decide whether the per-blob `.meta` freshness marker can be folded away
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-08-21'
+updated_date: '2026-09-26 12:45'
 labels:
   - 'area:formats'
   - 'complexity:large'
@@ -48,3 +48,9 @@ Provenance: BACKLOG/performance.md#per-blob-meta-sibling-object-count (fold ques
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-21 (10bf7f7162f, by 'per-blob-meta-sibling-object-count')
+<!-- SECTION:NOTES:END -->

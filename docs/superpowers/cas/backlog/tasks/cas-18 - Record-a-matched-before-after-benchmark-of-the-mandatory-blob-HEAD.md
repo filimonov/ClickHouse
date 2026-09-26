@@ -3,8 +3,8 @@ id: CAS-18
 title: Record a matched before/after benchmark of the mandatory blob HEAD
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:55'
-updated_date: '2026-09-26 07:33'
+created_date: '2026-08-23'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -48,3 +48,9 @@ Provenance: BACKLOG/performance.md#mandatory-blob-head-cost. Verified 2026-09-26
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-23 (f8b6e8a3870, by 'mandatory-blob-head-cost')
+<!-- SECTION:NOTES:END -->

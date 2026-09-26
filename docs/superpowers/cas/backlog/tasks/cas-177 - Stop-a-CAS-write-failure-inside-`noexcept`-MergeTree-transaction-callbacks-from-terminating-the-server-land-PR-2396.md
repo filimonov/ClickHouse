@@ -4,9 +4,10 @@ title: >-
   Stop a CAS write failure inside `noexcept` MergeTree-transaction callbacks
   from terminating the server (land PR #2396)
 status: In Progress
-assignee: []
-created_date: '2026-09-26 07:44'
-updated_date: '2026-09-26 12:21'
+assignee:
+  - '@filimonov'
+created_date: '2026-09-16'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:write-path'
   - 'area:upstream'
@@ -63,4 +64,8 @@ Provenance: BACKLOG/ref-protocol.md#cas-txn-commit-inside-noexcept-aftercommit. 
 
 <!-- SECTION:NOTES:BEGIN -->
 In progress: PR https://github.com/Altinity/ClickHouse/pull/2396 (open, base antalya-26.6); plan docs/superpowers/plans/2026-09-16-transaction-metadata-store-retry.md.
+
+First recorded: 2026-09-16 (cbf3fe14e36, by 'cas-txn-commit-inside-noexcept-aftercommit')
+
+PR #2396 (open), branch fix/antalya-26.6/transaction-metadata-store-retry-squashed, base antalya-26.6; review state CHANGES_REQUESTED on 2026-09-26. Status In Progress was already set; assignee added from the PR author.
 <!-- SECTION:NOTES:END -->

@@ -3,7 +3,8 @@ id: CAS-63
 title: Give the ca-soak fsck wait helpers honest timeouts and current finding labels
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
+created_date: '2026-07-26'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -43,3 +44,9 @@ Provenance: BACKLOG/operability-and-introspection.md#fsck-large-pool-fixed (a), 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-26 (a285b399be6, by 'fsck-large-pool-fixed')
+<!-- SECTION:NOTES:END -->

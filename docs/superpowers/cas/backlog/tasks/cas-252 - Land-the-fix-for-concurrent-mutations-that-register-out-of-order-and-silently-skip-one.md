@@ -5,7 +5,8 @@ title: >-
   skip one
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -55,3 +56,11 @@ Provenance: BACKLOG/replication.md#mutation-registration-race; observed in CI as
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (7a99f6b7825, by 'mutation-registration-race')
+
+Issue #2331 (open, reopened in comments): 23 failures in 45 days, every one with rows surviving (1 to 51 extra rows), one on upstream `clickhouse/clickhouse-server:head-alpine`, none in 520 runs of 23.3-25.8, so the race is a 26.x regression; CAS raises the hit rate about tenfold.
+<!-- SECTION:NOTES:END -->

@@ -5,7 +5,8 @@ title: >-
   as a corrupt namespace file
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
+created_date: '2026-07-30'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:fsck'
   - 'area:formats'
@@ -51,3 +52,9 @@ Provenance: BACKLOG/operability-and-introspection.md#loose-mountpoint-object-as-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-30 (d0f195fbaa7, by 'loose-mountpoint-object-as-corrupt-namespace-file')
+<!-- SECTION:NOTES:END -->

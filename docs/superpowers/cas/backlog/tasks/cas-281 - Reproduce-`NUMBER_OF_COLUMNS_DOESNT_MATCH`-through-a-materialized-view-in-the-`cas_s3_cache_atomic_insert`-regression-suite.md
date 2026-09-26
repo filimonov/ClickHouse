@@ -5,7 +5,8 @@ title: >-
   `cas_s3_cache_atomic_insert` regression suite
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:41'
 labels:
   - 'area:testing'
   - 'complexity:small'
@@ -43,3 +44,9 @@ Provenance: BACKLOG/formats-and-storage.md#cas-r2-r3-numcolumns-repro; the suite
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (f7e7a540506, by 'cas-r2-r3-numcolumns-repro')
+<!-- SECTION:NOTES:END -->

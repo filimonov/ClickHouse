@@ -3,7 +3,8 @@ id: CAS-179
 title: Earn the clean mount farewell only when no snapshot publish is in flight
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:44'
+created_date: '2026-08-24'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:ref-ledger'
   - 'area:mounts'
@@ -49,3 +50,9 @@ Provenance: BACKLOG/ref-protocol.md#shutdown-drain-misses-snapshot-publishes (op
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-24 (45efac389eb, by 'shutdown-drain-misses-snapshot-publishes')
+<!-- SECTION:NOTES:END -->

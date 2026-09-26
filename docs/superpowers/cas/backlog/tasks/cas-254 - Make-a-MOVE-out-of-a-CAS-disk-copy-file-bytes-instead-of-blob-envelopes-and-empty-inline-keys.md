@@ -5,7 +5,8 @@ title: >-
   empty inline keys
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
+created_date: '2026-08-04'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:read-path'
   - 'complexity:medium'
@@ -55,3 +56,13 @@ Provenance: BACKLOG/formats-and-storage.md#move-out-copies-envelope-bytes ([mixe
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-04 (f08734d17df, by 'mixed-ca-tiered-topology')
+
+PR #2415 (draft) changes exactly this path: `DiskObjectStorage::copyFileImpl` reads inline entries via `readInlineDataToString` and passes the blob payload offset from `IMetadataStorage::getObjectPayloadOffset`. Its test covers BACKUP only; AC #1-#2 (MOVE and TTL move) still need their own test.
+
+2031-triage CAS-020: the MOVE/TTL-move half of the audit's same-endpoint server-side copy finding (`getStorageObjects` returns the envelope key without the payload offset; inline files return an empty key). BACKUP half is CAS-300; the audit ranks it #2 in 'Where to start'.
+<!-- SECTION:NOTES:END -->

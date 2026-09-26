@@ -3,8 +3,8 @@ id: DRAFT-15
 title: Decide whether a CAS disk should give up earlier on a persistent S3 `SlowDown`
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:23'
-updated_date: '2026-09-26 07:36'
+created_date: '2026-08-31'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -50,4 +50,6 @@ Provenance: BACKLOG/performance.md#soak-retry-budget-livelock. Rig half done in 
 
 <!-- SECTION:NOTES:BEGIN -->
 From gcs.md (u12 merge): the S3 client's own retry strategy, 500 attempts with a 5 s cap and zero jitter, can block a thread for about forty minutes on a persistent SlowDown, and a CasOperation deadline cannot preempt it; any give-up-earlier decision has to bound that inner retry loop, not only the CAS-level attempt.
+
+First recorded: 2026-08-31 (271b7132f6f, by 'soak-retry-budget-livelock')
 <!-- SECTION:NOTES:END -->

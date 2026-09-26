@@ -5,7 +5,8 @@ title: >-
   remount instead of failing
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:44'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:38'
 labels:
   - 'area:mounts'
   - 'area:write-path'
@@ -48,3 +49,9 @@ Provenance: BACKLOG/ref-protocol.md#cas-transient-lease-fence-surfaces-to-client
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-04 (bbe9972e7a1, by 'cas-transient-lease-fence-surfaces-to-clients')
+<!-- SECTION:NOTES:END -->

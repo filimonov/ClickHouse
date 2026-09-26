@@ -3,8 +3,8 @@ id: CAS-56
 title: 'Give operators a diagnose, repair and runbook path for a damaged CAS object'
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-08-04'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:fsck'
   - 'area:tooling'
@@ -13,6 +13,7 @@ labels:
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:soak'
+  - 'origin:2031-triage'
 milestone: m-7
 dependencies:
   - CAS-32
@@ -59,4 +60,8 @@ Provenance: BACKLOG/operability-and-introspection.md#damaged-object-repair ([dam
 
 <!-- SECTION:NOTES:BEGIN -->
 The repair of a damaged `_ckpt` (the "repair" part of this task) is CAS-32, which absorbed the fsck-repair-derived-objects item; it is linked as a dependency, not a subtask.
+
+First recorded: 2026-08-04 (84fc63e9511, by 'damaged-object-diagnose-and-repair')
+
+2031-triage CAS-061: label added.
 <!-- SECTION:NOTES:END -->

@@ -5,7 +5,8 @@ title: >-
   without hand-editing the object store
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:mounts'
   - 'complexity:large'
@@ -60,3 +61,9 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#operator-replica-readd-uuid-trap; fi
 - [ ] #4 No fallback paths added; failures propagate
 - [ ] #5 The mount TLA+ model covers the new claim path
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-04 (8d6022b3070, by 'operator-replica-readd-uuid-trap')
+<!-- SECTION:NOTES:END -->

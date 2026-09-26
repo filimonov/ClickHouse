@@ -5,8 +5,8 @@ title: >-
   pull request
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 08:02'
+created_date: '2026-08-04'
+updated_date: '2026-09-26 12:42'
 labels:
   - 'area:upstream'
   - 'area:tooling'
@@ -61,4 +61,6 @@ Provenance: BACKLOG/operability-and-introspection.md#disks-exit-code-upstream; f
 
 <!-- SECTION:NOTES:BEGIN -->
 Belongs to the Group G upstream carve-out parent CAS-232 (dependency link set; the parent was created after this task).
+
+First recorded: 2026-08-04 (0a17684b9d2, by 'disks-exit-code-upstream')
 <!-- SECTION:NOTES:END -->

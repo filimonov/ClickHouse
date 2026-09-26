@@ -5,7 +5,8 @@ title: >-
   begin, and total time to Live
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
+created_date: '2026-07-28'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -63,3 +64,11 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#mount-fence [fence-window observabil
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-28 (1605b049a33, by 'fence-window observability')
+
+Correction: issue #2421 was closed on 2026-09-26 as not reproducible. Its one reproduced Code 210 was the soak harness (RustFS at Docker's `nofile` 1024 returned `os error 24` on the renewal), not the canary. The msan fence window and audit F28 evidence stand.
+<!-- SECTION:NOTES:END -->

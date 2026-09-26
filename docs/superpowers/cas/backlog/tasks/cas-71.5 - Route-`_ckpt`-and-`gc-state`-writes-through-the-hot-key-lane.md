@@ -3,8 +3,8 @@ id: CAS-71.5
 title: Route `_ckpt` and `gc/state` writes through the hot-key lane
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 07:44'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:43'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -51,3 +51,9 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 5. Verified 2026-09
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 5')
+<!-- SECTION:NOTES:END -->

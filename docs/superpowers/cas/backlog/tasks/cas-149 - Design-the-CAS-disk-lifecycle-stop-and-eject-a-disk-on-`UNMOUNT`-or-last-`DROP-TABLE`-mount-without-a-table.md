@@ -5,8 +5,8 @@ title: >-
   `DROP TABLE`, mount without a table
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:41'
-updated_date: '2026-09-26 08:34'
+created_date: '2026-07-23'
+updated_date: '2026-09-26 12:37'
 labels:
   - 'area:mounts'
   - 'complexity:epic'
@@ -59,3 +59,9 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#disk-lifecycle-rev8-closure (the dis
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-23 (87aeefac9bd, by 'disk-lifecycle-rev8-closure')
+<!-- SECTION:NOTES:END -->

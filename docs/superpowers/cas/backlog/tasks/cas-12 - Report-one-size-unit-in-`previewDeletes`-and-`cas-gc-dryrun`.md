@@ -4,6 +4,7 @@ title: Report one size unit in `previewDeletes` and `cas-gc-dryrun`
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:53'
+updated_date: '2026-09-26 12:36'
 labels:
   - 'area:gc'
   - 'area:tooling'
@@ -45,3 +46,9 @@ Provenance: BACKLOG/operability-and-introspection.md#byte-accounting-blobs-only-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+<!-- SECTION:NOTES:END -->

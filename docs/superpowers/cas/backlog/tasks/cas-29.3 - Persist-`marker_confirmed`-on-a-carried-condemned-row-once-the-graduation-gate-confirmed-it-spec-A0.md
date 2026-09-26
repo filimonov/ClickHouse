@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 12:41'
 labels:
   - 'area:gc'
   - 'complexity:trivial'
@@ -62,4 +62,6 @@ Provenance: spec A0 / audit F3; the restart case is stated in BACKLOG/gc.md#gc-r
 
 <!-- SECTION:NOTES:BEGIN -->
 u03-gc-c merged audit F3 here (no separate A0 task was created).
+
+First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 <!-- SECTION:NOTES:END -->

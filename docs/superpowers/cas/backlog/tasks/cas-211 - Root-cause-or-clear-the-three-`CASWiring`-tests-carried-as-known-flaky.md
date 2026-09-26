@@ -3,7 +3,8 @@ id: CAS-211
 title: Root-cause or clear the three `CASWiring` tests carried as 'known flaky'
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:57'
+created_date: '2026-09-04'
+updated_date: '2026-09-26 12:39'
 labels:
   - 'area:testing'
   - 'complexity:small'
@@ -43,3 +44,9 @@ Provenance: BACKLOG/testing-and-ci.md [ca-s3-stateless-lane] (the '3 pre-existin
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-04 (5d9bb3ec707, by 'ca-s3-stateless-lane')
+<!-- SECTION:NOTES:END -->

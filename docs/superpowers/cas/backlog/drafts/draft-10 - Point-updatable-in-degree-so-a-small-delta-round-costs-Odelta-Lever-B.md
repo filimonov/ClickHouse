@@ -3,7 +3,8 @@ id: DRAFT-10
 title: Point-updatable in-degree so a small-delta round costs O(delta) (Lever B)
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:17'
+created_date: '2026-07-06'
+updated_date: '2026-09-26 12:44'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -42,3 +43,9 @@ Provenance: BACKLOG/gc.md [Lever B].
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-07-06 (436714d80f0, by 'Lever B')
+<!-- SECTION:NOTES:END -->

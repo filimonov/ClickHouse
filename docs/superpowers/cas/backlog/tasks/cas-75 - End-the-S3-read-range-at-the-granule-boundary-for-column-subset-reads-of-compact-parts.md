@@ -4,8 +4,11 @@ title: >-
   End the S3 read range at the granule boundary for column-subset reads of
   compact parts
 status: To Do
-assignee: []
-created_date: '2026-09-26 07:10'
+assignee:
+  - '@ilejn'
+  - '@filimonov'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 12:55'
 labels:
   - 'area:read-path'
   - 'area:upstream'
@@ -53,3 +56,11 @@ Provenance: BACKLOG/performance.md#s3-drain-remainder-read-range-fix. Verified 2
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-09-26 (597753102a9, by 's3-drain-remainder-read-range-fix')
+
+Issue #2332 is assigned to ilejn and filimonov. Upstream issue https://github.com/ClickHouse/ClickHouse/issues/122103. Candidate patch by filimonov: https://github.com/filimonov/ClickHouse/commit/3e0dd5e279dd29ccfbb242e71787e3cd25bef17d. Regression-suite workaround: `net.ipv4.tcp_tw_reuse=1` on the ClickHouse containers.
+<!-- SECTION:NOTES:END -->

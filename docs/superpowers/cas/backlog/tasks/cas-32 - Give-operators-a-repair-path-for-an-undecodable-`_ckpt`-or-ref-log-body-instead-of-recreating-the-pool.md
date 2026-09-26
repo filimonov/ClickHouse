@@ -5,8 +5,8 @@ title: >-
   instead of recreating the pool
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 08:26'
+created_date: '2026-07-29'
+updated_date: '2026-09-26 12:41'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -65,4 +65,6 @@ Merged from operability-and-introspection.md #damaged-object-repair (fsck-repair
 Clarification (post-import review): AC #1 (the owner picks the mechanism) governs; AC #4-6 describe the fsck --repair candidate merged from operability-and-introspection.md and apply only if that mechanism is the one chosen.
 
 CAS-56 (diagnose, repair and runbook for a damaged CAS object) and its runbook subtask CAS-56.4 depend on this task.
+
+First recorded: 2026-07-29 (3815235b015, by 'CKPT-DAMAGE-NO-REPAIR-PATH')
 <!-- SECTION:NOTES:END -->
