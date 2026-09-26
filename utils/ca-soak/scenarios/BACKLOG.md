@@ -1,5 +1,15 @@
 # Scenario suite backlog
 
+> **Migrated 2026-09-26.** Every still-open item of this ledger was moved into Backlog.md
+> (docs/superpowers/cas/backlog): tasks `CAS-307`-`CAS-317` (S06 rerun, S22 zero-byte blob, S23
+> server-count variants, GC-wedge TLA+ gate, precommit-binding visibility, S40 replica shape, S07
+> ordinal-cap test, S31 card-prose cleanup, GC view-replay false `CORRUPTED_DATA`, quiesce
+> only-hosted tables, S42 thread-alloc-fault leg) and drafts `DRAFT-54`, `DRAFT-55`, and merges into
+> `CAS-17`, `CAS-29`, `CAS-29.11`, `CAS-31`, `CAS-41`, `CAS-76`, `CAS-100`, `CAS-104`, `CAS-105`,
+> `CAS-107`, `CAS-149`, `CAS-220.1`, `CAS-221`, `CAS-279`, `CAS-280`. New findings go to
+> `backlog task create` (label `origin:soak`), not to this file; the entries below are a historical
+> run record.
+
 > **Historical protocol note (2026-08-22):** S24 and older references to
 > `deduplication_cache_bytes`, `deduplication_head_first_min_bytes`, `CASBlobHeadFirst`, and
 > `CASBlobDeduplicationCacheHit` describe the superseded conditional blob-publication protocol. The
@@ -3399,3 +3409,122 @@ than to an error.
 - **Run:** 20260831T131942_S21_seed20260831
 - **Observed:** scenario raised: Node(localhost:8123) HTTP 408: Code: 159. DB::Exception: SYNC REPLICA default.s21_wide (8266336c-22d7-4d97-b32e-596929445d6b): command timed out. See the 'receive_timeout' setting. (TIMEOUT_EXCEEDED) (version 26.6.2.20000.altinityantalya) | sql=SYSTEM SYNC REPLICA s21_wide
 
+## S07-20260831T184741-1: S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive 
+
+- **Logged (UTC):** 2026-08-31T18:50:14
+- **Severity:** finding
+- **Run:** 20260831T184741_S07_seed20260831
+- **Observed:** S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive for the direct cap trip; the indirect fail-closed property check still runs.
+
+## S22-20260831T215102-1: scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/c
+
+- **Logged (UTC):** 2026-08-31T22:01:03
+- **Severity:** suspected-bug
+- **Run:** 20260831T215102_S22_seed20260831
+- **Observed:** scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/ca-soak/scripts/predown_dump.sh', 'S22_20260831T215102']' timed out after 600 seconds
+
+## S23-20260831T220103-1: scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/c
+
+- **Logged (UTC):** 2026-08-31T22:11:04
+- **Severity:** suspected-bug
+- **Run:** 20260831T220103_S23_seed20260831
+- **Observed:** scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/ca-soak/scripts/predown_dump.sh', 'S23_20260831T220103']' timed out after 600 seconds
+
+## S25-20260831T221104-1: scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/c
+
+- **Logged (UTC):** 2026-08-31T22:21:05
+- **Severity:** suspected-bug
+- **Run:** 20260831T221104_S25_seed20260831
+- **Observed:** scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/ca-soak/scripts/predown_dump.sh', 'S25_20260831T221104']' timed out after 600 seconds
+
+## S26-20260831T222105-1: scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/c
+
+- **Logged (UTC):** 2026-08-31T22:31:06
+- **Severity:** suspected-bug
+- **Run:** 20260831T222105_S26_seed20260831
+- **Observed:** scenario raised: Command '['/home/mfilimonov/workspace/ClickHouse/master/utils/ca-soak/scripts/predown_dump.sh', 'S26_20260831T222105']' timed out after 600 seconds
+
+## S40-20260831T230629-1: quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table
+
+- **Logged (UTC):** 2026-08-31T23:10:46
+- **Severity:** finding
+- **Run:** 20260831T230629_S40_seed20260831
+- **Observed:** quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table default.s40_dedup_outage does not exist. (UNKNOWN_TABLE) (version 26.6.2.20000.altinityantalya) | sql=SYSTEM SYNC REPLICA s40_dedup_outage
+
+## S41-20260831T231046-1: scenario raised: cluster did not become healthy after reset
+
+- **Logged (UTC):** 2026-08-31T23:16:01
+- **Severity:** suspected-bug
+- **Run:** 20260831T231046_S41_seed20260831
+- **Observed:** scenario raised: cluster did not become healthy after reset
+
+## S43-20260831T233300-1: quiescence failed: Node(localhost:8123) HTTP 400: Code: 36. DB::Exception: Table
+
+- **Logged (UTC):** 2026-08-31T23:35:19
+- **Severity:** finding
+- **Run:** 20260831T233300_S43_seed20260831
+- **Observed:** quiescence failed: Node(localhost:8123) HTTP 400: Code: 36. DB::Exception: Table default.w3_recreated (3e1f0a2b-4c5d-4e6f-8a9b-0c1d2e3f4a5b) is not replicated. (BAD_ARGUMENTS) (version 26.6.2.20000.altinityantalya) | sql=SYSTEM SYNC REPLICA w3_recreated
+
+## S41-20260901T002603-1: scenario raised: Node(localhost:18123) HTTP 500: Code: 57. DB::Exception: Table 
+
+- **Logged (UTC):** 2026-09-01T00:26:18
+- **Severity:** suspected-bug
+- **Run:** 20260901T002603_S41_seed20260831
+- **Observed:** scenario raised: Node(localhost:18123) HTTP 500: Code: 57. DB::Exception: Table default.s41_small_ca already exists. (TABLE_ALREADY_EXISTS) (version 26.6.2.20000.altinityantalya) | sql=CREATE TABLE s41_small_ca (c01 UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/s41_small_ca','{replica}')
+ORDER BY (c01)
+SETTINGS storage_policy='ca', min_bytes_for_wide_part=0, min_rows_for_...(171 more chars)
+
+## S07-20260901T053917-1: S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive 
+
+- **Logged (UTC):** 2026-09-01T05:39:47
+- **Severity:** finding
+- **Run:** 20260901T053917_S07_seed20260831
+- **Observed:** S07 could not trigger a manifest cap with dev-scale SQL — recorded inconclusive for the direct cap trip; the indirect fail-closed property check still runs.
+
+## S39-20260901T061413-1: scenario raised: S39 requires at least 500s; requested 300s. The minimum covers 
+
+- **Logged (UTC):** 2026-09-01T06:14:28
+- **Severity:** suspected-bug
+- **Run:** 20260901T061413_S39_seed20260831
+- **Observed:** scenario raised: S39 requires at least 500s; requested 300s. The minimum covers two complete short pulses, the past-TTL long fault, bounded remount/post-clear write recovery, and final fsck/cleanup.
+
+## S40-20260901T061428-1: quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table
+
+- **Logged (UTC):** 2026-09-01T06:18:36
+- **Severity:** finding
+- **Run:** 20260901T061428_S40_seed20260831
+- **Observed:** quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table default.s40_dedup_outage does not exist. (UNKNOWN_TABLE) (version 26.6.2.20000.altinityantalya) | sql=SYSTEM SYNC REPLICA s40_dedup_outage
+
+## S43-20260901T062327-1: quiescence failed: Node(localhost:8123) HTTP 400: Code: 36. DB::Exception: Table
+
+- **Logged (UTC):** 2026-09-01T06:25:37
+- **Severity:** finding
+- **Run:** 20260901T062327_S43_seed20260831
+- **Observed:** quiescence failed: Node(localhost:8123) HTTP 400: Code: 36. DB::Exception: Table default.w3_recreated (3e1f0a2b-4c5d-4e6f-8a9b-0c1d2e3f4a5b) is not replicated. (BAD_ARGUMENTS) (version 26.6.2.20000.altinityantalya) | sql=SYSTEM SYNC REPLICA w3_recreated
+
+## S03-20260901T065044-1: scenario raised: Node(localhost:8123) HTTP 500: Code: 210. DB::Exception: conten
+
+- **Logged (UTC):** 2026-09-01T06:53:21
+- **Severity:** suspected-bug
+- **Run:** 20260901T065044_S03_seed20260831
+- **Observed:** scenario raised: Node(localhost:8123) HTTP 500: Code: 210. DB::Exception: content-addressed disk 'ca' -- mount lease not held; backing may be temporarily unreachable; the operation is admitted again once the disk recovers to Live; TRANSIENT unavailability, not damage. (NETWORK_ERROR) (version 26.6.2.20000.altinityantalya) | sql=INSERT INTO s03_live SELECT 6450000 + number AS id, randomString(512) AS payload FROM numbers(50000)
+
+## S46-20260904T100111-1: quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table
+
+- **Logged (UTC):** 2026-09-04T10:03:40
+- **Severity:** finding
+- **Run:** 20260904T100111_S46_seed1
+- **Observed:** quiescence failed: Node(localhost:8124) HTTP 404: Code: 60. DB::Exception: Table default.s46_restart_1 does not exist. (UNKNOWN_TABLE) (version 26.6.2.20000.altinityantalya) | sql=SYSTEM SYNC REPLICA s46_restart_1
+
+
+## PRODUCT BUG: fixed per-round GC budgets turn a ref-log backlog into a positive feedback loop (otel.demo, 2026-09-24)
+
+- **Logged (UTC):** 2026-09-24
+- **Severity:** product bug (throughput collapse, no data damage)
+- **Stand:** otel.demo, 2 replicas, `26.6.4.20001.altinityantalya`, CAS as default disk (`cas_cache` over `cas`), pool `otel-cas-2664-gen1`, 94 live namespaces, ~400-475k `_log` keys and ~320k blob retirements per day.
+- **Symptom (reported by Boris):** since 2026-09-21 deletes per round pinned at exactly 5000, round cadence 4 min -> 48 min, ~520k retired-but-undeleted blobs, `cas_mounts.pending_reclaim` 230-260k.
+- **Observed (`system.cas_gc_log` phase rows):** `defer_decision.ref_log_keys_listed` grows linearly, 8k (09-14) -> 58k (09-16) -> 296k (09-17) -> 1.15M (09-19) -> 2.16M (09-21) -> 4.28M (09-24); `defer_decision` 3 s -> 1424 s, `fold_ref_intake` 54 s -> 903 s. Round duration 98 s (09-14) -> 2800 s (09-24). `_log` deletes/day in `blob_storage_log` = 5000 x rounds/day exactly (455k on 09-18 with 91 rounds, 95k on 09-24 with 19 rounds) while `_log` uploads stay at 380-475k/day. Correctness invariants (step 1 of the skill) are clean; S3 upload error rate ~0.03%.
+- **Root cause (confirmed):** `gc_round_ref_cleanup_budget` = 5000 covered `_log`/`_snap` deletes per round (`Gc::cleanupRefObjects`, `CasGc.cpp`), and `gc_round_graduation_budget` / `gc_round_redelete_budget` = 5000 blobs per round, are fixed caps independent of the backlog. Every round starts with `listRefPrefix`, one full LIST of `cas/ns/stream/` (O(all `_log` keys)). Once uploads/day exceed 5000 x rounds/day the key population grows, the LIST and fold get slower, rounds/day drop, the per-day delete budget drops further. The loop started on 09-16 (new writer epoch 0x12) while the budget was still being spent on the older epochs 2/5/8 backlog (~2M keys deleted 09-14..09-18); 09-21 is only where the graduation side became visible. The 5000-key cap is mis-sized against its own cost: 5000 keys = 5 batch-delete requests, while the LIST it induces today costs ~4300 requests per round.
+- **Not the cause:** the 09-21 `url()` access-limitation change (its errors are `executeQuery` rows on 09-22, no CAS effect), S3 errors, lease loss, restarts (09-22 12:30, 09-23 10:00 only shifted the epoch).
+- **Fix direction:** (1) make the per-round budgets proportional to observed backlog (or unbounded for write-once covered keys, which are pure batch deletes needing no HEAD); (2) stop paying a full prefix LIST per round: each namespace `_ckpt` already knows its head sequence and the fold seal knows the covered floor, so the round can enumerate only the uncovered tail per namespace; (3) `ref_object_cleanup` phase metrics expose only `namespaces_planned`/`suppressed`/`trim_enabled`: add `objects_deleted`, `objects_pending`, `budget_exhausted` so this is visible on one row. Stand mitigation: set `cas_gc_round_ref_cleanup_budget`, `cas_gc_round_graduation_budget`, `cas_gc_round_redelete_budget` to 0 or ~100000 in the disk config and restart (pool config is read at mount); expect several long catch-up rounds before the LIST shrinks.
+- **Also answers:** `cas_mounts.pending_reclaim` = cumulative condemned minus executed deletes in this process (`CasGcScheduler.h`), so it resets on restart; the 520k figure from the log is the durable one.
