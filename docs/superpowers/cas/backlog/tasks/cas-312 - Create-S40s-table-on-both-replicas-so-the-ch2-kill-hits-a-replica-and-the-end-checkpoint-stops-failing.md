@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:44'
+updated_date: '2026-09-26 14:47'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -53,3 +54,11 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#S40-20260717T090957-1, #S40-20260
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged from u19d-soak (S40 end-checkpoint quiescence fails on ch2 (resolve to the CAS id u19c's `s40-card-replica-shape` gets at import)): Three more S40 records with the same cause: 2026-08-31 01:41 (dev), 2026-08-31 23:10 (ci), 2026-09-01 06:18 (dev). Each is status pass with `quiescence failed: ... Table default.s40_dedup_outage does not exist (UNKNOWN_TABLE)` on localhost:8124 (`RUN_HISTORY.md:577,651,702`).
+The framework-level fix in u19d `quiesce-only-hosted-replicated-tables` would cure S40, S43 and S46 together. If it lands first, close this one as done by it.
+Source: utils/ca-soak/scenarios/BACKLOG.md:3311, :3437, :3481.
+<!-- SECTION:NOTES:END -->
