@@ -27,7 +27,7 @@ protocol: rev.6 lease-boundary exclusivity, ref-log recovery, and the ref-lane s
 ## Ref-ledger follow-ups from the two-model adversarial consult (2026-07-21) {#ref-ledger-consult-followups-2026-07-21}
 
 Consult-flagged, controller-verified, deliberately deferred with measurement/design gates. Evidence:
-`docs/superpowers/reports/2026-07-21-reftablestate-experiments.md`, `tmp/consult-gpt56sol-answer.md`.
+`docs/superpowers/reports/2026-07-21-reftablestate-experiments.md` (deleted in `f5c01e88d01`), `tmp/consult-gpt56sol-answer.md`.
 
 - **Post-durable-PUT allocation window in the ref-lane flush** — folded into the publish-confirm fetch-handoff work and tracked there, not here; this pointer stays only so the finding isn't rediscovered. Two nuances not to lose: the catch's "permanently unreplayable" framing over-claims (the covered region can throw via `MemoryTracker` limits on a durable+applied transaction); wedge resolution followed by flush is a path `BM_FlushInstall` does not model yet — measure before changing anything.
 - **Recovery re-runs 3-4 codec passes per snapshot row** (measured, est. 2-3x recovery/GC-rebuild cut) — `stateFromSnapshot` (`CasRefProtocol.cpp:431-432`) still round-trips through `encodeRefTableSnapshot` + `decodeRefTableSnapshot` (hand-built defense) instead of accepting the validated-witness type `decodeRefTableSnapshot` already produces; per-row size helpers then re-encode a third time.
@@ -165,7 +165,7 @@ move the `eraseView` calls inside the existing `try`. P2.
 
 `drainRefLanesForShutdown` (`CasRefLedger.cpp:1979-2032`) still waits only on `pending`/`leader_active` and checks
 `lane_state` — never on `pending_snapshot_publishes`. This is the mechanical confirmation of the B3+B4 chain
-already queued pre-release ({#detached-pool-outlives-context}, `final-checks-todo.md` item 10): an undrained
+already queued pre-release ({#detached-pool-outlives-context}, `final-checks-todo.md` (deleted in `1dc22709a49`, item 10)): an undrained
 publisher is what lets a detached task be the last `Pool` owner. The wait-loop pattern to transplant already
 exists twice in the same file (`:1838`, `:4319`), so the fix is a transplant with a `wait_budget_ms` bound rather
 than new machinery. P1 as part of that chain.
