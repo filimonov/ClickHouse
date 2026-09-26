@@ -39,8 +39,8 @@ historical or closed must not be read as the current body-publication API.
 | `BACKLOG/testing-and-ci.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:testing,area:ci,area:soak` | — |
 | `BACKLOG/operability-and-introspection.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:observability` | — |
 | `BACKLOG/performance.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:write-path,area:read-path,area:backend` | — |
-| [`BACKLOG/docs-and-cleanup.md`](BACKLOG/docs-and-cleanup.md) | 28 open, 4 closed records | Architecture/refactoring (no behavior change), minor/polish, source-layout residue, standing hygiene checklist items. Top items: `[refactor: CasGc split]`, `[Group G]` upstream carve-outs, `[cas-changelog-entry-missing]`. |
-| [`BACKLOG/issue-2310.md`](BACKLOG/issue-2310.md) | 2 open | Issue CLOSED 2026-09-14 (gate passed on #2300 run 10, fix in 26.6.4.20001). Triage of Altinity/ClickHouse#2310 (`ATTACH PARTITION FROM` stalls on relink confirm): the verdict that it is `[relink-confirm-lane-livelock]` on a pre-fix package, and the two items that stayed open. Items: `[attach-partition-cas-relink-residency]`, `[s3-empty-file-multipart-retry]`. |
+| `BACKLOG/docs-and-cleanup.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:docs,area:upstream` | — |
+| `BACKLOG/issue-2310.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:replication,area:upstream` | — |
 
 Items counted 2026-09-26: an item is a top-level bullet or section that carries an `[id]`, or an id-less leaf section
 that is not narrative; a closed record is one marked DONE, CLOSED, OBSOLETE or SUPERSEDED and kept for provenance.
