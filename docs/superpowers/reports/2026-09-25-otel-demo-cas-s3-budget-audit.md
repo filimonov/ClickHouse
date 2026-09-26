@@ -239,7 +239,7 @@ was cancelled, `WriteBufferFromS3 was canceled`), `StatusFile ... unclean restar
 so the new process observed the predecessor's write-token for 36.5 s before reclaiming (15:38:31 → 15:39:11), and the
 mount opened as "predecessor whose death was not proven clean" with a recovery seal. The GC round in progress
 (1383: 2 h 38 min of intake and reduce) was lost, which is inherent to the one-pass round and is what spec C3 bounds.
-Who sends the second signal, resolved from the operator's log (`Logs-2026-09-25 20_17_05.txt`, clickhouse-operator
+Who sends the second signal, resolved from the operator's log (`Logs-2026-09-25_20_17_05.txt`, clickhouse-operator
 0.27.2): the config change marked the host for a software restart (`shouldForceRestartHost: Config change(s) require
 host restart`), the operator excluded the host and waited for queries (15:38:09 to 15:38:27), then ran
 `HostShutdown()` (`schemer.go:188`) at 15:38:27.592, that is `SYSTEM SHUTDOWN` on the host, and logged "software
