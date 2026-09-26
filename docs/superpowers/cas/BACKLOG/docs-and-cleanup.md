@@ -43,6 +43,68 @@ shapes, `b5c812ba56a`, `src/Disks/tests/cas_test_helpers.h:1109` `namespace fixt
 - **[s3cache-config-comment-stale] stale comment in `utils/ca-soak/configs/storage_conf_s3cache_ch1.xml`** — MINOR — The comment claims cache-over-CA fails with `NOT_IMPLEMENTED`; this was fixed by `3ed0e5f5030` (2026-07-08) and the cache-over-CA path is now live-validated (see the quick-start cache example, `380688e8a66`). Remove the stale comment.
 - **[part-folder-validate-never-gating] ✅ CLOSED by the retirement of `part_folder_validate` (`66b480241b7`, 2026-09-03)** — HARD (user settings-policy direction) — The setting this item demanded a gate for no longer exists: the manifest-cache-by-id work retired `part_folder_validate` entirely, so there is no `never` value left to silently accept. `RetiredPartFolderValidateIsRejected` pins that loading the retired name now throws `UNKNOWN_SETTING`.
 
+## `[manifest-cache-by-id-prose-batch]` manifest-cache-by-id: prose and naming batch, still unapplied {#manifest-cache-by-id-prose-batch}
+
+From the whole-branch review of the manifest-cache-by-id work
+(`docs/superpowers/specs/2026-09-02-cas-manifest-cache-by-id-design.md`). All prose or a single
+identifier rename, none blocking; re-verified 2026-09-25, none of the 9 applied yet. **Not compacted to
+a paragraph — each line below is already the minimal actionable unit (a literal find-and-replace);
+folding these into prose would require re-expanding them for whoever applies the fix.**
+
+1. `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Parts/PartFolderAccess.cpp:450`,
+   `CachedPartFolderAccess::prepareEntries`. Current: "No pool HEAD/GET is performed before precommit;
+   the promote path re-proves each dependency fail-closed." False: `promote` re-checks no `Materialized`
+   leaf and probes no `TrustedManifest` leaf. Replace with: "the promote gate requires a dependency
+   proof for every blob leaf and a live precommit owner; it probes no blob, a missing adopted body is
+   fsck's to report."
+2. `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:1210`,
+   `createHardLink`'s carry-forward comment. Current: "record a TOKENLESS W-EVIDENCE dep for its blob
+   (no HEAD before precommit; promote re-proves it)." Same false claim as the `prepareEntries` one
+   above. Replace with: "record a TOKENLESS W-EVIDENCE dep for its blob (no HEAD before precommit; the
+   promote gate requires a dependency proof for every blob leaf and a live precommit owner — it probes
+   no blob, a missing body is fsck's to report)."
+3. `src/Disks/tests/gtest_cas_pool.cpp:131`, the `publishPartWithEntries` helper comment. Current: "Each
+   Blob entry's body MUST be present at promote: the promote gate revalidates EVERY blob leaf with a
+   HEAD and fails closed on an absent body." False: promote's `TrustedManifest` arm issues no probe.
+   Replace with: "Each Blob entry's body MUST be present at promote: the promote gate requires a
+   dependency proof for every blob leaf and fails closed if one is missing — it does not itself HEAD or
+   GET the body."
+4. `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Parts/PartFolderAccess.h:66`, the
+   `Freshness::StrictValidate` enumerator comment. Current: "fsck/debug: bypass retained views entirely;
+   fresh resolve + validated read." Overclaims: `StrictValidate` now does nothing beyond a `ForceFresh`
+   resolve except skip the retained-view cache. Replace with: "fsck/debug: fresh resolve that bypasses
+   the retained view cache entirely, populating nothing; otherwise identical to `ForceFresh`."
+5. `src/Disks/tests/gtest_cas_part_folder_access.cpp:230`,
+   `HitPathJournalEmptyAndCheapWhenExplainDisabled`. Current: "Same request oracle as
+   `RetainedHitCostsNoRequest` — one cold build, then retained hits." Stale since `5973676fbad`, which
+   moved `RetainedHitCostsNoRequest` to five zero totals excluding the cold build; this test still
+   asserts `getCount == 1` over the cold build plus hits. Replace with: "One body GET across the cold
+   build and five hits; the full no-request oracle is `RetainedHitCostsNoRequest`."
+6. `docs/en/antalya/cas/operations/troubleshooting.md:28`, the "Stale-looking part metadata" row's cause
+   cell. Current: "The part-folder view cache may be serving a retained (not re-validated) view." A
+   retained view is validated by manifest id against a fresh resolve on every hit; the snapshot that can
+   now outlive an out-of-band change is the manifest decode cache, which the row's fix cell already
+   names. Replace with: "The part-folder view cache or the manifest decode cache may be serving a
+   snapshot taken before the out-of-band change."
+7. `src/Common/ProfileEvents.cpp:929`, `CASPartFolderManifestGets`'s description. Current: "Number of
+   part-manifest body GET requests used to build or validate folder views. High values indicate cache
+   misses or validation work." No GET validates anything now; the counter increments once per manifest
+   decode-cache miss. Replace with: "Number of part-manifest body GET requests, one per manifest
+   decode-cache miss."
+8. STALE (2026-09-26): this point originally described `BACKLOG/performance.md`'s
+   `{#hardlink-per-file-forcefresh-head}` (lines ~306-322) as still asserting, present tense under the
+   `✅ CLOSED` banner, that `ForceFresh` "never serves a retained view" and the reader's `HEAD` "is
+   mandatory even on a decode-cache hit." That file was independently groomed and rewritten
+   (`0bf85b2d3ee`, `f8aef5bef2f`): the section now reads "— DONE (provenance kept)" with a short,
+   already-trimmed body and neither false claim present. Nothing left to apply for this point.
+9. `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.cpp:1619-1627`
+   (`unlinkFile`'s `already_proven` memo) and
+   `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.h:166`
+   (`force_fresh_validated_refs`). The surrounding comments were rewritten from "re-proven" to
+   "resolved" while the identifiers still say proven/validated — the memo now saves a fresh RESOLVE, not
+   a proof. Rename `force_fresh_validated_refs` to `force_fresh_resolved_refs` and `already_proven` to
+   `already_resolved` (or fold into the memo's removal, if that happens first).
+
 ## Source-layout refactoring residue (2026-07-16) {#source-layout-residue}
 
 - **[source-layout-bisect-hazard]** — KEEP, record — intermediate commits `592b9b8..9d714dd8` are not clean-buildable (a Phase-2 include sweep stranded 3 external-consumer fixes outside the sweep's pathspec); accepted as-is (no-amend/no-rebase rule). Lesson: a move/sweep's pathspec must include every touched file including external consumers, and the committed state, not an incrementally-built tree, must be what's verified green.
