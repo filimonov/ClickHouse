@@ -1254,3 +1254,14 @@ unconditional directory glob (`src/CMakeLists.txt:138`, unchanged both branches)
 construction sites and no registry entry — only consumers are `src/Disks/tests/gtest_cas_backend.cpp`
 and a README mention. Either move it under `src/Disks/tests/` (where its only users live) or exclude it
 from the production target. P3: dead weight and an audit smell, no behaviour.
+
+### Open product question: is `CAS_WRITE_UNATTRIBUTED` worth a distinct signal, or should the dead code be retired? (2026-09-03) {#cas-write-unattributed-product-question}
+
+`CAS_WRITE_UNATTRIBUTED` is unreachable on the Native/S3 write path now — its only throw site was the
+deleted legacy minter, and the request engine settles a 2xx whose value fits no grammar by a resolve
+read (`GaveUp{Unresolved}` at the deadline). Decide whether a distinct unattributed-write signal is
+wanted (an event/counter) or the error code is retired; the three tests that pinned the throw now pin
+the give-up. Confirmed still the case on both `cas-gc-rebuild` and `altinity/antalya-26.6`: the only
+throw site is `emuMintToken` (`CasObjectStorageBackend.cpp:573`), emulated backend only. Spec revision
+13 records this as an open product question rather than deciding it — see [the rulings
+doc](../2026-09-03-request-contract-rulings.md).
