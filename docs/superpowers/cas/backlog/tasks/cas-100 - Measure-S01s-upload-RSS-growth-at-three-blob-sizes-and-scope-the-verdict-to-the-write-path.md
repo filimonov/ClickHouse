@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-09-26 14:36'
 labels:
   - 'area:soak'
   - 'area:write-path'
@@ -52,4 +52,9 @@ Provenance: BACKLOG/performance.md#s01-rss-scales. Comparison point Altinity#223
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-01 (9deed66b471, by 's01-rss-scales')
+
+Merged from u19a-soak (Measure S01's upload RSS growth at three blob sizes and scope the verdict to the write path): Facts to add to CAS-100 (2026-06-28 measurements, after the streaming `putBlob` fix ccfa687c373):
+The residual ~2x insert peak comes from generic insert block buffering, not from the CA path. A 2 GiB single-part CA insert peaked at 4.33 GiB with default settings for both 512 x 4 MiB and 32768 x 64 KiB rows. With `max_block_size=1024, min_insert_block_size_bytes=32MiB`, the same insert peaked at 358 MiB, which is O(block) and constant in part size.
+Memory-profiler attribution at 1 GiB showed the peak in the test's `randomString` column. The ColumnString grew to a 2 GiB power-of-two capacity. The other large allocator was `WriteBufferFromS3::allocateBuffer` multipart churn: 63 x ~16 MiB, freed per part. No blob-sized String allocation remained.
+Verdict idea from the source: run S01 with a small `max_block_size` and assert that peak stays bounded as the blob size grows. That is a regression guard that can go red, unlike `growth < blob size`.
 <!-- SECTION:NOTES:END -->

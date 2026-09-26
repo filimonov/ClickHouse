@@ -4,7 +4,7 @@ title: Rewrite the three ack-floor soak cards for the current floor and run them
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-09-26 14:36'
 labels:
   - 'area:soak'
   - 'area:testing'
@@ -54,4 +54,11 @@ Provenance: BACKLOG/gc.md [ack-floor soak validation]; verified 2026-09-26 again
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'ack-floor soak validation')
+
+Merged from u19a-soak (Rewrite the three ack-floor soak cards for the current floor and run them): Facts to add to CAS-41 (verified 2026-09-26 against 66087be0ffb):
+The SIGSTOP card's premise is gone, not only its symbols. Graduation now paces on GC rounds (`new_round`), not on heartbeat acks (`CA/Gc/CasGc.cpp:483-486`). A paused writer therefore cannot hold the floor. It is fenced out once its write-token stays unchanged for `mountObservationThresholdMs` = TTL + TTL/20 + renewal period on the leader's monotonic clock (`CA/Pool/CasServerRoot.cpp:935`).
+Re-derive that card as: SIGSTOP a writer past the threshold, then assert one fence-out, then SIGCONT and assert its next write is refused and it self-remounts with no dangling ref in fsck.
+The kill-mid-burst card can assert `RoundReport::fence_outs` (`CA/Gc/CasGc.h:167`, set at `CA/Gc/CasGc.cpp:502`), the `CASGCHeartbeatFenceOuts` ProfileEvent and the per-srid `GcFenceOut` audit row. No card under `utils/ca-soak/scenarios/cards/` asserts a fence-out today; `framework/observe.py:416` only reads the column.
+The request-budget card overlaps CAS-77 (perf-smoke CI gate on per-insert S3 cost) and the CAS-29 acceptance numbers; one per-round request-count guard can serve both.
+Source text: utils/ca-soak/scenarios/BACKLOG.md:674-709. The 2026-07-03 header sweep lists them as release-gate items.
 <!-- SECTION:NOTES:END -->

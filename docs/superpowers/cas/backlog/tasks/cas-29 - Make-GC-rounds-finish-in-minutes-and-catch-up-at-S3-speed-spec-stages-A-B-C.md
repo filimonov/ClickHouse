@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-09-26 14:36'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -62,4 +62,10 @@ Provenance: BACKLOG/gc.md#gc-rounds-in-minutes; verified 2026-09-26 against aefe
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-25 (04f0180dca6, by 'gc-rounds-in-minutes')
+
+Merged from u19a-soak (Make GC rounds finish in minutes and catch up at S3 speed (spec stages A, B, C)): Facts to add to CAS-29 (soak scaling curve, 2026-07-05 campaign, pre-rebuild GC; re-measure before quoting as current):
+A single fold round's time grew with pool size: 87 ms at 400 parts (S03), 92.6 s and 93.9 s at 10,000 tables (S05 full), and 398 s at ~100,000 tiny parts (S08 full), where one round deleted 24,392 manifests.
+Consequences observed: with `gc_interval_sec=10` rounds ran back to back, and `settle_fsck` could not stabilise because each round bulk-mutated the pool. Correctness held (`dangling=0`).
+The idle and small-delta case was fixed by the defer round (436714d80f0..3cba4f812f8, `shouldDeferRound` at `CA/Gc/CasGc.cpp:297`). The large-delta case is what stages B and C target.
+Suggested second acceptance probe beside otel.demo: S05 (10,000 tables) and S08 (100,000 parts) at `--scale full`, with per-round duration recorded in `RUN_HISTORY.md`.
 <!-- SECTION:NOTES:END -->
