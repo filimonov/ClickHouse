@@ -269,8 +269,8 @@ test exists for it today. Lower-confidence secondary: the abort-path `deleteExac
 - **KEEP: `type=encrypted` over a CAS disk is accepted with no capability gate.**
   {#encrypted-over-cas-missing-gate} Confirmed unchanged: `DiskEncrypted` (`Disks/DiskEncrypted.h:332`)
   forwards `isPlain` but not `isContentAddressed`/`supportsAtomicFileWrites`, so both fall back to
-  `false`. CAS+encryption is out of scope for this release (`[B17]` in
-  `BACKLOG/operability-and-introspection.md` covers the real per-key-dedup feature); the residual is
+  `false`. CAS+encryption is out of scope for this release (`CAS-129` in Backlog.md covers the real
+  per-key-dedup feature); the residual is
   only the missing fail-fast, which fails loud at the first INSERT today (`NOT_IMPLEMENTED`), not
   silently. Fix (small): refuse at disk construction/config validation when the delegate answers
   `isContentAddressed()`.

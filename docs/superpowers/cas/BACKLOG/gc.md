@@ -466,7 +466,7 @@ Proposed:
 - **[REF-QUEUE-WAIT-MEASURE]** — superseded by audit `#f20`/`#f30`/`#f31` (2026-09-25), a far more precise re-measurement of the same ref-lane queue-wait cost (748ms of an 887ms insert) with an owner-approved fix.
 - **[orphan-sweep-byte-budget]** orphan-manifest nomination is object-count-bounded, not byte-bounded — DESIRABLE — `nomination_budget` (`CasOrphanManifestSweep.cpp:605-638`) caps count; 256 MiB manifests can still reach ~25 GiB retained/round.
 - **[gc-files-prefix-not-listed]** verify `_files` debris is reclaimed without a GC LIST of `rootsPrefix()` — DESIRABLE — Fold LISTs `casRefsPrefix()` but not `rootsPrefix()` (confirmed on both branches, 2026-09-25). Audit `#f16` confirms `roots/<ns>/files/<name>` has no index and is reclaimed only by the writer's own `removeNamespaceFile`. Open: does that remove fire on every orphaning path?
-- **[CA-LOG-TABLES-RESTART-COST]** {#ca-log-tables-restart-cost} — A 6/40 soak restart took 178.9s against a 180s gate, 138.1s reloading CA log tables' Outdated parts. Direction: TTL/partitioning, bounded churn, lazy load. Audit `#f1` confirms the same class on otel.demo (`system.*` = 86% of parts) and recommends a local storage policy — cross-check `operability-and-introspection.md`.
+- **[CA-LOG-TABLES-RESTART-COST]** {#ca-log-tables-restart-cost} — A 6/40 soak restart took 178.9s against a 180s gate, 138.1s reloading CA log tables' Outdated parts. Direction: TTL/partitioning, bounded churn, lazy load. Audit `#f1` confirms the same class on otel.demo (`system.*` = 86% of parts) and recommends a local storage policy — cross-check `CAS-94` in Backlog.md.
 - **[gc-checkpoint-timeout-tsan]** soak GC-checkpoint timeout assumes normal-speed throughput — MINOR, green-debt — Can blow its budget under TSan overhead while genuinely converging. Fix: sanitizer-aware multiplier.
 
 ### `[drop-path-head-of-line-and-repoint-ramp]` A synchronous DROP waits for an unrelated table's batch, and the per-part repoint grows 30-100x over an MSan shard (2026-09-15) {#drop-path-head-of-line-and-repoint-ramp}
@@ -924,8 +924,8 @@ parts are `system.*` log tables on the CAS disk (F1, deliberate on the stand, a 
 one-line GC fix); one manifest body GET per edge with no per-round reuse (F4, 29% of GETs); `_ckpt` PUT per flush (F5,
 21% of PUTs, owner decision); ~3 S3 LIST requests per 1000-key page (F6, verify); six GC requests per garbage blob (F7).
 
-Most of F1-F31's findings are already threaded through this file and `BACKLOG/performance.md` and
-`BACKLOG/operability-and-introspection.md` via the spec's own A/B/C items and per-finding `#fN` citations; this
+Most of F1-F31's findings are already threaded through this file, `BACKLOG/performance.md`, and
+Backlog.md (`backlog task list -l area:observability`) via the spec's own A/B/C items and per-finding `#fN` citations; this
 entry is the pointer for the ones that are not yet individually cross-referenced anywhere: F6, F8, F10, F17, F19,
 F23, F24, F28, F30 (checked 2026-09-26 — none of these nine appear under `docs/superpowers/cas/BACKLOG/`). Read the
 report directly for those until each gets its own line.
