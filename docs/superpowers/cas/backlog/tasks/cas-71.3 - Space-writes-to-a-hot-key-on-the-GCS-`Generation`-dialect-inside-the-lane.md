@@ -4,7 +4,7 @@ title: Space writes to a hot key on the GCS `Generation` dialect inside the lane
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 07:44'
 labels:
   - 'area:gcs'
   - 'complexity:medium'
@@ -15,6 +15,7 @@ labels:
   - 'needs:decision'
 milestone: m-6
 dependencies:
+  - CAS-167
   - CAS-70.3
 references:
   - >-

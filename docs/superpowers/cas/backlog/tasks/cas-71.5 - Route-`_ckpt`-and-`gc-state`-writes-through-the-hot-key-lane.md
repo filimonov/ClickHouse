@@ -4,6 +4,7 @@ title: Route `_ckpt` and `gc/state` writes through the hot-key lane
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 07:44'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -11,7 +12,8 @@ labels:
   - 'touches:protocol'
   - 'confidence:plausible'
   - 'needs:decision'
-dependencies: []
+dependencies:
+  - CAS-176
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp

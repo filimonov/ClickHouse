@@ -4,6 +4,7 @@ title: Re-measure the 256-partition INSERT after the zero-GET part publish
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:23'
+updated_date: '2026-09-26 07:44'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -12,7 +13,8 @@ labels:
   - 'needs:measurement'
   - 'origin:soak'
 milestone: m-2
-dependencies: []
+dependencies:
+  - CAS-176
 references:
   - src/Storages/MergeTree/ReplicatedMergeTreeSink.cpp
 documentation:

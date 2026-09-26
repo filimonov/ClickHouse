@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:23'
+updated_date: '2026-09-26 07:44'
 labels:
   - 'area:read-path'
   - 'complexity:medium'
@@ -13,7 +14,8 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
-dependencies: []
+dependencies:
+  - CAS-176
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp
