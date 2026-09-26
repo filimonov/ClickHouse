@@ -40,7 +40,7 @@ second, and the note says so at each use); anything about a workload that isn't 
 pool, a different fold-edge density) — this is one destructive round shape, not a general
 performance model.
 
-**Predecessor:** `docs/superpowers/reports/2026-07-29-gc-perf-audit-soak.md`
+**Predecessor:** `docs/superpowers/reports/2026-07-29-gc-perf-audit-soak.md` (deleted in `f5c01e88d01`)
 (`{#opportunities}`). Its verdicts against this baseline are in `{#predecessor-verdicts}`.
 
 ### A correction found while re-deriving: T8's Step-3c inventory does not reproduce from this archive {#specimen-reconciliation}
