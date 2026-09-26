@@ -295,7 +295,7 @@ Found by the codex review of the janitor brainstorm (`docs/superpowers/reports/2
 absorbed here as one entry with `{#janitor-page-hardcoded}` since both feed the same backlog-runaway loop. Spec
 [B3](/superpowers/specs/cas-gc-rounds-in-minutes-design#b3-cleanup-licence) names this as "adjudicated not yet
 built" (per-row licensing, per-namespace refusal); this entry is the measurement and plan behind that line. The
-write-hotspot context it cited, `{#ref-catalog-write-hotspot}` (`performance.md`), still applies.
+write-hotspot context it cited, `CAS-72` in Backlog.md, still applies.
 
 **Mechanism.** `Gc::cleanupRefObjects` deletes the `_log` objects of **live** lives that are already covered
 by their checkpoint. Before its first chunk it re-reads the pool catalog and, in `authorityHolds`
@@ -475,7 +475,7 @@ Two findings from the T4 msan investigation (`docs/superpowers/cas/2026-09-16-ms
 `Stateless (amd_msan, cas s3 storage, parallel, 2/3)` of run 10, binary v26.6.4, no hot-key lane phase A). They
 sit on top of `[PART-REMOVAL-REPOINT]` (above: elide the `delete_tmp_*` repoint; parallel removal via
 `concurrent_part_removal_threshold_for_remote_disk=1`) and `[ref-catalog-cas-starvation]` (namespace removal on
-`ref_catalog`, fixed by hot-key phase A, see [`hot-key-lane-phase-a-followups`](performance.md#hot-key-lane-phase-a-followups)),
+`ref_catalog`, fixed by hot-key phase A, see `CAS-70` in Backlog.md),
 and neither of those two closes them.
 
 **1. Head-of-line wait in the catalog drop task (upstream code, small portable fix).** With
@@ -924,8 +924,8 @@ parts are `system.*` log tables on the CAS disk (F1, deliberate on the stand, a 
 one-line GC fix); one manifest body GET per edge with no per-round reuse (F4, 29% of GETs); `_ckpt` PUT per flush (F5,
 21% of PUTs, owner decision); ~3 S3 LIST requests per 1000-key page (F6, verify); six GC requests per garbage blob (F7).
 
-Most of F1-F31's findings are already threaded through this file, `BACKLOG/performance.md`, and
-Backlog.md (`backlog task list -l area:observability`) via the spec's own A/B/C items and per-finding `#fN` citations; this
+Most of F1-F31's findings are already threaded through this file and
+Backlog.md (`backlog task list -l area:observability,area:write-path,area:read-path,area:backend`) via the spec's own A/B/C items and per-finding `#fN` citations; this
 entry is the pointer for the ones that are not yet individually cross-referenced anywhere: F6, F8, F10, F17, F19,
 F23, F24, F28, F30 (checked 2026-09-26 — none of these nine appear under `docs/superpowers/cas/BACKLOG/`). Read the
 report directly for those until each gets its own line.
