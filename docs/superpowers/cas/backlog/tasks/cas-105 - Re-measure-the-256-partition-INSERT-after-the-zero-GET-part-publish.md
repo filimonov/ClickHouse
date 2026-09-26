@@ -4,7 +4,7 @@ title: Re-measure the 256-partition INSERT after the zero-GET part publish
 status: To Do
 assignee: []
 created_date: '2026-07-06'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-09-26 14:38'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/performance.md#scale-findings [partitioned-INSERT O(partitio
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-06 (4abf5b743ed, by 'partitioned-INSERT O')
+
+Merged from u19b-soak (merge into CAS-105): From the soak ledger's partitioned-INSERT entry (2026-07-06, S11 full, 256 buckets): 4-5 INSERTs per minute. Fix direction recorded then: when the parts of one INSERT share a namespace, publish them in one combined flush; check whether the ref-lane combine window (CAS-287) already covers multi-partition INSERTs before reopening stage 2.
 <!-- SECTION:NOTES:END -->

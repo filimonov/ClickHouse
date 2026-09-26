@@ -4,7 +4,7 @@ title: Check the pinned RustFS image against the upstream fix for rustfs#3231
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-09-26 14:38'
 labels:
   - 'area:soak'
   - 'area:tooling'
@@ -50,4 +50,6 @@ Provenance: BACKLOG/formats-and-storage.md [F2 / rustfs#3231]; absorbs u06's dro
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'F2 / rustfs#3231')
+
+Merged from u19b-soak (merge into CAS-280): While the pinned RustFS still retains overwritten versions, long chaos soaks need the orphan reaper. Launched as `docker exec … orphan_reaper.sh` it dies on the first chaos RustFS restart, after which the leak grows until the disk watchdog stops the run. The fix recorded on 2026-07-09 (a host-side loop calling `orphan_reaper.sh <dir> --once` every 120 s) was applied by hand once and never wired: `utils/ca-soak/scripts/run_24h.sh` does not launch the reaper at all. If a fixed RustFS image removes the leak, retire the reaper instead.
 <!-- SECTION:NOTES:END -->

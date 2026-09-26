@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-09-26 14:38'
 labels:
   - 'area:soak'
   - 'complexity:large'
@@ -62,4 +62,6 @@ Provenance: BACKLOG/testing-and-ci.md [4h-continuous-chaos-soak]; absorbs [B165]
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (5245fbc7a76, by '4h-continuous-chaos-soak')
+
+Merged from u19b-soak (merge into CAS-221): Third non-CAS blocker from the 2026-07-07 4h chaos run, still open: the pool budget cannot be held. `_THROTTLE_MAX = 1.0` s per insert (`utils/ca-soak/soak/run.py:1166`) is the heaviest pacing and never stalls inserts, RustFS does no background compaction, and merge and mutation write amplification outpaced insert pacing (pool reached 187 GB in 4 h). Options recorded: a compacting store on the stand, a lower object-count scale, or a throttle that fully stalls inserts over budget. The run's other two blockers are handled: the TTL-band abort by `4501cc8415c`, fsck at scale by CAS-140. CAS correctness held through that run: replica agreement and `dangling=0` while fsck completed.
 <!-- SECTION:NOTES:END -->

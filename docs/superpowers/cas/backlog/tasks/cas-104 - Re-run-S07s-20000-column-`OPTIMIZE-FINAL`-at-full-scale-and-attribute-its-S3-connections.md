@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-06'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-09-26 14:38'
 labels:
   - 'area:read-path'
   - 'area:soak'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/performance.md#scale-findings [wide-part O(columns)] (+ orph
 Merged from mounts-and-lifecycle.md (#2243 housekeeping, S07 re-rated): the same port-exhaustion condition took the mount lease down and discarded in-flight PartWriteTxns, so S07 is availability class, not cost only.
 
 First recorded: 2026-07-06 (4abf5b743ed, by 'wide-part O')
+
+Merged from u19b-soak (merge into CAS-104): From the soak ledger's wide-part entry (2026-07-06, S07 full, 20000 columns): `OPTIMIZE FINAL` sat at progress 0 for over 4 minutes; the server log showed `Cannot assign requested address` (errno 99) to RustFS, the S3 client at retry attempt 7 of 501, and about 5 PutObject per 5 s. The part itself committed at INSERT; only the merge stalled. Two fix directions CAS-104 does not name: batch the per-column HEAD/GET/PUT of one part, and note that `.bin`, mark files and `primary.idx` always take the blob route regardless of size, so 20000 tiny columns become about 40000 objects (inline-by-size placement is CAS-16). Deployment note to carry into the docs if the re-run still exhausts ports: widen `net.ipv4.ip_local_port_range` and cap S3 connections for very wide tables.
 <!-- SECTION:NOTES:END -->

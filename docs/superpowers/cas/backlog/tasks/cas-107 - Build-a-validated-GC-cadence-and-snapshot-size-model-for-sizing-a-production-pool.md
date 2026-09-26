@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-03'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-09-26 14:38'
 labels:
   - 'area:gc'
   - 'area:docs'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/performance.md#scale-findings [Capacity model]. Verified 202
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-03 (7a8649f9e4f, by 'Capacity model')
+
+Merged from u19b-soak (merge into CAS-107): Cadence model shape from the soak ledger (ADAPTIVE-GC-CADENCE, 2026-07-06): request rate is roughly A/interval + B*interval, where A is the per-round cost over the whole blob universe and B is the writer amplification that grows with time since the last fold; the optimum interval grows with pool size and shrinks with the hottest key's write rate. Hard ceiling regardless of the optimum: a hot RMW object must stay under the store's inline threshold (about 128 KiB on RustFS, rustfs#3231 territory). The trigger for a round should be per-key write pressure (event count, body size, age), not the number of changed keys: one key written 10000 times counts as one change. Dead data held a few extra minutes costs almost nothing in storage. The root-shard journal knobs the entry was written against (`gc_fold_threshold`, `gc_trim_body_soft_limit`) no longer exist at HEAD, so re-derive A and B for the current ref-lane and snapshot design before using any 2026-07 number.
 <!-- SECTION:NOTES:END -->

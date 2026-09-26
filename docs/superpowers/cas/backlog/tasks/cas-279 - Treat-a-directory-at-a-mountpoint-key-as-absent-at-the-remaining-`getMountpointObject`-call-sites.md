@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-23'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-09-26 14:38'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/formats-and-storage.md [STATELESS-04286 EISDIR]; scenario en
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-23 (1989155d7e4, by 'STATELESS-04286 EISDIR')
+
+Merged from u19b-soak (merge into CAS-279): Soak ledger entry STATELESS-04286-getmountpoint-eisdir is already carried by CAS-279; no new facts.
 <!-- SECTION:NOTES:END -->
