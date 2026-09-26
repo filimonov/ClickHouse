@@ -1,5 +1,5 @@
 ---
-description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are held per resident ref-table runtime with write-through instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.6 folds in codex review rounds 1 to 5.'
+description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are held per resident ref-table runtime with write-through instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.7 folds in codex review rounds 1 to 6.'
 sidebar_label: 'CAS directory probes without LIST'
 sidebar_position: 12
 slug: /superpowers/specs/cas-directory-probes-no-list-design
@@ -7,20 +7,22 @@ title: 'CAS directory probes without an S3 LIST'
 doc_type: 'design'
 ---
 
-# CAS directory probes without an S3 LIST — rev.6 (2026-09-26) {#cas-directory-probes-no-list}
+# CAS directory probes without an S3 LIST — rev.7 (2026-09-26) {#cas-directory-probes-no-list}
 
 Mini spec for backlog tasks CAS-95.1 and CAS-95.2 (parent CAS-95, issue
 https://github.com/Altinity/ClickHouse/issues/2439). CAS-95.3 (the `detached` probe's catalog GETs) is
 out of scope. Implementation branch: new branch off `altinity/antalya-26.6`; this spec lives on
-`cas-gc-rebuild`. Rev.2 to rev.6 address codex review rounds 1 to 5
-(`docs/superpowers/reports/2026-09-26-cas-directory-probes-no-list-codex-reviews/review_r{1,2,3,4,5}.md`).
+`cas-gc-rebuild`. Rev.2 to rev.7 address codex review rounds 1 to 6
+(`docs/superpowers/reports/2026-09-26-cas-directory-probes-no-list-codex-reviews/review_r{1,2,3,4,5,6}.md`).
 The serialization mechanism changed twice: a version counter (rev.2) missed two interleavings; a
 per-runtime mutex (rev.3, rev.4) needed a post-settle rule and a second ledger operation to survive a
 remount. Rev.5 takes round 4's suggestion, a fixed bank of striped mutexes in the ledger keyed by the
 life, which outlives every runtime and needs no such rule. Rev.5 also counts the held names in the
 ref-table budget instead of capping them per table. Round 5 accepted the mechanism (no further
 stale-set schedule or lock cycle found); rev.6 folds in its implementation-level findings: admission
-re-checked inside the stripe, reset on a failed cache update, deterministic test schedules.
+re-checked inside the stripe, reset on a failed cache update, deterministic test schedules. Round 6
+found no new mechanism defect; rev.7 admits the operation inside the ledger, adds the two regression
+tests for the rev.6 branches, and fixes test wording. The review loop stops here.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
 line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`.
@@ -188,11 +190,13 @@ with any of them.
 
 **The ledger API.** Two methods, with `Pool` as their only caller:
 
-- `listNamespaceFilesHeld(life, op, list_fn)`: under the stripe, look up the runtime for `life.ns`;
-  when it exists, its `life` equals the argument, its `admitted_fence_generation` equals
-  `op.generation()`, its set is populated and `op.admitted()` is still true at that point (the fence
-  can drop while the caller waited for the stripe, and `admitted` is the dynamic verdict,
-  `Backend/CasRequests.h:258`), return a sorted copy. Otherwise call `list_fn` (today's LIST) and,
+- `listNamespaceFilesHeld(life, list_fn)`: take the stripe, then admit an operation on the ledger's
+  own `mount_requests` (admission happens after the wait, at the hit's linearization point, so a
+  fence lost while waiting for the stripe is seen; `admitted` is the dynamic verdict,
+  `Backend/CasRequests.h:258`). Look up the runtime for `life.ns`; when it exists, its `life` equals
+  the argument, its `admitted_fence_generation` equals the operation's generation, its set is
+  populated and the operation is admitted, return a sorted copy. Otherwise call `list_fn` (today's
+  LIST, which admits its own operation and refuses as today when the fence is lost) and,
   after it returns, look the runtime up again (a fresh lookup, exact `NamespaceLifeId` equality, the
   `shared_ptr` pinned for the update); when it exists, install the result and update
   `namespace_file_names_bytes`. A LIST failure propagates and installs nothing.
@@ -206,16 +210,14 @@ with any of them.
   Without a current runtime nothing is updated: a runtime created later starts unpopulated and its
   LIST, which needs the stripe, sees the settled state.
 
-**Read path.** `Pool::listNamespaceFiles(life)` (`Pool/CasPool.cpp:1218`): `CasOperation op =
-mount_requests.admit()`; if `op.admitted()`, return
-`ref_ledger.listNamespaceFilesHeld(life, op, [&] { return plain_objects.listNamespaceFiles(life); })`;
-otherwise call `plain_objects.listNamespaceFiles(life)` directly, which admits its own operation and
-refuses as today. The admission check at the disk layer (`:1626`, `:1804`) is not enough on its own
-because the fence can drop between it and the read; a hit is served only under an admission taken
-here, on the runtime's own generation. Lives without a runtime (test fixture lives, offline tools)
-list every time, which is today's behaviour. `CasPlainObjects` admits its own operation for the
-request (`Pool/CasPlainObjects.cpp:58-65`) on the same `mount_requests` fence; the operation admitted
-here is evidence for the hit only.
+**Read path.** `Pool::listNamespaceFiles(life)` (`Pool/CasPool.cpp:1218`) becomes
+`ref_ledger.listNamespaceFilesHeld(life, [&] { return plain_objects.listNamespaceFiles(life); })`.
+The admission check at the disk layer (`:1626`, `:1804`) is not enough on its own because the fence
+can drop between it and the read; a hit is served only under an admission taken inside the stripe,
+on the runtime's own generation. Lives without a runtime (test fixture lives, offline tools) list
+every time, which is today's behaviour. `CasPlainObjects` admits its own operation for the request
+(`Pool/CasPlainObjects.cpp:58-65`) on the same `mount_requests` fence; the operation admitted in the
+ledger is evidence for the hit only.
 
 **Write path.** `Pool::putNamespaceFile` and `Pool::removeNamespaceFile` become
 `ref_ledger.noteNamespaceFileWrite(life, [&] { plain_objects.putNamespaceFile(life, name, bytes); },
@@ -327,6 +329,13 @@ existing cases use):
    issues a LIST and returns the true state.
 9. Fence loss: with a populated set, trip the fence; `listNamespaceFiles` is refused as today (no
    cached answer served). After remount and a fresh runtime, the first call lists again.
+9b. Fence lost while waiting for the stripe: a first LIST blocks after its backend result while it
+    holds the stripe; a second `listNamespaceFiles` starts and is observed waiting (waiter seam);
+    trip the fence without remounting; release the first LIST. The second call refuses rather than
+    returning the freshly populated old-generation set.
+8b. Cache update fails after a durable PUT: inject a failure into the set mutation (a test-only
+    hook on the ledger that throws from `on_success`); the public `putNamespaceFile` throws, and the
+    next `listNamespaceFiles` issues a LIST and contains the name.
 10. Eviction: with `ref_table_cache_bytes` set so the runtime is evicted, the next call lists again.
 11. Drop and same-name rebirth: the reborn life lists again and does not see the old names.
 12. Write without a runtime: evict the runtime, start a PUT that blocks before the base `write`, touch
@@ -338,12 +347,14 @@ existing cases use):
 13. Write across remount: a PUT blocks before the base `write`; fence the mount out durably and
     `tryRemountOnce`, so runtime B replaces A (`tripMountLost` alone does not create B);
     `listNamespaceFiles` from another thread blocks on the stripe (same waiter-count seam as test
-    12); release the PUT; whether it settles as success or refused, the listing afterwards reflects
-    the true state and the name is present if it landed.
-14. Budget: read both runtimes' weights through a test-only weight accessor on the ledger, set
-    `ref_table_cache_bytes` to their sum plus a margin smaller than the set about to be installed,
-    assert both are resident, install the set on the second runtime; the idle first runtime is
-    evicted (`CASRefTableEvictions` increments) and the installed one is kept.
+    12); release the PUT; the writer throws (the post-commit gate refuses a write whose fence
+    generation changed, `Backend/CasRequests.h:237-240`), and the listing afterwards issues a LIST
+    and contains the landed name.
+14. Budget, broad-gap fixture (`ref_table_cache_bytes` is fixed at `Pool::open`,
+    `Pool/CasPool.h:321`): open the pool with a budget that comfortably retains two small runtimes,
+    assert both are resident, then install on the second runtime a name set larger than the
+    remaining margin (many long names); the idle first runtime is evicted (`CASRefTableEvictions`
+    increments) and the installed one is kept.
 15. Destructive consumers on a warmed set: `removeRecursive` of a table subdirectory
     (`ContentAddressedTransaction.cpp:1164`) removes every file it would have removed with a fresh
     LIST, and a table rename (`:1295`) copies every file, both without a LIST.
@@ -356,7 +367,11 @@ Integration, new module `tests/integration/test_cas_directory_probes` with GC di
 17. After the second restart, the delta of `CASRootList` over two minutes without queries or DDL is
     zero (covers `clearOldTemporaryDirectories`).
 
-No `LOGICAL_ERROR` is introduced by this change. The ASan lane runs for the touched suites.
+Test seams (the stripe waiter count of tests 9b, 12, 13 and the `on_success` failure hook of test
+8b) follow the existing `*ForTest` block on `Pool` (`Pool/CasPool.h:937-1138`) forwarding to the
+private ledger; the waiter count is incremented only on the contended `try_lock` path so the
+uncontended production path gains no accounting. No `LOGICAL_ERROR` is introduced by this change.
+The ASan lane runs for the touched suites.
 
 ## 5. Acceptance {#acceptance}
 
@@ -370,6 +385,6 @@ No `LOGICAL_ERROR` is introduced by this change. The ASan lane runs for the touc
 One paragraph in `docs/en/antalya/cas/architecture/read-path.md` stating that part-level directory
 probes are answered from the part manifest and that a table's file names are listed once per resident
 ref-table runtime on a node and then kept in memory with write-through. The `ref_table_cache_bytes`
-contract comment in `Pool/CasPool.h:311-321` and its user-facing description gain the namespace-name
-bytes as a third component of the weight. No on-S3 format change, so the CAS format documents and
+contract comment in `Pool/CasPool.h:311-321` gains the namespace-name bytes as a third component of
+the weight (the branch has no user-facing description of that setting to update). No on-S3 format change, so the CAS format documents and
 `NativeFormat.md` are untouched.
