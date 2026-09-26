@@ -7,7 +7,7 @@ title: 'CAS directory probes without an S3 LIST'
 doc_type: 'design'
 ---
 
-# CAS directory probes without an S3 LIST — rev.9 (2026-09-27) {#cas-directory-probes-no-list}
+# CAS directory probes without an S3 LIST — rev.9, §3.2 closed (2026-09-27) {#cas-directory-probes-no-list}
 
 Mini spec for backlog tasks CAS-95.1 and CAS-95.2 (parent CAS-95, issue
 https://github.com/Altinity/ClickHouse/issues/2439). CAS-95.3 (the `detached` probe's catalog GETs) is
@@ -30,7 +30,35 @@ runtime-lifetime argument all disappear. Rev.9 folds in round 7 (`review_r7.md`)
 generation-tagged and every hit, birth and population is admitted on the fence under the mutex; the
 rebuilding LIST waits for in-flight namespace-file requests of the lost generation and, after an
 unclean predecessor, for one attempt envelope; lives are enumerated from one fresh catalog cut;
-decommission and read-only opens never populate.
+decommission and read-only opens never populate. Round 8 (`review_r8.md`) then found three
+CRITICAL defects in the quiescence before the rebuilding LIST, and the loop for §3.2 was closed: see
+§0 below. §3.1 (CAS-95.1) is unaffected and goes to implementation alone.
+
+## 0. Decision after eight review rounds: §3.1 only {#decision}
+
+Every variant of a resident copy of the `_files/` names (lazy cache with a version counter, a mutex
+per runtime, striped mutexes, durable directory entries in the ref log, population at mount) ran
+into the same root fact: a `_files/` PUT or DELETE is a plain object write with no seal, and the
+backend gives no bound on when it applies a request it has already accepted. After an unclean
+crash of this node's previous incarnation, a DELETE it issued can land after the new incarnation's
+LIST, and a name then stays in the copy while the object is gone until the next mount; a
+`mutation_<n>.txt` in that state makes the table fail to load. In-process, a deferred write-buffer
+finalize created before a fence loss admits a fresh operation under the new generation and can
+overlap the rebuilding LIST (`ContentAddressedTransaction.cpp:805-852`); closing that needs a gate
+spanning admission, the table mutation and the whole request, which is the striped mutex of rev.5 to
+rev.7 again. Today's code has the same windows but heals at the next LIST; a resident copy does not.
+
+The only designs immune to this are the present one (a LIST per probe), a copy that is disabled for
+any mount over an unclean predecessor (which forfeits the steady-state saving exactly after a crash),
+or sealed table files, that is, table-level files as refs under a new format generation, which the
+closed design study `2026-09-26-cas-table-files-as-refs-design.md` rejected for its own reasons.
+
+Decision: implement §3.1 (CAS-95.1) now; it removes the restart storm of issue #2439 (77k LISTs,
+`503`s, failed ref-lane uploads) and has no open finding since round 2. Leave the steady-state LIST
+of `clearOldTemporaryDirectories` (one per table per minute, 155 per 10 minutes on otel.demo, about
+0.26 requests per second) as it is, and close CAS-95.2 as "not worth its mechanism" with a pointer
+to this section; reopen it only together with sealed table files. §3.2 below is kept as the record
+of the last design and of what it would still need.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
 line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`.
@@ -365,6 +393,11 @@ No `LOGICAL_ERROR` is introduced by this change.
 The ASan lane runs for the touched suites.
 
 ## 5. Acceptance {#acceptance}
+
+With the decision of §0, the implementation plan covers §3.1, tests 1 to 3 and tests 16 and 17 with
+the restart comparison only; acceptance #2 of CAS-95 is withdrawn for the `clearOldTemporaryDirectories`
+half.
+
 
 - CAS-95 acceptance #1: restart LIST count independent of the part count (test 16).
 - CAS-95 acceptance #2 for the `clearOldTemporaryDirectories` half: zero `CASRootList` on a warm node

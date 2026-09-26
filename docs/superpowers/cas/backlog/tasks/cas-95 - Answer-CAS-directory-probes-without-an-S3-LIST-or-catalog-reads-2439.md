@@ -4,7 +4,7 @@ title: Answer CAS directory probes without an S3 LIST or catalog reads (#2439)
 status: To Do
 assignee: []
 created_date: '2026-07-06'
-updated_date: '2026-09-26 18:45'
+updated_date: '2026-09-26 22:56'
 labels:
   - 'area:read-path'
   - 'complexity:medium'
@@ -58,4 +58,6 @@ Provenance: BACKLOG/performance.md#scale-findings [startup O(refs)] (deleted in 
 First recorded: 2026-07-06 (4abf5b743ed, by 'startup O')
 
 Spec rev.1 (2026-09-26) for 95.1+95.2: docs/superpowers/specs/2026-09-26-cas-directory-probes-no-list-design.md; codex review loop in progress; implementation branch to be cut from altinity/antalya-26.6. 95.3 stays open.
+
+2026-09-27: scope reduced to 95.1 (PartFile shape); 95.2 closed, see spec section 0; acceptance #2's clearOldTemporaryDirectories half withdrawn (155 LIST per 10 min stays).
 <!-- SECTION:NOTES:END -->

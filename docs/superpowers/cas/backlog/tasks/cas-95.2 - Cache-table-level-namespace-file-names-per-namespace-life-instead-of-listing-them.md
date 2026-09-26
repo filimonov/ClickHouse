@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-26 22:56'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -60,4 +60,6 @@ Provenance: audit #f16 via BACKLOG/performance.md#scale-findings [startup O(refs
 First recorded: 2026-09-26 (27654231df2, by 'scale-findings [startup O')
 
 Issue #2439 proposal 3, not part of this fix: record table-level file names (or the files) in the ref table next to the part refs, so a cold start needs no LIST either. It is an on-S3 format change (decision-4: new format version with a compatibility path), listed by the issue as a design question only.
+
+2026-09-27: closed as not worth its mechanism after eight codex rounds on spec 2026-09-26-cas-directory-probes-no-list-design.md (see its section 0) and two rounds on the design study 2026-09-26-cas-table-files-as-refs-design.md. Root cause: _files/ PUT and DELETE carry no seal and the backend gives no bound on when an accepted request is applied, so any resident copy of the names can name a deleted object after an unclean crash until the next mount. Reopen only together with sealed table-level files (format generation 2).
 <!-- SECTION:NOTES:END -->
