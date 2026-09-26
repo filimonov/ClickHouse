@@ -370,6 +370,46 @@ currently wrong. Either wire an emit site or remove the dead enum value. (An orp
 finding on catalog/fold-seal capacity-reservation correctness is adjacent to this GC-observability gap
 — folded in as a related note, not a separate item.)
 
+### `[ca-event-log-loses-gc-manifest-deletes]` GC deleted 517 manifests and the CA event log recorded one {#ca-event-log-loses-manifest-deletes}
+
+**Found while auditing S10's leftover-manifest finding in `cas_log` (2026-08-31).** This is why that
+audit could not be done.
+
+In the full-scale S10 run, `ch1`'s `gc_log` sums to exactly **517** `manifests_deleted` across its
+rounds — round 6 alone deletes 133 — while `ch1`'s `cas_log` holds exactly **one**
+`manifest_delete` event. `ch2` deleted none and logged none, so the whole discrepancy sits on one
+node.
+
+It is not a semantics mismatch between the two numbers. `CasGc.cpp` PHASE 15/18 emits
+`CasEventType::ManifestDelete` **unconditionally, once per attempt**, inside the `mf_cleanup_now`
+loop, and increments `report.manifests_deleted` only when the outcome classifies as `Deleted`. So
+attempts are greater than or equal to deletions, and the event count must be **at least** 517.
+It is 1.
+
+One event did land — round 1, for a namespace owned by the other server root — so the emitter is
+wired and reachable. That argues for events being dropped or lost rather than never produced.
+Candidates not yet distinguished: a bounded queue in the event sink discarding under burst (round 6's
+133 deletions in one phase is exactly a burst), a per-call `EventEmitter{*store}` binding to a sink
+that is not the disk's configured log on most calls, or rows buffered in `ca_event_log` and lost when
+the scenario tears the cluster down.
+
+**Consequence for anything that reads `cas_log`:** manifest reclaim is effectively invisible there,
+so `cas_log` cannot support any claim about whether a manifest was deleted, retried or skipped. The
+S10 residual finding (`BACKLOG/performance.md`{#s10-manifest-residual}) must be re-derived from
+`gc_log` and `fsck` until this is fixed.
+
+**Update, architecture changed underneath it.** The manifest-delete phase was later rewritten to batch
+write-once deletes (`CasGc.cpp:1105-1141`, via `removeChunkWriteOnceOrOneByOne`) and now emits exactly
+one `ManifestDelete` event per entry in the same loop that increments `report.manifests_deleted`
+(`:1131-1141`) — structurally this removes the described "unconditional per-attempt emit, incremented
+only on `Deleted`" defect. No commit or test asserts event-count == `manifests_deleted` parity though.
+Recommend one soak rerun comparing `cas_log` `manifest_delete` counts against `gc_log.manifests_deleted`
+before calling this DONE.
+
+**First step (if rerun is not yet done):** count events against `attempted` rather than against
+`manifests_deleted` — the phase already records `attempted` as a metric — and check whether
+`system.ca_event_log` shows drops of its own before looking for a bug in the emitter.
+
 ### Terminal counters are undocumented and logged below their own severity (opus review M3) {#terminal-counters-undocumented-and-warned}
 
 Both halves reproduce verbatim at HEAD: none of the seven terminal counters appears anywhere in
@@ -453,6 +493,16 @@ indefinitely — bounded in practice only by a process restart, since `prefixEli
 WARNING (now at `Pool/CasMountRuntime.cpp:1144`, was 529-530) still blames "an unresolved ref-log PUT"
 even when the real cause is an undrained cleanup duty — misleading at exactly the moment an operator
 reads it. P2.
+
+### `deleteFilesFromS3`'s generic per-key error classification still loses the error class {#delete-files-from-s3-generic-error-classification}
+
+**Found 2026-09-08, while fixing the CAS batch delete.** `src/IO/S3/deleteFileFromS3.cpp` classifies
+each per-key error of a `DeleteObjects` reply with `S3ErrorMapper::GetErrorForName` alone, which knows
+only S3-specific names (`NoSuchKey`, `NoSuchBucket`, ...); a service-wide name such as `AccessDenied`
+comes back `UNKNOWN`. Message and code text stay right, only the `S3Errors` enum callers may match on
+is wrong. The CAS path got a two-step lookup (S3 mapper, then `Aws::Client::CoreErrorsMapper`, the same
+order `S3ErrorMarshaller::Marshall` uses) in `13bf6a92df0`; the generic path is shared upstream code,
+out of the CAS PR's scope → separate small fix, upstream-worthy.
 
 ## SQL commands and CLI tools {#sql-commands-and-cli-tools}
 
@@ -843,6 +893,42 @@ healthy open — and fsck's unaccounted pipeline classifies only keys under the 
 keys are neither reported nor reclaimed. Owed (cheap): have `Pool::open` best-effort delete stale
 `_probe/*` entries older than a threshold, or have fsck count them under a `probe_debris` line so the
 class is at least visible. Not urgent — the bytes are negligible and cannot mask real data.
+
+## Issue #2233 adjudication residue: soak-harness observability + Poco shared-pool risk (2026-08-20) {#issue-2233-followups}
+
+Adjudication of https://github.com/Altinity/ClickHouse/issues/2233 ("replica HTTP dies on green-path soak
+after relink NETWORK_ERROR storm"): the refusal storm is the known, designed
+`[relink-confirm-busy-lane]` behavior (all four remediations there still open — the per-ref rule-3
+refinement is the availability fix); the claimed causality "storm -> HTTP death" is contradicted by our
+own artifacts (a 90-minute phase-3 soak absorbed 112,598 refusals — peak 9,219/min — and ended
+`PHASE3 OK` with both replicas alive; the reporter saw ~278 total), and no fd/socket/thread leak exists
+on the abandoned-relink path (drain-then-throw + `SCOPE_EXIT` verified). Prime suspects for the
+reporter's observation: VM-level OOM (28g `mem_limit` x2 on a 16 GiB Docker Desktop VM; their upstream-
+compose symptom was "Connection refused after the peer exits") and the Poco shared-`server_pool`
+silent-refusal upstream bug (below). Items:
+
+- (1) **ca-soak compose: `ch2` has NO healthcheck** (`docker-compose.yml` — only `ch1` has the HTTP
+  `/ping` probe, added for capability-probe serialization). "Container healthy while HTTP dead" on ch2
+  is therefore vacuous. Add the same healthcheck to ch2. Trivial.
+- (2) **soak driver: `TRANSPORT FAILURE` is an `else`-branch catch-all** (`soak/run.py:2020-2026`) that
+  names a subsystem it never diagnosed — the same triage-misdirection failure mode #2219 complains
+  about, one layer up. Phase 1 additionally does exactly one attempt (`transport_resilient=False`) and
+  checkpoints do not gate on HTTP health (phase-2-only wait), so any transient `OSError` becomes the
+  issue's exact headline. Split the label (name the errno/op) and consider a phase-1 HTTP-health gate
+  at checkpoints. Small.
+- (3) **Poco shared-`server_pool` silent connection refusal — assess exposure** (upstream bug, comment
+  in `base/poco/Net/src/TCPServerDispatcher.cpp:154-180`): one `Poco::ThreadPool` capped at
+  `max_connections` is shared by 8123/HTTPS/native/9009; `_currentThreads` is per-dispatcher, so
+  saturation by long-lived interserver byte fetches can make the 8123 dispatcher drop accepted sockets
+  with NO ClickHouse-level error (client sees RST; at most a Poco `Warning`). Relink-storm second-order
+  effect: refusals suppress zero-byte relinks and FORCE long byte fetches, i.e. the storm converts
+  cheap transfers into thread-holding ones. Candidate observability first: expose refused-connection
+  counts / alarm on pool saturation before considering upstream surgery (upstream file = consult-first).
+- (4) **Confirm-path observability gaps** (feeds `[relink-confirm-busy-lane]` items (b)/(c)): no
+  ProfileEvents pair for proven/refused confirms; refusal reason (which rule) logged only at Debug on
+  both sides; the receiver collapses refusal vs transport failure vs timeout into one message — the
+  reporter's logs could not distinguish them even in principle. This adjudication would have taken
+  minutes with (b)+(c) implemented.
 
 ## Later / design questions {#later-design-questions}
 
