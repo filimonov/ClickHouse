@@ -36,8 +36,8 @@ as an open product question, not a decision: its only throw site died with the l
 the engine now settles an ungrammatical response by resolve read. [What earlier revisions got
 wrong](#what-earlier-revisions-got-wrong) keeps the record through revision 12; what remains for the
 plan is checklist, not contract. This document supersedes
-`2026-09-02-cas-retry-coverage-by-construction.md` and
-`2026-09-02-cas-empty-conditional-token-guard-design.md`, and revises the prerequisites of
+`docs/superpowers/cas/2026-09-02-retry-coverage-by-construction.md` and
+`docs/superpowers/cas/history/2026-09-02-cas-empty-conditional-token-guard-design.md`, and revises the prerequisites of
 `2026-09-01-cas-self-authored-mount-reclaim-design.md`.
 
 ## Problem {#problem}
@@ -854,7 +854,7 @@ code no longer marks it, is an open product question this design does not settle
 **No operation issues a request it does not need**: `read`, `stream` and the Native `probeSentinel`
 issue no `HEAD`; `head` issues one; `readModifyWriteOnPresence` issues no `GET`. Reading an object's
 metadata is one `GET` at the caller level: `MountLeaseRenewer::claim` goes from two and three requests
-to two and two; the manifest reader's own change (`2026-09-02-cas-manifest-cache-by-id-design.md`)
+to two and two; the manifest reader's own change (`2026-09-02-cas-manifest-cache-by-id-design.md`, deleted in `05b2a33ff32`; landed, see `14f423aea98`)
 landed first and independently.
 
 **Control plane and data plane are two regimes, and the line is the nature of the request.**
