@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:41'
+updated_date: '2026-09-26 07:54'
 labels:
   - 'area:backend'
   - 'area:upstream'
@@ -15,7 +16,8 @@ labels:
   - 'confidence:plausible'
   - 'origin:issue'
 milestone: m-5
-dependencies: []
+dependencies:
+  - CAS-74
 references:
   - src/IO/S3/PocoHTTPClient.cpp
   - >-

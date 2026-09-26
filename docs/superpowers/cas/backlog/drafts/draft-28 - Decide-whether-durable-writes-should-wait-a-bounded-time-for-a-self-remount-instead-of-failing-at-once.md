@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:41'
+updated_date: '2026-09-26 07:54'
 labels:
   - 'area:mounts'
   - 'area:write-path'
@@ -15,7 +16,8 @@ labels:
   - 'needs:decision'
   - 'needs:measurement'
 milestone: m-8
-dependencies: []
+dependencies:
+  - CAS-150
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.cpp
