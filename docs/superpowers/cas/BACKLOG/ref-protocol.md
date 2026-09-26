@@ -316,3 +316,28 @@ Measured frequencies from the same run for the recorded items: PUT-timeout Error
 (`{#ref-catalog-cas-starvation}`) 1/11137. Class B (404 on stderr) = 0 after 6830b73af27.
 
 Related: `[cas-txn-commit-inside-noexcept-aftercommit]`.
+
+### `[pool-meta-algos-used-append-only]` `PoolMeta.algos_used` only ever grows, no removal path {#pool-meta-algos-used-append-only}
+
+LOW-PRI. `PoolMeta.algos_used` only ever grows (CAS-union on new-algo admission,
+`Pool/CasPoolMeta.cpp:77-99`), no removal path. Bounded in practice by `BlobHashAlgo`'s enum
+cardinality, so likely not worth acting on; recorded so a future algo-proliferation doesn't reopen the
+question unexamined.
+
+Source: `docs/superpowers/cas/random/todo.md` item 14 (session TODO, Russian, file deleted by the u22
+consolidation pass). Placement is a best-fit judgment call by the applier — `PoolMeta` is a
+ref-protocol control object; the source proposal did not state a target file.
+
+### `[entity-tag-grammar-compat-watch]` A compatibility review against entity-tag grammar was flagged but never filed {#entity-tag-grammar-compat-watch}
+
+WATCH. 2026-09-02 session notes flagged "a compatibility review against entity-tag grammar" as
+found-but-unfiled, with no further detail recorded. Re-derive scope before acting: likely concerns
+whether CAS's exact-token/`ETag` comparisons assume RFC 7232 entity-tag quoting/weak-vs-strong syntax
+uniformly across S3/GCS-HMAC/GCS-OAuth backends. Needs the original session's context
+(docs-restructure.md/rebuild-branch.md session ids, both deleted, point at `claude --resume
+e010c5f5-eaec-4c00-b787-277854921eb6` / `06c1752d-9324-4150-b975-5774418363c8` if those sessions are
+still resumable) or a fresh audit.
+
+Source: `docs/superpowers/cas/random/todo.md` item 14 (session TODO, Russian, file deleted by the u22
+consolidation pass). Placement is a best-fit judgment call by the applier — token/ETag comparison
+grammar; the source proposal did not state a target file.
