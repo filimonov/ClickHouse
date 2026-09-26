@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 07:07'
+updated_date: '2026-09-26 08:02'
 labels:
   - 'area:upstream'
   - 'area:tooling'
@@ -17,6 +17,7 @@ labels:
   - 'origin:review'
 milestone: m-5
 dependencies:
+  - CAS-232
   - CAS-59
 references:
   - programs/disks/DisksApp.cpp
@@ -55,3 +56,9 @@ Provenance: BACKLOG/operability-and-introspection.md#disks-exit-code-upstream; f
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Belongs to the Group G upstream carve-out parent CAS-232 (dependency link set; the parent was created after this task).
+<!-- SECTION:NOTES:END -->
