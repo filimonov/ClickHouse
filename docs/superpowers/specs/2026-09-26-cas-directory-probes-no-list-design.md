@@ -1,5 +1,5 @@
 ---
-description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are held per resident ref-table runtime with write-through instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.5 folds in codex review rounds 1 to 4.'
+description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are held per resident ref-table runtime with write-through instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.6 folds in codex review rounds 1 to 5.'
 sidebar_label: 'CAS directory probes without LIST'
 sidebar_position: 12
 slug: /superpowers/specs/cas-directory-probes-no-list-design
@@ -7,18 +7,20 @@ title: 'CAS directory probes without an S3 LIST'
 doc_type: 'design'
 ---
 
-# CAS directory probes without an S3 LIST — rev.5 (2026-09-26) {#cas-directory-probes-no-list}
+# CAS directory probes without an S3 LIST — rev.6 (2026-09-26) {#cas-directory-probes-no-list}
 
 Mini spec for backlog tasks CAS-95.1 and CAS-95.2 (parent CAS-95, issue
 https://github.com/Altinity/ClickHouse/issues/2439). CAS-95.3 (the `detached` probe's catalog GETs) is
 out of scope. Implementation branch: new branch off `altinity/antalya-26.6`; this spec lives on
-`cas-gc-rebuild`. Rev.2 to rev.5 address codex review rounds 1 to 4
-(`docs/superpowers/reports/2026-09-26-cas-directory-probes-no-list-codex-reviews/review_r{1,2,3,4}.md`).
+`cas-gc-rebuild`. Rev.2 to rev.6 address codex review rounds 1 to 5
+(`docs/superpowers/reports/2026-09-26-cas-directory-probes-no-list-codex-reviews/review_r{1,2,3,4,5}.md`).
 The serialization mechanism changed twice: a version counter (rev.2) missed two interleavings; a
 per-runtime mutex (rev.3, rev.4) needed a post-settle rule and a second ledger operation to survive a
 remount. Rev.5 takes round 4's suggestion, a fixed bank of striped mutexes in the ledger keyed by the
 life, which outlives every runtime and needs no such rule. Rev.5 also counts the held names in the
-ref-table budget instead of capping them per table.
+ref-table budget instead of capping them per table. Round 5 accepted the mechanism (no further
+stale-set schedule or lock cycle found); rev.6 folds in its implementation-level findings: admission
+re-checked inside the stripe, reset on a failed cache update, deterministic test schedules.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
 line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`.
@@ -186,21 +188,27 @@ with any of them.
 
 **The ledger API.** Two methods, with `Pool` as their only caller:
 
-- `listNamespaceFilesHeld(life, fence_generation, list_fn)`: under the stripe, look up the runtime
-  for `life.ns`; when it exists, its `life` equals the argument, its `admitted_fence_generation`
-  equals `fence_generation` and its set is populated, return a sorted copy. Otherwise call `list_fn`
-  (today's LIST) and, when such a runtime exists, install the result and update
+- `listNamespaceFilesHeld(life, op, list_fn)`: under the stripe, look up the runtime for `life.ns`;
+  when it exists, its `life` equals the argument, its `admitted_fence_generation` equals
+  `op.generation()`, its set is populated and `op.admitted()` is still true at that point (the fence
+  can drop while the caller waited for the stripe, and `admitted` is the dynamic verdict,
+  `Backend/CasRequests.h:258`), return a sorted copy. Otherwise call `list_fn` (today's LIST) and,
+  after it returns, look the runtime up again (a fresh lookup, exact `NamespaceLifeId` equality, the
+  `shared_ptr` pinned for the update); when it exists, install the result and update
   `namespace_file_names_bytes`. A LIST failure propagates and installs nothing.
 - `noteNamespaceFileWrite(life, write_fn, on_success)`: under the stripe, run `write_fn`; then look
   up the current runtime for the life (any generation, since this is the runtime whose set must not
   go stale). On success apply `on_success` to a populated set and update the bytes. If `write_fn`
   throws, reset that runtime's set (an ambiguous PUT or DELETE may have landed) before rethrowing.
+  If applying `on_success` itself throws (an allocation inside `std::set::insert` under a memory
+  limit), the object is durable and the set would be stale, so the set and the byte count are reset
+  before that exception propagates too.
   Without a current runtime nothing is updated: a runtime created later starts unpopulated and its
   LIST, which needs the stripe, sees the settled state.
 
 **Read path.** `Pool::listNamespaceFiles(life)` (`Pool/CasPool.cpp:1218`): `CasOperation op =
 mount_requests.admit()`; if `op.admitted()`, return
-`ref_ledger.listNamespaceFilesHeld(life, op.generation(), [&] { return plain_objects.listNamespaceFiles(life); })`;
+`ref_ledger.listNamespaceFilesHeld(life, op, [&] { return plain_objects.listNamespaceFiles(life); })`;
 otherwise call `plain_objects.listNamespaceFiles(life)` directly, which admits its own operation and
 refuses as today. The admission check at the disk layer (`:1626`, `:1804`) is not enough on its own
 because the fence can drop between it and the read; a hit is served only under an admission taken
@@ -244,8 +252,8 @@ warm-node guarantee: the set stays as long as the runtime stays resident.
 write of the same table (or of a table sharing its stripe), and namespace-file writes of one table
 wait for each other. The stripe is the general serialization; callers only happen to serialize some
 of it (`MergeTreeDeduplicationLog` holds its `state_mutex` across finalize and rotation, while a
-delayed write buffer can finalize on another thread). A wait is bounded by one request's retry
-policy.
+delayed write buffer can finalize on another thread). Each holder's request is bounded by its retry
+policy; a waiter may queue behind several colliding holders, and `std::mutex` gives no fairness.
 
 **Alternatives not taken.**
 
@@ -322,17 +330,20 @@ existing cases use):
 10. Eviction: with `ref_table_cache_bytes` set so the runtime is evicted, the next call lists again.
 11. Drop and same-name rebirth: the reborn life lists again and does not see the old names.
 12. Write without a runtime: evict the runtime, start a PUT that blocks before the base `write`, touch
-    the namespace so a new runtime exists, and call `listNamespaceFiles` from another thread: it
-    blocks on the stripe; release the PUT; the listing then returns a set containing the name and a
-    second call issues no LIST.
+    the namespace so a new runtime exists, and call `listNamespaceFiles` from another thread; wait
+    until the ledger's test-only stripe waiter count for the life reads 1 (a counter incremented
+    before the stripe lock is attempted and decremented after it is taken, the seam that makes the
+    schedule deterministic); release the PUT; the listing then returns a set containing the name and
+    a second call issues no LIST.
 13. Write across remount: a PUT blocks before the base `write`; fence the mount out durably and
     `tryRemountOnce`, so runtime B replaces A (`tripMountLost` alone does not create B);
-    `listNamespaceFiles` from another thread blocks on the stripe; release the PUT; whether it
-    settles as success or refused, the listing afterwards reflects the true state and the name is
-    present if it landed.
-14. Budget: with `ref_table_cache_bytes` just above one runtime's ref weight, installing a set on a
-    second runtime raises the total over the budget and evicts the idle first runtime
-    (`CASRefTableEvictions` increments); the installed runtime is kept.
+    `listNamespaceFiles` from another thread blocks on the stripe (same waiter-count seam as test
+    12); release the PUT; whether it settles as success or refused, the listing afterwards reflects
+    the true state and the name is present if it landed.
+14. Budget: read both runtimes' weights through a test-only weight accessor on the ledger, set
+    `ref_table_cache_bytes` to their sum plus a margin smaller than the set about to be installed,
+    assert both are resident, install the set on the second runtime; the idle first runtime is
+    evicted (`CASRefTableEvictions` increments) and the installed one is kept.
 15. Destructive consumers on a warmed set: `removeRecursive` of a table subdirectory
     (`ContentAddressedTransaction.cpp:1164`) removes every file it would have removed with a fresh
     LIST, and a table rename (`:1295`) copies every file, both without a LIST.
@@ -358,5 +369,7 @@ No `LOGICAL_ERROR` is introduced by this change. The ASan lane runs for the touc
 
 One paragraph in `docs/en/antalya/cas/architecture/read-path.md` stating that part-level directory
 probes are answered from the part manifest and that a table's file names are listed once per resident
-ref-table runtime on a node and then kept in memory with write-through. No on-S3 format change, so
-the CAS format documents and `NativeFormat.md` are untouched.
+ref-table runtime on a node and then kept in memory with write-through. The `ref_table_cache_bytes`
+contract comment in `Pool/CasPool.h:311-321` and its user-facing description gain the namespace-name
+bytes as a third component of the weight. No on-S3 format change, so the CAS format documents and
+`NativeFormat.md` are untouched.
