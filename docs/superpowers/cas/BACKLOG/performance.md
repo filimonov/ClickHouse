@@ -235,8 +235,9 @@ backoff, same shape the S3 client already uses. (2) the single-attempt client cl
 shared-slowdown state with the parent. Neither is a correctness issue (bounded,
 `Unresolved`-not-`Committed`). Confirmed unfixed on antalya-26.6. Adjacent: audit
 [F26](/superpowers/reports/otel-demo-cas-s3-budget-audit#f26) (GC LIST bursts correlate with throttling).
-Related, already tracked: `BACKLOG.md`'s `{#issue-2244-lease-retry-asymmetry}` (the lease/remount ops have
-the OPPOSITE problem — no retries at all) and `[timeout-retry RFC residuals]` in `BACKLOG/ref-protocol.md`.
+Related, already tracked: issue #2244 (closed 2026-09-14, `7f932d31352`/`37c9bd4356b`; the lease/remount
+ops had the OPPOSITE problem — no retries at all — now fixed, no topic-file anchor) and
+`[timeout-retry RFC residuals]` in `BACKLOG/ref-protocol.md`.
 
 Details: docs/superpowers/cas/2031-triage.md#cas-119
 
@@ -553,6 +554,205 @@ an unknown extension takes the buffered path. Cross-referenced by `BACKLOG/forma
 `umbrella-roadmap.md` §3.
 
 Details: docs/superpowers/cas/2031-triage.md#cas-014
+
+## Full-scale scenario findings (ca-soak) {#full-scale-scenario-findings}
+
+### S23: idle-pool RSS growth of 500 MB is still not separated from boot warm-up or telemetry churn {#s23-idle-rss-growth}
+
+(Alias: `s23-idle-baseline-measures-telemetry`.)
+
+**Found by rerunning S23 at `--scale full` (2026-08-31), which FAILED where `dev` and `ci` were
+inconclusive.** The `dev` window is 4 minutes at 5 s per minute; `full` is 15 real minutes, and that
+is what made the verdict discriminate.
+
+`memory flat over idle window` failed with `idle_rss_growth` = **500,146,176 bytes**. Per node,
+resident went 677 MB to 1,178 MB on `ch1` and 641 MB to 1,087 MB on `ch2`. It is not only allocator
+noise: ClickHouse's own `mem_tracking` roughly doubled too, 337 MB to 666 MB.
+
+What makes it worth a look is what the pool held while this happened: **nothing**. `pool_shape` is
+zero across every class — no blobs, no manifests, no refs, no roots, no files — `leftover_ca_tables`
+is empty, `max_s3_ops_per_round` is 0, and GC deleted nothing across 11 successful rounds.
+
+**Not yet established as a leak, and the reason is the window.** Fifteen minutes cannot separate a
+server settling into its steady state — thread pools, caches and arenas materializing after boot —
+from growth that does not stop. Peak resident (1,158 MB) sits close to final (1,181 MB), which is
+weak evidence for a plateau.
+
+**There is no `trace_log` evidence for this, and three separate things must change before a rerun
+can produce any.** Asked whether the trace told us where the 500 MB went, the answer is no:
+
+1. **The artifact dump does not collect it.** `predown_dump.sh` loops `for tt in CPU Real` — the
+   `Memory` trace type is never queried, so no allocation stacks reach the run directory.
+2. **There would be nothing to collect.** `total_memory_profiler_step` — the server-level knob that
+   samples background and idle allocations — defaults to **0**, meaning off, and `ca-soak`'s
+   `profiling.xml` sets only the two query profilers. The per-query `memory_profiler_step` (4 MiB)
+   cannot fire during an idle window because no query is running. This is why the earlier one-hour
+   chaos soak did have ~25k `Memory` samples while an idle run would have none: those came from
+   queries.
+3. **What was collected is not time-scoped — but the capability exists and is simply unused.**
+   `predown_dump.sh` already accepts `FROM_TS`/`TO_TS` and folds them into a `${WINDOW}` clause on
+   every trace query; the scenario runner just never passes them. So S23's `Real` aggregate spans the
+   whole server lifetime, and although it is full of CAS write frames — `commit` 380 samples,
+   `publishStaging` 378, `publishBlob` 365, `fanOutBlobUploads` 368, and
+   `CityHash128BlobHashingWriteBuffer::nextImpl` 172 — those most plausibly belong to the setup phase
+   and cannot be attributed to the idle minutes either way. The pool was empty by the end. Fixing
+   this is a matter of the card passing the window it already knows, not of adding a feature.
+
+**Items 1 and 2 are now fixed and verified (2026-08-31).** `predown_dump.sh` dumps `Memory` alongside
+`CPU` and `Real`, and `configs/memory.xml` sets `total_memory_profiler_step` to 4 MiB. The setting
+had to go in `memory.xml` rather than `profiling.xml`, because the latter is mounted into `users.d`
+where a server setting is ignored. Verified on a live cluster: the setting reports `changed = 1`, a
+write workload produced **1,064 background** `Memory` samples where the count would previously have
+been zero, and the dump wrote 1.27 MB of `Memory` stacks with no error output.
+
+**Experiment that decides it,** with those three fixed first: set `total_memory_profiler_step` to a
+few MiB on the server, have the dump query the `Memory` trace type, and scope the aggregate to the
+idle window by `event_time`. Then run one idle scenario with a 60-plus-minute window, sampling RSS
+and `mem_tracking` each minute, and read the shape of the curve rather than its endpoints. A plateau
+means the verdict's threshold is wrong for a freshly booted server; continued linear growth on an
+empty pool means a leak, and the `Memory` stacks will say whose. Do not file a leak against the
+product on the 15-minute number alone.
+
+**Second probe (measured 2026-08-31, using the `Memory` trace collection enabled the same day).**
+Fifteen idle minutes on an empty pool, all tables dropped, the trace aggregate scoped to the window
+itself. RSS did NOT accumulate this time: +19 MB drift inside an oscillation of roughly plus or minus
+80 MB (1,033 to 1,193 MB). No CAS frame appears in the background allocation top at all. What does
+appear is an INSERT — `MergeTreeSink::consume` into `MergeTreeDataWriter::writeTempPart`, 1,705
+samples — and `system.part_log` names the destinations: about 1,055 inserts across eight system log
+tables in fifteen minutes, `metric_log` alone accounting for 43.98 MiB, `trace_log` for 88,215 rows.
+An idle server is busy writing telemetry about itself, and part of that is self-inflicted: the 10 ms
+query profiler in `configs/profiling.xml` plus the memory sampling produce the very `trace_log` rows
+whose flush then allocates.
+
+**This reframes S23's verdict rather than settling it.** A verdict named "memory flat over idle
+window" is, at this profiling configuration, mostly measuring the cost of observing the server —
+roughly 176 MB/hour of system-log data before any CAS work exists. Either the threshold accounts for
+that churn, or the scenario quiets the profiler for the duration of the idle measurement.
+
+**What the second probe does NOT establish, and the reason is that it is not S23's experiment.** It
+began at 1,102 MB, which is where the first probe *ended* (1,178 MB), because a write workload had run
+before the tables were dropped. The first probe began at 677 MB on a freshly booted server and climbed.
+So the two runs converge on the same plateau by different routes, and the plateau is stable — but that
+the climb from 677 MB stops there is plausible, not shown. **Still needed: a FRESH BOOT idled 60+
+minutes, RSS sampled every minute, read as a curve.** Until then nothing here may be recorded as a leak,
+and nothing may be recorded as warm-up either.
+
+### A single unreachable manifest survives GC to fixpoint, three rounds running {#s10-manifest-residual}
+
+Found at `--scale full` (2026-08-31), same run as the (now-fixed) S10 patch-part premise bug; residual
+arises from the lightweight-delete workload, not patch content. `fsck_final`: `unreachable: 1, dangling:
+0` against `reachable: 163`, classified `leak` as `unreachable:_manifests: 1` — not `pipeline`, not
+`bookkeeping`. `reclaimable_drain_check` agrees it is reclaimable. `gc_fixpoint_history = [1, 1, 1]` —
+GC hit fixpoint three times without moving it.
+
+One object is small but the shape is not benign — a reclaimable, unreachable manifest that survives
+repeated fixpoints is by definition not being reclaimed. Also worth a glance in the same run:
+`graduation_drain_history` is a run of ones with a single **128** in it.
+
+Before calling it a product defect: identify the object and what still points at it, and re-derive
+whether the workload can legitimately leave it (a manifest published after the fold's coverage seal is
+bookkeeping, not a leak) — not yet done.
+
+### A 500-attempt retry budget converts RustFS's read-concurrency limit into an indefinite stall {#soak-retry-budget-livelock}
+
+**Observed live 2026-08-31 while verifying an S21 fix; the merge sat at progress 0.11 having read
+20.67 MiB of 1.10 GiB, and advanced 0 bytes in 40 seconds.**
+
+- RustFS says exactly what is wrong, 3,884 times in twelve minutes:
+  `SlowDown: disk read concurrency limit reached, please reduce your request rate`. It is a
+  **concurrency** ceiling, not a volume problem — the store answers a direct probe in 1.2 ms while
+  refusing the merge's reads.
+- The client does not pace itself: `s3_max_get_rps` and `s3_max_get_burst` are both **0**.
+- The retry budget is **500** (`s3_retry_attempts`), and the log shows `Attempt 19/501`.
+
+So a persistent 503 becomes neither success nor failure. Every thread keeps retrying, concurrency
+therefore never falls back under the ceiling, and the operation cannot finish or give up. 104 threads
+were parked in `RetryRequestSleep` at once.
+
+**The failure mode is already named in this repo, for a different trigger.** `configs/storage_conf.xml`
+carries a B187 comment describing "the 500x5s retry storm that wedges the merge finalize", caused by
+rustfs closing mid-body on a conditional PUT, and mitigates *that* path with
+`expect_continue_min_bytes = 65536`. The read path has no equivalent mitigation, so the same wedge
+returns through the concurrency limit. Two workarounds interacting: a retry budget raised to survive
+one rustfs defect turns a second rustfs behaviour into a livelock.
+
+**Fix, in the order the evidence supports it.** Set `s3_max_get_rps` so the client stays under the
+store's ceiling — this is precisely what the error message asks for, and it is a rig configuration
+gap, not a product defect. Then reconsider whether 500 attempts is right: a budget that large cannot
+distinguish "retry until the transient clears" from "wait forever", and a persistent, self-caused 503
+deserves to surface as an error long before attempt 500. Both are wider than S21 — every scenario
+doing concurrent reads at scale is exposed.
+
+**The ceiling IS configurable, and raising it fixes the stall.** `RUSTFS_OBJECT_MAX_CONCURRENT_DISK_READS`
+is the knob — found by extracting `RUSTFS_*` names from the `1.0.0-rc.3` binary, alongside
+`RUSTFS_OBJECT_DISK_PERMIT_WAIT_TIMEOUT`, `RUSTFS_OBJECT_DISK_DEGRADED_READ_CAP`,
+`RUSTFS_OBJECT_DISK_READ_TIMEOUT` and `RUSTFS_OBJECT_DISK_WRITE_ABSOLUTE_CAP`. The binary also carries
+the write-side twin of the message, `foreground write concurrency limit reached`.
+
+Measured, not assumed:
+
+| ceiling | outcome for the same 1.1 GiB seven-part merge |
+|---|---|
+| default | never completes: 20 MiB read, 0 bytes written across a 40 s window, 3,884 503s in 12 min |
+| **256** | **completes**: `system.part_log` shows `MergeParts` at 1,211.7 s with `error = 0` |
+
+`configs/rustfs.env` is set to 256 for that reason. A trial at 1024 was botched — rustfs was restarted
+mid-merge, destroying the experiment — so 1024 carries no evidence and is not used.
+
+**Two things this does not settle.** 503s still occur at 256 (579 in three minutes) while the host is
+completely idle: load 0.82, iowait 0%, on NVMe. So the ceiling is reached for reasons other than
+physical disk saturation, and what those are is unknown. And the client still does not pace itself at
+all, so every refusal becomes a long wait rather than an error — `s3_max_get_rps` remains the other
+half of the fix.
+
+**A hypothesis raised and then withdrawn, recorded so nobody re-runs it:** a permit leak in rustfs, on
+the grounds that progress came in a burst after each restart and then appeared to stop. The merge's
+completion refutes it. What actually happened is that the merge was slow and *uneven*, and a single
+90-second window that fell in a pause was sampled, concluding throughput was zero. Read a curve, not
+one interval.
+
+### RSS growth during a large upload is a fraction of the blob, not a constant {#s01-rss-scales}
+
+**Measured 2026-09-01 across two scales of S01.** At `ci` (512 MiB blob) RSS growth during the upload
+was **exactly 0**. At `full` (8 GiB blob) it was **2.228 GiB — 28% of the blob**. Growth tracks the
+blob rather than staying flat, so it is not query-pipeline noise.
+
+The verdict passes either way, because its threshold is "growth < blob size" — which would admit 99%
+just as happily. It catches full materialization and nothing short of it.
+
+**Where the memory actually goes, from `Memory` trace samples taken over the same run:** 42% in
+`SerializationString::deserializeBinaryBulkWithSizeStream` under `MergeTreeReaderWide::readData`, 6%
+in `ColumnString::shrinkToFit` under `MergeTreeSequentialSource::generate` inside `MergeTask` — that
+is the MERGE reading String columns. Only **7%** falls in the CAS write path (`publishBlob`,
+`PartWriteTxn`). So the card's headline verdict, which exists to prove the write path streams,
+is dominated by the read side of the merge that builds the part.
+
+**Two things to settle before tightening anything.** Whether the 28% is buffering by design or the
+same effect Altinity#2233 reports (RSS growing 0.98 GiB on a 0.50 GiB blob, i.e. ABOVE the blob) —
+measuring growth at three blob sizes answers it. And whether the verdict should measure the write path
+specifically rather than whole-server RSS, which is a different verdict and needs its own design.
+
+**Caveat on the trace evidence:** 139 samples, with 43% landing in generic thread-pool frames that were
+not decomposed. Enough to show where the bulk sits, not enough to apportion precisely.
+
+### 1,200 committed refs repointed outside a transaction during sparse-write GC {#s05-standalone-repoints}
+
+**Found 2026-09-01, S05 at `--scale full`** (10,000 tables, one insert each). Sixteen verdicts, zero
+anomalies — the card ran cleanly and caught product behaviour, not a harness fault.
+
+`CASRefRepoint == 0 on the non-transactional path` observed **1,200**. The card's own note: "unexpected
+standalone repoint of a committed ref during sparse-write GC — investigate which op took the
+`repointRef` path".
+
+It does NOT reproduce at `dev` or `ci`, so whatever takes that path needs either the object count or
+the sparse-write shape that only `full` produces.
+
+**First question to answer:** which operation calls `repointRef` outside a transaction. The count is
+suspiciously close to a per-table figure for a 10,000-table pool, so start by checking whether it
+scales with tables, with parts, or with GC rounds. Related: audit
+[F2](/superpowers/reports/otel-demo-cas-s3-budget-audit#f2) (`gc.md`'s `[PART-REMOVAL-REPOINT]`), where
+`delete_tmp_*` repoints were measured at ~22% of the writer PUT class — if the same call site is
+responsible, these are one finding, not two.
 
 ## Later / design questions {#later-design-questions}
 
