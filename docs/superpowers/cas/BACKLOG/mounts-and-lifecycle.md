@@ -381,7 +381,7 @@ Housekeeping folded in:
 first version of this entry said "a single unresolved heartbeat write costs the mount lease, with no
 retry" — which is exactly what
 [Issue #2244](https://github.com/Altinity/ClickHouse/issues/2244) diagnosed on 2026-08-20 and whose
-minimum fix landed **2026-08-24** (`docs/superpowers/specs/2026-08-23-cas-mount-renewal-retry-design.md`),
+minimum fix landed **2026-08-24** (`docs/superpowers/specs/2026-08-23-cas-mount-renewal-retry-design.md`, deleted in `e71aa78b8fe`; landed, see `7f932d31352`),
 with focused and full TLA+, Release/Debug, proxy-integration and 15-minute S39 gates. Filing it again
 as novel was a duplicate. Issue #2244 and its per-step-remount follow-up are both DONE, closed
 2026-09-14 (`7f932d31352`/`37c9bd4356b`), and carry no topic-file anchor.
