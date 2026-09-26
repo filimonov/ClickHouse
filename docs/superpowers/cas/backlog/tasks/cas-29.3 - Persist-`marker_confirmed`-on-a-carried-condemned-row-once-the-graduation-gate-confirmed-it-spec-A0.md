@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 07:39'
 labels:
   - 'area:gc'
   - 'complexity:trivial'
@@ -56,3 +57,9 @@ Provenance: spec A0 / audit F3; the restart case is stated in BACKLOG/gc.md#gc-r
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+u03-gc-c merged audit F3 here (no separate A0 task was created).
+<!-- SECTION:NOTES:END -->
