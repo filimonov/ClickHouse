@@ -1,5 +1,5 @@
 ---
-description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are held per resident ref-table runtime with write-through instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.4 folds in codex review rounds 1 to 3.'
+description: 'Design for CAS-95.1 and CAS-95.2: answer MergeTree directory probes on a CAS disk without an S3 LIST. A path inside a resolved part gets its own directory shape answered from the part-folder view, and the table-level namespace file names are held per resident ref-table runtime with write-through instead of being listed on every probe. Closes the restart LIST storm of issue #2439. Rev.5 folds in codex review rounds 1 to 4.'
 sidebar_label: 'CAS directory probes without LIST'
 sidebar_position: 12
 slug: /superpowers/specs/cas-directory-probes-no-list-design
@@ -7,17 +7,18 @@ title: 'CAS directory probes without an S3 LIST'
 doc_type: 'design'
 ---
 
-# CAS directory probes without an S3 LIST — rev.4 (2026-09-26) {#cas-directory-probes-no-list}
+# CAS directory probes without an S3 LIST — rev.5 (2026-09-26) {#cas-directory-probes-no-list}
 
 Mini spec for backlog tasks CAS-95.1 and CAS-95.2 (parent CAS-95, issue
 https://github.com/Altinity/ClickHouse/issues/2439). CAS-95.3 (the `detached` probe's catalog GETs) is
 out of scope. Implementation branch: new branch off `altinity/antalya-26.6`; this spec lives on
-`cas-gc-rebuild`. Rev.2 to rev.4 address codex review rounds 1 to 3
-(`docs/superpowers/reports/2026-09-26-cas-directory-probes-no-list-codex-reviews/review_r{1,2,3}.md`).
-Rev.3 replaced the version-counter protocol of rev.2 with one per-runtime mutex: round 2 found two
-more interleavings the counter missed, and a third patch on one mechanism is the signal to change the
-invariant instead. Rev.4 adds the post-settle rule that closes the remount window, a cap on the held
-set, and corrected fault-injection tests.
+`cas-gc-rebuild`. Rev.2 to rev.5 address codex review rounds 1 to 4
+(`docs/superpowers/reports/2026-09-26-cas-directory-probes-no-list-codex-reviews/review_r{1,2,3,4}.md`).
+The serialization mechanism changed twice: a version counter (rev.2) missed two interleavings; a
+per-runtime mutex (rev.3, rev.4) needed a post-settle rule and a second ledger operation to survive a
+remount. Rev.5 takes round 4's suggestion, a fixed bank of striped mutexes in the ledger keyed by the
+life, which outlives every runtime and needs no such rule. Rev.5 also counts the held names in the
+ref-table budget instead of capping them per table.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
 line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`.
@@ -151,81 +152,76 @@ the one switch every other shape uses.
 namespace life under one admitted fence generation and never rebound: a remount detaches every
 runtime (`quiesceRefTablesForRemount`, `Pool/CasRefLedger.cpp:1817-1865`), a drop ends it, a same-name
 rebirth is a different object with its own `runtime_id`, and the cache budget may evict an idle one
-(`enforceRefTableCacheBudget`, `:1736-1813`; a runtime some caller still holds a `shared_ptr` to is
-never evicted). Those are the lifetimes the cached names get, so the runtime gains two fields:
+(`enforceRefTableCacheBudget`, `:1736-1813`). Those are the lifetimes the cached names get, so the
+runtime gains two fields:
 
 ```cpp
-/// Serializes every namespace-file operation of THIS life on this node: the populating LIST, each
-/// PUT and each DELETE, and the cache hit. Separate from `state_mutex` so ref-table work never waits
-/// on namespace-file I/O. Held across the request on purpose: namespace-file writes of one table are
-/// rare (dedup-log rotation, `format_version.txt` at create, rename) and already serialized by their
-/// callers, and serializing them with the LIST is what makes the set exact without a version protocol.
-std::mutex namespace_files_mutex;
 /// Table-level file names of THIS life, as of one LIST plus this node's settled writes since, both
-/// applied under `namespace_files_mutex`. Empty optional: not yet listed, or forgotten after a write
-/// whose outcome is unknown. Guarded by `namespace_files_mutex`.
+/// applied under the life's namespace-file stripe (see `namespace_file_stripes`). Empty optional:
+/// not yet listed, or forgotten after a write whose outcome is unknown.
 std::optional<std::set<String>> namespace_file_names;
+/// Estimated bytes of `namespace_file_names` (sum of `name.size() + 64`), read by `weightOf` in
+/// `enforceRefTableCacheBudget` alongside the snapshot and log-tail bytes.
+std::atomic<uint64_t> namespace_file_names_bytes{0};
 ```
 
-The runtime lookup (`lookupRefTableRuntime`, `Pool/CasRefLedger.h:1036`) is private to the ledger, so
-the ledger exposes one method and `Pool` stays its only caller:
+**What serializes them.** The ledger gains a fixed bank of mutexes, `namespace_file_stripes`
+(64 `std::mutex`, indexed by a hash of `life.ns` and `life.incarnation`). Every namespace-file
+operation of a life on this node, the populating LIST, each PUT and each DELETE, and the cache hit,
+runs while holding the life's stripe: the runtime lookup, the request and the set update all happen
+inside it. The stripe outlives every runtime, so a runtime detached by remount or evicted by the
+budget while a write is in flight changes nothing: the successor's populating LIST needs the same
+stripe and therefore runs after the write settled and its effect was applied to whichever runtime is
+current at that moment. Two tables sharing a stripe serialize their namespace-file I/O with each
+other; with 64 stripes and rare writes that is a collision, not a design property. The stripe is
+held across the request on purpose: namespace-file writes of one table are rare (dedup-log rewrites,
+`format_version.txt` at create, rename) and serializing them with the LIST is what makes the set
+exact without any version protocol.
 
-- `lockNamespaceFiles(life, fence_generation)`: when the runtime for `life.ns` exists, its `life`
-  equals the argument and its `admitted_fence_generation` equals `fence_generation`, returns a guard
-  that owns a `shared_ptr` to that runtime and a `unique_lock` on its `namespace_files_mutex`, with
-  access to `namespace_file_names`; otherwise `nullopt`. Holding the `shared_ptr` across the operation
-  keeps the runtime non-evictable for its duration (`use_count() != 1`, `:1770`), so an operation
-  always finishes against the object it started on. It does not stop a remount from detaching that
-  object and creating a successor (`quiesceRefTablesForRemount` takes no `namespace_files_mutex`);
-  the post-settle rule below covers that. Lock order: the lookup takes and releases `ref_queue_mutex`
-  before the guard locks `namespace_files_mutex`; nothing under `namespace_files_mutex` takes
-  `state_mutex` or `ref_queue_mutex`, and `CasPlainObjects` has no path back into the ledger, so the
-  I/O held under it cannot deadlock with recovery, eviction or remount.
+Lock order: the stripe is taken first; the runtime lookup inside it takes and releases
+`ref_queue_mutex`; the set update takes `state_mutex` briefly. Nothing takes a stripe while holding
+`ref_queue_mutex` or `state_mutex`, recovery, eviction and remount never take a stripe, and
+`CasPlainObjects` has no path back into the ledger, so the I/O held under a stripe cannot deadlock
+with any of them.
 
-**Read path.** `Pool::listNamespaceFiles(life)` (`Pool/CasPool.cpp:1218`) becomes:
+**The ledger API.** Two methods, with `Pool` as their only caller:
 
-1. `CasOperation op = mount_requests.admit()`; `guard = ref_ledger.lockNamespaceFiles(life,
-   op.generation())`.
-2. Hit: `op.admitted()` and `guard` and the set is populated: return a sorted copy, no request. The
-   admission check at the disk layer (`:1626`, `:1804`) is not enough on its own because the fence can
-   drop between it and the read; today's LIST would then be refused by the engine, and the hit is
-   refused the same way (it falls to step 3, whose LIST refuses).
-3. Miss: run today's LIST through `plain_objects.listNamespaceFiles(life)` while still holding the
-   guard; on success, when `guard` exists, install the names. A LIST failure propagates and installs
-   nothing. Without a guard (no runtime for this life, or another fence generation) the call lists
-   every time, which is today's behaviour for fixture lives and offline tools.
+- `listNamespaceFilesHeld(life, fence_generation, list_fn)`: under the stripe, look up the runtime
+  for `life.ns`; when it exists, its `life` equals the argument, its `admitted_fence_generation`
+  equals `fence_generation` and its set is populated, return a sorted copy. Otherwise call `list_fn`
+  (today's LIST) and, when such a runtime exists, install the result and update
+  `namespace_file_names_bytes`. A LIST failure propagates and installs nothing.
+- `noteNamespaceFileWrite(life, write_fn, on_success)`: under the stripe, run `write_fn`; then look
+  up the current runtime for the life (any generation, since this is the runtime whose set must not
+  go stale). On success apply `on_success` to a populated set and update the bytes. If `write_fn`
+  throws, reset that runtime's set (an ambiguous PUT or DELETE may have landed) before rethrowing.
+  Without a current runtime nothing is updated: a runtime created later starts unpopulated and its
+  LIST, which needs the stripe, sees the settled state.
 
-**Write path.** `Pool::putNamespaceFile` and `Pool::removeNamespaceFile` take the same guard before
-the request, run the `plain_objects` call while holding it, and on success insert or erase the name
-in a populated set. Because the LIST, every PUT and every DELETE of one life on this node run under
-one mutex, the set is updated in durable order: there is no interleaving to reason about, and no
-version counter. The guard's `CasOperation` is admission evidence only; `CasPlainObjects` admits its
-own operation for the request (`Pool/CasPlainObjects.cpp:18-23`, `:40-41`, `:58-65`) on the same
-`mount_requests` fence. The two generations can differ only if the fence moved between the two
-admissions, which is one of the cases the post-settle rule handles.
+**Read path.** `Pool::listNamespaceFiles(life)` (`Pool/CasPool.cpp:1218`): `CasOperation op =
+mount_requests.admit()`; if `op.admitted()`, return
+`ref_ledger.listNamespaceFilesHeld(life, op.generation(), [&] { return plain_objects.listNamespaceFiles(life); })`;
+otherwise call `plain_objects.listNamespaceFiles(life)` directly, which admits its own operation and
+refuses as today. The admission check at the disk layer (`:1626`, `:1804`) is not enough on its own
+because the fence can drop between it and the read; a hit is served only under an admission taken
+here, on the runtime's own generation. Lives without a runtime (test fixture lives, offline tools)
+list every time, which is today's behaviour. `CasPlainObjects` admits its own operation for the
+request (`Pool/CasPlainObjects.cpp:58-65`) on the same `mount_requests` fence; the operation admitted
+here is evidence for the hit only.
 
-**Failure rule.** A write that throws may have landed (an ambiguous PUT or DELETE), so the set is
-reset before the exception propagates and the next read lists again. Nothing is guessed.
+**Write path.** `Pool::putNamespaceFile` and `Pool::removeNamespaceFile` become
+`ref_ledger.noteNamespaceFileWrite(life, [&] { plain_objects.putNamespaceFile(life, name, bytes); },
+[&](std::set<String> & s) { s.insert(name); })` and the same with `erase`. Because the LIST, every
+PUT and every DELETE of one life on this node run under one stripe, the set is updated in durable
+order, and the update goes to the runtime that is current when the write settled.
 
-**Post-settle rule.** After a write settles (success or failure), the writer looks up the current
-runtime for the life again, without the guard. If that runtime is not the one the write updated (a
-different `runtime_id`, or no runtime was held at all), the writer locks the current runtime's
-`namespace_files_mutex` and resets its set. This one rule covers two windows: a delayed write buffer
-that captured only the life (`ContentAddressedTransaction.cpp:838-851`) and runs while no runtime
-exists, and a write that held runtime A across a remount that detached A and created B. In both, a
-LIST that B ran before the write landed installed a set without the object; the reset happens after
-that LIST because it held B's mutex until it installed, and a LIST that starts after the reset sees
-the object. A write admitted on the old generation that the engine refuses after landing throws, so
-it also resets A under the failure rule, and B under this rule.
-
-**Memory.** The set holds the names of one table's files (`format_version.txt`, the dedup-log
-segments, the table-level mutation files), which have no hard upper bound because namespace files
-are public `IDisk` state. It is not added to the ref-table byte budget, which measures snapshot and
-log-tail bytes (`weightOf`, `:1751`) and is enforced only after recovery (`:1671`). Instead the cache
-is optional: a LIST result whose estimated size (sum of `name.size() + 64` per name) exceeds
-`kNamespaceFileNamesMaxBytes = 1 MiB` is returned but not installed, and a write-through that would
-push a populated set over the cap resets it. Reads of such a table keep listing, which is today's
-cost, bounded per table.
+**Memory.** The names are part of the runtime's weight: `weightOf` (`:1751`) adds
+`namespace_file_names_bytes`, and `enforceRefTableCacheBudget(life.ns)` runs after an install and
+after a write-through that grew the set, outside the stripe. The existing policy then applies
+unchanged: idle runtimes are evicted least-recently-touched first, the runtime just touched is kept,
+and the floor is one table (`Pool/CasPool.h:315-321`). A table whose names alone exceed the budget
+behaves as a table whose ref state alone does today. No separate cap and no exception to the
+warm-node guarantee: the set stays as long as the runtime stays resident.
 
 **Why this is safe.**
 
@@ -233,9 +229,9 @@ cost, bounded per table.
   holder per generation, every mutator of a cataloged live life's `_files/` on this node is one of the
   two wrapped methods, and a hit is served only under an operation admitted on the runtime's own
   generation.
-- Exact set: the populating LIST and every write of the life on this node are totally ordered by
-  `namespace_files_mutex`, and each write's effect is applied under the same critical section that
-  performed it.
+- Exact set: the populating LIST and every write of the life on this node are totally ordered by the
+  stripe, each write's effect is applied under the same critical section that performed it, to the
+  runtime current at settle time, and a successor runtime cannot LIST before that.
 - Same trust in LIST as today: the cached set is the answer of one real LIST plus settled writes. A
   repeated LIST is not a stronger guarantee.
 - Lifetime by construction: the set dies with the runtime (remount, drop, rebirth, eviction). No
@@ -244,24 +240,31 @@ cost, bounded per table.
 - Fail-close: unknown write outcome forgets the set; LIST failure installs nothing; lost fence refuses
   the hit.
 
-**Cost of the mutex.** A `listDirectory` of a table directory waits for an in-flight namespace-file
-write of the same table, and namespace-file writes of one table wait for each other. The mutex is the
-general serialization; callers only happen to serialize some of it (`MergeTreeDeduplicationLog` holds
-its `state_mutex` across finalize and rotation, while a delayed write buffer can finalize on another
-thread). `clearOldTemporaryDirectories` waiting on one table's write is bounded by that one request's
-retry policy.
+**Cost of the stripe.** A `listDirectory` of a table directory waits for an in-flight namespace-file
+write of the same table (or of a table sharing its stripe), and namespace-file writes of one table
+wait for each other. The stripe is the general serialization; callers only happen to serialize some
+of it (`MergeTreeDeduplicationLog` holds its `state_mutex` across finalize and rotation, while a
+delayed write buffer can finalize on another thread). A wait is bounded by one request's retry
+policy.
 
-**Alternatives not taken.** A `std::map<RootNamespace, {incarnation, std::set<String>}>` inside
-`CasPlainObjects`, `Pool` or `ContentAddressedMetadataStorage`: each needs its own eviction on drop
-and its own clear on remount and fence loss; review round 1 confirmed none is smaller. A version
-counter bumped at write start and settle with an install check (rev.2): round 2 found that concurrent
-PUT and DELETE settling out of durable order and a runtime replaced between LIST and install both
-defeat it, and closing them needs a runtime token, in-flight counting and a forget-on-transition rule.
-One ledger-wide `namespace_files_mutex` instead of one per runtime (round 3): it removes the post-settle
-rule, but on a CAS disk every dedup-log append is a `putNamespaceFile` (the disk cannot append,
-`ContentAddressedTransaction.cpp:830-851`), so one mutex across S3 I/O would serialize the inserts of
-every deduplicating table in the pool behind each other's PUT latency and retries. Per-table
-concurrency is worth one rule.
+**Alternatives not taken.**
+
+- A `std::map<RootNamespace, {incarnation, std::set<String>}>` inside `CasPlainObjects`, `Pool` or
+  `ContentAddressedMetadataStorage` (round 1): each needs its own eviction on drop and its own clear
+  on remount and fence loss.
+- A version counter bumped at write start and settle with an install check (rev.2): concurrent PUT
+  and DELETE settling out of durable order and a runtime replaced between LIST and install both
+  defeat it (round 2).
+- A mutex inside each `RefTableRuntime` (rev.3, rev.4): it does not survive the remount that detaches
+  the runtime, so it needs a post-settle rule and a second, generation-free ledger lookup to reset the
+  successor (rounds 3 and 4). The stripe bank is that mutex moved to an object that outlives the
+  runtime.
+- One ledger-wide mutex (round 3): on a CAS disk every dedup-log append is a `putNamespaceFile` (the
+  disk cannot append, `ContentAddressedTransaction.cpp:830-851`), so one mutex across S3 I/O would
+  serialize the inserts of every deduplicating table in the pool behind each other's PUT latency and
+  retries. Round 4 agreed.
+- A per-table cap on the held set (rev.4): it silently exempted an oversized table from the warm-node
+  guarantee and did not bound the aggregate (round 4).
 
 ### 3.3 What stays as it is {#unchanged}
 
@@ -274,7 +277,8 @@ concurrency is worth one rule.
   literal counts: its life is a fixture life without a runtime.
 - The subdirectory removal (`ContentAddressedTransaction.cpp:1164`) and rename (`:1295`) keep calling
   `listNamespaceFiles`; they now read the held names when present, which is the same answer the
-  single-writer argument gives for a fresh LIST.
+  single-writer argument gives for a fresh LIST. Their own `removeNamespaceFile`/`putNamespaceFile`
+  calls take the stripe one at a time, after the listing call released it.
 
 ## 4. Tests {#tests}
 
@@ -301,30 +305,34 @@ existing cases use):
 
 4. Two `listNamespaceFiles` calls cost one LIST; a `putNamespaceFile` and a `removeNamespaceFile`
    between them are visible in the second answer without a LIST.
-5. LIST in flight, PUT from another thread: the PUT does not start until the LIST installed (mutex);
+5. LIST in flight, PUT from another thread: the PUT does not start until the LIST installed (stripe);
    after both returned, `listNamespaceFiles` returns a set containing the name, with no further LIST.
 6. PUT in flight (landed, not returned), LIST from another thread: the LIST waits; after both
    returned the set contains the name and no further LIST is issued.
 7. Concurrent PUT and DELETE of one name: the second waits for the first; the final set equals the
    final storage state in both orders.
-8. Ambiguous PUT and ambiguous DELETE: the backend lands the request and then fails every
-   attempt, and `FakeClock` advances past the policy deadline so the engine's settle-by-read cannot
-   conclude (`Backend/CasRequests.cpp:1039-1069`); the public call throws, and the next
-   `listNamespaceFiles` on the same generation issues a LIST and returns the true state.
+8. Ambiguous PUT and ambiguous DELETE: the backend lands the first attempt and then throws on every
+   later attempt, for the DELETE including attempts whose base result is `Gone`
+   (`removeCurrent` otherwise treats `Gone` as success, `Backend/CasRequests.cpp:545-654`), and
+   `FakeClock` advances past the policy deadline so the engine's settle-by-read cannot conclude
+   (`:1039-1069`); the public call throws, and the next `listNamespaceFiles` on the same generation
+   issues a LIST and returns the true state.
 9. Fence loss: with a populated set, trip the fence; `listNamespaceFiles` is refused as today (no
    cached answer served). After remount and a fresh runtime, the first call lists again.
 10. Eviction: with `ref_table_cache_bytes` set so the runtime is evicted, the next call lists again.
 11. Drop and same-name rebirth: the reborn life lists again and does not see the old names.
 12. Write without a runtime: evict the runtime, start a PUT that blocks before the base `write`, touch
-    the namespace so a new runtime exists and `listNamespaceFiles` installs a set without the name,
-    release the PUT; after it returns, the next `listNamespaceFiles` issues a LIST and contains the
-    name (post-settle rule).
-13. Write across remount: a PUT blocks before the base `write` while holding runtime A's guard; trip
-    the fence and remount, so B replaces A; `listNamespaceFiles` on B installs a set without the
-    name; release the PUT; whether it settles as success or refused, the next `listNamespaceFiles`
-    issues a LIST and contains the name if it landed.
-14. Cap: a LIST result over `kNamespaceFileNamesMaxBytes` is returned but a second call lists again;
-    a write-through that crosses the cap resets the set.
+    the namespace so a new runtime exists, and call `listNamespaceFiles` from another thread: it
+    blocks on the stripe; release the PUT; the listing then returns a set containing the name and a
+    second call issues no LIST.
+13. Write across remount: a PUT blocks before the base `write`; fence the mount out durably and
+    `tryRemountOnce`, so runtime B replaces A (`tripMountLost` alone does not create B);
+    `listNamespaceFiles` from another thread blocks on the stripe; release the PUT; whether it
+    settles as success or refused, the listing afterwards reflects the true state and the name is
+    present if it landed.
+14. Budget: with `ref_table_cache_bytes` just above one runtime's ref weight, installing a set on a
+    second runtime raises the total over the budget and evicts the idle first runtime
+    (`CASRefTableEvictions` increments); the installed runtime is kept.
 15. Destructive consumers on a warmed set: `removeRecursive` of a table subdirectory
     (`ContentAddressedTransaction.cpp:1164`) removes every file it would have removed with a fresh
     LIST, and a table rename (`:1295`) copies every file, both without a LIST.
