@@ -39,7 +39,7 @@ became the likeliest to lose again. Worse, every writer in one process raced eve
 the *same* process, though compare-and-swap is needed only against other servers. Measured on ten
 parallel stateless jobs: `DROP TABLE` p90 11.9 s, max 34.7 s; 113 `PreconditionFailed` in 80 s from
 53 threads; one loser making 35 attempts with gaps growing to the 5 s cap. Full numbers: the RCA
-doc above and `docs/superpowers/cas/BACKLOG.md` `{#ref-catalog-cas-starvation}`.
+doc above and `docs/superpowers/cas/BACKLOG/performance.md` `{#ref-catalog-cas-starvation}`.
 
 ## Overview {#overview}
 
