@@ -4,6 +4,7 @@ title: Make one replica merge and the others relink on a shared CAS pool
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:23'
+updated_date: '2026-09-26 08:14'
 labels:
   - 'area:replication'
   - 'complexity:medium'
@@ -12,7 +13,8 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:soak'
-dependencies: []
+dependencies:
+  - CAS-251
 references:
   - src/Storages/MergeTree/MergeFromLogEntryTask.cpp
   - src/Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.cpp
