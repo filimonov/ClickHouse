@@ -17,15 +17,15 @@ Status as of 2026-09-25; task ids (Backlog.md, `backlog task view <id>`) added 2
 ### Write path
 - **Publish a part with zero GETs** (now, decided) — today a publish pays 2 catalog GETs, 2 `_ckpt` GETs and 1 manifest re-read (125 ms of 389 ms). Namespaces are node-owned, so: drop the per-flush catalog read, cache the `_ckpt` etag and write optimistically, trust the committed manifest etag, seed the part-folder view from memory. A ref-lane flush goes from four round trips to two. Audit F20/F30/F31. Tasks: CAS-176.
 - **Remove a part in one transaction** (now) — every removal does a `delete_tmp` repoint: an extra manifest PUT, log append, checkpoint write, and two extra manifest GETs in GC. 191k/day on the test stand, a quarter of the ref-lane load. `PART-REMOVAL-REPOINT`, audit F2. Tasks: CAS-83.
-- **Parallel part removals** — lower `concurrent_part_removal_threshold_for_remote_disk` for CAS disks so removals overlap instead of serializing on S3. Tasks: none; CAS-83 treats the setting as a stopgap.
+- **Parallel part removals** — lower `concurrent_part_removal_threshold_for_remote_disk` for CAS disks so removals overlap instead of serializing on S3. Tasks: CAS-286.
 - **No LIST on directory probes** ([#2439](https://github.com/Altinity/ClickHouse/issues/2439), next) — `existsDirectory` on a part file and `listDirectory` on a table dir issue an S3 LIST; a restart does 77k LISTs and gets throttled. `PartFile` shape answered from the part-folder view, cached table-level file names, `system.detached_parts` without catalog admission. Tasks: CAS-95.
 - **Lazy checkpoint** (decide) — `_ckpt` is rewritten on every flush, 21% of all PUTs and half of the flush's critical path. Checkpoint every N flushes or T seconds bounds the recovery walk by N logs. Tasks: DRAFT-26, CAS-167.
 - **Shorter locks in MergeTree** — the whole S3 publish of an inserted part runs under the table's `DataPartsLock`; concurrent inserts into one table serialize on seconds of S3 I/O. `covering-part-publish-under-datapartslock`. Tasks: CAS-13, CAS-14.
-- **Ref-lane batching** — 3 mutations per flush in steady state, 34 in bursts; a small delay-and-combine window would cut PUTs and lane waits. Measure first. Tasks: none.
+- **Ref-lane batching** — 3 mutations per flush in steady state, 34 in bursts; a small delay-and-combine window would cut PUTs and lane waits. Measure first. Tasks: CAS-287.
 - **Connection churn** (verify) — one new TLS connection per ~98 requests, 109k per day. Find whether the cap is `http_keep_alive_max_requests` or S3's `Connection: close`. Audit F27. Tasks: CAS-74, CAS-283.
 - **Write buffers for tiny parts** — each stream allocates its buffer twice on a CAS disk (content plus spill sink) for parts whose median size is 10 KB. Adaptive sizing. Tasks: CAS-79.
 - **Catalog write hotspot** — `ref_catalog` is one pool-global object mutated on every CREATE/DROP; under table churn its conditional writes starve. Hot-key lane phase B. `ref-catalog-write-hotspot`, [#2343](https://github.com/Altinity/ClickHouse/issues/2343). Tasks: CAS-71, CAS-72.
-- **Manifest decode cache** — 128 MiB default is full on a 1,700-part node; part-folder views rebuild on every merge. Raise the default or size it from the part count. Tasks: none for the default size; CAS-176.4 and CAS-22 touch the part-folder views.
+- **Manifest decode cache** — 128 MiB default is full on a 1,700-part node; part-folder views rebuild on every merge. Raise the default or size it from the part count. Tasks: CAS-285.4 and CAS-22 touch the part-folder views.
 
 ### GC
 - **Rounds in minutes** ([#2429](https://github.com/Altinity/ClickHouse/issues/2429), now) — spec `docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md`, three stages: Tasks: CAS-29.
@@ -37,16 +37,16 @@ Status as of 2026-09-25; task ids (Backlog.md, `backlog task view <id>`) added 2
 - **Log-structured snapshot runs** (later) — the in-degree snapshot is rewritten O(universe) every round (12 MiB here, 125 MiB with a backlog); at 100M blobs it becomes the round's floor. Tasks: CAS-89, DRAFT-10.
 - **Multi-node GC** (later) — coordinator plus executors over the existing per-shard delta runs; the "rounds in minutes" work is designed not to block it. Tasks: CAS-90.
 - **Cheap remount when the lost lease was never taken** — `MOUNT-CLAIM-EPOCH-REGRESSION`. Tasks: CAS-178.
-- **Faster replica bootstrap** (maybe) — clone a chosen replica's refs wholesale instead of fetching part by part. Tasks: none.
+- **Faster replica bootstrap** (maybe) — clone a chosen replica's refs wholesale instead of fetching part by part. Tasks: CAS-288.
 
 ## 3. Observability and UX
 
-- **Grafana dashboard** — one board from `cas_gc_log`, `cas_log`, `metric_log`: lane wait and batching, GC stage flow (condemned/graduated/redeleted), LIST rate, memory saw-tooth, mount renewals. The audit's F25 lists the useful signals. Tasks: none.
+- **Grafana dashboard** — one board from `cas_gc_log`, `cas_log`, `metric_log`: lane wait and batching, GC stage flow (condemned/graduated/redeleted), LIST rate, memory saw-tooth, mount renewals. The audit's F25 lists the useful signals. Tasks: CAS-289 (CAS-289.1 board, CAS-289.2 alert rules).
 - **Alerts** — lease lost, renewal retries, GC round age, backlog growth, conditional-write unresolved rate, S3 5xx. Not on `S3ReadRequestsErrors` (it counts protocol 404s). Tasks: CAS-4.
 - **Fix misleading metrics** — `CASGCPendingReclaim` goes negative after a restart and `CASGCLastSuccessAgeSeconds` reads 0 when no round ever succeeded in this process; derive both from `gc/state`. The `_cas_cache` copies of GC metrics double every value. 99 of 184 counters never move; `CASServer*` is unreachable code. Tasks: CAS-1.1, CAS-1.3, CAS-2, CAS-2.1.
 - **One Info line per GC round** — round, duration, keys listed, deleted, carried, deadline hit. Today the log shows nothing of GC at the default level. Tasks: CAS-29.14.
-- **`cas_log` volume** — 8M rows per day, 10% of the stand's write bytes, on the CAS disk it audits. Demote `ref_resolve` and per-edge rows, collapse the three condemn rows into one. Tasks: none.
-- **Simplify the system tables** — fewer columns with clearer names in `cas_mounts`, `cas_gc_log`, `cas_log`; document each with an example query. Tasks: none.
+- **`cas_log` volume** — 8M rows per day, 10% of the stand's write bytes, on the CAS disk it audits. Demote `ref_resolve` and per-edge rows, collapse the three condemn rows into one. Tasks: CAS-290.
+- **Simplify the system tables** — fewer columns with clearer names in `cas_mounts`, `cas_gc_log`, `cas_log`; document each with an example query. Tasks: CAS-291.
 - **Docs for operators** — recommend a local storage policy for `system.*` logs when CAS is the default disk; sizing (decode cache, `cas_gc_concurrency`); what each warning means. Tasks: CAS-94, CAS-102.
 - **Log noise on conditional writes** — every expected 412 (dedup) or 409 (two replicas on one `_ckpt`) prints three lines: `AWSClient: Response status` (409 at Error), `WriteBufferFromS3: Nothing to abort`, `WriteBufferFromS3 was canceled`; ~3k lines per day, more than half of the server's log. Upstream patches: 409 on a conditional request leveled like 412 and both at Debug; the deliberate cancel pair at Debug. `single-attempt-client-status-error-log-site`. Tasks: CAS-168, CAS-175, CAS-76.
 - **Snapshot-refusal warning** — `refusing snapshot publication while the append lane is not Ready` is a benign race logged at Warning without a rate limit; make it Debug. Tasks: CAS-148.
@@ -54,12 +54,12 @@ Status as of 2026-09-25; task ids (Backlog.md, `backlog task view <id>`) added 2
 
 ## 4. Robustness
 
-- **Mount lease under memory pressure** — the renewal thread has no thread group and can be killed by `MEMORY_LIMIT_EXCEEDED`; one failed renewal is terminal. [#2403](https://github.com/Altinity/ClickHouse/issues/2403). Tasks: none.
+- **Mount lease under memory pressure** — the renewal thread has no thread group and can be killed by `MEMORY_LIMIT_EXCEEDED`; one failed renewal is terminal. [#2403](https://github.com/Altinity/ClickHouse/issues/2403). Tasks: CAS-292.
 - **Lease loss without a store outage** — concurrent `SELECT FINAL`, tiny-part storms, port exhaustion. [#2332](https://github.com/Altinity/ClickHouse/issues/2332), [#2421](https://github.com/Altinity/ClickHouse/issues/2421), [#2243](https://github.com/Altinity/ClickHouse/issues/2243). Tasks: CAS-75, CAS-162, CAS-150, CAS-74.
 - **Clean shutdown** — every restart on the test stand was an immediate termination. Root cause found: the operator's software restart runs `SYSTEM SHUTDOWN`, ClickHouse implements it as `kill(0, SIGTERM)` to the process group, the watchdog forwards the signal to the child, and the second `SIGTERM` terminates immediately. Upstream fix (signal own pid, or the watchdog skips signals from the child) plus operator fix (pod delete instead of `SYSTEM SHUTDOWN`); on the CAS side, drain the ref lane and release the lease on the first `SIGTERM` so a restart costs no 36 s lease observation and no lost GC round. Tasks: CAS-147.
 - **Retries inside MergeTree transactions** — a CAS commit runs inside `noexcept` transaction callbacks; a throw there aborts the server. Decide the contract, not per-site patches. `cas-txn-commit-inside-noexcept-aftercommit`, [PR #2396](https://github.com/Altinity/ClickHouse/pull/2396). Tasks: CAS-177.
 - **Operator recovery** — mount a pool whose owner uuid differs, `SYSTEM CAS DROP POOL MEMBER`, re-adding a replica with a new uuid. Tasks: CAS-156, CAS-157.
-- **`num_tries` when the common pool is full** — a queue entry ages without running. Tasks: none.
+- **`num_tries` when the common pool is full** — a queue entry ages without running. Tasks: CAS-293.
 - **Disk lifecycle** — `UNMOUNT` stops background work and ejects the disk; disks are never torn down on `DROP TABLE` today, leaked GC threads can abort. Tasks: CAS-149.
 
 ## 5. Tech debt
@@ -67,10 +67,10 @@ Status as of 2026-09-25; task ids (Backlog.md, `backlog task view <id>`) added 2
 - **Split `CasGc`** — 18-phase round in one file, the fold alone ~1,700 lines. Mechanical extraction of contiguous regions into explicit phase inputs/results and a durable cleanup queue, wire protocol untouched; no rewrite. Redo [PR #2286](https://github.com/Altinity/ClickHouse/pull/2286) on that basis. Tasks: CAS-233.
 - **Split `CasRefLedger`** — recovery/cache, append lane and wedge protocol, snapshot publisher, namespace lifecycle, a thin facade. By moving code, not rewriting. Tasks: CAS-234.
 - **Extract from `Cas::Store`** — the remount thread, the caches, the ref-append lane. Tasks: CAS-235.
-- **Test API out of production classes** — ~495 `ForTest`/hook mentions; a `CasTestControl` adapter, injectable `Clock`, `Sleeper`, `Executor`, `FaultInjector`, a test factory, typed sub-configs instead of a flat `PoolConfig`. Tasks: none.
-- **`Store::open` modes** — split into create, open-rw, open-ro. Tasks: none.
+- **Test API out of production classes** — ~495 `ForTest`/hook mentions; a `CasTestControl` adapter, injectable `Clock`, `Sleeper`, `Executor`, `FaultInjector`, a test factory, typed sub-configs instead of a flat `PoolConfig`. Tasks: CAS-294 (CAS-294.1-3).
+- **`Store::open` modes** — split into create, open-rw, open-ro. Tasks: CAS-295.
 - **Portability** — the mount-fence clock uses `CLOCK_BOOTTIME` with no shim; CAS does not compile on Darwin. Tasks: CAS-161.
-- `pool-dtor-under-pointer-mutex`. Tasks: none.
+- `pool-dtor-under-pointer-mutex`. Done: `4b04b2c2cae`, `205af29c7f2` (teardown releases the pool pointers under the mutex and drains outside it; on antalya-26.6 too).
 - **Repo hygiene** — stale docs, dead counters, comment sweeps. Tasks: CAS-130, CAS-236, CAS-238, CAS-239.
 
 ## 6. Upstream
@@ -81,7 +81,7 @@ Status as of 2026-09-25; task ids (Backlog.md, `backlog task view <id>`) added 2
 
 ## 7. Operations
 
-- **`SYSTEM CAS ...` commands** — a complete, documented set: GC run, rebuild, mount/unmount, drop pool member, fsck. Tasks: none for the set as a whole; CAS-54 and CAS-55 cover two verbs.
+- **`SYSTEM CAS ...` commands** — a complete, documented set: GC run, rebuild, mount/unmount, drop pool member, fsck. Tasks: CAS-296 (CAS-296.1 MOUNT/UNMOUNT, CAS-296.2 verb reference).
 - **`cas-fsck`** — diagnose and repair a damaged rebuildable object; runbook. Tasks: CAS-56, CAS-32.
-- **Defaults review before the first deployment** — budgets, concurrency, cache sizes, keep-alive, lease TTL. Tasks: none.
+- **Defaults review before the first deployment** — budgets, concurrency, cache sizes, keep-alive, lease TTL. Tasks: CAS-297.
 - **Migration at scale** — move partitions to CAS and back on a real cluster, measure, document. Tasks: CAS-116.
