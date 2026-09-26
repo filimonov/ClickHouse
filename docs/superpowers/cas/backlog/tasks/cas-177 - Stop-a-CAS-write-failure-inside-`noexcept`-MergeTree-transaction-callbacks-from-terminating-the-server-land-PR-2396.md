@@ -3,10 +3,10 @@ id: CAS-177
 title: >-
   Stop a CAS write failure inside `noexcept` MergeTree-transaction callbacks
   from terminating the server (land PR #2396)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-26 07:44'
-updated_date: '2026-09-26 08:34'
+updated_date: '2026-09-26 12:21'
 labels:
   - 'area:write-path'
   - 'area:upstream'
@@ -58,3 +58,9 @@ Provenance: BACKLOG/ref-protocol.md#cas-txn-commit-inside-noexcept-aftercommit. 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+In progress: PR https://github.com/Altinity/ClickHouse/pull/2396 (open, base antalya-26.6); plan docs/superpowers/plans/2026-09-16-transaction-metadata-store-retry.md.
+<!-- SECTION:NOTES:END -->
