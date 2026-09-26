@@ -54,7 +54,8 @@ the delete verb can remove.
 `enumerateRefPrefix` (`Gc/CasGc.cpp:3954`), one unconditional full LIST of `cas/ns/stream/` including
 every dead life. Longer LIST and longer intake mean fewer rounds per minute, which lowers the
 janitor's ceiling. Round duration 24 s -> 597 s and backlog 81 -> 35,351 are **run-7** figures
-(`BACKLOG/gc.md {#janitor-page-hardcoded}`, formerly `BACKLOG.md {#gc-backlog-runaway}`); everything else here is run 8. Two runs of the same workload,
+(`CAS-29.9` in Backlog.md, formerly tracked as `{#janitor-page-hardcoded}` in `BACKLOG/gc.md` and `{#gc-backlog-runaway}` in
+`BACKLOG.md`); everything else here is run 8. Two runs of the same workload,
 not one time series.
 
 **(d) Why the covered-log cleanup deletes nothing in most rounds — measured by stage reached, not
