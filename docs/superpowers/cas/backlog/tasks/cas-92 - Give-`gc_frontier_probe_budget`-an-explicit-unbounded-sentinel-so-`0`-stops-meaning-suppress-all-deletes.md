@@ -5,8 +5,8 @@ title: >-
   meaning 'suppress all deletes'
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 12:43'
+created_date: '2026-08-04'
+updated_date: '2026-09-26 14:24'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure class E. Verified 20
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'std::numeric_limits<uint64_t>::max()'): 2026-08-04 (6cbeec21537)
 <!-- SECTION:NOTES:END -->

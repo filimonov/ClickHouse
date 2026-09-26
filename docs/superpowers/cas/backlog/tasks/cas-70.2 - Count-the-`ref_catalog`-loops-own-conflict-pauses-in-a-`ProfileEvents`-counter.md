@@ -5,8 +5,8 @@ title: >-
   counter
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 12:43'
+created_date: '2026-07-30'
+updated_date: '2026-09-26 14:23'
 labels:
   - 'area:observability'
   - 'complexity:trivial'
@@ -53,4 +53,6 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-a-followups (deferred item
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'CasRefCatalog'): 2026-07-30 (94bd8deaadd)
 <!-- SECTION:NOTES:END -->

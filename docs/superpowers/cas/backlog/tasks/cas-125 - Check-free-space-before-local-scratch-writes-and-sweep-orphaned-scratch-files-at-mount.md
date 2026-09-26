@@ -5,8 +5,8 @@ title: >-
   at mount
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:25'
-updated_date: '2026-09-26 12:55'
+created_date: '2026-06-03'
+updated_date: '2026-09-26 14:19'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -56,4 +56,6 @@ Merged from CAS-101: the full-scale campaign saw local scratch grow 1 -> 21 MiB 
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 2031-triage CAS-046: local scratch is unreserved, unaccounted and never swept at startup; the ledger (#cas-046) maps the `statvfs` guard and orphan sweep to this item. Sizing docs half is CAS-102.
+
+First recorded (pass 2, by identifier 'ContentAddressedTransaction'): 2026-06-03 (4fb3336fdf3)
 <!-- SECTION:NOTES:END -->

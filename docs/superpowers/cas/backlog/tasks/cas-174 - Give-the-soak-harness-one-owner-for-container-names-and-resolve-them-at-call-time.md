@@ -5,8 +5,8 @@ title: >-
   time
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:42'
-updated_date: '2026-09-26 12:38'
+created_date: '2026-09-02'
+updated_date: '2026-09-26 14:19'
 labels:
   - 'area:soak'
   - 'area:tooling'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/gcs.md#environment 'Harness debt'. Verified 2026-09-26 again
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'observe.RUSTFS_CONTAINER'): 2026-09-02 (9f87032fde6)
 <!-- SECTION:NOTES:END -->

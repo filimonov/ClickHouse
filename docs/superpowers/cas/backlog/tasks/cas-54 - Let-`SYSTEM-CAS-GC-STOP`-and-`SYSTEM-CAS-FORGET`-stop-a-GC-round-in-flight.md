@@ -3,8 +3,8 @@ id: CAS-54
 title: Let `SYSTEM CAS GC STOP` and `SYSTEM CAS FORGET` stop a GC round in flight
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 12:42'
+created_date: '2026-06-14'
+updated_date: '2026-09-26 14:23'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -61,4 +61,6 @@ Provenance: BACKLOG/operability-and-introspection.md#lifecycle-verbs-wait-out-un
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'CasGcScheduler'): 2026-06-14 (169f255b9a5)
 <!-- SECTION:NOTES:END -->

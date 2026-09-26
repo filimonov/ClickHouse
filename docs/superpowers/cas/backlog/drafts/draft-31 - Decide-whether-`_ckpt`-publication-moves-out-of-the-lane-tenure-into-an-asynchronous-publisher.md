@@ -5,8 +5,8 @@ title: >-
   asynchronous publisher
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:42'
-updated_date: '2026-09-26 12:44'
+created_date: '2026-07-30'
+updated_date: '2026-09-26 14:24'
 labels:
   - 'area:ref-ledger'
   - 'area:gcs'
@@ -54,4 +54,6 @@ Provenance: BACKLOG/gcs.md#gcs-hot-control-keys-429 (alternatives A2 / token buc
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'NeedsRecovery'): 2026-07-30 (bb4dd513118)
 <!-- SECTION:NOTES:END -->

@@ -5,8 +5,8 @@ title: >-
   read-only
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:33'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-02'
+updated_date: '2026-09-26 14:22'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -60,4 +60,6 @@ Provenance: umbrella-roadmap.md section 5 bullet '`Store::open` modes'; filed 20
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier '_pool_meta'): 2026-06-02 (cafc256906e)
 <!-- SECTION:NOTES:END -->

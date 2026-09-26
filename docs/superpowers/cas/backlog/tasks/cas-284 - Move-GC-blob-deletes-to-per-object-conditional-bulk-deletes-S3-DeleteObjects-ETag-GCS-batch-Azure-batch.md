@@ -5,8 +5,8 @@ title: >-
   ETag, GCS batch, Azure batch)
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:20'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-02'
+updated_date: '2026-09-26 14:20'
 labels:
   - 'area:gc'
   - 'area:backend'
@@ -63,4 +63,6 @@ Provenance: DRAFT-13 (archived), gc.md#gc-multidelete-conditional-gap, audit F7,
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'DELETE'): 2026-06-02 (019f825a59a)
 <!-- SECTION:NOTES:END -->

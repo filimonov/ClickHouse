@@ -5,8 +5,8 @@ title: >-
   `_pool_meta`
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 12:42'
+created_date: '2026-07-03'
+updated_date: '2026-09-26 14:23'
 labels:
   - 'area:tooling'
   - 'area:fsck'
@@ -59,4 +59,6 @@ Provenance: BACKLOG/operability-and-introspection.md#pool-meta-bootstrap-blocks-
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'cas-gc-rebuild'): 2026-07-03 (11681d28eba)
 <!-- SECTION:NOTES:END -->

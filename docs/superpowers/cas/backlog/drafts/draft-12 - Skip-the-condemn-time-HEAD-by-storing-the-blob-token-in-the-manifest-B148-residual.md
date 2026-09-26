@@ -5,8 +5,8 @@ title: >-
   residual)
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 12:44'
+created_date: '2026-07-13'
+updated_date: '2026-09-26 14:24'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/gc.md [B148]. Verified 2026-09-26: no stored-token symbol on
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier '[PROMOTE-REVALIDATION-MINIMIZATION]'): 2026-07-13 (45a6c8ee2b6)
 <!-- SECTION:NOTES:END -->

@@ -3,8 +3,8 @@ id: CAS-2.1
 title: Remove or reroute the eleven `CASServer*` ProfileEvents that can never move
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:53'
-updated_date: '2026-09-26 12:38'
+created_date: '2026-06-07'
+updated_date: '2026-09-26 14:20'
 labels:
   - 'area:observability'
   - 'complexity:small'
@@ -61,4 +61,6 @@ Provenance: BACKLOG/operability-and-introspection.md#profileevents-surface-resid
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'Server'): 2026-06-07 (e46642b3237)
 <!-- SECTION:NOTES:END -->

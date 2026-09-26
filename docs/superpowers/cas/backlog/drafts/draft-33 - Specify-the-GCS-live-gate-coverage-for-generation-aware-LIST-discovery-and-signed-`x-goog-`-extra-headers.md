@@ -5,8 +5,8 @@ title: >-
   signed `x-goog-*` extra headers
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:42'
-updated_date: '2026-09-26 12:44'
+created_date: '2026-07-03'
+updated_date: '2026-09-26 14:25'
 labels:
   - 'area:gcs'
   - 'area:testing'
@@ -48,4 +48,6 @@ Provenance: BACKLOG/gcs.md#gate. Verified 2026-09-26: no mention outside gcs.md 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'x-goog-*'): 2026-07-03 (8005ac8f95a)
 <!-- SECTION:NOTES:END -->

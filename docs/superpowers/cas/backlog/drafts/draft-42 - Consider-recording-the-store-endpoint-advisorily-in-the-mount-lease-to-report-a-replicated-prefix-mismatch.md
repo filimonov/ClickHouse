@@ -5,8 +5,8 @@ title: >-
   a replicated-prefix mismatch
 status: Draft
 assignee: []
-created_date: '2026-09-26 08:02'
-updated_date: '2026-09-26 12:44'
+created_date: '2026-06-23'
+updated_date: '2026-09-26 14:25'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/docs-and-cleanup.md#pool-exclusive-prefix-undocumented (the 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'ContentAddressedExchange'): 2026-06-23 (f6b6f1478eb)
 <!-- SECTION:NOTES:END -->

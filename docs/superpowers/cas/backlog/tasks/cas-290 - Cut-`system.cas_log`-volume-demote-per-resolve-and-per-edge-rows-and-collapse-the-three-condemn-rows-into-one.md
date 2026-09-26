@@ -5,8 +5,8 @@ title: >-
   the three condemn rows into one
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:33'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-18'
+updated_date: '2026-09-26 14:22'
 labels:
   - 'area:observability'
   - 'complexity:medium'
@@ -66,4 +66,6 @@ Provenance: umbrella-roadmap.md section 3 bullet '`cas_log` volume'; filed 2026-
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'ref_resolve'): 2026-06-18 (b3564a10c11)
 <!-- SECTION:NOTES:END -->

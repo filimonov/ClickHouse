@@ -5,8 +5,8 @@ title: >-
   `system.cas_log`, and document each table with example queries
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:33'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-17'
+updated_date: '2026-09-26 14:22'
 labels:
   - 'area:observability'
   - 'area:docs'
@@ -58,4 +58,6 @@ Provenance: umbrella-roadmap.md section 3 bullet 'Simplify the system tables'; f
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'ContentAddressedGarbageCollectionLog'): 2026-06-17 (27eef9df8fc)
 <!-- SECTION:NOTES:END -->

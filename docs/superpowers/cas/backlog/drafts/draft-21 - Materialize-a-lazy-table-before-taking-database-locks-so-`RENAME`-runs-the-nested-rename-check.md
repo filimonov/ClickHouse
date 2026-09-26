@@ -5,8 +5,8 @@ title: >-
   nested rename check
 status: Draft
 assignee: []
-created_date: '2026-09-26 07:25'
-updated_date: '2026-09-26 12:44'
+created_date: '2026-06-02'
+updated_date: '2026-09-26 14:24'
 labels:
   - 'area:upstream'
   - 'complexity:medium'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/operability-and-introspection.md#lazy-load-tables-decision-2
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'Buffer'): 2026-06-02 (c0a7046a3a7)
 <!-- SECTION:NOTES:END -->

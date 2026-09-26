@@ -3,8 +3,8 @@ id: CAS-112
 title: Refuse an encrypted disk whose delegate is a CAS disk at config load
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:25'
-updated_date: '2026-09-26 12:36'
+created_date: '2026-06-04'
+updated_date: '2026-09-26 14:19'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -53,4 +53,6 @@ Provenance: BACKLOG/operability-and-introspection.md#encrypted-wrapper-hides-con
 Merged from mounts-and-lifecycle.md #encrypted-over-cas-missing-gate: today the failure is a loud NOT_IMPLEMENTED at the first INSERT, not silent corruption; DiskEncrypted.h:332 forwards only isPlain, which is an additional mechanism next to the IV-reuse one.
 
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'isContentAddressed'): 2026-06-04 (0f24cea5ab2)
 <!-- SECTION:NOTES:END -->

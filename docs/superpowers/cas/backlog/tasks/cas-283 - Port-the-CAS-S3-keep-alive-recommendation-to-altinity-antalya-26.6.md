@@ -3,8 +3,8 @@ id: CAS-283
 title: Port the CAS S3 keep-alive recommendation to altinity/antalya-26.6
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:30'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-16'
+updated_date: '2026-09-26 14:20'
 labels:
   - 'area:backend'
   - 'area:docs'
@@ -55,4 +55,6 @@ Provenance: BACKLOG.md#inbox [cas-keep-alive-recommendation-backport], queued by
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'test_cas_*'): 2026-06-16 (518d2a1e67d)
 <!-- SECTION:NOTES:END -->

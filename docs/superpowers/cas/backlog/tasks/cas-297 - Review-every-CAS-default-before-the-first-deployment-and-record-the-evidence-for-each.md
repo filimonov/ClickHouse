@@ -5,8 +5,8 @@ title: >-
   for each
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:33'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-07-02'
+updated_date: '2026-09-26 14:22'
 labels:
   - 'area:mounts'
   - 'area:gc'
@@ -68,4 +68,6 @@ Provenance: umbrella-roadmap.md section 7 bullet 'Defaults review before the fir
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'mount_lease_ttl_ms'): 2026-07-02 (cacba14492b)
 <!-- SECTION:NOTES:END -->

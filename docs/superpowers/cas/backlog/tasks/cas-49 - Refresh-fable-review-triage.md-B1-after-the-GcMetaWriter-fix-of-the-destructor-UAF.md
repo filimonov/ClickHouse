@@ -5,8 +5,8 @@ title: >-
   UAF
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 12:42'
+created_date: '2026-07-10'
+updated_date: '2026-09-26 14:22'
 labels:
   - 'area:gc'
   - 'area:docs'
@@ -48,4 +48,6 @@ Provenance: BACKLOG/gc.md [gc-confirmed-meta-delete-etag-race] UAF note; the def
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'meta_pool'): 2026-07-10 (2b205eb54e6)
 <!-- SECTION:NOTES:END -->

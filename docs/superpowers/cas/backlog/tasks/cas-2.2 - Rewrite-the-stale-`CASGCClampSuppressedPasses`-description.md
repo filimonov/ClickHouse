@@ -3,8 +3,8 @@ id: CAS-2.2
 title: Rewrite the stale `CASGCClampSuppressedPasses` description
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:53'
-updated_date: '2026-09-26 12:38'
+created_date: '2026-06-15'
+updated_date: '2026-09-26 14:20'
 labels:
   - 'area:observability'
   - 'complexity:trivial'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-health-zero-is-ambiguous
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'system.events'): 2026-06-15 (6e28ecaaed5)
 <!-- SECTION:NOTES:END -->

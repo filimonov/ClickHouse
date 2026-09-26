@@ -5,8 +5,8 @@ title: >-
   (`InvalidObjectState`)
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:02'
-updated_date: '2026-09-26 12:40'
+created_date: '2026-06-06'
+updated_date: '2026-09-26 14:20'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/docs-and-cleanup.md#bucket-requirements-lifecycle-worm-glaci
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'NoSuchKey'): 2026-06-06 (4df7956ec79)
 <!-- SECTION:NOTES:END -->

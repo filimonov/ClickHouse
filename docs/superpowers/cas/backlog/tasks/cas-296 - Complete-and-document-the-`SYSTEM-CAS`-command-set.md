@@ -3,8 +3,8 @@ id: CAS-296
 title: Complete and document the `SYSTEM CAS` command set
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:33'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-17'
+updated_date: '2026-09-26 14:22'
 labels:
   - 'area:mounts'
   - 'area:docs'
@@ -55,4 +55,6 @@ Provenance: umbrella-roadmap.md section 7 bullet '`SYSTEM CAS ...` commands'; fi
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'ASTSystemQuery'): 2026-06-17 (27eef9df8fc)
 <!-- SECTION:NOTES:END -->

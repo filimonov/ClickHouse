@@ -3,8 +3,8 @@ id: CAS-56.1
 title: Report a damaged control object in fsck by exact key and damage class
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 12:42'
+created_date: '2026-06-02'
+updated_date: '2026-09-26 14:23'
 labels:
   - 'area:fsck'
   - 'complexity:medium'
@@ -57,4 +57,6 @@ Provenance: BACKLOG/operability-and-introspection.md#damaged-object-repair item 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier '_pool_meta'): 2026-06-02 (cafc256906e)
 <!-- SECTION:NOTES:END -->

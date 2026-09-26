@@ -5,8 +5,8 @@ title: >-
   rename
 status: To Do
 assignee: []
-created_date: '2026-09-26 08:14'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-11'
+updated_date: '2026-09-26 14:20'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -51,4 +51,6 @@ Provenance: BACKLOG/formats-and-storage.md [B66a]; the POSIX backend would retir
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'LocalObjectStorage'): 2026-06-11 (99466809c92)
 <!-- SECTION:NOTES:END -->

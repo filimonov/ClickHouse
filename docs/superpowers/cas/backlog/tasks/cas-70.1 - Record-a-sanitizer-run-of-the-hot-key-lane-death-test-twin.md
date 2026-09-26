@@ -3,8 +3,8 @@ id: CAS-70.1
 title: Record a sanitizer run of the hot-key lane death-test twin
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:10'
-updated_date: '2026-09-26 12:43'
+created_date: '2026-08-03'
+updated_date: '2026-09-26 14:23'
 labels:
   - 'area:testing'
   - 'complexity:trivial'
@@ -51,4 +51,6 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-a-followups (first outstan
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'CASRefCatalog'): 2026-08-03 (0f7b755bb16)
 <!-- SECTION:NOTES:END -->

@@ -3,8 +3,8 @@ id: CAS-58
 title: Render the fold seal's `hold` and sentinel cursors readably in `cas-inspect`
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 12:42'
+created_date: '2026-06-10'
+updated_date: '2026-09-26 14:23'
 labels:
   - 'area:tooling'
   - 'complexity:trivial'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-inspect-format-coverage
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'classification'): 2026-06-10 (5624e67d61e)
 <!-- SECTION:NOTES:END -->

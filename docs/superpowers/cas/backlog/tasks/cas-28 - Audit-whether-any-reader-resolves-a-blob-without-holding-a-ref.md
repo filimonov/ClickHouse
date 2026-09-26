@@ -3,8 +3,8 @@ id: CAS-28
 title: Audit whether any reader resolves a blob without holding a ref
 status: To Do
 assignee: []
-created_date: '2026-09-26 06:55'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-02'
+updated_date: '2026-09-26 14:20'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -48,4 +48,6 @@ Provenance: BACKLOG/performance.md#read-write [R1/X1]. Verified 2026-09-26 again
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'DataPart'): 2026-06-02 (c0a7046a3a7)
 <!-- SECTION:NOTES:END -->

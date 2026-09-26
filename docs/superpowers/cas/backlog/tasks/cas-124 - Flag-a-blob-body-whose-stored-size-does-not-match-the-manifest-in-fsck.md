@@ -3,8 +3,8 @@ id: CAS-124
 title: Flag a blob body whose stored size does not match the manifest in fsck
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:25'
-updated_date: '2026-09-26 12:36'
+created_date: '2026-06-04'
+updated_date: '2026-09-26 14:19'
 labels:
   - 'area:fsck'
   - 'complexity:small'
@@ -51,4 +51,6 @@ Provenance: BACKLOG/operability-and-introspection.md#disk-error-audit-followups-
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'Reachable'): 2026-06-04 (0f24cea5ab2)
 <!-- SECTION:NOTES:END -->

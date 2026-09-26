@@ -5,8 +5,8 @@ title: >-
   confirmed it (spec A0)
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-07-01'
+updated_date: '2026-09-26 14:21'
 labels:
   - 'area:gc'
   - 'complexity:trivial'
@@ -64,4 +64,6 @@ Provenance: spec A0 / audit F3; the restart case is stated in BACKLOG/gc.md#gc-r
 u03-gc-c merged audit F3 here (no separate A0 task was created).
 
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'CasBlobInDegree'): 2026-07-01 (c7d94e51817)
 <!-- SECTION:NOTES:END -->

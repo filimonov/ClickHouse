@@ -5,8 +5,8 @@ title: >-
   restart
 status: To Do
 assignee: []
-created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 12:55'
+created_date: '2026-06-28'
+updated_date: '2026-09-26 14:23'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/operability-and-introspection.md#cas-settings-not-reloadable
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 2031-triage CAS-107: the removed-disk half (mount lease renewed until restart); reload half is CAS-66. Audit ranks CAS-107 #5 in 'Where to start'.
+
+First recorded (pass 2, by identifier 'server_root_id'): 2026-06-28 (2243419abe5)
 <!-- SECTION:NOTES:END -->

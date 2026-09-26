@@ -3,8 +3,8 @@ id: CAS-289
 title: Ship a Grafana dashboard and alert rules for CAS operators
 status: To Do
 assignee: []
-created_date: '2026-09-26 12:33'
-updated_date: '2026-09-26 12:41'
+created_date: '2026-06-15'
+updated_date: '2026-09-26 14:21'
 labels:
   - 'area:observability'
   - 'complexity:epic'
@@ -55,4 +55,6 @@ Provenance: umbrella-roadmap.md section 3 bullet 'Grafana dashboard'; filed 2026
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
+
+First recorded (pass 2, by identifier 'S3ReadRequestsErrors'): 2026-06-15 (6e28ecaaed5)
 <!-- SECTION:NOTES:END -->
