@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
+updated_date: '2026-09-26 07:07'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -15,6 +16,7 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:review'
+  - 'confidence:contested'
 milestone: m-8
 dependencies: []
 references:
@@ -43,6 +45,9 @@ Provenance: BACKLOG/gc.md#ckpt-damage-no-repair-path part (b); verified 2026-09-
 - [ ] #1 The owner picks the repair mechanism
 - [ ] #2 A test corrupts one `_ckpt` and shows the chosen repair returns the namespace to normal folding without data loss
 - [ ] #3 The runbook names the repair step instead of pool recreation
+- [ ] #4 Repair of a damaged `_ckpt` publishes a checkpoint equal to the one recovery derives, through the normal conditional write
+- [ ] #5 Repair refuses blob bodies, ref-log records and `_pool_meta` with a message that says restore from backup
+- [ ] #6 After repair GC stops holding the namespace and the next round reclaims normally
 <!-- AC:END -->
 
 ## Definition of Done
@@ -52,3 +57,9 @@ Provenance: BACKLOG/gc.md#ckpt-damage-no-repair-path part (b); verified 2026-09-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged from operability-and-introspection.md #damaged-object-repair (fsck-repair-derived-objects): a `_ckpt` is a derived accelerator over the durable ref log, so it is reconstructible by the recovery walk the writer already has (`recoverRefTableDetailed`, the recovery-epoch seal); one candidate is `cas-fsck --repair` re-deriving the object and publishing it through the ordinary CAS write path with no new object kinds and no protocol change, refusing loudly for non-derivable objects (blob body, committed ref-log record, `_pool_meta` = restore-from-backup cases). Framing conflict with this task's "protocol-adjacent, owner decision" view is why the task is confidence:contested.
+<!-- SECTION:NOTES:END -->
