@@ -5,8 +5,8 @@ title: >-
   for each
 status: To Do
 assignee: []
-created_date: '2026-07-02'
-updated_date: '2026-09-26 14:22'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:mounts'
   - 'area:gc'
@@ -69,5 +69,5 @@ Provenance: umbrella-roadmap.md section 7 bullet 'Defaults review before the fir
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'mount_lease_ttl_ms'): 2026-07-02 (cacba14492b)
+Identifier trace: the earliest docs mention of `mount_lease_ttl_ms` is 2026-07-02 (cacba14492b); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

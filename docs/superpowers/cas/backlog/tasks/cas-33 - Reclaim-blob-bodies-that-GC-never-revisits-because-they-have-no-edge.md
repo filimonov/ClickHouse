@@ -3,8 +3,8 @@ id: CAS-33
 title: Reclaim blob bodies that GC never revisits because they have no edge
 status: To Do
 assignee: []
-created_date: '2026-07-03'
-updated_date: '2026-09-26 14:22'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -52,5 +52,5 @@ Parent created by u01 to group three gc.md items of one class; verified 2026-09-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'unaccounted'): 2026-07-03 (a626a12021e)
+Identifier trace: the earliest docs mention of `unaccounted` is 2026-07-03 (a626a12021e); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

@@ -5,8 +5,8 @@ title: >-
   restart
 status: To Do
 assignee: []
-created_date: '2026-06-28'
-updated_date: '2026-09-26 14:23'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -56,5 +56,5 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 2031-triage CAS-107: the removed-disk half (mount lease renewed until restart); reload half is CAS-66. Audit ranks CAS-107 #5 in 'Where to start'.
 
-First recorded (pass 2, by identifier 'server_root_id'): 2026-06-28 (2243419abe5)
+Identifier trace: the earliest docs mention of `server_root_id` is 2026-06-28 (2243419abe5); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

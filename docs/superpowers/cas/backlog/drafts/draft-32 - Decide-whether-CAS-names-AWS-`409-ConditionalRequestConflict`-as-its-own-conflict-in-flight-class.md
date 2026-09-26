@@ -5,8 +5,8 @@ title: >-
   conflict-in-flight class
 status: Draft
 assignee: []
-created_date: '2026-07-20'
-updated_date: '2026-09-26 14:24'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -61,5 +61,5 @@ Provenance: BACKLOG/gcs.md#single-attempt-client-status-error-log-site ('Classif
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'isPreconditionFailedError'): 2026-07-20 (b84ad10d219)
+Identifier trace: the earliest docs mention of `isPreconditionFailedError` is 2026-07-20 (b84ad10d219); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

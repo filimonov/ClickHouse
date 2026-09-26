@@ -5,8 +5,8 @@ title: >-
   meaning 'suppress all deletes'
 status: To Do
 assignee: []
-created_date: '2026-08-04'
-updated_date: '2026-09-26 14:24'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -57,5 +57,5 @@ Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure class E. Verified 20
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'std::numeric_limits<uint64_t>::max()'): 2026-08-04 (6cbeec21537)
+Identifier trace: the earliest docs mention of `std::numeric_limits<uint64_t>::max()` is 2026-08-04 (6cbeec21537); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

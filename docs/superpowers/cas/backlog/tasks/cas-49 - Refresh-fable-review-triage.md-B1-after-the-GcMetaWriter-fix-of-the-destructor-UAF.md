@@ -5,8 +5,8 @@ title: >-
   UAF
 status: To Do
 assignee: []
-created_date: '2026-07-10'
-updated_date: '2026-09-26 14:22'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:gc'
   - 'area:docs'
@@ -49,5 +49,5 @@ Provenance: BACKLOG/gc.md [gc-confirmed-meta-delete-etag-race] UAF note; the def
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'meta_pool'): 2026-07-10 (2b205eb54e6)
+Identifier trace: the earliest docs mention of `meta_pool` is 2026-07-10 (2b205eb54e6); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

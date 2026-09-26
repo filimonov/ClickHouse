@@ -3,8 +3,8 @@ id: CAS-296
 title: Complete and document the `SYSTEM CAS` command set
 status: To Do
 assignee: []
-created_date: '2026-06-17'
-updated_date: '2026-09-26 14:22'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:mounts'
   - 'area:docs'
@@ -56,5 +56,5 @@ Provenance: umbrella-roadmap.md section 7 bullet '`SYSTEM CAS ...` commands'; fi
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'ASTSystemQuery'): 2026-06-17 (27eef9df8fc)
+Identifier trace: the earliest docs mention of `ASTSystemQuery` is 2026-06-17 (27eef9df8fc); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

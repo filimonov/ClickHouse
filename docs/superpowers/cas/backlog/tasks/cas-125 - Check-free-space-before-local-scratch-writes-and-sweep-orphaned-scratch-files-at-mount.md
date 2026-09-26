@@ -5,8 +5,8 @@ title: >-
   at mount
 status: To Do
 assignee: []
-created_date: '2026-06-03'
-updated_date: '2026-09-26 14:19'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -57,5 +57,5 @@ First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier tr
 
 2031-triage CAS-046: local scratch is unreserved, unaccounted and never swept at startup; the ledger (#cas-046) maps the `statvfs` guard and orphan sweep to this item. Sizing docs half is CAS-102.
 
-First recorded (pass 2, by identifier 'ContentAddressedTransaction'): 2026-06-03 (4fb3336fdf3)
+Identifier trace: the earliest docs mention of `ContentAddressedTransaction` is 2026-06-03 (4fb3336fdf3); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

@@ -5,8 +5,8 @@ title: >-
   keys as deprecated no-ops for one release (spec C2)
 status: To Do
 assignee: []
-created_date: '2026-06-11'
-updated_date: '2026-09-26 14:21'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -67,5 +67,5 @@ Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure class A; audit F14 a
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'PoolConfig'): 2026-06-11 (99466809c92)
+Identifier trace: the earliest docs mention of `PoolConfig` is 2026-06-11 (99466809c92); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

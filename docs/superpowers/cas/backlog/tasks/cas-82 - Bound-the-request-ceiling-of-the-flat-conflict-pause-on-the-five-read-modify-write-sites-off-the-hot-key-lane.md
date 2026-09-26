@@ -5,8 +5,8 @@ title: >-
   read-modify-write sites off the hot-key lane
 status: To Do
 assignee: []
-created_date: '2026-06-07'
-updated_date: '2026-09-26 14:24'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:backend'
   - 'area:ref-ledger'
@@ -55,5 +55,5 @@ Provenance: tmp/task-1-review.md item 5 (hot-key lane task 1 review, 2026-09-04)
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'standard'): 2026-06-07 (996d156fdfb)
+Identifier trace: the earliest docs mention of `standard` is 2026-06-07 (996d156fdfb); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

@@ -3,8 +3,8 @@ id: CAS-112
 title: Refuse an encrypted disk whose delegate is a CAS disk at config load
 status: To Do
 assignee: []
-created_date: '2026-06-04'
-updated_date: '2026-09-26 14:19'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -54,5 +54,5 @@ Merged from mounts-and-lifecycle.md #encrypted-over-cas-missing-gate: today the 
 
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'isContentAddressed'): 2026-06-04 (0f24cea5ab2)
+Identifier trace: the earliest docs mention of `isContentAddressed` is 2026-06-04 (0f24cea5ab2); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

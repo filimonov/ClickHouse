@@ -5,8 +5,8 @@ title: >-
   cleanup aborts had an intact per-namespace licence (spec B3 steps 0-1)
 status: To Do
 assignee: []
-created_date: '2026-07-12'
-updated_date: '2026-09-26 14:21'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -65,5 +65,5 @@ Provenance: BACKLOG/gc.md#covered-log-cleanup-aborts-on-catalog-etag plan steps 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'cleanupRefObjects'): 2026-07-12 (d372bf410d4)
+Identifier trace: the earliest docs mention of `cleanupRefObjects` is 2026-07-12 (d372bf410d4); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

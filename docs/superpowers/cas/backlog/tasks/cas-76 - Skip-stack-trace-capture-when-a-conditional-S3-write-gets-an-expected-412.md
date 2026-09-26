@@ -3,8 +3,8 @@ id: CAS-76
 title: Skip stack-trace capture when a conditional S3 write gets an expected 412
 status: To Do
 assignee: []
-created_date: '2026-06-05'
-updated_date: '2026-09-26 14:24'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:backend'
   - 'area:upstream'
@@ -50,5 +50,5 @@ Provenance: BACKLOG/performance.md#stateless-lane-wall-time-is-drop-table (targe
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'DB::Exception'): 2026-06-05 (2c762c70d33)
+Identifier trace: the earliest docs mention of `DB::Exception` is 2026-06-05 (2c762c70d33); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

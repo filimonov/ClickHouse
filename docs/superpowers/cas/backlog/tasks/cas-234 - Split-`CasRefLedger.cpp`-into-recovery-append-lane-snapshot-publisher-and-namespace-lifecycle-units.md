@@ -5,8 +5,8 @@ title: >-
   namespace lifecycle units
 status: To Do
 assignee: []
-created_date: '2026-07-15'
-updated_date: '2026-09-26 14:20'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:ref-ledger'
   - 'complexity:large'
@@ -55,5 +55,5 @@ Provenance: BACKLOG/docs-and-cleanup.md#refactor-candidates-from-defects item 3 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'CasRefLedger'): 2026-07-15 (416c982b5d6)
+Identifier trace: the earliest docs mention of `CasRefLedger` is 2026-07-15 (416c982b5d6); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

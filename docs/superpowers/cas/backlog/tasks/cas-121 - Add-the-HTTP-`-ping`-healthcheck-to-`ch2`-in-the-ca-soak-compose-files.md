@@ -3,8 +3,8 @@ id: CAS-121
 title: Add the HTTP `/ping` healthcheck to `ch2` in the ca-soak compose files
 status: To Do
 assignee: []
-created_date: '2026-08-04'
-updated_date: '2026-09-26 14:19'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:soak'
   - 'complexity:trivial'
@@ -49,5 +49,5 @@ Provenance: BACKLOG/operability-and-introspection.md#issue-2233-followups item (
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'docker-compose-asan.yml'): 2026-08-04 (6cbeec21537)
+Identifier trace: the earliest docs mention of `docker-compose-asan.yml` is 2026-08-04 (6cbeec21537); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

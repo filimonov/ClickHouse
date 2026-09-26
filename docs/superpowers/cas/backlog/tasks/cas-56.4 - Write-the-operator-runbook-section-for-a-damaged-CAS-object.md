@@ -3,8 +3,8 @@ id: CAS-56.4
 title: Write the operator runbook section for a damaged CAS object
 status: To Do
 assignee: []
-created_date: '2026-06-02'
-updated_date: '2026-09-26 14:23'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:docs'
   - 'complexity:small'
@@ -57,5 +57,5 @@ Provenance: BACKLOG/operability-and-introspection.md#damaged-object-repair item 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier '_pool_meta'): 2026-06-02 (cafc256906e)
+Identifier trace: the earliest docs mention of `_pool_meta` is 2026-06-02 (cafc256906e); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

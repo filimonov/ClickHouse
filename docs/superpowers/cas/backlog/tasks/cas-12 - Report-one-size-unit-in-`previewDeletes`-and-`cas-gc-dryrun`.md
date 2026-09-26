@@ -3,8 +3,8 @@ id: CAS-12
 title: Report one size unit in `previewDeletes` and `cas-gc-dryrun`
 status: To Do
 assignee: []
-created_date: '2026-06-13'
-updated_date: '2026-09-26 14:19'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:gc'
   - 'area:tooling'
@@ -52,5 +52,5 @@ Provenance: BACKLOG/operability-and-introspection.md#byte-accounting-blobs-only-
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'previewDeletes'): 2026-06-13 (b9e64af811a)
+Identifier trace: the earliest docs mention of `previewDeletes` is 2026-06-13 (b9e64af811a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

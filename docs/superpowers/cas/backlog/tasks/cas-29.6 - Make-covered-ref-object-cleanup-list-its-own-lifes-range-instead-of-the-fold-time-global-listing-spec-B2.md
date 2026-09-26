@@ -5,8 +5,8 @@ title: >-
   fold-time global listing (spec B2)
 status: To Do
 assignee: []
-created_date: '2026-06-07'
-updated_date: '2026-09-26 14:21'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -66,5 +66,5 @@ Provenance: spec B2, motivated by BACKLOG/gc.md#covered-log-cleanup-aborts-on-ca
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'Removing'): 2026-06-07 (996d156fdfb)
+Identifier trace: the earliest docs mention of `Removing` is 2026-06-07 (996d156fdfb); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

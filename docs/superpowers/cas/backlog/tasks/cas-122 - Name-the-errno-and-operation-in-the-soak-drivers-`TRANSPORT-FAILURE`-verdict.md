@@ -3,8 +3,8 @@ id: CAS-122
 title: Name the errno and operation in the soak driver's `TRANSPORT FAILURE` verdict
 status: To Do
 assignee: []
-created_date: '2026-08-03'
-updated_date: '2026-09-26 14:19'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -50,5 +50,5 @@ Provenance: BACKLOG/operability-and-introspection.md#issue-2233-followups item (
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'OSError'): 2026-08-03 (19c3018767a)
+Identifier trace: the earliest docs mention of `OSError` is 2026-08-03 (19c3018767a); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

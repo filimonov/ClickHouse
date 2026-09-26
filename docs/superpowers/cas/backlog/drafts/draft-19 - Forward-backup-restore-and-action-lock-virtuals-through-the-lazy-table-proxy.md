@@ -3,8 +3,8 @@ id: DRAFT-19
 title: 'Forward backup, restore and action-lock virtuals through the lazy table proxy'
 status: Draft
 assignee: []
-created_date: '2026-07-20'
-updated_date: '2026-09-26 14:24'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:upstream'
   - 'complexity:medium'
@@ -55,5 +55,5 @@ Provenance: BACKLOG/operability-and-introspection.md#lazy-load-tables-decision-2
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'StorageTableProxy'): 2026-07-20 (2ef3f61ff6f)
+Identifier trace: the earliest docs mention of `StorageTableProxy` is 2026-07-20 (2ef3f61ff6f); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->

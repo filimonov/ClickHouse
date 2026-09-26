@@ -3,8 +3,8 @@ id: CAS-1.4
 title: Fix the two operator-doc lines that misread the GC-health columns
 status: To Do
 assignee: []
-created_date: '2026-06-28'
-updated_date: '2026-09-26 14:19'
+created_date: '2026-09-26'
+updated_date: '2026-09-26 14:28'
 labels:
   - 'area:docs'
   - 'area:observability'
@@ -56,5 +56,5 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-health-zero-is-ambiguous
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
-First recorded (pass 2, by identifier 'expires_at'): 2026-06-28 (2243419abe5)
+Identifier trace: the earliest docs mention of `expires_at` is 2026-06-28 (2243419abe5); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
 <!-- SECTION:NOTES:END -->
