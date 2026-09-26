@@ -4,6 +4,7 @@ title: Decide whether the per-blob `.meta` freshness marker can be folded away
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:formats'
   - 'complexity:large'
@@ -14,7 +15,8 @@ labels:
   - 'needs:decision'
   - 'needs:measurement'
   - 'origin:2031-triage'
-dependencies: []
+dependencies:
+  - CAS-73
 references:
   - docs/superpowers/cas/2031-triage.md#cas-117
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f7

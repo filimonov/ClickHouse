@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:57'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:ci'
   - 'area:upstream'
@@ -15,7 +16,9 @@ labels:
   - 'confidence:speculative'
   - 'needs:decision'
   - 'origin:issue'
-dependencies: []
+dependencies:
+  - CAS-222
+  - CAS-223
 references:
   - src/Common/memory.h
   - src/Common/MemoryWorker.cpp

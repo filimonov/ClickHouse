@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 08:02'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -14,7 +15,8 @@ labels:
   - 'confidence:speculative'
   - 'needs:decision'
   - 'origin:2031-triage'
-dependencies: []
+dependencies:
+  - CAS-243
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedExchange.h

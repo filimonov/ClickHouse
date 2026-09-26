@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -15,7 +16,8 @@ labels:
   - 'confidence:speculative'
   - 'needs:decision'
   - 'origin:review'
-dependencies: []
+dependencies:
+  - CAS-29.5
 references:
   - CA/Gc/CasGc.cpp
 documentation:

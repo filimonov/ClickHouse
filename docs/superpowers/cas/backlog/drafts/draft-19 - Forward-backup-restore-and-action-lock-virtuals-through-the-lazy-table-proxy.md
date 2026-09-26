@@ -4,6 +4,7 @@ title: 'Forward backup, restore and action-lock virtuals through the lazy table 
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:25'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:upstream'
   - 'complexity:medium'
@@ -12,7 +13,8 @@ labels:
   - 'confidence:plausible'
   - 'origin:review'
 milestone: m-5
-dependencies: []
+dependencies:
+  - DRAFT-18
 references:
   - src/Storages/StorageProxy.h
   - src/Storages/StorageTableProxy.h

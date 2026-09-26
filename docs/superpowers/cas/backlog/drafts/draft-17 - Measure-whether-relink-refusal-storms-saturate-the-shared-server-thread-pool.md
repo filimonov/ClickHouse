@@ -4,6 +4,7 @@ title: Measure whether relink refusal storms saturate the shared server thread p
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:25'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:replication'
   - 'area:upstream'
@@ -13,7 +14,8 @@ labels:
   - 'needs:measurement'
   - 'needs:repro'
   - 'origin:issue'
-dependencies: []
+dependencies:
+  - CAS-123
 references:
   - base/poco/Net/src/TCPServerDispatcher.cpp
   - src/Common/AsynchronousMetrics.cpp

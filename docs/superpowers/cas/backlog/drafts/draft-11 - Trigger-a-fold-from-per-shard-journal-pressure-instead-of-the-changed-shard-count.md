@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -14,7 +15,8 @@ labels:
   - 'confidence:speculative'
   - 'needs:measurement'
   - 'origin:soak'
-dependencies: []
+dependencies:
+  - CAS-29.10
 references:
   - CA/Pool/CasPool.h
   - CA/Gc/CasGc.cpp

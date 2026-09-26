@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 06:55'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -15,7 +16,8 @@ labels:
   - 'needs:decision'
   - 'needs:measurement'
   - 'origin:review'
-dependencies: []
+dependencies:
+  - CAS-17
 references:
   - src/Storages/MergeTree/ReplicatedMergeTreeSink.cpp
 documentation:

@@ -6,7 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -17,7 +17,8 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
 milestone: m-1
-dependencies: []
+dependencies:
+  - CAS-29.2
 references:
   - CA/Backend/CasObjectStorageBackend.cpp
   - src/IO/S3/deleteFileFromS3.cpp

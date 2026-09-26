@@ -6,6 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:08'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -17,7 +18,8 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
 milestone: m-2
-dependencies: []
+dependencies:
+  - CAS-176
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp
