@@ -31,6 +31,7 @@ infrastructure, the soak/chaos harness, and testing-methodology rules.
   3. `makeCasWriteRetryLaterExceptionPtr` (`CasRequests.h:89`) has no direct test against its direct-throw twin `throwCasWriteRetryLater`.
   Fix: add the three tests next to `gtest_cas_requests.cpp`'s existing siblings; add a direct classification test next to `CASWriteResult.OrThrowMapsEveryAlternative`.
 - **[gate-filter-countingbackendshape-escape] ✅ CLOSED by renaming the suite to `CASCountingBackendShape` (`683b68606e2`, 2026-08-24)** — TEST/INFRA — The strict `CAS*` gate then passed `2141/2141` Debug tests from `298` suites and `2140/2140` ASan tests from `297` suites with zero sanitizer, leak, logical, fatal, or signal markers. The generator now emits the same `298`-suite strict set with the three remaining generic-infrastructure exclusions.
+- **Engine test seam (if the checkpoint shows jitter-dependent reds):** `Retry::backoff` draws full jitter with no test seam, so a test driving an ambiguity under `untilLeaseSafe` with a short remaining lease is a coin flip; a `setBackoffFnForTest` on `CasRequests` (used by `pauseAndReissue`) would make it deterministic. `MountLeaseRenewer::renewOn`'s (renamed from `MountLeaseKeeper`) `catch (...)` arm reports `attempts_sent = 0` — an exception that escaped the engine carries no count; document at the field. `Pool/CasServerRoot.h` is a forbidden file for the source-comment pass; left for the engine-defect pass. (From the CP3/Task 7 review, 2026-09-03.)
 
 ### `[cas-tests-unchecked-optional-deref]` A test that dereferences a disengaged optional takes every later test in the binary with it {#cas-tests-unchecked-optional-deref}
 
@@ -120,6 +121,57 @@ of a cheap agent's time. Zero risk to the tree if step 2's revert check is honou
 - **[soak-harness-minors] soak-harness minors** — INFRA — Two open sub-points: the S01 scratch high-water sampler's coverage of the OPTIMIZE-FINAL spike is unconfirmed, and the `s3cache` scenario's positive-cache-hit assertion is unverified (the scenario file itself could not be located, possibly retired alongside S24). Resolved and dropped: `run_24h.sh` now archives prior-run logs under `logs/prev_<ts>` (`0cd9fc6cfff`); scenario cards no longer say `root_shards`; `pool_objects`/`pool_bytes` being `None` is a documented design choice, not an unreliability bug (`utils/ca-soak/soak/pool.py`). **OBSOLETE:** S24's pre-agreement `SYSTEM SYNC REPLICA` ask — S24 itself was retired 2026-08-22 (the conditional-blob-publication protocol it tested was superseded).
 - **[soak-lock-hold-wait-metric] soak phase-3 lock-hold/wait metric sampling + budget gate** — DESIRABLE — `utils/ca-soak/scenarios/framework/sampler.py` still has no lock-hold/wait fields, only memory/pool-size/container samples.
 - **[s23-soak-profiler-firehose-contamination] S23 soak memory-gate profiler-firehose contamination** — MINOR — Still unfixed; independently re-confirmed with more detail by `docs/superpowers/cas/2026-08-31-scenario-repair-ledger.md`: a 64 MiB threshold on S23's idle pool mostly measures ~176 MB/hour of the server's own telemetry.
+
+### Soak-harness bugs found across the 2026-09-03/04 GCS and phase-3 runs {#soak-harness-bugs-2026-09-04}
+
+- **Harness: `fixpoint_timeout_s` assumes a GC round every ~2 s** (`gc_interval_s=2` default) and gave
+  1092 s for ~98 rounds; real GCS rounds took 18.8 s to 1250 s (round 7: 1114 s of its 1125 s in
+  `pending_deletes`, 5000 throttled deletes). Derive the bound from observed round durations, as
+  `wait_for_pool_drain` already does; otherwise every real-GCS soak with a backlog fails falsely.
+  **Reproduced on real AWS 2026-09-04** (`ca_live_20260904_aws_r1`, 8-minute no-chaos smoke; read-only
+  investigation report in the run's `tmp/aws_unreachable_debug_report.md`): `history=[3517, 2779]`,
+  bound 300 s, while the pool converged to `unreachable=0 dangling=0 unaccounted=0` on its own 38
+  minutes after the checkpoint started; condemned = graduated = redeleted = 4305, spared/replaced/
+  absent 0, every unreachable object a `blobs/` key in `delete_pending` or `awaiting_gc`. Two concrete
+  defects in `soak/checker.py`: (1) `poll_unreachable_to_stable` needs `stable=3` samples and each sample
+  is a full fsck (~325 s at 4-5k objects), so three samples cannot fit a 300 s bound regardless of GC
+  health; (2) `initial` is read before the first condemning round, so `max(300, 0.2 * initial)` collapses
+  to the floor while the backlog is still rising; the `wait_for_pool_drain` precondition never engaged
+  because `soak.pool`'s physical probe returns `None` on a live store. Fix: bound ≥ `stable` × measured
+  fsck seconds plus a drain estimate taken from `pending_reclaim` in `system.cas_mounts` and the observed
+  `system.cas_gc_log` round durations. Also: the run JSON's `fsck_status: "skipped"` is misleading when
+  three fscks ran and only the final one was not reached.
+  Owner: `utils/ca-soak/soak/run.py`.
+- **`B152/B185` warning text is wrong for this occurrence.** `wait_for_pool_consistent` in
+  `utils/ca-soak/soak/run.py` reports "did not HOLD dangling==0 … after a fault window", but the flap
+  happened in the routine `gc_checkpoint` stage before any chaos fault. Broaden or correct the message so
+  a real future finding is not dismissed as the known post-restart flap. (Soak 2026-09-04, phase 3, 30
+  min, seed 20260904, binary 6ddaefbcc9e.)
+- **Pool drain probe `None` under load.** One `pool_bytes=None` sample at 23:26:26Z inside the GC-drain
+  window; plausibly a `docker exec`/`du` subprocess timeout under host I/O contention, unprovable from
+  RustFS logs (known observability gap). `soak/pool.py` `pool_size` should log subprocess-timeout and
+  empty-stdout as distinct causes. (Same run as above.)
+
+### `[soak-harness-needsrecovery-after-near-ttl-pause]` The soak harness treats a near-TTL chaos pause's designed fence-then-recover as a fatal violation (2026-09-04) {#soak-harness-needsrecovery-after-near-ttl-pause}
+
+GCS soak run 1 (`ca_live_20260904_r2`, phase 3, chaos): chaos fault #4 was `both pause` for 29 s
+against a 30 s mount-lease TTL. `ch2`'s renewer fenced (`external_lease_deadline`, 0 physical
+attempts), its ref append lane went `CASRefNeedsRecovery` at the committed-frontier publication
+fence, and the harness's recovery checkpoint treats any nonzero `CASRefNeedsRecovery` as a
+"LATE-PUT FENCING VIOLATION" and aborts the driver. The data model matched byte-for-byte on both
+nodes (count 62496, same `sum_fp`/`uniq_keys`/`sum_v`/`sum_version`) and fsck came back clean
+(`dangling=0 unreachable=0 stale_edge=0`); `system.cas_log` shows `ch2` recovered normally
+(`mount_remount ok`) once the pause ended. `CASRefNeedsRecovery` is a cumulative counter: one
+genuine, expected recovery event during a designed near-TTL pause keeps it nonzero in every later
+snapshot by construction, which is what "stays 1 across three ticks" actually means here, not a
+stuck lane. Ruled not attributable to the branch under measurement (`cas-gc-write-once-keys`): no
+file it touches sits on the mount renewer or the ref append lane. Fix options for the harness: (a)
+classify a chaos pause whose duration is within 1 s of the lease TTL as `freeze_long` rather than
+an ordinary pause, since a fence-then-recover is the designed outcome at that margin; or (b) drop
+`CASRefNeedsRecovery` from the must-stay-zero counter set at the recovery checkpoint specifically
+for the case where the lane has since remounted and the data model matches, since the counter
+cannot distinguish "recovered once, correctly" from "still stuck" without also reading the mount
+state.
 
 ### `[s27-list-anomaly-aimed-at-a-retired-path]` ✅ CLOSED by `d6986f799f4` (`cas-gc-rebuild` only): S27 re-aimed at the prefixes GC actually pages {#s27-list-anomaly-aimed-at-a-retired-path}
 
