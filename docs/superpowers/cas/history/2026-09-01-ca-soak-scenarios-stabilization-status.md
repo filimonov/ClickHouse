@@ -2,7 +2,7 @@
 description: 'Status dump of the ca-soak scenario stabilization campaign: what was fixed, what each variant reports, what is filed in the backlog, and what is still unexplained.'
 sidebar_label: 'Scenario stabilization status'
 sidebar_position: 98
-slug: /superpowers/cas/random/scenarios-stabilization-status
+slug: /superpowers/cas/history/ca-soak-scenarios-stabilization-status
 title: 'ca-soak scenarios — stabilization and research status'
 doc_type: 'reference'
 ---
