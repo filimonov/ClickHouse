@@ -22,10 +22,10 @@ Fully covered by the spec, text removed here:
 
 - **[gc-frontier-one-list]** — spec [B1](/superpowers/specs/cas-gc-rounds-in-minutes-design#b1-discovery): a per-life exact-GET probe plus a bounded per-life LIST only on change, stronger than either proposed lever.
 - **[GC-DEFER-DECISION-LIST-COST]** {#gc-defer-decision-list-cost} — same spec section (B1). Was the largest GC cost item in this file (79% of GC wall time on the 2026-08 measurement; audit re-measures 30-42%).
-- **`{#ref-cleanup-whole-catalog-token-stillness}`** (CAS-079) — spec [B3](/superpowers/specs/cas-gc-rounds-in-minutes-design#b3-cleanup-licence), named explicitly as absorbing CAS-079 (per-row licensing, per-namespace refusal, adjudicated not yet built). The write-hotspot context it cited, `{#ref-catalog-write-hotspot}` (`performance.md`), still applies.
 
 Partially covered, full text kept under their own topic below:
 
+- **`{#covered-log-cleanup-aborts-on-catalog-etag}`** (formerly `{#ref-cleanup-whole-catalog-token-stillness}`/CAS-079) — spec [B3](/superpowers/specs/cas-gc-rounds-in-minutes-design#b3-cleanup-licence), named explicitly as absorbing CAS-079 (per-row licensing, per-namespace refusal, adjudicated not yet built); the 2026-09-16 measurement (40 of 85 rounds abort at the catalog-etag check, 37 never read, 8 delete something) and the narrow-or-refresh-cut plan are still open. See [GC cost and throughput](#gc-cost-and-throughput).
 - **`{#janitor-page-hardcoded}`** (CAS-034) — spec [B4](/superpowers/specs/cas-gc-rounds-in-minutes-design#b4-janitor) makes the janitor's page settings-driven; does not narrow its LIST scope. See [GC cost and throughput](#gc-cost-and-throughput).
 - **`{#gc-outcome-budget-skews-round-report-counters}`** (CAS-101) — spec [C2](/superpowers/specs/cas-gc-rounds-in-minutes-design#c2-budgets-removed) closes refinement 1 only. See [GC observability](#gc-observability).
 - **`[distributed gc_shards>1 parallel GC]`** — spec [§7](/superpowers/specs/cas-gc-rounds-in-minutes-design#multi-node-direction) records the direction, not built. See [GC cost and throughput](#gc-cost-and-throughput).
@@ -150,7 +150,226 @@ is a carried marker or a sweep concern rather than anything in the fold.
 ## GC cost and throughput {#gc-cost-and-throughput}
 
 - **GC throughput collapse under a mass-DROP burst** {#gc-throughput-collapse-2026-07-25} — KEEP, historical RCA — Unbudgeted serial rounds diverge once DROP arrivals exceed one round's service rate (20s→1716s over 6 rounds, 188→20,046 candidates). Three defects: zero-depth meta-pool queue; permanent tombstones under the globally-enumerated ref prefix; `system.remote_data_paths` has no `disk_name` pushdown (tracked in `testing-and-ci.md`). The first two are the shape spec [Stage A](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-a)/[B](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-b) now re-derive from fresh data; kept as this incident's historical record.
-- **[janitor-page-hardcoded]** {#janitor-page-hardcoded} CAS-034 — KEEP, partially covered — Hardcoded 1000-key page over the WHOLE `namespaceRootPrefix()` (`Gc/CasGc.cpp:470`): post-DROP erase is O(all namespace objects), not O(debris) — latency, not loss. Spec [B4](/superpowers/specs/cas-gc-rounds-in-minutes-design#b4-janitor) makes page count/size real settings; does NOT narrow the LIST scope to the removed namespace — still open.
+### GC falls behind without bound under sustained small-part churn (measured 2026-09-15; formerly tracked separately, less precisely, as `[janitor-page-hardcoded]`/CAS-034) {#janitor-page-hardcoded}
+
+Local msan rig, CI msan binary v26.6.4, 6 passes of the CI shard 2/3 test list on one server (3 h 24 min), RustFS
+rc.3 in its own cgroup: GC round duration
+24.3 s → 596.8 s (24x) against a 20 s interval, `CASGCPendingReclaim_cas_s3` 81 → 35,351 (436x), rounds per 10 min
+23 → 1. Round length tracks the backlog (r = 0.92) more than the object store's delete latency (r = 0.57, RustFS
+`delete` 0.4 → 44 ms with store size), so the loop is inside CAS: the bigger the backlog, the longer the round, the
+more the backlog grows. GC is ~1/3 of all object-store operations in that run (run 3 events: ~890k GC reads, 290k
+`CASGCMetaOps`, ~510k graduation HEADs of ~4.7 M S3 requests). On NVMe the tests do not feel it (iteration 6 / 1
+median 1.17); on the CI runner's slow disk it is the likeliest amplifier of the msan/tsan CAS-S3 lane ramp
+(issue #2298). The CI msan shard's own log shows round 27 at +61 min = ~135 s per round already in hour one.
+
+**Which phases grow, and why** (live `system.cas_gc_log` of run 8, `cas_s3`, 5-minute windows; the `round` column
+is 0 on `Phase` rows — use `round_id`):
+
+| window | rounds | `defer_decision` | `fold_ref_intake` | `pending_deletes` | `fold_reduce` | `namespace_cleanup` |
+|---|---|---|---|---|---|---|
+| 0-5 min | 11 | 0.2 s | 0.5 s | 0.1 s | 0.6 s | 0.8 s |
+| 15-20 min | 6 | 10.9 s | 9.7 s | 8.4 s | 3.9 s | 2.0 s |
+
+- `defer_decision`: a full LIST of the ref-log prefix across every namespace each round, `ref_log_keys_listed`
+  2,308 → 19,415, `namespaces_seen` 105 → 434 — of which `dead_life_debris` 51 → 403 (93-95 %): with one live test
+  table on the server, almost everything the LIST walks is dropped tables' debris waiting for cleanup.
+- `fold_ref_intake`: one GET per ref-log record (`logs_applied` 613 → 2,102 per round); the fold read-ahead (in `antalya-26.6` since `8f6cd74a3f5`, 2026-09-05, so ON in this run at its default `cas_gc_read_concurrency=16`)
+  branch (2.4x intake) targets exactly this.
+- `pending_deletes`: `deleted` 60 → 1,181 per round at ~7 ms each (exact-token DELETE + graduation HEAD); RustFS
+  `delete` latency itself grows 0.4 → 44 ms with store size (run 7), which is where the loop closes.
+- `fold_reduce`: one HEAD per zero-transition candidate.
+The other 13 phases stay in the tens of milliseconds.
+
+**Why the debris cleanup does not keep up** (`CasGc.cpp:352-386`, `CasNamespaceJanitor.cpp`): the janitor runs ONCE
+per round over ONE page of 1,000 keys (page size hard-coded at `CasGc.cpp:363`), deleting dead-life objects one by one
+(HEAD + exact `remove`; the bulk-delete path is not used), and it runs AFTER the LIST/intake phases, so what it removes
+was already listed and read in the same round. Its throughput is `page × rounds/min`, and rounds/min collapses as the
+listed debris grows (11 → 4 rounds per 5 min; namespace removals per window 417 → 10 while 403 dead lives waited):
+a positive feedback loop. Namespace deaths themselves are folded (`new_removals`, ~35-40 per folding round). No
+setting bounds this: `gc_round_ref_cleanup_budget` (5000) is not the limiter.
+
+Asks, in order of size:
+1. **Small, measurable first:** make the janitor's pages per round and page size settings (`gc_round_janitor_pages`,
+   default 1; `gc_janitor_page_keys`, default 1000) and let a round run pages while dead candidates and a time budget
+   remain; move `namespace_cleanup` BEFORE `defer_decision` so a round does not list what it is about to delete.
+   A/B on the msan rig (`pages=10`) in one run. Spec [B4](/superpowers/specs/cas-gc-rounds-in-minutes-design#b4-janitor)
+   makes the page count/size settings-driven; does NOT narrow the LIST scope to the removed namespace — still open.
+2. **Medium:** batch the janitor's deletes through the existing bulk-delete path (`gc_bulk_delete_chunk_keys`; the
+   LIST already carries etags, skip the per-key HEAD where the token is known), and delete the covered ref logs of
+   dead lives together with them instead of waiting for retention prune.
+3. **Structural, the real O(debris) fix:** replace the global hint enumeration (`enumerateRefPrefix`,
+   `CasGc.cpp:3955`: one LIST of `<prefix>/cas/ns/stream/` over everything incl. dead lives) with the catalog cut
+   (already one GET per round, `CasRefCatalog::read` in `listRefPrefix` `:4003`) plus one frontier probe per LIVE life
+   (GET of `refLogKey(life, last_folded + 1)`, 404 = unchanged — the same probe fold intake already makes for
+   `frontier_proven`/`absent_probes`), and a per-life LIST of `<prefix>/cas/ns/stream/<life>/_log/` only for the
+   lives that fold. Run 8 at 20 min: 20 LIST pages / 19,415 keys (93 % debris) would become ~30-50 small requests
+   with zero debris sensitivity. A cross-round index of dead lives does NOT help by itself: S3 still walks their
+   keys, only the parsing is saved. Also note `gc_fold_threshold = 1` (`CasPool.h:160`) means every round with one
+   new log anywhere folds and the defer verdict is computed AFTER the full LIST, so a deferred round pays the whole
+   enumeration anyway (see the corrections below on the "deferred=0" claim).
+4. Bound the work per round / make the drain rate independent of the backlog (batching deletes; merge the fold
+   read-ahead is already in: `cas-gc-fold-read-ahead` was merged into `cas-gc-rebuild` as `e377741c725` and reached `antalya-26.6` as `8f6cd74a3f5` on 2026-09-05, so run 8 measured intake WITH it; the remaining lever is `[gc-intake-manifest-edge-serial-chain]`); back off rounds when the
+   store's delete latency is high instead of stacking longer rounds.
+5. Export `cas_gc_log` round and phase durations to the CI artifacts so this is visible per run.
+
+Corrections from the run-8 `cas_gc_log` dump (brainstorm rev.2,
+`docs/superpowers/specs/2026-09-15-cas-gc-dead-namespace-debris-cleanup-design.md`):
+- "deferred = 0 throughout" is wrong for run 8: 12 of 85 rounds were deferred.
+- The janitor's limiter is REQUEST COUNT, not page count: over 85 rounds it visited 55,285 keys and deleted 22,888,
+  a full 1000-key page costs 1.3-7.4 s (~7 ms per key: HEAD + exact DELETE, serial). Raising pages per round first
+  would lengthen rounds and partly cancel itself. Revised order: (1) batch the janitor's write-once `_log`/`_snap`
+  deletes through `removeChunkWriteOnceOrOneByOne` (~60 lines, no license change; a page becomes 1-2 batch requests),
+  (2) page settings at the existing phase position (the reorder before `defer_decision` is NOT invariant-preserving:
+  `suppress_destructive` comes from the fold verdict), (3) the targeted drain of retired lives
+  (`[targeted-drain-of-retired-lives]` below).
+- `gc_round_ref_cleanup_budget` IS the limiter on the rounds where covered-log cleanup is live: of 73
+  `ref_object_cleanup` rows, 66 deleted nothing and 6 sat exactly on the 5,000 cap — bimodal, i.e. cleanup fires only
+  for lives that hold a checkpoint-authorized snapshot (`planRefCleanup` returns early without a checkpoint,
+  `CasRefProtocol.cpp:822-835`), and short-lived test tables never publish one (run 8: ~40 `_snap` keys for 434 lives).
+  Full detail on this class of aborts: `{#covered-log-cleanup-aborts-on-catalog-etag}` below.
+- Safety notes from the codex review of the brainstorm: `retired_lives` are lives observed absent/replaced during
+  reconciliation, not proof that this actor erased them; the janitor's liveness lambda is a per-page cached
+  `authority_held` (`CasGc.cpp:364-367`, `4692-4703`) and cannot fence a concurrent new leader; `Removing` lives still
+  have recovery readers (`namespaceStillLogicallyPresent`, `dropNamespaceImpl` retry), so deleting on the DROP path
+  is rejected. Open question for the owner: may the round's drain phase perform physical deletes at all.
+
+CI-side mitigation without GC changes: system logs of the CAS lanes on a plain disk (every log flush onto `cas_s3`
+is new ref logs and objects), which also shrinks the RustFS object count.
+
+Related: RustFS `delete`/`delete_version` latency growth with object count (RustFS side),
+audit [F2](/superpowers/reports/otel-demo-cas-s3-budget-audit#f2) (`[PART-REMOVAL-REPOINT]` above).
+
+### `[covered-log-cleanup-aborts-on-catalog-etag]` Covered-log cleanup aborts before its first delete whenever any other namespace changed since the fold (found by the janitor review, 2026-09-16; formerly tracked separately, less precisely, as `{#ref-cleanup-whole-catalog-token-stillness}`/CAS-079) {#covered-log-cleanup-aborts-on-catalog-etag}
+
+Found by the codex review of the janitor brainstorm (`docs/superpowers/reports/2026-09-15-cas-gc-dead-namespace-debris-cleanup-codex-reviews/review_r2.md` MAJOR 1,
+`BRAINSTORM.md` rev.3a §1(d) and §7 question 5). Outside the janitor's scope proper and may be the larger lever;
+absorbed here as one entry with `{#janitor-page-hardcoded}` since both feed the same backlog-runaway loop. Spec
+[B3](/superpowers/specs/cas-gc-rounds-in-minutes-design#b3-cleanup-licence) names this as "adjudicated not yet
+built" (per-row licensing, per-namespace refusal); this entry is the measurement and plan behind that line. The
+write-hotspot context it cited, `{#ref-catalog-write-hotspot}` (`performance.md`), still applies.
+
+**Mechanism.** `Gc::cleanupRefObjects` deletes the `_log` objects of **live** lives that are already covered
+by their checkpoint. Before its first chunk it re-reads the pool catalog and, in `authorityHolds`
+(`Gc/CasGc.cpp:3590-3605`), requires `current_catalog.etag == folded.catalog_cut->etag` — equality of the
+**whole pool catalog** with the cut taken at fold time — in addition to the per-namespace checks (row
+unchanged, life resolves to the same incarnation, `gc/state` present with the same owner/sequence). The
+etag condition is the strict one: any `CREATE` or `DROP` of any other table between the fold and the cleanup
+changes it, and the caller then stops the entire pass before the first delete (`:3690-3691`). The code
+comment says the strictness is deliberate: "every irreversible delete is still licensed by the SAME complete
+catalog observation and GC lease that adopted the fold".
+
+**Measured (run 8 of the msan rig, `RIG/run8/samples/cas_gc_log.tsv`, 85 `ref_object_cleanup` rows, stage
+read off each row's ProfileEvents: the catalog GET classifies as `Other`, `/cas/ns/` reads as `Root`):**
+
+| stage reached | rows |
+|---|---|
+| no object read at all (no checkpoint / no `checkpoint_snapshot_id`; `planRefCleanup` returns early) | 37 |
+| nonempty chunk built, then `authorityHolds` false at the catalog comparison | **40** |
+| failed after the catalog comparison | 0 |
+| deleted something | 8 (7 at the 5,000 `gc_round_ref_cleanup_budget` cap) |
+
+Under a workload that creates and drops tables continuously, the etag rarely survives from the fold to the
+cleanup; the phases in between (`pending_deletes`, `fold_reduce`) are exactly the ones that grow over the run
+(`{#janitor-page-hardcoded}`), so the window widens as the round lengthens.
+
+**Why it matters beyond cleanup.** Covered logs the pass fails to delete stay under the live life's `_log/`,
+are listed by every global `enumerateRefPrefix` LIST (`defer_decision` growth), and become dead-life debris
+for the janitor when the table is dropped. So the aborts feed the very debris that S1/S2 make the janitor
+remove faster: **longer round → cleanup aborts more → more objects → longer LIST → longer round.** The 8
+successful rows deleted 23,840 objects; 40 aborted rounds at up to 5,000 each is the order of the backlog
+this can produce per run.
+
+**Plan, three steps, no step before the previous one's result:**
+
+0. *Estimate from existing data, no code.* From run 8's Phase rows: the window between the fold's catalog cut
+   and `ref_object_cleanup` per round, against the lane's CREATE/DROP rate. If the window is seconds and the
+   rate is several per second, survival of the etag is structurally near zero and the question is not "how
+   often" but "is whole-catalog equality required at all".
+1. *Measurement with code, one local run.* Split the stop reason in `authorityHolds` into ProfileEvents:
+   etag-only (row and life of THIS namespace unchanged), row/life changed, `gc/state` absent or owner/sequence
+   changed; plus, per round, the number of objects planned and not deleted because of the abort. Release
+   build in lane-g, local ca-s3 stateless lane, 60-90 min, dump `cas_gc_log` and events. Result: the share
+   of aborts whose per-namespace licence was intact, and the undeleted volume per run. ca-impl, half a day.
+2. *Brainstorm on the licence, only if etag-only dominates.* The narrow question: which observation must be
+   unchanged to delete write-once `_log` keys of one life that its own checkpoint covers. Candidates:
+   (a) narrow the licence to row + life + `gc/state`, dropping whole-catalog etag equality — the argument is
+   that the keys are write-once, belong to one life, and the plan derives from that life's durable
+   checkpoint, so other namespaces' churn changes neither the key set nor its coverage; the counter-argument
+   to answer is the author's "same complete observation" comment, i.e. whether the fold seal or this life's
+   coverage depends on the rest of the cut; (b) keep the licence, re-read the catalog and take a fresh cut
+   immediately before the cleanup inside the same round, shrinking the window to milliseconds; (c) move the
+   cleanup phase to right after the fold while the cut is fresh. Constraints in: the round stays one-pass,
+   LIST trust is not reopened, no new object kinds. ca-arch with the code, then codex in a loop capped at
+   three rounds.
+
+**Not to do:** relax the etag check directly. It is a licence on irreversible deletes and the comment says
+the strictness is intended. Numbers first, then the invariant, then code.
+
+Related: `{#janitor-page-hardcoded}`, `[targeted-drain-of-retired-lives]` below,
+audit [F2](/superpowers/reports/otel-demo-cas-s3-budget-audit#f2).
+
+### `[targeted-drain-of-retired-lives]` FROZEN, not designed: draining a retired life's prefixes right after reconciliation (approach A of the janitor brainstorm, 2026-09-15) {#targeted-drain-of-retired-lives}
+
+Source: `docs/superpowers/specs/2026-09-15-cas-gc-dead-namespace-debris-cleanup-design.md` rev.3 §A, and the three codex review rounds
+(`docs/superpowers/reports/2026-09-15-cas-gc-dead-namespace-debris-cleanup-codex-reviews/`). Status by owner decision 2026-09-16: **frozen as "not
+designed"**. It is not scheduled after S1/S2; whether it is worth building at all is decided by the S1/S2
+measurements (`{#janitor-page-hardcoded}`).
+
+**The idea.** `pre_fold_ref_drain` erases every eligible `Removing` row and the reconciler returns
+`retired_lives` (`Gc/CatalogLifecycleReconciler.h:32-34`); both per-life prefixes are constructible from the
+incarnation (`Formats/CasLayout.h:134-143`). A would, after a drain that reports `Authoritative` and
+`DrainComplete`, and only for a life that the unambiguous `final_catalog_cut` no longer resolves, delete that
+life's `namespaceStreamPrefix` (batched write-once deletes) and `namespaceStatePrefix` (exact removes), leaving
+the global janitor page as a backstop. Cost per dead life: 2 LISTs, 1 batch delete, a few exact removes.
+~150 lines plus a budget setting. The attraction: today's janitor finds dead-life debris only by paging the
+global `<prefix>/cas/ns/stream/` LIST, one 1,000-key page per round, and 93-95% of listed keys are that debris.
+
+**Why it is frozen: five review findings, each a legitimate reader or writer of a retired prefix that the
+design did not fence, and each answered in the brainstorm by one more precondition rather than an
+invariant.**
+
+1. `retired_lives` records lives *observed* absent or replaced, including on `FencedOut`
+   (`Gc/CatalogLifecycleReconciler.cpp:99-118`, `Pool/CasRefCatalog.cpp:474-484`, `525-536`); it is not proof
+   that this actor erased the row. Only the conjunction with an unambiguous final cut is a licence (r1 #1).
+2. Two GC actors can overlap. The janitor's liveness callback is a flag refreshed once per page
+   (`Gc/CasGc.cpp:364-367`, `4692-4703`); `CasOperation::gate` samples it without refreshing the lease
+   (`Backend/CasRequests.cpp:413-425`) and cannot cancel an in-flight delete. A successor leader's janitor and
+   a stale leader's drain can hit the same prefix. Per-chunk authority refresh improves stopping, it is not
+   fencing (r1 #2).
+3. `Removing` lives still have readers: `namespaceStillLogicallyPresent` and a retried DROP both call
+   `ensureRefTableRecovered` first (`Pool/CasRefLedger.cpp:5063-5071`, `5146-5155`), and recovery over drained
+   inputs **throws `CORRUPTED_DATA`**, non-transiently: `chooseRecoveryGrounding` throws for a `Live` or
+   `Removing` namespace with no readable `_ckpt` (`Pool/CasRefCkpt.cpp:142-151`); partial drainage throws on
+   missing committed logs under an unchanged checkpoint (`:1067-1081`); the outer retry treats corruption as
+   final (`:1489-1494`). Rev.2's "a cold probe answers present conservatively" and "a DROP retry proceeds to a
+   terminal append" were both wrong. The window exists today (the janitor deletes the same bytes after the row
+   erase); A narrows it from many rounds to part of one round and so raises the hit rate (r1 #4, r2 #2).
+4. A drained prefix is not guaranteed empty: a snapshot publisher captures live state and then creates at the
+   captured life's `_snap` key (`Pool/CasRefLedger.cpp:4543-4544`); its admission checks mount generation and
+   runtime flags (`:4445-4456`), which retirement invalidates but cannot un-send. A PUT in flight lands after
+   the drain. "Nothing can write under a dead incarnation" is withdrawn; the true guarantee is only "a
+   successor life uses a different prefix" (r2 #4).
+5. Bulk deletion is accounting-atomic, not physically all-or-nothing (`removeManyWriteOnce` contract), so a
+   partially drained prefix is a normal outcome, and `deletePrefixWholesale`'s `out_fully_drained` means
+   "enumeration exhausted", not "prefix empty" (`Gc/CasGc.cpp:3733-3757`) (r2 #3).
+
+The accretion is the signal: after two rounds A carried "publisher quiescence", "per-chunk authority
+refresh", "own budget", "backstop stays forever", and two blocking open questions (may the drain phase perform
+physical deletes at all; how the callers in 3 handle the exception). The system's recovery model treats a
+missing checkpoint of a `Live`/`Removing` life as corruption, not as "nothing to recover", and there is no
+durable marker "this prefix may be destroyed" that recovery, the publisher, a DROP retry and a second GC
+actor all consult. Without that marker A is a race by construction and the backstop does the real work.
+
+**What would unfreeze it.** A retirement-fence invariant designed first, on its own: who may read or write a
+retired life's prefix and until which durable event; recovery over a fenced life refuses (not
+`CORRUPTED_DATA`), publisher admission and DROP retry check the fence, and the fence is visible in the
+catalog cut a successor leader derives. Only then is a targeted drain a licence instead of a bet. That is
+architectural work, not a janitor optimisation, and it is justified only if S1/S2 leave the janitor unable to
+keep up with debris production.
+
+**Decision pending from the owner, no default:** whether a round's drain phase may perform physical deletes
+at all. Today the drain erases catalog rows under the lease (`Pool/CasRefCatalog.cpp:514-517`) and performs
+no physical cleanup; nothing in the code states either way.
 
 ### `[gc-namespace-janitor-one-page-per-round-cannot-keep-up]` The namespace janitor examines one 1000-key page per round, so dead namespaces accumulate and every round's ref-prefix LIST grows with them {#gc-namespace-janitor-one-page-per-round}
 
@@ -450,7 +669,65 @@ oracle, plus the existing `CAS*` gate. Acceptance: on a mass-removal round `Miss
 of zero and `fold_reduce` scales with the read-ahead, not with the inline HEAD count. Expected on the
 AWS figures above: 128 s → ~40 s.
 
+### GC per-disk thread pools → one server-wide pool (2026-09-07) {#gc-per-disk-thread-pools}
+
+`Cas::Gc` owns `read_pool` (`Gc.h:982`, concurrency 16, `max_free` 16) and `GcMetaWriter`'s pool
+(`gc_meta_pool_size` 16) for the DISK's lifetime although both are used only inside a round: ~17-32 idle
+threads per CAS disk, measured 523 threads at 30 inline disks. A design-only spec exists
+(`add795aba9bd`) but no implementation. Do it like `CasBlobUploadPool`: one pool initialised once from
+server settings, per-disk settings bound per-round in-flight work; or create the pools per round.
+Interim mitigation applied: `SYSTEM CAS FORGET` in every stateless test creating an inline disk.
+
 ## GC observability {#gc-observability}
+
+### Issue #2211: `SYSTEM CAS GC RUN` on a follower silently does nothing (adjudicated 2026-08-21) {#issue-2211-gc-run-follower-noop}
+
+https://github.com/Altinity/ClickHouse/issues/2211 — CONFIRMED as described; the report's code anchors
+all check out on HEAD. History splits it in two:
+
+1. **No-steal on manual runs is DELIBERATE** — commit `74d67b85021` (2026-07-13, "manual GC rounds
+   never steal a lease"): the observation-window steal protocol's safety argument needs the two
+   "incumbent frozen" observations spaced by real wall time (the loop's paced ticks); two manual
+   calls can land microseconds apart and fake a frozen incumbent → two concurrent destructive GC
+   actors. The pre-fix manual path also never heartbeat-protected an acquired lease. Keep as is;
+   the issue itself agrees steal is the wrong fix.
+2. **The silent success row was NOT a chosen contract** — commit `cb111510c1a` (2026-07-20) merely
+   surfaced the already-computed `RoundReport` as a result set ("mirroring the DROP POOL MEMBER
+   precedent", deferred-register item 11). No record anywhere (commits, specs, backlogs) weighs
+   throw-vs-row for the follower case; the docs (`operations/debugging.md` `{#sql-gc-run}`) don't
+   mention the follower no-op either. Genuine operator-contract gap.
+
+Also confirmed: `GcLease` is `{owner: UInt128 random gc_id, seq}` — no host identity
+(`CasGcStateFormat.h:17`), and `system.cas_mounts.is_leader` is populated only for the local mount,
+so a follower cannot name the leader today.
+
+Fix shape (DECIDED 2026-08-21, user call): keep the quiet idempotent OK — no exception. Rationale:
+with default `distributed_ddl_output_mode=throw`, a throwing follower inverts the bug for
+`ON CLUSTER` (leader ran the round, N-1 followers threw, the statement reports failure), and a node
+inside the DDL fan-out cannot tell it is part of `ON CLUSTER`, so selective throwing is impossible.
+A follower's "not my lease" is a valid outcome of "run a round here if this node may", and quiet OK
+keeps scripts/harnesses that poke `RUN` on every node working. Instead, make the outcome
+first-class and visible:
+- add a `finish` column (`Success`/`NotALeader`/`Deferred` — already exists in `cas_gc_log`, the
+  interpreter row just doesn't emit it) to the `RUN` result set, so the operator reads a word, not
+  infers from `acquired_lease=0` + zeros;
+- add advisory identity to `GcLease`, mirroring the existing `MountLease` precedent
+  (`CasServerRootFormats.h` carries `hostname`/`pid`/`server_uuid` next to its protocol fields for
+  exactly this purpose): `hostname` (+ `server_uuid`/`pid` for symmetry), written at acquire/steal.
+  The protocol part stays untouched — `owner` MUST remain a random per-process-instance UInt128
+  (a restarted server is a NEW GC actor and must not resume the old lease; hostname is neither
+  unique nor per-instance), which is WHY host identity was never the owner: the advisory field was
+  simply never needed until #2211 (YAGNI, not a considered rejection — no record deciding against
+  it). Durable-format change, pre-release so no compat scaffolding
+  ([[feedback_ca_no_compat_scaffolding_predev]]);
+- follower `RUN` row then carries `leader_host` — `NotALeader, leader_host='replica-2'` in one read,
+  no operator discovery query. Rejected as contract (user call): documenting a
+  `clusterAllReplicas(system.cas_mounts) WHERE is_leader=1` discovery recipe as the way to find the
+  leader — too strange a requirement once the row can name the holder;
+- bonus: `system.cas_mounts.is_leader` can be populated for ALL rows (match `gc/state`
+  hostname/server_uuid against mount slots), not local-only;
+- docs `{#sql-gc-run}`: state the leadership model in one sentence.
+No-steal on manual `RUN` stays untouched.
 
 - **[GC round progress observability]** round-duration watchdog + fold-window events — HARD — A wedged round is only visible after the fact. Spec [C5](/superpowers/specs/cas-gc-rounds-in-minutes-design#c5-observability) adds `deadline_hit`/`carry_total`; audit `#f28` recommends a one-line per-round summary. Neither adds the watchdog alert or the fold-begin/end imbalance check.
 - **[GC-FULL-TIME-ACCOUNTING]** {#round-duration-alarm} every millisecond of a round must be attributed — Timer coverage 99.986% complete. Remaining: name the `orphan_sweep` epilogue phase, add an `unaccounted_ms` column, a periodic progress log line — not delivered by spec C5 or audit `#f28`.
@@ -480,6 +757,22 @@ fix is attribution at the worker boundary, which is a `GcPhaseTimer` change and 
 - **[REBUILD-SEAL-POINT-READ]** point-read closure for REBUILD seal discovery — HARD — `rebuildBaseline` finds the newest seal by probe-and-step-down, not proof. Fix: a write-once `gc/gen/<G>/sealed` alias for one residual; a pruned-pool false-"virgin" verdict needs a marker that survives pruning, deferred. Reasoning: `.superpowers/sdd/2026-07-28-cas-ref-chain-stage-a-streams/task-8-report.md`.
 - **[FSCK-SCALE-TIMEOUT]** {#fsck-scale-timeout} `ca-fsck` cannot complete a large pool within its own deadline — MEASURED — Times out at ~29-31 GiB (`FSCK_EXIT=159`), returns nothing; raising the budget 180→600s did not help. Direction: bounded/streamed partial verdicts with a resumable cursor. A phase-3 soak's fsck-clean gate stays UNARMED at scale.
 - **[rebuild-cannot-recover-undecodable-gc-state]** {#rebuild-cannot-recover-undecodable-gc-state} opus review B8 — KEEP, P2 — `rebuildBaseline` classifies an undecodable `gc/state` correctly, then unconditionally re-decodes the same bytes with no `try` inside `acquireOrRenewLease` (`Gc/CasGc.cpp:4732-4760`, confirmed identical and unfixed on `antalya-26.6`, 2026-09-25) — `GC REBUILD FORCE` throws `CORRUPTED_DATA` in exactly the scenario it exists for. Only workaround (external S3 delete) is named nowhere. Fix: tolerate an undecodable state in the rebuild path's lease acquisition.
+
+## `[otel-demo-s3-budget-audit-2026-09-25]` otel.demo CAS S3 budget audit: twelve ranked findings on repeated and unnecessary work {#otel-demo-s3-budget-audit-2026-09-25}
+
+Report: `docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md`. Spec that absorbs the GC-side items:
+`docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md` (A0 = F3, A4 = F4, verification F6/F8, open
+questions F5/F7/F2). Stand: 2.3M PUT, 6.4M GET, 384k LIST per day on one replica for 43 MB/day of user data; 86% of
+parts are `system.*` log tables on the CAS disk (F1, deliberate on the stand, a docs note for production); `delete_tmp` repoints 191k/day (F2,
+`[PART-REMOVAL-REPOINT]`, now with a full cost line); carried condemned rows never persist `marker_confirmed` (F3,
+one-line GC fix); one manifest body GET per edge with no per-round reuse (F4, 29% of GETs); `_ckpt` PUT per flush (F5,
+21% of PUTs, owner decision); ~3 S3 LIST requests per 1000-key page (F6, verify); six GC requests per garbage blob (F7).
+
+Most of F1-F31's findings are already threaded through this file and `BACKLOG/performance.md` and
+`BACKLOG/operability-and-introspection.md` via the spec's own A/B/C items and per-finding `#fN` citations; this
+entry is the pointer for the ones that are not yet individually cross-referenced anywhere: F6, F8, F10, F17, F19,
+F23, F24, F28, F30 (checked 2026-09-26 — none of these nine appear under `docs/superpowers/cas/BACKLOG/`). Read the
+report directly for those until each gets its own line.
 
 ## Later / design questions {#gc-later-design-questions}
 
