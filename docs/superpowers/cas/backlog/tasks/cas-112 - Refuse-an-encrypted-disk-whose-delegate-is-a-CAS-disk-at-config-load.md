@@ -4,6 +4,7 @@ title: Refuse an encrypted disk whose delegate is a CAS disk at config load
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:25'
+updated_date: '2026-09-26 07:41'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -45,3 +46,9 @@ Provenance: BACKLOG/operability-and-introspection.md#encrypted-wrapper-hides-con
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged from mounts-and-lifecycle.md #encrypted-over-cas-missing-gate: today the failure is a loud NOT_IMPLEMENTED at the first INSERT, not silent corruption; DiskEncrypted.h:332 forwards only isPlain, which is an additional mechanism next to the IV-reuse one.
+<!-- SECTION:NOTES:END -->

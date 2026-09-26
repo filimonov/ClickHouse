@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:23'
-updated_date: '2026-09-26 07:23'
+updated_date: '2026-09-26 07:41'
 labels:
   - 'area:read-path'
   - 'area:soak'
@@ -20,7 +20,7 @@ dependencies:
   - CAS-75
 references:
   - utils/ca-soak/scenarios/cards/s06_s08_manifest_parts.py
-priority: low
+priority: medium
 type: research
 ordinal: 142000
 ---
@@ -48,3 +48,9 @@ Provenance: BACKLOG/performance.md#scale-findings [wide-part O(columns)] (+ orph
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged from mounts-and-lifecycle.md (#2243 housekeeping, S07 re-rated): the same port-exhaustion condition took the mount lease down and discarded in-flight PartWriteTxns, so S07 is availability class, not cost only.
+<!-- SECTION:NOTES:END -->
