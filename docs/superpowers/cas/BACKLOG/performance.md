@@ -460,6 +460,182 @@ tracked as `umbrella-roadmap.md` §2 GC "Cheaper GC per garbage blob (decide)".
 
 Details: docs/superpowers/cas/2031-triage.md#cas-117
 
+### `[hot-key-lane-phase-a-followups]` Phase A of the hot-key lane landed on both `cas-gc-rebuild` and `altinity/antalya-26.6`; what its reviews deferred (2026-09-04) {#hot-key-lane-phase-a-followups}
+
+Formerly `[ref-catalog-cas-starvation-under-parallel-writers]` {#ref-catalog-cas-starvation} — one
+process's CREATE/DROP writers starved each other on the ref-catalog compare-and-swap. Seen on the local
+CA-s3 stateless lane (run 2, ~10 parallel jobs): `01039_mergetree_exec_time`'s `CREATE TABLE` failed
+after 78.9 s with "CAS ref catalog update: gave up at the policy deadline"; RCA in
+`docs/superpowers/cas/2026-09-04-ref-catalog-starvation-rca.md`. **DONE, superseded:** the hot-key lane
+(`Backend/CasHotKeys.{h,cpp}`, commit `4ec755474fb`, an ancestor of both `cas-gc-rebuild` and
+`altinity/antalya-26.6`; design `docs/superpowers/specs/2026-09-04-cas-hot-key-write-lane-design.md`
+revision 34; tests `gtest_cas_hot_keys.cpp`) fixed it; anchor kept here as an alias, still cited by
+`docs/superpowers/plans/2026-09-04-cas-hot-key-lane-phase-a.md:2325` and the design spec.
+
+Branch `cas-hot-key-lane` (12 commits over `e59fe7e8e4b`), `CAS*` gate 2406/2406, reviewed per task (opus/lite),
+whole-branch (opus: mergeable) and end to end (codex `gpt-5.6-sol` high: three majors, folded). **Landed
+and merged on both branches** (merged 2026-09-05; not "not yet merged" as this entry originally said
+before this grooming pass).
+
+Still outstanding, three weeks after the 2026-09-05 merge (as of 2026-09-25/26), not "before or right
+after merge" as this entry originally said:
+- The new death-test twin `CASRefCatalogDeathTest.AStaleHintCasAdmitEntryAdmitsWhenTheStoreHasRoomAborts` has never
+  executed: `lane-g` has no debug or sanitizer build. Run `CASRefCatalog*:CASHotKeys.*` in an ASan build once.
+- The acceptance measurement of the design's Task 7 (ten minutes of the parallel stateless suite on the CA-s3 lane:
+  `DROP TABLE`/`CREATE TABLE` percentiles, `PreconditionFailed` on `ref_catalog`, the `CASHotKey*` and
+  `CASRequestConflictPause` deltas) is the gate for `{#hot-key-lane-phase-b}`.
+
+Deferred by the reviews (all triaged as not blocking the merge; the first is the one the measurement needs):
+- The catalog loop's own conflict pauses (`op.pause` in `casUpdateImpl`) have no `ProfileEvents` counter; the engine's
+  `CASRequestConflictPause` counts only `readModifyWrite`'s. Add one so the hottest key's pacing is visible.
+- Same-thread reentrant `submit` while holding self-waits until the deadline (the spec's callback rule is stated, not
+  enforced); a thread-local in-hold flag throwing `LOGICAL_ERROR` would make it immediate. Note: a `LOGICAL_ERROR`
+  aborts debug and sanitizer builds.
+- `CasRequests.h` pulls `Common/CacheBase.h` into every includer; a forward declaration of `CasHotKeys` plus an
+  out-of-line `CasRequests` destructor would confine it.
+- `CASRequestConflictPause`'s description says "no transport fault preceded it"; accurate: "in the same inner write".
+- `kWaitSlice` in `Backend/` vs the directory's `SCREAMING_SNAKE` constants.
+- The `Leave` guard's comment says "allocates nothing"; true only under the lock (the log line after it allocates).
+- Tests that discriminate weakly (each carries a deterministic sibling, so none is a false-pass risk today):
+  `CleanConflictsBeforeAFault...` (probabilistic; assert the ConflictPause/Reissue deltas),
+  `AConflictThatSettledAFault...` (sleep bound non-discriminating; the Reissue delta carries it),
+  `ABaseReadThatFails...` (pins only `sent_any` absolutely), `ACachedStartPastTheDeadlineSendsNothing`
+  (`decided == 1` is the discriminator, closed by the final review), the corruption test's "break again" arm,
+  `AFailedEnqueue...` (only the `inserted == true` arm), the GC-erase test ("exactly" in prose, "at most" in code),
+  the "nothing of ours landed" assertion (give the external a distinct `removal_started_round`).
+- Unused `ProfileEvents` externs in `gtest_cas_ref_catalog.cpp` and `gtest_cas_pool.cpp` (plan-mandated).
+- The two remaining items of `task-1-review.md` (the SDD workspace under `.superpowers/sdd/`, git-ignored; the
+  review files there are the only record of them if the workspace is deleted).
+
+Related: `[hot-key-lane-phase-b]`; `[stateless-lane-wall-time-is-drop-table]`.
+
+### `[stateless-lane-wall-time-is-drop-table]` Measured on the CA-s3 stateless lane (2026-09-04): DROP TABLE is the suite's largest wall-time sink; the server is not CPU-bound {#stateless-lane-wall-time-is-drop-table}
+
+`system.trace_log` over ten minutes of the parallel suite (~10 jobs): ~280 CPU samples against 630k
+Real samples — the server is waiting, not computing; 21% of the CPU samples are stack unwinding and
+symbolisation for exceptions (every expected 412/404/timeout builds a full `StackTrace`). Query threads'
+Real samples: 44% waiting in `InterpreterDropQuery::executeToTable` for the synchronous data drop, 25%
+in `TaskTracker::waitAll` under `fanOutBlobUploads`/`commit`/`moveDirectory` (the part-commit round
+trips), 14% in `finalizeConditionalWrite` (conditional PUT wait), 13% in `poll`. `system.query_log`,
+same window: DROP TABLE n=1436 p50 2.4 s p90 11.9 s max 34.7 s; CREATE TABLE p50 184 ms p90 391 ms;
+INSERT p50 253 ms p90 541 ms. S3 calls: GET 11 095, HEAD 2 966, PUT 1 597, LIST 206, DELETE 25.
+The background drop workers themselves sit in a futex inside `DatabaseCatalog::dropTableDataTask`, not
+in S3 — the drop chain is serialised somewhere (the namespace removal through the hot `ref_catalog`
+door with the conflict backoff up to 5 s fits the p90/max shape). Placement: profile one DROP on the CA
+disk (S3 operations and CAS conflicts per dropped table) as the first measurement of the
+`{#ref-catalog-cas-starvation}` follow-up; second target = the part-commit round trips (upload fan-out
++ conditional PUTs); third = skip `StackTrace` capture for expected 412s.
+
+Design for the first target: `docs/superpowers/specs/2026-09-04-cas-hot-key-write-lane-design.md`
+(revision 34, phase A, 2026-09-04; accepted by the codex review of revision 33 with no CRITICAL or MAJOR), which supersedes the fix sketch below where they differ; the
+deferred phase B is `{#hot-key-lane-phase-b}`.
+
+**Status (2026-09-26):** the first target (`ref_catalog` write hotspot) is closed by
+`[hot-key-lane-phase-a-followups]` above. Targets 2 (part-commit round trips: upload fan-out +
+conditional PUTs) and 3 (skip `StackTrace` capture for expected 412s) are still open, and target 2 is
+continued by `[drop-path-head-of-line-and-repoint-ramp]` in `gc.md`.
+
+### `[hot-key-lane-phase-b]` Hot-key lane phase B: combining, GCS spacing, the hold clamp, the GC erase, `_ckpt` (2026-09-04) {#hot-key-lane-phase-b}
+
+Designed to revision 26 of the hot-key lane spec (commit `26bde9f9604`, 13.5k words) and deferred from
+the phase A landing (revision 27) by owner decision on 2026-09-04. Not started. Phase A fixed the seams
+so that none of this reopens the callers: `submit`'s signature, `Decide = DecideOnObject`, the engine's
+`WriteResult` returned unchanged, the caller's `Conflict` loop and pause rule, the queue of `Item`s with
+the guard as the single remover, the hold as base, decide, write, settle. Each sub-item below has its
+own gate; none is started on the documentation's say-so.
+
+**0. Caller-side freeze in `dropNamespaceImpl` (do first, not phase B proper).** `cancelStalledCreating`'s
+creator-fence read (`isCreatorFenceTerminal(cancel_op, ...)`, `CasRefLedger.cpp:5121`) runs under a
+default `Retry::standard()` of its own while `resolveNamespaceLife` freezes once and passes its policy
+down (`:1384`). Inside a hold that read can keep the key for up to its own 90 s after its caller's
+window. Freeze once at `dropNamespaceImpl`'s entry and pass it to `cancelStalledCreating` and its read.
+One-line class; makes the clamp (item 3) unnecessary for phase A.
+
+**1. Combining.** Gate: the phase A acceptance run's `CASHotKeyQueueWaitMicroseconds` per submission
+and `PUT` rate on `ref_catalog`; combining pays when the queue wait, not the write, dominates a
+submission at p90. The design, with the rules twenty-two rounds established (each was lost once in a
+rewrite and found again as a critical, so they are listed): the holder takes the items queued behind it
+that were submitted on the same `CasRequests` (the leader's per-attempt fence gate then covers every
+member: same atomics, and a re-arm between two admissions is caught by whichever generation is older),
+are not under `single_attempt` (leader or member; `Retry::once` permits one attempt and a batch may
+reissue), carry no `Liveness` closure (the engine consults one before every physical attempt and the
+batch's write is gated on the leader alone; such an item holds alone), and whose bound deadline is not
+earlier than the leader's; allocation (`BatchOutcome`, the members vector) before taking, `taken` set in
+the same critical section, so a failed allocation takes nothing; "a leader takes this item" and "this
+item's caller leaves" decided under one mutex against `taken`, exclusive (the use-after-free the flag
+prevents was found by opus round 17). Chain: each member's `decide` on `Object{bytes = candidate, etag =
+base etag}` (the etag is a placeholder no `decide` may read as an identity of the bytes), after the
+member's own `gate(reservedFor(0, 2))` (`FenceLost`/`NoBudget` written as its `GaveUp` with `sent_any =
+false`, `decide` skipped); a member's exception is held; a decline stops the chain so the landed object is
+exactly its input; a taken item the chain did not reach is `Conflict{NotObserved}`. Settle: `Committed`
+gives each contributor a three-way `gate(0)` as `postCommit` does (`FenceLost` → `GaveUp{FenceLost,
+sent_any = true}`; `NoBudget` → `GaveUp{Deadline, Lease, sent_any = true}`; else `Committed{combined
+etag, attempts_sent = 0}`), delivers held exceptions, and gives the declined member
+`Declined{landed object}`; `Conflict` → every member `Conflict{seen, 0, any_ambiguous}`; `Refused` → the
+same `Refused` to every member; `GaveUp` with `sent_any = false` → members `Conflict{NotObserved}`;
+`GaveUp` with `sent_any = true` or an exception → members `GaveUp{Unresolved, sent_any = true}` with
+their own `Source`. Held verdicts are delivered only from a landed batch (as-if-serial: a batch that does
+not land is where serial execution would have landed a prefix). The leader's guard settles unsettled
+taken members the same way, settle and erase in one critical section. The as-if-serial argument covers
+the lane's key alone; a `decide`'s other reads must not observe a key a batch member may write. A
+member's `decide` runs on the leader's thread while its caller is parked (disjoint parts of the member's
+operation; the caller's step 1 touches `admitted_generation`, the fence and clock closures, the bound).
+`written` is a prefix state the store never held once later members followed (only test callers read
+it). Members carry `attempts_sent = 0`; the pool's attempt counters are the leader's. A member's reads
+inside the hold need the clamp (item 3). Invariants HK4, HK7, HK8 and tests 1 to 4, 12 and 16 of
+revision 26.
+
+**2. `Generation` spacing.** Gate: 429/`SlowDown` count on the catalog key over the parallel stateless
+suite on the `gcs` lane after phase A; the owner's position is "GCS will say if we are too fast". The
+design: `write_spacing_ms` as a constructor argument (`Pool` passes 1000 on the `Generation` dialect, 0
+elsewhere); `Lane::last_write_end_ms` optional, set by a no-throw guard around the engine's write on
+return and unwind (the lane exists then, the leader's item is in its queue, nothing allocates); before
+the write, `op.pause` the smaller of the remainder and the leader's remaining window, and let the verb's
+own entry gate decide (a pause that consumed the window ends `GaveUp{Deadline, sent_any = false}`);
+erasure becomes "erase a lane whose queue is empty and whose last write is older than the interval",
+swept at enter and leave, with the residue after the pool's last activity bounded by the write rate.
+INV-HK9 and tests 17, 18 of revision 26. Ten rounds of findings went into where this lives; above the
+engine it is one place, inside `readModifyWrite` it was three call sites and two result families.
+
+**3. The hold clamp.** One optional clamp deadline on `CasOperation`, honoured as a minimum at its
+twelve `policy.bind` sites, set by the lane for the hold and by a leader for a member's `decide`,
+cleared after; a read the clamp refuses gives up as at its own policy deadline, reported with
+`GaveUp::Source::Policy`. Required by combining (a member's nested read runs under the leader's hold);
+for phase A, item 0 is the caller-side answer.
+
+**4. The GC erase into the lane.** `deleteCompletedRemovingAtSnapshot`'s body from "refresh authority"
+through the `replace` becomes one `submit` whose `decide` refreshes authority, checks `op.admitted()`,
+`throwIfAmbiguous` and the exact row, and returns the erased candidate; the mandatory resolution read
+after `Committed` stays authoritative for the reconciler's next selection. Four prerequisites: the
+refresh reads `gc/state` through the erase's own operation, not a private one, so the clamp reaches it;
+the `decide` keeps `throwIfAmbiguous` and the absent-catalog refusal; `CompletedRemovingDeleteResult`
+needs the catalog cut the call ends on for `FencedOut` and `EntryChanged`, which a `decide` exception
+carries nowhere, so the erase captures the base it was shown or re-reads; the double refresh a
+cached-base re-run causes is one extra `gc/state` `GET` inside the hold. Its operation carries a
+`Liveness` closure (the cached `authority_held`), so it holds alone and never combines. The authority
+gap across the engine's internal reissue (a TTL on the GC lease) stays its own item. Until then the
+erase races the lane as it races everything today and costs the lane one stale cache entry per erase.
+
+**5. `_ckpt` and `gc/state` through the lane.** One-call change per site (`readModifyWrite` to `submit`
+in a `Conflict` loop with the pause rule). Gate: the audit of the `decide` contract's condition 1 for
+`publishCkptContribution`, whose `decide` counts its runs and records its decline's reason in captured
+locals that the caller's outcome reads, so a re-run on a fresh base doubles what it reports; move both
+out of the closure first. Operations that carry a `Liveness` closure will not combine (item 1) but do
+serialize and use the cache. Half 2's go/no-go for `_ckpt` left on `readModifyWrite`: 40·M requests per
+second per contended key for M writers, and 429/`SlowDown` not above today's.
+
+**How the design got here, for whoever picks this up.** Twenty-six revisions in one day; findings per
+review round never fell below eight; the document tripled while the core (FIFO ticket, `taken`
+handshake, cache as a hint the `PUT` validates, engine result unchanged) was judged sound from revision
+18 on. About 60% of the MAJOR+ findings after revision 21 were specific to combining, 20% to spacing and
+erasure. Rules for the next round of this work: a review revision only removes or tightens, never adds a
+feature; a new feature goes in its own revision and costs at least one round; a reviewer verifies
+against the checklist above and names the failing scenario; prose and pseudocode slips are MINOR; after
+three rounds the remaining questions are answered by code and tests, not by another revision.
+
+Cross-reference: `docs/superpowers/cas/BACKLOG/gcs.md#gcs-hot-control-keys-429` independently proposes a
+narrower `_ckpt`-only pacing scheme for GCS; reconcile before starting either.
+
 ## Memory {#memory}
 
 ### Write-path allocation and ref-table commit-path cost (2026-07-16, TXN-Final campaign) {#writepath-cost-txn-final} — KEEP
