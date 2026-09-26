@@ -110,7 +110,7 @@ Stage 1 took the wide 10M×30col×500part CA-S3 `INSERT` from 58.41s to 30.26s; 
 Remaining candidates:
 
 Reports: `docs/superpowers/reports/2026-07-23-cas-wide-insert-baseline.md` (baseline),
-`docs/superpowers/reports/2026-07-24-cas-wide-insert-stage1-effect.md` (stage-1 effect). The older 268.8
+`docs/superpowers/reports/2026-07-24-cas-wide-insert-stage1-effect.md` (stage-1 effect); both deleted in `f5c01e88d01`. The older 268.8
 `HEAD`/part estimate predates the unconditional-publication rewrite.
 
 1. **S3-native staging on the wide-insert profile** — MEASURE. Feature exists (opt-in, native-only same-store
