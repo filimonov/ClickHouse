@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-03'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-09-26 14:44'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -21,7 +21,7 @@ references:
   - CA/Gc/CasGc.cpp
   - CA/Gc/CasGc.h
   - src/Disks/tests/gtest_cas_gc_hold_grammar.cpp
-priority: medium
+priority: high
 type: design
 ordinal: 38000
 ---
@@ -59,4 +59,16 @@ Provenance: BACKLOG/gc.md [clamp liveness] and #ckpt-damage-no-repair-path part 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-03 (9a72dc465aa, by 'clamp liveness')
+
+Priority raised to High (u19c review, 2026-09-26): the soak measured a complete, indefinite pool-wide GC halt (4.6 h with zero deletes, pool at 112 GB, 764k unreachable objects, manual SYSTEM CAS GC REBUILD FORCE the only unwedge), which is the charter's measured-cost criterion, not a percentage overhead.
+
+Merged from u19c-soak (Stop one clamped or damaged namespace from suppressing every GC delete pool-wide indefinitely): Soak measurement of the liveness cost (2026-07-10, seed 991, 4.6 h exit soak): one dropped table's namespace with 63 manifests
+whose committed bodies were missing clamped the fold on every pass from t+540 s, 56.8k clamp events; the leader ran 800+
+Success rounds with objects_deleted=0, the pool grew to 112 GB and 764k unreachable objects, and the in-run fsck timeouts
+followed from the never-shrinking pool. Integrity held (dangling=0).
+The cause of that shape is fixed (`c1485f52a29`), but a permanently missing committed body still clamps. Recovering the -1 set
+from the snapshot was rejected: `sourceEdgeId` is a one-way CityHash128 of (ManifestId, path) (`CA/Gc/CasBlobInDegree.cpp:164`),
+so a missing body's edges cannot be enumerated. The known unwedge is `SYSTEM CAS GC REBUILD FORCE` (rebuilds from root refs;
+refuses only on a live ref naming a missing body).
+Provenance: utils/ca-soak/scenarios/BACKLOG.md#GC-WEDGE-REMOVAL-FOLD-2026-07-10. Forensics (all 63 refs, shards, cursors): `utils/ca-soak/scenarios/gc_wedge_forensics_20260710.txt` at 97589860bc4, deleted in 13723e501a3.
 <!-- SECTION:NOTES:END -->

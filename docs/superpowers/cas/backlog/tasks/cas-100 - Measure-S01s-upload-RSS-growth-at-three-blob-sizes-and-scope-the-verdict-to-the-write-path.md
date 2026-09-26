@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-09-26 14:36'
+updated_date: '2026-09-26 14:44'
 labels:
   - 'area:soak'
   - 'area:write-path'
@@ -57,4 +57,9 @@ Merged from u19a-soak (Measure S01's upload RSS growth at three blob sizes and s
 The residual ~2x insert peak comes from generic insert block buffering, not from the CA path. A 2 GiB single-part CA insert peaked at 4.33 GiB with default settings for both 512 x 4 MiB and 32768 x 64 KiB rows. With `max_block_size=1024, min_insert_block_size_bytes=32MiB`, the same insert peaked at 358 MiB, which is O(block) and constant in part size.
 Memory-profiler attribution at 1 GiB showed the peak in the test's `randomString` column. The ColumnString grew to a 2 GiB power-of-two capacity. The other large allocator was `WriteBufferFromS3::allocateBuffer` multipart churn: 63 x ~16 MiB, freed per part. No blob-sized String allocation remained.
 Verdict idea from the source: run S01 with a small `max_block_size` and assert that peak stays bounded as the blob size grows. That is a regression guard that can go red, unlike `growth < blob size`.
+
+Merged from u19c-soak (Measure S01's upload RSS growth at three blob sizes and scope the verdict to the write path): Earlier data point that contradicts the "0 at ci" figure: run 20260717T033430_S01_seed1 at ci scale (512 MiB blob, binary
+`cdac5ce8409c`, 2026-07-17) recorded peak RSS growth of 531 MiB during the upload and failed the `growth < blob size` verdict.
+At dev scale (64 MiB blob) growth was 51 MiB on 2026-07-11. Include ci in the three-size measurement and explain the spread.
+Provenance: utils/ca-soak/scenarios/BACKLOG.md#S01-20260717T033430-1.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-23'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-09-26 14:44'
 labels:
   - 'area:mounts'
   - 'complexity:epic'
@@ -64,4 +64,14 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#disk-lifecycle-rev8-closure (the dis
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-23 (87aeefac9bd, by 'disk-lifecycle-rev8-closure')
+
+Merged from u19c-soak (Design the CAS disk lifecycle: stop and eject a disk on `UNMOUNT` or last `DROP TABLE`, mount without a table): Observed consequence of the missing lifecycle (CI, PR #2073, `Stateless tests (amd_debug, sequential)`, sha 0d18313ddbc, 2026-07-19):
+a stateless test created an inline `disk(...)` CAS disk, dropped its only table and deleted the pool directory; the leaked GC
+and mount-lease threads kept running against it and a LOGICAL_ERROR killed the debug server, failing two unrelated tests.
+The same shape hits an operator who deletes a pool's storage after dropping its tables without a disk teardown step.
+Since then: a vanished mount slot ends the renewal as a terminal `FILE_DOESNT_EXIST` failure, not LOGICAL_ERROR
+(`CA/Pool/CasServerRoot.cpp:1516-1525`, also on antalya-26.6); the GC scheduler still logs `CORRUPTED_DATA` "gc/state vanished after
+being observed" every tick for such a disk (`CA/Gc/CasGc.cpp:4748`); the CAS no-leftovers tests tear down with `SYSTEM CAS FORGET`
+before removing the directory (`tests/queries/0_stateless/04295_cas_mutation_no_leftovers.sh:117-129`).
+Provenance: utils/ca-soak/scenarios/BACKLOG.md#PRODUCT BUG (custom CAS disk objects are never torn down on DROP TABLE/DATABASE).
 <!-- SECTION:NOTES:END -->

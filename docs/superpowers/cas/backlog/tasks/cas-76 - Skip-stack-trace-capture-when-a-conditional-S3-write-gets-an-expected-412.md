@@ -4,7 +4,7 @@ title: Skip stack-trace capture when a conditional S3 write gets an expected 412
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-09-26 14:44'
 labels:
   - 'area:backend'
   - 'area:upstream'
@@ -51,4 +51,11 @@ Provenance: BACKLOG/performance.md#stateless-lane-wall-time-is-drop-table (targe
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `DB::Exception` is 2026-06-05 (2c762c70d33); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+Merged from u19c-soak (Skip stack-trace capture when a conditional S3 write gets an expected 412): Second cost of the same throw: every expected 412 increments `ErrorCodes::S3_ERROR` in `system.errors` / `system.error_log`
+(the exception is constructed in `WriteBufferFromS3`, `src/IO/WriteBufferFromS3.cpp:815-831`, before CAS reclassifies it as
+`PutOutcome::PreconditionFailed` in `CA/Backend/CasObjectStorageBackend.cpp:242-263`). On the 2026-07-19 5 h soak the
+`S3_ERROR` last message was a blob-key `PreconditionFailed`, so the counter reads as real S3 errors on a CAS disk.
+Returning the 412 as an outcome without constructing an exception fixes both the stack capture and the counter.
+Provenance: utils/ca-soak/scenarios/BACKLOG.md#OPTIMIZATION OPPORTUNITY (conditional-PUT collisions inflate S3_ERROR).
 <!-- SECTION:NOTES:END -->
