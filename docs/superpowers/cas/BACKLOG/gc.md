@@ -199,6 +199,8 @@ and TLA+ gate before any code.
 - **GC throughput collapse under a mass-DROP burst** {#gc-throughput-collapse-2026-07-25} — KEEP, historical RCA — Unbudgeted serial rounds diverge once DROP arrivals exceed one round's service rate (20s→1716s over 6 rounds, 188→20,046 candidates). Three defects: zero-depth meta-pool queue; permanent tombstones under the globally-enumerated ref prefix; `system.remote_data_paths` has no `disk_name` pushdown (tracked in `testing-and-ci.md`). The first two are the shape spec [Stage A](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-a)/[B](/superpowers/specs/cas-gc-rounds-in-minutes-design#stage-b) now re-derive from fresh data; kept as this incident's historical record.
 ### GC falls behind without bound under sustained small-part churn (measured 2026-09-15; formerly tracked separately, less precisely, as `[janitor-page-hardcoded]`/CAS-034) {#janitor-page-hardcoded}
 
+Formerly `[gc-backlog-runaway]` (`{#gc-backlog-runaway}` in `BACKLOG.md`).
+
 Local msan rig, CI msan binary v26.6.4, 6 passes of the CI shard 2/3 test list on one server (3 h 24 min), RustFS
 rc.3 in its own cgroup: GC round duration
 24.3 s → 596.8 s (24x) against a 20 s interval, `CASGCPendingReclaim_cas_s3` 81 → 35,351 (436x), rounds per 10 min
