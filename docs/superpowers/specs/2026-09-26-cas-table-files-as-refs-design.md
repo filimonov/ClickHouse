@@ -1,302 +1,271 @@
 ---
-description: 'Design study: store every table-level file of a CAS namespace as a ref (single-entry inline manifest) and the non-replicated deduplication window as claims inside the ref log, with a one-way migration at first mount under a bumped reader generation. Removes the second storage model of a namespace, the TableSubdir probe machinery and the per-insert rewrite of deduplication-log segments. Alternative to the cache of spec 2026-09-26-cas-directory-probes-no-list-design.md §3.2.'
-sidebar_label: 'CAS table files as refs'
+description: 'Design study, rev.2: record the top-level entries of a CAS table directory (table-level files and subdirectories) in the ref log, so every directory probe is answered from the resident ref table. File objects stay where they are and are still modified in place; only creation and removal of a top-level entry appends an op. Replaces rev.1 (file contents as refs, dedup claims), which review round 1 rejected. Alternative to the striped cache of spec 2026-09-26-cas-directory-probes-no-list-design.md §3.2.'
+sidebar_label: 'CAS table directory entries in the ref log'
 sidebar_position: 13
 slug: /superpowers/specs/cas-table-files-as-refs-design
-title: 'CAS table-level files as refs and deduplication claims in the ref log'
+title: 'CAS table directory entries in the ref log'
 doc_type: 'design'
 ---
 
-# CAS table-level files as refs and deduplication claims in the ref log — rev.1 (2026-09-26) {#cas-table-files-as-refs}
+# CAS table directory entries in the ref log — rev.2 (2026-09-27) {#cas-table-dir-entries}
 
-Design study, no code. Written to answer three questions before choosing between this and the
-cache of `2026-09-26-cas-directory-probes-no-list-design.md` §3.2 (seven revisions, six review
-rounds): how much simpler the code becomes, how risky the one-way migration is, and how small the
-touch on upstream `MergeTree` code can be kept. CAS-95.1 (`PartFile` shape for paths inside a part)
-is independent and needed either way.
+Design study, no code. Rev.1 of this file proposed storing table-level file contents as refs and the
+deduplication window as claims in the ref log; codex review round 1
+(`docs/superpowers/reports/2026-09-26-cas-table-files-as-refs-codex-reviews/review_r1.md`) rejected
+it: content migration is not idempotent with the existing primitives, the deduplication log on a CAS
+disk creates a file per insert so claims or file refs would cost a durable write per insert, and the
+`MergeTree` touch was larger than stated. Rev.2 keeps the idea that made rev.1 attractive, a
+resident and durable answer for directory probes, and drops everything else: file objects stay under
+`cas/ns/state/<life_id>/_files/`, modified in place as today; the ref log records only which
+top-level entries the table directory has.
+
+CAS-95.1 (`PartFile` shape for paths inside a part) is independent and needed either way. The
+competing design is the striped cache of `2026-09-26-cas-directory-probes-no-list-design.md` §3.2.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
-line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`. This is a format change: it
-revisits decision 4 (format frozen since 26.6.4) by moving to reader generation 2 with a one-way
-migration, no compatibility read path.
+line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`. This is a format change (two ref-log
+op kinds and one snapshot section), so it revisits decision 4: reader generation 2, no compatibility
+read path, downgrade not supported once a namespace carries generation 2 ops.
 
-## 1. Today: two storage models in one namespace {#today}
+## 1. What the table directory contains today {#today}
 
-A namespace holds parts as refs: the ref table (snapshot plus log under `cas/ns/`, resident in
-memory as `RefTableRuntime`) maps a ref name to a manifest; the manifest lists files, small ones
-inline (`EntryPlacement::Inline`, `Formats/CasPartManifestFormat.h:41`), large ones as blobs.
-Everything about parts (existence, listing, rename via `republishRef`, drop via tombstone, GC, fsck,
-freeze, the TLA+ model) is built on that one model.
+Under a table directory on a CAS disk, parts are refs (ref table: snapshot plus log under `cas/ns/`,
+resident as `RefTableRuntime`), `detached/` and `moving/` are ref prefixes, and everything else is a
+plain object under the life's `_files/` prefix (`Formats/CasLayout.h:254`), written with
+HEAD-before-PUT by `CasPlainObjects` and enumerated only by a LIST of that prefix.
 
-Table-level files use a second model: plain objects under `cas/ns/state/<life_id>/_files/<name>`
-(`Formats/CasLayout.h:254`), written with HEAD-before-PUT by `CasPlainObjects`
-(`Pool/CasPlainObjects.cpp:44-75`), never content-addressed, listed by a LIST of the prefix. The
-files are `format_version.txt` (once per table), `mutation_<n>.txt` (`MergeTreeMutationEntry.cpp:63`,
-`:94`, with `WriteMode::Append` of the CSN at `:114`) and `deduplication_logs/<segment>` (rewritten
-on every insert: the CA disk cannot append, so `MergeTreeDeduplicationLog` rotates on every record,
-`MergeTreeDeduplicationLog.cpp:240`; the CAS transaction carries the old bytes forward,
-`ContentAddressedTransaction.cpp:830-851`).
+Top-level entries `MergeTree` creates: `format_version.txt` (`MergeTreeData.cpp:508-559`),
+`tmp_mutation_<n>.txt` moved to `mutation_<n>.txt` (`MergeTreeMutationEntry.cpp:51-95`, CSN appended
+at `:111-116`), the directories `detached` (`MergeTreeData.cpp:518-519`), `deduplication_logs`
+(`MergeTreeDeduplicationLog.cpp:97-98`) and `partition_exports`
+(`MergeTreePartitionExportScheduler.cpp:55-63`). Inside `deduplication_logs/` a new segment is
+created on every insert, because the CA disk does not support append and the log rotates per record
+(`MergeTreeDeduplicationLog.cpp:240`), and outdated segments are removed (`:227`). Non-MergeTree
+engines put their data files at top level: `Log` writes `<column>.bin`, `__marks.mrk`, `sizes.json`,
+`StripeLog` writes `data.bin`, `index.mrk`, `sizes.json`, all rewritten in place on every insert
+(probe `docs/superpowers/reports/2026-09-27-cas-non-mergetree-engines-probe.md`; persistent `Join`
+and `Set` are broken by a parser rule, CAS-318, independent of this design).
 
-What the second model costs, on this branch (non-test lines mentioning namespace files: 21 in
-`ContentAddressedTransaction.cpp`, 15 in `CasLayout.h`, 12 in `ContentAddressedMetadataStorage.cpp`,
-8 in `CasPool.cpp`, 15 in `CasPlainObjects.*`, 7 in `CasLayout.cpp`, one each in the janitor and
-fsck; 14 gtest files):
-
-- Every directory probe that is not a part or a container needs the LIST (`TableSubdir`,
-  `ContentAddressedMetadataStorage.cpp:1702-1712`, `:1895-1904`; the `TableDir` listing `:1851-1855`),
-  which is the steady-state half of issue #2439 and the reason spec §3.2 needed a striped cache.
-- Rename copies the files with GET and PUT per file next to the `republishRef` loop
-  (`ContentAddressedTransaction.cpp:1285-1305`); `moveFile`, `replaceFile`, `unlinkFile` and
-  `removeRecursive` of a subdirectory each have a file branch (`:1483-1485`, `:1664`, `:1155-1170`).
-- The janitor and fsck classify `_files/` keys separately (`Gc/CasNamespaceJanitor.cpp:88`,
-  `Tools/CasFsck.cpp:538`).
-- Each insert into a table with `non_replicated_deduplication_window > 0` is two independent write
-  rounds: the log segment (HEAD plus PUT of the whole segment) before the part, then the part's own
-  publish (`MergeTreeSink.cpp:381-407`).
+The probes that cost a LIST (issue #2439 steady state, audit F16): `listDirectory` of the table
+directory (`ContentAddressedMetadataStorage.cpp:1842-1861`, called by
+`clearOldTemporaryDirectories` once a minute per table), `existsDirectory` and `listDirectory` of a
+subdirectory (`:1702-1712`, `:1895-1904`), and the same enumeration in `removeRecursive`
+(`ContentAddressedTransaction.cpp:1164`) and table rename (`:1295`).
 
 ## 2. Goals and non-goals {#goals}
 
 Goals:
 
-- One storage model per namespace: everything under a table directory is a ref.
-- Table-level directory probes and file reads are answered from the resident ref table and cached
-  manifests. No LIST, no per-probe GET.
-- An insert into a deduplicating table costs no more requests than today, and produces no garbage
-  object per insert.
-- The touch on upstream `MergeTree` code is one interface extraction with no behavior change plus a
-  one-line choice of implementation; `MergeTreeSink` is untouched.
-- One-way migration at first writable mount of an upgraded build; an older build refuses to mount a
-  migrated pool with a clear error instead of misreading it.
+- Every probe of the table directory itself (`listDirectory`, `existsFile`, `existsDirectory` of a
+  top-level name) is answered from the resident ref table. No LIST after mount.
+- A restart costs one LIST per live table, never per part or per file.
+- File contents keep today's write path: in-place HEAD-before-PUT, no manifest, no garbage, no
+  extra request per insert for the deduplication log or the `Log` family.
+- No change to upstream `MergeTree` code.
+- Migration is non-destructive and needs no repair: objects are not moved.
 
 Non-goals:
 
-- A compatibility read path for reader generation 1 pools in the generation 2 build. Migration is
-  the only path forward; downgrade is not supported.
-- Replicated tables: `ReplicatedMergeTree` deduplicates through Keeper and has no deduplication log
-  on disk. Only `format_version.txt` and mutation files apply to it here.
-- Changing what `MergeTreeMutationEntry` or `MergeTreeDeduplicationLog` write on non-CAS disks.
+- Enumerating the contents of a subdirectory without a LIST (`listDirectory` of
+  `deduplication_logs`, once at table load; `removeRecursive` of a subdirectory; the file copy loop
+  of table rename). Those are rare and already bounded by one LIST per call.
+- Sizes or modification times in the ref table: `getFileSize` and reads go to the object as today.
+- The catalog GETs of the `detached` probe (CAS-95.3) and the parser rule of CAS-318.
 
 ## 3. Design {#design}
 
-### 3.1 Table-level files as refs {#file-refs}
+### 3.1 The directory table {#directory-table}
 
-**Naming.** A table-level file `<table>/<relative path>` becomes a ref named by its relative path
-(`format_version.txt`, `mutation_5.txt`, `tmp_mutation_5.txt`). Ref names with `/` already exist
-(`detached/<part>`, `moving/<part>`), so nested names need no new rule; after this change nothing
-nested remains at table level because the deduplication log leaves the file system (§3.2).
+Each namespace's ref table gains a **directory table**: a set of top-level entries, each
+`(name, kind)` with `kind ∈ {File, Directory}`. It records exactly the names that live under the
+table directory and are neither part refs nor the reserved containers `detached` and `moving`
+(those stay answered from refs, `:1712-1720`, and shadow namespaces are untouched).
 
-**Manifest.** One `ManifestEntry` whose `path` is the file's last path component, inline when small,
-a blob otherwise (the size rule `PartFolderAccess` already applies to part files). The manifest's
-`ref` and `root_namespace_id` are filled as for a part.
+Two ref-log op kinds (`Formats/CasRefLogFormat.h:35`): `DirEntryAdded = 6` with `ref_name` (the
+entry name) and `entry_kind`, and `DirEntryRemoved = 7` with `ref_name`. The snapshot
+(`Formats/CasRefSnapshotFormat.h:53`) gains a `dir_entries` section sorted by name.
+`RefTableState::applyOp` (`Pool/CasRefProtocol.h:274`) applies both: add of a present name with the
+same kind is a no-op, add with a different kind replaces, remove of an absent name is a no-op; the
+snapshot byte accounting counts the name. Ops are commutative for different names, so concurrent
+writers of one table need no coordination beyond the ref lane's own serialization of appends. A name
+is at most a path component, far below `ref_op_max_bytes` (`Formats/CasRefLogFormat.h:112`).
 
-**File versus folder.** A ref is a folder ref when its name matches the part grammar
-(`looksLikePartDir`, `Parts/PartPathParser.cpp:150`) directly or after the `detached/` or `moving/`
-prefix, or when it is a shadow (FREEZE) ref; every other ref is a file ref. `MergeTree` never
-creates a table-level file named like a part, and the parser already relies on the same grammar to
-find the part component. The alternative, a `file` flag in the manifest, is exact but changes the
-manifest codec and costs a manifest fetch on every `existsDirectory` of a non-part name; it is
-listed in §7 for the reviewers.
+### 3.2 Operation mapping {#mapping}
 
-**Operation mapping** (metadata storage and transaction, `ContentAddressedMetadataStorage.cpp` and
-`ContentAddressedTransaction.cpp`):
-
-| operation on `<table>/<file>` | today | after |
+| operation | today | after |
 |---|---|---|
-| `existsFile` (`:1500-1505`) | catalog life, GET | `resolveRef` in memory |
-| `readFile`, `getFileSize`, in-manifest bytes (`:2040-2052`) | GET | view of the ref, inline bytes or blob |
-| `existsDirectory`, `listDirectory` of a subdirectory | LIST | `hasAnyRefWithPrefix`, `listRefs` by prefix (the `DetachedContainer` branch) |
-| `listDirectory` of the table dir (`:1842-1861`) | refs plus LIST | refs only |
-| `writeFile` Rewrite (`:825-851`) | HEAD, PUT | `publishEntries` of a one-entry manifest |
-| `writeFile` Append (`:830-851`) | GET, HEAD, PUT | view, then `repointRef` with the merged bytes (`:406`), conflict surfaced by the ref lane |
-| `unlinkFile` (`:1655-1667`) | HEAD, DELETE | `dropRefIfPresent` |
-| `moveFile`, `replaceFile` (`:1470-1490`) | GET, PUT, DELETE | `republishRef` |
-| `removeRecursive` of a subdirectory (`:1155-1170`) | LIST, DELETE per file | tombstone refs by prefix |
-| table rename (`:1285-1305`) | `republishRef` loop plus GET and PUT per file | `republishRef` loop only |
-| drop table | `dropNamespace` plus janitor of `_files/` | `dropNamespace` |
+| `listDirectory(<table>)` (`:1842-1861`) | refs plus LIST | refs plus directory table |
+| `existsFile(<table>/<name>)` (`:1500-1505`) | catalog life, GET | directory table: `File` |
+| `existsDirectory(<table>/<name>)` (`TableSubdir`, `:1702-1712`) | LIST | directory table: `Directory` |
+| `listDirectory(<table>/<dir>)`, `existsDirectory(<table>/<dir>/<sub>)` | LIST | LIST of `_files/<dir>/` (unchanged, rare) |
+| `existsFile(<table>/<dir>/<name>)`, `readFile`, `getFileSize`, all reads | GET | GET (unchanged) |
+| `writeFile(<table>/<name>)` create (`ContentAddressedTransaction.cpp:825-851`) | HEAD, PUT | HEAD, PUT, then `DirEntryAdded{File}` |
+| `writeFile` of an existing top-level file, rewrite or append | HEAD, PUT | HEAD, PUT (no op: the entry exists) |
+| `writeFile(<table>/<dir>/<name>)` | HEAD, PUT | HEAD, PUT (no op: entries are top-level only) |
+| `createDirectory(<table>/<dir>)` (`:1007`, no-op today) | nothing | `DirEntryAdded{Directory}` |
+| `removeDirectory(<table>/<dir>)` (`:1020`) | today's object-side behaviour | same, then `DirEntryRemoved` |
+| `unlinkFile(<table>/<name>)` (`:1655-1667`) | HEAD, DELETE | `DirEntryRemoved`, then HEAD, DELETE |
+| `unlinkFile(<table>/<dir>/<name>)` | HEAD, DELETE | HEAD, DELETE (unchanged) |
+| `moveFile`, `replaceFile` at top level (`:1470-1490`) | GET, PUT, DELETE | same, plus `DirEntryAdded` for the destination and `DirEntryRemoved` for the source |
+| `removeRecursive(<table>/<dir>)` (`:1155-1170`) | LIST, DELETE per file | same, then `DirEntryRemoved` |
+| table rename (`:1285-1305`) | `republishRef` loop, GET and PUT per file | same, plus `DirEntryAdded` per entry in the destination namespace |
+| drop table | `dropNamespace`, janitor of `_files/` | unchanged (the directory table dies with the namespace) |
 
-`DirShape::TableSubdir` disappears from `classifyDirectory` (`:1608-1617`); `Pool` and
-`CasPlainObjects` lose the four namespace-file methods; `Layout` keeps `parseNamespaceFileKey` for
-the janitor only (§3.3).
+Ordering and crash windows. A file entry is added after its object is durable and removed before
+its object is deleted, so an entry never names a missing object; a crash between the two steps leaves
+an object without an entry, which is invisible, reported by fsck as an orphan, and reclaimed with the
+life by the janitor. A directory entry may legitimately name an empty directory, as on a local disk
+between `mkdir` and the first file. Whether the write of the object or the append of the op fails,
+the exception propagates; nothing is guessed.
 
-**Semantics preserved.** A file ref is tombstoned and reclaimed by GC like a part; today's plain
-object is deleted in place. Overwrite is a repoint of the ref to a new manifest, the same protocol a
-part replacement uses, so a concurrent writer is detected by the ref lane's precommit rather than by
-an object etag. The callers of append (`MergeTreeMutationEntry::writeCSN` under the table's mutation
-lock) serialize their own writes as today.
+`existsFile` of a top-level name no longer touches the object. The only way for the table to say
+`File` while the object is absent is a deletion that bypassed the transaction (an operator or a
+generation 1 tool), which fsck reports.
 
-### 3.2 Deduplication claims in the ref log {#dedup-claims}
+### 3.3 Mount-time resync instead of a migration marker {#resync}
 
-**What the log records.** Two new `RefOpKind` values (`Formats/CasRefLogFormat.h:35`):
-`ClaimBlockIds = 6` carrying `ref_name` (the part) and `block_ids` (one or more), and
-`ReleaseClaims = 7` carrying `ref_name`. The snapshot (`Formats/CasRefSnapshotFormat.h:53`) gains a
-`claims` section: the retained claims in insertion order, each `(block_id, ref_name)`. Both are
-generation 2 wire changes.
+At every writable mount of a generation 2 build, for each cataloged `Live` life of this server root,
+before the disk serves any request: one LIST of the life's `_files/` prefix, from which the top-level
+names are derived (a name without `/` is a `File`, the first component of a nested name is a
+`Directory`), and a single ref transaction appends `DirEntryAdded` for every entry the resident table
+lacks and `DirEntryRemoved` for every entry the LIST does not support. The transaction is empty on a
+clean mount and costs nothing; on the first mount after the upgrade it is the migration; on a mount
+after a generation 1 build wrote to this root (a downgrade and re-upgrade during the rollout) it is the
+repair. Objects are never moved or deleted by this step, so it needs no idempotence argument: it is a
+reconciliation that can be repeated at will.
 
-**What the runtime keeps.** Per namespace, an insertion-ordered journal of claims bounded by the
-table's window, and an index `block_id → ref_name`. `ClaimBlockIds` appends and trims to the window;
-`ReleaseClaims` removes every claim of that part (upstream's `dropPart`, `MergeTreeDeduplicationLog.h:154`,
-which is what lets a `DROP PARTITION` followed by a re-insert succeed). A merge does not release
-claims, exactly as upstream keeps records of merged parts until the window rotates.
+Cost: one LIST per live table per mount. That is the bound issue #2439 asks for.
 
-**The upstream seam.** `MergeTreeDeduplicationLog` (`MergeTreeDeduplicationLog.h:134`) becomes the
-file-based implementation of a new `IMergeTreeDeduplicationLog` interface with its five methods
-(`addPart`, `dropPart`, `load`, `setDeduplicationWindowSize`, `shutdown`), a pure extraction with no
-behavior change. `StorageMergeTree::loadDeduplicationLog` (`StorageMergeTree.cpp:1508-1521`) chooses
-the implementation: `disk->isContentAddressed()` (`IDisk.h:477`, already present) selects the CAS
-implementation, which lives under `ContentAddressed/` and reaches the pool through the disk's
-metadata storage. `MergeTreeSink` (`:381-407`), the three `dropPart` callers in `StorageMergeTree`
-(`:2535`, `:2657`, `:2924`), `setDeduplicationWindowSize` (`:840`) and `shutdown` (`:383`) are
-untouched because they call the interface.
+Trust: the LIST at mount is a recovery-time cold LIST, trusted exactly as the ref-table recovery
+trusts its own LIST of the log prefix (decision 2, the settled LIST-trust verdict); the hot LISTs it
+replaces were the untrusted ones.
 
-The CAS implementation: `addPart` checks the index under the runtime's `state_mutex`, and when no
-block id is claimed appends one `ClaimBlockIds` op through the ref lane, then returns; `dropPart`
-appends `ReleaseClaims`; `load` is a no-op (the runtime already recovered the claims);
-`setDeduplicationWindowSize` trims the journal. The ordering is upstream's: the claim is durable
-before the part is published, and a failed insert leaves the claim, as today.
+### 3.4 Generations, other builds, the floor {#generations}
 
-**Cost per insert.** One ref-log op instead of a segment rewrite: no manifest, no object, no
-garbage. The hot-key lane batches ops of one namespace that arrive close together
-(`Backend/CasHotKeys`), so the claim and the part's own publish usually share one PUT. The
-request-profile gate for this path pins the count.
+`G_BUILD` (`Formats/CasFormat.h:21`) becomes 2 and every object a generation 2 build writes is
+stamped with it (`:61-67`). A generation 1 build that decodes a ref transaction with an unknown op
+kind throws `CORRUPTED_DATA` (`refOpKindFromWireWord`), which is used by the ledger, the GC fold
+(`Gc/CasGc.cpp`, `Gc/CasOrphanManifestSweep.cpp`), fsck and inspect. So:
 
-**Rejected shapes.**
+- A generation 1 node on its own unmigrated root works unchanged; nothing of it is touched.
+- A generation 1 node reading a migrated namespace of another root (decommission takeover, the
+  pool-wide GC fold, fsck, inspect) fails closed at decode. During a rolling upgrade, GC rounds run by
+  generation 1 nodes abort on the first migrated namespace they fold; reclamation resumes when a
+  generation 2 node runs the round. This is the degraded window and it is bounded by the rollout.
+- A generation 1 build mounting a root after a generation 2 mount of that root fails closed at
+  ref-table recovery of the first migrated namespace: downgrade is not supported, as accepted.
 
-- Atomic claim-and-publish through `IDataPartStorage` and `MergeTreeSink` (claims carried into the
-  part's commit, duplicate reported by the commit): stronger semantics, but a CAS-motivated change
-  in `MergeTreeSink`'s flow and in the `IDataPartStorage` interface, and a new error path in the
-  sink. The interface extraction touches nothing that runs.
-- Intercepting writes to `deduplication_logs/` in the CAS transaction and folding them into the
-  next part publish: the log write and the part commit are different disk transactions on possibly
-  different threads, and a duplicate insert publishes no part at all.
-- Deduplication log as a file ref: one manifest per insert, one garbage manifest per insert for GC,
-  and the segment still rewritten whole.
+The pool floor (`min_reader_generation`, `Formats/CasPoolMetaFormat.cpp:155-158`) exists to turn the
+recovery-time failure above into a mount-time error with a message. A generation 2 node raises it to 2
+by CAS on the pool meta when every server root under `gc/server-roots/` (`Formats/CasLayout.h:417`,
+the prefix the GC heartbeat already lists) has a mount object stamped with generation 2, that is,
+when every root has been mounted by an upgraded build at least once. It is never raised by the first
+node, and never while an unstamped root exists; an operator can also raise it through the fsck tool.
+Read-only mounts do not resync and do not consult the directory table; the tools that use them read
+objects, not directories.
 
-### 3.3 Migration and the reader generation {#migration}
+### 3.5 What is removed and what stays {#removed}
 
-`G_BUILD` (`Formats/CasFormat.h:21`) becomes 2. The pool meta's `min_reader_generation`
-(`Formats/CasPoolMetaFormat.cpp:155-158`) is the gate: a build refuses a pool whose floor is above
-its `G_BUILD` with `UNKNOWN_FORMAT_VERSION`, which is exactly the fail-closed answer for an old
-build on a migrated pool.
-
-At the first writable mount of a generation 2 build on a pool with floor 1, after the mount lease is
-held and before any table is loaded, for every cataloged `Live` life of this server root:
-
-1. LIST the life's `_files/` prefix (one LIST per table, once).
-2. For each `deduplication_logs/<segment>`: GET, parse the records (`ADD`/`DROP`, tab-separated,
-   `MergeTreeDeduplicationLog.cpp:32-58`), replay them into `ClaimBlockIds`/`ReleaseClaims` ops in
-   segment order. The table's window is a `MergeTree` setting the pool cannot read at mount, so the
-   import keeps at most `kMaxImportedClaims` newest claims per table and the table trims to its own
-   window at its first `setDeduplicationWindowSize`.
-3. For every other file: GET, `publishEntries` of a one-entry manifest under the file's name.
-4. DELETE each imported plain object after its ref or claims are durable.
-5. When no `_files/` key remains under any life of this server root, compare-and-swap the pool
-   meta's floor to 2 (`min_reader_generation` is already written by CAS).
-
-Idempotent by construction: a crash between steps leaves objects that the next mount re-imports;
-a ref that already exists with byte-equal content is a no-op publish; step 5 runs only on an empty
-prefix. Multi-node pools: namespaces are server-root scoped, so each node migrates its own
-namespaces at its own upgrade, and the floor is raised by whichever node finishes first, after which
-a not-yet-upgraded node fails closed at mount. Operators upgrade all nodes of a pool in one window;
-the error names the required generation.
-
-Dead lives (absent from the catalog) keep their `_files/` debris until the namespace janitor deletes
-it (`Gc/CasNamespaceJanitor.cpp:88`); that is the one consumer of `parseNamespaceFileKey` that stays,
-and fsck keeps reporting such keys as debris (`Tools/CasFsck.cpp:538`).
-
-### 3.4 What is removed and what stays {#removed}
-
-Removed: `DirShape::TableSubdir` and its two branches; the file branches of `writeFile`,
-`unlinkFile`, `moveFile`, `replaceFile`, `removeRecursive` and rename in the transaction; the four
-namespace-file methods of `Pool` and `CasPlainObjects` (mountpoint objects stay);
-`namespaceFileKey`/`namespaceFilesPrefix` in `Layout`; the whole of spec §3.2 (striped cache) and
-CAS-95.2. Stays: `parseNamespaceFileKey` for janitor and fsck; `PartFile` (CAS-95.1); the
-mountpoint-object surface.
+Removed: the LIST in `listDirectory(TableDir)` and in the two `TableSubdir` branches for top-level
+names; the GET in `existsFile` of a top-level name; the whole striped cache of the competing spec
+(§3.2 there) and backlog task CAS-95.2. Stays: `_files/` objects and `CasPlainObjects`; the LIST for
+the contents of a subdirectory; the file copy loop of rename; the janitor and fsck classification of
+`_files/` keys; `PartFile` (CAS-95.1).
 
 ## 4. Risks, ranked {#risks}
 
-1. **No downgrade.** After the floor is raised, a 26.6.x build cannot mount the pool. Mitigation:
-   the gate is explicit and named; the migration is the first action of the upgraded mount, so the
-   window in which a pool is half-migrated and readable by an old build is the migration itself,
-   during which old builds see only their own unmigrated namespaces.
-2. **Migration crash.** Covered by idempotence (§3.3) and by tests 12-14. The one non-idempotent
-   step, the floor CAS, is last and conditional on an empty prefix.
-3. **Deduplication window across the upgrade.** Imported from the segments, so a retried insert
-   spanning the upgrade is still deduplicated. If a segment is unparsable (upstream's `load` ignores
-   broken logs), the import skips it with a warning, matching upstream.
-4. **Claims journal growth.** Bounded per table by the window (upstream's bound) and per pool by
-   `kMaxImportedClaims` at import. Counted in the ref-table weight like rows.
-5. **Name-based file/folder split.** A table-level file named like a part would be treated as a
-   folder. `MergeTree` creates none; the rule is pinned by a test and by `looksLikePartDir`'s own
-   tests. §7 asks for a verdict on the flag alternative.
-6. **Upstream drift.** The interface extraction is a fork patch on `MergeTreeDeduplicationLog.h`
-   and `StorageMergeTree.cpp` that must be carried across rebases. It is small, has no behavior,
-   and is the kind of extraction upstream might accept.
-7. **Append conflicts on mutation files.** `repointRef` detects a concurrent writer where the etag
-   did before; callers hold the table's mutation lock, as today.
+1. **Rolling upgrade window.** Generation 1 GC rounds abort on migrated namespaces (§3.4). To be
+   verified in the plan: that the fold aborts the round and never misfolds (the decoder throws before
+   any state is applied). Mitigation: upgrade a pool's nodes in one window; the floor raise is
+   automatic only when all roots are upgraded.
+2. **No downgrade after the first generation 2 mount of a root.** Accepted; the floor gives the
+   clear error once all roots are upgraded, the decoder gives `CORRUPTED_DATA` before that.
+3. **Entry/object drift by tools.** A deletion or creation of a `_files/` object outside the
+   transaction (generation 1 tools during the rollout, an operator) is repaired at the next mount
+   resync and reported by fsck between mounts. Between a drift and the resync, `existsFile` can
+   answer `File` for a missing object; the read then fails with the object's own error, which is what
+   a local disk does when a file is removed under a running server.
+4. **Format surface.** Two op kinds, one snapshot section, `applyOp`, scope and admission validation
+   in `Pool/CasRefProtocol.cpp`, codecs, fsck and inspect printing, the TLA+ model's op set. Each is a
+   mechanical extension of a place that already switches on the op kind.
+5. **Directory semantics change slightly.** Today a subdirectory exists iff it has a file; after, it
+   exists from `createDirectory` until `removeDirectory` or `removeRecursive`, like a local disk. The
+   `MergeTree` callers create their directories explicitly (§1) and remove them on drop, so no caller
+   observes the difference except an empty `deduplication_logs` after a window change, which is the
+   local-disk answer too.
+6. **CAS-318 is not fixed here.** Persistent `Join` and `Set` still fail on `tmp/<n>.bin`; the
+   directory table would record `tmp` as a `Directory` correctly once the parser stops claiming it as
+   a part.
 
 ## 5. Tests, failing-first {#tests}
 
-Generation 2 codecs (`gtest_cas_ref_log_format`, `gtest_cas_ref_snapshot_format` or the existing
-format suites):
+Format (existing codec suites):
 
-1. `ClaimBlockIds` and `ReleaseClaims` round-trip; a generation 1 decoder rejects them.
-2. Snapshot `claims` section round-trip, order preserved, rejected by generation 1.
+1. `DirEntryAdded`/`DirEntryRemoved` round-trip; the generation 1 decoder rejects them with
+   `CORRUPTED_DATA`; the snapshot `dir_entries` section round-trips sorted.
+2. `applyOp` semantics: add present same kind is a no-op, add with a different kind replaces, remove
+   absent is a no-op; snapshot bytes count the names.
 
-File refs (`gtest_ca_wiring`, a new `gtest_cas_table_file_refs`):
+Directory table (`gtest_ca_wiring`, new `gtest_cas_dir_entries` over `CountingBackend`):
 
-3. `writeFile`/`readFile`/`existsFile`/`getFileSize` of `format_version.txt` cost no LIST and no
-   GET beyond the manifest (`CountingBackend`).
-4. Append to `mutation_1.txt` produces the concatenated bytes; a concurrent conflicting append is
-   surfaced, not lost.
-5. `unlinkFile`, `moveFile` (`tmp_mutation_1.txt` to `mutation_1.txt`), `replaceFile` behave as on
-   a local disk; a missing source throws `FILE_DOESNT_EXIST`.
-6. `listDirectory` of the table dir returns part names and file names; `existsDirectory` of a file
-   ref answers false, of a part answers true.
-7. Table rename carries file refs; drop tombstones them; GC reclaims the manifests.
+3. Create `format_version.txt`, `mutation_1.txt`, directory `deduplication_logs` with two segments,
+   then `listDirectory(<table>)`, `existsFile`, `existsDirectory` of each top-level name: correct
+   answers, `listTotal() == 0` and no GET for the top-level probes.
+4. `listDirectory(<table>/deduplication_logs)` lists the segments with exactly one LIST; creating a
+   third segment costs HEAD and PUT and no ref-log append.
+5. `unlinkFile` of a top-level file: the entry disappears before the object; a fault injected between
+   the op and the DELETE leaves an orphan the next resync ignores and fsck reports.
+6. `moveFile` `tmp_mutation_1.txt` to `mutation_1.txt`: entries follow; `removeRecursive` of
+   `deduplication_logs` removes the entry; `removeDirectory` of an empty directory removes it;
+   table rename carries the entries; drop ends them.
+7. Restart: after a snapshot and after log-only, the directory table is recovered and the first
+   `listDirectory` issues no LIST beyond the mount resync's one per table.
+8. Non-MergeTree: `Log` and `StripeLog` on the CAS disk insert, restart, append, truncate and drop
+   with the same request profile as the probe report, plus zero LIST after mount.
 
-Deduplication (`gtest_cas_dedup_claims`, mirroring the behaviours of
-`tests/queries/0_stateless/*deduplication*` for non-replicated tables):
+Resync and generations (`gtest_cas_mount_resync`, integration `test_cas_upgrade_g1_to_g2` on a
+26.6.4 `cas-nightly` data set):
 
-8. `addPart` claims and rejects a duplicate; the claim survives a restart (recovered from the log,
-   then from a snapshot).
-9. `dropPart` releases; a re-insert after release succeeds; a merge does not release.
-10. Window trimming: the oldest claims fall out at `window`, `setDeduplicationWindowSize` shrinks.
-11. Request profile: one insert into a deduplicating table issues at most today's request count and
-    no manifest for the claim; the claim and the part publish share one hot-key PUT when issued
-    back to back.
+9. Mount over a generation 1 pool: one LIST per live table, entries derived correctly for files,
+   nested names and empty tables; a second mount appends an empty transaction.
+10. Drift repair: delete a `_files/` object behind the server's back, remount: the entry is gone;
+    create one, remount: the entry is present.
+11. Generation 1 build on a migrated root fails closed at recovery with `CORRUPTED_DATA`; on its own
+    unmigrated root it works; a generation 1 GC round over a pool with one migrated namespace aborts
+    the round and applies nothing.
+12. Floor: with two roots, the floor stays 1 after the first upgrade and becomes 2 after the second
+    root's generation 2 mount; a generation 1 build then fails at mount with `UNKNOWN_FORMAT_VERSION`.
+13. Stateless on a CAS disk: `clearOldTemporaryDirectories` over two minutes issues zero
+    `CASRootList` (the acceptance of CAS-95 #2); restart with 2 tables × 20 and 2 tables × 200
+    parts issues the same `CASRootList` count (acceptance #1, together with CAS-95.1).
 
-Migration (`gtest_cas_migration_g2`, integration `test_cas_upgrade_g1_to_g2` on the
-`cas-nightly` 26.6.4 image data):
+## 6. Size and comparison {#size}
 
-12. A generation 1 pool with three tables, mutation files and two deduplication segments migrates;
-    every file is readable, every claim present, no `_files/` key remains, floor is 2.
-13. Crash after step 3 for one table (fault injection): the next mount completes the migration; no
-    duplicate refs, no lost file.
-14. A generation 1 build refuses the migrated pool with `UNKNOWN_FORMAT_VERSION`; a generation 2
-    build with an unmigrated sibling server root migrates it independently.
-15. Stateless: `INSERT` with `non_replicated_deduplication_window` on a CAS disk deduplicates before
-    and after a server restart; `DROP PARTITION` then re-insert succeeds.
+Estimated: codecs, `applyOp` and validation 300-400 lines; metadata storage and transaction changes
+about 200 lines, net negative in the probe branches; mount resync about 100 lines; fsck, inspect and
+TLA+ updates; tests the largest part. One and a half to two weeks with review, against about one week
+for the striped cache and two to three weeks for rev.1.
 
-## 6. Size and staging {#size}
+Against the striped cache (`2026-09-26-cas-directory-probes-no-list-design.md` §3.2): the cache
+derives names from a hot LIST and protects them with a mutex held across I/O, needs budget
+accounting, and re-lists after every runtime eviction or remount; here the names are written by the
+writer into the log it already appends to, recovered with the rest of the ref table, and never listed
+after mount. The price is a format generation and the rolling-upgrade window of §3.4.
 
-Estimated: codecs and runtime claims 400-600 lines, file-ref mapping in the metadata storage and
-transaction net negative, migration 300-400 lines, upstream extraction about 60 lines, tests the
-largest part. Two to three weeks including review and one soak on the ca-soak stand, against about
-one week for the cache alternative.
-
-Staging options, for the reviewers: one generation bump with both parts (one migration, one
-maintenance window), or generation 2 for file refs and generation 3 for claims (two migrations,
-smaller reviews). The recommendation is one bump: the second migration would re-visit every table
-for the deduplication segments anyway.
+Against rev.1: no content moves, no per-insert cost, no `MergeTree` change, no claims.
 
 ## 7. Questions for review {#questions}
 
-1. Is there a smaller or more elegant way to get one storage model than file refs plus claims?
-2. Can the upstream touch be smaller than an interface extraction plus one choice line? Is there
-   an existing extension point that avoids even that?
-3. Name-based file/folder split versus a manifest flag: which is safer for the paths `MergeTree`
-   actually produces, including `tmp_mutation_*`, `detached/`, `moving/`, projections and FREEZE?
-4. Migration: is one generation bump with both parts the right staging, and is the floor-raise rule
-   (first node to finish raises it) acceptable for multi-node pools?
-5. Deduplication ordering: is keeping upstream's claim-before-publish order right, or should the
-   claim ride inside the part's own ref transaction despite the `MergeTreeSink` change?
+1. Is there a smaller or more elegant way to a resident, durable directory table than two op kinds
+   and a snapshot section? One considered: a reserved ref `_files` whose manifest lists the entries
+   as empty inline files, with no codec change; rejected here because every entry change would
+   repoint a manifest (a PUT plus a conflict retry between concurrent writers) and generation 1 builds
+   would still misread the reserved name as a part-shaped entry.
+2. Is the mount-time resync (§3.3) sound as the only migration and repair mechanism, and is one LIST
+   per live table per mount acceptable on the largest known pools?
+3. Is the floor rule (§3.4, raised when every root's mount object is generation 2) safe for
+   multi-node pools with dead or decommissioned roots?
+4. Does the generation 1 GC fold fail closed on an unknown op kind before applying anything, and is
+   the degraded window acceptable?
+5. Is recording directories explicitly (§3.2, `createDirectory` and `removeDirectory` become ops)
+   the right semantics, or should a directory entry be implied by its first nested object?
