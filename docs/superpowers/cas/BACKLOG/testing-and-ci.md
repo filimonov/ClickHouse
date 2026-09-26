@@ -319,6 +319,20 @@ clock values it needs at construction), then the capture shape stops mattering.
 `gtest_cas_gc_ack_floor.cpp`); `gtest_cas_pool.cpp` and `gtest_cas_mount.cpp` are each exactly 18. 36
 sites remain, concentrated in those 2 files.
 
+### `[remount-test-seam-stale-generation-race]` `scheduleRemountForTest` can report `false` after the remount it scheduled already succeeded {#remount-test-seam-stale-generation-race}
+
+TEST/INFRA. `CasMountRuntime::scheduleRemountForTest` (`CasMountRuntime.cpp:1080-1084`) releases and
+re-acquires `driver_mutex` between issuing the remount and computing its return value; the worker
+thread can complete the whole-chain remount in that window, so `gtest_cas_pool.cpp:4145`'s
+`ASSERT_TRUE(store->scheduleRemountForTest())` (in `TEST(CASPoolRemount,
+ParkedRedoRecoveryObservabilityPrecedesRemountResult)`, `:4097`) can see `false` for a remount that
+actually succeeded. Test-only (production never calls this seam under this pattern), but a real tsan
+flake. Fix: compute the return value under the same lock that increments the generation, or return the
+requested generation and let the test wait for `remount_handled_generation >= requested`.
+
+Source: `docs/superpowers/cas/random/pr2300-ci-triage-20260902.md` item 5 (Unit tests tsan, file
+deleted by the u22 consolidation pass).
+
 ## CI infrastructure {#ci-infrastructure}
 
 - **[GATE-DEBRIS] find the test that writes `test`/`test1`/`test2` into the repo-root cwd** — TEST/INFRA (small hygiene hunt) — `clickhouse-local`'s default database is a filesystem OVERLAY over the cwd, so those debris files shadow `default.test` and deterministically fail ~19 `clickhouse-local` tests in any full run launched from a poisoned checkout. Producer still not found; the shared worktree still shows the same *pattern* of fresh untracked cwd litter every run, though not proven to be literally this producer. Find it, make it write under its per-test dir; consider a pre-run debris sweep in the local praktika wrapper.
