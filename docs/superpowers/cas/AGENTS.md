@@ -86,3 +86,12 @@ After any cross-cutting sweep: `git status` the WHOLE tree and verify the commit
 - "No known reds": any red gets an RCA or a tracked return-item with a named owner-task; tactical tolerance is never silent.
 - Non-code (prose/comment) findings during reviews: batch into one deferred-docs pass, never a per-finding fix round — but CLASSIFY first; prose-looking findings are sometimes code.
 - Comments in code state constraints, never provenance: no references to plans/reviews/BACKLOG/task files (they get deleted); keep the reason, drop the citation.
+
+## Backlog.md (since 2026-09-26) {#backlog-md}
+
+The live CAS backlog is a [Backlog.md](https://github.com/MrLesk/Backlog.md) project at `docs/superpowers/cas/backlog`
+(config `backlog.config.yml` at the repository root, task ids `CAS-<n>`). Read `backlog instructions overview` before
+touching tasks; create and edit tasks only through the `backlog` CLI (never edit task files by hand), keep
+acceptance criteria outcome-oriented, and record settled owner decisions with `backlog decision create`. The
+topic files under `docs/superpowers/cas/BACKLOG/` are the pre-migration source and become history once the
+migration is verified.
