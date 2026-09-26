@@ -86,6 +86,23 @@ a CAS mount is outside supported operation, so this is a documentation and threa
 a fix — but the mount documentation should say it, and any future argument that reasons from "the store
 serialises us" should not assume a bound that is not there.
 
+### Remount backoff after a real-GCS DNS outage had no jitter, so both nodes retried in lockstep (2026-09-04) {#remount-backoff-no-jitter}
+
+From the real-GCS 15-minute soak (`docs/superpowers/cas/2026-09-04-gcs-soak-15min.md`): a **DNS
+resolution outage to `storage.googleapis.com` at 11:07:01–11:08:49Z** (repeated
+`Poco::TimeoutException`/DNS errors, zero 429s in the window) caused a simultaneous lease loss and a
+six-attempt remount storm on BOTH nodes (attempt 7 succeeded) and the 53.9 s lease phase on ch2's
+round 191. The fencing protocol did its job; the item is observability: the remount log should name
+the DNS failure class distinctly, and the host's Docker resolver flakiness is the suspect (unconfirmed
+against host DNS logs).
+
+Not a storm: the remount attempts were 1.5, 2.5, 4.5, 8.5, 16.5 s apart, then 72 s (attempt 7 succeeded
+once DNS returned) — `CasMountRuntime::remountLoop`'s deterministic doubling backoff 1 s → 30 s cap
+(`backoff_ms = min(backoff_ms * 2, 30000)`), with NO jitter: both nodes lost the lease within 1.4 s of
+each other and retried in lockstep (attempt k at the same second on ch1 and ch2). Harmless with two
+nodes; with N nodes it is the thundering herd jitter exists to break. Small change: draw the remount
+wait from the engine's full-jitter schedule (`Retry::backoff`) instead of the bare doubling.
+
 ## CAS disk lifecycle rev.8 round (FORGET-only) — residuals {#disk-lifecycle-rev8-closure}
 
 Round rev.8 (FORGET-only) resolved goals G1-G5 (isolation fix, throw-not-abort, GC self-exit on
