@@ -110,8 +110,10 @@ return committed-with-unattributed-token.
 Then revisit `MountLeaseKeeper::last_token`: an unattributed token is a guess, and the keeper might
 better treat its own write as unresolved and re-resolve than store one.
 
-Related: `[empty-token-unconditional-write-guard]` covers the *empty* token this same fallback can
-produce; this item is about a *wrong* one. Both come from the same three lines.
+Related: the *empty*-token case of this same fallback was fixed by `996b61e04da`
+(`ObjectStorageBackend::isValidTokenValue` now rejects an empty/wildcard/list token at the
+conditional-write entry); this item is about a *wrong* token, which that fix does not address. Both
+come from the same three lines.
 
 ### `[gc-mf-cleanup-durable-retry]` Manifest-cleanup GC phase needs durable retry, not a cap {#gc-mf-cleanup-durable-retry}
 
