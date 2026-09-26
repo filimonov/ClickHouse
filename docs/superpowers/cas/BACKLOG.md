@@ -485,7 +485,8 @@ Next measurement (before any code): a run with `query_log`, `cas_log` and `syste
 a plain disk, then per part removal: `CASRefQueueWaitMicroseconds` of the removing thread vs the `_log` PUT
 latency of the same flush, by hour. One number each answers the open question above. Then order the fixes:
 (1) here, the catalog batch wait; (2) `[PART-REMOVAL-REPOINT]`'s elided repoint if the queue dominates, or the
-store latency work of `{#gc-backlog-runaway}` / RustFS knobs if the tail dominates.
+store latency work of `BACKLOG/gc.md`'s `{#janitor-page-hardcoded}` (GC-backlog-runaway measurement) / RustFS
+knobs if the tail dominates.
 
 ### `[hot-key-lane-phase-b]` Hot-key lane phase B: combining, GCS spacing, the hold clamp, the GC erase, `_ckpt` (2026-09-04) {#hot-key-lane-phase-b}
 
