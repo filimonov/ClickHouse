@@ -356,6 +356,13 @@ Fix directions, in value order:
   not CREATING; TIME_WAIT is invisible to them (hence errno 99, never `HTTP_CONNECTION_LIMIT_REACHED`);
   lower caps flip the pool into the 0.5 s TTL regime sooner and worsen churn.
 
+**Status (2026-09-26):** directions (1) and (2) are addressed by the R2-series specs (connect-failure
+reissue: `CasRequests.cpp:987-1032` classifies a connect-failure hint for immediate reissue, `9a6bcb68aca`;
+unsafe no-delay reclaim) and direction (3) is closed per its own DONE note above (keep-alive
+recommendation, unblocked by the settings-namespace fix). `[cas-connection-churn-spike-redo]` and
+`[s3-drain-remainder-read-range-fix]` in `performance.md` never validated the R2-series baseline against
+this issue's real non-loopback port pressure (~430 GET/s) — that redo is what is left here.
+
 Housekeeping folded in:
 - **S07 wide-part port-exhaustion finding re-rated**: was closed 2026-07-06 as "cost/latency only, not a
   data bug" (`BACKLOG/performance.md`, DESIRABLE) — #2243 refutes that scope: the same condition takes the
@@ -489,3 +496,18 @@ Verified DONE at HEAD (`cas-gc-rebuild`), removed from the live backlog:
 - **`CasGcScheduler` lazy-construction race under concurrent `SYSTEM GC`.** Fixed: lazy creation now
   happens under `pointer_mutex` inside the caller's `gc_scheduler_mutex`/`lifecycle_mutex`
   (`ContentAddressedMetadataStorage::gcStart`). Commits `452d17af42f`, `e79a109b142`.
+
+### `[tiered-storage-cas-move-silent-failure]` Background moves onto a CAS disk under `max_move_factor`/tight `jbod` space fail without being distinguished from success by the regression's own query {#tiered-storage-cas-move-silent-failure}
+
+VERIFY. Two `tiered_storage_cas` x86 scenarios red on PR #2300 (also red on sibling PR 2286, so not
+newly introduced): `background move/max move factor` has one `MovePart` row with empty `path_on_disk`
+among 16 (a real move failure the test doesn't gate on: `system.part_log` query filters neither
+`error=0` nor table uuid); `simple replication and moves` hits `No space left on device` on the
+moving-`jbod` disk, arm-dependent (aarch64 passed). Node exception text unavailable from CI
+(`_service_logs/` empty). Needs: rerun `tiered_storage --only "/tiered storage/with cas/background
+move/*"` locally with server logs, read `part_log WHERE event_type='MovePart' AND error != 0`; harden
+the regression query independently (`error=0`, filter by uuid) — that fix belongs in the
+regression-suite repo, not this codebase.
+
+Source: `docs/superpowers/cas/random/pr2300-ci-triage-20260902.md` item 6 (file deleted by the u22
+consolidation pass).
