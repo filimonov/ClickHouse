@@ -170,6 +170,51 @@ publisher is what lets a detached task be the last `Pool` owner. The wait-loop p
 exists twice in the same file (`:1838`, `:4319`), so the fix is a transplant with a `wait_budget_ms` bound rather
 than new machinery. P1 as part of that chain.
 
+## CAS-021 (issue #2207) adjudication follow-ups: controller-outcome honesty + condemn-memo staleness (2026-08-20) {#cas-021-followups}
+
+Adjudication of https://github.com/Altinity/ClickHouse/issues/2207 (two read-only code sweeps against
+HEAD `684161dcc03`; updated for the 2026-08-23 rewrite): the controller-outcome observation remains
+relevant to mutable blob metadata, but the old conditional body-displacement branch was deleted. The
+claimed integrity consequence remains neutralized — the delete path is guarded by the normative
+delete-site in-degree re-read, exact-token deletion cannot remove a fresh retagged publication, and
+the writer checks its admitted fence generation before publication;
+the equality-resolved meta etag is consumed by NOBODY (`writeCondemnedMeta` reads only `.outcome`);
+the ref-log lane adjudicates authorship by byte equality over a payload that carries txn identity
+(`classifyRefLogOccupant`, `CasRefLedger.cpp:2240`); a false-`Occupied` → mount-fault path does not
+exist. GC's gate predicate is "durable Condemned evidence exists" — which the equality-resolve GET
+literally proves — same as the already-Condemned arm at `CasGc.cpp:137`.
+
+Follow-ups, in recommended packaging:
+
+- (1) **Honesty patch over the request controller** (one coherent change, NO durable-op/wire/behavior
+  change): split the equality-resolved outcome out of `Committed` (e.g. `IntendedStateDurable`), stop
+  returning the observed occupant token on that arm (it claims authorship no caller has; today unused
+  — make that structural); rename `slotOccupy`'s misleading `NotUnresolved` label; add the
+  "trust model" doc-block at the resolution ladder (what equality-resolve proves / does not prove,
+  pointers to the three system invariants that make it safe) and the ownership-decidability table by
+  key class (immutable content-addressed / mutable identity-in-payload / mutable identity-free /
+  owner-anchor `claimOwnerOrThrow`); cross-reference sentences at `writeCondemnedMeta` ("a foreign
+  `Condemned` marker satisfies the predicate by design") and `reconcileMetaClean` ("an
+  equality-resolved desired `Clean` record is already durable");
+  rename the pin tests to read as spec. ~150-250 line diff + test renames; controller = adversarial
+  review mandatory. This addresses the CORE of CAS-021 at the type level: the external auditor's
+  reading becomes impossible to write.
+- (2) **Stale condemn-marker memoization — ACCEPTED RESIDUAL, do NOT fix with re-reads** (user
+  decision 2026-08-20): the in-process `condemn_markers_confirmed` note survives a legitimate
+  `Condemned -> Clean` transition (no `forgetCondemnMarker` on writer replacement without an intervening fold),
+  so `confirm_condemned_marker` (`CasGc.cpp:1885`) can graduate an entry whose durable meta says
+  Clean. Consequence when it fires (ultra-rare race): ONE spurious `deleteExact` — an S3 DELETE,
+  which is FREE — self-healing at `CasGc.cpp:862-870` (TokenMismatch drops the confirmation, meta
+  untouched). The re-read fix would cost +1 BILLABLE GET per graduating condemned entry on the
+  COMMON path (P9 GET-budget class) to save free DELETEs in a rare race — worse than the disease.
+  No zero-cost invalidation exists either (the window is by definition "nothing observed the fresh
+  replacement"). Only sanctioned improvement: the observability LABEL at the self-heal site (counter/
+  log as "spared by token rotation", not an anomaly) — zero extra requests; fold into (1) if done.
+- (3) One trust-model paragraph for conditional writes in the numbered doc set
+  (`03-writer-protocol.md`) — documentation only.
+
+Issue response drafted (2026-08-20); post/adaptation is the user's call.
+
 ## Part publish leaves the common path with zero `GET`s (owner decision 2026-09-25) {#part-publish-zero-gets}
 
 Owner decision, confirmed against the code: a namespace is node-owned, so the per-flush catalog `GET`
