@@ -71,6 +71,39 @@ reintroduces the class. What would actually close it is making the deref fail lo
 use — a checked accessor the CA test helpers use in place of `->` — so the shape is unavailable
 rather than merely discouraged.
 
+## Unit-test mutation coverage {#unit-test-mutation-coverage}
+
+### `[cas-unit-test-mutation-battery]` Proposed: a dynamic mutation battery over the CAS unit tests (2026-09-03, deferred by the user) {#cas-unit-test-mutation-battery}
+
+**Context.** The backend request-contract migration (spec
+`docs/superpowers/specs/2026-09-02-cas-backend-token-contract-design.md`, revision 13) rewrote most of
+the 142 CAS unit-test files: doubles moved from the legacy verbs to `CasRequests`, one-shot faults were
+re-modelled for an engine that retries, counts pinned to the old controller were re-derived. The user
+asked whether the tests still test something useful or degenerated into `2 + 2 = 4`. The static half of
+that audit (two reviewers, per-test "killing mutation" + verdict DISCRIMINATING / WEAK / TAUTOLOGICAL)
+is recorded in `docs/superpowers/cas/2026-09-03-test-vacuity-audit.md`; its ranked mutant lists are the
+input to this item. The dynamic half was NOT run — other priorities (user, 2026-09-03). Still not run
+as of 2026-09-25.
+
+**Proposal (dynamic half).** Execute the mutants: a mutant nobody kills is a hole in the suite.
+
+1. Merge the auditors' mutant lists into at most 20 distinct one-line production mutants (never a test
+   line); one patch file each, with the tests the audit expects to go red.
+2. Per mutant, in order: apply → `ninja unit_tests_dbms` in `build_debug` → run
+   `build_debug/src/unit_tests_dbms --gtest_filter='CAS*'` (the gate filter is exactly `CAS*`) → record
+   ran / passed / failed and the FAILED names → revert and verify `git status --porcelain -- src` is
+   empty before the next mutant.
+3. Verdict per mutant: KILLED (an expected test is red), KILLED-BY-OTHERS (red, but none of the expected
+   tests — name what killed it), SURVIVED (zero reds: name the property no test pins). An abort in the
+   debug build counts as killed by an assertion; say so.
+4. Commit nothing from the mutants; finish with one clean `CAS*` gate to prove the tree is restored.
+5. Output: the mutant table (patch, expected tests, actual reds, verdict), the SURVIVED list with the
+   property each exposes, and for every test the static audit called TAUTOLOGICAL or WEAK whether the
+   battery confirms or refutes it. Each SURVIVED mutant becomes a test to write, not a note.
+
+**Cost.** ~20 incremental debug builds + ~20 `CAS*` runs, sequential (one builder); roughly 3-4 hours
+of a cheap agent's time. Zero risk to the tree if step 2's revert check is honoured.
+
 ## Stateless and integration lanes {#stateless-integration-lanes}
 
 - **[remote-data-paths-no-pushdown] `system.remote_data_paths` walks every disk, no `disk_name` pushdown** — {#remote-data-paths-no-pushdown} — DESIRABLE (upstream, needs consultation before editing generic code) — `StorageSystemRemoteDataPaths.cpp:153` still has no `disk_name` pushdown in `applyFilters`, confirmed unchanged on both branches. This is what timed out `04286_content_addressed_remote_data_paths` at 600s (root cause, not a CAS regression). Mitigated by tagging that one test (tag since renamed `no-content-addressed-storage` -> `no-cas-storage`, `c4f0ba4184f`); the general pushdown fix stays open.
@@ -182,7 +215,57 @@ Fix candidates as originally proposed: (a) `MemoryWorker` non-jemalloc branch re
 
 **Update 2026-09-26.** Fix candidate (a) landed, **on `altinity/antalya-26.6` only**: `0c9c89743ccd` "use sanitizer info for allocated" (PR #2349, merged 2026-09-16, closes Altinity issue #2299). `MemoryWorker::getMemoryUsage` now returns a separate `allocated` field; under ASan/TSan/MSan it is `__sanitizer_get_current_allocated_bytes()` rather than resident, and the negative-tracker correction branch in `updateResidentMemoryThread` now passes that `allocated` value instead of `resident`. **Not yet ported to `cas-gc-rebuild`** (`src/Common/MemoryWorker.cpp` there still has the pre-fix branch). Candidates (b) and (c) remain open on both branches.
 
-Related, separate investigation, not duplicated here: issue [#2298](https://github.com/Altinity/ClickHouse/issues/2298) (OPEN, "CAS-S3 ASan/MSan stateless shards hit GitHub's 6h timeout") and its RCA (`docs/superpowers/cas/2026-09-16-msan-cas-s3-shard-budget-rca.md`) found a *different* mechanism causing the ASan lane's `Code: 241` storms — the object store's own memory charged to the server through the shared cgroup — plus an unresolved CAS-GC backlog-runaway hypothesis under MSan; both are tracked as `{#gc-backlog-runaway}` in the main `docs/superpowers/cas/BACKLOG.md`.
+**Addendum (2026-09-07), alias `[asan-thread-count-fake-stack-ceiling]`.** Untried, orthogonal to
+candidates (a)-(c) above: (d) shrink the ASan fake-stack footprint directly —
+`detect_stack_use_after_return=0` weakens detection; `max_uar_stack_size_log=18` (default 20, ~11 MB/
+thread) is the untried conservative alternative ("E2", never finished). Candidate (c) — fewer baseline
+threads, e.g. via `[sanitizer-cas-thread-pool-profile]` below — is still the higher-value lever.
+
+Related, separate investigation, not duplicated here: issue [#2298](https://github.com/Altinity/ClickHouse/issues/2298) (OPEN, "CAS-S3 ASan/MSan stateless shards hit GitHub's 6h timeout") and its RCA (`docs/superpowers/cas/2026-09-16-msan-cas-s3-shard-budget-rca.md`) found a *different* mechanism causing the ASan lane's `Code: 241` storms — the object store's own memory charged to the server through the shared cgroup — plus an unresolved CAS-GC backlog-runaway hypothesis under MSan; both are tracked as `{#gc-backlog-runaway}` in `docs/superpowers/cas/BACKLOG/gc.md`.
+
+### Sanitizer CI lanes need a smaller thread-pool profile for the CAS stateless stand (2026-09-07, run-3 triage) {#sanitizer-cas-thread-pool-profile}
+
+Msan CAS lane throughput is 0.5k tests/h vs 2.0k/h for the plain S3 lane under the same sanitizer (tsan
+CAS <0.9k/h vs 2.0k/h; ASan CAS 4.2k/h, fine), so the msan and tsan CAS shards never fit the 6h job
+budget. The thread census points at pools, not tests: ≈2400 threads at 30 inline disks (BgSchPool 508,
+IOWriter 165, CAS per-disk GC pools 523, …). `tests/config/install.sh` already has an
+`is_sanitizer_build` branch and a `--cas-s3-storage` branch; add one `config.d/cas_sanitizer_pools.yaml`
+linked only when both hold, with a short, explained key list: `threadpool_writer_pool_size` 500 →
+64-100, `background_schedule_pool_size` 512 → 128-256 (renewal and cleanup tasks live there; not below
+128), and on the default CAS disk `cas_gc_read_concurrency`/`cas_gc_meta_pool_size` 16 → 4 (inline disks
+created by tests do not inherit these — there is no server-wide default for disk settings — so
+`SYSTEM CAS FORGET` stays the lever for them). `max_thread_pool_free_size` is not a lever: local pools
+built on the global pool count as busy (E1 with 50 changed nothing). Order: FORGET first (landed, run
+4), this profile second, resharding (tsan ≥ 4, msan ≥ 6, plus the harness's own 4h budget) only as
+insurance. Verify by the same `system.stack_trace` census per thread group, not by job wall time.
+
+Alternative idea, recorded for completeness: give idle pool threads a bounded lifetime so a pool
+shrinks between bursts and re-creates threads on demand. ClickHouse's `ThreadPool` never retires an
+idle worker unless `threads.size() > min(max_threads, scheduled + max_free_threads)`, and local pools
+pin their workers for the pool's lifetime, so this would be a change to the shared `ThreadPool` (idle
+timeout + shrink) outside the CAS tree, with wide blast radius and its own warm-up cost per burst;
+probably too much for the gain, and the per-disk pools would be better removed altogether (a
+server-wide GC pool, `[gc-per-disk-thread-pools]` in `BACKLOG/gc.md`) than made shrinkable.
+
+### CAS gtests: ~36 remaining PoolConfig hooks capture test-frame locals by reference (2026-09-08) {#poolconfig-hooks-capture-by-reference}
+
+Found 2026-09-08 after ASan caught one real UAF (`gtest_cas_ref_writer.cpp:2828`, fixed `a726e933419`:
+a Pool outlives its test frame through a background publish's `shared_from_this()`, deferred teardown
+calls `boot_ms_fn` on a dead local). Census of the same `_fn = [&` shape, original count 92 across 10
+files: `gtest_cas_pool.cpp` 51, `gtest_cas_mount.cpp` 23, `gtest_cas_writer_duties.cpp` 5,
+`gtest_cas_ref_recovery_cas_walk.cpp` 4, `gtest_cas_observability.cpp` 2,
+`gtest_cas_retirement_sweep.cpp` 2, `gtest_cas_ref_snapshot_publish_ordering.cpp` 2,
+`gtest_cas_detached_work.cpp` 1, `gtest_cas_event_log.cpp` 1, `gtest_cas_gc_ack_floor.cpp` 1. Each site
+needs a read (is the value mutated after the hook is installed, by whom); over half of the ref-writer
+sites needed shared state, not a by-value capture. One task per file; run the suite 5x under ASan after
+each. Alternative that removes the class: make `Pool` teardown not call config hooks (snapshot the
+clock values it needs at construction), then the capture shape stops mattering.
+
+**Progress (2026-09-25):** 8 of the 10 files are now at 0 by-reference captures (`gtest_cas_writer_duties.cpp`,
+`gtest_cas_ref_recovery_cas_walk.cpp`, `gtest_cas_observability.cpp`, `gtest_cas_retirement_sweep.cpp`,
+`gtest_cas_ref_snapshot_publish_ordering.cpp`, `gtest_cas_detached_work.cpp`, `gtest_cas_event_log.cpp`,
+`gtest_cas_gc_ack_floor.cpp`); `gtest_cas_pool.cpp` and `gtest_cas_mount.cpp` are each exactly 18. 36
+sites remain, concentrated in those 2 files.
 
 ## CI infrastructure {#ci-infrastructure}
 
