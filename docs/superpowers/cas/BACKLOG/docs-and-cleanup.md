@@ -42,6 +42,40 @@ shapes, `b5c812ba56a`, `src/Disks/tests/cas_test_helpers.h:1109` `namespace fixt
 - **[casrequestcontrol-comment-settings-stale] OBSOLETE: `CasRequestControl` deleted wholesale (`7f2a3b03a460`, `cas-gc-rebuild` only; the file still exists on `antalya-26.6`)** — DOC — Found during the Task 12 fix round: the header comments name `cas_s3_retry_initial_backoff_ms`/`cas_s3_retry_max_backoff_ms` as if they were configurable settings; they exist only in the comment text — the real budget is hardcoded in `CasRequestBudget`. Either implement the settings or fix the comments to stop implying a configuration surface that isn't there. `CasRequestControl.{h,cpp}` and its dedicated test are deleted on `cas-gc-rebuild`, so the stale comments no longer exist there; the item stays open on `antalya-26.6`, where the file is unchanged.
 - **[s3cache-config-comment-stale] stale comment in `utils/ca-soak/configs/storage_conf_s3cache_ch1.xml`** — MINOR — The comment claims cache-over-CA fails with `NOT_IMPLEMENTED`; this was fixed by `3ed0e5f5030` (2026-07-08) and the cache-over-CA path is now live-validated (see the quick-start cache example, `380688e8a66`). Remove the stale comment.
 - **[part-folder-validate-never-gating] ✅ CLOSED by the retirement of `part_folder_validate` (`66b480241b7`, 2026-09-03)** — HARD (user settings-policy direction) — The setting this item demanded a gate for no longer exists: the manifest-cache-by-id work retired `part_folder_validate` entirely, so there is no `never` value left to silently accept. `RetiredPartFolderValidateIsRejected` pins that loading the retired name now throws `UNKNOWN_SETTING`.
+- **Spec drift (`ensureBlobPresent`).** `docs/superpowers/specs/2026-09-02-cas-backend-token-contract-design.md` (revision 13)
+  still prescribes `op.publish(…, Retry::once())` and "never the shared `standard`" for
+  `ensureBlobPresent`; since the loop-deadline fix the publish runs under the loop's frozen policy made
+  single-attempt (one physical attempt, bounded by the loop's one deadline). Reword the spec sentence. Owner: the spec's next revision (revision 14), one editing pass for all three recorded drifts (this one, `[spec-drift-ref-lane-once]` below, and the `isAccessTokenExpiredError` sentence in the next bullet).
+- **Spec drift (`isAccessTokenExpiredError`).** The spec's retry section names `S3Exception::isAccessTokenExpiredError` as the
+  refreshability predicate; the landed `isRefreshableCredentialError` is deliberately narrower (named codes
+  only, never `S3Errors::UNKNOWN`), because the general predicate would turn every unmodelled store answer
+  into a refusal. The spec sentence is stale; the ruling is recorded in
+  `docs/superpowers/cas/2026-09-03-request-contract-rulings.md`. Fix: reword the spec sentence to name the
+  CAS-local predicate and its reason. (Codex production review, 2026-09-03, adjudicated; the review's 3
+  confirmed defects were already fixed in the plan's fix round, and its "accepted request costs" bullet is
+  recorded in full in that same rulings doc.)
+- **U9 `reconcileMetaClean` comment (CP3/Task 7 review, 2026-09-03).** `Pool/CasPartWriteTxn.cpp`'s
+  `reconcileMetaClean` create-first gate comment over-states what an absent observation implies (an absent
+  blob-body observation does not imply an absent marker).
+- **U6 `CasRefCatalog.cpp` citation (CP3/Task 7 review, 2026-09-03).** `Pool/CasRefCatalog.cpp:655` still
+  cites "the Task 2 review's own note on `casAdmitEntry`" — the header and test-file sweep were cleaned,
+  this `.cpp` site was missed.
+- **Prose and spec drift from the engine fix round review, 2026-09-03 (4 sites, `Backend/CasRequests.{h,cpp}`):**
+  - `isDefinitelyRefusedWrite`'s doc still says the engine refuses when "there is no reissue left to sign with what it did install" — under `once` no refresh is invoked any more, so that disjunct is unreachable; drop it. (FALSE)
+  - `WriteState::any_ambiguous` comment: "an inner write that ended in `Conflict` saw the precondition move" is false of the `!any_ambiguous` arm, which returns `Conflict{NotObserved}` having proved nothing — scope the claim to the ambiguous arm.
+  - `writeLoop` reset comment: "sent DIFFERENT bytes" is not guaranteed (`decide` may repeat bytes); the proof is the observed precondition, not the byte difference.
+  - `admit`/`resume` thread-safety comment: the conclusion is right, the enumeration is not (neither reads the backend; `resume` reads no member).
+
+### Spec drift: the ref-lane inventory row says `standard`, the coverage-gate paragraph and the code say `once` (2026-09-04) {#spec-drift-ref-lane-once}
+
+`docs/superpowers/specs/2026-09-02-cas-backend-token-contract-design.md` (revision 13) lists "the ref lane
+(`commitRefChunk`, the recovery walk, `resolveWedgeOnce`) — `create` under `standard`" in the inventory
+table, while its coverage-gate paragraph states that "the `once` writes of the pulse and the wedge retry
+are never a key's first request" and that the recovery walk's epoch seal at `T+1` is a `once` write.
+The implementation follows the paragraph (`resolveWedgeOnce` and the recovery seal `create` under
+`Retry::once`; the lane's own next flush is the retry), as chosen in the migration's ref-ledger unit and
+approved by its review. Fix: reword the inventory row to say `commitRefChunk` under `standard`, the wedge
+retry and the epoch seal under `once` with the reason. Found by the external test review (tests-02 #7/#8).
 
 ## `[manifest-cache-by-id-prose-batch]` manifest-cache-by-id: prose and naming batch, still unapplied {#manifest-cache-by-id-prose-batch}
 
