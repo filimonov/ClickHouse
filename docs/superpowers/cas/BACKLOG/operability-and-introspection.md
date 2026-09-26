@@ -822,9 +822,10 @@ only. Owed shape: an `applyNewSettings` override that (a) re-parses the block, (
 genuinely dynamic subset (GC cadence and the per-round budgets, the remaining cache byte/entry budgets,
 `gc_enabled` — the last already has runtime verbs, `SYSTEM CAS GC
 STOP`/`START`), and (c) LOGS a warning naming any changed creation-time key as ignored-until-restart,
-instead of today's silence. Fixing this also removes a second silent surface: the unknown-key gate
-([`cas-disk-s3-key-whitelist-gap`](../BACKLOG.md#cas-disk-s3-key-whitelist-gap)) is only ever evaluated
-at disk creation, so a typo introduced by an edit-and-reload is not diagnosed until the next restart.
+instead of today's silence. Fixing this also removes a second silent surface: the unknown-key gate in
+`ContentAddressedSettings.cpp` (formerly tracked as the now-DONE `[cas-disk-s3-key-whitelist-gap]`,
+fixed by `917600b122b`) is only ever evaluated at disk creation, so a typo introduced by an
+edit-and-reload is not diagnosed until the next restart.
 
 Second half, lower severity and mostly generic: removing a CAS disk from `storage_configuration` and
 reloading only produces the upstream warning "disappeared from configuration, this change will be
