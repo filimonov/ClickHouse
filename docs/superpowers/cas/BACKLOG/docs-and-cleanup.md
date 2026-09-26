@@ -84,7 +84,7 @@ retry and the epoch seal under `once` with the reason. Found by the external tes
 ## `[manifest-cache-by-id-prose-batch]` manifest-cache-by-id: prose and naming batch, still unapplied {#manifest-cache-by-id-prose-batch}
 
 From the whole-branch review of the manifest-cache-by-id work
-(`docs/superpowers/specs/2026-09-02-cas-manifest-cache-by-id-design.md`). All prose or a single
+(`docs/superpowers/specs/2026-09-02-cas-manifest-cache-by-id-design.md`, deleted in `05b2a33ff32`; landed, see `14f423aea98`). All prose or a single
 identifier rename, none blocking; re-verified 2026-09-25, none of the 9 applied yet. **Not compacted to
 a paragraph — each line below is already the minimal actionable unit (a literal find-and-replace);
 folding these into prose would require re-expanding them for whoever applies the fix.**
