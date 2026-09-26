@@ -460,6 +460,24 @@ tracked as `umbrella-roadmap.md` §2 GC "Cheaper GC per garbage blob (decide)".
 
 Details: docs/superpowers/cas/2031-triage.md#cas-117
 
+### `[cas-connection-churn-spike-redo]` The connection-churn spike investigation never validated its baseline against real port pressure {#cas-connection-churn-spike-redo}
+
+Connection-churn spike (2026-09-05, `cas-connection-churn-design.md`) never validated its baseline
+against real port pressure — redo over a non-loopback path at the #2243 reporter's ~430 GET/s before
+trusting the `http_keep_alive_max_requests=10000` verdict beyond mechanism. See also
+`[issue-2243-port-exhaustion-lease]` in `mounts-and-lifecycle.md`, which this redo would settle.
+
+Source: `tmp/groom/u11-specs-c/reviewed/proposal.md` §4/§6 (u11-specs-c unit).
+
+### `[s3-drain-remainder-read-range-fix]` The buffered-remainder drain recovers little and is near-useless for multi-MiB remainders {#s3-drain-remainder-read-range-fix}
+
+#2332 read-path connection churn: the buffered-remainder drain (branch
+`fix/antalya-26.6/s3-drain-buffered-remainder`) recovers ≤~7.8 KiB and is near-useless for multi-MiB
+remainders (research 2026-09-15) — pursue fixing the over-long read range in
+`MergeTreeReaderStream::adjustRightMark` instead.
+
+Source: `tmp/groom/u11-specs-c/reviewed/proposal.md` §4/§6 (u11-specs-c unit).
+
 ### `[hot-key-lane-phase-a-followups]` Phase A of the hot-key lane landed on both `cas-gc-rebuild` and `altinity/antalya-26.6`; what its reviews deferred (2026-09-04) {#hot-key-lane-phase-a-followups}
 
 Formerly `[ref-catalog-cas-starvation-under-parallel-writers]` {#ref-catalog-cas-starvation} — one
@@ -635,6 +653,19 @@ three rounds the remaining questions are answered by code and tests, not by anot
 
 Cross-reference: `docs/superpowers/cas/BACKLOG/gcs.md#gcs-hot-control-keys-429` independently proposes a
 narrower `_ckpt`-only pacing scheme for GCS; reconcile before starting either.
+
+### `[perf-smoke-cost-regression-gate]` No gate catches a per-commit RTT-cost regression the way safety regressions are caught by TLA+/soak/adversarial review {#perf-smoke-cost-regression-gate}
+
+DESIRABLE. Each write-path cost addition (`_ckpt` +4 RTT, frontier probes O(namespaces) serial
+GETs/round, `HEAD`-before-`PUT` 44% of round requests) was individually measured and accepted, but the
+*combined* current cost of a single insert is not tracked anywhere as a number that can regress;
+today's figure is unknown (the 1.59× baseline predates `_ckpt`). Proposed: a small perf-smoke lane
+(single insert, wide insert, quiet-GC-round request budget) run as a gate, not a benchmark — detects
+"cost grew N% since last week" rather than reporting an absolute number. See the write-path items above
+for the individual costs this would bound.
+
+Source: `docs/superpowers/cas/random/retrospection-archeology.md` §1 (Russian-language session
+reflection, file deleted by the u22 consolidation pass).
 
 ## Memory {#memory}
 
