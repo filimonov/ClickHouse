@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 08:14'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:write-path'
   - 'area:formats'
@@ -37,7 +38,7 @@ projection's `<proj>.proj/primary.idx`. Projection files live in the parent mani
 Fail-closed and loud; no corruption. CAS-80 (allowlist) shrinks the exposure but does not close it.
 Behavior-only, no wire-format change.
 
-Provenance: BACKLOG/formats-and-storage.md#manifest-inline-budget-no-spill (2031-triage CAS-044); related u05-perf-b:part-file-suffix-allowlist (CAS-80). Verified 2026-09-26 against 8b87aa15d21 (cas-gc-rebuild) and 8d62c314ec1 (altinity/antalya-26.6).
+Provenance: BACKLOG/formats-and-storage.md#manifest-inline-budget-no-spill (2031-triage CAS-044); related CAS-80 (CAS-80). Verified 2026-09-26 against 8b87aa15d21 (cas-gc-rebuild) and 8d62c314ec1 (altinity/antalya-26.6).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

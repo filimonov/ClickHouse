@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:57'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -32,7 +33,7 @@ remounted normally. The data model matched byte for byte and fsck was clean, yet
 (`soak/signals.py:94`, gate at `soak/run.py:871`), so one correct recovery keeps it nonzero forever.
 Options: classify a pause within 1 s of the TTL, or longer, as `freeze_long`; or exempt the counter when the lane has since remounted and the model matches.
 
-Provenance: BACKLOG/testing-and-ci.md#soak-harness-needsrecovery-after-near-ttl-pause; verified 2026-09-26 against 8b87aa15d21 (harness is not on antalya-26.6). Not a duplicate of u10-mounts:soak-lease-loss-detector.
+Provenance: BACKLOG/testing-and-ci.md#soak-harness-needsrecovery-after-near-ttl-pause; verified 2026-09-26 against 8b87aa15d21 (harness is not on antalya-26.6). Not a duplicate of CAS-162.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

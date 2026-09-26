@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 08:26'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:gc'
   - 'area:tooling'
@@ -35,7 +35,7 @@ ordinal: 185000
 `clickhouse-disks cas-gc-dryrun` prints `preview_deletes=0` for all three cases (`programs/disks/CommandCaGcDryRun.cpp`).
 The dry run is read-only and never authorizes a delete, but it reports a disaster as "nothing to do".
 
-Provenance: BACKLOG/gc.md#gc-dryrun-silent-on-damaged-state (2031-triage CAS-095). Same function as u07-oper-a:preview-deletes-size-units; do both in one change if convenient. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+Provenance: BACKLOG/gc.md#gc-dryrun-silent-on-damaged-state (2031-triage CAS-095). Same function as CAS-12; do both in one change if convenient. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

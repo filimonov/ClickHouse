@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:57'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:soak'
   - 'complexity:medium'
@@ -30,7 +31,7 @@ ordinal: 278000
 `utils/ca-soak/scenarios/RUN_HISTORY.md` has `full`-scale rows for 20 scenarios. Unresolved and not owned by another task:
 S15 is inconclusive on a card bug (`:596`, `Code: 41 Cannot read DateTime: unexpected number of decimal`); S29 is inconclusive (`:347`, `:599`);
 S12, S22 and S27 are green at `ci` scale but have never run at `full`.
-Owned elsewhere: S03 (`u10-mounts:renewal-budget-gap-s03-full-rerun`), S05 (CAS-99), S23 (CAS-97), S01 (CAS-100), S07 (CAS-104), S10 (CAS-98), S11 (CAS-106).
+Owned elsewhere: S03 (`CAS-152`), S05 (CAS-99), S23 (CAS-97), S01 (CAS-100), S07 (CAS-104), S10 (CAS-98), S11 (CAS-106).
 
 Provenance: BACKLOG/testing-and-ci.md [ci-full-scale-sweep]; verified 2026-09-26 against 8b87aa15d21. The 'RSS-attribution / manifest-cap measurement doc' sub-point is carried by CAS-100 and CAS-107.
 <!-- SECTION:DESCRIPTION:END -->

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:57'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:ci'
   - 'complexity:small'
@@ -36,7 +37,7 @@ Proposed keys: `threadpool_writer_pool_size` 500 to 64-100, `background_schedule
 `max_thread_pool_free_size` is not a lever (tried, no change). Idle-thread retirement in the shared `ThreadPool` was rejected: wide blast radius; per-disk pools go away with round-scoped GC pools instead.
 The same profile is candidate (c) for the ASan RSS ceiling (threads times fake stacks).
 
-Provenance: BACKLOG/testing-and-ci.md#sanitizer-cas-thread-pool-profile, plus candidate (c) of #asan-memory-tracker-snap; verified 2026-09-26 against 8b87aa15d21. Related: u02-gc-b:gc-a3-round-pool-and-pending-deletes-fan-out, CAS-85.
+Provenance: BACKLOG/testing-and-ci.md#sanitizer-cas-thread-pool-profile, plus candidate (c) of #asan-memory-tracker-snap; verified 2026-09-26 against 8b87aa15d21. Related: CAS-29.2, CAS-85.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

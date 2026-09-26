@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:57'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:soak'
   - 'complexity:small'
@@ -32,7 +33,7 @@ Real AWS, 8-minute no-chaos smoke `ca_live_20260904_aws_r1`: the checkpoint fail
 2. `initial` is read once before the first condemning round (`:581-588`), so the backlog-scaled bound collapses to its floor while the backlog is still rising.
 Also the run JSON says `fsck_status: "skipped"` when three fscks ran and only the final one was not reached.
 
-Provenance: BACKLOG/testing-and-ci.md#soak-harness-bugs-2026-09-04 bullet 1; verified 2026-09-26 against 8b87aa15d21. Related: CAS-93 (u02-gc-b:gc-soak-fixpoint-sanitizer-scaling), CAS-63.
+Provenance: BACKLOG/testing-and-ci.md#soak-harness-bugs-2026-09-04 bullet 1; verified 2026-09-26 against 8b87aa15d21. Related: CAS-93 (CAS-93), CAS-63.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

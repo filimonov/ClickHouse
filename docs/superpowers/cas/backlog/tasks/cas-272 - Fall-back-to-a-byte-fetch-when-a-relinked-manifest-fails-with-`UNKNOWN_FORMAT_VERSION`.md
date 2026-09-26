@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 08:14'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:replication'
   - 'area:formats'
@@ -33,7 +34,7 @@ ordinal: 337000
 Not reachable today: relink needs the same pool UUID and `_pool_meta` is exact-generation gated. It becomes reachable when a
 release admits a mixed-generation pool, so land it before the format-version rollout (CAS-117).
 
-Provenance: BACKLOG/replication.md#relink-fallback-unknown-format-version (2031-triage CAS-043); should precede u09-oper-c:format-version-rollout-design (CAS-117). Verified 2026-09-26 against 8b87aa15d21 (cas-gc-rebuild) and 8d62c314ec1 (altinity/antalya-26.6).
+Provenance: BACKLOG/replication.md#relink-fallback-unknown-format-version (2031-triage CAS-043); should precede CAS-117 (CAS-117). Verified 2026-09-26 against 8b87aa15d21 (cas-gc-rebuild) and 8d62c314ec1 (altinity/antalya-26.6).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

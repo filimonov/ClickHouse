@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:57'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:soak'
   - 'area:gc'
@@ -36,7 +37,7 @@ the prefix of GC discovery. Still uncovered: `CasNamespaceJanitor` pages `namesp
 `casManifestsPrefix()`; pagination ambiguity there is the hazard S27 exists for. The card asserts only that LISTs were perturbed, not GC's outcome.
 Spec B1 removes the global `cas/ns/stream/` LIST, which would retire S27's target a second time. Per decision-2 a LIST lie may delay reclamation, never authorize a delete.
 
-Provenance: BACKLOG/testing-and-ci.md#s27-list-anomaly-aimed-at-a-retired-path (fix direction not fully met by d6986f799f4); verified 2026-09-26 against 8b87aa15d21. Related: u01-gc-a:gc-b1-discovery-without-global-list. S27's full-scale run (subtask s27-full-scale-run of the scenario sweep) waits for this re-aim.
+Provenance: BACKLOG/testing-and-ci.md#s27-list-anomaly-aimed-at-a-retired-path (fix direction not fully met by d6986f799f4); verified 2026-09-26 against 8b87aa15d21. Related: CAS-29.1. S27's full-scale run (subtask s27-full-scale-run of the scenario sweep) waits for this re-aim.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

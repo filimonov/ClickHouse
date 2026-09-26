@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -41,9 +42,9 @@ column. On otel.demo rounds took up to 5 h, and round 1383 was lost after 2 h 38
 in the log (audit F17, F28).
 Phase rows do not sum to `duration_ms` ("the round also does untimed bookkeeping between phases",
 `src/Interpreters/ContentAddressedGarbageCollectionLog.cpp:64`); coverage was measured at 99.986%, and the remainder has no column.
-Spec C5 adds `deadline_hit`/`carry_total` (u02-gc-b:gc-c1-round-deadline-and-pacing) and the audit an Info summary line
+Spec C5 adds `deadline_hit`/`carry_total` (CAS-29.10) and the audit an Info summary line
 (gc-round-info-summary-line); neither shows a round while it runs.
-u07-oper-a:gc-alert-signal-gap-check excludes this item and maps the alert set; add the watchdog signal there once it exists.
+CAS-4 excludes this item and maps the alert set; add the watchdog signal there once it exists.
 
 Provenance: BACKLOG/gc.md#gc-observability [GC round progress observability] and [GC-FULL-TIME-ACCOUNTING] {#round-duration-alarm}. The source's 'name the orphan_sweep epilogue phase' is done (`orphan_sweep` is phase 18/18, CasGc.cpp:1192-1194); the unaccounted remainder is what is left. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->

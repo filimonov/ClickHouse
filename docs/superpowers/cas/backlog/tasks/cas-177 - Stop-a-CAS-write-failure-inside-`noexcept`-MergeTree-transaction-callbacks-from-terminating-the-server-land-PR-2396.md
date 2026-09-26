@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:44'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:write-path'
   - 'area:upstream'
@@ -38,7 +39,7 @@ Point fix on cas-gc-rebuild only: `ContentAddressedTransaction::abandonBuildBest
 antalya-26.6 lacks it: its `publishStaging` still calls a throwing `st.build->abandon()` after the repoint (`R/ContentAddressedTransaction.cpp:413` at `0dbbd797792`).
 Class fix: PR #2396 (open, base antalya-26.6) retries the six metadata writes in one helper for up to 60 s and rethrows on exhaustion or shutdown. Closes #2344.
 Rejected: catching at each CAS throw point (hides a lost durable write) and retrying under the lease (turns the abort into a minutes-long `COMMIT`).
-The CAS-side surface reduction (one repoint instead of a scratch build) lives in `u04-perf-a:standalone-write-single-manifest`.
+The CAS-side surface reduction (one repoint instead of a scratch build) lives in `CAS-15`.
 
 Provenance: BACKLOG/ref-protocol.md#cas-txn-commit-inside-noexcept-aftercommit. Verified 2026-09-26 against b1c34d03479 (point fix fb035142262 is an ancestor) and 0dbbd797792 (point fix absent); PR #2396 state OPEN via gh.
 <!-- SECTION:DESCRIPTION:END -->

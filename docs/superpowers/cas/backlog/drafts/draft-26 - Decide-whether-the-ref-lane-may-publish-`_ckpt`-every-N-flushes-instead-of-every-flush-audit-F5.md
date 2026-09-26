@@ -6,7 +6,7 @@ title: >-
 status: Draft
 assignee: []
 created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 08:08'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -44,7 +44,7 @@ This changes a protocol step, so it needs the owner's explicit approval (AGENTS.
 It is not covered by decision-1, which is about `HEAD` before a blob `PUT`, and it writes no new object kind (decision-4 not triggered).
 F31 item 2 (optimistic `_ckpt` write from a cached etag) removes the `_ckpt` GET first; decide this after it.
 
-Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F5; stated only in this pointer entry and the spec's open question 4, no BACKLOG item). Related: u05-perf-b:hot-key-ckpt-gcstate-in-lane. Verified 2026-09-26: no unit carries F5.
+Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F5; stated only in this pointer entry and the spec's open question 4, no BACKLOG item). Related: CAS-71.5. Verified 2026-09-26: no unit carries F5.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 08:26'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:gc'
   - 'area:tooling'
@@ -40,7 +40,7 @@ The empty catch also drops the decode message, so the operator cannot tell real 
 No gtest covers rebuild over garbage `gc/state` bytes (`src/Disks/tests/gtest_cas_gc_rebuild.cpp` covers absent state and damaged seals only).
 Fix: the rebuild's lease acquisition treats an undecodable current body as replaceable under the observed etag. Regular rounds keep failing closed.
 
-Provenance: BACKLOG/gc.md#rebuild-cannot-recover-undecodable-gc-state (opus review B8) and #rebuild-gcstate-decode-reason-unreported (2031-triage CAS-069). Same entry path as u01-gc-a:gc-rebuild-seal-point-read-marker. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792 (identical).
+Provenance: BACKLOG/gc.md#rebuild-cannot-recover-undecodable-gc-state (opus review B8) and #rebuild-gcstate-decode-reason-unreported (2031-triage CAS-069). Same entry path as CAS-44. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792 (identical).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

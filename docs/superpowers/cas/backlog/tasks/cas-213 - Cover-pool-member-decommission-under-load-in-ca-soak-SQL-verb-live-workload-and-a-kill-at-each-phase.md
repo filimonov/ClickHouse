@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:57'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:soak'
   - 'area:mounts'
@@ -32,7 +33,7 @@ S45 (`utils/ca-soak/scenarios/cards/s45_decommission_hidden_removing.py`, valida
 decommission, and none kills the decommission mid-run. Also uncovered: the fail-closed refusal of a mid-retirement victim with namespace
 debris until GC namespace cleanup catches up.
 
-Provenance: BACKLOG/testing-and-ci.md [b200-decommission-under-load]; verified 2026-09-26 against 8b87aa15d21. Related: u10-mounts:nowait-decommission-dead-member-precondition.
+Provenance: BACKLOG/testing-and-ci.md [b200-decommission-under-load]; verified 2026-09-26 against 8b87aa15d21. Related: CAS-156.3.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

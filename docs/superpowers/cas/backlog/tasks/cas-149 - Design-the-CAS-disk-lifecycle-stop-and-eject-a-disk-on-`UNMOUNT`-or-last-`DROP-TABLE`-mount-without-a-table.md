@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:41'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:mounts'
   - 'complexity:epic'
@@ -39,7 +40,7 @@ Owner goals (2026-07-22): `UNMOUNT` stops all background work of the disk (GC, l
 ejects it from the registry; `MOUNT` can bring up a disk, including an inline `disk(...)`, without creating a table;
 separate GC stop and start (done: `SYSTEM CAS GC STOP/START`).
 Ejecting from the registry touches generic `DiskSelector`/`Context` code, so the spec needs an upstream-coupling verdict.
-A disk removed from config has the same shape (`u08-oper-b:removed-cas-disk-names-retained-lease`).
+A disk removed from config has the same shape (`CAS-67`).
 
 Provenance: BACKLOG/mounts-and-lifecycle.md#disk-lifecycle-rev8-closure (the disk-lifecycle-leak proper); verified 2026-09-26 against b1c34d03479 (cas-gc-rebuild) and 0dbbd797792 (altinity/antalya-26.6).
 <!-- SECTION:DESCRIPTION:END -->

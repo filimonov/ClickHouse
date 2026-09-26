@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -34,7 +35,7 @@ promoted body per publish, or `tmp_` parts that never commit. F31 plans a publis
 so an unexplained second one changes that plan's arithmetic.
 Method from the audit: group `cas_log` `manifest_put` events by `ref_name` pattern.
 
-Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F8, one of the nine findings not threaded elsewhere). Related: u11-refproto:#part-publish-zero-gets, u02-gc-b:gc-part-removal-repoint-elision. Verified 2026-09-26: no unit or BACKLOG file carries F8.
+Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F8, one of the nine findings not threaded elsewhere). Related: u11-refproto:#part-publish-zero-gets, CAS-83. Verified 2026-09-26: no unit or BACKLOG file carries F8.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

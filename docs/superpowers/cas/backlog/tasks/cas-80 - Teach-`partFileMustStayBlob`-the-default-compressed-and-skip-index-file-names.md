@@ -4,6 +4,7 @@ title: Teach `partFileMustStayBlob` the default compressed and skip-index file n
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
@@ -25,7 +26,7 @@ ordinal: 105000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 `partFileMustStayBlob` (`R/ContentAddressedTransaction.cpp:67-75`) accepts `primary.idx`, `.bin`, `.mrk`/`.mrk2`/`.mrk3` and `.cmrk`/`.cmrk2`/`.cmrk3`. It misses `primary.cidx` (the default, `compress_primary_key = true`), `.mrk4`/`.cmrk4`, and skip-index `.idx`/`.idx2` files.
 Those go through `CaInlineWriteBuffer` and are buffered whole in memory before the 1 MiB spill cap applies: no correctness or bloat defect, but avoidable memory and a double write for wide indexes. Unchanged since `c623713479f` on both branches.
-Fix: add the default names; log once when an unknown extension takes the buffered path. The size-based inline decision is the separate `u04-perf-a:read-request-count-design`.
+Fix: add the default names; log once when an unknown extension takes the buffered path. The size-based inline decision is the separate `CAS-16`.
 
 Provenance: BACKLOG/performance.md#part-file-suffix-allowlist-memory (2031-triage CAS-014); roadmap §3. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->

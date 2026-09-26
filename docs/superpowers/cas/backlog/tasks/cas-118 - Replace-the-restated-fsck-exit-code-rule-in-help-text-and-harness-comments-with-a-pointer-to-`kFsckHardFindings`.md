@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:25'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:fsck'
   - 'area:docs'
@@ -32,7 +33,7 @@ two restatements are already wrong: the operator-facing help `CommandFsck.cpp:26
 missing (dangling)") and `utils/ca-soak/soak/fsck.py:194` ("exits nonzero when dangling > 0"); the real set also has
 `chain_broken` and `corrupted_runs`. Three such restatements were found wrong in one earlier round. Fix: point at the code.
 
-Provenance: BACKLOG/operability-and-introspection.md#fsck-rule-restated-in-unfenceable-prose; verified 2026-09-26 against dd0ed2f263a. The code-fence half is u08-oper-b:fsck-exit-set-and-sql-row-testable.
+Provenance: BACKLOG/operability-and-introspection.md#fsck-rule-restated-in-unfenceable-prose; verified 2026-09-26 against dd0ed2f263a. The code-fence half is DRAFT-7.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

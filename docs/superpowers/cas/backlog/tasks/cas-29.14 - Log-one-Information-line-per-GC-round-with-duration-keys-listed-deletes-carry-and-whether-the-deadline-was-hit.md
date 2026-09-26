@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -36,7 +37,7 @@ stops it or another leader blocks it, and the fold has two `LOG_INFO` sites for 
 and `Pool/`, 12 are Info. Everything the otel.demo audit found came from `cas_gc_log`, `cas_log`, `metric_log` and
 `trace_log`, none from the text log (audit F28). The audit calls one Info line per round the cheapest observability win.
 Fields: round, outcome, duration, keys listed, deleted, carried, `deadline_hit` (the last two exist once
-u02-gc-b:gc-c1-round-deadline-and-pacing lands; log what exists and add them with it).
+CAS-29.10 lands; log what exists and add them with it).
 
 Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F28, one of the nine findings not threaded elsewhere). Parented on the epic per the u01 cross-unit note (spec C5 observability). Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->

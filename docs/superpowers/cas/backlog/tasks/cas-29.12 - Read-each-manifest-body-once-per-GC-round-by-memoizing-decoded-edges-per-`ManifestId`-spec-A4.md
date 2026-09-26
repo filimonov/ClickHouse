@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -45,7 +46,7 @@ The read path already has an LRU decode cache (`CasManifestReader::readManifestS
 reuse its cache primitive rather than add a second shape.
 Measure first (audit verification item): count distinct `ManifestId` per round against edges to size the bound.
 
-Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (A4 = F4). The repoint elision (u02-gc-b:gc-part-removal-repoint-elision) removes half of the same reads at the source; u02-gc-b:gc-intake-manifest-edge-speculative-hint is decided after both. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792: no memo in `foldManifestEdges` on either.
+Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (A4 = F4). The repoint elision (CAS-83) removes half of the same reads at the source; DRAFT-14 is decided after both. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792: no memo in `foldManifestEdges` on either.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

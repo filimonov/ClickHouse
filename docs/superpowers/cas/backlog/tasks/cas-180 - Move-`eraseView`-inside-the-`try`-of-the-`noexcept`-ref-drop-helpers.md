@@ -4,6 +4,7 @@ title: Move `eraseView` inside the `try` of the `noexcept` ref-drop helpers
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:44'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:read-path'
   - 'complexity:trivial'
@@ -26,7 +27,7 @@ ordinal: 237000
 `eraseView` (`:277-284`) builds `key.cacheKey()` and calls `recordDecision`, both allocating. A memory-limit exception there terminates the process.
 These run on the rollback path under memory pressure, where allocation is most likely to fail.
 
-Provenance: BACKLOG/ref-protocol.md#noexcept-ref-drop-allocates (opus review NV-5). Verified 2026-09-26 against b1c34d03479 and 0dbbd797792. Same class: u09-oper-c:publish-staging-commit-recorded, noexcept-destructor-allocation-nits.
+Provenance: BACKLOG/ref-protocol.md#noexcept-ref-drop-allocates (opus review NV-5). Verified 2026-09-26 against b1c34d03479 and 0dbbd797792. Same class: CAS-113, noexcept-destructor-allocation-nits.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

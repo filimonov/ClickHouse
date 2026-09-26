@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -50,7 +50,7 @@ C3: a round that ends with `deadline_hit` and non-empty carry calls `requestRoun
 Rejected: backing off rounds when store delete latency is high; the deadline bounds round length instead.
 Phase rows gain `deadline_hit` and `carried`; the round row gains `deadline_hit` and `carry_total` (spec C5).
 
-Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure (classes A, C) and #gc-budgets-need-a-deadline; janitor-page-hardcoded ask 4. `pending_reclaim` from the seal (spec C5) is u07-oper-a:gc-pending-reclaim-from-seal. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792: no deadline symbol on either.
+Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure (classes A, C) and #gc-budgets-need-a-deadline; janitor-page-hardcoded ask 4. `pending_reclaim` from the seal (spec C5) is CAS-1.3. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792: no deadline symbol on either.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

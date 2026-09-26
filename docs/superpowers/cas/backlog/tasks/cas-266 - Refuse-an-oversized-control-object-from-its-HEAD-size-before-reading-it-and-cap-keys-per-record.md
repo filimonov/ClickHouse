@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 08:14'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:formats'
   - 'area:backend'
@@ -36,7 +37,7 @@ Second: `JsonObjectReader::nextKey` rejects duplicate keys with `std::find` over
 CAS-27 bounds known keys with a bitset; unknown keys under `Tolerant` stay unbounded.
 Behavior-only, no wire-format change.
 
-Provenance: BACKLOG/formats-and-storage.md#control-object-read-precap-materialization (2031-triage CAS-036); absorbs #sec4-decoder-size-bounds' remaining residue. Related u04-perf-a:decode-key-dedup-bitset (CAS-27). Verified 2026-09-26 against 8b87aa15d21 (cas-gc-rebuild) and 8d62c314ec1 (altinity/antalya-26.6).
+Provenance: BACKLOG/formats-and-storage.md#control-object-read-precap-materialization (2031-triage CAS-036); absorbs #sec4-decoder-size-bounds' remaining residue. Related CAS-27 (CAS-27). Verified 2026-09-26 against 8b87aa15d21 (cas-gc-rebuild) and 8d62c314ec1 (altinity/antalya-26.6).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

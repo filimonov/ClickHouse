@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
-updated_date: '2026-09-26 07:46'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:fsck'
   - 'area:soak'
@@ -34,11 +34,11 @@ ordinal: 182000
 `ca-fsck` timed out at ~29-31 GiB (`FSCK_EXIT=159`); raising the budget from 180 to 600 s did not help. Since then the
 scan can end partial with lower-bound counts (`--partial`) and can be scoped by `--namespace`
 (`programs/disks/CommandFsck.cpp:29-67`, `Tools/CasFsck.h:262-271`). A partial report is not a verdict, so the soak's
-phase-3 fsck-clean gate stays unarmed at scale. `SYSTEM CAS FSCK` cannot be bounded at all (u08-oper-b:sql-fsck-bounded-and-killable).
+phase-3 fsck-clean gate stays unarmed at scale. `SYSTEM CAS FSCK` cannot be bounded at all (CAS-55).
 Direction: a resumable cursor, so successive bounded runs cover the pool and combine into one verdict, or a scan
 sharded by namespace prefix whose partial reports merge. Re-measure scan time per GiB on the current binary first.
 
-Provenance: BACKLOG/gc.md#fsck-scale-timeout [FSCK-SCALE-TIMEOUT]. Related: u08-oper-b:soak-fsck-wait-defaults-and-labels (harness timeouts). Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+Provenance: BACKLOG/gc.md#fsck-scale-timeout [FSCK-SCALE-TIMEOUT]. Related: CAS-63 (harness timeouts). Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:fsck'
   - 'complexity:small'
@@ -33,7 +34,7 @@ from the catalog alone (`Pool/CasPool.cpp:1875-1903`). A namespace whose catalog
 is never listed. Its bodies appear in no fsck class and no byte count, so fsck under-reports exactly the debris GC's
 orphan sweep and the janitor are meant to reclaim.
 
-Provenance: BACKLOG/gc.md#gc-observability [fsck oracle gaps]. Sibling fsck blind spot for `gc/gen/` is u01-gc-a:gc-stranded-generation-prefix-fsck. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792 (CasFsck.cpp identical).
+Provenance: BACKLOG/gc.md#gc-observability [fsck oracle gaps]. Sibling fsck blind spot for `gc/gen/` is CAS-34. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792 (CasFsck.cpp identical).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

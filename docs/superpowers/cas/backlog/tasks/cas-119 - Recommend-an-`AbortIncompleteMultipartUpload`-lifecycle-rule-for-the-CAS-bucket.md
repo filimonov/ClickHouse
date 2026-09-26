@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:25'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:docs'
   - 'complexity:trivial'
@@ -30,7 +31,7 @@ kill or a failed `AbortMultipartUpload` leaves parts behind, billed until a buck
 ClickHouse S3 disk, but CAS docs promise pool byte accounting, and fsck `physical_bytes` counts only listed blob bodies
 (`CA/Tools/CasFsck.cpp:746`, `:760`, `:1075`). No mention of the rule in `docs/en/antalya/cas/` on either branch. Cost only.
 
-Provenance: BACKLOG/operability-and-introspection.md#mpu-and-probe-debris-unaccounted (multipart half; 2031-triage CAS-082); verified 2026-09-26 against dd0ed2f263a and 0dbbd797792. Per-class byte accounting is u07-oper-a:fsck-per-class-byte-accounting.
+Provenance: BACKLOG/operability-and-introspection.md#mpu-and-probe-debris-unaccounted (multipart half; 2031-triage CAS-082); verified 2026-09-26 against dd0ed2f263a and 0dbbd797792. Per-class byte accounting is CAS-11.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

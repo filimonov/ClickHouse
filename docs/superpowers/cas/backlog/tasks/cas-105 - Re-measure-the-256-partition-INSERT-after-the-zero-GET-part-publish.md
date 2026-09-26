@@ -4,7 +4,7 @@ title: Re-measure the 256-partition INSERT after the zero-GET part publish
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:23'
-updated_date: '2026-09-26 07:44'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -28,7 +28,7 @@ ordinal: 143000
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
 A 256-partition INSERT took ~10 s (~40 ms per part), because each partition's part is published serially.
-Concurrent per-partition commit (stage 2) is postponed by user decision (`u04-perf-a:stage2-concurrent-commitpart`); the zero-GET publish (decision-5, audit F31) cuts per-part latency and is scheduled.
+Concurrent per-partition commit (stage 2) is postponed by user decision (`DRAFT-2`); the zero-GET publish (decision-5, audit F31) cuts per-part latency and is scheduled.
 Measure what is left after it before reopening stage 2.
 
 Provenance: BACKLOG/performance.md#scale-findings [partitioned-INSERT O(partitions)]. Verified 2026-09-26 against dd0ed2f263a.

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:42'
-updated_date: '2026-09-26 07:42'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:ref-ledger'
   - 'area:gcs'
@@ -42,7 +42,7 @@ GCS answers `429 SlowDown` above about one mutation per second per object name; 
 8-minute GCS smoke of 2026-09-05 (`ca_live_20260905_r1`): 175 / 161 429s per node, all on the node's own `_ckpt`, 30-45 per minute in the mutations / ttl_pressure stages; the engine absorbed all (`CASRequestReissue` 178, `CASRequestResolveRead` 234, zero failed queries).
 The same key answers `409 ConditionalRequestConflict` on AWS (otel.demo: ~115/day, audit F28/F29) and costs one `_ckpt` PUT per flush (477k PUTs/day, 21% of all PUTs, audit F5).
 Cause at HEAD: `CasRefLedger::commitRefChunk` calls `publishCkptContribution` synchronously inside the lane tenure after every durable chunk (`Pool/CasRefLedger.cpp:3984`); `maybeScheduleSnapshotPublish` / `settleSnapshotPublish` (`:4274`, `:4246`) coalesce only the separate snapshot publisher.
-A1 = at most one frontier publish per T seconds or K flushes per namespace; birth, epoch seal and snapshot publications stay immediate. N/T and the recovery bound are the owner's decision (`u03-gc-c:ref-lane-lazy-checkpoint`, AGENTS.md invariant 5).
+A1 = at most one frontier publish per T seconds or K flushes per namespace; birth, epoch seal and snapshot publications stay immediate. N/T and the recovery bound are the owner's decision (`DRAFT-26`, AGENTS.md invariant 5).
 Rejected: rotating/generation-suffixed key (every reader must find the latest), sharding the catalog (breaks the atomic ownership index), writing `Live` directly (loses two-phase crash safety).
 B1 + B2 (catalog through `op.hotKeys().submit`, `Retry::conflictBackoff` full jitter) are done in `2f4aa25b03c` + `37c9bd4356b`.
 

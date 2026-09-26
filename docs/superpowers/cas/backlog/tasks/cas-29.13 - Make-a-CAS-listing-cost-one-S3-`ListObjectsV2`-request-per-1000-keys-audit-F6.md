@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:backend'
   - 'area:gc'
@@ -43,7 +44,7 @@ S3's 1000-key cap and so takes two requests, and the store default on resumed pa
 `S3ObjectStorage::iterate` hands `max_keys` to `S3IteratorAsync` (`src/Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.cpp:484-495`).
 That iterator prefetches the next batch, which is wasted when the caller stops at its page end.
 
-Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F6, conclusion 7, verification item). u01-gc-a:gc-b1-discovery-without-global-list and u02-gc-b:gc-b2-cleanup-lists-own-range say to confirm this before reusing the path; this task is that confirmation and fix. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F6, conclusion 7, verification item). CAS-29.1 and CAS-29.6 say to confirm this before reusing the path; this task is that confirmation and fix. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

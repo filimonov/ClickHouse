@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:44'
+updated_date: '2026-09-26 08:34'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -27,7 +28,7 @@ ordinal: 249000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 `RefTableState::precommits` is a plain `std::set` (`R/Pool/CasRefProtocol.h:254`), deep-copied per scratch copy; it is bounded only by the ~64 MiB admission byte budget, not the 1,000-op cap.
 Every "O(1) ~58 ns copy" benchmark used a one-precommit fixture (`benchmark_cas_ref_protocol.cpp:151-178`); only row-count sweeps exist.
-Run a precommit-count sweep (1, 100, 10,000) first. CAS-78 (`u05-perf-b:ref-table-state-copy-per-item`) lists copy-on-write as an option and needs this number.
+Run a precommit-count sweep (1, 100, 10,000) first. CAS-78 (`CAS-78`) lists copy-on-write as an option and needs this number.
 
 Provenance: BACKLOG/ref-protocol.md#ref-ledger-consult-followups-2026-07-21 (precommits std::set). Verified 2026-09-26 against b1c34d03479 and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
