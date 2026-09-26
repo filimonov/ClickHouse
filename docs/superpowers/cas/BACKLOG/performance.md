@@ -213,7 +213,7 @@ then republishes a second, merged manifest body — 2 manifest PUTs, ~4 ledger a
 changed file; a mutation multiplies this by part count. Also emits one audit row per carried-forward leaf on
 repoint. Fix (protocol-adjacent, needs a go-ahead): stage the merged manifest once via the existing two-phase
 `prepareEntries`+`promote` handle. Distinct from audit F2 (the higher-volume `delete_tmp_*` repoint case).
-Compounds `BACKLOG/gc.md`'s `{#ca-log-tables-restart-cost}` (the same audit-row volume feeds the
+Compounds `CAS-94` in Backlog.md (the same audit-row volume feeds the
 restart-health-gate cost there).
 
 Details: docs/superpowers/cas/2031-triage.md#cas-056
@@ -237,7 +237,7 @@ shared-slowdown state with the parent. Neither is a correctness issue (bounded,
 [F26](/superpowers/reports/otel-demo-cas-s3-budget-audit#f26) (GC LIST bursts correlate with throttling).
 Related, already tracked: issue #2244 (closed 2026-09-14, `7f932d31352`/`37c9bd4356b`; the lease/remount
 ops had the OPPOSITE problem — no retries at all — now fixed, no topic-file anchor) and
-`[timeout-retry RFC residuals]` in `BACKLOG/ref-protocol.md`.
+`CAS-188` in Backlog.md.
 
 Details: docs/superpowers/cas/2031-triage.md#cas-119
 
@@ -556,7 +556,7 @@ deferred phase B is `{#hot-key-lane-phase-b}`.
 **Status (2026-09-26):** the first target (`ref_catalog` write hotspot) is closed by
 `[hot-key-lane-phase-a-followups]` above. Targets 2 (part-commit round trips: upload fan-out +
 conditional PUTs) and 3 (skip `StackTrace` capture for expected 412s) are still open, and target 2 is
-continued by `[drop-path-head-of-line-and-repoint-ramp]` in `gc.md`.
+continued by `CAS-83` and `CAS-84` in Backlog.md.
 
 ### `[hot-key-lane-phase-b]` Hot-key lane phase B: combining, GCS spacing, the hold clamp, the GC erase, `_ckpt` (2026-09-04) {#hot-key-lane-phase-b}
 
@@ -656,7 +656,7 @@ feature; a new feature goes in its own revision and costs at least one round; a 
 against the checklist above and names the failing scenario; prose and pseudocode slips are MINOR; after
 three rounds the remaining questions are answered by code and tests, not by another revision.
 
-Cross-reference: `docs/superpowers/cas/BACKLOG/gcs.md#gcs-hot-control-keys-429` independently proposes a
+Cross-reference: `CAS-167` in Backlog.md independently proposes a
 narrower `_ckpt`-only pacing scheme for GCS; reconcile before starting either.
 
 ### `[perf-smoke-cost-regression-gate]` No gate catches a per-commit RTT-cost regression the way safety regressions are caught by TLA+/soak/adversarial review {#perf-smoke-cost-regression-gate}
@@ -962,7 +962,7 @@ the sparse-write shape that only `full` produces.
 **First question to answer:** which operation calls `repointRef` outside a transaction. The count is
 suspiciously close to a per-table figure for a 10,000-table pool, so start by checking whether it
 scales with tables, with parts, or with GC rounds. Related: audit
-[F2](/superpowers/reports/otel-demo-cas-s3-budget-audit#f2) (`gc.md`'s `[PART-REMOVAL-REPOINT]`), where
+[F2](/superpowers/reports/otel-demo-cas-s3-budget-audit#f2) (`CAS-83` in Backlog.md), where
 `delete_tmp_*` repoints were measured at ~22% of the writer PUT class — if the same call site is
 responsible, these are one finding, not two.
 

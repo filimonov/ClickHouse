@@ -48,7 +48,7 @@ pass, not a counter pass) — which is why the residency item below stays open.
   MAJOR) as [Altinity/ClickHouse#2364](https://github.com/Altinity/ClickHouse/pull/2364), but its
   author closed it unmerged on 2026-09-16 ("low priority, may open a different one later"): neither the
   event nor the tests exist on `cas-gc-rebuild` or `altinity/antalya-26.6` (checked 2026-09-26). Also
-  open in [`BACKLOG/gcs.md`](/superpowers/cas/backlog/gcs#relink-confirm-lane-livelock): no refusal
+  open, tracked as `CAS-170.1` in Backlog.md (migrated from `BACKLOG/gcs.md`): no refusal
   counter's increment has ever been observed reaching `system.events` on a live server, and
   `CASRelinkConfirmRefusedStateLockBusy` is exercised by no test. Verification, once this is picked
   back up: re-run `alter_attach_partition_cas` part 1 on a system-table-exporting build, read the
@@ -86,7 +86,7 @@ pass, not a counter pass) — which is why the residency item below stays open.
 ## On the report's fix: `Unknown` is not `No` {#byte-fallback-note}
 
 The report proposes splitting `No` from `Unknown` on the wire and byte-fetching on `Unknown` — option 5
-of the F11 design, already rejected in [`BACKLOG/gcs.md`](/superpowers/cas/backlog/gcs), and it stays
+of the F11 design, already rejected (see `CAS-170` in Backlog.md, migrated from `BACKLOG/gcs.md`), and it stays
 rejected. The recorded reason there ("the byte request goes to the source whose state is in doubt") is
 not the reason that actually holds:
 
