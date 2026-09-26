@@ -34,8 +34,8 @@ historical or closed must not be read as the current body-publication API.
 | `BACKLOG/gc.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:gc` | — |
 | `BACKLOG/mounts-and-lifecycle.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:mounts` | — |
 | `BACKLOG/gcs.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:gcs` | — |
-| [`BACKLOG/formats-and-storage.md`](BACKLOG/formats-and-storage.md) | 39 open, 4 closed records | Staging/adoption, real-store backends (S3/GCS/Azure), the local/emulated backend, codec/format items. Top items: `[GATE #1: Azure]`, `[B66a]` concurrent-fetch torn read on local storage, `[sec4-decoder-size-bounds]`. |
-| [`BACKLOG/replication.md`](BACKLOG/replication.md) | 9 open, 5 closed records | `MOVE PART`/`PARTITION` onto CA disks (landed, residuals open), merge/insert retry vs. the mount-lease fence, cross-replica relink, read-only replicas. Top items: `[merge-progress-reset-mount-fence]`, `[same-pool-move-reads-every-byte]`, `[zero-copy-parity-audit]`. |
+| `BACKLOG/formats-and-storage.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:formats,area:backend` | — |
+| `BACKLOG/replication.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:replication` | — |
 | `BACKLOG/testing-and-ci.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:testing,area:ci,area:soak` | — |
 | `BACKLOG/operability-and-introspection.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:observability` | — |
 | `BACKLOG/performance.md` | migrated to Backlog.md (docs/superpowers/cas/backlog), see `backlog task list -l area:write-path,area:read-path,area:backend` | — |
