@@ -504,6 +504,19 @@ is wrong. The CAS path got a two-step lookup (S3 mapper, then `Aws::Client::Core
 order `S3ErrorMarshaller::Marshall` uses) in `13bf6a92df0`; the generic path is shared upstream code,
 out of the CAS PR's scope → separate small fix, upstream-worthy.
 
+### `[control-object-generic-s3-error]` A transient control-object failure surfaces as a generic `S3_ERROR` with no indication of which object or operation was involved {#control-object-generic-s3-error}
+
+DOC/MINOR. A transient failure on a control-object read/write (catalog, `_ckpt`, `gc/state`) surfaces
+to the user as a generic `S3_ERROR` with no indication of which CAS control object or operation was
+involved. Makes CI/production triage slower than it needs to be (see the `ref_catalog`-unretried
+incident this was originally paired with, now fixed on the retry side). Fix: wrap or annotate the
+exception at the CAS control-object call sites with the object class and key before it escapes to the
+query result.
+
+Source: `docs/superpowers/cas/umbrella-backlog.md` line 4 (untracked draft, file deleted by the u22
+consolidation pass). Placement (Logging section, near `[delete-files-from-s3-generic-error-classification]`
+above) is a best-fit judgment call by the applier — the source proposal did not state a target file.
+
 ## SQL commands and CLI tools {#sql-commands-and-cli-tools}
 
 ### `SYSTEM` control surface — `POOL READONLY` is the remaining gap {#b197-system-control-surface}
@@ -1124,6 +1137,46 @@ plus a "Status" section in `docs/en/antalya/cas/index.md` that predates this rev
 resolve the either/or. Decide deliberately: either add a gate (setting or a loud registration warning
 naming the experimental status), or state in the docs that the config line IS the gate. P2 — this is
 the difference between "a user opted in" and "a user typed a metadata_type".
+
+### `[dynamic-cas-disk-no-gate]` SQL-defined dynamic `CAS` disks have no operator opt-in gate {#dynamic-cas-disk-no-gate}
+
+`disk(type=object_storage, metadata_type=cas, ...)` in SQL creates a `CAS` disk through
+`DiskFromAST` with no gate at all: any user who can `CREATE TABLE` joins a process-wide shared pool,
+may use server credentials, and starts background work — none of which the operator ever declared in
+`storage_configuration`. `RegisterDiskObjectStorage.cpp` ignores its `custom_disk` argument for
+`metadata_type=cas` on both `cas-gc-rebuild` and `altinity/antalya-26.6` (verified 2026-09-26).
+
+A full design and TDD implementation plan already exist and are ready to execute:
+`docs/superpowers/specs/2026-08-25-dynamic-cas-disk-gate-design.md` and
+`docs/superpowers/plans/2026-08-25-dynamic-cas-disk-gate.md` — add a default-`false` server setting
+`cas_allow_unsafe_dynamic_disks`, checked in the `object_storage` disk factory before any
+disk-construction side effect; server-configured disks (`custom_disk=false`) are unaffected.
+
+Related: [`no-experimental-gate`](#no-experimental-gate), which covers the *static*
+`storage_configuration` path (the operator already had to write the config line). This item is the
+dynamic/SQL path, and is the more severe of the two: it needs no operator action whatsoever, only
+`CREATE TABLE` privilege.
+
+Duplicate-source note: `[cas-custom-disk-privilege-bypass]` below reaches the same missing
+`custom_disk` gate from an independent source document; kept as a separate entry per that item's own
+note, since this one is the more actionable of the two (cites an existing design doc and TDD plan).
+
+### `[cas-custom-disk-privilege-bypass]` Inline `disk(metadata_type='cas', …)` bypasses the `SYSTEM CAS` privilege model {#cas-custom-disk-privilege-bypass}
+
+`MetadataStorageFactory::registerMetadataStorageType("cas", ...)` (`MetadataStorageFactory.cpp:219`)
+has no `custom_disk` gate, so any user who can `CREATE TABLE ... SETTINGS disk = disk(metadata_type='cas', ...)`
+mints a permanent pool member with a pool-wide view of other tenants' namespaces, without going
+through any `SYSTEM CAS` grant. The ready-made pattern to copy is the existing `use_fake_transaction`
+rejection one file over. Decide: reject `custom_disk` for pool-joining metadata types outright, or
+require a dedicated grant before a pool member can be minted this way. Originally raised as fable
+umbrella-review B1 2026-08-05 (P1); re-verified open on HEAD 2026-08-21/2026-09-26; was previously
+untracked by any BACKLOG entry. Not the same gap as [`pool-trust-boundary-undocumented`](docs-and-cleanup.md#pool-trust-boundary-undocumented),
+which only asks for docs explaining the trust model, not a code-level gate. This is the same missing
+gate as `[dynamic-cas-disk-no-gate]` above, reached from an independent source document
+(`final-checks-todo.md` item 9.B3 vs. an independent design+plan pair); kept separate per that item's
+own note pending a future consolidation pass.
+
+Source: `docs/superpowers/cas/final-checks-todo.md` item 9.B3 (file deleted by the u21 grooming pass).
 
 ### The mount-lease / request-budget / snapshot-pacing knobs have no `ContentAddressedSettings` entry (2031-triage CAS-105) {#pool-pacing-knobs-no-config-surface}
 
