@@ -7,6 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -35,7 +36,7 @@ always zero and nothing reads them. A lost hold travels in the adopted parent ro
 The `CASGCUnmatchedAdoptedParentLives` description (`src/Common/ProfileEvents.cpp:927`) says each drop "is logged with its exact physical
 life id". `4d40d453347` removed that warning, and the code comment says "counted, not narrated" (`CasGc.cpp:216-225`).
 
-Provenance: BACKLOG/gc.md#refplan-dead-drop-counters (CAS-096). `4d40d453347` is on cas-gc-rebuild only; on altinity/antalya-26.6 check whether the warning is still there before editing the description. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+Provenance: BACKLOG/gc.md#refplan-dead-drop-counters (2031-triage CAS-096). `4d40d453347` is on cas-gc-rebuild only; on altinity/antalya-26.6 check whether the warning is still there before editing the description. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

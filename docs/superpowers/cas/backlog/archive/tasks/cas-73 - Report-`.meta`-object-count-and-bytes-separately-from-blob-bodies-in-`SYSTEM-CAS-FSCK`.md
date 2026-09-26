@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:10'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:fsck'
   - 'complexity:small'
@@ -46,3 +47,9 @@ Provenance: BACKLOG/performance.md#per-blob-meta-sibling-object-count ('cheap no
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Duplicate of CAS-11 (bytes per object class in fsck): its body/`.meta` split and gtest were merged there as an acceptance criterion; DRAFT-8 now depends on CAS-11. Archived in the Backlog.md final pass.
+<!-- SECTION:NOTES:END -->

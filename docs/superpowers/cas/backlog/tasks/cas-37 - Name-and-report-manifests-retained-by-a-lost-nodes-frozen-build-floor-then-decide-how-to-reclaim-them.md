@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'area:fsck'
@@ -37,7 +38,7 @@ sentinel. Bytes are part-sized, bounded by in-flight concurrency at loss. `cas-f
 `in-flight-pre-precommit` (`CA/Tools/CasFsck.cpp:1121`). Owed: a named retain class in fsck and GC reports, then an owner
 decision on reclamation (protocol-adjacent).
 
-Provenance: BACKLOG/gc.md#dead-member-frozen-build-floor (CAS-077); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
+Provenance: BACKLOG/gc.md#dead-member-frozen-build-floor (2031-triage CAS-077); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

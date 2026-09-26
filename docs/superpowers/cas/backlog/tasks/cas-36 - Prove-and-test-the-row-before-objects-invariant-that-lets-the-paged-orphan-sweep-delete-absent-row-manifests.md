@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -34,7 +35,7 @@ manifest of a live or creating life is deleted. Contained today by `promote`'s f
 
 The 2031-triage audit (CAS-022, `docs/superpowers/cas/2031-triage.md#cas-022`) found the code comment's own safety premise false on HEAD: `CasOrphanManifestSweep.cpp:886` says creation publishes the catalog row before any life-owned object, but the manifest body is written before the row is created. The invariant test must therefore be written against the real order, not the comment.
 
-Provenance: BACKLOG/gc.md#orphan-sweep-absent-catalog-row-window (CAS-022), reframed; verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
+Provenance: BACKLOG/gc.md#orphan-sweep-absent-catalog-row-window (2031-triage CAS-022), reframed; verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

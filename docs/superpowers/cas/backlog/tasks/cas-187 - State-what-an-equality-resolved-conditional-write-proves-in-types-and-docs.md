@@ -4,6 +4,7 @@ title: 'State what an equality-resolved conditional write proves, in types and d
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:44'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:backend'
   - 'area:docs'
@@ -26,7 +27,7 @@ ordinal: 244000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Issue #2207 (CAS-021) read an equality-resolved write as authorship. The integrity consequence is neutralized (delete-site in-degree re-read, exact-token deletion, fence check before publication), so this is honesty, not safety.
+Issue #2207 (2031-triage CAS-021) read an equality-resolved write as authorship. The integrity consequence is neutralized (delete-site in-degree re-read, exact-token deletion, fence check before publication), so this is honesty, not safety.
 Done since: `slotOccupy` and its `NotUnresolved` label are gone; `Committed` carries `resolved_by_read` (`R/Backend/CasWriteResult.h:42`, set at `R/Backend/CasRequests.cpp:1069`).
 Still open: the resolved arm returns the observed occupant's etag as if this call authored it; no trust-model doc block at the resolution ladder; no ownership-decidability table by key class (immutable content-addressed, mutable identity-in-payload, mutable identity-free, owner anchor `claimOwnerOrThrow`).
 Also owed: cross-reference sentences at `writeCondemnedMeta` and `reconcileMetaClean`, pin tests renamed to read as spec, and one trust-model paragraph in `docs/en/antalya/cas/architecture/backend.md`.

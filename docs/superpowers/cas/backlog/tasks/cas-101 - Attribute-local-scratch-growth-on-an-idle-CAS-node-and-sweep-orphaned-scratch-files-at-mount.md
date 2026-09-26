@@ -1,11 +1,10 @@
 ---
 id: CAS-101
-title: >-
-  Attribute local scratch growth on an idle CAS node and sweep orphaned scratch
-  files at mount
+title: Attribute local scratch growth on an idle CAS node
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:23'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -36,7 +35,6 @@ Provenance: BACKLOG/performance.md#scale-findings [idle-scratch-debris]. Verifie
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The idle growth is attributed: in-flight spills of named writes, or files that outlive their write
-- [ ] #2 Scratch files not owned by a live write are removed at mount, covered by a test that leaves a stale file and remounts
 <!-- AC:END -->
 
 ## Definition of Done
@@ -46,3 +44,9 @@ Provenance: BACKLOG/performance.md#scale-findings [idle-scratch-debris]. Verifie
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The mount-time sweep of orphaned scratch files moved to CAS-125, which carries the same acceptance criterion; this task keeps only the attribution.
+<!-- SECTION:NOTES:END -->

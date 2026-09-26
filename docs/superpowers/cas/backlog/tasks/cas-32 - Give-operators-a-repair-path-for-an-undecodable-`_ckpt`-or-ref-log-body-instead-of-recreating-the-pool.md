@@ -6,14 +6,13 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 07:38'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:fsck'
   - 'area:gc'
   - 'complexity:medium'
   - 'risk:high'
   - 'touches:protocol'
-  - 'confidence:solid'
   - 'needs:decision'
   - 'origin:review'
   - 'confidence:contested'
@@ -64,4 +63,6 @@ Provenance: BACKLOG/gc.md#ckpt-damage-no-repair-path part (b); verified 2026-09-
 Merged from operability-and-introspection.md #damaged-object-repair (fsck-repair-derived-objects): a `_ckpt` is a derived accelerator over the durable ref log, so it is reconstructible by the recovery walk the writer already has (`recoverRefTableDetailed`, the recovery-epoch seal); one candidate is `cas-fsck --repair` re-deriving the object and publishing it through the ordinary CAS write path with no new object kinds and no protocol change, refusing loudly for non-derivable objects (blob body, committed ref-log record, `_pool_meta` = restore-from-backup cases). Framing conflict with this task's "protocol-adjacent, owner decision" view is why the task is confidence:contested.
 
 Clarification (post-import review): AC #1 (the owner picks the mechanism) governs; AC #4-6 describe the fsck --repair candidate merged from operability-and-introspection.md and apply only if that mechanism is the one chosen.
+
+CAS-56 (diagnose, repair and runbook for a damaged CAS object) and its runbook subtask CAS-56.4 depend on this task.
 <!-- SECTION:NOTES:END -->

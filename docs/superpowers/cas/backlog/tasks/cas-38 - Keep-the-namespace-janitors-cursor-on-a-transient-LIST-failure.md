@@ -4,6 +4,7 @@ title: Keep the namespace janitor's cursor on a transient LIST failure
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -29,7 +30,7 @@ whose LIST fails at a comparable rate pins the janitor at the head of the prefix
 Not loss. Fix: keep the cursor on a transient failure; reset only on a deterministic rejection or after N consecutive
 failures. Spec B4 changes the pacing knobs, not this.
 
-Provenance: BACKLOG/gc.md#janitor-cursor-rewind-on-list-error (CAS-078); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
+Provenance: BACKLOG/gc.md#janitor-cursor-rewind-on-list-error (2031-triage CAS-078); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

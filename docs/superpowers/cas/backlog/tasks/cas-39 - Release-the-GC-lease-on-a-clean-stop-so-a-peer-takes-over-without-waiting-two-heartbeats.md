@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -34,7 +35,7 @@ untouched (`CA/Gc/CasGcScheduler.h:122-126`). A peer then waits about two heartb
 60 s) before stealing. No correctness risk. The roadmap's "Clean shutdown" item asks that a restart cost no lost GC
 round. Proposal: a "resign" write mirroring the mount side's farewell. A new protocol step: owner consult first.
 
-Provenance: BACKLOG/gc.md#gc-lease-not-released-on-clean-stop (CAS-099); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
+Provenance: BACKLOG/gc.md#gc-lease-not-released-on-clean-stop (2031-triage CAS-099); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

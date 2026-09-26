@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -43,7 +44,7 @@ Changes: (1) dead-life `_log`/`_snap` keys are write-once, so delete them throug
 (default 1000) become settings. The phase keeps its position: moving it before `defer_decision` breaks the invariant
 (`suppress_destructive` comes from the fold verdict). Taking more pages while debris dominates is bounded by the stage C deadline.
 
-Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/CAS-034; asks 1-2 and the revised order) and #gc-namespace-janitor-one-page-per-round (item 1). u01's pointer bullet merges here. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792 (1000 hard-coded on both).
+Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/2031-triage CAS-034; asks 1-2 and the revised order) and #gc-namespace-janitor-one-page-per-round (item 1). u01's pointer bullet merges here. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792 (1000 hard-coded on both).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

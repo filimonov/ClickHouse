@@ -4,7 +4,7 @@ title: Stop the fold holding two full in-memory copies of a shard's edge run
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -33,7 +33,7 @@ ordinal: 123000
 Same O(pool)-per-round class as the snapshot rewrite. The old caveat "the enumeration cannot be skipped because the defer
 signal comes from it" predates spec B1 and must be re-examined once B1 lands.
 
-Provenance: BACKLOG/gc.md#fold-edge-run-memory (CAS-035). Verified 2026-09-26 against 59494ebf366 and 0dbbd797792.
+Provenance: BACKLOG/gc.md#fold-edge-run-memory (2031-triage CAS-035). Verified 2026-09-26 against 59494ebf366 and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

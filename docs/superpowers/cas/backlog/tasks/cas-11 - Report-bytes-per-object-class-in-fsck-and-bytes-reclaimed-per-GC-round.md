@@ -4,6 +4,7 @@ title: Report bytes per object class in fsck and bytes reclaimed per GC round
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:53'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:fsck'
   - 'area:observability'
@@ -42,6 +43,7 @@ Provenance: BACKLOG/operability-and-introspection.md#byte-accounting-blobs-only-
 - [ ] #1 The fsck summary line and SQL row report bytes for each object class the scan walks
 - [ ] #2 `system.cas_gc_log` round rows carry the bytes of blobs deleted in that round
 - [ ] #3 `operations/monitoring.md` states which classes each byte figure covers
+- [ ] #4 FSCK output shows body count, body bytes, `.meta` count and `.meta` bytes, and a gtest on a small pool asserts the four values
 <!-- AC:END -->
 
 ## Definition of Done
@@ -51,3 +53,9 @@ Provenance: BACKLOG/operability-and-introspection.md#byte-accounting-blobs-only-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged from CAS-73 (archived): the body/`.meta` split is the number the `.meta` fold decision (DRAFT-8) needs. Every fresh or adopted blob has a `.meta` sibling, so `.bin`/`.mrk*`/`primary.idx` cost two objects each; `FsckReport` already has the pairing advisories `meta_without_body`/`body_without_meta` and the body/meta partition in `CasFsck.cpp` (2031-triage CAS-117). Provenance of the merged item: BACKLOG/performance.md#per-blob-meta-sibling-object-count.
+<!-- SECTION:NOTES:END -->

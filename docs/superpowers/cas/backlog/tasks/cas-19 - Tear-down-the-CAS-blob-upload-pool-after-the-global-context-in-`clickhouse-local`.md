@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 06:55'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
@@ -29,7 +30,7 @@ ordinal: 25000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 `LocalServer::cleanup` resets the blob-upload pool (`programs/local/LocalServer.cpp:918`) before `global_context->shutdown` (`:922`), the reverse of `clickhouse-server` (`Server.cpp:1513`, final `SCOPE_EXIT_SAFE`) and `clickhouse-disks` (`DisksApp.cpp:673`). Present on both branches.
 `blobUploadPool` returns a raw `ThreadPool &` (`R/Pool/CasBlobUploadPool.cpp:52`), so a merge still fanning out while the context shuts down uses a destroyed pool; a new fan-out gets a `LOGICAL_ERROR`.
-Fix: reorder in `LocalServer::cleanup`; longer term a `shared_ptr` or use counter instead of call-order discipline. Not the backpressure item CAS-047.
+Fix: reorder in `LocalServer::cleanup`; longer term a `shared_ptr` or use counter instead of call-order discipline. Not the backpressure item 2031-triage CAS-047.
 
 Provenance: BACKLOG/performance.md#blob-upload-pool-teardown-order (umbrella review M6). Verified 2026-09-26 against aefe80eba98 and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->

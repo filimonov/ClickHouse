@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -46,7 +46,7 @@ Rejected: relaxing the etag check directly. Constraints: the round stays one-pas
 no new object kinds (decision-4). Process: ca-arch with the code, then codex review capped at three rounds, then code.
 Proceed only if the measurement subtask shows etag-only refusals dominate.
 
-Provenance: BACKLOG/gc.md#covered-log-cleanup-aborts-on-catalog-etag (plan step 2 and 'not to do'); formerly {#ref-cleanup-whole-catalog-token-stillness}/CAS-079. u01's pointer bullet merges here. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792.
+Provenance: BACKLOG/gc.md#covered-log-cleanup-aborts-on-catalog-etag (plan step 2 and 'not to do'); formerly {#ref-cleanup-whole-catalog-token-stillness}/2031-triage CAS-079. u01's pointer bullet merges here. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

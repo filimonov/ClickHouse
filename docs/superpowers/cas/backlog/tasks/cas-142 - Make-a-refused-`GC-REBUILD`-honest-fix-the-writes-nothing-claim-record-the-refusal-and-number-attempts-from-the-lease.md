@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -34,7 +35,7 @@ a lost `gc/state` CAS (`Gc/CasGc.cpp:4576-4582`), comes after the flushed runs a
 Attempt numbering comes from the per-shard flush count (`:4561-4563`), not from `lease.seq`.
 A performed rebuild emits a `GcRebuild` `cas_log` event (`:4588`) but no `cas_gc_log` row, and a refusal records nothing.
 
-Provenance: BACKLOG/gc.md#rebuild-refusal-leaves-run-and-seal-residue (CAS-094) and [gc-rebuild follow-ups] part (a), no gc-round-log row for `rebuildBaseline`. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+Provenance: BACKLOG/gc.md#rebuild-refusal-leaves-run-and-seal-residue (2031-triage CAS-094) and [gc-rebuild follow-ups] part (a), no gc-round-log row for `rebuildBaseline`. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

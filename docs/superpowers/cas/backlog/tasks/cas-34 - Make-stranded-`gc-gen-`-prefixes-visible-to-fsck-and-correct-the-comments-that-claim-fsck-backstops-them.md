@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:03'
-updated_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:fsck'
   - 'area:gc'
@@ -36,7 +36,7 @@ counter and no size. Owed: fix the prose, add a bounded advisory count of `gc/ge
 `snap_pruned_through`, then decide on a reclaimer. Same sweep: the false "GC lists `blobs/`" claims at
 `CA/Pool/CasServerRoot.h:622` and `src/Disks/tests/gtest_cas_s3_staging.cpp:961`.
 
-Provenance: BACKLOG/gc.md#stranded-generation-prefix-invisible-to-fsck (CAS-074); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
+Provenance: BACKLOG/gc.md#stranded-generation-prefix-invisible-to-fsck (2031-triage CAS-074); verified 2026-09-26 against aefe80eba98 (cas-gc-rebuild) and altinity/antalya-26.6.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

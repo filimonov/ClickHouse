@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:17'
-updated_date: '2026-09-26 07:17'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -42,7 +42,7 @@ the server default; the removal also removes that trap.
 Kept: sweep namespace and recovery-op budgets, prefix-wholesale and hand-off budgets (cursor-paced or one-shot),
 `rebuild_edge_budget` (memory), `gc_round_outcome_entry_budget` (audit size). Old keys are accepted for one release as
 deprecated no-ops with a Warning at load (AGENTS.md invariant 7), plus a docs migration note.
-Round-report counters tallied from in-memory decisions (CAS-101) ship in the same change; that item is sourced by u03.
+Round-report counters tallied from in-memory decisions (2031-triage CAS-101) ship in the same change; that item is sourced by u03.
 
 Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure class A; audit F14 and conclusion 3. Verified 2026-09-26 against 59494ebf366 and 0dbbd797792 (defaults 5000 on both).
 <!-- SECTION:DESCRIPTION:END -->

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:39'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -29,7 +30,7 @@ Both fold events set `e.round = state.round` (`src/Disks/DiskObjectStorage/Metad
 while every other event of the round uses `new_round = state.round + 1` (`:450`, e.g. `:514`, `:747`).
 A `cas_log` join of fold events to their round's `cas_gc_log` rows is therefore off by one. One-line fix on both events.
 
-Provenance: BACKLOG/gc.md#gc-outcome-budget-skews-round-report-counters (CAS-101) refinement 2. Refinement 1 (report counters tallied from budget-capped outcome logs, still open at CasGc.cpp:905-914) is carried by u02-gc-b:gc-c2-remove-count-budgets. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
+Provenance: BACKLOG/gc.md#gc-outcome-budget-skews-round-report-counters (2031-triage CAS-101) refinement 2. Refinement 1 (report counters tallied from budget-capped outcome logs, still open at CasGc.cpp:905-914) is carried by u02-gc-b:gc-c2-remove-count-budgets. Verified 2026-09-26 against d4be7f7045a and 0dbbd797792.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:25'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -45,3 +46,9 @@ Provenance: BACKLOG/operability-and-introspection.md#disk-error-audit-followups-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Merged from CAS-101: the full-scale campaign saw local scratch grow 1 -> 21 MiB over an idle window with no user inserts (attribution stays in CAS-101). Scratch files are the local-staging spill of `CaContentWriteBuffer` and the inline-overflow spill in `ContentAddressedTransaction.cpp`; each is removed by its writer on success or failure, so only a crashed process leaves them. A test leaves a stale file and remounts.
+<!-- SECTION:NOTES:END -->

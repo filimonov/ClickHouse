@@ -4,7 +4,7 @@ title: Write the operator runbook section for a damaged CAS object
 status: To Do
 assignee: []
 created_date: '2026-09-26 07:07'
-updated_date: '2026-09-26 07:07'
+updated_date: '2026-09-26 08:26'
 labels:
   - 'area:docs'
   - 'complexity:small'
@@ -15,6 +15,7 @@ milestone: m-7
 dependencies:
   - CAS-56.1
   - CAS-56.3
+  - CAS-32
 references:
   - docs/en/antalya/cas/operations/troubleshooting.md
   - docs/en/antalya/cas/operations/debugging.md
