@@ -3,10 +3,10 @@ id: CAS-95.1
 title: >-
   Classify `<table>/<part>/<file>` as a part file and answer `existsDirectory`
   from the part-folder view
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-27 07:37'
+updated_date: '2026-09-27 13:58'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -62,4 +62,6 @@ Provenance: audit #f15 via BACKLOG/performance.md#scale-findings [startup O(refs
 First recorded: 2026-09-26 (27654231df2, by 'scale-findings [startup O')
 
 2026-09-27: complementary upstream one-liner filed separately (checkSize: decide projection by the .proj suffix before existsDirectory); see spec 3.1 'Alternatives not taken' and review_r9.md.
+
+2026-09-27: implemented on branch fix/antalya-26.6/cas-part-file-probes-no-list (worktree cas-95-1), plan docs/superpowers/plans/2026-09-27-cas-part-file-probes-no-list.md; PR body in cas-95-1/build/pr_body.md; awaiting push and CI.
 <!-- SECTION:NOTES:END -->
