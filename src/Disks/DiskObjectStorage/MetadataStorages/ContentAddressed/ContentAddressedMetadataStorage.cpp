@@ -1550,6 +1550,20 @@ bool ContentAddressedMetadataStorage::existsFile(const std::string & path) const
     return view && view->findFile(r->file);
 }
 
+namespace
+{
+
+/// The manifest prefix of a directory inside a part: the route's file with exactly one trailing
+/// slash, whether or not the probe path carried one.
+std::string dirPrefixOf(const std::string & file)
+{
+    if (file.ends_with('/'))
+        return file;
+    return file + "/";
+}
+
+}
+
 ContentAddressedMetadataStorage::DirRoute ContentAddressedMetadataStorage::classifyDirectory(const std::string & path) const
 {
     DirRoute dr;
@@ -1741,9 +1755,17 @@ bool ContentAddressedMetadataStorage::existsDirectory(const std::string & path) 
         case DirShape::TableSubdir:
             return tableSubdirExists(*dr.tf);
         case DirShape::PartFile:
-            /// Answered as the table subdirectory or generic directory the same path was classified
-            /// as before this shape existed (the view-based answer replaces this in the next commit).
+        {
+            /// A resolved part answers from its folder view: a plain file has no entries under
+            /// its own name with a trailing slash, a nested directory has. An unresolved ref is not
+            /// a part we know (a table subdirectory path, or a non-Atomic part-shaped table
+            /// component) and answers exactly as before this shape existed. A failed resolution or
+            /// manifest read propagates.
+            auto view = partAccess()->getView(dr.r->refKey(), Cas::Freshness::CachedForLoad);
+            if (view)
+                return view->hasDirectory(dirPrefixOf(dr.r->file));
             return dr.tf ? tableSubdirExists(*dr.tf) : liveTreeDirHasChildren(path);
+        }
         case DirShape::GenericIntermediate:
             /// Exists iff a server-root-scoped mirrored LIST finds any object. Keeps `cd`/existence
             /// consistent with listDirectory so `clickhouse-disks` traversal behaves like a normal disk.
@@ -1929,7 +1951,12 @@ std::vector<std::string> ContentAddressedMetadataStorage::listDirectory(const st
         case DirShape::TableSubdir:
             return tableSubdirChildren(*dr.tf);
         case DirShape::PartFile:
+        {
+            auto view = partAccess()->getView(dr.r->refKey(), Cas::Freshness::CachedForLoad);
+            if (view)
+                return view->listChildren(dirPrefixOf(dr.r->file));
             return dr.tf ? tableSubdirChildren(*dr.tf) : listLiveTreeChildren(path);
+        }
         case DirShape::GenericIntermediate:
             /// The disk root "", `store`, or any loose-file container above a table dir: a
             /// server-root-scoped mirrored LIST. (`store/<u3>` is handled by AtomicShard above,
