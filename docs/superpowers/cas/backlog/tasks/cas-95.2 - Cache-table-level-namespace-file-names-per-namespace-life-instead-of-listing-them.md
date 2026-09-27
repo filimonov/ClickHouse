@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-27 06:15'
+updated_date: '2026-09-27 06:24'
 labels:
   - 'area:read-path'
   - 'complexity:high'
@@ -79,4 +79,6 @@ Where to look (all on cas-gc-rebuild):
 - Design study (files as refs; directory entries in the ref log): docs/superpowers/specs/2026-09-26-cas-table-files-as-refs-design.md, 2f0eccc7975, d4f9ea346ec, closed ec61a74790e; reports docs/superpowers/reports/2026-09-26-cas-table-files-as-refs-codex-reviews/
 - Probe of non-MergeTree engines on CAS (Log family works via _files/, persistent Join/Set broken): docs/superpowers/reports/2026-09-27-cas-non-mergetree-engines-probe.md, CAS-318.
 Reopen only with a decision on challenge 3 and, preferably, sealed table-level files (format generation 2).
+
+2026-09-27 CANDIDATE (user): invalidate-on-write cache instead of write-through. Per life: names of the last LIST + valid flag + counter, in Pool under a plain mutex (no I/O under it). listDirectory/existsDirectory(TableSubdir) answer from memory while valid; otherwise LIST, install, set valid. putNamespaceFile/removeNamespaceFile bump the counter at START and at SETTLE (success or exception) and clear the flag; a LIST installs only if the counter is unchanged between its start and the install (a LIST overlapping any part of a write is dropped, not installed). Hits need fence admission (rev.7 rule); table cleared on lease loss; entry erased on dropNamespace; rebirth is a new key; predecessor stragglers covered by the lease protocol (accepted assumption). Removes everything rounds 2-8 fought over (callback order, runtime ABA, mount population, drain, shared_mutex, catalog cut, birth hook). Cost: one LIST after every _files/ write of that table, so deduplicating tables (a segment per insert) keep today's per-minute LIST; the saving is on tables without table-level writes between scans. Not yet reviewed by codex; the spec is narrowed to 95.1 (rev.10).
 <!-- SECTION:NOTES:END -->
