@@ -42,7 +42,23 @@ into the same root fact: a `_files/` PUT or DELETE is a plain object write with 
 backend gives no bound on when it applies a request it has already accepted. After an unclean
 crash of this node's previous incarnation, a DELETE it issued can land after the new incarnation's
 LIST, and a name then stays in the copy while the object is gone until the next mount; a
-`mutation_<n>.txt` in that state makes the table fail to load. In-process, a deferred write-buffer
+`mutation_<n>.txt` in that state makes the table fail to load.
+
+Correction (2026-09-27, user review): the mount-lease protocol already bounds this in time. The
+predecessor's engine reserves one attempt envelope against its lease deadline before every attempt
+it starts (`Backend/CasRequests.cpp:288`, `:432`, `:451-453`), so none of its attempts is still
+running client-side at the deadline; and a successor reclaims an unclean slot only after observing
+the lease lapse for a full TTL plus 5% (`claimMountAwaitingExpiry`,
+`Pool/CasServerRoot.cpp:940-968`, default TTL 30 s). What remains is only the object store applying
+a request after the client gave up on it, the assumption the ref log's `EpochSeal` was introduced
+to remove by proof rather than by time (`Pool/CasPool.cpp:802-817`), and which every other unsealed
+object of the pool (the mount slot, mountpoint objects, `_files/` today) already lives with. Whether
+that assumption is acceptable for a resident copy is a design decision, not a proof gap; with it
+accepted, the cross-process half of the round 8 finding is covered by the lease protocol, and the
+open items are the in-process gate (one `std::shared_mutex`: namespace-file operations shared across
+admission, table mutation and request; population at remount exclusive), synchronous lease renewal
+during a long population, the catalog ambiguity check and the exact `dropNamespace` erasure. The
+decision below stands until the user reopens CAS-95.2 on that basis. In-process, a deferred write-buffer
 finalize created before a fence loss admits a fresh operation under the new generation and can
 overlap the rebuilding LIST (`ContentAddressedTransaction.cpp:805-852`); closing that needs a gate
 spanning admission, the table mutation and the whole request, which is the striped mutex of rev.5 to
