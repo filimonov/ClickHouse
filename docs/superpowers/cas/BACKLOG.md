@@ -24,3 +24,6 @@ The pre-migration topic files under `BACKLOG/` were deleted after their items we
 `c11dbeedabb` (performance), `8ebc69079a3` (ref-protocol), `5fb09ee950e` (gc), `05c641ef970` (testing-and-ci),
 `7d0957a75d5` (issue-2310), `128a94392ca` (docs-and-cleanup), `0f183528bcd` (formats-and-storage),
 `1b43d2f4363` (replication). The last Inbox item of this file became `CAS-283`.
+
+A product-level view of the same items, grouped by theme with one story per user-visible outcome, is kept in
+`PM-BACKLOG.md` (slug `/superpowers/cas/pm-backlog`). It is a snapshot for planning; the live backlog wins when they differ.
