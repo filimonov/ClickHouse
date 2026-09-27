@@ -4,15 +4,15 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedTransaction.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
-#include <IO/WriteHelpers.h>
-#include <Core/Defines.h>
 
 #include <fmt/ranges.h>
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <mutex>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -142,10 +142,9 @@ public:
         records.clear();
     }
 
-    /// Task 3: every GET of a key containing `needle` throws, so a resolved ref whose manifest
-    /// cannot be read is an error, never a fall-through. Unused by this task's tests; the next
-    /// task's tests in this file exercise it.
-    [[maybe_unused]] void failReadsContaining(String needle)
+    /// Every GET of a key containing `needle` throws, so a resolved ref whose manifest cannot be
+    /// read is an error, never a fall-through.
+    void failReadsContaining(String needle)
     {
         std::lock_guard lock(mutex);
         fail_reads_containing = std::move(needle);
@@ -183,12 +182,46 @@ private:
 const std::string kTbl = "a11/a11a11a1-1111-4111-8111-111111111111";
 const std::string kNonAtomicTbl = "data/db/tbl";
 
-std::shared_ptr<DB::ContentAddressedMetadataStorage> openCountingStorage(
+/// Owns the pool's two on-disk temp directories (object-storage root and metadata scratch dir) and
+/// removes both once the metadata storage they back is gone, so a test run does not leak two
+/// directories under the temp dir per call to `openCountingStorage`. `storage->`/`*storage` forward
+/// to the held metadata storage, so callers use it exactly like the `shared_ptr` it replaces.
+class CountingStoragePool
+{
+public:
+    CountingStoragePool(std::shared_ptr<DB::ContentAddressedMetadataStorage> storage_,
+                         std::string root_, std::string scratch_)
+        : storage(std::move(storage_)), root(std::move(root_)), scratch(std::move(scratch_))
+    {
+    }
+
+    CountingStoragePool(const CountingStoragePool &) = delete;
+    CountingStoragePool & operator=(const CountingStoragePool &) = delete;
+
+    ~CountingStoragePool()
+    {
+        storage.reset();
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+        std::filesystem::remove_all(scratch, ec);
+    }
+
+    DB::ContentAddressedMetadataStorage * operator->() const { return storage.get(); }
+    DB::ContentAddressedMetadataStorage & operator*() const { return *storage; }
+
+private:
+    std::shared_ptr<DB::ContentAddressedMetadataStorage> storage;
+    std::string root;
+    std::string scratch;
+};
+
+CountingStoragePool openCountingStorage(
     std::shared_ptr<CountingObjectStorage> & out_object_storage, bool disable_caches)
 {
     static std::atomic<uint64_t> counter{0};
     const String unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_dir_probes_" + unique)).string();
+    const auto scratch = (std::filesystem::temp_directory_path() / ("cas_dir_probes_scratch_" + unique)).string();
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
     std::filesystem::create_directories(root, ec);
@@ -196,8 +229,7 @@ std::shared_ptr<DB::ContentAddressedMetadataStorage> openCountingStorage(
     out_object_storage = std::make_shared<CountingObjectStorage>(
         DB::LocalObjectStorageSettings("test", root, /*read_only_=*/false));
 
-    auto settings = makeSettingsForTest(
-        "test", std::filesystem::temp_directory_path() / ("cas_dir_probes_scratch_" + unique));
+    auto settings = makeSettingsForTest("test", scratch);
     /// A GC round LISTs on its own schedule; a timer is not a fence, so keep it off.
     settings[DB::ContentAddressedSetting::gc_enabled] = false;
     if (disable_caches)
@@ -208,7 +240,7 @@ std::shared_ptr<DB::ContentAddressedMetadataStorage> openCountingStorage(
     auto storage = std::make_shared<DB::ContentAddressedMetadataStorage>(
         out_object_storage, "pool", "srv1", "", nullptr, settings);
     storage->startup();
-    return storage;
+    return CountingStoragePool(std::move(storage), root, scratch);
 }
 
 /// Publishes one part through the real transaction path: every (relative file, bytes) pair is written
@@ -227,13 +259,24 @@ void publishPart(DB::ContentAddressedMetadataStorage & storage, const std::strin
     tx->commit(DB::NoCommitOptions{});
 }
 
+/// The table's readable namespace-files life, the handle every verbatim (non-part) table file is
+/// keyed under. A null life means the test set the table up wrong (no live life to name), so this
+/// throws rather than falling back to a literal that would silently match no recorded key and pass
+/// a LIST-count assertion vacuously.
+DB::Cas::NamespaceLifeId namespaceFilesLifeOf(DB::ContentAddressedMetadataStorage & storage, const std::string & table_path)
+{
+    const auto uuid = table_path.substr(table_path.find_last_of('/') + 1);
+    const auto life = storage.readableNamespaceFilesLife(storage.liveNamespace(uuid));
+    if (!life)
+        throw std::runtime_error("namespaceFilesLifeOf: no readable namespace-files life for " + table_path);
+    return *life;
+}
+
 std::string filesPrefixOf(DB::ContentAddressedMetadataStorage & storage, const std::string & table_path)
 {
     /// The LIST that must not happen: the life's `_files/` prefix. Resolved through the storage so a
     /// layout change moves the assertion instead of silently matching nothing.
-    const auto uuid = table_path.substr(table_path.find_last_of('/') + 1);
-    const auto life = storage.readableNamespaceFilesLife(storage.liveNamespace(uuid));
-    return life ? storage.store()->layout().namespaceFilesPrefix(*life) : "cas/ns/state/";
+    return storage.store()->layout().namespaceFilesPrefix(namespaceFilesLifeOf(storage, table_path));
 }
 
 }
@@ -266,8 +309,9 @@ TEST_P(CASDirectoryProbes, PartFileAnswersFromTheViewWithoutAList)
     EXPECT_FALSE(storage->existsDirectory(part + "/columns.txt"));
     EXPECT_FALSE(storage->existsDirectory(part + "/data.bin"));
     EXPECT_TRUE(storage->existsDirectory(part + "/sub"));
-    EXPECT_TRUE(storage->existsDirectory(part + "/sub/"));            /// Review Focus 1: trailing slash
+    EXPECT_TRUE(storage->existsDirectory(part + "/sub/"));            /// trailing slash
     EXPECT_EQ(storage->listDirectory(part + "/sub"), (std::vector<std::string>{"inner.bin"}));
+    EXPECT_TRUE(storage->listDirectory(part + "/columns.txt").empty());   /// a plain file lists empty
     EXPECT_FALSE(storage->isDirectoryEmpty(part + "/sub"));
     EXPECT_TRUE(storage->isDirectoryEmpty(part + "/p.proj"));          /// ProjectionDir keeps its answer
     EXPECT_TRUE(storage->existsDirectory(part + "/p.proj"));
@@ -288,7 +332,7 @@ TEST_P(CASDirectoryProbes, PartFileAnswersFromTheViewWithoutAList)
 INSTANTIATE_TEST_SUITE_P(Caches, CASDirectoryProbes, ::testing::Bool(),
     [](const ::testing::TestParamInfo<bool> & param_info) { return param_info.param ? "Disabled" : "Default"; });
 
-/// Detached (Review Focus 4) and non-Atomic parts route through the same shape and the same view.
+/// Detached and non-Atomic parts route through the same shape and the same view.
 TEST(CASDirectoryProbes, DetachedAndNonAtomicPartFilesAnswerWithoutAList)
 {
     std::shared_ptr<CountingObjectStorage> os;
@@ -314,4 +358,111 @@ TEST(CASDirectoryProbes, DetachedAndNonAtomicPartFilesAnswerWithoutAList)
     EXPECT_FALSE(storage->existsDirectory(na_part + "/columns.txt"));
     EXPECT_TRUE(storage->existsDirectory(na_part + "/sub"));
     EXPECT_EQ(os->listCount(""), 0u) << "keys: " << fmt::to_string(fmt::join(os->keys(CountingObjectStorage::Kind::List, ""), ", "));
+}
+
+/// An unresolved ref is not a part: the old branch answers, with today's one LIST. Exact oracle:
+/// answer and LIST count per probe.
+TEST(CASDirectoryProbes, UnresolvedRefKeepsTheTableSubdirBranchAndItsOneList)
+{
+    std::shared_ptr<CountingObjectStorage> os;
+    auto storage = openCountingStorage(os, /*disable_caches=*/false);
+    /// A real part so the table has a live life and a resident ref table.
+    publishPart(*storage, kTbl + "/all_1_1_0", {{"columns.txt", "cols"}});
+    /// "custom" sits directly under the table's UUID, so the path parser anchors it exactly like a
+    /// real part component; the disk write path (`tryCreateWriteBuffer`) therefore cannot write
+    /// through it as a verbatim file (it always routes a part-shaped path into the part-write
+    /// machinery). Writing straight through the namespace-file primitive `tableSubdirExists` itself
+    /// reads is what makes "custom" content on disk without ever publishing it as a part ref.
+    storage->store()->putNamespaceFile(namespaceFilesLifeOf(*storage, kTbl), "custom/sub/x", "x");
+    const std::string emu_root = os->getCommonKeyPrefix() + "/";
+    const std::string files_prefix = emu_root + filesPrefixOf(*storage, kTbl);
+
+    os->reset();
+    EXPECT_TRUE(storage->existsDirectory(kTbl + "/custom/sub"));
+    EXPECT_EQ(os->listCount(files_prefix), 1u);
+
+    os->reset();
+    EXPECT_FALSE(storage->existsDirectory(kTbl + "/custom/nothere"));
+    EXPECT_EQ(os->listCount(files_prefix), 1u);
+
+    os->reset();   /// a part-shaped name with no such part
+    EXPECT_FALSE(storage->existsDirectory(kTbl + "/all_9_9_0/columns.txt"));
+    EXPECT_EQ(os->listCount(files_prefix), 1u);
+
+    os->reset();   /// non-Atomic, unresolved: the generic live-tree probe, not the `_files/` prefix
+    EXPECT_FALSE(storage->existsDirectory(kNonAtomicTbl + "/all_9_9_0/f"));
+    EXPECT_EQ(os->listCount(files_prefix), 0u);
+    EXPECT_EQ(os->listCount(""), 1u) << "keys: " << fmt::to_string(fmt::join(os->keys(CountingObjectStorage::Kind::List, ""), ", "));
+}
+
+/// A part being written in an open transaction is not published: its ref does not resolve through
+/// the storage, so the probe takes today's branch and today's answer.
+TEST(CASDirectoryProbes, UnpublishedPartFallsThroughLikeToday)
+{
+    std::shared_ptr<CountingObjectStorage> os;
+    auto storage = openCountingStorage(os, /*disable_caches=*/false);
+    publishPart(*storage, kTbl + "/all_1_1_0", {{"columns.txt", "cols"}});
+
+    auto tx = storage->createTransaction();
+    auto & ca_tx = dynamic_cast<DB::ContentAddressedTransaction &>(*tx);
+    const std::string staged = kTbl + "/tmp_insert_all_2_2_0";
+    auto buf = ca_tx.writeFile(staged + "/sub/data.bin", 65536, DB::WriteMode::Rewrite, {});
+    buf->write("d", 1);
+    buf->finalize();
+
+    const std::string emu_root = os->getCommonKeyPrefix() + "/";
+    const std::string files_prefix = emu_root + filesPrefixOf(*storage, kTbl);
+    os->reset();
+    EXPECT_NO_THROW(EXPECT_FALSE(storage->existsDirectory(staged + "/sub")));
+    EXPECT_EQ(os->listCount(files_prefix), 1u) << "unpublished: the old branch and its LIST, unchanged";
+    tx->commit(DB::NoCommitOptions{});
+}
+
+/// Failure is not absence: a resolved ref whose manifest cannot be read throws; the old LIST branch
+/// is never entered on a failed request.
+TEST(CASDirectoryProbes, FailedManifestReadPropagatesAndDoesNotList)
+{
+    std::shared_ptr<CountingObjectStorage> os;
+    auto storage = openCountingStorage(os, /*disable_caches=*/true);
+    const std::string part = kTbl + "/all_1_1_0";
+    publishPart(*storage, part, {{"columns.txt", "cols"}});
+    const std::string emu_root = os->getCommonKeyPrefix() + "/";
+    const std::string files_prefix = emu_root + filesPrefixOf(*storage, kTbl);
+
+    os->failReadsContaining(emu_root + storage->store()->layout().casManifestsPrefix());
+    os->reset();
+    EXPECT_THROW(storage->existsDirectory(part + "/columns.txt"), DB::Exception);
+    EXPECT_EQ(os->listCount(files_prefix), 0u);
+    EXPECT_EQ(os->listCount(""), 0u);
+}
+
+/// The load profile: after the one legitimate table-directory enumeration, probing every file of
+/// every part adds no LIST.
+TEST(CASDirectoryProbes, CheckSizeProbesOfFiftyPartsAddNoList)
+{
+    std::shared_ptr<CountingObjectStorage> os;
+    auto storage = openCountingStorage(os, /*disable_caches=*/false);
+    const std::vector<std::string> files = {"columns.txt", "checksums.txt", "count.txt", "data.bin", "data.cmrk3", "primary.cidx"};
+    for (int i = 1; i <= 50; ++i)
+    {
+        std::vector<std::pair<std::string, std::string>> contents;
+        for (const auto & f : files)
+            contents.emplace_back(f, "bytes-" + std::to_string(i));
+        publishPart(*storage, kTbl + "/all_" + std::to_string(i) + "_" + std::to_string(i) + "_0", contents);
+    }
+    const std::string emu_root = os->getCommonKeyPrefix() + "/";
+    const std::string files_prefix = emu_root + filesPrefixOf(*storage, kTbl);
+
+    /// The table directory enumeration a load does once (its one `_files/` LIST is legitimate).
+    auto names = storage->listDirectory(kTbl);
+    ASSERT_EQ(std::count_if(names.begin(), names.end(), [](const auto & n) { return n.starts_with("all_"); }), 50);
+    os->reset();
+
+    for (const auto & name : names)
+        if (name.starts_with("all_"))
+            for (const auto & f : files)
+                EXPECT_FALSE(storage->existsDirectory(kTbl + "/" + name + "/" + f));
+
+    EXPECT_EQ(os->listCount(files_prefix), 0u) << "keys: " << fmt::to_string(fmt::join(os->keys(CountingObjectStorage::Kind::List, "_files"), ", "));
+    EXPECT_EQ(os->listCount(""), 0u);
 }
