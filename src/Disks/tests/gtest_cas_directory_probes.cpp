@@ -17,7 +17,7 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
+    extern const int CORRUPTED_DATA;
 }
 
 /// Per-TU declarations of the settings this file overrides, the pattern `cas_test_helpers.h`
@@ -143,7 +143,9 @@ public:
     }
 
     /// Every GET of a key containing `needle` throws, so a resolved ref whose manifest cannot be
-    /// read is an error, never a fall-through.
+    /// read is an error, never a fall-through. `CORRUPTED_DATA` is a deterministic local failure
+    /// (`isDeterministicLocalFailure`), so the read engine propagates it on the first attempt
+    /// instead of retrying it to the lease budget like a transport fault.
     void failReadsContaining(String needle)
     {
         std::lock_guard lock(mutex);
@@ -161,7 +163,7 @@ private:
     {
         std::lock_guard lock(mutex);
         if (!fail_reads_containing.empty() && key.find(fail_reads_containing) != String::npos)
-            throw DB::Exception(DB::ErrorCodes::CANNOT_READ_ALL_DATA, "CountingObjectStorage: injected read failure on '{}'", key);
+            throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "CountingObjectStorage: injected read failure on '{}'", key);
     }
 
     size_t count(Kind kind, std::string_view prefix) const
@@ -189,14 +191,19 @@ const std::string kNonAtomicTbl = "data/db/tbl";
 class CountingStoragePool
 {
 public:
-    CountingStoragePool(std::shared_ptr<DB::ContentAddressedMetadataStorage> storage_,
-                         std::string root_, std::string scratch_)
-        : storage(std::move(storage_)), root(std::move(root_)), scratch(std::move(scratch_))
+    /// Owns the two directories from construction, before a metadata storage exists: a throwing
+    /// `startup()` still unwinds through this object's destructor and removes them.
+    CountingStoragePool(std::string root_, std::string scratch_)
+        : root(std::move(root_)), scratch(std::move(scratch_))
     {
     }
 
     CountingStoragePool(const CountingStoragePool &) = delete;
     CountingStoragePool & operator=(const CountingStoragePool &) = delete;
+    /// Needed for the by-value return from `openCountingStorage`: NRVO is not guaranteed for a
+    /// named local, and the deleted copy constructor above suppresses the implicit move
+    /// constructor the language would otherwise synthesize.
+    CountingStoragePool(CountingStoragePool &&) = default;
 
     ~CountingStoragePool()
     {
@@ -205,6 +212,8 @@ public:
         std::filesystem::remove_all(root, ec);
         std::filesystem::remove_all(scratch, ec);
     }
+
+    void attach(std::shared_ptr<DB::ContentAddressedMetadataStorage> storage_) { storage = std::move(storage_); }
 
     DB::ContentAddressedMetadataStorage * operator->() const { return storage.get(); }
     DB::ContentAddressedMetadataStorage & operator*() const { return *storage; }
@@ -222,9 +231,16 @@ CountingStoragePool openCountingStorage(
     const String unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_dir_probes_" + unique)).string();
     const auto scratch = (std::filesystem::temp_directory_path() / ("cas_dir_probes_scratch_" + unique)).string();
+
+    /// Take directory ownership BEFORE creating anything under `root`, so a throwing `startup()`
+    /// below still leaves cleanup to this object's destructor.
+    CountingStoragePool pool(root, scratch);
+
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
     std::filesystem::create_directories(root, ec);
+    if (ec)
+        throw std::runtime_error("openCountingStorage: create_directories(" + root + ") failed: " + ec.message());
 
     out_object_storage = std::make_shared<CountingObjectStorage>(
         DB::LocalObjectStorageSettings("test", root, /*read_only_=*/false));
@@ -240,7 +256,8 @@ CountingStoragePool openCountingStorage(
     auto storage = std::make_shared<DB::ContentAddressedMetadataStorage>(
         out_object_storage, "pool", "srv1", "", nullptr, settings);
     storage->startup();
-    return CountingStoragePool(std::move(storage), root, scratch);
+    pool.attach(std::move(storage));
+    return pool;
 }
 
 /// Publishes one part through the real transaction path: every (relative file, bytes) pair is written
@@ -326,10 +343,18 @@ TEST_P(CASDirectoryProbes, PartFileAnswersFromTheViewWithoutAList)
     if (!disable_caches)
         EXPECT_EQ(os->getCount(""), 0u) << "warm view: no GET at all";
     else
-        EXPECT_GT(os->getCount(emu_root + storage->store()->layout().casManifestsPrefix()), 0u) << "cold caches: the manifest is read, never listed";
+    {
+        /// Nine of the ten probes above reach `getView` (all but `isDirectoryEmpty(p.proj)`, which
+        /// short-circuits on the `ProjectionDir` prefix without touching the view). With both caches
+        /// disabled, every `getView` call issues exactly one manifest `GET` and nothing else, so both
+        /// counts must be exactly nine, not merely positive.
+        const std::string manifests_prefix = emu_root + storage->store()->layout().casManifestsPrefix();
+        EXPECT_EQ(os->getCount(manifests_prefix), 9u) << "cold caches: one manifest GET per probe reaching the view";
+        EXPECT_EQ(os->getCount(""), 9u) << "cold caches: nothing else is GET";
+    }
 }
 
-INSTANTIATE_TEST_SUITE_P(Caches, CASDirectoryProbes, ::testing::Bool(),
+INSTANTIATE_TEST_SUITE_P(CASCaches, CASDirectoryProbes, ::testing::Bool(),
     [](const ::testing::TestParamInfo<bool> & param_info) { return param_info.param ? "Disabled" : "Default"; });
 
 /// Detached and non-Atomic parts route through the same shape and the same view.
@@ -428,10 +453,23 @@ TEST(CASDirectoryProbes, FailedManifestReadPropagatesAndDoesNotList)
     publishPart(*storage, part, {{"columns.txt", "cols"}});
     const std::string emu_root = os->getCommonKeyPrefix() + "/";
     const std::string files_prefix = emu_root + filesPrefixOf(*storage, kTbl);
+    const std::string manifests_prefix = emu_root + storage->store()->layout().casManifestsPrefix();
 
-    os->failReadsContaining(emu_root + storage->store()->layout().casManifestsPrefix());
+    os->failReadsContaining(manifests_prefix);
     os->reset();
-    EXPECT_THROW(storage->existsDirectory(part + "/columns.txt"), DB::Exception);
+    try
+    {
+        storage->existsDirectory(part + "/columns.txt");
+        FAIL() << "expected the injected manifest-read failure to propagate";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA);
+        EXPECT_NE(e.message().find(manifests_prefix), std::string::npos) << e.message();
+    }
+    /// One attempted manifest GET, no reissue: `CORRUPTED_DATA` is a deterministic local failure, so
+    /// the read engine never retries it to the lease budget.
+    EXPECT_EQ(os->getCount(manifests_prefix), 1u);
     EXPECT_EQ(os->listCount(files_prefix), 0u);
     EXPECT_EQ(os->listCount(""), 0u);
 }

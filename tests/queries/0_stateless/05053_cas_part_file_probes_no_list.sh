@@ -41,7 +41,7 @@ WITH
     (SELECT ProfileEvents['CASRootList'] FROM system.query_log
       WHERE current_database = currentDatabase() AND type = 'QueryFinish'
         AND query_id = '${CLICKHOUSE_DATABASE}_attach_200' ORDER BY event_time DESC LIMIT 1) AS l200
-SELECT 'lists_equal', l200 = l20, 'lists_below_parts', l200 < 20"
+SELECT 'lists_equal', l200 = l20, 'lists_below_parts', l200 < 20, 'lists_positive', l20 > 0"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_20"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_200"

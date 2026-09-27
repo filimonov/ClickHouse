@@ -1550,20 +1550,6 @@ bool ContentAddressedMetadataStorage::existsFile(const std::string & path) const
     return view && view->findFile(r->file);
 }
 
-namespace
-{
-
-/// The manifest prefix of a directory inside a part: the route's file with exactly one trailing
-/// slash, whether or not the probe path carried one.
-std::string dirPrefixOf(const std::string & file)
-{
-    if (file.ends_with('/'))
-        return file;
-    return file + "/";
-}
-
-}
-
 ContentAddressedMetadataStorage::DirRoute ContentAddressedMetadataStorage::classifyDirectory(const std::string & path) const
 {
     DirRoute dr;
@@ -1645,11 +1631,13 @@ ContentAddressedMetadataStorage::DirRoute ContentAddressedMetadataStorage::class
         }
         /// A path with a part-shaped component followed by more components: a file or nested
         /// directory of a live, detached or moving part IF that ref resolves (shadow is routed
-        /// above). The parser calls every first component after the table root except
-        /// `deduplication_logs` the part component, so whether this really is a part is decided by
-        /// the ref at answer time, not by the path: `existsDirectory`/`listDirectory` take the old
-        /// table-subdirectory branch when it does not resolve. Classification stays pure path
-        /// computation, so the parse that branch needs travels with the shape.
+        /// above). For an Atomic table path, the parser calls every first component after the
+        /// table root except `deduplication_logs` the part component; a non-Atomic table path
+        /// anchors on the rightmost part-shaped component instead. Either way, whether this really
+        /// is a part is decided by the ref at answer time, not by the path:
+        /// `existsDirectory`/`listDirectory` take the old table-subdirectory branch when it does
+        /// not resolve. Classification stays pure path computation, so the parse that branch needs
+        /// travels with the shape.
         if (r && !r->ref.empty() && !r->file.empty())
         {
             dr.shape = DirShape::PartFile;
@@ -1759,11 +1747,11 @@ bool ContentAddressedMetadataStorage::existsDirectory(const std::string & path) 
             /// A resolved part answers from its folder view: a plain file has no entries under
             /// its own name with a trailing slash, a nested directory has. An unresolved ref is not
             /// a part we know (a table subdirectory path, or a non-Atomic part-shaped table
-            /// component) and answers exactly as before this shape existed. A failed resolution or
-            /// manifest read propagates.
+            /// component), so it answers as the table subdirectory or generic directory that the
+            /// same path denotes. A failed resolution or manifest read propagates.
             auto view = partAccess()->getView(dr.r->refKey(), Cas::Freshness::CachedForLoad);
             if (view)
-                return view->hasDirectory(dirPrefixOf(dr.r->file));
+                return view->hasDirectory(dr.r->file + "/");
             return dr.tf ? tableSubdirExists(*dr.tf) : liveTreeDirHasChildren(path);
         }
         case DirShape::GenericIntermediate:
@@ -1954,7 +1942,7 @@ std::vector<std::string> ContentAddressedMetadataStorage::listDirectory(const st
         {
             auto view = partAccess()->getView(dr.r->refKey(), Cas::Freshness::CachedForLoad);
             if (view)
-                return view->listChildren(dirPrefixOf(dr.r->file));
+                return view->listChildren(dr.r->file + "/");
             return dr.tf ? tableSubdirChildren(*dr.tf) : listLiveTreeChildren(path);
         }
         case DirShape::GenericIntermediate:

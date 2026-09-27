@@ -476,7 +476,8 @@ public:
 
     /// The table-level-subdirectory answers (a LIST of the life's `_files/` prefix filtered by
     /// `tf.tail + "/"`), shared by the `TableSubdir` shape and by a `PartFile` whose ref does not
-    /// resolve, which must answer exactly as it did before that shape existed.
+    /// resolve: an unresolved ref answers as the table subdirectory or generic directory that the
+    /// same path denotes.
     bool tableSubdirExists(const Cas::TableFilePath & tf) const;
     std::vector<std::string> tableSubdirChildren(const Cas::TableFilePath & tf) const;
 
