@@ -1,5 +1,5 @@
 ---
-description: 'Design for CAS-95.1: a path inside a resolved part on a CAS disk gets its own directory shape, answered from the part-folder view instead of an S3 LIST of the table-level file prefix. Removes the restart LIST storm of issue #2439 (one LIST per checksum entry per part at load). Rev.10 narrowed the spec to this change (the table-level name cache, CAS-95.2, lives in git history); rev.11 and rev.12 fold in codex rounds 9 and 10.'
+description: 'Design for CAS-95.1: a path inside a resolved part on a CAS disk gets its own directory shape, answered from the part-folder view instead of an S3 LIST of the table-level file prefix. Removes the restart LIST storm of issue #2439 (one LIST per checksum entry per part at load). Rev.10 narrowed the spec to this change (the table-level name cache, CAS-95.2, lives in git history); rev.11 and rev.12 fold in codex rounds 9 and 10; rev.13 makes the end-to-end test a stateless DETACH/ATTACH test.'
 sidebar_label: 'CAS part-file probes without LIST'
 sidebar_position: 12
 slug: /superpowers/specs/cas-directory-probes-no-list-design
@@ -7,7 +7,7 @@ title: 'CAS part-file directory probes without an S3 LIST'
 doc_type: 'design'
 ---
 
-# CAS part-file directory probes without an S3 LIST — rev.12 (2026-09-27) {#cas-directory-probes-no-list}
+# CAS part-file directory probes without an S3 LIST — rev.13 (2026-09-27) {#cas-directory-probes-no-list}
 
 Spec for backlog task CAS-95.1 (parent CAS-95, issue
 https://github.com/Altinity/ClickHouse/issues/2439). Implementation branch: new branch off
@@ -25,7 +25,10 @@ since round 2. Rev.11 folds in codex round 9 (`review_r9.md`): the request claim
 "no LIST", `isDirectoryEmpty` joins the stated answer change, and the tests name their
 instrumentation seam. Rev.12 folds in round 10 (`review_r10.md`): the guarantee is scoped to a
 resolved `PartFile`, `ProjectionDir` keeps its empty answer, and tests 2 to 5 get executable oracles
-and a counting object-storage seam. The review loop for this spec ends here.
+and a counting object-storage seam. The review loop for this spec ends here. Rev.13 (user
+suggestion): the end-to-end test needs no server restart, a `DETACH TABLE` / `ATTACH TABLE` reloads
+the parts through the same `loadDataParts` path (`StorageMergeTree.cpp:259`), so it is a stateless
+test reading the `ATTACH` query's own `ProfileEvents`.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
 line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`.
@@ -205,24 +208,27 @@ so `CountingBackend` cannot see its requests; the tests use a `CountingObjectSto
    prefix is issued (the unresolved-ref branch is entered only on a resolved absence, never on a
    failed request).
 
-Integration, new module `tests/integration/test_cas_directory_probes` with GC disabled
-(`gc_enabled = 0`) so no maintenance LIST is counted:
+Stateless, `tests/queries/0_stateless/<n>_cas_part_file_probes_no_list.sh` (added with
+`add-test`, tag `no-fasttest` like `04278_cas_disk.sh`), on an ad-hoc disk
+`disk(type = object_storage, object_storage_type = local, metadata_type = cas, cas_server_root_id = ...)`
+declared in `CREATE TABLE` as the existing CAS stateless tests do, so it runs in every lane:
 
-5. Two restarts of one node with identical table topology, first with 2 tables × 20 parts, then
-   with 2 tables × 200 parts. Merges are disabled from table creation
-   (`max_bytes_to_merge_at_max_space_in_pool = 1` in `CREATE TABLE`; `SYSTEM STOP MERGES` is an
-   in-memory action lock and does not survive a restart), the `MergeTree` temporary-directory
-   cleanup is pushed beyond the test's duration
-   (`merge_tree_clear_old_temporary_directories_interval_seconds` and
-   `temporary_directories_lifetime`, both `MergeTree` settings, set to hours; `gc_enabled = 0` stops
-   the CAS GC only, `StorageMergeTree.cpp:289-313`), and `system.events` `CASRootList` is read after
-   all parts are loaded: equal in both restarts.
+5. Two tables created with `max_bytes_to_merge_at_max_space_in_pool = 1` (merges never run), filled
+   with 20 and 200 single-row inserts (20 and 200 parts), then `DETACH TABLE` and `ATTACH TABLE`
+   each with a fixed `query_id`. `ATTACH` reloads every part synchronously inside the query
+   (`loadDataParts`, `StorageMergeTree.cpp:259`; the loading pool attaches to the query's thread
+   group), so after `SYSTEM FLUSH LOGS` the two `ATTACH` rows of `system.query_log` carry the load's
+   own counters, unaffected by parallel tests and by the disk's background work. Reference output:
+   `ProfileEvents['CASRootList']` of the 200-part `ATTACH` equals that of the 20-part `ATTACH`, and
+   both are below the smaller table's part count. Before the change the 200-part value is at least
+   200 times the number of files per part.
 
 No `LOGICAL_ERROR` is introduced by this change. The ASan lane runs for the touched suites.
 
 ## 5. Acceptance {#acceptance}
 
-- CAS-95 acceptance #1: restart LIST count independent of the part count (test 5). The acceptance
+- CAS-95 acceptance #1: load LIST count independent of the part count (test 5; a restart takes the
+  same `loadDataParts` path as `ATTACH`). The acceptance
   measures `CASRootList` only; the GET behaviour of §3.1 is covered by test 2's two cache
   configurations, not by acceptance.
 - Issue #2439 gets before/after `S3ListObjects` numbers from an otel.demo restart. The steady-state
