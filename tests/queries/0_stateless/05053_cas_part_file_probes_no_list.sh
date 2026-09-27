@@ -46,3 +46,8 @@ SELECT 'lists_equal', l200 = l20, 'lists_below_parts', l200 < 20"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_20"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_200"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'dropped_ok'"
+
+# FORGET logs an operator WARNING (the decommission is deliberately prominent in the server log); the
+# clickhouse-test harness runs the client at --send_logs_level=warning, which would stream that expected
+# warning to stderr and be flagged as a failure. Suppress it for the FORGET call only.
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "SYSTEM CAS FORGET '${CLICKHOUSE_DATABASE}_cas95_cas'"
