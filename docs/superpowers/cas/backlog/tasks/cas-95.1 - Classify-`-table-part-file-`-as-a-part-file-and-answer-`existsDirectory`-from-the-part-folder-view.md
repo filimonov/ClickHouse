@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-27 13:58'
+updated_date: '2026-09-27 20:16'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -64,4 +64,6 @@ First recorded: 2026-09-26 (27654231df2, by 'scale-findings [startup O')
 2026-09-27: complementary upstream one-liner filed separately (checkSize: decide projection by the .proj suffix before existsDirectory); see spec 3.1 'Alternatives not taken' and review_r9.md.
 
 2026-09-27: implemented on branch fix/antalya-26.6/cas-part-file-probes-no-list (worktree cas-95-1), plan docs/superpowers/plans/2026-09-27-cas-part-file-probes-no-list.md; PR body in cas-95-1/build/pr_body.md; awaiting push and CI.
+
+2026-09-27: pushed and PR opened: https://github.com/Altinity/ClickHouse/pull/2440 (base antalya-26.6, HEAD 58f8458c707 after a signoff rebase of the 8 local commits). Both final reviews (opus, codex gpt-6-astra) clean of Critical/Important; gate CAS* 2536/2536; 05053 5/5. Two parked test-comment nits recorded in the plan ledger.
 <!-- SECTION:NOTES:END -->
