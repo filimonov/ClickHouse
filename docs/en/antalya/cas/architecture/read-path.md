@@ -15,8 +15,9 @@ access is served, the full chain for the common case, the two caches that sit on
 how a part still open inside a write transaction serves its own reads. A directory probe on a path
 inside a part (`<table>/<part>/<file>`, which `MergeTree` issues for every checksum entry at load)
 is answered from the part's retained folder manifest: a plain file is not a directory, a nested
-directory is and lists its children. No object-store LIST is involved; only a probe whose part does
-not resolve falls back to the table-level file listing.
+directory is and lists its children. No object-store `LIST` is involved; only a probe whose part
+does not resolve falls back to a listing: the table-level file listing on an `Atomic` table, the
+mirrored live-tree listing on a non-`Atomic` table.
 
 ## How a file access is served {#access-kinds}
 
