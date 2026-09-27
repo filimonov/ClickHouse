@@ -474,6 +474,12 @@ public:
     /// always considered present.
     bool liveTreeDirHasChildren(const std::string & path) const;
 
+    /// The table-level-subdirectory answers (a LIST of the life's `_files/` prefix filtered by
+    /// `tf.tail + "/"`), shared by the `TableSubdir` shape and by a `PartFile` whose ref does not
+    /// resolve, which must answer exactly as it did before that shape existed.
+    bool tableSubdirExists(const Cas::TableFilePath & tf) const;
+    std::vector<std::string> tableSubdirChildren(const Cas::TableFilePath & tf) const;
+
     /// Resolves one parsed path to its namespace, reference, and in-tree file. Detached paths are
     /// re-split here so their references remain in the table namespace with a `detached/` prefix;
     /// shadow paths map to a namespace derived from the literal shadow directory.
@@ -516,6 +522,7 @@ public:
         MovingContainer,
         PartDir,
         ProjectionDir,
+        PartFile,
         TableSubdir,
         GenericIntermediate,
     };
