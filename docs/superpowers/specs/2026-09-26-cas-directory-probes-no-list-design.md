@@ -1,5 +1,5 @@
 ---
-description: 'Design for CAS-95.1: a path inside a resolved part on a CAS disk gets its own directory shape, answered from the part-folder view instead of an S3 LIST of the table-level file prefix. Removes the restart LIST storm of issue #2439 (one LIST per checksum entry per part at load). Rev.10 narrowed the spec to this change (the table-level name cache, CAS-95.2, lives in git history); rev.11 folds in codex round 9.'
+description: 'Design for CAS-95.1: a path inside a resolved part on a CAS disk gets its own directory shape, answered from the part-folder view instead of an S3 LIST of the table-level file prefix. Removes the restart LIST storm of issue #2439 (one LIST per checksum entry per part at load). Rev.10 narrowed the spec to this change (the table-level name cache, CAS-95.2, lives in git history); rev.11 and rev.12 fold in codex rounds 9 and 10.'
 sidebar_label: 'CAS part-file probes without LIST'
 sidebar_position: 12
 slug: /superpowers/specs/cas-directory-probes-no-list-design
@@ -7,7 +7,7 @@ title: 'CAS part-file directory probes without an S3 LIST'
 doc_type: 'design'
 ---
 
-# CAS part-file directory probes without an S3 LIST — rev.11 (2026-09-27) {#cas-directory-probes-no-list}
+# CAS part-file directory probes without an S3 LIST — rev.12 (2026-09-27) {#cas-directory-probes-no-list}
 
 Spec for backlog task CAS-95.1 (parent CAS-95, issue
 https://github.com/Altinity/ClickHouse/issues/2439). Implementation branch: new branch off
@@ -23,7 +23,9 @@ challenges recorded in it, and the last full design is rev.9 (`e2772b9ddad`, clo
 corrected `998c89c0975`). Rev.10 keeps only §3.1 of those revisions, which has had no open finding
 since round 2. Rev.11 folds in codex round 9 (`review_r9.md`): the request claim is narrowed to
 "no LIST", `isDirectoryEmpty` joins the stated answer change, and the tests name their
-instrumentation seam.
+instrumentation seam. Rev.12 folds in round 10 (`review_r10.md`): the guarantee is scoped to a
+resolved `PartFile`, `ProjectionDir` keeps its empty answer, and tests 2 to 5 get executable oracles
+and a counting object-storage seam. The review loop for this spec ends here.
 
 Source paths are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/` and
 line numbers refer to `altinity/antalya-26.6` at `8d62c314ec1`.
@@ -59,8 +61,10 @@ Goals:
 - Existing answers stay the same, with one deliberate exception: a nested directory inside a
   resolved part (`<table>/<part>/<dir>` with entries under `<dir>/` in the manifest) answers present,
   lists its children, and `isDirectoryEmpty` (implemented through iteration, `:1929-1947`) answers
-  false, where today it answers absent, empty and true. Every other path shape, including a
-  part-shaped component whose ref does not resolve, keeps its current branch and answer.
+  false, where today it answers absent, empty and true. This is for non-projection nested
+  directories only: `ProjectionDir` keeps its deliberate empty answer (`:1939-1945`). Every other
+  path shape, including a part-shaped component whose ref does not resolve, keeps its current branch
+  and answer.
 - No fallback path: a failed request propagates.
 
 Non-goals:
@@ -131,10 +135,12 @@ once the table root was enumerated at load) and serves the retained `CachedForLo
 view cache holds it; on a miss it rebuilds the view from the manifest decode cache, and only when
 that misses too does it GET the manifest (`:235-266`, `CasManifestReader.cpp:32-57`). The view cache
 can be disabled (`part_folder_cache_bytes = 0`), refuse an oversized manifest
-(`part_folder_cache_max_entry_bytes`) or evict, so the guarantee of this change is "no LIST, ever",
-and "no additional GET" only holds in the normal configuration, where the view a part's `checkSize`
-probes need is the one its load just retained. A manifest GET is a per-part request that the load
-already issued once; the LIST it replaces was per file and hit a shared prefix.
+(`part_folder_cache_max_entry_bytes`) or evict, so the guarantee of this change is "no LIST for a
+probe whose ref resolves" (an unresolved ref keeps today's branch and today's LIST), and "no
+additional GET" only holds in the normal configuration, where the view a part's `checkSize` probes
+need is the one its load just retained. With both the view cache and the manifest decode cache
+disabled or evicted, every probe can GET the manifest: still one exact-key request per probe against
+an immutable object, where the LIST it replaces was a prefix enumeration.
 
 `ProjectionDir` stays as it is: it is the same shape with a different prefix rule, and merging the two
 is not needed for this change.
@@ -163,49 +169,62 @@ every read, write and listing of table-level files; `CasPlainObjects`; the janit
 
 ## 4. Tests, failing-first {#tests}
 
-In `src/Disks/tests/gtest_ca_wiring.cpp` (`classifyDirectoryForTest`) and a new
-`src/Disks/tests/gtest_cas_directory_probes.cpp` over `CountingBackend`:
+In `src/Disks/tests/gtest_ca_wiring.cpp` (`classifyDirectoryForTest`, test 1) and a new
+`src/Disks/tests/gtest_cas_directory_probes.cpp` (tests 2 to 4) at the disk layer. The metadata
+storage builds its own backend from an `ObjectStoragePtr` (`ContentAddressedMetadataStorage.cpp:819-835`),
+so `CountingBackend` cannot see its requests; the tests use a `CountingObjectStorage`, a
+`LocalObjectStorage` subclass in the style of `RecordingObjectStorage`
+(`gtest_cas_namespace_file_request_profile.cpp:256`, `:397`) that records operation kind and key
+(list, get, head, put, delete) with a reset and per-kind, per-prefix counts.
 
 1. Routing: `<table>/<part>/columns.txt`, `<table>/detached/<part>/columns.txt`,
    `<table>/moving/<part>/columns.txt` and the non-Atomic `data/db/tbl/<part>/columns.txt` classify
    as `PartFile`; `<table>/<part>/<proj>.proj` stays `ProjectionDir`; `<table>/deduplication_logs`
    stays `TableSubdir`; a shadow part file stays `ShadowIntermediate`; a `tmp_restore_<part>-XXXXXXXX`
    file path on an Atomic table classifies as `PartFile` (its ref is a temporary part).
-2. `existsDirectory` on a published part's file answers false; on a nested directory present in the
-   manifest answers true, `listDirectory` of it lists its children and `isDirectoryEmpty` answers
-   false; the same for a detached part and for a resolved non-Atomic part; `listCount` of the life's
-   `_files/` prefix stays zero across all probes. With the view cache warm (the part was just
-   loaded) no GET is issued; with `part_folder_cache_bytes = 0` the probes may GET the manifest but
-   still issue no LIST.
+2. `existsDirectory` on a published part's file answers false; on a non-projection nested directory
+   present in the manifest answers true, `listDirectory` of it lists its children and
+   `isDirectoryEmpty` answers false; a projection directory keeps `isDirectoryEmpty == true`; the
+   same file and nested-directory answers for a detached part and for a resolved non-Atomic part.
+   Recording is reset after the parts are published and loaded; across all probes the list count of
+   the life's `_files/` prefix is zero. Two configurations: default caches, zero GETs after the
+   reset; `part_folder_cache_bytes = 0` and `manifest_decode_cache_bytes = 0`, exactly one manifest
+   GET per probe and still zero LISTs.
 3. Unresolved ref, exact oracle: Atomic `<table>/custom/sub` with a namespace file `custom/sub/x`
    answers true and costs exactly one LIST of the life's `_files/` prefix (`listCount(prefix) == 1`),
    with no such file answers false at the same cost; a missing part's file
    `<table>/all_1_1_0/columns.txt` with no such ref answers false at one LIST of that prefix (today's
    answer and cost); non-Atomic `data/db/tbl/all_1_1_0/f` with no such ref answers through
    `liveTreeDirHasChildren` with one LIST of the mirrored live-tree prefix.
-4. Load profile at the disk layer, through the recording `IObjectStorage` seam of
-   `gtest_cas_namespace_file_request_profile.cpp` (`RecordingObjectStorage`, `:256`,
-   `openRecordingStorage`, `:397`; the metadata storage builds its own backend from an
-   `ObjectStoragePtr`, so `CountingBackend` cannot see it): a table with 50 published parts is
-   loaded through `existsDirectory` for every checksum entry of every part; the recorded key set
-   contains no LIST of the `_files/` prefix.
+4. Load profile, checksum-probe phase only: a table with 50 published parts; the table directory is
+   enumerated once (the one legitimate LIST of the `_files/` prefix from `TableDir`, `:1842-1855`),
+   then recording is reset and `existsDirectory` is called for every checksum entry of every part;
+   the additional list count of the `_files/` prefix is zero.
+4b. Failure is not absence: with a fault injected into the ref resolution or the manifest GET of one
+   part, `existsDirectory` on that part's file throws the injected error, and no LIST of the `_files/`
+   prefix is issued (the unresolved-ref branch is entered only on a resolved absence, never on a
+   failed request).
 
 Integration, new module `tests/integration/test_cas_directory_probes` with GC disabled
 (`gc_enabled = 0`) so no maintenance LIST is counted:
 
 5. Two restarts of one node with identical table topology, first with 2 tables × 20 parts, then
-   with 2 tables × 200 parts, merges stopped (`SYSTEM STOP MERGES` persisted across the restart, or
-   `max_bytes_to_merge_at_max_space_in_pool = 1`) and the counter read immediately after all parts
-   are loaded: `system.events` `CASRootList` is equal in both restarts. `gc_enabled = 0` stops the
-   CAS GC only; `MergeTree`'s own temporary-directory cleanup keeps running
-   (`StorageMergeTree.cpp:289-313`), which is why the read happens right after load.
+   with 2 tables × 200 parts. Merges are disabled from table creation
+   (`max_bytes_to_merge_at_max_space_in_pool = 1` in `CREATE TABLE`; `SYSTEM STOP MERGES` is an
+   in-memory action lock and does not survive a restart), the `MergeTree` temporary-directory
+   cleanup is pushed beyond the test's duration
+   (`merge_tree_clear_old_temporary_directories_interval_seconds` and
+   `temporary_directories_lifetime`, both `MergeTree` settings, set to hours; `gc_enabled = 0` stops
+   the CAS GC only, `StorageMergeTree.cpp:289-313`), and `system.events` `CASRootList` is read after
+   all parts are loaded: equal in both restarts.
 
 No `LOGICAL_ERROR` is introduced by this change. The ASan lane runs for the touched suites.
 
 ## 5. Acceptance {#acceptance}
 
 - CAS-95 acceptance #1: restart LIST count independent of the part count (test 5). The acceptance
-  measures `CASRootList` only; the GET behaviour of §3.1 is covered by test 2, not by acceptance.
+  measures `CASRootList` only; the GET behaviour of §3.1 is covered by test 2's two cache
+  configurations, not by acceptance.
 - Issue #2439 gets before/after `S3ListObjects` numbers from an otel.demo restart. The steady-state
   half of acceptance #2 (`clearOldTemporaryDirectories`) is withdrawn with CAS-95.2; the
   `system.detached_parts` half stays with CAS-95.3.
