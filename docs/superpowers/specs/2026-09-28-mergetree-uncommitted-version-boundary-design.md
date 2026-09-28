@@ -7,7 +7,7 @@ title: 'MergeTree: pending versions under the selection mutex — design'
 doc_type: 'reference'
 ---
 
-# MergeTree: pending versions under the selection mutex — design (rev.7) {#design}
+# MergeTree: pending versions under the selection mutex — design (rev.8) {#design}
 
 Scope: plain `StorageMergeTree` only (`ReplicatedMergeTree` orders mutations through the queue and
 `havePendingPatchPartsForMutation`). Target: one upstream pull request built on top of
@@ -27,7 +27,16 @@ its own coherence argument. rev.7 (owner decision 2026-09-28) restates the probl
 must announce itself where the readers already look, under the mutex the readers already hold.** The
 reservations stay where they are for their other users; the readers gain one ordered set of pending versions
 guarded by `currently_processing_in_background_mutex`, and the two version accessors treat its members as
-boundaries. No snapshot type, no epoch, no lock held longer, no change in the compaction framework.
+boundaries. No snapshot type, no epoch, no lock held longer, no change in the compaction framework. rev.8
+(after design review round 5, `design_review_r5.md`, which judged rev.7 "substantially simpler and more
+maintainable" and the shape a MergeTree maintainer is much more likely to accept): allocation and
+announcement are one atomic step under the selection mutex (a helper), so no selector can see an allocated
+version before its announcement; `MOVE` announces before it takes the destination parts lock (never the
+background mutex under a parts lock); `OPTIMIZE FINAL` rebuilds its predicate and collector after every wait
+that released the mutex; a barrier `ALTER` waits for a pending mutation to become registered before
+`waitForMutation`; the accessors are renamed to boundary terminology; the RAII guard has an explicit
+"erase while locked and disarm" operation; PR #119155's `removeCommittingBlock` wake-up is dropped in favour
+of the pending erase; pending insert/erase are logged at Debug.
 
 ## 0. The races, restated {#races}
 
@@ -50,10 +59,16 @@ lines). Reproduced from CI logs (two `DELETE`s 8 ms apart, `mutation_51` registe
 
 ## 1. The rule {#rule}
 
-**A version that is allocated but not yet visible to the selectors is a pending version. A writer inserts it
-into `pending_versions` under `currently_processing_in_background_mutex` before anything that must not cross
-it can be selected, and erases it under the same mutex after its state is visible. The version accessors
-count pending versions as boundaries.**
+**A version that is allocated but not yet visible to the selectors is a pending version. Allocation and
+announcement are one atomic operation with respect to selection: a helper acquires
+`currently_processing_in_background_mutex`, allocates the block number while holding it, inserts `{version,
+kind}` into `pending_versions`, and only then releases the mutex, so no selector can observe an allocated
+version before its announcement. The writer erases the version under the same mutex after its state is
+visible. The version accessors count pending versions as boundaries.**
+
+Lock order: `currently_processing_in_background_mutex` → `committing_blocks_mutex` (the order merge-predicate
+construction already uses). A writer never takes the background mutex while holding a data-parts lock.
+Pending cleanup erases under the background mutex, releases it, and only then triggers the assignee.
 
 ```cpp
 /// Versions that exist (a block number is allocated) but whose state the selectors cannot see yet: a
@@ -65,13 +80,18 @@ std::map<Int64, PendingVersionKind> pending_versions;
 
 Readers (three sites, all under the mutex they already hold):
 
-1. `getCurrentMutationVersion(dv)`: the highest version `<= dv` among registered mutations **and pending
-   versions** (0 if none). `MergeTreeMergePredicate::canMergeParts` therefore refuses two parts with a pending
+1. `getCurrentVersionBoundary(dv)` (today `getCurrentMutationVersion`; renamed because a moved part is not a
+   mutation): the highest version `<= dv` among registered mutations **and pending versions** (0 if none). `MergeTreeMergePredicate::canMergeParts` therefore refuses two parts with a pending
    version between their data versions, with the existing "different mutation version" message, and a merge
    can no longer cross an unregistered mutation, an unpublished patch or a moving part.
-2. `getNextMutationVersion(dv)`: the lowest version `> dv` among registered mutations **and pending versions**
-   (0 if none). `getPatchesToApplyOnMerge` therefore never materializes a patch from above a pending version;
-   the bound is exclusive (a patch whose version equals the pending version is not applied).
+2. `getNextVersionBoundary(dv)` (today `getNextMutationVersion`): the lowest version `> dv` among registered
+   mutations **and pending versions** (0 if none). `getPatchesToApplyOnMerge` therefore never materializes a
+   patch from above a pending version. Equality: the utility skips only `max_patch_version > bound`, so a
+   patch whose version equals a pending update's version is excluded today by the retained
+   `min_update_block` filter, which holds as long as the update's committing-block holder outlives the pending
+   erase; that ownership order is stated in the plan and pinned by a test, and the utility comparison is not
+   changed in this pull request. These are the only three plain-`MergeTree` callers of the two accessors
+   (`canMergeParts` twice, `getPatchesToApplyOnMerge` once); none looks the value up in the map.
 3. `selectPartsToMutate`: the applicable range for a part ends at
    `current_mutations_by_version.lower_bound(first pending version > part data version)`; a part whose
    pending registered mutations all lie above a pending version is postponed with a reason that names the
@@ -81,20 +101,31 @@ Readers (three sites, all under the mutex they already hold):
 
 Writers (three sites):
 
-- `startMutation`: `prepareMutationEntry` allocates the block and writes the file as today; between them,
-  under the mutex, insert `{version, Mutation}`; `addPreparedMutationEntry` registers the entry and erases the
-  pending version in its existing critical section. On any failure before registration an RAII guard (taking
-  the mutex) erases it. The `alter` path, which calls `prepareMutationEntry` and `addPreparedMutationEntry`
-  around its durable metadata commit, gets the same guard.
-- `updateLightweight`: after `allocateBlockNumber(Op::Update)`, insert `{U, LightweightUpdate}`; erase after the
-  patch sink has committed its parts, or on failure (RAII). `waitForCommittingInsertsAndMutations` keeps
-  using `committing_blocks` as today.
-- `movePartitionToTable`: after `fillNewPartName` for the moved parts, insert `{q, MovedPart}` for each;
-  erase after `dest_transaction.commit()`, or on failure.
+- `startMutation`: `prepareMutationEntry` allocates through the helper (`allocatePendingVersion(Mutation)`),
+  then writes the file as today; `addPreparedMutationEntry` registers the entry and erases the pending version
+  in its existing critical section through the guard's "erase while already locked and disarm" operation
+  (a destructor that locks the background mutex would self-deadlock while unwinding under it). On any failure
+  before registration the guard's destructor erases it, taking the mutex only when the caller does not hold
+  it. The `alter` path, which calls `prepareMutationEntry` and `addPreparedMutationEntry` around its durable
+  metadata commit, gets the same guard.
+- `updateLightweight`: `allocatePendingVersion(LightweightUpdate)` instead of `allocateBlockNumber(Op::Update)`;
+  erase after the patch sink has committed its parts (some partitions' patches may be visible after a
+  failure; the erase happens after the sink has finished either way), then release the committing-block
+  holder. `waitForCommittingInsertsAndMutations` keeps using `committing_blocks` as today.
+- `movePartitionToTable`: allocates and announces every destination version (`MovedPart`) **before** taking
+  the destination data-parts lock; under that lock the announced versions are assigned to the moved parts'
+  names (`fillNewPartName` takes the pre-allocated holder); erase after `dest_transaction.commit()` has
+  returned and the destination parts lock is released, or, on failure, after the destination transaction has
+  unwound.
 
-Why coherence is free: erasure and every selection happen under one mutex, so a selection sees either the
-pending version or the already-visible state (registered entry, active patch, active moved part), never
-neither. A version allocated after the selection took the mutex is above every part the selection captured
+Why coherence is free: allocation-with-announcement, erasure and every selection happen under one mutex, so
+a selection sees either the pending version or the already-visible state (registered entry, active patch,
+active moved part), never neither. One selector releases that mutex mid-decision: `OPTIMIZE FINAL` waits on
+`currently_processing_in_background_condition` for running merges and retries. A predicate constructed under
+one acquisition captures patch state and `min_update_block`; after the wait releases and reacquires the mutex,
+`selectPartsToMerge` constructs a fresh `MergeTreeMergePredicate` and `MergeTreePartsCollector` before rereading
+parts. No predicate is reused across an unlock. This is a construction change inside `selectPartsToMerge`
+only. A version allocated after the selection took the mutex is above every part the selection captured
 (block numbers come from one increment) and cannot affect its result. There is no snapshot to keep coherent
 and no lock is held longer: the writers take the selection mutex for one `insert`/`erase`, which mutation
 registration already does; lightweight updates and moves are rare relative to inserts, which do not touch
@@ -106,9 +137,14 @@ the set.
 documented contract "serialize order of mutations with alter queries" and makes R1's inversion impossible
 for every mutation created through `mutate`; the pending version then covers R1 as defence in depth. A
 barrier `ALTER` reads `rbegin` of the registered map to pick the mutation to wait for; it now also considers
-the highest pending **mutation** version, so an `ALTER` issued through `StorageAlias` (which forwards the
-alias's lock instead of taking the target's) still waits for an in-flight mutation. `StorageAlias::alter` is
-left as is.
+the highest pending **mutation** version. `waitForMutation` is map-only and treats an unregistered version as
+killed, so the barrier first waits, under the background mutex on
+`currently_processing_in_background_condition`, for the pending version to leave `pending_versions` (every
+registration, failure removal and rollback removal notifies that condition); then, under the same mutex, it
+checks whether the version was registered: if so it releases the mutex and calls `waitForMutation`; if not,
+preparation failed or rolled back and there is nothing to wait for. This lets an `ALTER` issued through
+`StorageAlias` (which forwards the alias's lock instead of taking the target's) wait for an in-flight
+mutation. `StorageAlias::alter` is left as is.
 
 ### What stays as it is {#unchanged}
 
@@ -118,7 +154,8 @@ left as is.
   `PatchPartsUtils`, `MergeTreeData::Transaction`: untouched.
 - `system.mutations`, `killMutation`, `getMutationsSnapshot`, `clearOldMutations`, `backupMutations`: untouched,
   because pending versions are not entries of `current_mutations_by_version`; the only status change is the
-  postpone reason strings above.
+  postpone reason strings above. Pending insert and erase are logged at Debug with version and kind (a
+  leaked entry would otherwise show only as postponed work or `OPTIMIZE` refusals).
 - The on-disk format: untouched.
 
 ## 2. What supersedes what, and prerequisites {#supersedes}
@@ -129,7 +166,7 @@ Built on top of PR #119155 with its commits kept (authorship preserved), then:
 |---|---|
 | `Op::Update` loop in `selectPartsToMutate`, guarded by `supportsLightweightUpdate()` | replaced by the pending version inserted in `updateLightweight` (the guard, which a settings `ALTER` can flip mid-flight, disappears) |
 | `PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE` | kept unchanged |
-| `removeCommittingBlock` triggers on `Update` | kept; the pending erase triggers the assignee too, for the failure path of a mutation (registration already triggers on success) |
+| `removeCommittingBlock` triggers on `Update` | dropped: the pending erase (after releasing the mutex) owns the wake-up for updates, moved parts and the failure path of mutations; registration already triggers on success |
 | failpoint `mt_lightweight_update_pause_after_block_allocation` | kept |
 | test `05227_mutation_waits_for_lightweight_update.sh` | kept verbatim, plus a `timeout` around its `SYSTEM WAIT FAILPOINT` |
 
@@ -181,8 +218,17 @@ this series is based on the merged result (no stacked pull requests). Upstream r
   `optimize_throw_if_noop = 1` throws (pending version between the neighbours); resume; the moved rows are
   active in the destination and absent from the source. Red today (the merge happens and the moved part is
   outdated at commit).
-- **Unit test** for the accessors with a mixed registered/pending set: below, equal and above the data
-  version, empty set, the mutate end bound, and the exclusive patch bound.
+- **S6 stale predicate after the `OPTIMIZE FINAL` wait**: `OPTIMIZE FINAL` waits for a running merge (held
+  with the existing merge pause failpoint); meanwhile a lightweight update allocates, publishes and erases
+  its pending version; the merge is released; the retry must materialize the now-visible patch (its
+  predicate was rebuilt). Red with the reused predicate.
+- **S7 failure cleanup**: mutation preparation failure after announcement (`mt_throw_after_mutation_commit`),
+  and `MOVE` failure after destination preactivation: no pending entry remains, the assignee is woken, and a
+  refused merge proceeds. Red if the guard leaks.
+- **Unit test** for the boundary accessors with a mixed registered/pending set: below, equal and above the
+  data version, empty set, the mutate end bound, the patch-equality case with the holder outliving the
+  erase, and allocation-to-announcement atomicity for each kind (a selector-side observer must never see an
+  allocated block without its pending entry).
 
 ## 4. Why it is sound, and what it does not claim {#argument}
 
@@ -206,16 +252,17 @@ this series is based on the merged result (no stacked pull requests). Upstream r
   makes it wait for pending mutations, but a metadata `ALTER` through an alias can still run concurrently
   with a mutation that has not allocated yet; follow-up issue.
 
-## 5. Questions for review {#questions}
+## 5. Settled in review round 5 {#settled-r5}
 
-1. Is there a fourth writer that allocates a version the selectors cannot see (fetch/clone paths of plain
-   `MergeTree`, `ATTACH PART`, `REPLACE PARTITION`, `restoreAndActivatePart`, `swapActivePart`)? For each,
-   is allocation and publication one parts-lock critical section (no pending version needed) or not?
-2. Is taking `currently_processing_in_background_mutex` in `updateLightweight` and `movePartitionToTable`
-   free of lock-order inversions with the locks those paths already hold (parts lock, `committing_blocks_mutex`,
-   the alter lock, `DatabaseCatalog`/`DatabaseAtomic` mutexes on the `alter` path)?
-3. Does any reader of `getCurrentMutationVersion`/`getNextMutationVersion` rely on the value being a
-   registered mutation (for example to look it up in the map) rather than a version number? Name each caller.
-4. Is the barrier `ALTER` change (wait for the highest pending mutation version too) correct, and what does
-   `waitForMutation` do with a version that is pending and not yet registered?
-5. Anything simpler still?
+- No fourth writer: every plain-`MergeTree` block allocation goes through `prepareMutationEntry`,
+  `updateLightweight`, the `NewPart` helpers and the replace drop-range reservation; ordinary `INSERT`,
+  `ATTACH`, `REPLACE PARTITION` and restored attachment allocate and activate under one data-parts write lock.
+- Lock order: update insertion/erase adds `lightweight-update lock → background mutex`, corrected `MOVE` adds
+  `operation_with_data_parts_mutex → destination background mutex`; no reverse edge found; taking the
+  background mutex inside a destination parts lock is forbidden.
+- The two accessors have exactly three plain-`MergeTree` callers, none of which looks the value up in the map.
+- Contention note: `select_in_partition` polls memory pressure in one-second sleeps while holding the
+  background mutex; that already delays mutation registration and now also delays update and `MOVE`
+  announcement; recorded, not changed here.
+- Remaining review items (S1's pre-fix loss arm, S2c's hold of K, a deterministic long-backoff hook if
+  immediate wake-up is to be proven rather than eventual progress) are carried into the implementation plan.
