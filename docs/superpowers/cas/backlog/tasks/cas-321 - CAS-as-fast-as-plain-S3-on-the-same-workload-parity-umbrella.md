@@ -4,7 +4,7 @@ title: CAS as fast as plain S3 on the same workload (parity umbrella)
 status: To Do
 assignee: []
 created_date: '2026-09-28 16:46'
-updated_date: '2026-09-28 16:47'
+updated_date: '2026-09-28 16:49'
 labels:
   - 'theme:parity'
   - 'area:write-path'
@@ -58,3 +58,9 @@ Umbrella for the plan that makes a CAS disk cost no more than a plain S3 disk pe
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-28 correction (owner question 'is _ckpt not on every append safe?'): no, not as 'skip the checkpoint and ack anyway'. The ref-stream model CaRefTableSnapshotLogCore carries the sabotage SabotageAckBeforeFrontier ('acknowledge a durable log before _ckpt.committed_through') precisely because the acked-durability and GC frontier proofs (NoAckedLoss; a round may run destructive work only while holding a frontier proof taken from the exact _ckpt.committed_through) require the client ack to follow the checkpoint that covers the entry. The safe shape of stage 3 is group commit: several appends of a flush group share ONE _ckpt PUT and are acked after it (CAS-287 combine window; CAS-176.2 removes the _ckpt GET, not the PUT). DRAFT-26's 'every N flushes or T seconds' is admissible only with the ack deferred to that checkpoint, which is the same thing as a combine window, and it needs a model row before any code (AGENTS.md invariant 5).
+<!-- SECTION:NOTES:END -->
