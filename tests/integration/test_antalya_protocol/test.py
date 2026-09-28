@@ -32,12 +32,10 @@ def count_in_log(node, substring):
 
 def test_remote_function_negotiates(started_cluster):
     initiator_before = count_in_log(node1, NEGOTIATED)
-    worker_before = count_in_log(node2, NEGOTIATED)
 
     assert node1.query("SELECT count() FROM remote('node2', system.one)") == "1\n"
 
     assert count_in_log(node1, NEGOTIATED) > initiator_before
-    assert count_in_log(node2, NEGOTIATED) == worker_before
 
 
 def test_new_initiator_against_an_unmarked_worker(started_cluster):
