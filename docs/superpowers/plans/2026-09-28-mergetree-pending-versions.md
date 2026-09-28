@@ -990,12 +990,12 @@ wait_failpoint $UPDATE_FP
 # A settings ALTER that makes supportsLightweightUpdate() false must not hide the pending update.
 $CLICKHOUSE_CLIENT --query "ALTER TABLE $TABLE MODIFY SETTING enable_block_offset_column = 0"
 $CLICKHOUSE_CLIENT --query "ALTER TABLE $TABLE UPDATE w = 5 WHERE 1 SETTINGS mutations_sync = 0"
-wait_for_query_result "SELECT count() $MUTATIONS WHERE NOT is_done AND arrayExists(x -> x LIKE 'Lightweight update%', mapValues(parts_postpone_reasons))" "1"
+wait_for_query_result "SELECT count() $MUTATIONS AND NOT is_done AND arrayExists(x -> x LIKE 'Lightweight update%', mapValues(parts_postpone_reasons))" "1"
 $CLICKHOUSE_CLIENT --query "SELECT 'postponed:', arrayDistinct(mapValues(parts_postpone_reasons)) $MUTATIONS"
 $CLICKHOUSE_CLIENT --query "ALTER TABLE $TABLE MODIFY SETTING enable_block_offset_column = 1"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $UPDATE_FP"
 wait "$update_pid"
-wait_for_query_result "SELECT count() $MUTATIONS WHERE NOT is_done" "0"
+wait_for_query_result "SELECT count() $MUTATIONS AND NOT is_done" "0"
 $CLICKHOUSE_CLIENT --query "SELECT 'update survived', count() FROM $TABLE WHERE v = 2; SELECT 'mutation applied', count() FROM $TABLE WHERE w = 5;"
 
 echo "--- a cancelled pending update releases the postponed mutation"
@@ -1005,12 +1005,12 @@ $CLICKHOUSE_CLIENT --enable_lightweight_update 1 --query_id "05292_cancelled_upd
 update_pid=$!
 wait_failpoint $UPDATE_FP
 $CLICKHOUSE_CLIENT --query "ALTER TABLE $TABLE UPDATE w = 7 WHERE 1 SETTINGS mutations_sync = 0"
-wait_for_query_result "SELECT count() $MUTATIONS WHERE NOT is_done AND arrayExists(x -> x LIKE 'Lightweight update%', mapValues(parts_postpone_reasons))" "1"
-$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '05292_cancelled_update_${CLICKHOUSE_DATABASE}' SYNC FORMAT Null"
-# A thread parked in a failpoint notices the kill only when the failpoint is disabled.
+wait_for_query_result "SELECT count() $MUTATIONS AND NOT is_done AND arrayExists(x -> x LIKE 'Lightweight update%', mapValues(parts_postpone_reasons))" "1"
+# A thread parked in a failpoint notices the kill only when the failpoint is disabled, so the kill must not wait.
+$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '05292_cancelled_update_${CLICKHOUSE_DATABASE}' ASYNC FORMAT Null"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $UPDATE_FP"
 wait "$update_pid"
-wait_for_query_result "SELECT count() $MUTATIONS WHERE NOT is_done" "0"
+wait_for_query_result "SELECT count() $MUTATIONS AND NOT is_done" "0"
 $CLICKHOUSE_CLIENT --query "SELECT 'no patch committed', count() FROM $TABLE WHERE v = 3; SELECT 'mutation applied', count() FROM $TABLE WHERE w = 7;"
 
 echo "--- a lower registered mutation applies while a higher one waits behind a pending update"
@@ -1027,11 +1027,11 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE $TABLE UPDATE w = w + 10 WHERE 1 SETTING
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $TASK_FP"
 # K finishes; M is postponed behind U.
 wait_for_query_result "SELECT countIf(is_done) $MUTATIONS" "1"
-wait_for_query_result "SELECT count() $MUTATIONS WHERE NOT is_done AND arrayExists(x -> x LIKE 'Lightweight update%', mapValues(parts_postpone_reasons))" "1"
+wait_for_query_result "SELECT count() $MUTATIONS AND NOT is_done AND arrayExists(x -> x LIKE 'Lightweight update%', mapValues(parts_postpone_reasons))" "1"
 $CLICKHOUSE_CLIENT --query "SELECT 'after K, before U:', w, count() FROM $TABLE GROUP BY w ORDER BY w"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $UPDATE_FP"
 wait "$update_pid"
-wait_for_query_result "SELECT count() $MUTATIONS WHERE NOT is_done" "0"
+wait_for_query_result "SELECT count() $MUTATIONS AND NOT is_done" "0"
 $CLICKHOUSE_CLIENT --query "SELECT 'after U and M:', v, w, count() FROM $TABLE GROUP BY v, w ORDER BY v, w"
 ```
 
@@ -1163,6 +1163,8 @@ from removeCommittingBlock to the release of the pending version."
 ---
 
 ### Task 6: Barrier `ALTER` waits through a fence of registered and pending mutations (S4)
+
+> **Execution ruling (2026-09-28):** the fence in Step 3 was not implemented. On this target a pending mutation's writer always holds the alter lock (`mutate` since Task 2, `alter` for its rename mutation), and the barrier runs under that lock, so `pending_versions` never holds a `Mutation` at the fence. The barrier branch received a comment stating that invariant instead; test 05293 pins the lock (`DEADLOCK_AVOIDED` on the direct path) and that a barrier issued while a mutation is pending completes only after every earlier mutation. See the SDD ledger.
 
 **Files:**
 - Modify: `src/Storages/StorageMergeTree.cpp` (`alter`, the barrier branch at base lines 688-708)
@@ -1390,6 +1392,8 @@ stays map-only: it is never called for a still-pending version."
 ---
 
 ### Task 7: Merges do not cross a pending version; `OPTIMIZE FINAL` rebuilds its predicate after a wait (S3, S6)
+
+> **Execution ruling (2026-09-28):** the second arm of 05294 as written below expected `CANNOT_ASSIGN_OPTIMIZE` while an UPDATE is pending. That expectation was wrong: both source parts lie below the pending block, the boundary rule does not separate them, and `min_update_block` only excludes parts at or above it, so the merge is legitimate and the patch (keyed by the block number/offset columns) still applies to the merged part. The arm was re-pinned as "a merge of parts below a pending update keeps the update applicable" (0 updated rows before the update is released, 2000 after, one regular part). See the SDD ledger.
 
 **Files:**
 - Modify: `src/Storages/StorageMergeTree.cpp` (`selectPartsToMerge`: predicate/collector construction per attempt)
