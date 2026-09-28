@@ -1,4 +1,4 @@
-# MergeTree: committing blocks as version boundaries — design (rev.2) {#design}
+# MergeTree: committing blocks as version boundaries — design (rev.3) {#design}
 
 Target: upstream `master` (13d023155c7) on top of the two commits of PR #119155, one pull request.
 Supersedes the mechanism of `2026-09-28-mergetree-uncommitted-version-boundary-design.md` (rev.10, the
@@ -69,8 +69,12 @@ after the snapshot (`MergeTreePartsCollector` runs after the predicate is constr
 under the parts lock without the background mutex, so a part created after the snapshot can enter the candidate set
 while a version allocated between the snapshot and that part is in no snapshot (design review of rev.1: mutation `2`
 allocated after the snapshot, insert `3` activated, merge of `1` and `3` selected, `2` later deletes rows of block `3`).
-Hence the **watermark** (§3) also bounds the candidates: `canUsePartInMerges` refuses a part whose `min_block` or data
-version is above the watermark. Everything that participates in one selection — reservations, registered mutations,
+Hence the **watermark** (§3) also bounds the candidates: a part whose `min_block` or data version is above the watermark
+is not a candidate of this selection. It is *filtered out* before the partition-wide checks (`MergeTreePartsCollector`
+drops it from the initial set), not refused: refusing it would make `OPTIMIZE FINAL` fail whenever an insert lands
+between the snapshot and the collection, because `FINAL` requires every part of the partition to be usable
+(confirmation round of rev.2). The filtered parts are the newest ones; a `FINAL` under a concurrent insert stream never
+guaranteed a single part anyway. Everything that participates in one selection — reservations, registered mutations,
 parts and patches — is then at or below one point of the block sequence, and nothing allocated later can be between
 two things the selector compares.
 
@@ -88,7 +92,12 @@ two things the selector compares.
   below `R` materializes `U` and records version `U`, the rollback fails, `R` is re-registered and is skipped for the
   merged part: pre-existing rows lose the renamed column. With the holder retained, `R` is a reservation throughout,
   so the merge neither materializes `U` (rule 4) nor crosses `R` (rule 2). No lock is held longer; the holder just
-  dies a few statements later.
+  dies a few statements later. It is declared beside `prepared`, before `background_lock`, in the scope that ends before
+  the synchronous `waitForMutation`, so it is released on every exit (success, both rollback outcomes, an exception in
+  the recovery block) without the background mutex held and before any wait that could depend on it. Consequence
+  (confirmation round): a lightweight update issued while a failing `ALTER` is in its recovery interval waits in
+  `waitForCommittingInsertsAndMutations` for the retained reservation, bounded by `lock_acquire_timeout`, as it already
+  waits for any registering mutation.
 
 ## 3. The counterexample and the watermark {#watermark}
 
@@ -172,10 +181,12 @@ New, red without the retained holder: **05299 the rename recovery interleaving.*
 `mt_alter_throw_after_mutation_registered` (ONCE), `mt_alter_pause_before_durable_rollback` (PAUSEABLE_ONCE, added at the
 recovery interval as on the previous branch) and `mt_alter_throw_in_durable_rollback` (ONCE); table `(id, x String, y)`
 with block number/offset columns, two parts; `ALTER … RENAME COLUMN x TO z` in the background reaches the pause; while
-paused: `UPDATE t SET y = 2 WHERE 1` runs to completion (its patch commits), then `OPTIMIZE TABLE … FINAL` (must be
-refused or must not record `U`); release; the rollback fails, the rename is re-registered; wait; assert every row still
-reads its `x` value under `z` and `y = 2`. Without the retained holder the merged part records version `U > R` and `z`
-reads defaults.
+paused: `UPDATE t SET y = 2 WHERE 1` started in the background (with the retained holder it blocks in
+`waitForCommittingInsertsAndMutations` behind `R` — verify with a bounded poll on `system.processes`; without it, it
+commits its patch), then `OPTIMIZE TABLE … FINAL` (foreground; with the fix there is no patch to materialize and `R` is a
+reservation; without it the merge materializes `U` and records version `U > R`); release the pause; the rollback fails,
+the rename is re-registered; `wait` the update and the alter; wait for mutations; assert every row still reads its `x`
+value under `z` and `y = 2`. Without the retained holder `z` reads defaults for the merged rows.
 
 Test rules as before: tags with reasons, `timeout 60` around every `SYSTEM WAIT FAILPOINT`, traps that disable every
 failpoint and `wait`, `KILL … ASYNC` for parked queries, bounded polls, full test names on the command line.
