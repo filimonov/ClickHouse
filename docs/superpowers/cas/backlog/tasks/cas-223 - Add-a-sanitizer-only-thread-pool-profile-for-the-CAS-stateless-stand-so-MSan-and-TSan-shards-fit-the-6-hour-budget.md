@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@filimonov'
 created_date: '2026-09-16'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-28 12:06'
 labels:
   - 'area:ci'
   - 'complexity:small'
@@ -15,6 +15,7 @@ labels:
   - 'touches:settings'
   - 'confidence:solid'
   - 'origin:issue'
+  - 'confidence:contested'
 milestone: m-8
 dependencies: []
 references:
@@ -62,4 +63,6 @@ Provenance: BACKLOG/testing-and-ci.md#sanitizer-cas-thread-pool-profile, plus ca
 First recorded: 2026-09-16 (cbf3fe14e36, by 'asan-memory-tracker-snap')
 
 Issue #2298 (assigned filimonov): the ASan half is resolved on antalya-26.6 (test-policy `cas_gc_interval_sec` 5 → 20 in `38661e72127` plus the GC round-cost work; ASan CAS-S3 shards finish in 3.7 h and 2.9 h on the v26.6.4 tag). MSan and TSan shards are what remains. PR #2393 (merged, #2362 workaround) also speeds the sanitizer lanes.
+
+2026-09-28 (owner review): the thread-pool-profile proposal above is rejected as knob-turning; the standard is CAS as fast as the plain S3 disk on the same workload, with the loss located by metrics, traces and a synthetic repro. Systematic-debugging investigation started on PR #2440 run https://github.com/Altinity/ClickHouse/actions/runs/36347426173 (tsan 's3 storage' 1/2 finished in 2h05 vs 'cas s3 storage' 1/2 cancelled at the 6h timeout with 5,618 of 5,636 tests done; msan cas s3 1/3-3/3 cancelled at 6h). Phase 1 (tmp/cas223/phase1_ci_evidence.md): the loss is broad (top-1000 tests hold 67% of the extra time, median per-test 1.83x, p90 6.9x), confined to MergeTree tests (3.19x, ramping 2.0 -> 5.7 by elapsed hour; tests without tables 1.19x flat), and present only under TSan/MSan: the ASan CAS lane has the same threads and pools and runs 2.7-3.4k tests/h, as fast as TSan S3, which refutes the thread-count explanation. A constant 2.5x exists in release between CAS over RustFS and CAS over local objects (part-removal repoint ~140 ms release, ~570 ms TSan). CI confounds: CAS lane on RustFS without cache vs S3 lane on MinIO with a 5 GiB filesystem cache; TSan S3 lane runs with random query settings off. Phase 2 (tmp/cas223/phase2_hypotheses.md): H1 = O(pool catalog) CPU per CAS op: CasRefCatalog::read (GET + full decode + CatalogLifeIndex) on every part-commit append (CasRefLedger.cpp:3394/3425), twice per readable-runtime acquire and in listings (CasPool.cpp:1884/1912); Removing rows are erased only after a GC fold adopts cleanup evidence, so catalog = live tables + GC backlog, and a sanitizer-slowed GC grows it (feedback loop, predicts MSan > TSan > ASan). Overlaps CAS-176.1 (drop the per-flush catalog GET) and CAS-72. Next: phase 3 repro on the exact CI binaries and mining the completed-but-slow sanitizer runs' system-table dumps (query_log, metric_log, trace_log, cas_log).
 <!-- SECTION:NOTES:END -->
