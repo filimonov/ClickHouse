@@ -7,7 +7,7 @@ title: 'MergeTree: uncommitted block reservations as version boundaries — desi
 doc_type: 'reference'
 ---
 
-# MergeTree: uncommitted block reservations as version boundaries — design (rev.3) {#design}
+# MergeTree: uncommitted block reservations as version boundaries — design (rev.4, final) {#design}
 
 Scope: plain `StorageMergeTree` only (`ReplicatedMergeTree` orders mutations through the queue and
 `havePendingPatchPartsForMutation`). Target: one upstream pull request built on top of
@@ -27,6 +27,13 @@ across it); rule 3 stated as a generalization of the existing `min_update_block`
 sentinel handled; `Unknown` wakes the assignee too; the two open decisions settled (fix `StorageAlias::alter`
 here; land the Antalya transaction recheck first as its own pull request); S3b replaced by the two
 late-reservation tests; S1 proves the loss before releasing A; S2 cancellation and S3 made deterministic.
+rev.4 (after design review round 3, `design_review_r3.md`, the last design round): the cut is **atomic**, not
+ordered: parts, patches and reservations are captured while the data-parts read lock is held, because a
+lightweight update publishes its patch under the data-parts lock and releases its reservation right after,
+so two non-overlapping snapshots can miss both; every merge-selection attempt, including each `OPTIMIZE
+FINAL` retry, builds a fresh bundle; the failure statement, the lightweight-update proof and the cleanup
+ordering claim corrected; S3e, a deterministic S3d and rule-3 unit coverage added. Remaining findings go to
+code review.
 
 ## 0. Three races, one cause {#cause}
 
@@ -76,16 +83,23 @@ typed snapshot, and one ordering discipline.
 **An uncommitted `Mutation`, `Update` or `Unknown` reservation is a version boundary.** No mutation selection,
 merge or patch selection may produce a part whose data version crosses it, until its holder releases it.
 
-**A decision is made on a coherent cut.** A decision first captures every regular part and patch part that
-may contribute to it, then snapshots the reservations, and then uses only the captured parts. A reservation
-allocated after the reservation snapshot is therefore newer than every part and patch the decision can
-materialize (block numbers come from one increment), and needs no consideration; a reservation allocated
-before it is in the snapshot. Reservations first and parts later is the bug: a reservation N allocated in
-between is missed while a part Q > N committed in between is seen (round 2, MAJOR 1).
+**A decision is made on an atomic cut.** For every merge-selection attempt, acquire the data-parts read lock,
+capture the complete candidate regular-part and patch-part state (including the transaction-required active
+and outdated inputs), and, while still holding that read lock, snapshot `VersionReservations` under
+`committing_blocks_mutex`. Release the data-parts lock only after all three snapshots are complete. The
+collector and the predicate consume only those snapshots. A successful lightweight update therefore either
+published its patch before the parts snapshot, and the patch is captured, or its publication is blocked by
+the data-parts lock, and its reservation is captured. Two non-overlapping snapshots, in either order, are
+insufficient: reservations first misses a reservation N allocated in between while seeing a part Q > N
+committed in between (round 2); parts first misses a patch U published and released in between while
+having captured a later patch V > U (round 3). If overlapping the two locks were ever rejected, the
+equivalent is a monotonic generation bumped by every publication and release, with the whole capture retried
+when it changed. Mutation selection follows the same discipline: it captures the parts vector and the
+reservations under the same protocol.
 
 Consequences:
 
-1. `selectPartsToMutate` captures `getDataPartsVectorForInternalUsage()` first, then the reservations, and
+1. `selectPartsToMutate` captures the parts vector and the reservations as one atomic cut, and
    may apply to a part only the registered mutations below the first reservation above the part's data
    version: `mutations_end_it = current_mutations_by_version.lower_bound(reservation->number)` (or `end()`).
    A part whose pending registered mutations all lie above such a reservation is postponed with a reason
@@ -98,10 +112,12 @@ Consequences:
    bound is less conservative than #119155's in one way: with registered K < U < M it applies K now and
    postpones M, where #119155 postpones the whole part; this is safe (K is below every boundary) and gets
    its own test (S2c).
-2. Merge selection (`selectPartsToMerge` and its collector/predicate pair) captures the active regular parts
-   and the patch parts once, then snapshots the reservations, and hands both to `MergeTreePartsCollector`
-   and `MergeTreeMergePredicate`; the predicate does not reread patch parts and the collector does not
-   reread regular parts. `canMergeParts` keeps its registered-version comparison and additionally refuses the
+2. Merge selection (`selectPartsToMerge` and its collector/predicate pair) captures the active regular parts,
+   the patch parts and the reservations as one atomic cut per attempt and hands the bundle to
+   `MergeTreePartsCollector` and `MergeTreeMergePredicate`; the predicate does not reread patch parts and the
+   collector does not reread regular parts. Every collector invocation, including each retry after the
+   `OPTIMIZE FINAL` wait for running merges, is a separate attempt with a fresh bundle; a reservation
+   snapshot is never reused with a later parts read. `canMergeParts` keeps its registered-version comparison and additionally refuses the
    merge when a reservation lies in `(min(dv_left, dv_right), max(dv_left, dv_right)]`. Closes R3 and the
    round-2 late-reservation counterexamples.
 3. `getPatchesToApplyOnMerge` bounds the patches by `min(next registered version above dv, first reservation
@@ -138,18 +154,22 @@ struct VersionReservations
 VersionReservations StorageMergeTree::getVersionReservations() const;   /// filtered copy under committing_blocks_mutex
 ```
 
-Ordering discipline, stated once and asserted by construction: `selectPartsToMutate` reads the parts vector,
-then calls `getVersionReservations()`; `selectPartsToMerge` builds the parts and patch snapshots, then calls
-`getVersionReservations()`, then constructs the predicate and the collector from those three inputs. The
-predicate's constructor no longer calls `getCommittingBlocks()` or `getPatchPartInfos()` itself.
+Capture discipline, stated once and asserted by construction: a `MergeSelectionInputs` bundle (regular
+parts, patch parts, `VersionReservations`) is built by one function that holds the data-parts read lock
+across all three captures; `selectPartsToMerge` builds one bundle per attempt and constructs the predicate
+and the collector from it; the initial collection is hoisted out of `MergeTreePartsCollector` into the
+bundle. The predicate's constructor no longer calls `getCommittingBlocks()` or `getPatchPartInfos()` itself.
+`selectPartsToMutate` builds the same kind of bundle without patches.
 `getCurrentMutationVersion` and `getNextMutationVersion` keep describing registered mutations only; their
 other callers (`getIncompleteMutationsStatus`, `clearOldMutations`) stay correct because no part can cross a
 gap once the rule holds. Pre-filtering matters: `committing_blocks` is mostly `NewPart` entries under insert
 load, `firstAfter` is a binary search per candidate part.
 
-Lock order: `currently_processing_in_background_mutex` is held by both selectors; parts are read under
-`lockParts` and released; then `committing_blocks_mutex` is taken briefly for the snapshot. No overlap of the
-last two, no new edge. `removeCommittingBlock` releases `committing_blocks_mutex` before the trigger.
+Lock order: `currently_processing_in_background_mutex` → data-parts read lock → `committing_blocks_mutex`.
+The inner edge already exists: insert commit holds `lockParts` and calls `fillNewPartName`, which takes
+`committing_blocks_mutex` (`MergeTreeSink.cpp`, `StorageMergeTree::fillNewPartNameAndCommittingBlock`). The
+critical section under the data-parts lock is pointer and info capture plus one compact filtered copy of
+the reservations. `removeCommittingBlock` releases `committing_blocks_mutex` before the trigger.
 
 ### The lock fix, separately {#lock}
 
@@ -232,15 +252,27 @@ is disabled, so cancellation arms disable it right after the kill):
   across U (the captured patch set predates V, or the later reservation snapshot bounds it). Red with
   reservation-first ordering; this replaces rev.2's S3b, which was already green because of
   `min_update_block`.
-- **S3d failure release wakes a refused merge** (rule 4, `Mutation` arm): the merge is refused by a
-  `Mutation` reservation; the mutation then fails before registration (the existing
-  `mt_throw_after_mutation_commit` failpoint); the assignee is woken and the merge proceeds.
+- **S3d failure release wakes a refused merge** (rule 4, `Mutation` arm): a `PAUSEABLE_ONCE` failpoint
+  immediately before the failure injection of `mt_throw_after_mutation_commit` holds the mutation with its
+  reservation; the test waits until merge selection has refused the range because of it, releases the
+  mutation into the injected failure, and, with a test-only deterministic long-backoff hook on the assignee
+  (`BackgroundJobsAssignee` backoff can reach 600 s), shows the merge completes because `removeCommittingBlock`
+  called `trigger`, not because of a tick.
+- **S3e patch published between the captures** (round 3, MAJOR 1): pending update U (paused before
+  commit) and a committed disjoint patch V > U; pause merge selection after the patch capture and before the
+  reservation capture; let U attempt to commit. With the atomic cut U's publication blocks on the held
+  data-parts read lock, the reservation is captured, then the lock is released, and the merge does not
+  materialize V across U. Without it U publishes and releases before the reservation capture and U is lost.
 - **S4 barrier `ALTER` vs in-flight mutation** (lock fix): pause DELETE before registration; `ALTER TABLE ...
   RENAME COLUMN` with `lock_acquire_timeout = 1` fails with `TIMEOUT_EXCEEDED`; release; the rename succeeds.
   Alias variant: the same `RENAME COLUMN` through a `StorageAlias` of the table. Both red before their fix.
 - **Unit test** for `VersionReservations::firstAfter`: classification of `NewPart`/`Mutation`/`Update`/`Unknown`,
-  reservations below and above the data version, several `NewPart`s in between, empty input, and the map
-  bound `lower_bound(firstAfter(dv)->number)` against a small `current_mutations_by_version`.
+  reservations below and above the data version, several `NewPart`s in between, empty input, the map
+  bound `lower_bound(firstAfter(dv)->number)` against a small `current_mutations_by_version`, and the rule-3
+  upper bound with `getNextMutationVersion(dv) == 0` (infinity) and patches below, at and above the
+  reservation.
+- **S2 note:** the release trigger cannot be proven with `mt_merge_selecting_task_pause_when_scheduled`
+  (disabling it permits progress by itself); it uses the same long-backoff hook as S3d.
 
 ## 4. Why the rule is sound, and what it does not claim {#argument}
 
@@ -248,32 +280,41 @@ is disabled, so cancellation arms disable it right after the kill):
   reservation while holding `currently_processing_in_background_mutex`; both selectors hold that mutex while
   they capture parts and snapshot reservations, so a decision sees the reservation, or the registered entry,
   or both, never neither.
-- A lightweight update's reservation is not released under that mutex: its holder lives in the patch sink
-  and outlives the patch part commit. A decision that captured its patch parts before the release cannot
-  hold the patch; a decision that captured after it sees the committed patch and, having taken its
-  reservation snapshot after the parts, sees the reservation if it still exists. Either way the version is
-  counted.
+- Patch publication requires the data-parts write lock, and the update reservation outlives publication
+  (its holder lives in the patch sink). Merge selection holds the data-parts read lock through reservation
+  capture, so it observes either the committed patch or the reservation. Ordering the two snapshots without
+  overlapping the lock is insufficient (round 3, MAJOR 1).
 - Under the cut, a reservation allocated after the reservation snapshot is above every part and patch the
   decision captured, so the decision's result has a data version below it, and the later mutation or update
   applies to the result as usual.
-- A failed operation releases its reservation without publishing state; a decision with an older snapshot
-  is merely conservative, and rule 4 wakes the assignee.
+- A failed mutation publishes no registered entry. A failed lightweight update may have published a subset
+  of its patch parts (`MergeTreeSinkPatch` commits partitions one at a time). Until release, its reservation
+  protects the missing or partially published state; after release, the committed patches are observed
+  through the atomic cut. A decision with an older snapshot is merely conservative, and rule 4 wakes the
+  assignee. Registration itself already triggers, so the `Mutation` trigger is load-bearing only for the
+  failure path.
 - **Not covered by the rule, stated as scope:** (a) a mutation inside a transaction whose transaction rolls
   back between file write and registration: upstream master's registration-time recheck handles it; 26.6
   gets it as the prerequisite pull request of §2. (b) A nontransactional `mutation_N.txt` left behind when
   registration fails and the file removal fails: `loadMutations` treats every final file as registered after
   a restart, and parts may have advanced above N after the reservation was released. The pull request
-  reorders `PreparedMutationEntry` so the entry (and its file removal) is destroyed before the block holder,
-  which removes the in-process ordering hazard, and states the restart limitation; a durable distinction
+  reorders both the `PreparedMutationEntry` members and the locals in `prepareMutationEntry` (the local
+  `entry` is currently declared before `block_holder`, so unwinding destroys the holder first) so the entry
+  and its file removal are destroyed before the block holder on every path, and states the restart
+  limitation; a durable distinction
   between "final file" and "registered mutation" is a separate change. Process termination while the
   reservation exists is different: no in-process crossing can follow, only the restart ambiguity.
 
-## 5. Questions for review round 3 {#questions}
+## 5. Settled in round 3 {#settled}
 
-1. Is "predicate and collector consume captured parts" implementable without restructuring the compaction
-   framework, or is the equivalent "reservations snapshotted lazily on the predicate's first use, after the
-   collector's initial read" an acceptable form of the cut? Name what the collector reads after that point.
-2. Does anything else in `StorageMergeTree` decide on parts plus `committing_blocks` with the wrong order
-   (`waitForCommittingInsertsAndMutations`, `OPTIMIZE`'s explicit selection path, `merge_selecting_task`)?
-3. Are S3b/S3c red as specified with reservation-first ordering, given the pause point sits after the
-   reservation snapshot but the parts collector runs later in `grabAllPossibleRanges`?
+- Lazy reservation capture on the predicate's first use is not acceptable unless the data-parts lock is held
+  through it (or a generation check forces a retry); the bundle is built by hoisting the initial collection
+  out of `MergeTreePartsCollector`, a localized constructor/API change, not a compaction-framework redesign.
+- No other path decides on parts plus `committing_blocks` in the wrong order: background selection and
+  `OPTIMIZE` both go through `selectPartsToMerge`; `waitForCommittingInsertsAndMutations` inspects
+  reservations only; the `OPTIMIZE FINAL` retry inside `selectPartsToMerge` is the one place that needs a
+  fresh bundle per attempt.
+- S3b and S3c are red with reservation-first ordering (the predicate snapshots reservations in its
+  constructor, the collector reads parts later); S3e covers the publication-between-captures gap they miss.
+- The design loop closes here (three rounds); the remaining review items (S1's pre-fix loss check in the
+  existing test, S2c holding K pending explicitly) are carried into the implementation plan and code review.
