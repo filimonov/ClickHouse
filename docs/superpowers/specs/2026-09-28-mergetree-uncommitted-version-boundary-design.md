@@ -7,7 +7,7 @@ title: 'MergeTree: pending versions under the selection mutex — design'
 doc_type: 'reference'
 ---
 
-# MergeTree: pending versions under the selection mutex — design (rev.9, final) {#design}
+# MergeTree: pending versions under the selection mutex — design (rev.10, final) {#design}
 
 Scope: plain `StorageMergeTree` only (`ReplicatedMergeTree` orders mutations through the queue and
 `havePendingPatchPartsForMutation`). Target: one upstream pull request built on top of
@@ -42,8 +42,14 @@ of the pending erase; pending insert/erase are logged at Debug. rev.9 (after the
 remains, then waits for the highest registered mutation at or below it, so a failing highest pending
 mutation can no longer hide an earlier unfinished one; S7 gets a deterministic `MOVE` failure injection;
 S1 says explicitly that B is retried after A is released; §4 wording corrected (publication becomes visible
-under the data-parts lock, the background mutex serializes the later erase). The design is final; the rest
-is the implementation plan.
+under the data-parts lock, the background mutex serializes the later erase). rev.10 (second confirmation
+round, `design_review_r7.md`: the fence accepted; one uncovered transition): the post-registration recovery
+path of `StorageMergeTree::alter` temporarily unregisters a mutation while it attempts a durable metadata
+rollback and may re-register it, so during that interval the version was neither registered nor pending;
+rev.10 converts it back to pending for that interval, adds the fence arms to S4 and a rollback arm. Upstream
+note: `upstream/master` already commits the `MOVE` destination under the parts lock (PR #108922), so the
+`MovedPart` writer applies to `antalya-26.6` only until that fix is backported (task CAS-320); the upstream
+pull request has two writers. The design is final; the rest is the implementation plan.
 
 ## 0. The races, restated {#races}
 
@@ -114,7 +120,17 @@ Writers (three sites):
   (a destructor that locks the background mutex would self-deadlock while unwinding under it). On any failure
   before registration the guard's destructor erases it, taking the mutex only when the caller does not hold
   it. The `alter` path, which calls `prepareMutationEntry` and `addPreparedMutationEntry` around its durable
-  metadata commit, gets the same guard.
+  metadata commit, gets the same guard. Its post-registration recovery path preserves the same invariant: if
+  recovery temporarily removes a registered mutation into `held_entry` before attempting durable metadata
+  rollback, it atomically changes that version from registered back to `pending_versions[version] = Mutation`
+  while still holding `currently_processing_in_background_mutex`; the re-armed pending guard stays live across
+  the durable rollback attempt. If durable rollback succeeds, recovery performs the mutation-file cleanup and
+  then erases the pending version as terminal failure. If durable rollback fails, recovery atomically
+  re-registers `held_entry`, republishes `new_metadata`, and erases the pending version under the background
+  mutex. Both terminal transitions notify `currently_processing_in_background_condition`. A version that may
+  still be re-registered is never absent from both `current_mutations_by_version` and `pending_versions`. A
+  `PAUSEABLE_ONCE` failpoint after the registered-to-pending conversion and before the durable rollback
+  (`mt_alter_pause_before_durable_rollback`) drives the test.
 - `updateLightweight`: `allocatePendingVersion(LightweightUpdate)` instead of `allocateBlockNumber(Op::Update)`;
   erase after the patch sink has committed its parts (some partitions' patches may be visible after a
   failure; the erase happens after the sink has finished either way), then release the committing-block
@@ -222,7 +238,12 @@ this series is based on the merged result (no stacked pull requests). Upstream r
 - **S4 barrier `ALTER` vs in-flight mutation** (lock fix and the barrier change): pause DELETE before
   registration; `ALTER TABLE ... RENAME COLUMN` with `lock_acquire_timeout = 1` fails with `TIMEOUT_EXCEEDED`;
   the same through a `StorageAlias` waits for the pending version instead of overtaking it; release; both
-  succeed afterwards. Red today.
+  succeed afterwards. Red today. Additional fence arms cover: unfinished registered N plus pending P > N whose
+  preparation fails, proving the barrier still waits for N; two pending mutations where the lower one fails;
+  failure of the pending mutation exactly at the fence; and a mutation allocated after fence capture, proving
+  it is not waited for. A post-registration metadata-rollback arm pauses at
+  `mt_alter_pause_before_durable_rollback` after the registered-to-pending conversion and exercises both
+  durable-rollback success and failure with re-registration; the barrier must wait through both.
 - **S5 `MOVE PARTITION TO TABLE`**: pause the move at `mt_move_partition_pause_after_dest_preactivation`;
   insert into the destination above the moved block; `OPTIMIZE` the destination partition with
   `optimize_throw_if_noop = 1` throws (pending version between the neighbours); resume; the moved rows are
@@ -250,8 +271,10 @@ this series is based on the merged result (no stacked pull requests). Upstream r
   allocated (before the file write for a mutation, before the patch write for an update, before the
   destination lock is taken for a move) and is erased only after the writer's state became visible:
   registration under the background mutex for a mutation; patch or moved-part activation under the
-  data-parts lock in `Transaction::commit`, after which the writer takes the background mutex to erase. So
-  at every selection the version is pending, or visible, or (after a failure) gone with nothing to protect.
+  data-parts lock in `Transaction::commit`, after which the writer takes the background mutex to erase.
+  Therefore, at every selection the version is pending, visible, or terminally abandoned. Temporary
+  unregistration during metadata rollback remains represented as pending until durable rollback either
+  succeeds or the mutation is re-registered.
 - Registered mutations and pending versions share one ordering (block numbers from one increment), so the
   accessors' `max`/`min` over both sets are well defined and `lower_bound` on the map at the first pending
   version above a part is the correct end of the applicable range.
