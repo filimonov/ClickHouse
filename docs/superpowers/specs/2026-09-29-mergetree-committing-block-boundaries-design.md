@@ -1,4 +1,4 @@
-# MergeTree: committing blocks as version boundaries — design (rev.1) {#design}
+# MergeTree: committing blocks as version boundaries — design (rev.2) {#design}
 
 Target: upstream `master` (13d023155c7) on top of the two commits of PR #119155, one pull request.
 Supersedes the mechanism of `2026-09-28-mergetree-uncommitted-version-boundary-design.md` (rev.10, the
@@ -58,14 +58,21 @@ hold) and read it as follows. `firstReservationAfter(dv)` = the lowest reservati
    pre-check would skip the refusal, pinned by test 05296). The caller passes the bound from the predicate's snapshot.
 4. `getPatchesToApplyOnMerge`: `next_version = min(getNextMutationVersion(dv), firstReservationAfter(dv))`, plus the
    watermark rule of §3.
-5. `removeCommittingBlock` triggers `background_operations_assignee` for `Mutation` and `Update` (a released reservation
-   removes a boundary), after `committing_blocks_mutex` is released, as #119155 does for `Update`.
+5. `removeCommittingBlock` keeps #119155's wake-up for `Update` only. A mutation's reservation is released inside
+   `addPreparedMutationEntry`, which triggers the assignee itself; a mutation that fails before registration is rare
+   and the scheduler's backoff tick covers it.
 
 Why a snapshot is enough (the monotonicity argument): block numbers come from one `SimpleIncrement`, so a version
 allocated after the snapshot is above every part, every registered mutation and every reservation that existed at the
-snapshot. A later mutation cannot register while the selector holds the background mutex; a later update's patch is
-above every source part; a later insert's part is above every source part. None of them can be *between* two things
-the selector compares, so the snapshot is exact for every decision in rules 1–3.
+snapshot. A later mutation cannot register while the selector holds the background mutex. But the *parts* are read
+after the snapshot (`MergeTreePartsCollector` runs after the predicate is constructed), and an insert activates its part
+under the parts lock without the background mutex, so a part created after the snapshot can enter the candidate set
+while a version allocated between the snapshot and that part is in no snapshot (design review of rev.1: mutation `2`
+allocated after the snapshot, insert `3` activated, merge of `1` and `3` selected, `2` later deletes rows of block `3`).
+Hence the **watermark** (§3) also bounds the candidates: `canUsePartInMerges` refuses a part whose `min_block` or data
+version is above the watermark. Everything that participates in one selection — reservations, registered mutations,
+parts and patches — is then at or below one point of the block sequence, and nothing allocated later can be between
+two things the selector compares.
 
 ## 2. The lock fix and the two small fixes, separately {#separate}
 
@@ -74,6 +81,14 @@ the selector compares, so the snapshot is exact for every decision in rules 1–
   after the wait released the mutex (R4; commits b9fbb41381a and b637b72b894 of the previous branch, test 05297).
 - `alter`'s recovery path skips re-registering a moved-from entry (`held_entry && held_entry->commands`; the
   null-`commands` dereference is pre-existing; commit 1f86af3569e of the previous branch, guard only).
+- **`alter` retains the rename mutation's block holder** (moved out of `PreparedMutationEntry` before
+  `addPreparedMutationEntry`) until the new metadata is published or the recovery interval has ended. Design review of
+  rev.1: with the holder released at registration, a failed in-memory commit un-registers the rename `R` for the durable
+  rollback while nothing reserves `R`; an update `U > R` commits its patch (updates do not take the alter lock), a merge
+  below `R` materializes `U` and records version `U`, the rollback fails, `R` is re-registered and is skipped for the
+  merged part: pre-existing rows lose the renamed column. With the holder retained, `R` is a reservation throughout,
+  so the merge neither materializes `U` (rule 4) nor crosses `R` (rule 2). No lock is held longer; the holder just
+  dies a few statements later.
 
 ## 3. The counterexample and the watermark {#watermark}
 
@@ -103,14 +118,27 @@ parts today; only materialization on merge raises the version. `getPatchesToAppl
 `max data version > watermark`. The order "reservations and watermark, then patches" is load-bearing and is stated in the
 constructor; the reverse order has the symmetric hole (`U` committing between the two copies).
 
+Reachability note (design review of rev.1): on the current code the patch interleaving above cannot complete, because an
+update's planning (`MutationsInterpreter` → `getMutationsSnapshot`) takes the background mutex the selector holds, so `V`
+cannot commit during the selection. The rule is kept because it is the same watermark as the candidate rule (one
+statement: nothing above the watermark participates in a selection) and because it does not depend on that ordering
+of the update pipeline. The candidate side of the rule is reachable today and has a red test (§5).
+
 ## 4. Why it is sound, and what it does not claim {#argument}
 
-- I1 (no gap): a version is a committing block from allocation until visibility (§1); the alter recovery interval
-  un-registers a rename mutation whose block is long released, but during that interval no mutation can register above
-  it (the failing `ALTER` holds the alter lock) and a merge below it records at most a lower version, so the re-registered
-  rename still applies; a merge that started before the failure with the new metadata recorded the rename's version and
-  wrote the new names. No re-arm is needed. (The value loss for rows *inserted* in that window is a pre-existing bug,
+- I1 (no gap): a version is a committing block from allocation until visibility (§1). The alter recovery interval
+  un-registers the rename mutation, but `alter` keeps its block holder (§2), so the version stays a reservation until
+  the interval ends; no mutation can register above it meanwhile (the failing `ALTER` holds the alter lock). A merge
+  that started before the failure with the new metadata recorded the rename's version and wrote the new names, which is
+  consistent with re-registration. (The value loss for rows *inserted* in that window is a pre-existing bug,
   `tmp/cas252/issue_alter_rollback_window_loses_renamed_column.md`, not changed by this design.)
+- Known limits, pre-existing and unchanged: an orphaned `mutation_*.txt` that `loadMutations` registers after a restart
+  is outside any in-process snapshot; inside a transaction, a committed patch that the merge's transaction cannot see is
+  filtered by `getPatchPartInfos`, and a later visible patch can still be materialized above it (§4's transaction
+  exclusion). Intended behaviour changes: a lower registered mutation is applied while a higher one waits behind a
+  pending update (partial progress, one extra rewrite); a part already above a pending update proceeds with later
+  mutations; merges and explicit `OPTIMIZE FINAL` can be refused by a reservation and retried by the scheduler; patches
+  above the watermark are left for read time.
 - I2 (exact snapshot): the monotonicity argument of §1 for parts and mutations; §3 for patches.
 - I3 (alter lock): every path that registers a mutation on plain `MergeTree` holds the alter lock: `mutate` (after the
   R1 fix) and `alter` (its own rename mutation, from the interpreter's `lockForAlter`). Hence no registered mutation
@@ -131,12 +159,23 @@ releases its block; `KILL MUTATION` ignores an unregistered one), 05296 (merge d
 a pending update; `RENAME` refused), 05297 (`OPTIMIZE FINAL` retry with a held merge sees the `RENAME` published during
 the wait), 05227 (from #119155, timeout wrapper), 04516, 04309, 04312.
 
-New, red on this design without §3: **05298 the round-3 counterexample.** `PAUSEABLE_ONCE` failpoint
-`mt_merge_predicate_pause_after_reservation_snapshot` between the reservation copy and the patch copy in the predicate
-constructor; `SYSTEM STOP MERGES`; two parts of a table with block number/offset columns; `OPTIMIZE TABLE … FINAL` in the
-background reaches the failpoint; while paused: `UPDATE U` parked at `mt_lightweight_update_pause_after_block_allocation`,
-then `UPDATE V` on other rows runs to completion; release the predicate; release `U`; wait both; assert every row shows
-both updates and one regular active part. Without the watermark the rows of `U` keep their old values.
+New, red without the watermark on candidates: **05298 the late-candidate interleaving.** `PAUSEABLE_ONCE` failpoint
+`mt_merge_predicate_pause_after_reservation_snapshot` right after the predicate copied the reservations (it holds the
+background mutex there); `SYSTEM STOP MERGES`; part `P` (id 1); `OPTIMIZE TABLE … FINAL` in the background reaches the
+failpoint; while paused: `DELETE … WHERE id = 2` (lightweight_delete_mode = alter_update, sync 0) in the background —
+it allocates version 2 and blocks on the background mutex at registration; `INSERT … (2)` activates part `Q` at block 3
+(parts lock only); release the predicate; `wait` OPTIMIZE and the DELETE; wait for the mutation to finish; assert
+`SELECT count() FROM t WHERE id = 2` = 1 (the row inserted after the mutation's version survives) and the parts.
+Without the candidate watermark, `P` and `Q` merge at data version 1 and the mutation deletes the row of block 3.
+
+New, red without the retained holder: **05299 the rename recovery interleaving.** Failpoints
+`mt_alter_throw_after_mutation_registered` (ONCE), `mt_alter_pause_before_durable_rollback` (PAUSEABLE_ONCE, added at the
+recovery interval as on the previous branch) and `mt_alter_throw_in_durable_rollback` (ONCE); table `(id, x String, y)`
+with block number/offset columns, two parts; `ALTER … RENAME COLUMN x TO z` in the background reaches the pause; while
+paused: `UPDATE t SET y = 2 WHERE 1` runs to completion (its patch commits), then `OPTIMIZE TABLE … FINAL` (must be
+refused or must not record `U`); release; the rollback fails, the rename is re-registered; wait; assert every row still
+reads its `x` value under `z` and `y = 2`. Without the retained holder the merged part records version `U > R` and `z`
+reads defaults.
 
 Test rules as before: tags with reasons, `timeout 60` around every `SYSTEM WAIT FAILPOINT`, traps that disable every
 failpoint and `wait`, `KILL … ASYNC` for parked queries, bounded polls, full test names on the command line.
@@ -144,8 +183,8 @@ failpoint and `wait`, `KILL … ASYNC` for parked queries, bounded polls, full t
 ## 6. Size {#size}
 
 Source: `StorageMergeTree.{h,cpp}` (mutate lock scope; `selectPartsToMutate` end bound; `getMutationVersionForMergedPart`
-bound parameter; `removeCommittingBlock` trigger; `OPTIMIZE FINAL` retry; recovery guard; a `CommittingBlocksSnapshot
+bound parameter; `alter` retains the block holder; `OPTIMIZE FINAL` retry; recovery guard; a `CommittingBlocksSnapshot
 {blocks, watermark}` accessor), `MergeTreeMergePredicate.{h,cpp}` (watermark member; `canMergeParts` reservation rule;
-`getPatchesToApplyOnMerge` bounds; `firstReservationAfter`), `PatchPartsUtils.{h,cpp}` (watermark parameter or the caller
+`canUsePartInMerges` watermark rule; `getPatchesToApplyOnMerge` bounds; `firstReservationAfter`), `PatchPartsUtils.{h,cpp}` (watermark parameter or the caller
 filters before the call), `FailPoint.cpp` (one failpoint). Expected: about 100–150 changed lines in `src`. No new header,
 no gtest, no new object kind.
