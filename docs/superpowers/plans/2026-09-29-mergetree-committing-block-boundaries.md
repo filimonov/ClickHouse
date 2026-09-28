@@ -8,7 +8,7 @@
 
 **Tech Stack:** C++23 (ClickHouse), stateless bash tests (`tests/clickhouse-test`), failpoints, ninja in the worktree `~/workspace/ClickHouse/mt-pending-versions` (branch `fix/mergetree-committing-block-boundaries`, base b8749fd2dfd = upstream/master 13d023155c7 + #119155's two commits + a test timeout wrapper).
 
-**Spec:** `docs/superpowers/specs/2026-09-29-mergetree-committing-block-boundaries-design.md` (rev.1). Reference branch with reusable commits/tests: `fix/mergetree-pending-versions` (head 627c5c816dd) in the same worktree.
+**Spec:** `docs/superpowers/specs/2026-09-29-mergetree-committing-block-boundaries-design.md` (rev.2). Reference branch with reusable commits/tests: `fix/mergetree-pending-versions` (head 627c5c816dd) in the same worktree.
 
 ## Global Constraints
 
@@ -23,7 +23,7 @@
 
 ## Review Focus
 
-1. Update `U` allocated after the predicate's reservation copy and update `V > U` committed before its patch copy (spec §3): the merge must not materialize `V`. Pinned by 05298 (Task 4).
+1. A mutation allocated after the predicate's reservation copy and an insert activated before the parts are read (spec §1, late candidate): the new part must not be a merge candidate of that selection. Pinned by 05298 (Task 4). And the rename recovery interleaving (spec §2): a merge during the durable-rollback interval must not record a later update's version. Pinned by 05299 (Task 4).
 2. A mutation that throws after allocation (`mt_throw_after_mutation_commit`): its block is released by the holder's destructor with no lock held; a merge refused by that reservation proceeds afterwards. Pinned by 05295 (Task 5).
 3. `ALTER TABLE … MODIFY SETTING enable_block_offset_column = 0` while an update is parked: the mutation must still be postponed (no `supportsLightweightUpdate()` guard). Pinned by 05292 section 1 (Task 2).
 4. A `RENAME COLUMN` registered above a parked update: the merge that would materialize it is refused, not silently recorded. Pinned by 05296 arm 2 (Task 3).
@@ -99,6 +99,7 @@ CommittingBlocksSnapshot getCommittingBlocksSnapshot() const;   /// one lock_gua
 
 - [ ] **Step 1: copy both tests, run RED** (`build/test_task3_before.log`).
 - [ ] **Step 2: implement.**
+  - `canUsePartInMerges`, after the `currently_merging_mutating_parts` check: refuse a part with `info.min_block > reservations.watermark || info.getDataVersion() > reservations.watermark` ("Part {} was created after the snapshot this selection works with"): it was allocated after the reservation copy, so a version between the snapshot and it may be in no snapshot (spec §1, the late-candidate interleaving; the RED test is 05298 in Task 4, so Task 3 may implement this rule already but must say so).
   - `canMergeParts`, after the mutation-version comparison: `auto lo = min(left dv, right dv), hi = max(...)`; if `reservations.firstReservationAfter(lo)` is set and `≤ hi` → refuse with "Parts {} and {} have an allocated version {} between them that is not visible yet" (a mutation before registration or a lightweight update before its patch commit).
   - `getPatchesToApplyOnMerge`: `next_version = min over {storage.getNextMutationVersion(dv), *firstReservationAfter(dv) if set}` (0 means none for the first; treat as infinity when combining), and drop patches with `getDataVersion() > reservations.watermark` before calling `DB::getPatchesToApplyOnMerge` (comment: spec §3 reason, four lines).
   - Constructor: `reservations(storage.getCommittingBlocksSnapshot())` in the initializer list, comment that it must precede the body's patch read and why.
@@ -107,25 +108,21 @@ CommittingBlocksSnapshot getCommittingBlocksSnapshot() const;   /// one lock_gua
 
 ---
 
-### Task 4: The watermark counterexample test (spec §3) — failing first
+### Task 4: The two rev.2 counterexamples — failing first, then the retained holder
 
 **Files:**
-- Modify: `src/Common/FailPoint.cpp` (`PAUSEABLE_ONCE(mt_merge_predicate_pause_after_reservation_snapshot)`), `MergeTreeMergePredicate.cpp` (pause between the reservation copy and the patch read: first statement of the constructor body, with the `extern` declaration)
-- Create: `tests/queries/0_stateless/05298_merge_does_not_materialize_patch_above_watermark.{sh,reference}` via `add-test` (number may differ)
+- Modify: `src/Common/FailPoint.cpp` (`PAUSEABLE_ONCE(mt_merge_predicate_pause_after_reservation_snapshot)`, `PAUSEABLE_ONCE(mt_alter_pause_before_durable_rollback)`), `MergeTreeMergePredicate.cpp` (pause as the first statement of the constructor body, `extern` declaration), `src/Storages/StorageMergeTree.cpp` (`alter`: move the block holder out of `prepared` before `addPreparedMutationEntry`, keep it in a local declared before the `try` that publishes, so it dies after publication on success and after the recovery block on failure; pause failpoint at the recovery interval right after `background_lock.unlock()`)
+- Create: `tests/queries/0_stateless/05298_merge_ignores_parts_created_after_the_snapshot.{sh,reference}` and `05299_alter_rollback_keeps_rename_reserved.{sh,reference}` via `add-test` (numbers may differ)
 
-- [ ] **Step 1: the test.** `SYSTEM STOP MERGES`; table with `enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0`; two inserted parts (ids 0..999 and 1000..1999, `v = 1`); enable the pause failpoint; `OPTIMIZE TABLE … FINAL` in the background; `wait_failpoint` on it (the explicit OPTIMIZE constructs the predicate; merges are stopped so no background selection consumes the ONCE); while paused: enable `mt_lightweight_update_pause_after_block_allocation`, run `UPDATE … SET v = 2 WHERE id < 1000` (U) in the background, `wait_failpoint`; run `UPDATE … SET v = 3 WHERE id >= 1000` (V) to completion (foreground; it must not wait for U — confirm; if it does, report); disable the predicate pause; `wait` OPTIMIZE; disable the update pause; `wait` U; assert `SELECT countIf(v = 2), countIf(v = 3) FROM t` → `1000	1000` and one regular active part. Then, to make the RED unambiguous, disable the watermark filter temporarily? No: run the test on the Task 3 binary (no watermark yet) → expected RED: `countIf(v = 2)` = 0 (U lost). Record the excerpt.
-- [ ] **Step 2: watermark is already in Task 3's code?** If Task 3 implemented the watermark filter, this test is GREEN immediately: then Task 3's implementer must have left the watermark OUT (this plan asks Task 3 to include it). Decision for the executor: Task 3 implements everything EXCEPT the watermark filter; Task 4 adds the failpoint, the test (RED), then the two-line watermark filter (GREEN). Adjust Task 3's commit accordingly.
-- [ ] **Step 3: build, restart, GREEN** for 05298 and the previous set. Commit: "Never materialize on a merge a patch above the watermark of the reservation snapshot".
+- [ ] **Step 1: 05298 (late candidate), RED if Task 3 did NOT implement the candidate watermark.** `SYSTEM STOP MERGES`; `CREATE TABLE t (id UInt64) ENGINE = MergeTree ORDER BY id`; `INSERT (1)` (part P, block 1); enable the predicate pause; `OPTIMIZE TABLE t FINAL` in the background; `wait_failpoint`; in the background `DELETE FROM t WHERE id = 2` with `lightweight_delete_mode = alter_update`, `lightweight_deletes_sync = 0` (allocates version 2, blocks on the background mutex at registration — verify with a bounded poll on `system.processes` that it is running); `INSERT (2)` (part Q, block 3, foreground; needs no background mutex); disable the predicate pause; `wait` OPTIMIZE and the DELETE; wait until the mutation is done; assert `SELECT count() FROM t WHERE id = 2` → 1 and list active parts. If the DELETE does not stay blocked (registration path changed), report. RED evidence: `count() = 0` without the candidate rule.
+- [ ] **Step 2: 05299 (rename recovery), RED before the retained holder.** Failpoints `mt_alter_throw_after_mutation_registered`, `mt_alter_pause_before_durable_rollback`, `mt_alter_throw_in_durable_rollback`; table `(id UInt64, x String, y UInt64)` with `enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0`, two parts with `x = 'a'`/`'b'`, `y = 1`; `ALTER TABLE t RENAME COLUMN x TO z SETTINGS alter_sync = 2` in the background (fails with FAULT_INJECTED at the end); `wait_failpoint` on the pause; while paused: `UPDATE t SET y = 2 WHERE 1` with `enable_lightweight_update = 1` (foreground, commits its patch); `OPTIMIZE TABLE t FINAL` (foreground; with the fix it is refused or leaves the parts, without it the merge records version U); disable the pause; `wait`; wait for mutations to finish; assert `SELECT z, y, count() FROM t GROUP BY z, y ORDER BY z` → `a 2 N` / `b 2 N` (values kept under the new name, update applied). RED evidence: `z` reads `''` for the merged rows.
+- [ ] **Step 3: implement** the candidate watermark if not already in Task 3, and the retained holder in `alter`. Build, restart, GREEN for 05298, 05299 and the previous set (05291, 05292, 05294, 05296, 05227, 04309, 04312). Commits: "Ignore parts created after the reservation snapshot when selecting a merge" (if Task 3 did not) and "Keep the rename mutation's block reserved until the alter is published or rolled back".
 
----
+### Task 5: The failure/kill pins
 
-### Task 5: Wake-ups and the failure/kill pins
+**Files:** tests `05295_pending_version_failure_cleanup.{sh,reference}` copied from the reference branch (arm 1: a mutation that throws after allocation releases its block, `OPTIMIZE FINAL` then succeeds; arm 2: `KILL MUTATION` of a registered mutation leaves a paused one intact).
 
-**Files:** `src/Storages/StorageMergeTree.cpp` (`removeCommittingBlock`: trigger for `Mutation` too, comment updated), tests `05295_pending_version_failure_cleanup.{sh,reference}` copied (both arms are pins on this design; arm 1 exercises the block release on failure).
-
-- [ ] Copy 05295, run (expected GREEN as a pin; if arm 1 shows `CANNOT_ASSIGN_OPTIMIZE`, a block leaked — report), implement the trigger, build, restart, run 05295 + previous set. Commit: "Wake up merge selection when a mutation releases its block number".
-
----
+- [ ] Copy 05295, run (expected GREEN as a pin on this design — no code change; if arm 1 shows `CANNOT_ASSIGN_OPTIMIZE`, a reservation leaked: report BLOCKED). Commit: "Test that a failed mutation releases its block number and that `KILL MUTATION` ignores an unregistered one".
 
 ### Task 6: `OPTIMIZE FINAL` retry (R4) and the recovery guard
 
