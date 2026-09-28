@@ -7,7 +7,7 @@ title: 'MergeTree: uncommitted block reservations as version boundaries — desi
 doc_type: 'reference'
 ---
 
-# MergeTree: uncommitted block reservations as version boundaries — design (rev.5) {#design}
+# MergeTree: uncommitted block reservations as version boundaries — design (rev.6) {#design}
 
 Scope: plain `StorageMergeTree` only (`ReplicatedMergeTree` orders mutations through the queue and
 `havePendingPatchPartsForMutation`). Target: one upstream pull request built on top of
@@ -38,7 +38,15 @@ across the reservation snapshot. Any lengthening of a lock's hold needs its own 
 make the MVCC neighbours of the parts lock (inserts, part commits, patch commits) wait behind merge
 selection; an epoch check keeps every lock exactly as short as today and detects the one thing the cut
 needs to exclude, a publication between the two captures. The lock-overlap form is kept in §1 as the
-rejected alternative with its cost.
+rejected alternative with its cost. rev.6 (after design review round 4, `design_review_r4.md`): the epoch is a
+**boundary-handoff epoch**, advanced only by publications that can retire a reservation predating the
+captured parts (patch activation of an `Update`, activation of a split-phase `NewPart`), never by an ordinary
+insert, so a hot insert stream cannot starve selection; publication means the `PreActive → Active` transition
+in `MergeTreeData::Transaction::commit` (plus `restoreAndActivatePart` and `swapActivePart`), not the
+temporary-part rename; `Op::NewPart` is a boundary when its allocation and activation are not one parts-lock
+critical section, which today is `MOVE PARTITION TO TABLE` (the review gives a data-loss interleaving that
+exists without any of our changes); validation exhaustion is `CANNOT_SELECT`, never `NOTHING_TO_MERGE`; the
+rule-3 bound is exclusive; the test hooks (`S2c`, `S3e` retry arm, backoff hook) are named.
 
 ## 0. Three races, one cause {#cause}
 
@@ -96,15 +104,25 @@ the parts capture and the reservation snapshot**. A reservation allocated in the
 part (block numbers come from one increment) and needs no consideration; a reservation released in the gap
 without a publication is a failed operation, and an older snapshot is merely conservative.
 
-So the cut is validated, not locked: `StorageMergeTree` keeps a `publication_epoch` (a 64-bit atomic)
-incremented under the data-parts lock by every part and patch publication (`renameTempPartAndReplace` and its
-`Unlocked` sibling, the single place every insert, merge, mutation and patch commit goes through). A
-selection attempt reads the epoch **inside** the data-parts read lock together with the parts and patches,
-releases the lock exactly as today, snapshots `VersionReservations` under `committing_blocks_mutex`, and
-re-reads the epoch. Equal epochs mean no publication happened between the two captures and the bundle is
-coherent. A changed epoch means the attempt recaptures (bounded, three tries); if it still changes, the
-attempt returns "nothing to merge" for this tick with a Debug line, which is not destructive and is what a
-refused range already does today. Mutation selection uses the same validation with parts only.
+So the cut is validated, not locked. Validation uses a `boundary_publication_epoch` (a 64-bit atomic in
+`StorageMergeTree`), not an epoch advanced by every ordinary part publication. It is advanced only by
+publication events that can retire a reservation which may predate the captured part set: activation of a
+patch part for an `Update`, and activation of any split-phase `NewPart` retained as a boundary. An ordinary
+insert whose allocation and activation occur in one parts-lock critical section does not advance it; if it
+starts after the capture, its version is above every captured input and cannot invalidate the decision.
+Publication means the transition that makes a part visible to the captured active-part set: the
+`PreActive → Active` step in `MergeTreeData::Transaction::commit`, and the two direct activations
+`restoreAndActivatePart` and `swapActivePart`; the temporary-part rename and `PreActive` insertion
+(`renameTempPartAndReplaceImpl` → `preparePartForCommit`) are not publication points, because they happen
+before the selector's first read. A selection attempt reads the epoch **inside** the data-parts read lock
+together with the parts and patches, releases the lock exactly as today, snapshots `VersionReservations`
+under `committing_blocks_mutex`, and re-reads the epoch. Equal epochs mean no relevant handoff happened
+between the two captures and the bundle is coherent. A changed epoch means the attempt recaptures (three
+in-call tries bound the CPU work; they do not claim progress under an adversarial stream of relevant
+handoffs, which are rare by construction). Validation exhaustion is not reported as `NOTHING_TO_MERGE`:
+background selection records the retry and requests an immediate later attempt without increasing the
+normal no-work backoff; explicit `OPTIMIZE` returns `CANNOT_SELECT` with a transient "part set changed while
+capturing merge inputs" explanation. Mutation selection uses the same validation with parts only.
 
 Why this is simpler and safer than the alternative: no lock is held longer than today, so inserts, part
 commits and patch commits (the MVCC neighbours of the parts lock) never wait behind merge selection; the
@@ -114,6 +132,8 @@ the reservation snapshot (lock order background mutex → parts lock → `commit
 insert commit already has), is also correct, but it lengthens a hot lock by the reservation copy on every
 selection and would need an enumeration of every writer that takes `committing_blocks_mutex` under
 `lockParts` and a bound on the wait it adds; the owner rejected lengthening any lock without that proof.
+A universal epoch bumped by every insert was also rejected (review round 4): a continually ready insert
+writer can publish inside every validation window, and no finite retry count or backoff proves progress.
 
 Consequences:
 
@@ -140,7 +160,11 @@ Consequences:
    round-2 late-reservation counterexamples.
 3. `getPatchesToApplyOnMerge` bounds the patches by `min(next registered version above dv, first reservation
    above dv)`, where `getNextMutationVersion(dv) == 0` means infinity and is treated as such before the
-   `min` (the raw `min` would yield 0, which `getPatchesToApplyOnMerge` reads as unbounded). This is the
+   `min` (the raw `min` would yield 0, which `getPatchesToApplyOnMerge` reads as unbounded). The bound is
+   **exclusive**: a patch whose data version equals the reservation is not applied (the existing helper
+   skips only `max_patch_version > bound`, which for registered mutations never hits equality because block
+   numbers are unique, but does when the bound is an in-flight update's own reservation and one partition's
+   patch has already been published). This is the
    per-range generalization of the existing `min_update_block` filter (`getPatchPartsByPartition` already
    excludes patches at or above the lowest pending update); the two must not coexist as independent rules.
    `canUsePartInMerges`'s `min_update_block` refusal stays in this change as the conservative superset;
@@ -149,10 +173,21 @@ Consequences:
    `Unknown` reservation is released, after `committing_blocks_mutex` is dropped (PR #119155 does this for
    `Update`). Successful registration already triggers, so the `Mutation` trigger matters for the failure
    path: a mutation that fails between allocation and registration releases its block without registering.
-5. `Op::NewPart` reservations are not boundaries: insert allocation, indexing into `data_parts_indexes` and
-   commit happen under `lockParts` (`MergeTreeSink`, `MergeTreeData::renameTempPartAndReplace`), so a
-   decision that captured parts sees either no allocation yet or the committed part, and `getMaxLevelInBetween`
-   guards indexed gaps. This holds only under the cut: parts captured before reservations.
+5. `Op::NewPart` is also a provisional boundary unless its allocation, insertion and `PreActive → Active`
+   publication occur in one uninterrupted data-parts write-lock critical section. Ordinary `INSERT`
+   (`MergeTreeSink::commitPart` holds the parts lock across `fillNewPartName`, `renameTempPartAndAdd` and
+   `Transaction::commit`), `ATTACH`, `REPLACE PARTITION` and restored-part attachment satisfy that condition;
+   `MOVE PARTITION TO TABLE` currently does not: the destination allocates `NewPart` reservations, inserts
+   the moved parts as `PreActive`, releases the destination parts lock for the disk renames, and commits
+   later. A merge of two active neighbours selected in that window spans the moved part's block; the
+   later commit then finds the covering part and marks the moved part `Outdated`, and the rows are active
+   in neither table (a loss that exists today, independent of this design; it gets its own issue and the
+   regression test below). `VersionReservations` therefore retains split-phase `NewPart` reservations, with
+   a precise part-publication postpone reason (`PENDING_PART_PUBLICATION = "Part with a lower block number
+   is not published yet"`) rather than misreporting them as mutations; a lock-nested `NewPart` (the ordinary
+   insert) is excluded from the snapshot only where the holder encodes that its allocation and activation
+   were one critical section. The simplest robust first implementation retains every `NewPart` and lets
+   `firstAfter` skip nothing; the optimized exclusion is a follow-up with its own proof per holder.
 
 ### Implementation shape {#shape}
 
@@ -187,8 +222,10 @@ load, `firstAfter` is a binary search per candidate part.
 Lock order is unchanged from today: `currently_processing_in_background_mutex` is held by both selectors;
 the data-parts read lock is taken and released for the capture exactly as `collectInitial` does now; then
 `committing_blocks_mutex` is taken briefly for the filtered copy. No lock is held longer, no lock is nested
-that is not nested today. The epoch increment sits under the data-parts write lock that publication already
-holds. `removeCommittingBlock` releases `committing_blocks_mutex` before the trigger.
+that is not nested today. The epoch increment sits inside `Transaction::commit` (and the two direct
+activations), under the data-parts write lock that publication already holds, and only for patch parts and
+split-phase `NewPart`s. `removeCommittingBlock` releases `committing_blocks_mutex` before the trigger; the
+trigger is load-bearing on the failure path only (registration already triggers on success).
 
 ### The lock fix, separately {#lock}
 
@@ -243,8 +280,9 @@ is disabled, so cancellation arms disable it right after the kill):
   DELETE B with `lock_acquire_timeout = 1` fails with `TIMEOUT_EXCEEDED` and `system.mutations` is empty;
   release A; wait for A done; run B again synchronously; count 0, two mutations done in id order. Before the
   fix the test additionally waits for B to complete while A is still paused, then releases A, and shows A
-  reported done with its rows surviving: the loss itself, not only the ordering. (Implemented as
-  `05054_mutations_register_in_order.sh`; verified red/green.)
+  reported done with its rows surviving: the loss itself, not only the ordering. (The ordering arm is
+  implemented as `05054_mutations_register_in_order.sh` and verified red/green; the loss arm is still to be
+  added to that test in the implementation plan.)
 - **S2 update vs mutation, cancellation arm** (rule 4): pause a lightweight `UPDATE` after its block
   allocation (PR #119155's failpoint); start `ALTER ... UPDATE` and observe `PENDING_LIGHTWEIGHT_UPDATE`;
   `KILL QUERY` the paused update, then disable the failpoint; no patch part is committed; the postponed
@@ -284,6 +322,14 @@ is disabled, so cancellation arms disable it right after the kill):
   materialize V across U. Without it U publishes and releases before the reservation capture and U is lost.
   A second arm pins the bounded retry: keep publishing (a background insert loop) while selection is paused,
   and assert the attempt gives up after three recaptures with the Debug line, without a merge.
+- **S5 split-phase `MOVE`** (consequence 5): pause `MOVE PARTITION TO TABLE` after destination
+  preactivation (a new `PAUSEABLE_ONCE` failpoint at the point where the destination parts lock is released);
+  commit a later destination insert; `OPTIMIZE` the destination partition; resume; the moved rows remain
+  active in the destination and absent from the source. Red today (the merge spans the moved part's block
+  and its commit marks it `Outdated`); green with `NewPart` retained as a boundary.
+- **S6 validation exhaustion is not success:** with `mt_merge_selecting_pause_after_epoch_read` and three
+  injected handoffs, explicit `OPTIMIZE` returns `CANNOT_SELECT` with the transient explanation, not a
+  silent no-op, and the background assignee schedules an immediate retry.
 - **S4 barrier `ALTER` vs in-flight mutation** (lock fix): pause DELETE before registration; `ALTER TABLE ...
   RENAME COLUMN` with `lock_acquire_timeout = 1` fails with `TIMEOUT_EXCEEDED`; release; the rename succeeds.
   Alias variant: the same `RENAME COLUMN` through a `StorageAlias` of the table. Both red before their fix.
@@ -292,8 +338,14 @@ is disabled, so cancellation arms disable it right after the kill):
   bound `lower_bound(firstAfter(dv)->number)` against a small `current_mutations_by_version`, and the rule-3
   upper bound with `getNextMutationVersion(dv) == 0` (infinity) and patches below, at and above the
   reservation.
-- **S2 note:** the release trigger cannot be proven with `mt_merge_selecting_task_pause_when_scheduled`
-  (disabling it permits progress by itself); it uses the same long-backoff hook as S3d.
+- **Test hooks, named:** `mt_assignee_force_long_backoff` (`PAUSEABLE`): while enabled,
+  `BackgroundJobsAssignee::postpone` uses the maximum backoff, so a completion inside the test bound can only
+  come from an explicit `trigger`; S2's cancellation arm and S3d use it. `mt_merge_selecting_pause_after_epoch_read`
+  (`PAUSEABLE`): pauses a selection attempt between the first epoch read and the reservation snapshot; S3b,
+  S3c, S3e use it, and S3e's retry-exhaustion arm counts three injected relevant handoffs, one acknowledged per
+  attempt, instead of a background insert loop (which does not hit the narrow window deterministically).
+  `mt_mutate_task_pause_in_prepare` (existing) holds K applied-but-not-finished in S2c so K < U < M cannot
+  collapse before the observation.
 
 ## 4. Why the rule is sound, and what it does not claim {#argument}
 
@@ -343,14 +395,17 @@ is disabled, so cancellation arms disable it right after the kill):
 - The remaining review items (S1's pre-fix loss check in the existing test, S2c holding K pending
   explicitly) are carried into the implementation plan and code review.
 
-## 6. Questions for review round 4 {#questions-r4}
+## 6. Settled in review round 4 {#settled-r4}
 
-1. Is the epoch-validated cut sound? Enumerate every publication path that must bump `publication_epoch`
-   (`renameTempPartAndReplace`, `renameTempPartAndReplaceUnlocked`, patch commits, `ATTACH`, `REPLACE
-   PARTITION`, `MOVE`, fetch/clone paths of plain MergeTree) and say whether one site in `MergeTreeData`
-   covers them all; name any publication that bypasses it.
-2. Is a bounded recapture (three tries, then "nothing this tick") acceptable, or can a hot insert stream
-   starve merge selection forever on a busy table? If so, what bound or backoff makes it safe without
-   lengthening locks?
-3. Does the epoch also make `selectPartsToMutate`'s cut sound, given the mutate path reads parts once without
-   a patch snapshot?
+- Publication inventory: ordinary insert, patch insert, mutation commit, `ATTACH`, `REPLACE PARTITION` and
+  restored clone use rename plus `Transaction::commit`; merge and `MOVE` separate preactivation from commit;
+  `restoreAndActivatePart` and `swapActivePart` bypass rename. The common visible transition is activation in
+  `Transaction::commit`; the two direct activations are the exceptions and get the increment too.
+- A universal insert-bumped epoch can starve selection forever; the boundary-handoff epoch above is the
+  answer, with `CANNOT_SELECT` on exhaustion.
+- The epoch protocol is sufficient for `selectPartsToMutate` although it captures no patches: a pending
+  update either remains a reservation and bounds the target, publishes in the gap and invalidates the
+  capture, or published before the capture and is included later by `MutateTask::prepare`'s patch snapshot;
+  updates allocated after validation are above every selected version.
+- Separate upstream issue to file from this review: the `MOVE PARTITION TO TABLE` split-phase loss of §1
+  consequence 5, with test S5.
