@@ -13,7 +13,6 @@ labels:
   - 'complexity:small'
   - 'risk:low'
   - 'touches:settings'
-  - 'confidence:solid'
   - 'origin:issue'
   - 'confidence:contested'
 milestone: m-8
