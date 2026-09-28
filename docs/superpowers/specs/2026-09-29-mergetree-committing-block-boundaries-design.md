@@ -69,8 +69,10 @@ after the snapshot (`MergeTreePartsCollector` runs after the predicate is constr
 under the parts lock without the background mutex, so a part created after the snapshot can enter the candidate set
 while a version allocated between the snapshot and that part is in no snapshot (design review of rev.1: mutation `2`
 allocated after the snapshot, insert `3` activated, merge of `1` and `3` selected, `2` later deletes rows of block `3`).
-Hence the **watermark** (§3) also bounds the candidates: a part whose `min_block` or data version is above the watermark
-is not a candidate of this selection. It is *filtered out* before the partition-wide checks (`MergeTreePartsCollector`
+Hence the **watermark** (§3) also bounds the candidates: a part whose `min_block` is above the watermark is not a
+candidate of this selection. (`min_block`, not the data version: a restored or attached part keeps a mutation version
+from its source table that can be above this table's block counter, and it must stay mergeable; a part whose blocks
+were all allocated after the snapshot is exactly the late candidate.) It is *filtered out* before the partition-wide checks (`MergeTreePartsCollector`
 drops it from the initial set), not refused: refusing it would make `OPTIMIZE FINAL` fail whenever an insert lands
 between the snapshot and the collection, because `FINAL` requires every part of the partition to be usable
 (confirmation round of rev.2). The filtered parts are the newest ones; a `FINAL` under a concurrent insert stream never
