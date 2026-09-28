@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@filimonov'
 created_date: '2026-07-31'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -13,6 +13,10 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:canary'
+  - '>-'
+  - 'https://github.com/Altinity/ClickHouse/issues/2343'
+  - docs/superpowers/cas/umbrella-roadmap.md
+  - 'theme:parity'
 dependencies: []
 references:
   - >-

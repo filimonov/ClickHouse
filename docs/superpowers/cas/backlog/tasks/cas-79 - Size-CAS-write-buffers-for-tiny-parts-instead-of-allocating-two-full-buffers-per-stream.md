@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -15,6 +15,9 @@ labels:
   - 'needs:measurement'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - '>-'
+  - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f18
+  - 'theme:parity'
 dependencies: []
 references:
   - >-

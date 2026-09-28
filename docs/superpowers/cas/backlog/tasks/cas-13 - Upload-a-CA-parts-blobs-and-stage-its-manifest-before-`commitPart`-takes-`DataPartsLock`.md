@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:write-path'
   - 'complexity:large'
@@ -15,6 +15,11 @@ labels:
   - 'confidence:solid'
   - 'needs:spec'
   - 'origin:review'
+  - src/Storages/MergeTree/MergeTreeSink.cpp
+  - src/Storages/MergeTree/ReplicatedMergeTreeSink.cpp
+  - '>-'
+  - docs/superpowers/cas/umbrella-roadmap.md
+  - 'theme:parity'
 dependencies: []
 references:
   - src/Storages/MergeTree/MergeTreeSink.cpp

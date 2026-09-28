@@ -8,7 +8,7 @@ assignee:
   - '@ilejn'
   - '@filimonov'
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:read-path'
   - 'area:upstream'
@@ -18,6 +18,7 @@ labels:
   - 'confidence:plausible'
   - 'needs:measurement'
   - 'origin:issue'
+  - 'theme:parity'
 milestone: m-8
 dependencies: []
 references:

@@ -4,13 +4,18 @@ title: Derive the part-file route and view once per read open
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:read-path'
   - 'complexity:small'
   - 'risk:low'
   - 'confidence:solid'
   - 'origin:2031-triage'
+  - CAS-16
+  - src/Disks/DiskObjectStorage/DiskObjectStorage.cpp
+  - '>-'
+  - docs/superpowers/cas/2031-triage.md#cas-118
+  - 'theme:parity'
 dependencies:
   - CAS-16
 references:

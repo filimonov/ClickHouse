@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -14,6 +14,7 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'theme:parity'
 milestone: m-2
 dependencies: []
 references:

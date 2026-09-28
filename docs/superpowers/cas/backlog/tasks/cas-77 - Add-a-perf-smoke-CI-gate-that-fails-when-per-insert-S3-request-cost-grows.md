@@ -4,13 +4,16 @@ title: Add a perf-smoke CI gate that fails when per-insert S3 request cost grows
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:ci'
   - 'area:testing'
   - 'complexity:medium'
   - 'risk:low'
   - 'confidence:plausible'
+  - CAS-17
+  - ci/defs/job_configs.py
+  - 'theme:parity'
 dependencies:
   - CAS-17
 references:

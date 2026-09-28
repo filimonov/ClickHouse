@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -15,6 +15,7 @@ labels:
   - 'confidence:solid'
   - 'origin:soak'
   - 'origin:2031-triage'
+  - 'theme:parity'
 milestone: m-1
 dependencies: []
 references:

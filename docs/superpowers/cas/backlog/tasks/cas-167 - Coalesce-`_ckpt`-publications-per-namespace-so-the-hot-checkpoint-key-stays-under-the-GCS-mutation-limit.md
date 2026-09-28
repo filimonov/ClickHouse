@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:ref-ledger'
   - 'area:gcs'
@@ -18,6 +18,7 @@ labels:
   - 'origin:soak'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'theme:parity'
 milestone: m-2
 dependencies:
   - DRAFT-26

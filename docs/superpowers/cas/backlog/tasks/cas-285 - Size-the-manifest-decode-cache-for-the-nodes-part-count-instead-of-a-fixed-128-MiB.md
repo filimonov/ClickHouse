@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-09-28 16:46'
 labels:
   - 'area:read-path'
   - 'complexity:small'
@@ -16,6 +16,7 @@ labels:
   - 'needs:measurement'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'theme:parity'
 milestone: m-2
 dependencies: []
 references:
