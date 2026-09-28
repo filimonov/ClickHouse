@@ -31,13 +31,13 @@ String appendMarker(std::string_view name)
     return result;
 }
 
-UInt64 stripMarker(String & name)
+UInt64 parseMarker(std::string_view name)
 {
     if (name.empty() || name.back() != ')')
         return 0;
 
     const size_t marker_pos = name.rfind(MARKER_PREFIX);
-    if (marker_pos == String::npos)
+    if (marker_pos == std::string_view::npos)
         return 0;
 
     const size_t first_digit = marker_pos + MARKER_PREFIX.size();
@@ -52,7 +52,6 @@ UInt64 stripMarker(String & name)
     if (result.ec != std::errc{} || result.ptr != end)
         return 0;
 
-    name.resize(marker_pos);
     return std::min<UInt64>(version, DBMS_ANTALYA_PROTOCOL_VERSION);
 }
 

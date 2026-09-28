@@ -15,8 +15,8 @@ namespace AntalyaProtocol
 
 String appendMarker(std::string_view name);
 
-/// Removes a valid trailing marker and returns the negotiated version, or `0` if there is no marker.
-UInt64 stripMarker(String & name);
+/// Returns the negotiated version, or `0` if there is no marker.
+UInt64 parseMarker(std::string_view name);
 
 }
 

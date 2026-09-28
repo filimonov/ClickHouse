@@ -25,12 +25,10 @@ TEST(AntalyaProtocol, RejectsInvalidMarkers)
     };
 
     for (auto name : rejected)
-        EXPECT_EQ(stripMarker(name), 0u) << "should not have parsed: " << name;
+        EXPECT_EQ(parseMarker(name), 0u) << "should not have parsed: " << name;
 }
 
-TEST(AntalyaProtocol, StripsMarkerAndCapsVersion)
+TEST(AntalyaProtocol, ParsesMarkerAndCapsVersion)
 {
-    String marked = "ClickHouse server (antalya:999999999)";
-    EXPECT_EQ(stripMarker(marked), static_cast<UInt64>(DBMS_ANTALYA_PROTOCOL_VERSION));
-    EXPECT_EQ(marked, "ClickHouse server");
+    EXPECT_EQ(parseMarker("ClickHouse server (antalya:999999999)"), static_cast<UInt64>(DBMS_ANTALYA_PROTOCOL_VERSION));
 }

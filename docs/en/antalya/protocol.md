@@ -17,7 +17,7 @@ the `ServerHello` name string, on every connection:
 server -> client   "ClickHouse (antalya:1)"
 ```
 
-The client strips the suffix, caps the value with `min(own, server)` and keeps the result. `0` means
+The client parses the suffix, caps the value with `min(own, server)` and keeps the result. `0` means
 the peer is not an Antalya build. Negotiation is per hop and not transitive: initiator to worker and
 worker to worker negotiate independently.
 
