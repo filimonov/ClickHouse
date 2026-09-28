@@ -1,5 +1,5 @@
 ---
-description: 'Design for one MergeTree rule that closes three mutation-ordering races on plain MergeTree: an uncommitted block reservation of a mutation or lightweight update is a provisional mutation version that no mutation, merge or patch selection may cross.'
+description: 'Design for one MergeTree rule that closes three mutation-ordering races on plain MergeTree: an uncommitted block reservation of a mutation or lightweight update is a version boundary that no mutation, merge or patch selection may cross.'
 sidebar_label: 'MergeTree uncommitted version boundary'
 sidebar_position: 41
 slug: /superpowers/specs/2026-09-28-mergetree-uncommitted-version-boundary-design
@@ -7,13 +7,21 @@ title: 'MergeTree: uncommitted block reservations as version boundaries — desi
 doc_type: 'reference'
 ---
 
-# MergeTree: uncommitted block reservations as version boundaries — design (rev.1) {#design}
+# MergeTree: uncommitted block reservations as version boundaries — design (rev.2) {#design}
 
 Scope: plain `StorageMergeTree` only (`ReplicatedMergeTree` orders mutations through the queue and
 `havePendingPatchPartsForMutation`). Target: one upstream pull request built on top of
 https://github.com/ClickHouse/ClickHouse/pull/119155 and superseding it, plus the same commits on
 `altinity/antalya-26.6`. Related issues: https://github.com/ClickHouse/ClickHouse/issues/122083,
 https://github.com/ClickHouse/ClickHouse/issues/116686, https://github.com/Altinity/ClickHouse/issues/2331.
+
+Revision history: rev.1 folded reservations into `getCurrentMutationVersion`/`getNextMutationVersion` and
+used one postpone reason. Codex design review round 1 (`docs/superpowers/reports/2026-09-28-cas-252-codex-reviews/design_review_r1.md`)
+accepted the invariant and asked for an explicit helper instead of overloaded accessors, distinct postpone
+strings, corrections to the lifetime argument, an honest scope for transactions and orphan files, the
+`StorageAlias` gap, and a test plan without the invalid "mirror" arm. A separate audit of PR #119155
+(`audit_119155.md`) found its guard skipped when `supportsLightweightUpdate()` is false, which a settings
+`ALTER` can make true while an update is in flight. rev.2 incorporates all of it.
 
 ## 0. Three races, one cause {#cause}
 
@@ -23,8 +31,8 @@ number) before the durable state that the number stands for becomes visible:
 | reservation | visible state it precedes | window |
 |---|---|---|
 | `Op::Mutation` | the entry in `current_mutations_by_version` | `prepareMutationEntry` (write `mutation_N.txt`) → `addPreparedMutationEntry` |
-| `Op::Update` | the patch part of a lightweight `UPDATE` | `allocateBlockNumber` in `updateLightweight` → patch part commit |
-| `Op::NewPart` | the inserted part | `allocateBlockNumber` → part commit |
+| `Op::Update` | the patch part of a lightweight `UPDATE` | `allocateBlockNumber` in `updateLightweight` → patch part commit (the holder lives in `MergeTreeSinkPatch`) |
+| `Op::NewPart` | the inserted part | `allocateBlockNumber` → part commit, both under `lockParts` |
 
 The selection logic consults only the visible state: `selectPartsToMutate` walks
 `current_mutations_by_version` from `upper_bound(part data version)` to `end()`; `MergeTreeMergePredicate::canMergeParts`
@@ -36,73 +44,78 @@ uses `getNextMutationVersion` from the same map. Every race below is one selecti
   applies to it (`upper_bound` skips it) and is reported done. Rows targeted by N survive. Root cause on top of
   the window: `StorageMergeTree::mutate` declares its alter lock in an `if` initializer, so the lock meant to
   serialize mutations with `ALTER`s is released before `startMutation` runs (upstream master has the same
-  lines).
+  lines). Reproduced from CI logs: two `DELETE`s 8 ms apart, `mutation_51` registered 1.1 ms before
+  `mutation_50`, one row of mutation 50 survived; and deterministically by the test in §3.
 - **R2, lightweight update vs mutation** (issue #116686, PR #119155). A mutation above an uncommitted
   `Op::Update` block mutates the part without the patch and writes a higher data version the patch no longer
   applies to. PR #119155 postpones the part in `selectPartsToMutate` when an `Op::Update` block lies at or
-  below the target version, and wakes the assignee when an `Update` block is released.
+  below the target version, and wakes the assignee when an `Update` block is released. Its guard is taken
+  only `if (supportsLightweightUpdate())`, which reads two table settings that a settings-only `ALTER` can
+  flip while an update still holds its reservation; the audit gives the interleaving that loses the update.
 - **R3, merge vs in-flight mutation** (found in review of R1's fix). Part P below an unregistered mutation
   block N and part Q inserted above N have equal `getCurrentMutationVersion` (N is not in the map yet), so
-  they may merge; the merged part takes P's data version; when N registers it applies to the merged part and
-  deletes rows inserted after it. The mirror (merged part above N) skips N forever. `canUsePartInMerges`
-  already guards the `Update` kind conservatively (`min_update_block`); nothing guards `Mutation`.
+  they may merge; the merged part takes P's data version (`mutation` is 0 for unmutated sources, so
+  `getDataVersion` is `min_block`); when N registers it applies to the merged part and deletes rows inserted
+  after it. `canUsePartInMerges` already guards the `Update` kind conservatively (`min_update_block`);
+  nothing guards `Mutation`.
 
 Fixing each race where it surfaces gives three loops over `committing_blocks` in three places, each with its
-own postpone reason and wake-up. This design replaces them with one rule.
+own postpone reason and wake-up. This design replaces them with one rule and one helper.
 
 ## 1. The rule {#rule}
 
-**An uncommitted `Mutation` or `Update` reservation is a provisional mutation version.** For every decision that
-compares or advances a part's data version, a reservation counts exactly like a registered mutation with that
-version, until its holder releases it. Consequences:
+**An uncommitted `Mutation` or `Update` reservation is a version boundary.** No mutation selection, merge or
+patch selection may produce a part whose data version crosses it, until its holder releases it.
+
+Consequences:
 
 1. `selectPartsToMutate` may apply to a part only the registered mutations below the first reservation above
-   the part's data version. If the part has pending registered mutations but all of them lie above such a
-   reservation, the part is postponed with one reason:
-   `UNCOMMITTED_LOWER_VERSION = "Waiting for a mutation or lightweight update with a lower block number to commit"`.
-   This subsumes PR #119155's `Op::Update` loop and the `Op::Mutation` bound of the first R1 fix.
-2. `MergeTreeMergePredicate::canMergeParts` compares the two parts' current mutation versions **including
-   reservations**: a reservation between the two data versions makes the versions differ, so the merge is
-   refused. This closes R3 and makes `canUsePartInMerges`'s `min_update_block` refusal a special case (kept
-   or removed per review, see §5).
-3. `getPatchesToApplyOnMerge` bounds the patches by the next version **including reservations**, so a merge
-   never applies a patch from above an uncommitted lower version.
+   the part's data version. A part whose pending registered mutations all lie above such a reservation is
+   postponed. The postpone reason names the kind of the reservation: `PENDING_LIGHTWEIGHT_UPDATE` (PR
+   #119155's string, unchanged) for `Update`, and a new `PENDING_MUTATION_REGISTRATION = "Waiting for a
+   mutation with a lower block number to be registered"` for `Mutation` and `Unknown`. This subsumes PR
+   #119155's `Op::Update` loop and drops its `supportsLightweightUpdate()` guard: the existence of a
+   reservation is authoritative, not the table's current eligibility to start a new update.
+2. `MergeTreeMergePredicate::canMergeParts` keeps its registered-version comparison and additionally refuses
+   the merge when a reservation lies in `(min(dv_left, dv_right), max(dv_left, dv_right)]`. Closes R3.
+3. `getPatchesToApplyOnMerge` bounds the patches by `min(getNextMutationVersion(dv), first reservation > dv)`,
+   so a merge never materializes a patch from above an uncommitted lower version.
 4. Liveness: `removeCommittingBlock` triggers `background_operations_assignee` when a `Mutation` or `Update`
-   reservation is released (PR #119155 does this for `Update`; registration of a mutation already triggers,
-   but a mutation that fails between allocation and registration releases its block without registering).
-5. `Op::NewPart` reservations are not version boundaries: an insert has no mutation semantics, and merges
-   across an uncommitted insert are governed by block ranges and `getMaxLevelInBetween`, unchanged here.
-   `Op::Unknown` is treated as a boundary, as `getMinUpdateBlockNumber` already does (conservative).
+   reservation is released, after `committing_blocks_mutex` is dropped (PR #119155 does this for `Update`;
+   a mutation that fails between allocation and registration releases its block without registering, so
+   registration's own trigger does not cover it).
+5. `Op::NewPart` reservations are not boundaries: insert allocation, indexing into `data_parts_indexes` and
+   commit happen under `lockParts` (`MergeTreeSink`, `MergeTreeData::renameTempPartAndReplace`), so a selector
+   sees either no allocation yet or the committed part, and `getMaxLevelInBetween` guards indexed gaps.
+   `Op::Unknown` is not produced by plain `StorageMergeTree` today; it is treated as a boundary, as
+   `getMinUpdateBlockNumber` already does.
+6. `canUsePartInMerges`'s `min_update_block` refusal is redundant once rules 2 and 3 hold (review, §3 answer 2)
+   but stays in this change: removing it permits merges wholly above a pending update and needs its own
+   below/above-boundary tests. Its removal is a follow-up, not part of the superseding pull request.
 
 ### Implementation shape {#shape}
 
-One snapshot, three accessors, no new data structure:
+One helper, one snapshot per decision, no new data structure, existing accessors untouched:
 
 ```cpp
-/// Uncommitted reservations that stand for a mutation version: mutations between file write and
-/// registration, lightweight updates between block allocation and patch commit.
-static bool isVersionReservation(const CommittingBlock & b)
-{
-    return b.op == CommittingBlock::Op::Mutation || b.op == CommittingBlock::Op::Update
-        || b.op == CommittingBlock::Op::Unknown;
-}
+/// Block reservations that stand for a mutation version not yet visible: a mutation between its
+/// file write and its registration, a lightweight update between block allocation and patch commit.
+using VersionReservations = std::vector<CommittingBlock>;   /// sorted by number, pre-filtered
 
-/// Highest committed or reserved mutation version <= data_version (0 if none).
-UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, const CommittingBlocksSet & reservations, lock) const;
-/// Lowest committed or reserved mutation version > data_version (0 if none).
-UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, const CommittingBlocksSet & reservations, lock) const;
+VersionReservations StorageMergeTree::getVersionReservations() const;   /// snapshot under committing_blocks_mutex
+/// The lowest reservation strictly above data_version, or nullptr.
+static const CommittingBlock * firstVersionReservationAfter(Int64 data_version, const VersionReservations & r);
 ```
 
-`MergeTreeMergePredicate` already holds `committing_blocks` (a snapshot taken in its constructor) and passes
-it to both accessors. `selectPartsToMutate` takes one snapshot per call (as PR #119155 does) and uses
-`getNextMutationVersion`-style logic for the end bound: `mutations_end_it = lower_bound(first reservation >
-part data version)`. The snapshot is taken under `currently_processing_in_background_mutex`, which is also
-held when a mutation registers and when its holder is destroyed, so a reservation cannot vanish between the
-snapshot and the decision without the decision seeing the registered entry (see §4 for the argument).
+`selectPartsToMutate` takes the snapshot once per call under `currently_processing_in_background_mutex` and
+sets `mutations_end_it = current_mutations_by_version.lower_bound(reservation->number)` per part (or `end()`).
+`MergeTreeMergePredicate` takes it in its constructor (where it already copies `committing_blocks`) and uses
+it in `canMergeParts` and `getPatchesToApplyOnMerge`. `getCurrentMutationVersion` and `getNextMutationVersion`
+keep describing registered mutations only; their other callers (`getIncompleteMutationsStatus`,
+`clearOldMutations`) stay correct because no part can cross a gap once the rule holds.
 
-The two-argument overloads of the accessors that read only the map remain for callers that hold no
-snapshot (`getIncompleteMutationsStatus`, `clearOldMutations`), which are correct as long as no part can
-cross a gap, which is exactly what the rule guarantees.
+Pre-filtering matters: `committing_blocks` is mostly `NewPart` entries under insert load, and the helper runs
+once per candidate part.
 
 ### The lock fix, separately {#lock}
 
@@ -110,80 +123,100 @@ cross a gap, which is exactly what the rule guarantees.
 documented contract "serialize order of mutations with alter queries" and, as a side effect, makes R1's
 inversion impossible for every mutation created through `mutate` (all user mutations, lightweight `DELETE`
 included; the `ALTER` path already registers under the lock `InterpreterAlterQuery` took). It is a distinct
-bug with a distinct commit; the rule above then covers R1 as defence in depth and covers any future creator
-of mutations that does not take the lock.
+bug with a distinct commit; rule 1 then covers R1 as defence in depth. Known exception: `StorageAlias::alter`
+forwards the alias's lock holder to the target instead of taking the target's alter lock, so a metadata
+`ALTER` issued through an alias can still overtake a mutation on the target between its file write and its
+registration. The pull request either takes the target's alter lock in `StorageAlias::alter` (preferred if
+small) or names this as a remaining exception with a follow-up issue.
 
 ## 2. What supersedes what {#supersedes}
 
-Built on top of PR #119155 with its commits kept (authorship preserved):
+Built on top of PR #119155 with its commits kept (authorship preserved), then:
 
 | PR #119155 piece | in this design |
 |---|---|
-| `Op::Update` loop in `selectPartsToMutate` | replaced by the reservation-aware end bound (rule 1) |
-| `PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE` | replaced by `UNCOMMITTED_LOWER_VERSION` (one reason for both kinds); its test's expected string changes |
-| `removeCommittingBlock` triggers on `Update` | extended to `Mutation` (rule 4) |
-| failpoint `mt_lightweight_update_pause_after_block_allocation` | kept, used by the tests |
-| test `05227_mutation_waits_for_lightweight_update.sh` | kept, expected reason string updated |
+| `Op::Update` loop in `selectPartsToMutate`, guarded by `supportsLightweightUpdate()` | replaced by the helper; guard dropped (audit finding 1) |
+| `PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE` | kept unchanged for `Update`; `PENDING_MUTATION_REGISTRATION` added |
+| `removeCommittingBlock` triggers on `Update` | extended to `Mutation` |
+| failpoint `mt_lightweight_update_pause_after_block_allocation` | kept |
+| test `05227_mutation_waits_for_lightweight_update.sh` | kept verbatim, plus a `timeout` around its `SYSTEM WAIT FAILPOINT` (audit finding 2) |
 
 Added: failpoint `mt_pause_once_before_register_mutation` (`PAUSEABLE_ONCE`; the existing
 `mt_pause_before_register_mutation` is `PAUSEABLE` and would hold every mutation, so it cannot hold one while a
-second one is observed), the lock fix, the merge-predicate and patch-selection changes, and the tests below.
+second one is observed), the lock fix, the merge-predicate and patch-selection changes, and the tests in §3.
+
+Commit order in the superseding pull request: (1) #119155's commits; (2) the helper and rule 1 with the guard
+drop and the new reason; (3) rule 2 and rule 3 in the merge predicate; (4) rule 4; (5) the lock fix; (6)
+tests. Each commit builds and its tests pass on their own.
 
 ## 3. Tests, failing first {#tests}
 
-One new stateless test, `NNNNN_mutations_do_not_cross_uncommitted_versions.sh` (number from `add-test` at
-rebase time), tags `no-parallel, no-replicated-database, no-shared-merge-tree`, deterministic (failpoints and
-polling on `system.mutations`, no sleeps as synchronisation, bounded `SYSTEM WAIT FAILPOINT`, cleanup in a
-trap that drops the table and disables both failpoints):
+`05227_mutation_waits_for_lightweight_update.sh` (PR #119155) stays as the R2 pin. One new stateless test,
+`NNNNN_mutations_do_not_cross_uncommitted_versions.sh` (number from `add-test` at rebase time), tags
+`no-parallel, no-replicated-database, no-shared-merge-tree`, deterministic (failpoints and polling on
+`system.mutations`/`system.parts`, no sleeps as synchronisation, every `SYSTEM WAIT FAILPOINT` under `timeout`,
+a trap that disables both failpoints, reaps background clients and drops the tables):
 
-- **S1 mutation vs mutation** (R1): pause DELETE A at `mt_pause_once_before_register_mutation`; DELETE B with
-  `lock_acquire_timeout = 1` must fail with `TIMEOUT_EXCEEDED` (lock fix); release; both done in order; count 0.
-  Red before the lock fix (B succeeds and A's rows survive).
+- **S1 mutation vs mutation** (R1, lock fix): pause DELETE A at `mt_pause_once_before_register_mutation`;
+  DELETE B with `lock_acquire_timeout = 1` fails with `TIMEOUT_EXCEEDED` and `system.mutations` is empty;
+  release A; wait for A done; run B again synchronously; count 0, two mutations done in id order. Red before
+  the lock fix: B succeeds while A is paused, A's rows survive. (Implemented and verified red/green on
+  `antalya-26.6` as `05054_mutations_register_in_order.sh`; it is this scenario.)
+- **S2 update vs mutation, cancellation arm** (rule 4): pause a lightweight `UPDATE` after its block
+  allocation (PR #119155's failpoint); start `ALTER ... UPDATE` and observe `PENDING_LIGHTWEIGHT_UPDATE`;
+  `KILL QUERY` the paused update; no patch part is committed; the postponed mutation wakes and completes
+  without a scheduler tick timeout. Red before rule 4 only if the wake-up is missing; otherwise it pins it.
+- **S2b guard drop** (audit finding 1): pause the update after allocation; `ALTER TABLE ... MODIFY SETTING
+  enable_block_offset_column = 0`; start the mutation; it must still be postponed with
+  `PENDING_LIGHTWEIGHT_UPDATE`; re-enable the setting, release, both applied. Red on PR #119155 as is.
+- **S3 merge vs in-flight mutation** (R3, rule 2): `INSERT (0)`; pause DELETE `WHERE id = 1` before
+  registration; `INSERT (1)` (block above the mutation); `OPTIMIZE TABLE ... FINAL SETTINGS
+  optimize_throw_if_noop = 1` must throw (two active parts remain in `system.parts`); release; the mutation
+  applies to the first part only; `SELECT groupArray(id)` is `[0,1]`. Red before rule 2 (the merge happens,
+  the merged part keeps the first part's data version, and row 1 is deleted). A plain merge of unmutated
+  parts cannot advance above N, so there is no "mirror" arm; the above-boundary case is a patch case, below.
+- **S3b patch across a pending update** (rule 3): parts below a pending update U (paused after allocation),
+  a committed later lightweight update V above U; a merge of the parts must not materialize V's patch
+  (assert on `_part` data and `system.parts` after the merge), and after U commits both patches apply. Red
+  before rule 3.
+- **S4 barrier `ALTER` vs in-flight mutation** (lock fix): pause DELETE before registration; `ALTER TABLE ...
+  RENAME COLUMN` with `lock_acquire_timeout = 1` fails with `TIMEOUT_EXCEEDED`; release; the rename succeeds
+  afterwards. Red before the lock fix. An alias variant is added only if `StorageAlias::alter` is fixed in the
+  same pull request.
+- **Unit test** for `firstVersionReservationAfter`: classification of `NewPart`/`Mutation`/`Update`/`Unknown`,
+  reservations below and above the data version, several `NewPart`s in between, empty input.
 - Rule 1's `Mutation` arm has no SQL-reachable scenario once the lock fix is in (every creator of a mutation
-  holds the per-table alter lock), so it is covered by S3, by the argument in §4, and by a unit-level check
-  if the reviewer asks for one.
-- **S2 update vs mutation** (R2): PR #119155's test as is, with the new reason string.
-- **S3 merge vs in-flight mutation** (R3): `INSERT (0)`; pause DELETE `WHERE id = 1` before registration;
-  `INSERT (1)` (block above the mutation); `OPTIMIZE TABLE ... FINAL` must not merge the two parts (assert
-  `system.parts` still has two active parts, or `optimize_throw_if_noop = 1` throws); release; the mutation
-  applies to the first part only; `SELECT groupArray(id)` is `[0,1]`. Red before rule 2 (the merge happens
-  and row 1 is deleted). A second arm: `INSERT (0)` in a part; pause DELETE `WHERE id = 0`; `INSERT (2)`
-  above; `OPTIMIZE FINAL`; the mirror (merged part above N skips N) shows as `id = 0` surviving.
-- **S4 barrier `ALTER` vs in-flight mutation** (lock fix): pause DELETE before registration; `ALTER TABLE
-  ... RENAME COLUMN` with `lock_acquire_timeout = 1` must fail with `TIMEOUT_EXCEEDED`; release; rename
-  succeeds afterwards. Red before the lock fix (the rename proceeds and the mutation is interpreted against
-  the new metadata).
+  holds the per-table alter lock); it is covered by the unit test and by S3, which exercises the same
+  reservation from the merge side.
 
-## 4. Why the rule is sound {#argument}
+## 4. Why the rule is sound, and what it does not claim {#argument}
 
-- Reservation lifetime: `PlainCommittingBlockHolder` lives from `allocateBlockNumber` until the holder's
-  destructor removes the block. For a mutation the holder is destroyed after `addPreparedMutationEntry`
-  registered the entry, both under `currently_processing_in_background_mutex`; for an update the block is
-  released after the patch part is committed. So at every instant a version is either reserved, or
-  registered/committed, or both; never neither while in flight.
-- Every decision (mutation selection, merge predicate construction, patch selection) takes its snapshot of
-  `committing_blocks` while holding `currently_processing_in_background_mutex`, and consults the map under
-  the same lock. A reservation released before the snapshot has its entry visible in the map; a reservation
-  released after the snapshot is still in the snapshot. Either way the version is counted.
-- Block numbers come from one increment, so a reservation allocated after the snapshot is above every
-  version the decision can see, and no decision needs to see it: a part it selects has a data version below
-  it, and the later mutation or update applies to the result as usual.
-- Failure between allocation and registration: the holder is destroyed, the reservation disappears, the
-  gap is known never to register, and rule 4 wakes the assignee. Orphaned `mutation_N.txt` handling is
-  unchanged (`MergeTreeMutationEntry` removes it when unregistered).
+- Successful mutation registration transfers the entry into `current_mutations_by_version` and destroys its
+  reservation while holding `currently_processing_in_background_mutex`; every decision takes its snapshot
+  under the same mutex, so a decision sees the reservation, or the registered entry, or both, never neither.
+- A lightweight update's reservation is not released under that mutex: its holder lives in the patch sink
+  and outlives the patch part commit. A decision made before the release keeps the reservation in its
+  snapshot; a decision made after it can observe the committed patch part. Either way the version is counted.
+- Block numbers come from one increment, so a reservation allocated after a snapshot is above every version
+  the decision can see, and the later mutation or update applies to the decision's result as usual.
+- A failed operation releases its reservation without publishing state; a decision with an older snapshot
+  is merely conservative, and rule 4 wakes the assignee.
+- **Not covered by the rule, stated as scope:** (a) a mutation inside a transaction whose transaction rolls
+  back while the mutation is between file write and registration. Upstream master rechecks the transaction
+  after registration under the background mutex and removes the entry and its file; `antalya-26.6` lacks that
+  code, so the Antalya series backports it as a prerequisite commit with its test; the upstream pull request
+  relies on it. (b) A nontransactional `mutation_N.txt` left behind when registration fails and the file
+  removal fails or the process dies first: `loadMutations` treats every final file as registered after a
+  restart. The pull request reorders `PreparedMutationEntry` so the entry (and its file removal) is destroyed
+  before the block holder, which narrows the same-process gap, and states the restart limitation; a durable
+  distinction between "final file" and "registered mutation" is a separate change.
 
 ## 5. Open questions for review {#questions}
 
-1. Is it cleaner to fold reservations into `getCurrentMutationVersion`/`getNextMutationVersion` (this
-   design) or to keep them out of the accessors and add one explicit `firstReservationAbove(dv)` helper used
-   by the three sites? Which reads better to a MergeTree maintainer?
-2. With rule 2 in place, is `canUsePartInMerges`'s `min_update_block` refusal still needed (it refuses any part
-   at or above the lowest uncommitted update, even when both parts of a candidate merge are above it)? If it
-   is stricter for a reason (patch parts must not be applied on merge across an uncommitted update), say
-   which case rule 2 plus rule 3 would miss.
-3. Should `Op::NewPart` reservations be boundaries after all (a merge that spans an uncommitted insert's block
-   number)? If block ranges already forbid that merge, cite where.
-4. Transaction rollback in the mutation window (upstream master has a registration-time recheck; 26.6 does
-   not): in scope for the antalya branch, out of scope upstream?
-5. Is the single postpone reason acceptable to upstream, or should the two kinds keep distinct strings for
-   `system.mutations` consumers?
+1. Is dropping `supportsLightweightUpdate()` from the guard (rule 1) enough, or does `updateLightweight`
+   itself need to refuse a settings `ALTER` while it holds a reservation?
+2. Is `PENDING_MUTATION_REGISTRATION` the right name and string for the new reason, given that after the
+   lock fix it should never be observed through SQL?
+3. Should the `StorageAlias::alter` fix be in this pull request (it touches a third storage) or a follow-up?
+4. For the Antalya series: backport the upstream transaction recheck as the first commit, or land it as its
+   own pull request first?
