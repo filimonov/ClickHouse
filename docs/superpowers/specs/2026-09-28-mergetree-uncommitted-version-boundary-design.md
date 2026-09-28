@@ -7,7 +7,7 @@ title: 'MergeTree: pending versions under the selection mutex — design'
 doc_type: 'reference'
 ---
 
-# MergeTree: pending versions under the selection mutex — design (rev.8) {#design}
+# MergeTree: pending versions under the selection mutex — design (rev.9, final) {#design}
 
 Scope: plain `StorageMergeTree` only (`ReplicatedMergeTree` orders mutations through the queue and
 `havePendingPatchPartsForMutation`). Target: one upstream pull request built on top of
@@ -36,7 +36,14 @@ background mutex under a parts lock); `OPTIMIZE FINAL` rebuilds its predicate an
 that released the mutex; a barrier `ALTER` waits for a pending mutation to become registered before
 `waitForMutation`; the accessors are renamed to boundary terminology; the RAII guard has an explicit
 "erase while locked and disarm" operation; PR #119155's `removeCommittingBlock` wake-up is dropped in favour
-of the pending erase; pending insert/erase are logged at Debug.
+of the pending erase; pending insert/erase are logged at Debug. rev.9 (after the confirmation round,
+`design_review_r6.md`: every round-5 item closed except one): the barrier `ALTER` captures a **fence**
+(the highest registered or pending mutation version) and waits until no pending mutation at or below it
+remains, then waits for the highest registered mutation at or below it, so a failing highest pending
+mutation can no longer hide an earlier unfinished one; S7 gets a deterministic `MOVE` failure injection;
+S1 says explicitly that B is retried after A is released; §4 wording corrected (publication becomes visible
+under the data-parts lock, the background mutex serializes the later erase). The design is final; the rest
+is the implementation plan.
 
 ## 0. The races, restated {#races}
 
@@ -136,15 +143,18 @@ the set.
 `StorageMergeTree::mutate` keeps its alter lock until `startMutation` returns (two lines). This restores the
 documented contract "serialize order of mutations with alter queries" and makes R1's inversion impossible
 for every mutation created through `mutate`; the pending version then covers R1 as defence in depth. A
-barrier `ALTER` reads `rbegin` of the registered map to pick the mutation to wait for; it now also considers
-the highest pending **mutation** version. `waitForMutation` is map-only and treats an unregistered version as
-killed, so the barrier first waits, under the background mutex on
-`currently_processing_in_background_condition`, for the pending version to leave `pending_versions` (every
-registration, failure removal and rollback removal notifies that condition); then, under the same mutex, it
-checks whether the version was registered: if so it releases the mutex and calls `waitForMutation`; if not,
-preparation failed or rolled back and there is nothing to wait for. This lets an `ALTER` issued through
-`StorageAlias` (which forwards the alias's lock instead of taking the target's) wait for an in-flight
-mutation. `StorageAlias::alter` is left as is.
+barrier `ALTER` reads `rbegin` of the registered map to pick the mutation to wait for. `waitForMutation` is
+map-only and treats an unregistered version as killed, and a single selected pending version is not enough
+either (if the highest pending mutation fails, an earlier registered or pending one would be skipped). So
+the barrier captures a fence: under `currently_processing_in_background_mutex`, `barrier_version` = the
+highest registered or pending **mutation** version. It waits on `currently_processing_in_background_condition`
+until no pending mutation with version `<= barrier_version` remains (every registration, failure removal and
+rollback removal notifies that condition); then, under the same mutex, it finds the highest registered
+mutation with version `<= barrier_version`; if one exists it releases the mutex and calls `waitForMutation`
+on it, otherwise no mutation was successfully registered before the fence. Mutations allocated after the
+fence have higher versions and are not waited for. This lets an `ALTER` issued through `StorageAlias` (which
+forwards the alias's lock instead of taking the target's) wait for in-flight mutations. `StorageAlias::alter`
+is left as is.
 
 ### What stays as it is {#unchanged}
 
@@ -190,8 +200,8 @@ this series is based on the merged result (no stacked pull requests). Upstream r
 
 - **S1 mutation vs mutation** (R1, lock fix): pause DELETE A at `mt_pause_once_before_register_mutation`;
   DELETE B with `lock_acquire_timeout = 1` fails with `TIMEOUT_EXCEEDED` and `system.mutations` is empty;
-  release; both applied in order; count 0. Pre-fix arm: B completes while A is paused, A is then released
-  and reported done with its rows surviving. (Ordering arm implemented as `05054_mutations_register_in_order.sh`,
+  release A and wait for it; then B is retried and applied; count 0, two mutations done in id order.
+  Pre-fix arm: B completes while A is paused, A is then released and reported done with its rows surviving. (Ordering arm implemented as `05054_mutations_register_in_order.sh`,
   verified red/green; the loss arm is added in the plan.)
 - **S2 update vs mutation, guard-independent** (R2): PR #119155's scenario with `ALTER TABLE ... MODIFY
   SETTING enable_block_offset_column = 0` issued while the update is paused; the mutation is still postponed
@@ -223,8 +233,11 @@ this series is based on the merged result (no stacked pull requests). Upstream r
   its pending version; the merge is released; the retry must materialize the now-visible patch (its
   predicate was rebuilt). Red with the reused predicate.
 - **S7 failure cleanup**: mutation preparation failure after announcement (`mt_throw_after_mutation_commit`),
-  and `MOVE` failure after destination preactivation: no pending entry remains, the assignee is woken, and a
-  refused merge proceeds. Red if the guard leaks.
+  and `MOVE` failure after destination preactivation through a one-shot throw failpoint placed after the
+  pause and before `dest_transaction.commit()` (`mt_move_partition_throw_before_dest_commit`, `ONCE`): no
+  pending entry remains, the moved parts are not active in the destination and stay in the source, a merge
+  refused before the failure proceeds afterwards. Red if the guard leaks. Polling proves eventual progress;
+  immediate wake-up is proven only with the long-backoff hook if that claim is made.
 - **Unit test** for the boundary accessors with a mixed registered/pending set: below, equal and above the
   data version, empty set, the mutate end bound, the patch-equality case with the holder outliving the
   erase, and allocation-to-announcement atomicity for each kind (a selector-side observer must never see an
@@ -232,12 +245,13 @@ this series is based on the merged result (no stacked pull requests). Upstream r
 
 ## 4. Why it is sound, and what it does not claim {#argument}
 
-- Every selector runs under `currently_processing_in_background_mutex`; every insert into and erase from
-  `pending_versions` runs under it. A pending version is inserted after allocation and before the writer's
-  state can be crossed (before the file write for a mutation, before the patch write for an update, before
-  the destination lock is released for a move), and erased after that state is visible under the same mutex
-  in which registration, patch commit or move commit made it visible, or by RAII on failure. So at every
-  selection the version is pending, or visible, or (after a failure) gone with nothing to protect.
+- Every selector runs under `currently_processing_in_background_mutex`; allocation-with-announcement and
+  every erase from `pending_versions` run under it. A pending version exists from the moment its block is
+  allocated (before the file write for a mutation, before the patch write for an update, before the
+  destination lock is taken for a move) and is erased only after the writer's state became visible:
+  registration under the background mutex for a mutation; patch or moved-part activation under the
+  data-parts lock in `Transaction::commit`, after which the writer takes the background mutex to erase. So
+  at every selection the version is pending, or visible, or (after a failure) gone with nothing to protect.
 - Registered mutations and pending versions share one ordering (block numbers from one increment), so the
   accessors' `max`/`min` over both sets are well defined and `lower_bound` on the map at the first pending
   version above a part is the correct end of the applicable range.
