@@ -1,4 +1,4 @@
-# MergeTree: committing blocks as version boundaries — design (rev.3) {#design}
+# MergeTree: committing blocks as version boundaries — design (rev.4) {#design}
 
 Target: upstream `master` (13d023155c7) on top of the two commits of PR #119155, one pull request.
 Supersedes the mechanism of `2026-09-28-mergetree-uncommitted-version-boundary-design.md` (rev.10, the
@@ -58,9 +58,11 @@ hold) and read it as follows. `firstReservationAfter(dv)` = the lowest reservati
    pre-check would skip the refusal, pinned by test 05296). The caller passes the bound from the predicate's snapshot.
 4. `getPatchesToApplyOnMerge`: `next_version = min(getNextMutationVersion(dv), firstReservationAfter(dv))`, plus the
    watermark rule of §3.
-5. `removeCommittingBlock` keeps #119155's wake-up for `Update` only. A mutation's reservation is released inside
-   `addPreparedMutationEntry`, which triggers the assignee itself; a mutation that fails before registration is rare
-   and the scheduler's backoff tick covers it.
+5. `removeCommittingBlock` triggers `background_operations_assignee` for `Mutation` and `Update` reservations (after
+   `committing_blocks_mutex` is released): a released reservation removes a boundary that may have postponed a
+   mutation or a merge. The final review showed why the `Update`-only variant is not enough: `alter` releases its
+   rename mutation's reservation after the metadata is published (§2), and a selection that ran in between postponed
+   behind it; without a wake-up an `ALTER … RENAME COLUMN` with `alter_sync = 1` waits for the scheduler's backoff.
 
 Why a snapshot is enough (the monotonicity argument): block numbers come from one `SimpleIncrement`, so a version
 allocated after the snapshot is above every part, every registered mutation and every reservation that existed at the
@@ -167,7 +169,7 @@ of the update pipeline. The candidate side of the rule is reachable today and ha
 
 ## 5. Tests, failing first {#tests}
 
-Reused from the previous branch where their expectations hold on this design (renumbered by `add-test`):
+Implemented numbering (this branch): 05291 R1, 05292 R2, 05293 barrier pin, 05294 merge boundary, 05295 failure/kill pins, 05296 merged-part version cap, 05297 late candidate (real reproduction), 05298 rename recovery with the retained holder, 05299 `OPTIMIZE FINAL` retry (rebuild + metadata), plus the wake-up test of rule 5 and the restored-part merge pin added in the final fix wave. Reused from the previous branch where their expectations hold on this design:
 05291 (R1, red before the lock fix), 05292 (R2: settings-independent postponement, cancelled update wakes the mutation,
 truncation: a lower registered mutation applies while a higher one waits), 05293 (barrier vs paused mutation, pin),
 05294 (merge across a paused mutation refused; merge below a pending update keeps it applicable), 05295 (failed mutation
