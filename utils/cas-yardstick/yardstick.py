@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""CAS yardstick: the same workload cards on a CAS disk and on S3 disks, one server process per measurement."""
+import argparse
+import os
+import sys
+
+from yardstick import report as R
+from yardstick.cards import CARDS
+from yardstick.config import POLICIES
+from yardstick.runner import run
+
+DEFAULT_ENDPOINT = 'http://127.0.0.1:19121'
+DEFAULTS = dict(cards=['cycle'], scale=1.0, repeats=3, policies=list(POLICIES))
+SMOKE = dict(cards=list(CARDS), scale=0.01, repeats=1, policies=list(POLICIES))
+
+
+def _list(choices):
+    def parse(text):
+        items = [x for x in text.split(',') if x]
+        unknown = [x for x in items if x not in choices]
+        if unknown or not items:
+            raise argparse.ArgumentTypeError(f'expected a comma-separated subset of {",".join(choices)}')
+        return items
+    return parse
+
+
+def cmd_run(args):
+    smoke_conflicts = [name for name in SMOKE if getattr(args, name) is not None]
+    if args.smoke and smoke_conflicts:
+        sys.exit(f'--smoke fixes --{" --".join(smoke_conflicts)}; drop them')
+    for name, value in SMOKE.items():
+        if getattr(args, name) is None:
+            setattr(args, name, value if args.smoke else DEFAULTS[name])
+    args.external_endpoint = args.endpoint is not None
+    if args.external_endpoint and not args.keep_prefix:
+        sys.exit('--endpoint needs --keep-prefix: prefix removal only reaches the RustFS of rustfs.sh')
+    args.endpoint = args.endpoint or DEFAULT_ENDPOINT
+    return run(args)
+
+
+def cmd_report(args):
+    summary = R.read_summary(os.path.join(args.run_dir, 'summary.tsv'))
+    policies = [p for p in POLICIES if any(r['policy'] == p for r in summary)]
+    print(R.render_table(summary, [p for p in policies if not p.endswith('_cached')],
+                         [p for p in policies if p.endswith('_cached')]))
+    if args.diagnostics:
+        print(R.render_diagnostics(summary))
+    return 0
+
+
+def list_counters():
+    for metric, counters in R.AGGREGATES.items():
+        print(f'{metric}\t{" + ".join(counters)}')
+    print(f'CAS diagnostics\t{" ".join(R.CAS_DIAGNOSTICS)}')
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--list-counters', action='store_true', help='print the counters behind every aggregate')
+    sub = parser.add_subparsers(dest='command')
+
+    r = sub.add_parser('run', help='measure the cards')
+    r.add_argument('--binary', required=True)
+    r.add_argument('--cards', type=_list(list(CARDS)), help=f'default: {",".join(DEFAULTS["cards"])}')
+    r.add_argument('--policies', type=_list(POLICIES), help='default: all six')
+    r.add_argument('--repeats', type=int, help=f'default: {DEFAULTS["repeats"]}')
+    r.add_argument('--scale', type=float, help=f'default: {DEFAULTS["scale"]}')
+    r.add_argument('--gc', choices=['on', 'off'], default='on')
+    r.add_argument('--endpoint', help=f'an already running store instead of rustfs.sh on {DEFAULT_ENDPOINT}')
+    r.add_argument('--endpoint-version')
+    r.add_argument('--port-base', type=int, default=19700)
+    r.add_argument('--runs-dir', default='runs')
+    r.add_argument('--keep-prefix', action='store_true', help='keep the run\'s bucket prefix')
+    r.add_argument('--smoke', action='store_true',
+                   help='all cards, all policies, --scale 0.01, --repeats 1; exit 2 on any FAILED or unavailable cell')
+    r.set_defaults(func=cmd_run)
+
+    p = sub.add_parser('report', help='re-print the table of a finished run')
+    p.add_argument('run_dir')
+    p.add_argument('--diagnostics', action='store_true')
+    p.set_defaults(func=cmd_report)
+
+    args = parser.parse_args()
+    if args.list_counters:
+        return list_counters()
+    if args.command is None:
+        parser.error('a command is required')
+    return args.func(args)
+
+
+if __name__ == '__main__':
+    sys.exit(main())
