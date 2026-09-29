@@ -90,7 +90,7 @@ class Pairing(unittest.TestCase):
         return (rows_for('cas', 'GET', [83, 84, 83]) + rows_for('s3', 'GET', [12, 12, 12]) +
                 rows_for('cas', 'wall', [3.0, 3.1, 3.2]) + rows_for('s3', 'wall', [1.0, 1.0, 1.0]) +
                 rows_for('cas', 'median_op_ms', [12.5, 12.5, 12.5]) + rows_for('s3', 'median_op_ms', [4.0, 4.0, 4.0]) +
-                rows_for('cas', 'bytes_read', [1 << 20] * 3) + rows_for('s3', 'bytes_read', [1 << 19] * 3) +
+                rows_for('cas', 'bytes_read', [3 << 20] * 3) + rows_for('s3', 'bytes_read', [1 << 19] * 3) +
                 rows_for('cas', 'bytes_written', [1 << 21] * 3) + rows_for('s3', 'bytes_written', [1 << 20] * 3))
     def test_ratio_rows_are_per_repeat(self):
         summary = R.build_summary(self.rows())
@@ -103,7 +103,7 @@ class Pairing(unittest.TestCase):
         self.assertIn('6.92 (6.92..7.00)', table)            # ratio with range
         self.assertIn('83 (83..84)~', table)                  # cell range plus the request-variation mark
         self.assertIn('12.50', table)                         # median_op_ms rendered with a value
-        self.assertIn('1.0', table)                           # MiB_r cell of cas
+        self.assertIn('3.0', table)                           # MiB_r cell of cas; cannot match a wall cell
         self.assertIn('per unit', table); self.assertIn('GET=0.415', table)
     def test_zero_denominator_and_roundtrip(self):
         rows = rows_for('cas', 'PUT', [5, 5, 5]) + rows_for('s3', 'PUT', [0, 0, 0])
@@ -128,7 +128,17 @@ class Pairing(unittest.TestCase):
             R.build_summary(rows)
     def test_cached_block_skips_cards_without_rows(self):
         table = R.render_table(R.build_summary(self.rows()), ['cas', 's3'], ['cas_cached'])
-        self.assertNotIn('cached /', table)
+        self.assertIn('\nuncached\n', '\n' + table)
+        self.assertNotIn('\ncached\n', '\n' + table)
+        rows = self.rows() + rows_for('cas_cached', 'GET', [5, 5, 5], card='warm')
+        table = R.render_table(R.build_summary(rows), ['cas', 's3'], ['cas_cached'])
+        block = ('\n' + table).split('\ncached\n')[1]
+        self.assertIn('warm/cold', block)
+        self.assertNotIn('cycle/cold', block)
+    def test_scientific_notation_never_printed(self):
+        rows = rows_for('cas', 'GET', [16600, 16601], unit_count=1) + rows_for('s3', 'GET', [1, 1], unit_count=1)
+        table = R.render_table(R.build_summary(rows), ['cas', 's3'], [])
+        self.assertIn('16600.50', table); self.assertNotIn('e+', table)
     def test_diagnostics_s3_errors_and_empty(self):
         rows = rows_for('cas', 'S3ReadRequestsErrors', [2, 2, 2], unit_count=1)
         self.assertIn('S3ReadRequestsErrors', R.render_diagnostics(R.build_summary(rows)))

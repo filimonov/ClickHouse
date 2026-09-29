@@ -1,6 +1,7 @@
 """Report arithmetic for the CAS yardstick: counter aggregates, statistics, TSV files, tables.
 
-Counters are the disk-level ones (DiskS3*), which count requests per disk, not per process."""
+Requests are counted with the disk-level DiskS3* counters: the generic S3* counters overlap them,
+and some CAS paths increment only the disk-level ones."""
 import statistics
 from collections import OrderedDict
 
@@ -194,6 +195,10 @@ def _index(summary):
     return {(r['policy'], r['card'], r['phase'], r['metric']): r for r in summary}
 
 
+def _plain(v):
+    return f'{v:.6f}'.rstrip('0').rstrip('.')
+
+
 def _cards(summary):
     return list(OrderedDict(((r['card'], r['phase']), None) for r in summary))
 
@@ -203,7 +208,7 @@ def _num(v, metric):
         return f'{v:.2f}'
     if metric in ('MiB_r', 'MiB_w'):
         return f'{v:.1f}'
-    return str(int(v)) if v == int(v) else f'{v:.3g}'
+    return str(int(v)) if v == int(v) else f'{v:.2f}'
 
 
 def _cell(idx, policy, card, phase, metric):
@@ -237,15 +242,16 @@ def _grid(rows):
     return '\n'.join('  '.join(c.ljust(w) for c, w in zip(r, widths)).rstrip() for r in rows)
 
 
-def render_table(summary, policies_uncached, policies_cached, ratios_of=('cas', 's3', 's3plain')):
-    """Rows are card x phase; one column group per policy, then one ratio group per compared pair."""
+def render_table(summary, policies_uncached, policies_cached):
+    """Rows are card x phase; one column group per policy, then one ratio group per pair named by the ratio rows."""
     idx = _index(summary)
     blocks = []
     for title, policies in (('uncached', policies_uncached), ('cached', policies_cached)):
         cards = [cp for cp in OrderedDict(((r['card'], r['phase']), None) for r in summary if r['policy'] in policies)]
         if not policies or not cards:
             continue
-        pairs = [(ratios_of[0], o) for o in ratios_of[1:] if ratios_of[0] in policies and o in policies]
+        named = OrderedDict((tuple(r['policy'].split('/')), None) for r in summary if r['metric'].startswith('ratio:'))
+        pairs = [(n, d) for n, d in named if n in policies and d in policies]
         top = ['']
         sub = ['card/phase']
         for p in policies:
@@ -265,7 +271,7 @@ def render_table(summary, policies_uncached, policies_cached, ratios_of=('cas', 
         lines = [title, _grid(grid)]
         for card, phase in cards:
             for p in policies:
-                unit = [f'{m}={idx[(p, card, phase, m)]["per_unit"]:.3g}' for m in ['wall'] + REQUEST_METRICS
+                unit = [f'{m}={_plain(idx[(p, card, phase, m)]["per_unit"])}' for m in ['wall'] + REQUEST_METRICS
                         if (p, card, phase, m) in idx and isinstance(idx[(p, card, phase, m)]['per_unit'], float)]
                 if unit:
                     lines.append(f'per unit {card}/{phase} {p}: ' + ' '.join(unit))
