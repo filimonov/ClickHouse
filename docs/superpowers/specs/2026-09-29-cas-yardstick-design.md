@@ -163,8 +163,8 @@ stopped where units depend on part counts (§2); GC rounds are reported per wind
 disk; each window is preceded by a bounded settle (`SYSTEM FLUSH LOGS`, then wait until `system.merges`,
 `system.mutations` with `is_done = 0` and `system.replicated_fetches` are empty for the card table, bounded by 60 s).
 
-**GC.** After each pass: `SYSTEM FLUSH LOGS`, then `system.cas_gc_log` rows whose `round_id` has any event with
-`event_time_microseconds` inside the window are collected into `gc_rounds.tsv` with columns: `round_id`, `started_in_window`,
+**GC.** After each pass: `SYSTEM FLUSH LOGS`, then `system.cas_gc_log` rounds whose span (first to last event, by
+`event_time_microseconds`) overlaps the window are collected into `gc_rounds.tsv` with columns: `round_id`, `started_in_window`,
 `finished_in_window`, outcome, `objects_deleted`, `manifests_deleted`, duration. The table shows "GC rounds: N
 (M overlapping)" for CAS policies. `--gc off` runs CAS with `cas_gc_enabled = 0` and is labelled "GC-disabled process
 window" (mount renewal still runs). A 20 s GC interval on short windows does not amortize reclamation; the umbrella's stage
