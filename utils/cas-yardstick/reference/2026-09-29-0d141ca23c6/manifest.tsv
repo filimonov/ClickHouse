@@ -1,0 +1,18 @@
+field	value
+binary_version	26.6.2.20000.altinityantalya
+git_rev	0d141ca23c6
+build_type	RelWithDebInfo
+workload_rev	0d141ca23c6
+scale	1.0
+counts	cycle=iterations:25
+gc	on
+repeats	3
+policy_order	k1=cas,s3,s3plain,cas_cached,s3_cached,s3plain_cached;k2=s3,s3plain,cas_cached,s3_cached,s3plain_cached,cas;k3=s3plain,cas_cached,s3_cached,s3plain_cached,cas,s3
+config_hash	cas=9a8f388c7e0de177db4ce59b92f46bfb3b8397234477552a3981ce28535da80e;s3=5f7bc6378c26e421fee6213b8a41af010453aab3a03dac21b037a972969c51e0;s3plain=9d7e79a666314b7a0d46a94c0689b4873c19f015096b8077034aeb002c7523f9;cas_cached=8e80564dec4ded16ecf9aa8441ea3643bd70db199ece5460c848cfbda111ff98;s3_cached=f64063390383f8f1a9ab6729d763167ce38c87ca595323e406dc315eeda33342;s3plain_cached=85fc93f488d91f804fac064dba4d08395b13f26b95710ea38f8f55c2c0e5e241
+config_dir	/home/mfilimonov/workspace/ClickHouse/master/tmp/cas321/runs/20260929T213140Z/config
+store	rustfs/rustfs:1.0.0-rc.3
+store_version	unknown
+host	mfilimonov-MS-7E12
+kernel	6.14.0-37-generic
+date	2026-09-29T21:31:40+00:00
+flags	utils/cas-yardstick/yardstick.py run --binary /home/mfilimonov/workspace/ClickHouse/master/build/programs/clickhouse --repeats 3 --runs-dir /home/mfilimonov/workspace/ClickHouse/master/tmp/cas321/runs
