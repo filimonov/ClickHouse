@@ -12,8 +12,10 @@ MARKER=.cas-yardstick-rustfs
 
 mc()
 {
-    timeout 60 docker run --rm --network host --entrypoint sh "$MC_IMAGE" -c \
-        "mc alias set r http://127.0.0.1:$PORT clickhouse clickhouse >/dev/null && $1"
+    # A fixed name lets a timeout remove the container, which outlives the killed client.
+    timeout 60 docker run --rm --name cas-yardstick-mc --network host --entrypoint sh "$MC_IMAGE" -c \
+        "mc alias set r http://127.0.0.1:$PORT clickhouse clickhouse >/dev/null && $1" \
+        || { docker rm -f cas-yardstick-mc > /dev/null 2>&1; return 1; }
 }
 
 cmd=${1:-}

@@ -69,6 +69,7 @@ TEMPLATE = '''<clickhouse>
 </clickhouse>
 '''
 
+
 def write_config(run_dir: str, policy: str, endpoint: str, prefix: str, gc_enabled: bool) -> str:
     """Write the server config under run_dir/etc; return the config hash.
 
