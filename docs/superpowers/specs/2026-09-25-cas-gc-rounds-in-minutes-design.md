@@ -252,6 +252,12 @@ Stage C:
 - `groupRefKeys` and `RefTableListing` behaviour when given a per-life listing that starts at the floor (B1 step 3): confirm nothing below the floor is required for the grouping's validation.
 - The exact key the intake probes for `frontier_proven`, to reuse it verbatim in B1 step 2.
 - `listUnder` `start-after` semantics on GCS and the local backend (the code notes some backends ignore it and the filter keeps the contract).
-- Audit F6: the global LIST costs ~3 S3 requests per 1000-key logical page (`S3ListObjects` 14.4k per round against `CASRefGlobalListPages` 1543). Confirm `max_keys` propagation into `S3ObjectStorage::iterate` before B1/B2 reuse the same path; one request per 1000 keys is the target.
+- Audit F6: the global LIST costs ~9.3 S3 requests per 1000-key logical page (`S3ListObjects` 14.4k per round against
+  `CASRefGlobalListPages` 1543; the `defer_decision` phase, not the walk alone). The request-cuts spec
+  (`2026-09-29-cas-gc-request-cuts-design.md`, section 6) measures and attributes them; the fix belongs here, under three
+  constraints: a resumed page bounded to `limit` truncates walks on stores that ignore `start_after`; `max_keys` sets the
+  request's `MaxKeys` and does not stop `S3IteratorAsync`'s prefetch, so a transport-level request-count test is needed;
+  a trailing empty page moves the janitor cursor, the orphan sweep's `wrapped` and `deletePrefixWholesale` at exactly its
+  budget. One request per 1000 keys stays the target.
 - Audit F8: ~200k/day manifest PUTs on the stand are unattributed (2 per part publish); attribute before any writer-side change.
 - Where `CondemnedSummary` totals are available to `cas_mounts` without a new read (C5).
