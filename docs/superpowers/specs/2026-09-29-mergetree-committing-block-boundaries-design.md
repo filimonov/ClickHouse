@@ -1,4 +1,4 @@
-# MergeTree: committing blocks as version boundaries — design (rev.4) {#design}
+# MergeTree: committing blocks as version boundaries — design (rev.5) {#design}
 
 Target: upstream `master` (13d023155c7) on top of the two commits of PR #119155, one pull request.
 Supersedes the mechanism of `2026-09-28-mergetree-uncommitted-version-boundary-design.md` (rev.10, the
@@ -30,9 +30,9 @@ R4. `OPTIMIZE FINAL` retries after waiting for running merges with the predicate
 ## 1. The rule {#rule}
 
 **`committing_blocks` is the registry of allocated-but-invisible versions.** Every block number is inserted there by
-`allocateBlockNumber` under `committing_blocks_mutex` and removed by the holder's destructor, which for a mutation
-runs at the end of `addPreparedMutationEntry` (inside the registration critical section) and for an update runs with
-the sink after the last patch part is committed. There is no instant at which a version is neither a committing block
+`allocateBlockNumber` under `committing_blocks_mutex` and removed by the holder's destructor, which `startMutation`
+runs right after the insert into `current_mutations_by_version` (under the background mutex) and which for an update
+runs with the sink after the last patch part is committed. There is no instant at which a version is neither a committing block
 nor visible. This is what `ReplicatedMergeTree` relies on already (`ReplicatedMergeTreeMergePredicate` refuses merges
 across an uncommitted block; the queue postpones a mutation while a lower update is uncommitted).
 
@@ -48,14 +48,15 @@ hold) and read it as follows. `firstReservationAfter(dv)` = the lowest reservati
    unconditionally (the `supportsLightweightUpdate()` guard is removed). For each part, the applicable range of
    registered mutations is `[upper_bound(dv), lower_bound(firstReservationAfter(dv)))`. If the range is empty because of
    an `Update` reservation, the part is postponed with `PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE` (kept verbatim from
-   #119155). A `Mutation` reservation cannot have a registered mutation above it (every registration path holds the
-   alter lock, §4), so no second reason string exists.
+   #119155). A `Mutation` reservation below a registered mutation has one shape: the `ALTER` that created the mutation
+   still holds its block (§2); the part is then postponed with `PostponeReasons::PENDING_MUTATION_VERSION`
+   ("Mutation version is allocated but not visible yet", test 05300).
 2. `MergeTreeMergePredicate::canMergeParts`: refuse if a reservation lies in `(min(dv_l, dv_r), max(dv_l, dv_r)]`
    (`ReplicatedMergeTree`'s rule for uncommitted blocks, restricted to reservations). `canUsePartInMerges`'s
    `min_update_block` refusal stays.
 3. `getMutationVersionForMergedPart`: the walk that records a materialized metadata mutation's version ends at
    `lower_bound(firstReservationAfter(sources_dv))`; the pre-check and the `RENAME` refusal loop stay unbounded (a bounded
-   pre-check would skip the refusal, pinned by test 05296). The caller passes the bound from the predicate's snapshot.
+   pre-check would skip the refusal, pinned by test 05296). The caller passes the predicate's `CommittingBlocksSnapshot`; the bound is looked up inside.
 4. `getPatchesToApplyOnMerge`: `next_version = min(getNextMutationVersion(dv), firstReservationAfter(dv))`, plus the
    watermark rule of §3.
 5. `removeCommittingBlock` triggers `background_operations_assignee` for `Mutation` and `Update` reservations (after
@@ -92,16 +93,19 @@ two things the selector compares.
 - `mutate` keeps the alter lock through `startMutation` (R1; commit 6109419a064 of the previous branch, test 05291).
 - `OPTIMIZE FINAL` rebuilds the predicate and the parts collector and re-reads `getInMemoryMetadataPtr()` on every retry
   after the wait released the mutex (R4; commits b9fbb41381a and b637b72b894 of the previous branch, test 05297).
-- `alter`'s recovery path skips re-registering a moved-from entry (`held_entry && held_entry->commands`; the
-  null-`commands` dereference is pre-existing; commit 1f86af3569e of the previous branch, guard only).
-- **`alter` retains the rename mutation's block holder** (moved out of `PreparedMutationEntry` before
-  `addPreparedMutationEntry`) until the new metadata is published or the recovery interval has ended. Design review of
+- `alter`'s recovery path finds the rename mutation by version in `current_mutations_by_version`, registered or
+  not, and rolls it back or re-registers it from there; `addPreparedMutationEntry` takes the entry by reference and
+  moves it only into the map, so no path sees a moved-from entry (`chassert(held_entry->commands)`; failpoint
+  `mt_throw_after_mutation_entry_inserted`, test 05302: an orphaned `mutation_*.txt` replayed after `DETACH`/`ATTACH`
+  emptied the renamed column).
+- **`alter` retains the rename mutation's block holder** (it stays inside `prepared`, whose scope ends after the
+  recovery block) until the new metadata is published or the recovery interval has ended. Design review of
   rev.1: with the holder released at registration, a failed in-memory commit un-registers the rename `R` for the durable
   rollback while nothing reserves `R`; an update `U > R` commits its patch (updates do not take the alter lock), a merge
   below `R` materializes `U` and records version `U`, the rollback fails, `R` is re-registered and is skipped for the
   merged part: pre-existing rows lose the renamed column. With the holder retained, `R` is a reservation throughout,
   so the merge neither materializes `U` (rule 4) nor crosses `R` (rule 2). No lock is held longer; the holder just
-  dies a few statements later. It is declared beside `prepared`, before `background_lock`, in the scope that ends before
+  dies a few statements later. `prepared` is declared before `background_lock`, in the scope that ends before
   the synchronous `waitForMutation`, so it is released on every exit (success, both rollback outcomes, an exception in
   the recovery block) without the background mutex held and before any wait that could depend on it. Consequence
   (confirmation round): a lightweight update issued while a failing `ALTER` is in its recovery interval waits in
@@ -116,12 +120,18 @@ applies a patch raises the merged part's version to the patch's version (`Future
 
 1. part `P` with `dv < U`; update `U` allocated, paused before its patch commit;
 2. update `V > U` (disjoint rows) commits its patch — updates do not wait for lower updates;
-3. the merge predicate copies the reservations at `t1` and the patch parts at `t2 > t1` (`MergeTreeMergePredicate`'s
-   constructor: initializer list, then body); `U` was allocated after `t1` and `V` committed before `t2`;
+3. the merge predicate copies the reservations at `t1` and the patch parts at `t2 > t1` (the caller takes the
+   snapshot under the background mutex and passes it to `MergeTreeMergePredicate`'s constructor, which reads the
+   patch parts afterwards); `U` was allocated after `t1` and `V` committed before `t2`;
 4. `U` is in no snapshot, patch `V` is; the merge materializes `V` and the result's version becomes `V`;
 5. `U` commits its patch below the result's version: it never applies to the merged part. Data loss.
 
-The window is the constructor's own duration, but it exists. Rule: **the predicate reads the reservations and a
+The window is the constructor's own duration. Through `updateLightweight` it is empty: an update waits in
+`waitForCommittingInsertsAndMutations` for every lower non-`Update` block, and it plans its read under the background
+mutex (`getMutationsSnapshot`), which the selector holds from the reservation copy to the patch read (verified with a
+live stack trace). `ATTACH PART` of a detached patch part reaches it: attach takes a fresh block number without waiting
+and without the mutex, so the patch can land above a mutation that is not registered yet or above the snapshot
+(test 05304, failpoint `mt_optimize_pause_before_reading_patches`; both bounds below stay for that route). Rule: **the predicate reads the reservations and a
 watermark together, before it reads the patch parts, and never materializes a patch above the watermark.** The
 watermark is the value of `increment` at the moment of the reservation copy, read under `committing_blocks_mutex`, the
 same mutex `allocateBlockNumber` increments and inserts under, so "allocated at or before the watermark" and "present in
@@ -155,8 +165,10 @@ of the update pipeline. The candidate side of the rule is reachable today and ha
   filtered by `getPatchPartInfos`, and a later visible patch can still be materialized above it (§4's transaction
   exclusion). Intended behaviour changes: a lower registered mutation is applied while a higher one waits behind a
   pending update (partial progress, one extra rewrite); a part already above a pending update proceeds with later
-  mutations; merges and explicit `OPTIMIZE FINAL` can be refused by a reservation and retried by the scheduler; patches
-  above the watermark are left for read time.
+  mutations; merges refused by a reservation are retried by the scheduler; an explicit `OPTIMIZE FINAL` refused by a
+  reservation waits for its release (bounded by `lock_acquire_timeout_for_background_operations`, also with
+  `optimize_throw_if_noop = 1`; test 05305) and retries with a fresh snapshot — after the release, a registered
+  mutation between the parts is handled as before this change; patches above the watermark are left for read time.
 - I2 (exact snapshot): the monotonicity argument of §1 for parts and mutations; §3 for patches.
 - I3 (alter lock): every path that registers a mutation on plain `MergeTree` holds the alter lock: `mutate` (after the
   R1 fix) and `alter` (its own rename mutation, from the interpreter's `lockForAlter`). Hence no registered mutation
@@ -203,8 +215,9 @@ failpoint and `wait`, `KILL … ASYNC` for parked queries, bounded polls, full t
 ## 6. Size {#size}
 
 Source: `StorageMergeTree.{h,cpp}` (mutate lock scope; `selectPartsToMutate` end bound; `getMutationVersionForMergedPart`
-bound parameter; `alter` retains the block holder; `OPTIMIZE FINAL` retry; recovery guard; a `CommittingBlocksSnapshot
-{blocks, watermark}` accessor), `MergeTreeMergePredicate.{h,cpp}` (watermark member; `canMergeParts` reservation rule;
+bound parameter; `alter` retains the block holder; `OPTIMIZE FINAL` retry and reservation wait; recovery lookup by version;
+`getCommittingBlocksSnapshot`), `MergeTreeCommittingBlock.h` (`CommittingBlocksSnapshot`: sorted reservation numbers,
+`minUpdateBlock`, `watermark`), `MergeTreeMergePredicate.{h,cpp}` (snapshot parameter; `canMergeParts` reservation rule;
 `canUsePartInMerges` watermark rule; `getPatchesToApplyOnMerge` bounds; `firstReservationAfter`), `PatchPartsUtils.{h,cpp}` (watermark parameter or the caller
-filters before the call), `FailPoint.cpp` (one failpoint). Expected: about 100–150 changed lines in `src`. No new header,
+filters before the call), `FailPoint.cpp` (the tests' failpoints). Expected: about 100–150 changed lines in `src`. No new header,
 no gtest, no new object kind.
