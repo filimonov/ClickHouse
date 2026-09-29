@@ -189,14 +189,68 @@ cleared-marker case, where a writer replaced the token and set `Clean`, reaches 
 
 ### Limits {#limits-2026-09-30}
 
-- **Fresh condemn on a stale observation is not exercised.** With one writer, a body is replaced
-  only while the marker reads `Condemned`, which requires an existing retired row. The observed-then-
-  replaced interleaving is reached only for such a row; a fresh condemn always sees the live token.
-  Covering it needs a second writer.
+- **Fresh condemn on a stale observation needs `TwoWriters`.** With one writer, a body is replaced
+  only while an existing retired row keeps the marker `Condemned`, so a fresh condemn always sees
+  the live token. The two-writer runs below cover it.
 - **Deferred carry adds no distinct state.** Every state it reaches is also reached by condemning in
   a later round. Its safety is checked, but it is not an independent path in this graph.
-- **A wrong supersede is not detected.** The superseding token belongs to the one writer, whose edge
-  is folded by the next cut. The test that a superseded row starts unflagged remains a code-level
-  obligation.
+- **A wrong supersede needs `TwoWriters` to be detected.** With one writer, the superseding token's
+  writer is folded by the next cut. The two-writer sabotage below catches it.
 - **Marker writes land inside the settle.** A marker retry landing after the settle is represented
   only by a retry settling after the writer's replacement.
+
+## 2026-09-30: two writers {#two-writers}
+
+`NoDangle` holds when a fresh condemn uses a stale prefetched token, and that row's exact-token
+delete finds the replacement. The pre-fix gate with every extension still reaches the dangle.
+
+### What the extension models {#two-writers-extension}
+
+`TwoWriters` makes `edge`, `adopted` and `committed` functions over `Writers`, which is `{1, 2}`
+instead of `{1}`, and enables `WDrop`. `WDrop` removes a writer's edge and its committed reference,
+as a dropped part or an insert aborted before commit does. Without it an edge is permanent, every
+later cut folds the hash, and no body is condemned after a writer lands. `GCut` folds when any
+writer's edge has landed. `NoDangle` becomes `\A w \in Writers : committed[w] => body.present`.
+With `TwoWriters = FALSE` the functions have one point and `WDrop` is disabled; all six earlier
+configurations were rerun and reproduced their generated, distinct and depth counts exactly.
+
+### Runs {#two-writers-runs}
+
+Same checker, jar, `MaxGen = 3`, `MaxRounds = 6` and `nice 10`. Output:
+`tmp/gc/tlc_condemnmarker_2w.log` (8 workers) and `tmp/gc/tlc_condemnmarker_2w_bug_w1.log`
+(1 worker).
+
+| Configuration | Constants | Workers | Generated | Distinct | Queued | Depth | Seconds | Verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| `_fix_both_2w.cfg` | gate, `PersistConf`, `Prefetch`, `TwoWriters` | 8 | 79,999 | 20,574 | 0 | 21 | 4 | green |
+| `_bug_both_2w.cfg` | `PersistConf`, `Prefetch`, `TwoWriters`, no gate | 1 | 8,960 | 3,113 | 1,228 | 11 | 3 | `NoDangle` violated |
+
+The `_bug_both_2w.cfg` trace has the recorded shape with writer `1`: swallowed marker,
+unconditional graduation, `WPrecommit(1)`, `WAdopt(1)` of token `1`, `WCommit(1)`, then
+`GSettleRedelete` deletes token `1`.
+
+### Reachability {#two-writers-reachability}
+
+Scratch variants of `_fix_both_2w.cfg` with one worker. `stale_tok` is a scratch-only variable
+holding the token of the last fresh condemn whose observation no longer matched the body.
+
+| Witness | Prediction | Result | Distinct at violation | Depth |
+|---|---|---|---:|---:|
+| settle about to fresh-condemn an observed token the body no longer carries | reachable | reachable | 4,115 | 12 |
+| that row graduated, cut taken, exact-token delete about to find the replacement | reachable | reachable | 17,369 | 17 |
+| sabotage: a superseding row with a swallowed marker keeps `ret.pconf` | `NoDangle` violated | violated | 14,878 | 16 |
+
+The second trace is the full interleaving. Writer `1` lands after the round-1 cut, and token `1` is
+condemned with its marker. Writer `1` drops, and round 2 spares the row. In round 3, writer `2`
+lands after the cut, and `GObserve` records token `1`. Writer `2` then resurrects to token `2` and
+drops. `GSettleCondemn` condemns token `1`, and round 4 graduates it. At round 5 the pending delete
+of token `1` finds token `2`.
+
+### Limits {#two-writers-limits}
+
+- **Bounds.** At most three tokens and five complete rounds. The interleaving uses all three tokens'
+  worth of transitions and ends in round 5, so longer chains, such as a second replacement, are
+  outside the bound.
+- **Supersede reset is load-bearing.** In the sabotage trace, writer `1` resurrects to token `2` and
+  drops. The row supersedes to token `2` with its marker swallowed but flagged, and graduates. Writer
+  `2` then adopts token `2` under a `Clean` marker, and the redelete removes it.

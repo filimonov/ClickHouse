@@ -14,10 +14,12 @@ check_tlc_pin "$JAR" || exit 3
 CONFIGS=(
     "bug           violation  NoDangle"
     "bug_both      violation  NoDangle"
+    "bug_both_2w   violation  NoDangle"
     "fix           green      -"
     "fix_pconf     green      -"
     "fix_prefetch  green      -"
     "fix_both      green      -"
+    "fix_both_2w   green      -"
 )
 
 selected()

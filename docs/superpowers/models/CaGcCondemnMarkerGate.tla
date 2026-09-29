@@ -45,17 +45,22 @@
 (* graduation evidence. GSettleGraduateDeferred is the budget-exhausted carry.        *)
 (* Prefetch: GObserve records the body's token (0 = absent) between GCut and the      *)
 (* settle, as the HEAD read-ahead does; condemn and supersede use that observation.   *)
-(* Both default FALSE, which leaves the original state graph unchanged.               *)
+(* TwoWriters: a second writer, and a writer may drop its edge (WDrop), so a hash     *)
+(* returns to in-degree 0 and can be condemned again after a replacement.             *)
+(* All three default FALSE, which leaves the original state graph unchanged.          *)
 EXTENDS Naturals
 
 CONSTANTS
   GateOnMarker,   \* FALSE = pre-fix graduation (unconditional); TRUE = the fixed gate
   PersistConf,    \* TRUE = the confirmation is persisted in the run row and survives GRestart
   Prefetch,       \* TRUE = the settle uses a token observed earlier by GObserve
+  TwoWriters,     \* TRUE = a second writer, and writers may drop their edge
   MaxGen,         \* bound on fresh incarnation tokens
   MaxRounds       \* bound on GC rounds
 
 NoTok == 0
+
+Writers == IF TwoWriters THEN {1, 2} ELSE {1}
 
 NoRet == [st |-> "none", tok |-> NoTok, cr |-> 0, conf |-> FALSE, pconf |-> FALSE]
 
@@ -67,9 +72,9 @@ VARIABLES
   meta,        \* "clean" | "condemned" — the per-hash writer adopt gate (absence == clean)
   next_gen,    \* fresh incarnation-token allocator
   seeded,      \* the pre-existing unowned incarnation was created (once)
-  edge,        \* "none" | "landed" — the writer's durable edge (EDGE-BEFORE-OBSERVE: precedes adoption)
-  adopted,     \* the token the writer acquired (0 = none yet)
-  committed,   \* promote succeeded — a LIVE committed reference stands over `adopted`
+  edge,        \* per writer: "none" | "landed" | "dropped" — its durable edge (EDGE-BEFORE-OBSERVE)
+  adopted,     \* per writer: the token it acquired (0 = none yet)
+  committed,   \* per writer: promote succeeded — a LIVE committed reference stands over `adopted`
   ret,         \* the retired entry: [st |-> "none"|"condemned"|"pending", tok, cr, conf, pconf]
   observed,    \* GObserve ran in this round
   observed_tok \* the token GObserve saw (0 = body absent)
@@ -84,9 +89,9 @@ TypeOK ==
   /\ meta \in {"clean", "condemned"}
   /\ next_gen \in 1..(MaxGen + 1)
   /\ seeded \in BOOLEAN
-  /\ edge \in {"none", "landed"}
-  /\ adopted \in 0..MaxGen
-  /\ committed \in BOOLEAN
+  /\ edge \in [Writers -> {"none", "landed", "dropped"}]
+  /\ adopted \in [Writers -> 0..MaxGen]
+  /\ committed \in [Writers -> BOOLEAN]
   /\ ret \in [st : {"none", "condemned", "pending"}, tok : 0..MaxGen, cr : 0..MaxRounds,
              conf : BOOLEAN, pconf : BOOLEAN]
   /\ observed \in BOOLEAN /\ observed_tok \in 0..MaxGen
@@ -97,7 +102,9 @@ Init ==
   /\ meta = "clean"
   /\ next_gen = 1
   /\ seeded = FALSE
-  /\ edge = "none" /\ adopted = NoTok /\ committed = FALSE
+  /\ edge = [w \in Writers |-> "none"]
+  /\ adopted = [w \in Writers |-> NoTok]
+  /\ committed = [w \in Writers |-> FALSE]
   /\ ret = NoRet
   /\ observed = FALSE /\ observed_tok = NoTok
 
@@ -115,44 +122,53 @@ Seed ==
   /\ UNCHANGED <<round, cut_taken, folded, meta, edge, adopted, committed, ret, observed, observed_tok>>
 
 ------------------------------------------------------------------------------------
-(* Writer (one build). The durable edge lands BEFORE any observation (EDGE-BEFORE-
+(* Writers (one build each). The durable edge lands BEFORE any observation (EDGE-BEFORE-
    OBSERVE); acquisition then reads the meta: clean => adopt the CURRENT token
    without re-upload; condemned => resurrect (displace the body with a FRESH token
    and drive the meta back to clean — the sole condemned -> clean transition); body
    absent => create fresh. *)
-WPrecommit ==
-  /\ seeded /\ edge = "none"
-  /\ edge' = "landed"
+WPrecommit(w) ==
+  /\ seeded /\ edge[w] = "none"
+  /\ edge' = [edge EXCEPT ![w] = "landed"]
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, adopted, committed, ret, observed, observed_tok>>
 
-WAdopt ==
-  /\ edge = "landed" /\ adopted = NoTok
+WAdopt(w) ==
+  /\ edge[w] = "landed" /\ adopted[w] = NoTok
   /\ body.present /\ meta = "clean"
-  /\ adopted' = body.tok
+  /\ adopted' = [adopted EXCEPT ![w] = body.tok]
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, committed, ret, observed, observed_tok>>
 
-WResurrect ==
-  /\ edge = "landed" /\ adopted = NoTok
+WResurrect(w) ==
+  /\ edge[w] = "landed" /\ adopted[w] = NoTok
   /\ body.present /\ meta = "condemned" /\ Fresh
   /\ body' = [present |-> TRUE, tok |-> next_gen]
   /\ meta' = "clean"
-  /\ adopted' = next_gen
+  /\ adopted' = [adopted EXCEPT ![w] = next_gen]
   /\ next_gen' = next_gen + 1
   /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret, observed, observed_tok>>
 
-WCreate ==
-  /\ edge = "landed" /\ adopted = NoTok
+WCreate(w) ==
+  /\ edge[w] = "landed" /\ adopted[w] = NoTok
   /\ ~body.present /\ Fresh
   /\ body' = [present |-> TRUE, tok |-> next_gen]
   /\ meta' = "clean"
-  /\ adopted' = next_gen
+  /\ adopted' = [adopted EXCEPT ![w] = next_gen]
   /\ next_gen' = next_gen + 1
   /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret, observed, observed_tok>>
 
-WCommit ==
-  /\ adopted /= NoTok /\ ~committed
-  /\ committed' = TRUE
+WCommit(w) ==
+  /\ edge[w] = "landed" /\ adopted[w] /= NoTok /\ ~committed[w]
+  /\ committed' = [committed EXCEPT ![w] = TRUE]
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, ret, observed, observed_tok>>
+
+(* The writer's reference goes away: its part is dropped, or its insert aborts before
+   commit. Without this an edge is permanent, every later cut folds the hash, and no
+   body is condemned again once any writer lands. *)
+WDrop(w) ==
+  /\ TwoWriters /\ edge[w] = "landed"
+  /\ edge' = [edge EXCEPT ![w] = "dropped"]
+  /\ committed' = [committed EXCEPT ![w] = FALSE]
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, adopted, ret, observed, observed_tok>>
 
 ------------------------------------------------------------------------------------
 (* GC. GCut snapshots the round's edge visibility (the discovery LIST / merge input);
@@ -160,7 +176,7 @@ WCommit ==
    pre-CAS delete + marker writes. Writer actions between the two ARE the C1 window. *)
 GCut ==
   /\ ~cut_taken /\ round < MaxRounds
-  /\ folded' = (edge = "landed")
+  /\ folded' = (\E w \in Writers : edge[w] = "landed")
   /\ cut_taken' = TRUE
   /\ UNCHANGED <<round, body, meta, next_gen, seeded, edge, adopted, committed, ret, observed, observed_tok>>
 
@@ -283,7 +299,7 @@ GRestart ==
 ------------------------------------------------------------------------------------
 Next ==
   \/ Seed
-  \/ WPrecommit \/ WAdopt \/ WResurrect \/ WCreate \/ WCommit
+  \/ \E w \in Writers : WPrecommit(w) \/ WAdopt(w) \/ WResurrect(w) \/ WCreate(w) \/ WCommit(w) \/ WDrop(w)
   \/ GCut \/ GObserve
   \/ GSettleCondemn \/ GSettleIdle \/ GSettleSpare
   \/ GSettleGraduate \/ GSettleGraduateDeferred \/ GSettleSupersede \/ GSettleCarryRetry
@@ -295,6 +311,6 @@ Spec == Init /\ [][Next]_vars
 (* THE invariant: a live committed edge names the key's logical content, not the
    incarnation token observed by the writer. Because this model has one fixed content-addressed
    key, presence is also content identity; a safe equivalent replacement may change body.tok. *)
-NoDangle == committed => body.present
+NoDangle == \A w \in Writers : committed[w] => body.present
 
 =====================================================================================
