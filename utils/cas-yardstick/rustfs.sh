@@ -1,5 +1,6 @@
 #!/bin/bash
-# RustFS container for the yardstick. usage: rustfs.sh start [--port N] [--data DIR] | stop | status | rm-prefix <bucket/prefix>
+# RustFS container for the yardstick.
+# usage: rustfs.sh start [--port N] [--data DIR] | stop | status | rm-prefix <bucket/prefix>
 set -euo pipefail
 
 NAME=cas-yardstick-rustfs
@@ -7,10 +8,11 @@ IMAGE=rustfs/rustfs:1.0.0-rc.3
 MC_IMAGE=minio/mc:RELEASE.2025-04-16T18-13-26Z
 PORT=19121
 DATA="$PWD/tmp/cas-yardstick-rustfs-data"
+MARKER=.cas-yardstick-rustfs
 
 mc()
 {
-    docker run --rm --network host --entrypoint sh "$MC_IMAGE" -c \
+    timeout 60 docker run --rm --network host --entrypoint sh "$MC_IMAGE" -c \
         "mc alias set r http://127.0.0.1:$PORT clickhouse clickhouse >/dev/null && $1"
 }
 
@@ -27,8 +29,14 @@ case "$cmd" in
             esac
         done
         docker rm -f "$NAME" > /dev/null 2>&1 || true
+        # Refuse to wipe a directory this script did not create.
+        if [ -e "$DATA" ] && [ -n "$(ls -A "$DATA")" ] && [ ! -f "$DATA/$MARKER" ]; then
+            echo "refusing to wipe non-empty $DATA without $MARKER" >&2
+            exit 1
+        fi
         rm -rf "$DATA"
         mkdir -p "$DATA"
+        touch "$DATA/$MARKER"
         docker run -d --name "$NAME" --network host --user "$(id -u):$(id -g)" \
             -e RUSTFS_SCANNER_ENABLED=false -e RUSTFS_HEAL_ENABLED=false \
             -e RUSTFS_RUNTIME_MAX_BLOCKING_THREADS=64 -e RUSTFS_RUNTIME_THREAD_KEEP_ALIVE=5 \
@@ -40,7 +48,7 @@ case "$cmd" in
         ready=0
         for _ in $(seq 1 30); do
             # An unauthenticated request is answered with 403 once the S3 endpoint is up.
-            if [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)" = 403 ]; then
+            if [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)" = 403 ]; then
                 ready=1
                 break
             fi

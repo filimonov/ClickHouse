@@ -69,13 +69,15 @@ TEMPLATE = '''<clickhouse>
 </clickhouse>
 '''
 
-CONFIG_FILES = ('config.xml', 'users.xml', os.path.join('config.d', 'yardstick.xml'))
-
-
 def write_config(run_dir: str, policy: str, endpoint: str, prefix: str, gc_enabled: bool) -> str:
-    """Write the server config under run_dir/etc; return the SHA-256 hex of the config files."""
+    """Write the server config under run_dir/etc; return the config hash.
+
+    The hash covers the config files with run_dir and the bucket prefix masked,
+    so passes of the same configuration hash equal.
+    """
     if policy not in POLICIES:
         raise ValueError(f'unknown policy {policy!r}')
+    run_dir = os.path.abspath(run_dir)
     disk = policy.replace('_cached', '')
     cached = policy.endswith('_cached')
     etc = os.path.join(run_dir, 'etc')
@@ -85,8 +87,10 @@ def write_config(run_dir: str, policy: str, endpoint: str, prefix: str, gc_enabl
     for name in ('config.xml', 'users.xml'):
         shutil.copyfile(os.path.join(ETC_SRC, name), os.path.join(etc, name))
 
+    base = endpoint.rstrip('/')
+    full_endpoint = f"{base}/{prefix.strip('/')}/"
     body = POLICY_DISK[disk].format(
-        endpoint=f"{endpoint.rstrip('/')}/{prefix.strip('/')}/",
+        endpoint=full_endpoint,
         gc='1' if gc_enabled else '0',
         meta=os.path.join(run_dir, 's3_meta') + '/',
     )
@@ -98,8 +102,11 @@ def write_config(run_dir: str, policy: str, endpoint: str, prefix: str, gc_enabl
     with open(os.path.join(etc, 'config.d', 'yardstick.xml'), 'w') as f:
         f.write(text)
 
+    # The prefixed endpoint is masked before run_dir: either may contain the other's text.
+    masked = text.replace(full_endpoint, f'{base}/<PREFIX>/').replace(run_dir, '<RUN_DIR>')
     digest = hashlib.sha256()
-    for name in CONFIG_FILES:
+    for name in ('config.xml', 'users.xml'):
         with open(os.path.join(etc, name), 'rb') as f:
             digest.update(f.read())
+    digest.update(masked.encode())
     return digest.hexdigest()

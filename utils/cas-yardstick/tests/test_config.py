@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -18,7 +19,7 @@ def load_disks(run_dir):
 class ConfigTest(unittest.TestCase):
     def write(self, policy, gc=False, prefix='test/run/x/k1'):
         d = tempfile.mkdtemp()
-        self.addCleanup(lambda: __import__('shutil').rmtree(d, ignore_errors=True))
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         return d, write_config(d, policy, ENDPOINT, prefix, gc)
 
     def test_one_disk_per_policy(self):
@@ -69,21 +70,60 @@ class ConfigTest(unittest.TestCase):
         _, disks = load_disks(d)
         self.assertTrue(disks['s3'].findtext('metadata_path').startswith(d))
 
-    def test_cache_wrapper_block(self):
-        d, _ = self.write('cas_cached')
-        _, disks = load_disks(d)
-        c = disks['cas_cached']
-        self.assertEqual(c.findtext('path'), 'cas_cache/')
-        self.assertEqual(c.findtext('max_size'), '1Gi')
-        self.assertEqual(c.findtext('cache_on_write_operations'), '1')
-        self.assertEqual(c.findtext('background_download_threads'), '0')
-        self.assertEqual(c.findtext('load_metadata_asynchronously'), '0')
+    def test_cache_wrapper_block_on_every_cached_policy(self):
+        for policy in ('cas_cached', 's3_cached', 's3plain_cached'):
+            with self.subTest(policy=policy):
+                d, _ = self.write(policy)
+                _, disks = load_disks(d)
+                base = policy.replace('_cached', '')
+                got = {ch.tag: (ch.text or '').strip() for ch in disks[policy]}
+                self.assertEqual(got, {
+                    'type': 'cache', 'disk': base, 'path': base + '_cache/', 'max_size': '1Gi',
+                    'cache_on_write_operations': '1', 'background_download_threads': '0',
+                    'background_download_queue_size_limit': '0', 'load_metadata_asynchronously': '0'})
 
-    def test_hash_changes_with_gc_and_is_stable(self):
-        d, h1 = self.write('cas', gc=False)
-        self.assertEqual(len(h1), 64)
-        self.assertEqual(h1, write_config(d, 'cas', ENDPOINT, 'test/run/x/k1', False))
-        self.assertNotEqual(h1, write_config(d, 'cas', ENDPOINT, 'test/run/x/k1', True))
+    def test_disk_bodies_verbatim(self):
+        d, _ = self.write('cas', gc=True)
+        _, disks = load_disks(d)
+        got = {ch.tag: (ch.text or '').strip() for ch in disks['cas']}
+        self.assertEqual(got['type'], 'object_storage')
+        self.assertEqual(got['object_storage_type'], 's3')
+        self.assertEqual(got['metadata_type'], 'cas')
+        self.assertEqual(got['cas_scratch_path'], 'cas_scratch/')
+        self.assertEqual(got['cas_gc_interval_sec'], '20')
+        d, _ = self.write('s3')
+        _, disks = load_disks(d)
+        self.assertEqual(disks['s3'].findtext('type'), 's3')
+        d, _ = self.write('s3plain')
+        _, disks = load_disks(d)
+        self.assertEqual(disks['s3plain'].findtext('type'), 'object_storage')
+        self.assertEqual(disks['s3plain'].findtext('object_storage_type'), 's3')
+        self.assertEqual(disks['s3plain'].findtext('metadata_type'), 'plain_rewritable')
+
+    def test_hash_ignores_run_dir_and_prefix(self):
+        for policy in POLICIES:
+            with self.subTest(policy=policy):
+                _, h1 = self.write(policy, prefix='test/run1/x/k1')
+                _, h2 = self.write(policy, prefix='test/run2/y/k9')
+                self.assertEqual(len(h1), 64)
+                self.assertEqual(h1, h2)
+
+    def test_hash_changes_with_gc_policy_and_endpoint(self):
+        d, h = self.write('cas', gc=False)
+        self.assertNotEqual(h, write_config(d, 'cas', ENDPOINT, 'test/run/x/k1', True))
+        self.assertNotEqual(h, write_config(d, 'cas', 'http://127.0.0.1:19122', 'test/run/x/k1', False))
+        self.assertNotEqual(h, write_config(d, 'cas_cached', ENDPOINT, 'test/run/x/k1', False))
+        self.assertEqual(h, write_config(d, 'cas', ENDPOINT, 'test/run/x/k1', False))
+
+    def test_relative_run_dir_becomes_absolute(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        old = os.getcwd()
+        os.chdir(d)
+        self.addCleanup(os.chdir, old)
+        write_config('rel', 's3', ENDPOINT, 'test/p', False)
+        _, disks = load_disks(os.path.join(d, 'rel'))
+        self.assertEqual(disks['s3'].findtext('metadata_path'), os.path.realpath(os.path.join(d, 'rel')) + '/s3_meta/')
 
     def test_base_files_written(self):
         d, _ = self.write('s3')
@@ -93,8 +133,10 @@ class ConfigTest(unittest.TestCase):
             self.assertTrue(os.path.isdir(os.path.join(d, sub)))
 
     def test_unknown_policy_rejected(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         with self.assertRaises(ValueError):
-            write_config(tempfile.mkdtemp(), 'nope', ENDPOINT, 'p', False)
+            write_config(d, 'nope', ENDPOINT, 'p', False)
 
 
 if __name__ == '__main__':
