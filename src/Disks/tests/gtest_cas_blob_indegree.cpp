@@ -1121,3 +1121,54 @@ TEST(CASThreeCursorMerge, RedeleteBudgetDrainsCohortToFixpointOverRounds)
     EXPECT_EQ(total_redeleted, 10u) << "no entry lost to the cap across the whole drain";
     EXPECT_EQ(rounds, 4u) << "ceil(10 / 3) rounds to fully drain";
 }
+
+/// A row the gate confirmed but the graduation budget could not take is carried with the confirmation
+/// persisted, so the next fold graduates it without consulting the gate again.
+TEST(CASBlobInDegree, CarriedRowKeepsTheConfirmedMarker)
+{
+    InMemoryBackend backend;
+    DB::Cas::tests::OperationForTest backend_req(backend);
+    Layout layout{"pool"};
+    const RunRef gen1 = writeSourceEdgeRun(backend, layout, 1, 0, 0, condemnedCohort(3, /*condemn_round*/1, /*delete_pending*/false));
+
+    size_t first_calls = 0;
+    GcRoundWorkBudget first_budget;
+    first_budget.max_graduations = 1;
+    std::vector<RunRef> gen2;
+    RetiredMergeResult first;
+    foldDeltasIntoGeneration(*backend_req, layout, /*prior_runs*/{gen1}, 2, 0, 0, {}, gen2,
+        /*current_round*/5, /*condemn_round*/5, /*head_blob*/{}, /*peek_head*/{},
+        [&first_calls](const RetiredEntry &) { ++first_calls; return true; },
+        &first, /*suppress_destructive*/false, /*out_applied_by_txn_ordinal*/nullptr,
+        /*source_retirements*/{}, &first_budget);
+
+    EXPECT_EQ(first_calls, 3u);
+    EXPECT_EQ(first.graduated.size(), 1u);
+    ASSERT_EQ(gen2.size(), 1u);
+    const DecodedRun out = decodeRun(*backend_req, gen2[0]);
+    ASSERT_EQ(out.condemned.size(), 3u);
+    size_t carried = 0;
+    for (const auto & [hash, row] : out.condemned)
+    {
+        if (row.delete_pending)
+            continue;
+        ++carried;
+        EXPECT_TRUE(row.marker_confirmed) << "a carried row lost its confirmation";
+    }
+    EXPECT_EQ(carried, 2u);
+
+    size_t second_calls = 0;
+    GcRoundWorkBudget second_budget;
+    second_budget.max_graduations = 1;
+    std::vector<RunRef> gen3;
+    RetiredMergeResult second;
+    foldDeltasIntoGeneration(*backend_req, layout, /*prior_runs*/gen2, 3, 0, 0, {}, gen3,
+        /*current_round*/6, /*condemn_round*/6, /*head_blob*/{}, /*peek_head*/{},
+        [&second_calls](const RetiredEntry &) { ++second_calls; return true; },
+        &second, /*suppress_destructive*/false, /*out_applied_by_txn_ordinal*/nullptr,
+        /*source_retirements*/{}, &second_budget);
+
+    EXPECT_EQ(second_calls, 0u) << "a persisted confirmation must not be re-checked";
+    EXPECT_EQ(second.graduated.size(), 1u);
+    EXPECT_EQ(second.redelete.size(), 1u);
+}

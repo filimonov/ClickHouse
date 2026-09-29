@@ -393,7 +393,8 @@ struct GcRoundWorkBudget
 /// graduate. The callback returns whether durable `Condemned` evidence is confirmed for the entry's
 /// exact (hash, token); on false the entry is carried unchanged (fail-safe delay — the caller is
 /// expected to retry the marker so a later pass can confirm). An entry whose `marker_confirmed` bit is
-/// already set skips the callback. Unset (default `{}`) means UNGATED — the pre-gate merge semantics,
+/// already set skips the callback. A confirmed entry that the graduation budget cannot take is carried
+/// with `marker_confirmed` set. Unset (default `{}`) means UNGATED — the pre-gate merge semantics,
 /// for merge-mechanics unit tests only; the real GC round always passes the gate.
 /// The merge comparator is exactly `(ref.algo, ref.digest, source_id)` (that is, `BlobRef::operator<`
 /// followed by `source_id`), which is also the raw key order produced by `SourceEdgeKeyCodec`.

@@ -492,11 +492,17 @@ void foldDeltasIntoGeneration(CasOperation & op, const Layout & layout,
             /// later pass can confirm). This gates a DELETE on missing evidence; it never throws.
             if (e.marker_confirmed || !confirm_condemned_marker || confirm_condemned_marker(e))
             {
-                /// Excess past the round's graduation budget carries the floor-passed entry unchanged
+                /// Excess past the round's graduation budget carries the floor-passed entry
                 /// (still condemned, not yet delete_pending) — it re-evaluates the floor next round and
                 /// graduates then; nothing is lost, only delayed.
                 if (work_budget && !work_budget->graduationAvailable())
-                    rmr.still_retired.push_back(e);
+                {
+                    /// The confirmation is a durable fact about (hash, token); carrying it saves the
+                    /// meta re-read after a restart or leader change.
+                    RetiredEntry carried = e;
+                    carried.marker_confirmed = true;
+                    rmr.still_retired.push_back(std::move(carried));
+                }
                 else
                 {
                     if (work_budget)
