@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from . import config
+from . import gc
 from . import report as R
 from .cards import CARDS
 from .client import Client
@@ -112,9 +113,11 @@ def _window(card, c, policy, counts, phase, k, pass_dir):
     inv_path = os.path.join(phase_dir, 'invariants.tsv')
     _check_invariants(card, c, counts, phase, 'before', checked, inv_path)
     before = c.events()
+    t_start_us = time.time_ns() // 1000
     t0 = time.monotonic()
     result = card.measured(c, policy, counts, phase)
     wall = time.monotonic() - t0
+    t_end_us = time.time_ns() // 1000
     after = c.events()
     delta = R.delta(before, after)
     _write_kv(os.path.join(phase_dir, 'events_before.tsv'), ['event', 'value'], sorted(before.items()))
@@ -122,7 +125,10 @@ def _window(card, c, policy, counts, phase, k, pass_dir):
     _write_kv(os.path.join(phase_dir, 'events_delta.tsv'), ['event', 'value'], sorted(delta.items()))
     ops = result['ops']
     _write_ops(os.path.join(phase_dir, 'card.tsv'), ops)
-    _write_kv(os.path.join(phase_dir, 'gc_rounds.tsv'), GC_ROUNDS_COLUMNS, [])
+    is_cas = policy.startswith('cas')
+    rounds = gc.collect(c, t_start_us, t_end_us) if is_cas else []
+    _write_kv(os.path.join(phase_dir, 'gc_rounds.tsv'), GC_ROUNDS_COLUMNS,
+              [[r[column] for column in GC_ROUNDS_COLUMNS] for r in rounds])
     _check_invariants(card, c, counts, phase, 'after', checked, inv_path)
 
     units = result['unit_count']
@@ -133,6 +139,10 @@ def _window(card, c, policy, counts, phase, k, pass_dir):
         rows.append(_row(policy, card.name, phase, k, 'p90_op_ms', _p90(ms), units))
     present = set(before) & set(after)
     rows += [_row(policy, card.name, phase, k, m, v, units) for m, v in R.aggregate(delta, present).items()]
+    if is_cas:
+        inside = sum(r['started_in_window'] and r['finished_in_window'] for r in rounds)
+        rows.append(_row(policy, card.name, phase, k, 'gc_rounds', inside, units))
+        rows.append(_row(policy, card.name, phase, k, 'gc_rounds_overlapping', len(rounds) - inside, units))
     diagnostics = R.S3_ERROR_COUNTERS + (R.CAS_DIAGNOSTICS if policy.startswith('cas') else [])
     rows += [_row(policy, card.name, phase, k, m, delta[m] if m in present else R.UNAVAILABLE, units)
              for m in diagnostics]
@@ -281,6 +291,7 @@ def run(args) -> int:
     run_id = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     run_root = os.path.abspath(os.path.join(args.runs_dir, run_id))
     os.makedirs(run_root)
+    args.run_root = run_root
     gc = args.gc == 'on'
 
     config_dir = os.path.join(run_root, 'config')

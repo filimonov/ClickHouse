@@ -5,9 +5,10 @@ import os
 import sys
 
 from yardstick import report as R
+from yardstick.compare import compare_runs, reference_dir
 from yardstick.cards import CARDS
 from yardstick.config import POLICIES
-from yardstick.runner import run
+from yardstick.runner import TOOL_DIR, run
 
 DEFAULT_ENDPOINT = 'http://127.0.0.1:19121'
 DEFAULTS = dict(cards=['cycle'], scale=1.0, repeats=3, policies=list(POLICIES))
@@ -35,7 +36,21 @@ def cmd_run(args):
     if args.external_endpoint and not args.keep_prefix:
         sys.exit('--endpoint needs --keep-prefix: prefix removal only reaches the RustFS of rustfs.sh')
     args.endpoint = args.endpoint or DEFAULT_ENDPOINT
-    return run(args)
+    code = run(args)
+    if args.compare and code in (0, 2):
+        return compare_runs(args.run_root, _reference(args)) or code
+    return code
+
+
+def _reference(args):
+    try:
+        return args.reference_dir or reference_dir(TOOL_DIR)
+    except (OSError, ValueError) as e:
+        sys.exit(f'no reference: {e}')
+
+
+def cmd_compare(args):
+    return compare_runs(args.run_dir, _reference(args))
 
 
 def cmd_report(args):
@@ -72,6 +87,7 @@ def main():
     r.add_argument('--port-base', type=int, default=19700)
     r.add_argument('--runs-dir', default='runs')
     r.add_argument('--keep-prefix', action='store_true', help='keep the run\'s bucket prefix')
+    r.add_argument('--compare', action='store_true', help='compare with reference/CURRENT after the run')
     r.add_argument('--smoke', action='store_true',
                    help='all cards, all policies, --scale 0.01, --repeats 1; exit 2 on any FAILED or unavailable cell')
     r.set_defaults(func=cmd_run)
@@ -80,6 +96,11 @@ def main():
     p.add_argument('run_dir')
     p.add_argument('--diagnostics', action='store_true')
     p.set_defaults(func=cmd_report)
+
+    c = sub.add_parser('compare', help='compare a run with a reference run (default: reference/CURRENT)')
+    c.add_argument('run_dir')
+    c.add_argument('reference_dir', nargs='?')
+    c.set_defaults(func=cmd_compare)
 
     args = parser.parse_args()
     if args.list_counters:

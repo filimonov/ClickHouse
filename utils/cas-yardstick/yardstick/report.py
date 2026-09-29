@@ -215,6 +215,8 @@ def _cell(idx, policy, card, phase, metric):
     status = idx.get((policy, card, phase, 'status'))
     if status is not None:
         return status['median']
+    if metric == 'gc_rounds':
+        return _gc_cell(idx, policy, card, phase)
     source = {'MiB_r': 'bytes_read', 'MiB_w': 'bytes_written'}.get(metric, metric)
     r = idx.get((policy, card, phase, source))
     if r is None:
@@ -226,6 +228,15 @@ def _cell(idx, policy, card, phase, metric):
     if r['min'] != r['max']:
         text += f' ({_num(r["min"] / scale, metric)}..{_num(r["max"] / scale, metric)})'
     return text + ('' if r['mark'] in ('', 'noisy') else r['mark']) + (' noisy' if r['mark'] == 'noisy' else '')
+
+
+def _gc_cell(idx, policy, card, phase):
+    """`N (M overlapping)`: N rounds began and ended inside the window, M only overlapped it."""
+    inside = idx.get((policy, card, phase, 'gc_rounds'))
+    over = idx.get((policy, card, phase, 'gc_rounds_overlapping'))
+    if inside is None or over is None:
+        return '-'
+    return f'{_num(inside["median"], "gc_rounds")} ({_num(over["median"], "gc_rounds")} overlapping)'
 
 
 def _ratio_cell(idx, num_policy, den_policy, card, phase, metric):
