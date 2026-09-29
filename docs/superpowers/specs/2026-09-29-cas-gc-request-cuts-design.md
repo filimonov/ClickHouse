@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS GC: four request cuts and one LIST measurement — design (rev.3) {#cas-gc-request-cuts}
 
-- Date: 2026-09-29. Status: rev.3, for re-review, then plan.
+- Date: 2026-09-29. Status: rev.3, ready for planning (codex round 3: 7/7 closed, three verification items carried into the plan: the A0 oracle's process and edge-cut preconditions, the asserted allocation limit of the A4 memory test, the per-key form of B4's fault-path inequality).
 - Base: `altinity/antalya-26.6` with PR #2351 merged. Its fold sizes the read-ahead from `gc_io_concurrency`; there is no `cas_gc_concurrency` and no `GcRound` type.
 - Parent: `2026-09-25-cas-gc-rounds-in-minutes-design.md`. This spec takes A0, A2, A4, the batch-delete half of B4, and the measurement half of CAS-29.13. B1–B3, the janitor settings, stage C and the bounded-listing fix stay in the parent.
 - Backlog: CAS-29.3 (A0), CAS-29.5 (A2), CAS-29.12 (A4), CAS-29.9 (B4), CAS-29.13 (measurement only). Measurements: `docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md` F3, F4, F6, F24.
