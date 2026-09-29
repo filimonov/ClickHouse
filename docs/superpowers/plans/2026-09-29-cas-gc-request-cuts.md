@@ -47,9 +47,11 @@
 **Files:**
 - Modify: `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.cpp` (`settleEntry`, the `graduationAvailable()` branch at ~498)
 - Test: `src/Disks/tests/gtest_cas_blob_indegree.cpp` (carry), `src/Disks/tests/gtest_cas_gc_fold.cpp` (republish-and-clear, unreadable meta, delayed write, supersede)
+- Model: `docs/superpowers/models/CaGcCondemnMarkerGate.tla`, `_fix.cfg`, `_bug.cfg`, `_RESULTS.md` (on `cas-gc-rebuild`, where the models live; the code commits go to the antalya branch)
 
 **Interfaces:** none new. The row flag `marker_confirmed` (bit value 2 of the flags byte) is already encoded/decoded.
 
+- [ ] **Step 0: Model check.** Extend `docs/superpowers/models/CaGcCondemnMarkerGate.tla` with a persisted confirmation flag on the retired entry (`ret.pconf`): set where `ret.conf` is set, kept by `GRestart` (which still clears `ret.conf`), cleared by the supersede transition; `GSettleGraduate` accepts `ret.conf \/ ret.pconf \/ loadMeta = "condemned"`. Run TLC on `CaGcCondemnMarkerGate_fix.cfg` (expect `INV_NO_LOSS` to hold) and on `_bug.cfg` (expect the dangle trace still found) through `docs/superpowers/models/run_tlc.sh` (8 workers, `nice 10`), and append both results with state counts to `CaGcCondemnMarkerGate_RESULTS.md`. A violation on the fix configuration stops Task 1: report the trace, do not weaken the gate.
 - [ ] **Step 1: Failing test, carry.** In `gtest_cas_blob_indegree.cpp`, `TEST(CASBlobInDegree, CarriedRowKeepsTheConfirmedMarker)`: fold N=3 condemned rows below the floor with a `work_budget` whose graduation budget is 1 and a `confirm_condemned_marker` callback that counts calls and returns true. Assert: round 1 → 3 calls, 1 graduated (`delete_pending`), 2 carried; decode the carried run rows → `marker_confirmed == true` for both carried rows (today: false). Round 2 over the carried run with a fresh callback → 0 calls for the carried rows, 1 more graduated.
 - [ ] **Step 2: Run → red** (`build/src/unit_tests_dbms --gtest_filter='CASBlobInDegree.CarriedRow*'`).
 - [ ] **Step 3: Implement.** In the `!graduationAvailable()` branch push `RetiredEntry carried = e; carried.marker_confirmed = true; rmr.still_retired.push_back(std::move(carried));` — only there; the `else` branch (unconfirmed) and the supersede path are untouched. One comment: `/// The confirmation is a durable fact about (hash, token); carrying it saves the re-read after a restart (spec A0).` (drop "spec A0" in the code; keep the reason).
@@ -61,7 +63,7 @@
   - Each test asserts equality with the old path for the unaffected sibling row (marker still `Condemned`).
 - [ ] **Step 5: Run → red on the new expectations, green after Step 3** (the old path is reproduced in the test by a `Gc` built with the persisted flag cleared before the second round).
 - [ ] **Step 6: Gate** `bash utils/cas-gate/run_cas_gate_per_suite.sh > build/gate_task1.log 2>&1` → green.
-- [ ] **Step 7: Commit** `git add src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.cpp src/Disks/tests/gtest_cas_blob_indegree.cpp src/Disks/tests/gtest_cas_gc_fold.cpp && git commit -s -m "CAS GC: carry the confirmed condemn marker across rounds"`.
+- [ ] **Step 7: Commit** the model changes on `cas-gc-rebuild` (exact paths under `docs/superpowers/models/`), then on the antalya branch `git add src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasBlobInDegree.cpp src/Disks/tests/gtest_cas_blob_indegree.cpp src/Disks/tests/gtest_cas_gc_fold.cpp && git commit -s -m "CAS GC: carry the confirmed condemn marker across rounds"`.
 
 ---
 

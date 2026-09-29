@@ -48,6 +48,8 @@ Each change moves the moment of a read, memoizes an immutable body, or sends few
 | Marker absent after T was deleted | carries, retries | graduates; the delete ends absent |
 | Meta GET throws | carries, counts `CASGCCondemnMarkerUnconfirmedCarry` | graduates; the delete of a present T ends `Removed` |
 
+**Model check.** `docs/superpowers/models/CaGcCondemnMarkerGate.tla` models exactly this gate: `GRestart` drops the in-process confirmation and forces graduation onto the `loadMeta` re-check. A0 adds a third evidence source, a confirmation persisted in the run row that survives `GRestart`. The model is extended with that flag (set by the confirming step that sets `ret.conf`, kept across `GRestart`, reset by supersede), and TLC must show `INV_NO_LOSS` holding on the fix configuration while the bug configuration still finds the dangle. The prose argument above is the model's own "why the fix holds" argument plus the cleared-marker case; the TLC run is the evidence, the prose is not.
+
 **Tests, failing first.**
 - **Carry.** N condemned rows, budget 1, counting gate callback. Round 1 makes N calls. A fresh `Gc` graduates the next row with 0 calls; today it makes N−1.
 - **Each table row**, run through current and A0 code. Unchanged rows assert equality except the flag. Changed rows assert the listed transitions, that no delete targets a token other than T, and that the replacement survives. In the `Clean` case, the writer's replacement upload lands while its edge is still unfolded.
