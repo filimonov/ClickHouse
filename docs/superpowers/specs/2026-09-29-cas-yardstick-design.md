@@ -1,4 +1,4 @@
-# CAS yardstick: CAS vs S3 on the same workload — design (rev.2) {#design}
+# CAS yardstick: CAS vs S3 on the same workload — design (rev.3) {#design}
 
 Task: CAS-321.1 (stage 0 of the parity umbrella CAS-321). Origin: `tmp/cas223/rig` and the CAS-223 RCA
 (`docs/superpowers/reports/2026-09-28-cas-223-rca/RCA.md`), which measured one card by hand: a create / 3 insert / select /
@@ -92,14 +92,17 @@ process caches. "Cold" therefore means: the server process, its metadata and CAS
 are cold; the store is not. Cards that create their own data inside `measured` (1, 2, 5-hot, 7) have no fixture to reset:
 their cold pass is the first pass on the fresh process, their hot pass the second.
 
-Merges: `SYSTEM STOP MERGES` on the card table in cards 2, 3, 4, 6 (deterministic part counts and per-part units); merges
+Merges: cards 2, 3, 4, 6 create their table with `max_parts_to_merge_at_once = 1`, which the selector never satisfies, so
+no merge runs and the setting survives `DETACH`/`ATTACH` and the cold restart (`SYSTEM STOP MERGES` is lost on both and
+also blocks mutations, so card 4 could not use it); the part-count invariants pin it; merges
 run in cards 1, 5 and 7, which are therefore "merge-inclusive" workloads with units that do not depend on part counts.
 `--scale f` multiplies the row and count parameters below; every count is `max(1, round(f × n))`; the reference is defined
 at `f = 1` only and the manifest records the effective counts.
 
 Capability matrix: `supports(policy)` returns `True`/`False` with a reason; an unsupported (policy, card) prints
-`UNSUPPORTED (<reason>)` in every cell, gets no ratio, and is not a failure. Known today: all seven cards are expected to
-run on `cas`, `s3` and `s3_plain_rewritable`; the matrix exists so that a disk that cannot run a card is reported instead
+`UNSUPPORTED (<reason>)` in every cell, gets no ratio, and is not a failure. Known today: `mutation` and `lwd_concurrent` are `UNSUPPORTED (immutable disk)` on `s3plain` and `s3plain_cached`
+(`s3_plain_rewritable` has no hard links, the server refuses `ALTER … UPDATE` and `DELETE` with error 344); the other
+pairs run; the matrix exists so that a disk that cannot run a card is reported instead
 of substituted. An unexpected error on a supported pair is `FAILED`.
 
 1. **cycle** — unit: cycle (200: 8 workers × 25 iterations). One iteration: `CREATE TABLE (k UInt64, s String)`, 3 ×
@@ -108,22 +111,26 @@ of substituted. An unexpected error on a supported pair is `FAILED`.
    elapsed time of the whole pass (throughput), the per-operation latencies are separate columns. Invariant: every
    `SELECT` returns 3000 rows and the expected sum.
 2. **wide_insert** — unit: insert (500). `setup`: `CREATE TABLE` of 30 columns (15 `UInt64` = `number * i`, 15 `String` =
-   `toString(number * i)`), `STOP MERGES`. `measured` = 500 sequential `INSERT … FROM numbers(i*20000, 20000)` with
+   `toString(number * i)`), merges off. `measured` = 500 sequential `INSERT … FROM numbers(i*20000, 20000)` with
    `max_insert_threads = 1` from one worker (10M rows, 500 parts). Hot = `TRUNCATE TABLE` (not measured), then the same
    500 inserts. Invariants: 500 active parts and 10M rows after each pass.
-3. **attach_200** — unit: part (200). `setup`: 200 inserts of 10k rows, `STOP MERGES`; cold reset. `measured` =
+3. **attach_200** — unit: part (200). `setup`: 200 inserts of 10k rows, merges off; cold reset. `measured` =
    `DETACH TABLE` + `ATTACH TABLE` (part loading with `primary_key_lazy_load = 0`: every part's metadata and primary index
    are read). Hot = the same pair. Invariants: 200 active parts, 2M rows after each pass.
-4. **mutation** — unit: part (100). `setup`: 100 parts × 10k rows of `(k UInt64, s String = toString(k))`, `STOP MERGES`;
+4. **mutation** — unit: part (100). `setup`: 100 parts × 10k rows of `(k UInt64, s String = toString(k))`, merges off;
    cold reset. `measured` = `ALTER TABLE … UPDATE s = toString(k + <pass>) WHERE 1 SETTINGS mutations_sync = 2` (the value
    depends on the pass, so both passes rewrite every row from a known state). Hot = the same with `<pass>` = 2.
    Invariants: 100 active parts (no merges), 1M rows, `s = toString(k + pass)` on a sample.
 5. **lwd_concurrent** — unit: delete (80). `setup`: 50 parts × 100k rows (5M rows) with `enable_block_number_column = 1`
    and `enable_block_offset_column = 1`; cold reset. `measured` = 8 workers × 10 deletes, worker w, iteration i:
-   `DELETE FROM t WHERE k % 8 = w AND intDiv(k, 8) % 20 = i` with `lightweight_deletes_sync = 2`, i in 0..9 — half of the
+   `DELETE FROM t WHERE k % 8 = w AND intDiv(k, 8) % 20 = i` with `lightweight_delete_mode = 'lightweight_update_force'`
+   (patch parts, synchronous by construction), i in 0..9 — half of the
    rows. Hot: the same with i in 10..19 — the other half. Invariants: 5M rows before cold, 2.5M after cold, 0 after hot.
+   The default `lightweight_delete_mode` registers concurrent deletes as mutations and loses some of them
+   (ClickHouse#122083, fixed by ClickHouse#122934; on 26.6 the card lost 1–3 of 80 deletes in 9 of 12 runs), which is
+   why the card forces patch parts.
 6. **select_subset** — unit: query (1). `setup`: 200 compact parts (`min_bytes_for_wide_part = 1073741824`) × 50k rows × 10
-   `UInt64` columns (`c<i> = number * i`), `STOP MERGES`; cold reset. `measured` = `SELECT sum(c3) FROM t`. Hot = the same
+   `UInt64` columns (`c<i> = number * i`), merges off; cold reset. `measured` = `SELECT sum(c3) FROM t`. Hot = the same
    query. Invariants: 200 active parts, the expected sum.
 7. **dup_content** — unit: table (20). `measured` = 20 `CREATE TABLE` + one `INSERT … SELECT number, toString(number) FROM
    numbers(1000000)` each (identical content; the card where CAS is expected to need fewer PUTs and bytes). Cold = first
