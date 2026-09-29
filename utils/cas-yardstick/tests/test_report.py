@@ -81,5 +81,91 @@ class Compare(unittest.TestCase):
         self.assertRegex(out, r'wall.*!')      # |Δ wall| > 10 % is marked
         self.assertRegex(out, r'GET.*!')       # a request-median change is marked
 
+def rows_for(policy, metric, values, card='cycle', phase='cold', unit_count=200):
+    return [dict(policy=policy, card=card, phase=phase, repeat=i + 1, metric=metric, value=v, unit_count=unit_count)
+            for i, v in enumerate(values)]
+
+class Pairing(unittest.TestCase):
+    def rows(self):
+        return (rows_for('cas', 'GET', [83, 84, 83]) + rows_for('s3', 'GET', [12, 12, 12]) +
+                rows_for('cas', 'wall', [3.0, 3.1, 3.2]) + rows_for('s3', 'wall', [1.0, 1.0, 1.0]) +
+                rows_for('cas', 'median_op_ms', [12.5, 12.5, 12.5]) + rows_for('s3', 'median_op_ms', [4.0, 4.0, 4.0]) +
+                rows_for('cas', 'bytes_read', [1 << 20] * 3) + rows_for('s3', 'bytes_read', [1 << 19] * 3) +
+                rows_for('cas', 'bytes_written', [1 << 21] * 3) + rows_for('s3', 'bytes_written', [1 << 20] * 3))
+    def test_ratio_rows_are_per_repeat(self):
+        summary = R.build_summary(self.rows())
+        r = [x for x in summary if x['metric'] == 'ratio:cas/s3:GET'][0]
+        self.assertEqual((r['policy'], r['min'], r['max']), ('cas/s3', 83 / 12, 84 / 12))
+        self.assertAlmostEqual(r['median'], 83 / 12)
+        self.assertEqual([x for x in summary if x['metric'] == 'ratio:cas/s3plain:GET'], [])   # s3plain has no rows
+    def test_table_shows_ranges_ratios_values(self):
+        table = R.render_table(R.build_summary(self.rows()), ['cas', 's3', 's3plain'], [])
+        self.assertIn('6.92 (6.92..7.00)', table)            # ratio with range
+        self.assertIn('83 (83..84)~', table)                  # cell range plus the request-variation mark
+        self.assertIn('12.50', table)                         # median_op_ms rendered with a value
+        self.assertIn('1.0', table)                           # MiB_r cell of cas
+        self.assertIn('per unit', table); self.assertIn('GET=0.415', table)
+    def test_zero_denominator_and_roundtrip(self):
+        rows = rows_for('cas', 'PUT', [5, 5, 5]) + rows_for('s3', 'PUT', [0, 0, 0])
+        summary = R.build_summary(rows)
+        self.assertEqual([x for x in summary if x['metric'] == 'ratio:cas/s3:PUT'][0]['median'], '0 → 5')
+        self.assertIn('0 → 5', R.render_table(summary, ['cas', 's3'], []))
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 's.tsv'); R.write_summary(p, summary)
+            self.assertEqual(R.read_summary(p), summary)
+    def test_unavailable_suppresses_ratio(self):
+        rows = rows_for('cas', 'HEAD', [R.UNAVAILABLE] * 3) + rows_for('s3', 'HEAD', [4, 4, 4])
+        summary = R.build_summary(rows)
+        self.assertEqual([x for x in summary if x['metric'].startswith('ratio')], [])
+        table = R.render_table(summary, ['cas', 's3'], [])
+        self.assertIn(R.UNAVAILABLE, table)
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 's.tsv'); R.write_summary(p, summary)
+            self.assertEqual(R.read_summary(p), summary)
+    def test_repeat_sets_must_match(self):
+        rows = rows_for('cas', 'GET', [1, 2, 3]) + rows_for('s3', 'GET', [1, 2])
+        with self.assertRaises(ValueError):
+            R.build_summary(rows)
+    def test_cached_block_skips_cards_without_rows(self):
+        table = R.render_table(R.build_summary(self.rows()), ['cas', 's3'], ['cas_cached'])
+        self.assertNotIn('cached /', table)
+    def test_diagnostics_s3_errors_and_empty(self):
+        rows = rows_for('cas', 'S3ReadRequestsErrors', [2, 2, 2], unit_count=1)
+        self.assertIn('S3ReadRequestsErrors', R.render_diagnostics(R.build_summary(rows)))
+        self.assertEqual(R.render_diagnostics([]).strip(), '')
+
+class Edges(unittest.TestCase):
+    def test_paired_ratio_length_mismatch(self):
+        with self.assertRaises(ValueError):
+            R.paired_ratio([1, 2], [1])
+        with self.assertRaises(ValueError):
+            R.paired_ratio([], [])
+    def test_mark_wall_zero_min(self):
+        self.assertEqual(R.mark_wall([0.0, 1.0]), 'noisy')
+    def test_compatible_missing_field(self):
+        m = dict(workload_rev='a')
+        self.assertIn('scale', R.compatible(m, m))
+    def test_tsv_rejects_tab_and_newline(self):
+        with tempfile.TemporaryDirectory() as d:
+            for bad in ('a\tb', 'a\nb'):
+                with self.assertRaises(ValueError):
+                    R.write_manifest(os.path.join(d, 'm.tsv'), dict(gc=bad))
+    def test_compare_negative_and_missing(self):
+        def row(metric, median):
+            return dict(policy='cas', card='cycle', phase='cold', metric=metric, median=median, min=median, max=median,
+                        repeats=3, per_unit='', mark='')
+        cur = [row('wall', 3.1), row('GET', 100), row('PUT', 7)]
+        ref = [row('wall', 3.0), row('GET', 100), row('HEAD', 1)]
+        lines = {l.split(': ')[0]: l for l in R.render_compare(cur, ref).splitlines()}
+        self.assertNotIn('!', lines['cas cycle cold wall'])
+        self.assertNotIn('!', lines['cas cycle cold GET'])
+        self.assertRegex(lines['cas cycle cold PUT'], r'no reference.*!')
+        self.assertRegex(lines['cas cycle cold HEAD'], r'no current.*!')
+    def test_compare_text_vs_number_flagged(self):
+        a = dict(policy='cas', card='m', phase='cold', metric='status', median='FAILED', min='FAILED', max='FAILED',
+                 repeats=1, per_unit='', mark='')
+        b = dict(a, median=1, min=1, max=1)
+        self.assertIn('!', R.render_compare([a], [b]))
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,4 +1,6 @@
-"""Report arithmetic for the CAS yardstick: counter aggregates, statistics, TSV files, tables."""
+"""Report arithmetic for the CAS yardstick: counter aggregates, statistics, TSV files, tables.
+
+Counters are the disk-level ones (DiskS3*), which count requests per disk, not per process."""
 import statistics
 from collections import OrderedDict
 
@@ -20,6 +22,8 @@ S3_ERROR_COUNTERS = ['S3ReadRequestsErrors', 'S3WriteRequestsErrors',
                      'DiskS3ReadRequestRetryableErrors', 'DiskS3WriteRequestRetryableErrors']
 UNAVAILABLE = 'unavailable'
 REQUEST_METRICS = ['GET', 'PUT', 'HEAD', 'LIST', 'DELETE', 'COPY', 'ABORT']
+RATIO_METRICS = ['wall', 'GET', 'PUT', 'bytes_read', 'bytes_written']
+RATIO_COLUMNS = ['wall', 'GET', 'PUT', 'bytes_r', 'bytes_w']
 COMPAT_FIELDS = ['workload_rev', 'scale', 'counts', 'gc', 'repeats', 'config_hash', 'build_type', 'store']
 
 SAMPLE_COLUMNS = ['policy', 'card', 'phase', 'repeat', 'metric', 'value', 'unit_count']
@@ -43,12 +47,18 @@ def summarize(samples):
     return statistics.median(samples), min(samples), max(samples)
 
 
-def paired_ratio(num, den):
+def _ratios(num, den):
+    """(median, min, max) of per-repeat ratios, or the text '0 → n' when any denominator is zero."""
+    if len(num) != len(den) or not num:
+        raise ValueError(f'ratio needs equal, non-empty samples: {len(num)} vs {len(den)}')
     if any(d == 0 for d in den):
         return '0 → %g' % statistics.median(num)
-    ratios = [n / d for n, d in zip(num, den)]
-    m, lo, hi = summarize(ratios)
-    return f'{m:.2f} ({lo:.2f}..{hi:.2f})'
+    return summarize([n / d for n, d in zip(num, den)])
+
+
+def paired_ratio(num, den):
+    r = _ratios(num, den)
+    return r if isinstance(r, str) else f'{r[0]:.2f} ({r[1]:.2f}..{r[2]:.2f})'
 
 
 def mark_requests(samples):
@@ -56,10 +66,11 @@ def mark_requests(samples):
 
 
 def mark_wall(samples):
-    return 'noisy' if min(samples) > 0 and max(samples) / min(samples) > 1.2 else ''
+    lo, hi = min(samples), max(samples)
+    return 'noisy' if (lo == 0 < hi) or (lo > 0 and hi / lo > 1.2) else ''
 
 
-def per_unit(value, unit_count):
+def per_unit(value, unit_count):  # callers store '' instead when unit_count is 0
     return value / unit_count
 
 
@@ -77,7 +88,11 @@ def _parse_number(s):
 
 
 def _format(v):
-    return v if isinstance(v, str) else repr(v)
+    if not isinstance(v, str):
+        return repr(v)
+    if '\t' in v or '\n' in v:
+        raise ValueError(f'tab or newline in TSV value: {v!r}')
+    return v
 
 
 def _write_tsv(path, columns, rows):
@@ -118,7 +133,36 @@ def read_summary(path):
     return _read_tsv(path, SUMMARY_COLUMNS)
 
 
-def build_summary(rows):
+def _ratio_rows(rows, pairs):
+    by = {}
+    for r in rows:
+        by.setdefault((r['policy'], r['card'], r['phase']), {}).setdefault(r['metric'], {})[r['repeat']] = r['value']
+    out = []
+    for (policy, card, phase), metrics in by.items():
+        for num_policy, den_policy in pairs:
+            if policy != num_policy or (den_policy, card, phase) not in by:
+                continue
+            other = by[(den_policy, card, phase)]
+            if 'status' in metrics or 'status' in other:
+                continue
+            for m in RATIO_METRICS:
+                if m not in metrics or m not in other:
+                    continue
+                if set(metrics[m]) != set(other[m]):
+                    raise ValueError(f'repeat sets differ for {card}/{phase}/{m}: {num_policy} vs {den_policy}')
+                repeats = sorted(metrics[m])
+                num, den = [metrics[m][i] for i in repeats], [other[m][i] for i in repeats]
+                if any(isinstance(v, str) for v in num + den):
+                    continue
+                r = _ratios(num, den)
+                lo_hi = (r, r) if isinstance(r, str) else r[1:]
+                out.append(dict(policy=f'{num_policy}/{den_policy}', card=card, phase=phase,
+                                metric=f'ratio:{num_policy}/{den_policy}:{m}', median=r if isinstance(r, str) else r[0],
+                                min=lo_hi[0], max=lo_hi[1], repeats=len(repeats), per_unit='', mark=''))
+    return out
+
+
+def build_summary(rows, ratios_of=('cas', 's3', 's3plain')):
     groups = OrderedDict()
     for r in rows:
         groups.setdefault((r['policy'], r['card'], r['phase'], r['metric']), []).append(r)
@@ -127,7 +171,7 @@ def build_summary(rows):
         key = dict(policy=policy, card=card, phase=phase, metric=metric)
         values = [r['value'] for r in rs]
         text = [v for v in values if isinstance(v, str)]
-        if text:
+        if text:  # a text value (status, unavailable) in any repeat replaces the whole cell
             out.append(dict(key, median=text[0], min=text[0], max=text[0], repeats=len(rs), per_unit='', mark=''))
             continue
         units = {r['unit_count'] for r in rs}
@@ -143,7 +187,7 @@ def build_summary(rows):
         unit = units.pop()
         out.append(dict(key, median=median, min=lo, max=hi, repeats=len(rs),
                         per_unit=per_unit(median, unit) if unit else '', mark=mark))
-    return out
+    return out + _ratio_rows(rows, [(ratios_of[0], o) for o in ratios_of[1:]])
 
 
 def _index(summary):
@@ -154,37 +198,38 @@ def _cards(summary):
     return list(OrderedDict(((r['card'], r['phase']), None) for r in summary))
 
 
+def _num(v, metric):
+    if metric in ('wall', 'median_op_ms', 'p90_op_ms'):
+        return f'{v:.2f}'
+    if metric in ('MiB_r', 'MiB_w'):
+        return f'{v:.1f}'
+    return str(int(v)) if v == int(v) else f'{v:.3g}'
+
+
 def _cell(idx, policy, card, phase, metric):
     status = idx.get((policy, card, phase, 'status'))
     if status is not None:
         return status['median']
-    if metric in ('MiB_r', 'MiB_w'):
-        r = idx.get((policy, card, phase, 'bytes_read' if metric == 'MiB_r' else 'bytes_written'))
-        scale = 1 << 20
-    else:
-        r = idx.get((policy, card, phase, metric))
-        scale = 1
+    source = {'MiB_r': 'bytes_read', 'MiB_w': 'bytes_written'}.get(metric, metric)
+    r = idx.get((policy, card, phase, source))
     if r is None:
         return '-'
-    v = r['median']
-    if isinstance(v, str):
-        return v
-    v = v / scale
-    if metric == 'wall':
-        return f'{v:.2f}' + (' noisy' if r['mark'] == 'noisy' else '')
-    return (f'{v:.1f}' if isinstance(v, float) and v != int(v) else str(int(v))) + r['mark']
+    if isinstance(r['median'], str):
+        return r['median']
+    scale = (1 << 20) if source != metric else 1
+    text = _num(r['median'] / scale, metric)
+    if r['min'] != r['max']:
+        text += f' ({_num(r["min"] / scale, metric)}..{_num(r["max"] / scale, metric)})'
+    return text + ('' if r['mark'] in ('', 'noisy') else r['mark']) + (' noisy' if r['mark'] == 'noisy' else '')
 
 
-def _ratio(idx, num_policy, den_policy, card, phase, metric):
-    if (num_policy, card, phase, 'status') in idx or (den_policy, card, phase, 'status') in idx:
+def _ratio_cell(idx, num_policy, den_policy, card, phase, metric):
+    r = idx.get((f'{num_policy}/{den_policy}', card, phase, f'ratio:{num_policy}/{den_policy}:{metric}'))
+    if r is None:
         return '-'
-    n = idx.get((num_policy, card, phase, metric))
-    d = idx.get((den_policy, card, phase, metric))
-    if n is None or d is None or isinstance(n['median'], str) or isinstance(d['median'], str):
-        return '-'
-    if d['median'] == 0:
-        return '0 → %g' % n['median']
-    return f"{n['median'] / d['median']:.2f}"
+    if isinstance(r['median'], str):
+        return r['median']
+    return f'{r["median"]:.2f} ({r["min"]:.2f}..{r["max"]:.2f})'
 
 
 def _grid(rows):
@@ -193,36 +238,45 @@ def _grid(rows):
 
 
 def render_table(summary, policies_uncached, policies_cached, ratios_of=('cas', 's3', 's3plain')):
+    """Rows are card x phase; one column group per policy, then one ratio group per compared pair."""
     idx = _index(summary)
     blocks = []
     for title, policies in (('uncached', policies_uncached), ('cached', policies_cached)):
-        if not policies:
+        cards = [cp for cp in OrderedDict(((r['card'], r['phase']), None) for r in summary if r['policy'] in policies)]
+        if not policies or not cards:
             continue
-        for card, phase in _cards(summary):
-            rows = [['policy'] + TABLE_COLUMNS]
+        pairs = [(ratios_of[0], o) for o in ratios_of[1:] if ratios_of[0] in policies and o in policies]
+        top = ['']
+        sub = ['card/phase']
+        for p in policies:
+            top += [p] + [''] * (len(TABLE_COLUMNS) - 1)
+            sub += TABLE_COLUMNS
+        for n, d in pairs:
+            top += [f'{n}/{d}'] + [''] * (len(RATIO_COLUMNS) - 1)
+            sub += RATIO_COLUMNS
+        grid = [top, sub]
+        for card, phase in cards:
+            row = [f'{card}/{phase}']
             for p in policies:
-                rows.append([p] + [_cell(idx, p, card, phase, c) for c in TABLE_COLUMNS])
-            lines = [f'{title} / {card} / {phase}', _grid(rows)]
-            base, others = ratios_of[0], ratios_of[1:]
-            rrows = []
-            for o in others:
-                if base in policies and o in policies:
-                    rrows.append([f'{base}/{o}'] + [_ratio(idx, base, o, card, phase, m)
-                                                    for m in ('wall', 'GET', 'PUT', 'bytes_read')])
-            if rrows:
-                lines.append(_grid([['ratio', 'wall', 'GET', 'PUT', 'bytes']] + rrows))
+                row += [_cell(idx, p, card, phase, c) for c in TABLE_COLUMNS]
+            for n, d in pairs:
+                row += [_ratio_cell(idx, n, d, card, phase, m) for m in RATIO_METRICS]
+            grid.append(row)
+        lines = [title, _grid(grid)]
+        for card, phase in cards:
             for p in policies:
                 unit = [f'{m}={idx[(p, card, phase, m)]["per_unit"]:.3g}' for m in ['wall'] + REQUEST_METRICS
                         if (p, card, phase, m) in idx and isinstance(idx[(p, card, phase, m)]['per_unit'], float)]
                 if unit:
-                    lines.append(f'per unit, {p}: ' + ' '.join(unit))
-            blocks.append('\n'.join(lines))
+                    lines.append(f'per unit {card}/{phase} {p}: ' + ' '.join(unit))
+        blocks.append('\n'.join(lines))
     return '\n\n'.join(blocks) + '\n'
 
 
 def render_diagnostics(summary):
     idx = _index(summary)
-    policies = list(OrderedDict((r['policy'], None) for r in summary if r['policy'].startswith('cas')))
+    policies = list(OrderedDict((r['policy'], None) for r in summary
+                                if r['policy'].startswith('cas') and '/' not in r['policy']))
     lines = []
     for card, phase in _cards(summary):
         for p in policies:
@@ -246,18 +300,20 @@ def read_manifest(path):
 
 
 def compatible(m1, m2):
-    return [f for f in COMPAT_FIELDS if m1.get(f) != m2.get(f)]
+    return [f for f in COMPAT_FIELDS if f not in m1 or f not in m2 or m1[f] != m2[f]]
 
 
 def render_compare(cur_summary, ref_summary):
     ref = _index(ref_summary)
+    cur = _index(cur_summary)
     lines = []
-    for r in cur_summary:
-        k = (r['policy'], r['card'], r['phase'], r['metric'])
+    for k, r in cur.items():
+        name = ' '.join(k)
         o = ref.get(k)
         if o is None:
+            lines.append(f'{name}: no reference !')
             continue
-        head = f'{k[0]} {k[1]} {k[2]} {k[3]}: cur {r["median"]} ({r["min"]}..{r["max"]}) vs ref {o["median"]} ({o["min"]}..{o["max"]})'
+        head = f'{name}: cur {r["median"]} ({r["min"]}..{r["max"]}) vs ref {o["median"]} ({o["min"]}..{o["max"]})'
         if isinstance(r['median'], str) or isinstance(o['median'], str):
             lines.append(head + ('' if r['median'] == o['median'] else ' !'))
             continue
@@ -266,4 +322,5 @@ def render_compare(cur_summary, ref_summary):
         flag = (k[3] == 'wall' and pct is not None and abs(pct) > 10) or \
                (k[3] in REQUEST_METRICS and r['median'] != o['median'])
         lines.append(head + text + (' !' if flag else ''))
+    lines += [f'{" ".join(k)}: no current !' for k in ref if k not in cur]
     return '\n'.join(lines) + '\n'
