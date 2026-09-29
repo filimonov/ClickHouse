@@ -72,14 +72,12 @@ allocated after the snapshot, insert `3` activated, merge of `1` and `3` selecte
 Hence the **watermark** (§3) also bounds the candidates: a part whose `min_block` is above the watermark is not a
 candidate of this selection. (`min_block`, not the data version: a restored or attached part keeps a mutation version
 from its source table that can be above this table's block counter, and it must stay mergeable; a part whose blocks
-were all allocated after the snapshot is exactly the late candidate.) Reachability note (Task 4 of the
-implementation, verified with `system.stack_trace`): mutation planning (`MutationsInterpreter::validate` →
-`getMutationsSnapshot`) and update planning take `currently_processing_in_background_mutex` before allocating their
-block, so on the current code no data-affecting version can be allocated while a selection runs; the rename/drop path
-allocates without that mutex, but a merged part then stays below the rename's version and the rename applies to its
-rows. The candidate rule is kept because it makes the selection's consistency independent of the interpreter's lock
-order; its test is a structural pin (a part created after the snapshot is not merged by that selection), not a
-data-loss reproduction. It is *filtered out* before the partition-wide checks (`MergeTreePartsCollector`
+were all allocated after the snapshot is exactly the late candidate.) Reachability (settled in Task 4's review): mutation and update planning take
+`currently_processing_in_background_mutex` and release it before the block is allocated in `prepareMutationEntry`, so a
+mutation that finished planning just before a selection took the mutex allocates its version during that selection —
+the interleaving above is reachable, and the candidate rule is what closes it. Its test pauses the mutation right
+before `allocateBlockNumber` and the `OPTIMIZE` right after its snapshot (a pause reached only by the explicit
+`OPTIMIZE` path, so a background selection cannot consume it). It is *filtered out* before the partition-wide checks (`MergeTreePartsCollector`
 drops it from the initial set), not refused: refusing it would make `OPTIMIZE FINAL` fail whenever an insert lands
 between the snapshot and the collection, because `FINAL` requires every part of the partition to be usable
 (confirmation round of rev.2). The filtered parts are the newest ones; a `FINAL` under a concurrent insert stream never
