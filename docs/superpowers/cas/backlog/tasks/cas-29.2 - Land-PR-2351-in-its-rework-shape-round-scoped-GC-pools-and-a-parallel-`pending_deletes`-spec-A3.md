@@ -3,11 +3,11 @@ id: CAS-29.2
 title: >-
   Land PR #2351 in its rework shape: round-scoped GC pools and a parallel
   `pending_deletes` (spec A3)
-status: In Progress
+status: Done
 assignee:
   - '@k-morozov'
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-29 21:04'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -79,7 +79,5 @@ Provenance: BACKLOG/gc.md#gc-pending-deletes-fan-out (formerly [gc-delete-concur
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-First recorded: 2026-08-04 (fdbc062bfd0, by 'gc-delete-concurrency-serial')
-
-PR #2351 (open), branch cas/gc-parallel-delete-blobs, base antalya-26.6, +1534/-109, review required. As of 2026-09-26 it still adds a per-Gc pool behind `cas_gc_io_concurrency` (bench: 247 → 2,900 blobs/s at 16); the rework spec asks for round-scoped pools and `cas_gc_concurrency`.
+Landed with PR #2351 (merge 61d24118251 into antalya-26.6, 2026-09-29) in the rework shape (cas_gc_concurrency, GcRound). Not yet in cas-gc-rebuild.
 <!-- SECTION:NOTES:END -->
