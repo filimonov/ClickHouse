@@ -16,7 +16,7 @@ Source: `tmp/cas223/runs/req_cas.tsv`, `tmp/cas223/runs/req_plain.tsv`; table in
 
 The 800-cycle totals in `tests/fixtures/rca_2026_09_28_samples.tsv` are these counts times 800 (GET 66400 / 9600).
 
-The yardstick's own cycle smoke measured 6 GET per cycle on plain S3 (48 GET for 8 cycles, `s3plain` in `tmp/cas321/smoke_task4_fix1.log`), against 12 above.
+The yardstick's own cycle smoke measured 6 GET per cycle on plain S3 (48 GET for 8 cycles, `s3` in `tmp/cas321/smoke_task4_fix1.log`), against 12 above.
 A likely cause, not verified: the old rig's plain-S3 process also had a CAS disk registered. Prefer the yardstick's number for plain S3.
 The RCA does not state the GC setting of these two runs.
 
