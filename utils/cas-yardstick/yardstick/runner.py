@@ -292,10 +292,10 @@ def run(args) -> int:
     run_root = os.path.abspath(os.path.join(args.runs_dir, run_id))
     os.makedirs(run_root)
     args.run_root = run_root
-    gc = args.gc == 'on'
+    gc_on = args.gc == 'on'
 
     config_dir = os.path.join(run_root, 'config')
-    hashes = {p: config.write_config(os.path.join(config_dir, p), p, args.endpoint, f'test/{run_id}/{p}/config', gc)
+    hashes = {p: config.write_config(os.path.join(config_dir, p), p, args.endpoint, f'test/{run_id}/{p}/config', gc_on)
               for p in policies}
     version, build_type = _probe(args.binary)
     if args.external_endpoint:
@@ -325,7 +325,7 @@ def run(args) -> int:
     print(f'run {run_id} in {run_root}', flush=True)
 
     server = ServerControl(args.binary, args.port_base)
-    deps = Deps(run_id=run_id, runs_dir=os.path.abspath(args.runs_dir), endpoint=args.endpoint, gc=gc,
+    deps = Deps(run_id=run_id, runs_dir=os.path.abspath(args.runs_dir), endpoint=args.endpoint, gc=gc_on,
                 scale=args.scale, server=server, client_for=lambda run_dir: Client(args.port_base + 1),
                 config_hashes=hashes)
     samples_path = os.path.join(run_root, 'samples.tsv')

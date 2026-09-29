@@ -253,6 +253,10 @@ def _grid(rows):
     return '\n'.join('  '.join(c.ljust(w) for c, w in zip(r, widths)).rstrip() for r in rows)
 
 
+def _columns(policy):
+    return TABLE_COLUMNS if policy.startswith('cas') else [c for c in TABLE_COLUMNS if c != 'gc_rounds']
+
+
 def render_table(summary, policies_uncached, policies_cached):
     """Rows are card x phase; one column group per policy, then one ratio group per pair named by the ratio rows."""
     idx = _index(summary)
@@ -266,8 +270,8 @@ def render_table(summary, policies_uncached, policies_cached):
         top = ['']
         sub = ['card/phase']
         for p in policies:
-            top += [p] + [''] * (len(TABLE_COLUMNS) - 1)
-            sub += TABLE_COLUMNS
+            top += [p] + [''] * (len(_columns(p)) - 1)
+            sub += _columns(p)
         for n, d in pairs:
             top += [f'{n}/{d}'] + [''] * (len(RATIO_COLUMNS) - 1)
             sub += RATIO_COLUMNS
@@ -275,7 +279,7 @@ def render_table(summary, policies_uncached, policies_cached):
         for card, phase in cards:
             row = [f'{card}/{phase}']
             for p in policies:
-                row += [_cell(idx, p, card, phase, c) for c in TABLE_COLUMNS]
+                row += [_cell(idx, p, card, phase, c) for c in _columns(p)]
             for n, d in pairs:
                 row += [_ratio_cell(idx, n, d, card, phase, m) for m in RATIO_METRICS]
             grid.append(row)

@@ -118,6 +118,112 @@ class RunnerGcTest(unittest.TestCase):
         self.assertIn('2 (1 overlapping)', table)
 
 
+class FailingLogClient(FakeClient):
+    def query(self, sql, settings=None, timeout=3600):
+        if 'cas_gc_log' in sql:
+            raise RuntimeError(sql, 'UNKNOWN_TABLE')
+        return super().query(sql)
+
+
+class GcFailureTest(unittest.TestCase):
+    def test_failing_gc_log_query_fails_the_pass(self):
+        from tests.test_runner import FakeCard, FakeServer
+        from yardstick import runner
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        c = FailingLogClient([])
+        deps = runner.Deps(run_id='R', runs_dir=d, endpoint='e', gc=True, scale=1.0, server=FakeServer([]),
+                           client_for=lambda run_dir: _Client(c), write_config=lambda *a: 'h',
+                           config_hashes={'cas': 'h'})
+        rows = runner.run_one('cas', FakeCard('c', has_hot=False), 1, deps)
+        self.assertEqual([(r['phase'], r['metric'], r['value']) for r in rows], [('cold', 'status', 'FAILED')])
+
+
+class TableColumnsTest(unittest.TestCase):
+    def test_gc_column_only_for_cas_policies(self):
+        rows = [dict(policy=p, card='c', phase='cold', repeat=1, metric='wall', value=1.0, unit_count=1)
+                for p in ('cas', 's3')]
+        header = R.render_table(R.build_summary(rows), ['cas', 's3'], []).splitlines()[2]
+        self.assertEqual(header.count('gc_rounds'), 1)
+
+
+class CliTest(unittest.TestCase):
+    def setUp(self):
+        import importlib.util
+        tool = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        spec = importlib.util.spec_from_file_location('yardstick_cli', os.path.join(tool, 'yardstick.py'))
+        self.cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.cli)
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        os.makedirs(os.path.join(self.dir, 'reference'))
+        self.cli.TOOL_DIR = self.dir
+        self.run_dir = self.make_run('run')
+        self.ran = []
+
+        def stub_run(args):
+            self.ran.append(args)
+            args.run_root = self.run_dir
+            return 0
+        self.cli.run = stub_run
+
+    def make_run(self, name, **manifest):
+        d = os.path.join(self.dir, name)
+        os.makedirs(d)
+        R.write_manifest(os.path.join(d, 'manifest.tsv'), {f: 'x' for f in R.COMPAT_FIELDS} | manifest)
+        rows = [dict(policy='cas', card='cycle', phase='cold', repeat=1, metric='wall', value=2.0, unit_count=1)]
+        R.write_summary(os.path.join(d, 'summary.tsv'), R.build_summary(rows))
+        return d
+
+    def set_current(self, text):
+        with open(os.path.join(self.dir, 'reference', 'CURRENT'), 'w') as f:
+            f.write(text)
+
+    def main(self, *argv):
+        import unittest.mock
+        out, err = io.StringIO(), io.StringIO()
+        with unittest.mock.patch('sys.argv', ['yardstick.py', *argv]), contextlib.redirect_stdout(out), \
+                contextlib.redirect_stderr(err):
+            try:
+                code = self.cli.main()
+            except SystemExit as e:
+                code = e.code
+        return code, out.getvalue(), err.getvalue()
+
+    def test_run_compare_uses_current(self):
+        self.make_run('ref')
+        self.set_current('../ref\n')
+        code, out, _ = self.main('run', '--binary', 'b', '--compare')
+        self.assertEqual(code, 0)
+        self.assertIn('cas cycle cold wall: cur 2.0', out)
+
+    def test_run_compare_with_empty_current_fails_after_the_run(self):
+        self.set_current('')
+        code, out, err = self.main('run', '--binary', 'b', '--compare')
+        self.assertEqual(len(self.ran), 1)
+        self.assertNotEqual(code, 0)
+        self.assertIn('no reference', err)
+
+    def test_run_compare_with_explicit_reference(self):
+        code, out, _ = self.main('run', '--binary', 'b', '--compare', '--reference', self.make_run('ref2'))
+        self.assertEqual(code, 0)
+        self.assertIn('cas cycle cold wall', out)
+
+    def test_compare_with_explicit_dir(self):
+        code, out, _ = self.main('compare', self.run_dir, self.make_run('ref3', scale='2'))
+        self.assertEqual((code, out), (1, 'incompatible: scale\n'))
+
+    def test_compare_with_empty_current_exits_with_message(self):
+        self.set_current('')
+        code, _, _ = self.main('compare', self.run_dir)
+        self.assertIn('no reference', str(code))
+
+    def test_missing_reference_dir_exits_with_message(self):
+        self.set_current('nowhere')
+        code, _, _ = self.main('compare', self.run_dir)
+        self.assertIn('no reference', str(code))
+
+
 class _Client:
     def __init__(self, inner):
         self.inner = inner

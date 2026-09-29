@@ -38,19 +38,27 @@ def cmd_run(args):
     args.endpoint = args.endpoint or DEFAULT_ENDPOINT
     code = run(args)
     if args.compare and code in (0, 2):
-        return compare_runs(args.run_root, _reference(args)) or code
+        try:
+            return compare_runs(args.run_root, _reference(args.reference)) or code
+        except SystemExit as e:
+            print(e.code, file=sys.stderr)
+            return code or 1
     return code
 
 
-def _reference(args):
+def _reference(explicit):
+    """Reference run directory: `explicit`, else the one `reference/CURRENT` names; exits with a message otherwise."""
     try:
-        return args.reference_dir or reference_dir(TOOL_DIR)
+        path = explicit or reference_dir(TOOL_DIR)
+        if not os.path.isfile(os.path.join(path, 'manifest.tsv')):
+            raise FileNotFoundError(f'{path}: no manifest.tsv')
+        return path
     except (OSError, ValueError) as e:
         sys.exit(f'no reference: {e}')
 
 
 def cmd_compare(args):
-    return compare_runs(args.run_dir, _reference(args))
+    return compare_runs(args.run_dir, _reference(args.reference_dir))
 
 
 def cmd_report(args):
@@ -88,6 +96,7 @@ def main():
     r.add_argument('--runs-dir', default='runs')
     r.add_argument('--keep-prefix', action='store_true', help='keep the run\'s bucket prefix')
     r.add_argument('--compare', action='store_true', help='compare with reference/CURRENT after the run')
+    r.add_argument('--reference', help='run directory for --compare (default: the one reference/CURRENT names)')
     r.add_argument('--smoke', action='store_true',
                    help='all cards, all policies, --scale 0.01, --repeats 1; exit 2 on any FAILED or unavailable cell')
     r.set_defaults(func=cmd_run)
