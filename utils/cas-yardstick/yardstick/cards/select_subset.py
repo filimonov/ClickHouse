@@ -1,11 +1,11 @@
 """One SELECT of one column out of ten, from 200 compact parts."""
 import time
 
-from .base import DB, SINGLE_PART, Card, parts_and_rows, table_engine
+from .base import DB, NO_MERGES, SINGLE_PART, Card, parts_and_rows, table_engine
 
 ROWS_PER_PART = 50000
 COLUMNS = 10
-TABLE_SETTINGS = 'min_bytes_for_wide_part = 1073741824'
+TABLE_SETTINGS = f'min_bytes_for_wide_part = 1073741824, {NO_MERGES}'
 
 
 class SelectSubset(Card):
@@ -24,7 +24,6 @@ class SelectSubset(Card):
         c.query(f'CREATE DATABASE IF NOT EXISTS {DB}')
         columns = ', '.join(f'c{i} UInt64' for i in range(COLUMNS))
         c.query(f'CREATE TABLE {self.table} (k UInt64, {columns}) {table_engine(policy, TABLE_SETTINGS)}')
-        c.query(f'SYSTEM STOP MERGES {self.table}')
         values = ', '.join(f'number * {i}' for i in range(COLUMNS))
         for i in range(counts['parts']):
             c.query(f'INSERT INTO {self.table} SELECT number, {values} '

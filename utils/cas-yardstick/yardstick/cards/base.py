@@ -3,6 +3,10 @@ DB = 'yardstick'
 TABLE_SETTINGS = 'primary_key_lazy_load = 0, prewarm_mark_cache = 0, prewarm_primary_key_cache = 0'
 
 
+# Merging needs two or more parts, so this keeps the part count fixed (SYSTEM STOP MERGES would also block
+# mutations and is lost on restart and DETACH).
+NO_MERGES = 'max_parts_to_merge_at_once = 1'
+
 # One stream per INSERT ... SELECT, so each statement writes exactly one part.
 SINGLE_PART = {'max_insert_threads': 1}
 
@@ -35,7 +39,7 @@ class Card:
     name: str
     unit: str
     has_hot: bool = True
-    stops_merges: bool
+    stops_merges: bool  # merges cannot change the part count during the card
     COUNTS: dict[str, int] = {}
 
     @property
@@ -53,10 +57,7 @@ class Card:
         raise NotImplementedError
 
     def before_window(self, c, phase: str) -> None:
-        """Unmeasured preparation the runner calls right before settling a window.
-        SYSTEM STOP MERGES does not survive a restart or DETACH, so it is re-issued here."""
-        if self.stops_merges:
-            c.query(f'SYSTEM STOP MERGES {self.table}')
+        """Unmeasured preparation the runner calls right before settling a window."""
 
     def cold_reset_needed(self) -> bool:
         """True when `setup` builds a fixture that the cold pass must read from a restarted process."""

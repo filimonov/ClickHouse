@@ -1,12 +1,10 @@
 """One ALTER ... UPDATE rewriting a column in each of 100 parts."""
 import time
 
-from .base import DB, SINGLE_PART, Card, parts_and_rows, supports_mutations, table_engine
+from .base import DB, NO_MERGES, SINGLE_PART, Card, parts_and_rows, supports_mutations, table_engine
 
 ROWS_PER_PART = 10000
 PASS_NO = {'cold': 1, 'hot': 2}
-# SYSTEM STOP MERGES would also block the mutation, so merging is disabled by a table setting.
-TABLE_SETTINGS = 'max_parts_to_merge_at_once = 1'
 
 
 class Mutation(Card):
@@ -23,13 +21,10 @@ class Mutation(Card):
 
     def setup(self, c, policy, counts):
         c.query(f'CREATE DATABASE IF NOT EXISTS {DB}')
-        c.query(f'CREATE TABLE {self.table} (k UInt64, s String) {table_engine(policy, TABLE_SETTINGS)}')
+        c.query(f'CREATE TABLE {self.table} (k UInt64, s String) {table_engine(policy, NO_MERGES)}')
         for i in range(counts['parts']):
             c.query(f'INSERT INTO {self.table} SELECT number, toString(number) '
                     f'FROM numbers({i * ROWS_PER_PART}, {ROWS_PER_PART})', SINGLE_PART)
-
-    def before_window(self, c, phase):
-        pass
 
     def measured(self, c, policy, counts, phase):
         a = time.monotonic()

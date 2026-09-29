@@ -1,7 +1,7 @@
 """DETACH + ATTACH of a table with 200 small parts."""
 import time
 
-from .base import DB, SINGLE_PART, Card, parts_and_rows, table_engine
+from .base import DB, NO_MERGES, SINGLE_PART, Card, parts_and_rows, table_engine
 
 ROWS_PER_PART = 10000
 
@@ -17,8 +17,7 @@ class Attach200(Card):
 
     def setup(self, c, policy, counts):
         c.query(f'CREATE DATABASE IF NOT EXISTS {DB}')
-        c.query(f'CREATE TABLE {self.table} (k UInt64, s String) {table_engine(policy)}')
-        c.query(f'SYSTEM STOP MERGES {self.table}')
+        c.query(f'CREATE TABLE {self.table} (k UInt64, s String) {table_engine(policy, NO_MERGES)}')
         for i in range(counts['parts']):
             c.query(f'INSERT INTO {self.table} SELECT number, toString(number) '
                     f'FROM numbers({i * ROWS_PER_PART}, {ROWS_PER_PART})', SINGLE_PART)

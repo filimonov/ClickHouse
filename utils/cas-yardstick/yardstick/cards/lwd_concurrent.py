@@ -12,8 +12,8 @@ ROWS_PER_PART = 100000
 # k % 8 = w AND intDiv(k, 8) % 20 = r selects 1/160 of the rows and ROWS_PER_PART is a multiple of 160,
 # so each phase deletes exactly half of what is left.
 TABLE_SETTINGS = 'enable_block_number_column = 1, enable_block_offset_column = 1'
-# Patch parts: the default mode (a mutation per DELETE) loses some of 80 concurrent deletes.
-DELETE_SETTINGS = {'lightweight_deletes_sync': 2, 'lightweight_delete_mode': 'lightweight_update_force'}
+# The default mode registers concurrent deletes as mutations out of order and loses some (ClickHouse#122083).
+DELETE_SETTINGS = {'lightweight_delete_mode': 'lightweight_update_force'}
 
 
 class LwdConcurrent(Card):

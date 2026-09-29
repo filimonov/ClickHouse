@@ -73,11 +73,16 @@ class SetupTest(unittest.TestCase):
             self.assertIn("storage_policy = 's3'", create, name)
             for setting in ('primary_key_lazy_load = 0', 'prewarm_mark_cache = 0', 'prewarm_primary_key_cache = 0'):
                 self.assertIn(setting, create, name)
-            if name == 'mutation':
-                self.assertIn('max_parts_to_merge_at_once = 1', create)
-                self.assertEqual(c.sqls('SYSTEM STOP MERGES'), [])
-            else:
-                self.assertEqual(bool(c.sqls('SYSTEM STOP MERGES')), card.stops_merges, name)
+            self.assertEqual('max_parts_to_merge_at_once = 1' in create, card.stops_merges, name)
+            self.assertEqual(c.sqls('SYSTEM STOP MERGES'), [], name)
+
+    def test_before_window_only_prepares_wide_insert_hot(self):
+        for name, card in CARDS.items():
+            for phase in ('cold', 'hot'):
+                c = FakeClient()
+                card.before_window(c, phase)
+                expected = ['TRUNCATE TABLE yardstick.wide_insert'] if (name, phase) == ('wide_insert', 'hot') else []
+                self.assertEqual([s for s, _ in c.calls], expected, (name, phase))
 
     def test_per_card_table_settings(self):
         def create(name):
@@ -151,11 +156,6 @@ class AttachTest(unittest.TestCase):
 
 
 class MutationTest(unittest.TestCase):
-    def test_merges_are_never_stopped_because_that_blocks_the_mutation(self):
-        c = FakeClient()
-        CARDS['mutation'].before_window(c, 'cold')
-        self.assertEqual(c.calls, [])
-
     def test_measured_pass_number_follows_phase(self):
         for phase, n in (('cold', 1), ('hot', 2)):
             c = FakeClient()
@@ -191,8 +191,8 @@ class LwdTest(unittest.TestCase):
             seen = {(int(re.search(r'k % 8 = (\d+)', s).group(1)),
                      int(re.search(r'intDiv\(k, 8\) % 20 = (\d+)', s).group(1))) for s, _ in deletes}
             self.assertEqual(seen, {(w, r) for w in range(8) for r in residues})
-            self.assertTrue(all(st == {'lightweight_deletes_sync': 2,
-                                     'lightweight_delete_mode': 'lightweight_update_force'} for _, st in deletes))
+            self.assertTrue(all(st == {'lightweight_delete_mode': 'lightweight_update_force'}
+                                for _, st in deletes))
 
     def test_row_expectations_by_phase(self):
         card = CARDS['lwd_concurrent']

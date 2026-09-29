@@ -175,6 +175,24 @@ class RunOneTest(unittest.TestCase):
         self.assertTrue(os.path.isdir(os.path.join(pass_dir, 'caches')))
         self.assertTrue(os.path.isfile(os.path.join(pass_dir, 'cold', 'gc_rounds.tsv')))
 
+    def test_before_window_runs_before_settle_and_before_the_events_snapshot(self):
+        class LoggingClient(FakeClient):
+            def events(self):
+                self.queries.append('events')
+                return super().events()
+
+        class PreparingCard(FakeCard):
+            def before_window(self, c, phase):
+                self.calls.append(f'before_window {phase}')
+
+        card = PreparingCard('c', log=self.log)
+        self.deps.client_for = lambda run_dir: LoggingClient(self.log)
+        runner.run_one('cas', card, 1, self.deps)
+        hot = self.log[self.log.index('before_window hot'):]
+        self.assertEqual(hot[:4], ['before_window hot', 'settle yardstick.c', 'events', 'measured hot'])
+        cold = self.log[self.log.index('before_window cold'):]
+        self.assertEqual(cold[:3], ['before_window cold', 'settle yardstick.c', 'events'])
+
     def test_interrupt_still_tears_down_stops_and_cleans_up(self):
         cleanups = []
         interrupted = FakeCard('ctrl_c', fail_in='cold', error=KeyboardInterrupt())

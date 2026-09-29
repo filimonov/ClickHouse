@@ -1,7 +1,7 @@
 """500 inserts of 20000 rows into a 30-column table, merges stopped."""
 import time
 
-from .base import DB, SINGLE_PART, Card, parts_and_rows, table_engine
+from .base import DB, NO_MERGES, SINGLE_PART, Card, parts_and_rows, table_engine
 
 ROWS_PER_INSERT = 20000
 COLUMNS = 15
@@ -19,11 +19,9 @@ class WideInsert(Card):
     def setup(self, c, policy, counts):
         c.query(f'CREATE DATABASE IF NOT EXISTS {DB}')
         columns = ', '.join([f'u{i} UInt64' for i in range(COLUMNS)] + [f's{i} String' for i in range(COLUMNS)])
-        c.query(f'CREATE TABLE {self.table} (k UInt64, {columns}) {table_engine(policy)}')
-        c.query(f'SYSTEM STOP MERGES {self.table}')
+        c.query(f'CREATE TABLE {self.table} (k UInt64, {columns}) {table_engine(policy, NO_MERGES)}')
 
     def before_window(self, c, phase):
-        super().before_window(c, phase)
         if phase == 'hot':
             c.query(f'TRUNCATE TABLE {self.table}')
 
