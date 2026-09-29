@@ -12,8 +12,12 @@ check_tlc_pin "$JAR" || exit 3
 # Sabotage first: the positive gate is evidence only after the missing-marker bug is seen red.
 # name  expectation(green|violation)  expected-invariant
 CONFIGS=(
-    "bug  violation  NoDangle"
-    "fix  green      -"
+    "bug           violation  NoDangle"
+    "bug_both      violation  NoDangle"
+    "fix           green      -"
+    "fix_pconf     green      -"
+    "fix_prefetch  green      -"
+    "fix_both      green      -"
 )
 
 selected()

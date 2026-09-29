@@ -39,14 +39,25 @@
 (* the in-process confirmation is lost, forcing graduation onto the loadMeta          *)
 (* re-check branch. `meta` is {"clean", "condemned"} with absence == clean (the       *)
 (* current production semantics: deleteConfirmedMeta drops the meta; no tombstone).   *)
+(*                                                                                    *)
+(* PersistConf: the confirmation is also persisted in the run row (ret.pconf); it     *)
+(* survives GRestart, a superseding row starts without it, and it is a third          *)
+(* graduation evidence. GSettleGraduateDeferred is the budget-exhausted carry.        *)
+(* Prefetch: GObserve records the body's token (0 = absent) between GCut and the      *)
+(* settle, as the HEAD read-ahead does; condemn and supersede use that observation.   *)
+(* Both default FALSE, which leaves the original state graph unchanged.               *)
 EXTENDS Naturals
 
 CONSTANTS
   GateOnMarker,   \* FALSE = pre-fix graduation (unconditional); TRUE = the fixed gate
+  PersistConf,    \* TRUE = the confirmation is persisted in the run row and survives GRestart
+  Prefetch,       \* TRUE = the settle uses a token observed earlier by GObserve
   MaxGen,         \* bound on fresh incarnation tokens
   MaxRounds       \* bound on GC rounds
 
 NoTok == 0
+
+NoRet == [st |-> "none", tok |-> NoTok, cr |-> 0, conf |-> FALSE, pconf |-> FALSE]
 
 VARIABLES
   round,       \* GC round counter (bounds the run)
@@ -59,9 +70,12 @@ VARIABLES
   edge,        \* "none" | "landed" — the writer's durable edge (EDGE-BEFORE-OBSERVE: precedes adoption)
   adopted,     \* the token the writer acquired (0 = none yet)
   committed,   \* promote succeeded — a LIVE committed reference stands over `adopted`
-  ret          \* the retired entry: [st |-> "none"|"condemned"|"pending", tok, cr, conf]
+  ret,         \* the retired entry: [st |-> "none"|"condemned"|"pending", tok, cr, conf, pconf]
+  observed,    \* GObserve ran in this round
+  observed_tok \* the token GObserve saw (0 = body absent)
 
-vars == <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret>>
+vars == <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret,
+          observed, observed_tok>>
 
 TypeOK ==
   /\ round \in 1..MaxRounds
@@ -73,7 +87,9 @@ TypeOK ==
   /\ edge \in {"none", "landed"}
   /\ adopted \in 0..MaxGen
   /\ committed \in BOOLEAN
-  /\ ret \in [st : {"none", "condemned", "pending"}, tok : 0..MaxGen, cr : 0..MaxRounds, conf : BOOLEAN]
+  /\ ret \in [st : {"none", "condemned", "pending"}, tok : 0..MaxGen, cr : 0..MaxRounds,
+             conf : BOOLEAN, pconf : BOOLEAN]
+  /\ observed \in BOOLEAN /\ observed_tok \in 0..MaxGen
 
 Init ==
   /\ round = 1 /\ cut_taken = FALSE /\ folded = FALSE
@@ -82,7 +98,8 @@ Init ==
   /\ next_gen = 1
   /\ seeded = FALSE
   /\ edge = "none" /\ adopted = NoTok /\ committed = FALSE
-  /\ ret = [st |-> "none", tok |-> NoTok, cr |-> 0, conf |-> FALSE]
+  /\ ret = NoRet
+  /\ observed = FALSE /\ observed_tok = NoTok
 
 Fresh == next_gen <= MaxGen
 
@@ -95,7 +112,7 @@ Seed ==
   /\ body' = [present |-> TRUE, tok |-> next_gen]
   /\ next_gen' = next_gen + 1
   /\ seeded' = TRUE
-  /\ UNCHANGED <<round, cut_taken, folded, meta, edge, adopted, committed, ret>>
+  /\ UNCHANGED <<round, cut_taken, folded, meta, edge, adopted, committed, ret, observed, observed_tok>>
 
 ------------------------------------------------------------------------------------
 (* Writer (one build). The durable edge lands BEFORE any observation (EDGE-BEFORE-
@@ -106,13 +123,13 @@ Seed ==
 WPrecommit ==
   /\ seeded /\ edge = "none"
   /\ edge' = "landed"
-  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, adopted, committed, ret>>
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, adopted, committed, ret, observed, observed_tok>>
 
 WAdopt ==
   /\ edge = "landed" /\ adopted = NoTok
   /\ body.present /\ meta = "clean"
   /\ adopted' = body.tok
-  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, committed, ret>>
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, committed, ret, observed, observed_tok>>
 
 WResurrect ==
   /\ edge = "landed" /\ adopted = NoTok
@@ -121,7 +138,7 @@ WResurrect ==
   /\ meta' = "clean"
   /\ adopted' = next_gen
   /\ next_gen' = next_gen + 1
-  /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret>>
+  /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret, observed, observed_tok>>
 
 WCreate ==
   /\ edge = "landed" /\ adopted = NoTok
@@ -130,12 +147,12 @@ WCreate ==
   /\ meta' = "clean"
   /\ adopted' = next_gen
   /\ next_gen' = next_gen + 1
-  /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret>>
+  /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret, observed, observed_tok>>
 
 WCommit ==
   /\ adopted /= NoTok /\ ~committed
   /\ committed' = TRUE
-  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, ret>>
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, ret, observed, observed_tok>>
 
 ------------------------------------------------------------------------------------
 (* GC. GCut snapshots the round's edge visibility (the discovery LIST / merge input);
@@ -145,33 +162,48 @@ GCut ==
   /\ ~cut_taken /\ round < MaxRounds
   /\ folded' = (edge = "landed")
   /\ cut_taken' = TRUE
-  /\ UNCHANGED <<round, body, meta, next_gen, seeded, edge, adopted, committed, ret>>
+  /\ UNCHANGED <<round, body, meta, next_gen, seeded, edge, adopted, committed, ret, observed, observed_tok>>
 
 EndRound == /\ cut_taken' = FALSE
             /\ round' = round + 1
+            /\ observed' = FALSE /\ observed_tok' = NoTok
+
+(* The HEAD read-ahead: the body's token is observed at some point after the cut and
+   before the settle. Without an observation the settle reads the live body, as an
+   inline HEAD after a read-ahead miss does. *)
+GObserve ==
+  /\ Prefetch /\ cut_taken /\ ~observed
+  /\ observed' = TRUE
+  /\ observed_tok' = IF body.present THEN body.tok ELSE NoTok
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret>>
+
+SeenPresent == IF Prefetch /\ observed THEN observed_tok /= NoTok ELSE body.present
+SeenTok     == IF Prefetch /\ observed THEN observed_tok ELSE body.tok
+
+Confirmed == ret.conf \/ (PersistConf /\ ret.pconf)
 
 (* Fresh condemn at folded in-degree 0: the entry enters the retired set and the
    marker write is scheduled — it either lands durable (conf) or is SWALLOWED (the
    §3.4 failure; the entry stays unconfirmed). The rebuild's synchronous marker
    publish is the marker-ok branch of this same action. *)
 GSettleCondemn ==
-  /\ cut_taken /\ ret.st = "none" /\ body.present /\ ~folded
+  /\ cut_taken /\ ret.st = "none" /\ SeenPresent /\ ~folded
   /\ \/ /\ meta' = "condemned"   \* marker write landed durable
-        /\ ret' = [st |-> "condemned", tok |-> body.tok, cr |-> round, conf |-> TRUE]
+        /\ ret' = [st |-> "condemned", tok |-> SeenTok, cr |-> round, conf |-> TRUE, pconf |-> PersistConf]
      \/ /\ meta' = meta          \* marker write SWALLOWED (exception eaten by the pool wrapper)
-        /\ ret' = [st |-> "condemned", tok |-> body.tok, cr |-> round, conf |-> FALSE]
+        /\ ret' = [st |-> "condemned", tok |-> SeenTok, cr |-> round, conf |-> FALSE, pconf |-> FALSE]
   /\ EndRound
   /\ UNCHANGED <<folded, body, next_gen, seeded, edge, adopted, committed>>
 
 GSettleIdle ==
-  /\ cut_taken /\ ret.st = "none" /\ (~body.present \/ folded)
+  /\ cut_taken /\ ret.st = "none" /\ (~SeenPresent \/ folded)
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed, ret>>
 
 (* Folded in-degree recovered before graduation: spared (entry drops, body stays). *)
 GSettleSpare ==
   /\ cut_taken /\ ret.st = "condemned" /\ folded
-  /\ ret' = [st |-> "none", tok |-> NoTok, cr |-> 0, conf |-> FALSE]
+  /\ ret' = NoRet
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed>>
 
@@ -181,16 +213,38 @@ GSettleSpare ==
    (which may land durable or be swallowed again). *)
 GSettleGraduate ==
   /\ cut_taken /\ ret.st = "condemned" /\ ~folded /\ ret.cr < round
-  /\ (~GateOnMarker \/ ret.conf \/ meta = "condemned")
-  /\ ret' = [ret EXCEPT !.st = "pending", !.conf = TRUE]
+  /\ (~GateOnMarker \/ Confirmed \/ meta = "condemned")
+  /\ ret' = [ret EXCEPT !.st = "pending", !.conf = TRUE, !.pconf = PersistConf]
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed>>
 
+(* The gate passed but the round's graduation budget is spent: the row is carried and,
+   with PersistConf, carries the confirmation. *)
+GSettleGraduateDeferred ==
+  /\ PersistConf
+  /\ cut_taken /\ ret.st = "condemned" /\ ~folded /\ ret.cr < round
+  /\ (~GateOnMarker \/ Confirmed \/ meta = "condemned")
+  /\ ret' = [ret EXCEPT !.conf = TRUE, !.pconf = TRUE]
+  /\ EndRound
+  /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed>>
+
+(* The body now carries another token: the row is replaced by a fresh row for that
+   token, with its own marker write and without the old row's confirmation. *)
+GSettleSupersede ==
+  /\ PersistConf
+  /\ cut_taken /\ ret.st = "condemned" /\ ~folded /\ SeenPresent /\ SeenTok /= ret.tok
+  /\ \/ /\ meta' = "condemned"
+        /\ ret' = [st |-> "condemned", tok |-> SeenTok, cr |-> round, conf |-> TRUE, pconf |-> TRUE]
+     \/ /\ meta' = meta
+        /\ ret' = [st |-> "condemned", tok |-> SeenTok, cr |-> round, conf |-> FALSE, pconf |-> FALSE]
+  /\ EndRound
+  /\ UNCHANGED <<folded, body, next_gen, seeded, edge, adopted, committed>>
+
 GSettleCarryRetry ==
   /\ cut_taken /\ ret.st = "condemned" /\ ~folded /\ ret.cr < round
-  /\ GateOnMarker /\ ~ret.conf /\ meta /= "condemned"
+  /\ GateOnMarker /\ ~Confirmed /\ meta /= "condemned"
   /\ \/ /\ meta' = "condemned"   \* the carry-time retry landed durable
-        /\ ret' = [ret EXCEPT !.conf = TRUE]
+        /\ ret' = [ret EXCEPT !.conf = TRUE, !.pconf = PersistConf]
      \/ /\ meta' = meta          \* the retry was swallowed again — still unconfirmed
         /\ ret' = ret
   /\ EndRound
@@ -199,7 +253,7 @@ GSettleCarryRetry ==
 (* A delete_pending entry whose edge recovered by this round's cut: spared loudly. *)
 GSettleSpareLoud ==
   /\ cut_taken /\ ret.st = "pending" /\ folded
-  /\ ret' = [st |-> "none", tok |-> NoTok, cr |-> 0, conf |-> FALSE]
+  /\ ret' = NoRet
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed>>
 
@@ -214,25 +268,25 @@ GSettleRedelete ==
             /\ meta' = "clean"
        ELSE /\ body' = body
             /\ meta' = meta
-  /\ ret' = [st |-> "none", tok |-> NoTok, cr |-> 0, conf |-> FALSE]
+  /\ ret' = NoRet
   /\ EndRound
   /\ UNCHANGED <<folded, next_gen, seeded, edge, adopted, committed>>
 
 (* Leader change / process restart: the in-process confirmation set is lost (the
-   durable meta and the durable pending bit survive). Forces the graduation gate onto
+   durable meta, the durable pending bit and the persisted pconf survive). Forces the graduation gate onto
    the loadMeta re-check branch. *)
 GRestart ==
   /\ ret.st = "condemned" /\ ret.conf
   /\ ret' = [ret EXCEPT !.conf = FALSE]
-  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed>>
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, observed, observed_tok>>
 
 ------------------------------------------------------------------------------------
 Next ==
   \/ Seed
   \/ WPrecommit \/ WAdopt \/ WResurrect \/ WCreate \/ WCommit
-  \/ GCut
+  \/ GCut \/ GObserve
   \/ GSettleCondemn \/ GSettleIdle \/ GSettleSpare
-  \/ GSettleGraduate \/ GSettleCarryRetry
+  \/ GSettleGraduate \/ GSettleGraduateDeferred \/ GSettleSupersede \/ GSettleCarryRetry
   \/ GSettleSpareLoud \/ GSettleRedelete
   \/ GRestart
 

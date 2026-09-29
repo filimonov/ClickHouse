@@ -112,3 +112,91 @@ parser and final marker.
 This is a bounded safety proof for durable condemn-marker gating. It does not model provider
 wire-format behavior, multipart publication, or the split `HEAD`/publication transition system;
 those are separate implementation/live-test obligations and `CaBlobPublishCore` model scope.
+
+## 2026-09-30: persisted confirmation and prefetched observation {#persisted-confirmation-and-prefetch}
+
+All four new configurations meet their expectations, and the two original configurations reproduce
+their recorded results. `NoDangle` holds with the persisted confirmation, with the earlier
+observation, and with both. The pre-fix gate with both extensions still reaches the missing-marker
+dangle.
+
+### What the extensions model {#extensions}
+
+`PersistConf` persists the graduation evidence in the run row as `ret.pconf`. The flag is set
+wherever `ret.conf` becomes true: a landed marker write at condemn, a landed retry, and graduation.
+`GRestart` clears `ret.conf` and keeps `ret.pconf`. `GSettleGraduate` accepts
+`ret.conf \/ (PersistConf /\ ret.pconf) \/ meta = "condemned"`, and `GSettleCarryRetry` fires only
+when that gate fails. Two actions exist only under `PersistConf`. `GSettleGraduateDeferred` is the
+carry after a passed gate with the graduation budget spent, and it sets `ret.pconf`.
+`GSettleSupersede` replaces the row when the body carries another token, and the new row has only
+its own marker outcome. Setting `ret.pconf` at condemn over-approximates the code, which persists
+the flag only at the deferred carry; a larger set of flagged rows can only open the gate more often.
+
+`Prefetch` separates the settle's `HEAD` from the settle. `GObserve` records the body's token, or
+`0` when the body is absent, at any point between `GCut` and the settle. With an observation,
+`GSettleCondemn`, `GSettleIdle` and `GSettleSupersede` decide on the observed token; without one they
+read the live body, as an inline `HEAD` after a read-ahead miss does. `EndRound` clears the
+observation. Both constants are `FALSE` in `_fix.cfg` and `_bug.cfg`, whose state graphs are
+unchanged.
+
+### Runs {#runs-2026-09-30}
+
+TLC `2026.07.18.145032`, revision `30cc360`, the pinned jar above, `MaxGen = 3`, `MaxRounds = 6`,
+`nice 10`. Battery: `run_condemnmarker.sh` with `TLC_WORKERS=8`, output `tmp/gc/tlc_condemnmarker_battery_final.log`,
+ending `ALL EXPECTATIONS MET`.
+
+| Configuration | `GateOnMarker` | `PersistConf` | `Prefetch` | Generated | Distinct | Depth | Seconds | Verdict |
+|---|---|---|---|---:|---:|---:|---:|---|
+| `_fix.cfg` | `TRUE` | `FALSE` | `FALSE` | 1,540 | 808 | 17 | 2 | green, equal to the recorded run |
+| `_fix_pconf.cfg` | `TRUE` | `TRUE` | `FALSE` | 1,752 | 768 | 16 | 2 | green |
+| `_fix_prefetch.cfg` | `TRUE` | `FALSE` | `TRUE` | 3,072 | 1,337 | 19 | 2 | green |
+| `_fix_both.cfg` | `TRUE` | `TRUE` | `TRUE` | 3,586 | 1,285 | 17 | 2 | green |
+
+The violation rows were rerun with `TLC_WORKERS=1`, because the counts at a violation depend on
+worker scheduling. Output: `tmp/gc/tlc_condemnmarker_violations_w1_final.log`.
+
+| Configuration | `GateOnMarker` | `PersistConf` | `Prefetch` | Generated | Distinct | Queued | Depth | Seconds | Verdict |
+|---|---|---|---|---:|---:|---:|---:|---:|---|
+| `_bug.cfg` | `FALSE` | `FALSE` | `FALSE` | 381 | 227 | 48 | 11 | 3 | `NoDangle` violated, equal to the recorded run |
+| `_bug_both.cfg` | `FALSE` | `TRUE` | `TRUE` | 1,268 | 528 | 157 | 11 | 2 | `NoDangle` violated |
+
+Green distinct counts are stable across repeated 8-worker runs. The reported depth of
+`_fix_prefetch.cfg` was 18 in one run and 19 in another.
+
+The `_bug_both.cfg` trace has the recorded shape: `Seed`, `GCut`, `GSettleCondemn` with the marker
+swallowed (`meta = "clean"`), `GCut`, unconditional `GSettleGraduate`, `GCut`, `WPrecommit`,
+`WAdopt` of token `1`, `WCommit`, then `GSettleRedelete` deletes token `1` under the committed
+edge.
+
+### Sensitivity and reachability {#sensitivity-2026-09-30}
+
+Scratch variants of the model, run through a copy of the runner with 8 workers. None is committed.
+
+| Variant | Base | Prediction | Result |
+|---|---|---|---|
+| swallowed condemn marker sets `ret.pconf` | `_fix_pconf` | `NoDangle` violated | violated |
+| state with `ret.pconf`, no `ret.conf`, `meta = "clean"`, body replaced, gate evaluated | `_fix_pconf` | reachable | reachable |
+| `observed_tok = 0` and body present | `_fix_prefetch` | reachable | reachable |
+| body replaced after `GObserve` saw a token | `_fix_prefetch` | reachable | reachable |
+| fresh condemn of a token the body no longer carries | `_fix_prefetch` | reachable | **unreachable** |
+| `GSettleSupersede` disabled | `_fix_both` | distinct count changes | 1,237 against 1,285 |
+| `GSettleGraduateDeferred` disabled | `_fix_both` | distinct count changes | **1,285, unchanged** |
+| superseding row keeps `ret.pconf` | `_fix_both` | green, one writer cannot adopt the new token after the cut | green |
+
+The persisted flag is load-bearing: evidence without a landed marker produces the dangle. The
+cleared-marker case, where a writer replaced the token and set `Clean`, reaches the gate with only
+`ret.pconf`, and `NoDangle` still holds.
+
+### Limits {#limits-2026-09-30}
+
+- **Fresh condemn on a stale observation is not exercised.** With one writer, a body is replaced
+  only while the marker reads `Condemned`, which requires an existing retired row. The observed-then-
+  replaced interleaving is reached only for such a row; a fresh condemn always sees the live token.
+  Covering it needs a second writer.
+- **Deferred carry adds no distinct state.** Every state it reaches is also reached by condemning in
+  a later round. Its safety is checked, but it is not an independent path in this graph.
+- **A wrong supersede is not detected.** The superseding token belongs to the one writer, whose edge
+  is folded by the next cut. The test that a superseded row starts unflagged remains a code-level
+  obligation.
+- **Marker writes land inside the settle.** A marker retry landing after the settle is represented
+  only by a retry settling after the writer's replacement.
