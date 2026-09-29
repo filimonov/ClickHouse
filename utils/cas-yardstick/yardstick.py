@@ -11,8 +11,10 @@ from yardstick.config import POLICIES
 from yardstick.runner import TOOL_DIR, run
 
 DEFAULT_ENDPOINT = 'http://127.0.0.1:19121'
-DEFAULTS = dict(cards=['cycle'], scale=1.0, repeats=3, policies=list(POLICIES))
+DEFAULTS = dict(cards=list(CARDS), scale=1.0, repeats=3, policies=list(POLICIES))
 SMOKE = dict(cards=list(CARDS), scale=0.01, repeats=1, policies=list(POLICIES))
+QUICK = dict(cards=list(CARDS), scale=0.25, repeats=1, policies=[p for p in POLICIES if not p.endswith('_cached')])
+PROFILES = {'smoke': SMOKE, 'quick': QUICK}
 
 
 def _list(choices):
@@ -26,12 +28,16 @@ def _list(choices):
 
 
 def cmd_run(args):
-    smoke_conflicts = [name for name in SMOKE if getattr(args, name) is not None]
-    if args.smoke and smoke_conflicts:
-        sys.exit(f'--smoke fixes --{" --".join(smoke_conflicts)}; drop them')
-    for name, value in SMOKE.items():
+    if args.smoke and args.quick:
+        sys.exit('--smoke and --quick exclude each other')
+    profile_name = 'smoke' if args.smoke else 'quick' if args.quick else None
+    profile = PROFILES.get(profile_name, DEFAULTS)
+    conflicts = [name for name in DEFAULTS if profile_name and getattr(args, name) is not None]
+    if conflicts:
+        sys.exit(f'--{profile_name} fixes --{" --".join(conflicts)}; drop them')
+    for name in DEFAULTS:
         if getattr(args, name) is None:
-            setattr(args, name, value if args.smoke else DEFAULTS[name])
+            setattr(args, name, profile[name])
     args.external_endpoint = args.endpoint is not None
     if args.external_endpoint and not args.keep_prefix:
         sys.exit('--endpoint needs --keep-prefix: prefix removal only reaches the RustFS of rustfs.sh')
@@ -85,7 +91,7 @@ def main():
 
     r = sub.add_parser('run', help='measure the cards')
     r.add_argument('--binary', required=True)
-    r.add_argument('--cards', type=_list(list(CARDS)), help=f'default: {",".join(DEFAULTS["cards"])}')
+    r.add_argument('--cards', type=_list(list(CARDS)), help='default: all cards')
     r.add_argument('--policies', type=_list(POLICIES), help='default: all six')
     r.add_argument('--repeats', type=int, help=f'default: {DEFAULTS["repeats"]}')
     r.add_argument('--scale', type=float, help=f'default: {DEFAULTS["scale"]}')
@@ -99,6 +105,8 @@ def main():
     r.add_argument('--reference', help='run directory for --compare (default: the one reference/CURRENT names)')
     r.add_argument('--smoke', action='store_true',
                    help='all cards, all policies, --scale 0.01, --repeats 1; exit 2 on any FAILED or unavailable cell')
+    r.add_argument('--quick', action='store_true',
+                   help='all cards, uncached policies, --scale 0.25, --repeats 1: the everyday run')
     r.set_defaults(func=cmd_run)
 
     p = sub.add_parser('report', help='re-print the table of a finished run')

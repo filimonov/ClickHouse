@@ -226,23 +226,27 @@ def _cleanup(card, c, server, pass_dir):
     return ok
 
 
-def run_matrix(policies, cards, repeats, deps: Deps, rows, after_pass=None) -> list[dict]:
-    """Append every pass's rows to `rows`, so an interrupted run keeps the finished passes."""
+def run_matrix(policies, cards, repeats, deps: Deps, rows, after_pass=None, timings=None) -> list[dict]:
+    """Append every pass's rows to `rows`, so an interrupted run keeps the finished passes.
+    `timings` collects (policy, card, repeat, seconds) of each whole pass: server starts, setup, both windows, teardown."""
     for k in range(1, repeats + 1):
         for policy in policy_order(policies, k):
             for card in cards:
+                t0 = time.monotonic()
                 rows += run_one(policy, card, k, deps)
+                if timings is not None:
+                    timings.append((policy, card.name, k, time.monotonic() - t0))
                 if after_pass:
                     after_pass(rows)
     return rows
 
 
-def run_all(policies, cards, repeats, deps: Deps, cleanup, after_pass=None):
+def run_all(policies, cards, repeats, deps: Deps, cleanup, after_pass=None, timings=None):
     """run_matrix, then `cleanup()` even on Ctrl-C; returns (rows, interrupted, cleanup result)."""
     rows = []
     interrupted = False
     try:
-        run_matrix(policies, cards, repeats, deps, rows, after_pass)
+        run_matrix(policies, cards, repeats, deps, rows, after_pass, timings)
     except KeyboardInterrupt:
         interrupted = True
     finally:
@@ -340,8 +344,14 @@ def run(args) -> int:
             print(f'removing prefix test/{run_id} failed: {e}', file=sys.stderr)
             return False
 
+    timings = []
     rows, interrupted, cleaned = run_all(policies, cards, args.repeats, deps, remove_prefix,
-                                         after_pass=lambda rows: R.write_samples(samples_path, rows))
+                                         after_pass=lambda rows: R.write_samples(samples_path, rows),
+                                         timings=timings)
+    with open(os.path.join(run_root, 'pass_seconds.tsv'), 'w', encoding='utf-8') as f:
+        f.write('policy\tcard\trepeat\tseconds\n')
+        for policy, card_name, k, seconds in timings:
+            f.write(f'{policy}\t{card_name}\t{k}\t{seconds:.1f}\n')
     exit_code = 0 if cleaned else 1
     if interrupted:
         print('interrupted: the table below covers the finished passes only', file=sys.stderr)
