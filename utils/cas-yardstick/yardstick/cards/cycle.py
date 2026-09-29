@@ -1,5 +1,6 @@
 """Create / 3 x insert / select / drop, from concurrent workers."""
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from .base import DB, Card, table_engine
@@ -29,9 +30,18 @@ class Cycle(Card):
     def cold_reset_needed(self):
         return False
 
-    def _worker(self, c, policy, phase, w, iterations):
+    def _worker(self, c, policy, phase, w, iterations, stop):
+        try:
+            return self._iterations(c, policy, phase, w, iterations, stop)
+        except BaseException:
+            stop.set()
+            raise
+
+    def _iterations(self, c, policy, phase, w, iterations, stop):
         ops = []
         for i in range(iterations):
+            if stop.is_set():
+                break
             t = f'{DB}.t_{phase}_{w}_{i}'
             a = time.monotonic()
             c.query(f'CREATE TABLE {t} (k UInt64, s String) {table_engine(policy)}')
@@ -51,8 +61,10 @@ class Cycle(Card):
 
     def measured(self, c, policy, counts, phase):
         iterations = counts['iterations']
+        # One failed worker stops the others at their next iteration instead of letting them run to the end.
+        stop = threading.Event()
         with ThreadPoolExecutor(WORKERS) as pool:
-            futures = [pool.submit(self._worker, c, policy, phase, w, iterations) for w in range(WORKERS)]
+            futures = [pool.submit(self._worker, c, policy, phase, w, iterations, stop) for w in range(WORKERS)]
             ops = [op for f in futures for op in f.result()]
         self._mismatches[phase] = sum((op['count'], op['sum']) != EXPECTED for op in ops)
         return {'unit_count': len(ops), 'ops': ops}

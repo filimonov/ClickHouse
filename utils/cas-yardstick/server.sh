@@ -16,7 +16,8 @@ case "$cmd" in
         [ -f "$dir/etc/config.xml" ] || { echo "missing $dir/etc/config.xml; run write_config first" >&2; exit 1; }
         cd "$dir"
         # Cache disk paths resolve against custom_cached_disks_base_directory.
-        nohup "$binary" server --config-file="$dir/etc/config.xml" -- \
+        # setsid: SYSTEM SHUTDOWN signals the server's whole process group, which must not contain the caller.
+        setsid nohup "$binary" server --config-file="$dir/etc/config.xml" -- \
             --path="$dir/data/" --tmp_path="$dir/tmp/" --user_files_path="$dir/uf/" \
             --logger.log="$dir/server.log" --logger.errorlog="$dir/server.err.log" \
             --tcp_port="$port" --http_port=$((port + 1)) --interserver_http_port=$((port + 2)) \

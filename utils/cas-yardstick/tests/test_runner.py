@@ -13,8 +13,8 @@ ALL_COUNTERS = sorted({c for cs in R.AGGREGATES.values() for c in cs} | set(R.CA
 
 class FakeClient:
     """Every events() call advances each counter; DiskS3GetObject by GET_PER_CALL."""
-    def __init__(self):
-        self.queries = []
+    def __init__(self, log=None):
+        self.queries = [] if log is None else log
         self.calls = 0
 
     def query(self, sql, settings=None, timeout=3600):
@@ -33,15 +33,18 @@ class FakeClient:
 
 
 class FakeServer:
-    def __init__(self):
+    def __init__(self, log):
         self.starts = []
         self.stops = []
+        self.log = log
 
     def start(self, run_dir):
         self.starts.append(run_dir)
+        self.log.append('start')
 
     def stop(self, run_dir):
         self.stops.append(run_dir)
+        self.log.append('stop')
 
 
 class FakeCard(Card):
@@ -49,12 +52,15 @@ class FakeCard(Card):
     stops_merges = False
     COUNTS = {'ops': 4}
 
-    def __init__(self, name, has_hot=True, fail_in=None, supported=(True, '')):
+    def __init__(self, name, has_hot=True, fail_in=None, supported=(True, ''), cold_reset=False,
+                 error=RuntimeError('boom'), log=None):
         self.name = name
         self.has_hot = has_hot
         self.fail_in = fail_in
         self.supported = supported
-        self.calls = []
+        self.cold_reset = cold_reset
+        self.error = error
+        self.calls = [] if log is None else log
 
     def supports(self, policy):
         return self.supported
@@ -63,12 +69,12 @@ class FakeCard(Card):
         self.calls.append('setup')
 
     def cold_reset_needed(self):
-        return False
+        return self.cold_reset
 
     def measured(self, c, policy, counts, phase):
         self.calls.append(f'measured {phase}')
         if self.fail_in == phase:
-            raise RuntimeError('boom')
+            raise self.error
         return {'unit_count': counts['ops'], 'ops': [{'n': i, 'ms': 10.0 * (i + 1)} for i in range(counts['ops'])]}
 
     def invariants(self, c, counts, phase, when):
@@ -82,7 +88,8 @@ class RunOneTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
-        self.server = FakeServer()
+        self.log = []
+        self.server = FakeServer(self.log)
         self.prefixes = []
 
         def write_config(run_dir, policy, endpoint, prefix, gc_enabled):
@@ -90,7 +97,7 @@ class RunOneTest(unittest.TestCase):
             return 'hash-' + policy
 
         self.deps = runner.Deps(run_id='R1', runs_dir=self.dir, endpoint='http://127.0.0.1:1', gc=True, scale=1.0,
-                                server=self.server, client_for=lambda run_dir: FakeClient(),
+                                server=self.server, client_for=lambda run_dir: FakeClient(self.log),
                                 write_config=write_config, config_hashes={'cas': 'hash-cas', 's3': 'hash-s3'})
 
     def rows(self, rows, **match):
@@ -99,7 +106,7 @@ class RunOneTest(unittest.TestCase):
     def test_failed_measured_still_tears_down_and_next_card_runs(self):
         bad = FakeCard('bad', fail_in='cold')
         good = FakeCard('good')
-        rows = runner.run_matrix(['cas'], [bad, good], 1, self.deps)
+        rows = runner.run_matrix(['cas'], [bad, good], 1, self.deps, [])
         for phase in ('cold', 'hot'):
             self.assertEqual([r['value'] for r in self.rows(rows, card='bad', phase=phase)], ['FAILED'])
         self.assertIn('teardown', bad.calls)
@@ -145,6 +152,59 @@ class RunOneTest(unittest.TestCase):
         self.assertEqual(runner.policy_order(['a', 'b', 'c'], 1), ['a', 'b', 'c'])
         self.assertEqual(runner.policy_order(['a', 'b', 'c'], 2), ['b', 'c', 'a'])
         self.assertEqual(runner.policy_order(['a', 'b', 'c'], 4), ['a', 'b', 'c'])
+
+    def test_hot_failure_keeps_the_cold_rows(self):
+        rows = runner.run_one('cas', FakeCard('c', fail_in='hot'), 1, self.deps)
+        self.assertTrue(self.rows(rows, phase='cold', metric='GET'))
+        self.assertEqual(self.rows(rows, phase='cold', metric='status'), [])
+        self.assertEqual([(r['metric'], r['value']) for r in self.rows(rows, phase='hot')], [('status', 'FAILED')])
+
+    def test_teardown_failure_fails_every_phase(self):
+        card = FakeCard('c')
+        card.teardown = lambda c: (_ for _ in ()).throw(RuntimeError('teardown boom'))
+        rows = runner.run_one('cas', card, 1, self.deps)
+        self.assertEqual(sorted((r['phase'], r['value']) for r in rows), [('cold', 'FAILED'), ('hot', 'FAILED')])
+        self.assertEqual(len(self.server.stops), 1)
+
+    def test_cold_reset_order(self):
+        card = FakeCard('c', cold_reset=True, log=self.log)
+        rows = runner.run_one('cas', card, 1, self.deps)
+        self.assertEqual(self.rows(rows, metric='status'), [])
+        self.assertEqual(self.log[:6], ['start', 'setup', 'stop', 'start', 'drop caches', 'settle yardstick.c'])
+        pass_dir = runner.run_dir_for(self.dir, 'R1', 'cas', 'c', 1, '')
+        self.assertTrue(os.path.isdir(os.path.join(pass_dir, 'caches')))
+        self.assertTrue(os.path.isfile(os.path.join(pass_dir, 'cold', 'gc_rounds.tsv')))
+
+    def test_interrupt_still_tears_down_stops_and_cleans_up(self):
+        cleanups = []
+        interrupted = FakeCard('ctrl_c', fail_in='cold', error=KeyboardInterrupt())
+        rows, was_interrupted, cleaned = runner.run_all(
+            ['cas'], [FakeCard('good'), interrupted, FakeCard('never')], 1, self.deps,
+            cleanup=lambda: cleanups.append('rm-prefix') or True)
+        self.assertTrue(was_interrupted)
+        self.assertTrue(cleaned)
+        self.assertEqual(cleanups, ['rm-prefix'])
+        self.assertIn('teardown', interrupted.calls)
+        self.assertEqual(self.server.starts, self.server.stops)
+        self.assertEqual({r['card'] for r in rows}, {'good'})
+
+
+    def test_interrupted_teardown_still_stops_the_server(self):
+        card = FakeCard('c')
+        card.teardown = lambda c: (_ for _ in ()).throw(KeyboardInterrupt())
+        with self.assertRaises(KeyboardInterrupt):
+            runner.run_one('cas', card, 1, self.deps)
+        self.assertEqual(len(self.server.stops), 1)
+
+class SmokeTest(unittest.TestCase):
+    def test_failed_and_unavailable_cells(self):
+        def row(policy, phase, metric, value):
+            return dict(policy=policy, card='cycle', phase=phase, repeat=1, metric=metric, value=value, unit_count=16)
+        rows = [row('cas', 'cold', 'status', 'FAILED'), row('cas', 'hot', 'status', 'FAILED'),
+                row('s3', 'cold', 'GET', R.UNAVAILABLE), row('s3', 'cold', 'PUT', 31), row('s3', 'hot', 'GET', 6),
+                row('s3plain', 'cold', 'status', 'UNSUPPORTED (write-once)'), row('s3', 'cold', 'CASRootGet', R.UNAVAILABLE)]
+        failures = runner._smoke_failures(R.build_summary(rows), ['cas', 's3', 's3plain'], [FakeCard('cycle')])
+        self.assertEqual(failures, ['cas cycle cold: FAILED', 'cas cycle hot: FAILED', f's3 cycle cold GET: {R.UNAVAILABLE}'])
 
 
 class CardCountsTest(unittest.TestCase):

@@ -21,6 +21,8 @@ TOOL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHASES = ('cold', 'hot')
 SERVER_START_TIMEOUT_SEC = 300
 SERVER_STOP_TIMEOUT_SEC = 120
+GC_ROUNDS_COLUMNS = ['round_id', 'started_in_window', 'finished_in_window', 'outcome', 'objects_deleted',
+                     'manifests_deleted', 'duration_ms']
 TABLE_METRICS = ['wall', 'median_op_ms', 'p90_op_ms'] + R.REQUEST_METRICS + ['bytes_read', 'bytes_written']
 
 
@@ -119,6 +121,7 @@ def _window(card, c, policy, counts, phase, k, pass_dir):
     _write_kv(os.path.join(phase_dir, 'events_delta.tsv'), ['event', 'value'], sorted(delta.items()))
     ops = result['ops']
     _write_ops(os.path.join(phase_dir, 'card.tsv'), ops)
+    _write_kv(os.path.join(phase_dir, 'gc_rounds.tsv'), GC_ROUNDS_COLUMNS, [])
     _check_invariants(card, c, counts, phase, 'after', checked, inv_path)
 
     units = result['unit_count']
@@ -142,7 +145,8 @@ def _log_error(pass_dir, what):
 
 
 def run_one(policy, card, k, deps: Deps) -> list[dict]:
-    """Measure one (policy, card, repeat) on its own server process; any error makes every phase FAILED."""
+    """Measure one (policy, card, repeat) on its own server process.
+    A failed window marks it and every later phase FAILED; a setup, teardown or stop error fails every phase."""
     phases = PHASES if card.has_hot else PHASES[:1]
     ok, reason = card.supports(policy)
     if not ok:
@@ -153,48 +157,66 @@ def run_one(policy, card, k, deps: Deps) -> list[dict]:
     prefix = f'test/{deps.run_id}/{policy}/{card.name}/k{k}'
     counts = card.counts(deps.scale)
     rows = []
-    failed = False
+    failed = []
     started = False
     c = None
     try:
-        config_hash = deps.write_config(pass_dir, policy, deps.endpoint, prefix, deps.gc)
-        if config_hash != deps.config_hashes.get(policy):
-            raise RuntimeError(f'config hash {config_hash} differs from the run manifest\'s '
-                               f'{deps.config_hashes.get(policy)} for {policy}')
-        started = True
-        deps.server.start(pass_dir)
-        c = deps.client_for(pass_dir)
-        card.setup(c, policy, counts)
-        if card.cold_reset_needed():
-            deps.server.stop(pass_dir)
-            caches = os.path.join(pass_dir, 'caches')
-            shutil.rmtree(caches)
-            os.makedirs(caches)
+        try:
+            config_hash = deps.write_config(pass_dir, policy, deps.endpoint, prefix, deps.gc)
+            if config_hash != deps.config_hashes.get(policy):
+                raise RuntimeError(f'config hash {config_hash} differs from the run manifest\'s '
+                                   f'{deps.config_hashes.get(policy)} for {policy}')
+            started = True
             deps.server.start(pass_dir)
-            c.drop_caches()
-        for phase in phases:
-            rows += _window(card, c, policy, counts, phase, k, pass_dir)
-    except Exception:
-        failed = True
-        _log_error(pass_dir, 'pass')
+            c = deps.client_for(pass_dir)
+            card.setup(c, policy, counts)
+            if card.cold_reset_needed():
+                deps.server.stop(pass_dir)
+                caches = os.path.join(pass_dir, 'caches')
+                if os.path.isdir(caches):
+                    shutil.rmtree(caches)
+                os.makedirs(caches)
+                deps.server.start(pass_dir)
+                c.drop_caches()
+        except Exception:
+            _log_error(pass_dir, 'setup')
+            failed = list(phases)
+        else:
+            for i, phase in enumerate(phases):
+                try:
+                    rows += _window(card, c, policy, counts, phase, k, pass_dir)
+                except Exception:
+                    _log_error(pass_dir, f'{phase} window')
+                    failed = list(phases[i:])
+                    break
+    finally:
+        cleaned = _cleanup(card, c, deps.server if started else None, pass_dir)
+    if not cleaned:
+        rows, failed = [], list(phases)
+    return rows + _status_rows(policy, card, failed, k, 'FAILED')
+
+
+def _cleanup(card, c, server, pass_dir):
+    """Teardown, then stop the server even if teardown raised or was interrupted; True when both succeeded."""
+    ok = True
     try:
         if c is not None:
             card.teardown(c)
     except Exception:
-        failed = True
+        ok = False
         _log_error(pass_dir, 'teardown')
     finally:
-        if started:
+        if server is not None:
             try:
-                deps.server.stop(pass_dir)
+                server.stop(pass_dir)
             except Exception:
-                failed = True
+                ok = False
                 _log_error(pass_dir, 'server stop')
-    return _status_rows(policy, card, phases, k, 'FAILED') if failed else rows
+    return ok
 
 
-def run_matrix(policies, cards, repeats, deps: Deps, after_pass=None) -> list[dict]:
-    rows = []
+def run_matrix(policies, cards, repeats, deps: Deps, rows, after_pass=None) -> list[dict]:
+    """Append every pass's rows to `rows`, so an interrupted run keeps the finished passes."""
     for k in range(1, repeats + 1):
         for policy in policy_order(policies, k):
             for card in cards:
@@ -202,6 +224,19 @@ def run_matrix(policies, cards, repeats, deps: Deps, after_pass=None) -> list[di
                 if after_pass:
                     after_pass(rows)
     return rows
+
+
+def run_all(policies, cards, repeats, deps: Deps, cleanup, after_pass=None):
+    """run_matrix, then `cleanup()` even on Ctrl-C; returns (rows, interrupted, cleanup result)."""
+    rows = []
+    interrupted = False
+    try:
+        run_matrix(policies, cards, repeats, deps, rows, after_pass)
+    except KeyboardInterrupt:
+        interrupted = True
+    finally:
+        cleaned = cleanup()
+    return rows, interrupted, cleaned
 
 
 def _out(cmd, **kw):
@@ -238,7 +273,8 @@ def _smoke_failures(summary, policies, cards):
 
 
 def run(args) -> int:
-    """Run every (repeat, policy, card) and print the table. Returns 1 on any FAILED pass, 2 for a failed smoke."""
+    """Run every (repeat, policy, card) and print the table.
+    Exit code: 1 on a FAILED pass or a failed prefix removal, 2 on a failed smoke, 130 on Ctrl-C."""
     cards = [CARDS[name] for name in args.cards]
     policies = args.policies
     run_id = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -281,15 +317,23 @@ def run(args) -> int:
                 scale=args.scale, server=server, client_for=lambda run_dir: Client(args.port_base + 1),
                 config_hashes=hashes)
     samples_path = os.path.join(run_root, 'samples.tsv')
-    rows = run_matrix(policies, cards, args.repeats, deps, after_pass=lambda rows: R.write_samples(samples_path, rows))
 
-    exit_code = 0
-    if not args.keep_prefix:
+    def remove_prefix():
+        if args.keep_prefix:
+            return True
         try:
             _out(['bash', os.path.join(TOOL_DIR, 'rustfs.sh'), 'rm-prefix', f'test/{run_id}'])
+            return True
         except subprocess.SubprocessError as e:
             print(f'removing prefix test/{run_id} failed: {e}', file=sys.stderr)
-            exit_code = 1
+            return False
+
+    rows, interrupted, cleaned = run_all(policies, cards, args.repeats, deps, remove_prefix,
+                                         after_pass=lambda rows: R.write_samples(samples_path, rows))
+    exit_code = 0 if cleaned else 1
+    if interrupted:
+        print('interrupted: the table below covers the finished passes only', file=sys.stderr)
+        exit_code = 130
 
     R.write_samples(samples_path, rows)
     summary = R.build_summary(rows)
@@ -297,7 +341,7 @@ def run(args) -> int:
     print(R.render_table(summary, [p for p in policies if not p.endswith('_cached')],
                          [p for p in policies if p.endswith('_cached')]))
     if any(r['metric'] == 'status' and r['value'] == 'FAILED' for r in rows):
-        exit_code = 1
+        exit_code = exit_code or 1
     if args.smoke:
         failures = _smoke_failures(summary, policies, cards)
         for f in failures:

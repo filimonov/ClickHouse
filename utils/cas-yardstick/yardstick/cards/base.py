@@ -9,10 +9,8 @@ def table_engine(policy: str) -> str:
 
 
 class Card:
-    """Lifecycle per pass: setup, optional cold reset, measured cold, measured hot if `has_hot`, teardown.
-
-    `invariants` is checked before and after every measured pass; any mismatch fails the pass.
-    A card instance is reused across passes, so state kept on it must be reset by `measured`."""
+    """Per pass: setup, optional cold reset, measured cold, measured hot if `has_hot`, teardown.
+    Instances are reused across passes: `measured` must reset any state kept on the card."""
     name: str
     unit: str
     has_hot: bool = True

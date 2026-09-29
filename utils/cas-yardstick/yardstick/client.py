@@ -29,9 +29,8 @@ class Client:
         return {name: int(value) for name, value in (line.split('\t') for line in text.splitlines())}
 
     def settle(self, table: str, timeout: float = 60) -> None:
-        """Wait until no merge, unfinished mutation or fetch touches `table`.
-
-        `table` is `db.name`, or `db.*` for every table of the database. Raises TimeoutError."""
+        """Wait until no merge, unfinished mutation or fetch touches `table` (`db.name` or `db.*`).
+        Raises TimeoutError."""
         db, name = table.split('.', 1)
         cond = f"database = '{db}'" + ('' if name == '*' else f" AND table = '{name}'")
         sql = (f'SELECT (SELECT count() FROM system.merges WHERE {cond})'
