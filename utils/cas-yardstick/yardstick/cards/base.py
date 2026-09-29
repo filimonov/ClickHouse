@@ -3,9 +3,30 @@ DB = 'yardstick'
 TABLE_SETTINGS = 'primary_key_lazy_load = 0, prewarm_mark_cache = 0, prewarm_primary_key_cache = 0'
 
 
-def table_engine(policy: str) -> str:
+# One stream per INSERT ... SELECT, so each statement writes exactly one part.
+SINGLE_PART = {'max_insert_threads': 1}
+
+
+def table_engine(policy: str, extra_settings: str = '') -> str:
     """Engine clause every card table uses, so "cold" means the same on every disk."""
-    return f"ENGINE = MergeTree ORDER BY k SETTINGS storage_policy = '{policy}', {TABLE_SETTINGS}"
+    extra = f', {extra_settings}' if extra_settings else ''
+    return f"ENGINE = MergeTree ORDER BY k SETTINGS storage_policy = '{policy}', {TABLE_SETTINGS}{extra}"
+
+
+def supports_mutations(policy: str) -> tuple[bool, str]:
+    """The plain-rewritable disk is immutable: the server rejects every ALTER ... UPDATE and DELETE on it."""
+    if policy.startswith('s3plain'):
+        return False, 'mutations are not supported on the immutable s3plain disk'
+    return True, ''
+
+
+def parts_and_rows(c, table: str) -> tuple[int, int]:
+    """Active part count and row count of `db.name` from part metadata, without reading table data."""
+    db, name = table.split('.', 1)
+    text = c.query(f"SELECT count(), sum(rows) FROM system.parts WHERE database = '{db}' AND table = '{name}' "
+                   'AND active')
+    parts, rows = (int(x) for x in text.split())
+    return parts, rows
 
 
 class Card:
@@ -30,6 +51,12 @@ class Card:
 
     def setup(self, c, policy: str, counts: dict) -> None:
         raise NotImplementedError
+
+    def before_window(self, c, phase: str) -> None:
+        """Unmeasured preparation the runner calls right before settling a window.
+        SYSTEM STOP MERGES does not survive a restart or DETACH, so it is re-issued here."""
+        if self.stops_merges:
+            c.query(f'SYSTEM STOP MERGES {self.table}')
 
     def cold_reset_needed(self) -> bool:
         """True when `setup` builds a fixture that the cold pass must read from a restarted process."""

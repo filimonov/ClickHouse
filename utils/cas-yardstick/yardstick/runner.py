@@ -106,6 +106,7 @@ def _window(card, c, policy, counts, phase, k, pass_dir):
     """One measured pass; returns its sample rows."""
     phase_dir = os.path.join(pass_dir, phase)
     os.makedirs(phase_dir, exist_ok=True)
+    card.before_window(c, phase)
     c.settle(card.table)
     checked = []
     inv_path = os.path.join(phase_dir, 'invariants.tsv')
