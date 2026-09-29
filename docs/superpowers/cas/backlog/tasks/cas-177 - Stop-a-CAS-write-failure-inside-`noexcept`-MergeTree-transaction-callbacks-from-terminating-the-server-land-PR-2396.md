@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@filimonov'
 created_date: '2026-09-16'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-29 17:03'
 labels:
   - 'area:write-path'
   - 'area:upstream'
@@ -68,4 +68,6 @@ In progress: PR https://github.com/Altinity/ClickHouse/pull/2396 (open, base ant
 First recorded: 2026-09-16 (cbf3fe14e36, by 'cas-txn-commit-inside-noexcept-aftercommit')
 
 PR #2396 (open), branch fix/antalya-26.6/transaction-metadata-store-retry-squashed, base antalya-26.6; review state CHANGES_REQUESTED on 2026-09-26. Status In Progress was already set; assignee added from the PR author.
+
+2026-09-29: k-morozov requested changes (4 inline threads, 2026-09-24): iterator vs replaceFile in loadMutations, per-object budget, retry around killMutation, csn set before replace. All four addressed in d37a7d106cc (one Stopwatch per callback shared by all writes; killMutation runs once in try/catch, LOGICAL_ERROR/NOT_IMPLEMENTED propagate; loadMutations lists names with listFiles before touching files; csn set after replaceFile). Release tests green: 05053 x2, 01168, 04141, 01172, 01173. Base antalya-26.6 (bfd4b9b13ca) merged as dd44241da88f, pushed; replies posted in all four threads, re-review requested from k-morozov. Spec rev.3g (0d486690c06). Waiting for CI on dd44241da88f and the re-review. Known non-PR reds on the previous head: CAS-S3 stress lanes fail on the pre-stress restart budget (start_server default 6 tries with async_load_databases=false under ASan/debug), SQLLogic 3 h limit; both also seen on sibling PRs.
 <!-- SECTION:NOTES:END -->
