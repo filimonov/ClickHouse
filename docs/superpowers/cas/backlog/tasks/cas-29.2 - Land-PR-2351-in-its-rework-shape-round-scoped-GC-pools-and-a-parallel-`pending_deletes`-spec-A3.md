@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@k-morozov'
 created_date: '2026-08-04'
-updated_date: '2026-09-29 21:04'
+updated_date: '2026-09-29 21:19'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -79,5 +79,5 @@ Provenance: BACKLOG/gc.md#gc-pending-deletes-fan-out (formerly [gc-delete-concur
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Landed with PR #2351 (merge 61d24118251 into antalya-26.6, 2026-09-29) in the rework shape (cas_gc_concurrency, GcRound). Not yet in cas-gc-rebuild.
+Landed with PR #2351 (merge 61d24118251 into antalya-26.6, 2026-09-29): GcRound with a per-round io_pool exists; the setting is cas_gc_io_concurrency (not the rework spec's cas_gc_concurrency) and gc_meta_pool_size / the per-disk meta pool remain, so rework AC #1 (one setting) and #5 (no pool outlives a round) are only partly met. Not in cas-gc-rebuild (branches diverged; carry-over is its own task).
 <!-- SECTION:NOTES:END -->
