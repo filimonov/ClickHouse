@@ -9,7 +9,9 @@ doc_type: 'design'
 
 # Transaction metadata writes under `noexcept` callbacks do not terminate the server {#transaction-metadata-store-best-effort}
 
-Revision 3f, 2026-09-17 (revision 3e plus the full post-fix review: tolerant temporary cleanup in `loadMutations`, session-shutdown lock note; revision 3d plus the post-implementation reviews: ONCE failpoints, a test without
+Revision 3g, 2026-09-29 (revision 3f plus the PR review of https://github.com/Altinity/ClickHouse/pull/2396:
+one retry budget per callback, no retry around `killMutation`, `loadMutations` lists names before touching files,
+`csn` set after the replace; revision 3e plus the full post-fix review: tolerant temporary cleanup in `loadMutations`, session-shutdown lock note; revision 3d plus the post-implementation reviews: ONCE failpoints, a test without
 polling, lazy log descriptions, a backend caveat; before that, revision 3 plus review rounds 3 to 6 and one user decision, no waiting during shutdown: no shutdown exit, idempotent mutation-CSN write
 in its own temporary-file namespace, per-object budget, tests that inspect the persisted records). Revision 1 proposed plain best-effort persistence on the premise that the transaction log
 can always re-derive a CSN by tid; review round 1 refuted it (`TransactionLog::removeOldEntries` deletes the entry
@@ -135,12 +137,11 @@ deliberate: the helper has no path that swallows an error, so a misclassified pe
 budget and then terminates the server exactly as today. A finer classification would buy a faster abort for cases
 that are bugs anyway; it is not worth an allow-list that has to follow every backend's error codes.
 
-**Budget semantics.** The budget is a per-object retry-admission budget: it is checked after a failed attempt and
-decides whether another attempt is started. It does not bound the duration of an attempt (a write that hangs in
-the backend hangs as today), and it is not shared between the objects of one callback: a commit of `k` parts can
-in the worst case spend `k` budgets. This keeps the helper stateless and is enough for the purpose (a transient
-incident is over for every object at the same moment; the worst case needs every object to fail for a minute and
-then succeed).
+**Budget semantics.** The budget is a retry-admission budget shared by all writes of one callback: a `Stopwatch`
+started at the beginning of `afterCommit` / `rollback` is passed to every `retryMetadataStore` call, and the check
+after a failed attempt decides whether another attempt is started. So a commit of `k` parts waits at most one
+budget in total, and a retry on the unknown-state path blocks the log updating thread for at most one budget. The
+budget does not bound the duration of an attempt (a write that hangs in the backend hangs as today).
 
 ### 3.2 Idempotency of the retried writes {#idempotency}
 
@@ -174,11 +175,11 @@ result as one successful write.
   backend caveat as above; a mutation file without a `csn:` line is repaired by `loadMutations` from the log
   entry, `StorageMergeTree.cpp:1481-1487`); a repeated attempt writes the same complete record. The loader is
   unchanged.
-- **`killMutation`** → `removeFileIfExists`: a retry after the entry was already erased from
-  `current_mutations_by_version` returns `CancellationCode::NotFound` and does nothing; a mutation file that
-  survived is deleted by `loadMutations` at the next load because its tid has no CSN (`:1488-1494`). This is the
-  one write the retry may leave to restart; it concerns a rolled-back mutation whose file is ignored while the
-  server runs (not in the map), so nothing is lost.
+- **`killMutation`** is not retried: it erases the entry from `current_mutations_by_version` before deleting
+  the file, so a repeated call after a failure returns `CancellationCode::NotFound` and cannot delete anything.
+  It runs once inside `try/catch`; `LOGICAL_ERROR` and `NOT_IMPLEMENTED` propagate, any other error is logged at
+  Warning. A mutation file that survived is ignored while the server runs (not in the map) and deleted by
+  `loadMutations` at the next load because its tid has no CSN (`:1488-1494`).
 
 ### 3.3 Call sites {#call-sites}
 
@@ -191,7 +192,8 @@ for (const auto & part : creating_parts)
 ```
 
 and likewise for `removing_parts` (`setAndStoreRemovalCSN`), `mutations` (`setMutationCSN`), and in `rollback`
-for `killMutation`, `setAndStoreCreationCSN(Tx::RolledBackCSN)` and `setAndStoreRemovalTID(Tx::EmptyTID)`.
+for `setAndStoreCreationCSN(Tx::RolledBackCSN)` and `setAndStoreRemovalTID(Tx::EmptyTID)`; `killMutation` gets
+the single-attempt `try/catch` of §3.2. Each callback creates one `Stopwatch` and passes it to every call.
 `removePartsFromWorkingSet` and `restoreAndActivatePart` in `rollback` are in-memory operations and are not wrapped.
 `MergeTreeData::Transaction::rollback` (non-transactional path) already runs under a catch in its destructor and
 is not changed.
@@ -352,9 +354,11 @@ argues about, not code paths it adds.
   during shutdown, and moving session destruction outside the mutex is a `Session` change outside this design.
 - **Interrupted `writeCSN` and loading.** After an interruption between the temporary write and `replaceFile`, both
   `mutation_<N>.txt` (without `csn:`) and `tmp_mutation_csn_<N>.txt` exist. `loadMutations` repairs the canonical
-  file through `writeCSN`, which consumes the temporary name; the directory iterator may still return the
-  consumed entry, so the leftover cleanup removes temporary files with `removeFileIfExists` (found by the full
-  post-fix review; a strict removal failed the table load).
+  file through `writeCSN`, which replaces `mutation_<N>.txt` and consumes the temporary name while the directory
+  is being read. A directory iterator gives no guarantee about entries that change under it (a consumed temporary
+  file, or the replaced canonical file returned twice, which would hit the "already exists" `LOGICAL_ERROR`), so
+  `loadMutations` takes the name list with `listFiles` before touching any file and removes temporary files with
+  `removeFileIfExists`.
 - **Shutdown signal timing.** `TransactionLog`'s stop flag is set late in server shutdown, after executors are drained
   and databases are shut down (`Context.cpp:981`). A retry running in a background merge commit at that point is
   waited for by the executor drain before the flag can cut it short, so the shutdown shortcut of §3.1 helps
