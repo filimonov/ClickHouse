@@ -157,3 +157,7 @@ ORDER BY disk, server_root_id;
 process-local — `NULL` on every row describing a peer's mount — so this query is only informative
 run against the node whose GC leadership you are checking; run it on each node to see the whole
 pool's view of itself.
+
+## Measuring CAS against plain S3 {#cas-yardstick}
+
+`utils/cas-yardstick` runs a fixed set of workload cards on a CAS disk and on two ordinary S3 disks, and reports wall time, S3 API calls and bytes with paired ratios. Run `yardstick.py run --smoke` to check the pipeline and `yardstick.py run --binary <clickhouse> --repeats 3` to measure. The accepted reference run is in `utils/cas-yardstick/reference/`, and the README at `utils/cas-yardstick/README.md` lists the cards, the capability matrix and how to compare a run with it.
