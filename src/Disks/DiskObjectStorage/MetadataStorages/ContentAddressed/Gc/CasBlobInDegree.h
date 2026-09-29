@@ -41,7 +41,8 @@ struct RetiredEntry
                                      /// marker is the writer's adopt gate, so graduation to
                                      /// delete_pending requires confirmed durable evidence; an
                                      /// unconfirmed entry is CARRIED, never fail-open deleted. Set at
-                                     /// graduation (delete_pending rows always carry it).
+                                     /// graduation (delete_pending rows always carry it) and on a
+                                     /// confirmed entry the graduation budget carries.
 };
 
 /// The fold's HEAD hooks (`head_blob`, `peek_head`): the caller issues the request on its own admitted

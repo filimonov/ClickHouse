@@ -1058,7 +1058,7 @@ TEST(CASThreeCursorMerge, RedeleteBudgetCapsCohortAndCarriesExcess)
         EXPECT_TRUE(e.delete_pending) << "carried entries stay delete_pending, unexecuted this round";
 }
 
-/// Mirror test for the graduation cap: entries past `max_graduations` carry unchanged (still
+/// Mirror test for the graduation cap: entries past `max_graduations` are carried (still
 /// condemned, NOT yet delete_pending) rather than being force-graduated; the floor re-evaluates them
 /// next round.
 TEST(CASThreeCursorMerge, GraduationBudgetCapsCohortAndCarriesExcess)
@@ -1086,7 +1086,7 @@ TEST(CASThreeCursorMerge, GraduationBudgetCapsCohortAndCarriesExcess)
     for (const RetiredEntry & e : rmr.still_retired)
         e.delete_pending ? ++pending_count : ++carried_count;
     EXPECT_EQ(pending_count, 3u)  << "only the graduated 3 are republished delete_pending";
-    EXPECT_EQ(carried_count, 7u) << "the rest carry unchanged, still eligible next round";
+    EXPECT_EQ(carried_count, 7u) << "the rest are carried, still eligible next round";
 }
 
 /// The mandatory convergence proof: a cohort well past the per-round cap fully drains over

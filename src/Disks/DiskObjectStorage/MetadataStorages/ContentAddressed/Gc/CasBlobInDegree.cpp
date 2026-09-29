@@ -497,8 +497,8 @@ void foldDeltasIntoGeneration(CasOperation & op, const Layout & layout,
                 /// graduates then; nothing is lost, only delayed.
                 if (work_budget && !work_budget->graduationAvailable())
                 {
-                    /// The confirmation is a durable fact about (hash, token); carrying it saves the
-                    /// meta re-read after a restart or leader change.
+                    /// A confirmation stays sufficient: the marker leaves `Condemned` only after T is
+                    /// displaced or deleted, and the delete is exact-token.
                     RetiredEntry carried = e;
                     carried.marker_confirmed = true;
                     rmr.still_retired.push_back(std::move(carried));

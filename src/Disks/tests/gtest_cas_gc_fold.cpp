@@ -1101,3 +1101,72 @@ TEST(CASGCFold, SupersededRowStartsUnconfirmed)
     expectSameRow(persisted.sibling_after, cleared.sibling_after);
     EXPECT_TRUE(persisted.sibling_after->delete_pending);
 }
+
+/// Oracle row "Marker absent after T was deleted": the carried row graduates and its delete ends
+/// absent; the old path carried it and re-created the marker. The fresh leader holds an empty memo; no
+/// writer takes part.
+TEST(CASGCFold, PersistedConfirmationGraduatesWithMetaAbsent)
+{
+    struct Outcome
+    {
+        std::optional<RetiredEntry> flagged_after;
+        std::optional<RetiredEntry> sibling_after;
+        size_t flagged_meta_reads = 0;
+        uint64_t unconfirmed_carries = 0;
+        std::optional<MetaState> flagged_meta_after;
+        RoundReport delete_round;
+    };
+    const auto run = [](CarryPath path)
+    {
+        CondemnedCohort c;
+        c.confirmAndCarry();
+        const UInt128 flagged = c.blobs[1];
+        const UInt128 sibling = c.blobs[2];
+        if (path == CarryPath::Cleared)
+            clearCarriedConfirmations(*c.backend, c.layout);
+        {
+            OperationForTest op(*c.backend);
+            const String key = c.layout.blobKey(blobRefOf(flagged));
+            const auto body = (*op).head(key, Retry::standard());
+            EXPECT_TRUE(body.has_value());
+            if (body)
+                EXPECT_EQ((*op).remove(key, body->etag, Retry::once()), Removal::Removed);
+            const auto lm = loadMeta(*op, c.layout, blobRefOf(flagged));
+            EXPECT_TRUE(lm.has_value());
+            if (lm)
+                deleteMetaExact(*op, c.layout, blobRefOf(flagged), lm->etag);
+        }
+
+        auto store = openPoolWithGraduationBudget(c.backend, /*unbounded*/0);
+        Gc gc(store, kGc);
+        c.backend->resetMetaReads();
+        Outcome o;
+        const auto carries_before = ProfileEvents::global_counters[ProfileEvents::CASGCCondemnMarkerUnconfirmedCarry].load();
+        runRegularRoundReclaiming(gc);
+        o.unconfirmed_carries = ProfileEvents::global_counters[ProfileEvents::CASGCCondemnMarkerUnconfirmedCarry].load() - carries_before;
+        o.flagged_after = retiredRowOf(*c.backend, c.layout, flagged);
+        o.sibling_after = retiredRowOf(*c.backend, c.layout, sibling);
+        o.flagged_meta_reads = c.backend->metaReads(c.metaKey(flagged));
+        o.flagged_meta_after = metaStateOf(*c.backend, c.layout, flagged);
+        o.delete_round = runRegularRoundReclaiming(gc);
+        return o;
+    };
+    const Outcome persisted = run(CarryPath::Persisted);
+    const Outcome cleared = run(CarryPath::Cleared);
+
+    ASSERT_TRUE(cleared.flagged_after.has_value());
+    EXPECT_FALSE(cleared.flagged_after->delete_pending) << "old path: an absent marker refuses graduation";
+    EXPECT_EQ(cleared.unconfirmed_carries, 1u);
+    EXPECT_EQ(cleared.flagged_meta_after, MetaState::Condemned) << "old path: the refused gate re-creates the marker";
+
+    ASSERT_TRUE(persisted.flagged_after.has_value());
+    EXPECT_TRUE(persisted.flagged_after->delete_pending) << "the persisted confirmation graduates the row";
+    EXPECT_EQ(persisted.flagged_meta_reads, 0u);
+    EXPECT_EQ(persisted.unconfirmed_carries, 0u);
+    EXPECT_FALSE(persisted.flagged_meta_after.has_value()) << "graduation writes no marker";
+    EXPECT_EQ(persisted.delete_round.absent, 1u) << "the delete of the already-deleted T ends absent";
+    EXPECT_EQ(persisted.delete_round.replaced, 0u);
+
+    expectSameRow(persisted.sibling_after, cleared.sibling_after);
+    EXPECT_TRUE(persisted.sibling_after->delete_pending);
+}
