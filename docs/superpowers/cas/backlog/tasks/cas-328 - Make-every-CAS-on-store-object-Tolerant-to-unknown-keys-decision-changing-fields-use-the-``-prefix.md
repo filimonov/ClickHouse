@@ -1,12 +1,12 @@
 ---
 id: CAS-328
 title: >-
-  Make every CAS on-store object Tolerant to unknown keys; decision-changing
+  Remove `KeyStrictness`: every CAS reader skips unknown keys; decision-changing
   fields use the `!` prefix
 status: To Do
 assignee: []
 created_date: '2026-09-30 18:02'
-updated_date: '2026-09-30 18:02'
+updated_date: '2026-09-30 18:04'
 labels:
   - cas
   - gc
@@ -28,10 +28,10 @@ Owner decision 2026-09-30: all objects Tolerant unless a very important reason e
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The four readers use `KeyStrictness::Tolerant`; tests that asserted `CORRUPTED_DATA` on an unknown ordinary key now assert the key is skipped
-- [ ] #2 A `!`-prefixed unknown key still fails with `UNKNOWN_FORMAT_VERSION` in every reader (test per object)
-- [ ] #3 The format spec states the rule: optional field = plain key, decision-changing field = `!` key; Strict is not used
-- [ ] #4 Own PR to antalya-26.6, reader-only change, no writer change, no format version bump
+- [ ] #1 A `!`-prefixed unknown key still fails with `UNKNOWN_FORMAT_VERSION` in every reader (test per object)
+- [ ] #2 The format spec states the rule: optional field = plain key, decision-changing field = `!` key; Strict is not used
+- [ ] #3 Own PR to antalya-26.6, reader-only change, no writer change, no format version bump
+- [ ] #4 The `KeyStrictness` enum, the traits-table column and the `JsonObjectReader` parameter are gone; `skipUnknown` keeps only the `!` branch (`UNKNOWN_FORMAT_VERSION`) and the skip
 <!-- AC:END -->
 
 ## Definition of Done
@@ -41,3 +41,9 @@ Owner decision 2026-09-30: all objects Tolerant unless a very important reason e
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner decision 2026-09-30: drop the switch itself, not just flip the four Strict sites. The switch is declared twice (traits table in `CasFormat.cpp:103-129` and again at every reader call), and the two disagree for `cas_gc_maintenance_state` (Strict in the table, Tolerant at the reader), which nobody noticed because the table column is never read. 72 mentions in 15 files, all mechanical; the only behavioural change is the four Strict readers (`cas_run`, fold seal, `cas_ref_ckpt`, ref catalog) now skipping unknown ordinary keys.
+<!-- SECTION:NOTES:END -->
