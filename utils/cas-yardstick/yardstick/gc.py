@@ -9,7 +9,8 @@ _SQL = ('SELECT round_id, toUnixTimestamp64Micro(min(event_time_microseconds)) A
         "sumIf(manifests_deleted, event_type = 'Finish') AS manifests_deleted, "
         "sumIf(duration_ms, event_type = 'Finish') AS duration_ms, "
         "countIf(event_type = 'Finish') AS finished "
-        'FROM system.cas_gc_log GROUP BY round_id HAVING t1 >= {t_start_us} AND t0 <= {t_end_us} '
+        # A round without its Finish row is still running, so its last event does not bound it.
+        'FROM system.cas_gc_log GROUP BY round_id HAVING (finished = 0 OR t1 >= {t_start_us}) AND t0 <= {t_end_us} '
         'ORDER BY t0 FORMAT JSONEachRow')
 
 

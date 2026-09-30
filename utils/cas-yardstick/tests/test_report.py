@@ -21,15 +21,21 @@ class Aggregates(unittest.TestCase):
 class Stats(unittest.TestCase):
     def test_summarize(self):
         self.assertEqual(R.summarize([3.0, 1.0, 2.0]), (2.0, 1.0, 3.0))
-    def test_paired_ratio(self):
-        self.assertEqual(R.paired_ratio([83, 84, 83], [12, 12, 12]), '6.92 (6.92..7.00)')
-        self.assertEqual(R.paired_ratio([0, 0, 0], [0, 0, 0]), '0 → 0')
-        self.assertEqual(R.paired_ratio([5, 5, 5], [0, 0, 0]), '0 → 5')
+    def test_paired_ratios(self):
+        self.assertEqual(R._ratios([83, 84, 83], [12, 12, 12]), (83 / 12, 83 / 12, 84 / 12))
+        self.assertEqual(R._ratios([0, 0, 0], [0, 0, 0]), '0 → 0')
+        self.assertEqual(R._ratios([5, 5, 5], [0, 0, 0]), '0 → 5')
+        self.assertEqual(R._ratios([2392900, 2392900], [0, 0]), '0 → 2392900')
     def test_marks(self):
         self.assertEqual(R.mark_requests([83, 83, 83]), '')
         self.assertEqual(R.mark_requests([83, 84, 83]), '~')
-        self.assertEqual(R.mark_wall([1.0, 1.1, 1.0]), '')
-        self.assertEqual(R.mark_wall([1.0, 1.3, 1.0]), 'noisy')
+        self.assertEqual(R.mark_spread([1.0, 1.1, 1.0]), '')
+        self.assertEqual(R.mark_spread([1.0, 1.3, 1.0]), 'noisy')
+
+    def test_bytes_spread_is_marked_noisy(self):
+        rows = rows_for('cas', 'bytes_written', [1264897, 1479089048, 1264897])
+        [r] = R.build_summary(rows)
+        self.assertEqual(r['mark'], 'noisy')
     def test_per_unit(self):
         self.assertAlmostEqual(R.per_unit(16600, 200), 83.0)
 
@@ -62,10 +68,11 @@ class Files(unittest.TestCase):
 
 class Compare(unittest.TestCase):
     def manifest(self, **over):
-        m = dict(workload_rev='abc', scale='1', counts='cycle=200', gc='on', repeats='3', config_hash='h1', build_type='Release', store='rustfs/rustfs:1.0.0-rc.3')
+        m = dict(workload_hash='abc', scale='1', counts='cycle=200', gc='on', repeats='3', config_hash='h1', build_type='Release', store='rustfs/rustfs:1.0.0-rc.3', store_version='unknown')
         m.update(over); return m
     def test_compare_incompatible(self):
         self.assertEqual(R.compatible(self.manifest(), self.manifest(scale='0.5', repeats='1')), ['scale', 'repeats'])
+        self.assertEqual(R.compatible(self.manifest(), self.manifest(store_version='2')), ['store_version'])
         self.assertEqual(R.compatible(self.manifest(), self.manifest()), [])
     def test_manifest_roundtrip(self):
         with tempfile.TemporaryDirectory() as d:
@@ -105,6 +112,10 @@ class Pairing(unittest.TestCase):
         self.assertIn('12.50', table)                         # median_op_ms rendered with a value
         self.assertIn('3.0', table)                           # MiB_r cell of cas; cannot match a wall cell
         self.assertIn('per unit', table); self.assertIn('GET=0.415', table)
+
+    def test_per_unit_line_names_the_unit(self):
+        table = R.render_table(R.build_summary(self.rows()), ['cas', 's3'], [], {'cycle': 'cycle'})
+        self.assertIn('per cycle cycle/cold cas: ', table)
     def test_zero_denominator_and_roundtrip(self):
         rows = rows_for('cas', 'PUT', [5, 5, 5]) + rows_for('s3', 'PUT', [0, 0, 0])
         summary = R.build_summary(rows)
@@ -114,9 +125,10 @@ class Pairing(unittest.TestCase):
             p = os.path.join(d, 's.tsv'); R.write_summary(p, summary)
             self.assertEqual(R.read_summary(p), summary)
     def test_unavailable_suppresses_ratio(self):
-        rows = rows_for('cas', 'HEAD', [R.UNAVAILABLE] * 3) + rows_for('s3', 'HEAD', [4, 4, 4])
+        rows = (rows_for('cas', 'GET', [83, R.UNAVAILABLE, 83]) + rows_for('s3', 'GET', [6, 6, 6]) +
+                rows_for('cas', 'PUT', [64, 64, 64]) + rows_for('s3', 'PUT', [31, 31, 31]))
         summary = R.build_summary(rows)
-        self.assertEqual([x for x in summary if x['metric'].startswith('ratio')], [])
+        self.assertEqual([x['metric'] for x in summary if x['metric'].startswith('ratio')], ['ratio:cas/s3:PUT'])
         table = R.render_table(summary, ['cas', 's3'], [])
         self.assertIn(R.UNAVAILABLE, table)
         with tempfile.TemporaryDirectory() as d:
@@ -139,6 +151,46 @@ class Pairing(unittest.TestCase):
         rows = rows_for('cas', 'GET', [16600, 16601], unit_count=1) + rows_for('s3', 'GET', [1, 1], unit_count=1)
         table = R.render_table(R.build_summary(rows), ['cas', 's3'], [])
         self.assertIn('16600.50', table); self.assertNotIn('e+', table)
+    def test_cached_pairs_get_ratios(self):
+        rows = []
+        for policy, get in (('cas', 83), ('s3', 6), ('s3plain', 6), ('cas_cached', 40), ('s3_cached', 4),
+                            ('s3plain_cached', 5)):
+            rows += rows_for(policy, 'GET', [get] * 3)
+        metrics = {x['metric'] for x in R.build_summary(rows) if x['metric'].startswith('ratio')}
+        self.assertEqual(metrics, {'ratio:cas/s3:GET', 'ratio:cas/s3plain:GET', 'ratio:cas_cached/s3_cached:GET',
+                                   'ratio:cas_cached/s3plain_cached:GET'})
+        table = R.render_table(R.build_summary(rows), ['cas', 's3', 's3plain'], ['cas_cached', 's3_cached'])
+        self.assertIn('cas_cached/s3_cached', table.split('\ncached\n')[1])
+        self.assertIn('10.00 (10.00..10.00)', table)
+
+    def test_failed_repeat_leaves_no_numbers(self):
+        rows = (rows_for('cas', 'GET', [500, 500]) + rows_for('cas', 'wall', [1.0, 1.0]) +
+                [dict(policy='cas', card='cycle', phase='cold', repeat=3, metric='status', value='FAILED', unit_count=0)] +
+                rows_for('s3', 'GET', [6, 6, 6]))
+        summary = R.build_summary(rows)
+        cas = [(x['metric'], x['median']) for x in summary if x['policy'] == 'cas']
+        self.assertEqual(cas, [('status', 'FAILED (2 of 3 repeats ok)')])
+        self.assertEqual([x['repeats'] for x in summary if x['policy'] == 'cas'], [3])
+        self.assertEqual([x for x in summary if x['metric'].startswith('ratio')], [])
+        table = R.render_table(summary, ['cas', 's3'], [], {'cycle': 'cycle'})
+        self.assertIn('FAILED (2 of 3 repeats ok)', table)
+        self.assertNotIn('cycle/cold cas:', table)
+
+    def test_interrupted_run_drops_unpaired_ratios(self):
+        rows = rows_for('cas', 'GET', [1, 2]) + rows_for('s3', 'GET', [1, 2, 3]) + \
+            rows_for('cas', 'PUT', [4, 4, 4]) + rows_for('s3', 'PUT', [2, 2, 2])
+        metrics = [x['metric'] for x in R.build_summary(rows, strict=False) if x['metric'].startswith('ratio')]
+        self.assertEqual(metrics, ['ratio:cas/s3:PUT'])
+
+    def test_header_states_unavailable_and_gc(self):
+        rows = rows_for('cas', 'HEAD', [R.UNAVAILABLE]) + rows_for('cas', 'GET', [1])
+        header = R.render_header(dict(scale='1.0', repeats='3', gc='off'), R.build_summary(rows))
+        self.assertIn('GC-disabled process window', header)
+        self.assertIn('unavailable: cas cycle cold HEAD', header)
+        header = R.render_header(dict(scale='1.0', repeats='3', gc='on'), R.build_summary(rows[1:]))
+        self.assertNotIn('GC-disabled', header)
+        self.assertIn('unavailable: none', header)
+
     def test_diagnostics_s3_errors_and_empty(self):
         rows = rows_for('cas', 'S3ReadRequestsErrors', [2, 2, 2], unit_count=1)
         self.assertIn('S3ReadRequestsErrors', R.render_diagnostics(R.build_summary(rows)))
@@ -147,13 +199,13 @@ class Pairing(unittest.TestCase):
 class Edges(unittest.TestCase):
     def test_paired_ratio_length_mismatch(self):
         with self.assertRaises(ValueError):
-            R.paired_ratio([1, 2], [1])
+            R._ratios([1, 2], [1])
         with self.assertRaises(ValueError):
-            R.paired_ratio([], [])
-    def test_mark_wall_zero_min(self):
-        self.assertEqual(R.mark_wall([0.0, 1.0]), 'noisy')
+            R._ratios([], [])
+    def test_mark_spread_zero_min(self):
+        self.assertEqual(R.mark_spread([0.0, 1.0]), 'noisy')
     def test_compatible_missing_field(self):
-        m = dict(workload_rev='a')
+        m = dict(workload_hash='a')
         self.assertIn('scale', R.compatible(m, m))
     def test_tsv_rejects_tab_and_newline(self):
         with tempfile.TemporaryDirectory() as d:

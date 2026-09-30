@@ -33,7 +33,7 @@ class CollectTest(unittest.TestCase):
         c = FakeClient([row('a', T0 + 10, T1 - 10, 1), row('b', T0 - 10, T1 - 10, 1), row('c', T0 + 10, T1 + 10, 0)])
         rounds = gc.collect(c, T0, T1)
         self.assertEqual(c.queries[0], 'SYSTEM FLUSH LOGS')
-        self.assertIn(f't1 >= {T0} AND t0 <= {T1}', c.queries[1])
+        self.assertIn(f't1 >= {T0}) AND t0 <= {T1}', c.queries[1])
         self.assertEqual([(r['round_id'], r['started_in_window'], r['finished_in_window']) for r in rounds],
                          [('a', True, True), ('b', False, True), ('c', True, False)])
 
@@ -45,6 +45,13 @@ class CollectTest(unittest.TestCase):
 
     def test_no_rows(self):
         self.assertEqual(gc.collect(FakeClient([]), T0, T1), [])
+
+    def test_unfinished_round_is_open_until_it_finishes(self):
+        c = FakeClient([])
+        gc.collect(c, T0, T1)
+        self.assertIn(f'HAVING (finished = 0 OR t1 >= {T0}) AND t0 <= {T1}', c.queries[1])
+        rounds = gc.collect(FakeClient([row('a', T0 - 20, T0 - 10, 0)]), T0, T1)
+        self.assertEqual([(r['started_in_window'], r['finished_in_window']) for r in rounds], [(False, False)])
 
     def test_finished_after_window_end_is_not_finished_in_window(self):
         rounds = gc.collect(FakeClient([row('a', T0 + 1, T1 + 1, 1)]), T0, T1)
@@ -115,7 +122,14 @@ class RunnerGcTest(unittest.TestCase):
         rows = [dict(policy='cas', card='c', phase='cold', repeat=1, metric=m, value=v, unit_count=1)
                 for m, v in (('gc_rounds', 2), ('gc_rounds_overlapping', 1))]
         table = R.render_table(R.build_summary(rows), ['cas'], [])
-        self.assertIn('2 (1 overlapping)', table)
+        self.assertIn('2, 1 overlapping', table)
+
+    def test_table_cell_shows_the_range_over_repeats(self):
+        rows = [dict(policy='cas', card='c', phase='hot', repeat=k, metric=m, value=v, unit_count=1)
+                for k, inside, over in ((1, 0, 0), (2, 3, 0), (3, 0, 1))
+                for m, v in (('gc_rounds', inside), ('gc_rounds_overlapping', over))]
+        table = R.render_table(R.build_summary(rows), ['cas'], [])
+        self.assertIn('0 (0..3), 0 (0..1) overlapping', table)
 
 
 class FailingLogClient(FakeClient):
