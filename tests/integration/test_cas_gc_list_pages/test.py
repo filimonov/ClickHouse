@@ -2,7 +2,7 @@
 Measures how many S3 LIST requests the GC's global ref walk spends per logical listing page
 (`DiskS3ListObjects` against `CASRefGlobalListPages`) on RustFS and attributes them to the
 `limit + 1` first page, the iterator's prefetch, resumed pages and other callers. It records and
-prints; it asserts no ratio.
+prints; it asserts no ratio, only that the `listUnder` trace was parsed.
 """
 import logging
 import os
@@ -122,7 +122,7 @@ def test_list_requests_per_logical_page():
 
     trace = node.grep_in_log("listUnder prefix=").splitlines()[log_lines_before:log_lines_after]
     pat = re.compile(
-        r"listUnder prefix=(\S+), cursor_set=(true|false), limit=(\d+), keys=(\d+), has_next=(true|false), s3_list_requests=(\d+)"
+        r"listUnder prefix=(\S+), cursor_set=(true|false), limit=(\d+), keys=(\d+), has_next=(true|false), process_s3_list_requests_delta=(\d+)"
     )
     calls = [m.groups() for m in map(pat.search, trace) if m]
 
@@ -164,3 +164,9 @@ def test_list_requests_per_logical_page():
     with open(path, "w") as f:
         f.write(report)
     print("attribution written to", path)
+
+    first = table.get("first ref-stream", [0, 0, 0])
+    resumed = table.get("resumed ref-stream", [0, 0, 0])
+    assert first[0] >= 1 and resumed[0] >= 1, f"no first or no resumed ref-stream listUnder trace parsed: {table}"
+    # Each logical page sends at least one LIST inside its own call.
+    assert first[2] + resumed[2] >= delta["CASRefGlobalListPages"], f"traced LISTs below the page count: {table}"

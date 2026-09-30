@@ -1137,8 +1137,9 @@ Backend::RawListPage ObjectStorageBackend::listUnder(
     }
 
     /// Destroying the iterator waits for its prefetch, so the process-wide `DiskS3ListObjects` delta counts it.
+    /// The delta also counts LISTs other threads sent meanwhile.
     it.reset();
-    LOG_TRACE(getLogger("CasObjectStorageBackend"), "listUnder prefix={}, cursor_set={}, limit={}, keys={}, has_next={}, s3_list_requests={}",
+    LOG_TRACE(getLogger("CasObjectStorageBackend"), "listUnder prefix={}, cursor_set={}, limit={}, keys={}, has_next={}, process_s3_list_requests_delta={}",
         prefix, !cursor.empty(), limit, page.keys.size(), !page.next_cursor.empty(),
         ProfileEvents::global_counters[ProfileEvents::DiskS3ListObjects].load(std::memory_order_relaxed) - s3_lists_before);
     return page;
