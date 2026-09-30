@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-30 15:03'
+updated_date: '2026-09-30 16:33'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -24,6 +24,7 @@ references:
     docs/superpowers/reports/2026-09-30-cas-part-removal-flow/01-removal-flow-map.md
   - >-
     docs/superpowers/reports/2026-09-30-cas-part-removal-flow/02-design-inputs.md
+  - docs/superpowers/reports/2026-09-30-cas-part-removal-flow/03-yardstick-ab.md
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f2
   - docs/superpowers/cas/2026-09-16-msan-cas-s3-shard-budget-rca.md
@@ -83,4 +84,9 @@ Rejected: CAS-side sniffing of the `delete_tmp_` prefix; one disk transaction fo
 Also established: `delete-on-destroy.txt` is no longer written (upstream commit c1c69553741), and nothing is written into a part before `remove` when MergeTree transactions are off; the second manifest of a removal is the unlink batch itself.
 Not covered by this task: fetch and clone paths publish a part twice (separate tasks); `DROP DETACHED` (`deleting_` rename) stays as is.
 Branch: `fix/antalya-26.6/cas-part-removal-one-drop`, worktree `cas-83`, from antalya-26.6 @e2dd0f5d343. Proof: a stateless test counting `manifest_put` / `ref_repoint` / `ref_drop` per removed part, and a yardstick `cycle` A/B.
+
+2026-09-30, implemented and measured. Branch `fix/antalya-26.6/cas-part-removal-one-drop` (worktree `cas-83`): 1918ff55398 (the block + stateless test `05054_cas_part_removal_one_ref_drop`), fa41049c383 (comments, docs); not pushed.
+- Test, per removed part from `system.cas_log`: base 2 `manifest_put`, 1 `ref_repoint`, 2 `ref_drop`, 12 events on `delete_tmp_*` refs (with a projection 3 / 2 / 2 / 19); branch 0 / 0 / 1 / 0.
+- Yardstick `--quick`, card `cycle`, policy `cas`, two runs per side (`docs/superpowers/reports/2026-09-30-cas-part-removal-flow/03-yardstick-ab.md`): PUT per cycle 64 -> 28 (-56%), GET 83 -> 47 (-43%), wall 30.3 -> 17.0 ms cold and 27.9 -> 15.7 ms hot (-44%). cas/s3 ratios: PUT 2.08 -> 0.92, GET 13.85 -> 7.85, wall 1.70 -> 0.84 cold. Request spread 0.0-0.3%. Control cards (`wide_insert`, `attach_200`, `select_subset`, `dup_content`, `mutation`): request counts unchanged.
+- Final reviews: Opus APPROVE, codex no code finding; a fix wave for the block comment, the test's event synchronisation and stale comments is in progress.
 <!-- SECTION:NOTES:END -->
