@@ -1806,11 +1806,13 @@ void PrintTo(const HeadCounts & c, std::ostream * os)
     *os << "{hit " << c.hit << ", miss " << c.miss << ", wasted " << c.wasted << "}";
 }
 
-/// The positional rule: `s` is the first candidate position not yet passed and the outstanding hints
-/// are `[s, s + window)`. `entries` is one shard in `BlobRef` order.
+/// The positional rule: `s` is the first candidate position not yet passed and, from the shard's first
+/// take on, the outstanding hints are `[s, s + window)`. `entries` is one shard in `BlobRef` order.
 void modelShard(const std::vector<HeadEntry> & entries, size_t window, HeadCounts & counts)
 {
     const size_t n = entries.size();
+    if (std::count(entries.begin(), entries.end(), HeadEntry::Taken) == 0)
+        return;
     size_t s = 0;
     for (size_t pos = 0; pos < n; ++pos)
     {
@@ -2038,4 +2040,11 @@ TEST(CASGCFold, HeadWindowIgnoresUntakenReads)
 {
     const auto blobs = headPattern(BlobHashAlgo::CityHash128, 0, {{12, HeadEntry::Taken}});
     expectHeadWindow(blobs, {.untaken_reads = 9});
+}
+
+/// Hints start at a shard's first take, so a shard whose candidates all keep an edge issues none.
+TEST(CASGCFold, HeadWindowShardWithoutTakesHintsNothing)
+{
+    const auto blobs = headPattern(BlobHashAlgo::CityHash128, 0, {{12, HeadEntry::Passed}});
+    expectHeadWindow(blobs, {});
 }

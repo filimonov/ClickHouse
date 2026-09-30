@@ -2009,9 +2009,9 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
     result.retired_merge.resize(state.gc_shards);
 
     /// HEAD READ-AHEAD FOR THE REDUCE PHASE. `head_candidates[shard]` is filled in that phase with the
-    /// blobs the merge can bring to in-degree zero, in the merge's own ascending key order; `head_blob`
-    /// below tops the hints up a window deep before each take. It is EMPTY everywhere else, the whole of
-    /// intake included, so every take outside that phase is the plain inline HEAD.
+    /// blobs the merge can bring to in-degree zero, in ascending `BlobRef` order; `head_blob` below tops
+    /// the hints up a window deep around each take. It is EMPTY before that phase, so a take there
+    /// fails the candidate `chassert` in `passHeadHintsTo`.
     ///
     /// Hints are issued from INSIDE the lambda rather than in one burst at phase start, so the requests
     /// this can ever add are bounded by one window past the last candidate the merge actually reaches.
