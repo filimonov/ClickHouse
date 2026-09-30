@@ -1,45 +1,66 @@
 ---
-description: 'Design for CAS-29.9 (r8): on a folding round the namespace janitor walks pages sequentially on the round thread, deletes each page''s dead-life `_log`/`_snap` keys in one storage-sized batch, and takes the next page only while a 10 s phase budget has time left, so a dropped table drains in one folding round instead of one page per folding round.'
+description: 'Design for CAS-29.9 (r10): on a folding round the namespace janitor lists pages on the round thread and hands each page''s dead-life `_log`/`_snap` deletes to the GC I/O pool as jobs (storage-sized batches, or single keys on a store without batch delete), listing the next page while they run, and starts no new page after a best-effort 20 s budget, so a dropped table drains in one or two folding rounds instead of one page per folding round.'
 ---
 
 # CAS GC: janitor batch deletes under a phase time budget {#cas-gc-janitor-batches-and-budget}
 
 ## Decision {#decision}
 
-- **Sequential pages on the round thread.** A page is: authority read, LIST (one logical page), catalog read, one batch
-  delete of its dead write-once keys, and the exact-token deletes of its dead `_ckpt`/`_files` keys. Every
-  request uses `Retry::standard`, as today. No I/O pool.
+- **Pages listed on the round thread, deletes fanned out on the GC I/O pool.** LIST is sequential by
+  continuation token; nothing else is. Per page the round thread reads authority, LISTs, reads the
+  catalog, classifies, runs the exact-token `_ckpt`/`_files` deletes, and submits the page's dead
+  write-once deletes to `io_pool` as jobs. It then lists the next page while those jobs run
+  ([pipeline](#pipeline)).
+- **A job is one storage request.** Capability true or unknown: one batch of the phase's batch size.
+  Capability false: one key. `DeleteObjects` is idempotent and reports per-key errors, and pages are
+  disjoint, so concurrent batches are safe.
+- **At most `gc_io_concurrency` jobs outstanding** (default 16). The round thread takes a slot before
+  each submit and blocks when none is free. Each job is admitted on its own `CasOperation` resumed from
+  the phase's generation with the janitor's authority predicate, as `Gc::redeleteBlobs` resumes its jobs.
+- **One wait, one publication.** The phase waits for every job at its end, then publishes the cursor of
+  the longest prefix of complete pages, once.
 - **Batches, storage-sized.** A batch holds `bulkDeleteChunkKeys()` = clamp(min(`gc_bulk_delete_chunk_keys`,
-  the storage's batch-delete limit), 1, `kBulkDeleteMaxKeys`) keys. One CAS batch is one admitted request.
-  It is one storage request, except that a credential-refresh reissue (`refreshAndClassifyReadFault` in
-  `CasRequests.cpp`, and `S3ObjectStorage::refreshAndRetryOnExpiredCredentials` inside the storage call)
-  sends it again without a new admission. With the default 1000 and a 1,000-key LIST page, a page is one batch.
+  the storage's batch-delete limit), 1, `kBulkDeleteMaxKeys`) keys, fixed at phase start. One CAS batch is
+  one admitted request. It is one storage request, except that a credential-refresh reissue
+  (`refreshAndClassifyReadFault` in `CasRequests.cpp`, and
+  `S3ObjectStorage::refreshAndRetryOnExpiredCredentials` inside the storage call) sends it again without a
+  new admission. With the default 1000 and a 1,000-key LIST page, a page is one batch.
 - **Authority per cohort, requests per storage.** Authority is read once per cohort: once per page in the
-  janitor, once per 1,000-key cohort in `cleanupRefObjects`, as today. A cohort goes out as consecutive
-  storage-sized requests, each admitted. A store without batch delete pays one request per key, never
-  one authority read per key.
-- **Budget checked between pages.** Constant `kJanitorPhaseBudget` = 10 s. The phase takes the next page
-  iff elapsed < budget and the last page was complete and had debris. The phase bound is budget + one
-  page. Stage C's round deadline later absorbs the constant and bounds the tail of one page.
-- **Capability read once per phase.** `isBatchDeleteSupported()` false → one-key batches. Unknown → the
-  first batch is the probe. A rejection stops the phase; the next folding round cuts at 1.
+  janitor, once per 1,000-key cohort in `cleanupRefObjects`, as today. A store without batch delete pays
+  one request per key, never one authority read per key.
+- **Best-effort budget.** Constant `kJanitorPhaseBudget` = 20 s, inside the owner's 15–30 s range; the
+  owner may set 30 s. It is a soft limit, checked between pages: once elapsed ≥ budget the phase starts
+  no new page. The page in progress and the jobs in flight complete under their standard retry policy.
+  No hard ceiling is promised ([budget and in-flight work](#phase-bound)).
+- **Capability read once per phase, before any job; the batch size is fixed with it.** False → one-key
+  jobs. Unknown → multi-key jobs like true; no sequential probe. `S3Capabilities` remembers the answer for
+  the object storage, so only the first phase a process runs on the disk can probe. A rejection stops
+  the phase; the next folding round reads false.
 - **No per-key recovery of a failed batch, anywhere.** `removeChunkWriteOnceOrOneByOne` loses its
-  catch-and-loop. Both other write-once families contain the propagated `NOT_IMPLEMENTED` themselves.
-- **Failed batch leaks and advances.** Once its retry policy is exhausted, an ordinary delete failure,
-  transient or permanent, counts its keys as `leaked` and the cursor moves past the page, as the
-  exact-token path does today. Only lost authority, `NOT_IMPLEMENTED` and a deterministic local failure
-  hold the cursor. A key that fails every time is leaked on every pass that reaches it and shows in
+  catch-and-loop. Keys of a rejected batch are never re-sent in the phase. Both other write-once families
+  contain the propagated `NOT_IMPLEMENTED` themselves.
+- **Failed request leaks and advances.** Once its retry policy is exhausted, an ordinary delete failure,
+  transient or permanent, counts its keys as `leaked` and its page stays complete, as the exact-token
+  path does today. Only lost authority, `NOT_IMPLEMENTED`, a deterministic local failure and a schedule
+  refusal hold the page. A key that fails every time is leaked on every pass that reaches it and shows in
   `batches_leaked`/`leaked`; the next full pass retries it.
 - **S3 adapter keeps the canonical error name** at all three throw sites, the one-key path included, so
   a name-only refusal ends its CAS retry at once instead of spending the whole retry window. With a
   credential-refresh callback configured, a refusal the storage classifies as an expired token is
   reissued once by the refresh path before it leaks ([adapter](#adapter)).
-- **Deferred rounds unchanged.** A `DEFER` round takes one suppressed page: no deletes, no cursor move.
-- **Follow-up, not in this change.** Parallel batches across pages on the GC I/O pool, taken only if
-  [M1](#m1-long-stream-drain) shows the phase LIST-bound or CPU-bound per page.
-- **Proof before merge.** Fresh alternating A/B on `e2dd0f5d343`. Predicted: a 20k-key stream drains in
-  one folding round after the DROP. Quiet pools keep one logical LIST page per folding round and no
-  more physical LIST requests than base.
+- **Deferred rounds unchanged.** A `DEFER` round takes one suppressed page: no deletes, no jobs, no
+  cursor move.
+- **`gc_io_concurrency` 1 is the sequential model.** Jobs run inline on the round thread in submit order,
+  so page k's deletes finish before page k+1's LIST.
+- **A refresh never publishes a transient `false`.** Jobs read the authority flag while the round thread
+  refreshes it, so `refreshAuthority` keeps the confirmed value during its GET and stores `false` only on
+  absence, mismatch or a failed read. The janitor latches an observed loss until the phase ends
+  ([authority](#authority)).
+- **Proof before merge.** Fresh alternating A/B on `e2dd0f5d343`, all on the local RustFS stand.
+  Predicted: a 20k-key stream drains in one folding round after the DROP on S3, and in at most two with
+  the disk's `support_batch_delete` set to false at 20 ms RTT. Quiet pools keep one logical LIST page per
+  folding round and no more physical LIST requests than base. Request counts come from process-wide
+  `system.events` deltas over a GC-only window.
 
 ## Context {#context}
 
@@ -62,33 +83,39 @@ so after a DROP the janitor deletes on rounds 2 and 3 and then on every 9th roun
 The one-page cap bounded round time when a page cost ~1,005 requests (one exact DELETE per key). With a
 batch, a page costs ~8 requests on S3.
 
-**Open: report 08's per-page time.** The request model below predicts ~160 ms per page at 20 ms RTT.
-Report 08 measured 0.4–0.6 s without latency and 1.9–2.3 s at 20 ms, unexplained. Which one holds decides
-whether a 20k drain fits one 10 s window or needs two. M1 measures it; nothing below depends on the model
-being right except the predicted round count.
+**Open: report 08's per-page time.** The request model below predicts ~140 ms of round-thread time per
+page at 20 ms RTT. Report 08 measured 0.4–0.6 s without latency and 1.9–2.3 s at 20 ms, unexplained. If
+the unexplained time is the batch request itself, the pipeline hides it behind the next LIST; if it is
+the round thread's own work, it does not. Without latency either fits a 20k drain in one 20 s window.
+M1 measures it; nothing below depends on the model being right except the predicted round count.
 
 ## Execution model {#execution}
 
-### A page {#page}
+### Pipeline {#pipeline}
 
-`NamespaceJanitor::run` on the round thread, per page:
+`NamespaceJanitor::run`, on the round thread:
 
-1. `refreshAuthority`. Authority lost: stop; the page is not taken.
-2. LIST one page (1,000 keys) from the in-memory cursor.
-3. Read the catalog cut after the LIST, as today, and classify every key.
-4. Delete dead `_ckpt`/`_files` by exact token, as today.
-5. Cut the page's dead canonical `_log`/`_snap` keys into batches of the phase's batch size and send them
-   one after another.
+1. Read the maintenance state once. Read `isBatchDeleteSupported()` once and fix the phase's mode and
+   batch size ([capability](#capability)).
+2. Per page, while the [stop rules](#stop-rules) allow:
+   1. `refreshAuthority`. Authority lost: no further page.
+   2. LIST one page (1,000 keys) from the in-memory cursor.
+   3. Read the catalog cut after the LIST, as today, and classify every key.
+   4. Delete dead `_ckpt`/`_files` by exact token, as today, on the round thread.
+   5. Cut the dead canonical `_log`/`_snap` keys into jobs of the phase's batch size. For each job take a
+      slot, blocking while `gc_io_concurrency` jobs are outstanding, then submit it.
+3. Wait for every job. Compute the complete prefix. Publish the cursor once.
 
-Once per phase: the maintenance read before page 1, and one cursor publication after the last page.
+A page in progress is finished: its jobs are all submitted even after the budget passes. The budget only
+decides whether step 2 starts another page.
 
 | Request | S3, per page | GCS (no batch delete), per page |
 |---|---|---|
-| authority GET, catalog GET | 2 | 2 |
-| LIST, physical `ListObjectsV2` | 3 for a full page with more keys after it; 2 for the page before the last; 1 for the last | same |
-| dead `_log`/`_snap` deletes | 1 batch | one per key, serial |
-| exact `_ckpt`/`_files` deletes | a few (listing carries tokens) | a few |
-| **time at 20 ms RTT** | **~8 requests ≈ 160 ms** | **~1,000 requests ≈ 20 s** |
+| authority GET, catalog GET (round thread) | 2 | 2 |
+| LIST, physical `ListObjectsV2` (round thread waits) | 3 for a full page with more keys after it; 2 for the page before the last; 1 for the last | same |
+| exact `_ckpt`/`_files` deletes (round thread) | a few (listing carries tokens) | a few |
+| dead `_log`/`_snap` deletes (`io_pool`) | 1 batch job | 1,000 one-key jobs, 16 in flight |
+| **time at 20 ms RTT** | **round thread ~7 requests ≈ 140 ms; the batch overlaps the next page** | **1,000 / 16 × 20 ms ≈ 1.25 s of jobs; the round thread's ~140 ms overlaps them ≈ 1.3 s** |
 
 One logical page costs three `ListObjectsV2` (report `06-list-requests-per-page.md` in the same folder,
 measured on RustFS): the response holding the page, the next response for the sentinel key that proves
@@ -97,30 +124,93 @@ when that response arrives (`ObjectStorageIteratorAsync.cpp:71`) and its destruc
 thread blocks on all three, but they run on the iterator's threads. This change keeps the page contract
 and the iterator as they are.
 
-Keys per 10 s budget at 20 ms: S3 ≈ 60 pages ≈ 60k keys. GCS ≈ 500 key-requests, but the check is
-between pages, so a GCS phase finishes the page it started: one 1,000-key page in ~20 s per folding
-round. That is base's GCS cost; this change neither helps nor hurts it.
+Keys per 20 s budget at 20 ms RTT:
+
+| Store | Pages per phase | Keys per phase | Base, per folding round |
+|---|---|---|---|
+| S3, batch delete | ~140 (round-thread bound, ~140 ms per page) | ~140k | 1 page, ~24 s of serial exact deletes (report 08) |
+| GCS, no batch delete, `gc_io_concurrency` 16 | ~15 (job bound, ~1.3 s per page) | ~15k | 1 page, ~20 s of serial one-key deletes |
+| any store, `gc_io_concurrency` 1 | S3 ~125 (160 ms per page); no batch delete 1 (~20 s per page) | ~125k; 1k | same as base on a no-batch store |
+
+On S3 the pipeline saves only the batch's own time per page: the round thread's LIST and GETs are the
+bound. On a no-batch store the jobs are the bound and the pipeline is what makes the page ~1.3 s.
+
+### Jobs on `io_pool` {#jobs}
+
+**Shape: `Gc::redeleteBlobs` (`CasGc.cpp:488`).**
+
+- **Submit.** A `ThreadPoolCallbackRunnerLocal<void>` on `io_pool` with its own thread name, one per
+  phase. Each job through `enqueueAndGiveOwnership`; the handles are kept, and `SCOPE_EXIT_SAFE` waits for
+  all of them on every exit path, a throw included. At `gc_io_concurrency` 1 jobs run inline on the round
+  thread, as the redelete's `concurrency <= 1` branch does.
+- **Slots.** A counting semaphore of `gc_io_concurrency` slots. The round thread acquires one before each
+  submit; the job releases it as its last action. The pool queue stays unbounded, as the redelete and
+  `GcReadAhead` rely on; the semaphore is what bounds outstanding jobs, and with it the work left when
+  the budget passes. Without it the round thread would list ~140 pages in 20 s and queue their jobs
+  behind a pool that drains 16 at a time.
+- **Admission per job.** Each job builds its own operation with
+  `requests.resume(op.generation(), liveness)` and sends `removeManyWriteOnce(keys, Retry::standard())`
+  on it. The redelete resumes without a predicate; the janitor passes its `authority_held` predicate, so
+  every job is admitted against the mount fence and GC authority. `refreshAuthority` now runs on the
+  round thread while jobs read the flag: **`Gc::authority_held` becomes `std::atomic<bool>`**
+  (`CasGc.h:991`), and a refresh keeps its value during the GET ([authority](#authority)).
+- **Collect.** Each job writes one slot of its page: outcome (deleted, leaked, held, skipped) and its
+  exception. After the final wait the round thread calls `future.get()` per handle, as the redelete
+  does, and aggregates in submit order. Every logical count on the row comes from the slots, read once;
+  a job run inline at `gc_io_concurrency` 1 writes its slot like any other and adds nothing on the
+  round thread, so nothing is counted twice. A failure is reported per job, one WARNING each, as
+  `reportRedeleteFailure` does per entry.
+- **Stop flag.** A phase-wide `std::atomic<bool>`. A job that ends in a hold class sets it. A job checks
+  it once, before its first request: set, it records `skipped` and sends nothing. A job past that check
+  runs to its outcome. The round thread checks it before each page and each submit.
+- **Schedule refusal.** An `enqueueAndGiveOwnership` throw sets the stop flag and holds that job's page:
+  its unsent keys are neither deleted nor leaked. `io_pool_refuse_at_for_test` drives it, as for the
+  redelete.
+- `io_pool` is free while the janitor runs: its other users (read-ahead, orphan-sweep planning,
+  `pending_deletes`) are earlier phases of the same round thread and have returned.
+
+**Per-job outcome.** The [batch failure](#batch-failure) classes apply to each job:
+
+| Job ended | Counts | Its page |
+|---|---|---|
+| success (absent keys included) | `janitor_deleted` += keys | stays complete |
+| refused or exhausted | `leaked` += keys, `batches_leaked` += 1, one WARNING | stays complete |
+| authority lost (`job_op.admitted()` false after the throw, or admission refused) | `batches_held` += 1, keys not counted | held |
+| deterministic local failure, `NOT_IMPLEMENTED`, schedule refusal | `batches_held` += 1 | held |
+| skipped (stop flag set) | `delete_jobs_skipped` += 1 | held |
+
+A held page is incomplete. Jobs of other pages keep their outcomes: a later page's deletes were licensed
+by that page's own classification, so they stand and count even though the cursor stops before the held
+page. Ordinary failures on a held page are not counted as `leaked`: the next pass re-lists the page.
+
+**Failure asymmetry.**
+
+| Rule | Fails how |
+|---|---|
+| deletes on the round thread, serial | no-batch store: ~1,000 keys per ~20 s page, one page per folding round, so a 20k drain takes 20 folding rounds, most 9 rounds apart. S3: each page also waits for its batch |
+| up to 16 jobs in flight | 16× the delete rate against one bucket: more throttling, which leaks keys for a later pass; up to 16 requests in flight when authority is lost, each naming only terminal-life keys ([authority](#authority)); up to 16 rejected probes once per process ([capability](#capability)) |
+
+Throttling costs a pass; serial costs the drain. Parallel is chosen. 16 is the concurrency
+`pending_deletes` already runs against the same bucket.
 
 ### Stop rules {#stop-rules}
 
-The phase takes the next page iff elapsed < `kJanitorPhaseBudget` and the last page was complete and
-had a dead-life candidate.
+The round thread starts the next page iff elapsed < `kJanitorPhaseBudget`, the stop flag is clear, and
+the last page was decided, had a dead-life candidate, and its read succeeded. "Complete" is not known
+yet when the next page starts: its jobs may still run.
 
-| Stop when | Reason |
+| Stop starting pages when | Reason |
 |---|---|
-| elapsed ≥ budget after a page | the round-duration bound; `budget_exhausted` = 1 |
-| authority lost, at a refresh, at the admission check before a batch, or during a batch | no further request is licensed; nothing is published |
-| a batch threw a deterministic local failure | the cursor must not pass a page the code did not understand |
-| the storage rejected a batch as unsupported | [capability](#capability): the phase ends |
+| elapsed ≥ budget after a page | soft limit; `budget_exhausted` = 1 |
+| authority lost at a refresh or at an admission check | no further request is licensed; nothing is published |
+| the stop flag is set: a job held (authority, local failure, `NOT_IMPLEMENTED`, schedule refusal) | the cursor must not pass a page the code did not understand; stop spending requests |
 | page not decided (suppressed, ambiguous cut, admission lost) | the cursor did not move; the next page would re-list the same keys |
 | page had no dead-life candidate | steady state stays at one page per folding round, today's LIST cost. otel.demo shows `janitor_deleted` 0 over 24 h |
 | `next_cursor` empty | no wrap inside a round; the next round starts from the beginning |
 | a read of page ≥ 2 threw | [cursor](#cursor): publish the complete prefix |
 
-A leaked batch does not stop the phase: its keys are `leaked` and its page stays complete. A batch that
-spent its whole retry window usually exhausts the budget, so the phase then ends after that page.
-"Dead-life candidate" is a classification outcome, not a delete outcome, so a page of already-gone keys
-still counts as debris.
+A leaked job does not stop the phase. "Dead-life candidate" is a classification outcome, not a delete
+outcome, so a page of already-gone keys still counts as debris.
 
 ### Why no per-request deadline {#no-request-deadline}
 
@@ -128,62 +218,91 @@ A per-request deadline was the r4 design (`Retry::within(budget)` frozen for the
 
 - Every request reserves its whole attempt envelope before admission (`attemptReservationMs`,
   `Backend/CasRequests.h:462`): 7 s with default timeouts, and a conditional write reserves two
-  (`CasRequests.cpp:906`). A 10 s window admits requests only for its first ~3 s, and a store with a
-  larger envelope admits nothing after page 1.
+  (`CasRequests.cpp:906`). A 20 s window admits requests only for its first ~13 s, conditional writes
+  for its first ~6 s, and a store with a larger envelope admits less.
 - A deadline that cuts a page mid-way needs a first-page exemption to avoid starving, and the exemption
   gives back the worst case it was meant to remove.
+
+Here every request keeps `Retry::standard`, no policy is frozen for the phase, and no page is exempt: the
+budget only stops new pages.
 
 **Failure asymmetry.**
 
 | Rule | Fails how |
 |---|---|
-| deadline binds every request | a healthy fast store gets ~3 s of useful work, or none past page 1; budget refusals surface as read exceptions mid-page |
-| budget checked between pages | a phase overruns the budget by one page; that page's worst case is today's |
+| deadline binds every request | a healthy fast store loses the last third of the window, more with a larger envelope; budget refusals surface as read exceptions mid-page |
+| soft budget between pages | a phase overruns the budget by the page in progress and the jobs in flight |
 
-Under-binding costs one page of tail that base already pays on every folding round. Over-binding loses
-the throughput the change exists for. The between-pages check is chosen.
+Under-binding costs a tail that base already pays on every folding round. Over-binding loses the
+throughput the change exists for. The soft budget is chosen.
 
-### Bound on phase duration {#phase-bound}
+### Budget and in-flight work {#phase-bound}
 
-`T_phase < kJanitorPhaseBudget + one page + maintenance read + cursor publication`
+The budget is best effort. Expected phase time is **budget + the rest of the page in progress + the jobs
+in flight + the cursor publication**. Nothing cuts a request short.
 
-- **Healthy page:** ~160 ms on S3 at 20 ms RTT; ~20 s on GCS.
-- **Page against a failing store:** each request is `Retry::standard`, up to 90 s (`Backend/CasRetry.h:40`)
-  plus its envelope. A page is at most its request count × that ceiling. A batch that exhausts its
-  window leaks and pushes elapsed past the budget, so a failing store costs at most one page's authority,
-  LIST, catalog and batch requests, plus the exact `_ckpt`/`_files` deletes, which leak on failure as
-  today.
-- **Maintenance read and cursor publication:** one each, `Retry::standard`, as today.
+- **Healthy store, 20 ms RTT:** the overrun is under one page: ~140 ms on S3, ~1.3 s on GCS with 16 jobs
+  in flight, ~20 s on a no-batch store at `gc_io_concurrency` 1.
+- **Failing store:** every request runs `Retry::standard`, up to 90 s (`Backend/CasRetry.h:40`) plus its
+  envelope; call that C (~97 s with default timeouts). The round thread's own requests for the page in
+  progress are serial: up to ~5 C. Its jobs drain `gc_io_concurrency` at a time: one C on S3 (one batch
+  per page, up to 16 jobs overlapping), ⌈1,000 / 16⌉ × C ≈ 100 min on a no-batch store. The publication
+  adds one C. Base sends the same 1,000 no-batch requests serially: ~27 h.
+- A request that exhausts its window leaks and the elapsed time then exceeds the budget, so a failing
+  store usually ends the phase after the page in progress.
 
-This keeps today's worst case for one page and improves the healthy case only. Stage C's round deadline
-is the mechanism that later bounds the tail: it passes `Retry::within(remaining())` to the requests and
-replaces the budget with `min(phase_start + budget, round deadline)`. If a round reaches the janitor with
-no time left, stage C decides whether it takes a page; this design does not.
+Stage C's round deadline is the mechanism that later bounds the tail: it passes
+`Retry::within(remaining())` to the requests and replaces the budget with `min(phase_start + budget,
+round deadline)`. If a round reaches the janitor with no time left, stage C decides whether it takes a
+page; this design does not.
 
-**Why 10 s.** 1/6 of `gc_interval_sec` (60 s), 1/30 of the planned round deadline (300 s). A constant
-with a one-line reason in `CasGc.cpp`; a setting now would be removed with stage C, and nothing shows a
-need to tune it.
+**Why 20 s.** The owner set 15–30 s: 10 s drains too little on a no-batch store. 20 s is 1/3 of
+`gc_interval_sec` (60 s) and 1/15 of the planned round deadline (300 s). The owner may set 30 s; every
+per-phase figure here then scales by 1.5. A constant with a one-line reason in `CasGc.cpp`; a setting now
+would be removed with stage C.
 
 ### Authority {#authority}
 
-- `refreshAuthority` runs before each page, as before the single page today. Every request samples
-  `authority_held` through the operation's liveness predicate, as today. The janitor adds no shared
-  state.
-- Observed loss: no further page, and the cursor publication is not admitted. Earlier pages keep their
-  deletes. A batch that throws because liveness failed holds its page and is not counted as leaked.
-- `op.admitted()` is checked before every batch and every exact delete, as base checks before each exact
-  delete, and before the publication. A batch whose delete succeeded while liveness turned false stays
-  counted: `readLoop` returns the store's success without re-checking liveness (`CasRequests.h:475`),
-  and the keys are gone. The next check stops the phase.
-- **No instantaneous fencing.** Another leader can replace the durable lease while a synchronous batch is
-  in flight, or after the last refresh. `authority_held` does not change until this leader observes the
-  replacement, so that batch and the cursor publication can still be sent. Sequential execution does not
-  remove this schedule.
-- **Safety rests on life identity, not fencing.** Every key in a batch belongs to a life absent from an
-  unambiguous catalog cut taken after its LIST. Such a life is terminal: a table re-created with the same
-  UUID writes under a fresh incarnation prefix (`mintFreshIncarnation`), so its keys are never in the
-  batch, and `buildRefWalkPlan` discards parent lives absent from the catalog. A second leader deleting
-  the same keys repeats an idempotent delete.
+- `refreshAuthority` runs before each page on the round thread, as before the single page today. Every
+  request, on the round thread or in a job, samples authority through its operation's liveness
+  predicate.
+- **No transient `false` during a refresh.** Base `refreshAuthority` stores `false` before its GET and
+  the verdict after it (`CasGc.cpp:4853`). With jobs in flight, a page-1 job admitted or retried during
+  page 2's refresh would read that `false`, hold its page and stop the phase under unchanged leadership.
+  Rule: the refresh computes its verdict in a local and stores it once, after the read. The verdict is
+  `true` only when the lease owner and seq match; absence, mismatch and a failed read store `false`, so
+  every exit stays fail-closed. During the GET the flag keeps the value the previous refresh confirmed.
+  That widens the no-fencing window below by one GET and adds nothing else.
+- **Observed loss is latched for the phase.** The janitor wraps the predicate it is given: the first
+  `false` it samples sets a phase-local `authority_lost` flag, and from then on the wrapper returns
+  `false` without reading `authority_held`. The round thread and every job use the wrapper, so no job
+  sees authority return inside the phase.
+- **A refused admission is classified held.** A request refused at the gate throws
+  (`throwReadRefused`: `CasTransientUnavailable` for the fence or the predicate, `CasWriteRetryLater` for
+  `NoBudget`). The job then calls `job_op.admitted()`, which samples the gate again rather than
+  remembering the refusal (`CasRequests.h:258`). The re-sample is sound because both halves are
+  monotone in the phase: the predicate by the latch, the mount fence because `LostOrRearmed` is final
+  for the operation's generation (`CasMountRuntime::admit`). A predicate or fence refusal therefore
+  reads `false` again and holds; it is never counted as `leaked`. A `NoBudget` refusal re-samples
+  `false` unless the mount lease was renewed in between; then it classifies as exhausted and leaks.
+  Either outcome sends nothing and deletes nothing: held re-lists the page, leaked retries the keys on
+  the next pass.
+- Observed loss: no further page, no further submit, and the cursor publication is not admitted. Jobs
+  not yet past admission fail it and hold their pages; jobs already past it complete, and their deletes
+  stand and count. Earlier completed pages keep their deletes.
+- `op.admitted()` is checked before every exact delete and before the publication, as today. A job whose
+  delete succeeded while liveness turned false stays counted: `readLoop` returns the store's success
+  without re-checking liveness (`CasRequests.h:475`), and the keys are gone.
+- **No instantaneous fencing.** Another leader can replace the durable lease after the last refresh.
+  `authority_held` does not change until this leader observes the replacement, so up to
+  `gc_io_concurrency` jobs and the cursor publication can still be sent. Base has the same schedule with
+  one request.
+- **Safety rests on life identity, not fencing.** Every key in a job belongs to a life absent from an
+  unambiguous catalog cut taken after its page's LIST. Such a life is terminal: a table re-created with
+  the same UUID writes under a fresh incarnation prefix (`mintFreshIncarnation`), so its keys are never in
+  a job, and `buildRefWalkPlan` discards parent lives absent from the catalog. A second leader deleting
+  the same keys repeats an idempotent delete. Running jobs concurrently does not change what any job
+  names.
 - The cursor publication is a conditional write on the maintenance etag read at phase start. If a
   competing leader published first and this leader has not yet observed the loss, the gate admits the
   write, the store refuses the precondition, and the resolve read finds the other leader's state:
@@ -196,21 +315,24 @@ need to tune it.
 ### Cursor {#cursor}
 
 A page is **complete** when it was decided, its exact deletes ran (a failed exact delete is `leaked` and
-does not block, as today), and each of its batches succeeded or [leaked](#batch-failure). The
-published cursor is the `next_cursor` of the last page of the longest complete prefix.
+does not block, as today), and each of its jobs succeeded or [leaked](#batch-failure). Completeness is
+decided after the final wait. The published cursor is the `next_cursor` of the last page of the longest
+complete prefix.
 
-- **Publication:** one conditional maintenance write after the last page, `Retry::standard`, counted in
-  the [bound](#phase-bound). A `Refused`, `GaveUp` or thrown publication is an anomaly, not an
-  exception, as today; a `Conflict` means another leader's cursor stands and is not recorded. Published
-  only if the operation is still admitted.
+- **Publication:** one conditional maintenance write after the final wait, `Retry::standard`. A
+  `Refused`, `GaveUp` or thrown publication is an anomaly, not an exception, as today; a `Conflict` means
+  another leader's cursor stands and is not recorded. Published only if the operation is still admitted.
+- **Held page k, complete pages after it:** the cursor stops before page k. The next pass re-lists pages
+  k onward; keys the later pages already deleted are gone and are not listed again.
 - **Rejected persisted cursor:** kept as today (`CasNamespaceJanitor.cpp:40`). If page 1's LIST from the
   persisted cursor throws, the phase makes the one-shot maintenance reset under `Retry::once` and
-  rethrows. No delete follows in that invocation. `BackendRejectedCursorResetsExactlyAndDeletesNothing`
-  stays.
-- **Read failure on page ≥ 2** (LIST or catalog GET from this phase's own cursor): the phase stops,
-  records an anomaly and publishes the complete prefix. No reset: the failing cursor is not the persisted
-  one.
-- A crash publishes nothing. The next round re-lists; deleting an absent write-once key is a no-op.
+  rethrows. No job has been submitted yet. `BackendRejectedCursorResetsExactlyAndDeletesNothing` stays.
+- **Read failure on page ≥ 2** (LIST or catalog GET from this phase's own cursor): no further page, the
+  final wait, an anomaly, and the complete prefix published. No reset: the failing cursor is not the
+  persisted one.
+- **An exception escaping `run`** waits for all jobs (`SCOPE_EXIT_SAFE`) and publishes nothing; `out`
+  keeps the counts aggregated so far. A crash publishes nothing. The next round re-lists; deleting an
+  absent write-once key is a no-op.
 
 ## Batch size {#batch-size}
 
@@ -293,32 +415,45 @@ Per cohort is chosen.
 
 ### Capability {#capability}
 
-Read `isBatchDeleteSupported()` once, before the phase's first batch, and fix the phase's batch size:
+Read `isBatchDeleteSupported()` once, before the phase's first job, and fix the phase's batch size with
+it. A job is cut at that size for the whole phase, whatever the storage learns meanwhile:
 
-| Capability | Batch size | Notes |
+| Capability | Batch size | Jobs |
 |---|---|---|
-| false (config or learned) | 1 | one-key admitted requests, no probe |
-| unknown | storage limit | the first batch is the probe; unknown is the default for AWS too |
-| true | storage limit | |
+| false (config or learned) | 1 | one-key jobs, no probe |
+| unknown | storage limit | multi-key jobs, the same as true; unknown is the default for AWS too |
+| true | storage limit | multi-key jobs; a storage limit of 1 gives one-key jobs |
 
-**A rejection stops the phase.** The batch throws `NOT_IMPLEMENTED`: its page is incomplete, the cursor
-stays before it, no further page or batch is taken, and `capability_learned` = 1. The next folding round
-reads the capability as false and cuts at 1. **The stop is family-local.** A family that runs later in
-the same round reads false at its own start and sends one-key requests that round; that is intended. Its one-key requests are ordinary requests of a known
+**Remembered per disk.** `S3Capabilities` holds the answer under a mutex for the object-storage
+instance (`setIsBatchDeleteSupported`, `S3Capabilities.h:34`). It is not persisted: after a restart the
+first phase on the disk reads unknown again. No CAS-side memory is added.
+
+**No sequential probe.** On an unknown store the first page's job goes to the pool like any other. Up to
+`gc_io_concurrency` multi-key jobs may reach the store before the first rejection flips the flag; each is
+rejected. After the flip, `removeObjectsIfExistImpl` throws `NOT_IMPLEMENTED` for more than one key
+without sending (`S3ObjectStorage.cpp:696`). Every such job holds its page and sets the stop flag. So the
+cost is at most `gc_io_concurrency` rejected `DeleteObjects` and one held folding round, the first time a
+process touches the disk.
+
+**A rejection stops the phase.** `capability_learned` = 1, no further page or submit, the cursor stays
+before the first held page. The next folding round reads false and cuts one-key jobs. **The stop is
+family-local.** A family that runs later in the same round reads false at its own start and sends
+one-key requests that round; that is intended. Its one-key requests are ordinary requests of a known
 capability, each licensed by that round's own classification.
 
-**No same-phase per-key recovery can occur.** Batches are sent one at a time on the round thread, and
-the phase ends on the rejection before cutting another. The r4 schedule (a worker learns false while the
-round thread cuts a one-key batch of the same page) needs two concurrent senders; there is one. If
-another user of the same storage flips the capability mid-phase, the janitor's next multi-key batch
-throws `NOT_IMPLEMENTED` without a request and stops the phase the same way.
+**No same-phase per-key recovery can occur.** The r4 schedule was a worker learning false while the
+round thread cut the same page's keys again at 1. Here the batch size is fixed at phase start and the
+keys of a rejected job are never cut again in the phase. A one-key job in a multi-key phase (a page with
+one dead key, or a remainder of one) was cut at phase start from classification, not from a failure. If
+another user of the storage flips the capability mid-phase, the janitor's next multi-key job throws
+`NOT_IMPLEMENTED` without a request and stops the phase the same way.
 
 **Why no recovery at all.** Deleting keys one by one in response to a failed batch is a destructive
 fallback. The rejection is also not reliably "no batch verb": `InvalidRequest` and `InvalidArgument` map
 to the same `NOT_IMPLEMENTED`.
 
-**Cost on GCS:** one request per key, serial. A store whose capability is still unknown pays one rejected
-`DeleteObjects` and one held folding round, once per process.
+**Cost on GCS:** one request per key, 16 in flight in the janitor; serial in `cleanupRefObjects` and the
+manifest cleanup, as base.
 
 GCS's JSON-API multipart batch is unreachable through the S3 client; out of scope.
 
@@ -348,15 +483,16 @@ finally throws may have deleted any subset of its keys; the janitor does not par
 
 **Rule: an ordinary failure leaks and advances; three cases hold.** The same rule the exact-token path
 has today (`CasNamespaceJanitor.cpp:134`). `op.admitted()` is checked first: a batch that fails after
-authority is lost holds, whatever it threw.
+authority is lost holds, whatever it threw. Each job is classified by this table on its own operation
+([per-job outcome](#jobs)); a one-key job is a batch of one.
 
 | Class | Exceptions | Retry inside the policy | Action after the throw |
 |---|---|---|---|
 | refused | `isDefinitelyRefusedWrite(e)`: malformed request, entity too large, access denied, a credential error the one refresh did not fix | none: the read loop ends at once (`CasRequests.cpp:480`) | count the keys as `leaked`, `batches_leaked` += 1, one anomaly, page stays complete, continue |
 | exhausted | transport, throttling (`SlowDown`, 503), 5xx, timeouts, a non-S3 `Poco::Exception` | until `Retry::standard` gives up | as refused |
-| authority lost | the liveness predicate failed; `op.admitted()` is false after the throw | none | hold: `batches_held` += 1, keys not counted, stop, no publication |
-| capability | `NOT_IMPLEMENTED` | none | [stop the phase](#capability), hold |
-| local bug | `isDeterministicLocalFailure`: `LOGICAL_ERROR`, `BAD_ARGUMENTS`, `CORRUPTED_DATA`; a non-`Poco` exception | none (`CasRequests.cpp:458`) | hold: `batches_held` += 1, stop; never advance past a page the code did not understand |
+| authority lost | the liveness predicate failed; `op.admitted()` is false after the throw | none | hold: `batches_held` += 1, keys not counted, stop flag, no publication |
+| capability | `NOT_IMPLEMENTED` | none | [stop the phase](#capability), hold, stop flag |
+| local bug | `isDeterministicLocalFailure`: `LOGICAL_ERROR`, `BAD_ARGUMENTS`, `CORRUPTED_DATA`; a non-`Poco` exception | none (`CasRequests.cpp:458`) | hold: `batches_held` += 1, stop flag; never advance past a page the code did not understand |
 
 **Failure asymmetry.**
 
@@ -371,8 +507,8 @@ Advance is chosen.
 - **Repeat failures are visible.** A key that fails every time is leaked on every pass that reaches it:
   on a one-page namespace, every folding round. It shows in `batches_leaked` and `leaked`, and the
   anomaly names the key range and the exception.
-- **Termination.** Every batch ends in success, a leak or a hold. Success and leak advance past the
-  page; a hold is one of the three stop cases, none of which a storage throttle can produce.
+- **Termination.** Every job ends in success, a leak, a hold or a skip. Success and leak keep the page
+  complete; a hold is one of the stop cases, none of which a storage throttle can produce.
 - **Partial deletes.** A leaked batch may have deleted any subset of its keys. `leaked` counts the whole
   batch: an upper bound. The next pass lists only the survivors.
 - **Mixed per-key errors** classify by the first remaining one, the type the storage throws. The class
@@ -433,8 +569,9 @@ maintenance GET, one logical LIST page, one catalog GET, no delete, no cursor mo
 policy, kept because nothing needs it changed.
 
 A DROP changes shards, so the next rounds fold. The janitor starts on round 2, because in round 1 the
-life still resolves. At 160 ms per page round 2 drains a 20k stream. At report 08's 0.5 s per page it
-drains all but the last pages, and round 3, which also folds, takes the rest. No 9-round wait either way.
+life still resolves. At ~140 ms per page round 2 drains a 20k stream (~3 s). At report 08's 0.5 s per
+page it also drains it (~10 s). On a no-batch store at 20 ms round 2 takes ~15 pages and round 3, which
+also folds, takes the rest. No 9-round wait in any case.
 
 Why a deferred-round delete was not shown unsafe, and why folding does not protect against a vanished
 catalog row: see the lifecycle facts in `mintFreshIncarnation`, `CasRefCatalog::createNamespace`,
@@ -442,7 +579,7 @@ catalog row: see the lifecycle facts in `mintFreshIncarnation`, `CasRefCatalog::
 
 | Wrong choice | Cost |
 |---|---|
-| keep suppression, and deferred deletes were safe | debris beyond one 10 s window waits up to 9 rounds per further window |
+| keep suppression, and deferred deletes were safe | debris beyond one 20 s window waits up to 9 rounds per further window |
 | allow deferred deletes, and an unexamined term of the fold gate mattered | a destructive family runs on a round the gate would have stopped |
 
 **Reopen if** an A/B shows a realistic drain needing more than two folding rounds, the defer cadence
@@ -450,7 +587,10 @@ dominates its wall time, and stage C3 (`requestRoundSoon`) has not landed.
 
 ## Settings {#settings}
 
-- None new. `kJanitorPhaseBudget` is a constant until stage C absorbs it.
+- None new. `kJanitorPhaseBudget` (20 s) is a constant until stage C absorbs it.
+- `gc_io_concurrency`: its description (`ContentAddressedSettings.cpp:82`) gains "namespace janitor
+  deletes of dead ref logs and snapshots"; "other GC requests run on the round thread" stays true of
+  everything else. 1 keeps the janitor sequential.
 - Test seam: `PoolConfig::gc_janitor_phase_budget_ms_for_test` (`std::optional<uint64_t>`). Not a setting.
 - `gc_bulk_delete_chunk_keys`: its description gains "dead-life ref logs and snapshots of the namespace
   janitor" and "capped by the storage's batch-delete limit".
@@ -462,8 +602,10 @@ dominates its wall time, and stage C3 (`requestRoundSoon`) has not landed.
 
 - `NamespaceJanitor::runOnePage` → `NamespaceJanitor::run(bool suppress_deletes, JanitorRunContext,
   NamespaceJanitorResult & out)`. The context carries the phase budget, the clock, the batch-size
-  function and a `refresh_authority` callback. `run` owns the loop, the maintenance read and the single
-  cursor publication, and writes into `out` as it goes, so a throw leaves completed work counted.
+  function, a `refresh_authority` callback, `io_pool`, `gc_io_concurrency`, the schedule-refusal test
+  seam and an `on_final_wait_for_test` seam. `run` owns the page loop, the job window, the final wait, the maintenance read and the single
+  cursor publication. It writes into `out` as pages and jobs settle, so a throw leaves completed work
+  counted.
 - From `cas/gc-request-cuts` @`1edf28f2a9a`: the classification and `Layout::writeOnceStreamKey`
   (`CasLayout.h`), which batches a listed key only if it equals its canonical rendering; others go to the
   exact path. A write-once batch has no token, so it must name only keys the layout renders. Not taken:
@@ -473,6 +615,14 @@ dominates its wall time, and stage C3 (`requestRoundSoon`) has not landed.
   ([cohort and request](#cohort-and-request), [other families](#other-families)).
 - `Gc::runNamespaceJanitorPage` → `Gc::runNamespaceJanitor`. Its existing `catch` emits the partial `out`.
   The deferred call site keeps `suppress_destructive = true`; the stop rule ends it after one page.
+- The job fan-out follows `Gc::redeleteBlobs`'s structure: submit with handles, `SCOPE_EXIT_SAFE` wait,
+  per-slot results, aggregation in submit order on the round thread. It adds the slot semaphore, the
+  stop flag and per-page completeness, and shares no code with the redelete.
+- `Gc::authority_held` becomes `std::atomic<bool>`: `refreshAuthority` writes it while jobs read it.
+  `refreshAuthority` drops its leading `authority_held = false` and stores its local verdict once, on
+  every exit ([authority](#authority)). `run` wraps the liveness predicate in the phase latch.
+- Context test seam `on_job_start_for_test(page, job)`, called on the worker before the stop-flag check
+  and the admission, so a test can place a job's first admission inside another step.
 - `run` times each step with a stopwatch (`list_ms`, `catalog_ms`, `delete_ms`) and snapshots the global
   `DiskS3ListObjects` counter at phase start and end (`list_requests_process`).
 - `IObjectStorage::batchDeleteKeyLimit`, `S3ObjectStorage` override, `Backend::bulkDeleteKeyLimit`,
@@ -483,8 +633,16 @@ dominates its wall time, and stage C3 (`requestRoundSoon`) has not landed.
 
 The janitor issues its requests from the round thread, but the LIST requests run on the async
 iterator's threads. `GcPhaseTimer` snapshots the round thread's `ProfileEvents`, so its delta misses every
-`ListObjectsV2`: report 06 found `DiskS3ListObjects` 0 on phase rows. `delete_requests` relies on the
-delete events landing on the calling thread; `WireRequestsIncludeRetriedAttempts` checks it. LIST is therefore measured two other ways:
+`ListObjectsV2`: report 06 found `DiskS3ListObjects` 0 on phase rows.
+
+**The row carries logical counts, not wire requests.** The janitor's write-once deletes run on `io_pool`
+threads, which the phase delta also misses. `pending_deletes` has the same gap today: its row carries
+only `jobs_scheduled` and `jobs_failed` (`CasGcPhaseTimer.h`, "what the delta does not cover"; the same
+note at `CasGc.cpp:2216`). The janitor follows it: no per-job `ProfileEvents` delta, no wire count on
+the row. Wire requests are counted once, outside the row, by the process-wide `system.events` delta over
+a GC-only window on an idle stand ([value proof](#value-proof)).
+
+LIST is measured two other ways:
 
 - **Count:** `list_requests_process`, the process-wide `DiskS3ListObjects` delta over the phase. It
   includes other threads' LISTs, so it attributes to the janitor only on an otherwise idle server (M1).
@@ -498,17 +656,20 @@ Metrics are `std::map<String, UInt64>` (`CasGc.h:219`), so every value is numeri
 
 | Metric | Status | Meaning |
 |---|---|---|
-| `janitor_pages`, `janitor_keys`, `janitor_deleted`, `leaked`, `evidence_rows` | existing | now sums; `janitor_pages` counts logical pages; `janitor_deleted` counts keys of succeeded batches, including already-absent keys; `leaked` adds all keys of leaked batches |
-| `batches` | new | batches sent |
-| `batches_leaked` | new | batches refused or exhausted: keys leaked, cursor advanced |
-| `batches_held` | new | batches that held the page: authority lost or a deterministic local failure |
+| `janitor_pages`, `janitor_keys`, `janitor_deleted`, `leaked`, `evidence_rows` | existing | now sums; `janitor_pages` counts logical pages; `janitor_deleted` counts keys of succeeded jobs, including already-absent keys; `leaked` adds all keys of leaked jobs |
+| `batches` | new | jobs that sent a request (a batch or one key) |
+| `batches_leaked` | new | jobs refused or exhausted: keys leaked, page stays complete |
+| `batches_held` | new | jobs that held their page: authority lost, a deterministic local failure, `NOT_IMPLEMENTED` or a schedule refusal |
+| `delete_jobs` | new | jobs submitted (inline ones included at `gc_io_concurrency` 1) |
+| `delete_jobs_skipped` | new | jobs that found the stop flag set and sent nothing |
+| `jobs_in_flight_max` | new | the most jobs outstanding at once; ≤ `gc_io_concurrency` |
+| `drain_wait_ms` | new | round-thread time in the final wait for jobs: the overrun the jobs add after the last page |
 | `list_requests_process` | new | process-wide `DiskS3ListObjects` delta over the phase |
-| `list_ms`, `catalog_ms`, `delete_ms` | new | round-thread wall time in each step, summed over pages; with the phase's round-thread CPU they split per-page time into waits and CPU |
+| `list_ms`, `catalog_ms`, `delete_ms` | new | round-thread wall time in each step, summed over pages; `delete_ms` is exact deletes plus time blocked on a job slot; with the phase's round-thread CPU they split per-page time into waits and CPU |
 | `batch_keys` | new | the phase's batch size; shows the storage limit and capability in effect |
-| `capability_learned` | new | 1 when a batch was rejected as unsupported |
-| `delete_calls` | new | logical delete calls (`removeManyWriteOnce` and exact `remove`), failed ones included |
-| `delete_requests` | new | wire deletes: the phase's delta of the S3 delete `ProfileEvents`, (`DiskS3DeleteObjects` is incremented per batch attempt, `S3ObjectStorage.cpp:720`). `WireRequestsIncludeRetriedAttempts` checks that it counts attempts. `system.blob_storage_log` is not a substitute: it has one row per key per attempt (`:728`) and no request id, so it counts objects, not requests. If the event does not land on the calling thread, `delete_requests` is reported as unavailable and the A/B uses the server-side `DiskS3DeleteObjects` total over the drain window |
-| `budget_exhausted` | new | 1 when the budget stopped the phase |
+| `capability_learned` | new | 1 when a job was rejected as unsupported |
+| `delete_calls` | new | logical delete calls (`removeManyWriteOnce`, one per job that sent, and exact `remove`), failed ones included; a credential-refresh reissue or a retried attempt is not a new call |
+| `budget_exhausted` | new | 1 when the soft budget stopped new pages |
 | `cursor_start_fp`, `cursor_end_fp` | new | `sipHash64` of the cursor at phase start and the one published; 0 for the empty cursor |
 | `cursor_advanced` | new | 1 when a new cursor was published |
 
@@ -516,8 +677,10 @@ The same `cursor_start_fp` with `cursor_advanced` 0 on every folding round is a 
 `cursor_start_fp` is failures on successive pages.
 
 ProfileEvents: new `CASGCNamespaceCleanupObjectsDeleted` (twin of `CASRefCleanupObjectsDeleted`, same
-"includes absent keys" caveat), new `CASGCNamespaceCleanupBatchFailures` (leaked and held batches), and
-`CASGCNamespaceCleanupLeaks` also counts keys of leaked batches. One WARNING per failed batch. No new `CasEvent`.
+"includes absent keys" caveat), new `CASGCNamespaceCleanupBatchFailures` (leaked and held jobs), and
+`CASGCNamespaceCleanupLeaks` also counts keys of leaked jobs. All three are incremented on the round
+thread during aggregation. One WARNING per failed job, as the redelete warns per entry
+(`reportRedeleteFailure`). No new `CasEvent`.
 
 Docs: phase 16 of `docs/en/antalya/cas/architecture/garbage-collection.md`, the `namespace_cleanup` row
 of `docs/en/operations/system-tables/cas_gc_log.md`, the batch-size note in
@@ -526,34 +689,49 @@ of `docs/en/operations/system-tables/cas_gc_log.md`, the batch-size note in
 ## Value proof {#value-proof}
 
 Owner rule: no merge without an A/B that moves the target metric. **Target: drain wall time from the end
-of `DROP TABLE ... SYNC` until no `_log`/`_snap` key of the life remains.** Secondary: janitor wire DELETE
+of `DROP TABLE ... SYNC` until no `_log`/`_snap` key of the life remains.** Secondary: wire DELETE
 requests, janitor phase time, per-page time, round duration.
 
 Base = `e2dd0f5d343`. After = this change on the same base. Both built from the same tree, run
-alternately (B, A, B, A, ...) on the same stand. Report 08 supplies predictions only.
+alternately (B, A, B, A, ...) on the same local stand (`ch1` + RustFS + Keeper). Report 08 supplies
+predictions only.
+
+**Two scopes, never mixed in one criterion.**
+
+- **Janitor phase:** read from the `namespace_cleanup` rows of `system.cas_gc_log`. Logical counts
+  only (`delete_calls`, `batches`, `batches_leaked`, `batches_held`, `janitor_pages`, `cursor_advanced`,
+  the fingerprints, `budget_exhausted`, `capability_learned`) and phase time.
+- **Whole drain:** from the end of the DROP until the drain completes. Wire requests are process-wide
+  `system.events` deltas over that window, on a server that runs nothing but the forced GC rounds: the
+  method of `utils/ca-soak/gc-ab` and of report 08. They include every GC family, the fold's own ref
+  cleanup in the first folding round among them, on both sides.
 
 ### M1: long-stream drain {#m1-long-stream-drain}
 
 Driver `master/tmp/gc-cuts-stand/value/m1.py`, `ch1` + RustFS + Keeper, rounds forced every 10 s, ≥ 3 runs
 per side per cell. **M1 carries the value proof.** ch1 runs nothing but the forced rounds, so
 `list_requests_process` is the janitor's LIST count. Every after-run reports per-page time split into
-`list_ms`, `catalog_ms`, `delete_ms` and round-thread CPU; that settles the [open question](#context).
+`list_ms`, `catalog_ms`, `delete_ms`, `drain_wait_ms` and round-thread CPU; that settles the
+[open question](#context).
 
 | Cell | Metric | Predicted (after) | Pass |
 |---|---|---|---|
 | 7k, no latency | janitor phase | ≤ 1 s | |
 | | janitor-active rounds | 1 | 1 |
-| | janitor wire DELETE requests | 7 | ≤ 10 |
+| | janitor delete calls (`batches`), janitor phase | 7 | ≤ 10 |
+| | wire DELETE requests, whole drain | base − after ≈ base's `janitor_deleted` − after's `batches`: the fold's own deletes are equal on both sides (report 08: 2,551 → 221) | after ≤ base, and the saving within 1% of that difference |
 | | physical LIST requests | janitor: ~3 per page, 2 and 1 on the last two: ~18 | process-wide `DiskS3ListObjects` over the drain window (`metric_log`, report 01's method) ≤ base; base has no `list_requests_process` |
-| 20k, no latency | janitor phase | ~3 s at 160 ms per page; ~10 s at 0.5 s | |
-| | janitor-active rounds | 1 | ≤ 2 |
+| 20k, no latency | janitor phase | ~3 s at 140 ms per page; ~10 s at 0.5 s | |
+| | janitor-active rounds | 1 | 1 |
 | | drain wall | round 1 (~23 s) + one interval + round 2 ≈ 45 s | ≤ 90 s, and below every base run |
-| | janitor wire DELETE requests | 20 | ≤ 25 |
-| 7k, 20 ms RTT | janitor phase | ~1 s at 160 ms per page | ≤ 5.3 s (report 08's batches-only figure) |
-| 100k, no latency | janitor-active rounds | 2 at 160 ms per page (60 pages per window) | `budget_exhausted` 1 on all but the last |
+| | janitor delete calls (`batches`), janitor phase | 16 (~15k keys; the fold deleted ~5k in round 1) | ≤ 25 |
+| | wire DELETE requests, whole drain | as the 7k cell (report 08: 16,163 → 266) | as the 7k cell |
+| 7k, 20 ms RTT | janitor phase | ~1 s at 140 ms per page | ≤ 5.3 s (report 08's batches-only figure) |
+| 100k, no latency | janitor-active rounds | 1 at 140 ms per page (~14 s for 100 pages); 3 at 0.5 s (40 pages per window) | ≤ 3; `budget_exhausted` 1 on every janitor-active round but the last |
 
-If per-page time is report 08's 0.4–0.6 s rather than ~160 ms, the 20k cell needs two folding rounds; that
-still passes, and the profile names the hot spot. Fixing it is a separate task unless trivial.
+If per-page time is report 08's 0.4–0.6 s rather than ~140 ms, the 20k cell still fits one 20 s window
+(~12 s), and the 100k cell shows the budget stop. The profile names the hot spot. Fixing it is a separate
+task unless trivial.
 
 Base runs the 7k, 20k and 7k latency cells, measured fresh. Base is not run at 100k: ~95 pages × 9 × 10 s
 ≈ 2.4 h per run. If seeding 100k keys takes more than 1 h, stop at 50k and say so.
@@ -561,8 +739,9 @@ Base runs the 7k, 20k and 7k latency cells, measured fresh. Base is not run at 1
 **Fail:** janitor-active rounds on the 9-round cadence with `budget_exhausted` 0: the loop did not
 continue. Debug before re-measuring.
 
-**Parallel follow-up** is justified only if M1 shows the phase hitting the budget on S3 at ≤ 20 ms RTT
-with requests, not round-thread CPU, dominating the page.
+**Pipeline check.** Every after-run also reports `jobs_in_flight_max` (≤ `gc_io_concurrency`) and
+`drain_wait_ms`. If `delete_ms` + `drain_wait_ms` is a large share of the phase on S3, the batch
+request, not the round thread, bounds a page; say so.
 
 ### M2: S30 create/drop churn {#m2-s30}
 
@@ -582,41 +761,71 @@ otherwise unchanged: authority GET, maintenance GET, catalog GET, maintenance PU
 
 ### M4: storage without batch delete {#m4-no-batch}
 
-GCS stand (`reference_gcs_soak_stand_recipe`), after binary only except the
-[ref-cleanup comparison](#m4-ref-cleanup), one 20k drain with the capability
-configured false: `batch_keys` 1 from the first round, `delete_requests` ≈ keys, one page per folding
-round, phase ≈ one page (~20 s at 20 ms), no `NOT_IMPLEMENTED`. Then once with it unknown, asserted
-**per family** because the stop is family-local. Families run in order: manifest cleanup
-(`CasGc.cpp:1252`), namespace janitor (`CasGc.cpp:1334`), ref cleanup.
+The local stand with the CAS disk's `support_batch_delete` set to false in its disk config, rounds
+forced every 10 s, 20 ms RTT added on the RustFS container by `utils/ca-soak/gc-ab/longround/netem.sh`.
+Capability false sends one `DeleteObject` per key, the request shape of a store without batch delete,
+so no GCS stand is needed. **This store now has a gain.**
 
-- The rejecting family: exactly one rejected `DeleteObjects`, `capability_learned` 1 on its row, no
-  one-key request for its failed cohort in that round.
-- Families after it in the same round may read false and send one-key requests; allowed.
+**M4a, 20k drain, base vs after**, 2 runs per side, alternating. Report 08's DROP workload: the first
+folding round's ref cleanup deletes ~5,000 dead-life `_log` keys, serially on both sides
+(`CasGc.cpp:3846`): ~100 s at 20 ms, unchanged by this design. The janitor gets the other ~15,000 keys,
+~16 pages.
+
+| Metric | Scope | Predicted (after) | Base | Pass |
+|---|---|---|---|---|
+| janitor-active folding rounds | janitor phase | 2: ~15 pages, then ~1 | ~16: one page each, 2 right after the DROP, then one per 9 rounds | after ≤ 2 at ≤ 20 ms median one-key DELETE latency |
+| janitor phase time | janitor phase | ~20 s + the page in progress (~1.3 s), then ~1.3 s | ~20 s per page | reported |
+| `batch_keys`, `delete_jobs`, `delete_calls` | janitor phase | 1, ~15k, ~15k plus the exact deletes | no such metrics | `delete_jobs` = janitor keys; `batches_held` 0 |
+| authority GETs per deleting page | janitor phase: `system.blob_storage_log` `Read` rows for the `gc/state` key inside the phase's time window | 1 | 1 | after = base |
+| drain wall | whole drain | round 1 (~100 s of ref cleanup plus the fold) + one interval + round 2 (~21 s) + one interval + round 3 ≈ 2.5 min | ~100 s + ~14 × 9 rounds of cadence ≈ 30 min | after below every base run |
+| wire DELETE requests | whole drain, `DiskS3DeleteObjects` from `system.events` | ≈ keys of all families: ~20k plus manifests and state keys | the same | after ≤ 1.01 × base |
+| authority GETs | whole drain, `blob_storage_log` `Read` rows for `gc/state` | fewer: fewer rounds | one per round at least | after ≤ base |
+
+Every criterion compares one scope with the same scope. The per-page authority GET is the only
+per-key figure, so it alone comes from `system.blob_storage_log`; a run first checks that the log holds
+`Read` rows for `gc/state`, and if it holds none the authority rows are reported as unmeasured.
+
+A base run may stop after 5 janitor-active rounds (~30 rounds, ~10 min), once its one-page-per-round
+cadence is shown; the report then states the extrapolated drain wall. If the stand's median DELETE
+latency is above 20 ms, the pass is page time ≤ 1.2 × (1,000 / 16 × measured latency) plus the serial
+requests, and the round count is reported, not judged. One run per side without netem is reported, not
+judged: without latency both sides may drain in a few rounds.
+
+**M4b, capability unknown, leaves the A/B.** The local store accepts `DeleteObjects`, so nothing on the
+stand rejects the probe. The per-family behaviour is asserted on the emulated S3 store by
+`UnknownCapabilityConcurrentProbesAllStop`, `RefCleanupContainsCapabilityRejection` and
+`ManifestCleanupContainsCapabilityRejection`:
+
+- The rejecting family: `capability_learned` 1 on its row, no one-key request for its failed cohort or
+  page in that round. Rejected `DeleteObjects`: exactly one for the manifest or ref cleanup, which send
+  in sequence; between 1 and `gc_io_concurrency` for the janitor, whose jobs overlap.
+- Families after it in the same round (manifest cleanup `CasGc.cpp:1252`, namespace janitor
+  `CasGc.cpp:1334`, ref cleanup, in that order) may read false and send one-key requests; allowed.
 - If manifest cleanup rejected, its unsent bodies are reported and later deleted by the orphan-manifest
   sweep.
-- The janitor has `batch_keys` 1 from the round after its own rejection, or from the same round if an
-  earlier family learned false.
 
-Which family learns first depends on whether the DROP's manifest bodies reach cleanup before the janitor
-sees debris. The run records which family had `capability_learned` 1 and checks the bullets for that
-family; either outcome passes.
+No live store in this plan exercises a rejected probe.
 
 #### M4 ref-cleanup comparison, base vs after {#m4-ref-cleanup}
 
-Same GCS stand, capability configured
-false, 2 runs per side, alternating. A live table takes single-row inserts until `ref_object_cleanup`
-deletes ≥ 2,000 keys per round on both sides.
+Same local stand, `support_batch_delete` false, 20 ms RTT, 2 runs per side, alternating. A live table
+takes single-row inserts until `ref_object_cleanup` deletes ≥ 2,000 keys per round on both sides. The
+inserts make this window not GC-only, so every count here is per key from `system.blob_storage_log`,
+scoped to the phase window and the ref-key prefix; with one key per request a `Delete` row is one
+request attempt.
 
 | Metric, per `ref_object_cleanup` phase | Source | Pass |
 |---|---|---|
 | authority GETs: reads of the catalog object and of `gc/state` | `system.blob_storage_log` inside the phase window | after = base, = ⌈keys / 1,000⌉ each |
-| delete requests | `system.blob_storage_log` | after = base, ≈ keys |
+| delete requests | `system.blob_storage_log` `Delete` rows under the ref-key prefix inside the phase window | after = base, ≈ keys |
 | phase duration | `system.cas_gc_log` | after ≤ base + spread |
 
 ## Tests, failing first {#tests}
 
 `src/Disks/tests/gtest_cas_namespace_janitor.cpp`, suites `CASNamespaceJanitor` (in-memory backend,
-injected request clock) and `CASNamespaceJanitorIntegration` (`Gc` + `openPoolForTest`). "Red" fails
+injected request clock) and `CASNamespaceJanitorIntegration` (`Gc` + `openPoolForTest`). Tests run at
+`gc_io_concurrency` 1, the sequential model with exact request orders and counts, unless a row or
+section says otherwise. "Red" fails
 against `e2dd0f5d343`; "guard" is green on base and stays green. A red test fails on
 an assertion of new behaviour, not only on a missing hook or metric name. Orderings use backend hooks, never
 sleeps. Fault schedules first; the happy path once.
@@ -637,7 +846,7 @@ sleeps. Fault schedules first; the happy path once.
 
 | Test | Asserts | Base |
 |---|---|---|
-| `NoBatchCapabilitySendsOneKeyRequestsWithoutProbe` | capability false: every dead canonical stream key goes through a one-key `removeManyWriteOnce`, zero exact-token `remove` calls for them, `batch_keys` 1, no `NOT_IMPLEMENTED`, `batches_held` 0 | red |
+| `NoBatchCapabilitySendsOneKeyRequestsWithoutProbe` | capability false, `gc_io_concurrency` 4: every dead canonical stream key goes through a one-key `removeManyWriteOnce` on a thread other than the caller's, zero exact-token `remove` calls for them, `batch_keys` 1, `delete_jobs` = keys, no `NOT_IMPLEMENTED`, `batches_held` 0 | red |
 | `UnknownCapabilityRejectionStopsThePhase` | unknown, 3 dead pages, the first batch throws `NOT_IMPLEMENTED`: 1 backend delete call, zero one-key calls, no page 2 LIST, cursor unchanged, `capability_learned` 1; the next run cuts at 1 and drains | red |
 | `CapabilityFlippedByAnotherUserStopsThePhase` | capability flips false between page 1's and page 2's batch: page 2's batch throws without a backend call; phase stops; cursor after page 1 | red |
 | `CohortHelperPropagatesNotImplemented` | `removeCohortWriteOnce`, cohort 1,000: request size 1,000, first request rejected → 1 call, rethrows, no per-key call; request size 250, second request rejected → 2 calls, callback once, rethrows. Replaces the per-key tests of `gtest_cas_gc_bulk_delete_fallback.cpp`; the teardown-between-keys test goes with the loop | red |
@@ -662,14 +871,37 @@ sleeps. Fault schedules first; the happy path once.
 | `AuthorityLostDuringSuccessfulBatchCounts` | same page; `onBeforeBulkRemove` turns liveness false on the first batch, and the delete then applies. `bulkRemoveCalls()` 1, the first 500 keys gone, the second 500 present, `batches` 1, `janitor_deleted` 500, `batches_held` 0, `leaked` 0, no second batch, no page 2 LIST, no cursor publication | red |
 | `S3BatchErrorKeepsCanonicalName` | [adapter](#adapter) test: whole-response `EntityTooLarge` and `MalformedXML`, per-key `EntityTooLarge`, one-key `EntityTooLarge` through `deleteFileFromS3` → name preserved, `isDefinitelyRefusedWrite` true | red |
 | `NameOnlyRefusalLeaksAndAdvances` | multi-key batch, per-key `EntityTooLarge` through the emulated S3 backend, no refresh callback: one attempt, `leaked`, cursor advances | red |
-| `NameOnlyRefusalWithRefreshCallbackReissuesAtMostOnce` | same refusal with a counting `credentials_refresh_callback` that returns a client: at most 2 storage requests for the batch, callback called at most once, then `leaked` and the cursor advances; `delete_requests` counts both requests, `delete_calls` 1 | red |
+| `NameOnlyRefusalWithRefreshCallbackReissuesAtMostOnce` | same refusal with a counting `credentials_refresh_callback` that returns a client: at most 2 storage requests for the batch, callback called at most once, then `leaked` and the cursor advances; the emulated store records both requests, `delete_calls` 1 | red |
+
+**Pipeline and jobs**
+
+`gc_io_concurrency` 4 on a real `io_pool`, 3 dead 1,000-key pages unless stated. Orderings use backend
+hooks, latches and a test-owned liveness flag that `refresh_authority` also reads; assertions hold for
+any interleaving of the jobs. Throughput is not a unit test: an injected clock serializes the jobs'
+time; [M1](#m1-long-stream-drain) and [M4a](#m4-no-batch) measure it.
+
+| Test | Asserts | Base |
+|---|---|---|
+| `PipelineListsNextPageWhileJobsRun` | batch store: page 1's batch blocks in `onBeforeBulkRemove` until the LIST hook sees page 2's LIST, then proceeds. All 3 pages drained, cursor past page 3. On base, or if the round thread waited for the batch, the test deadlocks; a latch timeout fails it | red |
+| `OutstandingJobsNeverExceedConcurrency` | capability false: a counting backend records concurrent removes; max ≤ 4 and `jobs_in_flight_max` ≤ 4; all 3,000 keys gone | red |
+| `HeldPageStopsCursorButLaterDeletesStand` | batch store: a barrier in the test backend blocks page 2's batch in `onBeforeBulkRemove` until the after-remove hook has fired for page 1's batch and for page 3's batch, then throws `CORRUPTED_DATA`. A job past its stop-flag check runs to its outcome, so both have succeeded. Pages 1 and 3 gone, page 2 present, cursor after page 1, `batches_held` 1, no fourth LIST | red |
+| `UnknownCapabilityConcurrentProbesAllStop` | emulated S3, capability unknown, the store rejects `DeleteObjects`: between 1 and 4 rejected requests, zero `DeleteObject` requests, `capability_learned` 1, cursor unchanged, capability false after; the next run sends one-key jobs and drains | red |
+| `SoftBudgetStopsNewPagesInFlightJobsComplete` | batch store, budget seam 1 s, the LIST hook advances the phase clock 2 s; page 1's batch blocks until the context's `on_final_wait_for_test` seam fires. One page listed, the blocked batch then applies, its keys gone, cursor after page 1, `budget_exhausted` 1 | red |
+| `ParallelPathLeaksOneFailingKeyAndAdvances` | capability false, key 500 of page 1 always answers `AccessDenied`: `leaked` 1, `batches_leaked` 1, every other key gone, cursor past page 3, `batches_held` 0, one WARNING naming key 500 | red |
+| `ParallelPathAuthorityLostMidPageHolds` | capability false; the liveness flag turns false inside the 100th one-key request of page 1: keys absent from the store = `janitor_deleted`; keys present + `janitor_deleted` = 1,000; `leaked` 0; `batches_held` + `delete_jobs_skipped` ≥ 1; no page 2 LIST; no cursor publication | red |
+| `ParallelPathLocalFailureStopsSubmission` | capability false; one job throws `CORRUPTED_DATA`: page held, `batches_held` ≥ 1, `leaked` 0, jobs that found the stop flag send nothing (`delete_jobs_skipped` = jobs without a backend call), cursor unchanged, phase stops | red |
+| `ParallelPathScheduleRefusalHolds` | capability false, `io_pool_refuse_at_for_test` 10: `delete_jobs` 10; jobs that found the stop flag send nothing, so `batches` + `delete_jobs_skipped` = 10 and the backend's one-key call count = `batches`; keys absent = `janitor_deleted` = `batches`; the other 1,000 − `batches` keys present and not `leaked`; `batches_held` 1 (the refusal), page held, cursor unchanged | red |
+| `ParallelPathRequestCountOnNoBatchStore` | emulated S3 with `setIsBatchDeleteSupported(false)`, 2,500 dead keys: the emulated store records 2,500 `DeleteObject` requests, `delete_calls` 2,500, `batches` 2,500, `batch_keys` 1; the first attempt of one key fails once: the store records 2,501, `delete_calls` stays 2,500 | red |
+| `ParallelPathAtConcurrencyOneRunsInline` | emulated S3, capability false, `gc_io_concurrency` 1, 2,500 dead keys, the first attempt of one key fails once: the keys deleted in submit order on the caller's thread, page k's deletes before page k+1's LIST; exact counts with no double count of inline jobs: `delete_jobs` 2,500, `batches` 2,500, `delete_calls` 2,500, the store records 2,501 requests | red |
+| `RefreshInFlightKeepsAuthority` (integration: the real `refreshAuthority`) | `gc_io_concurrency` 4, backend limit 500, 3 dead 1,000-key pages. A decorator blocks the `gc/state` read of page 2's refresh. Page 1's second job waits in `on_job_start_for_test` until that read has begun, so its first admission falls inside it; page 1's first job fails its first attempt with `SlowDown` in a hook that waits for the same read, so its reissue is gated inside it. The read is released after both jobs' requests have applied. Page 1's 1,000 keys gone, `batches_held` 0, `delete_jobs_skipped` 0, all 3 pages drained, cursor past page 3. With a fail-closed-first refresh both jobs would hold | red |
+| `LivenessRefusalIsLatchedForThePhase` | capability false; the test predicate returns `false` for exactly one sample, a job's admission, then `true` again. That job holds, not leaks: `batches_held` ≥ 1, `leaked` 0. The test predicate is never sampled again after it returned `false`, so no later admission in the phase can pass; `batches` + `batches_held` + `delete_jobs_skipped` = `delete_jobs`; no page 2 LIST; no cursor publication | red |
 
 **Budget, cursor and authority**
 
 | Test | Asserts | Base |
 |---|---|---|
-| `PhaseBudgetCheckedBetweenPages` | budget 10 s, clock advances 4 s per page: pages start at 0, 4, 8 s; page 3 completes although it ends at 12 s; no page 4; `budget_exhausted` 1; cursor after page 3 | red |
-| `SlowFirstPageCompletesThenStops` | budget 1 s, page 1 takes 20 s (one-key batches), dead pages behind it: page 1 completes, cursor advances, no page 2, `budget_exhausted` 1. Base also completes one page and stops; only `budget_exhausted` makes it red | red |
+| `PhaseBudgetCheckedBetweenPages` | default budget 20 s, clock advances 8 s per page: pages start at 0, 8, 16 s; page 3 completes although it ends at 24 s; no page 4; `budget_exhausted` 1; cursor after page 3 | red |
+| `SlowFirstPageCompletesThenStops` | budget 1 s, page 1 takes 30 s on the injected clock, dead pages behind it: page 1 completes, cursor advances, no page 2, `budget_exhausted` 1. Base also completes one page and stops; only `budget_exhausted` makes it red | red |
 | `RejectedPersistedCursorResetsExactlyAndDeletesNothing` | existing `BackendRejectedCursorResetsExactlyAndDeletesNothing`, kept | guard |
 | `LaterPageReadFailurePublishesPrefix` | pages 1–2 delete, page 3's catalog GET throws: cursor after page 2 published, no reset, counts of pages 1–2 on the row | red |
 | `ObservedAuthorityLossPublishesNothing` | refresh before page 3 fails: no page 3 LIST, no cursor publication, pages 1–2 deletes stand | red |
@@ -685,7 +917,6 @@ sleeps. Fault schedules first; the happy path once.
 | `DeferredRoundTakesOneSuppressedPage` | `DEFER` with debris: 1 page, 0 deletes, cursor unchanged, no PUT | guard |
 | `EndOfPassStopsWithoutWrapping` | debris smaller than a page: 1 page, cursor reset to empty | guard |
 | `CursorFingerprintShowsStuckVsMoving` | two runs holding at one page (`CORRUPTED_DATA`): equal `cursor_start_fp`, `cursor_advanced` 0; successive pages: different; empty cursor → 0 | red |
-| `WireRequestsIncludeRetriedAttempts` | emulated S3 fails a batch's first attempt: `delete_requests` 2, `delete_calls` 1 | red |
 | `FoldingRoundDrainsWithinBudget` (integration) | one folding round, 3,500 dead keys then live keys: `janitor_pages` 5, all dead keys gone, one maintenance CAS | red |
 
 No new `LOGICAL_ERROR`. If implementation adds one, its test is an `EXPECT_DEATH` whose child exits through
@@ -696,11 +927,14 @@ No new `LOGICAL_ERROR`. If implementation adds one, its test is an `EXPECT_DEATH
 test drive rounds with `SYSTEM CAS GC RUN`. Setup: `SYSTEM STOP MERGES`, ~2,500 single-row inserts,
 `DROP TABLE ... SYNC`. Assert: within 3 rounds no `_log`/`_snap` key of the life remains; exactly one round
 has `janitor_deleted` > 0, with `janitor_pages` ≥ 3 and `budget_exhausted` 0. Base leaves keys behind. A
-second case sets `s3_objects_chunk_size_to_delete` 100 and asserts `batch_keys` 100, `batches` ≥ 25.
+second case sets `s3_objects_chunk_size_to_delete` 100 and asserts `batch_keys` 100, `batches` ≥ 25. A third
+case sets `support_batch_delete` false and asserts one deleting round, `batch_keys` 1, `delete_jobs`
+≥ 2,500 and `jobs_in_flight_max` ≤ `gc_io_concurrency`.
 
 ## Out of scope {#out-of-scope}
 
-- Parallel batches on the GC I/O pool ([M1](#m1-long-stream-drain) decides).
+- Parallel one-key deletes in `cleanupRefObjects` and the manifest cleanup: they stay serial on a no-batch
+  store, as base.
 - A per-request phase deadline ([why not](#no-request-deadline)); stage C's round deadline owns the tail.
 - GCS JSON-API batch deletes.
 - The manifest-body memo (`CasGcManifestMemo` on the parked branch).
@@ -718,10 +952,10 @@ second case sets `s3_objects_chunk_size_to_delete` 100 and asserts `batch_keys` 
 | Finding | Resolution | Section |
 |---|---|---|
 | r3-1 MAJOR: unknown capability deletes per key after a failed batch | rejection stops the phase; `removeChunkWriteOnce`, no per-key loop anywhere | [Capability](#capability) |
-| r3-2 MAJOR: bound ignores 90 s retry windows | bound stated as budget + one page, one page's worst case = today's; stage C bounds the tail | [Phase bound](#phase-bound) |
+| r3-2 MAJOR: bound ignores 90 s retry windows | soft budget: expected time is budget + page in progress + jobs in flight, failing-store worst case stated; stage C bounds the tail | [Phase bound](#phase-bound) |
 | r3-3 MAJOR: permanent error starves later debris | permanent refusal leaks and advances; starvation test | [Batch failure](#batch-failure) |
 | r3-4 MAJOR: storage limit may be 0 | getter ≥ 1, CAS clamp; zero-limit tests | [Batch size](#chunk-rule) |
-| r3-5 MAJOR: phase counters miss worker requests | no delete workers; `delete_calls` + `delete_requests`. LIST still runs off the round thread: see r5-3 | [Observability](#observability) |
+| r3-5 MAJOR: phase counters miss worker requests | logical `delete_calls` on the row; wire requests from process-wide `system.events` over a GC-only window (owner decision 2026-10-01, r10). LIST still runs off the round thread: see r5-3 | [Observability](#observability) |
 | r3-6 MAJOR: report 08 is not a same-base baseline | fresh alternating A/B on `e2dd0f5d343`; report 08 gives predictions; per-page time open, measured in M1 | [Context](#context), [Value proof](#value-proof) |
 | r3-7 MINOR: authority-loss test vs publication | observed loss publishes nothing. "Sequential, so no in-flight batch" was wrong: see r5-5 | [Authority](#authority) |
 | r3-8 MINOR: deferred-round rationale | suppression kept as the conservative policy; reopen condition | [Deferred rounds](#deferred-rounds) |
@@ -730,14 +964,14 @@ second case sets `s3_objects_chunk_size_to_delete` 100 and asserts `batch_keys` 
 | r4-1 MAJOR: frozen 10 s policy gives ~3 s of work under attempt reservations | no per-request deadline; budget checked between pages; cursor publication policy stated | [Why no per-request deadline](#no-request-deadline), [Cursor](#cursor) |
 | r4-2 MAJOR: first-page exemption rests on a false wedge argument | exemption dropped; stage C interplay stated. The "partial page is progress" answer did not hold: see r5-2 | [Phase bound](#phase-bound), [Batch failure](#batch-failure) |
 | r4-3 MAJOR: removing the fallback escapes both cleanup families; manifest retry claim false | per-caller containment of `NOT_IMPLEMENTED`; manifest bodies go to the orphan sweep; tests for both callers | [Other families](#other-families) |
-| r4-4 MAJOR: parallel capability learning allows same-phase per-key deletes | sequential batches and a phase stop make the schedule impossible; external flip also stops | [Capability](#capability) |
+| r4-4 MAJOR: parallel capability learning allows same-phase per-key deletes | batch size fixed at phase start, keys of a rejected job never re-cut, phase stop; external flip also stops. Holds with jobs in parallel | [Capability](#capability) |
 | r4-5 MAJOR: S3 adapter drops the canonical error name | adapter passes the name at the batch throw sites; the one-key site added in r5-1 | [Adapter](#adapter) |
 | r4-6 MINOR: "any exception publishes nothing" loses rejected-cursor recovery | reset kept for page 1's persisted cursor; page ≥ 2 read failure publishes the prefix | [Cursor](#cursor) |
 | r4-7 MINOR: test expectations contradict the model | tests rewritten for sequential pages; recreate-after-classification schedule added | [Tests](#tests) |
 | r4-8 MINOR: string fingerprints; inline double-count | numeric `sipHash64`, 0 for empty; round-thread delta only | [Observability](#observability) |
 | r5-1 MAJOR: a one-key chunk goes through `deleteFileFromS3`, which drops the error name | name passed at `deleteFileFromS3.cpp:77` too; one-key adapter test and `OneKeyNameOnlyRefusalLeaksAfterOneAttempt` | [Adapter](#adapter), [Tests](#tests) |
 | r5-2 MAJOR: holding on transient failure starves later debris; no strictly positive progress | exhausted ordinary failures leak and advance, as the exact-token path; holds only for lost authority, `NOT_IMPLEMENTED`, local failures; `SlowDownForeverDoesNotStarveLaterDebris` | [Batch failure](#batch-failure), [Stop rules](#stop-rules) |
-| r5-3 MINOR: one logical page is three `ListObjectsV2` on iterator threads | request table per report 06; `list_requests_process`, `list_ms`; M1/M3 criteria on logical pages and process-wide LIST ≤ base | [Page](#page), [Observability](#observability), [M1](#m1-long-stream-drain), [M3](#m3-steady-state) |
+| r5-3 MINOR: one logical page is three `ListObjectsV2` on iterator threads | request table per report 06; `list_requests_process`, `list_ms`; M1/M3 criteria on logical pages and process-wide LIST ≤ base | [Pipeline](#pipeline), [Observability](#observability), [M1](#m1-long-stream-drain), [M3](#m3-steady-state) |
 | r5-4 MINOR: M4's round-wide expectation contradicts the family-local stop | M4 asserted per family; later families may send one-key requests the same round | [Capability](#capability), [M4](#m4-no-batch) |
 | r5-5 MINOR: a lease replacement can overlap an in-flight batch | no-fencing statement; safety rests on terminal life identity; `LeaseReplacedBeforeFinalBatch` | [Authority](#authority), [Tests](#tests) |
 | r5-6 MINOR: some "red" tests pass on base | one-key-path assertions on `NoBatchCapabilitySendsOneKeyRequestsWithoutProbe`; `budget_exhausted` on `SlowFirstPageCompletesThenStops`; the lease test marked guard | [Tests](#tests) |
@@ -748,3 +982,12 @@ second case sets `s3_objects_chunk_size_to_delete` 100 and asserts `batch_keys` 
 | r7-2 MINOR: a credential refresh can reissue a batch without new admission | guarantee restated as one admitted request = one storage request except a refresh reissue; "one attempt" tests run without a refresh callback; refresh-callback test added | [Decision](#decision), [Adapter](#adapter), [Tests](#tests) |
 | r7-3 MINOR: capability plumbing omits the production decorator | `InstrumentedBackend` forwards the limit and any capability accessor; `PoolWrappedBackendForwardsStorageLimit` | [Batch size](#chunk-rule), [Code shape](#code-shape), [Tests](#tests) |
 | r7-4 MINOR: `blob_storage_log` counts objects, not requests | alternative dropped; `DiskS3DeleteObjects` stays the primary source, with a stated fallback to the server-side total | [Observability](#observability) |
+| owner change 2026-10-01 (a): serial one-key deletes drain ~1,000 keys per 20 s page on a no-batch store; 10 s budget too small | one-key jobs on `io_pool` (16), admission per job on a resumed `CasOperation` with the authority predicate, per-job classification, stop flag; `kJanitorPhaseBudget` 20 s and every dependent figure recomputed; M4a base-vs-after drain | [Decision](#decision), [Jobs](#jobs), [Observability](#observability), [M4](#m4-no-batch), [Tests](#tests) |
+| owner change 2026-10-01 (b): one fan-out for both capability cases; LIST page k+1 while page k's jobs run | [pipeline](#pipeline): a job is one batch or one key, ≤ `gc_io_concurrency` outstanding, one final wait, one publication of the complete prefix; `authority_held` atomic. Parallel batches across pages leave Out of scope. It answers the three objections that kept r4–r8 sequential: **frozen policy envelopes** (r4-1): every request keeps `Retry::standard` and no policy is frozen; **first-page exemption** (r4-2): none, the budget only stops new pages; **capability race** (r4-4): batch size fixed at phase start and no re-cut of a rejected job's keys | [Decision](#decision), [Pipeline](#pipeline), [Why no per-request deadline](#no-request-deadline), [Capability](#capability), [Tests](#tests) |
+| owner change 2026-10-01 (c): the budget is best effort; the capability is remembered per disk | soft limit: no new page after it, page in progress and jobs in flight complete; the bound section states expected time and the failing-store worst case, no ceiling. No sequential probe: up to `gc_io_concurrency` rejected probes on the first phase a process runs on the disk, all stop | [Budget and in-flight work](#phase-bound), [Capability](#capability), [M4](#m4-no-batch) |
+| r9-1 MAJOR (codex round 6): `refreshAuthority` stores `false` before its GET, so a job admitted or retried during the next page's refresh holds under unchanged leadership; `admitted()` re-samples, so a refusal can be classified as a leak | refresh stores its verdict once, after the read, `false` only on absence, mismatch or failure; loss latched for the phase by a predicate wrapper; a refused admission re-samples monotone state and holds; `RefreshInFlightKeepsAuthority`, `LivenessRefusalIsLatchedForThePhase` | [Decision](#decision), [Authority](#authority), [Code shape](#code-shape), [Tests](#tests) |
+| r9-2 MINOR (codex round 6): inline jobs double-count wire deletes | the row has no wire count; logical counts come from job slots, read once, inline or not; `ParallelPathAtConcurrencyOneRunsInline` asserts exact counts with a retry | [Jobs](#jobs), [Observability](#observability), [Tests](#tests) |
+| r9-3 MINOR (codex round 6): two concurrency tests assert orderings their hooks do not establish | `HeldPageStopsCursorButLaterDeletesStand` gets a backend barrier on page 1's and page 3's completion; `ParallelPathScheduleRefusalHolds` asserts sent, skipped and deleted counts by identity; a job past its stop-flag check runs to its outcome | [Jobs](#jobs), [Tests](#tests) |
+| r9-4 MINOR (codex round 6): M4a mixes janitor-only and whole-drain accounting; the drain prediction omits the fold's ~5,000 serial ref deletes | answered by the owner's measurement decision below: every M4a row names its scope, criteria compare like with like, the round-1 ref cleanup (~100 s at 20 ms) is in the drain prediction | [Value proof](#value-proof), [M4](#m4-no-batch) |
+| owner decision 2026-10-01 (r10): M4/M4a on the local store with `support_batch_delete` false in the disk config (one `DeleteObject` per key), base vs after, drain wall time and authority GETs; GCS stand dropped | M4 on RustFS with netem 20 ms; M4b leaves the A/B for the emulated-store tests, since the local store accepts `DeleteObjects` | [Decision](#decision), [M4](#m4-no-batch) |
+| owner decision 2026-10-01 (r10): A/B request attribution from process-wide `system.events` deltas in a GC-only window, as `utils/ca-soak/gc-ab` and the yardstick | `delete_requests`, the per-job `ProfileEvents` deltas and `WireRequestsIncludeRetriedAttempts` removed; the row keeps logical counts; tests count wire requests at the emulated store | [Observability](#observability), [Value proof](#value-proof), [Tests](#tests) |
