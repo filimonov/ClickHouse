@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 23:00'
+updated_date: '2026-09-30 23:34'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -60,5 +60,5 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-01 OWNER: upgrade scenarios are low priority (few deployments; procedural description suffices). Rollout section frozen as procedure + accepted residual; rule RG and its tests dropped from PR1 (upgrade-only scaffolding).
+2026-10-01 spec r9 APPROVED by the owner (docs/superpowers/specs/2026-09-30-cas-gc-meta-delete-names-its-condemnation-design.md @c3de87981e0). Plan + SDD next, unattended.
 <!-- SECTION:NOTES:END -->
