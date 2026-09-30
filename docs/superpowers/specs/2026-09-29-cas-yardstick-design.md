@@ -1,4 +1,4 @@
-# CAS yardstick: CAS vs S3 on the same workload — design (rev.4) {#design}
+# CAS yardstick: CAS vs S3 on the same workload — design (rev.5) {#design}
 
 Task: CAS-321.1 (stage 0 of the parity umbrella CAS-321). Origin: `tmp/cas223/rig` and the CAS-223 RCA
 (`docs/superpowers/reports/2026-09-28-cas-223-rca/RCA.md`), which measured one card by hand: a create / 3 insert / select /
@@ -27,18 +27,20 @@ wire-level byte accounting (the counters are the server's own, §3).
 
 `utils/cas-yardstick/`:
 
-- `rustfs.sh` — starts a fresh RustFS in docker on a given port with an empty data directory and creates the bucket
+- `rustfs.sh` — starts a fresh RustFS in docker on the fixed port 19121 with an empty data directory (default
+  `<repo>/tmp/cas-yardstick/rustfs-data/`) and creates the bucket
   `test` (the recipe of `tmp/cas223/rig/rustfs_fresh.sh`: scanner and heal off, relaxed durability, `--network host`);
-  the image version is pinned in the script and written to the run header. `--endpoint URL` uses an already running store:
+  the image version is pinned in the script and written to the manifest. `run` does not start it. `--endpoint URL` uses an already running store:
   the header then records `endpoint: external` and the reported store version is what `--endpoint-version` says or
   `unknown`; a comparison against a reference whose store differs is flagged (§4).
 - `server.sh` — generates the server configuration into the run directory and starts `clickhouse server` from the given
   binary (ports from a base port; embedded Keeper off; caches, tmp, user files, access, system logs under the run
-  directory); waits for `SELECT 1` with a bounded poll; stops with `SYSTEM SHUTDOWN` and a bounded wait on the PID.
+  directory); waits for `SELECT 1` with a bounded poll; stops with `SYSTEM SHUTDOWN` and a bounded wait on the PID. The
+  server runs with `CLICKHOUSE_WATCHDOG_ENABLE=0`, so the PID is the server and a stop is one SIGTERM, not a crash-restart.
 - `yardstick.py` — the runner: `run`, `report`, `compare` subcommands (§4).
 - `cards/` — one Python module per card (§2), each exposing `setup`, `measured`, `teardown`, `unit`, `invariants`,
   `supports(policy)` and `scale` handling.
-- `reference/` — accepted runs: `<date>-<git-rev>/` with `manifest.tsv`, `summary.tsv`, `samples.tsv`; a one-line `CURRENT`.
+- `reference/` — accepted runs: `<date>-<git-rev>/` with `manifest.tsv`, `summary.tsv`, `samples.tsv`, `pass_seconds.tsv`; a one-line `CURRENT`.
 - `tests/test_report.py` — unit tests of the report arithmetic (§5).
 - `README.md`.
 
@@ -72,9 +74,10 @@ measure `measured` again (hot) if the card defines a hot pass; run `teardown`; s
 card, repeat): the process boundary is what keeps the counters of one card from another; inside the process the delta
 still covers every activity of the window (§3).
 
-Run directory: `runs/<run-id>/<policy>/<card>/k<N>/{cold,hot}/` with `events_before.tsv`, `events_after.tsv`,
-`events_delta.tsv`, `card.tsv`, `invariants.tsv`, `gc_rounds.tsv`, `server.log`; at the top `manifest.tsv`, `samples.tsv`,
-`summary.tsv`.
+Run directory (default under `<repo>/tmp/cas-yardstick/runs/`): `<run-id>/<policy>/<card>/k<N>/` with `server.log`,
+`server.err.log`, `server_control.log` and `error.txt` of a failed pass; its `{cold,hot}/` hold `events_before.tsv`,
+`events_after.tsv`, `events_delta.tsv`, `card.tsv`, `invariants.tsv`, `gc_rounds.tsv`; at the top `manifest.tsv`,
+`samples.tsv`, `summary.tsv`, `pass_seconds.tsv`.
 
 ## 2. The cards {#cards}
 
@@ -85,22 +88,26 @@ pass** (`measured` again without a reset), `teardown`, and `invariants` checked 
 carries `database_atomic_wait_for_drop_and_detach_synchronously = 1`. Values are deterministic expressions of `number`.
 
 Cold reset: the fixture is built by `setup`, then the server process is stopped and started again on the same run
-directory with the cache directory emptied and the server-side caches dropped after start (`SYSTEM DROP FILESYSTEM CACHE`,
-`DROP MARK CACHE`, `DROP UNCOMPRESSED CACHE`, `DROP PRIMARY INDEX CACHE` where the binary has it). What stays warm and is
-NOT reset, stated once: the OS page cache holding the `s3` disk's local metadata files and RustFS's own data, and RustFS
-process caches. "Cold" therefore means: the server process, its metadata and CAS in-memory state, and the filesystem cache
-are cold; the store is not. Cards that create their own data inside `measured` (1, 2, 5-hot, 7) have no fixture to reset:
+directory with the cache directory emptied. With `async_load_databases = false` the new process loads every attached table
+before it answers `SELECT 1`; then the server-side caches are dropped (`SYSTEM DROP FILESYSTEM CACHE`, `SYSTEM DROP MARK
+CACHE`, `SYSTEM DROP UNCOMPRESSED CACHE`, `SYSTEM CLEAR PRIMARY INDEX CACHE`; a binary without one fails the pass). "Cold"
+therefore means: a new server process, empty filesystem, mark, uncompressed and primary-index caches, and no column data
+read. The restart has already loaded the metadata and part lists of attached tables, for CAS their manifests, and their
+primary keys (`primary_key_lazy_load = 0`). Not reset: the OS page cache holding the `s3` disk's local metadata files,
+RustFS's own data and process caches; the store is not cold. Cards that create their own data inside `measured` (1, 2, 5-hot, 7) have no fixture to reset:
 their cold pass is the first pass on the fresh process, their hot pass the second.
 
 Merges: cards 2, 3, 4, 6 create their table with `max_parts_to_merge_at_once = 1`, which the selector never satisfies, so
 no merge runs and the setting survives `DETACH`/`ATTACH` and the cold restart (`SYSTEM STOP MERGES` is lost on both and
 also blocks mutations, so card 4 could not use it); the part-count invariants pin it; merges
 run in cards 1, 5 and 7, which are therefore "merge-inclusive" workloads with units that do not depend on part counts.
-`--scale f` multiplies the row and count parameters below; every count is `max(1, round(f × n))`; the reference is defined
+`--scale f` multiplies the row and count parameters below (worker counts, inserts per `cycle` iteration and deletes
+per worker stay); every count is `max(1, round(f × n))`; the reference is defined
 at `f = 1` only and the manifest records the effective counts.
 
 Capability matrix: `supports(policy)` returns `True`/`False` with a reason; an unsupported (policy, card) prints
-`UNSUPPORTED (<reason>)` in every cell, gets no ratio, and is not a failure. Known today: `mutation` and `lwd_concurrent` are `UNSUPPORTED (immutable disk)` on `s3plain` and `s3plain_cached`
+`UNSUPPORTED (<reason>)` in every cell, gets no ratio, and is not a failure. Known today: `mutation` and `lwd_concurrent` are
+`UNSUPPORTED (mutations are not supported on the immutable s3plain disk)` on `s3plain` and `s3plain_cached`
 (`s3_plain_rewritable` has no hard links, the server refuses `ALTER … UPDATE` and `DELETE` with error 344); the other
 pairs run; the matrix exists so that a disk that cannot run a card is reported instead
 of substituted. An unexpected error on a supported pair is `FAILED`.
@@ -110,10 +117,10 @@ of substituted. An unexpected error on a supported pair is `FAILED`.
    Cold = first pass, hot = second pass (new table names). Per-operation timings in `card.tsv`; the reported wall is the
    elapsed time of the whole pass (throughput), the per-operation latencies are separate columns. Invariant: every
    `SELECT` returns 3000 rows and the expected sum.
-2. **wide_insert** — unit: insert (500). `setup`: `CREATE TABLE` of 30 columns (15 `UInt64` = `number * i`, 15 `String` =
-   `toString(number * i)`), merges off. `measured` = 500 sequential `INSERT … FROM numbers(i*20000, 20000)` with
+2. **wide_insert** — unit: insert (500). `setup`: `CREATE TABLE` of 30 columns (15 `UInt64` = `number * j`, 15 `String` =
+   `toString(number * j)`, `j` the column index), merges off. `measured` = 500 sequential `INSERT … FROM numbers(i*20000, 20000)` with
    `max_insert_threads = 1` from one worker (10M rows, 500 parts). Hot = `TRUNCATE TABLE` (not measured), then 500 inserts of
-   different values (`number * i + 1`), so the hot pass measures a second insert and not dedup (`dup_content` is the dedup card). Invariants: 500 active parts and 10M rows after each pass.
+   different values (`k` and every column shifted by 1), so the hot pass measures a second insert and not dedup (`dup_content` is the dedup card). Invariants: 500 active parts and 10M rows after each pass.
 3. **attach_200** — unit: part (200). `setup`: 200 inserts of 10k rows, merges off, then `DETACH TABLE … PERMANENTLY`; cold reset (the restart does not load
    the table). `measured` = `ATTACH TABLE` cold, `DETACH TABLE` + `ATTACH TABLE` hot (part loading with `primary_key_lazy_load = 0`: every part's metadata and primary index
    are read). Hot = the same pair. Invariants: 200 active parts, 2M rows after each pass.
@@ -141,7 +148,7 @@ of substituted. An unexpected error on a supported pair is `FAILED`.
 
 **Snapshots.** `system.events` is read with `SETTINGS system_events_show_zero_values = 1` before and after each measured
 pass (a zero-valued counter is a real zero; a counter the binary does not have is absent and makes the metric
-`unavailable`, which suppresses its ratios and comparisons and is stated in the header). The difference of every counter
+`unavailable`, which suppresses its ratios and comparisons and is listed in the header line above the table). The difference of every counter
 is written to `events_delta.tsv`; the table shows aggregates, the file keeps everything.
 
 **Aggregates (API calls, not wire requests).** The disk-level counters are the primary source, because the generic `S3*`
@@ -164,23 +171,24 @@ disk; each window is preceded by a bounded settle (`SYSTEM FLUSH LOGS`, then wai
 `system.mutations` with `is_done = 0` and `system.replicated_fetches` are empty for the card table, bounded by 60 s).
 
 **GC.** After each pass: `SYSTEM FLUSH LOGS`, then `system.cas_gc_log` rounds whose span (first to last event, by
-`event_time_microseconds`) overlaps the window are collected into `gc_rounds.tsv` with columns: `round_id`, `started_in_window`,
-`finished_in_window`, outcome, `objects_deleted`, `manifests_deleted`, duration. The table shows "GC rounds: N
-(M overlapping)" for CAS policies. `--gc off` runs CAS with `cas_gc_enabled = 0` and is labelled "GC-disabled process
-window" (mount renewal still runs). A 20 s GC interval on short windows does not amortize reclamation; the umbrella's stage
+`event_time_microseconds`; a round without its `Finish` row is still open) overlaps the window are collected into `gc_rounds.tsv` with columns: `round_id`, `started_in_window`,
+`finished_in_window`, outcome, `objects_deleted`, `manifests_deleted`, duration. The table shows `N, M overlapping` for CAS
+policies, each with min..max over repeats. `--gc off` runs CAS with `cas_gc_enabled = 0` and the header says "GC-disabled
+process window" (mount renewal still runs). A 20 s GC interval on short windows does not amortize reclamation; the umbrella's stage
 1 uses `run_gc_long`-style runs for that, not this tool.
 
 **Wall and units.** Wall is the runner's clock around `measured`. For concurrent cards it is elapsed time (reciprocal
 throughput); per-operation latencies come from `card.tsv` and are reported as their own columns (`median_op_ms`, `p90_op_ms`)
-so that throughput and latency are not conflated. Per-unit values divide by the actual unit count recorded in
-`invariants.tsv`, not the nominal one.
+so that throughput and latency are not conflated. Per-unit values divide by the unit count `measured` returns: completed
+operations, or the part count for `attach_200` and `mutation`, which the invariants check.
 
 **Repeats and statistics.** K repeats (default 3). `samples.tsv` keeps every sample (policy, card, phase, repeat, metric,
 value, unit count). `summary.tsv` and the table show the median and min..max over repeats; ratios are computed per repeat
 between the paired policies of that repeat and then summarized as median and min..max (pairing preserved). A ratio with a
 zero denominator prints `0 → n` (absolute counts) instead of a number. Request counts are marked `~` when they differ across
 repeats; that is expected wherever merges, GC or retries are on, and is information, not an error. Wall spread max/min > 1.2
-is marked `noisy`. K = 3 describes the samples; a parity claim in a pull request quotes the min..max, and the `--repeats`
+is marked `noisy`, and so is a byte count with max/min > 1.2. A pass with any `FAILED` repeat prints
+`FAILED (n of K repeats ok)` and gives no numbers, ratio or comparison. K = 3 describes the samples; a parity claim in a pull request quotes the min..max, and the `--repeats`
 needed for a tighter claim is the author's call (CAS-77 defines thresholds, not this tool).
 
 **Errors.** Any error inside a card on a supported pair (a failed query, a timeout, a violated invariant, a server that did
@@ -191,18 +199,20 @@ code is non-zero. No default substitutions.
 
 **Printed table** (stdout, aligned text): rows = card × phase (cold, hot); two blocks — uncached policies (`cas`, `s3`,
 `s3plain`) and cached ones; columns per policy: wall, `median_op_ms` where the card records operations, GET, PUT, HEAD,
-LIST, DELETE, COPY, MiB read, MiB written, and for CAS policies "GC rounds"; then the paired ratios `cas/s3` and
-`cas/s3plain` for wall, GET, PUT and bytes. Cells: median with min..max, the `~`/`noisy` marks, `UNSUPPORTED (reason)`,
+LIST, DELETE, COPY, MiB read, MiB written, and for CAS policies "GC rounds"; then the paired ratios for wall, GET,
+PUT and bytes: `cas/s3` and `cas/s3plain` in the uncached block, `cas_cached/s3_cached` and `cas_cached/s3plain_cached` in
+the cached one. A header line above the table states scale, repeats, `--gc` and the `unavailable` metrics. Cells: median with min..max, the `~`/`noisy` marks, `UNSUPPORTED (reason)`,
 `FAILED` or `unavailable`. Under each block a per-unit line per card (actual unit counts).
 
-**Machine output.** `manifest.tsv` (binary version and git revision, build type, workload revision = git revision of
-`utils/cas-yardstick`, effective scale and counts, `--gc`, K, policy order, the config hash and the config file itself,
+**Machine output.** `manifest.tsv` (binary version, git revision and `dirty`, build type, workload hash = SHA-256 over
+the workload files — `yardstick.py`, `yardstick/*.py`, `yardstick/cards/*.py`, `etc/*`, `rustfs.sh`, `server.sh`; not the
+README, tests or references, so an accepted reference does not change it — effective scale and counts, `--gc`, K, policy order, the config hash and the config file itself,
 RustFS image or `external` endpoint and its stated version, host, kernel, date, flags), `samples.tsv`, `summary.tsv`.
 `yardstick.py report runs/<id>` re-prints the table.
 
-**Reference.** `reference/<date>-<git-rev>/` holds the three files of an accepted run; `CURRENT` names the one in force.
-`yardstick.py compare runs/<id> [reference]` (and `run --compare`) checks the manifests first: workload revision, scale,
-counts, `--gc`, K, config hash, build type and store must match, otherwise the comparison is printed as `incompatible:
+**Reference.** `reference/<date>-<git-rev>/` holds `manifest.tsv`, `samples.tsv`, `summary.tsv` and `pass_seconds.tsv` of an accepted run; `CURRENT` names the one in force.
+`yardstick.py compare runs/<id> [reference]` (and `run --compare`) checks the manifests first: workload hash, scale,
+counts, `--gc`, K, config hash, build type, store and store version must match, otherwise the comparison is printed as `incompatible:
 <field>` per differing field and nothing else; when compatible it prints, per metric, current vs reference (median and
 min..max both) with the delta of medians in percent, marking `|Δ wall| > 10 %` and any request-count median change.
 No threshold fails the run (CAS-77). The RCA numbers of 2026-09-28 are checked in as `reference/2026-09-28-rca-context.md`
