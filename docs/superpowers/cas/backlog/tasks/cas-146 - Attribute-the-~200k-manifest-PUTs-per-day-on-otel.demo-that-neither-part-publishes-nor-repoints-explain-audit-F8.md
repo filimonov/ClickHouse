@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-09-30 13:42'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (F8, one of the n
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (83949645ce7, by 'audit F8')
+
+2026-09-30, likely answer. otel.demo (26.6.4.20001.altinityantalya), `system.cas_log` of both replicas, 6 hours before 2026-09-30 13:40 UTC: besides the 50,774 `ref_repoint` events there are 101,548 `build_publish` events on `delete_tmp_*` refs, two per removed part (the rename to `delete_tmp_<part>` publishes a new manifest, then the removal marks publish another through a repoint). That is about 406k manifest PUTs per day from the removal flow against about 204k real part publishes. The trace of one part is in the notes of CAS-83. Check against `system.blob_storage_log` before closing.
 <!-- SECTION:NOTES:END -->

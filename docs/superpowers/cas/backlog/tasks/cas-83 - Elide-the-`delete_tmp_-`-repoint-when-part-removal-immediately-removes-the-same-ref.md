@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-09-30 13:42'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -64,4 +64,12 @@ Provenance: BACKLOG/gc.md [PART-REMOVAL-REPOINT] and #drop-path-head-of-line-and
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-15 (db28579459a, by 'PART-REMOVAL-REPOINT')
+
+2026-09-30, measured on the real stand. otel.demo (26.6.4.20001.altinityantalya), `system.cas_log` of both replicas, 6 hours before 2026-09-30 13:40 UTC: `manifest_put` 152,460; `build_publish` 152,457, of which 101,548 on `delete_tmp_*` refs; `ref_repoint` 50,774, all on `delete_tmp_*`; `ref_drop` 101,548, of which 50,774 on `delete_tmp_*`; `blob_put` 50,897. So only one manifest PUT in three is a real part publish; the removal flow writes the other two.
+Trace of one part (`202609_491558_491558_0`, removal 13:21:49.57-13:21:50.82 UTC, 1.25 s in the ref lane):
+1. `precommit` + `build_publish` of `delete_tmp_<part>` with a new manifest B (the rename);
+2. `ref_drop` of `<part>` (manifest A);
+3. `precommit` + `build_publish` + `ref_repoint` of `delete_tmp_<part>` to a new manifest C (the removal marks);
+4. `ref_drop` of `delete_tmp_<part>` (manifest C).
+Per removed part: 2 extra manifests, 4 ref-log transactions instead of 1, and for the GC 6 owner edges on 3 manifests instead of 2 edges on 1. With the flow reduced to one drop, manifest PUTs fall to a third, and the GC's manifest reads in `fold_ref_intake` (40.5% of round time on this stand, 4,645 bodies per round) fall by about two thirds. This removes the work that the manifest memo of CAS-29.12 would only cache.
 <!-- SECTION:NOTES:END -->
