@@ -3,10 +3,10 @@ id: CAS-29.9
 title: >-
   Batch the namespace janitor's dead-life deletes and make its pages per round
   and page size settings (spec B4)
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-30 15:57'
+updated_date: '2026-09-30 18:48'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -28,7 +28,7 @@ documentation:
   - >-
     docs/superpowers/specs/2026-09-15-cas-gc-dead-namespace-debris-cleanup-design.md
 parent_task_id: CAS-29
-priority: high
+priority: medium
 type: enhancement
 ordinal: 115000
 ---
@@ -68,19 +68,9 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-034')
+2026-09-30 OWNER DECISION (C): batches return only together with lifting the one-page-per-authoritative-round cap, as one task with its own A/B. Draft backed up at github.com/filimonov/ClickHouse `cas/gc-request-cuts` @1edf28f2a9a (`CasNamespaceJanitor.cpp` +98/-34, `removeManyWriteOnce` for dead-life `_log`/`_snap`, `_ckpt`/`_files` stay per-key, a failed batch falls back to per-key - the fallback is to be removed on return: fail the batch, retry next round).
 
-2031-triage CAS-034: label added; the description already names the id.
+Measured (report 08): DELETE requests 2,333 -> 3 (7k keys) and 15,913 -> 16 (20k); janitor phase at 20 ms latency 60.8 -> 5.3 s, janitor-active round 26-28 -> 4.2-4.7 s; no latency: about 0.5 s per 1000 keys saved. Drain wall time IDENTICAL (112 s = 112 s at 7k; 1,307 s = 1,307 s at 20k): the janitor takes one 1,000-key page per authoritative round (`page_budget` 1000 hard-coded in `Gc::runNamespaceJanitorPage`), authoritative rounds every ~9th round after the first two. otel.demo: `namespace_cleanup` 0.4% of round time, `janitor_deleted` 0 over 24 h.
 
-2026-09-30: the batch-delete half is implemented on the branch (37afe9138fb, 2a71ba3dd8f, bc2e9831a62; about 175 lines in `Gc/CasNamespaceJanitor.{h,cpp}` and `Formats/CasLayout.h`); the settings half is not started. Branch `cas/gc-request-cuts` (worktree `gc-request-cuts`, base antalya-26.6 @e2dd0f5d343, HEAD 1edf28f2a9a on 2026-09-30; not pushed, no PR). NOT accepted yet.
-Measured only on tiny dead lives (ca-soak S30, `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/01-before-after-10s-rounds.md` T2): DELETE requests for 372-430 janitor keys 383 / 395 / 378 -> 70 / 68 / 68 / 69, about 6 keys per batch; of the remaining requests 8-10 are batches and about 60 are per-key exact-token deletes of `_ckpt` / `_files` (see CAS-284.5). Janitor phase time 430 / 494 / 471 ms -> 978 / 338 / 319 / 317 ms: one outlier, not established.
-Open before acceptance (owner's rule: no complexity without proven value): an A/B on DROP of a table with a 7k-20k-key ref stream, with and without latency (measurement in progress).
-
-2026-09-30, the real stand. otel.demo (`chi-otel-otel-0-0-0`, 26.6.4.20001.altinityantalya), last 24 h before 2026-09-30 13:30 UTC, from `system.cas_gc_log` / `system.cas_log`: `janitor_deleted` = 0 in every round (`janitor_keys` 952 listed per round), `namespace_cleanup` is 0.4% of round time. The batch deletes change nothing on this stand; their value can only show on drops of tables with long ref streams.
-
-2026-09-30, A/B on a dropped table with a long ref stream (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/08-janitor-batches-on-long-streams-and-memo-reuse-distance.md`; RustFS, base vs the branch):
-- Janitor DELETE requests: 2,333 -> 3 at 7k stream keys, 15,913 -> 16 at 20k (one request per 1,000-key page instead of one per key).
-- `namespace_cleanup` phase time: 2.4-2.6 s -> 1.0-1.2 s at 7k; 16.8 s -> 7.1-9.4 s at 20k. With 20 ms added per request (7k, one run per side): 60.8 s -> 5.3 s, a janitor round 26-28 s -> 4.2-4.7 s.
-- Drain WALL time does not change: 112 s vs 112 s at 7k, 1,307 s vs 1,307 s at 20k. The janitor handles one 1,000-key page per authoritative round in both binaries, and such rounds come twice in a row and then about every 9th round (read from `cas_gc_log`, not traced in the code).
-Reading: the batches cut requests and the latency of a janitor round; the drain of a dropped table is bounded by the janitor's pacing, which is the second half of this task (`gc_janitor_pages_per_round`). The two halves only pay off together: with batches a round can take many pages for one request each.
+Next: spec a budget by time/requests instead of pages per authoritative round (why the cap exists: bounded round duration; keep that bound), then A/B on the S30 create/drop churn and the 20k-key drain: the figure to move is drain wall time.
 <!-- SECTION:NOTES:END -->

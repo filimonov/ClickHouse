@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-30 13:34'
+updated_date: '2026-09-30 18:48'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -61,23 +61,5 @@ Provenance: BACKLOG/gc.md#gc-rounds-in-minutes; verified 2026-09-26 against aefe
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-First recorded: 2026-09-25 (04f0180dca6, by 'gc-rounds-in-minutes')
-
-Merged from u19a-soak (Make GC rounds finish in minutes and catch up at S3 speed (spec stages A, B, C)): Facts to add to CAS-29 (soak scaling curve, 2026-07-05 campaign, pre-rebuild GC; re-measure before quoting as current):
-A single fold round's time grew with pool size: 87 ms at 400 parts (S03), 92.6 s and 93.9 s at 10,000 tables (S05 full), and 398 s at ~100,000 tiny parts (S08 full), where one round deleted 24,392 manifests.
-Consequences observed: with `gc_interval_sec=10` rounds ran back to back, and `settle_fsck` could not stabilise because each round bulk-mutated the pool. Correctness held (`dangling=0`).
-The idle and small-delta case was fixed by the defer round (436714d80f0..3cba4f812f8, `shouldDeferRound` at `CA/Gc/CasGc.cpp:297`). The large-delta case is what stages B and C target.
-Suggested second acceptance probe beside otel.demo: S05 (10,000 tables) and S08 (100,000 parts) at `--scale full`, with per-round duration recorded in `RUN_HISTORY.md`.
-
-2026-09-30, where a GC round spends its time (ca-soak S11 ci, base binary, `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/03-long-rounds-and-latency.md`), shares of `fold_ref_intake` / `fold_reduce` / `defer_decision` / `ref_object_cleanup` / `manifest_deletes` / `namespace_cleanup`:
-- round every 10 s, local RustFS: 12 / 12 / 12 / 43 / 14 / 4 %;
-- one round per 300 s, local RustFS: 8-10 / 5 / 57-58 / 12 / 13 / 2 %;
-- one round per 300 s with 20 ms per request (dev scale): 73-74 / 14-15 / the rest 1-3 % each.
-The first slice (spec `2026-09-29-cas-gc-request-cuts-design.md`: A0, A2, A4, batch half of B4, LIST measurement) was chosen by request counts from the otel.demo audit, not by time share. Outcome: A0 removed (blocked by CAS-30, CAS-29.3), A2 rejected by measurement (CAS-29.5), A4 and B4 implemented but not accepted (CAS-29.12, CAS-29.9), LIST measured (CAS-29.13). Nothing merged.
-Owner's rule for every further stage: no code complexity without proven value; prove it on a scenario that reproduces a GC backlog with store latency before building.
-Reports: `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/README.md`.
-
-2026-09-30, the real stand. otel.demo (`chi-otel-otel-0-0-0`, 26.6.4.20001.altinityantalya), last 24 h before 2026-09-30 13:30 UTC, from `system.cas_gc_log` / `system.cas_log`: 212 rounds, all Success on one leader, p50 109 s, p90 138 s, 22.9k s of GC per day; condemned = graduated = deleted = about 164k blobs per day, so the GC keeps up (the five-hour rounds of the 2026-09-25 audit are gone).
-Phase shares of round time: `fold_ref_intake` 40.5% (45 s per round: 4,645 manifest GETs + 2,041 ref-log GETs, all through read-ahead), `pending_deletes` 33.3% (34 s: 774 blobs, one HEAD + one DELETE each, on the round thread: 10.0 s of HEAD + 25.7 s of DELETE time), `fold_reduce` 10.9% (read-ahead: 2,015 hits, 3,834 wasted per round), `ref_object_cleanup` 9.3% (2,047 ref objects in 8 bulk requests, 7.0 s), `defer_decision` 2.6%, `manifest_deletes` 2.4%, `namespace_cleanup` 0.4%.
-Reading: the two phases worth attacking on this stand are the manifest reads of the fold and the per-blob HEAD + DELETE of `pending_deletes`. The stand shows the deletes on the round thread, so it does not run the parallel `pending_deletes` of PR #2351 yet (inferred from the counters, not from the build).
+2026-09-30 OWNER DECISION on the request-cuts branch: nothing shipped from it. A0 (29.3) blocked by CAS-30; A2 (29.5) rejected by measurement; memo (29.12) parked, re-measure after CAS-83 (D); janitor batches (29.9) return only with the page-cap change (C). Draft backed up at github.com/filimonov/ClickHouse cas/gc-request-cuts @1edf28f2a9a. The measured GC cost that moved in practice came from CAS-83 (PR #2452): the part-removal flow published two extra manifests per removed part.
 <!-- SECTION:NOTES:END -->
