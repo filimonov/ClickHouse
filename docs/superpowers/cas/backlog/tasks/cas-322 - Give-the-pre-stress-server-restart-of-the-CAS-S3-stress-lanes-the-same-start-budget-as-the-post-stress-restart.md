@@ -1,0 +1,50 @@
+---
+id: CAS-322
+title: >-
+  Give the pre-stress server restart of the CAS-S3 stress lanes the same start
+  budget as the post-stress restart
+status: To Do
+assignee: []
+created_date: '2026-09-30 07:43'
+updated_date: '2026-09-30 07:43'
+labels:
+  - 'area:ci'
+  - 'complexity:trivial'
+  - 'risk:low'
+  - 'confidence:solid'
+  - 'origin:review'
+  - 'touches:upstream-code'
+milestone: m-8
+dependencies: []
+references:
+  - 'https://github.com/Altinity/ClickHouse/pull/2396'
+  - tests/docker_scripts/stress_runner.sh
+priority: high
+type: bug
+ordinal: 408000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+The CAS-S3 stress lanes fail with `Cannot start clickhouse-server` whenever `stress_runner.sh` draws `async_load_databases=false` (a 50% coin flip a few lines above the call).
+The restart before `stress.py` (`tests/docker_scripts/stress_runner.sh:293`, plain `start_server`) waits 6 tries of 10 s; the restart after it (`:314`) already uses `start_server 10` with the comment "under sanitizers with async_load_databases=false the server may need minutes to load all tables".
+With synchronous loading the server loads 46 tables (76-108 parts on `cas_s3`, thousands of S3 requests) under ASan/debug plus ThreadFuzzer; the server log ends at 92-95% of loading when the script gives up. No `<Fatal>`, `fatal.log` empty.
+Evidence (PR #2396, three heads, plus one sibling): every failing run has the sync flag; six sibling runs without it pass with 4-7 readiness retries, PR #2398 with it fails the same way.
+Logs: `lane-g/tmp/pr2396/{stress,h2,h3}/` (job.log, server.log per run), sibling job logs `lane-g/tmp/pr2396/h3/sib_*_asan_cas_stress_job.log`.
+Fix shape: `start_server 10` at `:293` (or skip the sync-load draw when `USE_CAS_S3_STORAGE_FOR_MERGE_TREE=1`). The function is upstream code (`tests/docker_scripts/stress_tests.lib`); the call site change is one line.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 The pre-stress restart uses the larger budget (or the sync-load draw is off for CAS-S3), and a CAS-S3 stress run with `async_load_databases=false` reaches `stress.py`
+- [ ] #2 Stress test (amd_asan_ubsan, cas s3 storage) and Stress test (amd_debug, cas s3 storage) are green on a PR that draws synchronous loading
+<!-- AC:END -->
+
+## Definition of Done
+<!-- DOD:BEGIN -->
+- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [ ] #2 ASan lane green for touched suites
+- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [ ] #4 No fallback paths added; failures propagate
+<!-- DOD:END -->
