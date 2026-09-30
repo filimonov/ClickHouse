@@ -285,7 +285,7 @@ def _smoke_failures(summary, policies, cards):
             for phase in PHASES:
                 status = idx.get((policy, card.name, phase, 'status'))
                 if status is not None:
-                    if status['median'] == 'FAILED':
+                    if status['median'].startswith('FAILED'):
                         failures.append(f'{policy} {card.name} {phase}: FAILED')
                     continue
                 failures += [f'{policy} {card.name} {phase} {m}: {R.UNAVAILABLE}' for m in TABLE_METRICS
