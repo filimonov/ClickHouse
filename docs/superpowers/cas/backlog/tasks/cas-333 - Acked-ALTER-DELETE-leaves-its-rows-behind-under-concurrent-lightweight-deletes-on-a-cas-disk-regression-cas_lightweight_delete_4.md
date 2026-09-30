@@ -3,9 +3,10 @@ id: CAS-333
 title: >-
   Acked ALTER DELETE leaves its rows behind under concurrent lightweight deletes
   on a cas disk (regression cas_lightweight_delete_4)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-30 21:17'
+updated_date: '2026-09-30 21:19'
 labels:
   - cas
   - ci
@@ -39,3 +40,9 @@ This is a correctness symptom (an acked mutation whose effect is not visible), n
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-30 OWNER: duplicate of the known mutation-registration race, CAS-252 — upstream fix https://github.com/ClickHouse/ClickHouse/pull/122934 (open), Altinity issue https://github.com/Altinity/ClickHouse/issues/2331, fork branch feature/antalya-26.6/fix-mutation-registration-race. The cas_lightweight_delete survivors are the documented CI signature of that race (CAS-252 notes: 'observed in CI as the cas_lightweight_delete survivors of PR #2300'). Closed as duplicate; the #2452 occurrence is recorded in CAS-252.
+<!-- SECTION:NOTES:END -->
