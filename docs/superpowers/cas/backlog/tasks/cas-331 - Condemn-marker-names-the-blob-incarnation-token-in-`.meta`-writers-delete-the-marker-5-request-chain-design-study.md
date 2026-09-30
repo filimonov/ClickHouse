@@ -3,9 +3,10 @@ id: CAS-331
 title: >-
   Condemn marker names the blob incarnation: token in `.meta`, writers delete
   the marker, 5-request chain (design study)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-30 19:29'
+updated_date: '2026-09-30 20:29'
 labels:
   - cas
   - gc
@@ -49,3 +50,9 @@ Five requests on the happy path. Open points to settle:
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-30 study done: report docs/superpowers/reports/2026-09-30-cas-331-condemn-marker-variants.md. Owner decision: PR1 = minimal fix (G1 + r1 round checks + re-stamp); V1/V2r/V3 and all findings recorded in CAS-329 for the request-cut work.
+<!-- SECTION:NOTES:END -->

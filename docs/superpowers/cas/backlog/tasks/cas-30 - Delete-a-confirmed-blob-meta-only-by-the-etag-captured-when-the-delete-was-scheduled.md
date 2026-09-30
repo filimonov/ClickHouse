@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 18:58'
+updated_date: '2026-09-30 20:29'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -60,5 +60,5 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30 OWNER DECISION C: spec r2 describes the 5-request end state; PR1 = the fix only (G1 always-read at graduation, registry removed, marker delete pinned to the etag M observed at graduation, M in leader memory, unknown M => skip the marker delete); PR2 = request cuts (blind marker create; DELETE blob If-Match persisted token, no HEAD); PR3 = persist M in the condemned run row once a release with CAS-328 (tolerant readers) is everywhere. Details in tmp/cas30/owner_decisions.md (session scratch) and the r2 spec.
+2026-09-30 OWNER DECISION (final shape of PR1): G1 - remove the in-process confirmation registry, graduation always reads the marker (revert of the request-saving optimization) - plus spec r1's round checks (C1 in the delete job, C3 at the gate) and the re-stamp (C2). No pins, no format change. Spec r3 = r1 without the registry, with r2's schedules, model (returning leader, marker-preservation invariants) and tests, and codex r2's two MAJORs (budget check before the gate's read; rebuild residual stated accurately). V1/V2r/V3 alternatives recorded in CAS-329.
 <!-- SECTION:NOTES:END -->

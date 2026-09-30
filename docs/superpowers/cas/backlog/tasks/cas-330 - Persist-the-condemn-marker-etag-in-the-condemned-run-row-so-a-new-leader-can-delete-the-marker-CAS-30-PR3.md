@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 18:58'
-updated_date: '2026-09-30 18:58'
+updated_date: '2026-09-30 20:29'
 labels:
   - cas
   - gc
@@ -40,3 +40,9 @@ Blocked until a release whose readers skip unknown keys in `cas_run` rows (CAS-3
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-30: only needed under V1 (pinned delete). Owner decision keeps PR1 without pins; this task is relevant only if CAS-329 later adopts V1. Kept as Low.
+<!-- SECTION:NOTES:END -->
