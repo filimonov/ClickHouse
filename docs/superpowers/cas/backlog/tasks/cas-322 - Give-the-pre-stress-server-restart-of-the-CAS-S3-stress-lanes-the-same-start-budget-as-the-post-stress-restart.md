@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 07:43'
-updated_date: '2026-09-30 07:43'
+updated_date: '2026-09-30 07:50'
 labels:
   - 'area:ci'
   - 'complexity:trivial'
@@ -48,3 +48,9 @@ Fix shape: `start_server 10` at `:293` (or skip the sync-load draw when `USE_CAS
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-30: the slow start is the CAS-95 LIST storm (79% of 23,739 S3 requests in 40 s of loading are LISTs of one _files/ prefix per namespace, ~176 per part; numbers in CAS-95 notes). PR #2440 (CAS-95.1) removes the per-checksum LIST; after it lands, re-measure this restart before deciding whether the larger start budget is still needed. The budget fix stays cheap and correct either way (the post-stress restart already has it).
+<!-- SECTION:NOTES:END -->
