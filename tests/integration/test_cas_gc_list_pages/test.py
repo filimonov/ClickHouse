@@ -18,8 +18,8 @@ cluster = ClickHouseCluster(__file__)
 
 STORAGE_POLICY = "cas_gc_list_pages"
 BUCKET_PREFIX = "cas_gc_list_pages/"
-TARGET_KEYS = 20000
-MIN_KEYS = 5000
+TARGET_KEYS = 7000
+MIN_KEYS = 6000
 SEED_WALL_SECONDS = 600
 INSERT_THREADS = 4
 PARTITIONS = 50
@@ -91,7 +91,7 @@ def events(node):
 def test_list_requests_per_logical_page():
     node = cluster.instances["node"]
     per_insert, keys = seed(node)
-    assert keys >= MIN_KEYS, f"only {keys} _log keys seeded"
+    assert keys >= MIN_KEYS, f"only {keys} _log keys seeded (seeding deadline hit?)"
 
     log_lines_before = int(node.count_in_log("listUnder prefix=").strip())
     ev_before = events(node)
@@ -99,6 +99,7 @@ def test_list_requests_per_logical_page():
     ts = node.query("SELECT now64(6)").strip()
 
     node.query("SYSTEM CAS GC RUN")
+    log_lines_after = int(node.count_in_log("listUnder prefix=").strip())
     node.query("SYSTEM FLUSH LOGS")
     ev_after = events(node)
     delta = {k: ev_after.get(k, 0) - ev_before.get(k, 0) for k in ev_after}
@@ -111,17 +112,22 @@ def test_list_requests_per_logical_page():
         "ORDER BY event_time_microseconds FORMAT TSV"
     ).strip().splitlines()
     assert any(r.split("\t")[0] == "Finish" for r in rows), "the GC round did not finish"
+    ref_keys_listed = max(
+        (int(r.split("\t")[3] or 0) for r in rows if r.split("\t")[1] == "defer_decision"),
+        default=0,
+    )
+    assert ref_keys_listed >= MIN_KEYS, f"the round listed only {ref_keys_listed} ref keys"
     assert delta["DiskS3ListObjects"] > 0
     assert delta["CASRefGlobalListPages"] > 0
 
-    trace = node.grep_in_log("listUnder prefix=").splitlines()[log_lines_before:]
+    trace = node.grep_in_log("listUnder prefix=").splitlines()[log_lines_before:log_lines_after]
     pat = re.compile(
         r"listUnder prefix=(\S+), cursor_set=(true|false), limit=(\d+), keys=(\d+), has_next=(true|false), s3_list_requests=(\d+)"
     )
     calls = [m.groups() for m in map(pat.search, trace) if m]
 
     def cls(c):
-        return ("resumed" if c[1] == "true" else "first") + (" ref-stream" if c[0].endswith("ns/stream") else " other")
+        return ("resumed" if c[1] == "true" else "first") + (" ref-stream" if c[0].rstrip("/").endswith("ns/stream") else " other")
 
     table = {}
     for c in calls:
