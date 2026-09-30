@@ -350,7 +350,8 @@ for a removal queues the exact body delete from the stored `Etag`.
 - **Absence is never memoized.** An absent body is probed again by the next edge that names it, and
   a body that fails validation throws as without the memo.
 - **Bound:** 64 MiB of charged storage per fold, oldest insert evicted first. The charge covers the
-  map node, the `Etag` strings, every entry and its path, and each namespace once. The real
+  map and FIFO nodes, the `Etag` strings, every entry and its path, each namespace once, and the
+  hash tables' bucket arrays, which eviction does not shrink. The real
   allocation stays within 1.25 times the charge, so the worst-case footprint of a fold's memo is
   about 80 MiB (64 MiB × 1.25). A manifest whose own charge exceeds the budget is folded without
   being stored. An evicted or oversized manifest is read again on its next edge.

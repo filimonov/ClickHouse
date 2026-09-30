@@ -3,7 +3,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasBlobDigest.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <base/types.h>
-#include <deque>
+#include <list>
 #include <unordered_map>
 #include <vector>
 
@@ -31,10 +31,11 @@ struct ManifestFold
 /// Absence is never stored: only `insert` of a validated body adds an entry.
 ///
 /// Bounded by `budget` bytes of charged retained storage, evicting the oldest insert first. The
-/// charge overestimates: per manifest the map node, the etag strings' capacity and 64 B for the
-/// bucket and FIFO slots; per entry its `sizeof` and path capacity; per distinct namespace its node
-/// and capacity, once, since keys share one interned copy. Each retained `Etag` key is the full
-/// manifest key and so holds its own copy of the namespace, charged with the etag's capacity.
+/// charge overestimates: per manifest the map and FIFO nodes and the etag strings' capacity; per
+/// entry its `sizeof` and path capacity; per distinct namespace its node and capacity, once, since
+/// keys share one interned copy; and the hash tables' bucket arrays as they are, since eviction does
+/// not shrink them. Each retained `Etag` key is the full manifest key and so holds its own copy of
+/// the namespace, charged with the etag's capacity.
 class GcManifestMemo
 {
 public:
@@ -48,11 +49,14 @@ public:
     const ManifestFold * find(const ManifestId & id);
     /// Same lookup without counting a hit.
     bool contains(const ManifestId & id) const;
-    /// Stores `fold` unless its own charge, namespace included, exceeds the budget; then returns
-    /// false and changes nothing. Evicts oldest inserts until the new charge fits.
+    /// Evicts oldest inserts until `fold` fits and stores it. Returns false without storing when it
+    /// cannot fit even alone; without evicting when its charge plus the current bucket arrays already
+    /// exceeds the budget.
     bool insert(const ManifestId & id, ManifestFold fold);
 
-    size_t charged() const { return charged_bytes; }
+    size_t charged() const { return charged_bytes + bucketBytes(); }
+    /// The bucket arrays' share of `charged`.
+    size_t bucketBytes() const;
     size_t hits() const { return hit_count; }
     size_t evictions() const { return eviction_count; }
 
@@ -80,12 +84,14 @@ private:
 
     const String * internedNamespace(const ManifestId & id) const;
     void evictOldest();
+    void releaseNamespace(const String & root_namespace);
 
     const size_t budget_bytes;
     Namespaces namespaces;
     Folds folds;
-    std::deque<Key> insertion_order;
-    size_t charged_bytes = 0;
+    /// A list, unlike a deque, frees its storage as eviction pops it.
+    std::list<Key> insertion_order;
+    size_t charged_bytes = 0;   /// what eviction frees; `bucketBytes` is measured apart
     size_t hit_count = 0;
     size_t eviction_count = 0;
 };

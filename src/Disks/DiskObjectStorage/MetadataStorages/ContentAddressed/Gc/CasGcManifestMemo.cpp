@@ -11,8 +11,8 @@ namespace
 
 /// A node-based hash container's per-element links: the next pointer and the cached hash.
 constexpr size_t kNodeLinks = 2 * sizeof(void *);
-/// Bucket pointer plus FIFO slot per manifest, rounded up.
-constexpr size_t kPerManifestBookkeeping = 64;
+/// A list node's links: the next and previous pointers.
+constexpr size_t kListLinks = 2 * sizeof(void *);
 
 void hashCombine(size_t & seed, size_t value)
 {
@@ -37,7 +37,7 @@ size_t GcManifestMemo::KeyHash::operator()(const Key & key) const
 
 size_t GcManifestMemo::foldCharge(const ManifestFold & fold)
 {
-    size_t charge = sizeof(Folds::value_type) + kNodeLinks + kPerManifestBookkeeping + fold.etag.stringCapacity()
+    size_t charge = sizeof(Folds::value_type) + kNodeLinks + sizeof(Key) + kListLinks + fold.etag.stringCapacity()
         + fold.entries.capacity() * sizeof(ManifestFoldEntry);
     for (const ManifestFoldEntry & entry : fold.entries)
         charge += entry.path.capacity();
@@ -46,7 +46,12 @@ size_t GcManifestMemo::foldCharge(const ManifestFold & fold)
 
 size_t GcManifestMemo::namespaceCharge(const String & root_namespace)
 {
-    return sizeof(Namespaces::value_type) + kNodeLinks + sizeof(void *) + root_namespace.capacity();
+    return sizeof(Namespaces::value_type) + kNodeLinks + root_namespace.capacity();
+}
+
+size_t GcManifestMemo::bucketBytes() const
+{
+    return (folds.bucket_count() + namespaces.bucket_count()) * sizeof(void *);
 }
 
 const String * GcManifestMemo::internedNamespace(const ManifestId & id) const
@@ -80,9 +85,9 @@ bool GcManifestMemo::insert(const ManifestId & id, ManifestFold fold)
 
     String root_namespace = id.root_namespace.string();
     const size_t fold_charge = foldCharge(fold);
-    /// The namespace counts even when already interned, so that evicting every other fold always
-    /// makes room.
-    if (fold_charge + namespaceCharge(root_namespace) > budget_bytes)
+    /// The namespace counts even when already interned, so that evicting every other fold makes room
+    /// unless a bucket array grows.
+    if (fold_charge + namespaceCharge(root_namespace) + bucketBytes() > budget_bytes)
         return false;
 
     auto [ns_it, interned] = namespaces.try_emplace(std::move(root_namespace), 0);
@@ -90,15 +95,23 @@ bool GcManifestMemo::insert(const ManifestId & id, ManifestFold fold)
         charged_bytes += namespaceCharge(ns_it->first);
     ++ns_it->second;   /// held before evicting, so eviction cannot release this namespace
 
-    while (charged_bytes + fold_charge > budget_bytes && !insertion_order.empty())
+    while (charged() + fold_charge > budget_bytes && !insertion_order.empty())
         evictOldest();
-    chassert(charged_bytes + fold_charge <= budget_bytes);
+    if (charged() + fold_charge > budget_bytes)
+    {
+        releaseNamespace(ns_it->first);
+        return false;
+    }
 
-    const Key key{&ns_it->first, id.ref};
-    folds.emplace(key, Slot{std::move(fold), fold_charge});
-    insertion_order.push_back(key);
+    std::list<Key> order_node{Key{&ns_it->first, id.ref}};
+    folds.emplace(order_node.front(), Slot{std::move(fold), fold_charge});
+    insertion_order.splice(insertion_order.end(), order_node);
     charged_bytes += fold_charge;
-    return true;
+
+    /// The emplace may have grown the bucket array. The new fold is the newest, so it goes last.
+    while (charged() > budget_bytes && !insertion_order.empty())
+        evictOldest();
+    return !insertion_order.empty();
 }
 
 void GcManifestMemo::evictOldest()
@@ -110,12 +123,16 @@ void GcManifestMemo::evictOldest()
     charged_bytes -= it->second.charge;
     folds.erase(it);
     ++eviction_count;
+    releaseNamespace(*key.root_namespace);
+}
 
-    const auto ns_it = namespaces.find(*key.root_namespace);
-    if (--ns_it->second == 0)
+void GcManifestMemo::releaseNamespace(const String & root_namespace)
+{
+    const auto it = namespaces.find(root_namespace);
+    if (--it->second == 0)
     {
-        charged_bytes -= namespaceCharge(ns_it->first);
-        namespaces.erase(ns_it);
+        charged_bytes -= namespaceCharge(it->first);
+        namespaces.erase(it);
     }
 }
 

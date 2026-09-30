@@ -158,10 +158,12 @@ TEST(CASGCManifestMemo, SharedNamespaceIsChargedOnce)
 
     const ManifestId first = idOf(ns, 1);
     ASSERT_TRUE(memo.insert(first, ManifestFold{.etag = etagOf(backend, first), .entries = {}}));
-    const size_t after_first = memo.charged();
+    /// Bucket arrays grow in steps; they are measured apart from what each manifest pays.
+    const auto held = [&memo] { return memo.charged() - memo.bucketBytes(); };
+    const size_t after_first = held();
     const ManifestId second = idOf(ns, 2);
     ASSERT_TRUE(memo.insert(second, ManifestFold{.etag = etagOf(backend, second), .entries = {}}));
-    const size_t per_manifest = memo.charged() - after_first;
+    const size_t per_manifest = held() - after_first;
     EXPECT_GE(after_first - per_manifest, kMaxNamespaceBytes) << "the first insert paid for the namespace";
 
     for (uint64_t seq = 3; seq <= 1000; ++seq)
@@ -169,7 +171,7 @@ TEST(CASGCManifestMemo, SharedNamespaceIsChargedOnce)
         const ManifestId id = idOf(ns, seq);
         ASSERT_TRUE(memo.insert(id, ManifestFold{.etag = etagOf(backend, id), .entries = {}}));
     }
-    EXPECT_EQ(memo.charged(), after_first + 999 * per_manifest)
+    EXPECT_EQ(held(), after_first + 999 * per_manifest)
         << "each further manifest pays its node and etag (whose key embeds the namespace), never the interned namespace again";
 }
 
@@ -266,6 +268,83 @@ TEST(CASGCManifestMemo, AllocationStaysWithinTheCharge)
 #if !defined(SANITIZER)
         EXPECT_GT(allocation, 0) << "the thread tracker saw the inserts";
         EXPECT_LE(static_cast<double>(allocation), 1.25 * static_cast<double>(charged));
+#else
+        (void)allocation;
+#endif
+    }
+#if defined(SANITIZER)
+    /// The sanitizer runtime provides `operator new`, so the thread tracker is never fed; only the charge bound is checked.
+    GTEST_SKIP() << "allocation is not measurable: the thread memory tracker is not fed in sanitizer builds";
+#endif
+}
+
+namespace
+{
+
+/// Charge of a fresh default-budget memo holding copies of `folds`, inserted in order under `ns`.
+size_t chargeOf(const String & ns, std::initializer_list<const ManifestFold *> folds)
+{
+    GcManifestMemo probe;
+    uint64_t seq = 0;
+    for (const ManifestFold * fold : folds)
+        EXPECT_TRUE(probe.insert(idOf(ns, ++seq), *fold));
+    return probe.charged();
+}
+
+}
+
+/// Many small manifests grow the hash tables, then a manifest sized to fit the budget only alone
+/// arrives, then a small one that cannot fit beside it. A hash table keeps its bucket array after
+/// eviction, so the charge must keep covering it whatever the memo decides to store.
+TEST(CASGCManifestMemo, EvictionKeepsChargingRetainedCapacity)
+{
+    DB::MainThreadStatus::getInstance();
+    InMemoryBackend backend;
+    constexpr size_t kBudget = 1u << 20;
+    const String ns = "00/aa@cas@";
+    const ManifestFold small = foldOf(backend, idOf(ns, 1), 0, 0);
+    constexpr size_t kPathBytes = 1000;
+    ManifestFold large = foldOf(backend, idOf(ns, 2), kBudget * 3 / 4 / (sizeof(ManifestFoldEntry) + kPathBytes), kPathBytes);
+
+    /// Grow one path so that the large manifest plus its namespace leaves half a small manifest of
+    /// the budget free: it fits alone, and a small one beside it does not.
+    const size_t one_small = chargeOf(ns, {&small});
+    const size_t small_charge = chargeOf(ns, {&small, &small}) - one_small;
+    const size_t grow = kBudget - chargeOf(ns, {&large}) - small_charge / 2;
+    large.entries.back().path.append(grow, 'q');
+    const size_t large_alone = chargeOf(ns, {&large});
+    ASSERT_LE(large_alone, kBudget);
+    ASSERT_GT(large_alone + small_charge, kBudget);
+
+    auto & tracker = DB::CurrentThread::get().memory_tracker;
+    DB::CurrentThread::flushUntrackedMemory();
+    const Int64 before = tracker.get();
+    {
+        GcManifestMemo memo(kBudget);
+        uint64_t seq = 0;
+        /// A copy allocates what a decode hands the memo.
+        const auto insert = [&](const ManifestFold & fold)
+        {
+            ManifestFold copy = fold;
+            const bool stored = memo.insert(idOf(ns, ++seq), std::move(copy));
+            EXPECT_LE(memo.charged(), kBudget) << "after insert " << seq;
+            return stored;
+        };
+
+        /// Every manifest is charged at least 256 B, so this fixed count charges at least twice the budget.
+        const uint64_t small_inserts = 2 * kBudget / 256;
+        for (uint64_t i = 0; i < small_inserts; ++i)
+            ASSERT_TRUE(insert(small));
+        ASSERT_GT(memo.evictions(), 0u) << "the small manifests filled the budget";
+        insert(large);
+        ASSERT_TRUE(insert(small));
+
+        DB::CurrentThread::flushUntrackedMemory();
+        const Int64 allocation = tracker.get() - before;
+        std::cerr << "retained allocation " << allocation << " B, charge " << memo.charged() << " B\n";
+#if !defined(SANITIZER)
+        EXPECT_GT(allocation, 0) << "the thread tracker saw the inserts";
+        EXPECT_LE(static_cast<double>(allocation), 1.25 * static_cast<double>(memo.charged()));
 #else
         (void)allocation;
 #endif
