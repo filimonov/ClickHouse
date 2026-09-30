@@ -4,6 +4,7 @@ title: Make the GC round number monotonic across a lost or undecodable `gc/state
 status: To Do
 assignee: []
 created_date: '2026-09-30 14:20'
+updated_date: '2026-09-30 14:22'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -43,3 +44,9 @@ Direction, not verified: start the round after a bootstrap or rebuild from a val
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Correction after the external review of the CAS-30 spec, checked against `Gc/CasGc.cpp` at e2dd0f5d343 on 2026-09-30: `max_fence_round` is declared as 0 (`:4515`) and never updated, so it contributes nothing to the rebuild round (`:4681`). `acquireOrRenewLease` decodes an existing `gc/state` unconditionally (`:4919`), so a rebuild does not get past an undecodable state through this path. A regression therefore needs `gc/state` to be ABSENT (bootstrap from 0) and the surviving generation numbers (`max_gen`) to be lower than rounds already stamped into `.meta`; what `max_gen` preserves after a state loss is not established. First step of this task: establish whether a regression is reachable at all.
+<!-- SECTION:NOTES:END -->
