@@ -3,10 +3,10 @@ id: CAS-29.9
 title: >-
   Batch the namespace janitor's dead-life deletes and make its pages per round
   and page size settings (spec B4)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-30 18:48'
+updated_date: '2026-09-30 20:56'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -68,9 +68,5 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30 OWNER DECISION (C): batches return only together with lifting the one-page-per-authoritative-round cap, as one task with its own A/B. Draft backed up at github.com/filimonov/ClickHouse `cas/gc-request-cuts` @1edf28f2a9a (`CasNamespaceJanitor.cpp` +98/-34, `removeManyWriteOnce` for dead-life `_log`/`_snap`, `_ckpt`/`_files` stay per-key, a failed batch falls back to per-key - the fallback is to be removed on return: fail the batch, retry next round).
-
-Measured (report 08): DELETE requests 2,333 -> 3 (7k keys) and 15,913 -> 16 (20k); janitor phase at 20 ms latency 60.8 -> 5.3 s, janitor-active round 26-28 -> 4.2-4.7 s; no latency: about 0.5 s per 1000 keys saved. Drain wall time IDENTICAL (112 s = 112 s at 7k; 1,307 s = 1,307 s at 20k): the janitor takes one 1,000-key page per authoritative round (`page_budget` 1000 hard-coded in `Gc::runNamespaceJanitorPage`), authoritative rounds every ~9th round after the first two. otel.demo: `namespace_cleanup` 0.4% of round time, `janitor_deleted` 0 over 24 h.
-
-Next: spec a budget by time/requests instead of pages per authoritative round (why the cap exists: bounded round duration; keep that bound), then A/B on the S30 create/drop churn and the 20k-key drain: the figure to move is drain wall time.
+2026-09-30 spec started (agent cas299-spec): docs/superpowers/specs/2026-09-30-cas-gc-janitor-batches-and-budget-design.md; questions to settle: budget shape instead of one page per authoritative round; deletes on deferred rounds under the pinned seal; batch failure without fallback; A/B on S30 + 20k drain with drain wall time as the metric.
 <!-- SECTION:NOTES:END -->
