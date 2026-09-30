@@ -1,4 +1,4 @@
-# CAS yardstick: CAS vs S3 on the same workload — design (rev.3) {#design}
+# CAS yardstick: CAS vs S3 on the same workload — design (rev.4) {#design}
 
 Task: CAS-321.1 (stage 0 of the parity umbrella CAS-321). Origin: `tmp/cas223/rig` and the CAS-223 RCA
 (`docs/superpowers/reports/2026-09-28-cas-223-rca/RCA.md`), which measured one card by hand: a create / 3 insert / select /
@@ -112,10 +112,10 @@ of substituted. An unexpected error on a supported pair is `FAILED`.
    `SELECT` returns 3000 rows and the expected sum.
 2. **wide_insert** — unit: insert (500). `setup`: `CREATE TABLE` of 30 columns (15 `UInt64` = `number * i`, 15 `String` =
    `toString(number * i)`), merges off. `measured` = 500 sequential `INSERT … FROM numbers(i*20000, 20000)` with
-   `max_insert_threads = 1` from one worker (10M rows, 500 parts). Hot = `TRUNCATE TABLE` (not measured), then the same
-   500 inserts. Invariants: 500 active parts and 10M rows after each pass.
-3. **attach_200** — unit: part (200). `setup`: 200 inserts of 10k rows, merges off; cold reset. `measured` =
-   `DETACH TABLE` + `ATTACH TABLE` (part loading with `primary_key_lazy_load = 0`: every part's metadata and primary index
+   `max_insert_threads = 1` from one worker (10M rows, 500 parts). Hot = `TRUNCATE TABLE` (not measured), then 500 inserts of
+   different values (`number * i + 1`), so the hot pass measures a second insert and not dedup (`dup_content` is the dedup card). Invariants: 500 active parts and 10M rows after each pass.
+3. **attach_200** — unit: part (200). `setup`: 200 inserts of 10k rows, merges off, then `DETACH TABLE … PERMANENTLY`; cold reset (the restart does not load
+   the table). `measured` = `ATTACH TABLE` cold, `DETACH TABLE` + `ATTACH TABLE` hot (part loading with `primary_key_lazy_load = 0`: every part's metadata and primary index
    are read). Hot = the same pair. Invariants: 200 active parts, 2M rows after each pass.
 4. **mutation** — unit: part (100). `setup`: 100 parts × 10k rows of `(k UInt64, s String = toString(k))`, merges off;
    cold reset. `measured` = `ALTER TABLE … UPDATE s = toString(k + <pass>) WHERE 1 SETTINGS mutations_sync = 2` (the value
