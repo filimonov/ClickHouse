@@ -233,23 +233,136 @@ ORDER BY event_time DESC LIMIT 200
     ]
 
 
+PRICE_VARIABLES = [
+    P.constant("price_put_per_1000", "0.005", "PUT/LIST price per 1000 (USD)"),
+    P.constant("price_get_per_1000", "0.0004", "GET/HEAD price per 1000 (USD)"),
+]
+
+S3_CLASSES = ("Blob", "Manifest", "Root", "GC", "Meta", "Other")
+VERBS = ("Put", "Get", "Head", "List", "Delete")
+
+
+def _has(cls: str, verb: str) -> bool:
+    return cls != "Meta" or verb in ("Put", "Delete")
+
+
+def _class_verb_series(verb: str) -> dict:
+    return {cls: r(f"CAS{cls}{verb}") for cls in S3_CLASSES if _has(cls, verb)}
+
+
 def s3_rows() -> list:
-    return []
+    verbs = P.metric_ts("S3 requests per second, by verb",
+                        "`S3PutObject`, `S3GetObject`, `S3HeadObject`, `S3ListObjects`, `S3DeleteObjects` (one DELETE request may carry many keys).",
+                        {"PUT": r("S3PutObject"), "GET": r("S3GetObject"), "HEAD": r("S3HeadObject"), "LIST": r("S3ListObjects"), "DELETE": r("S3DeleteObjects")}, unit="reqps", stack=True, w=12)
+    per_host = P.metric_ts("S3 requests per second, per host", "Sum of the five verbs per host.",
+                           {"Requests": "(sum(ProfileEvent_S3PutObject) + sum(ProfileEvent_S3GetObject) + sum(ProfileEvent_S3HeadObject) + sum(ProfileEvent_S3ListObjects) + sum(ProfileEvent_S3DeleteObjects)) / $interval"},
+                           unit="reqps", by_host=True, w=12)
+    put_by_class = P.metric_ts("PUT per second by object class",
+                               "`CAS<Class>Put`: which subsystem writes. Blob = data, Manifest = part descriptions, Root = ref-log keys, GC = collector state, Meta = `.meta` sidecars, Other = everything else.",
+                               _class_verb_series("Put"), unit="reqps", stack=True)
+    get_by_class = P.metric_ts("GET per second by object class", "`CAS<Class>Get` (bodies); streams are counted separately in `CAS<Class>GetStream`.", _class_verb_series("Get"), unit="reqps", stack=True)
+    head_by_class = P.metric_ts("HEAD per second by object class", "`CAS<Class>Head`. Blob HEAD is the writer's HEAD-before-PUT; its misses are new blobs, not errors.", _class_verb_series("Head"), unit="reqps", stack=True)
+    list_by_class = P.metric_ts("LIST per second by object class", "`CAS<Class>List`. `CASRootList` at a constant 155 per 10 minutes on otel.demo is `clearOldTemporaryDirectories` (audit F16).", _class_verb_series("List"), unit="reqps", stack=True)
+    delete_by_class = P.metric_ts("DELETE per second by object class", "`CAS<Class>Delete`.", _class_verb_series("Delete"), unit="reqps", stack=True)
+    gc_total = " + ".join(f"sum(ProfileEvent_CASGC{v})" for v in VERBS)
+    all_total = " + ".join(f"sum(ProfileEvent_CAS{cls}{v})" for cls in S3_CLASSES for v in VERBS if _has(cls, v))
+    gc_share = P.metric_ts("GC share of all CAS requests (%)", "`CASGC*` verbs over all `CAS<Class>*` verbs, per 5-minute bucket.",
+                           {"GC %": f"100 * ({gc_total}) / greatest({all_total}, 1)"}, unit="percent")
+    cost = P.metric_ts("Estimated cost per day (USD)",
+                       "Requests × price per 1000, scaled to a day. Prices are the dashboard variables (AWS S3 Standard us-east-1 defaults); DELETE is free.",
+                       {"PUT + LIST": "(sum(ProfileEvent_S3PutObject) + sum(ProfileEvent_S3ListObjects)) / 1000 * $price_put_per_1000 * 86400 / $interval",
+                        "GET + HEAD": "(sum(ProfileEvent_S3GetObject) + sum(ProfileEvent_S3HeadObject)) / 1000 * $price_get_per_1000 * 86400 / $interval"},
+                       unit="currencyUSD", stack=True, w=12)
+    throttling = P.metric_ts("Throttling per second",
+                             "`S3ReadRequestsThrottling`, `S3WriteRequestsThrottling`: 429/503 answers. 537 in a week on otel.demo, mostly at restarts; the rest coincides with GC LIST bursts (audit F26).",
+                             {"Read": r("S3ReadRequestsThrottling"), "Write": r("S3WriteRequestsThrottling")}, unit="reqps", w=12)
+    write_errors = P.metric_ts("S3 write request errors per second (see description)",
+                               "`S3WriteRequestsErrors` mixes HTTP 412 (conditional-write collisions, benign), 409 (concurrent conditional PUTs on one key, benign), 503 (throttling) and 500. Only the last two are errors; there is no counter for them alone (CAS-299). `S3ReadRequestsErrors` is not shown: on a CAS disk it equals `CASBlobHeadMiss`.",
+                               {"Write errors (all statuses)": r("S3WriteRequestsErrors"), "Connect failure hints": r("CASRequestConnectFailureHint")}, unit="reqps", w=12)
+    blob_errors = P.table("Errors from blob_storage_log",
+                          "`error` text per event type, grouped, over the selected range. `PreconditionFailed` (412) and `ConditionalRequestConflict` (409) are the storage's expected answers to concurrent writes of one object, not failures.",
+                          f"""SELECT toString(event_type) AS "Event", error_code AS "Code", substring(error, 1, 160) AS "Error", count() AS "Count", toUInt64(max(event_time)) * 1000 AS "Last"
+FROM clusterAllReplicas('$cluster', system.blob_storage_log)
+WHERE disk_name IN ($disk) AND hostName() IN ($host) AND error != '' AND $timeFilter
+GROUP BY "Event", "Code", "Error" ORDER BY "Count" DESC LIMIT 50
+{SETTINGS}""", table="blob_storage_log", w=12)
+    per_query = P.table("S3 requests per query kind",
+                        "From `query_log`: average PUT / GET / HEAD / LIST per finished query, by `query_kind`. Background merges are not here (see the next table).",
+                        f"""SELECT query_kind AS "Kind", count() AS "Queries",
+       round(sum(ProfileEvents['S3PutObject']) / count(), 2) AS "PUT/query", round(sum(ProfileEvents['S3GetObject']) / count(), 2) AS "GET/query",
+       round(sum(ProfileEvents['S3HeadObject']) / count(), 2) AS "HEAD/query", round(sum(ProfileEvents['S3ListObjects']) / count(), 2) AS "LIST/query"
+FROM clusterAllReplicas('$cluster', system.query_log)
+WHERE hostName() IN ($host) AND type != 'QueryStart' AND $timeFilter
+GROUP BY query_kind ORDER BY "Queries" DESC
+{SETTINGS}""", table="query_log", w=12)
+    per_part = P.table("S3 requests per part event",
+                       "From `part_log`: average per `MergeParts`, `MutatePart`, `DownloadPart`, `RemovePart`. `NewPart` rows repeat the INSERT's own ProfileEvents and are excluded; merge PUTs are counted at the S3 call site and show in the class panels, not here.",
+                       f"""SELECT toString(event_type) AS "Event", count() AS "Parts",
+       round(sum(ProfileEvents['S3PutObject']) / count(), 2) AS "PUT/part", round(sum(ProfileEvents['S3GetObject']) / count(), 2) AS "GET/part",
+       round(sum(ProfileEvents['S3HeadObject']) / count(), 2) AS "HEAD/part", round(avg(duration_ms)) AS "avg ms"
+FROM clusterAllReplicas('$cluster', system.part_log)
+WHERE hostName() IN ($host) AND event_type != 'NewPart' AND $timeFilter
+GROUP BY event_type ORDER BY "Parts" DESC
+{SETTINGS}""", table="part_log", w=12)
+    per_round = P.table("S3 requests per GC round", "From `cas_gc_log` Finish rows with outcome Success: averages per round over the range.",
+                        f"""SELECT count() AS "Rounds", round(avg(ProfileEvents['S3PutObject'])) AS "PUT/round", round(avg(ProfileEvents['S3GetObject'])) AS "GET/round",
+       round(avg(ProfileEvents['S3HeadObject'])) AS "HEAD/round", round(avg(ProfileEvents['S3ListObjects'])) AS "LIST/round", round(avg(ProfileEvents['S3DeleteObjects'])) AS "DELETE/round",
+       round(avg(duration_ms)) AS "avg ms"
+FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+WHERE {GC_WHERE} AND outcome = 'Success'
+{SETTINGS}""", table="cas_gc_log", w=24, h=4)
+    latency = P.metric_ts("Average S3 request time (ms)", "`S3ReadMicroseconds / S3ReadRequestsCount` and the write pair, per 5-minute bucket.",
+                          {"Read": "sum(ProfileEvent_S3ReadMicroseconds) / greatest(sum(ProfileEvent_S3ReadRequestsCount), 1) / 1000",
+                           "Write": "sum(ProfileEvent_S3WriteMicroseconds) / greatest(sum(ProfileEvent_S3WriteRequestsCount), 1) / 1000"}, unit="ms", w=12)
+    connections = P.metric_ts("New S3 connections per second", "`DiskConnectionsCreated`: one new TLS connection per ~98 requests on otel.demo (audit F27, unexplored).",
+                              {"Connections created": r("DiskConnectionsCreated")}, unit="ops", w=12)
+    return [
+        P.row("S3: by verb", [verbs, per_host]),
+        P.row("S3: who makes requests", [put_by_class, get_by_class, head_by_class, list_by_class, delete_by_class, gc_share]),
+        P.row("S3: cost estimate", [cost]),
+        P.row("S3: errors and throttling", [throttling, write_errors, blob_errors]),
+        P.row("S3: cost per unit", [per_query, per_part, per_round]),
+        P.row("S3: latency", [latency, connections]),
+    ]
+
+
+COUNTERS_SQL = f"""SELECT name AS "Counter",
+       sumIf(value, name LIKE 'ProfileEvent_%') AS "Events in range",
+       round(sumIf(value, name LIKE 'ProfileEvent_%') / greatest(dateDiff('hour', min(t), max(t)), 1)) AS "Events per hour",
+       maxIf(value, name LIKE 'CurrentMetric_%') AS "Gauge max in range"
+FROM (
+    SELECT t, tupleElement(nv, 1) AS name, tupleElement(nv, 2) AS value
+    FROM (
+        SELECT event_time AS t, arrayJoin(arrayZip(names, values)) AS nv
+        FROM (
+            SELECT event_time,
+                   (SELECT groupArray(name) FROM (SELECT name FROM system.columns WHERE database = 'system' AND table = 'metric_log'
+                                                  AND (name LIKE 'ProfileEvent_CAS%' OR name LIKE 'CurrentMetric_CAS%') ORDER BY position)) AS names,
+                   [COLUMNS('^(ProfileEvent|CurrentMetric)_CAS') APPLY toUInt64] AS values
+            FROM clusterAllReplicas('$cluster', system.metric_log)
+            WHERE hostName() IN ($host) AND $timeFilter
+        )
+    )
+)
+GROUP BY name HAVING sum(value) > 0
+ORDER BY "Events in range" DESC, "Gauge max in range" DESC
+{SETTINGS}"""
 
 
 def counters_row() -> dict:
-    return P.row(COUNTERS_ROW, [])
+    return P.row(COUNTERS_ROW, [P.table(
+        COUNTERS_ROW,
+        "Every `ProfileEvent_CAS*` (summed) and `CurrentMetric_CAS*` (max) column of `metric_log` that was above zero in the range, largest first. New counters appear here without a panel. 99 of 184 never moved in a week on otel.demo.",
+        COUNTERS_SQL, table="metric_log", h=16)])
 
 
 def build() -> dict:
-    rows = gc_rows() + writes_rows() + s3_rows()
-    cr = counters_row()
-    if cr["panels"]:
-        rows.append(cr)
+    rows = gc_rows() + writes_rows() + s3_rows() + [counters_row()]
     return P.dashboard(
         "cas-drilldown", "CAS / Drilldown",
         "Content-addressed (CAS) storage internals for support engineers and CAS developers: garbage-collection rounds, "
         "stages and phases; the write path, ref lanes and mount leases; S3 requests by object class. Rows are collapsed; "
         "open the one the Overview pointed at.",
         rows, tags=["cas", "clickhouse"],
-        links=[{"title": "CAS / Overview", "type": "link", "url": OVERVIEW_LINK["url"], "keepTime": True, "includeVars": True, "icon": "dashboard"}])
+        links=[{"title": "CAS / Overview", "type": "link", "url": OVERVIEW_LINK["url"], "keepTime": True, "includeVars": True, "icon": "dashboard"}],
+        extra_variables=PRICE_VARIABLES)

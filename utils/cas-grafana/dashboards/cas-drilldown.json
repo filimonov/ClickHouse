@@ -3345,6 +3345,1422 @@
       ],
       "title": "Writes: replication",
       "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 181
+      },
+      "id": 57,
+      "panels": [
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`S3PutObject`, `S3GetObject`, `S3HeadObject`, `S3ListObjects`, `S3DeleteObjects` (one DELETE request may carry many keys).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 182
+          },
+          "id": 58,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_S3PutObject) / $interval AS \"PUT\", sum(ProfileEvent_S3GetObject) / $interval AS \"GET\", sum(ProfileEvent_S3HeadObject) / $interval AS \"HEAD\", sum(ProfileEvent_S3ListObjects) / $interval AS \"LIST\", sum(ProfileEvent_S3DeleteObjects) / $interval AS \"DELETE\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "S3 requests per second, by verb",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "Sum of the five verbs per host.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 182
+          },
+          "id": 59,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, hostName() AS host, (sum(ProfileEvent_S3PutObject) + sum(ProfileEvent_S3GetObject) + sum(ProfileEvent_S3HeadObject) + sum(ProfileEvent_S3ListObjects) + sum(ProfileEvent_S3DeleteObjects)) / $interval AS \"Requests\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t, host ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "S3 requests per second, per host",
+          "type": "timeseries"
+        }
+      ],
+      "title": "S3: by verb",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 190
+      },
+      "id": 60,
+      "panels": [
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`CAS<Class>Put`: which subsystem writes. Blob = data, Manifest = part descriptions, Root = ref-log keys, GC = collector state, Meta = `.meta` sidecars, Other = everything else.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 191
+          },
+          "id": 61,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_CASBlobPut) / $interval AS \"Blob\", sum(ProfileEvent_CASManifestPut) / $interval AS \"Manifest\", sum(ProfileEvent_CASRootPut) / $interval AS \"Root\", sum(ProfileEvent_CASGCPut) / $interval AS \"GC\", sum(ProfileEvent_CASMetaPut) / $interval AS \"Meta\", sum(ProfileEvent_CASOtherPut) / $interval AS \"Other\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "PUT per second by object class",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`CAS<Class>Get` (bodies); streams are counted separately in `CAS<Class>GetStream`.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 191
+          },
+          "id": 62,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_CASBlobGet) / $interval AS \"Blob\", sum(ProfileEvent_CASManifestGet) / $interval AS \"Manifest\", sum(ProfileEvent_CASRootGet) / $interval AS \"Root\", sum(ProfileEvent_CASGCGet) / $interval AS \"GC\", sum(ProfileEvent_CASOtherGet) / $interval AS \"Other\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "GET per second by object class",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`CAS<Class>Head`. Blob HEAD is the writer's HEAD-before-PUT; its misses are new blobs, not errors.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 191
+          },
+          "id": 63,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_CASBlobHead) / $interval AS \"Blob\", sum(ProfileEvent_CASManifestHead) / $interval AS \"Manifest\", sum(ProfileEvent_CASRootHead) / $interval AS \"Root\", sum(ProfileEvent_CASGCHead) / $interval AS \"GC\", sum(ProfileEvent_CASOtherHead) / $interval AS \"Other\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "HEAD per second by object class",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`CAS<Class>List`. `CASRootList` at a constant 155 per 10 minutes on otel.demo is `clearOldTemporaryDirectories` (audit F16).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 199
+          },
+          "id": 64,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_CASBlobList) / $interval AS \"Blob\", sum(ProfileEvent_CASManifestList) / $interval AS \"Manifest\", sum(ProfileEvent_CASRootList) / $interval AS \"Root\", sum(ProfileEvent_CASGCList) / $interval AS \"GC\", sum(ProfileEvent_CASOtherList) / $interval AS \"Other\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "LIST per second by object class",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`CAS<Class>Delete`.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 199
+          },
+          "id": 65,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_CASBlobDelete) / $interval AS \"Blob\", sum(ProfileEvent_CASManifestDelete) / $interval AS \"Manifest\", sum(ProfileEvent_CASRootDelete) / $interval AS \"Root\", sum(ProfileEvent_CASGCDelete) / $interval AS \"GC\", sum(ProfileEvent_CASMetaDelete) / $interval AS \"Meta\", sum(ProfileEvent_CASOtherDelete) / $interval AS \"Other\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "DELETE per second by object class",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`CASGC*` verbs over all `CAS<Class>*` verbs, per 5-minute bucket.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "percent"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 199
+          },
+          "id": 66,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, 100 * (sum(ProfileEvent_CASGCPut) + sum(ProfileEvent_CASGCGet) + sum(ProfileEvent_CASGCHead) + sum(ProfileEvent_CASGCList) + sum(ProfileEvent_CASGCDelete)) / greatest(sum(ProfileEvent_CASBlobPut) + sum(ProfileEvent_CASBlobGet) + sum(ProfileEvent_CASBlobHead) + sum(ProfileEvent_CASBlobList) + sum(ProfileEvent_CASBlobDelete) + sum(ProfileEvent_CASManifestPut) + sum(ProfileEvent_CASManifestGet) + sum(ProfileEvent_CASManifestHead) + sum(ProfileEvent_CASManifestList) + sum(ProfileEvent_CASManifestDelete) + sum(ProfileEvent_CASRootPut) + sum(ProfileEvent_CASRootGet) + sum(ProfileEvent_CASRootHead) + sum(ProfileEvent_CASRootList) + sum(ProfileEvent_CASRootDelete) + sum(ProfileEvent_CASGCPut) + sum(ProfileEvent_CASGCGet) + sum(ProfileEvent_CASGCHead) + sum(ProfileEvent_CASGCList) + sum(ProfileEvent_CASGCDelete) + sum(ProfileEvent_CASMetaPut) + sum(ProfileEvent_CASMetaDelete) + sum(ProfileEvent_CASOtherPut) + sum(ProfileEvent_CASOtherGet) + sum(ProfileEvent_CASOtherHead) + sum(ProfileEvent_CASOtherList) + sum(ProfileEvent_CASOtherDelete), 1) AS \"GC %\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "GC share of all CAS requests (%)",
+          "type": "timeseries"
+        }
+      ],
+      "title": "S3: who makes requests",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 207
+      },
+      "id": 67,
+      "panels": [
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "Requests \u00d7 price per 1000, scaled to a day. Prices are the dashboard variables (AWS S3 Standard us-east-1 defaults); DELETE is free.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "currencyUSD"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 208
+          },
+          "id": 68,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, (sum(ProfileEvent_S3PutObject) + sum(ProfileEvent_S3ListObjects)) / 1000 * $price_put_per_1000 * 86400 / $interval AS \"PUT + LIST\", (sum(ProfileEvent_S3GetObject) + sum(ProfileEvent_S3HeadObject)) / 1000 * $price_get_per_1000 * 86400 / $interval AS \"GET + HEAD\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "Estimated cost per day (USD)",
+          "type": "timeseries"
+        }
+      ],
+      "title": "S3: cost estimate",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 216
+      },
+      "id": 69,
+      "panels": [
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`S3ReadRequestsThrottling`, `S3WriteRequestsThrottling`: 429/503 answers. 537 in a week on otel.demo, mostly at restarts; the rest coincides with GC LIST bursts (audit F26).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 217
+          },
+          "id": 70,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_S3ReadRequestsThrottling) / $interval AS \"Read\", sum(ProfileEvent_S3WriteRequestsThrottling) / $interval AS \"Write\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "Throttling per second",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`S3WriteRequestsErrors` mixes HTTP 412 (conditional-write collisions, benign), 409 (concurrent conditional PUTs on one key, benign), 503 (throttling) and 500. Only the last two are errors; there is no counter for them alone (CAS-299). `S3ReadRequestsErrors` is not shown: on a CAS disk it equals `CASBlobHeadMiss`.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 217
+          },
+          "id": 71,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_S3WriteRequestsErrors) / $interval AS \"Write errors (all statuses)\", sum(ProfileEvent_CASRequestConnectFailureHint) / $interval AS \"Connect failure hints\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "S3 write request errors per second (see description)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`error` text per event type, grouped, over the selected range. `PreconditionFailed` (412) and `ConditionalRequestConflict` (409) are the storage's expected answers to concurrent writes of one object, not failures.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 225
+          },
+          "id": 72,
+          "options": {
+            "cellHeight": "sm",
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "table",
+              "intervalFactor": 1,
+              "query": "SELECT toString(event_type) AS \"Event\", error_code AS \"Code\", substring(error, 1, 160) AS \"Error\", count() AS \"Count\", toUInt64(max(event_time)) * 1000 AS \"Last\"\nFROM clusterAllReplicas('$cluster', system.blob_storage_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND error != '' AND $timeFilter\nGROUP BY \"Event\", \"Code\", \"Error\" ORDER BY \"Count\" DESC LIMIT 50\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "blob_storage_log"
+            }
+          ],
+          "title": "Errors from blob_storage_log",
+          "type": "table"
+        }
+      ],
+      "title": "S3: errors and throttling",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 233
+      },
+      "id": 73,
+      "panels": [
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "From `query_log`: average PUT / GET / HEAD / LIST per finished query, by `query_kind`. Background merges are not here (see the next table).",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 234
+          },
+          "id": 74,
+          "options": {
+            "cellHeight": "sm",
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "table",
+              "intervalFactor": 1,
+              "query": "SELECT query_kind AS \"Kind\", count() AS \"Queries\",\n       round(sum(ProfileEvents['S3PutObject']) / count(), 2) AS \"PUT/query\", round(sum(ProfileEvents['S3GetObject']) / count(), 2) AS \"GET/query\",\n       round(sum(ProfileEvents['S3HeadObject']) / count(), 2) AS \"HEAD/query\", round(sum(ProfileEvents['S3ListObjects']) / count(), 2) AS \"LIST/query\"\nFROM clusterAllReplicas('$cluster', system.query_log)\nWHERE hostName() IN ($host) AND type != 'QueryStart' AND $timeFilter\nGROUP BY query_kind ORDER BY \"Queries\" DESC\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "query_log"
+            }
+          ],
+          "title": "S3 requests per query kind",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "From `part_log`: average per `MergeParts`, `MutatePart`, `DownloadPart`, `RemovePart`. `NewPart` rows repeat the INSERT's own ProfileEvents and are excluded; merge PUTs are counted at the S3 call site and show in the class panels, not here.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 234
+          },
+          "id": 75,
+          "options": {
+            "cellHeight": "sm",
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "table",
+              "intervalFactor": 1,
+              "query": "SELECT toString(event_type) AS \"Event\", count() AS \"Parts\",\n       round(sum(ProfileEvents['S3PutObject']) / count(), 2) AS \"PUT/part\", round(sum(ProfileEvents['S3GetObject']) / count(), 2) AS \"GET/part\",\n       round(sum(ProfileEvents['S3HeadObject']) / count(), 2) AS \"HEAD/part\", round(avg(duration_ms)) AS \"avg ms\"\nFROM clusterAllReplicas('$cluster', system.part_log)\nWHERE hostName() IN ($host) AND event_type != 'NewPart' AND $timeFilter\nGROUP BY event_type ORDER BY \"Parts\" DESC\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "part_log"
+            }
+          ],
+          "title": "S3 requests per part event",
+          "type": "table"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "From `cas_gc_log` Finish rows with outcome Success: averages per round over the range.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 242
+          },
+          "id": 76,
+          "options": {
+            "cellHeight": "sm",
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "table",
+              "intervalFactor": 1,
+              "query": "SELECT count() AS \"Rounds\", round(avg(ProfileEvents['S3PutObject'])) AS \"PUT/round\", round(avg(ProfileEvents['S3GetObject'])) AS \"GET/round\",\n       round(avg(ProfileEvents['S3HeadObject'])) AS \"HEAD/round\", round(avg(ProfileEvents['S3ListObjects'])) AS \"LIST/round\", round(avg(ProfileEvents['S3DeleteObjects'])) AS \"DELETE/round\",\n       round(avg(duration_ms)) AS \"avg ms\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter AND outcome = 'Success'\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "cas_gc_log"
+            }
+          ],
+          "title": "S3 requests per GC round",
+          "type": "table"
+        }
+      ],
+      "title": "S3: cost per unit",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 246
+      },
+      "id": 77,
+      "panels": [
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`S3ReadMicroseconds / S3ReadRequestsCount` and the write pair, per 5-minute bucket.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 247
+          },
+          "id": 78,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_S3ReadMicroseconds) / greatest(sum(ProfileEvent_S3ReadRequestsCount), 1) / 1000 AS \"Read\", sum(ProfileEvent_S3WriteMicroseconds) / greatest(sum(ProfileEvent_S3WriteRequestsCount), 1) / 1000 AS \"Write\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "Average S3 request time (ms)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`DiskConnectionsCreated`: one new TLS connection per ~98 requests on otel.demo (audit F27, unexplored).",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "ops"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 247
+          },
+          "id": 79,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries, sum(ProfileEvent_DiskConnectionsCreated) / $interval AS \"Connections created\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "New S3 connections per second",
+          "type": "timeseries"
+        }
+      ],
+      "title": "S3: latency",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 255
+      },
+      "id": 80,
+      "panels": [
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "Every `ProfileEvent_CAS*` (summed) and `CurrentMetric_CAS*` (max) column of `metric_log` that was above zero in the range, largest first. New counters appear here without a panel. 99 of 184 never moved in a week on otel.demo.",
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "filterable": true
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 16,
+            "w": 24,
+            "x": 0,
+            "y": 256
+          },
+          "id": 81,
+          "options": {
+            "cellHeight": "sm",
+            "showHeader": true,
+            "sortBy": []
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "table",
+              "intervalFactor": 1,
+              "query": "SELECT name AS \"Counter\",\n       sumIf(value, name LIKE 'ProfileEvent_%') AS \"Events in range\",\n       round(sumIf(value, name LIKE 'ProfileEvent_%') / greatest(dateDiff('hour', min(t), max(t)), 1)) AS \"Events per hour\",\n       maxIf(value, name LIKE 'CurrentMetric_%') AS \"Gauge max in range\"\nFROM (\n    SELECT t, tupleElement(nv, 1) AS name, tupleElement(nv, 2) AS value\n    FROM (\n        SELECT event_time AS t, arrayJoin(arrayZip(names, values)) AS nv\n        FROM (\n            SELECT event_time,\n                   (SELECT groupArray(name) FROM (SELECT name FROM system.columns WHERE database = 'system' AND table = 'metric_log'\n                                                  AND (name LIKE 'ProfileEvent_CAS%' OR name LIKE 'CurrentMetric_CAS%') ORDER BY position)) AS names,\n                   [COLUMNS('^(ProfileEvent|CurrentMetric)_CAS') APPLY toUInt64] AS values\n            FROM clusterAllReplicas('$cluster', system.metric_log)\n            WHERE hostName() IN ($host) AND $timeFilter\n        )\n    )\n)\nGROUP BY name HAVING sum(value) > 0\nORDER BY \"Events in range\" DESC, \"Gauge max in range\" DESC\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "metric_log"
+            }
+          ],
+          "title": "All CAS counters, nonzero in range",
+          "type": "table"
+        }
+      ],
+      "title": "All CAS counters, nonzero in range",
+      "type": "row"
     }
   ],
   "refresh": "1m",
@@ -3420,6 +4836,28 @@
         "refresh": 2,
         "sort": 1,
         "type": "query"
+      },
+      {
+        "current": {
+          "text": "0.005",
+          "value": "0.005"
+        },
+        "hide": 0,
+        "label": "PUT/LIST price per 1000 (USD)",
+        "name": "price_put_per_1000",
+        "query": "0.005",
+        "type": "constant"
+      },
+      {
+        "current": {
+          "text": "0.0004",
+          "value": "0.0004"
+        },
+        "hide": 0,
+        "label": "GET/HEAD price per 1000 (USD)",
+        "name": "price_get_per_1000",
+        "query": "0.0004",
+        "type": "constant"
       }
     ]
   },

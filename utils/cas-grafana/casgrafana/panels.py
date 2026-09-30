@@ -184,6 +184,10 @@ def _annotation(name: str, sql: str, color: str, table: str) -> dict:
             "target": dict(target(sql, fmt="table", table=table), annotation=True)}
 
 
+def constant(name: str, value: str, label: str) -> dict:
+    return {"type": "constant", "name": name, "label": label, "query": value, "current": {"value": value, "text": value}, "hide": 0}
+
+
 def _place_top_level(p: dict, placed: list, y: int, ids) -> int:
     """Top-level (non-row) panels flow together: reuse the current line when the panel fits."""
     line_y = next((q["gridPos"]["y"] for q in reversed(placed) if q["type"] != "row"), None)
@@ -199,8 +203,10 @@ def _place_top_level(p: dict, placed: list, y: int, ids) -> int:
     return y + p["gridPos"]["h"]
 
 
-def dashboard(uid, title, description, panels, *, tags, links, refresh="1m", time_from="now-6h") -> dict:
+def dashboard(uid, title, description, panels, *, tags, links, refresh="1m", time_from="now-6h", extra_variables=()) -> dict:
     ids = itertools.count(1)
+    templating = _templating()
+    templating["list"].extend(extra_variables)
     placed, y = [], 0
     for p in panels:
         if p["type"] == "row":
@@ -213,7 +219,7 @@ def dashboard(uid, title, description, panels, *, tags, links, refresh="1m", tim
     return {"uid": uid, "title": title, "description": description, "tags": list(tags), "editable": True,
             "graphTooltip": 1, "schemaVersion": 41, "version": 0, "refresh": refresh, "timezone": "browser",
             "time": {"from": time_from, "to": "now"}, "timepicker": {}, "links": list(links),
-            "templating": _templating(),
+            "templating": templating,
             "annotations": {"list": [_annotation("Restart", RESTART_ANNOTATION_SQL, "orange", "asynchronous_metric_log"),
                                      _annotation("Lease lost", LEASE_LOST_ANNOTATION_SQL, "red", "metric_log")]},
             "panels": placed}

@@ -94,6 +94,13 @@ class Problems(unittest.TestCase):
         self.assertTrue(any("title" in p for p in probs), probs)
 
 
+class ExtraVariables(unittest.TestCase):
+    def test_extra_constant_variables_are_allowed(self):
+        o, d = good_overview(), good_drilldown()
+        d["templating"]["list"].append({"type": "constant", "name": "price_put_per_1000", "query": "0.005"})
+        self.assertEqual(checks.check_dashboards([o, d], KNOWN, ASYNC), [])
+
+
 class KnownNames(unittest.TestCase):
     def test_loads_from_repo(self):
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))

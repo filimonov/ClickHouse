@@ -21,6 +21,12 @@ class Expand(unittest.TestCase):
         self.assertIn("toUnixTimestamp(now()) * 1000", out)
 
 
+class ExpandConstants(unittest.TestCase):
+    def test_expand_constants(self):
+        out = verify.expand("x * $price_put_per_1000", cluster="c", hosts=["h"], disks=["d"], seconds=1, constants={"price_put_per_1000": "0.005"})
+        self.assertEqual(out, "x * 0.005")
+
+
 class FakeClient:
     def __init__(self, answers):
         self.answers = answers

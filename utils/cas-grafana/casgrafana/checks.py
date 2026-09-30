@@ -86,7 +86,7 @@ def check_dashboards(dashboards: list, known: set, async_prefixes: set) -> list:
             out.append(f"{uid}: title must be {EXPECTED_TITLES.get(uid)!r}, got {d.get('title')!r}")
         if "id" in d:
             out.append(f"{uid}: dashboard must not carry an id")
-        var_sets[uid] = [(v["type"], v["name"]) for v in d.get("templating", {}).get("list", [])]
+        var_sets[uid] = [(v["type"], v["name"]) for v in d.get("templating", {}).get("list", []) if v["type"] in ("query", "datasource")]
         for p, row_title in iter_panels(d):
             where = f"{uid}/{p.get('title')}"
             if not str(p.get("description", "")).strip():

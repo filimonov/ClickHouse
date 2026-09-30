@@ -60,5 +60,35 @@ class WritesRows(unittest.TestCase):
         self.assertIn("134217728", sql)
 
 
+class S3Rows(unittest.TestCase):
+    def test_row_titles(self):
+        self.assertEqual([r["title"] for r in drilldown.s3_rows()],
+                         ["S3: by verb", "S3: who makes requests", "S3: cost estimate", "S3: errors and throttling", "S3: cost per unit", "S3: latency"])
+
+    def test_cost_uses_price_variables(self):
+        sql = panel(drilldown.s3_rows(), "Estimated cost per day (USD)")["targets"][0]["query"]
+        self.assertIn("$price_put_per_1000", sql)
+        self.assertIn("$price_get_per_1000", sql)
+
+    def test_write_errors_panel_carries_the_412_caveat(self):
+        p = panel(drilldown.s3_rows(), "S3 write request errors per second (see description)")
+        self.assertIn("412", p["description"])
+        self.assertIn("409", p["description"])
+
+    def test_counters_row_is_last_and_dynamic(self):
+        d = drilldown.build()
+        last = d["panels"][-1]
+        self.assertEqual(last["title"], "All CAS counters, nonzero in range")
+        sql = last["panels"][0]["targets"][0]["query"]
+        self.assertIn("system.columns", sql)
+        self.assertIn("name LIKE 'ProfileEvent_CAS%'", sql)
+
+    def test_price_variables_declared_in_drilldown_only(self):
+        d = drilldown.build()
+        names = [v["name"] for v in d["templating"]["list"]]
+        self.assertEqual(names[:4], ["datasource", "cluster", "host", "disk"])
+        self.assertIn("price_put_per_1000", names)
+
+
 if __name__ == "__main__":
     unittest.main()
