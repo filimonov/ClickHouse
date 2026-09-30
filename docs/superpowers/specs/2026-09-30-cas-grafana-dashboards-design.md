@@ -2,22 +2,30 @@
 
 Backlog: CAS-289.1 (board), parent CAS-289. Alert rules stay in CAS-289.2.
 
-**Decision.** Four dashboards for Grafana 12.3.0 with the Altinity ClickHouse datasource
-(`vertamedia-clickhouse-datasource`): one `CAS / Overview` in plain language for end users, three
-detail boards (`CAS / GC`, `CAS / Writes and mounts`, `CAS / S3 requests`) for support and CAS
-developers. v1 uses only signals that exist in `26.6.4.20001.altinityantalya`; every gap becomes a
-blocker of a new backlog task "CAS Grafana dashboard v2". Built and verified on the otel.demo
-stand first; the port to `utils/ca-soak` with fault injection is a separate task.
+**Decision.** Two dashboards for Grafana 12.3.0 with the Altinity ClickHouse datasource
+(`vertamedia-clickhouse-datasource`): `CAS / Overview` in plain language for end users, and
+`CAS / Drilldown` for support and CAS developers, with the GC, write-path and S3 detail as
+collapsible rows on one time axis. v1 uses only signals that exist in
+`26.6.4.20001.altinityantalya`; every gap becomes a blocker of a new backlog task "CAS Grafana
+dashboard v2". Built and verified on the otel.demo stand first; the port to `utils/ca-soak` with
+fault injection is a separate task.
 
 ## 1. Audience and the placement rule {#placement-rule}
 
 - **Overview** answers "is something wrong, and where". Its reader does not know CAS internals.
-- **Detail boards** answer "why". Their reader is Altinity support or a CAS developer.
+- **Drilldown** answers "why". Its reader is Altinity support or a CAS developer.
 - A panel goes on the Overview only if all three hold: a reader without CAS knowledge can read
   it; it has a clear good/bad state; a change on it leads to an action. Cache usage, GC phase
-  breakdown and per-class S3 counters fail the first two, so they live on detail boards.
-- Every Overview block links to its detail board, carrying the time range and variables.
-- Moving a panel between boards is cheap; promote a detail panel to the Overview once otel.demo
+  breakdown and per-class S3 counters fail the first two, so they live on the Drilldown.
+- One Drilldown rather than one board per subsystem: an incident spans subsystems (S3 throttling →
+  slow GC round → ref-lane wait), and reading it on one time axis beats switching boards.
+  Collapsed rows run no queries until opened, so the board stays cheap.
+- Every Overview block links to the Drilldown, carrying the time range and variables. Grafana has
+  no URL parameter that expands a collapsed row, so the link lands on the top of the board; row
+  order and the subsystem prefix in row titles (`GC:`, `Writes:`, `S3:`) make the target easy to
+  find. If `?viewPanel=<id>` opens a panel inside a collapsed row (to be checked on otel.demo), each
+  tile links to the key panel of its row instead.
+- Moving a panel between boards is cheap; promote a Drilldown panel to the Overview once otel.demo
   usage shows it is opened on every visit.
 
 ## 2. Sources and known traps {#sources-and-traps}
@@ -41,7 +49,7 @@ Rules the queries follow, from audit F25 (`docs/superpowers/reports/2026-09-25-o
 - The `disk` variable excludes `*_cas_cache` wrapper disks, or every `CASGC*` sum doubles.
 - Counters are read as sums over windows of 5 minutes or longer, never as per-second gauges
   (`CASRefQueueWaitMicroseconds` and `CASGCRetiredGraduated` spike per second by design).
-- The 99 counters that never moved in a week are not given panels; each detail board has one
+- The 99 counters that never moved in a week are not given panels; the Drilldown has one
   collapsed row "All CAS counters, nonzero in range" built by a query, so a new counter shows up by itself.
 
 ## 3. `CAS / Overview` {#overview}
@@ -82,7 +90,7 @@ Rules for every tile:
 - **No data is a grey state, never green.** On otel.demo the system logs sit on the CAS disk; when
   CAS is down the logs stop and the tiles must not stay green. Implemented as Grafana "no value"
   mapping to a grey "no data" text.
-- Each tile has a description: what it means, what to do, a link to its detail board and to
+- Each tile has a description: what it means, what to do, a link to the Drilldown and to
   `docs/en/antalya/cas/operations/troubleshooting.md`.
 - Tiles on `cas_mounts` refresh every 5 minutes (panel-level `interval`), the rest with the board.
 
@@ -102,9 +110,13 @@ Rules for every tile:
 - **S3 requests** — requests per second by verb (`S3PutObject`, `S3GetObject`, `S3HeadObject`,
   `S3ListObjects`, `S3DeleteObjects`) summed over hosts; throttling events.
 
-## 4. Detail boards {#detail-boards}
+## 4. `CAS / Drilldown` {#drilldown}
 
-### 4.1 `CAS / GC` {#board-gc}
+One board, rows collapsed by default, in the order of the Overview blocks. Row titles carry the
+subsystem prefix. The last row, "All CAS counters, nonzero in range", is one table over every
+`ProfileEvent_CAS*` and `CurrentMetric_CAS*` column of `metric_log`.
+
+### 4.1 `GC:` rows {#rows-gc}
 
 | Row | Panels |
 |---|---|
@@ -114,12 +126,11 @@ Rules for every tile:
 | Round cost | S3 requests per round by verb (`Finish.ProfileEvents`); requests per deleted object; `CASGCEnumerationPages`, `CASBulkDeleteRequests`; read-ahead `Hit` / `Miss` / `Wasted`; `CurrentMetric_MemoryTracking` on the leader |
 | Ref-log cleanup | `CASRootPut` vs `CASRefCleanupObjectsDeleted`; `CASRefSweepDeferred`, `CASRefSweepRearmed`; `CASRefStalePrecommitsReclaimed` |
 | Anomalies | `anomalies` per round; `CASGCUnmatchedRemoveDeltas`, `CASGCCondemnMarkerUnconfirmedCarry`, `CASGCMetaWriteAnomaly`, `CASGCHeartbeatFenceOuts`, `CASGCStuckRemovals`, `CASGCNamespaceCleanupLeaks`; table of `gc_fold_clamp` / `gc_anomaly` / `gc_fence_out` from `cas_log` |
-| All CAS counters, nonzero in range | collapsed; one query over `metric_log` columns `ProfileEvent_CASGC*` |
 
 Known gap, stated in the Phases row description: S3 requests issued on GC worker pools are not
 attributed to the phase that scheduled them; LIST in particular is missing from `Phase` rows (CAS-135).
 
-### 4.2 `CAS / Writes and mounts` {#board-writes-mounts}
+### 4.2 `Writes:` rows {#rows-writes}
 
 | Row | Panels |
 |---|---|
@@ -130,9 +141,8 @@ attributed to the phase that scheduled them; LIST in particular is missing from 
 | Blobs and dedup | `CASBlobHeadMiss` (new blobs), `CASBlobPutDeduplicated`, `CASBlobBodyPutAvoided`, `CASBlobAdoptTrusted`; dedup ratio = `PutDeduplicated / (PutDeduplicated + HeadMiss)`; upload pool `CASBlobUploadPoolThreadsActive` / `Scheduled`; fan-out batches and tasks |
 | Caches | part-folder view: `Hits` / `Misses` / `Invalidations` / `ValidationMismatches` / `OversizedBypasses`, hit ratio, `CASPartFolderCacheBytes` / `Entries`; manifest decode cache bytes vs the 128 MiB default cap, entries; hot-key cache bytes and entries; `CASRefTableEvictions` |
 | Replication | `CASRelinkConfirmRefused*` by reason |
-| All CAS counters, nonzero in range | collapsed; `ProfileEvent_CAS*` except `CASGC*` |
 
-### 4.3 `CAS / S3 requests` {#board-s3}
+### 4.3 `S3:` rows {#rows-s3}
 
 | Row | Panels |
 |---|---|
@@ -157,8 +167,7 @@ attributed to the phase that scheduled them; LIST in particular is missing from 
   `$interval`, with a floor of 300 s on counter panels.
 - Two annotations on every board: server restart (`asynchronous_metric_log` `Uptime` drop) and
   lease lost (`metric_log` `ProfileEvent_CASMountLeaseLost > 0`).
-- Dashboard uids are fixed: `cas-overview`, `cas-gc`, `cas-writes-mounts`, `cas-s3`. All four live
-  in a Grafana folder `CAS`.
+- Dashboard uids are fixed: `cas-overview`, `cas-drilldown`. Both live in a Grafana folder `CAS`.
 - Default refresh 1 min; default range 6 h; the "Mounts now" panels use a panel interval of 5 min.
 - Panel titles and descriptions are English. Overview descriptions use no CAS-internal terms.
 
@@ -168,9 +177,7 @@ attributed to the phase that scheduled them; LIST in particular is missing from 
 utils/cas-grafana/
   README.md                 import steps, required grants (SELECT on system.*, REMOTE), how to run the checks
   dashboards/cas-overview.json
-  dashboards/cas-gc.json
-  dashboards/cas-writes-mounts.json
-  dashboards/cas-s3.json
+  dashboards/cas-drilldown.json
   check_dashboards.py       offline checks over the JSON (section 7)
   verify_on_grafana.py      runs every panel query through /api/ds/query and reports empty or failing ones
   local.env.example         GRAFANA_URL, CLICKHOUSE_* placeholders; local.env and .netrc are gitignored
@@ -181,7 +188,7 @@ The JSON files are the source of truth. Boards are edited on otel.demo and expor
 `GET /api/dashboards/uid/<uid>`; the export strips `id`, `version` and `iteration` before commit.
 No generator: the checks in section 7 give the guarantees a generator would.
 
-The otel.demo Grafana is preprod: the scripts only create or update the four uids above, never
+The otel.demo Grafana is preprod: the scripts only create or update the two uids above, never
 pass `overwrite` for another uid, and never touch `/api/datasources`.
 
 ## 7. Checks {#checks}
@@ -193,10 +200,11 @@ pass `overwrite` for another uid, and never touch `/api/datasources`.
   matches `ServerAsynchronousMetrics.cpp`.
 - Banned names are absent: `S3ReadRequestsErrors`, `DiskS3ReadRequestsErrors`, `CASGCPendingReclaim`,
   `CASGCLastSuccessAgeSeconds`.
-- Every panel has a non-empty `description`; every Overview tile has a `links` entry to a detail board.
+- Every panel has a non-empty `description`; every Overview tile has a `links` entry to the Drilldown.
 - Every query contains `$timeFilter` and reads through `clusterAllReplicas('$cluster', ...)`; the
   exception list is the `cas_mounts` panels.
-- All four files declare the same variable set (section 5) and use `${datasource}`.
+- Both files declare the same variable set (section 5) and use `${datasource}`.
+- Every Drilldown row title starts with `GC:`, `Writes:` or `S3:`, except the counters row.
 - `uid` and `title` match the file name; no `id`.
 
 `verify_on_grafana.py` (against a live Grafana, read-only):
@@ -245,5 +253,5 @@ Backlog actions after this spec is approved (via the `backlog` CLI, per `docs/su
 ## 10. Order of work {#order}
 
 1. `CAS / Overview` on otel.demo, complete with descriptions, links and both scripts.
-2. `CAS / GC`, then `CAS / Writes and mounts`, then `CAS / S3 requests`.
+2. `CAS / Drilldown`: `GC:` rows, then `Writes:` rows, then `S3:` rows, then the counters row.
 3. `monitoring.md` section; backlog actions of section 8.
