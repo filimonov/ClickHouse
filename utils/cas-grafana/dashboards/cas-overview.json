@@ -1188,7 +1188,32 @@
                 "filterable": true
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Time"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Last"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "dateTimeAsIso"
+                  }
+                ]
+              }
+            ]
           },
           "gridPos": {
             "h": 8,
@@ -1215,7 +1240,7 @@
               "extrapolate": false,
               "format": "table",
               "intervalFactor": 1,
-              "query": "SELECT event_time AS \"Time\", host AS \"Host\", what AS \"What happened\", detail AS \"Details\"\nFROM (\n    SELECT event_time, hostName() AS host, concat('Integrity: ', toString(event_type)) AS what,\n           concat(namespace, ' ', ref_name, ' ', toString(reason)) AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_log)\n    WHERE disk_name IN ($disk) AND event_type IN ('read_missing', 'dangling_access', 'corrupt_dangle', 'corrupt_decode', 'snap_journal_incoherent', 'exception') AND $timeFilter\n    UNION ALL\n    SELECT event_time, hostName() AS host, concat('GC round ', toString(round), ': ', toString(outcome)) AS what, error AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_gc_log)\n    WHERE disk_name IN ($disk) AND event_type = 'Finish' AND outcome IN ('Error', 'Aborted', 'Stopped') AND $timeFilter\n    UNION ALL\n    SELECT event_time, hostName() AS host, concat('Storage lease: ', toString(event_type), ' ', toString(outcome)) AS what,\n           concat(toString(reason), ' ', toString(detail)) AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_log)\n    WHERE disk_name IN ($disk) AND event_type IN ('mount_remount', 'watermark_renew') AND outcome = 'failed' AND $timeFilter\n    UNION ALL\n    SELECT event_time, hostName() AS host, 'GC fenced out an expired host' AS what, concat(toString(reason), ' ', toString(detail)) AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_log)\n    WHERE disk_name IN ($disk) AND event_type = 'gc_fence_out' AND $timeFilter\n)\nORDER BY \"Time\" DESC LIMIT 100\nSETTINGS skip_unavailable_shards = 1",
+              "query": "SELECT toUInt64(event_time) * 1000 AS \"Time\", host AS \"Host\", what AS \"What happened\", detail AS \"Details\"\nFROM (\n    SELECT event_time, hostName() AS host, concat('Integrity: ', toString(event_type)) AS what,\n           concat(namespace, ' ', ref_name, ' ', toString(reason)) AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_log)\n    WHERE disk_name IN ($disk) AND event_type IN ('read_missing', 'dangling_access', 'corrupt_dangle', 'corrupt_decode', 'snap_journal_incoherent', 'exception') AND $timeFilter\n    UNION ALL\n    SELECT event_time, hostName() AS host, concat('GC round ', toString(round), ': ', toString(outcome)) AS what, error AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_gc_log)\n    WHERE disk_name IN ($disk) AND event_type = 'Finish' AND outcome IN ('Error', 'Aborted', 'Stopped') AND $timeFilter\n    UNION ALL\n    SELECT event_time, hostName() AS host, concat('Storage lease: ', toString(event_type), ' ', toString(outcome)) AS what,\n           concat(toString(reason), ' ', toString(detail)) AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_log)\n    WHERE disk_name IN ($disk) AND event_type IN ('mount_remount', 'watermark_renew') AND outcome = 'failed' AND $timeFilter\n    UNION ALL\n    SELECT event_time, hostName() AS host, 'GC fenced out an expired host' AS what, concat(toString(reason), ' ', toString(detail)) AS detail\n    FROM clusterAllReplicas('$cluster', system.cas_log)\n    WHERE disk_name IN ($disk) AND event_type = 'gc_fence_out' AND $timeFilter\n)\nORDER BY \"Time\" DESC LIMIT 100\nSETTINGS skip_unavailable_shards = 1",
               "rawQuery": "",
               "refId": "A",
               "round": "0s",

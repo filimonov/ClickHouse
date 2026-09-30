@@ -112,6 +112,9 @@ def table(title, desc, sql, *, w=24, h=8, table="cas_log", interval=None) -> dic
     p = _base("table", title, desc, [target(sql, fmt="table", table=table)], w, h, interval)
     p["options"] = {"showHeader": True, "cellHeight": "sm", "sortBy": []}
     p["fieldConfig"]["defaults"] = {"custom": {"align": "auto", "cellOptions": {"type": "auto"}, "filterable": True}}
+    # The plugin backend pivots any DateTime-typed column into a time series; tables carry epoch ms and render it as a date.
+    p["fieldConfig"]["overrides"] = [{"matcher": {"id": "byName", "options": name},
+                                      "properties": [{"id": "unit", "value": "dateTimeAsIso"}]} for name in ("Time", "Last")]
     return p
 
 

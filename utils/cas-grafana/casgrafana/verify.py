@@ -39,7 +39,7 @@ def verify_dashboard(client, dashboard: dict, *, cluster, hosts, disks, seconds:
     def run(title, ref, sql):
         expanded = expand(sql, cluster=cluster, hosts=hosts, disks=disks, seconds=seconds, constants=constants)
         try:
-            rows = client.ds_query(expanded, fmt="table")
+            rows = client.ds_query(expanded, fmt="table", seconds=seconds)
             results.append(PanelResult(uid, title, ref, len(rows), None))
         except Exception as e:  # noqa: BLE001 - every failure is a finding, reported not raised
             results.append(PanelResult(uid, title, ref, 0, str(e)))

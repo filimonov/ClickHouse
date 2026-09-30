@@ -163,7 +163,7 @@ def tiles() -> list:
     return [tile_storage(), tile_writes(), tile_gc(), tile_garbage(), tile_integrity(), tile_s3()]
 
 
-NEEDS_ATTENTION_SQL = f"""SELECT event_time AS "Time", host AS "Host", what AS "What happened", detail AS "Details"
+NEEDS_ATTENTION_SQL = f"""SELECT toUInt64(event_time) * 1000 AS "Time", host AS "Host", what AS "What happened", detail AS "Details"
 FROM (
     SELECT event_time, hostName() AS host, concat('Integrity: ', toString(event_type)) AS what,
            concat(namespace, ' ', ref_name, ' ', toString(reason)) AS detail

@@ -55,6 +55,14 @@ class Stat(unittest.TestCase):
         self.assertEqual(p["options"]["textMode"], "value_and_name")
 
 
+class Table(unittest.TestCase):
+    def test_time_column_rendered_as_date(self):
+        p = P.table("t", "d", "SELECT toUInt64(event_time) * 1000 AS \"Time\" FROM x")
+        self.assertEqual(p["targets"][0]["format"], "table")
+        override = next(o for o in p["fieldConfig"]["overrides"] if o["matcher"]["options"] == "Time")
+        self.assertEqual(override["properties"][0], {"id": "unit", "value": "dateTimeAsIso"})
+
+
 class Layout(unittest.TestCase):
     def test_flow_layout_wraps_and_rows_reset(self):
         a = P.metric_ts("a", "d", {"a": "1"}, w=12)

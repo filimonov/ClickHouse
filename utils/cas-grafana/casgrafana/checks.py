@@ -31,6 +31,9 @@ def iter_panels(dashboard: dict):
             yield p, None
 
 
+DATETIME_COL_RE = re.compile(r"\b(event_time|event_time_microseconds|expires_at|started_at|lifecycle_since|max\(event_time\)|min\(event_time\))\s+AS\s+\"")
+
+
 def iter_queries(dashboard: dict):
     for p, _ in iter_panels(dashboard):
         for t in p.get("targets", []):
@@ -104,6 +107,10 @@ def check_dashboards(dashboards: list, known: set, async_prefixes: set) -> list:
                     out.append(f"{uid}: row title {t!r} must start with one of {ROW_PREFIXES}")
         for p, sql in iter_queries(d):
             _check_query(f"{uid}/{p.get('title') or p.get('name')}", sql, known, async_prefixes, out)
+        for p, _ in iter_panels(d):
+            for t in p.get("targets", []):
+                if t.get("format") == "table" and DATETIME_COL_RE.search(t.get("query", "")):
+                    out.append(f"{uid}/{p.get('title')}: table query selects a DateTime column; use toUInt64(...) * 1000 (the plugin backend pivots DateTime columns)")
     if len(set(map(tuple, var_sets.values()))) > 1:
         out.append(f"variables differ between dashboards: {var_sets}")
     return out

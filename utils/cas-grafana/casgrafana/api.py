@@ -45,6 +45,13 @@ def load_config(path: str = "utils/cas-grafana/local.env") -> Config:
     )
 
 
+def ds_query_body(sql: str, fmt: str, ds_uid: str, seconds: int) -> dict:
+    """The plugin drops result rows outside [from, to] when a DateTime column is present, so the range must cover the query's window."""
+    return {"queries": [{"refId": "A", "datasource": {"uid": ds_uid, "type": DS_TYPE},
+                         "rawQuery": True, "query": sql.rstrip().rstrip(";") + " FORMAT JSON", "format": fmt}],
+            "from": f"now-{seconds}s", "to": "now"}
+
+
 def rows_from_frames(frames) -> list:
     cols, vals = [], []
     for frame in frames:
@@ -84,13 +91,10 @@ class GrafanaClient:
     def post_json(self, path: str, body) -> dict:
         return self._request("POST", path, body)
 
-    def ds_query(self, sql: str, fmt: str = "table") -> list:
+    def ds_query(self, sql: str, fmt: str = "table", seconds: int = 3600) -> list:
         if not self.config.ds_uid:
             raise RuntimeError("GRAFANA_DS_UID is not set in local.env")
-        body = {"queries": [{"refId": "A", "datasource": {"uid": self.config.ds_uid, "type": DS_TYPE},
-                             "rawQuery": True, "query": sql.rstrip().rstrip(";") + " FORMAT JSON", "format": fmt}],
-                "from": "now-1h", "to": "now"}
-        result = self.post_json("/api/ds/query", body)["results"]["A"]
+        result = self.post_json("/api/ds/query", ds_query_body(sql, fmt, self.config.ds_uid, seconds))["results"]["A"]
         if result.get("status", 200) != 200 or "error" in result:
             raise RuntimeError(f"datasource query failed: {result.get('error')}")
         return rows_from_frames(result.get("frames", []))

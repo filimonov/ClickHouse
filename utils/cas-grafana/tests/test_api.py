@@ -39,6 +39,14 @@ class LoadConfig(unittest.TestCase):
         self.assertIsNone(cfg.ds_uid)
 
 
+class QueryBody(unittest.TestCase):
+    def test_range_covers_the_verification_window(self):
+        body = api.ds_query_body("SELECT 1", "table", "P1", seconds=7 * 86400)
+        self.assertEqual(body["from"], "now-604800s")
+        self.assertEqual(body["to"], "now")
+        self.assertEqual(body["queries"][0]["query"], "SELECT 1 FORMAT JSON")
+
+
 class RowsFromFrames(unittest.TestCase):
     def test_frames_to_rows(self):
         frames = [

@@ -42,7 +42,7 @@ GROUP BY t, series ORDER BY t
     last_rounds = P.table(
         "Last 50 rounds",
         "Finish rows, newest first, with counts and the error text. `error_code` is the structured twin of `error`.",
-        f"""SELECT event_time AS "Time", hostName() AS "Host", round AS "Round", toString(trigger) AS "Trigger", toString(outcome) AS "Outcome",
+        f"""SELECT toUInt64(event_time) * 1000 AS "Time", hostName() AS "Host", round AS "Round", toString(trigger) AS "Trigger", toString(outcome) AS "Outcome",
        duration_ms AS "ms", candidates_marked AS "Marked", objects_deleted AS "Deleted", entries_condemned AS "Condemned",
        entries_graduated AS "Graduated", entries_redeleted AS "Redeleted", anomalies AS "Anomalies", fence_outs AS "Fence-outs",
        error_code AS "Code", error AS "Error"
@@ -119,7 +119,7 @@ GROUP BY phase ORDER BY "p99 s" DESC
                             "Stuck removals": c("CASGCStuckRemovals"), "Namespace cleanup leaks": c("CASGCNamespaceCleanupLeaks")})
     anomaly_table = P.table("Fold clamps, GC anomalies and fence-outs from cas_log",
                             "`gc_fold_clamp`, `gc_anomaly`, `gc_fence_out` rows with their reason and detail map.",
-                            f"""SELECT event_time AS "Time", hostName() AS "Host", toString(event_type) AS "Event", namespace AS "Namespace", round AS "Round", toString(outcome) AS "Outcome", toString(reason) AS "Reason", toString(detail) AS "Detail"
+                            f"""SELECT toUInt64(event_time) * 1000 AS "Time", hostName() AS "Host", toString(event_type) AS "Event", namespace AS "Namespace", round AS "Round", toString(outcome) AS "Outcome", toString(reason) AS "Reason", toString(detail) AS "Detail"
 FROM clusterAllReplicas('$cluster', system.cas_log)
 WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('gc_fold_clamp', 'gc_anomaly', 'gc_fence_out') AND $timeFilter
 ORDER BY event_time DESC LIMIT 200
@@ -135,7 +135,102 @@ ORDER BY event_time DESC LIMIT 200
 
 
 def writes_rows() -> list:
-    return []
+    mounts = P.table(
+        "Mounts now",
+        "Live view from `system.cas_mounts` (one backend `listMounts` per query, hence the 5-minute refresh). `state` is the slot as the backend sees it; `lifecycle` is this host's own view of the disk. `is_leader` is NULL on rows describing other hosts' mounts.",
+        f"""SELECT hostName() AS "Host", disk AS "Disk", hostname AS "Slot owner", state AS "State", lifecycle AS "Lifecycle",
+       lifecycle_detail AS "Lifecycle detail", dateDiff('second', now(), expires_at) AS "Expires in (s)", writer_epoch AS "Epoch",
+       renewal_sequence AS "Renewals", is_leader AS "GC leader", gc_fenced AS "Fenced", wedged_namespace_count AS "Wedged lanes"
+FROM clusterAllReplicas('$cluster', system.cas_mounts)
+WHERE disk IN ($disk)
+ORDER BY "Host", "Disk", "Slot owner"
+{SETTINGS}""", table="cas_mounts", interval="5m")
+    renewals = P.metric_ts("Lease renewals per second",
+                           "`CASMountRenewal*`: physical attempts, retries after the first PUT, resolved by an exact GET, recovered after retry, stopped by the external deadline.",
+                           {"Attempts": r("CASMountRenewalAttempts"), "Retries": r("CASMountRenewalRetries"), "Resolved": r("CASMountRenewalResolved"),
+                            "Recovered": r("CASMountRenewalRecovered"), "Deadline exceeded": r("CASMountRenewalDeadlineExceeded")}, unit="ops")
+    remounts = P.metric_ts("Lease lost and remounts per 5 minutes",
+                           "`CASMountLeaseLost` (once per Live → TransientNotLive generation) and whole-chain remount attempts / successes / failures.",
+                           {"Lease lost": c("CASMountLeaseLost"), "Remount attempts": c("CASRemountAttempts"), "Remount succeeded": c("CASRemountSucceeded"), "Remount failed": c("CASRemountFailed")})
+    lease_events = P.table("Renewal and remount events",
+                           "`watermark_renew` (only nontrivial renewals: outcome recovered/failed) and `mount_remount` rows from `cas_log`, with `classification`, `attempts_sent`, `elapsed_ms` from the detail map.",
+                           f"""SELECT toUInt64(event_time) * 1000 AS "Time", hostName() AS "Host", toString(event_type) AS "Event", toString(outcome) AS "Outcome",
+       detail['classification'] AS "Classification", detail['attempts_sent'] AS "Attempts", detail['elapsed_ms'] AS "Elapsed ms",
+       detail['step'] AS "Step", detail['error'] AS "Error", toString(reason) AS "Reason"
+FROM clusterAllReplicas('$cluster', system.cas_log)
+WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('watermark_renew', 'mount_remount') AND $timeFilter
+ORDER BY event_time DESC LIMIT 200
+{SETTINGS}""")
+    cond = P.metric_ts("Conditional writes per second",
+                       "`CASConditionalWrite*`. Unresolved = response lost, resolved by a read; DefiniteFailure = the backend said no; FenceLostPostWrite = the write landed after the lease was gone.",
+                       {"Attempts": r("CASConditionalWriteAttempts"), "Committed": r("CASConditionalWriteCommitted"), "Unresolved": r("CASConditionalWriteUnresolved"),
+                        "Definite failure": r("CASConditionalWriteDefiniteFailure"), "Fence lost post-write": r("CASConditionalWriteFenceLostPostWrite")}, unit="ops")
+    requests = P.metric_ts("Request outcomes per second",
+                           "`CASRequest*`: reissues (retries), conflict pauses (409 on one key), resolve reads, gave up, refused, first-attempt fuse.",
+                           {"Reissue": r("CASRequestReissue"), "Conflict pause": r("CASRequestConflictPause"), "Resolve read": r("CASRequestResolveRead"),
+                            "Gave up": r("CASRequestGaveUp"), "Refused": r("CASRequestRefused"), "First-attempt fuse": r("CASRequestFirstAttemptFuse")}, unit="ops")
+    conflicts = P.metric_ts("Compare-and-swap conflicts per second, by object class",
+                            "`CAS<Class>CompareSwapConflict`. Root conflicts equal `CASRequestConflictPause` on otel.demo: replicas racing on `_ckpt`.",
+                            {"Blob": r("CASBlobCompareSwapConflict"), "Manifest": r("CASManifestCompareSwapConflict"), "Root": r("CASRootCompareSwapConflict"),
+                             "GC": r("CASGCCompareSwapConflict"), "Other": r("CASOtherCompareSwapConflict")}, unit="ops")
+    lane_wait = P.metric_ts("Ref-lane wait per mutation (ms)",
+                            "`CASRefQueueWaitMicroseconds / CASRefBatchedMutations` per 5-minute bucket. Read as a rate over minutes: a single second can sum hundreds of mutations finishing together (audit F25).",
+                            {"Wait per mutation": "sum(ProfileEvent_CASRefQueueWaitMicroseconds) / greatest(sum(ProfileEvent_CASRefBatchedMutations), 1) / 1000"}, unit="ms")
+    batching = P.metric_ts("Mutations per flush and flushes per second",
+                           "`CASRefBatchedMutations / CASRefBatchFlushes` (3.1 in steady state, up to 34 in a removal burst) and `CASRefBatchFlushes` per second (≤ 5, the lane's bound).",
+                           {"Mutations per flush": "sum(ProfileEvent_CASRefBatchedMutations) / greatest(sum(ProfileEvent_CASRefBatchFlushes), 1)",
+                            "Flushes per second": r("CASRefBatchFlushes"), "Scope cuts per second": r("CASRefBatchScopeCuts")})
+    lane_health = P.metric_ts("Ref-lane health counters per 5 minutes",
+                              "`CASRefAppendWedged`, `CASRefNeedsRecovery` (must be zero), `CASRefAppendSealRejected` (occasional is the protocol working), `CASRefAppendUnwedged`, `CASRefAppendDefiniteFailure`.",
+                              {"Wedged": c("CASRefAppendWedged"), "Needs recovery": c("CASRefNeedsRecovery"), "Seal rejected": c("CASRefAppendSealRejected"),
+                               "Unwedged": c("CASRefAppendUnwedged"), "Definite failure": c("CASRefAppendDefiniteFailure")})
+    checkpoints = P.metric_ts("Checkpoints and snapshots per 5 minutes",
+                              "`CASRefCheckpoint*` and `CASRefSnapshotPublish*`. `IdenticalSkip` means the `_ckpt` overwrite was avoided (audit F5).",
+                              {"Checkpoint published": c("CASRefCheckpointPublished"), "Checkpoint identical skip": c("CASRefCheckpointIdenticalSkip"),
+                               "Checkpoint not advanced": c("CASRefCheckpointNotAdvanced"), "Snapshot publish dispatched": c("CASRefSnapshotPublishDispatched"),
+                               "Snapshot publish backoff": c("CASRefSnapshotPublishBackoff")})
+    hotkey = P.metric_ts("Hot-key lane",
+                         "`CASHotKey*`: never engaged on otel.demo in a week. Wait per start in ms, plus cache starts, read starts and verdicts re-read.",
+                         {"Wait per start (ms)": "sum(ProfileEvent_CASHotKeyQueueWaitMicroseconds) / greatest(sum(ProfileEvent_CASHotKeyCacheStarts) + sum(ProfileEvent_CASHotKeyReadStarts), 1) / 1000",
+                          "Cache starts": c("CASHotKeyCacheStarts"), "Read starts": c("CASHotKeyReadStarts"), "Verdicts re-read": c("CASHotKeyCacheVerdictsReread")})
+    blobs = P.metric_ts("Blob publications per second",
+                        "`CASBlobHeadMiss` = new blobs; `CASBlobPutDeduplicated` = content already present; `CASBlobBodyPutAvoided` = body upload skipped; `CASBlobAdoptTrusted` counts the `delete_tmp` repoint re-adopting a part's own blobs, not dedup (audit F2).",
+                        {"New (HeadMiss)": r("CASBlobHeadMiss"), "Deduplicated": r("CASBlobPutDeduplicated"), "Body put avoided": r("CASBlobBodyPutAvoided"), "Adopt trusted": r("CASBlobAdoptTrusted")}, unit="ops")
+    dedup = P.metric_ts("Dedup ratio (%)", "`PutDeduplicated / (PutDeduplicated + HeadMiss)`. 0.27% on the otel.demo workload.",
+                        {"Dedup %": "100 * sum(ProfileEvent_CASBlobPutDeduplicated) / greatest(sum(ProfileEvent_CASBlobPutDeduplicated) + sum(ProfileEvent_CASBlobHeadMiss), 1)"}, unit="percent")
+    upload_pool = P.metric_ts("Blob upload pool: threads active and scheduled",
+                              "`CurrentMetric_CASBlobUploadPoolThreadsActive` / `Scheduled` (max per bucket). Scheduled far above active means uploads queue behind the pool.",
+                              {"Active": g("CASBlobUploadPoolThreadsActive"), "Scheduled": g("CASBlobUploadPoolThreadsScheduled"), "Threads": g("CASBlobUploadPoolThreads")})
+    fanout = P.metric_ts("Upload fan-out per second", "`CASBlobUploadFanoutBatches` and `CASBlobUploadFanoutTasks`.",
+                         {"Batches": r("CASBlobUploadFanoutBatches"), "Tasks": r("CASBlobUploadFanoutTasks")}, unit="ops")
+    pfv = P.metric_ts("Part-folder view cache per second",
+                      "`CASPartFolderView*`: hits, misses (rebuild from manifests), invalidations, validation mismatches, oversized bypasses. Misses cost ~3 manifest GETs per merge (audit F9).",
+                      {"Hits": r("CASPartFolderViewHits"), "Misses": r("CASPartFolderViewMisses"), "Invalidations": r("CASPartFolderViewInvalidations"),
+                       "Validation mismatches": r("CASPartFolderViewValidationMismatches"), "Oversized bypasses": r("CASPartFolderViewOversizedBypasses")}, unit="ops")
+    pfv_ratio = P.metric_ts("Part-folder view hit ratio (%)", "`Hits / (Hits + Misses)` per 5-minute bucket.",
+                            {"Hit %": "100 * sum(ProfileEvent_CASPartFolderViewHits) / greatest(sum(ProfileEvent_CASPartFolderViewHits) + sum(ProfileEvent_CASPartFolderViewMisses), 1)"}, unit="percent")
+    pfv_size = P.metric_ts("Part-folder view cache size", "`CASPartFolderCacheBytes` (max per bucket).", {"Bytes": g("CASPartFolderCacheBytes")}, unit="bytes")
+    decode = P.metric_ts("Manifest decode cache bytes vs 128 MiB default cap",
+                         "`CASManifestDecodeCacheBytes` sat at its cap all week on otel.demo with 1.9–3.3k entries; part-folder rebuilds partly come from decode-cache eviction (audit F25).",
+                         {"Bytes": g("CASManifestDecodeCacheBytes"), "Default cap": "134217728"}, unit="bytes")
+    cache_entries = P.metric_ts("Cache entries", "`CASManifestDecodeCacheEntries`, `CASPartFolderCacheEntries`, `CASHotKeyCacheEntries`.",
+                                {"Manifest decode": g("CASManifestDecodeCacheEntries"), "Part-folder view": g("CASPartFolderCacheEntries"), "Hot-key": g("CASHotKeyCacheEntries")})
+    evictions = P.metric_ts("Ref-table evictions and manifest GETs for the part-folder view per second", "`CASRefTableEvictions`, `CASPartFolderManifestGets`.",
+                            {"Ref-table evictions": r("CASRefTableEvictions"), "Part-folder manifest GETs": r("CASPartFolderManifestGets")}, unit="ops")
+    relink = P.metric_ts("Relink-confirm refusals per 5 minutes, by reason",
+                         "`CASRelinkConfirmRefused*` on the receiving replica of a fetch. Zero on otel.demo in a week.",
+                         {"Ref mutation in flight": c("CASRelinkConfirmRefusedRefMutationInFlight"), "Lane wedged": c("CASRelinkConfirmRefusedLaneWedged"),
+                          "Lane broken": c("CASRelinkConfirmRefusedLaneBroken"), "State lock busy": c("CASRelinkConfirmRefusedStateLockBusy"),
+                          "Mount cannot speak": c("CASRelinkConfirmRefusedMountCannotSpeak")})
+    return [
+        P.row("Writes: mounts now", [mounts]),
+        P.row("Writes: lease", [renewals, remounts, lease_events]),
+        P.row("Writes: conditional writes", [cond, requests, conflicts]),
+        P.row("Writes: ref lane", [lane_wait, batching, lane_health, checkpoints, hotkey]),
+        P.row("Writes: blobs and dedup", [blobs, dedup, upload_pool, fanout]),
+        P.row("Writes: caches", [pfv, pfv_ratio, pfv_size, decode, cache_entries, evictions]),
+        P.row("Writes: replication", [relink]),
+    ]
 
 
 def s3_rows() -> list:

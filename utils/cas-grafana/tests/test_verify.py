@@ -26,8 +26,8 @@ class FakeClient:
         self.answers = answers
         self.sent = []
 
-    def ds_query(self, sql, fmt="table"):
-        self.sent.append(sql)
+    def ds_query(self, sql, fmt="table", seconds=3600):
+        self.sent.append((sql, seconds))
         a = self.answers.pop(0)
         if isinstance(a, Exception):
             raise a
@@ -42,7 +42,8 @@ class VerifyDashboard(unittest.TestCase):
         client = FakeClient([[{"t": 1, "a": 2}], RuntimeError("boom"), [], []])
         res = verify.verify_dashboard(client, d, cluster="otel", hosts=["h"], disks=["cas"], seconds=600)
         self.assertEqual([(r.title, r.rows, r.error is None) for r in res[:2]], [("A", 1, True), ("B", 0, False)])
-        self.assertNotIn("$", client.sent[0])
+        self.assertNotIn("$", client.sent[0][0])
+        self.assertEqual(client.sent[0][1], 600)
         errors, empties = verify.summarize(res, allow_empty_titles=set())
         self.assertEqual(len(errors), 1)
         self.assertEqual(empties, [])

@@ -85,6 +85,10 @@ class Problems(unittest.TestCase):
         probs = self.one(lambda o, d: o["panels"][0].__setitem__("description", "The fold condemned it."))
         self.assertTrue(any("internal term" in p for p in probs), probs)
 
+    def test_table_query_must_not_select_a_datetime_column(self):
+        probs = self.one(lambda o, d: d["panels"][1]["panels"][0]["targets"][0].__setitem__("query", "SELECT event_time AS \"Time\", 1 FROM clusterAllReplicas('$cluster', system.metric_log) WHERE hostName() IN ($host) AND $timeFilter " + P.SETTINGS))
+        self.assertTrue(any("DateTime" in p for p in probs), probs)
+
     def test_uid_and_title(self):
         probs = self.one(lambda o, d: o.__setitem__("title", "Overview"))
         self.assertTrue(any("title" in p for p in probs), probs)

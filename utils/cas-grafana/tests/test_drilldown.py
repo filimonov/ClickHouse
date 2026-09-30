@@ -36,5 +36,29 @@ class GcRows(unittest.TestCase):
         self.assertEqual(probs, [])
 
 
+class WritesRows(unittest.TestCase):
+    def test_row_titles(self):
+        self.assertEqual([r["title"] for r in drilldown.writes_rows()],
+                         ["Writes: mounts now", "Writes: lease", "Writes: conditional writes", "Writes: ref lane",
+                          "Writes: blobs and dedup", "Writes: caches", "Writes: replication"])
+
+    def test_mounts_now_refreshes_slowly_and_has_no_time_filter(self):
+        p = panel(drilldown.writes_rows(), "Mounts now")
+        self.assertEqual(p["interval"], "5m")
+        sql = p["targets"][0]["query"]
+        self.assertIn("system.cas_mounts", sql)
+        self.assertNotIn("$timeFilter", sql)
+        self.assertIn("dateDiff('second', now(), expires_at)", sql)
+
+    def test_dedup_ratio(self):
+        sql = panel(drilldown.writes_rows(), "Dedup ratio (%)")["targets"][0]["query"]
+        self.assertIn("100 * sum(ProfileEvent_CASBlobPutDeduplicated) / greatest(sum(ProfileEvent_CASBlobPutDeduplicated) + sum(ProfileEvent_CASBlobHeadMiss), 1)", sql)
+
+    def test_decode_cache_vs_cap(self):
+        sql = panel(drilldown.writes_rows(), "Manifest decode cache bytes vs 128 MiB default cap")["targets"][0]["query"]
+        self.assertIn("max(CurrentMetric_CASManifestDecodeCacheBytes)", sql)
+        self.assertIn("134217728", sql)
+
+
 if __name__ == "__main__":
     unittest.main()
