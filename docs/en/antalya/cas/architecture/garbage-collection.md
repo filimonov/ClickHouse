@@ -350,11 +350,11 @@ for a removal records the stored `Etag` for phase 15, which deletes the body by 
   `GC` deletes owner-removed bodies in [phase 15](#phase-15-manifest-deletes), after the commit.
   The orphan sweep ([phase 18](#phase-18-orphan-sweep)) deletes only manifests outside its
   protection view of the ref graph.
-  A deposed leader's post-commit delete can overlap a successor's fold. The memo then answers with
-  the bytes an earlier read returned, where a fresh read would find the key absent: a committed or
-  removal edge then folds instead of clamping the table, and a removed precommit applies instead of
-  being skipped. Both follow the edges the ref history names, so the difference is in the safe
-  direction.
+  A successor leader can delete a body while a deposed leader's fold still runs. The memo then
+  answers with the bytes an earlier read returned, where a fresh read would find the key absent: a
+  committed or removal edge then folds instead of clamping the table, and a removed precommit applies
+  instead of being skipped. The fold is still complete up to its cut, which is all the delete gate
+  needs, and the deposed round can no longer commit.
 - **Absence is never memoized.** An absent body is probed again by the next edge that names it, and
   a body that fails validation throws as without the memo.
 - **Bound:** 64 MiB of charged storage per fold, oldest insert evicted first. The charge covers the

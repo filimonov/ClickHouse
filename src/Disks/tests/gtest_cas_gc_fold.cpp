@@ -1094,10 +1094,9 @@ TEST(CASGCFold, AbsentManifestBodyIsReprobed)
     EXPECT_EQ(inDegreeOf(*probe.backend, probe.layout(), DB::UInt128(1)), 1);
 }
 
-/// A memo hit is a fresh read only while no folded body is deleted during the fold. Inside the fold,
-/// after both A and the writer's precommitted M were memoized, the orphan sweep runs over A's build
-/// prefix and the writer abandons M's build. Each deletes other debris and neither deletes a folded
-/// body; a direct delete of A in the same window is caught.
+/// Inside the fold, after both A and the writer's precommitted M were memoized, the orphan sweep runs
+/// over A's build prefix and the writer abandons M's build. Each deletes other debris and neither
+/// deletes a folded body; a direct delete of A in the same window is caught.
 TEST(CASGCFold, FoldedManifestBodyIsNeverDeletedDuringTheFold)
 {
     /// Far from the build sequences the writer below mints, so the two never share a key.

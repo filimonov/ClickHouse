@@ -26,8 +26,9 @@ struct ManifestFold
     std::vector<ManifestFoldEntry> entries;
 };
 
-/// Validated manifest bodies of ONE fold, keyed by `ManifestId`. A hit is equivalent to a fresh read
-/// only while no folded body is deleted during the fold, so an instance must not outlive its fold.
+/// Validated manifest bodies of ONE fold, keyed by `ManifestId`. A hit is the body's true content
+/// (the key is write-once); it differs from a fresh read only when a successor leader deleted the body
+/// during the fold, and that fold's round can no longer commit. An instance must not outlive its fold.
 /// Absence is never stored: only `insert` of a validated body adds an entry.
 ///
 /// Bounded by `budget` bytes of charged retained storage, evicting the oldest insert first. Real

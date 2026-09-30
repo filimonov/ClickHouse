@@ -1494,8 +1494,10 @@ bool Gc::foldManifestEdges(GcReadAhead & reads, GcManifestMemo * memo, const Man
                            std::vector<BlobDelta> & deltas, std::map<ManifestId, Etag> & mf_cleanup,
                            uint32_t txn_ordinal)
 {
-    /// A memoized body stands in for a fresh read: the key is write-once and no folded body is deleted
-    /// while the fold runs. The sign and the ordinal always come from this edge, never from the memo.
+    /// A memoized body stands in for a fresh read: the key is write-once, so a hit is the body's true
+    /// content. It differs from a fresh read only after a successor leader deleted the body, and then the
+    /// fold is still complete up to its cut, which is all the delete gate needs. The sign and the ordinal
+    /// always come from this edge, never from the memo.
     const ManifestFold * fold = memo ? memo->find(id) : nullptr;
     std::optional<ManifestFold> read;
     if (fold)
