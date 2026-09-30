@@ -299,7 +299,7 @@ extracting blob source edges. Usually the dominant read phase on ref-log- and ma
 - **Runs on:** fold path only
 - **Reads:** one `_ckpt` per namespace in the universe; `_log` records from each namespace's cursor
   up to its committed ceiling; one manifest body per distinct manifest the folded owner edges name
-  (see the [memo](#phase-8-fold-ref-intake)); extra `_log` reads when the
+  (each read once, see the manifest-body memo below); extra `_log` reads when the
   walk crosses an epoch seal
 - **Writes / deletes:** none (the successor seal's `cleanup_evidence` rows are written between this
   phase's timer and phase 9's)
@@ -350,9 +350,8 @@ for a removal queues the exact body delete from the stored `Etag`.
 - **Absence is never memoized.** An absent body is probed again by the next edge that names it, and
   a body that fails validation throws as without the memo.
 - **Bound:** 64 MiB of charged storage per fold, oldest insert evicted first. The charge covers the
-  map node, the `Etag` strings, every entry and its path, and each namespace once. It overestimates;
-  the thread-tracker test holds the real allocation within 1.25 times the charge, so the worst-case
-  footprint is about 80 MiB. A manifest whose own charge exceeds the budget is folded without being
+  map node, the `Etag` strings, every entry and its path, and each namespace once. It overestimates
+  by design, but the budget bounds the charge, not the measured allocation. A manifest whose own charge exceeds the budget is folded without being
   stored. An evicted or oversized manifest is read again on its next edge.
 - **Read-ahead:** the hint loop skips a manifest the memo holds. If an eviction lands between the
   skip and the take, the take reads inline: one `CASGCReadAheadMiss` and one `GET`.
