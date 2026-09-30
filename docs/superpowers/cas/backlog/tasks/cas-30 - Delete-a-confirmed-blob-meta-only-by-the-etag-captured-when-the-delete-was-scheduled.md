@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 21:59'
+updated_date: '2026-09-30 23:00'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -60,5 +60,5 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30 OWNER: residuals L1b/L2 (§10.2) accepted for PR1; the writer rule that closes them (and extdrop) is CAS-334, the next PR.
+2026-10-01 OWNER: upgrade scenarios are low priority (few deployments; procedural description suffices). Rollout section frozen as procedure + accepted residual; rule RG and its tests dropped from PR1 (upgrade-only scaffolding).
 <!-- SECTION:NOTES:END -->
