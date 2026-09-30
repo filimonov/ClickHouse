@@ -9,11 +9,12 @@ MC_IMAGE=minio/mc:RELEASE.2025-04-16T18-13-26Z
 PORT=19121
 DATA="$PWD/tmp/cas-yardstick-rustfs-data"
 MARKER=.cas-yardstick-rustfs
+MC_TIMEOUT=60
 
 mc()
 {
     # A fixed name lets a timeout remove the container, which outlives the killed client.
-    timeout 60 docker run --rm --name cas-yardstick-mc --network host --entrypoint sh "$MC_IMAGE" -c \
+    timeout "$MC_TIMEOUT" docker run --rm --name cas-yardstick-mc --network host --entrypoint sh "$MC_IMAGE" -c \
         "mc alias set r http://127.0.0.1:$PORT clickhouse clickhouse >/dev/null && $1" \
         || { docker rm -f cas-yardstick-mc > /dev/null 2>&1; return 1; }
 }
@@ -76,6 +77,8 @@ case "$cmd" in
         ;;
     rm-prefix)
         target=${1:?usage: rustfs.sh rm-prefix <bucket/prefix>}
+        # A full run leaves a prefix too large to remove within the default 60 s.
+        MC_TIMEOUT=1800
         mc "mc rm --recursive --force r/$target"
         ;;
     *)
