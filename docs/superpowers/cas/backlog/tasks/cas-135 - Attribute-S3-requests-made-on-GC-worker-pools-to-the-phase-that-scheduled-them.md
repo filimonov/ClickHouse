@@ -4,7 +4,7 @@ title: Attribute S3 requests made on GC worker pools to the phase that scheduled
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-09-30 08:20'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -58,4 +58,11 @@ Provenance: BACKLOG/gc.md#gc-phase-rows-lose-worker-requests. Verified 2026-09-2
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-03 (db5bb3485c8, by 'gc-phase-rows-lose-worker-requests')
+
+More evidence (2026-09-30), and a third off-thread source the description does not name: LIST.
+- `listUnder` lists through `S3IteratorAsync`, whose batches run on the list-objects pool. Integration test `test_cas_gc_list_pages` (branch `cas/gc-request-cuts`, 20,000 `_log` keys): the `defer_decision` row has `CASRefGlobalListPages` = 21 and `S3ListObjects` = 0, while `system.events` moved `DiskS3ListObjects` by 67 over the round. The `Finish` row (`ProfileEventsScope` on the round thread) is 0 as well.
+- ca-soak S11 at `--scale ci` on the same branch: no `Phase` or `Finish` row carries `DiskS3ListObjects` or `DiskS3HeadObject`; the before/after measurement had to take them from `system.metric_log` windows, which include foreground traffic.
+- Since https://github.com/Altinity/ClickHouse/pull/2351 the HEAD read-ahead and the parallel deletes run on the round's `io_pool`, so more of a round's requests are off the round thread than when this task was written.
+The header comment of `GcPhaseRecord` (`Gc/CasGc.h`) promises that `ProfileEvents['S3ListObjects']` on a `Phase` row answers which phase burns the LIST budget; today it cannot.
+Fix shape to consider: run the round under its own `ThreadGroup`, attach every pool job to it (`ThreadGroupSwitcher`; `threadPoolCallbackRunner` already carries the caller's group), and diff the group's counters instead of the thread's.
 <!-- SECTION:NOTES:END -->
