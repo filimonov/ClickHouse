@@ -519,6 +519,13 @@ public:
     void setManifestMemoForTest(bool enabled) { manifest_memo_enabled = enabled; }
     void setManifestMemoBudgetForTest(size_t bytes) { manifest_memo_budget = bytes; }
 
+    /// TEST SEAM: refs for which `unlisted` returns true are left out of the HEAD read-ahead candidates,
+    /// so the merge takes them as blobs nobody hinted. Production lists every candidate.
+    void setHeadCandidateFilterForTest(std::function<bool(const BlobRef &)> unlisted)
+    {
+        head_candidate_filter_for_test = std::move(unlisted);
+    }
+
     /// Fires once, synchronously, right after `listRefPrefix`'s hot-scan catalog `GET`
     /// (`CasRefCatalog::read`) returns -- the exact instant the round's catalog cut is taken, before
     /// the round does anything else with it. Lets a test land a real namespace birth (through the
@@ -988,6 +995,8 @@ private:
     size_t manifest_memo_budget = GcManifestMemo::kBudgetBytes;     /// see setManifestMemoBudgetForTest
     /// TEST SEAM ONLY: see setPostHotScanCatalogReadHookForTest. Empty in production.
     std::function<void()> post_hot_scan_catalog_read_hook_for_test;
+    /// TEST SEAM ONLY: see setHeadCandidateFilterForTest. Empty in production.
+    std::function<bool(const BlobRef &)> head_candidate_filter_for_test;
     /// Leader-local, in-memory count of consecutive deferred
     /// rounds since the last FOLD. NOT persisted (a fresh/stolen leader starts at 0 -- conservative:
     /// it may fold one round sooner than a long-lived leader would, never later). Reset to 0 whenever

@@ -26,6 +26,7 @@
 #include <base/scope_guard.h>
 #include <unordered_set>
 #include <algorithm>
+#include <deque>
 #include <limits>
 #include <optional>
 #include <set>
@@ -2019,11 +2020,54 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
     std::vector<std::vector<BlobRef>> head_candidates(state.gc_shards);
     size_t head_hint_shard = 0;
     size_t next_head_hint = 0;
+    size_t head_search_from = 0;
+    std::optional<BlobRef> last_head_take;
+    std::deque<size_t> outstanding_heads;
+    /// Throttled on this window's own hints, not `reads.pending()`: read slots a clamp leaves untaken
+    /// would otherwise hold the HEAD window shut.
     const auto topUpHeadHints = [&]
     {
         const std::vector<BlobRef> & shard_candidates = head_candidates[head_hint_shard];
-        while (next_head_hint < shard_candidates.size() && reads.pending() < reads.window())
-            reads.hintHead(layout.blobKey(shard_candidates[next_head_hint++]));
+        while (next_head_hint < shard_candidates.size() && outstanding_heads.size() < reads.window())
+        {
+            reads.hintHead(layout.blobKey(shard_candidates[next_head_hint]));
+            outstanding_heads.push_back(next_head_hint++);
+        }
+    };
+    const auto discardHeadHintsBelow = [&](size_t position)
+    {
+        while (!outstanding_heads.empty() && outstanding_heads.front() < position)
+        {
+            reads.discardHead(layout.blobKey(head_candidates[head_hint_shard][outstanding_heads.front()]));
+            outstanding_heads.pop_front();
+        }
+    };
+    const auto resetHeadHints = [&](size_t shard)
+    {
+        discardHeadHintsBelow(std::numeric_limits<size_t>::max());
+        head_hint_shard = shard;
+        next_head_hint = 0;
+        head_search_from = 0;
+        last_head_take.reset();
+    };
+    /// The merge takes in ascending `BlobRef` order, so a candidate below a take is never taken: its
+    /// hint is discarded rather than left holding a window slot.
+    const auto passHeadHintsTo = [&](const BlobRef & ref)
+    {
+        const bool in_order = !last_head_take || !(ref < *last_head_take);
+        chassert(in_order);
+        if (!in_order)
+            return;
+        const std::vector<BlobRef> & shard_candidates = head_candidates[head_hint_shard];
+        const size_t position = std::lower_bound(shard_candidates.begin() + head_search_from, shard_candidates.end(), ref)
+            - shard_candidates.begin();
+        discardHeadHintsBelow(position);
+        const bool listed = position < shard_candidates.size() && shard_candidates[position] == ref;
+        if (listed && !outstanding_heads.empty() && outstanding_heads.front() == position)
+            outstanding_heads.pop_front();
+        next_head_hint = std::max(next_head_hint, listed ? position + 1 : position);
+        head_search_from = position;
+        last_head_take = ref;
     };
 
     /// Condemn-time observation: ONE HEAD per new zero-transition captures the exact incarnation token
@@ -2045,6 +2089,8 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
             e.gen = state.snap_generation + 1;
             e.reason = "last folded owner edge dropped; in-degree reached 0";
         });
+        topUpHeadHints();
+        passHeadHintsTo(ref);
         topUpHeadHints();
         const std::optional<Meta> observed = reads.takeHead(layout.blobKey(ref));
         EventEmitter{*store}.emit([&](CasEvent & e)
@@ -3502,7 +3548,7 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
         for (const auto & [edge, is_remove] : last_verdict_is_remove)
             (is_remove ? removed : surviving_add).insert(edge.first);
         for (const BlobRef & ref : removed)
-            if (!surviving_add.contains(ref))
+            if (!surviving_add.contains(ref) && !(head_candidate_filter_for_test && head_candidate_filter_for_test(ref)))
                 head_candidates[blobShard(ref, state.gc_shards)].push_back(ref);
     }
 
@@ -3521,8 +3567,7 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
         {
             /// Either a real delta or a non-empty retired input: run the merge (empty deltas still settle
             /// the RunMarker::Condemned rows riding the parent run). The prior runs are the parent seal's shard-0 refs.
-            head_hint_shard = 0;
-            next_head_hint = 0;
+            resetHeadHints(0);
             foldDeltasIntoGeneration(op, layout, priorRunsFor(0),
                                      new_generation, attempt, /*shard*/0,
                                      std::move(deltas), result.fold_seal.blob_target_runs,
@@ -3531,6 +3576,7 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
                                      result.retired_merge.data(), suppress_destructive,
                                      &ledger.applied, std::move(orphan_source_retirements),
                                      &work_budget);
+            resetHeadHints(0);
             result.fold_seal.condemned_summary[0] = summarize(result.retired_merge[0].still_retired);
         }
     }
@@ -3565,8 +3611,7 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
             /// A reducer owns exactly one disjoint shard. Two replicas may run reducers for DIFFERENT
             /// shards concurrently (CasGcScheduler ownership); their run-key namespaces never collide.
             std::vector<RunRef> shard_runs;
-            head_hint_shard = shard;
-            next_head_hint = 0;
+            resetHeadHints(shard);
             foldDeltasIntoGeneration(
                 op, layout, priorRunsFor(shard), new_generation, attempt, shard,
                 std::move(buckets[shard]), shard_runs,
@@ -3575,6 +3620,7 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
                 &result.retired_merge[shard], suppress_destructive,
                 &ledger.applied, std::move(retirement_buckets[shard]),
                 &work_budget);
+            resetHeadHints(shard);
             for (RunRef & r : shard_runs)
                 result.fold_seal.blob_target_runs.push_back(std::move(r));
             result.fold_seal.condemned_summary[shard] = summarize(result.retired_merge[shard].still_retired);
