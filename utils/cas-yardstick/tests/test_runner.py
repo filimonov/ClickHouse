@@ -220,6 +220,10 @@ class RunOneTest(unittest.TestCase):
         self.assertEqual({r['card'] for r in rows}, {'good'})
 
 
+    def test_unsupported_card_without_hot_pass_has_only_cold_rows(self):
+        rows = runner.run_one('cas', FakeCard('m', has_hot=False, supported=(False, 'x')), 1, self.deps)
+        self.assertEqual([(r['phase'], r['value']) for r in rows], [('cold', 'UNSUPPORTED (x)')])
+
     def test_interrupted_teardown_still_stops_the_server(self):
         card = FakeCard('c')
         card.teardown = lambda c: (_ for _ in ()).throw(KeyboardInterrupt())

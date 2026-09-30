@@ -8,9 +8,10 @@ from yardstick import report as R
 from yardstick.compare import compare_runs, reference_dir
 from yardstick.cards import CARDS
 from yardstick.config import POLICIES
-from yardstick.runner import TOOL_DIR, run
+from yardstick.runner import CARD_UNITS, TOOL_DIR, run
 
 DEFAULT_ENDPOINT = 'http://127.0.0.1:19121'
+DEFAULT_RUNS_DIR = os.path.join(os.path.dirname(os.path.dirname(TOOL_DIR)), 'tmp', 'cas-yardstick', 'runs')
 DEFAULTS = dict(cards=list(CARDS), scale=1.0, repeats=3, policies=list(POLICIES))
 SMOKE = dict(cards=list(CARDS), scale=0.01, repeats=1, policies=list(POLICIES))
 QUICK = dict(cards=list(CARDS), scale=0.25, repeats=1, policies=[p for p in POLICIES if not p.endswith('_cached')])
@@ -23,6 +24,9 @@ def _list(choices):
         unknown = [x for x in items if x not in choices]
         if unknown or not items:
             raise argparse.ArgumentTypeError(f'expected a comma-separated subset of {",".join(choices)}')
+        # A repeated entry would rerun into the same pass directory and bucket prefix.
+        if len(set(items)) != len(items):
+            raise argparse.ArgumentTypeError(f'duplicate entries in {text}')
         return items
     return parse
 
@@ -45,7 +49,9 @@ def cmd_run(args):
     code = run(args)
     if args.compare and code in (0, 2):
         try:
-            return compare_runs(args.run_root, _reference(args.reference)) or code
+            # The run's own exit code wins; the comparison is printed either way.
+            compared = compare_runs(args.run_root, _reference(args.reference))
+            return code or compared
         except SystemExit as e:
             print(e.code, file=sys.stderr)
             return code or 1
@@ -70,8 +76,9 @@ def cmd_compare(args):
 def cmd_report(args):
     summary = R.read_summary(os.path.join(args.run_dir, 'summary.tsv'))
     policies = [p for p in POLICIES if any(r['policy'] == p for r in summary)]
+    print(R.render_header(R.read_manifest(os.path.join(args.run_dir, 'manifest.tsv')), summary), end='')
     print(R.render_table(summary, [p for p in policies if not p.endswith('_cached')],
-                         [p for p in policies if p.endswith('_cached')]))
+                         [p for p in policies if p.endswith('_cached')], CARD_UNITS))
     if args.diagnostics:
         print(R.render_diagnostics(summary))
     return 0
@@ -99,7 +106,7 @@ def main():
     r.add_argument('--endpoint', help=f'an already running store instead of rustfs.sh on {DEFAULT_ENDPOINT}')
     r.add_argument('--endpoint-version')
     r.add_argument('--port-base', type=int, default=19700)
-    r.add_argument('--runs-dir', default='runs')
+    r.add_argument('--runs-dir', default=DEFAULT_RUNS_DIR)
     r.add_argument('--keep-prefix', action='store_true', help='keep the run\'s bucket prefix')
     r.add_argument('--compare', action='store_true', help='compare with reference/CURRENT after the run')
     r.add_argument('--reference', help='run directory for --compare (default: the one reference/CURRENT names)')

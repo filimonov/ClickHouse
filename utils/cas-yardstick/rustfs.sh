@@ -1,15 +1,17 @@
 #!/bin/bash
 # RustFS container for the yardstick.
-# usage: rustfs.sh start [--port N] [--data DIR] | stop | status | rm-prefix <bucket/prefix>
+# usage: rustfs.sh start [--data DIR] | stop | status | rm-prefix <bucket/prefix>
 set -euo pipefail
 
 NAME=cas-yardstick-rustfs
 IMAGE=rustfs/rustfs:1.0.0-rc.3
 MC_IMAGE=minio/mc:RELEASE.2025-04-16T18-13-26Z
 PORT=19121
-DATA="$PWD/tmp/cas-yardstick-rustfs-data"
+DATA="$(realpath "$(dirname "$0")/../..")/tmp/cas-yardstick/rustfs-data"
 MARKER=.cas-yardstick-rustfs
 MC_TIMEOUT=60
+# A full run leaves a prefix too large to remove within MC_TIMEOUT.
+RM_PREFIX_TIMEOUT=1800
 
 mc()
 {
@@ -26,7 +28,6 @@ case "$cmd" in
     start)
         while [ $# -gt 0 ]; do
             case "$1" in
-                --port) PORT=$2; shift 2 ;;
                 --data) DATA=$2; shift 2 ;;
                 *) echo "unknown argument: $1" >&2; exit 2 ;;
             esac
@@ -77,12 +78,11 @@ case "$cmd" in
         ;;
     rm-prefix)
         target=${1:?usage: rustfs.sh rm-prefix <bucket/prefix>}
-        # A full run leaves a prefix too large to remove within the default 60 s.
-        MC_TIMEOUT=1800
+        MC_TIMEOUT=$RM_PREFIX_TIMEOUT
         mc "mc rm --recursive --force r/$target"
         ;;
     *)
-        echo "usage: $0 start [--port N] [--data DIR] | stop | status | rm-prefix <bucket/prefix>" >&2
+        echo "usage: $0 start [--data DIR] | stop | status | rm-prefix <bucket/prefix>" >&2
         exit 2
         ;;
 esac

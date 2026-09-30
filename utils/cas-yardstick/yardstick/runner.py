@@ -1,5 +1,7 @@
 """Run cards on policies: one server process and one fresh bucket prefix per (policy, card, repeat)."""
 import datetime
+import glob
+import hashlib
 import os
 import platform
 import shlex
@@ -16,12 +18,18 @@ from . import config
 from . import gc
 from . import report as R
 from .cards import CARDS
+
+CARD_UNITS = {name: card.unit for name, card in CARDS.items()}
 from .client import Client
 
 TOOL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PHASES = ('cold', 'hot')
 SERVER_START_TIMEOUT_SEC = 300
 SERVER_STOP_TIMEOUT_SEC = 120
+# Above rustfs.sh's own RM_PREFIX_TIMEOUT, so the script's deadline fires first and removes its mc container.
+RM_PREFIX_TIMEOUT_SEC = 1800 + 120
+# What defines the measurement; docs, tests and accepted references do not.
+WORKLOAD_GLOBS = ('yardstick.py', 'yardstick/*.py', 'yardstick/cards/*.py', 'etc/*', 'rustfs.sh', 'server.sh')
 GC_ROUNDS_COLUMNS = ['round_id', 'started_in_window', 'finished_in_window', 'outcome', 'objects_deleted',
                      'manifests_deleted', 'duration_ms']
 TABLE_METRICS = ['wall', 'median_op_ms', 'p90_op_ms'] + R.REQUEST_METRICS + ['bytes_read', 'bytes_written']
@@ -57,6 +65,23 @@ class Deps:
     client_for: Callable[[str], object]
     write_config: Callable = config.write_config
     config_hashes: dict = field(default_factory=dict)
+
+
+def workload_files(tool_dir) -> list[str]:
+    return sorted({os.path.relpath(p, tool_dir) for g in WORKLOAD_GLOBS for p in glob.glob(os.path.join(tool_dir, g))
+                   if os.path.isfile(p)})
+
+
+def workload_hash(tool_dir) -> str:
+    """SHA-256 over the (path, bytes) of every workload file."""
+    digest = hashlib.sha256()
+    for rel in workload_files(tool_dir):
+        with open(os.path.join(tool_dir, rel), 'rb') as f:
+            content = f.read()
+        for chunk in (rel.encode(), content):
+            digest.update(len(chunk).to_bytes(8, 'little'))
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def run_dir_for(base, run_id, policy, card, k, phase) -> str:
@@ -143,7 +168,7 @@ def _window(card, c, policy, counts, phase, k, pass_dir):
         inside = sum(r['started_in_window'] and r['finished_in_window'] for r in rounds)
         rows.append(_row(policy, card.name, phase, k, 'gc_rounds', inside, units))
         rows.append(_row(policy, card.name, phase, k, 'gc_rounds_overlapping', len(rounds) - inside, units))
-    diagnostics = R.S3_ERROR_COUNTERS + (R.CAS_DIAGNOSTICS if policy.startswith('cas') else [])
+    diagnostics = R.S3_ERROR_COUNTERS + (R.CAS_DIAGNOSTICS if is_cas else [])
     rows += [_row(policy, card.name, phase, k, m, delta[m] if m in present else R.UNAVAILABLE, units)
              for m in diagnostics]
     return rows
@@ -161,7 +186,7 @@ def run_one(policy, card, k, deps: Deps) -> list[dict]:
     phases = PHASES if card.has_hot else PHASES[:1]
     ok, reason = card.supports(policy)
     if not ok:
-        return _status_rows(policy, card, PHASES, k, f'UNSUPPORTED ({reason})')
+        return _status_rows(policy, card, phases, k, f'UNSUPPORTED ({reason})')
 
     pass_dir = os.path.abspath(run_dir_for(deps.runs_dir, deps.run_id, policy, card.name, k, ''))
     os.makedirs(pass_dir, exist_ok=True)
@@ -261,8 +286,17 @@ def run_all(policies, cards, repeats, deps: Deps, cleanup, after_pass=None, timi
     return rows, interrupted, cleaned
 
 
-def _out(cmd, **kw):
-    return subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=120, **kw).stdout.strip()
+def _out(cmd, timeout=120, **kw):
+    return subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=timeout, **kw).stdout.strip()
+
+
+def remove_prefix(run_id) -> bool:
+    try:
+        _out(['bash', os.path.join(TOOL_DIR, 'rustfs.sh'), 'rm-prefix', f'test/{run_id}'], timeout=RM_PREFIX_TIMEOUT_SEC)
+        return True
+    except subprocess.SubprocessError as e:
+        print(f'removing prefix test/{run_id} failed: {e}', file=sys.stderr)
+        return False
 
 
 def _probe(binary):
@@ -296,7 +330,7 @@ def _smoke_failures(summary, policies, cards):
 
 def run(args) -> int:
     """Run every (repeat, policy, card) and print the table.
-    Exit code: 1 on a FAILED pass or a failed prefix removal, 2 on a failed smoke, 130 on Ctrl-C."""
+    Exit code: 1 on a FAILED pass or a failed prefix removal, 2 on a failed smoke, 130 on Ctrl-C (which wins)."""
     cards = [CARDS[name] for name in args.cards]
     policies = args.policies
     run_id = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -317,7 +351,8 @@ def run(args) -> int:
         binary_version=version,
         git_rev=_out(['git', 'rev-parse', '--short', 'HEAD'], cwd=TOOL_DIR),
         build_type=build_type,
-        workload_rev=_out(['git', 'log', '-1', '--format=%h', '--', '.'], cwd=TOOL_DIR),
+        workload_hash=workload_hash(TOOL_DIR),
+        dirty='yes' if _out(['git', 'status', '--porcelain', '--'] + workload_files(TOOL_DIR), cwd=TOOL_DIR) else 'no',
         scale=args.scale,
         counts=_format_counts(cards, args.scale),
         gc=args.gc,
@@ -341,37 +376,35 @@ def run(args) -> int:
                 config_hashes=hashes)
     samples_path = os.path.join(run_root, 'samples.tsv')
 
-    def remove_prefix():
-        if args.keep_prefix:
-            return True
-        try:
-            _out(['bash', os.path.join(TOOL_DIR, 'rustfs.sh'), 'rm-prefix', f'test/{run_id}'])
-            return True
-        except subprocess.SubprocessError as e:
-            print(f'removing prefix test/{run_id} failed: {e}', file=sys.stderr)
-            return False
-
     timings = []
-    rows, interrupted, cleaned = run_all(policies, cards, args.repeats, deps, remove_prefix,
+    rows, interrupted, cleaned = run_all(policies, cards, args.repeats, deps,
+                                         lambda: args.keep_prefix or remove_prefix(run_id),
                                          after_pass=lambda rows: R.write_samples(samples_path, rows),
                                          timings=timings)
-    write_pass_seconds(os.path.join(run_root, 'pass_seconds.tsv'), timings)
-    exit_code = 0 if cleaned else 1
-    if interrupted:
-        print('interrupted: the table below covers the finished passes only', file=sys.stderr)
-        exit_code = 130
+    return finish_run(run_root, rows, timings, interrupted, cleaned, policies, cards, args.smoke)
 
-    R.write_samples(samples_path, rows)
-    summary = R.build_summary(rows)
+
+def finish_run(run_root, rows, timings, interrupted, cleaned, policies, cards, smoke) -> int:
+    """Write the run's files and print its table; returns the exit code of `run`."""
+    write_pass_seconds(os.path.join(run_root, 'pass_seconds.tsv'), timings)
+    R.write_samples(os.path.join(run_root, 'samples.tsv'), rows)
+    # An interrupted repeat leaves policies with different repeat sets; their ratios are dropped, not paired.
+    summary = R.build_summary(rows, strict=not interrupted)
     R.write_summary(os.path.join(run_root, 'summary.tsv'), summary)
+    manifest = R.read_manifest(os.path.join(run_root, 'manifest.tsv'))
+    print(R.render_header(manifest, summary), end='')
     print(R.render_table(summary, [p for p in policies if not p.endswith('_cached')],
-                         [p for p in policies if p.endswith('_cached')]))
-    if any(r['metric'] == 'status' and r['value'] == 'FAILED' for r in rows):
-        exit_code = exit_code or 1
-    if args.smoke:
+                         [p for p in policies if p.endswith('_cached')], CARD_UNITS))
+    exit_code = 0
+    if not cleaned or any(r['metric'] == 'status' and r['value'] == 'FAILED' for r in rows):
+        exit_code = 1
+    if smoke:
         failures = _smoke_failures(summary, policies, cards)
         for f in failures:
             print(f'smoke: {f}', file=sys.stderr)
         if failures:
             exit_code = 2
+    if interrupted:
+        print('interrupted: the table covers the finished passes only', file=sys.stderr)
+        exit_code = 130
     return exit_code

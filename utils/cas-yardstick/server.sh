@@ -15,9 +15,15 @@ case "$cmd" in
         binary=$1; dir=$(realpath "$2"); port=$3
         [ -f "$dir/etc/config.xml" ] || { echo "missing $dir/etc/config.xml; run write_config first" >&2; exit 1; }
         cd "$dir"
+        # Otherwise a leftover server on the port would answer the readiness check for this one.
+        if [ "$(curl -s --max-time 5 "http://127.0.0.1:$((port + 1))/?query=SELECT+1" || true)" = 1 ]; then
+            echo "port $((port + 1)) already answers; stop the server that holds it" >&2
+            exit 1
+        fi
         # Cache disk paths resolve against custom_cached_disks_base_directory.
         # setsid: SYSTEM SHUTDOWN signals the server's whole process group, which must not contain the caller.
-        setsid nohup "$binary" server --config-file="$dir/etc/config.xml" -- \
+        # No watchdog: server.pid is then the server itself, and SYSTEM SHUTDOWN delivers one SIGTERM, not two.
+        CLICKHOUSE_WATCHDOG_ENABLE=0 setsid nohup "$binary" server --config-file="$dir/etc/config.xml" -- \
             --path="$dir/data/" --tmp_path="$dir/tmp/" --user_files_path="$dir/uf/" \
             --logger.log="$dir/server.log" --logger.errorlog="$dir/server.err.log" \
             --tcp_port="$port" --http_port=$((port + 1)) --interserver_http_port=$((port + 2)) \

@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import os
 import unittest
 from unittest import mock
@@ -7,6 +8,7 @@ from yardstick.cards import CARDS
 from yardstick.config import POLICIES
 
 _PATH = os.path.join(os.path.dirname(__file__), '..', 'yardstick.py')
+REPO_ROOT = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'))
 _spec = importlib.util.spec_from_file_location('yardstick_cli', _PATH)
 CLI = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(CLI)
@@ -46,6 +48,24 @@ class ProfileTest(unittest.TestCase):
             for extra in (['--cards', 'cycle'], ['--scale', '1'], ['--repeats', '2'], ['--policies', 'cas']):
                 with self.subTest(flag=flag, extra=extra), self.assertRaises(SystemExit):
                     parsed(flag, *extra)
+
+    def test_duplicate_selections_are_rejected(self):
+        for extra in (['--cards', 'cycle,cycle'], ['--policies', 'cas,s3,cas']):
+            with self.subTest(extra=extra), self.assertRaises(SystemExit), \
+                    mock.patch('sys.stderr', new_callable=io.StringIO):
+                parsed(*extra)
+
+    def test_default_runs_dir_does_not_depend_on_the_cwd(self):
+        self.assertEqual(parsed().runs_dir, os.path.join(REPO_ROOT, 'tmp', 'cas-yardstick', 'runs'))
+
+    def test_smoke_exit_code_survives_an_incompatible_compare(self):
+        compared = []
+        with mock.patch.object(CLI, 'run', lambda args: setattr(args, 'run_root', 'x') or 2), \
+                mock.patch.object(CLI, 'compare_runs', lambda *a: compared.append(a) or 1), \
+                mock.patch.object(CLI, '_reference', lambda explicit: 'ref'), \
+                mock.patch('sys.argv', ['yardstick.py', 'run', '--binary', 'b', '--smoke', '--compare']):
+            self.assertEqual(CLI.main(), 2)
+        self.assertEqual(compared, [('x', 'ref')])
 
     def test_smoke_and_quick_exclude_each_other(self):
         with self.assertRaises(SystemExit):
