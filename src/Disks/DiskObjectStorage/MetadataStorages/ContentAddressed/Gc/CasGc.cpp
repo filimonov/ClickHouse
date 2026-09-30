@@ -2021,7 +2021,6 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
     size_t head_hint_shard = 0;
     size_t next_head_hint = 0;
     size_t head_search_from = 0;
-    std::optional<BlobRef> last_head_take;
     std::deque<size_t> outstanding_heads;
     /// Throttled on this window's own hints, not `reads.pending()`: read slots a clamp leaves untaken
     /// would otherwise hold the HEAD window shut.
@@ -2048,26 +2047,23 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
         head_hint_shard = shard;
         next_head_hint = 0;
         head_search_from = 0;
-        last_head_take.reset();
     };
-    /// The merge takes in ascending `BlobRef` order, so a candidate below a take is never taken: its
-    /// hint is discarded rather than left holding a window slot.
+    /// The merge takes candidates in ascending `BlobRef` order, so a candidate below a take is never
+    /// taken: its hint is discarded rather than left holding a window slot.
     const auto passHeadHintsTo = [&](const BlobRef & ref)
     {
-        const bool in_order = !last_head_take || !(ref < *last_head_take);
-        chassert(in_order);
-        if (!in_order)
-            return;
         const std::vector<BlobRef> & shard_candidates = head_candidates[head_hint_shard];
         const size_t position = std::lower_bound(shard_candidates.begin() + head_search_from, shard_candidates.end(), ref)
             - shard_candidates.begin();
+        const bool at_candidate = position < shard_candidates.size() && shard_candidates[position] == ref;
+        chassert(at_candidate);
+        if (!at_candidate)
+            return;
         discardHeadHintsBelow(position);
-        const bool listed = position < shard_candidates.size() && shard_candidates[position] == ref;
-        if (listed && !outstanding_heads.empty() && outstanding_heads.front() == position)
+        if (!outstanding_heads.empty() && outstanding_heads.front() == position)
             outstanding_heads.pop_front();
-        next_head_hint = std::max(next_head_hint, listed ? position + 1 : position);
+        next_head_hint = std::max(next_head_hint, position + 1);
         head_search_from = position;
-        last_head_take = ref;
     };
 
     /// Condemn-time observation: ONE HEAD per new zero-transition captures the exact incarnation token
@@ -3527,10 +3523,9 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
     /// folded in AFTER the deltas because the merge applies them that way, unconditionally: a key whose
     /// deltas end in an activation but which a retirement then clears is a candidate too.
     ///
-    /// IT IS A SUPERSET, AND NOTHING MAY COME TO DEPEND ON IT BEING EXACT. A blob named here that keeps
-    /// an untouched prior edge costs one HEAD the merge never takes; a candidate this set misses is
-    /// HEADed inline, which is simply the behaviour with no read-ahead at all. Both are counted, and
-    /// neither is asserted.
+    /// IT IS A SUPERSET: a blob named here that keeps an untouched prior edge costs one HEAD the merge
+    /// never takes. Every take is a candidate, because this applies the merge's own per-(ref, source)
+    /// last verdict in the same stable order; `head_blob` asserts that.
     ///
     /// PLACED HERE, not at the top of the phase: `orphan_source_retirements` is decided just above by
     /// the sweep, and a retirement is a removal like any other. The round's cut is frozen well before
@@ -3548,7 +3543,7 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
         for (const auto & [edge, is_remove] : last_verdict_is_remove)
             (is_remove ? removed : surviving_add).insert(edge.first);
         for (const BlobRef & ref : removed)
-            if (!surviving_add.contains(ref) && !(head_candidate_filter_for_test && head_candidate_filter_for_test(ref)))
+            if (!surviving_add.contains(ref))
                 head_candidates[blobShard(ref, state.gc_shards)].push_back(ref);
     }
 

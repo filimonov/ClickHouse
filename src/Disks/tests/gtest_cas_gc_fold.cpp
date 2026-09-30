@@ -1789,9 +1789,8 @@ namespace
 /// How the reduce phase meets one blob that a drop brought to a removal.
 enum class HeadEntry
 {
-    Taken,      /// a candidate the merge HEADs
-    Passed,     /// a candidate that keeps a prior edge, so the merge never HEADs it
-    Unlisted,   /// HEADed by the merge but left out of the candidates
+    Taken,      /// the merge HEADs it
+    Passed,     /// it keeps a prior edge, so the merge never HEADs it
 };
 
 struct HeadCounts
@@ -1811,28 +1810,16 @@ void PrintTo(const HeadCounts & c, std::ostream * os)
 /// are `[s, s + window)`. `entries` is one shard in `BlobRef` order.
 void modelShard(const std::vector<HeadEntry> & entries, size_t window, HeadCounts & counts)
 {
-    const size_t n = std::count_if(entries.begin(), entries.end(), [](HeadEntry e) { return e != HeadEntry::Unlisted; });
+    const size_t n = entries.size();
     size_t s = 0;
-    size_t pos = 0;   /// the lower bound of the next entry among the candidates
-    for (const HeadEntry entry : entries)
+    for (size_t pos = 0; pos < n; ++pos)
     {
-        if (entry == HeadEntry::Passed)
-        {
-            ++pos;
+        if (entries[pos] == HeadEntry::Passed)
             continue;
-        }
         const size_t outstanding_end = std::min(s + window, n);
-        counts.wasted += std::min(pos, outstanding_end) - std::min(s, outstanding_end);
-        if (entry == HeadEntry::Taken)
-        {
-            ++(pos < outstanding_end ? counts.hit : counts.miss);
-            s = ++pos;
-        }
-        else
-        {
-            ++counts.miss;
-            s = pos;
-        }
+        counts.wasted += std::min(pos, outstanding_end) - s;
+        ++(pos < outstanding_end ? counts.hit : counts.miss);
+        s = pos + 1;
     }
     counts.wasted += std::min(s + window, n) - std::min(s, n);
 }
@@ -1890,12 +1877,6 @@ HeadWindowRun runHeadWindowScenario(const std::vector<std::pair<BlobRef, HeadEnt
         Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = fmt::format("admit-{}", blobHashAlgoName(algo)),
                                        .blob_hash_algo = algo, .blob_hash_allow_new = true});
     Gc gc(store, kGc);
-
-    std::set<BlobRef> unlisted;
-    for (const auto & [blob, entry] : blobs)
-        if (entry == HeadEntry::Unlisted)
-            unlisted.insert(blob);
-    gc.setHeadCandidateFilterForTest([unlisted](const BlobRef & blob) { return unlisted.contains(blob); });
 
     HeadWindowRun run;
     std::array<uint64_t, 3> at_intake_end{};
@@ -2050,14 +2031,6 @@ TEST(CASGCFold, HeadWindowRestartsAtEachShard)
     for (size_t i = 0; i < blobs.size(); ++i)
         ASSERT_EQ(blobShard(blobs[i].first, 2), i < shard0_blobs ? 0u : 1u);
     expectHeadWindow(blobs, {.gc_shards = 2});
-}
-
-/// A take nobody listed keeps its successor hintable, so the successor hits after a long gap.
-TEST(CASGCFold, HeadWindowSuccessorOfAnUnlistedTakeHits)
-{
-    const auto blobs = headPattern(BlobHashAlgo::CityHash128, 0,
-        {{2, HeadEntry::Taken}, {10, HeadEntry::Passed}, {1, HeadEntry::Unlisted}, {6, HeadEntry::Taken}});
-    expectHeadWindow(blobs, {});
 }
 
 /// Reads a clamped log never takes do not count against the HEAD window.
