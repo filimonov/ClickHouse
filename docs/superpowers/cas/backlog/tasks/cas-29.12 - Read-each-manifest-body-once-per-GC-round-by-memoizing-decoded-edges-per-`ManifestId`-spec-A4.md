@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-30 13:23'
+updated_date: '2026-09-30 13:34'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -77,4 +77,6 @@ Measured (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/01..03`):
 Cost: a byte-accounted cache (interned namespaces, two hash tables, a FIFO list, two eviction loops), up to about 80 MiB per fold.
 Safety (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/05-memo-vs-deposed-leader-adjudication.md`): blob deletes stay safe; in a leader overlap a deposed leader's round is no longer suppressed by the absent-body anomaly and can reach `deleteConfirmedMeta` jobs, which widens CAS-30. Fix CAS-30 first, or re-check leadership after the fold.
 Owner's rule (2026-09-30): no code complexity without proven value. Open before acceptance: (1) a reuse-distance trace to see whether an LRU of the last K bodies without byte accounting keeps >= 90% of the hits (measurement in progress); (2) proof of value on a realistic GC-backlog scenario (CAS-321 subtask for the yardstick card).
+
+2026-09-30, estimate for the real stand. otel.demo (`chi-otel-otel-0-0-0`, 26.6.4.20001.altinityantalya), last 24 h before 2026-09-30 13:30 UTC, from `system.cas_gc_log` / `system.cas_log`: `fold_ref_intake` is 40.5% of round time and reads 4,645 manifest bodies per round (984k per day). Bucketing the writers' `build_publish` / `ref_repoint` / `ref_drop` events of 12 hours by the `gc_fold_begin` times (104 windows) gives 606k owner edges on 347k distinct (manifest, window) pairs: an estimated memo hit rate of 0.43 (a manifest is named once in 174k cases, twice in 86k, three times in 87k). That would be about 2,000 fewer GETs per round; if intake time is proportional to its requests, about 13 s of a 109-s round (DERIVED, not measured; the window assignment by event time is approximate and counts 25% more edges than `CASRefEmittedEdges`).
 <!-- SECTION:NOTES:END -->

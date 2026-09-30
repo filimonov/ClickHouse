@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-30 13:23'
+updated_date: '2026-09-30 13:34'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -76,4 +76,8 @@ Suggested second acceptance probe beside otel.demo: S05 (10,000 tables) and S08 
 The first slice (spec `2026-09-29-cas-gc-request-cuts-design.md`: A0, A2, A4, batch half of B4, LIST measurement) was chosen by request counts from the otel.demo audit, not by time share. Outcome: A0 removed (blocked by CAS-30, CAS-29.3), A2 rejected by measurement (CAS-29.5), A4 and B4 implemented but not accepted (CAS-29.12, CAS-29.9), LIST measured (CAS-29.13). Nothing merged.
 Owner's rule for every further stage: no code complexity without proven value; prove it on a scenario that reproduces a GC backlog with store latency before building.
 Reports: `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/README.md`.
+
+2026-09-30, the real stand. otel.demo (`chi-otel-otel-0-0-0`, 26.6.4.20001.altinityantalya), last 24 h before 2026-09-30 13:30 UTC, from `system.cas_gc_log` / `system.cas_log`: 212 rounds, all Success on one leader, p50 109 s, p90 138 s, 22.9k s of GC per day; condemned = graduated = deleted = about 164k blobs per day, so the GC keeps up (the five-hour rounds of the 2026-09-25 audit are gone).
+Phase shares of round time: `fold_ref_intake` 40.5% (45 s per round: 4,645 manifest GETs + 2,041 ref-log GETs, all through read-ahead), `pending_deletes` 33.3% (34 s: 774 blobs, one HEAD + one DELETE each, on the round thread: 10.0 s of HEAD + 25.7 s of DELETE time), `fold_reduce` 10.9% (read-ahead: 2,015 hits, 3,834 wasted per round), `ref_object_cleanup` 9.3% (2,047 ref objects in 8 bulk requests, 7.0 s), `defer_decision` 2.6%, `manifest_deletes` 2.4%, `namespace_cleanup` 0.4%.
+Reading: the two phases worth attacking on this stand are the manifest reads of the fold and the per-blob HEAD + DELETE of `pending_deletes`. The stand shows the deletes on the round thread, so it does not run the parallel `pending_deletes` of PR #2351 yet (inferred from the counters, not from the build).
 <!-- SECTION:NOTES:END -->

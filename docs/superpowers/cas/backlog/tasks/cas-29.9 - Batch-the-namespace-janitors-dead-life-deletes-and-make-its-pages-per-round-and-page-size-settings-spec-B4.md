@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-30 13:23'
+updated_date: '2026-09-30 13:34'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -75,4 +75,6 @@ First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-034')
 2026-09-30: the batch-delete half is implemented on the branch (37afe9138fb, 2a71ba3dd8f, bc2e9831a62; about 175 lines in `Gc/CasNamespaceJanitor.{h,cpp}` and `Formats/CasLayout.h`); the settings half is not started. Branch `cas/gc-request-cuts` (worktree `gc-request-cuts`, base antalya-26.6 @e2dd0f5d343, HEAD 1edf28f2a9a on 2026-09-30; not pushed, no PR). NOT accepted yet.
 Measured only on tiny dead lives (ca-soak S30, `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/01-before-after-10s-rounds.md` T2): DELETE requests for 372-430 janitor keys 383 / 395 / 378 -> 70 / 68 / 68 / 69, about 6 keys per batch; of the remaining requests 8-10 are batches and about 60 are per-key exact-token deletes of `_ckpt` / `_files` (see CAS-284.5). Janitor phase time 430 / 494 / 471 ms -> 978 / 338 / 319 / 317 ms: one outlier, not established.
 Open before acceptance (owner's rule: no complexity without proven value): an A/B on DROP of a table with a 7k-20k-key ref stream, with and without latency (measurement in progress).
+
+2026-09-30, the real stand. otel.demo (`chi-otel-otel-0-0-0`, 26.6.4.20001.altinityantalya), last 24 h before 2026-09-30 13:30 UTC, from `system.cas_gc_log` / `system.cas_log`: `janitor_deleted` = 0 in every round (`janitor_keys` 952 listed per round), `namespace_cleanup` is 0.4% of round time. The batch deletes change nothing on this stand; their value can only show on drops of tables with long ref streams.
 <!-- SECTION:NOTES:END -->
