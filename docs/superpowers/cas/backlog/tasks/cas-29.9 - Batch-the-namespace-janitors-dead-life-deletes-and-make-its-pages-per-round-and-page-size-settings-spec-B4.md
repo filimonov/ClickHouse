@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-30 20:56'
+updated_date: '2026-09-30 23:37'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -68,5 +68,5 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30 spec started (agent cas299-spec): docs/superpowers/specs/2026-09-30-cas-gc-janitor-batches-and-budget-design.md; questions to settle: budget shape instead of one page per authoritative round; deletes on deferred rounds under the pinned seal; batch failure without fallback; A/B on S30 + 20k drain with drain wall time as the metric.
+2026-10-01 spec r10 (six codex rounds; 0 MAJOR at r8, owner changes r9/r10) committed at docs/superpowers/specs/2026-09-30-cas-gc-janitor-batches-and-budget-design.md; owner: proceed to plan + SDD unattended on fix/antalya-26.6/cas-gc-janitor-batches (worktree cas-83).
 <!-- SECTION:NOTES:END -->
