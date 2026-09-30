@@ -776,6 +776,13 @@ public:
         return outcome;
     }
 
+    std::optional<DB::Cas::Backend::RawMeta> head(const String & key, Access & access) override
+    {
+        if (before_head)
+            before_head(key);
+        return CountingBackend::head(key, access);
+    }
+
     void removeManyWriteOnce(const Keys & keys, Access & access) override
     {
         ++bulk_requests;
@@ -807,6 +814,7 @@ public:
     std::function<void(Access &)> after_namespace_list;
     std::function<void(const Keys &, Access &)> before_bulk;
     std::function<void(const Keys &)> after_bulk;
+    std::function<void(const String &)> before_head;
     std::function<void(const String &, Access &)> before_single_remove;
     std::function<void(const String &)> after_single_remove;
 };
@@ -1172,4 +1180,35 @@ TEST(CASNamespaceJanitor, AdmissionLossPublishesNoCursor)
                 << "the completed batch is never rolled back, and the page stays selected for a retry";
         }
     }
+}
+
+TEST(CASNamespaceJanitor, FallbackHeadFailureLeaksTheKeyWithoutDeletingIt)
+{
+    auto backend = std::make_shared<BatchJanitorBackend>(/*tokenless*/ true);
+    FakeClock clock;
+    CasRequests requests(backend, Fence::open(), clock.nowFn(), clock.sleepFn());
+    const Layout layout("p");
+    seedCatalog(*backend, layout);
+    const std::vector<String> keys = seedStream(*backend, layout, life("dead", 221), 2, 0);
+    backend->before_bulk = [&](const BatchJanitorBackend::Keys &, BatchJanitorBackend::Access &) { throwTransient(); };
+    backend->before_head = [&](const String & key)
+    {
+        if (key == keys[0])
+            throwTransient();
+    };
+    backend->resetCounts();
+
+    const auto result = NamespaceJanitor(requests, layout, 100).runOnePage(false, [] { return true; });
+
+    EXPECT_GE(backend->bulk_requests, 1u);
+    EXPECT_EQ(result.leaked, 1u);
+    ASSERT_EQ(result.anomalies.size(), 1u);
+    EXPECT_NE(result.anomalies.front().find("leaked dead-life object '" + keys[0] + "': exact HEAD failed"), String::npos)
+        << result.anomalies.front();
+    EXPECT_EQ(backend->single_removes, (std::vector<String>{keys[1]})) << "a key without a token is never deleted";
+    EXPECT_EQ(backend->deleteCount(keys[0]), 0u);
+    EXPECT_TRUE(present(*backend, keys[0]));
+    EXPECT_FALSE(present(*backend, keys[1]));
+    EXPECT_EQ(result.deleted, 1u);
+    EXPECT_TRUE(cursorPublished(requests, layout)) << "a leak is a final per-key outcome and the fence held";
 }
