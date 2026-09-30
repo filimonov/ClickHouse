@@ -331,30 +331,38 @@ decision, decode, counter and event stays on the round thread and the phase's se
 not depend on the setting. Two things do: a request a worker performed lands on that worker's
 `ProfileEvents`, not the phase row's, and a hinted key the walk never takes (a namespace held below
 its lookahead, a `HEAD` candidate that kept an edge) is a wasted request. `CASGCReadAheadHit` and
-`CASGCReadAheadMiss` are charged to the phase that takes the result; `CASGCReadAheadWasted` is
-counted when the reader is destroyed after phase 10, so it shows up in the round-level
-`ProfileEvents`, not on the phase-8 or phase-9 row.
+`CASGCReadAheadMiss` are charged to the phase that takes the result. `CASGCReadAheadWasted` is
+counted in two places. A `HEAD` hint that phase 9's merge passes is discarded and counted in
+`fold_reduce`, including the disposal at the end of each shard. A manifest or `_log` read the walk
+never takes is counted when the reader is destroyed after phase 10, so it shows up in the
+round-level `ProfileEvents`, not on a phase row.
 
 **Manifest-body memo.** The fold keeps the validated bodies it has already read in a per-fold memo
 keyed by manifest identity, so a manifest that two edges of one round name (a publish and its drop,
 a repoint, an attach) is read and decoded once. A memo entry holds the body's `Etag` and its
 `Blob`-placement entries (blob reference, source-edge id, path), in body order. A hit rebuilds the
 deltas with the sign and transaction ordinal of the edge being folded, emits the same events, and
-for a removal queues the exact body delete from the stored `Etag`.
+for a removal records the stored `Etag` for phase 15, which deletes the body by key and uses the
+`Etag` only in the delete event.
 
 - **Lifetime:** one fold. The memo is freed when the fold ends, so nothing carries to the next
   round. The rebuild path does not use it.
-- **Why a hit equals a read:** a manifest key is write-once, and no folded body is deleted while the
-  fold runs. Writers delete only staged bodies that were never precommitted, and `GC` deletes
-  owner-removed bodies in [phase 15](#phase-15-manifest-deletes), after the commit.
+- **Why a hit equals a read:** a manifest key is write-once, and this process deletes no body the
+  fold names while the fold runs. Writers delete only staged bodies that were never precommitted.
+  `GC` deletes owner-removed bodies in [phase 15](#phase-15-manifest-deletes), after the commit.
+  The orphan sweep ([phase 18](#phase-18-orphan-sweep)) deletes only manifests outside its
+  protection view of the ref graph.
+  A deposed leader's post-commit delete can overlap a successor's fold. The memo then answers with
+  the bytes an earlier read returned, where a fresh read could find the key absent. Such a body's
+  removal is already adopted by the committed round, so the fold has no edge that needs it.
 - **Absence is never memoized.** An absent body is probed again by the next edge that names it, and
   a body that fails validation throws as without the memo.
 - **Bound:** 64 MiB of charged storage per fold, oldest insert evicted first. The charge covers the
-  map and FIFO nodes, the `Etag` strings, every entry and its path, each namespace once, and the
-  hash tables' bucket arrays, which eviction does not shrink. The real
-  allocation stays within 1.25 times the charge, so the worst-case footprint of a fold's memo is
-  about 80 MiB (64 MiB × 1.25). A manifest whose own charge exceeds the budget is folded without
-  being stored. An evicted or oversized manifest is read again on its next edge.
+  map and list nodes, the `Etag` strings, every entry and its path, each namespace once, and the
+  two hash tables' bucket arrays as measured, which eviction does not shrink. The charge
+  overestimates the allocation, so the memo holds at most 64 MiB. A manifest whose own charge
+  exceeds the budget is folded without being stored. An evicted or oversized manifest is read again
+  on its next edge.
 - **Read-ahead:** the hint loop skips a manifest the memo holds. If an eviction lands between the
   skip and the take, the take reads inline: one `CASGCReadAheadMiss` and one `GET`.
 
@@ -368,7 +376,7 @@ Recomputes the per-shard in-degree snapshot and computes the round's single dest
 
 - **Runs on:** fold path only
 - **Reads:** streaming `GET` of each referenced parent run segment; one `HEAD` per zero-in-degree
-  candidate; one `.meta` `GET` per graduation candidate lacking a confirmed condemn marker. When
+  candidate; one `.meta` `GET` per graduation candidate lacking in-process marker confirmation. When
   orphan-sweep planning runs: a `LIST` page of `cas/manifests/`, a `GET` per candidate, plus
   `gc/state`, the adopted seal, the catalog, and per-namespace `_ckpt` / tail `_log`.
 - **Writes / deletes:** one `PUT` per rewritten run segment; schedules the async `.meta` condemn
@@ -594,7 +602,8 @@ the cursor where it was.
 - **`janitor_deleted`:** a successful batch adds its whole chunk, including keys that were already
   absent, because a batch delete of write-once keys cannot tell the two apart. After a failed batch,
   the exact-token path counts only the keys it removes, so keys the failed batch already deleted are
-  not counted. A tokenless key in a batch sends no `HEAD`, so it cannot leak on a `HEAD` failure.
+  not counted. A tokenless key in a successful batch sends no `HEAD`, so it cannot leak on a `HEAD` failure.
+  After a failed batch, the per-key path sends the `HEAD`, and a failed `HEAD` records a leak.
 
 ## Phase 17 — ref object cleanup {#phase-17-ref-object-cleanup}
 
@@ -934,7 +943,7 @@ No writes.
 |---|---|---:|
 | referenced parent run segments | streaming `GET` | one per referenced run |
 | `<pool_prefix>/blobs/...` | `HEAD` | one per zero-in-degree candidate, plus one peek per carried entry that reached zero again |
-| blob `.meta` | `GET` | one per graduation candidate whose condemn marker this process has not confirmed |
+| blob `.meta` | `GET` | one per graduation candidate with no in-process marker confirmation |
 | new run segments | `PUT` | one per written run |
 | `<pool_prefix>/cas/manifests/` | `LIST` | one bounded page, only when orphan planning runs |
 | manifest candidate body | `GET` | one per nominated candidate (≤ `cas_manifest_sweep_delete_budget_keys`), through the read-ahead; keys decided from their name alone are never read; only when orphan planning runs |
