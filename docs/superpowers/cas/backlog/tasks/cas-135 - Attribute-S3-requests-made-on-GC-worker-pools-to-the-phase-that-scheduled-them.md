@@ -4,7 +4,7 @@ title: Attribute S3 requests made on GC worker pools to the phase that scheduled
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-30 08:22'
+updated_date: '2026-09-30 22:10'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -80,4 +80,6 @@ Facts for the fix:
 - Attaching workers to a group moves their events to the group's counters, not to the round thread's. The phase timer and the `Finish` row must then diff the group's counters; `CurrentThread::getProfileEvents` and a thread-level `ProfileEventsScope` stay blind to workers.
 - Concurrent rounds of different disks need separate groups, or one round's row takes another's requests.
 What stays correct today: counters incremented on the round thread (all `CAS*` take-site counters, synchronous GET/PUT) and the semantic `metrics` map.
+
+Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
 <!-- SECTION:NOTES:END -->

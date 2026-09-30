@@ -4,7 +4,7 @@ title: Report bytes per object class in fsck and bytes reclaimed per GC round
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-09-30 22:10'
 labels:
   - 'area:fsck'
   - 'area:observability'
@@ -60,4 +60,6 @@ Provenance: BACKLOG/operability-and-introspection.md#byte-accounting-blobs-only-
 Merged from CAS-73 (archived): the body/`.meta` split is the number the `.meta` fold decision (DRAFT-8) needs. Every fresh or adopted blob has a `.meta` sibling, so `.bin`/`.mrk*`/`primary.idx` cost two objects each; `FsckReport` already has the pairing advisories `meta_without_body`/`body_without_meta` and the body/meta partition in `CasFsck.cpp` (2031-triage CAS-117). Provenance of the merged item: BACKLOG/performance.md#per-blob-meta-sibling-object-count.
 
 First recorded: 2026-08-21 (b96f3805036, by 'byte-accounting-blobs-only-and-preview-size-units')
+
+Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
 <!-- SECTION:NOTES:END -->

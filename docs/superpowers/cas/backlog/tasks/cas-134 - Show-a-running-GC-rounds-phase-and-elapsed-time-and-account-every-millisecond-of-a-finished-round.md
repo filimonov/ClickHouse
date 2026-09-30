@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-02'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-09-30 22:10'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -69,4 +69,6 @@ Provenance: BACKLOG/gc.md#gc-observability [GC round progress observability] and
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-02 (c6ed3162fa0, by 'GC round progress observability')
+
+Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
 <!-- SECTION:NOTES:END -->

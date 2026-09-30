@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:37'
+updated_date: '2026-09-30 22:10'
 labels:
   - 'area:observability'
   - 'area:upstream'
@@ -56,3 +57,9 @@ Provenance: GitHub issue #2397 requests 1-2 (open), reconciled by u17-github-cas
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
+<!-- SECTION:NOTES:END -->

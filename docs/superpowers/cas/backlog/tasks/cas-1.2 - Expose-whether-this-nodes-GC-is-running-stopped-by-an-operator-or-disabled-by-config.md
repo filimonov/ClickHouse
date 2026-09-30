@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-09-30 22:10'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -63,4 +63,8 @@ Provenance: BACKLOG/operability-and-introspection.md#gc-health-zero-is-ambiguous
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (967849c785b, by 'gc-enabled-false-silent')
+
+Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
+
+Expose the state through system.metrics (CurrentMetrics), not asynchronous metrics: the transition is exact and cheap (user decision 2026-09-30, same reasoning as CAS-289.4).
 <!-- SECTION:NOTES:END -->
