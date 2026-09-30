@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CatalogLifecycleReconciler.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcMetaWriter.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcReadAhead.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcManifestMemo.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFoldSealFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcStateFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasGcOutcomesFormat.h>
@@ -513,6 +514,11 @@ public:
     /// blob in-degree). Production never calls this; trim is always enabled.
     void setTrimEnabledForTest(bool enabled) { trim_enabled = enabled; }
 
+    /// TEST SEAMS: fold without the manifest memo, the oracle a memo test compares against, or with a
+    /// smaller memo budget. Production always folds with a `GcManifestMemo::kBudgetBytes` memo.
+    void setManifestMemoForTest(bool enabled) { manifest_memo_enabled = enabled; }
+    void setManifestMemoBudgetForTest(size_t bytes) { manifest_memo_budget = bytes; }
+
     /// Fires once, synchronously, right after `listRefPrefix`'s hot-scan catalog `GET`
     /// (`CasRefCatalog::read`) returns -- the exact instant the round's catalog cut is taken, before
     /// the round does anything else with it. Lets a test land a real namespace birth (through the
@@ -856,8 +862,15 @@ private:
     /// PRESENT but fails refMatchesBody / manifestNamespaceMatches throws CORRUPTED_DATA.
     /// `txn_ordinal` stamps every delta this call pushes with the round-local ordinal of the ref
     /// transaction that emitted it (probe B2 — see `TxnApplyLedger`).
-    bool foldManifestEdges(GcReadAhead & reads, const ManifestId & id, int sign, std::vector<BlobDelta> & deltas,
-                           std::map<ManifestId, Etag> & mf_cleanup, uint32_t txn_ordinal);
+    /// With a `memo`, a body it holds is folded without a read, and a body read here is added to it.
+    bool foldManifestEdges(GcReadAhead & reads, GcManifestMemo * memo, const ManifestId & id, int sign,
+                           std::vector<BlobDelta> & deltas, std::map<ManifestId, Etag> & mf_cleanup,
+                           uint32_t txn_ordinal);
+
+    /// Takes the body of `id` from `reads`, decodes and validates it, and returns its `Blob` entries
+    /// with the read's incarnation. `nullopt` when the body is absent; an invalid body throws
+    /// CORRUPTED_DATA.
+    std::optional<ManifestFold> readManifestFold(GcReadAhead & reads, const ManifestId & id);
 
 
 
@@ -970,6 +983,8 @@ private:
     /// against another node's clock; see `computeHeartbeatFloor`.
     std::function<uint64_t()> mono_ms_fn;
     bool trim_enabled = true;     /// TEST SEAM ONLY: production always trims; see setTrimEnabledForTest
+    bool manifest_memo_enabled = true;                              /// see setManifestMemoForTest
+    size_t manifest_memo_budget = GcManifestMemo::kBudgetBytes;     /// see setManifestMemoBudgetForTest
     /// TEST SEAM ONLY: see setPostHotScanCatalogReadHookForTest. Empty in production.
     std::function<void()> post_hot_scan_catalog_read_hook_for_test;
     /// Leader-local, in-memory count of consecutive deferred

@@ -828,6 +828,7 @@ The server successfully detected this situation and will download merged part fr
     M(CASRefGlobalListPages, "Number of CAS ref LIST pages fetched during GC. Growing values indicate more refs or smaller backend pages to scan.", ValueType::Number) \
     M(CASRefLogBodyGets, "Number of CAS ref-log bodies read and decoded during GC. Growth indicates more reference history to process.", ValueType::Number) \
     M(CASRefManifestBodyFoldGets, "Number of manifest bodies read while GC follows reference edges. High values indicate cache misses or many referenced manifests.", ValueType::Number) \
+    M(CASRefManifestBodyMemoHits, "Number of manifest bodies GC folded from the per-fold memo of already decoded bodies instead of reading them again.", ValueType::Number) \
     M(CASRefEmittedEdges, "Number of reachability edges emitted while GC folds CAS reference history. Growth indicates more reference relationships to process.", ValueType::Number) \
     M(CASRefCleanupObjectsDeleted, "Number of old CAS ref logs and snapshots deleted after safe coverage was confirmed. Includes keys that were already absent, since a batch delete of write-once keys cannot tell the two apart. Growth indicates cleanup progress.", ValueType::Number) \
     M(CASRefSnapshotPutBytes, "Total bytes written to CAS ref-table snapshots. A high value indicates frequent or large snapshot publication.", ValueType::Bytes) \

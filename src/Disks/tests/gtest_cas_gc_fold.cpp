@@ -6,6 +6,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasFsck.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRecordStreamFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobMeta.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/ProfileEvents.h>
@@ -25,6 +27,9 @@ namespace DB::ErrorCodes
 namespace ProfileEvents
 {
     extern const Event CASGCCondemnMarkerUnconfirmedCarry;
+    extern const Event CASGCReadAheadMiss;
+    extern const Event CASRefManifestBodyFoldGets;
+    extern const Event CASRefManifestBodyMemoHits;
 }
 
 namespace
@@ -1169,4 +1174,466 @@ TEST(CASGCFold, PersistedConfirmationGraduatesWithMetaAbsent)
 
     expectSameRow(persisted.sibling_after, cleared.sibling_after);
     EXPECT_TRUE(persisted.sibling_after->delete_pending);
+}
+
+namespace
+{
+
+/// Records which watched manifest keys the running fold read, and fails the test on a delete of one of
+/// them while the fold still runs. The window is the phase-sink interval from the end of
+/// `fold_ref_group` to the end of `fold_reduce`, which contains every read of the ref intake.
+class FoldGuardBackend : public InMemoryBackend
+{
+public:
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
+    {
+        auto got = InMemoryBackend::read(key, access);
+        std::function<void()> hook;
+        {
+            std::lock_guard lock(mutex);
+            ++reads_of[key];
+            if (got && fold_running && watched.contains(key))
+                folded.insert(key);
+            if (const auto it = read_hooks.find(key); it != read_hooks.end())
+            {
+                hook = std::move(it->second);
+                read_hooks.erase(it);
+            }
+        }
+        if (hook)
+            hook();
+        return got;
+    }
+
+    RawRemoval remove(const String & key, const String & expected_value, TransportAccess & access) override
+    {
+        checkDelete(key);
+        return InMemoryBackend::remove(key, expected_value, access);
+    }
+
+    void removeManyWriteOnce(const std::vector<WriteOnceKey> & keys, TransportAccess & access) override
+    {
+        for (const WriteOnceKey & key : keys)
+            checkDelete(key.str());
+        InMemoryBackend::removeManyWriteOnce(keys, access);
+    }
+
+    void watch(const String & key)
+    {
+        std::lock_guard lock(mutex);
+        watched.insert(key);
+    }
+    /// Runs `hook` once, right after the first read of `key` returns.
+    void onRead(const String & key, std::function<void()> hook)
+    {
+        std::lock_guard lock(mutex);
+        read_hooks[key] = std::move(hook);
+    }
+    GcPhaseSink phaseSink()
+    {
+        return [this](const GcPhaseRecord & record)
+        {
+            std::lock_guard lock(mutex);
+            if (record.phase == "fold_ref_group")
+                fold_running = true;
+            else if (record.phase == "fold_reduce")
+                fold_running = false;
+        };
+    }
+    void setFailOnGuardedDelete(bool fail)
+    {
+        std::lock_guard lock(mutex);
+        fail_on_guarded_delete = fail;
+    }
+    std::set<String> foldedKeys() const
+    {
+        std::lock_guard lock(mutex);
+        return folded;
+    }
+    std::vector<String> guardedDeletes() const
+    {
+        std::lock_guard lock(mutex);
+        return guarded_deletes;
+    }
+    size_t readsOf(const String & key) const
+    {
+        std::lock_guard lock(mutex);
+        const auto it = reads_of.find(key);
+        return it == reads_of.end() ? 0 : it->second;
+    }
+
+private:
+    void checkDelete(const String & key)
+    {
+        std::lock_guard lock(mutex);
+        if (!fold_running || !folded.contains(key))
+            return;
+        guarded_deletes.push_back(key);
+        if (fail_on_guarded_delete)
+            ADD_FAILURE() << "a manifest body the running fold has folded was deleted: " << key;
+    }
+
+    mutable std::mutex mutex;
+    std::set<String> watched;
+    std::set<String> folded;
+    std::vector<String> guarded_deletes;
+    std::map<String, size_t> reads_of;
+    std::map<String, std::function<void()>> read_hooks;
+    bool fold_running = false;
+    bool fail_on_guarded_delete = true;
+};
+
+/// Everything a fold run leaves behind that the memo could change: the whole store, the folded edge
+/// events, each round's clamp decision and the read counters.
+struct MemoRun
+{
+    std::map<String, String> objects;
+    std::vector<String> edge_events;
+    std::vector<bool> clamped;
+    uint64_t body_gets = 0;
+    uint64_t memo_hits = 0;
+    uint64_t read_ahead_misses = 0;
+};
+
+struct MemoOptions
+{
+    bool memo = true;
+    uint64_t io_concurrency = 16;
+    std::optional<size_t> memo_budget = std::nullopt;
+};
+
+struct MemoFixture
+{
+    std::shared_ptr<FoldGuardBackend> backend = std::make_shared<FoldGuardBackend>();
+    std::shared_ptr<SharedEventLog> events = std::make_shared<SharedEventLog>();
+    PoolPtr store;
+    std::unique_ptr<Gc> gc;
+
+    explicit MemoFixture(const MemoOptions & options)
+    {
+        store = Pool::open(backend, PoolConfig{
+            .pool_prefix = "p",
+            .server_root_id = "test",
+            .gc_fold_max_defer_rounds = 0,
+            .gc_io_concurrency = options.io_concurrency,
+            .event_sink = [log = events](CasEvent event) { log->push(std::move(event)); }});
+        gc = std::make_unique<Gc>(store, kGc);
+        gc->setManifestMemoForTest(options.memo);
+        if (options.memo_budget)
+            gc->setManifestMemoBudgetForTest(*options.memo_budget);
+        gc->setPhaseSink(backend->phaseSink());
+    }
+    const Layout & layout() const { return store->layout(); }
+};
+
+uint64_t counter(ProfileEvents::Event event)
+{
+    return ProfileEvents::global_counters[event].load();
+}
+
+std::map<String, String> objectsOf(Backend & backend)
+{
+    std::map<String, String> objects;
+    OperationForTest op(backend);
+    String cursor;
+    while (true)
+    {
+        const ListPage page = (*op).list("", cursor, 1000, Retry::standard());
+        for (const ListedKey & listed : page.keys)
+        {
+            /// Per-pool identity (a random pool id, the mount lease's clock) differs between any two pools.
+            if (listed.key == "p/_pool_meta" || listed.key.starts_with("p/gc/server-roots/"))
+                continue;
+            if (const auto got = (*op).read(listed.key, Retry::standard()))
+                objects[listed.key] = got->bytes;
+        }
+        if (page.next_cursor.empty())
+            break;
+        cursor = page.next_cursor;
+    }
+    return objects;
+}
+
+std::vector<String> edgeEventsOf(const SharedEventLog & events)
+{
+    std::vector<String> rendered;
+    for (const CasEvent & ev : events.snapshot())
+    {
+        if (ev.type != CasEventType::RootAdd && ev.type != CasEventType::RootRemove)
+            continue;
+        String line = fmt::format("{}|{}|{}|{}|{}", ev.type == CasEventType::RootAdd ? "add" : "remove",
+                                  ev.namespace_, ev.object_hash, ev.outcome, ev.reason);
+        for (const auto & [name, value] : ev.detail)
+            line += fmt::format("|{}={}", name, value);
+        rendered.push_back(std::move(line));
+    }
+    return rendered;
+}
+
+/// Runs `rounds` regular rounds on a fresh pool, calling `stage(fixture, round)` before each.
+MemoRun runMemoScenario(const MemoOptions & options, size_t rounds,
+                        const std::function<void(MemoFixture &, size_t)> & stage)
+{
+    MemoFixture f(options);
+    MemoRun run;
+    const uint64_t gets_before = counter(ProfileEvents::CASRefManifestBodyFoldGets);
+    const uint64_t hits_before = counter(ProfileEvents::CASRefManifestBodyMemoHits);
+    const uint64_t misses_before = counter(ProfileEvents::CASGCReadAheadMiss);
+    for (size_t round = 0; round < rounds; ++round)
+    {
+        stage(f, round);
+        run.clamped.push_back(!f.gc->runRegularRound().anomalies.empty());
+    }
+    run.body_gets = counter(ProfileEvents::CASRefManifestBodyFoldGets) - gets_before;
+    run.memo_hits = counter(ProfileEvents::CASRefManifestBodyMemoHits) - hits_before;
+    run.read_ahead_misses = counter(ProfileEvents::CASGCReadAheadMiss) - misses_before;
+    run.objects = objectsOf(*f.backend);
+    run.edge_events = edgeEventsOf(*f.events);
+    return run;
+}
+
+/// The memo must not change anything a fold decides: same store, same edge events, same clamps.
+void expectSameOutcome(const MemoRun & memo, const MemoRun & oracle)
+{
+    std::vector<String> differing;
+    for (const auto & [key, bytes] : memo.objects)
+        if (!oracle.objects.contains(key) || oracle.objects.at(key) != bytes)
+            differing.push_back(key);
+    for (const auto & [key, bytes] : oracle.objects)
+        if (!memo.objects.contains(key))
+            differing.push_back(key);
+    EXPECT_EQ(differing, std::vector<String>{}) << "the store after the rounds differs from the no-memo fold";
+    EXPECT_EQ(memo.edge_events, oracle.edge_events);
+    EXPECT_EQ(memo.clamped, oracle.clamped);
+    EXPECT_EQ(memo.body_gets + memo.memo_hits, oracle.body_gets)
+        << "every body the no-memo fold consumed is consumed once, from a read or from the memo";
+    EXPECT_EQ(oracle.memo_hits, 0u);
+}
+
+const RootNamespace kMemoNs{"00/aa@cas@"};
+
+/// Returns the ref-log key of the drop.
+String publishThenDrop(MemoFixture & f, const ManifestRef & a)
+{
+    writeManifestRaw(*f.backend, f.layout(), kMemoNs, a,
+        {blobEntryFor("a", DB::UInt128(1)), blobEntryFor("b", DB::UInt128(2))});
+    f.backend->watch(f.layout().manifestKey(ManifestId{kMemoNs, a}));
+    publishCommittedTransition(*f.backend, f.layout(), kMemoNs, "r1", std::nullopt, a);
+    const uint64_t drop = dropRefTransition(*f.backend, f.layout(), kMemoNs, "r1", a);
+    return f.layout().refLogKey(
+        CasRefCatalog::lifeIfCataloged(*OperationForTest(*f.backend), f.layout(), kMemoNs).value(), RefTxnId{1, drop});
+}
+
+}
+
+/// A part published and dropped in one round: its body is read once, and the drop's hit reproduces
+/// the `-1` deltas and the exact-incarnation cleanup that deletes the body after the round.
+TEST(CASGCFold, ManifestFoldedForPublishAndDropIsReadOnce)
+{
+    const ManifestRef a = ref("", 1, 1);
+    const auto stage = [&](MemoFixture & f, size_t) { publishThenDrop(f, a); };
+    const MemoRun memo = runMemoScenario({}, 1, stage);
+    const MemoRun oracle = runMemoScenario({.memo = false}, 1, stage);
+
+    expectSameOutcome(memo, oracle);
+    EXPECT_EQ(oracle.body_gets, 2u);
+    EXPECT_EQ(memo.body_gets, 1u);
+    EXPECT_EQ(memo.memo_hits, 1u);
+    EXPECT_EQ(memo.edge_events.size(), 4u) << "two +1 and two -1 blob edges";
+    EXPECT_FALSE(memo.objects.contains(Layout("p").manifestKey(ManifestId{kMemoNs, a})))
+        << "the drop's cleanup token came from the memo and still deleted the body";
+}
+
+/// Memoized manifests across several transactions and a repoint: each hit folds with the sign and
+/// the ordinal of the edge in front of it. B's drop is its log's only edge, so a hit carrying another
+/// transaction's ordinal leaves that log unapplied. A later edge that clamps its log discards that
+/// log's staged hit and its cleanup.
+TEST(CASGCFold, ManifestMemoHitUsesTheCurrentSignAndOrdinal)
+{
+    const ManifestRef a = ref("", 1, 1);
+    const ManifestRef b = ref("", 2, 1);
+    const ManifestRef c = ref("", 3, 1);
+    const ManifestRef d = ref("", 4, 1);
+    const Layout layout("p");
+    const String d_key = layout.manifestKey(ManifestId{kMemoNs, d});
+    bool d_survived_clamp = false;
+    const auto stage = [&](MemoFixture & f, size_t round)
+    {
+        if (round == 0)
+        {
+            writeManifestRaw(*f.backend, f.layout(), kMemoNs, a, {blobEntryFor("a", DB::UInt128(1))});
+            writeManifestRaw(*f.backend, f.layout(), kMemoNs, b, {blobEntryFor("b", DB::UInt128(2))});
+            writeManifestRaw(*f.backend, f.layout(), kMemoNs, d, {blobEntryFor("d", DB::UInt128(4))});
+            publishCommittedTransition(*f.backend, f.layout(), kMemoNs, "r3", std::nullopt, d);
+            publishCommittedTransition(*f.backend, f.layout(), kMemoNs, "r1", std::nullopt, a);
+            publishCommittedTransition(*f.backend, f.layout(), kMemoNs, "r1", a, b);   /// repoint: A's `-1` is a hit
+            dropRefTransition(*f.backend, f.layout(), kMemoNs, "r1", b);               /// a log of one hit
+            /// C's body is absent: the log clamps after D's `-1` was staged from the memo.
+            const uint64_t seq = appendRefLogSeed(*f.backend, f.layout(), kMemoNs,
+                {ownerTransitionOp(RefOwnerBinding{RefOwnerKind::Committed, "r3", d}, std::nullopt),
+                 ownerTransitionOp(std::nullopt, RefOwnerBinding{RefOwnerKind::Precommit, "r2", c})});
+            advanceRecoverableCkptForRawFixture(*f.backend, f.layout(), kMemoNs, RefTxnId{1, seq});
+        }
+        else
+        {
+            d_survived_clamp = headExists(*f.backend, d_key);
+            writeManifestRaw(*f.backend, f.layout(), kMemoNs, c, {blobEntryFor("c", DB::UInt128(3))});
+        }
+    };
+    const MemoRun memo = runMemoScenario({}, 2, stage);
+    EXPECT_TRUE(d_survived_clamp) << "the clamp discarded D's staged `-1` and its cleanup";
+    const MemoRun oracle = runMemoScenario({.memo = false}, 2, stage);
+
+    expectSameOutcome(memo, oracle);
+    EXPECT_EQ(memo.clamped, (std::vector<bool>{true, false}));
+    EXPECT_EQ(memo.memo_hits, 3u) << "the removals of A, B and D in the first round";
+    EXPECT_FALSE(memo.objects.contains(d_key));
+}
+
+/// The hint loop skips a memoized body. When the take evicts it before its edge folds, the fold
+/// reads it inline: one extra read-ahead miss and one GET, same outcome.
+TEST(CASGCFold, ManifestMemoSkipsHintsAndFallsBackInline)
+{
+    const ManifestRef a = ref("", 1, 1);
+    const ManifestRef b = ref("", 2, 1);
+
+    /// A budget that holds one of the two manifests but not both.
+    size_t budget = 0;
+    {
+        InMemoryBackend scratch;
+        const auto charge = [&](const std::vector<ManifestRef> & refs)
+        {
+            GcManifestMemo probe;
+            for (const ManifestRef & r : refs)
+            {
+                const ManifestId id{kMemoNs, r};
+                const String key = Layout("p").manifestKey(id);
+                OperationForTest op(scratch);
+                if (!(*op).read(key, Retry::standard()))
+                    (*op).create(key, "x", Retry::standard());
+                probe.insert(id, ManifestFold{.etag = (*op).read(key, Retry::standard())->etag, .entries = {
+                    ManifestFoldEntry{.ref = BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(DB::UInt128(1))},
+                                      .source_id = sourceEdgeId(id, "a"), .path = "a"}}});
+            }
+            return probe.charged();
+        };
+        const size_t one = charge({a});
+        const size_t two = charge({a, b});
+        budget = one + (two - one) / 2;
+        ASSERT_LT(budget, two);
+    }
+
+    const auto stage = [&](MemoFixture & f, size_t)
+    {
+        writeManifestRaw(*f.backend, f.layout(), kMemoNs, a, {blobEntryFor("a", DB::UInt128(1))});
+        writeManifestRaw(*f.backend, f.layout(), kMemoNs, b, {blobEntryFor("a", DB::UInt128(1))});
+        publishCommittedTransition(*f.backend, f.layout(), kMemoNs, "r1", std::nullopt, a);
+        /// B folds first and its insert evicts A, whose hint the memo hit had skipped.
+        const uint64_t seq = appendRefLogSeed(*f.backend, f.layout(), kMemoNs,
+            {ownerTransitionOp(std::nullopt, RefOwnerBinding{RefOwnerKind::Precommit, "r2", b}),
+             ownerTransitionOp(RefOwnerBinding{RefOwnerKind::Committed, "r1", a}, std::nullopt)});
+        advanceRecoverableCkptForRawFixture(*f.backend, f.layout(), kMemoNs, RefTxnId{1, seq});
+    };
+    const MemoRun memo = runMemoScenario({.memo_budget = budget}, 1, stage);
+    const MemoRun oracle = runMemoScenario({.memo = false}, 1, stage);
+
+    expectSameOutcome(memo, oracle);
+    EXPECT_EQ(memo.body_gets, 3u);
+    EXPECT_EQ(memo.memo_hits, 0u);
+    EXPECT_EQ(memo.read_ahead_misses, oracle.read_ahead_misses + 1) << "A's inline read after its eviction";
+}
+
+/// A repeated manifest whose charge exceeds the budget is never stored: two GETs, zero hits.
+TEST(CASGCFold, ManifestLargerThanTheMemoBudgetIsReadEachTime)
+{
+    const ManifestRef a = ref("", 1, 1);
+    const auto stage = [&](MemoFixture & f, size_t) { publishThenDrop(f, a); };
+    const MemoRun memo = runMemoScenario({.memo_budget = 64}, 1, stage);
+    const MemoRun oracle = runMemoScenario({.memo = false}, 1, stage);
+
+    expectSameOutcome(memo, oracle);
+    EXPECT_EQ(memo.body_gets, 2u);
+    EXPECT_EQ(memo.memo_hits, 0u);
+}
+
+/// An absent body is not memoized: the next edge naming it reads it again and sees it present.
+TEST(CASGCFold, AbsentManifestBodyIsReprobed)
+{
+    const RootNamespace ns{"srv/tbl"};
+    const ManifestRef p = ManifestRef{.writer_epoch = 1, .build_sequence = 5, .manifest_ordinal = 1};
+    const String p_key = Layout("p").manifestKey(ManifestId{ns, p});
+    const auto stage = [&](MemoFixture & f, size_t)
+    {
+        /// Build 5 is below the floor, so the first edge's absent body is skipped rather than clamped.
+        setWatermarkMinActive(*f.backend, f.layout(), "srv", /*writer_epoch*/ 1, /*min_active_build_sequence*/ 10);
+        addPrecommitTransition(*f.backend, f.layout(), ns, DB::UInt128(7), "r1", std::nullopt, p);
+        const uint64_t seq = appendRefLogSeed(*f.backend, f.layout(), ns, publishCommittedOps("r2", p));
+        advanceRecoverableCkptForRawFixture(*f.backend, f.layout(), ns, RefTxnId{1, seq});
+        const String second_log = f.layout().refLogKey(
+            CasRefCatalog::lifeIfCataloged(*OperationForTest(*f.backend), f.layout(), ns).value(), RefTxnId{1, seq});
+        f.backend->onRead(second_log, [&f, ns, p]
+            { writeManifestRaw(*f.backend, f.layout(), ns, p, {blobEntryFor("a", DB::UInt128(1))}); });
+    };
+    const MemoOptions sequential{.io_concurrency = 1};
+    MemoFixture probe(sequential);
+    stage(probe, 0);
+    probe.gc->runRegularRound();
+    const size_t p_reads = probe.backend->readsOf(p_key);
+
+    const MemoRun memo = runMemoScenario(sequential, 1, stage);
+    const MemoRun oracle = runMemoScenario({.memo = false, .io_concurrency = 1}, 1, stage);
+
+    expectSameOutcome(memo, oracle);
+    EXPECT_EQ(p_reads, 2u) << "absent on the first edge, read again and present on the second";
+    EXPECT_EQ(memo.body_gets, 1u) << "an absent read is not a consumed body";
+    EXPECT_EQ(memo.memo_hits, 0u);
+    EXPECT_EQ(inDegreeOf(*probe.backend, probe.layout(), DB::UInt128(1)), 1);
+}
+
+/// A memo hit is a fresh read only while no folded body is deleted during the fold. An orphan sweep
+/// and a writer's staged-debris cleanup run inside the fold, between the publish and the drop of A;
+/// neither deletes A, and a direct delete in the same window is caught.
+TEST(CASGCFold, FoldedManifestBodyIsNeverDeletedDuringTheFold)
+{
+    /// Far from the build sequences the writer below mints, so the two never share a key.
+    const ManifestRef a = ref("", 1000, 1);
+    const auto run = [&](bool delete_a_directly) -> std::vector<String>
+    {
+        MemoFixture f(MemoOptions{.io_concurrency = 1});
+        f.backend->setFailOnGuardedDelete(!delete_a_directly);
+        const String a_key = f.layout().manifestKey(ManifestId{kMemoNs, a});
+        setWatermarkMinActive(*f.backend, f.layout(), "00", /*writer_epoch*/ 1, /*min_active_build_sequence*/ 2000);
+        const String drop_log = publishThenDrop(f, a);
+
+        bool steps_ran = false;
+        std::optional<ManifestId> debris;
+        f.backend->onRead(drop_log, [&]
+        {
+            sweepNamespace(*f.store, kMemoNs, BuildPrefix{.writer_epoch = 1, .build_sequence = 1000});
+
+            PartWriteInfo info;
+            info.intended_namespace = kMemoNs;
+            info.intended_ref = kMemoNs.string() + "/debris";
+            auto build = f.store->beginPartWrite(info);
+            debris = build->stageManifest({blobEntryFor("d", DB::UInt128(9))});
+            build->abandon();
+
+            if (delete_a_directly)
+                deleteManifestBody(*f.backend, f.layout(), ManifestId{kMemoNs, a});
+            steps_ran = true;
+        });
+
+        const uint64_t hits_before = counter(ProfileEvents::CASRefManifestBodyMemoHits);
+        f.gc->runRegularRound();
+        EXPECT_TRUE(steps_ran);
+        EXPECT_TRUE(debris.has_value());
+        if (debris)
+            EXPECT_FALSE(headExists(*f.backend, f.layout().manifestKey(*debris))) << "the writer cleanup ran";
+        EXPECT_EQ(f.backend->foldedKeys(), std::set<String>{a_key}) << "the guard saw the fold read A";
+        EXPECT_EQ(counter(ProfileEvents::CASRefManifestBodyMemoHits) - hits_before, 1u) << "the drop folded A from the memo";
+        return f.backend->guardedDeletes();
+    };
+
+    EXPECT_TRUE(run(/*delete_a_directly*/ false).empty());
+    EXPECT_EQ(run(/*delete_a_directly*/ true).size(), 1u) << "the guard catches a delete of a folded body";
 }

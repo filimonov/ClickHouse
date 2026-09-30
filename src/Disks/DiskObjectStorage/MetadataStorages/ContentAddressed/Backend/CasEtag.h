@@ -32,6 +32,8 @@ public:
     const String & key() const { return key_; }
     Dialect dialect() const { return dialect_; }
     uint64_t backendId() const { return backend_id_; }
+    /// Capacity of the key and value strings, for callers that bound retained memory by it.
+    size_t stringCapacity() const { return key_.capacity() + value_.capacity(); }
 
 private:
     friend class CasRequests;

@@ -62,6 +62,7 @@ namespace ProfileEvents
     extern const Event CASRefGlobalListPages;
     extern const Event CASRefLogBodyGets;
     extern const Event CASRefManifestBodyFoldGets;
+    extern const Event CASRefManifestBodyMemoHits;
     extern const Event CASRefEmittedEdges;
     extern const Event CASRefCleanupObjectsDeleted;
 }
@@ -1420,15 +1421,14 @@ void Gc::reportStuckRemovals(const RefPlan & plan, uint64_t current_round)
     }
 }
 
-bool Gc::foldManifestEdges(GcReadAhead & reads, const ManifestId & id, int sign, std::vector<BlobDelta> & deltas,
-                           std::map<ManifestId, Etag> & mf_cleanup, uint32_t txn_ordinal)
+std::optional<ManifestFold> Gc::readManifestFold(GcReadAhead & reads, const ManifestId & id)
 {
     const Layout & layout = store->layout();
 
     const String key = layout.manifestKey(id);
-    /// ONE ROUND TRIP PER EDGE. The GET alone carries the absence signal a HEAD would have carried, so
+    /// ONE ROUND TRIP PER READ. The GET alone carries the absence signal a HEAD would have carried, so
     /// the HEAD that used to precede it bought nothing and cost a second serial round trip on the
-    /// hottest read path of the round (one per manifest edge, on every folded log). `!got` is the SAME
+    /// hottest read path of the round (one per manifest edge, on every folded log). `nullopt` is the SAME
     /// absent outcome the missing HEAD used to produce -- record-and-continue, and the caller decides
     /// what an absent body means for that edge (a missing-body precommit is a barrier; a committed one
     /// fails closed). Never a throw: a 404 during the fold is an observation, not an error.
@@ -1438,10 +1438,10 @@ bool Gc::foldManifestEdges(GcReadAhead & reads, const ManifestId & id, int sign,
     /// decode and every decision below still happen HERE, in edge order, exactly as they always did.
     const auto got = reads.takeRead(key);
     if (!got)
-        return false;   /// absent body: caller decides (missing-body precommit OK; committed => fail closed)
-    ProfileEvents::increment(ProfileEvents::CASRefManifestBodyFoldGets);   /// one body GET per manifest fold
+        return std::nullopt;   /// absent body: caller decides (missing-body precommit OK; committed => fail closed)
+    ProfileEvents::increment(ProfileEvents::CASRefManifestBodyFoldGets);   /// one body GET per consumed body
 
-    const PartManifest body = decodePartManifest(openObject(FormatId::PartManifest, got->bytes));
+    PartManifest body = decodePartManifest(openObject(FormatId::PartManifest, got->bytes));
     if (!refMatchesBody(id.ref, body))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "CAS gc fold: manifest body ref mismatch at {} (refMatchesBody fail-closed)", key);
@@ -1455,8 +1455,13 @@ bool Gc::foldManifestEdges(GcReadAhead & reads, const ManifestId & id, int sign,
     /// in-memory `admitted_algos` cache reading a manifest another node already admitted a new algo
     /// for). Per-entry admission validation refreshes on miss BEFORE
     /// failing closed, so a genuinely fresh admission is never mistaken for corruption.
+    size_t blob_entries = 0;
     for (const ManifestEntry & entry : body.entries)
-        if (entry.placement == EntryPlacement::Blob && !store->isAlgoAdmitted(entry.ref.algo))
+    {
+        if (entry.placement != EntryPlacement::Blob)
+            continue;
+        ++blob_entries;
+        if (!store->isAlgoAdmitted(entry.ref.algo))
         {
             const std::vector<uint8_t> refreshed = store->refreshAdmittedAlgos();
             if (!store->isAlgoAdmitted(entry.ref.algo))
@@ -1473,36 +1478,68 @@ bool Gc::foldManifestEdges(GcReadAhead & reads, const ManifestId & id, int sign,
                     blobHashAlgoName(entry.ref.algo), names);
             }
         }
+    }
 
-    for (const ManifestEntry & entry : body.entries)
+    ManifestFold fold{.etag = got->etag, .entries = {}};
+    /// Exact size: the memo charges the vector by its capacity.
+    fold.entries.reserve(blob_entries);
+    for (ManifestEntry & entry : body.entries)
         if (entry.placement == EntryPlacement::Blob)
         {
             /// The fold settles the FULL `BlobRef` pair natively -- no bare-digest bridge remains.
-            deltas.push_back(BlobDelta{
-                .ref = entry.ref,
-                .source_id = sourceEdgeId(id, entry.path),
-                .remove = (sign < 0),
-                .txn_ordinal = txn_ordinal});
-            /// A folded owner edge over this blob (the manifest-model analog of the old
-            /// `RootAdd`). +1 = the manifest's owner activated this blob's reference; -1 =
-            /// the owner was removed, dropping the reference. Reconstructs WHY a blob's in-degree moved.
-            EventEmitter{*store}.emit([&](CasEvent & ev)
-            {
-                ev.type = sign > 0 ? CasEventType::RootAdd : CasEventType::RootRemove;
-                ev.namespace_ = id.root_namespace.string();
-                ev.object_kind = CasEventObjectKind::Blob;
-                ev.object_hash = blobIdOf(entry.ref);
-                ev.outcome = sign > 0 ? "edge_added" : "edge_removed";
-                ev.reason = sign > 0
-                    ? "fold: manifest owner activated; +1 blob edge"
-                    : "fold: manifest owner removed; -1 blob edge";
-                ev.detail = {{"manifest_ref_instance", manifestRefDebugString(id.ref)},
-                             {"path", entry.path}};
-            });
+            const UInt128 source_id = sourceEdgeId(id, entry.path);
+            fold.entries.push_back(ManifestFoldEntry{.ref = entry.ref, .source_id = source_id, .path = std::move(entry.path)});
         }
+    return fold;
+}
+
+bool Gc::foldManifestEdges(GcReadAhead & reads, GcManifestMemo * memo, const ManifestId & id, int sign,
+                           std::vector<BlobDelta> & deltas, std::map<ManifestId, Etag> & mf_cleanup,
+                           uint32_t txn_ordinal)
+{
+    /// A memoized body stands in for a fresh read: the key is write-once and no folded body is deleted
+    /// while the fold runs. The sign and the ordinal always come from this edge, never from the memo.
+    const ManifestFold * fold = memo ? memo->find(id) : nullptr;
+    std::optional<ManifestFold> read;
+    if (fold)
+        ProfileEvents::increment(ProfileEvents::CASRefManifestBodyMemoHits);
+    else
+    {
+        read = readManifestFold(reads, id);
+        if (!read)
+            return false;
+        fold = &*read;
+    }
+
+    for (const ManifestFoldEntry & entry : fold->entries)
+    {
+        deltas.push_back(BlobDelta{
+            .ref = entry.ref,
+            .source_id = entry.source_id,
+            .remove = (sign < 0),
+            .txn_ordinal = txn_ordinal});
+        /// A folded owner edge over this blob (the manifest-model analog of the old
+        /// `RootAdd`). +1 = the manifest's owner activated this blob's reference; -1 =
+        /// the owner was removed, dropping the reference. Reconstructs WHY a blob's in-degree moved.
+        EventEmitter{*store}.emit([&](CasEvent & ev)
+        {
+            ev.type = sign > 0 ? CasEventType::RootAdd : CasEventType::RootRemove;
+            ev.namespace_ = id.root_namespace.string();
+            ev.object_kind = CasEventObjectKind::Blob;
+            ev.object_hash = blobIdOf(entry.ref);
+            ev.outcome = sign > 0 ? "edge_added" : "edge_removed";
+            ev.reason = sign > 0
+                ? "fold: manifest owner activated; +1 blob edge"
+                : "fold: manifest owner removed; -1 blob edge";
+            ev.detail = {{"manifest_ref_instance", manifestRefDebugString(id.ref)},
+                         {"path", entry.path}};
+        });
+    }
 
     if (sign < 0)
-        mf_cleanup.emplace(id, got->etag);   /// owner removed: defer the exact body delete to recheck
+        mf_cleanup.emplace(id, fold->etag);   /// owner removed: defer the exact body delete to recheck
+    if (read && memo)
+        memo->insert(id, std::move(*read));
     return true;
 }
 
@@ -1841,6 +1878,11 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
     /// holds and its events are what they were; only the moment of the fetch moves. At
     /// `gc_io_concurrency` 1 it hints nothing and every take IS the original inline read.
     GcReadAhead reads(op, store->openRequests(), *io_pool, store->poolConfig().gc_io_concurrency);
+    /// Bodies this fold already decoded, so an identity folded twice in one round is read once.
+    std::optional<GcManifestMemo> manifest_memo_storage;
+    if (manifest_memo_enabled)
+        manifest_memo_storage.emplace(manifest_memo_budget);
+    GcManifestMemo * const manifest_memo = manifest_memo_storage ? &*manifest_memo_storage : nullptr;
     FoldResult result;
 
     /// 1. Group the round's one enumeration of `cas/ns/stream/` (taken before the defer decision) into
@@ -2818,14 +2860,15 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
             /// one. A clamp mid-log leaves the rest of this log's bodies fetched and untaken, which is
             /// the bounded waste the read-ahead counts.
             for (const RefManifestEdge & edge : edges)
-                reads.hintRead(layout.manifestKey(edge.manifest_id));
+                if (!manifest_memo || !manifest_memo->contains(edge.manifest_id))
+                    reads.hintRead(layout.manifestKey(edge.manifest_id));
 
             std::vector<BlobDelta> log_deltas;
             std::map<ManifestId, Etag> log_mf_cleanup;
             for (const RefManifestEdge & edge : edges)
             {
                 ProfileEvents::increment(ProfileEvents::CASRefEmittedEdges);   /// one manifest-edge event
-                if (foldManifestEdges(reads, edge.manifest_id, edge.change, log_deltas, log_mf_cleanup,
+                if (foldManifestEdges(reads, manifest_memo, edge.manifest_id, edge.change, log_deltas, log_mf_cleanup,
                                       txn_ordinal))
                     continue;
 
@@ -4560,7 +4603,7 @@ RebuildReport Gc::rebuildBaseline(bool force)
         {
             const ManifestId id{ns, row.manifest_ref};
             owned_manifest_keys.insert(layout.manifestKey(id));
-            if (!foldManifestEdges(reads, id, +1, deltas, mf_cleanup_unused, /*txn_ordinal=*/0))
+            if (!foldManifestEdges(reads, /*memo=*/nullptr, id, +1, deltas, mf_cleanup_unused, /*txn_ordinal=*/0))
             {
                 rep.refusal = "committed ref '" + ns.string() + "/" + ref_name
                     + "' names a missing or invalid part manifest — that is DATA LOSS the rebuild "
@@ -4576,7 +4619,7 @@ RebuildReport Gc::rebuildBaseline(bool force)
         {
             const ManifestId id{ns, manifest_ref};
             owned_manifest_keys.insert(layout.manifestKey(id));
-            if (foldManifestEdges(reads, id, +1, deltas, mf_cleanup_unused, /*txn_ordinal=*/0))
+            if (foldManifestEdges(reads, /*memo=*/nullptr, id, +1, deltas, mf_cleanup_unused, /*txn_ordinal=*/0))
                 ++rep.live_precommits;
             else
             {
@@ -4648,7 +4691,7 @@ RebuildReport Gc::rebuildBaseline(bool force)
             if (prefixEligible(*store, ns, BuildPrefix{mref.writer_epoch, mref.build_sequence}))
                 return true;   /// provably dead — the orphan sweep's territory, never an edge
             const ManifestId id{ns, mref};
-            if (foldManifestEdges(reads, id, +1, deltas, mf_cleanup_unused, /*txn_ordinal=*/0))
+            if (foldManifestEdges(reads, /*memo=*/nullptr, id, +1, deltas, mf_cleanup_unused, /*txn_ordinal=*/0))
             {
                 ++rep.unowned_alive_manifests;
                 route_deltas(deltas);
