@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-30 18:02'
-updated_date: '2026-09-30 18:08'
+updated_date: '2026-09-30 18:41'
 labels:
   - cas
   - gc
@@ -45,5 +45,5 @@ Owner decision 2026-09-30: all objects Tolerant unless a very important reason e
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30 started: branch fix/antalya-26.6/cas-drop-key-strictness from e2dd0f5d343 in the cas-83 worktree (reusing its release build); implementer cas328-impl; report tmp/cas328/impl-report.md
+2026-09-30 PR opened: https://github.com/Altinity/ClickHouse/pull/2455 (base antalya-26.6, head fix/antalya-26.6/cas-drop-key-strictness-pr = a61b9a1a46b, 30 files +285/-199). Five Strict readers, not four (cas_gc_maintenance_state); seven own-throw sites routed through skipUnknown. Local gate CAS* 2564/0; review APPROVE, 4 minors closed. No local ASan run (no ASan build on disk); CI ASan lane covers it. Next: CI on the PR.
 <!-- SECTION:NOTES:END -->
