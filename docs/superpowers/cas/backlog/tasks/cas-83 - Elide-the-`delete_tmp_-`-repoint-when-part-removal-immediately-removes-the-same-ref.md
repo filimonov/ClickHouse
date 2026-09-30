@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-30 16:33'
+updated_date: '2026-09-30 17:14'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -68,25 +68,5 @@ Provenance: BACKLOG/gc.md [PART-REMOVAL-REPOINT] and #drop-path-head-of-line-and
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-First recorded: 2026-07-15 (db28579459a, by 'PART-REMOVAL-REPOINT')
-
-2026-09-30, measured on the real stand. otel.demo (26.6.4.20001.altinityantalya), `system.cas_log` of both replicas, 6 hours before 2026-09-30 13:40 UTC: `manifest_put` 152,460; `build_publish` 152,457, of which 101,548 on `delete_tmp_*` refs; `ref_repoint` 50,774, all on `delete_tmp_*`; `ref_drop` 101,548, of which 50,774 on `delete_tmp_*`; `blob_put` 50,897. So only one manifest PUT in three is a real part publish; the removal flow writes the other two.
-Trace of one part (`202609_491558_491558_0`, removal 13:21:49.57-13:21:50.82 UTC, 1.25 s in the ref lane):
-1. `precommit` + `build_publish` of `delete_tmp_<part>` with a new manifest B (the rename);
-2. `ref_drop` of `<part>` (manifest A);
-3. `precommit` + `build_publish` + `ref_repoint` of `delete_tmp_<part>` to a new manifest C (the removal marks);
-4. `ref_drop` of `delete_tmp_<part>` (manifest C).
-Per removed part: 2 extra manifests, 4 ref-log transactions instead of 1, and for the GC 6 owner edges on 3 manifests instead of 2 edges on 1. With the flow reduced to one drop, manifest PUTs fall to a third, and the GC's manifest reads in `fold_ref_intake` (40.5% of round time on this stand, 4,645 bodies per round) fall by about two thirds. This removes the work that the manifest memo of CAS-29.12 would only cache.
-
-2026-09-30, design decided by the owner. Why today's removal is never cheap: `DataPartStorageOnDiskBase::remove` issues three separate disk transactions (`moveDirectory` to `delete_tmp_<part>`, `removeSharedFiles`, `removeDirectory`), so the same-transaction elision of the unlink batch never fires; the CAS comments and the gtest `UnlinkStormThenDirDropIsOneRefDrop` describe a single-transaction shape production never produces. Map: `docs/superpowers/reports/2026-09-30-cas-part-removal-flow/01-removal-flow-map.md`.
-Chosen cut: one self-contained block of 11 lines in `DataPartStorageOnDiskBase::remove` after `auto disk = volume->getDisk();` — on a content-addressed disk outside `detached/`, evaluate `can_remove_callback` once and call one `disk->removeSharedRecursive(from)`, which CAS turns into one `dropRefIfPresent`. No rename, no per-file unlinks, no warning for an absent directory. Reason: removing a CAS part is one atomic ref-log record, so the two-step rename-then-remove protects nothing. No upstream line changes; the surrounding lines have not changed since 2023. Inputs: `docs/superpowers/reports/2026-09-30-cas-part-removal-flow/02-design-inputs.md`.
-Rejected: CAS-side sniffing of the `delete_tmp_` prefix; one disk transaction for the whole `remove` with a collapse at commit (feasible, but needs a deferred committed-ref rename in CAS); one transaction for unlinks + rmdir only (half the effect).
-Also established: `delete-on-destroy.txt` is no longer written (upstream commit c1c69553741), and nothing is written into a part before `remove` when MergeTree transactions are off; the second manifest of a removal is the unlink batch itself.
-Not covered by this task: fetch and clone paths publish a part twice (separate tasks); `DROP DETACHED` (`deleting_` rename) stays as is.
-Branch: `fix/antalya-26.6/cas-part-removal-one-drop`, worktree `cas-83`, from antalya-26.6 @e2dd0f5d343. Proof: a stateless test counting `manifest_put` / `ref_repoint` / `ref_drop` per removed part, and a yardstick `cycle` A/B.
-
-2026-09-30, implemented and measured. Branch `fix/antalya-26.6/cas-part-removal-one-drop` (worktree `cas-83`): 1918ff55398 (the block + stateless test `05054_cas_part_removal_one_ref_drop`), fa41049c383 (comments, docs); not pushed.
-- Test, per removed part from `system.cas_log`: base 2 `manifest_put`, 1 `ref_repoint`, 2 `ref_drop`, 12 events on `delete_tmp_*` refs (with a projection 3 / 2 / 2 / 19); branch 0 / 0 / 1 / 0.
-- Yardstick `--quick`, card `cycle`, policy `cas`, two runs per side (`docs/superpowers/reports/2026-09-30-cas-part-removal-flow/03-yardstick-ab.md`): PUT per cycle 64 -> 28 (-56%), GET 83 -> 47 (-43%), wall 30.3 -> 17.0 ms cold and 27.9 -> 15.7 ms hot (-44%). cas/s3 ratios: PUT 2.08 -> 0.92, GET 13.85 -> 7.85, wall 1.70 -> 0.84 cold. Request spread 0.0-0.3%. Control cards (`wide_insert`, `attach_200`, `select_subset`, `dup_content`, `mutation`): request counts unchanged.
-- Final reviews: Opus APPROVE, codex no code finding; a fix wave for the block comment, the test's event synchronisation and stale comments is in progress.
+2026-09-30 PR opened: https://github.com/Altinity/ClickHouse/pull/2452 (base antalya-26.6, head fix/antalya-26.6/cas-part-removal-one-drop-pr = fd7be6776a7). Diff: one 11-line hunk in `DataPartStorageOnDiskBase::remove`, test 05054, two docs files. Comment-only edits in CAS files were dropped at the owner's request (isolated upstream impact). Local gates on the same compiled code: gtest CAS* 2556/0, 49 stateless, 05054 x10. Next: CI on the PR.
 <!-- SECTION:NOTES:END -->
