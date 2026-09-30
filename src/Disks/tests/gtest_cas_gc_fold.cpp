@@ -17,6 +17,7 @@ using namespace DB::Cas::tests;
 
 namespace DB::ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CORRUPTED_DATA;
 }
 
@@ -1174,6 +1175,152 @@ TEST(CASGCFold, FoldedManifestBodyIsNeverDeletedDuringTheFold)
 
     EXPECT_EQ(run(/*delete_a_directly*/ false), std::vector<String>{});
     EXPECT_EQ(run(/*delete_a_directly*/ true).size(), 1u) << "the guard catches a delete of a folded body";
+}
+
+/// L1's fold memoizes A at its publish edge. Before L1 folds A's drop, L2 steals the lease, commits a
+/// round that deletes A's body and the `delete_pending` blob X, and a writer re-creates X and binds it.
+/// With the memo L1 folds the drop and runs its pending delete of X, which finds the fresh token; without
+/// it the absent body clamps the fold and suppresses that delete. Either way L1's commit is refused.
+TEST(CASGCFold, DeposedLeaderMemoHitAfterSuccessorDeletedTheBody)
+{
+    const UInt128 successor_id = hexToU128("0000000000000000000000000000000c");
+    /// Sorts before `kMemoNs`, so L1 has walked it before the hook binds X again.
+    const RootNamespace live_ns{"00/a1@cas@"};
+    const UInt128 x = DB::UInt128(11);
+    const UInt128 y = DB::UInt128(12);
+    const BlobRef x_ref{BlobHashAlgo::CityHash128, BlobDigest::fromU128(x)};
+    const ManifestRef p = ref("", 1, 1);
+    const ManifestRef q = ref("", 2, 1);
+    const ManifestRef r = ref("", 3, 1);
+    const ManifestRef a = ref("", 4, 1);
+
+    struct Observed
+    {
+        bool l1_anomaly_in_memo_ns = false;
+        uint64_t l1_memo_hits = 0;
+        size_t l1_redeleted = 0;
+        std::vector<String> l1_blob_deletes;
+        std::vector<String> l2_blob_deletes;
+    };
+
+    const auto run = [&](bool memo) -> Observed
+    {
+        MemoFixture f(MemoOptions{.memo = memo, .io_concurrency = 1});
+        f.backend->setFailOnGuardedDelete(false);
+        const Layout & layout = f.layout();
+        const String x_key = layout.blobKey(x_ref);
+        const String y_key = layout.blobKey(BlobRef{BlobHashAlgo::CityHash128, BlobDigest::fromU128(y)});
+        const String a_key = layout.manifestKey(ManifestId{kMemoNs, a});
+
+        /// L1 leaves X `delete_pending`: fold P and Q, condemn X after P's drop, graduate it.
+        writeBlobBody(*f.backend, layout, x);
+        writeBlobBody(*f.backend, layout, y);
+        writeManifestRaw(*f.backend, layout, live_ns, p, {blobEntryFor("x", x)});
+        writeManifestRaw(*f.backend, layout, live_ns, q, {blobEntryFor("y", y)});
+        publishCommittedTransition(*f.backend, layout, live_ns, "p", std::nullopt, p);
+        publishCommittedTransition(*f.backend, layout, live_ns, "q", std::nullopt, q);
+        f.gc->runRegularRound();
+        dropRefTransition(*f.backend, layout, live_ns, "p", p);
+        f.gc->runRegularRound();
+        f.gc->runRegularRound();
+        const String condemned_token = readOf(*f.backend, x_key)->etag.render();
+        const std::vector<Gc::PreviewEntry> preview = f.gc->previewDeletes();
+        EXPECT_TRUE(preview.size() == 1 && preview[0].ref == x_ref && preview[0].reason == "delete_pending");
+
+        Gc successor(f.store, successor_id);
+        successor.setManifestMemoForTest(memo);
+        RoundReport successor_report;
+        uint64_t successor_memo_hits = 0;
+        size_t events_before_l1_resumes = 0;
+        String replacement_token;
+        bool hook_ran = false;
+        const String drop_log = publishThenDrop(f, a);
+        f.backend->onRead(drop_log, [&]
+        {
+            const uint64_t hits_before = counter(ProfileEvents::CASRefManifestBodyMemoHits);
+            /// The first call records L1's lease; the second sees it unchanged and steals.
+            for (size_t call = 0; call < 3 && !successor_report.acquired_lease; ++call)
+                successor_report = successor.runRegularRound();
+            successor_memo_hits = counter(ProfileEvents::CASRefManifestBodyMemoHits) - hits_before;
+            EXPECT_TRUE(successor_report.acquired_lease);
+            EXPECT_NE(successor_report.round, 0u) << "L2 committed";
+            EXPECT_FALSE(headExists(*f.backend, a_key)) << "L2 deleted A's body after its commit";
+            EXPECT_FALSE(headExists(*f.backend, x_key)) << "L2 deleted X at the condemned token";
+            events_before_l1_resumes = f.events->snapshot().size();
+
+            writeBlobBody(*f.backend, layout, x);
+            replacement_token = readOf(*f.backend, x_key)->etag.render();
+            writeManifestRaw(*f.backend, layout, live_ns, r, {blobEntryFor("x", x)});
+            publishCommittedTransition(*f.backend, layout, live_ns, "r", std::nullopt, r);
+            hook_ran = true;
+        });
+
+        const uint64_t hits_before = counter(ProfileEvents::CASRefManifestBodyMemoHits);
+        RoundReport progress;
+        try
+        {
+            f.gc->runRegularRound({}, /*allow_steal*/ true, UniversePolicy::Authoritative, &progress);
+            ADD_FAILURE() << "the deposed leader's round committed";
+        }
+        catch (const DB::Exception & e)
+        {
+            EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED) << e.message();
+            EXPECT_TRUE(e.message().contains("gc/state moved during the round")) << e.message();
+        }
+        EXPECT_TRUE(hook_ran);
+        EXPECT_EQ(progress.round, 0u) << "L1's round did not commit";
+
+        const GcState state = decodeGcState(readOf(*f.backend, layout.gcStateKey())->bytes);
+        EXPECT_EQ(state.lease.owner, successor_id);
+        EXPECT_EQ(state.round, successor_report.round);
+        EXPECT_NE(replacement_token, condemned_token);
+        const auto x_now = readOf(*f.backend, x_key);
+        EXPECT_TRUE(x_now && x_now->etag.render() == replacement_token) << "the replacement token survives";
+        EXPECT_TRUE(headExists(*f.backend, y_key));
+        EXPECT_EQ(inDegreeOf(*f.backend, layout, y), 1);
+        EXPECT_EQ(f.backend->guardedDeletes(), std::vector<String>{a_key}) << "L2 deleted A while L1 folded";
+
+        Observed observed;
+        for (const RoundAnomaly & anomaly : progress.anomalies)
+            observed.l1_anomaly_in_memo_ns |= anomaly.ns.string() == kMemoNs.string();
+        observed.l1_memo_hits = counter(ProfileEvents::CASRefManifestBodyMemoHits) - hits_before - successor_memo_hits;
+        observed.l1_redeleted = progress.redeleted;
+        const std::vector<CasEvent> events = f.events->snapshot();
+        for (size_t i = 0; i < events.size(); ++i)
+            if (events[i].type == CasEventType::BlobDelete)
+                (i < events_before_l1_resumes ? observed.l2_blob_deletes : observed.l1_blob_deletes)
+                    .push_back(fmt::format("{}|{}|{}", events[i].object_hash, events[i].token, events[i].outcome));
+        return observed;
+    };
+
+    const Observed with_memo = run(true);
+    const Observed without_memo = run(false);
+
+    /// `<X>|<condemned token>`, from L2's delete of X in that run.
+    const auto condemnedX = [&](const Observed & observed) -> String
+    {
+        if (observed.l2_blob_deletes.size() != 1)
+            return "";
+        const String & line = observed.l2_blob_deletes[0];
+        return line.substr(0, line.rfind('|'));
+    };
+    for (const Observed * observed : {&with_memo, &without_memo})
+    {
+        const String x_condemned = condemnedX(*observed);
+        EXPECT_TRUE(x_condemned.starts_with(blobIdOf(x_ref) + "|"));
+        EXPECT_EQ(observed->l2_blob_deletes, std::vector<String>{x_condemned + "|deleted"});
+    }
+
+    EXPECT_FALSE(with_memo.l1_anomaly_in_memo_ns);
+    EXPECT_EQ(with_memo.l1_memo_hits, 1u);
+    EXPECT_EQ(with_memo.l1_redeleted, 1u);
+    EXPECT_EQ(with_memo.l1_blob_deletes, std::vector<String>{condemnedX(with_memo) + "|replaced"})
+        << "L1's delete of X at the condemned token found the replacement and deleted nothing";
+
+    EXPECT_TRUE(without_memo.l1_anomaly_in_memo_ns) << "A's absent body clamps L1's fold";
+    EXPECT_EQ(without_memo.l1_memo_hits, 0u);
+    EXPECT_EQ(without_memo.l1_redeleted, 0u);
+    EXPECT_EQ(without_memo.l1_blob_deletes, std::vector<String>{}) << "the clamp suppressed L1's pending deletes";
 }
 
 /// One manifest folded under several owners in one round: an adoption (a precommit of the live body
