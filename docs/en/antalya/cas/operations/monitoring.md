@@ -160,4 +160,4 @@ pool's view of itself.
 
 ## Measuring CAS against plain S3 {#cas-yardstick}
 
-`utils/cas-yardstick` runs a fixed set of workload cards on a CAS disk and on two ordinary S3 disks, and reports wall time, S3 API calls and bytes with paired ratios. Run `yardstick.py run --smoke` to check the pipeline and `yardstick.py run --binary <clickhouse> --repeats 3` to measure. The accepted reference run is in `utils/cas-yardstick/reference/`, and the README at `utils/cas-yardstick/README.md` lists the cards, the capability matrix and how to compare a run with it.
+`utils/cas-yardstick` runs a fixed set of workload cards on a CAS disk and on two ordinary S3 disks, and reports wall time, S3 API calls and bytes with paired ratios. Run `yardstick.py run --smoke` to check the pipeline and `yardstick.py run --quick --binary <clickhouse>` for a frequent measurement and `yardstick.py run --binary <clickhouse>` for the full one. The accepted reference run is in `utils/cas-yardstick/reference/`, and the README at `utils/cas-yardstick/README.md` lists the cards, the capability matrix and how to compare a run with it.

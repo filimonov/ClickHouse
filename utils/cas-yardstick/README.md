@@ -3,14 +3,17 @@
 Runs seven fixed workload cards on a CAS disk and on two ordinary S3 disks, and reports wall time, S3 API calls and payload bytes, cold and hot, with paired ratios. One server process per measurement, a fresh bucket prefix per measurement.
 
 ```bash
-# First thing to run after any change to the tool: all cards, all policies, tiny scale, a few minutes.
+# First thing to run after any change to the tool: all cards, all policies, tiny scale. About 8 min.
 python3 utils/cas-yardstick/yardstick.py run --smoke --binary build/programs/clickhouse
 
-# The real measurement: 3 repeats of the default card set (add --compare to check against reference/CURRENT).
-python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse --repeats 3
+# The everyday run: all cards, uncached policies, scale 0.25, one repeat. About 6 min. Recommended for frequent use.
+python3 utils/cas-yardstick/yardstick.py run --quick --binary build/programs/clickhouse
+
+# The real measurement: all cards, six policies, 3 repeats (add --compare to check against reference/CURRENT). About 73 min.
+python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse
 ```
 
-`--smoke` exits 2 on any `FAILED` or `unavailable` cell. `--cards` defaults to `cycle`; pass a comma-separated list for more cards.
+`--smoke` exits 2 on any `FAILED` or `unavailable` cell. `--smoke` and `--quick` fix the cards, scale, repeats and policies and refuse them as options. `--quick` output is not comparable with the reference (scale differs). `--cards` and `--policies` take comma-separated lists.
 
 ## Prerequisites
 
@@ -22,7 +25,7 @@ python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse 
 
 | Command | What it does |
 |---|---|
-| `run` | Measures the cards, prints the table, writes `runs/<run-id>/`. Exit non-zero if any cell is `FAILED`. |
+| `run` | Measures the cards, prints the table, writes `runs/<run-id>/`. Exit non-zero if any cell is `FAILED` or the final prefix removal fails (the numbers are complete in that case). |
 | `report runs/<id>` | Re-prints the table of a finished run. |
 | `compare runs/<id> [reference]` | Compares a run with a reference run (default: the one named by `reference/CURRENT`). |
 | `--list-counters` | Prints the counters behind every aggregate. |
@@ -32,7 +35,7 @@ python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse 
 | Option | Default | Meaning |
 |---|---|---|
 | `--binary` | required | `clickhouse` binary to start servers from. |
-| `--cards` | `cycle` | Cards to run. |
+| `--cards` | all seven | Cards to run. |
 | `--policies` | all six | Subset of `cas, s3, s3plain, cas_cached, s3_cached, s3plain_cached`. |
 | `--repeats` | 3 | Repeats per (policy, card). |
 | `--scale` | 1.0 | Multiplies every count as `max(1, round(scale * n))`. A reference is defined at 1.0 only. |
@@ -43,6 +46,7 @@ python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse 
 | `--keep-prefix` | off | Keep the run's bucket prefix after the run. |
 | `--compare`, `--reference` | off | Compare with `reference/CURRENT` (or the given run dir) after the run. |
 | `--smoke` | off | All cards, all policies, `--scale 0.01`, `--repeats 1`. |
+| `--quick` | off | All cards, `cas, s3, s3plain`, `--scale 0.25`, `--repeats 1`. |
 
 ## Policies and disks
 
@@ -85,6 +89,8 @@ An unsupported pair prints `UNSUPPORTED (<reason>)` in every cell, gets no ratio
 | `cycle`, `wide_insert`, `attach_200`, `select_subset`, `dup_content` | run | run |
 | `mutation`, `lwd_concurrent` | run | `UNSUPPORTED (immutable disk)`: `s3_plain_rewritable` has no hard links and the server rejects `ALTER ... UPDATE` and `DELETE` with error 344 |
 
+A full run prints 8 `UNSUPPORTED` rows: 2 cards x 2 policies x cold and hot.
+
 ## What "cold" resets
 
 Setup builds the fixture, then the server is stopped and started again on the same run directory with the cache directory emptied. After start the runner executes `SYSTEM DROP FILESYSTEM CACHE`, `DROP MARK CACHE`, `DROP UNCOMPRESSED CACHE` and `DROP PRIMARY INDEX CACHE` (where the binary has it).
@@ -122,7 +128,7 @@ Each cell is the median over repeats with min..max. Ratios are computed per repe
 ### Run directory
 
 ```
-runs/<run-id>/manifest.tsv  samples.tsv  summary.tsv
+runs/<run-id>/manifest.tsv  samples.tsv  summary.tsv  pass_seconds.tsv
 runs/<run-id>/<policy>/<card>/k<N>/{cold,hot}/
     events_before.tsv events_after.tsv events_delta.tsv card.tsv invariants.tsv gc_rounds.tsv server.log
 ```
@@ -131,38 +137,60 @@ runs/<run-id>/<policy>/<card>/k<N>/{cold,hot}/
 
 ## Reference and compare
 
-`reference/<date>-<git-rev>/` holds `manifest.tsv`, `samples.tsv`, `summary.tsv` of an accepted run. `reference/CURRENT` names the one in force.
+`reference/<date>-<git-rev>/` holds `manifest.tsv`, `samples.tsv`, `summary.tsv` and `pass_seconds.tsv` of an accepted run. `reference/CURRENT` names the one in force.
 
-`compare` checks manifests first. Workload revision, scale, counts, `--gc`, repeats, config hash, build type and store must match. Otherwise it prints `incompatible: <field>` per differing field and nothing else. When compatible it prints current vs reference (median and min..max) per metric, the delta of medians in percent, and marks `|delta wall| > 10 %` and any change of a request-count median. It fails no run; there are no thresholds.
+`compare` checks manifests first. Workload revision, scale, counts, `--gc`, repeats, config hash, build type and store must match. Otherwise it prints `incompatible: <field>` per differing field and nothing else. When compatible it prints current vs reference (median and min..max) per metric, the delta of medians in percent, and marks `|delta wall| > 10 %` and any change of a request-count median. It fails no run; there are no thresholds. A `--quick` run prints `incompatible: scale`, `counts`, `repeats` and `config_hash`.
 
 Accept a run as the reference:
 
 ```bash
-cp -r runs/<run-id> utils/cas-yardstick/reference/<date>-<rev>   # keep only manifest.tsv, samples.tsv, summary.tsv
+cp -r runs/<run-id> utils/cas-yardstick/reference/<date>-<rev>   # keep only manifest.tsv, samples.tsv, summary.tsv, pass_seconds.tsv
 echo <date>-<rev> > utils/cas-yardstick/reference/CURRENT
 ```
 
-Accept only a complete run (`--scale 1`, `--repeats 3`, six policies) with no `FAILED` cell.
+Accept only a complete run (default cards, `--scale 1`, `--repeats 3`, six policies) with no `FAILED` cell.
 
 ### Current reference
 
-`reference/2026-09-29-0d141ca23c6/`: `cycle` card only, all six policies, `--scale 1`, 3 repeats, GC on, RustFS 1.0.0-rc.3 on the same host, binary `26.6.2.20000.altinityantalya` (`RelWithDebInfo`). No `FAILED` cell. Other cards have no reference yet; `compare` needs a run with a matching manifest, so run `cycle` alone to compare.
+`reference/2026-09-30-a9628dfdedf/`: all seven cards, all six policies, `--scale 1`, 3 repeats, GC on, RustFS 1.0.0-rc.3 on one host (kernel 6.14.0-37), binary `26.6.2.20000.altinityantalya` (`RelWithDebInfo`). No `FAILED` cell, 8 `UNSUPPORTED` rows (capability matrix).
+
+### Run time
+
+Same host and binary as the reference. Wall time is the span between the first and the last file of the run directory.
+
+| Run | Scale | Repeats | Passes | Wall |
+|---|---|---|---|---|
+| `--smoke` | 0.01 | 1 | 42 (7 cards x 6 policies) | 469 s |
+| `--quick` | 0.25 | 1 | 21 (7 cards x 3 policies) | 325 s |
+| default (reference) | 1.0 | 3 | 126 | 4392 s |
+
+Seconds per pass in the reference, median over 3 repeats (`pass_seconds.tsv`). `0` is an `UNSUPPORTED` pair:
+
+| Card | `cas` | `s3` | `s3plain` | `cas_cached` | `s3_cached` | `s3plain_cached` |
+|---|---:|---:|---:|---:|---:|---:|
+| `cycle` | 11 | 8 | 38 | 11 | 16 | 39 |
+| `wide_insert` | 35 | 36 | 88 | 37 | 49 | 91 |
+| `attach_200` | 47 | 5 | 10 | 48 | 5 | 10 |
+| `mutation` | 55 | 14 | 0 | 58 | 15 | 0 |
+| `lwd_concurrent` | 75 | 30 | 0 | 40 | 25 | 0 |
+| `select_subset` | 51 | 15 | 17 | 51 | 9 | 17 |
+| `dup_content` | 5 | 10 | 8 | 6 | 5 | 15 |
 
 ### RCA context
 
 `reference/2026-09-28-rca-context.md` holds the numbers of the earlier ad-hoc measurement (83 GET + 64 PUT per cycle on CAS, 12 + 31 on plain S3). It is context, not a reference: workload, server and store differ, and `compare` does not accept it.
 
-Per-cycle API calls of the current reference (median over 3 repeats; cold and hot agree to within one call):
+Per-cycle API calls of the `cycle` card in the current reference (median over 3 repeats; cold and hot agree to within one call):
 
-| Policy | GET | PUT | HEAD | LIST | DELETE | wall per cycle, cold / hot |
-|---|---|---|---|---|---|---|
-| `cas` | 83 | 64 | 5 | 7 | 1 | 21.3 / 22.9 ms |
-| `s3` | 6 | 31 | 0 | 0 | 2 | 15.9 / 15.4 ms |
-| `s3plain` | 6 | 44 | 36 | 0 | 67 | 83.9 / 79.6 ms |
+| Policy | GET | PUT | HEAD | LIST | DELETE | COPY | wall per cycle, cold / hot |
+|---|---|---|---|---|---|---|---|
+| `cas` | 83 | 64 | 5 | 7 | 1 | 0 | 21.9 / 22.1 ms |
+| `s3` | 6 | 31 | 0 | 0 | 2 | 0 | 15.7 / 15.6 ms |
+| `s3plain` | 6 | 44 | 36 | 0 | 67 | 31 | 91.2 / 87.2 ms |
 
 Against the RCA numbers:
 
 - **CAS 83 GET, 64 PUT, 7 LIST, 5 HEAD, 1 DELETE:** identical to the RCA, so the request cost of a CAS cycle did not move.
-- **`s3` 6 GET instead of 12:** the RCA plain-S3 process also had a CAS disk registered, which is a likely but unverified cause. PUT (31) matches. The RCA lists 2 DeleteObjects calls, the reference 2.
-- **CAS/`s3` wall 1.33x instead of 3.1x:** the window here is 200 cycles and about 4 s, with no GC round overlapping it (`GC rounds: 0`), while the RCA figure comes from 8 x 1000 cycles with GC on. This run does not test the long-window behavior.
+- **`s3` 6 GET instead of 12:** the RCA plain-S3 process also had a CAS disk registered, which is a likely but unverified cause. PUT (31) matches. The RCA lists 2 DeleteObjects calls, the reference 1.9 (rounded above).
+- **CAS/`s3` wall 1.32x instead of 3.1x:** the window here is 200 cycles and about 4 s, with no GC round overlapping it (`GC rounds: 0`), while the RCA figure comes from 8 x 1000 cycles with GC on. This run does not test the long-window behavior.
 - **`s3plain` needs 44 PUT, 36 HEAD, 67 DELETE and 31 COPY per cycle:** the RCA has no figure for this disk. Its wall time is the highest of the three.
