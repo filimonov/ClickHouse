@@ -69,7 +69,7 @@ Each change moves the moment of a read, memoizes an immutable body, or sends few
 **Bound: 64 MiB of measured retained storage per fold.** Each insert is charged its actual footprint, and overcharging is the safe direction:
 - **Per manifest**: `sizeof` the map node, plus the `Etag`'s key and value `capacity()`, plus 64 B for eviction bookkeeping.
 - **Per entry**: `sizeof` the cache entry, plus the path's `capacity()`. Entry vectors are allocated at exact size.
-- **Per namespace**: the fold interns each namespace string once, and memo keys share that copy. Its `capacity()` is charged once, when first interned. A 512-byte namespace (`kMaxNamespaceBytes`) therefore does not multiply per manifest.
+- **Per namespace**: the fold interns each namespace string once, and memo keys share that copy. Its `capacity()` is charged once, when first interned. A 512-byte namespace (`kMaxNamespaceBytes`) therefore does not multiply per manifest in the memo keys; the retained `Etag` key also contains the namespace and is charged per manifest by its capacity.
 
 A manifest whose own charge exceeds the budget is folded without being memoized. Past the budget the oldest insert is evicted first. `rebuild_edge_budget` is not reused: it counts routed deltas, not bytes.
 **Read-ahead.** The log hint loop skips memo hits. If an eviction lands between that skip and the take, the take reads inline: one `CASGCReadAheadMiss` and one GET, with the same outcome.
