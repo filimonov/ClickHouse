@@ -263,7 +263,15 @@ TEST(CASGCManifestMemo, AllocationStaysWithinTheCharge)
         const auto [allocation, charged] = allocationAndCharge(entries, path_bytes);
         EXPECT_LE(charged, GcManifestMemo::kBudgetBytes);
         EXPECT_GE(charged, GcManifestMemo::kBudgetBytes - (64u << 10)) << "the fill reached the budget";
+#if !defined(SANITIZER)
         EXPECT_GT(allocation, 0) << "the thread tracker saw the inserts";
         EXPECT_LE(static_cast<double>(allocation), 1.25 * static_cast<double>(charged));
+#else
+        (void)allocation;
+#endif
     }
+#if defined(SANITIZER)
+    /// The sanitizer runtime provides `operator new`, so the thread tracker is never fed; only the charge bound is checked.
+    GTEST_SKIP() << "allocation is not measurable: the thread memory tracker is not fed in sanitizer builds";
+#endif
 }
