@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 07:43'
-updated_date: '2026-09-30 07:50'
+updated_date: '2026-09-30 07:54'
 labels:
   - 'area:ci'
   - 'complexity:trivial'
@@ -19,6 +19,8 @@ dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2396'
   - tests/docker_scripts/stress_runner.sh
+  - 'https://github.com/Altinity/ClickHouse/pull/2440'
+  - 'https://github.com/Altinity/ClickHouse/issues/2439'
 priority: high
 type: bug
 ordinal: 408000
@@ -53,4 +55,11 @@ Fix shape: `start_server 10` at `:293` (or skip the sync-load draw when `USE_CAS
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-09-30: the slow start is the CAS-95 LIST storm (79% of 23,739 S3 requests in 40 s of loading are LISTs of one _files/ prefix per namespace, ~176 per part; numbers in CAS-95 notes). PR #2440 (CAS-95.1) removes the per-checksum LIST; after it lands, re-measure this restart before deciding whether the larger start budget is still needed. The budget fix stays cheap and correct either way (the post-stress restart already has it).
+
+Request breakdown of the failing pre-stress start (2026-09-30). Source: `lane-g/tmp/pr2396/stress/server.log`, from the last `Application: starting up` (line 509663, 12:22:48) to the end of the log (12:23:43, 55 s); counted `AWSClient: Make S3 request to` lines.
+- 16,779 S3 requests in total.
+- 12,448 (74%) are LISTs of `ns/state/<ns>/_files/`: one LIST per part file at part load (`MergeTreeDataPartChecksum::checkSize` -> `existsDirectory` -> `listNamespaceFiles`). Same mechanism as CAS-95.1 and the restart storm of https://github.com/Altinity/ClickHouse/issues/2439.
+- 2,075 (12%) are GETs of `ns/stream/<ns>/_log/` (ref-log reads at mount); 803 are manifest GETs.
+The larger start budget treats the symptom. CAS-95.1 (https://github.com/Altinity/ClickHouse/pull/2440, open) removes the `_files/` LISTs; whether the synchronous load then fits the default 60 s under ASan is not measured. The `_log` GETs are a separate cost that PR #2440 does not touch.
+Same cost on the yardstick (`utils/cas-yardstick/reference/2026-09-30-647dbf9dfe9`, card `attach_200`, cold): CAS 1005 LIST + 358 GET in 123 ms, plain S3 0 LIST + 1801 GET in 50 ms.
 <!-- SECTION:NOTES:END -->
