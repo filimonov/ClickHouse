@@ -65,7 +65,8 @@ thing on every disk); the full effective config is copied into the run directory
 `test/<run-id>/<policy>/<card>/k<N>/` for the disk and its cache. `DROP TABLE` does not make a CAS prefix empty (blobs,
 manifests, catalog entries and GC state persist and would let a later repeat deduplicate against an earlier one), so
 nothing is inferred from the SQL-level cleanup: the prefix is simply never reused. Cleanup of prefixes happens after the
-whole run, outside any measurement, by deleting the run's prefix in the store.
+whole run, outside any measurement, by deleting the run's prefix in the store (`rustfs.sh rm-prefix`, bounded by 1800 s;
+the runner waits 1920 s, so the script's own deadline fires first and removes its `mc` container).
 
 **Run order.** Policies are rotated per repeat (repeat 1: `cas, s3, s3plain, …`; repeat 2 starts with `s3`; …) so that
 machine or store drift is not confounded with the policy. For each repeat k and policy: for each card: start a fresh server
@@ -204,9 +205,10 @@ PUT and bytes: `cas/s3` and `cas/s3plain` in the uncached block, `cas_cached/s3_
 the cached one. A header line above the table states scale, repeats, `--gc` and the `unavailable` metrics. Cells: median with min..max, the `~`/`noisy` marks, `UNSUPPORTED (reason)`,
 `FAILED` or `unavailable`. Under each block a per-unit line per card (actual unit counts).
 
-**Machine output.** `manifest.tsv` (binary version, git revision and `dirty`, build type, workload hash = SHA-256 over
+**Machine output.** `manifest.tsv` (binary version, build type, workload hash = SHA-256 over
 the workload files — `yardstick.py`, `yardstick/*.py`, `yardstick/cards/*.py`, `etc/*`, `rustfs.sh`, `server.sh`; not the
-README, tests or references, so an accepted reference does not change it — effective scale and counts, `--gc`, K, policy order, the config hash and the config file itself,
+README, tests or references, so an accepted reference does not change it; `git_rev` and `dirty` are
+recorded for information and not compared — effective scale and counts, `--gc`, K, policy order, the config hash and the config file itself,
 RustFS image or `external` endpoint and its stated version, host, kernel, date, flags), `samples.tsv`, `summary.tsv`.
 `yardstick.py report runs/<id>` re-prints the table.
 
@@ -231,9 +233,11 @@ recorded by the task that lands the tool.
    policies (the cache wrapper is the path that behaves differently, so it is in the smoke), on a fresh RustFS: the
    end-to-end check of the pipeline in a few minutes; the README names it as the first thing to run after any change to the
    tool. The smoke asserts: every supported pair produced numbers or `UNSUPPORTED`, no `FAILED`, invariants held, every
-   aggregate available.
+   aggregate available. `run --quick` (all cards, `cas, s3, s3plain`, `--scale 0.25`, `--repeats 1`) is the everyday run;
+   it is not comparable with the reference. Measured on the reference host: `--smoke` 160 s, `--quick` 133 s, the full
+   run 2427 s.
 3. First reference: a complete run (`--scale 1`, K = 3, six policies) on the CI-like environment; its `manifest.tsv`,
-   `samples.tsv` and `summary.tsv` become `reference/CURRENT`, and its `cycle` numbers are compared in the README with the
+   `samples.tsv`, `summary.tsv` and `pass_seconds.tsv` become `reference/CURRENT`, and its `cycle` numbers are compared in the README with the
    RCA context numbers (same order of magnitude expected: 83/64 vs 12/31 per cycle; a difference is explained, not hidden).
 4. `shellcheck` on the shell scripts, `python3 -m py_compile` on the Python files.
 
