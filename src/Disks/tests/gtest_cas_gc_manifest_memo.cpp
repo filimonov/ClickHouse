@@ -281,21 +281,22 @@ TEST(CASGCManifestMemo, AllocationStaysWithinTheCharge)
 namespace
 {
 
-/// Charge of a fresh default-budget memo holding copies of `folds`, inserted in order under `ns`.
+/// Charge of a fresh default-budget memo holding copies of `folds`, inserted in order under `ns`,
+/// without the bucket arrays, which depend on how many manifests the memo held before.
 size_t chargeOf(const String & ns, std::initializer_list<const ManifestFold *> folds)
 {
     GcManifestMemo probe;
     uint64_t seq = 0;
     for (const ManifestFold * fold : folds)
         EXPECT_TRUE(probe.insert(idOf(ns, ++seq), *fold));
-    return probe.charged();
+    return probe.charged() - probe.bucketBytes();
 }
 
 }
 
-/// Many small manifests grow the hash tables, then a manifest sized to fit the budget only alone
-/// arrives, then a small one that cannot fit beside it. A hash table keeps its bucket array after
-/// eviction, so the charge must keep covering it whatever the memo decides to store.
+/// Many small manifests grow the hash tables, then a manifest sized from the live memo to fit the
+/// budget only alone arrives, then a small one that cannot fit beside it. A hash table keeps its
+/// bucket array after eviction, so the charge must keep covering it whatever the memo decides to store.
 TEST(CASGCManifestMemo, EvictionKeepsChargingRetainedCapacity)
 {
     DB::MainThreadStatus::getInstance();
@@ -306,13 +307,36 @@ TEST(CASGCManifestMemo, EvictionKeepsChargingRetainedCapacity)
     constexpr size_t kPathBytes = 1000;
     ManifestFold large = foldOf(backend, idOf(ns, 2), kBudget * 3 / 4 / (sizeof(ManifestFoldEntry) + kPathBytes), kPathBytes);
 
-    /// Grow one path so that the large manifest plus its namespace leaves half a small manifest of
-    /// the budget free: it fits alone, and a small one beside it does not.
-    const size_t one_small = chargeOf(ns, {&small});
-    const size_t small_charge = chargeOf(ns, {&small, &small}) - one_small;
-    const size_t grow = kBudget - chargeOf(ns, {&large}) - small_charge / 2;
+    /// Every manifest is charged at least 256 B, so this fixed count charges at least twice the budget.
+    const uint64_t small_inserts = 2 * kBudget / 256;
+    const auto fillSmall = [&](GcManifestMemo & memo)
+    {
+        for (uint64_t seq = 1; seq <= small_inserts; ++seq)
+        {
+            /// A copy allocates what a decode hands the memo.
+            ManifestFold copy = small;
+            ASSERT_TRUE(memo.insert(idOf(ns, seq), std::move(copy)));
+            ASSERT_LE(memo.charged(), kBudget) << "after insert " << seq;
+        }
+    };
+
+    /// The bucket arrays a filled memo holds, read from a scratch one so that the large manifest
+    /// exists before the allocation is measured. The measured memo must end up with the same arrays.
+    size_t live_buckets = 0;
+    {
+        GcManifestMemo scratch(kBudget);
+        fillSmall(scratch);
+        ASSERT_GT(scratch.evictions(), 0u) << "the small manifests filled the budget";
+        live_buckets = scratch.bucketBytes();
+    }
+    ASSERT_GT(live_buckets, 0u);
+
+    /// Grow one path so that the large manifest, its namespace and the live bucket arrays leave half
+    /// a small manifest of the budget free: it fits alone, and a small one beside it does not.
+    const size_t small_charge = chargeOf(ns, {&small, &small}) - chargeOf(ns, {&small});
+    const size_t grow = kBudget - live_buckets - chargeOf(ns, {&large}) - small_charge / 2;
     large.entries.back().path.append(grow, 'q');
-    const size_t large_alone = chargeOf(ns, {&large});
+    const size_t large_alone = chargeOf(ns, {&large}) + live_buckets;
     ASSERT_LE(large_alone, kBudget);
     ASSERT_GT(large_alone + small_charge, kBudget);
 
@@ -321,23 +345,23 @@ TEST(CASGCManifestMemo, EvictionKeepsChargingRetainedCapacity)
     const Int64 before = tracker.get();
     {
         GcManifestMemo memo(kBudget);
-        uint64_t seq = 0;
-        /// A copy allocates what a decode hands the memo.
-        const auto insert = [&](const ManifestFold & fold)
-        {
-            ManifestFold copy = fold;
-            const bool stored = memo.insert(idOf(ns, ++seq), std::move(copy));
-            EXPECT_LE(memo.charged(), kBudget) << "after insert " << seq;
-            return stored;
-        };
+        fillSmall(memo);
+        ASSERT_EQ(memo.bucketBytes(), live_buckets);
 
-        /// Every manifest is charged at least 256 B, so this fixed count charges at least twice the budget.
-        const uint64_t small_inserts = 2 * kBudget / 256;
-        for (uint64_t i = 0; i < small_inserts; ++i)
-            ASSERT_TRUE(insert(small));
-        ASSERT_GT(memo.evictions(), 0u) << "the small manifests filled the budget";
-        insert(large);
-        ASSERT_TRUE(insert(small));
+        const ManifestId large_id = idOf(ns, small_inserts + 1);
+        ManifestFold copy = large;
+        ASSERT_TRUE(memo.insert(large_id, std::move(copy))) << "the large manifest fits beside the bucket arrays";
+        EXPECT_LE(memo.charged(), kBudget);
+        EXPECT_TRUE(memo.contains(large_id));
+        for (uint64_t seq = 1; seq <= small_inserts; ++seq)
+            ASSERT_FALSE(memo.contains(idOf(ns, seq))) << "small manifest " << seq << " survived the large insert";
+
+        const ManifestId last_small_id = idOf(ns, small_inserts + 2);
+        ManifestFold last_small = small;
+        ASSERT_TRUE(memo.insert(last_small_id, std::move(last_small)));
+        EXPECT_LE(memo.charged(), kBudget);
+        EXPECT_FALSE(memo.contains(large_id)) << "the small manifest does not fit beside the large one";
+        EXPECT_TRUE(memo.contains(last_small_id));
 
         DB::CurrentThread::flushUntrackedMemory();
         const Int64 allocation = tracker.get() - before;
