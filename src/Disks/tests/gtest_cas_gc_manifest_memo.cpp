@@ -131,21 +131,23 @@ TEST(CASGCManifestMemo, EmptyManifestsAreChargedAndEvict)
     InMemoryBackend backend;
     const size_t budget = 64 * 1024;
     GcManifestMemo memo(budget);
-    size_t inserted = 0;
-    for (uint64_t seq = 1; memo.evictions() == 0; ++seq)
+    /// Enough inserts to charge twice the budget at 256 B each; a fixed count keeps a broken bound finite.
+    const uint64_t inserts = 2 * budget / 256;
+    size_t inserted_before_eviction = 0;
+    for (uint64_t seq = 1; seq <= inserts; ++seq)
     {
         const ManifestId id = idOf("00/aa@cas@", seq);
         const size_t before = memo.charged();
         ASSERT_TRUE(memo.insert(id, ManifestFold{.etag = etagOf(backend, id), .entries = {}}));
+        ASSERT_LE(memo.charged(), budget) << "after insert " << seq;
         if (memo.evictions() == 0)
         {
             EXPECT_GE(memo.charged() - before, 256u) << "an empty manifest still costs its node, key and etag";
-            ++inserted;
+            ++inserted_before_eviction;
         }
-        ASSERT_LT(seq, 10000u) << "empty manifests never filled the budget";
     }
-    EXPECT_LE(memo.charged(), budget);
-    EXPECT_LE(inserted * 256, budget);
+    EXPECT_GT(memo.evictions(), 0u) << "empty manifests filled the budget";
+    EXPECT_LE(inserted_before_eviction * 256, budget);
 }
 
 TEST(CASGCManifestMemo, SharedNamespaceIsChargedOnce)
@@ -215,18 +217,35 @@ std::pair<Int64, size_t> allocationAndCharge(size_t entries, size_t path_bytes)
         templates.push_back(foldOf(backend, idOf(namespaces.back(), 1), entries, path_bytes));
     }
 
+    size_t per_fold_charge = 0;
+    {
+        GcManifestMemo probe;
+        probe.insert(idOf(namespaces[0], 1), templates[0]);
+        const size_t one = probe.charged();
+        probe.insert(idOf(namespaces[0], 2), templates[0]);
+        per_fold_charge = probe.charged() - one;
+    }
+
     auto & tracker = DB::CurrentThread::get().memory_tracker;
     DB::CurrentThread::flushUntrackedMemory();
     const Int64 before = tracker.get();
     GcManifestMemo memo;
-    /// The charge cap stops the fill when eviction does not.
-    for (uint64_t seq = 1; memo.evictions() < 1000 && memo.charged() <= 2 * GcManifestMemo::kBudgetBytes; ++seq)
+    /// A fixed count that charges twice the budget, checked every 1024 inserts, keeps a broken bound
+    /// from allocating without limit.
+    const uint64_t inserts = 2 * GcManifestMemo::kBudgetBytes / per_fold_charge;
+    for (uint64_t seq = 1; seq <= inserts; ++seq)
     {
         const size_t n = seq % kNamespaces;
         /// A copy allocates what a decode hands the memo: a fresh etag key, entry vector and paths.
         ManifestFold fold = templates[n];
         EXPECT_TRUE(memo.insert(idOf(String(namespaces[n]), seq), std::move(fold)));
+        if (seq % 1024 == 0 && memo.charged() > GcManifestMemo::kBudgetBytes)
+        {
+            ADD_FAILURE() << "charge " << memo.charged() << " passed the budget after insert " << seq;
+            break;
+        }
     }
+    EXPECT_GT(memo.evictions(), 0u) << "the fill reached the budget";
     DB::CurrentThread::flushUntrackedMemory();
     const Int64 allocation = tracker.get() - before;
     std::cerr << "memo with " << entries << " entries of " << path_bytes << " B: allocation " << allocation
