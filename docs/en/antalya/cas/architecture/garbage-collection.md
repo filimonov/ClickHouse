@@ -331,11 +331,9 @@ decision, decode, counter and event stays on the round thread and the phase's se
 not depend on the setting. Two things do: a request a worker performed lands on that worker's
 `ProfileEvents`, not the phase row's, and a hinted key the walk never takes (a namespace held below
 its lookahead, a `HEAD` candidate that kept an edge) is a wasted request. `CASGCReadAheadHit` and
-`CASGCReadAheadMiss` are charged to the phase that takes the result. `CASGCReadAheadWasted` is
-counted in two places. A `HEAD` hint that phase 9's merge passes is discarded and counted in
-`fold_reduce`, including the disposal at the end of each shard. A manifest or `_log` read the walk
-never takes is counted when the reader is destroyed after phase 10, so it shows up in the
-round-level `ProfileEvents`, not on a phase row.
+`CASGCReadAheadMiss` are charged to the phase that takes the result; `CASGCReadAheadWasted` is
+counted when the reader is destroyed after phase 10, so it shows up in the round-level
+`ProfileEvents`, not on the phase-8 or phase-9 row.
 
 **Manifest-body memo.** The fold keeps the validated bodies it has already read in a per-fold memo
 keyed by manifest identity, so a manifest that two edges of one round name (a publish and its drop,
@@ -408,15 +406,6 @@ candidate the merge decides one of: `spare`, `condemn`, `supersede`, `graduate` 
 the other work families of phases 9 (sweep planning), 11 (outcome-log entries, whose overflow is
 simply not logged), 13, 14 (one-shot, see there) and 17 (recomputed next round). Phase 18's
 volume is bounded by `cas_manifest_sweep_delete_budget_keys` through phase 9's planning.
-
-**Head window.** The condemn-time `HEAD` read-ahead hints only candidates the merge can still take.
-The merge takes candidates in ascending `BlobRef` order (algorithm, then digest). When it takes a
-candidate, the hints for candidates below it are discarded and counted in `CASGCReadAheadWasted` at
-once, and the window refills past the take. A hint for a candidate the merge has passed therefore
-never holds a window slot, and later takes do not miss on a window full of stale hints. Each
-shard starts and ends with an empty window, so the phase counts all its wasted hints. The window
-throttles on its own outstanding `HEAD` hints, not on all pending read-ahead requests, so read slots
-left untaken by a clamp do not hold it shut.
 
 ## Phase 10 — fold seal write {#phase-10-fold-seal-write}
 
