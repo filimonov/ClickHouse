@@ -128,7 +128,7 @@ def _check_invariants(card, c, counts, phase, when, checked, path):
         raise AssertionError(f'invariants violated: {violated}')
 
 
-def _window(card, c, policy, counts, phase, k, pass_dir):
+def _window(card, c, policy, counts, phase, k, pass_dir, process_start_us):
     """One measured pass; returns its sample rows."""
     phase_dir = os.path.join(pass_dir, phase)
     os.makedirs(phase_dir, exist_ok=True)
@@ -151,7 +151,7 @@ def _window(card, c, policy, counts, phase, k, pass_dir):
     ops = result['ops']
     _write_ops(os.path.join(phase_dir, 'card.tsv'), ops)
     is_cas = policy.startswith('cas')
-    rounds = gc.collect(c, t_start_us, t_end_us) if is_cas else []
+    rounds = gc.collect(c, t_start_us, t_end_us, process_start_us) if is_cas else []
     _write_kv(os.path.join(phase_dir, 'gc_rounds.tsv'), GC_ROUNDS_COLUMNS,
               [[r[column] for column in GC_ROUNDS_COLUMNS] for r in rounds])
     _check_invariants(card, c, counts, phase, 'after', checked, inv_path)
@@ -203,6 +203,7 @@ def run_one(policy, card, k, deps: Deps) -> list[dict]:
                 raise RuntimeError(f'config hash {config_hash} differs from the run manifest\'s '
                                    f'{deps.config_hashes.get(policy)} for {policy}')
             started = True
+            process_start_us = time.time_ns() // 1000
             deps.server.start(pass_dir)
             c = deps.client_for(pass_dir)
             card.setup(c, policy, counts)
@@ -212,6 +213,7 @@ def run_one(policy, card, k, deps: Deps) -> list[dict]:
                 if os.path.isdir(caches):
                     shutil.rmtree(caches)
                 os.makedirs(caches)
+                process_start_us = time.time_ns() // 1000
                 deps.server.start(pass_dir)
                 c.drop_caches()
         except Exception:
@@ -220,7 +222,7 @@ def run_one(policy, card, k, deps: Deps) -> list[dict]:
         else:
             for i, phase in enumerate(phases):
                 try:
-                    rows += _window(card, c, policy, counts, phase, k, pass_dir)
+                    rows += _window(card, c, policy, counts, phase, k, pass_dir, process_start_us)
                 except Exception:
                     _log_error(pass_dir, f'{phase} window')
                     failed = list(phases[i:])

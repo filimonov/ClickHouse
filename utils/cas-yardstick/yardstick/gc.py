@@ -9,15 +9,19 @@ _SQL = ('SELECT round_id, toUnixTimestamp64Micro(min(event_time_microseconds)) A
         "sumIf(manifests_deleted, event_type = 'Finish') AS manifests_deleted, "
         "sumIf(duration_ms, event_type = 'Finish') AS duration_ms, "
         "countIf(event_type = 'Finish') AS finished "
-        # A round without its Finish row is still running, so its last event does not bound it.
-        'FROM system.cas_gc_log GROUP BY round_id HAVING (finished = 0 OR t1 >= {t_start_us}) AND t0 <= {t_end_us} '
+        # A round without its Finish row is still running, so its last event does not bound it. A stop does not log
+        # the Finish of a round it cuts, so only rounds this process started can still be running.
+        'FROM system.cas_gc_log GROUP BY round_id '
+        'HAVING ((finished = 0 AND t0 >= {process_start_us}) OR t1 >= {t_start_us}) AND t0 <= {t_end_us} '
         'ORDER BY t0 FORMAT JSONEachRow')
 
 
-def collect(client, t_start_us: int, t_end_us: int) -> list[dict]:
-    """Rounds overlapping [t_start_us, t_end_us] (microseconds since epoch), oldest first."""
+def collect(client, t_start_us: int, t_end_us: int, process_start_us: int) -> list[dict]:
+    """Rounds overlapping [t_start_us, t_end_us] (microseconds since epoch), oldest first.
+    `process_start_us` is taken before the current server process was launched."""
     client.query('SYSTEM FLUSH LOGS')
-    text = client.query(_SQL.format(t_start_us=int(t_start_us), t_end_us=int(t_end_us)))
+    text = client.query(_SQL.format(t_start_us=int(t_start_us), t_end_us=int(t_end_us),
+                                    process_start_us=int(process_start_us)))
     rounds = []
     for line in text.splitlines():
         r = json.loads(line)

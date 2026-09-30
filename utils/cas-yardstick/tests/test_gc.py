@@ -1,6 +1,8 @@
 import contextlib
 import io
 import json
+import re
+import time
 import os
 import shutil
 import tempfile
@@ -28,10 +30,24 @@ def row(round_id, t0, t1, finished):
                 duration_ms=30, finished=finished)
 
 
+class EmulatingClient(FakeClient):
+    """Applies the HAVING clause of `gc._SQL` to its rows, so tests exercise the filter the server would run."""
+    def query(self, sql, settings=None, timeout=3600):
+        if not sql.startswith('SELECT'):
+            return super().query(sql)
+        self.queries.append(sql)
+        m = re.search(r'HAVING \(\(finished = 0 AND t0 >= (\d+)\) OR t1 >= (\d+)\) AND t0 <= (\d+) ', sql)
+        assert m, sql
+        process_start, start, end = (int(x) for x in m.groups())
+        kept = [r for r in self.rows
+                if ((r['finished'] == 0 and r['t0'] >= process_start) or r['t1'] >= start) and r['t0'] <= end]
+        return '\n'.join(json.dumps(r) for r in kept)
+
+
 class CollectTest(unittest.TestCase):
     def test_flags_and_flush_first(self):
         c = FakeClient([row('a', T0 + 10, T1 - 10, 1), row('b', T0 - 10, T1 - 10, 1), row('c', T0 + 10, T1 + 10, 0)])
-        rounds = gc.collect(c, T0, T1)
+        rounds = gc.collect(c, T0, T1, 0)
         self.assertEqual(c.queries[0], 'SYSTEM FLUSH LOGS')
         self.assertIn(f't1 >= {T0}) AND t0 <= {T1}', c.queries[1])
         self.assertEqual([(r['round_id'], r['started_in_window'], r['finished_in_window']) for r in rounds],
@@ -39,22 +55,23 @@ class CollectTest(unittest.TestCase):
 
     def test_bounds_are_compared_as_integers(self):
         c = FakeClient([])
-        gc.collect(c, T0, T1)
+        gc.collect(c, T0, T1, 0)
         self.assertIn('toUnixTimestamp64Micro(min(event_time_microseconds)) AS t0', c.queries[1])
         self.assertIn('toUnixTimestamp64Micro(max(event_time_microseconds)) AS t1', c.queries[1])
 
     def test_no_rows(self):
-        self.assertEqual(gc.collect(FakeClient([]), T0, T1), [])
+        self.assertEqual(gc.collect(FakeClient([]), T0, T1, 0), [])
 
     def test_unfinished_round_is_open_until_it_finishes(self):
-        c = FakeClient([])
-        gc.collect(c, T0, T1)
-        self.assertIn(f'HAVING (finished = 0 OR t1 >= {T0}) AND t0 <= {T1}', c.queries[1])
-        rounds = gc.collect(FakeClient([row('a', T0 - 20, T0 - 10, 0)]), T0, T1)
+        rounds = gc.collect(EmulatingClient([row('a', T0 - 20, T0 - 10, 0)]), T0, T1, T0 - 100)
         self.assertEqual([(r['started_in_window'], r['finished_in_window']) for r in rounds], [(False, False)])
 
+    def test_unfinished_round_of_an_earlier_process_is_not_open(self):
+        rounds = gc.collect(EmulatingClient([row('a', T0 - 20, T0 - 10, 0)]), T0, T1, T0 - 5)
+        self.assertEqual(rounds, [])
+
     def test_finished_after_window_end_is_not_finished_in_window(self):
-        rounds = gc.collect(FakeClient([row('a', T0 + 1, T1 + 1, 1)]), T0, T1)
+        rounds = gc.collect(FakeClient([row('a', T0 + 1, T1 + 1, 1)]), T0, T1, 0)
         self.assertFalse(rounds[0]['finished_in_window'])
 
 
@@ -130,6 +147,42 @@ class RunnerGcTest(unittest.TestCase):
                 for m, v in (('gc_rounds', inside), ('gc_rounds_overlapping', over))]
         table = R.render_table(R.build_summary(rows), ['cas'], [])
         self.assertIn('0 (0..3), 0 (0..1) overlapping', table)
+
+
+class TwoProcessesTest(unittest.TestCase):
+    def test_round_cut_by_the_cold_reset_stop_counts_in_no_window(self):
+        from tests.test_runner import FakeCard, FakeServer
+        from yardstick import runner
+
+        class TimedServer(FakeServer):
+            def start(self, run_dir):
+                super().start(run_dir)
+                self.started_us = getattr(self, 'started_us', []) + [time.time_ns() // 1000]
+
+        server = TimedServer([])
+
+        class Rounds(EmulatingClient):
+            # One unfinished round per process lifetime, each starting 1 us after its process.
+            @property
+            def rows(self):
+                return [row(f'p{i}', t + 1, t + 2, 0) for i, t in enumerate(server.started_us)]
+
+            @rows.setter
+            def rows(self, value):
+                pass
+
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        c = Rounds([])
+        deps = runner.Deps(run_id='R', runs_dir=d, endpoint='e', gc=True, scale=1.0, server=server,
+                           client_for=lambda run_dir: _Client(c), write_config=lambda *a: 'h',
+                           config_hashes={'cas': 'h'})
+        rows = runner.run_one('cas', FakeCard('c', cold_reset=True), 1, deps)
+        self.assertEqual(len(server.started_us), 2)
+        for phase in ('cold', 'hot'):
+            with open(os.path.join(d, 'R', 'cas', 'c', 'k1', phase, 'gc_rounds.tsv')) as f:
+                self.assertEqual([line.split('\t')[0] for line in f.read().splitlines()[1:]], ['p1'], phase)
+        self.assertEqual({r['value'] for r in rows if r['metric'] == 'gc_rounds_overlapping'}, {1})
 
 
 class FailingLogClient(FakeClient):
