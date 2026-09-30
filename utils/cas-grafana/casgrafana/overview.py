@@ -216,7 +216,7 @@ def rows() -> list:
         "GC rounds per 30 minutes, by outcome",
         "How many garbage-collection rounds finished, colored by outcome. Success and Deferred are healthy (Deferred = "
         "nothing to do). Error, Aborted or Stopped bars need a look at Needs attention.",
-        f"""SELECT $timeSeries, toString(outcome) AS outcome, count()
+        f"""SELECT $timeSeries AS t, toString(outcome) AS outcome, count()
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter
 GROUP BY t, outcome ORDER BY t

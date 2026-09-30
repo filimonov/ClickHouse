@@ -62,6 +62,8 @@ def _check_query(where: str, sql: str, known, async_prefixes, out: list):
         out.append(f"{where}: query does not read through clusterAllReplicas('$cluster', ...)")
     if "skip_unavailable_shards" not in sql:
         out.append(f"{where}: query lacks SETTINGS skip_unavailable_shards = 1")
+    if "$timeSeries" in sql and "$timeSeries AS t" not in sql:
+        out.append(f"{where}: the plugin expands $timeSeries without an alias; write '$timeSeries AS t'")
 
 
 def _check_tile(d: dict, p: dict, out: list):

@@ -11,7 +11,7 @@ def _quoted(values) -> str:
 
 def expand(sql: str, *, cluster: str, hosts, disks, seconds: int, interval: int = 300, constants: dict = None) -> str:
     out = sql
-    out = out.replace("$timeSeries", f"(intDiv(toUInt32(event_time), {interval}) * {interval}) * 1000 AS t")
+    out = out.replace("$timeSeries", f"(intDiv(toUInt32(event_time), {interval}) * {interval}) * 1000")
     out = out.replace("$timeFilter", f"event_date >= toDate(now() - {seconds}) AND event_time >= now() - {seconds} AND event_time <= now()")
     out = out.replace("$__from", f"toUnixTimestamp(now() - {seconds}) * 1000").replace("$__to", "toUnixTimestamp(now()) * 1000")
     out = out.replace("$interval", str(interval))

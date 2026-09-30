@@ -89,6 +89,10 @@ class Problems(unittest.TestCase):
         probs = self.one(lambda o, d: d["panels"][1]["panels"][0]["targets"][0].__setitem__("query", "SELECT event_time AS \"Time\", 1 FROM clusterAllReplicas('$cluster', system.metric_log) WHERE hostName() IN ($host) AND $timeFilter " + P.SETTINGS))
         self.assertTrue(any("DateTime" in p for p in probs), probs)
 
+    def test_time_series_macro_needs_its_alias(self):
+        probs = self.one(lambda o, d: o["panels"][1]["targets"][0].__setitem__("query", "SELECT $timeSeries, 1 FROM clusterAllReplicas('$cluster', system.metric_log) WHERE hostName() IN ($host) AND $timeFilter GROUP BY t " + P.SETTINGS))
+        self.assertTrue(any("$timeSeries AS t" in p for p in probs), probs)
+
     def test_uid_and_title(self):
         probs = self.one(lambda o, d: o.__setitem__("title", "Overview"))
         self.assertTrue(any("title" in p for p in probs), probs)

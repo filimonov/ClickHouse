@@ -65,7 +65,7 @@ def metric_ts(title, desc, series: dict, *, unit="short", stack=False, by_host=F
     host_col = ", hostName() AS host" if by_host else ""
     group = "t, host" if by_host else "t"
     extra = f" AND {where}" if where else ""
-    sql = (f"SELECT $timeSeries{host_col}, {cols}\n"
+    sql = (f"SELECT $timeSeries AS t{host_col}, {cols}\n"
            f"FROM clusterAllReplicas('$cluster', system.{table})\n"
            f"WHERE hostName() IN ($host) AND $timeFilter{extra}\n"
            f"GROUP BY {group} ORDER BY t\n{SETTINGS}")
@@ -112,8 +112,9 @@ def stat(title, desc, targets: list, fields: dict, *, w=4, h=5, links=None, inte
             props.append({"id": "color", "value": {"mode": "fixed", "fixedColor": spec["fixed"]}})
         p["fieldConfig"]["overrides"].append({"matcher": {"id": "byName", "options": name}, "properties": props})
     p["options"] = {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
-                    "orientation": "vertical", "textMode": "value_and_name", "colorMode": "background",
-                    "graphMode": "none", "justifyMode": "center", "wideLayout": False, "showPercentChange": False}
+                    "orientation": "horizontal", "textMode": "value_and_name", "colorMode": "background",
+                    "graphMode": "none", "justifyMode": "center", "wideLayout": True, "showPercentChange": False,
+                    "text": {"titleSize": 12, "valueSize": 20}}
     return p
 
 
@@ -158,15 +159,17 @@ def _flow(panels: list, y0: int, ids) -> int:
 
 
 def _variable_query(sql: str, name: str, label: str, multi: bool) -> dict:
+    current = {"text": ["All"], "value": ["$__all"], "selected": True} if multi else {}
     return {"type": "query", "name": name, "label": label, "datasource": DS, "query": sql, "definition": sql,
-            "refresh": 2, "sort": 1, "multi": multi, "includeAll": multi, "current": {}, "options": [], "hide": 0}
+            "refresh": 2, "sort": 1, "multi": multi, "includeAll": multi, "current": current, "options": [], "hide": 0}
 
 
 def _templating() -> dict:
     return {"list": [
         {"type": "datasource", "name": "datasource", "label": "Datasource", "query": DS["type"], "current": {}, "hide": 0,
          "refresh": 1, "regex": "", "multi": False, "includeAll": False},
-        _variable_query("SELECT DISTINCT cluster FROM system.clusters ORDER BY cluster", "cluster", "Cluster", False),
+        _variable_query("SELECT DISTINCT cluster FROM system.clusters WHERE cluster NOT IN ('default') AND cluster NOT LIKE 'all-%' ORDER BY cluster",
+                        "cluster", "Cluster", False),
         _variable_query("SELECT DISTINCT hostName() FROM clusterAllReplicas('$cluster', system.one) " + SETTINGS,
                         "host", "Host", True),
         _variable_query("SELECT DISTINCT disk_name FROM clusterAllReplicas('$cluster', system.cas_gc_log) "
@@ -218,13 +221,20 @@ def dashboard(uid, title, description, panels, *, tags, links, refresh="1m", tim
     templating["list"].extend(extra_variables)
     placed, y = [], 0
     for p in panels:
-        if p["type"] == "row":
+        if p["type"] == "row" and p["collapsed"]:
             p["gridPos"].update(x=0, y=y)
             p["id"] = next(ids)
             y = _flow(p["panels"], y + 1, ids)
+            placed.append(p)
+        elif p["type"] == "row":
+            # Grafana nests panels only under collapsed rows; an expanded row's panels follow it at top level.
+            head = dict(p, panels=[], gridPos=dict(p["gridPos"], x=0, y=y), id=next(ids))
+            placed.append(head)
+            y = _flow(p["panels"], y + 1, ids)
+            placed.extend(p["panels"])
         else:
             y = _place_top_level(p, placed, y, ids)
-        placed.append(p)
+            placed.append(p)
     return {"uid": uid, "title": title, "description": description, "tags": list(tags), "editable": True,
             "graphTooltip": 1, "schemaVersion": 41, "version": 0, "refresh": refresh, "timezone": "browser",
             "time": {"from": time_from, "to": "now"}, "timepicker": {}, "links": list(links),

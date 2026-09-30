@@ -5,15 +5,19 @@ from casgrafana import verify, panels as P
 
 class Expand(unittest.TestCase):
     def test_expand_multi_value(self):
-        sql = "SELECT $timeSeries, sum(x) / $interval FROM clusterAllReplicas('$cluster', system.metric_log) WHERE hostName() IN ($host) AND disk_name IN ($disk) AND $timeFilter GROUP BY t"
+        sql = "SELECT $timeSeries AS t, sum(x) / $interval FROM clusterAllReplicas('$cluster', system.metric_log) WHERE hostName() IN ($host) AND disk_name IN ($disk) AND $timeFilter GROUP BY t"
         out = verify.expand(sql, cluster="otel", hosts=["h1", "h2"], disks=["cas"], seconds=3600, interval=300)
         self.assertIn("clusterAllReplicas('otel', system.metric_log)", out)
         self.assertIn("hostName() IN ('h1','h2')", out)
         self.assertIn("disk_name IN ('cas')", out)
-        self.assertIn("(intDiv(toUInt32(event_time), 300) * 300) * 1000 AS t", out)
+        self.assertIn("SELECT (intDiv(toUInt32(event_time), 300) * 300) * 1000 AS t,", out)
         self.assertIn("sum(x) / 300", out)
         self.assertIn("event_date >= toDate(now() - 3600) AND event_time >= now() - 3600 AND event_time <= now()", out)
         self.assertNotIn("$", out)
+
+    def test_time_series_macro_expands_without_alias_like_the_plugin(self):
+        out = verify.expand("SELECT $timeSeries, 1", cluster="c", hosts=["h"], disks=["d"], seconds=1)
+        self.assertEqual(out, "SELECT (intDiv(toUInt32(event_time), 300) * 300) * 1000, 1")
 
     def test_expand_from_to(self):
         out = verify.expand("WHERE t >= $__from AND t <= $__to", cluster="c", hosts=["h"], disks=["d"], seconds=60)

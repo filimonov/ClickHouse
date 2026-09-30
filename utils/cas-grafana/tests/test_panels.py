@@ -15,7 +15,7 @@ class MetricTs(unittest.TestCase):
     def test_query_shape(self):
         p = P.metric_ts("PUT rate", "desc", {"PUT": P.r("S3PutObject")}, unit="reqps")
         sql = p["targets"][0]["query"]
-        self.assertIn("SELECT $timeSeries, sum(ProfileEvent_S3PutObject) / $interval AS \"PUT\"", sql)
+        self.assertIn("SELECT $timeSeries AS t, sum(ProfileEvent_S3PutObject) / $interval AS \"PUT\"", sql)
         self.assertIn("FROM clusterAllReplicas('$cluster', system.metric_log)", sql)
         self.assertIn("WHERE hostName() IN ($host) AND $timeFilter", sql)
         self.assertIn("GROUP BY t ORDER BY t", sql)
@@ -79,6 +79,25 @@ class Layout(unittest.TestCase):
         ids = [p["id"] for p in d["panels"]] + [q["id"] for p in d["panels"] for q in p.get("panels", [])]
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_expanded_row_panels_follow_the_row_at_top_level(self):
+        a = P.metric_ts("a", "d", {"a": "1"}, w=12)
+        row = P.row("Needs attention", [a], collapsed=False)
+        d = P.dashboard("cas-overview", "CAS / Overview", "desc", [row], tags=["cas"], links=[])
+        self.assertEqual([p["type"] for p in d["panels"]], ["row", "timeseries"])
+        self.assertEqual(d["panels"][0]["panels"], [])
+        self.assertEqual(d["panels"][1]["gridPos"]["y"], 1)
+        self.assertEqual(len(row["panels"]), 1)  # the input row is not mutated
+
+    def test_cluster_variable_skips_operator_clusters(self):
+        q = P._templating()["list"][1]["query"]
+        self.assertIn("cluster NOT IN ('default')", q)
+        self.assertIn("cluster NOT LIKE 'all-%'", q)
+
+    def test_stat_layout_is_readable(self):
+        p = P.stat("t", "d", [P.target("SELECT 1", fmt="table")], {})
+        self.assertEqual(p["options"]["orientation"], "horizontal")
+        self.assertEqual(p["options"]["text"], {"titleSize": 12, "valueSize": 20})
+
     def test_dashboard_skeleton(self):
         d = P.dashboard("cas-drilldown", "CAS / Drilldown", "desc", [], tags=["cas"], links=[])
         self.assertEqual(d["uid"], "cas-drilldown")
@@ -88,6 +107,7 @@ class Layout(unittest.TestCase):
         host = d["templating"]["list"][2]
         self.assertTrue(host["multi"] and host["includeAll"])
         self.assertNotIn("allValue", host)
+        self.assertEqual(host["current"], {"text": ["All"], "value": ["$__all"], "selected": True})
         self.assertIn("system.cas_gc_log", d["templating"]["list"][3]["query"])
         self.assertEqual([a["name"] for a in d["annotations"]["list"]], ["Restart", "Lease lost"])
         self.assertEqual(d["refresh"], "1m")

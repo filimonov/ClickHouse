@@ -34,7 +34,7 @@ def gc_rows() -> list:
         "Rounds per interval, by outcome and host",
         "Finished rounds per bucket. `NotALeader` on a host is normal: only the leader runs the fold. Recurring "
         "`Error` or `Aborted` is not; `Deferred` is a cheap round that found nothing changed.",
-        f"""SELECT $timeSeries, concat(hostName(), ' ', toString(outcome)) AS series, count()
+        f"""SELECT $timeSeries AS t, concat(hostName(), ' ', toString(outcome)) AS series, count()
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE {GC_WHERE}
 GROUP BY t, series ORDER BY t
@@ -44,7 +44,7 @@ GROUP BY t, series ORDER BY t
         "GC leader (1 = this host leads)",
         "`CASGCIsLeader_<disk>` per host. Leadership moves on restart or lease loss; two hosts at 1 at the same time is a "
         "finding (CAS-133 records the leader identity in `gc/state`).",
-        f"""SELECT $timeSeries, concat(hostName(), ' ', replaceOne(metric, 'CASGCIsLeader_', '')) AS series, max(value)
+        f"""SELECT $timeSeries AS t, concat(hostName(), ' ', replaceOne(metric, 'CASGCIsLeader_', '')) AS series, max(value)
 FROM clusterAllReplicas('$cluster', system.asynchronous_metric_log)
 WHERE hostName() IN ($host) AND metric LIKE 'CASGCIsLeader_%' AND replaceOne(metric, 'CASGCIsLeader_', '') IN ($disk) AND $timeFilter
 GROUP BY t, series ORDER BY t
@@ -85,7 +85,7 @@ ORDER BY t
     phases_stack = P.raw_ts(
         "Phase durations per bucket, stacked",
         "`phase_duration_microseconds` summed per bucket and phase. On otel.demo `fold_ref_intake` and `pending_deletes` dominate; a phase that grows across rounds is the one to read in the round log.",
-        f"""SELECT $timeSeries, toString(phase) AS phase, sum(phase_duration_microseconds) / 1e6
+        f"""SELECT $timeSeries AS t, toString(phase) AS phase, sum(phase_duration_microseconds) / 1e6
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter
 GROUP BY t, phase ORDER BY t
