@@ -2056,6 +2056,8 @@ Gc::FoldResult Gc::fold(GcState & state, std::optional<Etag> & /*state_etag*/,
         const size_t position = std::lower_bound(shard_candidates.begin() + head_search_from, shard_candidates.end(), ref)
             - shard_candidates.begin();
         const bool at_candidate = position < shard_candidates.size() && shard_candidates[position] == ref;
+        /// Candidates and the merge apply the same verdicts in the same order, so every take is one. In
+        /// release a non-candidate leaves the hints as they are, and `takeHead` reads it inline.
         chassert(at_candidate);
         if (!at_candidate)
             return;
