@@ -4,6 +4,7 @@ title: 'Soak end checkpoint: take fsck and the GC dry-run on one quiesced state'
 status: To Do
 assignee: []
 created_date: '2026-09-30 09:25'
+updated_date: '2026-09-30 12:52'
 labels:
   - 'area:testing'
   - 'complexity:small'
@@ -43,3 +44,9 @@ Second harness race seen the same day: S46 failed at entry with 'a GC leader was
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Third occurrence of the same race, 2026-09-30, S11 `--scale ci` with `cas_gc_interval_sec` = 300 (one round folds 44-60k edges): the leak verdict failed in 2 of 3 runs of one binary and 0 of 2 of another, with 9 and 63 unreachable `_manifests` left. In both failures a `RemovePart` batch of the writers' outdated-part cleanup landed 6-7 s after the last GC round had listed the ref stream and before the final fsck (21 parts -> 63 manifests, 3 parts -> 9); the 150-s drain deadline expired before another round. A live rerun passed the harness and then held 15,677 unreachable `_manifests` with 4,130 outdated parts still queued; forced rounds took it to 0 within 6 rounds and it stayed 0 for 33 more. So it is not a leak. Fix as in the first acceptance criterion: wait for zero outdated parts before the final rounds.
+<!-- SECTION:NOTES:END -->
