@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <map>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -259,14 +260,23 @@ public:
 
     std::optional<RawMeta> head(const String & key, TransportAccess & access) override
     {
-        if (!bypass_fault && key == unreadable_key)
-            throw std::runtime_error("injected post-fold terminal read failure for " + key);
+        if (!bypass_fault && unreadable_keys.contains(key))
+        {
+            ++refused_heads[key];
+            throw std::runtime_error("injected post-fold read failure for " + key);
+        }
         return CountingBackend::head(key, access);
     }
 
     void makeUnreadable(String key)
     {
-        unreadable_key = std::move(key);
+        unreadable_keys.insert(std::move(key));
+    }
+
+    uint64_t refusedHeads(const String & key) const
+    {
+        const auto it = refused_heads.find(key);
+        return it == refused_heads.end() ? 0 : it->second;
     }
 
     /// The test's own look at the key the fault hides, taken through the same primitive with the fault
@@ -284,7 +294,8 @@ public:
     }
 
 private:
-    String unreadable_key;
+    std::set<String> unreadable_keys;
+    std::map<String, uint64_t> refused_heads;
     bool bypass_fault = false;
 };
 
@@ -2819,10 +2830,9 @@ TEST(CASGCFrontierGate, CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanito
     EXPECT_EQ(backend->deleteCount(ckpt_key), 1);
 }
 
-/// Once a terminal has folded, a later physical read failure is janitor debt, not lifecycle evidence
-/// loss. Removing this per-key leak handling would either make the signal disappear or let one dead
-/// object prevent the janitor from considering the rest of its page.
-TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingProgress)
+/// After the terminal folds, an unreadable dead state key is a counted janitor leak that does not stop
+/// the page; an unreadable terminal `_log` is batch-deleted without a HEAD, so it is never counted.
+TEST(CASGCFrontierGate, PostFoldUnreadableStateKeyIsCountedAndTerminalLogIsBatchDeleted)
 {
     auto backend = std::make_shared<PostFoldUnreadableTerminalBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
@@ -2879,7 +2889,9 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
     const String later_dead_residue = layout.refLogKey(removed_life, RefTxnId{1, 3});
     ASSERT_TRUE(std::holds_alternative<Committed>(
         op.create(later_dead_residue, "dead residue after the folded terminal", Retry::once())));
+    const String unreadable_ckpt = layout.refCkptKey(removed_life);
     backend->makeUnreadable(terminal_key);
+    backend->makeUnreadable(unreadable_ckpt);
 
     std::map<String, UInt64> namespace_cleanup;
     const uint64_t leaks_before
@@ -2900,7 +2912,10 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
     EXPECT_EQ(report.manifests_deleted, 1u)
         << "the janitor leak cannot promote itself into pool-wide destructive suppression";
     EXPECT_FALSE(op.head(layout.manifestKey(manifest_id), Retry::once()).has_value());
-    EXPECT_TRUE(backend->existsIgnoringFault(terminal_key));
+    EXPECT_TRUE(backend->existsIgnoringFault(unreadable_ckpt));
+    EXPECT_FALSE(backend->existsIgnoringFault(terminal_key));
+    EXPECT_EQ(backend->refusedHeads(terminal_key), 0u);
+    EXPECT_EQ(backend->refusedHeads(unreadable_ckpt), 1u);
     EXPECT_FALSE(backend->existsIgnoringFault(later_dead_residue))
         << "one unreadable key cannot stop the perpetual janitor from deciding the rest of its page";
     ASSERT_FALSE(namespace_cleanup.empty());
@@ -2909,7 +2924,8 @@ TEST(CASGCFrontierGate, PostFoldUnreadableTerminalIsCountedWithoutSuppressingPro
         ProfileEvents::global_counters[ProfileEvents::CASGCNamespaceCleanupLeaks].load() - leaks_before,
         1u);
     const String captured = log_capture.captured();
-    EXPECT_NE(captured.find(terminal_key), String::npos);
+    EXPECT_NE(captured.find(unreadable_ckpt), String::npos);
+    EXPECT_EQ(captured.find(terminal_key), String::npos);
     EXPECT_NE(captured.find("leak"), String::npos);
 }
 

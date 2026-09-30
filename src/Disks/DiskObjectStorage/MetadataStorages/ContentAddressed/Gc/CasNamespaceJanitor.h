@@ -1,6 +1,7 @@
 #pragma once
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
+#include <algorithm>
 #include <functional>
 #include <vector>
 
@@ -20,14 +21,18 @@ struct NamespaceJanitorResult
 class NamespaceJanitor
 {
 public:
-    NamespaceJanitor(CasRequests & requests_, const Layout & layout_, size_t page_budget_)
-        : requests(requests_), layout(layout_), page_budget(page_budget_) {}
+    /// `bulk_delete_chunk_keys_` bounds one batch delete of dead-life `_log`/`_snap` keys; it is clamped
+    /// to `[1, kBulkDeleteMaxKeys]`.
+    NamespaceJanitor(CasRequests & requests_, const Layout & layout_, size_t page_budget_,
+                     size_t bulk_delete_chunk_keys_ = kBulkDeleteMaxKeys)
+        : requests(requests_), layout(layout_), page_budget(page_budget_)
+        , bulk_delete_chunk_keys(std::clamp<size_t>(bulk_delete_chunk_keys_, 1, kBulkDeleteMaxKeys)) {}
 
     /// `liveness` is admitted once for the whole page (one `CasOperation` covers the read, the list,
     /// every delete and the cursor publication): a fact the fence cannot see, such as "this tenure
     /// still holds the GC round's own lease" -- see `CasRequests::admit`. It is SAMPLED BEFORE EVERY
-    /// REQUEST the page makes (and before every reissue of one), not just at the two points this
-    /// function itself checks `op.admitted()` -- so it must be cheap and must never throw. A sample
+    /// REQUEST the page makes (and before every reissue of one), not just where this function
+    /// itself checks `op.admitted()` -- so it must be cheap and must never throw. A sample
     /// that returns false ends whichever request was about to be sent: a read verb (the maintenance
     /// read, the list, a HEAD) throws out of this call, and a write verb (a delete, the cursor
     /// publication) reports it as `GaveUp` rather than sending anything.
@@ -37,6 +42,7 @@ private:
     CasRequests & requests;
     const Layout & layout;
     size_t page_budget;
+    size_t bulk_delete_chunk_keys;
 };
 
 }

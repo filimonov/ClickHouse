@@ -8,6 +8,7 @@ using namespace DB::Cas::tests;
 namespace DB::ErrorCodes
 {
     extern const int NETWORK_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -733,4 +734,442 @@ TEST(CASNamespaceJanitorIntegration, RegularGcRoundDeletesDeadNamespaceBytes)
     EXPECT_EQ(namespace_cleanup["janitor_pages"], 1u);
     EXPECT_GE(namespace_cleanup["janitor_keys"], 1u);
     EXPECT_EQ(namespace_cleanup["janitor_deleted"], 1u);
+}
+
+namespace
+{
+
+/// Counts bulk and single-key delete requests apart and lets a test fault the bulk verb or act as a
+/// concurrent writer at fixed points. Every hook's own store access goes through the uncounted
+/// `InMemoryBackend` primitives, so only the janitor's requests are counted.
+class BatchJanitorBackend : public CountingBackend
+{
+public:
+    using Access = DB::Cas::TransportAccess;
+    using Keys = std::vector<DB::Cas::WriteOnceKey>;
+
+    explicit BatchJanitorBackend(bool tokenless_) : tokenless(tokenless_) {}
+
+    DB::Cas::Backend::RawListPage list(const String & prefix, const String & cursor, size_t limit, Access & access) override
+    {
+        DB::Cas::Backend::RawListPage page = CountingBackend::list(prefix, cursor, limit, access);
+        if (!prefix.ends_with("/cas/ns/"))
+            return page;
+        if (tokenless)
+            for (auto & key : page.keys)
+                key.value.reset();
+        if (after_namespace_list)
+            std::exchange(after_namespace_list, {})(access);
+        return page;
+    }
+
+    bool supportsListTokens() const override { return !tokenless; }
+
+    DB::Cas::Backend::RawRemoval remove(const String & key, const String & expected_value, Access & access) override
+    {
+        single_removes.push_back(key);
+        if (before_single_remove)
+            before_single_remove(key, access);
+        DB::Cas::Backend::RawRemoval outcome = CountingBackend::remove(key, expected_value, access);
+        if (after_single_remove)
+            after_single_remove(key);
+        return outcome;
+    }
+
+    void removeManyWriteOnce(const Keys & keys, Access & access) override
+    {
+        ++bulk_requests;
+        if (before_bulk)
+            before_bulk(keys, access);
+        CountingBackend::removeManyWriteOnce(keys, access);
+        if (after_bulk)
+            after_bulk(keys);
+    }
+
+    /// A concurrent actor's delete of whatever `key` holds now.
+    void removeUncounted(const String & key, Access & access)
+    {
+        if (const auto current = InMemoryBackend::read(key, access)) // NOLINT(bugprone-parent-virtual-call)
+            (void)InMemoryBackend::remove(key, current->value, access); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    /// A concurrent actor's write: a create when `key` is absent, else a replacement of what it holds now.
+    void writeUncounted(const String & key, const String & bytes, Access & access)
+    {
+        const auto current = InMemoryBackend::read(key, access); // NOLINT(bugprone-parent-virtual-call)
+        const std::optional<String> expected = current ? std::optional<String>(current->value) : std::nullopt;
+        ASSERT_TRUE(InMemoryBackend::write(key, bytes, expected, access).has_value()); // NOLINT(bugprone-parent-virtual-call)
+    }
+
+    const bool tokenless;
+    uint64_t bulk_requests = 0;
+    std::vector<String> single_removes;
+    std::function<void(Access &)> after_namespace_list;
+    std::function<void(const Keys &, Access &)> before_bulk;
+    std::function<void(const Keys &)> after_bulk;
+    std::function<void(const String &, Access &)> before_single_remove;
+    std::function<void(const String &)> after_single_remove;
+};
+
+[[noreturn]] void throwTransient()
+{
+    throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected transient failure");
+}
+
+/// `logs` `_log` keys then `snaps` `_snap` keys of `owner`, in listing order.
+std::vector<String> seedStream(Backend & backend, const Layout & layout, const NamespaceLifeId & owner,
+                               uint64_t logs, uint64_t snaps, const String & bytes = "stream")
+{
+    std::vector<String> keys;
+    for (uint64_t i = 1; i <= logs; ++i)
+        keys.push_back(layout.refLogKey(owner, RefTxnId{1, i}));
+    for (uint64_t i = 1; i <= snaps; ++i)
+        keys.push_back(layout.refSnapshotKey(owner, RefTxnId{1, i}));
+    for (const String & key : keys)
+        createObj(backend, key, bytes);
+    return keys;
+}
+
+bool present(Backend & backend, const String & key)
+{
+    return readObj(backend, key).has_value();
+}
+
+bool cursorPublished(CasRequests & requests, const Layout & layout)
+{
+    return readState(requests, layout).status == GcMaintenanceReadStatus::Valid;
+}
+
+}
+
+TEST(CASNamespaceJanitor, DeadLifeStreamKeysDrainInBatches)
+{
+    for (const bool tokenless : {false, true})
+    {
+        SCOPED_TRACE(tokenless ? "tokenless listing" : "token listing");
+        auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+        CasRequests requests(backend, Fence::open());
+        const Layout layout("p");
+        seedCatalog(*backend, layout);
+        const auto dead = life("dead", 171);
+        const std::vector<String> stream = seedStream(*backend, layout, dead, 3, 2);
+        const String ckpt = layout.refCkptKey(dead);
+        const String file = layout.namespaceFilesPrefix(dead) + "data";
+        createObj(*backend, ckpt, "ckpt");
+        createObj(*backend, file, "file");
+        backend->resetCounts();
+
+        const auto result = NamespaceJanitor(requests, layout, 100, 2).runOnePage(false, [] { return true; });
+
+        /// S = 5 stream keys in chunks of 2, M = 2 state keys.
+        EXPECT_EQ(backend->bulk_requests, 3u);
+        EXPECT_EQ(backend->single_removes, (std::vector<String>{ckpt, file}));
+        EXPECT_EQ(backend->headTotal(), tokenless ? 2u : 0u);
+        EXPECT_EQ(backend->headCount(ckpt), tokenless ? 1u : 0u);
+        EXPECT_EQ(backend->headCount(file), tokenless ? 1u : 0u);
+        EXPECT_EQ(result.deleted, 7u);
+        EXPECT_EQ(result.leaked, 0u);
+        EXPECT_TRUE(result.anomalies.empty());
+        for (const String & key : stream)
+            EXPECT_FALSE(present(*backend, key)) << key;
+        EXPECT_FALSE(present(*backend, ckpt));
+        EXPECT_FALSE(present(*backend, file));
+        EXPECT_TRUE(cursorPublished(requests, layout));
+    }
+}
+
+TEST(CASNamespaceJanitor, StateKeysNeverEnterTheBatchPath)
+{
+    for (const bool tokenless : {false, true})
+    {
+        SCOPED_TRACE(tokenless ? "tokenless listing" : "token listing");
+        auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+        CasRequests requests(backend, Fence::open());
+        const Layout layout("p");
+        seedCatalog(*backend, layout);
+        const auto dead = life("dead", 172);
+        const std::vector<String> stream = seedStream(*backend, layout, dead, 1, 0);
+        const String ckpt = layout.refCkptKey(dead);
+        const String file = layout.namespaceFilesPrefix(dead) + "data";
+        const String unrecognized = layout.namespaceStatePrefix(dead) + "_other";
+        createObj(*backend, ckpt, "ckpt");
+        createObj(*backend, file, "file");
+        createObj(*backend, unrecognized, "other");
+        /// Both state objects are rewritten between observation and delete: only an exact-token delete
+        /// retains the rewrite.
+        backend->before_single_remove = [&](const String & key, BatchJanitorBackend::Access & access)
+        {
+            if (key == ckpt || key == file)
+                backend->writeUncounted(key, "winner", access);
+        };
+        std::vector<String> batched;
+        backend->before_bulk = [&](const BatchJanitorBackend::Keys & keys, BatchJanitorBackend::Access &)
+        {
+            for (const auto & key : keys)
+                batched.push_back(key.str());
+        };
+        backend->resetCounts();
+
+        const auto result = NamespaceJanitor(requests, layout, 100).runOnePage(false, [] { return true; });
+
+        EXPECT_EQ(backend->bulk_requests, 1u);
+        EXPECT_EQ(batched, stream);
+        EXPECT_EQ(backend->single_removes, (std::vector<String>{ckpt, file}));
+        EXPECT_EQ(result.deleted, 1u);
+        ASSERT_TRUE(present(*backend, ckpt));
+        EXPECT_EQ(readObj(*backend, ckpt)->bytes, "winner");
+        ASSERT_TRUE(present(*backend, file));
+        EXPECT_EQ(readObj(*backend, file)->bytes, "winner");
+        EXPECT_TRUE(present(*backend, unrecognized));
+        EXPECT_EQ(backend->deleteCount(unrecognized), 0u);
+        EXPECT_EQ(result.anomalies.size(), 1u);
+        EXPECT_FALSE(present(*backend, stream.front()));
+        EXPECT_TRUE(cursorPublished(requests, layout));
+    }
+}
+
+TEST(CASNamespaceJanitor, RecreatedLifeBetweenListAndDeleteKeepsItsKeys)
+{
+    for (const bool tokenless : {false, true})
+    {
+        SCOPED_TRACE(tokenless ? "tokenless listing" : "token listing");
+        auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+        CasRequests requests(backend, Fence::open());
+        const Layout layout("p");
+        seedCatalog(*backend, layout);
+        const auto dropped = life("t", 181);
+        const auto recreated = life("t", 182);
+        const std::vector<String> old_keys = seedStream(*backend, layout, dropped, 2, 1, "old");
+        /// The recreation publishes a live catalog row for the same name and writes the same
+        /// transaction ids -- under the new incarnation's prefix.
+        const std::vector<String> new_keys{layout.refLogKey(recreated, RefTxnId{1, 1}),
+            layout.refLogKey(recreated, RefTxnId{1, 2}), layout.refSnapshotKey(recreated, RefTxnId{1, 1})};
+        backend->after_namespace_list = [&](BatchJanitorBackend::Access & access)
+        {
+            RefCatalog live;
+            live.entries.push_back(CatalogEntry{.ns = recreated.ns, .state = NsState::Live,
+                .incarnation = recreated.incarnation});
+            backend->writeUncounted(layout.refCatalogKey(), encodeRefCatalog(live), access);
+            for (const String & key : new_keys)
+                backend->writeUncounted(key, "new", access);
+        };
+        backend->resetCounts();
+
+        const auto result = NamespaceJanitor(requests, layout, 100).runOnePage(false, [] { return true; });
+
+        EXPECT_EQ(backend->bulk_requests, 1u);
+        EXPECT_EQ(result.deleted, old_keys.size());
+        for (const String & key : old_keys)
+            EXPECT_FALSE(present(*backend, key)) << key;
+        for (const String & key : new_keys)
+        {
+            ASSERT_TRUE(present(*backend, key)) << key;
+            EXPECT_EQ(readObj(*backend, key)->bytes, "new");
+            EXPECT_EQ(backend->deleteCount(key), 0u);
+        }
+    }
+}
+
+TEST(CASNamespaceJanitor, PartialBatchFailureUndercountsNeverOvercounts)
+{
+    for (const bool tokenless : {false, true})
+    {
+        SCOPED_TRACE(tokenless ? "tokenless listing" : "token listing");
+        {
+            SCOPED_TRACE("every attempt of the batch deletes A, then fails");
+            auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+            FakeClock clock;
+            CasRequests requests(backend, Fence::open(), clock.nowFn(), clock.sleepFn());
+            const Layout layout("p");
+            seedCatalog(*backend, layout);
+            const std::vector<String> keys = seedStream(*backend, layout, life("dead", 191), 2, 0);
+            backend->before_bulk = [&](const BatchJanitorBackend::Keys & chunk, BatchJanitorBackend::Access & access)
+            {
+                backend->removeUncounted(chunk.front().str(), access);
+                throwTransient();
+            };
+            backend->resetCounts();
+
+            const auto result = NamespaceJanitor(requests, layout, 100).runOnePage(false, [] { return true; });
+
+            EXPECT_GE(backend->bulk_requests, 2u) << "the batch is reissued before it falls back";
+            EXPECT_EQ(result.deleted, 1u) << "A was deleted by the failed batch and is not counted";
+            EXPECT_EQ(result.leaked, 0u);
+            EXPECT_TRUE(result.anomalies.empty());
+            EXPECT_FALSE(present(*backend, keys[0]));
+            EXPECT_FALSE(present(*backend, keys[1]));
+            EXPECT_EQ(backend->headTotal(), tokenless ? 2u : 0u);
+            EXPECT_TRUE(cursorPublished(requests, layout));
+        }
+        {
+            SCOPED_TRACE("chunk size 1: A vanishes after LIST, B's batch fails without deleting");
+            auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+            FakeClock clock;
+            CasRequests requests(backend, Fence::open(), clock.nowFn(), clock.sleepFn());
+            const Layout layout("p");
+            seedCatalog(*backend, layout);
+            const std::vector<String> keys = seedStream(*backend, layout, life("dead", 192), 2, 0);
+            backend->after_namespace_list = [&](BatchJanitorBackend::Access & access) { backend->removeUncounted(keys[0], access); };
+            backend->before_bulk = [&](const BatchJanitorBackend::Keys & chunk, BatchJanitorBackend::Access &)
+            {
+                if (chunk.front().str() == keys[1])
+                    throwTransient();
+            };
+            backend->resetCounts();
+
+            const auto result = NamespaceJanitor(requests, layout, 100, 1).runOnePage(false, [] { return true; });
+
+            /// The rule holds per chunk: A's batch succeeded (1, although A was already absent) and B's
+            /// fallback removed B (1).
+            EXPECT_EQ(result.deleted, 2u);
+            EXPECT_EQ(result.leaked, 0u);
+            EXPECT_EQ(backend->single_removes, (std::vector<String>{keys[1]}));
+            EXPECT_EQ(backend->headCount(keys[0]), 0u);
+            EXPECT_EQ(backend->headCount(keys[1]), tokenless ? 1u : 0u);
+            EXPECT_FALSE(present(*backend, keys[1]));
+            EXPECT_TRUE(cursorPublished(requests, layout));
+        }
+    }
+}
+
+TEST(CASNamespaceJanitor, ExhaustedRetriesAndUnsupportedBatchFallBackPerKey)
+{
+    for (const bool tokenless : {false, true})
+    {
+        for (const bool unsupported : {false, true})
+        {
+            SCOPED_TRACE(tokenless ? "tokenless listing" : "token listing");
+            SCOPED_TRACE(unsupported ? "NOT_IMPLEMENTED" : "exhausted retries");
+            auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+            FakeClock clock;
+            CasRequests requests(backend, Fence::open(), clock.nowFn(), clock.sleepFn());
+            const Layout layout("p");
+            seedCatalog(*backend, layout);
+            const std::vector<String> keys = seedStream(*backend, layout, life("dead", 201), 4, 0);
+            /// Only the first chunk's batch fails; the key that cannot be deleted one by one leaks.
+            backend->before_bulk = [&](const BatchJanitorBackend::Keys & chunk, BatchJanitorBackend::Access &)
+            {
+                if (chunk.front().str() != keys[0])
+                    return;
+                if (unsupported)
+                    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "no batch delete");
+                throwTransient();
+            };
+            backend->before_single_remove = [&](const String & key, BatchJanitorBackend::Access &)
+            {
+                if (key == keys[1])
+                    throwTransient();
+            };
+            backend->resetCounts();
+
+            const auto result = NamespaceJanitor(requests, layout, 100, 2).runOnePage(false, [] { return true; });
+
+            /// The per-key oracle for these keys: three deleted, keys[1] leaked with one report.
+            EXPECT_EQ(result.deleted, 3u);
+            EXPECT_EQ(result.leaked, 1u);
+            ASSERT_EQ(result.anomalies.size(), 1u);
+            EXPECT_NE(result.anomalies.front().find("leaked dead-life object '" + keys[1] + "': exact delete failed"),
+                      String::npos) << result.anomalies.front();
+            EXPECT_TRUE(present(*backend, keys[1]));
+            EXPECT_FALSE(present(*backend, keys[0]));
+            EXPECT_FALSE(present(*backend, keys[2]));
+            EXPECT_FALSE(present(*backend, keys[3]));
+            if (unsupported)
+            {
+                EXPECT_EQ(backend->bulk_requests, 1u) << "the rest of the page skips the batch verb";
+                EXPECT_EQ(backend->deleteCount(keys[0]), 1u);
+                EXPECT_EQ(backend->deleteCount(keys[2]), 1u);
+                EXPECT_EQ(backend->deleteCount(keys[3]), 1u);
+                EXPECT_EQ(backend->headCount(keys[2]), tokenless ? 1u : 0u);
+            }
+            else
+            {
+                EXPECT_GE(backend->bulk_requests, 3u) << "the first chunk is reissued, the second is batched";
+                EXPECT_EQ(backend->deleteCount(keys[2]), 1u) << "the second chunk's batch names it once";
+                EXPECT_EQ(std::count(backend->single_removes.begin(), backend->single_removes.end(), keys[2]), 0);
+                EXPECT_EQ(std::count(backend->single_removes.begin(), backend->single_removes.end(), keys[0]), 1);
+                EXPECT_EQ(backend->headCount(keys[2]), 0u);
+            }
+            EXPECT_EQ(backend->headCount(keys[0]), tokenless ? 1u : 0u);
+            EXPECT_TRUE(cursorPublished(requests, layout))
+                << "a leaked key is a final per-key outcome and does not pin the page";
+        }
+    }
+}
+
+TEST(CASNamespaceJanitor, AdmissionLossPublishesNoCursor)
+{
+    for (const bool tokenless : {false, true})
+    {
+        SCOPED_TRACE(tokenless ? "tokenless listing" : "token listing");
+        {
+            SCOPED_TRACE("lost before the second chunk");
+            auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+            CasRequests requests(backend, Fence::open());
+            const Layout layout("p");
+            seedCatalog(*backend, layout);
+            const std::vector<String> keys = seedStream(*backend, layout, life("dead", 211), 2, 0);
+            bool held = true;
+            backend->after_bulk = [&](const BatchJanitorBackend::Keys &) { held = false; };
+            backend->resetCounts();
+
+            const auto result = NamespaceJanitor(requests, layout, 100, 1).runOnePage(false, [&] { return held; });
+
+            EXPECT_EQ(backend->bulk_requests, 1u);
+            EXPECT_TRUE(backend->single_removes.empty());
+            EXPECT_EQ(backend->headTotal(), 0u);
+            EXPECT_EQ(result.deleted, 1u);
+            EXPECT_EQ(result.leaked, 0u);
+            EXPECT_FALSE(present(*backend, keys[0]));
+            EXPECT_TRUE(present(*backend, keys[1]));
+            EXPECT_EQ(readState(requests, layout).status, GcMaintenanceReadStatus::Absent);
+        }
+        {
+            SCOPED_TRACE("lost inside the fallback, after its first delete");
+            auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+            FakeClock clock;
+            CasRequests requests(backend, Fence::open(), clock.nowFn(), clock.sleepFn());
+            const Layout layout("p");
+            seedCatalog(*backend, layout);
+            const std::vector<String> keys = seedStream(*backend, layout, life("dead", 212), 2, 0);
+            bool held = true;
+            backend->before_bulk = [&](const BatchJanitorBackend::Keys &, BatchJanitorBackend::Access &) { throwTransient(); };
+            backend->after_single_remove = [&](const String &) { held = false; };
+            backend->resetCounts();
+
+            const auto result = NamespaceJanitor(requests, layout, 100).runOnePage(false, [&] { return held; });
+
+            EXPECT_GE(backend->bulk_requests, 1u);
+            EXPECT_EQ(backend->single_removes, (std::vector<String>{keys[0]}));
+            EXPECT_EQ(result.deleted, 1u);
+            EXPECT_FALSE(present(*backend, keys[0]));
+            EXPECT_TRUE(present(*backend, keys[1]));
+            /// Tokenless, the refused HEAD of the second key is reported as a leak, exactly as on the
+            /// per-key path.
+            EXPECT_EQ(result.leaked, tokenless ? 1u : 0u);
+            EXPECT_EQ(readState(requests, layout).status, GcMaintenanceReadStatus::Absent);
+        }
+        {
+            SCOPED_TRACE("lost after the last chunk");
+            auto backend = std::make_shared<BatchJanitorBackend>(tokenless);
+            CasRequests requests(backend, Fence::open());
+            const Layout layout("p");
+            seedCatalog(*backend, layout);
+            const std::vector<String> keys = seedStream(*backend, layout, life("dead", 213), 2, 0);
+            bool held = true;
+            backend->after_bulk = [&](const BatchJanitorBackend::Keys &) { held = false; };
+            backend->resetCounts();
+
+            const auto result = NamespaceJanitor(requests, layout, 100).runOnePage(false, [&] { return held; });
+
+            EXPECT_EQ(backend->bulk_requests, 1u);
+            EXPECT_TRUE(backend->single_removes.empty());
+            EXPECT_EQ(result.deleted, 2u);
+            EXPECT_EQ(result.leaked, 0u);
+            EXPECT_FALSE(present(*backend, keys[0]));
+            EXPECT_FALSE(present(*backend, keys[1]));
+            EXPECT_EQ(readState(requests, layout).status, GcMaintenanceReadStatus::Absent)
+                << "the completed batch is never rolled back, and the page stays selected for a retry";
+        }
+    }
 }

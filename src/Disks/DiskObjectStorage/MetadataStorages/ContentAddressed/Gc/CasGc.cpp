@@ -372,7 +372,7 @@ void Gc::runNamespaceJanitorPage(
     {
         CasRequests & requests = store->openRequests();
         const Layout & layout = store->layout();
-        NamespaceJanitor janitor(requests, layout, 1000);
+        NamespaceJanitor janitor(requests, layout, 1000, store->poolConfig().gc_bulk_delete_chunk_keys);
         /// ONE authority read per page, made here rather than from the predicate: the janitor's
         /// operation samples its liveness before every request, and a page walks up to a thousand keys.
         refreshAuthority(leased_state.lease.seq);

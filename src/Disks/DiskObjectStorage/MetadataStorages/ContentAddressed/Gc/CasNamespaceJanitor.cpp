@@ -3,6 +3,11 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.h>
 #include <Common/Exception.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace DB::Cas
 {
 
@@ -64,22 +69,99 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(bool suppress_deletes, Liven
     /// candidate on it. Advancing while the global gate is closed can phase-lock a dead page onto
     /// every suppressed round and a different page onto every bounded forced fold. An ambiguous cut
     /// retains the old cursor so an authoritative round retries the exact page; a lost liveness sample
-    /// only reaches this retained-cursor path when it is caught between the two `op.admitted()` checks
-    /// below -- a sample lost earlier throws out of a read verb (the maintenance read, the list, or a
+    /// only reaches this retained-cursor path when an `op.admitted()` check below catches it -- a
+    /// sample lost earlier throws out of a read verb (the maintenance read, the list, or a
     /// HEAD) before this line is ever reached, ending the page by exception instead. Malformed keys,
     /// absent objects and token mismatches are final per-key outcomes and therefore do not by
     /// themselves prevent progress.
     bool page_decided = !ambiguous && !suppress_deletes;
 
+    /// The exact-token delete of one listed key; false when admission was lost and the page stops.
+    const auto remove_exactly = [&](const ListedKey & listed)
+    {
+        std::optional<Etag> etag = listed.etag;
+        if (!etag)
+        {
+            try
+            {
+                const std::optional<Meta> current = op.head(listed.key, Retry::standard());
+                if (!current)
+                    return true;
+                etag = current->etag;
+            }
+            catch (const std::exception & e)
+            {
+                ++result.leaked;
+                result.anomalies.push_back(
+                    "leaked dead-life object '" + listed.key + "': exact HEAD failed: " + e.what());
+                return true;
+            }
+        }
+        if (!op.admitted())
+        {
+            page_decided = false;
+            return false;
+        }
+        try
+        {
+            if (op.remove(listed.key, *etag, Retry::standard()) == Removal::Removed)
+                ++result.deleted;
+        }
+        catch (const std::exception & e)
+        {
+            ++result.leaked;
+            result.anomalies.push_back(
+                "leaked dead-life object '" + listed.key + "': exact delete failed: " + e.what());
+        }
+        return true;
+    };
+
+    /// A dead life's `_log`/`_snap` keys are write-once and the life is never reborn under the same
+    /// prefix, so they need no token. A batch cannot tell removed keys from absent ones, so success
+    /// counts the whole chunk; after any failure the chunk takes the exact path, which does not count
+    /// keys the failed batch already removed.
+    std::vector<WriteOnceKey> chunk;
+    std::vector<const ListedKey *> chunk_listed;
+    bool batch_supported = true;
+    const auto flush_chunk = [&]
+    {
+        if (chunk.empty())
+            return true;
+        if (!op.admitted())
+        {
+            page_decided = false;
+            return false;
+        }
+        try
+        {
+            op.removeManyWriteOnce(chunk, Retry::standard());
+            result.deleted += chunk.size();
+        }
+        catch (const std::exception & e)
+        {
+            if (const auto * error = dynamic_cast<const DB::Exception *>(&e); error && error->code() == ErrorCodes::NOT_IMPLEMENTED)
+                batch_supported = false;
+            for (const ListedKey * listed : chunk_listed)
+                if (!remove_exactly(*listed))
+                    return false;
+        }
+        chunk.clear();
+        chunk_listed.clear();
+        return true;
+    };
+
+    bool page_stopped = false;
     for (const ListedKey & listed : page.keys)
     {
         std::optional<NamespaceLifePhysicalId> life_id;
+        std::optional<ParsedRefObjectKey> stream_key;
         try
         {
             if (listed.key.starts_with(layout.namespaceStreamRootPrefix()))
             {
-                if (const auto parsed = layout.parseRefObjectKey(listed.key))
-                    life_id = parsed->life_id;
+                stream_key = layout.parseRefObjectKey(listed.key);
+                if (stream_key)
+                    life_id = stream_key->life_id;
             }
             else if (listed.key.starts_with(layout.namespaceStateRootPrefix()))
             {
@@ -103,41 +185,26 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(bool suppress_deletes, Liven
         if (ambiguous || suppress_deletes || catalog_cut.life_index.resolve(*life_id))
             continue;
 
-        std::optional<Etag> etag = listed.etag;
-        if (!etag)
+        if (batch_supported && stream_key)
         {
-            try
+            if (std::optional<WriteOnceKey> write_once = layout.writeOnceStreamKey(*stream_key, listed.key))
             {
-                const std::optional<Meta> current = op.head(listed.key, Retry::standard());
-                if (!current)
+                chunk.push_back(std::move(*write_once));
+                chunk_listed.push_back(&listed);
+                if (chunk.size() < bulk_delete_chunk_keys || flush_chunk())
                     continue;
-                etag = current->etag;
-            }
-            catch (const std::exception & e)
-            {
-                ++result.leaked;
-                result.anomalies.push_back(
-                    "leaked dead-life object '" + listed.key + "': exact HEAD failed: " + e.what());
-                continue;
+                page_stopped = true;
+                break;
             }
         }
-        if (!op.admitted())
+        if (!remove_exactly(listed))
         {
-            page_decided = false;
+            page_stopped = true;
             break;
         }
-        try
-        {
-            if (op.remove(listed.key, *etag, Retry::standard()) == Removal::Removed)
-                ++result.deleted;
-        }
-        catch (const std::exception & e)
-        {
-            ++result.leaked;
-            result.anomalies.push_back(
-                "leaked dead-life object '" + listed.key + "': exact delete failed: " + e.what());
-        }
     }
+    if (!page_stopped)
+        flush_chunk();
 
     /// Recheck even when the page had no dead candidate. A tenure that observes fence loss after LIST
     /// or after the last exact delete must not publish progress. Loss after this check may still race
