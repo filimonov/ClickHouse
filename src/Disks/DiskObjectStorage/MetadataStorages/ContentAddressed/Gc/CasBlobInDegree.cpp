@@ -492,17 +492,11 @@ void foldDeltasIntoGeneration(CasOperation & op, const Layout & layout,
             /// later pass can confirm). This gates a DELETE on missing evidence; it never throws.
             if (e.marker_confirmed || !confirm_condemned_marker || confirm_condemned_marker(e))
             {
-                /// Excess past the round's graduation budget carries the floor-passed entry
+                /// Excess past the round's graduation budget carries the floor-passed entry unchanged
                 /// (still condemned, not yet delete_pending) — it re-evaluates the floor next round and
                 /// graduates then; nothing is lost, only delayed.
                 if (work_budget && !work_budget->graduationAvailable())
-                {
-                    /// A confirmation stays sufficient: the marker leaves `Condemned` only after T is
-                    /// displaced or deleted, and the delete is exact-token.
-                    RetiredEntry carried = e;
-                    carried.marker_confirmed = true;
-                    rmr.still_retired.push_back(std::move(carried));
-                }
+                    rmr.still_retired.push_back(e);
                 else
                 {
                     if (work_budget)

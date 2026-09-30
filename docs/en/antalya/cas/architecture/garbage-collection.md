@@ -406,14 +406,6 @@ shard starts and ends with an empty window, so the phase counts all its wasted h
 throttles on its own outstanding `HEAD` hints, not on all pending read-ahead requests, so read slots
 left untaken by a clamp do not hold it shut.
 
-**Carried marker.** A graduation candidate whose condemn marker was confirmed but that the
-graduation budget cannot take is carried with `marker_confirmed` set in its run row. The next
-round, on the same leader or after a leader change, graduates it without the marker `.meta` `GET`. The
-confirmation stays sufficient because the marker leaves `Condemned` only after the condemned token
-is displaced or deleted, and the delete is exact-token. A candidate that never got a confirmation is
-still carried unflagged and counted in `CASGCCondemnMarkerUnconfirmedCarry`; a candidate that is
-only budget-limited is not counted there.
-
 ## Phase 10 — fold seal write {#phase-10-fold-seal-write}
 
 Validates, encodes and writes the new fold seal with one write-once `PUT`.
@@ -941,7 +933,7 @@ No writes.
 |---|---|---:|
 | referenced parent run segments | streaming `GET` | one per referenced run |
 | `<pool_prefix>/blobs/...` | `HEAD` | one per zero-in-degree candidate, plus one peek per carried entry that reached zero again |
-| blob `.meta` | `GET` | one per graduation candidate with no confirmed condemn marker, in process or carried in its run row |
+| blob `.meta` | `GET` | one per graduation candidate whose condemn marker this process has not confirmed |
 | new run segments | `PUT` | one per written run |
 | `<pool_prefix>/cas/manifests/` | `LIST` | one bounded page, only when orphan planning runs |
 | manifest candidate body | `GET` | one per nominated candidate (≤ `cas_manifest_sweep_delete_budget_keys`), through the read-ahead; keys decided from their name alone are never read; only when orphan planning runs |

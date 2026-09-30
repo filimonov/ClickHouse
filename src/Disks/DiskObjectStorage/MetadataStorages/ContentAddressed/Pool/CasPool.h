@@ -97,7 +97,7 @@ struct PoolConfig
     /// Per-round blob-deletion work envelope: caps how many entries the fold's graduation
     /// (condemned -> delete_pending) and redelete (exact-token delete of a prior delete_pending row)
     /// arms move out of the durable retired pipeline in one round. Excess entries are carried
-    /// in `still_retired` and retried next round (never dropped). 0 = unbounded.
+    /// unchanged in `still_retired` and retried next round (never dropped). 0 = unbounded.
     /// Default UNBOUNDED. A count cap here is not backpressure: it throttles the consumer while the
     /// producer (inserts, merges) is unaware of it, and the excess is carried in `still_retired`, which
     /// the next round reads in full -- so a round's cost grows with the debt while its useful work stays
