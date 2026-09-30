@@ -4,6 +4,18 @@ from .panels import SETTINGS, OVERVIEW_LINK, r, c, g
 
 GC_WHERE = "disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter"
 COUNTERS_ROW = "All CAS counters, nonzero in range"
+S3_CLASSES = ("Blob", "Manifest", "Root", "GC", "Meta", "Other")
+VERBS = ("Put", "Get", "Head", "List", "Delete")
+
+
+def _has(cls: str, verb: str) -> bool:
+    return cls != "Meta" or verb in ("Put", "Delete")
+
+
+def cas_verb_sum(verb: str) -> str:
+    """Sum of the CAS<Class><Verb> keys of a ProfileEvents map: the raw S3* keys miss requests made on pool threads."""
+    keys = ", ".join(f"'CAS{cls}{verb}'" for cls in S3_CLASSES if _has(cls, verb))
+    return f"arraySum(x -> ProfileEvents[x], [{keys}])"
 
 
 def gc_finish_ts(title, desc, cols: dict, *, outcome="Success", unit="short", w=8, h=8, draw="line") -> dict:
@@ -79,22 +91,22 @@ GROUP BY t, phase ORDER BY t
 {SETTINGS}""", unit="s", stack=True, draw="bars", interval="30m", w=12)
     phases_table = P.table(
         "Phases: duration and S3 requests per phase",
-        "Per phase over the selected range. S3 requests issued on GC worker pools are not attributed to their phase and LIST is missing from Phase rows entirely (CAS-135); the round-level ProfileEvents in the Finish row are complete.",
+        "Per phase over the selected range, from the CAS-semantic counters in each Phase row (`CAS<Class><Verb>`; the raw `S3*` keys miss requests made on pool threads). Requests issued on GC worker pools are still attributed to the phase only partially (CAS-135).",
         f"""SELECT toString(phase) AS "Phase", count() AS "Rounds",
        round(quantile(0.5)(phase_duration_microseconds) / 1e6, 2) AS "p50 s", round(quantile(0.99)(phase_duration_microseconds) / 1e6, 2) AS "p99 s",
-       sum(ProfileEvents['S3ListObjects']) AS "LIST", sum(ProfileEvents['S3GetObject']) AS "GET", sum(ProfileEvents['S3HeadObject']) AS "HEAD",
-       sum(ProfileEvents['S3PutObject']) AS "PUT", sum(ProfileEvents['S3DeleteObjects']) AS "DELETE"
+       sum({cas_verb_sum('List')}) AS "LIST", sum({cas_verb_sum('Get')}) AS "GET", sum({cas_verb_sum('Head')}) AS "HEAD",
+       sum({cas_verb_sum('Put')}) AS "PUT", sum(ProfileEvents['CASBulkDeleteRequests']) AS "DELETE requests", sum({cas_verb_sum('Delete')}) AS "Keys deleted"
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter
 GROUP BY phase ORDER BY "p99 s" DESC
 {SETTINGS}""", table="cas_gc_log", w=12)
     cost = gc_finish_ts("S3 requests per round, by verb",
-                        "Round-level `ProfileEvents` from the Finish row. A GC round is ~55–100x the S3 cost of one insert on otel.demo, driven by GET and HEAD verification, not PUT.",
-                        {"PUT": "ProfileEvents['S3PutObject']", "GET": "ProfileEvents['S3GetObject']", "HEAD": "ProfileEvents['S3HeadObject']",
-                         "LIST": "ProfileEvents['S3ListObjects']", "DELETE": "ProfileEvents['S3DeleteObjects']"}, unit="short")
+                        "CAS-semantic counters from the Finish row's `ProfileEvents` (`CAS<Class><Verb>` summed per verb; the raw `S3*` keys miss requests made on pool threads). A GC round is ~55–100x the S3 cost of one insert on otel.demo, driven by GET and HEAD verification, not PUT.",
+                        {"PUT": cas_verb_sum("Put"), "GET": cas_verb_sum("Get"), "HEAD": cas_verb_sum("Head"),
+                         "LIST": cas_verb_sum("List"), "DELETE requests": "ProfileEvents['CASBulkDeleteRequests']"}, unit="short")
     per_object = gc_finish_ts("S3 requests per deleted object",
-                              "All S3 requests of a round divided by objects deleted + marked + graduated + redeleted. Six requests per garbage blob was the otel.demo figure (audit F7).",
-                              {"Requests per item": "(ProfileEvents['S3PutObject'] + ProfileEvents['S3GetObject'] + ProfileEvents['S3HeadObject'] + ProfileEvents['S3ListObjects'] + ProfileEvents['S3DeleteObjects']) / greatest(objects_deleted + candidates_marked + entries_graduated + entries_redeleted, 1)"})
+                              "PUT + GET + HEAD + LIST + DELETE requests of a round divided by objects deleted + marked + graduated + redeleted. Six requests per garbage blob was the otel.demo figure (audit F7).",
+                              {"Requests per item": f"({cas_verb_sum('Put')} + {cas_verb_sum('Get')} + {cas_verb_sum('Head')} + {cas_verb_sum('List')} + ProfileEvents['CASBulkDeleteRequests']) / greatest(objects_deleted + candidates_marked + entries_graduated + entries_redeleted, 1)"})
     enumeration = P.metric_ts("Enumeration pages and bulk deletes per second",
                               "`CASGCEnumerationPages` (LIST pages the fold walked) and `CASBulkDeleteRequests`.",
                               {"Enumeration pages": r("CASGCEnumerationPages"), "Bulk delete requests": r("CASBulkDeleteRequests")}, unit="reqps")
@@ -238,14 +250,6 @@ PRICE_VARIABLES = [
     P.constant("price_get_per_1000", "0.0004", "GET/HEAD price per 1000 (USD)"),
 ]
 
-S3_CLASSES = ("Blob", "Manifest", "Root", "GC", "Meta", "Other")
-VERBS = ("Put", "Get", "Head", "List", "Delete")
-
-
-def _has(cls: str, verb: str) -> bool:
-    return cls != "Meta" or verb in ("Put", "Delete")
-
-
 def _class_verb_series(verb: str) -> dict:
     return {cls: r(f"CAS{cls}{verb}") for cls in S3_CLASSES if _has(cls, verb)}
 
@@ -266,7 +270,8 @@ def s3_rows() -> list:
     delete_by_class = P.metric_ts("DELETE per second by object class", "`CAS<Class>Delete`.", _class_verb_series("Delete"), unit="reqps", stack=True)
     gc_total = " + ".join(f"sum(ProfileEvent_CASGC{v})" for v in VERBS)
     all_total = " + ".join(f"sum(ProfileEvent_CAS{cls}{v})" for cls in S3_CLASSES for v in VERBS if _has(cls, v))
-    gc_share = P.metric_ts("GC share of all CAS requests (%)", "`CASGC*` verbs over all `CAS<Class>*` verbs, per 5-minute bucket.",
+    gc_share = P.metric_ts("GC-state objects' share of CAS requests (%)",
+                           "`CASGC*` verbs (objects under `gc/`) over all `CAS<Class>*` verbs, per 5-minute bucket. This is not the collector's share of traffic: its blob HEADs, manifest GETs and ref-log reads are counted under their object class; see GC: round cost for the collector's own requests.",
                            {"GC %": f"100 * ({gc_total}) / greatest({all_total}, 1)"}, unit="percent")
     cost = P.metric_ts("Estimated cost per day (USD)",
                        "Requests × price per 1000, scaled to a day. Prices are the dashboard variables (AWS S3 Standard us-east-1 defaults); DELETE is free.",
@@ -304,9 +309,9 @@ FROM clusterAllReplicas('$cluster', system.part_log)
 WHERE hostName() IN ($host) AND event_type != 'NewPart' AND $timeFilter
 GROUP BY event_type ORDER BY "Parts" DESC
 {SETTINGS}""", table="part_log", w=12)
-    per_round = P.table("S3 requests per GC round", "From `cas_gc_log` Finish rows with outcome Success: averages per round over the range.",
-                        f"""SELECT count() AS "Rounds", round(avg(ProfileEvents['S3PutObject'])) AS "PUT/round", round(avg(ProfileEvents['S3GetObject'])) AS "GET/round",
-       round(avg(ProfileEvents['S3HeadObject'])) AS "HEAD/round", round(avg(ProfileEvents['S3ListObjects'])) AS "LIST/round", round(avg(ProfileEvents['S3DeleteObjects'])) AS "DELETE/round",
+    per_round = P.table("S3 requests per GC round", "From `cas_gc_log` Finish rows with outcome Success: averages per round over the range, from the CAS-semantic counters (`CAS<Class><Verb>`).",
+                        f"""SELECT count() AS "Rounds", round(avg({cas_verb_sum('Put')})) AS "PUT/round", round(avg({cas_verb_sum('Get')})) AS "GET/round",
+       round(avg({cas_verb_sum('Head')})) AS "HEAD/round", round(avg({cas_verb_sum('List')})) AS "LIST/round", round(avg(ProfileEvents['CASBulkDeleteRequests'])) AS "DELETE requests/round",
        round(avg(duration_ms)) AS "avg ms"
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE {GC_WHERE} AND outcome = 'Success'

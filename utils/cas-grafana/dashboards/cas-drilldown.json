@@ -763,7 +763,7 @@
             "type": "vertamedia-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "description": "Per phase over the selected range. S3 requests issued on GC worker pools are not attributed to their phase and LIST is missing from Phase rows entirely (CAS-135); the round-level ProfileEvents in the Finish row are complete.",
+          "description": "Per phase over the selected range, from the CAS-semantic counters in each Phase row (`CAS<Class><Verb>`; the raw `S3*` keys miss requests made on pool threads). Requests issued on GC worker pools are still attributed to the phase only partially (CAS-135).",
           "fieldConfig": {
             "defaults": {
               "custom": {
@@ -826,7 +826,7 @@
               "extrapolate": false,
               "format": "table",
               "intervalFactor": 1,
-              "query": "SELECT toString(phase) AS \"Phase\", count() AS \"Rounds\",\n       round(quantile(0.5)(phase_duration_microseconds) / 1e6, 2) AS \"p50 s\", round(quantile(0.99)(phase_duration_microseconds) / 1e6, 2) AS \"p99 s\",\n       sum(ProfileEvents['S3ListObjects']) AS \"LIST\", sum(ProfileEvents['S3GetObject']) AS \"GET\", sum(ProfileEvents['S3HeadObject']) AS \"HEAD\",\n       sum(ProfileEvents['S3PutObject']) AS \"PUT\", sum(ProfileEvents['S3DeleteObjects']) AS \"DELETE\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY phase ORDER BY \"p99 s\" DESC\nSETTINGS skip_unavailable_shards = 1",
+              "query": "SELECT toString(phase) AS \"Phase\", count() AS \"Rounds\",\n       round(quantile(0.5)(phase_duration_microseconds) / 1e6, 2) AS \"p50 s\", round(quantile(0.99)(phase_duration_microseconds) / 1e6, 2) AS \"p99 s\",\n       sum(arraySum(x -> ProfileEvents[x], ['CASBlobList', 'CASManifestList', 'CASRootList', 'CASGCList', 'CASOtherList'])) AS \"LIST\", sum(arraySum(x -> ProfileEvents[x], ['CASBlobGet', 'CASManifestGet', 'CASRootGet', 'CASGCGet', 'CASOtherGet'])) AS \"GET\", sum(arraySum(x -> ProfileEvents[x], ['CASBlobHead', 'CASManifestHead', 'CASRootHead', 'CASGCHead', 'CASOtherHead'])) AS \"HEAD\",\n       sum(arraySum(x -> ProfileEvents[x], ['CASBlobPut', 'CASManifestPut', 'CASRootPut', 'CASGCPut', 'CASMetaPut', 'CASOtherPut'])) AS \"PUT\", sum(ProfileEvents['CASBulkDeleteRequests']) AS \"DELETE requests\", sum(arraySum(x -> ProfileEvents[x], ['CASBlobDelete', 'CASManifestDelete', 'CASRootDelete', 'CASGCDelete', 'CASMetaDelete', 'CASOtherDelete'])) AS \"Keys deleted\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY phase ORDER BY \"p99 s\" DESC\nSETTINGS skip_unavailable_shards = 1",
               "rawQuery": "",
               "refId": "A",
               "round": "0s",
@@ -856,7 +856,7 @@
             "type": "vertamedia-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "description": "Round-level `ProfileEvents` from the Finish row. A GC round is ~55\u2013100x the S3 cost of one insert on otel.demo, driven by GET and HEAD verification, not PUT.",
+          "description": "CAS-semantic counters from the Finish row's `ProfileEvents` (`CAS<Class><Verb>` summed per verb; the raw `S3*` keys miss requests made on pool threads). A GC round is ~55\u2013100x the S3 cost of one insert on otel.demo, driven by GET and HEAD verification, not PUT.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -910,7 +910,7 @@
               "extrapolate": false,
               "format": "time_series",
               "intervalFactor": 1,
-              "query": "SELECT toUInt64(event_time) * 1000 AS t, ProfileEvents['S3PutObject'] AS \"PUT\", ProfileEvents['S3GetObject'] AS \"GET\", ProfileEvents['S3HeadObject'] AS \"HEAD\", ProfileEvents['S3ListObjects'] AS \"LIST\", ProfileEvents['S3DeleteObjects'] AS \"DELETE\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter AND outcome = 'Success'\nORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "query": "SELECT toUInt64(event_time) * 1000 AS t, arraySum(x -> ProfileEvents[x], ['CASBlobPut', 'CASManifestPut', 'CASRootPut', 'CASGCPut', 'CASMetaPut', 'CASOtherPut']) AS \"PUT\", arraySum(x -> ProfileEvents[x], ['CASBlobGet', 'CASManifestGet', 'CASRootGet', 'CASGCGet', 'CASOtherGet']) AS \"GET\", arraySum(x -> ProfileEvents[x], ['CASBlobHead', 'CASManifestHead', 'CASRootHead', 'CASGCHead', 'CASOtherHead']) AS \"HEAD\", arraySum(x -> ProfileEvents[x], ['CASBlobList', 'CASManifestList', 'CASRootList', 'CASGCList', 'CASOtherList']) AS \"LIST\", ProfileEvents['CASBulkDeleteRequests'] AS \"DELETE requests\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter AND outcome = 'Success'\nORDER BY t\nSETTINGS skip_unavailable_shards = 1",
               "rawQuery": "",
               "refId": "A",
               "round": "0s",
@@ -926,7 +926,7 @@
             "type": "vertamedia-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "description": "All S3 requests of a round divided by objects deleted + marked + graduated + redeleted. Six requests per garbage blob was the otel.demo figure (audit F7).",
+          "description": "PUT + GET + HEAD + LIST + DELETE requests of a round divided by objects deleted + marked + graduated + redeleted. Six requests per garbage blob was the otel.demo figure (audit F7).",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -980,7 +980,7 @@
               "extrapolate": false,
               "format": "time_series",
               "intervalFactor": 1,
-              "query": "SELECT toUInt64(event_time) * 1000 AS t, (ProfileEvents['S3PutObject'] + ProfileEvents['S3GetObject'] + ProfileEvents['S3HeadObject'] + ProfileEvents['S3ListObjects'] + ProfileEvents['S3DeleteObjects']) / greatest(objects_deleted + candidates_marked + entries_graduated + entries_redeleted, 1) AS \"Requests per item\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter AND outcome = 'Success'\nORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "query": "SELECT toUInt64(event_time) * 1000 AS t, (arraySum(x -> ProfileEvents[x], ['CASBlobPut', 'CASManifestPut', 'CASRootPut', 'CASGCPut', 'CASMetaPut', 'CASOtherPut']) + arraySum(x -> ProfileEvents[x], ['CASBlobGet', 'CASManifestGet', 'CASRootGet', 'CASGCGet', 'CASOtherGet']) + arraySum(x -> ProfileEvents[x], ['CASBlobHead', 'CASManifestHead', 'CASRootHead', 'CASGCHead', 'CASOtherHead']) + arraySum(x -> ProfileEvents[x], ['CASBlobList', 'CASManifestList', 'CASRootList', 'CASGCList', 'CASOtherList']) + ProfileEvents['CASBulkDeleteRequests']) / greatest(objects_deleted + candidates_marked + entries_graduated + entries_redeleted, 1) AS \"Requests per item\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter AND outcome = 'Success'\nORDER BY t\nSETTINGS skip_unavailable_shards = 1",
               "rawQuery": "",
               "refId": "A",
               "round": "0s",
@@ -3872,7 +3872,7 @@
             "type": "vertamedia-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "description": "`CASGC*` verbs over all `CAS<Class>*` verbs, per 5-minute bucket.",
+          "description": "`CASGC*` verbs (objects under `gc/`) over all `CAS<Class>*` verbs, per 5-minute bucket. This is not the collector's share of traffic: its blob HEADs, manifest GETs and ref-log reads are counted under their object class; see GC: round cost for the collector's own requests.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -3935,7 +3935,7 @@
               "table": "metric_log"
             }
           ],
-          "title": "GC share of all CAS requests (%)",
+          "title": "GC-state objects' share of CAS requests (%)",
           "type": "timeseries"
         }
       ],
@@ -4435,7 +4435,7 @@
             "type": "vertamedia-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "description": "From `cas_gc_log` Finish rows with outcome Success: averages per round over the range.",
+          "description": "From `cas_gc_log` Finish rows with outcome Success: averages per round over the range, from the CAS-semantic counters (`CAS<Class><Verb>`).",
           "fieldConfig": {
             "defaults": {
               "custom": {
@@ -4498,7 +4498,7 @@
               "extrapolate": false,
               "format": "table",
               "intervalFactor": 1,
-              "query": "SELECT count() AS \"Rounds\", round(avg(ProfileEvents['S3PutObject'])) AS \"PUT/round\", round(avg(ProfileEvents['S3GetObject'])) AS \"GET/round\",\n       round(avg(ProfileEvents['S3HeadObject'])) AS \"HEAD/round\", round(avg(ProfileEvents['S3ListObjects'])) AS \"LIST/round\", round(avg(ProfileEvents['S3DeleteObjects'])) AS \"DELETE/round\",\n       round(avg(duration_ms)) AS \"avg ms\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter AND outcome = 'Success'\nSETTINGS skip_unavailable_shards = 1",
+              "query": "SELECT count() AS \"Rounds\", round(avg(arraySum(x -> ProfileEvents[x], ['CASBlobPut', 'CASManifestPut', 'CASRootPut', 'CASGCPut', 'CASMetaPut', 'CASOtherPut']))) AS \"PUT/round\", round(avg(arraySum(x -> ProfileEvents[x], ['CASBlobGet', 'CASManifestGet', 'CASRootGet', 'CASGCGet', 'CASOtherGet']))) AS \"GET/round\",\n       round(avg(arraySum(x -> ProfileEvents[x], ['CASBlobHead', 'CASManifestHead', 'CASRootHead', 'CASGCHead', 'CASOtherHead']))) AS \"HEAD/round\", round(avg(arraySum(x -> ProfileEvents[x], ['CASBlobList', 'CASManifestList', 'CASRootList', 'CASGCList', 'CASOtherList']))) AS \"LIST/round\", round(avg(ProfileEvents['CASBulkDeleteRequests'])) AS \"DELETE requests/round\",\n       round(avg(duration_ms)) AS \"avg ms\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter AND outcome = 'Success'\nSETTINGS skip_unavailable_shards = 1",
               "rawQuery": "",
               "refId": "A",
               "round": "0s",

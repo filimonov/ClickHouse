@@ -27,8 +27,17 @@ class GcRows(unittest.TestCase):
 
     def test_phase_table_reads_profile_events_map(self):
         sql = panel(drilldown.gc_rows(), "Phases: duration and S3 requests per phase")["targets"][0]["query"]
-        for k in ("ProfileEvents['S3ListObjects']", "ProfileEvents['S3GetObject']", "quantile(0.99)(phase_duration_microseconds)"):
+        for k in ("'CASRootList'", "'CASGCGet'", "quantile(0.99)(phase_duration_microseconds)"):
             self.assertIn(k, sql)
+        self.assertNotIn("ProfileEvents['S3ListObjects']", sql)
+
+    def test_round_cost_uses_cas_semantic_counters(self):
+        self.assertEqual(drilldown.cas_verb_sum("List"),
+                         "arraySum(x -> ProfileEvents[x], ['CASBlobList', 'CASManifestList', 'CASRootList', 'CASGCList', 'CASOtherList'])")
+        sql = panel(drilldown.gc_rows(), "S3 requests per round, by verb")["targets"][0]["query"]
+        self.assertIn("'CASGCPut'", sql)
+        self.assertIn("ProfileEvents['CASBulkDeleteRequests'] AS \"DELETE requests\"", sql)
+        self.assertNotIn("ProfileEvents['S3PutObject']", sql)
 
     def test_build_passes_checks_with_repo_names(self):
         known, async_prefixes = checks.load_known_names(ROOT)
@@ -61,6 +70,10 @@ class WritesRows(unittest.TestCase):
 
 
 class S3Rows(unittest.TestCase):
+    def test_gc_state_share_panel_is_named_for_what_it_measures(self):
+        p = panel(drilldown.s3_rows(), "GC-state objects' share of CAS requests (%)")
+        self.assertIn("object class", p["description"])
+
     def test_row_titles(self):
         self.assertEqual([r["title"] for r in drilldown.s3_rows()],
                          ["S3: by verb", "S3: who makes requests", "S3: cost estimate", "S3: errors and throttling", "S3: cost per unit", "S3: latency"])
