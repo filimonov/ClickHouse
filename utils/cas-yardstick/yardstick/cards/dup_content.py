@@ -3,7 +3,6 @@ import time
 
 from .base import DB, SINGLE_PART, Card, table_engine
 
-ROWS = 1000000
 PASSES_BEFORE = {'cold': 0, 'hot': 1}
 
 
@@ -11,7 +10,7 @@ class DupContent(Card):
     name = 'dup_content'
     unit = 'table'
     stops_merges = False
-    COUNTS = {'tables': 20}
+    COUNTS = {'tables': 20, 'rows': 1000000}
 
     @property
     def table(self) -> str:
@@ -30,14 +29,15 @@ class DupContent(Card):
             a = time.monotonic()
             c.query(f'CREATE TABLE {t} (k UInt64, s String) {table_engine(policy)}')
             b = time.monotonic()
-            c.query(f'INSERT INTO {t} SELECT number, toString(number) FROM numbers({ROWS})', SINGLE_PART)
+            c.query(f'INSERT INTO {t} SELECT number, toString(number) FROM numbers({counts["rows"]})', SINGLE_PART)
             d = time.monotonic()
             ops.append(dict(table=i, create_ms=(b - a) * 1e3, insert_ms=(d - b) * 1e3, ms=(d - a) * 1e3))
         return {'unit_count': len(ops), 'ops': ops}
 
     def invariants(self, c, counts, phase, when):
         tables = counts['tables'] * (PASSES_BEFORE[phase] + (when == 'after'))
-        text = c.query(f"SELECT count(), countIf(total_rows = {ROWS}), ifNull(sum(total_rows), 0) FROM system.tables "
-                       f"WHERE database = '{DB}' AND name LIKE '{self.name}\\\\_%'")
+        per_table = counts['rows']
+        text = c.query(f"SELECT count(), countIf(total_rows = {per_table}), ifNull(sum(total_rows), 0) "
+                       f"FROM system.tables WHERE database = '{DB}' AND name LIKE '{self.name}\\\\_%'")
         n, full, rows = (int(x) for x in text.split())
-        return {'tables': (tables, n), 'tables_with_1m_rows': (tables, full), 'rows': (tables * ROWS, rows)}
+        return {'tables': (tables, n), 'tables_with_all_rows': (tables, full), 'rows': (tables * per_table, rows)}

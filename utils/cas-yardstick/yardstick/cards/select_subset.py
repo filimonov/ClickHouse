@@ -3,7 +3,6 @@ import time
 
 from .base import DB, NO_MERGES, SINGLE_PART, Card, parts_and_rows, table_engine
 
-ROWS_PER_PART = 50000
 COLUMNS = 10
 TABLE_SETTINGS = f'min_bytes_for_wide_part = 1073741824, {NO_MERGES}'
 
@@ -12,7 +11,7 @@ class SelectSubset(Card):
     name = 'select_subset'
     unit = 'query'
     stops_merges = True
-    COUNTS = {'parts': 200}
+    COUNTS = {'parts': 200, 'rows_per_part': 50000}
 
     def __init__(self):
         self._sums = {}
@@ -25,9 +24,10 @@ class SelectSubset(Card):
         columns = ', '.join(f'c{i} UInt64' for i in range(COLUMNS))
         c.query(f'CREATE TABLE {self.table} (k UInt64, {columns}) {table_engine(policy, TABLE_SETTINGS)}')
         values = ', '.join(f'number * {i}' for i in range(COLUMNS))
+        rows = counts['rows_per_part']
         for i in range(counts['parts']):
             c.query(f'INSERT INTO {self.table} SELECT number, {values} '
-                    f'FROM numbers({i * ROWS_PER_PART}, {ROWS_PER_PART})', SINGLE_PART)
+                    f'FROM numbers({i * rows}, {rows})', SINGLE_PART)
 
     def measured(self, c, policy, counts, phase):
         a = time.monotonic()
@@ -37,7 +37,7 @@ class SelectSubset(Card):
 
     def invariants(self, c, counts, phase, when):
         parts, rows = parts_and_rows(c, self.table)
-        n = counts['parts'] * ROWS_PER_PART
+        n = counts['parts'] * counts['rows_per_part']
         out = {'active_parts': (counts['parts'], parts), 'rows': (n, rows)}
         if when == 'after':
             out['sum_c3'] = (3 * (n * (n - 1) // 2), self._sums.pop(phase))

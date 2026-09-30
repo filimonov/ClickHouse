@@ -3,7 +3,6 @@ import time
 
 from .base import DB, NO_MERGES, SINGLE_PART, Card, parts_and_rows, supports_mutations, table_engine
 
-ROWS_PER_PART = 10000
 PASS_NO = {'cold': 1, 'hot': 2}
 
 
@@ -11,7 +10,7 @@ class Mutation(Card):
     name = 'mutation'
     unit = 'part'
     stops_merges = True
-    COUNTS = {'parts': 100}
+    COUNTS = {'parts': 100, 'rows_per_part': 10000}
 
     def supports(self, policy):
         return supports_mutations(policy)
@@ -22,9 +21,10 @@ class Mutation(Card):
     def setup(self, c, policy, counts):
         c.query(f'CREATE DATABASE IF NOT EXISTS {DB}')
         c.query(f'CREATE TABLE {self.table} (k UInt64, s String) {table_engine(policy, NO_MERGES)}')
+        rows = counts['rows_per_part']
         for i in range(counts['parts']):
             c.query(f'INSERT INTO {self.table} SELECT number, toString(number) '
-                    f'FROM numbers({i * ROWS_PER_PART}, {ROWS_PER_PART})', SINGLE_PART)
+                    f'FROM numbers({i * rows}, {rows})', SINGLE_PART)
 
     def measured(self, c, policy, counts, phase):
         a = time.monotonic()
@@ -34,7 +34,7 @@ class Mutation(Card):
 
     def invariants(self, c, counts, phase, when):
         parts, rows = parts_and_rows(c, self.table)
-        out = {'active_parts': (counts['parts'], parts), 'rows': (counts['parts'] * ROWS_PER_PART, rows)}
+        out = {'active_parts': (counts['parts'], parts), 'rows': (counts['parts'] * counts['rows_per_part'], rows)}
         if when == 'after':
             # Reads column s, so it runs only after the window.
             wrong = int(c.query(f'SELECT count() FROM {self.table} WHERE s != toString(k + {PASS_NO[phase]})'))

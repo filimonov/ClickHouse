@@ -1,4 +1,7 @@
 """The card interface: one fixed workload measured on one disk."""
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 DB = 'yardstick'
 TABLE_SETTINGS = 'primary_key_lazy_load = 0, prewarm_mark_cache = 0, prewarm_primary_key_cache = 0'
 
@@ -33,6 +36,31 @@ def parts_and_rows(c, table: str) -> tuple[int, int]:
     return parts, rows
 
 
+def run_workers(count: int, work) -> list:
+    """Results of `work(w, stop)` for w in range(count), each on its own thread, in worker order.
+    A failing worker sets `stop`, which `work` checks between its operations. On Ctrl-C the pool is not joined: the
+    runner's teardown and server stop end the queries still in flight."""
+    stop = threading.Event()
+
+    def guarded(w):
+        try:
+            return work(w, stop)
+        except BaseException:
+            stop.set()
+            raise
+
+    pool = ThreadPoolExecutor(count)
+    interrupted = False
+    try:
+        return [f.result() for f in [pool.submit(guarded, w) for w in range(count)]]
+    except KeyboardInterrupt:
+        interrupted = True
+        stop.set()
+        raise
+    finally:
+        pool.shutdown(wait=not interrupted, cancel_futures=interrupted)
+
+
 class Card:
     """Per pass: setup, optional cold reset, measured cold, measured hot if `has_hot`, teardown.
     Instances are reused across passes: `measured` must reset any state kept on the card."""
@@ -40,7 +68,7 @@ class Card:
     unit: str
     has_hot: bool = True
     stops_merges: bool  # merges cannot change the part count during the card
-    COUNTS: dict[str, int] = {}
+    COUNTS: dict[str, int] = {}  # every count and row parameter; `counts(scale)` scales them all
 
     @property
     def table(self) -> str:

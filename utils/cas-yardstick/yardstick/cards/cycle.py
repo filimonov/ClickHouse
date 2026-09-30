@@ -1,21 +1,17 @@
 """Create / 3 x insert / select / drop, from concurrent workers."""
 import time
-import threading
-from concurrent.futures import ThreadPoolExecutor
 
-from .base import DB, Card, table_engine
+from .base import DB, Card, run_workers, table_engine
 
 WORKERS = 8
-ROWS_PER_INSERT = 1000
 INSERTS = 3
-EXPECTED = (INSERTS * ROWS_PER_INSERT, sum(range(INSERTS * ROWS_PER_INSERT)))
 
 
 class Cycle(Card):
     name = 'cycle'
     unit = 'cycle'
     stops_merges = False
-    COUNTS = {'iterations': 25}
+    COUNTS = {'iterations': 25, 'rows_per_insert': 1000}
 
     def __init__(self):
         self._mismatches = {}
@@ -30,16 +26,10 @@ class Cycle(Card):
     def cold_reset_needed(self):
         return False
 
-    def _worker(self, c, policy, phase, w, iterations, stop):
-        try:
-            return self._iterations(c, policy, phase, w, iterations, stop)
-        except BaseException:
-            stop.set()
-            raise
-
-    def _iterations(self, c, policy, phase, w, iterations, stop):
+    def _iterations(self, c, policy, phase, w, counts, stop):
+        rows = counts['rows_per_insert']
         ops = []
-        for i in range(iterations):
+        for i in range(counts['iterations']):
             if stop.is_set():
                 break
             t = f'{DB}.t_{phase}_{w}_{i}'
@@ -47,8 +37,7 @@ class Cycle(Card):
             c.query(f'CREATE TABLE {t} (k UInt64, s String) {table_engine(policy)}')
             b = time.monotonic()
             for j in range(INSERTS):
-                c.query(f'INSERT INTO {t} SELECT number, toString(number) '
-                        f'FROM numbers({j * ROWS_PER_INSERT}, {ROWS_PER_INSERT})')
+                c.query(f'INSERT INTO {t} SELECT number, toString(number) FROM numbers({j * rows}, {rows})')
             d = time.monotonic()
             count, total = (int(x) for x in c.query(f'SELECT count(), sum(k) FROM {t}').split())
             e = time.monotonic()
@@ -60,13 +49,11 @@ class Cycle(Card):
         return ops
 
     def measured(self, c, policy, counts, phase):
-        iterations = counts['iterations']
-        # One failed worker stops the others at their next iteration instead of letting them run to the end.
-        stop = threading.Event()
-        with ThreadPoolExecutor(WORKERS) as pool:
-            futures = [pool.submit(self._worker, c, policy, phase, w, iterations, stop) for w in range(WORKERS)]
-            ops = [op for f in futures for op in f.result()]
-        self._mismatches[phase] = sum((op['count'], op['sum']) != EXPECTED for op in ops)
+        per_worker = run_workers(WORKERS, lambda w, stop: self._iterations(c, policy, phase, w, counts, stop))
+        ops = [op for worker_ops in per_worker for op in worker_ops]
+        n = INSERTS * counts['rows_per_insert']
+        expected = (n, n * (n - 1) // 2)
+        self._mismatches[phase] = sum((op['count'], op['sum']) != expected for op in ops)
         return {'unit_count': len(ops), 'ops': ops}
 
     def invariants(self, c, counts, phase, when):

@@ -132,6 +132,12 @@ class ConfigTest(unittest.TestCase):
         for sub in ('data', 'tmp', 'uf', 'caches'):
             self.assertTrue(os.path.isdir(os.path.join(d, sub)))
 
+    def test_tables_load_before_the_server_answers(self):
+        # A cold reset drops caches right after `SELECT 1` answers; an asynchronous table load would refill them.
+        d, _ = self.write('s3')
+        root = ET.parse(os.path.join(d, 'etc', 'config.xml')).getroot()
+        self.assertEqual(root.findtext('async_load_databases'), 'false')
+
     def test_unknown_policy_rejected(self):
         d = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)

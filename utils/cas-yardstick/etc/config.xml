@@ -26,6 +26,7 @@
     <default_profile>default</default_profile>
     <default_database>default</default_database>
     <mlock_executable>false</mlock_executable>
+    <async_load_databases>false</async_load_databases>
     <query_log>
         <database>system</database>
         <table>query_log</table>

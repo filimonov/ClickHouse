@@ -3,15 +3,16 @@ import time
 
 from .base import DB, NO_MERGES, SINGLE_PART, Card, parts_and_rows, table_engine
 
-ROWS_PER_INSERT = 20000
 COLUMNS = 15
+# The hot pass shifts every value, so it writes new content instead of repeating the cold pass's blobs.
+VALUE_OFFSET = {'cold': 0, 'hot': 1}
 
 
 class WideInsert(Card):
     name = 'wide_insert'
     unit = 'insert'
     stops_merges = True
-    COUNTS = {'inserts': 500}
+    COUNTS = {'inserts': 500, 'rows_per_insert': 20000}
 
     def cold_reset_needed(self):
         return False
@@ -26,17 +27,19 @@ class WideInsert(Card):
             c.query(f'TRUNCATE TABLE {self.table}')
 
     def measured(self, c, policy, counts, phase):
+        rows = counts['rows_per_insert']
+        o = VALUE_OFFSET[phase]
+        numeric = ', '.join(f'number * {j} + {o}' for j in range(COLUMNS))
+        strings = ', '.join(f'toString(number * {j} + {o})' for j in range(COLUMNS))
         ops = []
         for i in range(counts['inserts']):
-            numeric = ', '.join(f'number * {i}' for _ in range(COLUMNS))
-            strings = ', '.join(f'toString(number * {i})' for _ in range(COLUMNS))
             a = time.monotonic()
-            c.query(f'INSERT INTO {self.table} SELECT number, {numeric}, {strings} '
-                    f'FROM numbers({i * ROWS_PER_INSERT}, {ROWS_PER_INSERT})', SINGLE_PART)
+            c.query(f'INSERT INTO {self.table} SELECT number + {o}, {numeric}, {strings} '
+                    f'FROM numbers({i * rows}, {rows})', SINGLE_PART)
             ops.append(dict(insert=i, ms=(time.monotonic() - a) * 1e3))
         return {'unit_count': len(ops), 'ops': ops}
 
     def invariants(self, c, counts, phase, when):
         parts, rows = parts_and_rows(c, self.table)
         inserts = counts['inserts'] if when == 'after' else 0
-        return {'active_parts': (inserts, parts), 'rows': (inserts * ROWS_PER_INSERT, rows)}
+        return {'active_parts': (inserts, parts), 'rows': (inserts * counts['rows_per_insert'], rows)}
