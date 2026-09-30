@@ -1,7 +1,15 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcManifestMemo.h>
 
-#include <base/defines.h>
+#include <Common/Exception.h>
 #include <functional>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 namespace DB::Cas
 {
@@ -117,9 +125,10 @@ bool GcManifestMemo::insert(const ManifestId & id, ManifestFold fold)
 void GcManifestMemo::evictOldest()
 {
     const Key key = insertion_order.front();
-    insertion_order.pop_front();
     const auto it = folds.find(key);
-    chassert(it != folds.end());
+    if (it == folds.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GC manifest memo: the eviction order names a manifest the memo does not hold");
+    insertion_order.pop_front();
     charged_bytes -= it->second.charge;
     folds.erase(it);
     ++eviction_count;
@@ -129,6 +138,8 @@ void GcManifestMemo::evictOldest()
 void GcManifestMemo::releaseNamespace(const String & root_namespace)
 {
     const auto it = namespaces.find(root_namespace);
+    if (it == namespaces.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GC manifest memo: a held namespace is not interned");
     if (--it->second == 0)
     {
         charged_bytes -= namespaceCharge(it->first);
