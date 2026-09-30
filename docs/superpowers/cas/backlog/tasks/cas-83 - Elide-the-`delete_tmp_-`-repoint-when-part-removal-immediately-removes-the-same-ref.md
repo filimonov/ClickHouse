@@ -3,10 +3,10 @@ id: CAS-83
 title: >-
   Elide the `delete_tmp_*` repoint when part removal immediately removes the
   same ref
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-30 13:42'
+updated_date: '2026-09-30 15:03'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -20,6 +20,10 @@ dependencies: []
 references:
   - CA/ContentAddressedTransaction.cpp
   - CA/Parts/PartFolderAccess.cpp
+  - >-
+    docs/superpowers/reports/2026-09-30-cas-part-removal-flow/01-removal-flow-map.md
+  - >-
+    docs/superpowers/reports/2026-09-30-cas-part-removal-flow/02-design-inputs.md
 documentation:
   - docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f2
   - docs/superpowers/cas/2026-09-16-msan-cas-s3-shard-budget-rca.md
@@ -72,4 +76,11 @@ Trace of one part (`202609_491558_491558_0`, removal 13:21:49.57-13:21:50.82 UTC
 3. `precommit` + `build_publish` + `ref_repoint` of `delete_tmp_<part>` to a new manifest C (the removal marks);
 4. `ref_drop` of `delete_tmp_<part>` (manifest C).
 Per removed part: 2 extra manifests, 4 ref-log transactions instead of 1, and for the GC 6 owner edges on 3 manifests instead of 2 edges on 1. With the flow reduced to one drop, manifest PUTs fall to a third, and the GC's manifest reads in `fold_ref_intake` (40.5% of round time on this stand, 4,645 bodies per round) fall by about two thirds. This removes the work that the manifest memo of CAS-29.12 would only cache.
+
+2026-09-30, design decided by the owner. Why today's removal is never cheap: `DataPartStorageOnDiskBase::remove` issues three separate disk transactions (`moveDirectory` to `delete_tmp_<part>`, `removeSharedFiles`, `removeDirectory`), so the same-transaction elision of the unlink batch never fires; the CAS comments and the gtest `UnlinkStormThenDirDropIsOneRefDrop` describe a single-transaction shape production never produces. Map: `docs/superpowers/reports/2026-09-30-cas-part-removal-flow/01-removal-flow-map.md`.
+Chosen cut: one self-contained block of 11 lines in `DataPartStorageOnDiskBase::remove` after `auto disk = volume->getDisk();` — on a content-addressed disk outside `detached/`, evaluate `can_remove_callback` once and call one `disk->removeSharedRecursive(from)`, which CAS turns into one `dropRefIfPresent`. No rename, no per-file unlinks, no warning for an absent directory. Reason: removing a CAS part is one atomic ref-log record, so the two-step rename-then-remove protects nothing. No upstream line changes; the surrounding lines have not changed since 2023. Inputs: `docs/superpowers/reports/2026-09-30-cas-part-removal-flow/02-design-inputs.md`.
+Rejected: CAS-side sniffing of the `delete_tmp_` prefix; one disk transaction for the whole `remove` with a collapse at commit (feasible, but needs a deferred committed-ref rename in CAS); one transaction for unlinks + rmdir only (half the effect).
+Also established: `delete-on-destroy.txt` is no longer written (upstream commit c1c69553741), and nothing is written into a part before `remove` when MergeTree transactions are off; the second manifest of a removal is the unlink batch itself.
+Not covered by this task: fetch and clone paths publish a part twice (separate tasks); `DROP DETACHED` (`deleting_` rename) stays as is.
+Branch: `fix/antalya-26.6/cas-part-removal-one-drop`, worktree `cas-83`, from antalya-26.6 @e2dd0f5d343. Proof: a stateless test counting `manifest_put` / `ref_repoint` / `ref_drop` per removed part, and a yardstick `cycle` A/B.
 <!-- SECTION:NOTES:END -->
