@@ -93,7 +93,7 @@ A manifest whose own charge exceeds the budget is folded without being memoized.
 - **Take `ref`.** Let `p` be the lower bound of `ref` among the candidates, starting from the last take. `discardHead` every outstanding position below `p`.
   - If the candidate at `p` equals `ref`, the take hits when `p` is outstanding and reads inline otherwise. Then set `next_hint = max(next_hint, p + 1)`.
   - Every take is a candidate: the candidate set and the merge apply the same per-(ref, source) last verdict in the same stable order. A take that is not at a candidate position is a `chassert`; in release builds it reads inline and leaves the hint state untouched.
-- **Top up.** At shard start and after each take, hint from `next_hint` while `outstanding.size() < reads.window()`. Read slots left untaken by a clamp or an A4 eviction therefore never pin the head window.
+- **Top up.** Before the shard's first take and after each take, hint from `next_hint` while `outstanding.size() < reads.window()`. Read slots left untaken by a clamp or an A4 eviction therefore never pin the head window.
 - **Shard transition.** `discardHead` every outstanding position of the finished shard before switching, and of the last shard before the reduce phase ends, so `Wasted` is counted inside the phase.
 - **Order check.** A take below the last take is a `chassert`. In release builds it is an inline HEAD, which is the behaviour without read-ahead.
 - **Discard is correct.** A discarded candidate is below every future take, so no sequential walk would have issued its HEAD, and `discard`'s wait and exception drop apply.
