@@ -353,16 +353,19 @@ for a removal records the stored `Etag` for phase 15, which deletes the body by 
   The orphan sweep ([phase 18](#phase-18-orphan-sweep)) deletes only manifests outside its
   protection view of the ref graph.
   A deposed leader's post-commit delete can overlap a successor's fold. The memo then answers with
-  the bytes an earlier read returned, where a fresh read could find the key absent. Such a body's
-  removal is already adopted by the committed round, so the fold has no edge that needs it.
+  the bytes an earlier read returned, where a fresh read would find the key absent: a committed or
+  removal edge then folds instead of clamping the table, and a removed precommit applies instead of
+  being skipped. Both follow the edges the ref history names, so the difference is in the safe
+  direction.
 - **Absence is never memoized.** An absent body is probed again by the next edge that names it, and
   a body that fails validation throws as without the memo.
 - **Bound:** 64 MiB of charged storage per fold, oldest insert evicted first. The charge covers the
   map and list nodes, the `Etag` strings, every entry and its path, each namespace once, and the
   two hash tables' bucket arrays as measured, which eviction does not shrink. Allocator rounding is
   not charged: the real allocation stays within 1.25 times the charge, so a fold's memo holds at
-  most about 80 MiB (64 MiB × 1.25). A manifest whose own charge exceeds the budget is folded
-  without being stored. An evicted or oversized manifest is read again on its next edge.
+  most about 80 MiB (64 MiB × 1.25). A manifest is also folded without being stored when its
+  charge plus the retained bucket arrays exceed the budget (see `insert` in
+  `Gc/CasGcManifestMemo.h`). An evicted or unstored manifest is read again on its next edge.
 - **Read-ahead:** the hint loop skips a manifest the memo holds. If an eviction lands between the
   skip and the take, the take reads inline: one `CASGCReadAheadMiss` and one `GET`.
 
