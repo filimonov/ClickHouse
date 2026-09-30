@@ -3,6 +3,9 @@
 Runs seven fixed workload cards on a CAS disk and on two ordinary S3 disks, and reports wall time, S3 API calls and payload bytes, cold and hot, with paired ratios. One server process per measurement, a fresh bucket prefix per measurement.
 
 ```bash
+# Start the RustFS container the runs use (http://127.0.0.1:19121). `run` does not start it.
+utils/cas-yardstick/rustfs.sh start
+
 # First thing to run after any change to the tool: all cards, all policies, tiny scale. About 8 min.
 python3 utils/cas-yardstick/yardstick.py run --smoke --binary build/programs/clickhouse
 
@@ -11,24 +14,38 @@ python3 utils/cas-yardstick/yardstick.py run --quick --binary build/programs/cli
 
 # The real measurement: all cards, six policies, 3 repeats (add --compare to check against reference/CURRENT). About 73 min.
 python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse
+
+# Remove the container. Its data directory is wiped by the next `start`.
+utils/cas-yardstick/rustfs.sh stop
 ```
 
-`--smoke` exits 2 on any `FAILED` or `unavailable` cell. `--smoke` and `--quick` fix the cards, scale, repeats and policies and refuse them as options. `--quick` output is not comparable with the reference (scale differs). `--cards` and `--policies` take comma-separated lists.
+`--smoke` exits 2 on any `FAILED` or `unavailable` cell. `--smoke` and `--quick` fix the cards, scale, repeats and policies and refuse them as options. `--quick` output is not comparable with the reference (scale differs). `--cards` and `--policies` take comma-separated lists without duplicates.
 
 ## Prerequisites
 
 - Docker, with the pinned images pulled on first use: `rustfs/rustfs:1.0.0-rc.3` and `minio/mc:RELEASE.2025-04-16T18-13-26Z` (see `rustfs.sh`).
 - A `clickhouse` binary with CAS disks (`metadata_type=cas`) and the `system.cas_gc_log` table.
-- Ports from `--port-base` (19700) for the servers and 19121 for RustFS. `--endpoint URL` uses a store that is already running instead of starting RustFS; it requires `--keep-prefix`, because prefix removal only reaches the RustFS of `rustfs.sh`.
+- Ports from `--port-base` (19700) for the servers and 19121 for RustFS.
+- `rustfs.sh start [--data DIR]` keeps its data in `<repo>/tmp/cas-yardstick/rustfs-data/` by default and refuses a non-empty directory it did not create.
+- `--endpoint URL` points the servers at another running store instead of the `rustfs.sh` container. It requires `--keep-prefix`, because prefix removal only reaches the `rustfs.sh` container.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `run` | Measures the cards, prints the table, writes `runs/<run-id>/`. Exit non-zero if any cell is `FAILED` or the final prefix removal fails (the numbers are complete in that case). |
-| `report runs/<id>` | Re-prints the table of a finished run. |
-| `compare runs/<id> [reference]` | Compares a run with a reference run (default: the one named by `reference/CURRENT`). |
+| `run` | Measures the cards, prints the table, writes `<runs-dir>/<run-id>/`. |
+| `report <run-dir>` | Re-prints the table of a finished run. |
+| `compare <run-dir> [reference]` | Compares a run with a reference run (default: the one named by `reference/CURRENT`). Exit 1 when incompatible. |
 | `--list-counters` | Prints the counters behind every aggregate. |
+
+`run` exit codes, highest priority first:
+
+| Code | Meaning |
+|---|---|
+| 130 | Interrupted. The files and the table cover the finished passes. |
+| 2 | `--smoke` found a `FAILED` or `unavailable` cell. |
+| 1 | A `FAILED` cell, a failed prefix removal (the numbers are complete in that case), or an incompatible `--compare`. |
+| 0 | Otherwise. |
 
 `run` options:
 
@@ -38,11 +55,11 @@ python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse
 | `--cards` | all seven | Cards to run. |
 | `--policies` | all six | Subset of `cas, s3, s3plain, cas_cached, s3_cached, s3plain_cached`. |
 | `--repeats` | 3 | Repeats per (policy, card). |
-| `--scale` | 1.0 | Multiplies every count as `max(1, round(scale * n))`. A reference is defined at 1.0 only. |
-| `--gc` | `on` | `off` runs CAS with `cas_gc_enabled = 0`; the window is then labelled "GC-disabled process window". |
+| `--scale` | 1.0 | Multiplies every count and row parameter as `max(1, round(scale * n))`; worker counts and deletes per worker stay. A reference is defined at 1.0 only. |
+| `--gc` | `on` | `off` runs CAS with `cas_gc_enabled = 0`; the table header then says "GC-disabled process window". |
 | `--endpoint`, `--endpoint-version` | RustFS started by `rustfs.sh` | Use a running store; the manifest records `external` and the stated version. |
 | `--port-base` | 19700 | First port of the per-process server port range. |
-| `--runs-dir` | `runs` | Where run directories go. |
+| `--runs-dir` | `<repo>/tmp/cas-yardstick/runs` | Where run directories go. |
 | `--keep-prefix` | off | Keep the run's bucket prefix after the run. |
 | `--compare`, `--reference` | off | Compare with `reference/CURRENT` (or the given run dir) after the run. |
 | `--smoke` | off | All cards, all policies, `--scale 0.01`, `--repeats 1`. |
@@ -67,8 +84,8 @@ Every card is `setup` (not measured), a cold reset where it has a fixture, `meas
 | Card | Unit | Measured step | Cold reset | Merges off | Hot pass |
 |---|---|---|---|---|---|
 | `cycle` | cycle (200) | 8 workers x 25 iterations of: `CREATE TABLE`, 3 inserts of 1000 rows, `SELECT count(), sum(k)`, `DROP TABLE SYNC` | no | no | second pass, new table names |
-| `wide_insert` | insert (500) | 500 sequential 20000-row inserts into a 30-column table (10M rows, 500 parts) | no | yes | `TRUNCATE` (not measured), then the same 500 inserts |
-| `attach_200` | part (200) | `DETACH TABLE` + `ATTACH TABLE` of 200 parts, 2M rows | yes | yes | the same pair |
+| `wide_insert` | insert (500) | 500 sequential 20000-row inserts into a 30-column table (10M rows, 500 parts) | no | yes | `TRUNCATE` (not measured), then 500 inserts of values shifted by one, so nothing deduplicates against the cold pass |
+| `attach_200` | part (200) | `ATTACH TABLE` of 200 parts, 2M rows; setup left the table `DETACH ... PERMANENTLY` | yes | yes | `DETACH TABLE` + `ATTACH TABLE` |
 | `mutation` | part (100) | `ALTER TABLE ... UPDATE` of every row of 100 parts, `mutations_sync = 2` | yes | yes | the same with the next pass value |
 | `lwd_concurrent` | delete (80) | 8 workers x 10 lightweight deletes on 50 parts, 5M rows; half the rows go | yes | no | 8 x 10 deletes removing the other half |
 | `select_subset` | query (1) | `SELECT sum(c3)` over 200 compact parts of 10 `UInt64` columns | yes | yes | the same query |
@@ -87,15 +104,28 @@ An unsupported pair prints `UNSUPPORTED (<reason>)` in every cell, gets no ratio
 | Card | `cas`, `s3` (+ cached) | `s3plain`, `s3plain_cached` |
 |---|---|---|
 | `cycle`, `wide_insert`, `attach_200`, `select_subset`, `dup_content` | run | run |
-| `mutation`, `lwd_concurrent` | run | `UNSUPPORTED (immutable disk)`: `s3_plain_rewritable` has no hard links and the server rejects `ALTER ... UPDATE` and `DELETE` with error 344 |
+| `mutation`, `lwd_concurrent` | run | `UNSUPPORTED (mutations are not supported on the immutable s3plain disk)`: `s3_plain_rewritable` has no hard links and the server rejects `ALTER ... UPDATE` and `DELETE` with error 344 |
 
 A full run prints 8 `UNSUPPORTED` rows: 2 cards x 2 policies x cold and hot.
 
 ## What "cold" resets
 
-Setup builds the fixture, then the server is stopped and started again on the same run directory with the cache directory emptied. After start the runner executes `SYSTEM DROP FILESYSTEM CACHE`, `DROP MARK CACHE`, `DROP UNCOMPRESSED CACHE` and `DROP PRIMARY INDEX CACHE` (where the binary has it).
+Setup builds the fixture. Then `SYSTEM SHUTDOWN` stops the server and a new process starts on the same run directory with the cache directory emptied. The server loads every attached table before it answers (`async_load_databases = false`). Then the runner executes `SYSTEM DROP FILESYSTEM CACHE`, `SYSTEM DROP MARK CACHE`, `SYSTEM DROP UNCOMPRESSED CACHE` and `SYSTEM CLEAR PRIMARY INDEX CACHE`. A binary without one of them fails the pass.
 
-Cold means: the server process, its metadata and CAS in-memory state, and the filesystem cache are cold. The store is not. Not reset:
+Cold:
+
+- the server process;
+- the filesystem cache, and the mark, uncompressed and primary-index caches;
+- column data: no measured query has read it in this process.
+
+Loaded by the restart before the cold window:
+
+- table metadata and part lists of every attached table, and for CAS the manifests of their parts;
+- the primary key of every part (`primary_key_lazy_load = 0` loads it with the part).
+
+So `mutation`, `lwd_concurrent` and `select_subset` start their cold window with parts metadata in memory and no column data read. `attach_200` keeps its table detached across the restart, so its cold `ATTACH` is the first load of those parts.
+
+Not reset:
 
 - the OS page cache holding the `s3` disk's local metadata files;
 - RustFS's own data and process caches.
@@ -106,34 +136,38 @@ Cold means: the server process, its metadata and CAS in-memory state, and the fi
 - **API calls, not wire requests.** GET, PUT, HEAD, LIST, DELETE and COPY are sums of `DiskS3*` counters (an N-part upload is N + 2 PUT); the exact list is in `--list-counters`. Bytes are `ReadBufferFromS3Bytes` and `WriteBufferFromS3Bytes`: buffer payload, not network bytes.
 - **Fresh prefix.** Every (policy, card, repeat) uses `test/<run-id>/<policy>/<card>/k<N>/` and never reuses it, because `DROP TABLE` does not empty a CAS prefix. Prefixes are deleted after the run.
 - **Order.** Policies rotate per repeat so store drift is not confounded with the policy.
-- **Wall.** Runner clock around `measured`. For concurrent cards it is elapsed time; per-operation latency is in `median_op_ms` and `p90_op_ms`. Per-unit values divide by the actual unit count from `invariants.tsv`.
+- **Wall.** Runner clock around `measured`. For concurrent cards it is elapsed time; per-operation latency is in `median_op_ms` and `p90_op_ms`.
+- **Per unit.** Values divide by the unit count that `measured` returns: completed operations for `cycle`, `wide_insert`, `lwd_concurrent` and `dup_content`, the part count for `attach_200` and `mutation`. The invariants check that the part count matches.
 
 ## Output
 
-Two blocks, uncached and cached policies. Rows are card x phase (cold, hot). Per policy: `wall`, `median_op_ms`, `p90_op_ms`, GET, PUT, HEAD, LIST, DELETE, COPY, MiB read, MiB written, and for CAS policies `GC rounds`. Then the paired ratios `cas/s3` and `cas/s3plain` for wall, GET, PUT and bytes, and a per-unit line per card.
+A header line with scale, repeats and `--gc`, "GC-disabled process window" under `--gc off`, and the list of `unavailable` metrics (or `none`). Then two blocks, uncached and cached policies. Rows are card x phase (cold, hot). Per policy: `wall`, `median_op_ms`, `p90_op_ms`, GET, PUT, HEAD, LIST, DELETE, COPY, MiB read, MiB written, and for CAS policies `gc_rounds`. Then the paired ratios for wall, GET, PUT and bytes: `cas/s3` and `cas/s3plain` in the uncached block, `cas_cached/s3_cached` and `cas_cached/s3plain_cached` in the cached one. Under each block a per-unit line per card and policy, named by the unit (`per part attach_200/cold cas: ...`).
 
 Each cell is the median over repeats with min..max. Ratios are computed per repeat, then summarized.
 
 | Cell or mark | Meaning |
 |---|---|
-| `~` | The count differs across repeats. Expected wherever merges, GC or retries are on. |
-| `noisy` | Wall max/min over repeats is above 1.2. |
-| `0 -> n` | A ratio with a zero denominator, shown as absolute counts. |
+| `~` | A request count differs across repeats. Expected wherever merges, GC or retries are on. |
+| `noisy` | Wall or bytes max/min over repeats is above 1.2. |
+| `0 → n` | A ratio with a zero denominator, shown as the absolute count of the numerator. |
 | `UNSUPPORTED (reason)` | The pair cannot run the card (capability matrix). |
-| `FAILED` | Error, timeout, violated invariant or server that did not start. No numbers; logs kept; the run continues; exit code is non-zero. |
+| `FAILED (n of K repeats ok)` | Error, timeout, violated invariant or server that did not start in at least one repeat. The pass gets no numbers, per-unit line, ratio or compare row; logs are kept; the run continues; exit code is non-zero. |
 | `unavailable` | The binary lacks a counter behind the metric. Its ratios and comparisons are suppressed. |
 
-**GC column.** After each pass the runner flushes logs and collects `system.cas_gc_log` rounds whose span overlaps the window into `gc_rounds.tsv`. The table shows "GC rounds: N (M overlapping)". A 20 s GC interval on a short window does not amortize reclamation; use a long GC soak for that, not this tool.
+**GC column.** After each pass the runner flushes logs and collects `system.cas_gc_log` rounds whose span overlaps the window into `gc_rounds.tsv`. A round without its `Finish` row counts as still running. The cell is `N, M overlapping`: N rounds began and ended inside the window, M only overlapped it; each with min..max over repeats when they differ. A 20 s GC interval on a short window does not amortize reclamation; use a long GC soak for that, not this tool.
 
 ### Run directory
 
 ```
-runs/<run-id>/manifest.tsv  samples.tsv  summary.tsv  pass_seconds.tsv
-runs/<run-id>/<policy>/<card>/k<N>/{cold,hot}/
-    events_before.tsv events_after.tsv events_delta.tsv card.tsv invariants.tsv gc_rounds.tsv server.log
+<run-id>/manifest.tsv  samples.tsv  summary.tsv  pass_seconds.tsv  config/
+<run-id>/<policy>/<card>/k<N>/
+    server.log  server.err.log  stdout.log  server_control.log  error.txt (FAILED passes only)
+    etc/  data/  caches/  ...
+<run-id>/<policy>/<card>/k<N>/{cold,hot}/
+    events_before.tsv  events_after.tsv  events_delta.tsv  card.tsv  invariants.tsv  gc_rounds.tsv
 ```
 
-`events_delta.tsv` keeps every counter; the table shows aggregates. `error.txt` appears next to a `FAILED` pass.
+`events_delta.tsv` keeps every counter; the table shows aggregates.
 
 ## Reference and compare
 
@@ -141,14 +175,16 @@ runs/<run-id>/<policy>/<card>/k<N>/{cold,hot}/
 
 `config_dir` and `flags` in the manifest record where and how the run was started. They are informational and `compare` ignores them.
 
-`compare` checks manifests first. Workload revision, scale, counts, `--gc`, repeats, config hash, build type and store must match. Otherwise it prints `incompatible: <field>` per differing field and nothing else. When compatible it prints current vs reference (median and min..max) per metric, the delta of medians in percent, and marks `|delta wall| > 10 %` and any change of a request-count median. It fails no run; there are no thresholds. A `--quick` run prints `incompatible: scale`, `counts`, `repeats` and `config_hash`.
+`workload_hash` in the manifest is a SHA-256 over the files that define the measurement: `yardstick.py`, `yardstick/*.py`, `yardstick/cards/*.py`, `etc/*`, `rustfs.sh` and `server.sh`. This README, `tests/` and `reference/` are not part of it, so committing a reference keeps later runs comparable. `git_rev` and `dirty` (uncommitted changes to those files) are informational.
+
+`compare` checks manifests first. Workload hash, scale, counts, `--gc`, repeats, config hash, build type, store and store version must match. Otherwise it prints `incompatible: <field>` per differing field and nothing else. When compatible it prints current vs reference (median and min..max) per metric, the delta of medians in percent, and marks `|delta wall| > 10 %` and any change of a request-count median. It fails no run; there are no thresholds. A `--quick` run prints `incompatible: scale`, `counts`, `repeats` and `config_hash`.
 
 Accept a run as the reference:
 
 ```bash
 ref=utils/cas-yardstick/reference/<date>-<rev>
 mkdir "$ref"
-for f in manifest samples summary pass_seconds; do cp runs/<run-id>/$f.tsv "$ref"/; done
+for f in manifest samples summary pass_seconds; do cp tmp/cas-yardstick/runs/<run-id>/$f.tsv "$ref"/; done
 echo <date>-<rev> > utils/cas-yardstick/reference/CURRENT
 ```
 
