@@ -1,0 +1,59 @@
+import unittest
+
+from casgrafana import overview, checks
+
+
+def tile(title):
+    return next(t for t in overview.tiles() if t["title"] == title)
+
+
+def sql_of(p, ref="A"):
+    return next(t["query"] for t in p["targets"] if t["refId"] == ref)
+
+
+class Tiles(unittest.TestCase):
+    def test_six_tiles_in_order(self):
+        self.assertEqual([t["title"] for t in overview.tiles()],
+                         ["Storage online", "Writes safe", "GC: last success", "Garbage trend", "Integrity", "S3 throttling"])
+
+    def test_storage_tile_counts_missing_hosts(self):
+        sql = sql_of(tile("Storage online"), "A")
+        self.assertIn("FROM system.clusters WHERE cluster = '$cluster'", sql)
+        self.assertIn("uniqExact(host)", sql)
+        self.assertIn("system.cas_mounts", sql)
+        self.assertEqual(tile("Storage online")["interval"], "5m")
+
+    def test_storage_tile_metrics_age_is_red_without_rows(self):
+        sql = sql_of(tile("Storage online"), "B")
+        self.assertIn("dateDiff('second', max(event_time), now()) AS \"Metrics age (s)\"", sql)
+        age = next(o for o in tile("Storage online")["fieldConfig"]["overrides"] if o["matcher"]["options"] == "Metrics age (s)")
+        steps = next(x for x in age["properties"] if x["id"] == "thresholds")["value"]["steps"]
+        self.assertEqual([s["value"] for s in steps], [None, 120, 600])
+
+    def test_gc_tile_counts_deferred_as_success(self):
+        sql = sql_of(tile("GC: last success"), "A")
+        self.assertIn("outcome IN ('Success', 'Deferred')", sql)
+        self.assertIn("/* now */", sql)
+
+    def test_garbage_tile_uses_last_10_success_rounds(self):
+        sql = sql_of(tile("Garbage trend"), "A")
+        self.assertIn("ORDER BY event_time DESC LIMIT 10", sql)
+        self.assertIn("toInt64(entries_condemned) - toInt64(entries_redeleted)", sql)
+        self.assertIn("100 * sum(net) / greatest(sum(cond), 1)", sql)
+
+    def test_s3_errors_tile_excludes_benign_conditional_write_answers(self):
+        sql = sql_of(tile("S3 throttling"), "B")
+        self.assertIn("NOT LIKE '%PreconditionFailed%'", sql)
+        self.assertIn("NOT LIKE '%ConditionalRequestConflict%'", sql)
+        self.assertIn("/ greatest(($__to - $__from) / 3600000, 1)", sql)
+        self.assertIn('AS "S3 errors per hour"', sql)
+
+    def test_every_tile_links_to_drilldown_and_passes_checks(self):
+        d = overview.build()
+        known = {"CASMountLeaseLost", "CASRequestGaveUp", "CASConditionalWriteAttempts", "CASConditionalWriteUnresolved",
+                 "CASRefNeedsRecovery", "S3ReadRequestsThrottling", "S3WriteRequestsThrottling"} | overview.METRICS_USED
+        self.assertEqual([p for p in checks.check_dashboards([d], known, {"CASGCWedgedNamespaces_", "CASGCIsLeader_"}) if "variables" not in p], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

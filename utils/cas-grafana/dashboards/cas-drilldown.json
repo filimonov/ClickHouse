@@ -1,0 +1,165 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "vertamedia-clickhouse-datasource",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "name": "Restart",
+        "target": {
+          "annotation": true,
+          "database": "system",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "event_date",
+          "dateTimeColDataType": "event_time",
+          "dateTimeType": "DATETIME",
+          "extrapolate": false,
+          "format": "table",
+          "intervalFactor": 1,
+          "query": "SELECT toUInt64(event_time) * 1000 AS time, concat('Restart: ', host) AS text, 'restart' AS tags\nFROM (SELECT hostName() AS host, event_time, value,\n             lagInFrame(value, 1) OVER (PARTITION BY hostName() ORDER BY event_time) AS prev\n      FROM clusterAllReplicas('$cluster', system.asynchronous_metric_log)\n      WHERE metric = 'Uptime' AND hostName() IN ($host) AND $timeFilter)\nWHERE prev > value\nSETTINGS skip_unavailable_shards = 1",
+          "rawQuery": "",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": false,
+          "table": "asynchronous_metric_log"
+        }
+      },
+      {
+        "datasource": {
+          "type": "vertamedia-clickhouse-datasource",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "red",
+        "name": "Lease lost",
+        "target": {
+          "annotation": true,
+          "database": "system",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "event_date",
+          "dateTimeColDataType": "event_time",
+          "dateTimeType": "DATETIME",
+          "extrapolate": false,
+          "format": "table",
+          "intervalFactor": 1,
+          "query": "SELECT toUInt64(event_time) * 1000 AS time, concat('Lease lost: ', hostName()) AS text, 'lease' AS tags\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE ProfileEvent_CASMountLeaseLost > 0 AND hostName() IN ($host) AND $timeFilter\nSETTINGS skip_unavailable_shards = 1",
+          "rawQuery": "",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": false,
+          "table": "metric_log"
+        }
+      }
+    ]
+  },
+  "description": "Content-addressed (CAS) storage internals for support engineers and CAS developers.",
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "title": "CAS / Overview",
+      "type": "link",
+      "url": "/d/cas-overview/cas-overview?${__url_time_range}&${__all_variables}"
+    }
+  ],
+  "panels": [],
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "tags": [
+    "cas",
+    "clickhouse"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "query": "vertamedia-clickhouse-datasource",
+        "refresh": 1,
+        "regex": "",
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "vertamedia-clickhouse-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT DISTINCT cluster FROM system.clusters ORDER BY cluster",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Cluster",
+        "multi": false,
+        "name": "cluster",
+        "options": [],
+        "query": "SELECT DISTINCT cluster FROM system.clusters ORDER BY cluster",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "vertamedia-clickhouse-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT DISTINCT hostName() FROM clusterAllReplicas('$cluster', system.one) SETTINGS skip_unavailable_shards = 1",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Host",
+        "multi": true,
+        "name": "host",
+        "options": [],
+        "query": "SELECT DISTINCT hostName() FROM clusterAllReplicas('$cluster', system.one) SETTINGS skip_unavailable_shards = 1",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "vertamedia-clickhouse-datasource",
+          "uid": "${datasource}"
+        },
+        "definition": "SELECT DISTINCT disk_name FROM clusterAllReplicas('$cluster', system.cas_gc_log) WHERE event_date >= today() - 7 ORDER BY disk_name SETTINGS skip_unavailable_shards = 1",
+        "hide": 0,
+        "includeAll": true,
+        "label": "CAS disk",
+        "multi": true,
+        "name": "disk",
+        "options": [],
+        "query": "SELECT DISTINCT disk_name FROM clusterAllReplicas('$cluster', system.cas_gc_log) WHERE event_date >= today() - 7 ORDER BY disk_name SETTINGS skip_unavailable_shards = 1",
+        "refresh": 2,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CAS / Drilldown",
+  "uid": "cas-drilldown",
+  "version": 0
+}

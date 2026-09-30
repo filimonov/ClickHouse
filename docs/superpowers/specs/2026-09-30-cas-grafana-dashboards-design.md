@@ -42,8 +42,10 @@ fault injection is a separate task.
 Rules the queries follow, from audit F25 (`docs/superpowers/reports/2026-09-25-otel-demo-cas-s3-budget-audit.md#f25`):
 
 - `S3ReadRequestsErrors` is never used: on a CAS disk it equals `CASBlobHeadMiss` (HEAD-before-PUT misses).
-- `S3WriteRequestsErrors` is shown only on the S3 board with a description that 412/409 rows are
-  benign; the error signal is `blob_storage_log.error` and throttling counters.
+- `S3WriteRequestsErrors` is shown only on the Drilldown with a description that 412/409 rows are
+  benign; the error signal is `blob_storage_log.error` minus its `PreconditionFailed` (412) and
+  `ConditionalRequestConflict` (409) rows (108 of 112 error rows in a quiet 6 hours on otel.demo), and
+  the throttling counters.
 - `CASGCPendingReclaim_*` and `CASGCLastSuccessAgeSeconds_*` are never used (CAS-1.3, CAS-1.1).
   Backlog trend comes from `CASGCRetiredCondemned − CASGCRetiredRedeleted`; round age from `cas_gc_log`.
 - The `disk` variable excludes `*_cas_cache` wrapper disks, or every `CASGC*` sum doubles.
@@ -74,16 +76,20 @@ Thresholds come from the otel.demo baseline measured on 2026-09-30 (last 24 h un
 rounds every 430 s p50 / 515 s p90; round duration 386 s avg, 214 s p90, 8.8 h max (one round);
 `Unresolved / Attempts` = 0.028%; `GaveUp` = 0; lane wait 193 ms per mutation; 3.07 mutations
 per flush; throttling 0; `S3ListObjects` 0.3/s; `CASMountLeaseLost` 0; week: 1 `gc_fence_out`,
-1 `watermark_renew`, 0 integrity events.
+1 `watermark_renew`, 0 integrity events. Garbage over the week, 10-round windows of
+`net / condemned`: p50 0, p90 0.05, p99 0.58 (the hour after a restart); the sign of a single
+round's `net` is noise (half of all windows are net-positive), so the tile uses the ratio, not a
+count of growing rounds. Real S3 errors (412/409 excluded): 5–33 per day on quiet days, 2,005 on
+2026-09-26 (timeouts).
 
 | Tile | Query | Green | Yellow | Red |
 |---|---|---|---|---|
 | Storage online | `cas_mounts`: hosts with `lifecycle = 'live'` vs all; plus `sum(CASMountLeaseLost)` in range | all live, 0 lost | — | any host not live, or lease lost in range |
 | Writes safe | `sum(CASRequestGaveUp)`, `sum(CASConditionalWriteUnresolved) / sum(CASConditionalWriteAttempts)` | gave up 0, unresolved < 0.1% | unresolved ≥ 0.1% | gave up > 0 |
 | GC: last success | `now() − max(event_time)` of `cas_gc_log` `Finish` with outcome in (`Success`, `Deferred`), per disk | < 30 min | 30 min – 2 h | > 2 h, or last outcome `Error` |
-| Garbage trend | per `Success` round from `cas_gc_log`: `entries_condemned − entries_redeleted`; the tile shows the sum over the last 10 rounds | sum ≤ 0, or positive in fewer than 3 of the last 10 rounds | positive in 3–9 of the last 10 rounds | positive in all of the last 10 rounds |
+| Garbage trend | per `Success` round from `cas_gc_log`: `net = entries_condemned − entries_redeleted`; the tile shows `100 · sum(net) / sum(entries_condemned)` over the last 10 rounds and `sum(net)` | growth ≤ 25% | 25–50% | > 50% |
 | Integrity | count of `cas_log` rows with `event_type` in (`read_missing`, `dangling_access`, `corrupt_dangle`, `corrupt_decode`, `snap_journal_incoherent`, `exception`) + `sum(anomalies)` from `Finish` rows + max `CASGCWedgedNamespaces_*` + `sum(CASRefNeedsRecovery)` | 0 | `anomalies` > 0 only | any other > 0 |
-| S3 throttling | `sum(S3ReadRequestsThrottling + S3WriteRequestsThrottling)`, `countIf(error != '')` from `blob_storage_log` | 0 | > 0 | > 10 per minute sustained 15 min |
+| S3 throttling | `sum(S3ReadRequestsThrottling + S3WriteRequestsThrottling)` per minute; `blob_storage_log` rows with `error != ''` per hour, excluding `PreconditionFailed` (412) and `ConditionalRequestConflict` (409) | 0 throttling, ≤ 5 errors/h | any throttling, or 5–50 errors/h | > 10 throttling/min, or > 50 errors/h |
 
 Rules for every tile:
 
