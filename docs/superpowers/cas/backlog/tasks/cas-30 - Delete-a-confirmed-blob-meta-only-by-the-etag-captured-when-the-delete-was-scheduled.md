@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 20:51'
+updated_date: '2026-09-30 21:59'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -60,5 +60,5 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30 OWNER OK: PR1 = r3 + read-ahead of graduation marker reads via the existing read-ahead pool (window-bounded, hints only for entries the budget admits); requests unchanged, serial-read wall time removed from the round thread. Codex review of r3 running; r4 folds its findings and the read-ahead section.
+2026-09-30 OWNER: residuals L1b/L2 (§10.2) accepted for PR1; the writer rule that closes them (and extdrop) is CAS-334, the next PR.
 <!-- SECTION:NOTES:END -->
