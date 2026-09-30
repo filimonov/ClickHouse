@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 21:59'
+updated_date: '2026-09-30 21:59'
 labels:
   - cas
   - gc
@@ -25,9 +26,9 @@ Fix: the publisher never turns `Condemned` into `Clean`, on both paths of `recon
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Model cfgs ,  and the extdrop cfgs green with the writer rule
-- [ ] #2 Deterministic tests for L1b and L2 (late Clean after graduation) pass; yardstick  and the write path show the republish cost
-- [ ] #3 Own PR to antalya-26.6 after CAS-30 PR1
+- [ ] #1 Own PR to antalya-26.6 after CAS-30 PR1
+- [ ] #2 Model cfgs `pm_g1_late_resolved_stale`, `pm_g1_late_gaveup` and the extdrop cfgs green with the writer rule
+- [ ] #3 Deterministic tests for L1b and L2 (late Clean after graduation) pass; yardstick `dup_content` and the write path show the republish cost
 <!-- AC:END -->
 
 ## Definition of Done
