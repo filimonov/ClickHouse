@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 20:29'
+updated_date: '2026-09-30 20:51'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -60,5 +60,5 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30 OWNER DECISION (final shape of PR1): G1 - remove the in-process confirmation registry, graduation always reads the marker (revert of the request-saving optimization) - plus spec r1's round checks (C1 in the delete job, C3 at the gate) and the re-stamp (C2). No pins, no format change. Spec r3 = r1 without the registry, with r2's schedules, model (returning leader, marker-preservation invariants) and tests, and codex r2's two MAJORs (budget check before the gate's read; rebuild residual stated accurately). V1/V2r/V3 alternatives recorded in CAS-329.
+2026-09-30 OWNER OK: PR1 = r3 + read-ahead of graduation marker reads via the existing read-ahead pool (window-bounded, hints only for entries the budget admits); requests unchanged, serial-read wall time removed from the round thread. Codex review of r3 running; r4 folds its findings and the read-ahead section.
 <!-- SECTION:NOTES:END -->
