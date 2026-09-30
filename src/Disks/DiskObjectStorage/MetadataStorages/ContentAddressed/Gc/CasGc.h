@@ -856,10 +856,11 @@ private:
     /// enumeration alone and no point read can prove it.
     std::optional<std::pair<uint64_t, uint64_t>> newestFoldSealRef();
 
-    /// Read ONE part manifest named by `id`, validate it, and append sign*(+1) blob deltas for each
-    /// blob entry to `deltas`. On sign<0 queue (id -> incarnation) into mf_cleanup. Returns whether a body was
-    /// read+validated: false => ABSENT body (404; the caller decides per the 404 rule). A body that is
-    /// PRESENT but fails refMatchesBody / manifestNamespaceMatches throws CORRUPTED_DATA.
+    /// Fold the part manifest named by `id`: append sign*(+1) blob deltas for each blob entry to
+    /// `deltas`, and on sign<0 queue (id -> incarnation) into mf_cleanup. Returns whether the body was
+    /// folded, from a validated read or from the memo: false => ABSENT body (404; the caller decides per
+    /// the 404 rule). A body that is PRESENT but fails refMatchesBody / manifestNamespaceMatches throws
+    /// CORRUPTED_DATA.
     /// `txn_ordinal` stamps every delta this call pushes with the round-local ordinal of the ref
     /// transaction that emitted it (probe B2 — see `TxnApplyLedger`).
     /// With a `memo`, a body it holds is folded without a read, and a body read here is added to it.

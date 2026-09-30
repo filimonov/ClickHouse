@@ -33,7 +33,8 @@ struct ManifestFold
 /// Bounded by `budget` bytes of charged retained storage, evicting the oldest insert first. The
 /// charge overestimates: per manifest the map node, the etag strings' capacity and 64 B for the
 /// bucket and FIFO slots; per entry its `sizeof` and path capacity; per distinct namespace its node
-/// and capacity, once, since keys share one interned copy.
+/// and capacity, once, since keys share one interned copy. Each retained `Etag` key is the full
+/// manifest key and so holds its own copy of the namespace, charged with the etag's capacity.
 class GcManifestMemo
 {
 public:

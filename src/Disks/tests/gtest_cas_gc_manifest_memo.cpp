@@ -170,7 +170,7 @@ TEST(CASGCManifestMemo, SharedNamespaceIsChargedOnce)
         ASSERT_TRUE(memo.insert(id, ManifestFold{.etag = etagOf(backend, id), .entries = {}}));
     }
     EXPECT_EQ(memo.charged(), after_first + 999 * per_manifest)
-        << "each further manifest pays only its own node and etag, never the namespace again";
+        << "each further manifest pays its node and etag (whose key embeds the namespace), never the interned namespace again";
 }
 
 TEST(CASGCManifestMemo, LongPathsAreChargedByCapacity)
@@ -217,29 +217,28 @@ std::pair<Int64, size_t> allocationAndCharge(size_t entries, size_t path_bytes)
         templates.push_back(foldOf(backend, idOf(namespaces.back(), 1), entries, path_bytes));
     }
 
-    size_t per_fold_charge = 0;
-    {
-        GcManifestMemo probe;
-        probe.insert(idOf(namespaces[0], 1), templates[0]);
-        const size_t one = probe.charged();
-        probe.insert(idOf(namespaces[0], 2), templates[0]);
-        per_fold_charge = probe.charged() - one;
-    }
-
     auto & tracker = DB::CurrentThread::get().memory_tracker;
     DB::CurrentThread::flushUntrackedMemory();
     const Int64 before = tracker.get();
     GcManifestMemo memo;
-    /// A fixed count that charges twice the budget, checked every 1024 inserts, keeps a broken bound
-    /// from allocating without limit.
-    const uint64_t inserts = 2 * GcManifestMemo::kBudgetBytes / per_fold_charge;
-    for (uint64_t seq = 1; seq <= inserts; ++seq)
+    /// Every manifest is charged at least 256 B, so this fixed count charges at least twice the budget.
+    /// The tracker, not the charge under test, stops the fill if the bound is broken.
+    constexpr uint64_t kInserts = 2 * GcManifestMemo::kBudgetBytes / 256;
+    for (uint64_t seq = 1; seq <= kInserts; ++seq)
     {
         const size_t n = seq % kNamespaces;
         /// A copy allocates what a decode hands the memo: a fresh etag key, entry vector and paths.
         ManifestFold fold = templates[n];
         EXPECT_TRUE(memo.insert(idOf(String(namespaces[n]), seq), std::move(fold)));
-        if (seq % 1024 == 0 && memo.charged() > GcManifestMemo::kBudgetBytes)
+        if (seq % 1024 != 0)
+            continue;
+        DB::CurrentThread::flushUntrackedMemory();
+        if (tracker.get() - before > static_cast<Int64>(2 * GcManifestMemo::kBudgetBytes))
+        {
+            ADD_FAILURE() << "allocation " << tracker.get() - before << " passed twice the budget after insert " << seq;
+            break;
+        }
+        if (memo.charged() > GcManifestMemo::kBudgetBytes)
         {
             ADD_FAILURE() << "charge " << memo.charged() << " passed the budget after insert " << seq;
             break;

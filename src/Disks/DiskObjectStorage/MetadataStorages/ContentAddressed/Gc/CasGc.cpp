@@ -1426,16 +1426,13 @@ std::optional<ManifestFold> Gc::readManifestFold(GcReadAhead & reads, const Mani
     const Layout & layout = store->layout();
 
     const String key = layout.manifestKey(id);
-    /// ONE ROUND TRIP PER READ. The GET alone carries the absence signal a HEAD would have carried, so
-    /// the HEAD that used to precede it bought nothing and cost a second serial round trip on the
-    /// hottest read path of the round (one per manifest edge, on every folded log). `nullopt` is the SAME
-    /// absent outcome the missing HEAD used to produce -- record-and-continue, and the caller decides
-    /// what an absent body means for that edge (a missing-body precommit is a barrier; a committed one
+    /// One GET, no HEAD: the GET carries the absence signal. `nullopt` means absent, and the caller
+    /// decides what that means for its edge (a missing-body precommit is a barrier; a committed one
     /// fails closed). Never a throw: a 404 during the fold is an observation, not an error.
     ///
-    /// The bytes may already have been fetched when the log that named this edge was decoded (all of
-    /// that log's edges are hinted together, since one decode names them all). The absence signal, the
-    /// decode and every decision below still happen HERE, in edge order, exactly as they always did.
+    /// The bytes may already have been fetched when the log naming this edge was decoded, since that
+    /// log's edges are hinted together. The take, the decode and the validation still run here, when
+    /// the caller folds the edge.
     const auto got = reads.takeRead(key);
     if (!got)
         return std::nullopt;   /// absent body: caller decides (missing-body precommit OK; committed => fail closed)
