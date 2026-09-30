@@ -6,13 +6,13 @@ Runs seven fixed workload cards on a CAS disk and on two ordinary S3 disks, and 
 # Start the RustFS container the runs use (http://127.0.0.1:19121). `run` does not start it.
 utils/cas-yardstick/rustfs.sh start
 
-# First thing to run after any change to the tool: all cards, all policies, tiny scale. About 8 min.
+# First thing to run after any change to the tool: all cards, all policies, tiny scale. About 3 min.
 python3 utils/cas-yardstick/yardstick.py run --smoke --binary build/programs/clickhouse
 
-# The everyday run: all cards, uncached policies, scale 0.25, one repeat. About 6 min. Recommended for frequent use.
+# The everyday run: all cards, uncached policies, scale 0.25, one repeat. About 2 min. Recommended for frequent use.
 python3 utils/cas-yardstick/yardstick.py run --quick --binary build/programs/clickhouse
 
-# The real measurement: all cards, six policies, 3 repeats (add --compare to check against reference/CURRENT). About 73 min.
+# The real measurement: all cards, six policies, 3 repeats (add --compare to check against reference/CURRENT). About 41 min.
 python3 utils/cas-yardstick/yardstick.py run --binary build/programs/clickhouse
 
 # Remove the container. Its data directory is wiped by the next `start`.
@@ -192,29 +192,29 @@ Accept only a complete run (default cards, `--scale 1`, `--repeats 3`, six polic
 
 ### Current reference
 
-`reference/2026-09-30-a9628dfdedf/`: all seven cards, all six policies, `--scale 1`, 3 repeats, GC on, RustFS 1.0.0-rc.3 on one host (kernel 6.14.0-37), binary `26.6.2.20000.altinityantalya` (`RelWithDebInfo`). No `FAILED` cell, 8 `UNSUPPORTED` rows (capability matrix).
+`reference/2026-09-30-647dbf9dfe9/`: all seven cards, all six policies, `--scale 1`, 3 repeats, GC on, RustFS 1.0.0-rc.3 on one host (kernel 6.14.0-37), binary `26.6.2.20000.altinityantalya` (`RelWithDebInfo`). No `FAILED` cell, 8 `UNSUPPORTED` rows (capability matrix).
 
 ### Run time
 
-Same host and binary as the reference. Wall time is the span between the first and the last file of the run directory. Runs: `--smoke` `20260929T213821Z` (made before `pass_seconds.tsv` existed, so it has no per-pass table), `--quick` `20260929T231106Z`, default `20260929T214729Z` (the reference).
+Same host and binary as the reference. Wall time is the span between the first and the last file of the run directory. Runs: `--smoke` `20260930T055107Z`, `--quick` `20260930T055413Z`, default `20260930T055649Z` (the reference). A `unit_tests_dbms` gate of another worktree ran on the same host during the `--quick` and default runs.
 
 | Run | Scale | Repeats | Passes | Wall |
 |---|---|---|---|---|
-| `--smoke` | 0.01 | 1 | 42 (7 cards x 6 policies) | 469 s |
-| `--quick` | 0.25 | 1 | 21 (7 cards x 3 policies) | 325 s |
-| default (reference) | 1.0 | 3 | 126 | 4392 s |
+| `--smoke` | 0.01 | 1 | 42 (7 cards x 6 policies) | 160 s |
+| `--quick` | 0.25 | 1 | 21 (7 cards x 3 policies) | 133 s |
+| default (reference) | 1.0 | 3 | 126 | 2427 s |
 
 Seconds per pass in the reference, median over 3 repeats (`pass_seconds.tsv`). `0` is an `UNSUPPORTED` pair:
 
 | Card | `cas` | `s3` | `s3plain` | `cas_cached` | `s3_cached` | `s3plain_cached` |
 |---|---:|---:|---:|---:|---:|---:|
-| `cycle` | 11 | 8 | 38 | 11 | 16 | 39 |
-| `wide_insert` | 35 | 36 | 88 | 37 | 49 | 91 |
-| `attach_200` | 47 | 5 | 10 | 48 | 5 | 10 |
-| `mutation` | 55 | 14 | 0 | 58 | 15 | 0 |
-| `lwd_concurrent` | 75 | 30 | 0 | 40 | 25 | 0 |
-| `select_subset` | 51 | 15 | 17 | 51 | 9 | 17 |
-| `dup_content` | 5 | 10 | 8 | 6 | 5 | 15 |
+| `cycle` | 11 | 8 | 38 | 11 | 8 | 39 |
+| `wide_insert` | 54 | 32 | 82 | 44 | 32 | 84 |
+| `attach_200` | 7 | 5 | 10 | 7 | 5 | 10 |
+| `mutation` | 15 | 13 | 0 | 16 | 13 | 0 |
+| `lwd_concurrent` | 31 | 29 | 0 | 25 | 22 | 0 |
+| `select_subset` | 11 | 9 | 17 | 10 | 9 | 16 |
+| `dup_content` | 4 | 5 | 9 | 4 | 5 | 11 |
 
 ### RCA context
 
@@ -224,13 +224,13 @@ Per-cycle API calls of the `cycle` card in the current reference (median over 3 
 
 | Policy | GET | PUT | HEAD | LIST | DELETE | COPY | wall per cycle, cold / hot |
 |---|---|---|---|---|---|---|---|
-| `cas` | 83 | 64 | 5 | 7 | 1 | 0 | 21.9 / 22.1 ms |
-| `s3` | 6 | 31 | 0 | 0 | 2 | 0 | 15.7 / 15.6 ms |
-| `s3plain` | 6 | 44 | 36 | 0 | 67 | 31 | 91.2 / 87.2 ms |
+| `cas` | 83 | 64 | 5 | 7 | 1 | 0 | 21.2 / 21.5 ms |
+| `s3` | 6 | 31 | 0 | 0 | 2 | 0 | 15.7 / 15.5 ms |
+| `s3plain` | 6 | 44 | 36 | 0 | 67 | 31 | 92.8 / 88.0 ms |
 
 Against the RCA numbers:
 
 - **CAS 83 GET, 64 PUT, 7 LIST, 5 HEAD, 1 DELETE:** identical to the RCA, so the request cost of a CAS cycle did not move.
-- **`s3` 6 GET instead of 12:** the RCA plain-S3 process also had a CAS disk registered, which is a likely but unverified cause. PUT (31) matches. The RCA lists 2 DeleteObjects calls, the reference 1.9 (rounded above).
-- **CAS/`s3` wall 1.32x instead of 3.1x:** the window here is 200 cycles and about 4 s, with no GC round overlapping it (`GC rounds: 0`), while the RCA figure comes from 8 x 1000 cycles with GC on. This run does not test the long-window behavior.
+- **`s3` 6 GET instead of 12:** the RCA plain-S3 process also had a CAS disk registered, which is a likely but unverified cause. PUT (31) matches. The RCA lists 2 DeleteObjects calls, the reference 2.04 cold and 1.86 hot (rounded above).
+- **CAS/`s3` wall 1.32x (1.17..1.35 over the 3 repeats) instead of 3.1x:** the window here is 200 cycles and about 4 s, with no GC round overlapping it (`gc_rounds` 0 in every repeat), while the RCA figure comes from 8 x 1000 cycles with GC on. This run does not test the long-window behavior.
 - **`s3plain` needs 44 PUT, 36 HEAD, 67 DELETE and 31 COPY per cycle:** the RCA has no figure for this disk. Its wall time is the highest of the three.
