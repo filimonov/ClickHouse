@@ -33,6 +33,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event DiskS3ListObjects;
     extern const Event CASConditionalWriteAttempts;
     extern const Event CASConditionalWriteCommitted;
     extern const Event CASConditionalWriteDefiniteFailure;
@@ -1091,6 +1092,7 @@ Backend::RawListPage ObjectStorageBackend::listUnder(
     const std::optional<String> start_after = cursor.empty()
         ? std::nullopt
         : std::optional<String>(cursor);
+    const auto s3_lists_before = ProfileEvents::global_counters[ProfileEvents::DiskS3ListObjects].load(std::memory_order_relaxed);
 
     /// The FIRST page the caller asked for is the page the store is asked for: a request that
     /// enumerates the storage's default page (a thousand keys) to answer a caller that wanted a
@@ -1134,6 +1136,14 @@ Backend::RawListPage ObjectStorageBackend::listUnder(
         page.keys.push_back(std::move(lk));
     }
 
+    /// Feeds the LIST-per-page measurement: the `DiskS3ListObjects` delta is process-wide and includes the iterator's prefetch.
+    const std::string_view trimmed_prefix = std::string_view(prefix).substr(0, prefix.find_last_not_of('/') + 1);
+    const size_t last_slash = trimmed_prefix.rfind('/');
+    const size_t prev_slash = last_slash == std::string_view::npos || last_slash == 0 ? std::string_view::npos : trimmed_prefix.rfind('/', last_slash - 1);
+    const std::string_view prefix_tail = prev_slash == std::string_view::npos ? trimmed_prefix : trimmed_prefix.substr(prev_slash + 1);
+    LOG_TRACE(getLogger("CasObjectStorageBackend"), "listUnder prefix={}, cursor_set={}, limit={}, keys={}, has_next={}, s3_list_requests={}",
+        prefix_tail, !cursor.empty(), limit, page.keys.size(), !page.next_cursor.empty(),
+        ProfileEvents::global_counters[ProfileEvents::DiskS3ListObjects].load(std::memory_order_relaxed) - s3_lists_before);
     return page;
 }
 

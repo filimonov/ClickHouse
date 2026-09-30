@@ -1,0 +1,38 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <size>4G</size>
+    </logger>
+    <storage_configuration>
+        <disks>
+            <disk_cas_gc_s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
+                <!-- Phase 0 (mount safety): required, validated layout-subtree identity. Single server. -->
+                <cas_server_root_id>itest-content-addressed-gc-list-pages</cas_server_root_id>
+                <!-- RustFS (not MinIO) enforces the conditional-PUT/DELETE semantics the CA mount
+                     capability probe requires (CasProbe.cpp step 6): MinIO OSS silently honors a
+                     mismatched-token DELETE instead of rejecting it, so the fail-closed probe
+                     aborted server startup on MinIO (see PR#2073 CI triage). -->
+                <endpoint>http://rustfs1:11121/test/cas_gc_list_pages/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <!-- Background GC on, but the interval is long: rounds are driven by SYSTEM CAS GC RUN. -->
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>86400</cas_gc_interval_sec>
+            </disk_cas_gc_s3>
+        </disks>
+        <policies>
+            <cas_gc_list_pages>
+                <volumes>
+                    <main>
+                        <disk>disk_cas_gc_s3</disk>
+                    </main>
+                </volumes>
+            </cas_gc_list_pages>
+        </policies>
+    </storage_configuration>
+</clickhouse>
