@@ -14,6 +14,7 @@ mentioned in them are scratch and may be gone.
 | `05-memo-vs-deposed-leader-adjudication.md` | manifest memo against a deposed leader: blob deletes safe, `.meta` delete jobs reachable |
 | `06-list-requests-per-page.md` | LIST requests per logical listing page and their attribution |
 | `07-sentinel-probe-flake-rca.md` | boundary mismatch in `probeSentinel` (flaky gtest) |
+| `08-janitor-batches-on-long-streams-and-memo-reuse-distance.md` | janitor batch deletes on a dropped table with 7k and 20k ref-stream keys; reuse distance of manifest bodies and a last-K cache simulation |
 
 Related: `docs/superpowers/reports/2026-09-30-cas-30-stale-meta-delete-adjudication.md`,
 `docs/superpowers/reports/2026-09-30-soak-s11-dryrun-subset-red-rca.md`.

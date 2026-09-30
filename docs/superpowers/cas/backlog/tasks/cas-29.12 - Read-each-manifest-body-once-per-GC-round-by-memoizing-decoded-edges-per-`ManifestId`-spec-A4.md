@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-30 13:34'
+updated_date: '2026-09-30 15:57'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -79,4 +79,7 @@ Safety (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/05-memo-vs-depo
 Owner's rule (2026-09-30): no code complexity without proven value. Open before acceptance: (1) a reuse-distance trace to see whether an LRU of the last K bodies without byte accounting keeps >= 90% of the hits (measurement in progress); (2) proof of value on a realistic GC-backlog scenario (CAS-321 subtask for the yardstick card).
 
 2026-09-30, estimate for the real stand. otel.demo (`chi-otel-otel-0-0-0`, 26.6.4.20001.altinityantalya), last 24 h before 2026-09-30 13:30 UTC, from `system.cas_gc_log` / `system.cas_log`: `fold_ref_intake` is 40.5% of round time and reads 4,645 manifest bodies per round (984k per day). Bucketing the writers' `build_publish` / `ref_repoint` / `ref_drop` events of 12 hours by the `gc_fold_begin` times (104 windows) gives 606k owner edges on 347k distinct (manifest, window) pairs: an estimated memo hit rate of 0.43 (a manifest is named once in 174k cases, twice in 86k, three times in 87k). That would be about 2,000 fewer GETs per round; if intake time is proportional to its requests, about 13 s of a 109-s round (DERIVED, not measured; the window assignment by event time is approximate and counts 25% more edges than `CASRefEmittedEdges`).
+
+2026-09-30, could a simpler cache do (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/08-janitor-batches-on-long-streams-and-memo-reuse-distance.md`): a trace of every manifest-body take in ca-soak S11 ci (validated: equals `CASRefManifestBodyMemoHits` in 25 of 25 rounds; the memo never evicted) gives a reuse distance of p50 181-230, p90 367-376 distinct manifests, max 10,911 with long rounds. A cache of the last K bodies keeps 28% of the hits at K = 8, 47% at K = 128, 73% at K = 256, 97-99% at K = 384. So a small fixed cache does not replace the memo; K of about 400-1000 does, and wide parts then need an entry cap, which is accounting again.
+More important, 2026-09-30: most repeated manifest reads come from the part-removal flow (CAS-83): per removed part the rename and the unlink batch publish two manifests that are each read twice within a second. CAS-83 removes those manifests and their edges at the source. Re-measure the hit potential after CAS-83 before spending anything more here.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-30 13:34'
+updated_date: '2026-09-30 15:57'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -77,4 +77,10 @@ Measured only on tiny dead lives (ca-soak S30, `docs/superpowers/reports/2026-09
 Open before acceptance (owner's rule: no complexity without proven value): an A/B on DROP of a table with a 7k-20k-key ref stream, with and without latency (measurement in progress).
 
 2026-09-30, the real stand. otel.demo (`chi-otel-otel-0-0-0`, 26.6.4.20001.altinityantalya), last 24 h before 2026-09-30 13:30 UTC, from `system.cas_gc_log` / `system.cas_log`: `janitor_deleted` = 0 in every round (`janitor_keys` 952 listed per round), `namespace_cleanup` is 0.4% of round time. The batch deletes change nothing on this stand; their value can only show on drops of tables with long ref streams.
+
+2026-09-30, A/B on a dropped table with a long ref stream (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/08-janitor-batches-on-long-streams-and-memo-reuse-distance.md`; RustFS, base vs the branch):
+- Janitor DELETE requests: 2,333 -> 3 at 7k stream keys, 15,913 -> 16 at 20k (one request per 1,000-key page instead of one per key).
+- `namespace_cleanup` phase time: 2.4-2.6 s -> 1.0-1.2 s at 7k; 16.8 s -> 7.1-9.4 s at 20k. With 20 ms added per request (7k, one run per side): 60.8 s -> 5.3 s, a janitor round 26-28 s -> 4.2-4.7 s.
+- Drain WALL time does not change: 112 s vs 112 s at 7k, 1,307 s vs 1,307 s at 20k. The janitor handles one 1,000-key page per authoritative round in both binaries, and such rounds come twice in a row and then about every 9th round (read from `cas_gc_log`, not traced in the code).
+Reading: the batches cut requests and the latency of a janitor round; the drain of a dropped table is bounded by the janitor's pacing, which is the second half of this task (`gc_janitor_pages_per_round`). The two halves only pay off together: with batches a round can take many pages for one request each.
 <!-- SECTION:NOTES:END -->
