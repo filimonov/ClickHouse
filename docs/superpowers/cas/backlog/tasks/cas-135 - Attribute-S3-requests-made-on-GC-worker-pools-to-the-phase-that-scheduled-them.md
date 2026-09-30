@@ -4,7 +4,7 @@ title: Attribute S3 requests made on GC worker pools to the phase that scheduled
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-30 08:20'
+updated_date: '2026-09-30 08:22'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -65,4 +65,19 @@ More evidence (2026-09-30), and a third off-thread source the description does n
 - Since https://github.com/Altinity/ClickHouse/pull/2351 the HEAD read-ahead and the parallel deletes run on the round's `io_pool`, so more of a round's requests are off the round thread than when this task was written.
 The header comment of `GcPhaseRecord` (`Gc/CasGc.h`) promises that `ProfileEvents['S3ListObjects']` on a `Phase` row answers which phase burns the LIST budget; today it cannot.
 Fix shape to consider: run the round under its own `ThreadGroup`, attach every pool job to it (`ThreadGroupSwitcher`; `threadPoolCallbackRunner` already carries the caller's group), and diff the group's counters instead of the thread's.
+
+Site inventory at `cas/gc-request-cuts` @27436f2ae8c (antalya-26.6 + PR #2351), verified 2026-09-30. Paths under `src/Disks/DiskObjectStorage/`.
+Requests that leave the round thread:
+- LIST: `ObjectStorages/ObjectStorageIteratorAsync.cpp:19-20,97`. Every batch and its prefetch run on the iterator's own one-thread `list_objects_pool` through `threadPoolCallbackRunnerUnsafe`. Reached from `ObjectStorageBackend::listUnder` (`MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.cpp`), so every listing phase is affected: `defer_decision`, `namespace_cleanup`, `ref_object_cleanup`, `orphan_sweep`.
+- HEAD and manifest GET read-ahead: `Gc/CasGcReadAhead.cpp:51`, plain `pool.scheduleOrThrowOnError` on `io_pool` (users: `Gc/CasGc.cpp:1878`, `:4294`).
+- Parallel blob redelete: `Gc/CasGc.cpp:519-534`, `ThreadPoolCallbackRunnerLocal` on `io_pool`.
+- Orphan manifest sweep reads: `Gc/CasGc.cpp:3510` passes `io_pool` to `CasOrphanManifestSweep`.
+- Meta writes: `Gc/CasGcMetaWriter.cpp:133`, plain `pool.scheduleOrThrowOnError` on `meta_pool`.
+The gap is documented in the code as a known limit (`Gc/CasGcPhaseTimer.h:22`, `Gc/CasGc.cpp:1093`, `:2298`), while `GcPhaseRecord`'s comment in `Gc/CasGc.h` still promises per-phase `S3ListObjects`.
+Facts for the fix:
+- The scheduled round runs on a `ThreadFromGlobalPool` with no `ThreadGroup` (no `ThreadGroup` use under `Gc/`); `SYSTEM CAS GC RUN` runs on the query thread and has the query's group.
+- `threadPoolCallbackRunner*` captures `getCurrentThreadGroup` and switches the worker to it (`Common/threadPoolCallbackRunner.h:33-37`), so the LIST pool and the redelete runner follow a group once the round has one. The two plain `scheduleOrThrowOnError` sites need an explicit `ThreadGroupSwitcher`.
+- Attaching workers to a group moves their events to the group's counters, not to the round thread's. The phase timer and the `Finish` row must then diff the group's counters; `CurrentThread::getProfileEvents` and a thread-level `ProfileEventsScope` stay blind to workers.
+- Concurrent rounds of different disks need separate groups, or one round's row takes another's requests.
+What stays correct today: counters incremented on the round thread (all `CAS*` take-site counters, synchronous GET/PUT) and the semantic `metrics` map.
 <!-- SECTION:NOTES:END -->
