@@ -25,7 +25,7 @@ utils/cas-yardstick/rustfs.sh stop
 
 - Docker, with the pinned images pulled on first use: `rustfs/rustfs:1.0.0-rc.3` and `minio/mc:RELEASE.2025-04-16T18-13-26Z` (see `rustfs.sh`).
 - A `clickhouse` binary with CAS disks (`metadata_type=cas`) and the `system.cas_gc_log` table.
-- Ports from `--port-base` (19700) for the servers and 19121 for RustFS.
+- Ports from `--port-base` (19700) for the servers and 19121 for RustFS. The RustFS port is fixed: the runner and `rustfs.sh` both use 19121.
 - `rustfs.sh start [--data DIR]` keeps its data in `<repo>/tmp/cas-yardstick/rustfs-data/` by default and refuses a non-empty directory it did not create.
 - `--endpoint URL` points the servers at another running store instead of the `rustfs.sh` container. It requires `--keep-prefix`, because prefix removal only reaches the `rustfs.sh` container.
 
