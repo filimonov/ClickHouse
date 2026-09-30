@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-09-30 20:57'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -57,7 +57,5 @@ Provenance: BACKLOG/performance.md#cas-connection-churn-spike-redo; roadmap §2 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-First recorded: 2026-09-26 (597753102a9, by 'cas-connection-churn-spike-redo')
-
-Issue #2243's last comment asks whether to backport upstream https://github.com/ClickHouse/ClickHouse/pull/119078 (`isStoreLimitReached` makes the pool open a fresh socket per request once its store limit is crossed) and whether the keep-alive settings stay after it. The #2332 repro measured 58 pooled connections against a store limit of 10,000, so it did not fence that run; the redo should record whether the limit is crossed.
+2026-09-30: cas_selects regression red on PRs #2452 and #2455 (and base antalya-26.6 at 66a2ea5c, PR #2440): 20 tests under selects/final/force/concurrent fail with 'mount lease not held ... TRANSIENT'; server log has EADDRNOTAVAIL on S3 PUTs to minio 2.5k-4k times, manifest PUT retries exhausted, CasMountLeaseRenewer fences the lease, remount fails at pool_identity_probe. Same port-exhaustion class. RCA: session scratch tmp/ci-cas-selects/rca.md. Intermittent on base (0 failures at 61d24118).
 <!-- SECTION:NOTES:END -->
