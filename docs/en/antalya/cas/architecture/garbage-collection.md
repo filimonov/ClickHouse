@@ -359,10 +359,10 @@ for a removal records the stored `Etag` for phase 15, which deletes the body by 
   a body that fails validation throws as without the memo.
 - **Bound:** 64 MiB of charged storage per fold, oldest insert evicted first. The charge covers the
   map and list nodes, the `Etag` strings, every entry and its path, each namespace once, and the
-  two hash tables' bucket arrays as measured, which eviction does not shrink. The charge
-  overestimates the allocation, so the memo holds at most 64 MiB. A manifest whose own charge
-  exceeds the budget is folded without being stored. An evicted or oversized manifest is read again
-  on its next edge.
+  two hash tables' bucket arrays as measured, which eviction does not shrink. Allocator rounding is
+  not charged: the real allocation stays within 1.25 times the charge, so a fold's memo holds at
+  most about 80 MiB (64 MiB × 1.25). A manifest whose own charge exceeds the budget is folded
+  without being stored. An evicted or oversized manifest is read again on its next edge.
 - **Read-ahead:** the hint loop skips a manifest the memo holds. If an eviction lands between the
   skip and the take, the take reads inline: one `CASGCReadAheadMiss` and one `GET`.
 

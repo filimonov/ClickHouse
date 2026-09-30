@@ -30,8 +30,9 @@ struct ManifestFold
 /// only while no folded body is deleted during the fold, so an instance must not outlive its fold.
 /// Absence is never stored: only `insert` of a validated body adds an entry.
 ///
-/// Bounded by `budget` bytes of charged retained storage, evicting the oldest insert first. The
-/// charge overestimates: per manifest the map and FIFO nodes and the etag strings' capacity; per
+/// Bounded by `budget` bytes of charged retained storage, evicting the oldest insert first. Real
+/// allocation stays within 1.25 times the charge (allocator rounding is not charged). The charge
+/// counts: per manifest the map and FIFO nodes and the etag strings' capacity; per
 /// entry its `sizeof` and path capacity; per distinct namespace its node and capacity, once, since
 /// keys share one interned copy; and the hash tables' bucket arrays as they are, since eviction does
 /// not shrink them. Each retained `Etag` key is the full manifest key and so holds its own copy of
