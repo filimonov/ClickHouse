@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 08:47'
+updated_date: '2026-09-30 13:23'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -68,4 +68,6 @@ Second independent confirmation, 2026-09-30 (final review of `cas/gc-request-cut
 - Fix variant proposed there, different from the etag variant above: pass `RetiredEntry::condemn_round` to the job and delete only a `Condemned` meta whose `condemn_round` is not newer; and make `writeCondemnedMeta` re-stamp an already-`Condemned` meta of an older round, which closes a double-failure case where the old generation's marker object survives and ends up guarding the new one. Round numbers only increase. No format change, no extra request on the normal path. Compare with the captured-etag variant before choosing.
 - The model `docs/superpowers/models/CaGcCondemnMarkerGate.tla` cannot see the schedule: `GSettleRedelete` deletes body and meta atomically. Split it and add an unfenced `GMetaDeleteJob` action.
 - The safety argument of spec `2026-09-29-cas-gc-request-cuts-design.md` §2 (carried `marker_confirmed`) assumes the premise this defect breaks; that change must not ship before this fix.
+
+2026-09-30, one more path to the stale job (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/05-memo-vs-deposed-leader-adjudication.md`): on antalya-26.6 an absent manifest body is an anomaly that sets `suppress_destructive` for the whole round, so a deposed leader whose successor deleted a body runs no deletes. With the manifest memo (CAS-29.12) a hit replaces the absent read, the round is not suppressed, and the deposed leader can reach up to `gc_round_redelete_budget` `deleteConfirmedMeta` jobs. The memo must not ship before this fix, or it needs a leadership re-check after the fold.
 <!-- SECTION:NOTES:END -->

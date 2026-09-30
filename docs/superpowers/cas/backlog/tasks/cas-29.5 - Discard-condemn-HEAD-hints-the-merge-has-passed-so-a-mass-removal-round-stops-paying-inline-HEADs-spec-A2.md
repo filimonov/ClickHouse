@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-09-30 13:23'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -24,7 +24,7 @@ documentation:
     docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md#a2-pinned-head-window
   - docs/superpowers/cas/2026-09-04-gcs-soak-15min.md
 parent_task_id: CAS-29
-priority: high
+priority: low
 type: bug
 ordinal: 111000
 ---
@@ -63,4 +63,9 @@ Provenance: BACKLOG/gc.md#gc-condemn-head-read-ahead-pinned-window (task part an
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (afbff0a95d3, by 'gc-condemn-head-read-ahead-pinned-window')
+
+2026-09-30: implemented on the branch (e691f7d7c13, 091f93a5422, 3ecbc8d541b), measured, removed (aa51587b5c1). Rejected by measurement; priority lowered. Branch `cas/gc-request-cuts` (worktree `gc-request-cuts`, base antalya-26.6 @e2dd0f5d343, HEAD 1edf28f2a9a on 2026-09-30; not pushed, no PR).
+- GC round every 10 s (ca-soak S11 ci): read-ahead misses 48 -> 48, HEAD requests within the run-to-run spread.
+- One round per 300 s: the rule RAISES the HEAD requests a round issues by 15-34% of takes (totals 21063 / 19532 without it, 25443 / 24319 with it, about +4.4k per run); about 3.6-4.1k inline HEADs move to read-ahead; `fold_reduce` -5% without latency, inside the spread with 20 ms per request. Source: `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/04-leak-verdict-rca-and-head-window.md`, `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/03-long-rounds-and-latency.md`.
+- Reopen only with a workload where inline HEADs dominate a round, and with a rule that does not hint candidates it then discards.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-09-30 13:23'
 labels:
   - 'area:gc'
   - 'complexity:trivial'
@@ -15,7 +15,8 @@ labels:
   - 'origin:otel-demo-audit'
   - 'origin:canary'
 milestone: m-1
-dependencies: []
+dependencies:
+  - CAS-30
 references:
   - CA/Gc/CasBlobInDegree.cpp
   - 'https://github.com/Altinity/ClickHouse/issues/2429'
@@ -66,4 +67,9 @@ u03-gc-c merged audit F3 here (no separate A0 task was created).
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `CasBlobInDegree` is 2026-07-01 (c7d94e51817); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-09-30: implemented on the branch (4e177f6adb4, a3e10126c45), then removed from it (c4fdec53a23). Branch `cas/gc-request-cuts` (worktree `gc-request-cuts`, base antalya-26.6 @e2dd0f5d343, HEAD 1edf28f2a9a on 2026-09-30; not pushed, no PR).
+- The safety argument of spec `2026-09-29-cas-gc-request-cuts-design.md` §2 needs 'a marker leaves Condemned only after its condemned token is deleted or displaced'. CAS-30 breaks that premise (`docs/superpowers/reports/2026-09-30-cas-30-stale-meta-delete-adjudication.md`), so a confirmation must not outlive the process that made it until CAS-30 is fixed. Hence the dependency.
+- No stand run reached the change: it needs a restart or a leader change while rows are carried (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/01-before-after-10s-rounds.md`, T3). Its value is unmeasured; do not re-add it without a scenario that shows one.
+- The model `docs/superpowers/models/CaGcCondemnMarkerGate.tla` was extended for it (c9c4fa54bf0, e44bbef587e) but deletes body and meta atomically, so it cannot see the CAS-30 schedule.
 <!-- SECTION:NOTES:END -->

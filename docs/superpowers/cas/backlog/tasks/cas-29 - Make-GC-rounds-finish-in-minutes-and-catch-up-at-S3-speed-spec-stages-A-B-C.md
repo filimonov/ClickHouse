@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-26 14:36'
+updated_date: '2026-09-30 13:23'
 labels:
   - 'area:gc'
   - 'complexity:epic'
@@ -68,4 +68,12 @@ A single fold round's time grew with pool size: 87 ms at 400 parts (S03), 92.6 s
 Consequences observed: with `gc_interval_sec=10` rounds ran back to back, and `settle_fsck` could not stabilise because each round bulk-mutated the pool. Correctness held (`dangling=0`).
 The idle and small-delta case was fixed by the defer round (436714d80f0..3cba4f812f8, `shouldDeferRound` at `CA/Gc/CasGc.cpp:297`). The large-delta case is what stages B and C target.
 Suggested second acceptance probe beside otel.demo: S05 (10,000 tables) and S08 (100,000 parts) at `--scale full`, with per-round duration recorded in `RUN_HISTORY.md`.
+
+2026-09-30, where a GC round spends its time (ca-soak S11 ci, base binary, `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/03-long-rounds-and-latency.md`), shares of `fold_ref_intake` / `fold_reduce` / `defer_decision` / `ref_object_cleanup` / `manifest_deletes` / `namespace_cleanup`:
+- round every 10 s, local RustFS: 12 / 12 / 12 / 43 / 14 / 4 %;
+- one round per 300 s, local RustFS: 8-10 / 5 / 57-58 / 12 / 13 / 2 %;
+- one round per 300 s with 20 ms per request (dev scale): 73-74 / 14-15 / the rest 1-3 % each.
+The first slice (spec `2026-09-29-cas-gc-request-cuts-design.md`: A0, A2, A4, batch half of B4, LIST measurement) was chosen by request counts from the otel.demo audit, not by time share. Outcome: A0 removed (blocked by CAS-30, CAS-29.3), A2 rejected by measurement (CAS-29.5), A4 and B4 implemented but not accepted (CAS-29.12, CAS-29.9), LIST measured (CAS-29.13). Nothing merged.
+Owner's rule for every further stage: no code complexity without proven value; prove it on a scenario that reproduces a GC backlog with store latency before building.
+Reports: `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/README.md`.
 <!-- SECTION:NOTES:END -->

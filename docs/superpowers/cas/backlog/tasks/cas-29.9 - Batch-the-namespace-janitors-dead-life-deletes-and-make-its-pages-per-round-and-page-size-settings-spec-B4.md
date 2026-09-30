@@ -3,10 +3,10 @@ id: CAS-29.9
 title: >-
   Batch the namespace janitor's dead-life deletes and make its pages per round
   and page size settings (spec B4)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-09-30 13:23'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -71,4 +71,8 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-034')
 
 2031-triage CAS-034: label added; the description already names the id.
+
+2026-09-30: the batch-delete half is implemented on the branch (37afe9138fb, 2a71ba3dd8f, bc2e9831a62; about 175 lines in `Gc/CasNamespaceJanitor.{h,cpp}` and `Formats/CasLayout.h`); the settings half is not started. Branch `cas/gc-request-cuts` (worktree `gc-request-cuts`, base antalya-26.6 @e2dd0f5d343, HEAD 1edf28f2a9a on 2026-09-30; not pushed, no PR). NOT accepted yet.
+Measured only on tiny dead lives (ca-soak S30, `docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/01-before-after-10s-rounds.md` T2): DELETE requests for 372-430 janitor keys 383 / 395 / 378 -> 70 / 68 / 68 / 69, about 6 keys per batch; of the remaining requests 8-10 are batches and about 60 are per-key exact-token deletes of `_ckpt` / `_files` (see CAS-284.5). Janitor phase time 430 / 494 / 471 ms -> 978 / 338 / 319 / 317 ms: one outlier, not established.
+Open before acceptance (owner's rule: no complexity without proven value): an A/B on DROP of a table with a 7k-20k-key ref stream, with and without latency (measurement in progress).
 <!-- SECTION:NOTES:END -->

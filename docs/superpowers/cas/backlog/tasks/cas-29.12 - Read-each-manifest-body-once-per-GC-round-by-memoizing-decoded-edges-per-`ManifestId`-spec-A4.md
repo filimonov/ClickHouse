@@ -3,10 +3,10 @@ id: CAS-29.12
 title: >-
   Read each manifest body once per GC round by memoizing decoded edges per
   `ManifestId` (spec A4)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-09-30 13:23'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -68,4 +68,13 @@ Provenance: BACKLOG/gc.md#otel-demo-s3-budget-audit-2026-09-25 (A4 = F4). The re
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-25 (2aee871df0a, by 'audit F4')
+
+2026-09-30: implemented on the branch as `GcManifestMemo` (`Gc/CasGcManifestMemo.{h,cpp}` + hunks in `Gc/CasGc.cpp`, about 350 lines without tests). Branch `cas/gc-request-cuts` (worktree `gc-request-cuts`, base antalya-26.6 @e2dd0f5d343, HEAD 1edf28f2a9a on 2026-09-30; not pushed, no PR). NOT accepted yet.
+Measured (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/01..03`):
+- Manifest body GETs per 1000 folded owner edges: 1000 -> 691 (677..705) with 10-s rounds; 611-636 with one round per 300 s. No manifest read is fetched and discarded, so the GET saving equals the memo hits.
+- Hit rate 0.31 (10-s rounds), 0.34-0.38 (long rounds): below the 0.5 the audit expected.
+- Time: on local RustFS the whole round does not move outside the spread. With 20 ms per request (S11 dev, n=2 per side) the round is 54.0 s -> 41.7 s (-23%); `fold_ref_intake` is 73-74% of that round.
+Cost: a byte-accounted cache (interned namespaces, two hash tables, a FIFO list, two eviction loops), up to about 80 MiB per fold.
+Safety (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/05-memo-vs-deposed-leader-adjudication.md`): blob deletes stay safe; in a leader overlap a deposed leader's round is no longer suppressed by the absent-body anomaly and can reach `deleteConfirmedMeta` jobs, which widens CAS-30. Fix CAS-30 first, or re-check leadership after the fold.
+Owner's rule (2026-09-30): no code complexity without proven value. Open before acceptance: (1) a reuse-distance trace to see whether an LRU of the last K bodies without byte accounting keeps >= 90% of the hits (measurement in progress); (2) proof of value on a realistic GC-backlog scenario (CAS-321 subtask for the yardstick card).
 <!-- SECTION:NOTES:END -->
