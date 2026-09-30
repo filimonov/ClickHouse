@@ -55,5 +55,23 @@ class Tiles(unittest.TestCase):
         self.assertEqual([p for p in checks.check_dashboards([d], known, {"CASGCWedgedNamespaces_", "CASGCIsLeader_"}) if "variables" not in p], [])
 
 
+class Rows(unittest.TestCase):
+    def test_rows_present_and_expanded(self):
+        rows = overview.rows()
+        self.assertEqual([r["title"] for r in rows], ["Needs attention", "Storage and writes", "Garbage collection", "S3 requests"])
+        self.assertTrue(all(r["collapsed"] is False for r in rows))
+
+    def test_needs_attention_unions_three_sources(self):
+        sql = overview.rows()[0]["panels"][0]["targets"][0]["query"]
+        self.assertEqual(sql.count("UNION ALL"), 3)
+        for needle in ("system.cas_log", "system.cas_gc_log", "outcome IN ('Error', 'Aborted', 'Stopped')", "gc_fence_out", "ORDER BY \"Time\" DESC LIMIT 100"):
+            self.assertIn(needle, sql)
+
+    def test_insert_delay_is_wait_per_mutation(self):
+        p = next(p for r in overview.rows() for p in r["panels"] if p["title"] == "Insert delay caused by storage (ms per operation)")
+        self.assertIn("sum(ProfileEvent_CASRefQueueWaitMicroseconds) / greatest(sum(ProfileEvent_CASRefBatchedMutations), 1) / 1000", p["targets"][0]["query"])
+        self.assertEqual(p["interval"], "5m")
+
+
 if __name__ == "__main__":
     unittest.main()

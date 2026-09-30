@@ -163,8 +163,109 @@ def tiles() -> list:
     return [tile_storage(), tile_writes(), tile_gc(), tile_garbage(), tile_integrity(), tile_s3()]
 
 
+NEEDS_ATTENTION_SQL = f"""SELECT event_time AS "Time", host AS "Host", what AS "What happened", detail AS "Details"
+FROM (
+    SELECT event_time, hostName() AS host, concat('Integrity: ', toString(event_type)) AS what,
+           concat(namespace, ' ', ref_name, ' ', toString(reason)) AS detail
+    FROM clusterAllReplicas('$cluster', system.cas_log)
+    WHERE disk_name IN ($disk) AND event_type IN {INTEGRITY_EVENTS} AND $timeFilter
+    UNION ALL
+    SELECT event_time, hostName() AS host, concat('GC round ', toString(round), ': ', toString(outcome)) AS what, error AS detail
+    FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+    WHERE disk_name IN ($disk) AND event_type = 'Finish' AND outcome IN ('Error', 'Aborted', 'Stopped') AND $timeFilter
+    UNION ALL
+    SELECT event_time, hostName() AS host, concat('Storage lease: ', toString(event_type), ' ', toString(outcome)) AS what,
+           concat(toString(reason), ' ', toString(detail)) AS detail
+    FROM clusterAllReplicas('$cluster', system.cas_log)
+    WHERE disk_name IN ($disk) AND event_type IN ('mount_remount', 'watermark_renew') AND outcome = 'failed' AND $timeFilter
+    UNION ALL
+    SELECT event_time, hostName() AS host, 'GC fenced out an expired host' AS what, concat(toString(reason), ' ', toString(detail)) AS detail
+    FROM clusterAllReplicas('$cluster', system.cas_log)
+    WHERE disk_name IN ($disk) AND event_type = 'gc_fence_out' AND $timeFilter
+)
+ORDER BY "Time" DESC LIMIT 100
+{SETTINGS}"""
+
+
 def rows() -> list:
-    return []
+    attention = P.table(
+        "Needs attention",
+        "Recent events that need a person: integrity findings, garbage-collection rounds that failed or were aborted, "
+        "failed storage-lease renewals or reconnects, and hosts fenced out of the pool. Empty is good. "
+        "What to do: read the Details column; the same events appear with full context on the Drilldown.",
+        NEEDS_ATTENTION_SQL, h=8)
+    lease = P.metric_ts(
+        "Storage lease renewals per second",
+        "Each host renews its write permission every 10 s. Retries and recoveries mean the storage answered slowly; "
+        "Lost means a host was cut off and had to reconnect.",
+        {"Attempts": P.r(_m("CASMountRenewalAttempts")), "Retries": P.r(_m("CASMountRenewalRetries")),
+         "Recovered": P.r(_m("CASMountRenewalRecovered")), "Lost": P.r(_m("CASMountLeaseLost"))}, unit="ops")
+    writes = P.metric_ts(
+        "Writes: committed vs unresolved per second",
+        "Committed: writes the storage confirmed. Unresolved: writes whose confirmation was lost and had to be re-checked "
+        "by reading back; normally a tiny fraction of committed.",
+        {"Committed": P.r(_m("CASConditionalWriteCommitted")), "Unresolved": P.r(_m("CASConditionalWriteUnresolved"))}, unit="ops")
+    delay = P.metric_ts(
+        "Insert delay caused by storage (ms per operation)",
+        "Average time an INSERT, merge or delete waited for the shared storage's write queue. About 200 ms is normal on "
+        "otel.demo; a sustained rise slows every INSERT.",
+        {"Wait per operation": f"sum(ProfileEvent_{_m('CASRefQueueWaitMicroseconds')}) / greatest(sum(ProfileEvent_{_m('CASRefBatchedMutations')}), 1) / 1000"},
+        unit="ms")
+    rounds = P.raw_ts(
+        "GC rounds per 30 minutes, by outcome",
+        "How many garbage-collection rounds finished, colored by outcome. Success and Deferred are healthy (Deferred = "
+        "nothing to do). Error, Aborted or Stopped bars need a look at Needs attention.",
+        f"""SELECT $timeSeries, toString(outcome) AS outcome, count()
+FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter
+GROUP BY t, outcome ORDER BY t
+{SETTINGS}""", unit="short", stack=True, draw="bars", interval="30m", w=6)
+    duration = P.raw_ts(
+        "GC round duration",
+        "Wall-clock time of each finished round. Rounds take a few minutes on otel.demo; a long round after a large "
+        "deletion is normal, a round that never finishes is not.",
+        f"""SELECT toUInt64(event_time) * 1000 AS t, toString(outcome) AS outcome, duration_ms
+FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter
+ORDER BY t
+{SETTINGS}""", unit="ms", draw="points", w=6)
+    stages = P.raw_ts(
+        "GC per round: marked vs deleted objects",
+        "Marked: objects a round found to be garbage. Deleted: objects it physically removed. Over time the two lines "
+        "should track each other; deleted staying below marked for many rounds means the backlog grows.",
+        f"""SELECT toUInt64(event_time) * 1000 AS t, entries_condemned AS "Marked", entries_redeleted AS "Deleted"
+FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND outcome = 'Success' AND $timeFilter
+ORDER BY t
+{SETTINGS}""", unit="short", w=6)
+    backlog = P.raw_ts(
+        "GC backlog change over the selected period",
+        "Running total of marked minus deleted objects since the start of the selected period. Flat or falling is healthy; "
+        "a line that keeps rising means garbage is being found faster than it is removed.",
+        f"""SELECT t, sum(net) OVER (ORDER BY t) AS "Net backlog change"
+FROM (SELECT toUInt64(event_time) * 1000 AS t, toInt64(entries_condemned) - toInt64(entries_redeleted) AS net
+      FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+      WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND outcome = 'Success' AND $timeFilter)
+ORDER BY t
+{SETTINGS}""", unit="short", w=6)
+    verbs = P.metric_ts(
+        "S3 requests per second, by type",
+        "All requests the cluster sends to the object storage. Cost drivers are PUT and LIST; GET and HEAD are cheap. "
+        "Spikes of LIST follow a server restart.",
+        {"PUT": P.r(_m("S3PutObject")), "GET": P.r(_m("S3GetObject")), "HEAD": P.r(_m("S3HeadObject")),
+         "LIST": P.r(_m("S3ListObjects")), "DELETE": P.r(_m("S3DeleteObjects"))}, unit="reqps", stack=True, w=12)
+    throttling = P.metric_ts(
+        "S3 throttling events per second",
+        "Requests the object storage slowed down (HTTP 429/503). Zero is normal; bursts follow a restart; a steady rate "
+        "means the request rate is above the bucket's limit.",
+        {"Read throttling": P.r(_m("S3ReadRequestsThrottling")), "Write throttling": P.r(_m("S3WriteRequestsThrottling"))},
+        unit="reqps", w=12)
+    return [
+        P.row("Needs attention", [attention], collapsed=False),
+        P.row("Storage and writes", [lease, writes, delay], collapsed=False),
+        P.row("Garbage collection", [rounds, duration, stages, backlog], collapsed=False),
+        P.row("S3 requests", [verbs, throttling], collapsed=False),
+    ]
 
 
 def build() -> dict:
