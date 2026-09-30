@@ -82,6 +82,15 @@ def raw_ts(title, desc, sql, *, unit="short", stack=False, draw="line", interval
     return p
 
 
+OUTCOME_COLORS = ((".*Success$", "green"), (".*Deferred$", "blue"), (".*(Error|Aborted|Stopped)$", "red"), (".*NotALeader$", "#8e8e8e"))
+
+
+def outcome_color_overrides() -> list:
+    """Fixed colors for series named after a GC outcome (optionally prefixed by a host name)."""
+    return [{"matcher": {"id": "byRegexp", "options": regexp},
+             "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": color}}]} for regexp, color in OUTCOME_COLORS]
+
+
 def _steps(steps) -> dict:
     return {"mode": "absolute", "steps": [{"color": color, "value": value} for color, value in steps]}
 

@@ -20,6 +20,11 @@ class GcRows(unittest.TestCase):
         sql = panel(drilldown.gc_rows(), "Rounds per interval, by outcome and host")["targets"][0]["query"]
         self.assertIn("concat(hostName(), ' ', toString(outcome))", sql)
 
+    def test_rounds_panel_colors_outcomes(self):
+        p = panel(drilldown.gc_rows(), "Rounds per interval, by outcome and host")
+        regexps = {o["matcher"]["options"] for o in p["fieldConfig"]["overrides"] if o["matcher"]["id"] == "byRegexp"}
+        self.assertIn(".*Deferred$", regexps)
+
     def test_leader_timeline_uses_async_metric(self):
         sql = panel(drilldown.gc_rows(), "GC leader (1 = this host leads)")["targets"][0]["query"]
         self.assertIn("metric LIKE 'CASGCIsLeader_%'", sql)

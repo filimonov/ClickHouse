@@ -449,7 +449,7 @@
         "type": "vertamedia-clickhouse-datasource",
         "uid": "${datasource}"
       },
-      "description": "Garbage collection frees storage that deleted or merged data no longer needs. Rounds normally finish every 5\u201310 minutes. Minutes since last success: time since the last completed round anywhere in the cluster; yellow after 30 minutes, red after 2 hours. Failed rounds: rounds in the selected period that ended with an error or were aborted. What to do: open Drilldown \u2192 GC: rounds for the error text; a long-running round is normal after a large deletion, a stopped one is not.",
+      "description": "Garbage collection frees storage that deleted or merged data no longer needs. Rounds normally finish every 5\u201310 minutes. Minutes since last success: time since the last completed round anywhere in the cluster; yellow after 30 minutes, red after 2 hours. Failed rounds: rounds in the selected period that ended with an error or were aborted (an event count: no rows means none). What to do: open Drilldown \u2192 GC: rounds for the error text; a long-running round is normal after a large deletion, a stopped one is not.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -755,7 +755,7 @@
         "type": "vertamedia-clickhouse-datasource",
         "uid": "${datasource}"
       },
-      "description": "Signals that must stay at zero. Integrity events: the storage found data that should exist but does not, or could not be decoded. GC anomalies: garbage collection hit an inconsistency and worked around it; a value that stays above zero across rounds deserves a look. Wedged lanes and Lanes needing recovery: a table's write queue to the shared storage is stuck. What to do: any red value is a support case; keep the selected time range and open Drilldown \u2192 Needs attention and GC: anomalies.",
+      "description": "Signals that must stay at zero. Integrity events: the storage found data that should exist but does not, or could not be decoded (an event log: no rows means no events, so this field cannot show 'no data'; the Storage online tile's Metrics age tells whether logging itself stopped). GC anomalies: garbage collection hit an inconsistency and worked around it; a value that stays above zero across rounds deserves a look. Wedged lanes and Lanes needing recovery: a table's write queue to the shared storage is stuck. What to do: any red value is a support case; keep the selected time range and open Drilldown \u2192 Needs attention and GC: anomalies.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -984,7 +984,7 @@
           "extrapolate": false,
           "format": "table",
           "intervalFactor": 1,
-          "query": "SELECT max(v) AS \"Wedged lanes\"\nFROM (SELECT hostName() AS host, argMax(value, event_time) AS v\n      FROM clusterAllReplicas('$cluster', system.asynchronous_metric_log)\n      WHERE hostName() IN ($host) AND metric LIKE 'CASGCWedgedNamespaces_%'\n        AND replaceOne(metric, 'CASGCWedgedNamespaces_', '') IN ($disk) AND $timeFilter\n      GROUP BY host)\nSETTINGS skip_unavailable_shards = 1",
+          "query": "SELECT if(count() = 0, NULL, max(v)) AS \"Wedged lanes\"\nFROM (SELECT hostName() AS host, argMax(value, event_time) AS v\n      FROM clusterAllReplicas('$cluster', system.asynchronous_metric_log)\n      WHERE hostName() IN ($host) AND metric LIKE 'CASGCWedgedNamespaces_%'\n        AND replaceOne(metric, 'CASGCWedgedNamespaces_', '') IN ($disk) AND $timeFilter\n      GROUP BY host)\nSETTINGS skip_unavailable_shards = 1",
           "rawQuery": "",
           "refId": "D",
           "round": "0s",
@@ -1518,7 +1518,68 @@
               },
               "unit": "short"
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*Success$"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "green",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*Deferred$"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "blue",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*(Error|Aborted|Stopped)$"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "red",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*NotALeader$"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "fixedColor": "#8e8e8e",
+                      "mode": "fixed"
+                    }
+                  }
+                ]
+              }
+            ]
           },
           "gridPos": {
             "h": 8,

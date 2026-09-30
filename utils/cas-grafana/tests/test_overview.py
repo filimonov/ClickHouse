@@ -48,6 +48,19 @@ class Tiles(unittest.TestCase):
         self.assertIn("/ greatest(($__to - $__from) / 3600000, 1)", sql)
         self.assertIn('AS "S3 errors per hour"', sql)
 
+    def test_wedged_lanes_is_null_without_rows(self):
+        sql = sql_of(tile("Integrity"), "D")
+        self.assertIn("if(count() = 0, NULL, max(v)) AS \"Wedged lanes\"", sql)
+
+    def test_gc_rounds_bars_color_deferred_separately(self):
+        p = next(p for r in overview.rows() for p in r["panels"] if p["title"] == "GC rounds per 30 minutes, by outcome")
+        colors = {o["matcher"]["options"]: next(x["value"]["fixedColor"] for x in o["properties"] if x["id"] == "color")
+                  for o in p["fieldConfig"]["overrides"] if o["matcher"]["id"] == "byRegexp"}
+        self.assertEqual(colors[".*Deferred$"], "blue")
+        self.assertEqual(colors[".*Success$"], "green")
+        self.assertEqual(colors[".*(Error|Aborted|Stopped)$"], "red")
+        self.assertEqual(colors[".*NotALeader$"], "#8e8e8e")
+
     def test_every_tile_links_to_drilldown_and_passes_checks(self):
         d = overview.build()
         known = {"CASMountLeaseLost", "CASRequestGaveUp", "CASConditionalWriteAttempts", "CASConditionalWriteUnresolved",

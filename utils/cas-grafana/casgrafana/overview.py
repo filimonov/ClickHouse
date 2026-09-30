@@ -75,7 +75,7 @@ WHERE disk_name IN ($disk) AND event_type = 'Finish' AND $timeFilter
         "Garbage collection frees storage that deleted or merged data no longer needs. Rounds normally finish every 5–10 "
         "minutes. Minutes since last success: time since the last completed round anywhere in the cluster; yellow after "
         "30 minutes, red after 2 hours. Failed rounds: rounds in the selected period that ended with an error or were "
-        "aborted. What to do: open Drilldown → GC: rounds for the error text; a long-running round is normal after a large "
+        "aborted (an event count: no rows means none). What to do: open Drilldown → GC: rounds for the error text; a long-running round is normal after a large "
         "deletion, a stopped one is not.",
         [P.target(a, fmt="table", table="cas_gc_log", ref="A"), P.target(b, fmt="table", table="cas_gc_log", ref="B")],
         {"Minutes since last success": {"steps": [("green", None), ("yellow", 30), ("red", 120)], "unit": "m"},
@@ -114,7 +114,7 @@ FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE disk_name IN ($disk) AND event_type = 'Finish' AND $timeFilter
 {SETTINGS}"""
     cc = _metric_sql(f"""{guarded(c(_m('CASRefNeedsRecovery')))} AS "Lanes needing recovery\"""")
-    d = f"""SELECT max(v) AS "Wedged lanes"
+    d = f"""SELECT if(count() = 0, NULL, max(v)) AS "Wedged lanes"
 FROM (SELECT hostName() AS host, argMax(value, event_time) AS v
       FROM clusterAllReplicas('$cluster', system.asynchronous_metric_log)
       WHERE hostName() IN ($host) AND metric LIKE 'CASGCWedgedNamespaces_%'
@@ -124,7 +124,8 @@ FROM (SELECT hostName() AS host, argMax(value, event_time) AS v
     return P.stat(
         "Integrity",
         "Signals that must stay at zero. Integrity events: the storage found data that should exist but does not, or "
-        "could not be decoded. GC anomalies: garbage collection hit an inconsistency and worked around it; a value that "
+        "could not be decoded (an event log: no rows means no events, so this field cannot show 'no data'; the "
+        "Storage online tile's Metrics age tells whether logging itself stopped). GC anomalies: garbage collection hit an inconsistency and worked around it; a value that "
         "stays above zero across rounds deserves a look. Wedged lanes and Lanes needing recovery: a table's write queue to "
         "the shared storage is stuck. What to do: any red value is a support case; keep the selected time range and open "
         "Drilldown → Needs attention and GC: anomalies.",
@@ -220,6 +221,7 @@ FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND $timeFilter
 GROUP BY t, outcome ORDER BY t
 {SETTINGS}""", unit="short", stack=True, draw="bars", interval="30m", w=6)
+    rounds["fieldConfig"]["overrides"] = P.outcome_color_overrides()
     duration = P.raw_ts(
         "GC round duration",
         "Wall-clock time of each finished round. Rounds take a few minutes on otel.demo; a long round after a large "

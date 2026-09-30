@@ -39,6 +39,7 @@ FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE {GC_WHERE}
 GROUP BY t, series ORDER BY t
 {SETTINGS}""", stack=True, draw="bars", interval="30m")
+    rounds["fieldConfig"]["overrides"] = P.outcome_color_overrides()
     leader = P.state_timeline(
         "GC leader (1 = this host leads)",
         "`CASGCIsLeader_<disk>` per host. Leadership moves on restart or lease loss; two hosts at 1 at the same time is a "
