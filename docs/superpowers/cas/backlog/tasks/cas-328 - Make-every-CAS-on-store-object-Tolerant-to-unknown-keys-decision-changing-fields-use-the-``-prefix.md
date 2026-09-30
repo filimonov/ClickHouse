@@ -3,10 +3,10 @@ id: CAS-328
 title: >-
   Remove `KeyStrictness`: every CAS reader skips unknown keys; decision-changing
   fields use the `!` prefix
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-30 18:02'
-updated_date: '2026-09-30 18:04'
+updated_date: '2026-09-30 18:08'
 labels:
   - cas
   - gc
@@ -45,5 +45,5 @@ Owner decision 2026-09-30: all objects Tolerant unless a very important reason e
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Owner decision 2026-09-30: drop the switch itself, not just flip the four Strict sites. The switch is declared twice (traits table in `CasFormat.cpp:103-129` and again at every reader call), and the two disagree for `cas_gc_maintenance_state` (Strict in the table, Tolerant at the reader), which nobody noticed because the table column is never read. 72 mentions in 15 files, all mechanical; the only behavioural change is the four Strict readers (`cas_run`, fold seal, `cas_ref_ckpt`, ref catalog) now skipping unknown ordinary keys.
+2026-09-30 started: branch fix/antalya-26.6/cas-drop-key-strictness from e2dd0f5d343 in the cas-83 worktree (reusing its release build); implementer cas328-impl; report tmp/cas328/impl-report.md
 <!-- SECTION:NOTES:END -->
