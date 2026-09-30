@@ -33,9 +33,9 @@ public:
     /// still holds the GC round's own lease" -- see `CasRequests::admit`. It is SAMPLED BEFORE EVERY
     /// REQUEST the page makes (and before every reissue of one), not just where this function
     /// itself checks `op.admitted()` -- so it must be cheap and must never throw. A sample
-    /// that returns false ends whichever request was about to be sent: a read verb (the maintenance
-    /// read, the list, a HEAD) throws out of this call, and a write verb (a delete, the cursor
-    /// publication) reports it as `GaveUp` rather than sending anything.
+    /// that returns false ends whichever request was about to be sent: the maintenance read and the
+    /// list throw out of this call, a refused HEAD is reported as a leak, a refused batch delete falls
+    /// back to the per-key path, and a write verb (a delete, the cursor publication) reports `GaveUp`.
     NamespaceJanitorResult runOnePage(bool suppress_deletes, Liveness liveness);
 
 private:

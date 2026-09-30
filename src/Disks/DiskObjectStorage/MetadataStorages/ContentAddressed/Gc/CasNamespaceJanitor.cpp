@@ -68,12 +68,11 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(bool suppress_deletes, Liven
     /// A valid page is complete only when the round had deletion authority for every dead-life
     /// candidate on it. Advancing while the global gate is closed can phase-lock a dead page onto
     /// every suppressed round and a different page onto every bounded forced fold. An ambiguous cut
-    /// retains the old cursor so an authoritative round retries the exact page; a lost liveness sample
-    /// only reaches this retained-cursor path when an `op.admitted()` check below catches it -- a
-    /// sample lost earlier throws out of a read verb (the maintenance read, the list, or a
-    /// HEAD) before this line is ever reached, ending the page by exception instead. Malformed keys,
-    /// absent objects and token mismatches are final per-key outcomes and therefore do not by
-    /// themselves prevent progress.
+    /// retains the old cursor so an authoritative round retries the exact page. A liveness sample lost
+    /// at the maintenance read or the list throws out of this call; one lost at a HEAD or a batch
+    /// delete is caught (a leak, or the per-key path), and an `op.admitted()` check below keeps the
+    /// cursor. Malformed keys, absent objects and token mismatches are final per-key outcomes and
+    /// therefore do not by themselves prevent progress.
     bool page_decided = !ambiguous && !suppress_deletes;
 
     /// The exact-token delete of one listed key; false when admission was lost and the page stops.
@@ -116,10 +115,8 @@ NamespaceJanitorResult NamespaceJanitor::runOnePage(bool suppress_deletes, Liven
         return true;
     };
 
-    /// A dead life's `_log`/`_snap` keys are write-once and the life is never reborn under the same
-    /// prefix, so they need no token. A batch cannot tell removed keys from absent ones, so success
-    /// counts the whole chunk; after any failure the chunk takes the exact path, which does not count
-    /// keys the failed batch already removed.
+    /// A dead life's `_log`/`_snap` are write-once and never reborn under its prefix, so need no token.
+    /// Success counts the whole chunk; after a failure the exact path does not count keys already gone.
     std::vector<WriteOnceKey> chunk;
     std::vector<const ListedKey *> chunk_listed;
     bool batch_supported = true;

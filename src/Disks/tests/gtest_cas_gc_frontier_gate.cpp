@@ -242,7 +242,7 @@ private:
     std::function<void()> after_read_hook;
 };
 
-class PostFoldUnreadableTerminalBackend final : public CountingBackend
+class PostFoldUnreadableKeysBackend final : public CountingBackend
 {
 public:
     /// Unhide the names the primitive overrides below would otherwise shadow.
@@ -2834,7 +2834,7 @@ TEST(CASGCFrontierGate, CleanupEvidenceLeavesRemovedNamespaceCheckpointForJanito
 /// the page; an unreadable terminal `_log` is batch-deleted without a HEAD, so it is never counted.
 TEST(CASGCFrontierGate, PostFoldUnreadableStateKeyIsCountedAndTerminalLogIsBatchDeleted)
 {
-    auto backend = std::make_shared<PostFoldUnreadableTerminalBackend>();
+    auto backend = std::make_shared<PostFoldUnreadableKeysBackend>();
     auto store = openPoolForTest(backend, /*gc_fold_max_defer_rounds=*/0);
     CasRequests requests = openRequestsForTest(backend);
     CasOperation op = requests.admit();
