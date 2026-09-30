@@ -298,7 +298,8 @@ extracting blob source edges. Usually the dominant read phase on ref-log- and ma
 
 - **Runs on:** fold path only
 - **Reads:** one `_ckpt` per namespace in the universe; `_log` records from each namespace's cursor
-  up to its committed ceiling; one manifest body per folded owner edge; extra `_log` reads when the
+  up to its committed ceiling; one manifest body per distinct manifest the folded owner edges name
+  (see the [memo](#phase-8-fold-ref-intake)); extra `_log` reads when the
   walk crosses an epoch seal
 - **Writes / deletes:** none (the successor seal's `cleanup_evidence` rows are written between this
   phase's timer and phase 9's)
@@ -334,13 +335,39 @@ its lookahead, a `HEAD` candidate that kept an edge) is a wasted request. `CASGC
 counted when the reader is destroyed after phase 10, so it shows up in the round-level
 `ProfileEvents`, not on the phase-8 or phase-9 row.
 
+**Manifest-body memo.** The fold keeps the validated bodies it has already read in a per-fold memo
+keyed by manifest identity, so a manifest that two edges of one round name (a publish and its drop,
+a repoint, an attach) is read and decoded once. A memo entry holds the body's `Etag` and its
+`Blob`-placement entries (blob reference, source-edge id, path), in body order. A hit rebuilds the
+deltas with the sign and transaction ordinal of the edge being folded, emits the same events, and
+for a removal queues the exact body delete from the stored `Etag`.
+
+- **Lifetime:** one fold. The memo is freed when the fold ends, so nothing carries to the next
+  round. The rebuild path does not use it.
+- **Why a hit equals a read:** a manifest key is write-once, and no folded body is deleted while the
+  fold runs. Writers delete only staged bodies that were never precommitted, and `GC` deletes
+  owner-removed bodies in [phase 15](#phase-15-manifest-deletes), after the commit.
+- **Absence is never memoized.** An absent body is probed again by the next edge that names it, and
+  a body that fails validation throws as without the memo.
+- **Bound:** 64 MiB of charged storage per fold, oldest insert evicted first. The charge covers the
+  map node, the `Etag` strings, every entry and its path, and each namespace once. It overestimates;
+  the thread-tracker test holds the real allocation within 1.25 times the charge, so the worst-case
+  footprint is about 80 MiB. A manifest whose own charge exceeds the budget is folded without being
+  stored. An evicted or oversized manifest is read again on its next edge.
+- **Read-ahead:** the hint loop skips a manifest the memo holds. If an eviction lands between the
+  skip and the take, the take reads inline: one `CASGCReadAheadMiss` and one `GET`.
+
+`CASRefManifestBodyFoldGets` counts bodies consumed from a read; `CASRefManifestBodyMemoHits`
+counts bodies consumed from the memo. Their sum is the number of manifest bodies the fold
+consumed; absent reads and hinted reads a clamp leaves untaken count in neither.
+
 ## Phase 9 — fold reduce {#phase-9-fold-reduce}
 
 Recomputes the per-shard in-degree snapshot and computes the round's single destructive gate.
 
 - **Runs on:** fold path only
 - **Reads:** streaming `GET` of each referenced parent run segment; one `HEAD` per zero-in-degree
-  candidate; one `.meta` `GET` per graduation candidate lacking in-process marker confirmation. When
+  candidate; one `.meta` `GET` per graduation candidate lacking a confirmed condemn marker. When
   orphan-sweep planning runs: a `LIST` page of `cas/manifests/`, a `GET` per candidate, plus
   `gc/state`, the adopted seal, the catalog, and per-namespace `_ckpt` / tail `_log`.
 - **Writes / deletes:** one `PUT` per rewritten run segment; schedules the async `.meta` condemn
@@ -369,6 +396,23 @@ candidate the merge decides one of: `spare`, `condemn`, `supersede`, `graduate` 
 the other work families of phases 9 (sweep planning), 11 (outcome-log entries, whose overflow is
 simply not logged), 13, 14 (one-shot, see there) and 17 (recomputed next round). Phase 18's
 volume is bounded by `cas_manifest_sweep_delete_budget_keys` through phase 9's planning.
+
+**Head window.** The condemn-time `HEAD` read-ahead hints only candidates the merge can still take.
+The merge takes candidates in ascending `BlobRef` order (algorithm, then digest). When it takes a
+candidate, the hints for candidates below it are discarded and counted in `CASGCReadAheadWasted` at
+once, and the window refills past the take. A hint for a candidate the merge has passed therefore
+never holds a window slot, and later takes do not miss on a window full of stale hints. Each
+shard starts and ends with an empty window, so the phase counts all its wasted hints. The window
+throttles on its own outstanding `HEAD` hints, not on all pending read-ahead requests, so read slots
+left untaken by a clamp do not hold it shut.
+
+**Carried marker.** A graduation candidate whose condemn marker was confirmed but that the
+graduation budget cannot take is carried with `marker_confirmed` set in its run row. The next
+round, on the same leader or after a leader change, graduates it without the marker `.meta` `GET`. The
+confirmation stays sufficient because the marker leaves `Condemned` only after the condemned token
+is displaced or deleted, and the delete is exact-token. A candidate that never got a confirmation is
+still carried unflagged and counted in `CASGCCondemnMarkerUnconfirmedCarry`; a candidate that is
+only budget-limited is not counted there.
 
 ## Phase 10 — fold seal write {#phase-10-fold-seal-write}
 
@@ -525,8 +569,8 @@ no longer in the catalog (dead-life debris).
   `suppress_destructive` forced on
 - **Reads:** the durable `janitor_cursor`; one `LIST` page (≤ 1000 keys) of `cas/ns/`; a fresh
   ref-catalog snapshot; `gc/state` per fence re-check
-- **Writes / deletes:** exact-token `DELETE` per dead-life `_log` / `_snap` / `_ckpt` / `_files`
-  object; one `CAS` on the maintenance state when the page is decided
+- **Writes / deletes:** batch `DELETE` of dead-life `_log` / `_snap` keys, exact-token `DELETE` per
+  dead-life `_ckpt` / `_files` object; one `CAS` on the maintenance state when the page is decided
 - **Safety:** each delete is under a GC fence re-check (`lease.owner` / `lease.seq`) before it and
   once at the end; the incarnation segment in every key makes an old life's objects structurally
   unreachable from a reborn same-name namespace, so a missed key can only leak storage, never expose
@@ -538,6 +582,26 @@ no longer in the catalog (dead-life debris).
 
 The cursor advances only when the whole page was decided under a held fence and an unambiguous
 catalog; under suppression it lists and classifies but deletes nothing and does not advance.
+
+**Batching.** A dead life's `_log` and `_snap` objects are write-once and never reborn under the
+life's prefix, so their delete needs no token. The janitor collects them in listing order into
+chunks of `cas_gc_bulk_delete_chunk_keys` (see the
+[configuration page](/antalya/cas/configuration#disk-settings)) and sends each chunk as one batch
+`DELETE`, after the same checks as any dead-life key: life not resolved by the catalog cut, cut not
+ambiguous, deletes not suppressed. The fence is re-checked before each chunk; a lost fence leaves
+the cursor where it was.
+
+- **Batched:** a key that parses as a `_log` or `_snap` object and equals the key this layout
+  writes for that identity.
+- **Exact-token, per key:** `_ckpt`, `_files` and any stream key that does not round-trip. The
+  token comes from the `LIST` entry, or from one `HEAD` when the entry carries none.
+- **Fallback:** if a batch throws for any reason, its keys go through the exact-token path, with a
+  fence check before each delete. After a `NOT_IMPLEMENTED` error, the rest of the page uses the
+  exact-token path for every key.
+- **`janitor_deleted`:** a successful batch adds its whole chunk, including keys that were already
+  absent, because a batch delete of write-once keys cannot tell the two apart. After a failed batch,
+  the exact-token path counts only the keys it removes, so keys the failed batch already deleted are
+  not counted. A tokenless key in a batch sends no `HEAD`, so it cannot leak on a `HEAD` failure.
 
 ## Phase 17 — ref object cleanup {#phase-17-ref-object-cleanup}
 
@@ -739,15 +803,15 @@ logs:
 | `LIST gc/server-roots/` | 1, plus 1 `GET` per mount |
 | `GET` the adopted fold seal | 6 on the fold path of an established pool (phases 2, 4, 5, 7); phase 9 orphan planning adds one more. See [per-phase backend cost](#per-phase-cost) |
 | `GET` ref logs | 1 per new log record, plus `_ckpt` reads and epoch-crossing probes |
-| `GET` manifests | 1 per folded owner (manifest) edge — a manifest emits many blob edges but is read once per edge event; no manifest-body cache within a round |
+| `GET` manifests | 1 per distinct manifest the folded owner edges name — a manifest emits many blob edges and is read once per round, unless the memo evicted it or it exceeds the memo budget |
 | `PUT` run segments | 1 per non-pure-carry shard, plus 1 fold seal |
 | `HEAD` blobs | 1 per newly condemned |
 | Blob `HEAD` + conditional `DELETE` | 1 `HEAD` per `redelete` entry — an entry that graduated in an *earlier* round, not the current one — up to `cas_gc_round_redelete_budget`; a `DELETE` only when the body is present at the condemned token |
 | Successful lease `CAS gc/state` | 1 |
 | Commit `CAS gc/state` | 1 |
 
-Phase 8's body reads are one ref-log `GET` per consumed record plus one manifest `GET` per owner
-edge; that is the dominant variable term, not the whole-round `GET` total, which also includes the
+Phase 8's body reads are one ref-log `GET` per consumed record plus one manifest `GET` per distinct
+manifest; that is the dominant variable term, not the whole-round `GET` total, which also includes the
 state, seal, catalog, checkpoint, mount, parent-run and cleanup reads listed per phase below. An idle
 folding round is one `LIST` of `cas/ns/stream/`, the heartbeat floor (`LIST` plus `N` `GET`s), the
 seal, catalog and `gc/state` reads of phases 2, 4, 5 and 7, one successful lease `CAS`, and one
@@ -779,7 +843,7 @@ the chunk size reject `0`:
 | `cas_manifest_sweep_delete_budget_keys` | 100 | orphan-manifest sweep `DELETE` budget per round (phases 9, 18) |
 | `cas_gc_round_sweep_namespace_budget` | 20 | namespaces whose protection view the sweep may build per page (phase 9) |
 | `cas_gc_round_sweep_recovery_op_budget` | 5000 | committed-tail ref-log reads the sweep's recovery walk may spend (phase 9) |
-| `cas_gc_bulk_delete_chunk_keys` | 1000 | keys per batch `DELETE` request for write-once families (phases 15, 17); `1` to `1000` |
+| `cas_gc_bulk_delete_chunk_keys` | 1000 | keys per batch `DELETE` request for write-once families (phases 15, 16, 17); `1` to `1000` |
 | `cas_gc_meta_pool_size` | 16 | bounded pool for condemn-marker writes (phase 12) |
 | `cas_gc_io_concurrency` | 16 | bounded pool for the fold's read-ahead of checkpoints, ref logs, manifest bodies and zero-candidate `HEAD`s (phases 8, 9), the orphan-sweep planning reads (phase 9), the rebuild read-ahead and the `pending_deletes` `HEAD` + conditional `DELETE` fan-out (phase 11); other GC requests run on the round thread; `1` runs the covered requests sequentially. `cas_gc_read_concurrency` is rejected without an alias; use `cas_gc_io_concurrency` instead |
 
@@ -867,7 +931,7 @@ phase 9 runs orphan planning it reads the same key once more.
 | `<life_id>/_ckpt` | `GET` | one per namespace life in the universe |
 | `_log` record up to `committed_through` | `GET` | one per record read; none when the cursor already equals the ceiling |
 | `_log` record at an epoch start | `GET` | at least two per crossing, plus one per epoch stepped back and one on a failed crossing |
-| manifest body | `GET` | one per folded owner edge |
+| manifest body | `GET` | one per folded owner edge whose body the fold's memo does not hold; a memo hit sends none |
 
 No writes.
 
@@ -877,7 +941,7 @@ No writes.
 |---|---|---:|
 | referenced parent run segments | streaming `GET` | one per referenced run |
 | `<pool_prefix>/blobs/...` | `HEAD` | one per zero-in-degree candidate, plus one peek per carried entry that reached zero again |
-| blob `.meta` | `GET` | one per graduation candidate with no in-process marker confirmation |
+| blob `.meta` | `GET` | one per graduation candidate with no confirmed condemn marker, in process or carried in its run row |
 | new run segments | `PUT` | one per written run |
 | `<pool_prefix>/cas/manifests/` | `LIST` | one bounded page, only when orphan planning runs |
 | manifest candidate body | `GET` | one per nominated candidate (≤ `cas_manifest_sweep_delete_budget_keys`), through the read-ahead; keys decided from their name alone are never read; only when orphan planning runs |
@@ -936,7 +1000,8 @@ backend without batch delete: the refused bulk call plus one `DELETE` per key). 
 | `<pool_prefix>/cas/ns/` | `LIST` | one page |
 | `<pool_prefix>/cas/ref_catalog` | `GET` | 1 |
 | `<pool_prefix>/gc/state` | `GET` | one per fence check |
-| dead-life object | `DELETE` | one per object (plus one `HEAD` per object whose `LIST` entry carried no token) |
+| dead-life `_log` / `_snap` | batch `DELETE` | one request per chunk of ≤ `cas_gc_bulk_delete_chunk_keys` keys (the failed call plus one per key when a batch falls back) |
+| dead-life `_ckpt` / `_files` | `DELETE` | one per object (plus one `HEAD` per object whose `LIST` entry carried no token) |
 | `<pool_prefix>/gc/maintenance_state` | `CAS` | 1 when the page is decided |
 
 ### Phase 17 — ref object cleanup {#cost-phase-17}
