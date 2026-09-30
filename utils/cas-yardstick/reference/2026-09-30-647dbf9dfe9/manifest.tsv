@@ -2,7 +2,7 @@ field	value
 binary_version	26.6.2.20000.altinityantalya
 git_rev	647dbf9dfe9
 build_type	RelWithDebInfo
-workload_hash	5be7b704d42c6a3d92430035b81599c8ae1a0e5dc32bd19c57fa0d5082d8cf21
+workload_hash	d9ce020cbea7954b34aeac3cd3cf2a9d119682b2b202bfdebf8223f1c6103309
 dirty	no
 scale	1.0
 counts	cycle=iterations:25,rows_per_insert:1000;wide_insert=inserts:500,rows_per_insert:20000;attach_200=parts:200,rows_per_part:10000;mutation=parts:100,rows_per_part:10000;lwd_concurrent=parts:50,rows_per_part:100000;select_subset=parts:200,rows_per_part:50000;dup_content=tables:20,rows:1000000

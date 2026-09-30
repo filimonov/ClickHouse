@@ -79,7 +79,7 @@ The S3 client block is identical for the three. Card tables pin `primary_key_laz
 
 ## Cards
 
-Every card is `setup` (not measured), a cold reset where it has a fixture, `measured`, an optional hot pass, `teardown`. Row counts and active part counts are checked before and after each measured pass; a violation marks the pass `FAILED`.
+Every card is `setup` (not measured), a cold reset where it has a fixture, `measured`, an optional hot pass, `teardown`. Row counts and active part counts are checked before and after each measured pass; a violation marks the pass `FAILED`. The exception is `attach_200` before its cold pass: the table is detached then, so only `attached_tables = 0` is checked.
 
 | Card | Unit | Measured step | Cold reset | Merges off | Hot pass |
 |---|---|---|---|---|---|
@@ -151,7 +151,7 @@ Each cell is the median over repeats with min..max. Ratios are computed per repe
 | `noisy` | Wall or bytes max/min over repeats is above 1.2. |
 | `0 → n` | A ratio with a zero denominator, shown as the absolute count of the numerator. |
 | `UNSUPPORTED (reason)` | The pair cannot run the card (capability matrix). |
-| `FAILED (n of K repeats ok)` | Error, timeout, violated invariant or server that did not start in at least one repeat. The pass gets no numbers, per-unit line, ratio or compare row; logs are kept; the run continues; exit code is non-zero. |
+| `FAILED (n of K repeats ok)` | Error, timeout, violated invariant or server that did not start in at least one repeat. The pass gets no numbers, per-unit line or ratio; `compare` flags it with `no reference !` and `no current !` rows instead of a numeric comparison; logs are kept; the run continues; exit code is non-zero. |
 | `unavailable` | The binary lacks a counter behind the metric. Its ratios and comparisons are suppressed. |
 
 **GC column.** After each pass the runner flushes logs and collects `system.cas_gc_log` rounds whose span overlaps the window into `gc_rounds.tsv`. A round without its `Finish` row counts as still running. The cell is `N, M overlapping`: N rounds began and ended inside the window, M only overlapped it; each with min..max over repeats when they differ. A 20 s GC interval on a short window does not amortize reclamation; use a long GC soak for that, not this tool.
@@ -193,6 +193,8 @@ Accept only a complete run (default cards, `--scale 1`, `--repeats 3`, six polic
 ### Current reference
 
 `reference/2026-09-30-647dbf9dfe9/`: all seven cards, all six policies, `--scale 1`, 3 repeats, GC on, RustFS 1.0.0-rc.3 on one host (kernel 6.14.0-37), binary `26.6.2.20000.altinityantalya` (`RelWithDebInfo`). No `FAILED` cell, 8 `UNSUPPORTED` rows (capability matrix).
+
+The reference was accepted at `workload_hash` `5be7b704d42c…`. The later fix that stops counting unfinished GC rounds of an earlier server process changed the hash to `d9ce020cbea7…` and no cell of the reference, so only its manifest's `workload_hash` was updated (`NOTE.md` in the reference directory).
 
 ### Run time
 
