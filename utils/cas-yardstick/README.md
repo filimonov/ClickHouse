@@ -139,12 +139,16 @@ runs/<run-id>/<policy>/<card>/k<N>/{cold,hot}/
 
 `reference/<date>-<git-rev>/` holds `manifest.tsv`, `samples.tsv`, `summary.tsv` and `pass_seconds.tsv` of an accepted run. `reference/CURRENT` names the one in force.
 
+`config_dir` and `flags` in the manifest record where and how the run was started. They are informational and `compare` ignores them.
+
 `compare` checks manifests first. Workload revision, scale, counts, `--gc`, repeats, config hash, build type and store must match. Otherwise it prints `incompatible: <field>` per differing field and nothing else. When compatible it prints current vs reference (median and min..max) per metric, the delta of medians in percent, and marks `|delta wall| > 10 %` and any change of a request-count median. It fails no run; there are no thresholds. A `--quick` run prints `incompatible: scale`, `counts`, `repeats` and `config_hash`.
 
 Accept a run as the reference:
 
 ```bash
-cp -r runs/<run-id> utils/cas-yardstick/reference/<date>-<rev>   # keep only manifest.tsv, samples.tsv, summary.tsv, pass_seconds.tsv
+ref=utils/cas-yardstick/reference/<date>-<rev>
+mkdir "$ref"
+for f in manifest samples summary pass_seconds; do cp runs/<run-id>/$f.tsv "$ref"/; done
 echo <date>-<rev> > utils/cas-yardstick/reference/CURRENT
 ```
 
@@ -156,7 +160,7 @@ Accept only a complete run (default cards, `--scale 1`, `--repeats 3`, six polic
 
 ### Run time
 
-Same host and binary as the reference. Wall time is the span between the first and the last file of the run directory.
+Same host and binary as the reference. Wall time is the span between the first and the last file of the run directory. Runs: `--smoke` `20260929T213821Z` (made before `pass_seconds.tsv` existed, so it has no per-pass table), `--quick` `20260929T231106Z`, default `20260929T214729Z` (the reference).
 
 | Run | Scale | Repeats | Passes | Wall |
 |---|---|---|---|---|

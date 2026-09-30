@@ -118,6 +118,19 @@ class RunOneTest(unittest.TestCase):
         with open(os.path.join(bad_dir, 'error.txt')) as f:
             self.assertIn('boom', f.read())
 
+    def test_timings_hold_one_entry_per_pass_in_run_order(self):
+        timings = []
+        runner.run_matrix(['cas', 's3'], [FakeCard('a'), FakeCard('b')], 1, self.deps, [], timings=timings)
+        self.assertEqual([(p, c, k) for p, c, k, _ in timings],
+                         [('cas', 'a', 1), ('cas', 'b', 1), ('s3', 'a', 1), ('s3', 'b', 1)])
+        self.assertTrue(all(isinstance(s, float) and s >= 0 for *_, s in timings))
+
+    def test_pass_seconds_file_has_header_and_one_decimal(self):
+        path = os.path.join(self.dir, 'pass_seconds.tsv')
+        runner.write_pass_seconds(path, [('cas', 'cycle', 1, 4.349), ('s3', 'cycle', 2, 10.0)])
+        with open(path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), 'policy\tcard\trepeat\tseconds\ncas\tcycle\t1\t4.3\ns3\tcycle\t2\t10.0\n')
+
     def test_no_hot_rows_without_hot_pass(self):
         rows = runner.run_one('cas', FakeCard('cold_only', has_hot=False), 1, self.deps)
         self.assertTrue(self.rows(rows, phase='cold', metric='GET'))

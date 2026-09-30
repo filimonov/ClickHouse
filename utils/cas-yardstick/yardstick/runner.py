@@ -241,6 +241,13 @@ def run_matrix(policies, cards, repeats, deps: Deps, rows, after_pass=None, timi
     return rows
 
 
+def write_pass_seconds(path, timings):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('policy\tcard\trepeat\tseconds\n')
+        for policy, card_name, k, seconds in timings:
+            f.write(f'{policy}\t{card_name}\t{k}\t{seconds:.1f}\n')
+
+
 def run_all(policies, cards, repeats, deps: Deps, cleanup, after_pass=None, timings=None):
     """run_matrix, then `cleanup()` even on Ctrl-C; returns (rows, interrupted, cleanup result)."""
     rows = []
@@ -348,10 +355,7 @@ def run(args) -> int:
     rows, interrupted, cleaned = run_all(policies, cards, args.repeats, deps, remove_prefix,
                                          after_pass=lambda rows: R.write_samples(samples_path, rows),
                                          timings=timings)
-    with open(os.path.join(run_root, 'pass_seconds.tsv'), 'w', encoding='utf-8') as f:
-        f.write('policy\tcard\trepeat\tseconds\n')
-        for policy, card_name, k, seconds in timings:
-            f.write(f'{policy}\t{card_name}\t{k}\t{seconds:.1f}\n')
+    write_pass_seconds(os.path.join(run_root, 'pass_seconds.tsv'), timings)
     exit_code = 0 if cleaned else 1
     if interrupted:
         print('interrupted: the table below covers the finished passes only', file=sys.stderr)
