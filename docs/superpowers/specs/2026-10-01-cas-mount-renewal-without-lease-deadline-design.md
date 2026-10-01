@@ -201,6 +201,43 @@ through the one path: after arming from the claim, if no write can be admitted, 
 before the open returns or the remount reports `Live`. An open waits at most one TTL for that and
 then fails, as a failed re-anchor fails it today.
 
+### Further cleanups {#further-cleanups}
+
+Small, independent, found by a second pass over the same files. Each removes state that nothing
+reads or says one thing in one place. None changes behaviour.
+
+1. Delete `process_epoch`, its random initial value, `setProcessEpoch` and the `epoch` /
+   `writerEpoch` accessors. No production code reads them; identity uses the allocated
+   `writer_epoch`, incarnation checks use `liveWriterEpoch`.
+2. Drop `terminal_state_published`: the `Vanished` lifecycle values already say it. Keep
+   `vanished_intent`, which FORGET publishes earlier, and the publication order under `driver_mutex`.
+3. One source for the renewal period and for the boot clock: remove the copy `renewal_period` and
+   `MountRenewOperationEnvironment::boot_ms`.
+4. `CasGcScheduler::runRoundLogged` takes only the trigger; `allow_steal` follows from scheduled
+   versus manual. `runOneRoundNow` loses its parameter.
+5. One predicate for "background work must stop": the GC scheduler uses the runtime's
+   `remountTerminal` instead of repeating its two conditions.
+6. Remove write-only fields: `MountFence::server_uuid` and `writer_epoch`, the runtime's
+   `backend_ptr`, `Pool::farewellRequests`, `MountRenewResult::sent_any`.
+7. Remove the second observation log line in `claimMountAwaitingExpiry`; correct six comments and
+   two setting descriptions that describe timing wrongly.
+8. Replace `setRoundInFlightForTest` by assertions in the test that already parks a real round.
+9. Rename the renewer's `open_requests` to `claim_farewell_requests`; the pool's "open plane" is
+   the GC plane.
+
+Looked at and left alone, because each loses something:
+
+- **One request plane with one sleep for GC, renewal and farewell.** Their stop conditions differ:
+  FORGET keeps the GC plane usable while it stops the lease thread, and the farewell runs after the
+  stop.
+- **One claim policy for open, remount and decommission.** A remount must not use
+  `cas_unsafe_remount_no_delay`, and decommission must not wait.
+- **GC leadership without the heartbeat object, the acquisition-time pulse or the `i_am_leader`
+  hint.** A long fold leaves `gc/state` unchanged; without the pulse a follower steals from a live
+  leader.
+- **A simpler steal rule.** Heartbeat movement under a deposed owner's name must still block a
+  steal, and a manual round must not arm one.
+
 ## Renewal under memory pressure {#memory-pressure}
 
 A memory-limit exception inside a request is a transient failure and is retried like any other. Two
@@ -324,8 +361,9 @@ Each step leaves the tree working. The rules describe the state after step 6.
 5. One thread: move the reclaim into the loop; remove the remount worker and the driver states.
 6. The renewal returns its result; remove the thread-local stack. Needs step 4.
 7. One definition for each duplicated quantity; stale text.
+8. The [further cleanups](#further-cleanups), one commit each.
 
-Steps 1 to 3 close the three issues. Steps 4 to 7 remove code and can be deferred as a group.
+Steps 1 to 3 close the three issues. Steps 4 to 8 remove code and can be deferred as a group.
 
 ## Wedged ref lanes after an outage {#wedged-lanes}
 
@@ -369,7 +407,10 @@ read and fences a holder inside its authority. All run green in TLC before code 
 Step 0 in full:
 
 - **Baseline.** Run `run_mountrenewretry.sh`, `run_mount.sh` and `run_disklifecycle.sh` unchanged
-  and record state counts.
+  and record state counts. `run_disklifecycle.sh` reports `sab_nogcselfexit` as `error`: the model
+  violates `GcExitsAfterVanished` as intended, but the runner looks for the text "Temporal
+  properties were violated" and the pinned TLC prints "Temporal property … was violated". Fix the
+  pattern first.
 - **`CaMountRenewRetryCore`**: the list above.
 - **GC observation.** In `CaCasMountCore`, `GcFence` is enabled by `mount.deadline + Drift <= clock`:
   the model assumes GC fences only after the holder's authority ended. The code gets there by
