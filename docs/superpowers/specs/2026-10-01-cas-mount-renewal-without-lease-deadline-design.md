@@ -122,7 +122,7 @@ room to admit a write.
 | `expired_ms` in the `watermark_renew` event; a `WARNING` with the last failure | `system.cas_log`, server log | How long the lease was expired and why |
 | `CASMountRenewalAttempts`, `CASMountRenewalRetries` | `system.events` | Advance as requests are sent, not at the end, so an outage shows while it lasts |
 | `CASMountLeaseLost` | `system.events` | Unchanged: the mount was fenced locally and a remount follows |
-| Text of a write refused only because the lease expired | exception | Says the lease expired and that writes resume when a renewal succeeds. Other refusals keep their text |
+| Text of a refused write | exception | Where the runtime itself refuses (`checkFenceOrThrow`, the ref-batch flush), the text says the lease expired and that writes resume when a renewal succeeds. The request engine cannot tell an expired lease from too little budget; its texts ("no lease budget", "gave up at the lease deadline") stay |
 
 The expired row is shown only while the lifecycle enum is `Live`; the enum itself is not touched.
 `lifecycle_reason = 'lease_expired'` is about this server's own confirmed deadline. The existing
@@ -160,8 +160,9 @@ until stopped or the lifecycle is terminal:
 **Arming rule.** The fence is armed, and `Live` reported, only when no remount request is pending,
 no stop is requested, the lifecycle is not terminal, and the deadline admits a ref append now. The
 check and the arm are one step under `driver_mutex`, the mutex that the publication of a FORGET
-intent also takes. `Live` is published before `lost` is cleared, so a reader without the mutex
-never sees "not `Live`" with the fence armed.
+intent also takes. `Live` is published before `lost` is cleared: a reader that sees the fence armed
+reads `Live` afterwards, and the one window a reader without the mutex can see is `Live` with the
+fence still lost, which only refuses.
 
 "Terminal lifecycle" is today's `remountTerminal` predicate, including a published FORGET intent.
 A stop trips the fence without counting a lease loss, as today. The requested and handled remount
@@ -500,9 +501,10 @@ on a disk with room; the docs record state counts, not wall-clock time.
 
 Unit tests use `RenewalScriptBackend` and `Ops` from `src/Disks/tests/gtest_cas_heartbeat.cpp` with
 an injected boot clock; `CASMountRuntime` tests live in `gtest_cas_mount_runtime.cpp`. The rule each
-test guards is in brackets. Order follows the [order of work](#order-of-work). Tests 6, 7, 9 and 17
+test guards is in brackets. Order follows the [order of work](#order-of-work). Tests 6, 7 and 9
 guard behaviour that holds today too: on today's code they fail only because the renewal gives up at
-the deadline before reaching the asserted state.
+the deadline before reaching the asserted state. Test 17 is regression coverage carried over to the
+loop; it passes today in its present form.
 
 1. `CASTokenWatch.CountsFromAfterTheRead` [11]: a sighting is dated by the sample passed after the
    read; `stableFor` compares against the sample passed before the confirming read and is false when
@@ -563,7 +565,8 @@ the deadline before reaching the asserted state.
     old does not arm the fence; the loop renews with no cadence wait; that renewal arms the fence
     from its own start and the open returns with `admit` passing for a ref append. If the renewal
     keeps failing for one TTL the open stops the thread, joins it and fails. A readiness renewal that
-    succeeds with a stale start arms nothing and reports nothing; the next one does. Before the
+    succeeds with a stale start arms nothing and reports nothing; the next one does. Neither does a
+    success whose deadline has not passed but leaves less than a ref append needs. Before the
     thread starts, the open's latched fence refuses a write while the renewal itself is sent. A
     remount whose quiesce took 20 s stays not `Live` with the fence lost until the same renewal, and
     is never armed while not `Live`.
@@ -572,7 +575,8 @@ the deadline before reaching the asserted state.
     the reclaim and then renews under the new epoch; a second request raised during the reclaim is
     handled before the next renewal: the first reclaim arms nothing, the second starts with the fence
     latched, and no write is admitted between them. The first report produces exactly one remount
-    generation, one epoch change and one lease-loss count. On today's code the first reclaim re-arms
+    generation, one epoch change and one lease-loss count, also when the reclaim fails and is
+    retried several times. On today's code the first reclaim re-arms
     the fence.
 16. `CASMountRuntime.StopDuringAReclaimJoinsTheThread` [13]: a stop during a reclaim joins the thread
     when the reclaim attempt returns, the fence is tripped without a lease-loss count, and no
