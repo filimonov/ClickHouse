@@ -27,7 +27,8 @@ behind each is told in prose below.
 ## Conventions {#conventions}
 
 - `<Model>.tla` — the module; `<Model>_*.cfg` — TLC configs for that module (prefix-matched, no
-  sharing across modules; exception: `m_*.cfg` belong to `CaB140DangleMerge.tla`).
+  sharing across modules; exceptions: `m_*.cfg` belong to `CaB140DangleMerge.tla`, and
+  `CaCasMountCore_witness_laterenew.cfg` runs `CaCasMountCoreLateRenew.tla`).
 - `_stage*` / `_safe` / `_reduced` / `_fix` — positive gates: must pass.
 - `_sab_*` / `_bug` — sabotages (negative controls): each removes one load-bearing rule and MUST
   produce a counterexample; an unexpected pass means the model lost its teeth.
@@ -118,6 +119,7 @@ exact-delete authorization.
 | `CaBuildRootPrecommit.tla` | adopted-blob dangle fix: precommit-first build-root reachability + fail-closed commit + inline closure recording | CURRENT conclusion (inline-closure + presence-gate mechanisms drifted → lazy-fold+clamp-barrier + owner-liveness) | `run_buildrootprecommit.sh` |
 | `CaGcLeaseCore.tla` | GC leader lease: epoch-fence safety, advisory heartbeat against false steals | CURRENT | `run_gclease.sh` |
 | `CaCasMountCore.tla` | mount ownership: sticky owner, monotone epoch, observation-based lease reclaim, and the v9 recovery-generation layer (a generation captured at admission and rechecked post-I/O before every publication; a successor's `EpochSeal` as a conclusive rejection; the acked-then-lost byte comparison) | CURRENT (v9 extension 2026-07-28; gates the ref-chain implementation's `slot-occupy` / `_ckpt` / install changes) | `run_mount.sh` |
+| `CaMountObserveCore.tla` | observer timing of the mount lease: a GC round or a re-mounting server watches the token on its own clock and fences only after the holder's authority ended; reproduces CAS-342 (a sighting dated before its read) and measures the fence margin | CURRENT (gates `TokenWatch` and the sighting fix in `computeHeartbeatFloor`) | `run_mountobserve.sh` |
 | `CaGcRootLocalPartManifestCore.tla` | root-local part-manifest GC: fold, manifest cleanup, orphan sweep, attempt scoping | CURRENT (partial: fence/recheck phases superseded by the ack-floor round) | `run_gc_partmanifest.sh` |
 | `CaGcAckFloorCore.tla` | one-pass GC round, clamp suppression, disaster-recovery rebuild | MIXED: graduation gate (writer-ack floor) superseded by round-only pacing; `GRebuild` + clamp-suppression still match | `run_ackfloor.sh` |
 | `CaGcAckFloorZombie.tla` | two-leader `delete_pending` two-phase graduation | CURRENT (partial: same caveat) | `run_ackfloor_zombie.sh` |
@@ -434,9 +436,26 @@ ordered scan and cleanup deletes only what it observed durable. The migration is
   (drift-aware, known not to complete in an interactive budget — pre-existing, `SLOW=1`),
   `_sab_adoptwedge`, `_sab_epochreset`, `_sab_fenceresurrect`, `_sab_foreigntakeover`,
   `_sab_wallclockreclaim`, `_sab_epochwipelive`, `_sab_decomblindbypass`, `_sab_staleinstall`,
-  `_sab_wedgeretryoldgen`, `_sab_slotnocompare`, their three `_strictorder` variants, and seven
-  `_witness_*` reachability checks. Run evidence, state counts and traces:
-  `CaCasMountCore_RESULTS.md`.
+  `_sab_wedgeretryoldgen`, `_sab_slotnocompare`, their three `_strictorder` variants, and eight
+  `_witness_*` reachability checks. `_witness_laterenew` runs `CaCasMountCoreLateRenew.tla`, a
+  history wrapper that extends the module without changing its reachable states: the lease
+  expires, `Renew` extends it under the same epoch, then `WedgeRetryCreate` and `Write` run under
+  the same generation. Run evidence, state counts and traces: `CaCasMountCore_RESULTS.md`.
+- **`CaMountObserveCore.tla`** — observer timing of the mount lease, for one holder, one observer
+  and one slot. The holder's clock and the observer's clock are separate variables coupled only by
+  a bounded rate difference. The observer samples its clock, reads the slot later, dates a new
+  token, and fences by a conditional write once the token stayed unchanged for
+  `TTL + Allowance + Cadence` (`mountObservationThresholdMs`; `Cadence` is the renewal period for
+  GC and half of it for `claimMountAwaitingExpiry`). `NoFenceInsideAuthority`: when the fence lands
+  the holder has no authority, also for a holder that keeps its lease for the whole `TTL`.
+  `_sab_sighting_before_read` (CAS-342) and `_sab_redecision_stale_sample` date a sighting with the
+  sample taken before the read and are red; `_sab_wrapping_stability` is the unsigned-subtraction
+  trap of the stability test. The `_stale_stamps_*` pairs bound the walk the defect needs, the
+  `_margin_*_tight` pairs and `SWEEP=1` measure the fence margin exactly, and
+  `_env_drift_exceeds_allowance` shows the rate bound is load-bearing. Configs: `_gc`, `_remount`,
+  `_earlyfence`, `_healthy_gc`, `_healthy_remount`, three `_sab_*`, four `_stale_stamps_*`,
+  three `_margin_*_tight`, `_env_drift_exceeds_allowance` and four `_witness_*`. Run evidence,
+  traces, the margin table and limits: `CaMountObserveCore_RESULTS.md`.
 
 ### Mount-renewal model routing {#mount-renewal-model-routing}
 
@@ -450,6 +469,11 @@ lease never overlaps that authority. `CaCasMountCore.Renew` remains an atomic, d
 permissive safety abstraction. A focused `Committed` result corresponds to its durable body/token
 and deadline postconditions; a focused terminal result enters its fenced/remount boundary. There is
 no claimed refinement. Run evidence: `CaMountRenewRetryCore_RESULTS.md`.
+
+`CaMountObserveCore` owns the observer's side of the same lease. `CaCasMountCore.GcFence` is
+enabled by `mount.deadline + Drift <= clock`, which assumes that GC fences only after the holder's
+authority ended. The code gets there by watching the token on the observer's own clock, and
+`CaMountObserveCore` checks that watch: sample, read, sighting, threshold, conditional fence.
 
 `CaDiskLifecycle` models the one lease thread that renews and reclaims in sequence, with remount
 requests as generations. A reclaim already past its step-0 bail may still finish before FORGET joins

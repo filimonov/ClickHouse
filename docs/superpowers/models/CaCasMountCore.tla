@@ -670,6 +670,10 @@ Renew(a) ==
 \* `{0}`, so `fenceUntil = mount.deadline` exactly, and `mount.deadline + 0 <= clock`
 \* reduces to `mount.deadline <= clock`) -- every legacy (`Drift = 0`) cfg's semantics are
 \* therefore completely unchanged (re-run and re-verified this round regardless).
+\*
+\* The guard is an abstraction. The code compares no clock with the holder's deadline: it watches
+\* the token on the observer's own clock. `CaMountObserveCore` models that watch and checks that
+\* it fences only after the holder's authority ended (`NoFenceInsideAuthority`).
 GcFence ==
     /\ mount # None
     /\ ~mount.fenced

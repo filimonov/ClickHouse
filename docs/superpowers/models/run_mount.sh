@@ -87,6 +87,10 @@
 #   witness_ackhappened                 -> W_AckHappened        an operation is ever acked at all,
 #                                          so `AckedOpsAreDurable` (a set inclusion, trivially true
 #                                          on an empty `acked`) is not vacuous in the green gate
+#   witness_laterenew                   -> W_LateRenewThenLaneAndWrite  the lease expires, `Renew`
+#                                          extends it under the same epoch, then `WedgeRetryCreate`
+#                                          and `Write` run under the same generation. Runs the
+#                                          history wrapper `CaCasMountCoreLateRenew.tla`
 #
 # NOT in the default suite: CaCasMountCore_rev6_observe.cfg. It does not complete in an interactive
 # budget and that is PRE-EXISTING, confirmed against the pre-2026-07-24 committed model (Drift = 2
@@ -123,6 +127,7 @@ JAR=../../../tmp/tla2tools.jar
 MODULE=CaCasMountCore
 
 # name  expectation(green|violation|incomplete)  expected-invariant(asserted, not just logged)
+# An optional fourth column names the module to run when it is not $MODULE.
 CONFIGS=(
   "sab_epochreset                        violation  WriterEpochMonotoneUnique"
   "sab_foreigntakeover                   violation  ForeignUuidNeverAutoTakesOver"
@@ -146,13 +151,15 @@ CONFIGS=(
   "witness_genrefused                    violation  W_GenerationRefused"
   "witness_sealrejected                  violation  W_SealRejectedRetry"
   "witness_ackhappened                   violation  W_AckHappened"
+  "witness_laterenew                     violation  W_LateRenewThenLaneAndWrite  CaCasMountCoreLateRenew"
 )
 [[ "${SLOW:-0}" == "1" ]] && CONFIGS+=("rev6_observe  incomplete  -")
 
 overall=0
 printf '%-38s %-11s %-40s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"; do
-  read -r name expect want <<<"$row"
+  read -r name expect want module <<<"$row"
+  module="${module:-$MODULE}"
   cfg="${MODULE}_${name}.cfg"
   log="../../../tmp/tlc_${MODULE}_${name}.log"
   meta="../../../tmp/tlc-meta-mount-${name}"
@@ -168,7 +175,7 @@ for row in "${CONFIGS[@]}"; do
   rm -rf "$meta"
   start=$SECONDS
   timeout "$tmo" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
-    -metadir "$meta" -workers "${TLC_WORKERS:-1}" -config "$cfg" "$MODULE.tla" >"$log" 2>&1
+    -metadir "$meta" -workers "${TLC_WORKERS:-1}" -config "$cfg" "$module.tla" >"$log" 2>&1
   rc=$?
   elapsed=$((SECONDS - start))
 

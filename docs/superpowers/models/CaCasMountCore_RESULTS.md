@@ -917,3 +917,47 @@ distinct from this 22-row asserted regression.
 **GREEN.** The complete committed atomic battery's 22 executed rows matched the runner's exact
 green/violation/witness expectations. This gate records the established mount/remount safety
 battery unchanged; it is not evidence of a formal refinement from the focused retry model.
+
+## 2026-10-02 — late-renewal witness and the `GcFence` abstraction {#2026-10-02-late-renewal-witness}
+
+One witness row is added. `CaCasMountCore.tla` changes by one comment at `GcFence`.
+
+### `CaCasMountCore_witness_laterenew.cfg` {#witness-laterenew}
+
+The witnessed behaviour: the lease expires (`clock >= fenceUntil`), `Renew` extends it under the
+same epoch, then `WedgeRetryCreate` and `Write` run under the same generation. This is a holder
+that keeps retrying its renewal past the lease and resumes without a remount.
+
+- **Result.** `W_LateRenewThenLaneAndWrite` violated at depth 10: 102,629 states generated, 33,366
+  distinct. No other invariant was violated.
+- **Invariants enabled.** The seven of `CaCasMountCore_v9_recoverygen.cfg`, plus `TypeOKW`.
+- **Bounds.** Those of `_v9_recoverygen`, with the `StrictOrderMount` constraint.
+- **Trace.** `ClaimOwnerEmpty -> AllocEpoch -> ClaimMount -> WedgeAdmit` (lane admitted at
+  generation 1, `clock = 0 < fenceUntil = 2`) `-> Tick -> Tick` (`clock = 2 = fenceUntil`)
+  `-> Renew` (`mount.deadline` 2 to 4, `fenceUntil = 4`, epoch 1 kept) `-> WedgeRetryCreate`
+  (the lane's bytes land at generation 1 and are acked) `-> Write`.
+
+The config runs `CaCasMountCoreLateRenew.tla`, not the module itself. A state predicate over the
+module's variables cannot tell a late `Renew` from a same-epoch `ClaimMount`, nor
+`WedgeRetryCreate` from `StragglerLands` followed by `WedgeRetryOccupied`. The wrapper adds three
+history variables and records the four steps as they happen. Every step of its `NextW` is a step of
+`Next`, and `Next` alone is always allowed, so its reachable states project onto exactly those of
+`CaCasMountCore`. `run_mount.sh` takes the module name from an optional fourth column.
+
+In this model `GcFence` is enabled at the same instant as the late `Renew`
+(`mount.deadline + Drift <= clock` at `clock = 2`). The witness is the interleaving in which the
+renewal lands first.
+
+### `GcFence` is an abstraction {#gcfence-abstraction}
+
+`GcFence` compares the clock with the holder's deadline. The code does not: it watches the token on
+the observer's own clock. `CaMountObserveCore` models that watch and checks
+`NoFenceInsideAuthority`, which is what the guard assumes. Evidence:
+`CaMountObserveCore_RESULTS.md`.
+
+### Battery {#2026-10-02-battery}
+
+`run_mount.sh` with `TLC_WORKERS=1`: 23 rows, `ALL EXPECTATIONS MET`. The two exhaustive greens are
+unchanged: `stage1` 51,231,925 generated and 10,616,665 distinct at depth 28; `v9_recoverygen`
+82,299,033 generated and 15,658,147 distinct at depth 26. `rev6_observe` (`Drift = 2`) is still not
+part of the default run and has still never completed.
