@@ -12,14 +12,30 @@ check_tlc_pin "$JAR" || exit 3
 # Sabotage first: the positive gate is evidence only after the missing-marker bug is seen red.
 # name  expectation(green|violation)  expected-invariant
 CONFIGS=(
-    "bug           violation  NoDangle"
-    "bug_both      violation  NoDangle"
-    "bug_both_2w   violation  NoDangle"
-    "fix           green      -"
-    "fix_pconf     green      -"
-    "fix_prefetch  green      -"
-    "fix_both      green      -"
-    "fix_both_2w   green      -"
+    "bug                          violation  NoDangle"
+    "bug_both                     violation  NoDangle"
+    "bug_both_2w                  violation  NoDangle"
+    "rv_bug                       violation  NoDangle"
+    "f1_bug                       violation  NoDangle"
+    "pm_g1_late_resolved_entry    violation  NoDangle"
+    "pm_g1_late_resolved_stale    violation  NoDangle"
+    "pm_g1_late_gaveup            violation  NoDangle"
+    "pm_g1_nogateround_noregistry violation  NoDangle"
+    "pm_g1_nojob                  violation  JobSparesPendingGuard"
+    "pm_g1_norestamp_live         violation  NoWedgedCarry"
+    "pm_g1_extdrop_noregistry     violation  NoDangle"
+    "fix                          green      -"
+    "fix_pconf                    green      -"
+    "fix_prefetch                 green      -"
+    "fix_both                     green      -"
+    "fix_both_2w                  green      -"
+    "pm_g1_noregistry             green      -"
+    "pm_g1_all_noregistry         green      -"
+    "rv_g1_noregistry             green      -"
+    "pm_g1_f1                     green      -"
+    "pm_g1_live                   green      -"
+    "pm_g1_late_resolved          green      -"
+    "pm_g1_late_resolved_version  green      -"
 )
 
 selected()
@@ -41,7 +57,7 @@ selected()
 
 overall=0
 run_id="${MODULE}-$$-$(date +%s%N)"
-printf '%-12s %-11s %-32s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
+printf '%-30s %-11s %-32s %12s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "DISTINCT" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"
 do
     read -r name expect want <<<"$row"
@@ -51,10 +67,11 @@ do
     log="../../../tmp/tlc-${run_id}-${name}.log"
     meta="../../../tmp/tlc-meta-${run_id}-${name}"
     start=$SECONDS
-    timeout "${TLC_TIMEOUT:-3600}" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
-        -metadir "$meta" -workers "${TLC_WORKERS:-1}" -deadlock -config "$cfg" "$MODULE.tla" >"$log" 2>&1
+    timeout "${TLC_TIMEOUT:-3600}" nice -n 10 /usr/bin/java -XX:+UseParallelGC -Xmx8g ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
+        -metadir "$meta" -workers "${TLC_WORKERS:-8}" -deadlock -config "$cfg" "$MODULE.tla" >"$log" 2>&1
     rc=$?
     elapsed=$((SECONDS - start))
+    distinct="$(grep -oE '[0-9]+ distinct states found' "$log" | tail -1 | awk '{print $1}')"
 
     result=error
     if [[ $rc -eq 0 ]] && grep -q "No error has been found" "$log"
@@ -76,7 +93,7 @@ do
         violation) [[ "$result" == "violation:${want}" ]] && verdict=PASS ;;
     esac
     [[ "$verdict" == FAIL ]] && overall=1
-    printf '%-12s %-11s %-32s %-8s %s\n' "$name" "$expect" "$result" "$elapsed" "$verdict"
+    printf '%-30s %-11s %-32s %12s %-8s %s\n' "$name" "$expect" "$result" "${distinct:-?}" "$elapsed" "$verdict"
     printf '  log: %s\n' "$log"
 done
 

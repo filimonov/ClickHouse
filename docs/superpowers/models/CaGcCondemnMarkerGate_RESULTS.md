@@ -1,5 +1,5 @@
 ---
-description: 'TLC evidence for durable condemn-marker gating and logical-content NoDangle safety'
+description: 'TLC evidence for the condemn-marker gate: PR1 configuration, sabotage rows and the regression battery'
 sidebar_label: 'CAS condemn-marker TLC results'
 sidebar_position: 5
 slug: /superpowers/models/CaGcCondemnMarkerGate-results
@@ -11,246 +11,129 @@ doc_type: 'reference'
 
 ## Verdict {#verdict}
 
-The focused gate passed twice from identical final model inputs. The missing-marker sabotage violated the exact
-invariant `NoDangle`, while the durable-marker gate exhausted its state graph without an error. The
-runner printed `ALL EXPECTATIONS MET` only after both exact expectations matched.
-
-`NoDangle` now expresses logical content identity rather than incarnation-token identity. This
-model has one fixed content-addressed key and every present body carries that key's content, so a
-committed reference requires `body.present`; it does not require the replacement body's current
-token to equal the token previously observed by the writer. Tokens continue to authorize exact
-deletion.
+The PR1 configuration (gate always reads, no registry, retry stamps the current round, job deletes only at a round up to the entry's) is green in every required row, and each sabotage row violates the invariant named for it. The inert defaults of the four new constants reproduce the distinct-state count of every green row of the earlier battery; violation rows differ in count because TLC stops at the first counterexample, which depends on worker scheduling.
 
 ## Checker and finite scope {#checker-and-finite-scope}
 
-- TLC: `2026.07.18.145032`, revision `30cc360`.
-- Pinned `tla2tools.jar` SHA-256:
-  `cc4803dce2a8ffaf0f5920a9dc39df4b5ee34ab4cb53fb58ac557277a7e516b3`.
-- Workers: `1`.
-- One fixed content-addressed body slot and one writer edge.
-- `MaxGen = 3` and `MaxRounds = 6` in both configurations.
-- Breadth-first search, deadlock checking, `TypeOK`, and `NoDangle` are enabled.
-- Raw TLC logs, metadata, and generated traces are retained below repository `tmp`; generated
-  source-adjacent trace modules were moved there before staging.
+- TLC `2026.07.18.145032`, revision `30cc360`; `tla2tools.jar` SHA-256 `cc4803dce2a8ffaf0f5920a9dc39df4b5ee34ab4cb53fb58ac557277a7e516b3`.
+- 8 workers, `nice -n 10`, `-Xmx8g`, deadlock checking on. PR1 rows use `MaxGen 3`, `MaxRounds 7`, `TwoWriters`; regression rows keep their own values.
+- Not shown: the read-ahead, a destructive request landing after a PR1 read, an old build's pending entries, and GC's own ambiguous writes. `GSettleGraduate` makes the gate read, the graduation and the round commit one step.
+- Not shown: more than one hash, more than one retired entry, more than two writer slots, more than one `GStaleAttempt` and one late request per behaviour, and liveness. The meta value is its bytes, so under `EtagIsContent` it stands for S3's content etag.
 
-The model covers a swallowed condemn-marker write, same-token writer adoption in the cut/redelete
-window, round graduation, confirmed durable marker evidence, marker retry, and exact-token deletion.
-It is a focused gate for that interleaving, not the broader split publication protocol owned by
-`CaBlobPublishCore`.
+## Switches {#switches}
 
-## Safety invariant {#safety-invariant}
+| Constant | PR1 value | Meaning |
+|---|---|---|
+| `GateOnMarker`, `GateAlwaysReads`, `GateRoundCheck`, `JobRoundCheck`, `Restamp` | `TRUE` | the gate reads the marker; round check; job round check; re-stamp |
+| `RetryStampsCurrent` | `TRUE` | the gate's retry write stamps the refusing round, not the entry's |
+| `SplitMetaDelete`, `SplitPublish`, `RealCandidate`, `Respawn` | `TRUE` | the code's shape |
+| `Registry`, `RegRound` | `FALSE` | no in-process registry |
+| `PersistConf` | either | the carried bit; `GateAlwaysReads` ignores it |
+| `WriterLeavesMarker`, `DeleteReads`, `GateTouched`, `ForgetOnTouch`, `ExternalDrop` | `FALSE` | rejected candidates |
+| `OutstandingReconcile` | `"none"` | `"resolved"` / `"gaveup"`: a reconcile leaves one Clean If-Match request in flight |
+| `EtagIsContent` | `TRUE` | S3: equal bytes match; `FALSE`: only an unreplaced version matches (GCS) |
+| `TrackRetry` | `FALSE` | records a completed retry write for `NoWedgedCarry` |
+
+Fault switches: `AsyncMarker`, `Prefetch`, `ReconcileFault`, `StaleMarkers`, `StaleAttempts`, `SuppressRounds`. `ExactAbsentPath` makes publication only into a key with neither body nor meta.
+
+## Invariants {#invariants}
 
 ```tla
-NoDangle == committed => body.present
+NoDangle == \A w \in Writers : committed[w] => body.present
+
+MarkerPreservedPending == (ret.st = "pending" /\ TokCurrent) => Cond
+MarkerPreservedConfirmed == (ret.st = "condemned" /\ GateConfirmed /\ TokCurrent) => Cond
+
+JobWouldDelete(c) == ~JobRoundCheck \/ (Cond /\ meta.cr <= c)
+JobSparesPendingGuard == \A c \in mdq : ~(ret.st = "pending" /\ TokCurrent /\ JobWouldDelete(c))
+
+NoWedgedCarry == ~(ret.st = "condemned" /\ ret.retried /\ Cond /\ meta.cr < ret.cr)
 ```
 
-Presence is content identity in this one-key abstraction. `body.tok` is deliberately absent from
-the invariant: an equivalent body replacement may have a new provider token without invalidating a
-logical content-addressed reference.
+`NoDangle` compares content presence, not tokens. `MarkerPreservedConfirmed` is vacuous under `GateAlwaysReads` and is kept for the regression cfgs. `NoWedgedCarry` checks the re-stamp, not eventual graduation.
 
-## First complete run {#first-complete-run}
+## Required runs {#required-runs}
 
-Command output: `build/task2_condemnmarker_tla.log`. TLC row-log run ID:
-`CaGcCondemnMarkerGate-11-1787386011121917359`.
+Command output: `tmp/cas-pub-marker/final3_pr1.txt`; traces read from `tmp/cas-pub-marker/logs/<cfg>.log`. The last two rows are the earlier sabotage cfgs, rerun on the new module.
 
-| Configuration | Expected | Exact observed result | Generated | Distinct | Queued | Depth | Seconds |
-|---|---|---|---:|---:|---:|---:|---:|
-| `CaGcCondemnMarkerGate_bug.cfg` | violation | `NoDangle` violated | 381 | 227 | 48 | 11 | 0 |
-| `CaGcCondemnMarkerGate_fix.cfg` | green | `green` | 1,540 | 808 | 0 | 17 | 0 |
+| Cfg | Expected | Observed | Distinct | Seconds | Trace |
+|---|---|---|---:|---:|---|
+| `pm_g1_noregistry` | green | `green` | 199,936 | 1 | - |
+| `pm_g1_all_noregistry` | green | `green` | 6,089,253 | 21 | - |
+| `rv_g1_noregistry` | green | `green` | 536,095 | 3 | - |
+| `pm_g1_f1` | green | `green` | 4,578,945 | 15 | - |
+| `pm_g1_live` | green | `green` | 386,063 | 2 | - |
+| `pm_g1_late_resolved` | green | `green` | 675,800 | 2 | - |
+| `pm_g1_late_resolved_entry` | violation | `violation:NoDangle` | 380,644 | 1 | entry cr1 carried while the retry stamps the entry's round; a reconcile resolves Clean and leaves a request expecting Condemned(cr2); a later write recreates identical bytes Condemned(cr2); the late request lands (equal bytes), clears the guard, the entry graduates and deletes the body under a landed edge. |
+| `pm_g1_late_resolved_version` | green | `green` | 13,862,134 | 47 | - |
+| `pm_g1_late_resolved_stale` | violation | `violation:NoDangle` | 542,881 | 2 | a stale marker write Condemned(cr1) is the version the reconcile read; the reconcile resolves, its request stays in flight; the gate's own Condemned(cr1) recreates identical bytes; the late request lands, the entry graduates, body deleted under a landed edge. |
+| `pm_g1_late_gaveup` | violation | `violation:NoDangle` | 298,083 | 1 | the reconcile faults and gives up with a request in flight expecting Condemned(cr2); the entry graduates to pending on that unchanged marker; the late request lands Clean; the redelete removes the body under a landed edge. |
+| `pm_g1_nogateround_noregistry` | violation | `violation:NoDangle` | 4,010,406 | 12 | gate without the round check accepts a stale Condemned(cr1) for an entry of round 4; the stale delete job removes then a writer's Clean lands; entry deletes the body under a landed edge. |
+| `pm_g1_nojob` | violation | `violation:JobSparesPendingGuard` | 104,421 | 1 | JobRoundCheck off; a queued job captured at round 1 would delete the Condemned(cr4) marker guarding the pending entry (the invariant fires one step before the delete). |
+| `pm_g1_norestamp_live` | violation | `violation:NoWedgedCarry` | 21,959 | 0 | Restamp off; the entry re-condemns at round 2/3 while the marker stays Condemned(cr1); after the retry write completed the marker is older than the entry's round. |
+| `pm_g1_extdrop_noregistry` | violation | `violation:NoDangle` | 46,592 | 1 | the first writer's edge is dropped externally while its reconcile is owed, a second writer lands, its reconcile writes Clean over Condemned(cr2), the entry deletes the body under a landed edge. |
+| `rv_bug` | violation | `violation:NoDangle` | 14,238 | 1 | a publisher's Clean overwrites the entry's Condemned(cr1) marker; the in-process confirmation lets the entry graduate; body deleted while a writer's edge landed. |
+| `f1_bug` | violation | `violation:NoDangle` | 1,299,275 | 3 | stale job deletes the marker, a new writer publishes over the absent marker and cleans, the entry (cr4) graduates on the old in-process confirmation and deletes the body under a landed edge. |
 
-The runner exited `0` and its final line was exactly `ALL EXPECTATIONS MET`.
+## Regression {#regression}
 
-## Second complete run {#second-complete-run}
+Inert-default rerun of the earlier battery. Green rows match in distinct states. Violation rows are first-counterexample counts and vary between runs. Rows that were not green before (`pm_g7_all`, `pm_g1w1_extdrop`, `pm_g7_big`, `pm_g1_big`) keep the same result as before.
 
-Command output: `build/task2_condemnmarker_rerun.log`. TLC row-log run ID:
-`CaGcCondemnMarkerGate-11-1787411329587200063`.
+| Cfg | Before: result | Before: distinct | After: result | After: distinct |
+|---|---|---:|---|---:|
+| `atomic_regress` | `green` | 20,802 | `green` | 20,802 |
+| `bug_gateround` | `violation:NoDangle` | 52,084 | `violation:NoDangle` | 51,468 |
+| `bug_jobdelay` | `violation:NoDangle` | 25,886 | `violation:NoDangle` | 25,397 |
+| `bug_restamp` | `violation:NoDangle` | 55,888 | `violation:NoDangle` | 54,907 |
+| `bug_stale` | `violation:NoDangle` | 114,328 | `violation:NoDangle` | 119,983 |
+| `fix_both` | `green` | 104,271 | `green` | 104,271 |
+| `fix` | `green` | 52,645 | `green` | 52,645 |
+| `fix_splitpub` | `violation:NoDangle` | 34,382 | `violation:NoDangle` | 34,979 |
+| `fix_stale_big` | `green` | 2,591,915 | `green` | 2,591,915 |
+| `fix_stale` | `green` | 719,379 | `green` | 719,379 |
+| `job_only` | `green` | 40,197 | `green` | 40,197 |
+| `job_only_stale` | `violation:NoDangle` | 294,797 | `violation:NoDangle` | 308,988 |
+| `nogate_stale` | `violation:NoDangle` | 311,874 | `violation:NoDangle` | 296,958 |
+| `norestamp_stale` | `violation:NoDangle` | 281,131 | `violation:NoDangle` | 301,088 |
+| `old_bug_both_2w` | `violation:NoDangle` | 7,830 | `violation:NoDangle` | 4,298 |
+| `old_bug_both` | `violation:NoDangle` | 1,068 | `violation:NoDangle` | 847 |
+| `old_bug` | `violation:NoDangle` | 455 | `violation:NoDangle` | 455 |
+| `old_fix_both_2w` | `green` | 22,171 | `green` | 22,171 |
+| `old_fix_both` | `green` | 1,331 | `green` | 1,331 |
+| `old_fix` | `green` | 845 | `green` | 845 |
+| `old_fix_pconf` | `green` | 803 | `green` | 803 |
+| `old_fix_prefetch` | `green` | 1,385 | `green` | 1,385 |
+| `rv_bug` | `violation:NoDangle` | 17,866 | `violation:NoDangle` | 9,981 |
+| `rv_bug_mp` | `violation:MarkerPreservedPending` | 3,177 | `violation:MarkerPreservedPending` | 2,471 |
+| `rv_bug_async` | `violation:NoDangle` | 14,165 | `violation:NoDangle` | 10,372 |
+| `f1_bug` | `violation:NoDangle` | 1,333,161 | `violation:NoDangle` | 1,280,796 |
+| `f1_bug_mp` | `violation:MarkerPreservedPending` | 321,419 | `violation:MarkerPreservedPending` | 382,988 |
+| `pm_bug` | `violation:NoDangle` | 90,777 | `violation:NoDangle` | 89,130 |
+| `pm_bug_all` | `violation:NoDangle` | 1,641,510 | `violation:NoDangle` | 1,613,975 |
+| `pm_overapprox` | `violation:NoDangle` | 61,647 | `violation:NoDangle` | 68,444 |
+| `pm_g1_nogateround` | `violation:NoDangle` | 35,332,696 | `violation:NoDangle` | 44,130,658 |
+| `pm_g1_extdrop` | `violation:NoDangle` | 73,907 | `violation:NoDangle` | 58,910 |
+| `pm_g1_wit` | `violation:WitNoDeleteAfterRefusal` | 11,400 | `violation:WitNoDeleteAfterRefusal` | 12,760 |
+| `pm_g7_mpc` | `violation:MarkerPreservedConfirmed` | 5,511 | `violation:MarkerPreservedConfirmed` | 3,551 |
+| `pm_g7_naive` | `violation:NoDangle` | 164,032 | `violation:NoDangle` | 133,738 |
+| `pm_w1_stale` | `violation:NoDangle` | 9,526,734 | `violation:NoDangle` | 4,130,740 |
+| `pm_g2_all` | `violation:NoDangle` | 1,890,991 | `violation:NoDangle` | 2,966,783 |
+| `pm_g1w1_extdrop_stale` | `violation:NoDangle` | 6,626,988 | `violation:NoDangle` | 3,361,495 |
+| `rv_g1` | `green` | 1,951,931 | `green` | 1,951,931 |
+| `f1_fix` | `green` | 37,162,840 | `green` | 37,162,840 |
+| `pm_nosplit` | `green` | 37,162,840 | `green` | 37,162,840 |
+| `pm_g1` | `green` | 241,547 | `green` | 241,547 |
+| `pm_g1_all` | `green` | 108,547,117 | `green` | 108,547,117 |
+| `pm_g1_noreg` | `green` | 108,547,117 | `green` | 108,547,117 |
+| `pm_g1_overapprox` | `green` | 57,644,865 | `green` | 57,644,865 |
+| `pm_g1_norestamp` | `green` | 79,572,691 | `green` | 79,572,691 |
+| `pm_g7_all` | `violation:MarkerPreservedPending` | 180,871 | `violation:MarkerPreservedPending` | 121,690 |
+| `pm_w1` | `green` | 1,532,050 | `green` | 1,532,050 |
+| `pm_g1w1_extdrop` | `violation:MarkerPreservedPending` | 57,061 | `violation:MarkerPreservedPending` | 53,780 |
+| `f1_fix_big` | `green` | 241,031,093 | `green` | 241,031,093 |
+| `pm_g1_big` | `timeout` | 300 | `timeout` | 619 |
+| `pm_g7_big` | `violation:MarkerPreservedPending` | 261,366 | `violation:MarkerPreservedPending` | 148,701 |
 
-| Configuration | Expected | Exact observed result | Generated | Distinct | Queued | Depth | Seconds |
-|---|---|---|---:|---:|---:|---:|---:|
-| `CaGcCondemnMarkerGate_bug.cfg` | violation | `NoDangle` violated | 381 | 227 | 48 | 11 | 1 |
-| `CaGcCondemnMarkerGate_fix.cfg` | green | `green` | 1,540 | 808 | 0 | 17 | 0 |
+## Big run {#big-run}
 
-The rerun also exited `0` and ended with exact `ALL EXPECTATIONS MET`. The deterministic state
-counts and depths match the first complete run.
-
-## Counterexample audit {#counterexample-audit}
-
-The missing-marker trace was inspected rather than accepted from a generic TLC error:
-
-- Before the invariant edit, `run_condemnmarker.sh bug` produced the exact `NoDangle` violation at
-  depth `11`, with `381` generated, `227` distinct, and `48` queued states.
-- After changing `NoDangle`, the same selected sabotage produced the same exact violation and state
-  counts. This sensitivity check proves the logical invariant was not weakened into green.
-- In the trace, `WCommit` makes `committed = TRUE` while
-  `body = [present |-> TRUE, tok |-> 1]`. `GSettleRedelete` then consumes the retired entry and sets
-  `body = [present |-> FALSE, tok |-> 0]` while `committed` remains true. The violation is caused by
-  absence of the key's content, not by token mismatch.
-
-The fixed configuration gates graduation on confirmed durable `Condemned` evidence or a synchronous
-metadata re-read. Without confirmation, the retired entry is carried and the marker write retried.
-Its entire graph completes with zero queued states.
-
-## Commands {#commands}
-
-```bash
-docs/superpowers/models/run_condemnmarker.sh bug \
-    > build/task2_condemnmarker_red_control.log 2>&1
-docs/superpowers/models/run_condemnmarker.sh bug \
-    > build/task2_condemnmarker_red_after_nodangle.log 2>&1
-docs/superpowers/models/run_condemnmarker.sh \
-    > build/task2_condemnmarker_tla.log 2>&1
-docs/superpowers/models/run_condemnmarker.sh \
-    > build/task2_condemnmarker_rerun.log 2>&1
-```
-
-The two selected negative controls each exited `0` because their declared exact sabotage
-expectation matched. Both complete batteries were accepted only through the runner's exact row
-parser and final marker.
-
-## Scope note {#scope-note}
-
-This is a bounded safety proof for durable condemn-marker gating. It does not model provider
-wire-format behavior, multipart publication, or the split `HEAD`/publication transition system;
-those are separate implementation/live-test obligations and `CaBlobPublishCore` model scope.
-
-## 2026-09-30: persisted confirmation and prefetched observation {#persisted-confirmation-and-prefetch}
-
-All four new configurations meet their expectations, and the two original configurations reproduce
-their recorded results. `NoDangle` holds with the persisted confirmation, with the earlier
-observation, and with both. The pre-fix gate with both extensions still reaches the missing-marker
-dangle.
-
-### What the extensions model {#extensions}
-
-`PersistConf` persists the graduation evidence in the run row as `ret.pconf`. The flag is set
-wherever `ret.conf` becomes true: a landed marker write at condemn, a landed retry, and graduation.
-`GRestart` clears `ret.conf` and keeps `ret.pconf`. `GSettleGraduate` accepts
-`ret.conf \/ (PersistConf /\ ret.pconf) \/ meta = "condemned"`, and `GSettleCarryRetry` fires only
-when that gate fails. Two actions exist only under `PersistConf`. `GSettleGraduateDeferred` is the
-carry after a passed gate with the graduation budget spent, and it sets `ret.pconf`.
-`GSettleSupersede` replaces the row when the body carries another token, and the new row has only
-its own marker outcome. Setting `ret.pconf` at condemn over-approximates the code, which persists
-the flag only at the deferred carry; a larger set of flagged rows can only open the gate more often.
-
-`Prefetch` separates the settle's `HEAD` from the settle. `GObserve` records the body's token, or
-`0` when the body is absent, at any point between `GCut` and the settle. With an observation,
-`GSettleCondemn`, `GSettleIdle` and `GSettleSupersede` decide on the observed token; without one they
-read the live body, as an inline `HEAD` after a read-ahead miss does. `EndRound` clears the
-observation. Both constants are `FALSE` in `_fix.cfg` and `_bug.cfg`, whose state graphs are
-unchanged.
-
-### Runs {#runs-2026-09-30}
-
-TLC `2026.07.18.145032`, revision `30cc360`, the pinned jar above, `MaxGen = 3`, `MaxRounds = 6`,
-`nice 10`. Battery: `run_condemnmarker.sh` with `TLC_WORKERS=8`, output `tmp/gc/tlc_condemnmarker_battery_final.log`,
-ending `ALL EXPECTATIONS MET`.
-
-| Configuration | `GateOnMarker` | `PersistConf` | `Prefetch` | Generated | Distinct | Depth | Seconds | Verdict |
-|---|---|---|---|---:|---:|---:|---:|---|
-| `_fix.cfg` | `TRUE` | `FALSE` | `FALSE` | 1,540 | 808 | 17 | 2 | green, equal to the recorded run |
-| `_fix_pconf.cfg` | `TRUE` | `TRUE` | `FALSE` | 1,752 | 768 | 16 | 2 | green |
-| `_fix_prefetch.cfg` | `TRUE` | `FALSE` | `TRUE` | 3,072 | 1,337 | 19 | 2 | green |
-| `_fix_both.cfg` | `TRUE` | `TRUE` | `TRUE` | 3,586 | 1,285 | 17 | 2 | green |
-
-The violation rows were rerun with `TLC_WORKERS=1`, because the counts at a violation depend on
-worker scheduling. Output: `tmp/gc/tlc_condemnmarker_violations_w1_final.log`.
-
-| Configuration | `GateOnMarker` | `PersistConf` | `Prefetch` | Generated | Distinct | Queued | Depth | Seconds | Verdict |
-|---|---|---|---|---:|---:|---:|---:|---:|---|
-| `_bug.cfg` | `FALSE` | `FALSE` | `FALSE` | 381 | 227 | 48 | 11 | 3 | `NoDangle` violated, equal to the recorded run |
-| `_bug_both.cfg` | `FALSE` | `TRUE` | `TRUE` | 1,268 | 528 | 157 | 11 | 2 | `NoDangle` violated |
-
-Green distinct counts are stable across repeated 8-worker runs. The reported depth of
-`_fix_prefetch.cfg` was 18 in one run and 19 in another.
-
-The `_bug_both.cfg` trace has the recorded shape: `Seed`, `GCut`, `GSettleCondemn` with the marker
-swallowed (`meta = "clean"`), `GCut`, unconditional `GSettleGraduate`, `GCut`, `WPrecommit`,
-`WAdopt` of token `1`, `WCommit`, then `GSettleRedelete` deletes token `1` under the committed
-edge.
-
-### Sensitivity and reachability {#sensitivity-2026-09-30}
-
-Scratch variants of the model, run through a copy of the runner with 8 workers. None is committed.
-
-| Variant | Base | Prediction | Result |
-|---|---|---|---|
-| swallowed condemn marker sets `ret.pconf` | `_fix_pconf` | `NoDangle` violated | violated |
-| state with `ret.pconf`, no `ret.conf`, `meta = "clean"`, body replaced, gate evaluated | `_fix_pconf` | reachable | reachable |
-| `observed_tok = 0` and body present | `_fix_prefetch` | reachable | reachable |
-| body replaced after `GObserve` saw a token | `_fix_prefetch` | reachable | reachable |
-| fresh condemn of a token the body no longer carries | `_fix_prefetch` | reachable | **unreachable** |
-| `GSettleSupersede` disabled | `_fix_both` | distinct count changes | 1,237 against 1,285 |
-| `GSettleGraduateDeferred` disabled | `_fix_both` | distinct count changes | **1,285, unchanged** |
-| superseding row keeps `ret.pconf` | `_fix_both` | green, one writer cannot adopt the new token after the cut | green |
-
-The persisted flag is load-bearing: evidence without a landed marker produces the dangle. The
-cleared-marker case, where a writer replaced the token and set `Clean`, reaches the gate with only
-`ret.pconf`, and `NoDangle` still holds.
-
-### Limits {#limits-2026-09-30}
-
-- **Fresh condemn on a stale observation needs `TwoWriters`.** With one writer, a body is replaced
-  only while an existing retired row keeps the marker `Condemned`, so a fresh condemn always sees
-  the live token. The two-writer runs below cover it.
-- **Deferred carry adds no distinct state.** Every state it reaches is also reached by condemning in
-  a later round. Its safety is checked, but it is not an independent path in this graph.
-- **A wrong supersede needs `TwoWriters` to be detected.** With one writer, the superseding token's
-  writer is folded by the next cut. The two-writer sabotage below catches it.
-- **Marker writes land inside the settle.** A marker retry landing after the settle is represented
-  only by a retry settling after the writer's replacement.
-
-## 2026-09-30: two writers {#two-writers}
-
-`NoDangle` holds when a fresh condemn uses a stale prefetched token, and that row's exact-token
-delete finds the replacement. The pre-fix gate with every extension still reaches the dangle.
-
-### What the extension models {#two-writers-extension}
-
-`TwoWriters` makes `edge`, `adopted` and `committed` functions over `Writers`, which is `{1, 2}`
-instead of `{1}`, and enables `WDrop`. `WDrop` removes a writer's edge and its committed reference,
-as a dropped part or an insert aborted before commit does. Without it an edge is permanent, every
-later cut folds the hash, and no body is condemned after a writer lands. `GCut` folds when any
-writer's edge has landed. `NoDangle` becomes `\A w \in Writers : committed[w] => body.present`.
-With `TwoWriters = FALSE` the functions have one point and `WDrop` is disabled; all six earlier
-configurations were rerun and reproduced their generated, distinct and depth counts exactly.
-
-### Runs {#two-writers-runs}
-
-Same checker, jar, `MaxGen = 3`, `MaxRounds = 6` and `nice 10`. Output:
-`tmp/gc/tlc_condemnmarker_2w.log` (8 workers) and `tmp/gc/tlc_condemnmarker_2w_bug_w1.log`
-(1 worker).
-
-| Configuration | Constants | Workers | Generated | Distinct | Queued | Depth | Seconds | Verdict |
-|---|---|---:|---:|---:|---:|---:|---:|---|
-| `_fix_both_2w.cfg` | gate, `PersistConf`, `Prefetch`, `TwoWriters` | 8 | 79,999 | 20,574 | 0 | 21 | 4 | green |
-| `_bug_both_2w.cfg` | `PersistConf`, `Prefetch`, `TwoWriters`, no gate | 1 | 8,960 | 3,113 | 1,228 | 11 | 3 | `NoDangle` violated |
-
-The `_bug_both_2w.cfg` trace has the recorded shape with writer `1`: swallowed marker,
-unconditional graduation, `WPrecommit(1)`, `WAdopt(1)` of token `1`, `WCommit(1)`, then
-`GSettleRedelete` deletes token `1`.
-
-### Reachability {#two-writers-reachability}
-
-Scratch variants of `_fix_both_2w.cfg` with one worker. `stale_tok` is a scratch-only variable
-holding the token of the last fresh condemn whose observation no longer matched the body.
-
-| Witness | Prediction | Result | Distinct at violation | Depth |
-|---|---|---|---:|---:|
-| settle about to fresh-condemn an observed token the body no longer carries | reachable | reachable | 4,115 | 12 |
-| that row graduated, cut taken, exact-token delete about to find the replacement | reachable | reachable | 17,369 | 17 |
-| sabotage: a superseding row with a swallowed marker keeps `ret.pconf` | `NoDangle` violated | violated | 14,878 | 16 |
-
-The second trace is the full interleaving. Writer `1` lands after the round-1 cut, and token `1` is
-condemned with its marker. Writer `1` drops, and round 2 spares the row. In round 3, writer `2`
-lands after the cut, and `GObserve` records token `1`. Writer `2` then resurrects to token `2` and
-drops. `GSettleCondemn` condemns token `1`, and round 4 graduates it. At round 5 the pending delete
-of token `1` finds token `2`.
-
-### Limits {#two-writers-limits}
-
-- **Bounds.** At most three tokens and five complete rounds. The interleaving uses all three tokens'
-  worth of transitions and ends in round 5, so longer chains, such as a second replacement, are
-  outside the bound.
-- **Supersede reset is load-bearing.** In the sabotage trace, writer `1` resurrects to token `2` and
-  drops. The row supersedes to token `2` with its marker swallowed but flagged, and graduates. Writer
-  `2` then adopts token `2` under a `Clean` marker, and the redelete removes it.
+`pm_g1_big_noregistry`: `green`, 25,807,236 distinct states, 90 s (cap 7200 s). 
