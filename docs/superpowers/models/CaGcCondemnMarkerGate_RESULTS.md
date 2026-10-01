@@ -79,6 +79,8 @@ All cfgs are committed next to the module; `run_condemnmarker.sh` asserts the in
 
 ## Regression {#regression}
 
+### Reproducible with committed cfgs {#regression-committed}
+
 Promoted cfgs against the last committed RESULTS (`4dd5f1ac11b`). The module was replaced, not extended: the earlier module had different writer actions, so the counts moved while every result stayed the same.
 
 | Cfg | Last committed distinct | Now distinct | Result |
@@ -88,6 +90,8 @@ Promoted cfgs against the last committed RESULTS (`4dd5f1ac11b`). The module was
 | `fix_prefetch` | 1,337 | 1,385 | `green` |
 | `fix_both` | 1,285 | 1,331 | `green` |
 | `fix_both_2w` | 20,574 | 22,171 | `green` |
+
+### Recorded counts, cfgs not committed {#regression-recorded}
 
 Earlier battery rerun with the four constants at their inert values. Its cfgs are not committed, and several names (`fix`, `fix_both`, `rv_bug`, `f1_bug`) denote different configurations from the committed cfgs of the same name, so these rows are recorded counts, not reproducible from this directory. Green rows match in distinct states. Violation rows are first-counterexample counts and vary between runs. Rows that were not green before (`pm_g7_all`, `pm_g1w1_extdrop`, `pm_g7_big`, `pm_g1_big`) keep the same result as before.
 
