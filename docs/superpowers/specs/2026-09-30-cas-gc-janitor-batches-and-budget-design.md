@@ -206,7 +206,8 @@ yet when the next page starts: its jobs may still run.
 | the stop flag is set: a job held (authority, local failure, `NOT_IMPLEMENTED`, schedule refusal) | the cursor must not pass a page the code did not understand; stop spending requests |
 | page not decided (suppressed, ambiguous cut, admission lost) | the cursor did not move; the next page would re-list the same keys |
 | page had no dead-life candidate | steady state stays at one page per folding round, today's LIST cost. otel.demo shows `janitor_deleted` 0 over 24 h |
-| `next_cursor` empty | no wrap inside a round; the next round starts from the beginning |
+| `next_cursor` empty and the pass began at the stream start | one pass per round; the next round starts from the beginning |
+| `next_cursor` empty and the pass began mid-stream | wrap once: continue from the stream start up to the page that began the pass, under the same budget and stop rules; the next round starts from the beginning. Without the wrap every `DROP` costs an extra round: the fold round's pass advances one live page past the debris, and the keys before that page wait for the round after the deleting one |
 | a read of page ≥ 2 threw | [cursor](#cursor): publish the complete prefix |
 
 A leaked job does not stop the phase. "Dead-life candidate" is a classification outcome, not a delete
@@ -915,7 +916,9 @@ time; [M1](#m1-long-stream-drain) and [M4a](#m4-no-batch) measure it.
 |---|---|---|
 | `SteadyStateTakesOnePage` | 5,000 live keys: `janitor_pages` 1, one maintenance PUT | guard |
 | `DeferredRoundTakesOneSuppressedPage` | `DEFER` with debris: 1 page, 0 deletes, cursor unchanged, no PUT | guard |
-| `EndOfPassStopsWithoutWrapping` | debris smaller than a page: 1 page, cursor reset to empty | guard |
+| `EndOfPassStopsWithoutWrapping` | pass began at the stream start, debris smaller than a page: 1 page, cursor reset to empty | guard |
+| `MidStreamPassWrapsToTheStart` | cursor at page 3 of 5, dead keys on every page: pages 3, 4, 5, 1, 2 in one pass, cursor reset to empty, one maintenance CAS | red |
+| `WrapStopsAtAnAllLivePage` | cursor at page 3 of 5, pages 3–5 dead, page 1 live: pages 3, 4, 5, 1; page 2 not listed; cursor reset to empty | red |
 | `CursorFingerprintShowsStuckVsMoving` | two runs holding at one page (`CORRUPTED_DATA`): equal `cursor_start_fp`, `cursor_advanced` 0; successive pages: different; empty cursor → 0 | red |
 | `FoldingRoundDrainsWithinBudget` (integration) | one folding round, 3,500 dead keys then live keys: `janitor_pages` 5, all dead keys gone, one maintenance CAS | red |
 
