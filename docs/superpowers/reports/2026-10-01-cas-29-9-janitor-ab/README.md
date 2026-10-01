@@ -1,6 +1,6 @@
 # CAS-29.9 janitor batches: A/B on the local stand
 
-M1 and M4a pass their bars on the headline metric (drain wall). M3 (steady state) and M2 (S30) were not run, and the authority-GET rows are unmeasured. Two wire-DELETE rows miss the strict 1% bar for a base-only reason (below).
+M1 and M4a pass their bars on the headline metric (drain wall). M3 and M2 were not measured on the stand, and the authority-GET rows are unmeasured. Two wire-DELETE rows miss the strict 1% bar; the extra base deletes are from an unidentified family (below).
 
 - Base: `e2dd0f5d343`. After: `a3b8d44c73f`. Binaries in `cas-83/tmp/ab/`.
 - Stand: `ch1` + RustFS + Keeper, rounds forced every 10 s, driver `tmp/gc-cuts-stand/value/m1.py`. Runs alternated base/after.
@@ -28,7 +28,7 @@ Medians of 3 runs per cell.
 | 13 | 100k, 0 ms: janitor-active rounds | ≤ 3 | not run (spec) | 2 | PASS |
 | 14 | 100k, 0 ms: `budget_exhausted` | 1 on every janitor round but the last | not run | 1 on round 2, 0 on round 3 (all 3 runs) | PASS |
 
-Rows 4 and 10, the 1% bar. Paired run 1: base 2556 deletes with 2338 janitor keys, after 20 deletes with 3 batches. Saving is 2536; the formula gives 2335 (8.6% off). At 20k: 16142 against 15928 (1.3%). In base, round 3 sends 200 non-janitor deletes and later janitor rounds send 1 to 2 extra each; after finishes before those rounds exist. The bar compares unequal numbers of rounds, so I count the strict reading as a MISS and do not claim the residual is explained by data beyond that round-by-round difference in the run JSONs.
+Rows 4 and 10, the 1% bar. Paired run 1: base 2556 deletes with 2338 janitor keys, after 20 deletes with 3 batches. Saving is 2536; the formula gives 2335 (8.6% off). At 20k: 16142 against 15928 (1.3%). In base, round 3 sends 200 non-janitor deletes and later janitor rounds send 1 to 2 extra each; after finishes before those rounds exist. Family of the extra deletes: unresolved. In base round 3 at 7k, `DiskS3DeleteObjects` is 1200 while `CASRootDelete` is 1000 and `CASManifestDelete` is 0, so the extra 200 come from neither counter; the same round also shows `DiskS3HeadObject` 100 and `DiskS3GetObject` 120. The per-round data holds only process-wide counts, so I cannot name the family. The bar is not adjusted: strict reading is a MISS.
 
 Wire DELETE count falls by about 99.7% at 20k (16175 to 52). Drain wall at 7k: 112 s to 11.7 s (0 ms), 259 s to 124 s (20 ms). At 20 ms the after side is bound by the first folding round (~100 s, finding 1).
 
@@ -68,7 +68,7 @@ Per page after: 134 to 208 ms at 0 ms (7k, 20k), 433 to 468 ms at 100k (round 2)
 
 ### M4 ref-cleanup {#m4-ref}
 
-`ref_object_cleanup` after 2500 single-row inserts, `support_batch_delete` false, 20 ms. One run per side.
+The precondition (at least 2000 ref keys in one round) was not met with 500-insert batches: 1030 to 1290 keys per round. With 2500 inserts before a single round it was met (5000). `ref_object_cleanup` after 2500 single-row inserts, `support_batch_delete` false, 20 ms. One run per side.
 
 | Metric | Bar | Base | After | Result |
 |---|---|---|---|---|
@@ -76,15 +76,22 @@ Per page after: 134 to 208 ms at 0 ms (7k, 20k), 433 to 468 ms at 100k (round 2)
 | phase duration | after ≤ base + spread | 109.40 s | 109.76 s | PASS on one run; spread not estimated |
 | authority GETs | after = base | unmeasured | unmeasured | not judged |
 
+## M3: steady state {#m3}
+
+Not measured on the stand. The quiet-pool property (one logical page, no batches, on a folding round) is covered by the unit tests `SteadyStateTakesOnePage` and `MidStreamPassOverLivePagesTakesOnePage`. The S11 before/after comparison of process-wide `DiskS3ListObjects` per round does not exist.
+
 ## Findings {#findings}
 
-1. **First folding round after the DROP is ~18 min at 20 ms, on both sides.** Round 1 wall: 1073.4 to 1077.4 s at 20 ms against 36 to 37 s at 0 ms. Its process-wide counters: `DiskS3DeleteObjects` 35000, of which `CASManifestDelete` 30000 and `CASRootDelete` 5000. That is ~36 ms per key, consistent with one key per request issued serially; the run JSONs do not record the phase name, so which phase it is comes from the stand's `cas_gc_log`, not from these files. The janitor then drains in 2 rounds on the after side (11000 keys with `budget_exhausted` 1, then 4959 to 4966 keys), against 1000 keys per round on base.
+1. **(CAS-337) First folding round after the DROP is ~18 min at 20 ms, on both sides.** Round 1 wall: 1073.4 to 1077.4 s at 20 ms against 36 to 37 s at 0 ms. Its process-wide counters: `DiskS3DeleteObjects` 35000, of which `CASManifestDelete` 30000 and `CASRootDelete` 5000. That is ~36 ms per key, consistent with one key per request issued serially; the run JSONs do not record the phase name, so which phase it is comes from the stand's `cas_gc_log`, not from these files. The janitor then drains in 2 rounds on the after side (11000 keys with `budget_exhausted` 1, then 4959 to 4966 keys), against 1000 keys per round on base.
 2. **M1 at 20k:** after drains in 1 janitor round (17 pages, 16 batches, 3.17 to 3.54 s). Base needs 16 janitor-active rounds over 129 rounds, 1307 s.
+
+3. **(CAS-338) `fold_ref_intake` costs about 4.3 GETs per part.** Taken from the owner's ruling; not re-measured in these runs.
 
 ## Not done, and why {#deviations}
 
-- **M3 (S11 steady state): not run.** Stopped on request before the first run. No `COMPARISON.md` exists.
+- **M3 (S11 steady state): not run.** Stopped by the owner's ruling before the first run. No `COMPARISON.md` exists.
 - **M2 (S30): not run.** Reported-only measurement; not started.
+- **M4a first base attempt died** on the client's 300 s receive timeout in the 1074 s fold round; `--receive_timeout=7200` was added to `m1.py` and `m4ref.py` and the chain was rerun.
 - **M4 ref-cleanup: one run per side, not two.** The stand was stopped after the first pair.
 - **`m4ref.py` changed.** Per-batch windows of 500 inserts deleted 1030 to 1290 keys, never the 2000 the script waits for. It now inserts 2500 rows, then runs up to 4 GC rounds.
 - **First M4 ref-cleanup attempts discarded.** Two orchestrator scripts ran concurrently and tore down each other's stand; I killed both and restarted from a down stand. No numbers from those attempts are used.
