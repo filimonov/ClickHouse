@@ -440,13 +440,16 @@ ordered scan and cleanup deletes only what it observed durable. The migration is
 
 ### Mount-renewal model routing {#mount-renewal-model-routing}
 
-`CaMountRenewRetryCore` is the current fidelity model for one split-phase logical mount renewal:
-immutable `write_attempt_id` and bytes, physical retry, exact-`GET` adoption, absolute deadline,
-terminalization, late delivery, and attempt-start cadence. `CaCasMountCore.Renew` remains an atomic,
-deliberately permissive safety abstraction. A focused `Committed` result corresponds to its durable
-body/token plus local-authority postconditions; a focused terminal result enters its fenced/remount
-boundary. There is no claimed refinement, and the atomic action's ability to renew after its modeled
-deadline is an over-approximation rather than current runtime behavior.
+`CaMountRenewRetryCore` is the fidelity model for split-phase mount renewal without a lease
+deadline. It covers two logical renewals in sequence, immutable `write_attempt_id` and bytes, and
+retries past the confirmed deadline with no exhaustion. It also covers exact-`GET` adoption,
+terminalization, late and stale delivery, and attempt-start cadence. Write authority is the
+holder's own timer: `clock < confirmedDeadline`, the deadline being the committed renewal's first
+send plus the lease. `NoAuthorityAfterEntitledTakeover` checks that an observer that waited one
+lease never overlaps that authority. `CaCasMountCore.Renew` remains an atomic, deliberately
+permissive safety abstraction. A focused `Committed` result corresponds to its durable body/token
+and deadline postconditions; a focused terminal result enters its fenced/remount boundary. There is
+no claimed refinement. Run evidence: `CaMountRenewRetryCore_RESULTS.md`.
 
 `CaDiskLifecycle` models the one lease thread that renews and reclaims in sequence, with remount
 requests as generations. A reclaim already past its step-0 bail may still finish before FORGET joins
@@ -474,14 +477,16 @@ evidence and trace analysis: `.superpowers/sdd/tla-rev7-report.md`.
     (`_sab_unearnedfarewell` red, `_witness_forgetfarewell` reachable);
   - no renewal starts after the FORGET intent (`_sab_renewafterintent` red) or while a remount
     request is pending;
-  - a reclaim reports `Live` only when a write can be admitted: a too-old claim waits for the loop's
-    renewal, and that renewal reports `Live` only if the fence is still armed (`_sab_liveunready`,
-    `_sab_livelostfence` red, `_witness_livebyrenewal` reachable);
+  - a reclaim reports `Live` only when a write can be admitted. With a too-old claim it leaves the
+    fence latched and the pool `Transient`; the loop's next successful renewal arms the fence and
+    reports `Live` in one step, never while a remount request is pending (`_sab_liveunready`,
+    `_sab_livependingrequest` red, `_witness_livebyrenewal` reachable);
   - a reclaim acknowledges only the generation it snapshotted (`_sab_ackrequested` red);
-  - a non-`Live` pool has no write authority and a `Vanished` pool has a latched fence. This needs a
-    reclaim's step 0 to trip the fence: otherwise a request raised during a reclaim is overridden by
-    that reclaim's arm, and the next reclaim runs `Transient`, or lands `Replaced`, on an armed fence
-    (`_sab_reclaimnotrip`, `_sab_reclaimnotrip_vanished` red);
+  - a non-`Live` pool and a `Vanished` pool have a latched fence. This needs a reclaim's step 0 to
+    trip the fence: otherwise a request raised during a reclaim is overridden by that reclaim's arm,
+    and the next reclaim runs `Transient`, or lands `Replaced`, on an armed fence
+    (`_sab_reclaimnotrip`, `_sab_reclaimnotrip_vanished` red). A reclaim still arms the fence when a
+    request was raised after its snapshot; `_finding_reclaimarmpending` keeps that window visible;
   - one-way `IdentityLost`/`Vanished`; FORGET leaves GC destroyed; first-terminal-wins
     (`_witness_racedreplaced`);
   - liveness under `FairSpec`: a started FORGET completes, GC stops once `Vanished`
