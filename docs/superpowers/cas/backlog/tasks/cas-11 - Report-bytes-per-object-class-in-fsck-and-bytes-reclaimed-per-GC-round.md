@@ -4,7 +4,7 @@ title: Report bytes per object class in fsck and bytes reclaimed per GC round
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-30 22:10'
+updated_date: '2026-10-01 07:34'
 labels:
   - 'area:fsck'
   - 'area:observability'
@@ -62,4 +62,6 @@ Merged from CAS-73 (archived): the body/`.meta` split is the number the `.meta` 
 First recorded: 2026-08-21 (b96f3805036, by 'byte-accounting-blobs-only-and-preview-size-units')
 
 Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
+
+CAS-289.6 asks for the same per-class bytes (plus counts) on a per-round surface the dashboards can read.
 <!-- SECTION:NOTES:END -->
