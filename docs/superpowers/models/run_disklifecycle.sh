@@ -108,7 +108,7 @@ for row in "${CONFIGS[@]}"; do
   elif grep -qE "(Invariant|Property|Action property) [A-Za-z0-9_]+ is violated" "$log"; then
     result="violation:$(grep -oE '(Invariant|Property|Action property) [A-Za-z0-9_]+ is violated' "$log" \
                         | head -1 | sed -E 's/.* ([A-Za-z0-9_]+) is violated/\1/')"
-  elif grep -q "Temporal properties were violated" "$log"; then
+  elif grep -qE "Temporal propert(ies were|y [A-Za-z0-9_]+ was) violated" "$log"; then
     result="temporal:$(declared_properties "$cfg" | paste -sd, -)"
   elif [[ $rc -eq 124 ]]; then
     result="incomplete"
