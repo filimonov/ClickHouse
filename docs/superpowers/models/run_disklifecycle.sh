@@ -1,44 +1,41 @@
 #!/usr/bin/env bash
 # Run every CaDiskLifecycle config and print a one-line PASS/FAIL verdict per config.
-# Model: the rev.8 (FORGET-only v1) pool lifecycle state machine + the as-built
-# `SYSTEM CONTENT ADDRESSED FORGET` protocol (spec 2026-07-22 "throw-when-uncertain"
-# SS1/SS3/SS5/SS6), the Task-15 gate.
+# Model: the pool lifecycle of a writable CAS mount, its one lease thread (renewal and reclaim in
+# sequence), the GC scheduler, and the `SYSTEM CONTENT ADDRESSED FORGET` protocol.
 #
-# 2026-07-28: rewritten during the v9 ref-chain TLA phase audit. It used to glob every cfg and set
-# `overall=1` on any nonzero TLC exit -- so the three sabotages and the three witnesses, whose whole
-# purpose is to make TLC exit nonzero, made the suite FAIL every single time it ran. A runner that
-# always fails is a runner nobody runs. Expectations are now asserted BY NAME, matching
-# run_mount.sh / run_refcatalog.sh.
+# Expectations are asserted BY NAME. Sabotages run first: a green is only evidence once the property
+# it rests on has been seen red.
 #
-# Sabotages/reds run FIRST: a green is only evidence once the property it rests on has been seen red.
+#   sab_nogcselfexit            -> GcExitsAfterVanished (temporal)  the GC scheduler never exits on a
+#                                                                   natural Vanished transition
+#   sab_notrip2                 -> I1ForgetTerminal        no re-trip after the join: a reclaim that
+#                                                          completes inside the join window leaves the
+#                                                          fence armed after FORGET
+#   sab_unearnedfarewell        -> I2EarnedFarewell        the farewell regardless of the drain outcome
+#   sab_renewafterintent        -> RenewNotAfterIntent     a renewal starts after the FORGET intent
+#   sab_liveunready             -> LiveOnlyWhenAdmissible  a reclaim with a too-old claim reports Live
+#                                                          without the renewal
+#   sab_livelostfence           -> LiveOnlyWhenAdmissible  that renewal reports Live after the fence
+#                                                          was tripped
+#   sab_ackrequested            -> I7RequestNotLost        a reclaim acknowledges the current request,
+#                                                          not its snapshot
+#   sab_reclaimnotrip           -> I4aNotLiveNoAuthority   a reclaim's step 0 leaves the fence armed;
+#                                                          a request raised during the previous reclaim
+#                                                          was overridden by that reclaim's arm
+#   sab_reclaimnotrip_vanished  -> I4bVanishedImpliesLost  the same, ending Replaced on an armed fence
+#   main                        -> GREEN   every invariant, the three action properties and the three
+#                                          liveness properties under FairSpec
 #
-#   sab_nogcselfexit      -> GcExitsAfterVanished (temporal)  the pre-[C1] scheduler: it never exits
-#                                                             on a natural Vanished transition, so a
-#                                                             VanishedReplaced pool keeps running GC
-#                                                             rounds forever
-#   sab_notrip2           -> I1ForgetTerminal                 the second `tripMountLost` removed: a
-#                                                             reclaim completing inside the
-#                                                             remount-join window re-arms the fence
-#                                                             and FORGET finishes with write authority
-#                                                             still granted (the Task-10 race)
-#   sab_unearnedfarewell  -> I2EarnedFarewell                 the drain gate removed: finishTeardown
-#                                                             writes the clean farewell regardless of
-#                                                             the drain outcome
-#   main                  -> GREEN   the as-built protocol: five safety invariants + both liveness
-#                                    properties (a started FORGET always completes; GC exits once
-#                                    Vanished) under FairSpec
+# Witnesses are negated reachability -- a VIOLATION is the evidence:
 #
-# Witnesses are negated reachability -- a VIOLATION is the evidence. They exist because BFS reports
-# the SHORTEST counterexample, so a branch no red travels would silently rot:
-#
-#   witness_forgetdone          -> WForgetNeverDone        FORGET completion is reachable at all
-#   witness_joinwindowreclaim   -> WNoJoinWindowReclaim    the trip#2 race is REAL: an in-flight
-#                                                          attempt's reclaim can complete inside the
-#                                                          join window, leaving Live/mayMutate at the
-#                                                          Trip2 step
-#   witness_racedreplaced       -> WNoRacedReplaced        first-terminal-wins is REAL: FORGET can
-#                                                          complete on a pool a racing natural
-#                                                          promotion left VanishedReplaced
+#   witness_forgetdone            -> WForgetNeverDone         FORGET completes
+#   witness_joinwindowreclaim     -> WNoJoinWindowReclaim     a reclaim completes inside the join
+#                                                             window: Live and an armed fence at Trip2
+#   witness_racedreplaced         -> WNoRacedReplaced         FORGET completes on a pool a racing
+#                                                             natural promotion left VanishedReplaced
+#   witness_livebyrenewal         -> WNoLiveByRenewal         a renewal reports Live for a waiting reclaim
+#   witness_requestduringreclaim  -> WNoRequestDuringReclaim  a remount request is raised during a reclaim
+#   witness_forgetfarewell        -> WNoForgetFarewell        FORGET still writes the farewell
 #
 # TLC names no property in a liveness counterexample ("Error: Temporal properties were violated."),
 # so the `temporal` expectation asserts what can be asserted: a temporal violation happened, NO
@@ -66,13 +63,22 @@ MODULE=CaDiskLifecycle
 
 # name  expectation(green|violation|temporal)  expected-invariant/property(asserted, not just logged)
 CONFIGS=(
-  "sab_nogcselfexit          temporal   GcExitsAfterVanished"
-  "sab_notrip2               violation  I1ForgetTerminal"
-  "sab_unearnedfarewell      violation  I2EarnedFarewell"
-  "main                      green      -"
-  "witness_forgetdone        violation  WForgetNeverDone"
-  "witness_joinwindowreclaim violation  WNoJoinWindowReclaim"
-  "witness_racedreplaced     violation  WNoRacedReplaced"
+  "sab_nogcselfexit             temporal   GcExitsAfterVanished"
+  "sab_notrip2                  violation  I1ForgetTerminal"
+  "sab_unearnedfarewell         violation  I2EarnedFarewell"
+  "sab_renewafterintent         violation  RenewNotAfterIntent"
+  "sab_liveunready              violation  LiveOnlyWhenAdmissible"
+  "sab_livelostfence            violation  LiveOnlyWhenAdmissible"
+  "sab_ackrequested             violation  I7RequestNotLost"
+  "sab_reclaimnotrip            violation  I4aNotLiveNoAuthority"
+  "sab_reclaimnotrip_vanished   violation  I4bVanishedImpliesLost"
+  "main                         green      -"
+  "witness_forgetdone           violation  WForgetNeverDone"
+  "witness_joinwindowreclaim    violation  WNoJoinWindowReclaim"
+  "witness_racedreplaced        violation  WNoRacedReplaced"
+  "witness_livebyrenewal        violation  WNoLiveByRenewal"
+  "witness_requestduringreclaim violation  WNoRequestDuringReclaim"
+  "witness_forgetfarewell       violation  WNoForgetFarewell"
 )
 check_tlc_temporal_expectations "$JAR" "${CONFIGS[@]}" || exit 4
 
@@ -90,7 +96,7 @@ declared_properties() {
 }
 
 overall=0
-printf '%-28s %-11s %-40s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
+printf '%-30s %-11s %-40s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"; do
   read -r name expect want <<<"$row"
   cfg="${MODULE}_${name}.cfg"
@@ -124,7 +130,7 @@ for row in "${CONFIGS[@]}"; do
   esac
   [[ "$verdict" == "FAIL" ]] && overall=1
 
-  printf '%-28s %-11s %-40s %-8s %s\n' "$name" "$expect" "$result" "$elapsed" "$verdict"
+  printf '%-30s %-11s %-40s %-8s %s\n' "$name" "$expect" "$result" "$elapsed" "$verdict"
 done
 
 echo
