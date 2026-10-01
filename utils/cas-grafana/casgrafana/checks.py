@@ -4,7 +4,7 @@ import re
 
 BANNED = ("S3ReadRequestsErrors", "DiskS3ReadRequestsErrors", "CASGCPendingReclaim", "CASGCLastSuccessAgeSeconds")
 OVERVIEW_BANNED_WORDS = ("fold", "condemn", "ref lane", "ref-lane", "manifest", "namespace", "precommit", "graduat")
-ROW_PREFIXES = ("GC:", "Writes:", "S3:")
+ROW_PREFIXES = ("GC:", "Objects:", "Writes:", "S3:")
 COUNTERS_ROW = "All CAS counters, nonzero in range"
 EXPECTED_TITLES = {"cas-overview": "CAS / Overview", "cas-drilldown": "CAS / Drilldown"}
 METRIC_RE = re.compile(r"\b(ProfileEvent|CurrentMetric)_([A-Za-z0-9]+)")

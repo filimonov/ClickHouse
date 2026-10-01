@@ -112,52 +112,113 @@ GROUP BY t ORDER BY t
 {SETTINGS}"""
 
 
-def inventory_row() -> dict:
+def cas_log_events_ts(title: str, desc: str, kind: str, w: int = 8) -> dict:
+    sql = f"""SELECT $timeSeries AS t, toString(event_type) AS event, count()
+FROM clusterAllReplicas('$cluster', system.cas_log)
+WHERE disk_name IN ($disk) AND hostName() IN ($host) AND object_kind = '{kind}' AND $timeFilter
+GROUP BY t, event ORDER BY t
+{SETTINGS}"""
+    return P.raw_ts(title, desc, sql, table="cas_log", interval="5m", stack=True, draw="bars", w=w)
+
+
+def net_ts(title: str, desc: str, plus: str, minus: str, label: str) -> dict:
+    sql = f"""SELECT t, sum(d) OVER (ORDER BY t) AS "{label}"
+FROM (SELECT $timeSeries AS t, sum(ProfileEvent_{plus}) - sum(ProfileEvent_{minus}) AS d
+      FROM clusterAllReplicas('$cluster', system.metric_log)
+      WHERE hostName() IN ($host) AND $timeFilter
+      GROUP BY t)
+ORDER BY t
+{SETTINGS}"""
+    return P.raw_ts(title, desc, sql, table="metric_log", interval="5m")
+
+
+def bytes_under_prefix_ts(title: str, desc: str, where: str) -> dict:
+    sql = f"""SELECT $timeSeries AS t, sum(data_size) AS "Bytes uploaded"
+FROM {UPLOADS_FROM}
+WHERE {where}
+GROUP BY t ORDER BY t
+{SETTINGS}"""
+    return P.raw_ts(title, desc, sql, table="blob_storage_log", unit="bytes", interval="5m")
+
+
+def object_rows() -> list:
     latest = P.stat("Inventory, latest round",
                     "Population counts the fold records in `phase_metrics` of the newest round: `namespaces_seen`, `tables_scanned`, `seal_ref_lives` (ref lives = table incarnations with a fold state, not parts), `ref_log_keys_listed` and `ref_keys_listed − ref_log_keys_listed` (snapshot and checkpoint keys). Blob and manifest totals are not recorded anywhere (CAS-289.6).",
                     [P.target(INVENTORY_LATEST_SQL, fmt="table", table="cas_gc_log")],
                     {"Namespaces": {"fixed": "blue"}, "Tables scanned": {"fixed": "blue"}, "Ref lives": {"fixed": "blue"},
                      "Ref-log keys": {"fixed": "blue"}, "Snapshots + checkpoints": {"fixed": "blue"}}, w=8, h=8)
-    ns_total = P.raw_ts("Namespaces per round (total)", "`namespaces_seen` in each round: namespaces the fold saw in the catalog.",
-                        per_round_total_sql(pm_round("namespaces_seen"), "Namespaces"), w=8)
-    lives_total = P.raw_ts("Ref lives per round (total)", "`seal_ref_lives`: ref lives (table incarnations) recorded in the round's seal.",
-                           per_round_total_sql(pm_round("seal_ref_lives"), "Ref lives"), w=8)
+    # blobs
+    blob_counters = P.metric_ts("Blobs per 5 minutes: new, deduplicated, body put avoided, adopted, deleted",
+                                "`CASBlobHeadMiss` (new content hash uploaded), `CASBlobPutDeduplicated` (hash already present), `CASBlobBodyPutAvoided` (body upload skipped), `CASBlobAdoptTrusted` (the `delete_tmp` repoint re-adopting a part's own blobs, not dedup), `CASBlobDelete` (keys deleted by GC).",
+                                {"New": c("CASBlobHeadMiss"), "Deduplicated": c("CASBlobPutDeduplicated"), "Body put avoided": c("CASBlobBodyPutAvoided"),
+                                 "Adopted": c("CASBlobAdoptTrusted"), "Deleted": c("CASBlobDelete")})
+    blob_events = cas_log_events_ts("Blob events per 5 minutes (cas_log)",
+                                    "Every `cas_log` row with `object_kind = 'blob'`, by `event_type`: `blob_put`, `blob_reuse_adopt`, `blob_reuse_resurrect`, `blob_retire`, `blob_delete`, `indegree_zero`, `gc_retire_observe`, `gc_recheck_verdict`, ... The GC's three decisions per garbage blob show here as three rows.", "blob")
+    blob_bytes = P.raw_ts("Blob bytes per 5 minutes: published vs reused",
+                          "From `cas_log`: `blob_put` rows carry the blob size; `blob_reuse_adopt` rows carry it only for `observed` reuse — the `delete_tmp` re-adoption rows record size 0, so bytes saved by deduplication are understated (CAS-289.6).",
+                          BLOB_BYTES_SQL, table="cas_log", unit="bytes", interval="5m")
+    blob_uploaded = bytes_under_prefix_ts("Bytes uploaded under blobs/ per 5 minutes", "`blob_storage_log` uploads whose key starts with `blobs/`.", "p2 = 'blobs'")
+    blob_net = net_ts("Net blobs over the period", "Running sum of `CASBlobHeadMiss − CASBlobDelete` since the start of the range: change, not population (CAS-289.6).",
+                      "CASBlobHeadMiss", "CASBlobDelete", "Net blobs")
+    blob_dedup = P.metric_ts("Dedup ratio by count (%)", "`CASBlobPutDeduplicated / (CASBlobPutDeduplicated + CASBlobHeadMiss)`; 0.27% on the otel.demo workload.",
+                             {"Dedup %": "100 * sum(ProfileEvent_CASBlobPutDeduplicated) / greatest(sum(ProfileEvent_CASBlobPutDeduplicated) + sum(ProfileEvent_CASBlobHeadMiss), 1)"}, unit="percent")
+    # manifests
+    manifest_counters = P.metric_ts("Manifests per 5 minutes: put, deduplicated, overwritten, deleted, read",
+                                    "`CASManifestPut`, `CASManifestPutDeduplicated`, `CASManifestOverwrite`, `CASManifestDelete`, `CASManifestGet` (body reads; part-folder view misses and GC folds read manifests).",
+                                    {"Put": c("CASManifestPut"), "Deduplicated": c("CASManifestPutDeduplicated"), "Overwritten": c("CASManifestOverwrite"),
+                                     "Deleted": c("CASManifestDelete"), "Read (GET)": c("CASManifestGet")})
+    manifest_events = cas_log_events_ts("Manifest events per 5 minutes (cas_log)",
+                                        "`cas_log` rows with `object_kind = 'manifest'`: `manifest_put`, `manifest_delete`, `ref_publish`, `ref_drop`, `ref_repoint`, `ref_resolve` (a manifest read on the write path).", "manifest")
+    manifest_uploaded = bytes_under_prefix_ts("Bytes uploaded under cas/manifests per 5 minutes", "`blob_storage_log` uploads whose key starts with `cas/manifests`.", "p2 = 'cas' AND p3 = 'manifests'")
+    manifest_net = net_ts("Net manifests over the period", "Running sum of `CASManifestPut − CASManifestDelete` since the start of the range: change, not population (CAS-289.6).",
+                          "CASManifestPut", "CASManifestDelete", "Net manifests")
+    manifest_per_round = gc_finish_ts("Manifests deleted per round", "`manifests_deleted` from the Finish row: owner-removed manifest bodies deleted or found absent.",
+                                      {"Manifests deleted": "manifests_deleted"})
+    # refs
     logs_total = P.raw_ts("Ref-log keys per round (total)", "`ref_log_keys_listed`: `_log` keys under `cas/ns` the round listed. Growth here is the audit F14 balance going wrong.",
                           per_round_total_sql(pm_round("ref_log_keys_listed"), "Ref-log keys"), w=8)
     snaps_total = P.raw_ts("Snapshots and checkpoints per round (total)", "`ref_keys_listed − ref_log_keys_listed`: ref keys that are not log entries.",
                            per_round_total_sql(f"{pm_round('ref_keys_listed')} - {pm_round('ref_log_keys_listed')}", "Snapshots + checkpoints"), w=8)
+    lives_total = P.raw_ts("Ref lives per round (total)", "`seal_ref_lives`: ref lives (table incarnations) recorded in the round's seal.",
+                           per_round_total_sql(pm_round("seal_ref_lives"), "Ref lives"), w=8)
+    ref_counters = P.metric_ts("Ref objects per 5 minutes: log keys written, snapshots, checkpoints, deleted",
+                               "`CASRootPut` (ref-log keys), `CASRefSnapshotPublishDispatched`, `CASRefCheckpointPublished`, `CASRefCheckpointIdenticalSkip`; `CASRootDelete` counts every root-class key deleted (logs, snapshots and checkpoints together), `CASRefCleanupObjectsDeleted` the ref cleanup's own deletions.",
+                               {"Log keys written": c("CASRootPut"), "Snapshots published": c("CASRefSnapshotPublishDispatched"),
+                                "Checkpoints published": c("CASRefCheckpointPublished"), "Checkpoint identical skip": c("CASRefCheckpointIdenticalSkip"),
+                                "Keys deleted (CASRootDelete)": c("CASRootDelete"), "Ref cleanup deletions": c("CASRefCleanupObjectsDeleted")})
+    ref_events = cas_log_events_ts("Ref events per 5 minutes (cas_log)",
+                                   "`cas_log` rows with `object_kind` in `root` or `snapshot`: `root_add`, `root_remove`, `root_repoint`, `precommit`, `precommit_removed`, `gc_fold_begin`, `gc_fold_end`, `gc_fence`, ...", "root")
+    snapshot_events = cas_log_events_ts("Snapshot events per 5 minutes (cas_log)", "`cas_log` rows with `object_kind = 'snapshot'`.", "snapshot")
+    snapshot_bytes = P.metric_ts("Snapshot bytes per 5 minutes", "`CASRefSnapshotPutBytes`: bytes of ref snapshots written (a byte volume exposed as an event counter).",
+                                 {"Snapshot bytes": c("CASRefSnapshotPutBytes")}, unit="bytes")
+    ref_uploaded = bytes_under_prefix_ts("Bytes uploaded under cas/ns per 5 minutes", "`blob_storage_log` uploads whose key starts with `cas/ns` (ref logs, snapshots, checkpoints).", "p2 = 'cas' AND p3 = 'ns'")
+    ref_net = net_ts("Net ref keys over the period", "Running sum of `CASRootPut − CASRootDelete` since the start of the range.", "CASRootPut", "CASRootDelete", "Net ref keys")
+    # namespaces
+    ns_total = P.raw_ts("Namespaces per round (total)", "`namespaces_seen` in each round: namespaces the fold saw in the catalog.",
+                        per_round_total_sql(pm_round("namespaces_seen"), "Namespaces"), w=8)
+    ns_changes = P.raw_ts("Namespaces per round: added, removed, changed",
+                          "Added = `namespaces_seen` minus the previous round's plus `namespace_removals`; Removed = `namespace_removals`; Changed = `tables_changed` (namespaces whose ref log advanced).",
+                          NAMESPACES_PER_ROUND_SQL, draw="bars")
+    ns_cleanup = P.metric_ts("Namespace cleanup per 5 minutes", "`CASGCNamespaceCleanupLeaks` (must stay at zero) and `CASRefSweepDeferred` / `CASRefSweepRearmed`.",
+                             {"Cleanup leaks": c("CASGCNamespaceCleanupLeaks"), "Sweep deferred": c("CASRefSweepDeferred"), "Sweep re-armed": c("CASRefSweepRearmed")})
+    # gc state
     seal_bytes = P.raw_ts("GC state: seal bytes per round", "`seal_bytes` written by `fold_seal_write`: the size of the round's fold seal, the GC's durable state.",
                           per_round_total_sql(pm_round("seal_bytes"), "Seal bytes"), unit="bytes", w=8)
     gc_state_bytes = P.raw_ts("GC state bytes uploaded per 5 minutes, by sub-prefix",
                               "`blob_storage_log` uploads under `gc/`: `gen` (per-generation fold output), `state`, `hb` (heartbeats), `server-roots`, `maintenance_state`.",
                               GC_STATE_BYTES_SQL, table="blob_storage_log", unit="bytes", stack=True, interval="5m", w=8)
-    blobs = P.metric_ts("Blobs per 5 minutes: new, deduplicated, deleted",
-                        "`CASBlobHeadMiss` (a new content hash was uploaded), `CASBlobPutDeduplicated` (the hash already existed), `CASBlobDelete` (blob keys deleted by GC).",
-                        {"New": c("CASBlobHeadMiss"), "Deduplicated": c("CASBlobPutDeduplicated"), "Deleted": c("CASBlobDelete")})
-    manifests = P.metric_ts("Manifests per 5 minutes: new, deleted", "`CASManifestPut` and `CASManifestDelete` (also `manifests_deleted` per round in GC: stage flow).",
-                            {"New": c("CASManifestPut"), "Deleted": c("CASManifestDelete")})
-    refs = P.metric_ts("Ref objects per 5 minutes: log keys written, snapshots, checkpoints, cleaned",
-                       "`CASRootPut` (ref-log keys), `CASRefSnapshotPublishDispatched`, `CASRefCheckpointPublished`; `CASRootDelete` counts every root-class key deleted (logs, snapshots and checkpoints together), `CASRefCleanupObjectsDeleted` the ref cleanup's own deletions.",
-                       {"Log keys written": c("CASRootPut"), "Snapshots published": c("CASRefSnapshotPublishDispatched"),
-                        "Checkpoints published": c("CASRefCheckpointPublished"), "Keys deleted (CASRootDelete)": c("CASRootDelete"),
-                        "Ref cleanup deletions": c("CASRefCleanupObjectsDeleted")})
-    net = P.raw_ts("Net change over the period: blobs, manifests, ref keys",
-                   "Running sum of new − deleted since the start of the range. Absolute totals for blobs and manifests do not exist (CAS-289.6); this is the change, not the population.",
-                   NET_CHANGE_SQL, table="metric_log", interval="5m")
-    namespaces = P.raw_ts("Namespaces per round: added, removed, changed",
-                          "Added = `namespaces_seen` minus the previous round's plus `namespace_removals`; Removed = `namespace_removals`; Changed = `tables_changed` (namespaces whose ref log advanced).",
-                          NAMESPACES_PER_ROUND_SQL, draw="bars")
-    bytes_by_class = P.raw_ts("Bytes uploaded per 5 minutes, by object class",
-                              "`blob_storage_log` uploads grouped by key prefix: `blobs/` (data), `cas/manifests`, `cas/ns` (ref logs, snapshots, checkpoints), `gc/` (collector state). Bytes in flight, not bytes stored: totals per class are not recorded anywhere (CAS-289.6).",
-                              BYTES_BY_CLASS_SQL, table="blob_storage_log", unit="bytes", stack=True, interval="5m")
+    gc_state_counters = P.metric_ts("GC state objects per 5 minutes: put, retired, deleted",
+                                    "`CASGCPut`, `CASGCRetireReplaced`, `CASGCDelete`, `CASGCList`: requests on objects under `gc/`.",
+                                    {"Put": c("CASGCPut"), "Retire replaced": c("CASGCRetireReplaced"), "Deleted": c("CASGCDelete"), "Listed": c("CASGCList")})
     uploads_table = P.table("Uploads in range, by object class", "Count, bytes and average object size per class over the selected range, from `blob_storage_log`.",
                             UPLOADS_TABLE_SQL, table="blob_storage_log", w=8)
-    blob_bytes = P.raw_ts("Blob bytes per 5 minutes: published vs reused",
-                          "From `cas_log`: `blob_put` rows carry the blob size; `blob_reuse_adopt` rows carry it only for `observed` reuse — the `delete_tmp` re-adoption rows record size 0, so bytes saved by deduplication are understated (CAS-289.6). Reuse by count is in Writes: blobs and dedup.",
-                          BLOB_BYTES_SQL, table="cas_log", unit="bytes", interval="5m")
-    return P.row("GC: pool inventory", [latest, ns_total, lives_total, logs_total, snaps_total,
-                                        blobs, manifests, refs, net, namespaces,
-                                        bytes_by_class, uploads_table, blob_bytes, seal_bytes, gc_state_bytes])
+    return [
+        P.row("Objects: blobs", [blob_counters, blob_events, blob_bytes, blob_uploaded, blob_net, blob_dedup]),
+        P.row("Objects: manifests", [manifest_counters, manifest_events, manifest_uploaded, manifest_net, manifest_per_round]),
+        P.row("Objects: refs", [logs_total, snaps_total, lives_total, ref_counters, ref_events, snapshot_events, snapshot_bytes, ref_uploaded, ref_net]),
+        P.row("Objects: namespaces", [latest, ns_total, ns_changes, ns_cleanup]),
+        P.row("Objects: GC state", [seal_bytes, gc_state_bytes, gc_state_counters, uploads_table]),
+    ]
 
 
 def gc_rows() -> list:
@@ -271,7 +332,6 @@ ORDER BY event_time DESC LIMIT 200
     return [
         P.row("GC: rounds", [rounds, leader, duration, last_rounds]),
         P.row("GC: stage flow", [stages, outcomes, manifests, cumulative]),
-        inventory_row(),
         P.row("GC: phases", [phases_stack, phases_table]),
         P.row("GC: round cost", [cost, per_object, enumeration, readahead, memory]),
         P.row("GC: ref-log cleanup", [reflog, sweeps]),
@@ -495,7 +555,7 @@ def counters_row() -> dict:
 
 
 def build() -> dict:
-    rows = gc_rows() + writes_rows() + s3_rows() + [counters_row()]
+    rows = gc_rows() + object_rows() + writes_rows() + s3_rows() + [counters_row()]
     return P.dashboard(
         "cas-drilldown", "CAS / Drilldown",
         "Content-addressed (CAS) storage internals for support engineers and CAS developers: garbage-collection rounds, "

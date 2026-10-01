@@ -73,6 +73,10 @@ class Problems(unittest.TestCase):
         probs = self.one(lambda o, d: d["panels"][0].__setitem__("title", "rounds"))
         self.assertTrue(any("row title" in p for p in probs), probs)
 
+    def test_objects_prefix_allowed(self):
+        probs = self.one(lambda o, d: d["panels"][0].__setitem__("title", "Objects: blobs"))
+        self.assertFalse(any("row title" in p for p in probs), probs)
+
     def test_variables_must_match(self):
         probs = self.one(lambda o, d: d["templating"]["list"].pop())
         self.assertTrue(any("variables" in p for p in probs), probs)
