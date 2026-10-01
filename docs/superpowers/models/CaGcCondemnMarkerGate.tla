@@ -1,9 +1,35 @@
 --------------------------- MODULE CaGcCondemnMarkerGate ---------------------------
-(* Variant for the publisher-clears-its-own-marker question. Built on the CAS-30       *)
-(* variant (tmp/cas30-meta-model). Every constant added here is inert when FALSE, and  *)
-(* the variables it adds then stay constant, so the CAS-30 cfgs reproduce their exact  *)
-(* distinct-state counts.                                                              *)
-(*                                                                                     *)
+(* A retired (hash, token) entry must not delete a body a writer adopted. The per-hash     *)
+(* meta is the writer's adopt gate: absent or Clean lets a writer adopt the CURRENT token   *)
+(* without re-upload, while Condemned forces a fresh upload. One hash, one fixed content-   *)
+(* addressed key, single-leader GC.                                                         *)
+(*                                                                                          *)
+(* THE HAZARD. A Condemned marker that guards an entry can disappear: a writer's Clean      *)
+(* overwrites it, a lost marker write never creates it, or a delayed delete job removes a   *)
+(* marker written by a LATER condemnation. A writer then adopts the token, and the entry    *)
+(* later deletes the body under that writer's landed edge (NoDangle).                       *)
+(*                                                                                          *)
+(* THE FIX. The marker carries the condemn round (meta.cr).                                 *)
+(*   - GMetaDeleteJob removes only a marker at round <= the round it captured               *)
+(*     (JobRoundCheck).                                                                     *)
+(*   - GSettleCarryRetry stamps the CURRENT round (RetryStampsCurrent), and a Condemned     *)
+(*     marker of an older round is re-stamped (Restamp).                                    *)
+(*   - Graduation always reads the marker (GateAlwaysReads) and accepts only Condemned at   *)
+(*     round >= the entry's (GateRoundCheck, MetaGuards). Nothing in-process is trusted:    *)
+(*     Registry is FALSE.                                                                   *)
+(*                                                                                          *)
+(* WHY IT HOLDS. A same-token adoption needs a read of a marker that is not Condemned, so   *)
+(* the adopter's edge landed before the marker turned Condemned. Graduation reads the       *)
+(* marker, and GSettleRedelete runs in a LATER round whose cut postdates that read: the cut *)
+(* folds the edge and the entry is spared. The round check keeps a stale job or a stale     *)
+(* marker from standing in for the guard, and the current-round retry keeps a carried       *)
+(* entry's marker from lagging behind it.                                                   *)
+(*                                                                                          *)
+(* The cfgs switch each rule off one at a time and expect the invariant named in the        *)
+(* runner. Losses the fix leaves open (a late Clean request that matches recreated bytes,   *)
+(* an externally dropped edge) are the cfgs late_resolved_stale, late_gaveup and            *)
+(* extdrop_noregistry, which are expected to FAIL.                                          *)
+(*                                                                                          *)
 (* Added:                                                                              *)
 (*   RealCandidate      a fresh condemn needs a delta for the hash in this round's cut *)
 (*                      (`closeBlob`: cur_edges == 0 && cur_touched); a carried row is *)
@@ -23,8 +49,8 @@
 (*                      round whose cut touched the hash.                              *)
 (*   Registry           the in-process confirmation is a per-process set of (token,    *)
 (*                      round) pairs that outlives rounds, failed attempts and         *)
-(*                      leadership changes (`GcMetaWriter` state); forgets as the code.*)
-(*   RegRound           the fourth change: a pair confirms only at round >= entry's.   *)
+(*                      leadership changes.                                            *)
+(*   RegRound           a pair confirms only at round >= entry's.                      *)
 (*   StaleAttempts      an uncommitted attempt of this process HEADs the current token,*)
 (*                      writes its marker and keeps the confirmation (GStaleAttempt).  *)
 (*   ExactAbsentPath    publication only into a key with neither body nor meta.        *)
@@ -425,9 +451,9 @@ GSettleRedelete ==
   /\ UNCHANGED <<folded, next_gen, seeded, edge, adopted, committed, recon, dirty, touched, premeta, mjob, sa_done>>
 
 (* The delayed meta delete. Unfenced: enabled in any state, so it also stands for a
-   deposed leader's job. Read and conditional delete act on one etag; the etag names
-   the content, so modelling them as one step loses no interleaving that changes
-   the outcome. *)
+   deposed leader's job. The read and the conditional delete act on the token the HEAD
+   returned (the content etag on S3, the generation on GCS; the latter is stricter), so
+   modelling them as one step loses no interleaving that changes the outcome. *)
 GMetaDeleteJob(c) ==
   /\ c \in mdq
   /\ mdq' = mdq \ {c}
@@ -466,29 +492,43 @@ GStaleAttempt(r) ==
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, adopted, committed, ret, observed, observed_tok,
                  mdq, recon, dirty, touched, premeta, mjob, wit>>
 
-OtherNext ==
-  \/ Seed
-  \/ \E w \in Writers : WPrecommit(w) \/ WAdopt(w) \/ WPublish(w) \/ WCommit(w) \/ WDrop(w) \/ WRespawn(w)
-  \/ GCut \/ GObserve \/ GMarkerJob
-  \/ GSettleCondemn \/ GSettleIdle \/ GSettleSpare
-  \/ GSettleGraduate \/ GSettleGraduateDeferred \/ GSettleSupersede \/ GSettleCarryRetry
-  \/ GSettleSpareLoud \/ GSettleRedelete \/ GSettleSuppressed
-  \/ \E c \in mdq : GMetaDeleteJob(c)
-  \/ \E r \in 1..round : GStaleMarkerWrite(r)
-  \/ GRestart
-  \/ \E r \in 1..round : GStaleAttempt(r)
-
 (* Every step that changes the marker moves the version a late request read. *)
 LateMovedTrack ==
   late_moved' = IF ~late'.pending THEN FALSE
                 ELSE IF ~late.pending THEN meta' /= late'.expect
                 ELSE late_moved \/ meta' /= meta
 
+(* Each disjunct is its own action so TLC names the step in a counterexample. *)
+LateStill == late' = late /\ LateMovedTrack
+
 Next ==
-  /\ \/ (OtherNext /\ late' = late)
-     \/ \E w \in Writers : WReconcile(w)
-     \/ WLateLand \/ WLateDie
-  /\ LateMovedTrack
+  \/ Seed /\ LateStill
+  \/ \E w \in Writers : WPrecommit(w) /\ LateStill
+  \/ \E w \in Writers : WAdopt(w) /\ LateStill
+  \/ \E w \in Writers : WPublish(w) /\ LateStill
+  \/ \E w \in Writers : WCommit(w) /\ LateStill
+  \/ \E w \in Writers : WDrop(w) /\ LateStill
+  \/ \E w \in Writers : WRespawn(w) /\ LateStill
+  \/ GCut /\ LateStill
+  \/ GObserve /\ LateStill
+  \/ GMarkerJob /\ LateStill
+  \/ GSettleCondemn /\ LateStill
+  \/ GSettleIdle /\ LateStill
+  \/ GSettleSpare /\ LateStill
+  \/ GSettleGraduate /\ LateStill
+  \/ GSettleGraduateDeferred /\ LateStill
+  \/ GSettleSupersede /\ LateStill
+  \/ GSettleCarryRetry /\ LateStill
+  \/ GSettleSpareLoud /\ LateStill
+  \/ GSettleRedelete /\ LateStill
+  \/ GSettleSuppressed /\ LateStill
+  \/ \E c \in mdq : GMetaDeleteJob(c) /\ LateStill
+  \/ \E r \in 1..round : GStaleMarkerWrite(r) /\ LateStill
+  \/ GRestart /\ LateStill
+  \/ \E r \in 1..round : GStaleAttempt(r) /\ LateStill
+  \/ \E w \in Writers : WReconcile(w) /\ LateMovedTrack
+  \/ WLateLand /\ LateMovedTrack
+  \/ WLateDie /\ LateMovedTrack
 
 Spec == Init /\ [][Next]_vars
 

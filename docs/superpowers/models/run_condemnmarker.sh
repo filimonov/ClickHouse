@@ -71,7 +71,7 @@ do
         -metadir "$meta" -workers "${TLC_WORKERS:-8}" -deadlock -config "$cfg" "$MODULE.tla" >"$log" 2>&1
     rc=$?
     elapsed=$((SECONDS - start))
-    distinct="$(grep -oE '[0-9]+ distinct states found' "$log" | tail -1 | awk '{print $1}')"
+    distinct="$(grep -oE '[0-9,]+ distinct states found' "$log" | tail -1 | awk '{gsub(",", "", $1); print $1}')"
 
     result=error
     if [[ $rc -eq 0 ]] && grep -q "No error has been found" "$log"
