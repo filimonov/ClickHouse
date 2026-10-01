@@ -132,7 +132,8 @@ allowance. The two are independent signals and need not agree.
 ## Simpler code {#simpler-code}
 
 Most of the machinery around the lease exists because a renewal used to need lease budget. Without
-that need it has no job. Nothing is built in its place.
+that need the two-worker protocol has no job. What replaces it is smaller: one loop, one arming
+rule, and a readiness wait.
 
 ### One loop {#one-loop}
 
@@ -150,13 +151,17 @@ until stopped or the lifecycle is terminal:
     renew                              # retries inside; ends on success, a definitive answer,
                                        # a stop, a remount request or a terminal lifecycle
     success:  deadline = start + TTL
-              if the fence is not armed: arm it and report Live        (arming rule)
+              if the fence is not armed and the deadline admits a write:
+                  arm it and report Live                                 (arming rule)
+    ended by a stop or a terminal lifecycle: trip the fence without counting a loss; exit
     terminal: trip the fence and request a remount, unless one is already pending
 ```
 
 **Arming rule.** The fence is armed, and `Live` reported, only when no remount request is pending,
-no stop is requested and the lifecycle is not terminal. The check and the arm are one step under
-`driver_mutex`, the mutex that the publication of a FORGET intent also takes.
+no stop is requested, the lifecycle is not terminal, and the deadline admits a ref append now. The
+check and the arm are one step under `driver_mutex`, the mutex that the publication of a FORGET
+intent also takes. `Live` is published before `lost` is cleared, so a reader without the mutex
+never sees "not `Live`" with the fence armed.
 
 "Terminal lifecycle" is today's `remountTerminal` predicate, including a published FORGET intent.
 A stop trips the fence without counting a lease loss, as today. The requested and handled remount
@@ -176,7 +181,7 @@ Two things the lifecycle model found in today's code close on the way:
 
 | Removed | What it guaranteed | What guarantees it now |
 |---|---|---|
-| The startup and remount re-anchor renewals (`renewRenewerForStartupOnce`, `renewRenewerForRemountOnce`, `renewForRemount`) and the copied `period + 2 × envelope` window test in `mountWritable` and `tryRemountOnce` | After a slow claim or a long quiesce the first worker renewal still had lease budget, and an open returned or a remount reported `Live` only with a lease that admits writes | A renewal needs no budget. The fence is armed from the claim. If that deadline does not admit a write, the loop renews first; the open returns and the remount reports `Live` after that |
+| The startup and remount re-anchor renewals (`renewRenewerForStartupOnce`, `renewRenewerForRemountOnce`, `renewForRemount`) and the copied `period + 2 × envelope` window test in `mountWritable` and `tryRemountOnce` | After a slow claim or a long quiesce the first worker renewal still had lease budget, and an open returned or a remount reported `Live` only with a lease that admits writes | A renewal needs no budget. If the claim admits a ref append the fence is armed from it; otherwise the loop renews first and that renewal arms the fence ([readiness](#readiness)) |
 | The direct renewal (`renewWatermarkOnce`, `DirectCall`), used by tests only | Tests could drive one renewal | Tests call the loop's renewal step |
 | The remount worker thread, `ParkRequested` / `Parked`, `DriverLease`, `admitRenewerCall`, all nine `RenewalDriverState` values | The renewer is never replaced while a renewal is in flight; one driver at a time | One thread renews and reclaims in sequence. Remount requests stay generations, so a request raised during a reclaim is not lost |
 | The thread-local observability stack, its deferred delivery and nesting (`MountRenewObservabilityStack`, `configureMountRenewObservability`, `deliverDeferredMountRenewObservability`) | The sink reached `renewOn` without a parameter; a sink that renews was tolerated; logging waited until `remount_mutex` was released | `renew` returns its result and the loop reports it. No renewal runs under `remount_mutex`. An event sink must not renew; production sinks only append to a system log |
@@ -184,9 +189,12 @@ Two things the lifecycle model found in today's code close on the way:
 | The token-stability code written twice | See [step one](#gc-sighting) | `TokenWatch`: `sighted(token, sample_after_read)` and `stableFor(sample_before_read)`, used by `claimMountAwaitingExpiry` and `computeHeartbeatFloor` |
 | `2 × envelope` computed in `refAppendFenceOk`, `validateCasRequestBudget` and `terminate`; the literals `2000` (four places) and `90'000` (three); ignored parameters of `consumeRenewResult`; comments about a stack-local observer and an unclean-boundary marker that do not exist; "Startup-only" in the text of `cas_lease_safety_margin_ms` | Nothing | One definition each; the stale text is corrected. The farewell keeps its own slack and minimum window |
 
-Estimated effect on `CasMountRuntime.cpp`, `CasServerRoot.cpp` and `CasPool.cpp`: about 800 of
-3,000 lines removed. The estimate comes from the line counts of the removed areas, not from a
-patch.
+Estimated effect, from the line counts of the affected areas and not from a patch: in
+`CasMountRuntime.cpp`, `CasServerRoot.cpp` and `CasPool.cpp` (5,167 lines today) about 1,000 lines
+go and about 450 come, a net of about 500. Across all production files the net is about 480 lines
+fewer. Test code grows by about 1,000 lines, so code plus tests end up larger. What shrinks is the
+ownership protocol: nine driver states to none, four renewal entry points to one, two lease threads
+to one. The retry and reporting code grows.
 
 Tests go only where their subject becomes unreachable: the direct renewal and its races with
 worker start, the order of the re-anchor inside open and remount, the deferred reporting of a
@@ -217,19 +225,25 @@ that callers find a lease that admits writes. Callers depend on it: ref-table re
 admission outside its retry loop, and table loading propagates the failure. The order stays, through
 the one path:
 
-- The claim admits a write: arm the fence and report `Live` at once.
+- The claim admits a ref append: arm the fence and report `Live` at once.
 - It does not: the fence stays latched and the lifecycle stays not `Live`. The loop's next renewal
-  runs in that state. When it succeeds, the fence is armed from that renewal's start and `Live` is
-  reported in the same step, under the arming rule.
+  runs in that state. A success whose deadline admits a ref append arms the fence from that
+  renewal's start and reports `Live` in the same step, under the arming rule. A success with a stale
+  start arms nothing; the loop renews again at once.
+- At an open the runtime starts with the fence unarmed, which admits writes. An open whose claim
+  does not admit a ref append therefore latches the fence itself, without counting a lease loss,
+  before it starts the thread. The open has not returned, so no caller sees that state.
 
 So "not `Live` implies the fence is lost" holds as it does today, and a state "armed but not `Live`"
-does not exist. An open waits at most one TTL for that renewal and then fails, as a failed
-re-anchor fails it today.
+does not exist. An open waits one TTL for readiness; then it requests a stop, joins the thread and
+fails, as a failed re-anchor fails it today. A request or a credential refresh already under way,
+and the join, come on top of that TTL.
 
 ### Further cleanups {#further-cleanups}
 
 Small, independent, found by a second pass over the same files. Each removes state that nothing
-reads or says one thing in one place. None changes behaviour.
+reads or says one thing in one place. None changes behaviour, except that item 7 drops a duplicate
+log line.
 
 1. Delete `process_epoch`, its random initial value, `setProcessEpoch` and the `epoch` /
    `writerEpoch` accessors. No production code reads them; identity uses the allocated
@@ -323,7 +337,7 @@ token-conditional update or delete, or content-addressed. Callers that see a ref
 refuse or mark the table for recovery; none treats it as the end of the incarnation.
 
 **The models agree.** `CaCasMountCore.Renew` has no expiry guard and `Write` is guarded by the clock
-only. `NoRequestAfterSafeDeadline` is defined and used only inside `CaMountRenewRetryCore`.
+only. The results are in [models](#models).
 
 **Checked beyond the mount code.** In `Gc/`, creator retirement needs a fenced, farewell or
 superseded-epoch certificate, orphan eligibility uses the durable epoch and build floor, recovery
@@ -337,8 +351,8 @@ not parse the lease error and does not use `system.cas_mounts` as authority; the
 The exact contract. A review checks the design against this list.
 
 1. **One path.** Only the loop renews. An open returns, and a remount reports `Live`, only after a
-   write can be admitted. If the claim does not admit one, the fence stays latched until the loop's
-   renewal succeeds; that renewal arms it.
+   ref append can be admitted. If the claim does not admit one, the fence stays latched until a
+   renewal of the loop succeeds with a deadline that does; that renewal arms it.
 2. **One tuple.** A renewal fixes `(key, bytes, expected token, write_attempt_id, start)` before I/O.
    Every request repeats it byte for byte. Unchanged.
 3. **Start.** The start is the `BOOTTIME` instant sampled before the first request. Success sets the
@@ -352,8 +366,10 @@ The exact contract. A review checks the design against this list.
    A timed-out copy of an already committed renewal can still be in flight when the next one starts;
    it is conditional on a token that no longer exists.
 6. **Definitive answers are terminal.** Unchanged classification: foreign or successor occupant,
-   own slot `gc_fenced`, own `(uuid, epoch)` body with other bytes, vanished slot, a refused
-   precondition with an unreadable slot, deterministic store refusal, deterministic local failure.
+   own slot `gc_fenced`, own `(uuid, epoch)` body with other bytes, vanished slot, deterministic
+   store refusal, deterministic local failure. A refused precondition whose resolving read keeps
+   failing transiently is not an answer yet: the read is retried, spaced, until the slot is read or
+   the renewal is ended.
 7. **What ends a renewal early.** A stop, a pending remount request, a terminal lifecycle or a
    published FORGET intent, whatever the lease budget. A lost fence alone does not: the readiness
    renewal of rule 1 runs under one, and every trip that must stop a renewal comes with a request,
@@ -382,8 +398,9 @@ The exact contract. A review checks the design against this list.
     the farewell or the re-latch. A remount request is a generation: a reclaim acknowledges only the
     generation it served, and a terminal renewal raises one only if none is pending.
 14. **Latch and arm.** A reclaim starts by latching the fence. The fence is armed, by a reclaim or by
-    a renewal, only when no remount request is pending, no stop is requested and the lifecycle is not
-    terminal; the check and the arm are one step under `driver_mutex`.
+    a renewal, only when no remount request is pending, no stop is requested, the lifecycle is not
+    terminal and the deadline admits a ref append; the check and the arm are one step under
+    `driver_mutex`, and `Live` is published before `lost` is cleared.
 
 ## Order of work {#order-of-work}
 
@@ -394,14 +411,17 @@ Each step leaves the tree working. The rules describe the state after step 6.
 2. Memory guard, inline `PUT`, buffer size (CAS-292).
 3. The worker's renewal without a deadline, spacing, expiry reporting (CAS-298). The startup and
    remount re-anchors keep their bounded policy in this step.
-4. One renewal path: the loop's first renewal provides readiness; remove the re-anchors and the
-   direct renewal.
-5. One thread: move the reclaim into the loop; remove the remount worker and the driver states.
-6. The renewal returns its result; remove the thread-local stack. Needs step 4.
+4. One thread: move the reclaim into the loop, with the latch at its start and the arming rule;
+   remove the remount worker and the driver states. The re-anchors stay as calls from the loop.
+5. One renewal path: the readiness wait of the open, the closed initial state, the readiness
+   renewal in the loop; then remove the re-anchors and the direct renewal.
+6. The renewal returns its result; remove the thread-local stack. Needs step 5.
 7. One definition for each duplicated quantity; stale text.
 8. The [further cleanups](#further-cleanups), one commit each.
 
-Steps 1 to 3 close the three issues. Steps 4 to 8 remove code and can be deferred as a group.
+Steps 1 to 3 close the three issues and form the first implementation plan. Steps 4 to 8 restructure
+and remove code; they form a second plan, written against the code as it is after step 3, and can be
+deferred as a group.
 
 ## Wedged ref lanes after an outage {#wedged-lanes}
 
@@ -449,10 +469,12 @@ What they establish:
   (the re-decision after a refused fence-out) and `sab_wrapping_stability` (a stability test with a
   sample older than the sighting). The walk bound of step one is confirmed: green up to
   `threshold − TTL`, red one tick above.
-- **The 5 percent bound is load-bearing.** `env_drift_exceeds_allowance` violates
-  `NoFenceInsideAuthority`.
-- **The margin survives the full TTL.** `FenceMarginAtLeast` is exact on twelve scaled points and
-  matches the formula `(TTL + TTL/20 + cadence)/1.05 − TTL`: 9.5 s for GC, 4.8 s for a re-mount.
+- **A bounded clock-rate difference is load-bearing.** `env_drift_exceeds_allowance`, with drift far
+  above the allowance, violates `NoFenceInsideAuthority`.
+- **The margin survives the full TTL.** `FenceMarginAtLeast` is exact on twelve scaled points, which
+  match the model's discrete formula (it includes one banked observer tick). The real-scale figures,
+  9.5 s for GC and 4.8 s for a re-mount at 5 percent drift, are calculated from the continuous form
+  `(TTL + TTL/20 + cadence)/1.05 − TTL`; TLC did not run at that scale.
 - **One thread keeps every lifecycle property**, with the arming rule and the latch at the start of
   a reclaim ([one loop](#one-loop)). `NoArmWhileRequestPending`, `NoJoinWindowReclaim`,
   `RenewNotAfterIntent`, `LiveOnlyWhenAdmissible`, `I7RequestNotLost` each have a sabotage.
@@ -478,7 +500,9 @@ on a disk with room; the docs record state counts, not wall-clock time.
 
 Unit tests use `RenewalScriptBackend` and `Ops` from `src/Disks/tests/gtest_cas_heartbeat.cpp` with
 an injected boot clock; `CASMountRuntime` tests live in `gtest_cas_mount_runtime.cpp`. The rule each
-test guards is in brackets. Order follows the [order of work](#order-of-work).
+test guards is in brackets. Order follows the [order of work](#order-of-work). Tests 6, 7, 9 and 17
+guard behaviour that holds today too: on today's code they fail only because the renewal gives up at
+the deadline before reaching the asserted state.
 
 1. `CASTokenWatch.CountsFromAfterTheRead` [11]: a sighting is dated by the sample passed after the
    read; `stableFor` compares against the sample passed before the confirming read and is false when
@@ -511,8 +535,10 @@ test guards is in brackets. Order follows the [order of work](#order-of-work).
 9. `CASHeartbeat.DefinitiveAnswersStayTerminalPastTheDeadline` [6]: past the deadline the slot turns
    `gc_fenced`, foreign, a newer own epoch, an own-epoch body with other bytes, or absent; or the
    store refuses deterministically; or the request raises a deterministic local failure. Each is
-   terminal with today's classification, asserted by name.
-10. `CASHeartbeat.RenewalSpacesRetries` [8], three cases. Fast connect failures: `PUT`s start 800 to
+   terminal with today's classification, asserted by name. A clean refused precondition followed by
+   resolving reads that keep failing transiently is not terminal: the read is retried until it
+   answers, and then the classification follows.
+10. `CASHeartbeat.RenewalSpacesRetries` [8], four cases. A credential-refresh retry keeps the spacing. Fast connect failures: `PUT`s start 800 to
     1200 ms apart. Unclear `PUT` with a failing read: the read follows its `PUT` at once; retries of
     the read and of the `PUT` keep the spacing. A request that takes 5 s on the injected clock is
     retried with no wait. In each case the first-attempt fuse reissues at once for its verb, and the
@@ -525,15 +551,22 @@ test guards is in brackets. Order follows the [order of work](#order-of-work).
     loop over a scripted backend. Past the deadline `admit` returns `NoBudget`, `lost` is false, the
     lifecycle enum is `Live`. After the stale success `admit` still returns `NoBudget` and the next
     renewal starts with no cadence wait. After it `admit` returns `Ok`, same epoch and generation.
+    An operation admitted before the expiry continues after the restore; the same operation is
+    refused after a remount changed the generation.
 13. `CASMountRuntime.ExpiryIsReported`: during the expiry the lifecycle snapshot reads `not_live` /
     `lease_expired`, `lifecycle_since` is the deadline and `lifecycle_detail` holds the last failure
-    text; the two attempt counters advance during the outage; the restoring renewal increments
-    `CASMountLeaseExpired` and the event carries `expired_ms`.
+    text, also when only the resolving reads fail; the two attempt counters advance during the
+    outage; a stale success does not end the expired interval; the restoring renewal increments
+    `CASMountLeaseExpired` once and the event carries `expired_ms` from the original deadline; the
+    completion writes one summary line, whatever the number of requests.
 14. `CASMountRuntime.OpenAndRemountReportReadyOnlyWhenWritable` [1, 14]: an open whose claim is 20 s
     old does not arm the fence; the loop renews with no cadence wait; that renewal arms the fence
     from its own start and the open returns with `admit` passing for a ref append. If the renewal
-    keeps failing for one TTL the open fails. A remount whose quiesce took 20 s stays not `Live` with
-    the fence lost until the same renewal, and is never armed while not `Live`.
+    keeps failing for one TTL the open stops the thread, joins it and fails. A readiness renewal that
+    succeeds with a stale start arms nothing and reports nothing; the next one does. Before the
+    thread starts, the open's latched fence refuses a write while the renewal itself is sent. A
+    remount whose quiesce took 20 s stays not `Live` with the fence lost until the same renewal, and
+    is never armed while not `Live`.
 15. `CASMountRuntime.ARemountRequestEndsTheRenewalAndTheSameThreadReclaims` [7, 13]: an interference
     report while the renewal retries ends it within one wait plus one request; the lease thread runs
     the reclaim and then renews under the new epoch; a second request raised during the reclaim is
