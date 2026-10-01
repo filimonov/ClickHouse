@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 19:31'
-updated_date: '2026-10-01 20:32'
+updated_date: '2026-10-01 22:44'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -77,4 +77,6 @@ Provenance: found in the review of the CAS-298 spec, 2026-10-01; the timestamp m
 
 <!-- SECTION:NOTES:BEGIN -->
 The fix and its tests are specified as step one of docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md (section 'Step one: GC counts a sighting from after its read').
+
+Model result (CaMountObserveCore, commit 11a0675f8d3): the defect is reachable in today's code without the new renewal rule when the renewal thread is stalled, because the holder then keeps authority to start + TTL; the early self-fence hides it only when renewals fail. Sabotages sab_sighting_before_read and sab_redecision_stale_sample reproduce it; the walk bound is threshold - TTL (11.5 s, 10 s with 5 percent drift).
 <!-- SECTION:NOTES:END -->
