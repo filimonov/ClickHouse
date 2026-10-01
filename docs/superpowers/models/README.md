@@ -140,7 +140,7 @@ exact-delete authorization.
 | `CaRefWriterCleanupCore.tla` | writer ownership lifecycle plus unresolved-grant duty queue and retirement guard | CURRENT (Task 8A extension 2026-08-02) | `run_refwcleanup.sh` |
 | `CaRelinkConfirmCore.tla` | publish-then-confirm relink: gate 1 (exact-`ManifestRef` equality, ref-scoped mutation refusal (the mutation's `MutationScope`), poison, mount fence) and the publish-before-confirm order, each proven load-bearing — **plus the finding that the theorem is violable independently of the protocol under an honest fold cursor** | CURRENT (gates unlanded Part B; `_main` is CONDITIONAL on `LIST` completeness) | `run_relinkconfirm.sh` |
 | `CaErasureProof.tla` | rev.7 natural `Vanished(erased)` proof soundness: writer paths closed by op-gate + guard counter + LIST-reset + grace ([D1] grace proven load-bearing); two GC-side windows found — evidence in the decision to excise the natural-erasure stack from v1 | HISTORICAL (design excised before activation) | `run_erasureproof.sh` |
-| `CaDiskLifecycle.tla` | pool lifecycle with one lease thread (renew and reclaim in sequence): one-way-ness, the `FORGET` protocol (trip#2 sufficiency, earned farewell, first-terminal-wins), GC self-exit on `Vanished`, no renewal after the FORGET intent, `Live` only when a write can be admitted, no lost remount request | CURRENT | `run_disklifecycle.sh` |
+| `CaDiskLifecycle.tla` | pool lifecycle with one lease thread (renew and reclaim in sequence): one-way-ness, the `FORGET` protocol (no arm in the join window, earned farewell, first-terminal-wins), GC self-exit on `Vanished`, no renewal after the FORGET intent, one arming rule, `Live` only when a write can be admitted, no lost remount request | CURRENT | `run_disklifecycle.sh` |
 | `CaB140DangleMerge.tla` (+ `m_*.cfg`) | journal-trim dangle across a lease handoff: trim-gate + cursor-in-snap jointly necessary | HISTORICAL | `run_b140danglemerge.sh` |
 
 ## Model groups {#model-groups}
@@ -453,7 +453,7 @@ no claimed refinement. Run evidence: `CaMountRenewRetryCore_RESULTS.md`.
 
 `CaDiskLifecycle` models the one lease thread that renews and reclaims in sequence, with remount
 requests as generations. A reclaim already past its step-0 bail may still finish before FORGET joins
-the thread, so the second fence trip remains load-bearing. GC-leader heartbeats,
+the thread; the arming rule keeps it from arming the fence. GC-leader heartbeats,
 build/debris heartbeats, and the superseded writer-ack-floor mechanisms in the other matching models
 are separate protocols; their current or historical status is recorded in the model entries below.
 
@@ -471,22 +471,22 @@ evidence and trace analysis: `.superpowers/sdd/tla-rev7-report.md`.
   self-exit on `Vanished`, and the `GC STOP`/`GC START` verbs. The thread exits on a stop or on
   `remountTerminal` (FORGET intent or `IdentityLost`); a reclaim past its step-0 bail may still
   finish mid-FORGET. Proves:
-  - FORGET ends with the fence latched and a terminal state; the second `tripMountLost` closes the
-    join-window reclaim (`_sab_notrip2` red, `_witness_joinwindowreclaim` reachable);
+  - FORGET ends with the fence latched and a terminal state, and no reclaim arms the fence inside
+    its join window. The arming rule makes the second `tripMountLost` a second line: it matters
+    only when arming ignores the intent (`_sab_armafterintent`, `_sab_notrip2` red);
   - a farewell only after a drain, from an `Active` renewer, with the thread joined
     (`_sab_unearnedfarewell` red, `_witness_forgetfarewell` reachable);
   - no renewal starts after the FORGET intent (`_sab_renewafterintent` red) or while a remount
     request is pending;
-  - a reclaim reports `Live` only when a write can be admitted. With a too-old claim it leaves the
-    fence latched and the pool `Transient`; the loop's next successful renewal arms the fence and
-    reports `Live` in one step, never while a remount request is pending (`_sab_liveunready`,
-    `_sab_livependingrequest` red, `_witness_livebyrenewal` reachable);
+  - one arming rule for a reclaim and a renewal: the fence is armed and `Live` reported only with no
+    remount request pending, no stop and no terminal lifecycle (`_sab_livependingrequest`,
+    `_sab_reclaimarmpending` red);
+  - `Live` only when a write can be admitted: with a too-old claim the reclaim leaves the fence
+    latched and the next successful renewal arms it (`_sab_liveunready` red,
+    `_witness_livebyrenewal` reachable);
   - a reclaim acknowledges only the generation it snapshotted (`_sab_ackrequested` red);
-  - a non-`Live` pool and a `Vanished` pool have a latched fence. This needs a reclaim's step 0 to
-    trip the fence: otherwise a request raised during a reclaim is overridden by that reclaim's arm,
-    and the next reclaim runs `Transient`, or lands `Replaced`, on an armed fence
-    (`_sab_reclaimnotrip`, `_sab_reclaimnotrip_vanished` red). A reclaim still arms the fence when a
-    request was raised after its snapshot; `_finding_reclaimarmpending` keeps that window visible;
+  - a non-`Live` pool and a `Vanished` pool have a latched fence; a reclaim's step 0 trips the fence
+    (`_sab_reclaimnotrip`, `_sab_reclaimnotrip_vanished` red);
   - one-way `IdentityLost`/`Vanished`; FORGET leaves GC destroyed; first-terminal-wins
     (`_witness_racedreplaced`);
   - liveness under `FairSpec`: a started FORGET completes, GC stops once `Vanished`

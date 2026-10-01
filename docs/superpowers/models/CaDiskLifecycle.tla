@@ -15,11 +15,11 @@
 (*       generation it snapshots, or fail and retry;                       *)
 (*     otherwise renew: success sets the deadline; any other end trips    *)
 (*       the fence and requests a remount unless one is pending.           *)
-(* `deadlineOk` abstracts "the fence deadline admits a write". A reclaim   *)
-(* whose claim admits a write arms the fence and reports Live. Otherwise   *)
-(* the fence stays latched and the pool Transient; the next successful     *)
-(* renewal arms the fence and reports Live in one step, unless a request   *)
-(* is pending, the lifecycle is terminal or a stop was requested.          *)
+(* `deadlineOk` abstracts "the fence deadline admits a write". One arming  *)
+(* rule (`CanArm`): the fence is armed and Live reported only with no      *)
+(* remount request pending, no stop and no terminal lifecycle. A reclaim   *)
+(* arms when its claim admits a write; otherwise the next successful       *)
+(* renewal arms in the same step that reports Live.                        *)
 (*                                                                         *)
 (* FORGET steps in `Pool::forgetDisk` order: mutex -> idempotent           *)
 (* `isVanished` short-circuit -> publish intent -> trip#1 -> GC stop       *)
@@ -38,7 +38,9 @@ CONSTANTS
     EnableGcSelfExit,  \* the GC scheduler exits at a wake that sees a Vanished pool
     RenewChecksIntent, \* a renewal never starts once the FORGET intent is published
     ReadinessGate,     \* a reclaim with a too-old claim reports Live only after a renewal
-    LiveChecksPending, \* that renewal arms nothing while a remount request is pending
+    LiveChecksPending, \* a renewal arms nothing while a remount request is pending
+    ReclaimChecksPending, \* a reclaim arms nothing while a newer request is pending
+    ArmChecksTerminal, \* nothing arms after a stop or with a terminal lifecycle
     AckSnapshot,       \* a reclaim acknowledges only the generation it snapshotted
     ReclaimTrips,      \* a reclaim's step 0 trips the fence, not only the lifecycle
     MaxGen             \* bound on remount requests (state-space bound only)
@@ -125,6 +127,12 @@ TripMountLost ==
 
 Max(a, b) == IF a > b THEN a ELSE b
 
+\* The one arming rule; `pendingAfter` is whether a request stays pending
+\* once this step's acknowledgement is applied.
+CanArm(pendingAfter, checkPending) ==
+    /\ (~checkPending \/ ~pendingAfter)
+    /\ (~ArmChecksTerminal \/ (~stop /\ ~LeaseTerminal))
+
 (***************************************************************************)
 (* THE LEASE THREAD                                                        *)
 (***************************************************************************)
@@ -161,14 +169,15 @@ LAttemptFail ==
                    gcVars, forgetVars, historyVars>>
 
 \* Verdict Recover: install and start a fresh renewer, acknowledge the
-\* snapshot. `ready` = the claim still admits a write: arm the fence and
-\* report Live; otherwise leave both to the loop's next renewal. No intent
-\* check: the attempt is past its step-0 bail.
+\* snapshot. `ready` = the claim still admits a write. Arm and report Live
+\* under `CanArm`; otherwise leave the fence latched and the pool Transient
+\* for the loop's next renewal, or its next reclaim if a request is pending.
 LReclaim ==
     /\ lpc = "InAttempt" /\ pstate = "Transient"
     /\ \E ready \in BOOLEAN :
          /\ deadlineOk' = ready
-         /\ IF ready \/ ~ReadinessGate
+         /\ IF (ready \/ ~ReadinessGate)
+               /\ CanArm(reqGen > snapGen, ReclaimChecksPending)
             THEN pstate' = "Live" /\ lost' = FALSE
             ELSE UNCHANGED <<pstate, lost>>
     /\ keeper' = "Active" /\ lpc' = "Top"
@@ -218,8 +227,8 @@ LRenewOk ==
     /\ lpc = "Renewing"
     /\ lpc' = "Top"
     /\ \E ready \in BOOLEAN :
-         LET report == ready /\ pstate = "Transient" /\ ~stop /\ ~LeaseTerminal
-                       /\ (~LiveChecksPending \/ ~Pending)
+         LET report == ready /\ pstate = "Transient"
+                       /\ CanArm(Pending, LiveChecksPending)
          IN /\ deadlineOk' = ready
             /\ pstate' = IF report THEN "Live" ELSE pstate
             /\ lost' = IF report THEN FALSE ELSE lost
@@ -379,8 +388,8 @@ FJoinWait ==
                    farewell, drained, leaseVars, stop, gcVars, mutex,
                    historyVars>>
 
-\* A reclaim that completed inside the join window re-armed the fence; the
-\* lease thread is joined, so re-latch.
+\* Re-latch after the join. Under `CanArm` nothing arms once the intent is
+\* published; this covers an arm that ignores the intent.
 FTrip2 ==
     /\ fpc = "Trip2"
     /\ TripMountLost
@@ -491,13 +500,8 @@ RenewNotAfterIntent ==
 RenewNotWhilePending ==
     [][(lpc # "Renewing" /\ lpc' = "Renewing") => ~Pending]_vars
 
-\* A renewal arms the fence only while no remount request is pending.
-RenewalArmNotWhilePending ==
-    [][(lpc = "Renewing" /\ lost /\ ~lost') => ~Pending]_vars
-
-\* A reclaim arms the fence only while no newer remount request is pending.
-ReclaimArmNotWhilePending ==
-    [][(lpc = "InAttempt" /\ lost /\ ~lost') => reqGen = snapGen]_vars
+\* The fence is never armed while a remount request stays pending.
+NoArmWhileRequestPending == [][(lost /\ ~lost') => ~Pending']_vars
 
 \* Live is reported only when a write can be admitted.
 LiveOnlyWhenAdmissible ==
@@ -516,7 +520,8 @@ LeaseThreadExits == (stop \/ LeaseTerminal) ~> (lpc = "Exited")
 \* Witnesses (expected VIOLATED in their configs = reachability).
 WForgetNeverDone == ~ForgetDone
 WNoRacedReplaced == ~(ForgetDone /\ pstate = "VanishedReplaced")
-WNoJoinWindowReclaim == ~(fpc = "Trip2" /\ pstate = "Live" /\ ~lost)
+\* No reclaim arms the fence inside FORGET's join window.
+NoJoinWindowReclaim == ~(fpc = "Trip2" /\ pstate = "Live" /\ ~lost)
 WNoLiveByRenewal == ~liveByRenewal
 WNoRequestDuringReclaim == ~(lpc = "InAttempt" /\ reqGen > snapGen)
 WNoForgetFarewell == ~(ForgetDone /\ farewell)

@@ -8,37 +8,31 @@
 #
 #   sab_nogcselfexit            -> GcExitsAfterVanished (temporal)  the GC scheduler never exits on a
 #                                                                   natural Vanished transition
-#   sab_notrip2                 -> I1ForgetTerminal        no re-trip after the join: a reclaim that
-#                                                          completes inside the join window leaves the
-#                                                          fence armed after FORGET
+#   sab_armafterintent          -> NoJoinWindowReclaim     arming ignores a stop and a terminal
+#                                                          lifecycle: a reclaim arms inside the join window
+#   sab_notrip2                 -> I1ForgetTerminal        the same, and no re-trip after the join: FORGET
+#                                                          completes with the fence armed
 #   sab_unearnedfarewell        -> I2EarnedFarewell        the farewell regardless of the drain outcome
 #   sab_renewafterintent        -> RenewNotAfterIntent     a renewal starts after the FORGET intent
 #   sab_liveunready             -> LiveOnlyWhenAdmissible  a reclaim with a too-old claim arms the
 #                                                          fence and reports Live without the renewal
-#   sab_livependingrequest      -> RenewalArmNotWhilePending  that renewal arms the fence while a
-#                                                          remount request is pending
+#   sab_livependingrequest      -> NoArmWhileRequestPending  a renewal arms while a request is pending
+#   sab_reclaimarmpending       -> NoArmWhileRequestPending  a reclaim arms although a request was
+#                                                          raised after its snapshot
 #   sab_ackrequested            -> I7RequestNotLost        a reclaim acknowledges the current request,
 #                                                          not its snapshot
-#   sab_reclaimnotrip           -> I4aTransientImpliesLost a reclaim's step 0 leaves the fence armed;
-#                                                          a request raised during the previous reclaim
-#                                                          was overridden by that reclaim's arm
+#   sab_reclaimnotrip           -> I4aTransientImpliesLost a reclaim's step 0 leaves the fence armed
 #   sab_reclaimnotrip_vanished  -> I4bVanishedImpliesLost  the same, ending Replaced on an armed fence
 #   main                        -> GREEN   every invariant, the four action properties and the three
 #                                          liveness properties under FairSpec
 #
-# A finding row is a violation the design accepts today, kept visible:
-#
-#   finding_reclaimarmpending   -> ReclaimArmNotWhilePending  a reclaim arms the fence although a request
-#                                                          was raised after its snapshot
-#
 # Witnesses are negated reachability -- a VIOLATION is the evidence:
 #
 #   witness_forgetdone            -> WForgetNeverDone         FORGET completes
-#   witness_joinwindowreclaim     -> WNoJoinWindowReclaim     a reclaim completes inside the join
-#                                                             window: Live and an armed fence at Trip2
 #   witness_racedreplaced         -> WNoRacedReplaced         FORGET completes on a pool a racing
 #                                                             natural promotion left VanishedReplaced
-#   witness_livebyrenewal         -> WNoLiveByRenewal         a renewal reports Live for a waiting reclaim
+#   witness_livebyrenewal         -> WNoLiveByRenewal         a renewal arms and reports Live for a
+#                                                             reclaim whose claim was too old
 #   witness_requestduringreclaim  -> WNoRequestDuringReclaim  a remount request is raised during a reclaim
 #   witness_forgetfarewell        -> WNoForgetFarewell        FORGET still writes the farewell
 #
@@ -69,18 +63,18 @@ MODULE=CaDiskLifecycle
 # name  expectation(green|violation|temporal)  expected-invariant/property(asserted, not just logged)
 CONFIGS=(
   "sab_nogcselfexit             temporal   GcExitsAfterVanished"
+  "sab_armafterintent           violation  NoJoinWindowReclaim"
   "sab_notrip2                  violation  I1ForgetTerminal"
   "sab_unearnedfarewell         violation  I2EarnedFarewell"
   "sab_renewafterintent         violation  RenewNotAfterIntent"
   "sab_liveunready              violation  LiveOnlyWhenAdmissible"
-  "sab_livependingrequest       violation  RenewalArmNotWhilePending"
+  "sab_livependingrequest       violation  NoArmWhileRequestPending"
+  "sab_reclaimarmpending        violation  NoArmWhileRequestPending"
   "sab_ackrequested             violation  I7RequestNotLost"
   "sab_reclaimnotrip            violation  I4aTransientImpliesLost"
   "sab_reclaimnotrip_vanished   violation  I4bVanishedImpliesLost"
   "main                         green      -"
-  "finding_reclaimarmpending    violation  ReclaimArmNotWhilePending"
   "witness_forgetdone           violation  WForgetNeverDone"
-  "witness_joinwindowreclaim    violation  WNoJoinWindowReclaim"
   "witness_racedreplaced        violation  WNoRacedReplaced"
   "witness_livebyrenewal        violation  WNoLiveByRenewal"
   "witness_requestduringreclaim violation  WNoRequestDuringReclaim"
