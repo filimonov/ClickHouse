@@ -86,7 +86,7 @@ The one-second spacing of retries is a constant in code.
 The expired row is shown only while the lifecycle enum is `Live`; the enum itself is not touched.
 `lifecycle_reason = 'lease_expired'` is about this server's own confirmed deadline. The existing
 `state = 'expired'` column is a display value from the body's wall-clock `expires_at_ms` plus a skew
-allowance; the two can disagree for a few seconds.
+allowance. The two are independent signals and need not agree.
 
 ## Renewal under memory pressure {#memory-pressure}
 
@@ -100,10 +100,13 @@ gaps remain, from issue #2403: an exception outside the request (`encodeBody`, `
   log use the same guard.
 - `ObjectStorageBackend::conditionalWriteSettings` sets `s3_allow_parallel_part_upload = false`, so
   a conditional `PUT` runs on the calling thread and the guard covers it. This applies to every
-  conditional control-plane write, not only the renewal; the caller waits for the `PUT` either way.
-- Control-plane buffers are sized to the payload: the body size in `nativeConditionalPut`, the known
-  size in `casSizedReadSettings`.
-- A real allocator failure (`std::bad_alloc`) is still terminal.
+  conditional control-plane write, not only the renewal. The caller waits for the `PUT` either way;
+  a large conditional write uploads its parts one after another, which can take longer and uses
+  less memory.
+- A conditional `PUT` starts with a buffer of the body size, at least one byte, instead of 1 MiB;
+  `WriteBufferFromS3` keeps its own growth and caps. Reads keep their current sizing.
+- An unwrapped `std::bad_alloc` that reaches the request engine is still terminal. Classification
+  of failures is unchanged.
 
 ## Why it is safe {#safety}
 
@@ -196,10 +199,12 @@ The exact contract. A review checks the design against this list.
 - `Retry`: one optional spacing field. `writeLoop` and the read loop record when each request
   started and pass it to the pause; `gatedPause` takes neither today.
 - One callback from the worker plane to the runtime per sent request and per failure text. It feeds
-  the two attempt counters and the last-failure text.
+  the two attempt counters and the last-failure text. The text is owned by the runtime under a
+  mutex, outside the trivially copyable observability context; failing to record it is diagnostic
+  only.
 - `CasMountRuntime::consumeRenewResult`: on success, report an expiry that just ended.
 - `deliverMountRenewObservability`: drop the loop that replays one `DEBUG` line per request.
-- `renewalLoop`, `conditionalWriteSettings`, `nativeConditionalPut`, `casSizedReadSettings`:
+- `renewalLoop`, `conditionalWriteSettings`, `nativeConditionalPut`:
   [memory pressure](#memory-pressure).
 - `GaveUp{Deadline}` and `GaveUp{Unresolved}` are not reachable for the worker path. If the engine
   returns either, the result is terminal as today.
@@ -289,13 +294,13 @@ test guards is in brackets. Tests for rule 11 belong to CAS-342.
     text; the two attempt counters advance during the outage; the restoring renewal increments
     `CASMountLeaseExpired` and the event carries `expired_ms`.
 12. `CASMountRuntime.MemoryLimitDoesNotEndTheRenewalThread` [12]: with the global tracker over its
-    limit, an allocation inside a renewal iteration does not throw, the tracker still counts it, and
-    the renewal over the in-memory backend succeeds. A memory-limit exception injected into a request
+    limit, an allocation before the request and another while the result is consumed do not throw,
+    the tracker still counts them, and the renewal over the in-memory backend succeeds. A memory-limit exception injected into a request
     is retried, does not trip the fence and does not end the thread.
 13. `CASBackend.ConditionalPutRunsOnTheCallingThread` [12]: `conditionalWriteSettings` has parallel
     part upload off, and a conditional `PUT` over the S3 object storage runs on the thread that
-    issued it. The buffer of a small conditional `PUT` and of a sized control-plane read equals the
-    payload size.
+    issued it. A small conditional `PUT` starts with a buffer of its body size, and an empty body with
+    one byte.
 14. Integration, `tests/integration/test_cas_mount_renewal_retry` with `s3_fault_proxy.py`:
     `test_short_put_outage_does_not_fence` holds `503` on `PUT` for 8 s across a renewal. No
     `fenced after` line on any node, `CASMountLeaseLost` unchanged, the next `INSERT` succeeds.
