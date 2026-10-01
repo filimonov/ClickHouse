@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-01 14:07'
+updated_date: '2026-10-01 19:48'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -68,5 +68,5 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-01 16:10: PR https://github.com/Altinity/ClickHouse/pull/2468 opened (base antalya-26.6, head fix/antalya-26.6/cas-gc-janitor-batches @528398bf844). A/B report docs/superpowers/reports/2026-10-01-cas-29-9-janitor-ab/README.md. Follow-ups CAS-337, CAS-338.
+2026-10-01 21:45: after owner-driven simplification rounds (pool pattern from #2351 instead of a window; telemetry/events/seams/duplicate tests cut; YAGNI cuts 1–5) PR #2468 head is 22afe53066b: +3296/−729 (src +719/−252, tests +2505/−431, docs +72/−46), down from +4123/−723 at the first push. Spec synced 1b3cf19130b.
 <!-- SECTION:NOTES:END -->
