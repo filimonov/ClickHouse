@@ -50,8 +50,8 @@ description: 'Design for CAS-29.9 (r10): on a folding round the namespace janito
   reissued once by the refresh path before it leaks ([adapter](#adapter)).
 - **Deferred rounds unchanged.** A `DEFER` round takes one suppressed page: no deletes, no jobs, no
   cursor move.
-- **`gc_io_concurrency` 1 is the sequential model.** Jobs run inline on the round thread in submit order,
-  so page k's deletes finish before page k+1's LIST.
+- **`gc_io_concurrency` 1 runs the jobs one at a time on one pool thread.** They overlap the next page's
+  LIST. Inline execution on the round thread exists only for unit tests that pass no pool.
 - **A refresh never publishes a transient `false`.** Jobs read the authority flag while the round thread
   refreshes it, so `refreshAuthority` keeps the confirmed value during its GET and stores `false` only on
   absence, mismatch or a failed read. The janitor latches an observed loss until the phase ends
@@ -141,8 +141,8 @@ bound. On a no-batch store the jobs are the bound and the pipeline is what makes
 
 - **Submit.** A `ThreadPoolCallbackRunnerLocal<void>` on `io_pool` with its own thread name, one per
   phase. Each job through `enqueueAndGiveOwnership`; the handles are kept, and `SCOPE_EXIT_SAFE` waits for
-  all of them on every exit path, a throw included. At `gc_io_concurrency` 1 jobs run inline on the round
-  thread, as the redelete's `concurrency <= 1` branch does.
+  all of them on every exit path, a throw included. At `gc_io_concurrency` 1 jobs run one at a time on one
+  pool thread; with no pool (unit tests only) they run inline on the round thread.
 - **Slots.** A counting semaphore of `gc_io_concurrency` slots. The round thread acquires one before each
   submit; the job releases it as its last action. The pool queue stays unbounded, as the redelete and
   `GcReadAhead` rely on; the semaphore is what bounds outstanding jobs, and with it the work left when
