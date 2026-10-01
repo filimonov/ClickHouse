@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-01 07:40'
+updated_date: '2026-10-01 12:52'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -60,5 +60,5 @@ Provenance: BACKLOG/gc.md#gc-confirmed-meta-delete-etag-race (first raised as P1
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-01: PR1 implemented and reviewed (SDD, 11 tasks, Opus + codex final reviews SHIP). Branch fix/antalya-26.6/cas-gc-stale-meta-delete @63aca021bcb in the gc-request-cuts worktree; squashed -pr branch fix/antalya-26.6/cas-gc-stale-meta-delete-pr @137d86d5430; PR body tmp/cas30/pr_body.md. Not pushed (owner authorization). Measurements: tmp/cas30/gc-ab/REPORT.md. Follow-ups: CAS-334 (writer rule), CAS-329 (request cuts), CAS-336 (.meta GET event).
+2026-10-01 14:55: PR https://github.com/Altinity/ClickHouse/pull/2463 opened (base antalya-26.6, head fix/antalya-26.6/cas-gc-stale-meta-delete @c4ed6fc881e). Measurements tmp/cas30/gc-ab/REPORT.md. Follow-ups: CAS-334 (writer rule), CAS-329 (request cuts), CAS-336 (.meta GET event).
 <!-- SECTION:NOTES:END -->
