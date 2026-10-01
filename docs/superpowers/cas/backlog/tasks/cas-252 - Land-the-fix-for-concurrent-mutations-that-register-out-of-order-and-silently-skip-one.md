@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 21:19'
+updated_date: '2026-10-01 17:03'
 labels:
   - 'area:upstream'
   - 'complexity:small'
@@ -60,5 +60,5 @@ Provenance: BACKLOG/replication.md#mutation-registration-race; observed in CI as
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30: another CI occurrence on PR #2452 (run 36750016225, cas_lightweight_delete_4, scenario 'concurrent delete without overlap with alter delete': acked ALTER DELETE rows survive, count 50000 instead of 0; also on #2437 and #2440). RCA in session scratch tmp/ci-2452-lwd4/rca.md. Not caused by those PRs; the antalya-26.6 fix is still pending (AC #1).
+2026-10-01: occurrence on PR #2463 cas_lightweight_delete_4 (release x86): 'without overlap' scenarios 251 vs 250, 3 vs 0; tmp/ci-2463/rca.md
 <!-- SECTION:NOTES:END -->

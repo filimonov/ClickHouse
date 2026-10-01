@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 20:57'
+updated_date: '2026-10-01 17:03'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -57,5 +57,5 @@ Provenance: BACKLOG/performance.md#cas-connection-churn-spike-redo; roadmap §2 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-09-30: cas_selects regression red on PRs #2452 and #2455 (and base antalya-26.6 at 66a2ea5c, PR #2440): 20 tests under selects/final/force/concurrent fail with 'mount lease not held ... TRANSIENT'; server log has EADDRNOTAVAIL on S3 PUTs to minio 2.5k-4k times, manifest PUT retries exhausted, CasMountLeaseRenewer fences the lease, remount fails at pool_identity_probe. Same port-exhaustion class. RCA: session scratch tmp/ci-cas-selects/rca.md. Intermittent on base (0 failures at 61d24118).
+2026-10-01: occurrence on PR #2463 (cas_selects release + aarch64): 2620/2632 'Cannot assign requested address' on S3 PUTs, fenced after 67 attempts; tmp/ci-2463/rca.md
 <!-- SECTION:NOTES:END -->
