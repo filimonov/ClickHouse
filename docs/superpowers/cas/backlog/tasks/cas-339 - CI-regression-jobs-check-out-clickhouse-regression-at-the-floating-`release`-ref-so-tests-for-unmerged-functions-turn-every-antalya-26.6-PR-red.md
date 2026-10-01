@@ -6,10 +6,11 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 17:03'
+updated_date: '2026-10-01 19:29'
 labels:
   - ci
 dependencies: []
-priority: high
+priority: low
 ordinal: 432000
 ---
 
@@ -32,3 +33,9 @@ Observed 2026-10-01 on PR #2463 (also any PR on antalya-26.6 after 05:10Z): cas_
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-01 owner: not ours — the clickhouse-regression maintainers own the release ref; the reds disappear once PR #2398 (uniqApacheHLL) merges. Kept only as the explanation for cas_aggregate_functions_* reds on antalya-26.6 PRs in the meantime.
+<!-- SECTION:NOTES:END -->
