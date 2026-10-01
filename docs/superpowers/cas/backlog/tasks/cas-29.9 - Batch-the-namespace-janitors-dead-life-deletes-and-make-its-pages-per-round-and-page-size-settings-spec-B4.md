@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-01 13:57'
+updated_date: '2026-10-01 14:07'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -68,5 +68,5 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-01: implemented via SDD (9 tasks + 8b wrap), final reviews Opus + codex SHIP. Branch fix/antalya-26.6/cas-gc-janitor-batches @3ec73f290db (cas-83 worktree); squashed -pr branch fix/antalya-26.6/cas-gc-janitor-batches-pr @528398bf844; PR body tmp/cas299/pr_body.md. Not pushed (owner authorization). A/B report docs/superpowers/reports/2026-10-01-cas-29-9-janitor-ab/README.md. Follow-ups CAS-337, CAS-338.
+2026-10-01 16:10: PR https://github.com/Altinity/ClickHouse/pull/2468 opened (base antalya-26.6, head fix/antalya-26.6/cas-gc-janitor-batches @528398bf844). A/B report docs/superpowers/reports/2026-10-01-cas-29-9-janitor-ab/README.md. Follow-ups CAS-337, CAS-338.
 <!-- SECTION:NOTES:END -->
