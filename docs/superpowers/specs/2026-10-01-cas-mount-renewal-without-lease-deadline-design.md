@@ -13,7 +13,40 @@ The background renewal of the mount lease keeps trying until the store answers. 
 the renewal's retry budget, decides when writes stop.
 
 Closes [issue #2431](https://github.com/Altinity/ClickHouse/issues/2431) (CAS-298), CAS-152 and
-[issue #2403](https://github.com/Altinity/ClickHouse/issues/2403) (CAS-292). Needs CAS-342 first.
+[issue #2403](https://github.com/Altinity/ClickHouse/issues/2403) (CAS-292), and CAS-342, which is
+the first step.
+
+## Step one: GC counts a sighting from after its read {#gc-sighting}
+
+GC treats a server as dead when its mount token stays unchanged for `TTL + TTL/20 + period`
+(41.5 s) on the GC leader's own clock, and then writes `gc_fenced` into the slot. The wait must
+start when GC saw the token. Today it starts earlier.
+
+`Gc::runRegularRound` and the rebuild pass call `computeHeartbeatFloor` with a clock sample taken
+before the `LIST` and the per-slot reads. The function stores that sample as the first sighting.
+A sighting made `d` after the sample is credited `d` too early:
+
+| Time | Event |
+|---|---|
+| 0 s | The round starts and samples the clock. The store is slow. |
+| 18 s | The holder commits a renewal: token `T`, authority until 48 s. |
+| 20 s | GC reaches the slot, sees `T`, records "first seen at 0 s". |
+| 42 s | A second round sees `T` unchanged: 42 − 0 ≥ 41.5, so it fences. It really watched for 22 s. |
+| 42 to 48 s | The slot is fenced and the holder still considers itself entitled to write. |
+
+Both conditions are needed: the walk spends more than `threshold − TTL` (11.5 s; 10 s with a
+5 percent faster observer clock) before the read, and a second round follows soon. The regular
+timer waits a full `gc_interval_sec` after a round ends, so only a manual round, an early requested
+round or the rebuild pass can be that second round.
+
+Today a holder whose renewals fail fences itself about 14 s after its last success, which hides
+most of this. The rest of this design keeps the lease until the TTL, so the fix comes first.
+
+**Fix.** `computeHeartbeatFloor` takes the clock as a function and records a sighting with a sample
+taken inside the decision, after the read, on the first decision and on the re-decision that
+follows a refused fence-out. The stability test keeps the round-start sample, which is earlier than
+the real instant and so errs on the safe side. `claimMountAwaitingExpiry` already samples this way.
+No format change.
 
 ## How it works {#how-it-works}
 
@@ -121,8 +154,7 @@ was not taken.
 **The holder never has authority longer than an observer waits.** Authority ends at `start + TTL` on
 the holder's clock. An observer sees the new token no earlier than that start and acts only after
 the token stayed unchanged for `TTL + TTL/20 + cadence` on its own clock. Retrying does not move the
-start. The observer side needs CAS-342: GC today credits a sighting with a clock sample taken before
-its read.
+start. The observer side needs [step one](#gc-sighting).
 
 **A request that lands late is harmless.** A renewal request that lands after the holder stopped is
 conditional on the old token: it lands on an unfenced, non-farewell body, or a successor moved the
@@ -184,13 +216,13 @@ The exact contract. A review checks the design against this list.
     enough budget for admission.
 11. **Observer timestamps.** An observer records the first sighting of a token with a clock sample
     taken after the read, and tests stability with a sample taken before the confirming read
-    (CAS-342).
+    ([step one](#gc-sighting)).
 12. **Memory guard.** The tracker does not throw on the renewal thread, and a conditional `PUT` runs
     on the thread that issues it ([memory pressure](#memory-pressure)).
 
 ## Code shape {#code-shape}
 
-- `computeHeartbeatFloor` and its two callers in `Gc/CasGc.cpp`: CAS-342.
+- `computeHeartbeatFloor` and its two callers in `Gc/CasGc.cpp`: [step one](#gc-sighting).
 - `MountLeaseRenewer::renewOn`: the worker path uses the policy of rules 4 and 8. Startup and direct
   renewals share `renew` with the worker today, so the policy follows the caller's kind.
 - Request plane of the worker renewal: not gated by the mount fence, takes the worker's liveness
@@ -248,14 +280,21 @@ quiet wedged table. Background retry of wedged lanes is a separate change.
 
 `CaCasMountCore`: a witness for `Renew` at `clock >= fenceUntil` followed by `WedgeRetryCreate`, with
 the invariants of `CaCasMountCore_v9_recoverygen.cfg`. Both run green in TLC before code is written.
-The sabotage for rule 11 belongs to CAS-342.
+For rule 11, the model that owns the timing of `GCFence` gets a sabotage in which an observer credits
+a sighting with a sample taken before its read and fences a holder inside its authority.
 
 ## Tests, failing first {#tests}
 
 Unit tests use `RenewalScriptBackend` and `Ops` from `src/Disks/tests/gtest_cas_heartbeat.cpp` with
 an injected boot clock; `CASMountRuntime` tests live in `gtest_cas_mount_runtime.cpp`. The rule each
-test guards is in brackets. Tests for rule 11 belong to CAS-342.
+test guards is in brackets.
 
+0. `CASHeartbeat.GcCountsASightingFromAfterItsRead` [11], three cases over an injected clock function.
+   The clock advances by more than `threshold − TTL` between the call of `computeHeartbeatFloor` and
+   its read of a slot: a second call one threshold after the first call's start does not fence; a
+   call one threshold after the read does. A sighting recorded in the re-decision after a refused
+   fence-out is counted from after that read. A call whose own clock sample precedes the threshold
+   does not fence, however long its walk takes.
 1. `CASHeartbeat.WorkerRenewalOutlivesTheReservationCutoff` [4]: `PUT` fails transiently for 8 s,
    then succeeds. `Committed`, renewer `Active`, and the number of `PUT`s matches one per spacing
    interval. Replaces `RenewalStopsBeforeTheCutoffWhenEveryAttemptConsumesTheEnvelope`.

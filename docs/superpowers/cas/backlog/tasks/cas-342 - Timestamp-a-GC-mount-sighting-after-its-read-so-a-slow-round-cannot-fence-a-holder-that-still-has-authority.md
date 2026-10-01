@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 19:31'
-updated_date: '2026-10-01 20:00'
+updated_date: '2026-10-01 20:32'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -72,3 +72,9 @@ Provenance: found in the review of the CAS-298 spec, 2026-10-01; the timestamp m
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The fix and its tests are specified as step one of docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md (section 'Step one: GC counts a sighting from after its read').
+<!-- SECTION:NOTES:END -->
