@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-30 23:37'
+updated_date: '2026-10-01 13:57'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -68,5 +68,5 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-01 spec r10 (six codex rounds; 0 MAJOR at r8, owner changes r9/r10) committed at docs/superpowers/specs/2026-09-30-cas-gc-janitor-batches-and-budget-design.md; owner: proceed to plan + SDD unattended on fix/antalya-26.6/cas-gc-janitor-batches (worktree cas-83).
+2026-10-01: implemented via SDD (9 tasks + 8b wrap), final reviews Opus + codex SHIP. Branch fix/antalya-26.6/cas-gc-janitor-batches @3ec73f290db (cas-83 worktree); squashed -pr branch fix/antalya-26.6/cas-gc-janitor-batches-pr @528398bf844; PR body tmp/cas299/pr_body.md. Not pushed (owner authorization). A/B report docs/superpowers/reports/2026-10-01-cas-29-9-janitor-ab/README.md. Follow-ups CAS-337, CAS-338.
 <!-- SECTION:NOTES:END -->
