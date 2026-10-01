@@ -56,8 +56,8 @@ A review checks the design against this list.
    commit sets the confirmed deadline to `anchor + TTL`. A response never moves it. Unchanged.
 4. **No deadline.** The logical renewal is not bounded by the lease deadline or by a policy window and
    reserves nothing against either. It ends only on: commit, a definitive answer, stop, or park. The
-   policy carries no lease bound and the window `UINT64_MAX`; `Retry::bind` saturates, so no
-   reservation can fail against it.
+   policy carries no lease bound and the window `UINT64_MAX`; `Retry::bind` saturates, so the only
+   horizon left is the representable range of the clock.
 5. **One engine call.** A logical renewal is one call of the request engine, so the resolve read that
    adopts a landed attempt always belongs to the call that sent it. No second logical renewal starts
    while one is unresolved.
@@ -69,8 +69,9 @@ A review checks the design against this list.
    ends the renewal is terminal and forbids the farewell, whether or not a request was sent.
 8. **Pacing.** Every pause taken under the worker policy is a flat 1 s: the reissue of a failed
    `PUT` of any failure kind, and the retry of a failed resolve read. The first-attempt fuse keeps its
-   one immediate reissue per verb. A stop wakes the pause. A park is noticed within one pause plus one
-   attempt in flight.
+   one immediate reissue per verb. A stop wakes the pause. A park is seen at the next
+   admission check: the pause adds at most 1 s, and a request or a credential refresh already under
+   way returns first.
 9. **Authority.** Write admission is unchanged. A lapse changes neither `mount_fence.lost`, nor
    `fence_generation`, nor the lifecycle enum, nor the epoch.
 10. **Resume.** After a commit whose `anchor + TTL` is already past, writes stay refused and the
@@ -114,8 +115,10 @@ sample is credited `d` too early:
 1. The GC leader samples its clock at `t0`, then spends `d` in the walk before it reads holder `H`'s
    slot and sees token `T`, committed with anchor `a <= t0 + d`. It records `first_seen = t0`.
 2. A later round samples `t1 >= t0 + threshold`, reads `T` unchanged and fences.
-3. `H` has authority until `a + TTL`, which is after the fence when `d > threshold − TTL`, 11.5 s
-   with the defaults.
+3. `H` has authority until `a + TTL`, so the fence can land inside it. With equal clock rates, the
+   anchor at the sighting and the fence at the earliest qualifying instant, that needs
+   `d > threshold − TTL`: 11.5 s with the defaults, 10 s when the observer's clock runs 5 percent
+   fast.
 
 The token stays unchanged across both reads when `H` is healthy and the reads are less than one
 period apart, or when `H`'s renewals are failing. Today the second case is masked, because a failing
@@ -171,8 +174,8 @@ Defaults; "outage" means `PUT` fails with a transient error.
   and report the lapse ([observability](#observability)). Terminal handling is unchanged.
 - `deliverMountRenewObservability`: drop the loop that replays one `DEBUG` line per attempt at
   completion. The summary line already carries the count.
-- Not reachable any more for the worker path: `GaveUp{Deadline}` and `GaveUp{Unresolved}`. If the
-  engine returns either, the result stays terminal as today.
+- Not reachable for the worker path within the representable clock range: `GaveUp{Deadline}` and
+  `GaveUp{Unresolved}`. If the engine returns either, the result stays terminal as today.
 
 ## What does not change {#unchanged}
 
@@ -232,7 +235,9 @@ background is a separate change to the ref ledger and is out of scope here.
 - Two logical renewals in one behaviour: after a commit the model returns to a state from which
   `SendRenewal` fires again.
 - Bounds large enough for a first commit whose `anchor + LeaseDuration` is strictly in the past.
-- Invariants: drop `NoRequestAfterSafeDeadline` and `WitnessExhaustionFences`, keep the other ten,
+- Invariants: drop `NoRequestAfterSafeDeadline` and `WitnessExhaustionFences`, keep the other ten, restated
+  per logical renewal where they name a single request (`ConfirmedDeadlineNeverExtendedByResponse`,
+  `OneLogicalBodyPerExpectedToken`, `CadenceAnchoredAtAttemptStart`),
   add `AuthorityEndsAtConfirmedDeadline`.
 - Sabotage: the deadline is anchored at a later attempt. It must violate an invariant that compares
   against an independently recorded first-send instant.
@@ -251,14 +256,16 @@ an injected boot clock, unless noted. The rule each test guards is in brackets.
 1. `CASHeartbeat.GcCreditsASightingAfterItsRead` [11]: the clock function advances by more than
    `threshold − TTL` between the call of `computeHeartbeatFloor` and its read of a slot. A second
    call one threshold after the first call's start reads the same token and must not fence. A call
-   one threshold after the read fences.
+   one threshold after the read fences. Two more cases: a sighting recorded in the re-decision after
+   a refused fence-out is credited after that read; and a call whose own clock sample precedes the
+   threshold does not fence, however long its walk takes.
 2. `CASHeartbeat.WorkerRenewalOutlivesTheReservationCutoff` [4]: every `PUT` fails transiently for
    8 s of injected time, then succeeds. The result is `Committed`, the renewer is `Active`, and the
    attempt count equals one per elapsed pause. Replaces
    `RenewalStopsBeforeTheCutoffWhenEveryAttemptConsumesTheEnvelope`.
 3. `CASHeartbeat.WorkerRenewalSendsOneTupleOnEveryAttempt` [2, 5]: across the same outage every
-   recorded attempt carries identical bytes, expected token and `write_attempt_id`, and the backend
-   sees no second body before the first is resolved.
+   recorded attempt carries identical bytes, expected token and `write_attempt_id`, the backend sees
+   no second body before the first is resolved, and the renewal commits when the outage ends.
 4. `CASHeartbeat.WorkerRenewalCommitsPastTheDeadlineWithItsFirstAnchor` [3]: failures last longer
    than the TTL. The commit reports the first attempt's anchor; `anchor + TTL` is in the past.
 5. `CASHeartbeat.LandedAttemptIsAdoptedAfterALongOutage` [5]: the first attempt lands and its
@@ -266,12 +273,16 @@ an injected boot clock, unless noted. The rule each test guards is in brackets.
    The result is `Committed` with `resolved_by_read`, not `same_epoch_state_uncertain`.
 6. `CASHeartbeat.DefinitiveAnswersStayTerminalPastTheDeadline` [6]: after the deadline the slot
    turns `gc_fenced`, foreign, a newer own epoch, an own-epoch body with other bytes, or absent, or
-   the store refuses deterministically. Each is terminal with today's classification.
-7. `CASHeartbeat.WorkerRenewalPacesEveryPauseFlat` [8]: with a connect-failure text on every `PUT`
-   and a failing resolve read, consecutive requests on the injected clock are exactly 1000 ms apart,
-   apart from the one fuse reissue per verb, and the renewal is still running after 30 s.
+   the store refuses deterministically, or the attempt raises a deterministic local failure. Each
+   is terminal with the classification it has today, asserted by name.
+7. `CASHeartbeat.WorkerRenewalPacesEveryPauseFlat` [8], two cases. Connect-failure text on every
+   `PUT`: consecutive `PUT`s are 1000 ms apart on the injected clock. Ambiguous `PUT` with a failing
+   resolve read: the read follows its `PUT` at once, each retry of the read and each reissue of the
+   `PUT` comes after a 1000 ms pause. In both the one fuse reissue per verb is immediate and the
+   renewal is still running after 30 s.
 8. `CASHeartbeat.StopDuringARetryPauseEndsTheRenewal` [7, 8]: a stop during the pause returns
-   without waiting it out; the result is terminal and `release` is forbidden.
+   without waiting it out; the result is terminal and `release` is forbidden. A stop that arrives
+   after the renewal began but before its first send is terminal too.
    `CancellationBeforeSendIsNotAttemptedAndAllowsRelease` and
    `CancellationAfterSendIsTerminalAndForbidsRelease` stay green.
 9. `CASMountRuntime.ParkEndsAnUnboundedRenewalWithinOnePause`
@@ -283,7 +294,7 @@ an injected boot clock, unless noted. The rule each test guards is in brackets.
     as `DeadlineBeforeSendTerminalizesWithTypedFailure` asserts today.
 11. `CASMountRuntime.LapseRefusesWritesAndResumesUnderTheSameEpoch` [9, 10]: driven by real worker
     renewals over a scripted backend, not by setting the deadline. Past the deadline `admit` returns
-    `NoBudget` and `lost` is false. After the stale-anchor commit `admit` still returns `NoBudget`
+    `NoBudget`, `lost` is false and the lifecycle enum is `Live`. After the stale-anchor commit `admit` still returns `NoBudget`
     and the next renewal starts with no cadence wait. After that commit `admit` returns `Ok` with the
     same epoch and generation.
 12. `CASMountRuntime.LapseIsReported`: during the lapse the lifecycle snapshot reads `not_live` /
