@@ -234,8 +234,9 @@ Every later change to the marker comes from one of the Q4 writers:
 
 - **Invariant:** `graduations_used + reserved ≤ max_graduations`. So an entry holding a reservation is always
   admitted, and reads per round never exceed accepted reads plus refusals.
-- **Order:** with hints, an unhinted (touched) entry can be carried while hinted ones hold the slots and then
-  refuse; the round graduates fewer than at concurrency 1. Delay only. **A refusal consumes no slot**, as today.
+- **Order:** the scan stops at a touched row, so reservations are always a contiguous run of eligible rows right
+  after the cursor and the round graduates the same set at every concurrency. **A refusal consumes no slot**, as
+  today.
 
 ### 5.2 Every GC marker write stamps its own round (C2) {#pr1-restamp}
 
@@ -295,7 +296,7 @@ the entry at the gate; with `graduations_used` it never exceeds `max_graduations
 
 **Own window.** Graduation hints throttle on `graduation_reserved.size() < reads.window()`, head hints on
 `reads.pendingHeads() < reads.window()`, not the shared `pending()`: an untaken head hint (a candidate that keeps
-another edge) stays counted until its shard ends, and 63 of them would leave graduation one slot. At most
+another edge) stays counted until the fold ends, and 63 of them would leave graduation one slot. At most
 `2 × window()` requests queue on the 16 workers.
 
 **The gate, in order.** The cursor has already consumed the current entry's row, so a scan offers only later rows.
@@ -307,11 +308,13 @@ another edge) stays counted until its shard ends, and 63 of them would leave gra
 3. The callback reserves and hints a row only if all hold:
    - it is not `delete_pending`, `condemn_round < current_round`, and the round is not `suppress_destructive`;
    - its blob has **no delta and no source retirement this round**: `last_verdict_is_remove`'s key set, hoisted
-     to fold scope as `touched_blobs`. An untouched carried row has no edge, is not superseded, reaches the gate;
+     to fold scope as `touched_blobs`. A touched row STOPS the scan (it is decided inline when the cursor reaches
+     it; skipping it would let reservations run past it and change the budget decision between concurrency 1 and
+     8). An untouched carried row has no edge, is not superseded, reaches the gate;
    - `graduations_used + graduation_reserved.size() < max_graduations` (or the budget is unbounded);
    - `graduation_reserved.size() < reads.window()`.
-   The scan stops when the budget or window is full, the buffer holds `kGraduationLookaheadRows`, or the segment
-   ends.
+   The scan stops at a touched row, when the budget or window is full, when the buffer holds
+   `kGraduationLookaheadRows`, or when the segment ends.
 4. The gate takes the read and releases the reservation.
 
 **Boundaries.**
