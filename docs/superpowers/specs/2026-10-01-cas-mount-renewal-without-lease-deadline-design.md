@@ -138,8 +138,8 @@ token and it is refused. Both cases exist today (`WitnessLateBeforeReclaim`,
 the same generation: a thread can stall between its gate and its send, or across a pause, and the
 reservation is not an execution deadline. That is allowed. By the lemma nobody else held authority in
 between, so such a write equals the same write inside one uninterrupted lease, and its safety rests
-on the object protocols: every such write is a conditional create, a token-conditional update, or
-content-addressed. The same holds for a request sent before the lapse that lands after the resume.
+on the object protocols: every such write is a conditional create, a token-conditional update or
+delete, or content-addressed. The same holds for a request sent before the lapse that lands after the resume.
 Callers that see a refusal during the lapse (`resolveWedgeOnce`, `commitRefChunk`, `publishCkpt`,
 the catalog mutators, `ensureBlobPresent`) refuse or mark the table for recovery; none acts on it as
 proof that the incarnation ended.
