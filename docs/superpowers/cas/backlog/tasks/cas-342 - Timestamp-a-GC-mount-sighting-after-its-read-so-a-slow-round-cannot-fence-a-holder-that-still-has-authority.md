@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 19:31'
+updated_date: '2026-10-01 20:00'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -59,6 +60,9 @@ Provenance: found in the review of the CAS-298 spec, 2026-10-01; the timestamp m
 - [ ] #3 A gtest advances the injected clock by more than threshold - TTL between the call and the slot read: a second call one threshold after the first call's start does not fence, a call one threshold after the read does
 - [ ] #4 Both call sites in Gc/CasGc.cpp pass the clock function
 - [ ] #5 The task records what GC can remove or retire for a fenced epoch whose holder still admits writes
+- [ ] #6 A gtest covers the re-decision: a sighting recorded after a refused fence-out is credited after that read, not at the round's start
+- [ ] #7 A gtest covers the confirming call: a call whose own clock sample precedes the threshold does not fence, however long its walk takes
+- [ ] #8 The model that owns the timing of GCFence gets a sabotage in which an observer credits a sighting with a sample taken before its read and fences a holder inside its authority
 <!-- AC:END -->
 
 ## Definition of Done

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-10-01 20:00'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -68,4 +68,6 @@ Provenance: umbrella-roadmap.md section 4 bullet 'Mount lease under memory press
 First recorded: 2026-09-25 (74f60f0a3a5, by 'https://github.com/Altinity/ClickHouse/issues/2403')
 
 Merged from the GitHub reconciliation (u17, would have been a duplicate task for #2403): The renewal thread has no thread group, so its allocations go to the global tracker and can throw `MEMORY_LIMIT_EXCEEDED` whenever the server is above `max_server_memory_usage`. One terminal renewal loses the mount; an exception outside the inner `try` reaches the loop's catch-all (`Pool/CasMountRuntime.cpp:717`, loop at `:643`) and ends the renewal thread for good. A transient memory condition therefore takes down something that must never stop. Unfixed on both branches (no `LockMemoryExceptionInThread` in the file). Each attempt allocates ~1 MiB for the PUT buffer plus ~1 MiB for a settling read; the PUT runs on the remote-FS write pool because `conditionalWriteSettings` (`Backend/CasObjectStorageBackend.cpp:805`) keeps `s3_allow_parallel_part_upload = true`, so a guard on the renewal thread would not cover it. Fix (issue proposal): hold `LockMemoryExceptionInThread(VariableContext::Global)` across a renewal iteration (precedent: `KeeperServer.cpp:397`, `TransactionLog.cpp:491`); disable parallel part upload for control-plane writes with a comment saying why; size control-plane buffers to the payload. The "name the transport error in `GaveUp`" part is CAS-50. Rejected: `MemoryTrackerBlockerInThread` (hides the memory), classifying the limit as deterministic (fails faster), a longer budget. AC to keep: With the global tracker held above its limit, the renewal keeps committing and the mount stays Live; without the change the same test reports a terminal renewal; A fault-injected memory-limit exception on the renewal path neither ends the renewal thread nor trips the fence; The control-plane PUT is issued on the renewal thread, not a remote-FS write-pool thread; The renewal's allocations still show up in server memory accounting
+
+Covered by the design in docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md (section 'Renewal under memory pressure', rule 12). Under that design a memory-limit exception inside a request is a transient failure and is retried; item 4 of the issue (failure text in GaveUp) becomes the last-failure text in lifecycle_detail and in the WARNING that reports a restored lease.
 <!-- SECTION:NOTES:END -->
