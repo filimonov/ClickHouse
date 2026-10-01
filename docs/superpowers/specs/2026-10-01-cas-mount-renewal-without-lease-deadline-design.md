@@ -122,7 +122,7 @@ room to admit a write.
 | `expired_ms` in the `watermark_renew` event; a `WARNING` with the last failure | `system.cas_log`, server log | How long the lease was expired and why |
 | `CASMountRenewalAttempts`, `CASMountRenewalRetries` | `system.events` | Advance as requests are sent, not at the end, so an outage shows while it lasts |
 | `CASMountLeaseLost` | `system.events` | Unchanged: the mount was fenced locally and a remount follows |
-| Text of a refused write | exception | Where the runtime itself refuses (`checkFenceOrThrow`, the ref-batch flush), the text says the lease expired and that writes resume when a renewal succeeds. The request engine cannot tell an expired lease from too little budget; its texts ("no lease budget", "gave up at the lease deadline") stay |
+| Text of a refused write | exception | Where the runtime itself refuses (`checkFenceOrThrow`), the text says the lease expired and that writes resume when a renewal succeeds. The request engine and the ref ledger cannot tell an expired lease from too little budget or a lost fence; their texts ("no lease budget", "gave up at the lease deadline") stay and still name the lease |
 
 The expired row is shown only while the lifecycle enum is `Live`; the enum itself is not touched.
 `lifecycle_reason = 'lease_expired'` is about this server's own confirmed deadline. The existing
