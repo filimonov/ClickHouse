@@ -1877,7 +1877,7 @@
         "type": "vertamedia-clickhouse-datasource",
         "uid": "${datasource}"
       },
-      "description": "What the shared storage holds right now, as counted by the last garbage-collection round. Tables: tables with data in the storage. Live parts: data parts currently referenced by those tables. Write-log entries: records of inserts and deletes not yet compacted away. The counts of data objects and part descriptions are not available yet.",
+      "description": "What the shared storage holds right now, as counted by the last garbage-collection round. Tables: tables with data in the storage. Write-log entries: records of inserts and deletes not yet compacted away. The total counts of data objects, parts and part descriptions are not available yet.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1912,21 +1912,6 @@
             "matcher": {
               "id": "byName",
               "options": "Tables"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Live parts"
             },
             "properties": [
               {
@@ -2002,7 +1987,7 @@
           "extrapolate": false,
           "format": "table",
           "intervalFactor": 1,
-          "query": "SELECT if(countIf(mapContains(phase_metrics, 'namespaces_seen')) = 0, NULL, argMaxIf(phase_metrics['namespaces_seen'], event_time, mapContains(phase_metrics, 'namespaces_seen'))) AS \"Tables\", if(countIf(mapContains(phase_metrics, 'seal_ref_lives')) = 0, NULL, argMaxIf(phase_metrics['seal_ref_lives'], event_time, mapContains(phase_metrics, 'seal_ref_lives'))) AS \"Live parts\",\n       if(countIf(mapContains(phase_metrics, 'ref_log_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_log_keys_listed'], event_time, mapContains(phase_metrics, 'ref_log_keys_listed'))) AS \"Write-log entries\" /* now */\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND event_date >= today() - 7\nSETTINGS skip_unavailable_shards = 1",
+          "query": "SELECT if(countIf(mapContains(phase_metrics, 'namespaces_seen')) = 0, NULL, argMaxIf(phase_metrics['namespaces_seen'], event_time, mapContains(phase_metrics, 'namespaces_seen'))) AS \"Tables\", if(countIf(mapContains(phase_metrics, 'ref_log_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_log_keys_listed'], event_time, mapContains(phase_metrics, 'ref_log_keys_listed'))) AS \"Write-log entries\" /* now */\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND event_date >= today() - 7\nSETTINGS skip_unavailable_shards = 1",
           "rawQuery": "",
           "refId": "A",
           "round": "0s",
@@ -2010,7 +1995,7 @@
           "table": "cas_gc_log"
         }
       ],
-      "title": "Tables and live parts",
+      "title": "Tables and write logs",
       "type": "stat"
     },
     {
@@ -2231,7 +2216,7 @@
         "type": "vertamedia-clickhouse-datasource",
         "uid": "${datasource}"
       },
-      "description": "Bytes written to the shared storage: table data, part descriptions, write logs and collector state. This is traffic, not the amount stored; stored totals are not available yet.",
+      "description": "Bytes written to the shared storage: table data, part descriptions, write logs and GC state. This is traffic, not the amount stored; stored totals are not available yet.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2286,7 +2271,7 @@
           "extrapolate": false,
           "format": "time_series",
           "intervalFactor": 1,
-          "query": "SELECT $timeSeries AS t, multiIf(p2 = 'blobs', 'Table data', p2 = 'cas' AND p3 = 'manifests', 'Part descriptions',\n                                     p2 = 'cas' AND p3 = 'ns', 'Write logs', p2 = 'gc', 'Collector state', 'Other') AS kind, sum(data_size) / $interval\nFROM (SELECT event_time, event_date, data_size, splitByChar('/', remote_path)[2] AS p2, splitByChar('/', remote_path)[3] AS p3\n      FROM clusterAllReplicas('$cluster', system.blob_storage_log)\n      WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('Upload', 'MultiPartUploadWrite') AND $timeFilter)\nGROUP BY t, kind ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+          "query": "SELECT $timeSeries AS t, multiIf(p2 = 'blobs', 'Table data', p2 = 'cas' AND p3 = 'manifests', 'Part descriptions',\n                                     p2 = 'cas' AND p3 = 'ns', 'Write logs', p2 = 'gc', 'GC state', 'Other') AS kind, sum(data_size) / $interval\nFROM (SELECT event_time, event_date, data_size, splitByChar('/', remote_path)[2] AS p2, splitByChar('/', remote_path)[3] AS p3\n      FROM clusterAllReplicas('$cluster', system.blob_storage_log)\n      WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('Upload', 'MultiPartUploadWrite') AND $timeFilter)\nGROUP BY t, kind ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
           "rawQuery": "",
           "refId": "A",
           "round": "0s",

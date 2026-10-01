@@ -44,19 +44,21 @@ def pm_round(key: str) -> str:
 
 
 INVENTORY_LATEST_SQL = f"""SELECT {pm_latest('namespaces_seen')} AS "Namespaces", {pm_latest('tables_scanned')} AS "Tables scanned",
-       {pm_latest('seal_ref_lives')} AS "Live refs (parts)", {pm_latest('ref_log_keys_listed')} AS "Ref-log keys",
+       {pm_latest('seal_ref_lives')} AS "Ref lives", {pm_latest('ref_log_keys_listed')} AS "Ref-log keys",
        {pm_latest('ref_keys_listed')} - {pm_latest('ref_log_keys_listed')} AS "Snapshots + checkpoints" /* now */
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE {PHASE_WHERE} AND event_date >= today() - 7
 {SETTINGS}"""
 
-INVENTORY_PER_ROUND_SQL = f"""SELECT toUInt64(max(event_time)) * 1000 AS t, {pm_round('namespaces_seen')} AS "Namespaces",
-       {pm_round('seal_ref_lives')} AS "Live refs (parts)", {pm_round('ref_log_keys_listed')} AS "Ref-log keys",
-       {pm_round('ref_keys_listed')} - {pm_round('ref_log_keys_listed')} AS "Snapshots + checkpoints"
+def per_round_total_sql(expr: str, label: str) -> str:
+    return f"""SELECT toUInt64(max(event_time)) * 1000 AS t, {expr} AS "{label}"
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE {PHASE_WHERE} AND $timeFilter
 GROUP BY round_id ORDER BY t
 {SETTINGS}"""
+
+
+
 
 NAMESPACES_PER_ROUND_SQL = f"""SELECT t, seen - lagInFrame(seen, 1, seen) OVER (ORDER BY t) + removed AS "Added", removed AS "Removed", changed AS "Changed"
 FROM (SELECT toUInt64(max(event_time)) * 1000 AS t, {pm_round('namespaces_seen')} AS seen,
@@ -95,6 +97,12 @@ FROM {UPLOADS_FROM}
 GROUP BY "Class" ORDER BY "Bytes" DESC
 {SETTINGS}"""
 
+GC_STATE_BYTES_SQL = f"""SELECT $timeSeries AS t, concat('gc/', p3) AS prefix, sum(data_size)
+FROM {UPLOADS_FROM}
+WHERE p2 = 'gc'
+GROUP BY t, prefix ORDER BY t
+{SETTINGS}"""
+
 BLOB_BYTES_SQL = f"""SELECT $timeSeries AS t,
        sumIf(toUInt64OrZero(detail['size']), event_type = 'blob_put') AS "Published",
        sumIf(toUInt64OrZero(detail['size']), event_type = 'blob_reuse_adopt') AS "Reused (size known)"
@@ -106,11 +114,23 @@ GROUP BY t ORDER BY t
 
 def inventory_row() -> dict:
     latest = P.stat("Inventory, latest round",
-                    "Population counts the fold records in `phase_metrics` of the newest round: `namespaces_seen`, `tables_scanned`, `seal_ref_lives` (live refs = live parts), `ref_log_keys_listed` and `ref_keys_listed − ref_log_keys_listed` (snapshot and checkpoint keys). Blob and manifest totals are not recorded anywhere (CAS-289.6).",
+                    "Population counts the fold records in `phase_metrics` of the newest round: `namespaces_seen`, `tables_scanned`, `seal_ref_lives` (ref lives = table incarnations with a fold state, not parts), `ref_log_keys_listed` and `ref_keys_listed − ref_log_keys_listed` (snapshot and checkpoint keys). Blob and manifest totals are not recorded anywhere (CAS-289.6).",
                     [P.target(INVENTORY_LATEST_SQL, fmt="table", table="cas_gc_log")],
-                    {"Namespaces": {"fixed": "blue"}, "Tables scanned": {"fixed": "blue"}, "Live refs (parts)": {"fixed": "blue"},
+                    {"Namespaces": {"fixed": "blue"}, "Tables scanned": {"fixed": "blue"}, "Ref lives": {"fixed": "blue"},
                      "Ref-log keys": {"fixed": "blue"}, "Snapshots + checkpoints": {"fixed": "blue"}}, w=8, h=8)
-    per_round = P.raw_ts("Inventory per round", "The same counts from every round in the range.", INVENTORY_PER_ROUND_SQL, w=16)
+    ns_total = P.raw_ts("Namespaces per round (total)", "`namespaces_seen` in each round: namespaces the fold saw in the catalog.",
+                        per_round_total_sql(pm_round("namespaces_seen"), "Namespaces"), w=8)
+    lives_total = P.raw_ts("Ref lives per round (total)", "`seal_ref_lives`: ref lives (table incarnations) recorded in the round's seal.",
+                           per_round_total_sql(pm_round("seal_ref_lives"), "Ref lives"), w=8)
+    logs_total = P.raw_ts("Ref-log keys per round (total)", "`ref_log_keys_listed`: `_log` keys under `cas/ns` the round listed. Growth here is the audit F14 balance going wrong.",
+                          per_round_total_sql(pm_round("ref_log_keys_listed"), "Ref-log keys"), w=8)
+    snaps_total = P.raw_ts("Snapshots and checkpoints per round (total)", "`ref_keys_listed − ref_log_keys_listed`: ref keys that are not log entries.",
+                           per_round_total_sql(f"{pm_round('ref_keys_listed')} - {pm_round('ref_log_keys_listed')}", "Snapshots + checkpoints"), w=8)
+    seal_bytes = P.raw_ts("GC state: seal bytes per round", "`seal_bytes` written by `fold_seal_write`: the size of the round's fold seal, the GC's durable state.",
+                          per_round_total_sql(pm_round("seal_bytes"), "Seal bytes"), unit="bytes", w=8)
+    gc_state_bytes = P.raw_ts("GC state bytes uploaded per 5 minutes, by sub-prefix",
+                              "`blob_storage_log` uploads under `gc/`: `gen` (per-generation fold output), `state`, `hb` (heartbeats), `server-roots`, `maintenance_state`.",
+                              GC_STATE_BYTES_SQL, table="blob_storage_log", unit="bytes", stack=True, interval="5m", w=8)
     blobs = P.metric_ts("Blobs per 5 minutes: new, deduplicated, deleted",
                         "`CASBlobHeadMiss` (a new content hash was uploaded), `CASBlobPutDeduplicated` (the hash already existed), `CASBlobDelete` (blob keys deleted by GC).",
                         {"New": c("CASBlobHeadMiss"), "Deduplicated": c("CASBlobPutDeduplicated"), "Deleted": c("CASBlobDelete")})
@@ -135,7 +155,9 @@ def inventory_row() -> dict:
     blob_bytes = P.raw_ts("Blob bytes per 5 minutes: published vs reused",
                           "From `cas_log`: `blob_put` rows carry the blob size; `blob_reuse_adopt` rows carry it only for `observed` reuse — the `delete_tmp` re-adoption rows record size 0, so bytes saved by deduplication are understated (CAS-289.6). Reuse by count is in Writes: blobs and dedup.",
                           BLOB_BYTES_SQL, table="cas_log", unit="bytes", interval="5m")
-    return P.row("GC: pool inventory", [latest, per_round, blobs, manifests, refs, net, namespaces, bytes_by_class, uploads_table, blob_bytes])
+    return P.row("GC: pool inventory", [latest, ns_total, lives_total, logs_total, snaps_total,
+                                        blobs, manifests, refs, net, namespaces,
+                                        bytes_by_class, uploads_table, blob_bytes, seal_bytes, gc_state_bytes])
 
 
 def gc_rows() -> list:

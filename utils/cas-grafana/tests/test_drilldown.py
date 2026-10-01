@@ -77,6 +77,30 @@ class InventoryRow(unittest.TestCase):
 
 
 class InventoryBytes(unittest.TestCase):
+    def test_totals_over_time_are_separate_panels(self):
+        titles = [p["title"] for p in next(r for r in drilldown.gc_rows() if r["title"] == "GC: pool inventory")["panels"]]
+        for t in ("Namespaces per round (total)", "Ref lives per round (total)", "Ref-log keys per round (total)",
+                  "Snapshots and checkpoints per round (total)"):
+            self.assertIn(t, titles)
+        self.assertNotIn("Inventory per round", titles)
+
+    def test_no_system_parts_anywhere(self):
+        for p, _ in checks.iter_panels(drilldown.build()):
+            for t in p["targets"]:
+                self.assertNotIn("system.parts", t["query"], p["title"])
+
+    def test_gc_state_size_panels(self):
+        seal = panel(drilldown.gc_rows(), "GC state: seal bytes per round")["targets"][0]["query"]
+        self.assertIn("seal_bytes", seal)
+        gc = panel(drilldown.gc_rows(), "GC state bytes uploaded per 5 minutes, by sub-prefix")["targets"][0]["query"]
+        self.assertIn("p2 = 'gc'", gc)
+        self.assertIn("p3", gc)
+
+    def test_ref_lives_label(self):
+        sql = panel(drilldown.gc_rows(), "Inventory, latest round")["targets"][0]["query"]
+        self.assertIn('AS "Ref lives"', sql)
+        self.assertNotIn("Live refs (parts)", sql)
+
     def test_bytes_by_class_from_blob_storage_log(self):
         sql = panel(drilldown.gc_rows(), "Bytes uploaded per 5 minutes, by object class")["targets"][0]["query"]
         self.assertIn("system.blob_storage_log", sql)

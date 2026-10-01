@@ -753,7 +753,7 @@
             "type": "vertamedia-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "description": "Population counts the fold records in `phase_metrics` of the newest round: `namespaces_seen`, `tables_scanned`, `seal_ref_lives` (live refs = live parts), `ref_log_keys_listed` and `ref_keys_listed \u2212 ref_log_keys_listed` (snapshot and checkpoint keys). Blob and manifest totals are not recorded anywhere (CAS-289.6).",
+          "description": "Population counts the fold records in `phase_metrics` of the newest round: `namespaces_seen`, `tables_scanned`, `seal_ref_lives` (ref lives = table incarnations with a fold state, not parts), `ref_log_keys_listed` and `ref_keys_listed \u2212 ref_log_keys_listed` (snapshot and checkpoint keys). Blob and manifest totals are not recorded anywhere (CAS-289.6).",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -817,7 +817,7 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "Live refs (parts)"
+                  "options": "Ref lives"
                 },
                 "properties": [
                   {
@@ -901,7 +901,7 @@
               "extrapolate": false,
               "format": "table",
               "intervalFactor": 1,
-              "query": "SELECT if(countIf(mapContains(phase_metrics, 'namespaces_seen')) = 0, NULL, argMaxIf(phase_metrics['namespaces_seen'], event_time, mapContains(phase_metrics, 'namespaces_seen'))) AS \"Namespaces\", if(countIf(mapContains(phase_metrics, 'tables_scanned')) = 0, NULL, argMaxIf(phase_metrics['tables_scanned'], event_time, mapContains(phase_metrics, 'tables_scanned'))) AS \"Tables scanned\",\n       if(countIf(mapContains(phase_metrics, 'seal_ref_lives')) = 0, NULL, argMaxIf(phase_metrics['seal_ref_lives'], event_time, mapContains(phase_metrics, 'seal_ref_lives'))) AS \"Live refs (parts)\", if(countIf(mapContains(phase_metrics, 'ref_log_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_log_keys_listed'], event_time, mapContains(phase_metrics, 'ref_log_keys_listed'))) AS \"Ref-log keys\",\n       if(countIf(mapContains(phase_metrics, 'ref_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_keys_listed'], event_time, mapContains(phase_metrics, 'ref_keys_listed'))) - if(countIf(mapContains(phase_metrics, 'ref_log_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_log_keys_listed'], event_time, mapContains(phase_metrics, 'ref_log_keys_listed'))) AS \"Snapshots + checkpoints\" /* now */\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND event_date >= today() - 7\nSETTINGS skip_unavailable_shards = 1",
+              "query": "SELECT if(countIf(mapContains(phase_metrics, 'namespaces_seen')) = 0, NULL, argMaxIf(phase_metrics['namespaces_seen'], event_time, mapContains(phase_metrics, 'namespaces_seen'))) AS \"Namespaces\", if(countIf(mapContains(phase_metrics, 'tables_scanned')) = 0, NULL, argMaxIf(phase_metrics['tables_scanned'], event_time, mapContains(phase_metrics, 'tables_scanned'))) AS \"Tables scanned\",\n       if(countIf(mapContains(phase_metrics, 'seal_ref_lives')) = 0, NULL, argMaxIf(phase_metrics['seal_ref_lives'], event_time, mapContains(phase_metrics, 'seal_ref_lives'))) AS \"Ref lives\", if(countIf(mapContains(phase_metrics, 'ref_log_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_log_keys_listed'], event_time, mapContains(phase_metrics, 'ref_log_keys_listed'))) AS \"Ref-log keys\",\n       if(countIf(mapContains(phase_metrics, 'ref_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_keys_listed'], event_time, mapContains(phase_metrics, 'ref_keys_listed'))) - if(countIf(mapContains(phase_metrics, 'ref_log_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_log_keys_listed'], event_time, mapContains(phase_metrics, 'ref_log_keys_listed'))) AS \"Snapshots + checkpoints\" /* now */\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND event_date >= today() - 7\nSETTINGS skip_unavailable_shards = 1",
               "rawQuery": "",
               "refId": "A",
               "round": "0s",
@@ -917,7 +917,7 @@
             "type": "vertamedia-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "description": "The same counts from every round in the range.",
+          "description": "`namespaces_seen` in each round: namespaces the fold saw in the catalog.",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -942,7 +942,7 @@
           },
           "gridPos": {
             "h": 8,
-            "w": 16,
+            "w": 8,
             "x": 8,
             "y": 35
           },
@@ -971,7 +971,7 @@
               "extrapolate": false,
               "format": "time_series",
               "intervalFactor": 1,
-              "query": "SELECT toUInt64(max(event_time)) * 1000 AS t, maxIf(phase_metrics['namespaces_seen'], mapContains(phase_metrics, 'namespaces_seen')) AS \"Namespaces\",\n       maxIf(phase_metrics['seal_ref_lives'], mapContains(phase_metrics, 'seal_ref_lives')) AS \"Live refs (parts)\", maxIf(phase_metrics['ref_log_keys_listed'], mapContains(phase_metrics, 'ref_log_keys_listed')) AS \"Ref-log keys\",\n       maxIf(phase_metrics['ref_keys_listed'], mapContains(phase_metrics, 'ref_keys_listed')) - maxIf(phase_metrics['ref_log_keys_listed'], mapContains(phase_metrics, 'ref_log_keys_listed')) AS \"Snapshots + checkpoints\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY round_id ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "query": "SELECT toUInt64(max(event_time)) * 1000 AS t, maxIf(phase_metrics['namespaces_seen'], mapContains(phase_metrics, 'namespaces_seen')) AS \"Namespaces\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY round_id ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
               "rawQuery": "",
               "refId": "A",
               "round": "0s",
@@ -979,7 +979,217 @@
               "table": "cas_gc_log"
             }
           ],
-          "title": "Inventory per round",
+          "title": "Namespaces per round (total)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`seal_ref_lives`: ref lives (table incarnations) recorded in the round's seal.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 35
+          },
+          "id": 14,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT toUInt64(max(event_time)) * 1000 AS t, maxIf(phase_metrics['seal_ref_lives'], mapContains(phase_metrics, 'seal_ref_lives')) AS \"Ref lives\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY round_id ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "cas_gc_log"
+            }
+          ],
+          "title": "Ref lives per round (total)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`ref_log_keys_listed`: `_log` keys under `cas/ns` the round listed. Growth here is the audit F14 balance going wrong.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 43
+          },
+          "id": 15,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT toUInt64(max(event_time)) * 1000 AS t, maxIf(phase_metrics['ref_log_keys_listed'], mapContains(phase_metrics, 'ref_log_keys_listed')) AS \"Ref-log keys\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY round_id ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "cas_gc_log"
+            }
+          ],
+          "title": "Ref-log keys per round (total)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`ref_keys_listed \u2212 ref_log_keys_listed`: ref keys that are not log entries.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 43
+          },
+          "id": 16,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT toUInt64(max(event_time)) * 1000 AS t, maxIf(phase_metrics['ref_keys_listed'], mapContains(phase_metrics, 'ref_keys_listed')) - maxIf(phase_metrics['ref_log_keys_listed'], mapContains(phase_metrics, 'ref_log_keys_listed')) AS \"Snapshots + checkpoints\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY round_id ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "cas_gc_log"
+            }
+          ],
+          "title": "Snapshots and checkpoints per round (total)",
           "type": "timeseries"
         },
         {
@@ -1013,10 +1223,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 0,
+            "x": 16,
             "y": 43
           },
-          "id": 14,
+          "id": 17,
           "interval": "5m",
           "options": {
             "legend": {
@@ -1084,10 +1294,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 8,
-            "y": 43
+            "x": 0,
+            "y": 51
           },
-          "id": 15,
+          "id": 18,
           "interval": "5m",
           "options": {
             "legend": {
@@ -1155,10 +1365,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 16,
-            "y": 43
+            "x": 8,
+            "y": 51
           },
-          "id": 16,
+          "id": 19,
           "interval": "5m",
           "options": {
             "legend": {
@@ -1226,10 +1436,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 0,
+            "x": 16,
             "y": 51
           },
-          "id": 17,
+          "id": 20,
           "interval": "5m",
           "options": {
             "legend": {
@@ -1297,10 +1507,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 8,
-            "y": 51
+            "x": 0,
+            "y": 59
           },
-          "id": 18,
+          "id": 21,
           "options": {
             "legend": {
               "displayMode": "list",
@@ -1367,10 +1577,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 16,
-            "y": 51
+            "x": 8,
+            "y": 59
           },
-          "id": 19,
+          "id": 22,
           "interval": "5m",
           "options": {
             "legend": {
@@ -1453,10 +1663,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 0,
+            "x": 16,
             "y": 59
           },
-          "id": 20,
+          "id": 23,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -1517,10 +1727,10 @@
           "gridPos": {
             "h": 8,
             "w": 8,
-            "x": 8,
-            "y": 59
+            "x": 0,
+            "y": 67
           },
-          "id": 21,
+          "id": 24,
           "interval": "5m",
           "options": {
             "legend": {
@@ -1556,6 +1766,147 @@
           ],
           "title": "Blob bytes per 5 minutes: published vs reused",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`seal_bytes` written by `fold_seal_write`: the size of the round's fold seal, the GC's durable state.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 8,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 67
+          },
+          "id": 25,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT toUInt64(max(event_time)) * 1000 AS t, maxIf(phase_metrics['seal_bytes'], mapContains(phase_metrics, 'seal_bytes')) AS \"Seal bytes\"\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND $timeFilter\nGROUP BY round_id ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "cas_gc_log"
+            }
+          ],
+          "title": "GC state: seal bytes per round",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "description": "`blob_storage_log` uploads under `gc/`: `gen` (per-generation fold output), `state`, `hb` (heartbeats), `server-roots`, `maintenance_state`.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisPlacement": "auto",
+                "drawStyle": "line",
+                "fillOpacity": 25,
+                "lineWidth": 1,
+                "pointSize": 4,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 67
+          },
+          "id": 26,
+          "interval": "5m",
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "database": "system",
+              "datasource": {
+                "type": "vertamedia-clickhouse-datasource",
+                "uid": "${datasource}"
+              },
+              "dateColDataType": "event_date",
+              "dateTimeColDataType": "event_time",
+              "dateTimeType": "DATETIME",
+              "extrapolate": false,
+              "format": "time_series",
+              "intervalFactor": 1,
+              "query": "SELECT $timeSeries AS t, concat('gc/', p3) AS prefix, sum(data_size)\nFROM (SELECT event_time, event_date, data_size, splitByChar('/', remote_path)[2] AS p2, splitByChar('/', remote_path)[3] AS p3\n      FROM clusterAllReplicas('$cluster', system.blob_storage_log)\n      WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('Upload', 'MultiPartUploadWrite') AND $timeFilter)\nWHERE p2 = 'gc'\nGROUP BY t, prefix ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+              "rawQuery": "",
+              "refId": "A",
+              "round": "0s",
+              "skip_comments": false,
+              "table": "blob_storage_log"
+            }
+          ],
+          "title": "GC state bytes uploaded per 5 minutes, by sub-prefix",
+          "type": "timeseries"
         }
       ],
       "title": "GC: pool inventory",
@@ -1567,9 +1918,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 75
       },
-      "id": 22,
+      "id": 27,
       "panels": [
         {
           "datasource": {
@@ -1603,9 +1954,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 68
+            "y": 76
           },
-          "id": 23,
+          "id": 28,
           "interval": "30m",
           "options": {
             "legend": {
@@ -1689,9 +2040,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 68
+            "y": 76
           },
-          "id": 24,
+          "id": 29,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -1731,9 +2082,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 84
       },
-      "id": 25,
+      "id": 30,
       "panels": [
         {
           "datasource": {
@@ -1767,9 +2118,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 77
+            "y": 85
           },
-          "id": 26,
+          "id": 31,
           "options": {
             "legend": {
               "displayMode": "list",
@@ -1837,9 +2188,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 77
+            "y": 85
           },
-          "id": 27,
+          "id": 32,
           "options": {
             "legend": {
               "displayMode": "list",
@@ -1907,9 +2258,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 77
+            "y": 85
           },
-          "id": 28,
+          "id": 33,
           "interval": "5m",
           "options": {
             "legend": {
@@ -1978,9 +2329,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 85
+            "y": 93
           },
-          "id": 29,
+          "id": 34,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2049,9 +2400,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 85
+            "y": 93
           },
-          "id": 30,
+          "id": 35,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2098,9 +2449,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 93
+        "y": 101
       },
-      "id": 31,
+      "id": 36,
       "panels": [
         {
           "datasource": {
@@ -2134,9 +2485,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 94
+            "y": 102
           },
-          "id": 32,
+          "id": 37,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2205,9 +2556,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 94
+            "y": 102
           },
-          "id": 33,
+          "id": 38,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2254,9 +2605,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 102
+        "y": 110
       },
-      "id": 34,
+      "id": 39,
       "panels": [
         {
           "datasource": {
@@ -2290,9 +2641,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 103
+            "y": 111
           },
-          "id": 35,
+          "id": 40,
           "options": {
             "legend": {
               "displayMode": "list",
@@ -2360,9 +2711,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 103
+            "y": 111
           },
-          "id": 36,
+          "id": 41,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2446,9 +2797,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 111
+            "y": 119
           },
-          "id": 37,
+          "id": 42,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -2488,9 +2839,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 119
+        "y": 127
       },
-      "id": 38,
+      "id": 43,
       "panels": [
         {
           "datasource": {
@@ -2539,9 +2890,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 120
+            "y": 128
           },
-          "id": 39,
+          "id": 44,
           "interval": "5m",
           "options": {
             "cellHeight": "sm",
@@ -2582,9 +2933,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 128
+        "y": 136
       },
-      "id": 40,
+      "id": 45,
       "panels": [
         {
           "datasource": {
@@ -2618,9 +2969,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 129
+            "y": 137
           },
-          "id": 41,
+          "id": 46,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2689,9 +3040,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 129
+            "y": 137
           },
-          "id": 42,
+          "id": 47,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2775,9 +3126,9 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 137
+            "y": 145
           },
-          "id": 43,
+          "id": 48,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -2817,9 +3168,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 145
+        "y": 153
       },
-      "id": 44,
+      "id": 49,
       "panels": [
         {
           "datasource": {
@@ -2853,9 +3204,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 146
+            "y": 154
           },
-          "id": 45,
+          "id": 50,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2924,9 +3275,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 146
+            "y": 154
           },
-          "id": 46,
+          "id": 51,
           "interval": "5m",
           "options": {
             "legend": {
@@ -2995,9 +3346,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 146
+            "y": 154
           },
-          "id": 47,
+          "id": 52,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3044,9 +3395,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 154
+        "y": 162
       },
-      "id": 48,
+      "id": 53,
       "panels": [
         {
           "datasource": {
@@ -3080,9 +3431,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 155
+            "y": 163
           },
-          "id": 49,
+          "id": 54,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3151,9 +3502,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 155
+            "y": 163
           },
-          "id": 50,
+          "id": 55,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3222,9 +3573,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 155
+            "y": 163
           },
-          "id": 51,
+          "id": 56,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3293,9 +3644,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 163
+            "y": 171
           },
-          "id": 52,
+          "id": 57,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3364,9 +3715,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 163
+            "y": 171
           },
-          "id": 53,
+          "id": 58,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3413,9 +3764,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 171
+        "y": 179
       },
-      "id": 54,
+      "id": 59,
       "panels": [
         {
           "datasource": {
@@ -3449,9 +3800,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 172
+            "y": 180
           },
-          "id": 55,
+          "id": 60,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3520,9 +3871,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 172
+            "y": 180
           },
-          "id": 56,
+          "id": 61,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3591,9 +3942,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 172
+            "y": 180
           },
-          "id": 57,
+          "id": 62,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3662,9 +4013,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 180
+            "y": 188
           },
-          "id": 58,
+          "id": 63,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3711,9 +4062,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 188
+        "y": 196
       },
-      "id": 59,
+      "id": 64,
       "panels": [
         {
           "datasource": {
@@ -3747,9 +4098,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 189
+            "y": 197
           },
-          "id": 60,
+          "id": 65,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3818,9 +4169,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 189
+            "y": 197
           },
-          "id": 61,
+          "id": 66,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3889,9 +4240,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 189
+            "y": 197
           },
-          "id": 62,
+          "id": 67,
           "interval": "5m",
           "options": {
             "legend": {
@@ -3960,9 +4311,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 197
+            "y": 205
           },
-          "id": 63,
+          "id": 68,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4031,9 +4382,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 197
+            "y": 205
           },
-          "id": 64,
+          "id": 69,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4102,9 +4453,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 197
+            "y": 205
           },
-          "id": 65,
+          "id": 70,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4151,9 +4502,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 205
+        "y": 213
       },
-      "id": 66,
+      "id": 71,
       "panels": [
         {
           "datasource": {
@@ -4187,9 +4538,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 206
+            "y": 214
           },
-          "id": 67,
+          "id": 72,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4236,9 +4587,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 214
+        "y": 222
       },
-      "id": 68,
+      "id": 73,
       "panels": [
         {
           "datasource": {
@@ -4272,9 +4623,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 215
+            "y": 223
           },
-          "id": 69,
+          "id": 74,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4343,9 +4694,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 215
+            "y": 223
           },
-          "id": 70,
+          "id": 75,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4392,9 +4743,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 223
+        "y": 231
       },
-      "id": 71,
+      "id": 76,
       "panels": [
         {
           "datasource": {
@@ -4428,9 +4779,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 224
+            "y": 232
           },
-          "id": 72,
+          "id": 77,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4499,9 +4850,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 224
+            "y": 232
           },
-          "id": 73,
+          "id": 78,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4570,9 +4921,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 224
+            "y": 232
           },
-          "id": 74,
+          "id": 79,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4641,9 +4992,9 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 232
+            "y": 240
           },
-          "id": 75,
+          "id": 80,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4712,9 +5063,9 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 232
+            "y": 240
           },
-          "id": 76,
+          "id": 81,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4783,9 +5134,9 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 232
+            "y": 240
           },
-          "id": 77,
+          "id": 82,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4832,9 +5183,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 240
+        "y": 248
       },
-      "id": 78,
+      "id": 83,
       "panels": [
         {
           "datasource": {
@@ -4868,9 +5219,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 241
+            "y": 249
           },
-          "id": 79,
+          "id": 84,
           "interval": "5m",
           "options": {
             "legend": {
@@ -4917,9 +5268,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 249
+        "y": 257
       },
-      "id": 80,
+      "id": 85,
       "panels": [
         {
           "datasource": {
@@ -4953,9 +5304,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 250
+            "y": 258
           },
-          "id": 81,
+          "id": 86,
           "interval": "5m",
           "options": {
             "legend": {
@@ -5024,9 +5375,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 250
+            "y": 258
           },
-          "id": 82,
+          "id": 87,
           "interval": "5m",
           "options": {
             "legend": {
@@ -5110,9 +5461,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 258
+            "y": 266
           },
-          "id": 83,
+          "id": 88,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -5152,9 +5503,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 266
+        "y": 274
       },
-      "id": 84,
+      "id": 89,
       "panels": [
         {
           "datasource": {
@@ -5203,9 +5554,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 267
+            "y": 275
           },
-          "id": 85,
+          "id": 90,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -5282,9 +5633,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 267
+            "y": 275
           },
-          "id": 86,
+          "id": 91,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -5361,9 +5712,9 @@
             "h": 4,
             "w": 24,
             "x": 0,
-            "y": 275
+            "y": 283
           },
-          "id": 87,
+          "id": 92,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,
@@ -5403,9 +5754,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 279
+        "y": 287
       },
-      "id": 88,
+      "id": 93,
       "panels": [
         {
           "datasource": {
@@ -5439,9 +5790,9 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 280
+            "y": 288
           },
-          "id": 89,
+          "id": 94,
           "interval": "5m",
           "options": {
             "legend": {
@@ -5510,9 +5861,9 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 280
+            "y": 288
           },
-          "id": 90,
+          "id": 95,
           "interval": "5m",
           "options": {
             "legend": {
@@ -5559,9 +5910,9 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 288
+        "y": 296
       },
-      "id": 91,
+      "id": 96,
       "panels": [
         {
           "datasource": {
@@ -5610,9 +5961,9 @@
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 289
+            "y": 297
           },
-          "id": 92,
+          "id": 97,
           "options": {
             "cellHeight": "sm",
             "showHeader": true,

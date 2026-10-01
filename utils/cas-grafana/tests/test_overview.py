@@ -83,12 +83,16 @@ class Rows(unittest.TestCase):
     def test_objects_row_in_plain_words(self):
         row = next(r for r in overview.rows() if r["title"] == "Objects")
         titles = [p["title"] for p in row["panels"]]
-        self.assertEqual(titles, ["Tables and live parts", "Data objects: new vs deleted per second",
+        self.assertEqual(titles, ["Tables and write logs", "Data objects: new vs deleted per second",
                                   "Part descriptions: new vs deleted per second", "Write-log entries: written vs cleaned per second",
                                   "Data uploaded per second, by kind"])
         stat = row["panels"][0]
         self.assertEqual(stat["type"], "stat")
-        self.assertIn("mapContains(phase_metrics, 'seal_ref_lives')", stat["targets"][0]["query"])
+        self.assertIn("mapContains(phase_metrics, 'namespaces_seen')", stat["targets"][0]["query"])
+        self.assertEqual(len(stat["targets"]), 1)
+        uploaded = row["panels"][4]["targets"][0]["query"]
+        self.assertIn("'GC state'", uploaded)
+        self.assertNotIn("Collector state", uploaded)
 
     def test_insert_delay_is_wait_per_mutation(self):
         p = next(p for r in overview.rows() for p in r["panels"] if p["title"] == "Insert delay caused by storage (ms per operation)")

@@ -252,16 +252,15 @@ ORDER BY t
 {SETTINGS}""", unit="short", w=6)
     from .drilldown import pm_latest, PHASE_WHERE, UPLOADS_FROM  # noqa: E402 - the Overview reuses the Drilldown's inventory expressions
     inventory = P.stat(
-        "Tables and live parts",
+        "Tables and write logs",
         "What the shared storage holds right now, as counted by the last garbage-collection round. Tables: tables with "
-        "data in the storage. Live parts: data parts currently referenced by those tables. Write-log entries: records "
-        "of inserts and deletes not yet compacted away. The counts of data objects and part descriptions are not available yet.",
-        [P.target(f"""SELECT {pm_latest('namespaces_seen')} AS "Tables", {pm_latest('seal_ref_lives')} AS "Live parts",
-       {pm_latest('ref_log_keys_listed')} AS "Write-log entries" /* now */
+        "data in the storage. Write-log entries: records of inserts and deletes not yet compacted away. "
+        "The total counts of data objects, parts and part descriptions are not available yet.",
+        [P.target(f"""SELECT {pm_latest('namespaces_seen')} AS "Tables", {pm_latest('ref_log_keys_listed')} AS "Write-log entries" /* now */
 FROM clusterAllReplicas('$cluster', system.cas_gc_log)
 WHERE {PHASE_WHERE} AND event_date >= today() - 7
 {SETTINGS}""", fmt="table", table="cas_gc_log")],
-        {"Tables": {"fixed": "blue"}, "Live parts": {"fixed": "blue"}, "Write-log entries": {"fixed": "blue"}},
+        {"Tables": {"fixed": "blue"}, "Write-log entries": {"fixed": "blue"}},
         links=[DRILLDOWN_LINK], w=6, h=8)
     data_objects = P.metric_ts(
         "Data objects: new vs deleted per second",
@@ -281,10 +280,10 @@ WHERE {PHASE_WHERE} AND event_date >= today() - 7
         {"Written": P.r(_m("CASRootPut")), "Cleaned": P.r(_m("CASRootDelete"))}, unit="ops", w=6)
     uploaded = P.raw_ts(
         "Data uploaded per second, by kind",
-        "Bytes written to the shared storage: table data, part descriptions, write logs and collector state. This is "
+        "Bytes written to the shared storage: table data, part descriptions, write logs and GC state. This is "
         "traffic, not the amount stored; stored totals are not available yet.",
         f"""SELECT $timeSeries AS t, multiIf(p2 = 'blobs', 'Table data', p2 = 'cas' AND p3 = 'manifests', 'Part descriptions',
-                                     p2 = 'cas' AND p3 = 'ns', 'Write logs', p2 = 'gc', 'Collector state', 'Other') AS kind, sum(data_size) / $interval
+                                     p2 = 'cas' AND p3 = 'ns', 'Write logs', p2 = 'gc', 'GC state', 'Other') AS kind, sum(data_size) / $interval
 FROM {UPLOADS_FROM}
 GROUP BY t, kind ORDER BY t
 {SETTINGS}""", table="blob_storage_log", unit="Bps", stack=True, interval="5m", w=24)
