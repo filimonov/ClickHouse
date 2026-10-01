@@ -1,36 +1,44 @@
 -------------------------- MODULE CaMountRenewRetryCore --------------------------
 (*
-Focused safety model for split-phase conditional mount renewal.
+Focused safety model for split-phase conditional mount renewal without a lease deadline.
 
-One old-epoch runtime starts from a confirmed predecessor. A logical renewal captures
-its attempt ID, body, expected token, body deadline, absolute operation deadline, and
-cadence anchor before I/O. Physical retries are collapsed to `outstanding`: every copy
-carries that one tuple. Backend landing, response delivery/loss, exact reads, local
-terminalization, and post-terminal delivery remain separate actions.
+One old-epoch runtime starts from a confirmed predecessor and runs two logical renewals in
+sequence. A logical renewal captures its attempt ID, body, expected token, body deadline, start,
+and cadence anchor before I/O. Physical retries are collapsed to `outstanding`: every copy carries
+that one tuple. A renewal is never bounded by the lease: it sends and retries past the confirmed
+deadline and ends only on success, a definitive answer, or a cancel. Backend landing, response
+delivery/loss, exact reads, local terminalization, and post-terminal delivery remain separate
+actions. Copies still in flight when the next renewal starts become `staleOutstanding`.
 
-The durable observers deliberately run while local confirmation is pending. They can
-install a same-pair twin, GC-fence or reclaim a body, install a successor epoch, or
-install a foreign holder. Honest conditional landing consumes the predecessor token;
-the multiplicity sabotage is the sole action that lets two copies replace it.
+Write authority is the holder's own timer, `LocalAuthority`: `clock < confirmedDeadline`, unless a
+terminal outcome tripped the fence. Success sets the deadline to the renewal's start plus the lease.
+
+The durable observers deliberately run at any time, also while local confirmation is pending. They
+can install a same-pair twin, GC-fence or reclaim a body, install a successor epoch, or install a
+foreign holder. They never touch local state. A takeover is entitled once the current token has
+been stable for one lease (`tokenStableUntil`), or for the successor once the old runtime is locally
+terminal. Honest conditional landing consumes the expected token; the multiplicity sabotage is the
+sole action that lets two copies replace it.
 *)
 EXTENDS Naturals, FiniteSets
 
 CONSTANTS
     AttemptIds,
-    CurrentAttempt,
+    FirstAttempt,
+    SecondAttempt,
     OtherAttempt,
     Holders,
     SelfHolder,
     ForeignHolder,
     PredecessorToken,
-    RenewalToken,
+    FirstRenewalToken,
+    SecondRenewalToken,
     TwinToken,
     SuccessorToken,
     ForeignToken,
     InitialConfirmedDeadline,
     MaxTime,
     LeaseDuration,
-    RequestTimeout,
     CadencePeriod,
     MaxRetries,
     MaxOutstanding,
@@ -39,13 +47,13 @@ CONSTANTS
 AllowedDefects ==
     {"ignore_attempt_id",
      "refresh_deadline_from_response",
+     "anchor_deadline_at_retry",
      "retry_with_new_body",
      "accept_after_terminal",
      "accept_successor",
      "drop_pending_on_terminal",
      "late_rearm",
      "response_relative_cadence",
-     "send_after_deadline",
      "double_conditional_landing"}
 
 Defect(name) == name \in Defects
@@ -62,6 +70,11 @@ SuccessorBody == "SuccessorBody"
 ForeignBody == "ForeignBody"
 NoBody == "NoBody"
 
+Rounds == 1..2
+
+AttemptOf(r) == IF r = 1 THEN FirstAttempt ELSE SecondAttempt
+RenewalTokenOf(r) == IF r = 1 THEN FirstRenewalToken ELSE SecondRenewalToken
+
 BodyNames ==
     {RenewalBody, RetryBody, PredecessorBody, SuccessorBody, ForeignBody, NoBody}
 DurableKinds == {"Predecessor", "Renewal", "Twin", "Successor", "Foreign", "Absent"}
@@ -72,7 +85,8 @@ ResolveOutcomes == {"None", "Exact", "Predecessor", "Conflict"}
 AdoptedKinds == {"None", "Renewal", "Twin", "Successor", "Foreign", "GCFenced"}
 
 TokenSet ==
-    {PredecessorToken, RenewalToken, TwinToken, SuccessorToken, ForeignToken, NoToken}
+    {PredecessorToken, FirstRenewalToken, SecondRenewalToken, TwinToken, SuccessorToken,
+     ForeignToken, NoToken}
 AttemptSet == AttemptIds \cup {NoAttempt}
 HolderSet == Holders \cup {NoHolder}
 DeadlineRange == 0..(MaxTime + LeaseDuration)
@@ -87,25 +101,27 @@ DurableState ==
      deadline : DeadlineRange]
 
 HistoryState ==
-    [sentOutsideBudget : BOOLEAN,
-     tupleChanged : BOOLEAN,
+    [tupleChanged : BOOLEAN,
      deadlineFromResponse : BOOLEAN,
      rearmedAfterTerminal : BOOLEAN,
      badAcknowledgement : BOOLEAN,
      lateOverwroteSuccessor : BOOLEAN,
      terminalDroppedPending : BOOLEAN,
+     entitledTakeover : BOOLEAN,
      sawNonLandedTransient : BOOLEAN,
      sawLandedResponseLoss : BOOLEAN,
      sawRetrySent : BOOLEAN,
      directRetryReached : BOOLEAN,
      readAdoptionReached : BOOLEAN,
-     exhaustionFencesReached : BOOLEAN,
      lateOldLanded : BOOLEAN,
      lateBeforeReclaimReached : BOOLEAN,
      oldCopyRefused : BOOLEAN,
      lateAfterSuccessorReached : BOOLEAN,
      slowSuccess : BOOLEAN,
-     catchupReached : BOOLEAN]
+     catchupReached : BOOLEAN,
+     retryPastDeadlineReached : BOOLEAN,
+     staleSuccessSeen : BOOLEAN,
+     authorityRestoredReached : BOOLEAN]
 
 InitialDurable ==
     [kind |-> "Predecessor",
@@ -126,46 +142,53 @@ EmptyDurable ==
      deadline |-> 0]
 
 InitialHistory ==
-    [sentOutsideBudget |-> FALSE,
-     tupleChanged |-> FALSE,
+    [tupleChanged |-> FALSE,
      deadlineFromResponse |-> FALSE,
      rearmedAfterTerminal |-> FALSE,
      badAcknowledgement |-> FALSE,
      lateOverwroteSuccessor |-> FALSE,
      terminalDroppedPending |-> FALSE,
+     entitledTakeover |-> FALSE,
      sawNonLandedTransient |-> FALSE,
      sawLandedResponseLoss |-> FALSE,
      sawRetrySent |-> FALSE,
      directRetryReached |-> FALSE,
      readAdoptionReached |-> FALSE,
-     exhaustionFencesReached |-> FALSE,
      lateOldLanded |-> FALSE,
      lateBeforeReclaimReached |-> FALSE,
      oldCopyRefused |-> FALSE,
      lateAfterSuccessorReached |-> FALSE,
      slowSuccess |-> FALSE,
-     catchupReached |-> FALSE]
+     catchupReached |-> FALSE,
+     retryPastDeadlineReached |-> FALSE,
+     staleSuccessSeen |-> FALSE,
+     authorityRestoredReached |-> FALSE]
 
 VARIABLES
     clock,
     durable,
     gcFenced,
+    tokenStableUntil,
     confirmedBody,
     confirmedToken,
     confirmedDeadline,
-    localAuthority,
+    confirmedAnchor,
+    committedRound,
+    fenceLost,
     localState,
     resolveOutcome,
-    logicalCreated,
+    round,
     requestAttempt,
     requestBody,
     requestExpectedToken,
     requestDeadline,
     attemptStartedAt,
     cadenceAnchor,
+    firstSendAt,
     retryCount,
     outstanding,
-    predecessorLandings,
+    staleOutstanding,
+    landings,
     adoptedAttempt,
     adoptedKind,
     terminalSeen,
@@ -177,11 +200,12 @@ VARIABLES
     history
 
 vars ==
-    <<clock, durable, gcFenced,
-      confirmedBody, confirmedToken, confirmedDeadline,
-      localAuthority, localState, resolveOutcome,
-      logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-      attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+    <<clock, durable, gcFenced, tokenStableUntil,
+      confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+      fenceLost, localState, resolveOutcome,
+      round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+      attemptStartedAt, cadenceAnchor, firstSendAt,
+      retryCount, outstanding, staleOutstanding, landings,
       adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
       nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
@@ -189,22 +213,27 @@ Init ==
     /\ clock = 0
     /\ durable = InitialDurable
     /\ gcFenced = FALSE
+    /\ tokenStableUntil = InitialConfirmedDeadline
     /\ confirmedBody = PredecessorBody
     /\ confirmedToken = PredecessorToken
     /\ confirmedDeadline = InitialConfirmedDeadline
-    /\ localAuthority = TRUE
+    /\ confirmedAnchor = 0
+    /\ committedRound = 0
+    /\ fenceLost = FALSE
     /\ localState = "Idle"
     /\ resolveOutcome = "None"
-    /\ logicalCreated = FALSE
-    /\ requestAttempt = CurrentAttempt
+    /\ round = 0
+    /\ requestAttempt = FirstAttempt
     /\ requestBody = RenewalBody
     /\ requestExpectedToken = PredecessorToken
     /\ requestDeadline = 0
     /\ attemptStartedAt = 0
     /\ cadenceAnchor = 0
+    /\ firstSendAt = [r \in Rounds |-> 0]
     /\ retryCount = 0
     /\ outstanding = 0
-    /\ predecessorLandings = 0
+    /\ staleOutstanding = 0
+    /\ landings = [r \in Rounds |-> 0]
     /\ adoptedAttempt = NoAttempt
     /\ adoptedKind = "None"
     /\ terminalSeen = FALSE
@@ -215,17 +244,31 @@ Init ==
     /\ reclaimSeen = FALSE
     /\ history = InitialHistory
 
-SafeOperationDeadline == InitialConfirmedDeadline
-CanStartRequest == clock + RequestTimeout <= SafeOperationDeadline
+LogicalCreated == round > 0
+
+(* The holder's write authority: its own timer and its own fence, nothing another process wrote. *)
+LocalAuthority == ~fenceLost /\ clock < confirmedDeadline
+
+(* An observer that waited one lease after the current token appeared may act on the slot. *)
+ObserverWaitedOut == clock >= tokenStableUntil
 
 RequestDurable ==
     [kind |-> "Renewal",
-     token |-> RenewalToken,
+     token |-> RenewalTokenOf(round),
      holder |-> SelfHolder,
      epoch |-> 0,
      attempt |-> requestAttempt,
      body |-> requestBody,
      deadline |-> requestDeadline]
+
+StaleDurable ==
+    [kind |-> "Renewal",
+     token |-> FirstRenewalToken,
+     holder |-> SelfHolder,
+     epoch |-> 0,
+     attempt |-> FirstAttempt,
+     body |-> RenewalBody,
+     deadline |-> firstSendAt[1] + LeaseDuration]
 
 TwinDurable ==
     [kind |-> "Twin",
@@ -257,10 +300,10 @@ ForeignDurable ==
 ExactRequestDurable ==
     /\ ~gcFenced
     /\ durable.kind = "Renewal"
-    /\ durable.token = RenewalToken
+    /\ durable.token = RenewalTokenOf(round)
     /\ durable.holder = SelfHolder
     /\ durable.epoch = 0
-    /\ durable.attempt = CurrentAttempt
+    /\ durable.attempt = AttemptOf(round)
     /\ durable.body = RenewalBody
     /\ durable.deadline = requestDeadline
 
@@ -274,20 +317,20 @@ TwinMatchesIgnoringId ==
 
 PredecessorStillCurrent ==
     /\ ~gcFenced
-    /\ durable.kind = "Predecessor"
     /\ durable.token = requestExpectedToken
 
 TypeOK ==
-    /\ AttemptIds = {CurrentAttempt, OtherAttempt}
-    /\ CurrentAttempt /= OtherAttempt
+    /\ AttemptIds = {FirstAttempt, SecondAttempt, OtherAttempt}
+    /\ Cardinality(AttemptIds) = 3
     /\ Holders = {SelfHolder, ForeignHolder}
     /\ SelfHolder /= ForeignHolder
-    /\ Cardinality({PredecessorToken, RenewalToken, TwinToken, SuccessorToken, ForeignToken}) = 5
-    /\ NoToken \notin {PredecessorToken, RenewalToken, TwinToken, SuccessorToken, ForeignToken}
+    /\ Cardinality({PredecessorToken, FirstRenewalToken, SecondRenewalToken, TwinToken,
+                    SuccessorToken, ForeignToken}) = 6
+    /\ NoToken \notin {PredecessorToken, FirstRenewalToken, SecondRenewalToken, TwinToken,
+                       SuccessorToken, ForeignToken}
     /\ InitialConfirmedDeadline = 3
-    /\ MaxTime = 4
+    /\ MaxTime = 5
     /\ LeaseDuration = 4
-    /\ RequestTimeout = 1
     /\ CadencePeriod = 2
     /\ MaxRetries = 1
     /\ MaxOutstanding = 2
@@ -296,22 +339,27 @@ TypeOK ==
     /\ clock \in 0..MaxTime
     /\ durable \in DurableState
     /\ gcFenced \in BOOLEAN
+    /\ tokenStableUntil \in DeadlineRange
     /\ confirmedBody \in BodyNames
     /\ confirmedToken \in TokenSet
     /\ confirmedDeadline \in DeadlineRange
-    /\ localAuthority \in BOOLEAN
+    /\ confirmedAnchor \in 0..MaxTime
+    /\ committedRound \in 0..2
+    /\ fenceLost \in BOOLEAN
     /\ localState \in LocalStates
     /\ resolveOutcome \in ResolveOutcomes
-    /\ logicalCreated \in BOOLEAN
+    /\ round \in 0..2
     /\ requestAttempt \in AttemptIds
     /\ requestBody \in {RenewalBody, RetryBody}
     /\ requestExpectedToken \in TokenSet
     /\ requestDeadline \in DeadlineRange
     /\ attemptStartedAt \in 0..MaxTime
     /\ cadenceAnchor \in 0..MaxTime
+    /\ firstSendAt \in [Rounds -> 0..MaxTime]
     /\ retryCount \in 0..MaxRetries
     /\ outstanding \in 0..MaxOutstanding
-    /\ predecessorLandings \in 0..MaxOutstanding
+    /\ staleOutstanding \in 0..MaxOutstanding
+    /\ landings \in [Rounds -> 0..MaxOutstanding]
     /\ adoptedAttempt \in AttemptSet
     /\ adoptedKind \in AdoptedKinds
     /\ terminalSeen \in BOOLEAN
@@ -321,48 +369,54 @@ TypeOK ==
     /\ nextBeat \in 0..(MaxTime + CadencePeriod)
     /\ reclaimSeen \in BOOLEAN
     /\ history \in HistoryState
-    /\ (logicalCreated => requestDeadline = attemptStartedAt + LeaseDuration)
+    /\ (LogicalCreated => requestDeadline = firstSendAt[round] + LeaseDuration)
     /\ (nextBeatScheduled => localState = "Committed")
 
 AdvanceTime ==
     /\ clock < MaxTime
     /\ clock' = clock + 1
     /\ UNCHANGED
-        <<durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline,
-          localAuthority, localState, resolveOutcome,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+        <<durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
+(* The first renewal starts at any time; the second one when the cadence after a commit is due.
+   Neither needs authority: the start may already be past the confirmed deadline. *)
 SendRenewal ==
-    /\ ~logicalCreated
-    /\ localAuthority
-    /\ localState = "Idle"
-    /\ outstanding = 0
-    /\ (CanStartRequest \/ Defect("send_after_deadline"))
-    /\ logicalCreated' = TRUE
+    /\ ~terminalSeen
+    /\ \/ round = 0
+       \/ /\ round = 1
+          /\ localState = "Committed"
+          /\ nextBeatScheduled
+          /\ clock >= nextBeat
+          /\ ~cancelled
+    /\ round' = round + 1
+    /\ requestAttempt' = AttemptOf(round + 1)
+    /\ requestBody' = RenewalBody
+    /\ requestExpectedToken' = confirmedToken
     /\ requestDeadline' = clock + LeaseDuration
     /\ attemptStartedAt' = clock
     /\ cadenceAnchor' = clock
+    /\ firstSendAt' = [firstSendAt EXCEPT ![round + 1] = clock]
     /\ localState' = "Sent"
     /\ resolveOutcome' = "None"
     /\ retryCount' = 0
     /\ outstanding' = 1
-    /\ history' =
-        [history EXCEPT
-            !.sentOutsideBudget = @ \/ ~CanStartRequest]
+    /\ staleOutstanding' = staleOutstanding + outstanding
+    /\ nextBeatScheduled' = FALSE
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          requestAttempt, requestBody, requestExpectedToken,
-          predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, landings, adoptedAttempt, adoptedKind,
+          terminalSeen, cancelled, successObservedAt, nextBeat, reclaimSeen, history>>
 
 ResponseLoss ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState \in {"Sent", "Landed"}
     /\ localState' = "ResponseLost"
@@ -372,34 +426,37 @@ ResponseLoss ==
             !.sawNonLandedTransient = @ \/ (localState = "Sent"),
             !.sawLandedResponseLoss = @ \/ (localState = "Landed")]
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen>>
 
 LandCopy ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState \notin {"Committed", "Unresolved"}
     /\ outstanding > 0
     /\ PredecessorStillCurrent
-    /\ predecessorLandings < MaxOutstanding
+    /\ landings[round] < MaxOutstanding
     /\ durable' = RequestDurable
     /\ gcFenced' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
     /\ outstanding' = outstanding - 1
-    /\ predecessorLandings' = predecessorLandings + 1
+    /\ landings' = [landings EXCEPT ![round] = @ + 1]
     /\ localState' = IF localState = "ResponseLost" THEN localState ELSE "Landed"
     /\ UNCHANGED
-        <<clock, confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, adoptedAttempt, adoptedKind, terminalSeen, cancelled,
-          successObservedAt, nextBeatScheduled, nextBeat, reclaimSeen, history>>
+        <<clock, confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor,
+          committedRound, fenceLost, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, staleOutstanding,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
 RefuseCopy ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState \notin {"Committed", "Unresolved"}
     /\ outstanding > 0
@@ -408,65 +465,100 @@ RefuseCopy ==
     /\ localState' = IF localState = "ResponseLost" THEN localState ELSE "Conflict"
     /\ resolveOutcome' = IF localState = "ResponseLost" THEN resolveOutcome ELSE "Conflict"
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+
+(* A copy of the previous renewal is conditional on a token that renewal already replaced. *)
+StaleCopyDelivery ==
+    /\ staleOutstanding > 0
+    /\ staleOutstanding' = staleOutstanding - 1
+    /\ IF ~gcFenced /\ durable.token = PredecessorToken
+       THEN
+           /\ durable' = StaleDurable
+           /\ tokenStableUntil' = clock + LeaseDuration
+           /\ landings' = [landings EXCEPT ![1] = @ + 1]
+       ELSE
+           UNCHANGED <<durable, tokenStableUntil, landings>>
+    /\ UNCHANGED
+        <<clock, gcFenced,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, outstanding,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
 DoubleConditionalLanding ==
     /\ Defect("double_conditional_landing")
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ outstanding >= 2
-    /\ predecessorLandings = 0
+    /\ landings[round] = 0
     /\ PredecessorStillCurrent
     /\ durable' = RequestDurable
     /\ gcFenced' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
     /\ outstanding' = outstanding - 2
-    /\ predecessorLandings' = predecessorLandings + 2
+    /\ landings' = [landings EXCEPT ![round] = @ + 2]
     /\ localState' = IF localState = "ResponseLost" THEN localState ELSE "Landed"
     /\ UNCHANGED
-        <<clock, confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, adoptedAttempt, adoptedKind, terminalSeen, cancelled,
-          successObservedAt, nextBeatScheduled, nextBeat, reclaimSeen, history>>
+        <<clock, confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor,
+          committedRound, fenceLost, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, staleOutstanding,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+
+(* The history a commit of the current renewal at `clock` leaves; `newDeadline` is what it sets. *)
+CommitHistory(newDeadline) ==
+    [history EXCEPT
+        !.slowSuccess = @ \/ (clock >= cadenceAnchor + CadencePeriod),
+        !.staleSuccessSeen =
+            @ \/ (round = 1 /\ firstSendAt[1] + LeaseDuration < clock),
+        !.authorityRestoredReached =
+            @ \/ (round = 2 /\ history.staleSuccessSeen /\ ~fenceLost /\ clock < newDeadline)]
+
+CommittedDeadline ==
+    IF Defect("refresh_deadline_from_response")
+    THEN clock + LeaseDuration
+    ELSE attemptStartedAt + LeaseDuration
 
 AcknowledgeRenewal ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState = "Landed"
     /\ ExactRequestDurable
-    /\ clock <= SafeOperationDeadline
     /\ ( ~Defect("refresh_deadline_from_response")
          \/ clock > attemptStartedAt )
     /\ localState' = "Committed"
     /\ confirmedBody' = durable.body
     /\ confirmedToken' = durable.token
-    /\ confirmedDeadline' =
-        IF Defect("refresh_deadline_from_response")
-        THEN clock + LeaseDuration
-        ELSE durable.deadline
+    /\ confirmedDeadline' = CommittedDeadline
+    /\ confirmedAnchor' = attemptStartedAt
+    /\ committedRound' = round
     /\ adoptedAttempt' = durable.attempt
     /\ adoptedKind' = "Renewal"
     /\ successObservedAt' = clock
     /\ history' =
-        [history EXCEPT
+        [CommitHistory(CommittedDeadline) EXCEPT
             !.deadlineFromResponse = @ \/ Defect("refresh_deadline_from_response"),
             !.badAcknowledgement = @ \/ ~ExactRequestDurable,
             !.directRetryReached =
-                @ \/ (history.sawNonLandedTransient /\ history.sawRetrySent),
-            !.slowSuccess = @ \/ (clock >= cadenceAnchor + CadencePeriod)]
+                @ \/ (history.sawNonLandedTransient /\ history.sawRetrySent)]
     /\ UNCHANGED
-        <<clock, durable, gcFenced, localAuthority, resolveOutcome,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil, fenceLost, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
           terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
 
 ExactResolve ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState = "ResponseLost"
     /\ IF ExactRequestDurable
@@ -485,109 +577,111 @@ ExactResolve ==
            /\ localState' = "Conflict"
            /\ resolveOutcome' = "Conflict"
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
 AcceptResolved ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState = "Resolved"
     /\ resolveOutcome = "Exact"
     /\ (ExactRequestDurable
         \/ (Defect("ignore_attempt_id") /\ TwinMatchesIgnoringId))
-    /\ clock <= SafeOperationDeadline
     /\ localState' = "Committed"
     /\ confirmedBody' = durable.body
     /\ confirmedToken' = durable.token
-    /\ confirmedDeadline' = durable.deadline
+    /\ confirmedDeadline' = attemptStartedAt + LeaseDuration
+    /\ confirmedAnchor' = attemptStartedAt
+    /\ committedRound' = round
     /\ adoptedAttempt' = durable.attempt
     /\ adoptedKind' = durable.kind
     /\ successObservedAt' = clock
     /\ history' =
-        [history EXCEPT
+        [CommitHistory(attemptStartedAt + LeaseDuration) EXCEPT
             !.readAdoptionReached =
-                @ \/ (history.sawLandedResponseLoss /\ ExactRequestDurable),
-            !.slowSuccess = @ \/ (clock >= cadenceAnchor + CadencePeriod)]
+                @ \/ (history.sawLandedResponseLoss /\ ExactRequestDurable)]
     /\ UNCHANGED
-        <<clock, durable, gcFenced, localAuthority, resolveOutcome,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil, fenceLost, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
           terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
 
 EnterRetryWait ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ ~cancelled
     /\ localState = "Resolved"
     /\ resolveOutcome = "Predecessor"
     /\ localState' = "RetryWait"
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
+(* `MaxRetries` bounds the state space only: running out of it is not a transition. *)
 RetrySend ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ ~cancelled
     /\ localState = "RetryWait"
     /\ retryCount < MaxRetries
     /\ outstanding < MaxOutstanding
-    /\ (CanStartRequest \/ Defect("send_after_deadline"))
     /\ localState' = "Sent"
     /\ resolveOutcome' = "None"
     /\ retryCount' = retryCount + 1
     /\ outstanding' = outstanding + 1
     /\ requestBody' =
         IF Defect("retry_with_new_body") THEN RetryBody ELSE requestBody
+    /\ attemptStartedAt' =
+        IF Defect("anchor_deadline_at_retry") THEN clock ELSE attemptStartedAt
     /\ history' =
         [history EXCEPT
-            !.sentOutsideBudget = @ \/ ~CanStartRequest,
             !.tupleChanged = @ \/ Defect("retry_with_new_body"),
-            !.sawRetrySent = TRUE]
+            !.sawRetrySent = TRUE,
+            !.retryPastDeadlineReached = @ \/ (clock >= confirmedDeadline)]
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          logicalCreated, requestAttempt, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestExpectedToken, requestDeadline,
+          cadenceAnchor, firstSendAt, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen>>
 
+(* A stop or a remount request after the renewal sent something. *)
 Cancel ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState /= "Committed"
     /\ ~cancelled
     /\ cancelled' = TRUE
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, successObservedAt, nextBeatScheduled, nextBeat,
-          reclaimSeen, history>>
-
-Exhausted ==
-    /\ ~cancelled
-    /\ localState \in {"ResponseLost", "RetryWait"}
-    /\ (retryCount = MaxRetries \/ ~CanStartRequest)
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
 LocalTerminalize ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState /= "Committed"
-    /\ (cancelled \/ localState = "Conflict" \/ Exhausted)
+    /\ (cancelled \/ localState = "Conflict")
     /\ terminalSeen' = TRUE
-    /\ localAuthority' = FALSE
+    /\ fenceLost' = TRUE
     /\ localState' = "Unresolved"
     /\ resolveOutcome' = "Conflict"
     /\ outstanding' =
@@ -597,87 +691,106 @@ LocalTerminalize ==
     /\ history' =
         [history EXCEPT
             !.terminalDroppedPending =
-                @ \/ (Defect("drop_pending_on_terminal") /\ outstanding > 0),
-            !.exhaustionFencesReached = @ \/ Exhausted]
+                @ \/ (Defect("drop_pending_on_terminal") /\ outstanding > 0)]
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen>>
 
 SamePairTwin ==
-    /\ logicalCreated
-    /\ durable.kind = "Predecessor"
+    /\ LogicalCreated
+    /\ durable.token = requestExpectedToken
+    /\ durable.token /= TwinToken
     /\ ~gcFenced
     /\ durable' = TwinDurable
-    /\ localAuthority' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
     /\ UNCHANGED
-        <<clock, gcFenced, confirmedBody, confirmedToken, confirmedDeadline,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
+        <<clock, gcFenced,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen, history>>
 
 GCFence ==
     /\ durable.kind /= "Absent"
     /\ ~gcFenced
     /\ gcFenced' = TRUE
-    /\ localAuthority' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
+    /\ history' =
+        [history EXCEPT !.entitledTakeover = @ \/ ObserverWaitedOut]
     /\ UNCHANGED
-        <<clock, durable, confirmedBody, confirmedToken, confirmedDeadline,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+        <<clock, durable,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen>>
 
+(* Same process, new epoch: entitled by waiting, or by the old runtime being locally terminal. *)
 SuccessorClaim ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ durable.kind /= "Successor"
     /\ durable' = SuccessorDurable
     /\ gcFenced' = FALSE
-    /\ localAuthority' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
+    /\ history' =
+        [history EXCEPT !.entitledTakeover = @ \/ ObserverWaitedOut \/ terminalSeen]
     /\ UNCHANGED
-        <<clock, confirmedBody, confirmedToken, confirmedDeadline,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+        <<clock,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen>>
 
 ForeignHolderWrite ==
-    /\ logicalCreated
+    /\ LogicalCreated
     /\ durable.kind /= "Foreign"
     /\ durable' = ForeignDurable
     /\ gcFenced' = FALSE
-    /\ localAuthority' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
+    /\ history' =
+        [history EXCEPT !.entitledTakeover = @ \/ ObserverWaitedOut]
     /\ UNCHANGED
-        <<clock, confirmedBody, confirmedToken, confirmedDeadline,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+        <<clock,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen>>
 
 Reclaim ==
     /\ gcFenced
     /\ durable.kind /= "Absent"
     /\ durable' = EmptyDurable
     /\ gcFenced' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
     /\ reclaimSeen' = TRUE
     /\ history' =
         [history EXCEPT
             !.lateBeforeReclaimReached =
-                @ \/ (history.lateOldLanded /\ terminalSeen /\ ~localAuthority)]
+                @ \/ (history.lateOldLanded /\ terminalSeen /\ ~LocalAuthority)]
     /\ UNCHANGED
-        <<clock, confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
+        <<clock,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat>>
 
 LateDeliveryLands ==
@@ -685,23 +798,26 @@ LateDeliveryLands ==
     /\ localState = "Unresolved"
     /\ outstanding > 0
     /\ PredecessorStillCurrent
-    /\ predecessorLandings < MaxOutstanding
+    /\ landings[round] < MaxOutstanding
     /\ durable' = RequestDurable
     /\ gcFenced' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
     /\ outstanding' = outstanding - 1
-    /\ predecessorLandings' = predecessorLandings + 1
-    /\ localAuthority' = IF Defect("late_rearm") THEN TRUE ELSE FALSE
+    /\ landings' = [landings EXCEPT ![round] = @ + 1]
+    /\ fenceLost' = ~Defect("late_rearm")
     /\ history' =
         [history EXCEPT
             !.rearmedAfterTerminal = @ \/ Defect("late_rearm"),
             !.lateOverwroteSuccessor = @ \/ (durable.kind = "Successor"),
             !.lateOldLanded = TRUE]
     /\ UNCHANGED
-        <<clock, confirmedBody, confirmedToken, confirmedDeadline,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, adoptedAttempt, adoptedKind, terminalSeen, cancelled,
-          successObservedAt, nextBeatScheduled, nextBeat, reclaimSeen>>
+        <<clock,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, staleOutstanding,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen>>
 
 LateDeliveryRefused ==
     /\ terminalSeen
@@ -709,19 +825,19 @@ LateDeliveryRefused ==
     /\ outstanding > 0
     /\ ~PredecessorStillCurrent
     /\ outstanding' = outstanding - 1
-    /\ localAuthority' = FALSE
     /\ history' =
         [history EXCEPT
             !.oldCopyRefused = @ \/ (durable.kind = "Successor"),
             !.lateAfterSuccessorReached =
                 @ \/ (durable.kind = "Successor" /\ ~gcFenced)]
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt,
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
           nextBeatScheduled, nextBeat, reclaimSeen>>
 
 AcceptAfterTerminal ==
@@ -730,10 +846,12 @@ AcceptAfterTerminal ==
     /\ localState = "Unresolved"
     /\ ExactRequestDurable
     /\ localState' = "Committed"
-    /\ localAuthority' = TRUE
+    /\ fenceLost' = FALSE
     /\ confirmedBody' = durable.body
     /\ confirmedToken' = durable.token
-    /\ confirmedDeadline' = durable.deadline
+    /\ confirmedDeadline' = attemptStartedAt + LeaseDuration
+    /\ confirmedAnchor' = attemptStartedAt
+    /\ committedRound' = round
     /\ adoptedAttempt' = durable.attempt
     /\ adoptedKind' = "Renewal"
     /\ successObservedAt' = clock
@@ -741,9 +859,10 @@ AcceptAfterTerminal ==
         [history EXCEPT
             !.rearmedAfterTerminal = TRUE]
     /\ UNCHANGED
-        <<clock, durable, gcFenced, resolveOutcome,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
           terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
 
 AcceptSuccessor ==
@@ -753,10 +872,11 @@ AcceptSuccessor ==
     /\ durable.kind = "Successor"
     /\ ~gcFenced
     /\ localState' = "Committed"
-    /\ localAuthority' = TRUE
     /\ confirmedBody' = durable.body
     /\ confirmedToken' = durable.token
     /\ confirmedDeadline' = durable.deadline
+    /\ confirmedAnchor' = attemptStartedAt
+    /\ committedRound' = round
     /\ adoptedAttempt' = durable.attempt
     /\ adoptedKind' = "Successor"
     /\ successObservedAt' = clock
@@ -764,9 +884,10 @@ AcceptSuccessor ==
         [history EXCEPT
             !.badAcknowledgement = TRUE]
     /\ UNCHANGED
-        <<clock, durable, gcFenced, resolveOutcome,
-          logicalCreated, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
-          attemptStartedAt, cadenceAnchor, retryCount, outstanding, predecessorLandings,
+        <<clock, durable, gcFenced, tokenStableUntil, fenceLost, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
           terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
 
 ScheduleNextBeat ==
@@ -783,12 +904,14 @@ ScheduleNextBeat ==
                 @ \/ (history.slowSuccess
                       /\ cadenceAnchor + CadencePeriod <= clock)]
     /\ UNCHANGED
-        <<clock, durable, gcFenced,
-          confirmedBody, confirmedToken, confirmedDeadline, localAuthority,
-          localState, resolveOutcome, logicalCreated, requestAttempt, requestBody,
-          requestExpectedToken, requestDeadline, attemptStartedAt, cadenceAnchor,
-          retryCount, outstanding, predecessorLandings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt, reclaimSeen>>
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          reclaimSeen>>
 
 Next ==
     \/ AdvanceTime
@@ -796,6 +919,7 @@ Next ==
     \/ ResponseLoss
     \/ LandCopy
     \/ RefuseCopy
+    \/ StaleCopyDelivery
     \/ DoubleConditionalLanding
     \/ AcknowledgeRenewal
     \/ ExactResolve
@@ -817,35 +941,32 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
-(* Only the exact symbolic `write_attempt_id` may be adopted. *)
+(* Only the exact symbolic `write_attempt_id` of the committed renewal may be adopted. *)
 ExactAttemptOnly ==
-    adoptedAttempt \in {NoAttempt, CurrentAttempt}
+    adoptedAttempt = NoAttempt \/ adoptedAttempt = AttemptOf(committedRound)
 
 (* Twins, GC-fenced bodies, successor epochs, and foreign holders remain fail closed. *)
 ForeignOrSuccessorNeverAdopted ==
     adoptedKind \in {"None", "Renewal"}
 
-(* A confirmed renewal uses the pre-I/O body deadline, never a response timestamp. *)
+(* A commit sets the deadline from the start it used, never from a response timestamp. *)
 ConfirmedDeadlineNeverExtendedByResponse ==
     /\ ~history.deadlineFromResponse
-    /\ (confirmedBody = RenewalBody => confirmedDeadline = requestDeadline)
-
-(* The timeout of every physical send must fit inside the captured absolute budget. *)
-NoRequestAfterSafeDeadline ==
-    ~history.sentOutsideBudget
+    /\ (committedRound > 0 => confirmedDeadline = confirmedAnchor + LeaseDuration)
 
 (* Once locally terminal, old-epoch authority remains fenced through all late outcomes. *)
 TerminalNeverRearmsAuthority ==
     /\ ~history.rearmedAfterTerminal
-    /\ (terminalSeen => ~localAuthority)
+    /\ (terminalSeen => ~LocalAuthority)
 
-(* All physical copies retain the original body, attempt, and expected predecessor token. *)
+(* All physical copies of a renewal retain its body, attempt, and expected token. *)
 OneLogicalBodyPerExpectedToken ==
     /\ ~history.tupleChanged
-    /\ (logicalCreated
-        => /\ requestAttempt = CurrentAttempt
+    /\ (LogicalCreated
+        => /\ requestAttempt = AttemptOf(round)
            /\ requestBody = RenewalBody
-           /\ requestExpectedToken = PredecessorToken)
+           /\ requestExpectedToken =
+                IF round = 1 THEN PredecessorToken ELSE RenewalTokenOf(1))
 
 (* Direct acknowledgement is possible only after that exact body and token are durable. *)
 AcknowledgedRenewalIsDurable ==
@@ -859,20 +980,36 @@ LateDeliveryCannotOverwriteSuccessor ==
 PendingSurvivesLocalTerminal ==
     ~history.terminalDroppedPending
 
-(* Conditional atomicity lets at most one physical copy consume the predecessor token. *)
+(* Conditional atomicity lets at most one physical copy consume each renewal's expected token. *)
 OneIncarnationPerPredecessor ==
-    predecessorLandings <= 1
+    \A r \in Rounds : landings[r] <= 1
 
-(* The next beat derives from the pre-I/O cadence anchor, not result delivery time. *)
+(* The next beat derives from the renewal's first send, not result delivery time. *)
 CadenceAnchoredAtAttemptStart ==
-    ~nextBeatScheduled \/ nextBeat = cadenceAnchor + CadencePeriod
+    nextBeatScheduled
+        => /\ nextBeat = cadenceAnchor + CadencePeriod
+           /\ cadenceAnchor = firstSendAt[round]
+
+(* The first conjunct holds by the definition of `LocalAuthority`; the second compares the
+   deadline with `firstSendAt`, which only `SendRenewal` writes. *)
+AuthorityEndsAtConfirmedDeadline ==
+    /\ (LocalAuthority => clock < confirmedDeadline)
+    /\ confirmedDeadline =
+        IF committedRound = 0
+        THEN InitialConfirmedDeadline
+        ELSE firstSendAt[committedRound] + LeaseDuration
+
+(* No authority once an observer that waited, or the successor after a local terminal, took over. *)
+NoAuthorityAfterEntitledTakeover ==
+    history.entitledTakeover => ~LocalAuthority
 
 (* Negated reachability checks: TLC must violate each exact witness name. *)
 WitnessDirectRetry == ~history.directRetryReached
 WitnessReadAdoption == ~history.readAdoptionReached
-WitnessExhaustionFences == ~history.exhaustionFencesReached
 WitnessLateBeforeReclaim == ~history.lateBeforeReclaimReached
 WitnessLateAfterSuccessor == ~history.lateAfterSuccessorReached
 WitnessImmediateCatchup == ~history.catchupReached
+WitnessRetryPastDeadline == ~history.retryPastDeadlineReached
+WitnessAuthorityRestored == ~history.authorityRestoredReached
 
 ================================================================================

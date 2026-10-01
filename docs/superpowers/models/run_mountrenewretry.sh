@@ -12,7 +12,6 @@ SAFETY_INVARIANTS=(
     ExactAttemptOnly
     ForeignOrSuccessorNeverAdopted
     ConfirmedDeadlineNeverExtendedByResponse
-    NoRequestAfterSafeDeadline
     TerminalNeverRearmsAuthority
     OneLogicalBodyPerExpectedToken
     AcknowledgedRenewalIsDurable
@@ -20,28 +19,32 @@ SAFETY_INVARIANTS=(
     PendingSurvivesLocalTerminal
     OneIncarnationPerPredecessor
     CadenceAnchoredAtAttemptStart
+    AuthorityEndsAtConfirmedDeadline
+    NoAuthorityAfterEntitledTakeover
 )
 
-# Sabotages run first, followed by the safe graph and six negated-reachability witnesses.
+# Sabotages run first, followed by the safe graph and seven negated-reachability witnesses.
 # name                                  expectation  exact invariant/witness
 CONFIGS=(
     "sab_ignore_attempt_id                  violation  ExactAttemptOnly"
     "sab_refresh_deadline_from_response     violation  ConfirmedDeadlineNeverExtendedByResponse"
+    "sab_response_deadline_outlives_observer violation NoAuthorityAfterEntitledTakeover"
+    "sab_anchor_deadline_at_retry           violation  AuthorityEndsAtConfirmedDeadline"
     "sab_retry_with_new_body                violation  OneLogicalBodyPerExpectedToken"
     "sab_accept_after_terminal              violation  TerminalNeverRearmsAuthority"
     "sab_accept_successor                   violation  ForeignOrSuccessorNeverAdopted"
     "sab_drop_pending_on_terminal           violation  PendingSurvivesLocalTerminal"
     "sab_late_rearm                         violation  TerminalNeverRearmsAuthority"
     "sab_response_relative_cadence          violation  CadenceAnchoredAtAttemptStart"
-    "sab_send_after_deadline                violation  NoRequestAfterSafeDeadline"
     "sab_double_conditional_landing         violation  OneIncarnationPerPredecessor"
     "safe                                  green      -"
     "witness_direct_retry                  witness    WitnessDirectRetry"
     "witness_read_adoption                 witness    WitnessReadAdoption"
-    "witness_exhaustion_fences             witness    WitnessExhaustionFences"
     "witness_late_before_reclaim           witness    WitnessLateBeforeReclaim"
     "witness_late_after_successor          witness    WitnessLateAfterSuccessor"
     "witness_catchup                       witness    WitnessImmediateCatchup"
+    "witness_retry_past_deadline           witness    WitnessRetryPastDeadline"
+    "witness_authority_restored            witness    WitnessAuthorityRestored"
 )
 
 selected()
