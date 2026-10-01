@@ -370,7 +370,10 @@ The exact contract. A review checks the design against this list.
    own slot `gc_fenced`, own `(uuid, epoch)` body with other bytes, vanished slot, deterministic
    store refusal, deterministic local failure. A refused precondition whose resolving read keeps
    failing transiently is not an answer yet: the read is retried, spaced, until the slot is read or
-   the renewal is ended.
+   the renewal is ended. A store refusal that follows an unclear request of the same renewal is not
+   an answer either, because the unclear request may still land: the engine settles it by a read and
+   retries. Such a renewal ends on a stop or a remount request; meanwhile the lease expires and the
+   refusal shows as the last failure.
 7. **What ends a renewal early.** A stop, a pending remount request, a terminal lifecycle or a
    published FORGET intent, whatever the lease budget. A lost fence alone does not: the readiness
    renewal of rule 1 runs under one, and every trip that must stop a renewal comes with a request,
