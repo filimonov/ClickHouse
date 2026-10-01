@@ -19,6 +19,9 @@ doc_type: 'guide'
   writes once the confirmed deadline is too close or past. A lapse trips nothing: no `tripMountLost`,
   no generation bump, no remount, no new epoch.
 - **Writes resume when a renewal commits**, under the same `writer_epoch` and fence generation.
+- **Prerequisite: GC timestamps a mount observation after the read that produced it.** Today
+  `computeHeartbeatFloor` credits an observation with a clock sample taken before its `LIST` and
+  `GET`, which can fence a holder that still has authority ([timing](#timing)). The fix lands first.
 
 Closes [issue #2431](https://github.com/Altinity/ClickHouse/issues/2431) (CAS-298) and CAS-152.
 
@@ -52,23 +55,30 @@ A review checks the design against this list.
 3. **Anchor.** The anchor is the `BOOTTIME` instant sampled before the first physical attempt. A
    commit sets the confirmed deadline to `anchor + TTL`. A response never moves it. Unchanged.
 4. **No deadline.** The logical renewal is not bounded by the lease deadline or by a policy window and
-   reserves nothing against either. It ends only on: commit, a definitive answer, stop, or park.
+   reserves nothing against either. It ends only on: commit, a definitive answer, stop, or park. The
+   policy carries no lease bound and the window `UINT64_MAX`; `Retry::bind` saturates, so no
+   reservation can fail against it.
 5. **One engine call.** A logical renewal is one call of the request engine, so the resolve read that
    adopts a landed attempt always belongs to the call that sent it. No second logical renewal starts
    while one is unresolved.
 6. **Definitive answers stay terminal.** Unchanged classification in `throwRenewConflict` and for
    `Refused`: foreign or successor occupant, own slot `gc_fenced`, own `(uuid, epoch)` body that is not
    this renewal's bytes, vanished slot, deterministic store refusal, deterministic local failure.
-7. **Stop and park.** A stop or park before any request was sent is `NotAttempted`. After a request
-   was sent it is terminal and forbids the farewell. Unchanged.
-8. **Pacing.** Failed attempts are spaced by a flat 1 s pause whatever the failure kind. The
-   first-attempt fuse may reissue once at once. A stop wakes the pause. A park is noticed within one
-   pause plus one attempt in flight.
+7. **Stop and park.** Today's classification is kept as it is. `NotAttempted` only when a stop was
+   already requested when the renewal began and no request was sent. Every other stop or park that
+   ends the renewal is terminal and forbids the farewell, whether or not a request was sent.
+8. **Pacing.** Every pause taken under the worker policy is a flat 1 s: the reissue of a failed
+   `PUT` of any failure kind, and the retry of a failed resolve read. The first-attempt fuse keeps its
+   one immediate reissue per verb. A stop wakes the pause. A park is noticed within one pause plus one
+   attempt in flight.
 9. **Authority.** Write admission is unchanged. A lapse changes neither `mount_fence.lost`, nor
    `fence_generation`, nor the lifecycle enum, nor the epoch.
 10. **Resume.** After a commit whose `anchor + TTL` is already past, writes stay refused and the
     existing catch-up cadence starts the next renewal at once. A lapse ends with the first commit whose
     anchor is fresh.
+11. **Observer timestamps.** An observer records the first sighting of a token with a clock sample
+    taken after the read returned, and tests stability with a sample taken before the confirming
+    read. `claimMountAwaitingExpiry` does this today; `computeHeartbeatFloor` must.
 
 ## Why this is safe {#safety}
 
@@ -88,22 +98,48 @@ Every writer of the mount slot is conditional on the token it observed:
 Holder bodies carry a random `write_attempt_id`, so a token never repeats. `expires_at_ms` is read
 for display and for a non-authoritative precheck only.
 
-**Timing.** Authority from a commit ends at `anchor + TTL` on the holder's clock. An observer sees
-the new token no earlier than its landing, which is no earlier than the anchor, and then waits
-`mountObservationThresholdMs` on its own clock. That argument is today's and depends on rule 3 only.
-A late retry does not move the anchor, so retrying past the deadline cannot extend authority.
+### Timing {#timing}
+
+Authority from a commit ends at `anchor + TTL` on the holder's clock. An observer sees the new token
+no earlier than its landing, which is no earlier than the anchor, and acts only after the token
+stayed unchanged for `mountObservationThresholdMs` on its own clock. The holder side depends on
+rule 3 only: a late retry does not move the anchor, so retrying past the deadline cannot extend
+authority.
+
+The observer side depends on rule 11, and GC breaks it today. `Gc::runRegularRound` passes
+`mono_ms_fn()` to `computeHeartbeatFloor` as an argument, sampled before the `LIST` and the per-slot
+reads, and the function stores that value as `first_seen_mono_ms`. A sighting made `d` after the
+sample is credited `d` too early:
+
+1. The GC leader samples its clock at `t0`, then spends `d` in the walk before it reads holder `H`'s
+   slot and sees token `T`, committed with anchor `a <= t0 + d`. It records `first_seen = t0`.
+2. A later round samples `t1 >= t0 + threshold`, reads `T` unchanged and fences.
+3. `H` has authority until `a + TTL`, which is after the fence when `d > threshold − TTL`, 11.5 s
+   with the defaults.
+
+The token stays unchanged across both reads when `H` is healthy and the reads are less than one
+period apart, or when `H`'s renewals are failing. Today the second case is masked, because a failing
+renewal fences `H` itself about 4 s in. Under this design `H` keeps authority until the deadline, so
+the defect must be fixed first: record `first_seen` from a sample taken inside the decision, after
+the read, including the re-decision that follows a refused fence-out. The stability test keeps the
+round-start sample, which is conservative.
+
+### Late landings and writes across a lapse {#across-a-lapse}
 
 **Late landings.** An attempt that lands after the holder stopped is conditional on the old token.
 Either it lands and the next reader sees an unfenced, non-farewell body, or a successor moved the
 token and it is refused. Both cases exist today (`WitnessLateBeforeReclaim`,
 `WitnessLateAfterSuccessor` in `CaMountRenewRetryCore`).
 
-**Writes across a lapse.** Operations in the engine cannot sleep across a lapse: each attempt and
-pause reserves its cost and gives up before the deadline. Callers that see a refusal
-(`resolveWedgeOnce`, `commitRefChunk`, `publishCkpt`, the catalog mutators, `ensureBlobPresent`)
-refuse or mark the table for recovery; none acts on it as proof that the incarnation ended. A request
-sent before the lapse that lands after the resume is the same straggler as inside one uninterrupted
-lease: every such write is a conditional create, a token-conditional update, or content-addressed.
+**Writes across a lapse.** An operation admitted before a lapse may continue after the resume under
+the same generation: a thread can stall between its gate and its send, or across a pause, and the
+reservation is not an execution deadline. That is allowed. By the lemma nobody else held authority in
+between, so such a write equals the same write inside one uninterrupted lease, and its safety rests
+on the object protocols: every such write is a conditional create, a token-conditional update, or
+content-addressed. The same holds for a request sent before the lapse that lands after the resume.
+Callers that see a refusal during the lapse (`resolveWedgeOnce`, `commitRefChunk`, `publishCkpt`,
+the catalog mutators, `ensureBlobPresent`) refuse or mark the table for recovery; none acts on it as
+proof that the incarnation ended.
 
 **Models.** `CaCasMountCore.Renew` has no expiry guard, and `Write` is guarded by `clock <
 fenceUntil` only, so that model already contains lapse, late same-epoch `Renew`, then `Write`.
@@ -121,10 +157,16 @@ Defaults; "outage" means `PUT` fails with a transient error.
 
 ## Code shape {#code-shape}
 
-- `MountLeaseRenewer::renewOn`: the worker path uses a policy with no lease bound, no window and the
-  flat pause, on a request plane that is not gated by the mount fence and takes the worker's liveness
-  predicate. The other three callers are unchanged.
-- `Retry`: one optional flat-pause field. When set, the reissue pauses in `writeLoop` use it.
+- `computeHeartbeatFloor`: takes the clock as a function and samples it when it records a sighting
+  (rule 11). Both call sites in `Gc/CasGc.cpp` change with it.
+- `MountLeaseRenewer::renewOn`: the worker path uses the unbounded policy of rule 4 with the flat
+  pause. Startup and direct renewals share `renew` with the worker today, so the policy is chosen by
+  the caller's kind, not by the method. The remount path keeps `renewForRemount`.
+- Request plane for the worker renewal: not gated by the mount fence, takes the worker's liveness
+  predicate, and sleeps through the runtime's interruptible sleep. The existing open plane sleeps
+  with a plain sleep, so the worker needs its own plane or that plane's sleep changes.
+- `Retry`: one optional flat-pause field. When set, it replaces the pause in `gatedPause` and in the
+  read loop that serves the resolve read.
 - `CasMountRuntime::consumeRenewResult`: on a commit, detect that the previous deadline had passed
   and report the lapse ([observability](#observability)). Terminal handling is unchanged.
 - `deliverMountRenewObservability`: drop the loop that replays one `DEBUG` line per attempt at
@@ -163,9 +205,15 @@ An append made ambiguous by the outage leaves its lane `Wedged`. `resolveWedgeOn
 because `quiesceRefTablesForRemount` drops the runtime and the new epoch's seal settles the write.
 
 Under this design an outage no longer remounts, so a wedge in a namespace that gets no further
-mutation stays. Its costs: a relink confirm for that table answers `Unknown`, and
-`drainRefLanesForShutdown` reports a wedge, so the shutdown writes no farewell and the next start
-pays the observation wait.
+mutation stays. It has no correctness consequence: the attempted tuple is retained and cannot be
+bypassed. Its costs:
+
+- a relink confirm for that table answers `Unknown`;
+- `drainRefLanesForShutdown` reports a wedge, so the shutdown writes no farewell and the next start
+  pays the observation wait;
+- the runtime and its attempt bytes stay in memory, and cache eviction skips a runtime that is not
+  `Ready`, so the cache can exceed its budget;
+- snapshot publication for that table is refused.
 
 This is not a new state: a blip shorter than today's 4 s window already leaves the same wedge, and
 the code documents it as accepted. The worst case equals what every outage costs today, deferred to
@@ -174,17 +222,23 @@ background is a separate change to the ref ledger and is out of scope here.
 
 ## Models {#models}
 
-`CaMountRenewRetryCore`:
+`CaMountRenewRetryCore` must express the following. The edits are the plan's business.
 
-- Remove `CanStartRequest` from `SendRenewal` and `RetrySend`, and the `SafeOperationDeadline` guard
-  from `AcknowledgeRenewal` and `AcceptResolved`.
-- Remove the `Exhausted` arm of `LocalTerminalize`.
-- Make `localAuthority` depend on the clock: authority holds only while `clock < requestDeadline` of
-  the confirmed body.
-- Drop `NoRequestAfterSafeDeadline` and `WitnessExhaustionFences`. Keep the other ten invariants.
-- Add the invariant `AuthorityEndsAtConfirmedDeadline`, a sabotage that anchors the deadline at a
-  later attempt and must violate it, and a witness for commit with a stale anchor followed by a
-  catch-up renewal.
+- A renewal can be sent and retried without write authority and past the confirmed deadline
+  (`CanStartRequest` and the `SafeOperationDeadline` guards go).
+- Write authority is derived: it holds only while `clock < confirmedDeadline`.
+- No exhaustion transition: the `Exhausted` arm of `LocalTerminalize` goes. `MaxRetries` stays as a
+  bound on the state space only.
+- Two logical renewals in one behaviour: after a commit the model returns to a state from which
+  `SendRenewal` fires again.
+- Bounds large enough for a first commit whose `anchor + LeaseDuration` is strictly in the past.
+- Invariants: drop `NoRequestAfterSafeDeadline` and `WitnessExhaustionFences`, keep the other ten,
+  add `AuthorityEndsAtConfirmedDeadline`.
+- Sabotage: the deadline is anchored at a later attempt. It must violate an invariant that compares
+  against an independently recorded first-send instant.
+- Witness: stale-anchor commit, then a second logical renewal commits and authority is restored.
+- Sabotage for rule 11, in the model that owns the timing of `GCFence`: an observer credits a
+  sighting with a sample taken before its read and fences a holder inside its authority.
 
 `CaCasMountCore`: add a negated-reachability witness for `Renew` at `clock >= fenceUntil` followed by
 `WedgeRetryCreate`, with every invariant of `CaCasMountCore_v9_recoverygen.cfg` enabled.
@@ -192,52 +246,73 @@ background is a separate change to the ref ledger and is out of scope here.
 ## Tests, failing first {#tests}
 
 Unit tests use `RenewalScriptBackend` and `Ops` from `src/Disks/tests/gtest_cas_heartbeat.cpp` with
-an injected boot clock, unless noted.
+an injected boot clock, unless noted. The rule each test guards is in brackets.
 
-1. `CASHeartbeat.WorkerRenewalOutlivesTheReservationCutoff`: every `PUT` fails transiently for 8 s of
-   injected time, then succeeds. The result is `Committed`, the renewer is `Active`. Replaces
+1. `CASHeartbeat.GcCreditsASightingAfterItsRead` [11]: the clock function advances by more than
+   `threshold − TTL` between the call of `computeHeartbeatFloor` and its read of a slot. A second
+   call one threshold after the first call's start reads the same token and must not fence. A call
+   one threshold after the read fences.
+2. `CASHeartbeat.WorkerRenewalOutlivesTheReservationCutoff` [4]: every `PUT` fails transiently for
+   8 s of injected time, then succeeds. The result is `Committed`, the renewer is `Active`, and the
+   attempt count equals one per elapsed pause. Replaces
    `RenewalStopsBeforeTheCutoffWhenEveryAttemptConsumesTheEnvelope`.
-2. `CASHeartbeat.WorkerRenewalCommitsPastTheDeadlineWithItsFirstAnchor`: failures last longer than
-   the TTL. The commit reports the first attempt's anchor; `anchor + TTL` is in the past.
-3. `CASHeartbeat.LandedAttemptIsAdoptedAfterALongOutage`: the first attempt lands and its response is
-   lost; later attempts and resolve reads fail past the deadline; then a read succeeds. The result is
-   `Committed` with `resolved_by_read`, not `same_epoch_state_uncertain`.
-4. `CASHeartbeat.DefinitiveAnswersStayTerminalPastTheDeadline`: after the deadline the slot turns
-   `gc_fenced`, foreign, or absent. Each is terminal with today's classification.
-5. `CASHeartbeat.WorkerRenewalPacesAttemptsFlat`: with a connect-failure text on every attempt, 10 s
-   of injected time sends at most 12 attempts.
-6. `CASHeartbeat.StopDuringARetryPauseEndsTheRenewal`: a stop during the pause returns without
-   waiting it out; the result is terminal and `release` is forbidden.
-   `CancellationAfterSendIsTerminalAndForbidsRelease` stays green.
-7. `CASHeartbeat.StartupRenewalStillStopsAtTheLeaseDeadline`: the bounded path keeps
-   `DeadlineBeforeSendTerminalizesWithTypedFailure`'s behaviour.
-8. `CASMountRuntime.LapseRefusesWritesAndResumesUnderTheSameEpoch`
-   (`src/Disks/tests/gtest_cas_mount_runtime.cpp`): past the deadline `admit` returns `NoBudget` and
-   `lost` is false; after a stale-anchor commit writes stay refused; after the catch-up commit
-   `admit` returns `Ok` with the same epoch and generation.
-9. `CASMountRuntime.LapseIsReported`: during the lapse the lifecycle snapshot reads `not_live` /
-   `lease_lapsed`; the ending commit increments `CASMountLeaseLapsed` and the event carries
-   `lapsed_ms`.
-10. Integration, `tests/integration/test_cas_mount_renewal_retry` with `s3_fault_proxy.py`:
+3. `CASHeartbeat.WorkerRenewalSendsOneTupleOnEveryAttempt` [2, 5]: across the same outage every
+   recorded attempt carries identical bytes, expected token and `write_attempt_id`, and the backend
+   sees no second body before the first is resolved.
+4. `CASHeartbeat.WorkerRenewalCommitsPastTheDeadlineWithItsFirstAnchor` [3]: failures last longer
+   than the TTL. The commit reports the first attempt's anchor; `anchor + TTL` is in the past.
+5. `CASHeartbeat.LandedAttemptIsAdoptedAfterALongOutage` [5]: the first attempt lands and its
+   response is lost; later attempts and resolve reads fail past the deadline; then a read succeeds.
+   The result is `Committed` with `resolved_by_read`, not `same_epoch_state_uncertain`.
+6. `CASHeartbeat.DefinitiveAnswersStayTerminalPastTheDeadline` [6]: after the deadline the slot
+   turns `gc_fenced`, foreign, a newer own epoch, an own-epoch body with other bytes, or absent, or
+   the store refuses deterministically. Each is terminal with today's classification.
+7. `CASHeartbeat.WorkerRenewalPacesEveryPauseFlat` [8]: with a connect-failure text on every `PUT`
+   and a failing resolve read, consecutive requests on the injected clock are exactly 1000 ms apart,
+   apart from the one fuse reissue per verb, and the renewal is still running after 30 s.
+8. `CASHeartbeat.StopDuringARetryPauseEndsTheRenewal` [7, 8]: a stop during the pause returns
+   without waiting it out; the result is terminal and `release` is forbidden.
+   `CancellationBeforeSendIsNotAttemptedAndAllowsRelease` and
+   `CancellationAfterSendIsTerminalAndForbidsRelease` stay green.
+9. `CASMountRuntime.ParkEndsAnUnboundedRenewalWithinOnePause`
+   (`src/Disks/tests/gtest_cas_mount_runtime.cpp`) [7, 8]: a remount request while the worker
+   renewal is retrying reaches `Parked` within one pause plus one attempt, and the renewal is
+   terminal.
+10. `CASHeartbeat.BoundedPathsStillStopAtTheLeaseDeadline` [1]: the startup renewal, the direct
+    renewal and `renewForRemount` give up against the lease deadline with a typed terminal failure,
+    as `DeadlineBeforeSendTerminalizesWithTypedFailure` asserts today.
+11. `CASMountRuntime.LapseRefusesWritesAndResumesUnderTheSameEpoch` [9, 10]: driven by real worker
+    renewals over a scripted backend, not by setting the deadline. Past the deadline `admit` returns
+    `NoBudget` and `lost` is false. After the stale-anchor commit `admit` still returns `NoBudget`
+    and the next renewal starts with no cadence wait. After that commit `admit` returns `Ok` with the
+    same epoch and generation.
+12. `CASMountRuntime.LapseIsReported`: during the lapse the lifecycle snapshot reads `not_live` /
+    `lease_lapsed`; the ending commit increments `CASMountLeaseLapsed` and the event carries
+    `lapsed_ms`.
+13. Integration, `tests/integration/test_cas_mount_renewal_retry` with `s3_fault_proxy.py`:
     `test_short_put_outage_does_not_fence` holds `503` on `PUT` for 8 s across a renewal; no
     `fenced after` line on any node, `CASMountLeaseLost` unchanged, the next `INSERT` succeeds.
-11. Same file: `test_long_put_outage_resumes_under_the_same_epoch` holds the fault for 45 s;
+14. Same file: `test_long_put_outage_resumes_under_the_same_epoch` holds the fault for 45 s;
     afterwards `writer_epoch` in `system.cas_mounts` is unchanged, `CASMountLeaseLapsed` is 1 and an
     `INSERT` succeeds without a remount line in the log.
-12. Soak card S39 queries every replica in its short-fault check.
+15. Soak card S39 queries every replica in its short-fault check.
 
-## Checks before the plan {#checks-before-plan}
+## Boundaries checked {#boundaries-checked}
 
-The safety argument was verified by reading the mount, request-engine and ref-ledger code. Three
-areas were read only at their boundary. Each check either confirms the lemma or blocks the plan.
+The lemma was checked beyond the mount, request-engine and ref-ledger code:
 
-- `Gc/`: no decision about a writer's liveness is derived from time or from `expires_at_ms` without
-  a write to the mount slot.
-- Code above `ContentAddressed/`: nothing reacts to the lease error text or to `system.cas_mounts`
-  in a way that treats a refusal as loss of the incarnation.
-- `Backend/CasProbe.cpp`: the capability probe refuses a store that does not honour `If-Match` on
-  `PUT` and `DELETE`.
-- TLC: both model changes above run green before code is written.
+- `Gc/`: no unconditional writer of the mount slot and no destructive decision from elapsed time
+  alone. Creator retirement uses the fenced, farewell or superseded-epoch certificate; orphan
+  eligibility uses the durable epoch and build floor; recovery seals only older epochs; GC
+  leadership rests on `gc/state`, not on this node's mount deadline. The one defect is the
+  observation timestamp of rule 11.
+- Code above `ContentAddressed/`: nothing parses the lease error text or consumes
+  `system.cas_mounts` as authority. The refusal class stays `NETWORK_ERROR`, which
+  `checkDataPart` and `ReplicatedMergeTreePartCheckThread` treat as retryable.
+- `Backend/CasProbe.cpp`: the capability probe fails a store that accepts a stale-token `PUT` or
+  `DELETE`.
+
+Owed before code: both model changes run green in TLC.
 
 ## Documentation {#documentation}
 
