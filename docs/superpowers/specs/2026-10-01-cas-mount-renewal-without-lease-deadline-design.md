@@ -21,7 +21,8 @@ doc_type: 'guide'
 - **Writes resume when a renewal commits**, under the same `writer_epoch` and fence generation.
 - **Prerequisite: GC timestamps a mount observation after the read that produced it.** Today
   `computeHeartbeatFloor` credits an observation with a clock sample taken before its `LIST` and
-  `GET`, which can fence a holder that still has authority ([timing](#timing)). The fix lands first.
+  `GET`, which can fence a holder that still has authority ([timing](#timing)). The fix (CAS-342) lands
+  first.
 
 Closes [issue #2431](https://github.com/Altinity/ClickHouse/issues/2431) (CAS-298) and CAS-152.
 
