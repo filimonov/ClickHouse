@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-02'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-10-01 17:57'
 labels:
   - 'area:ref-ledger'
   - 'area:gcs'
@@ -69,5 +69,5 @@ Provenance: BACKLOG/gcs.md#gcs-hot-control-keys-429 (A1, cross-provider note, 20
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-First recorded: 2026-09-02 (d1c0b90c697, by 'gcs-hot-control-keys-429')
+2026-10-01: occurrence on PR #2463 aarch64 cas_alter_attach_3: minio timeouts on the shared data/cas/ref_catalog (~1.1 MB, 3 nodes conditional PUTs): clickhouse2 1648 S3 timeouts, 752 on ref_catalog, PreconditionFailed contention; CREATE TABLE ON CLUSTER failed with 210 after 12 attempts. tmp/ci-2463/rca.md section 9
 <!-- SECTION:NOTES:END -->
