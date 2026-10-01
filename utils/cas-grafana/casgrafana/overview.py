@@ -250,6 +250,44 @@ FROM (SELECT toUInt64(event_time) * 1000 AS t, toInt64(entries_condemned) - toIn
       WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Finish' AND outcome = 'Success' AND $timeFilter)
 ORDER BY t
 {SETTINGS}""", unit="short", w=6)
+    from .drilldown import pm_latest, PHASE_WHERE, UPLOADS_FROM  # noqa: E402 - the Overview reuses the Drilldown's inventory expressions
+    inventory = P.stat(
+        "Tables and live parts",
+        "What the shared storage holds right now, as counted by the last garbage-collection round. Tables: tables with "
+        "data in the storage. Live parts: data parts currently referenced by those tables. Write-log entries: records "
+        "of inserts and deletes not yet compacted away. The counts of data objects and part descriptions are not available yet.",
+        [P.target(f"""SELECT {pm_latest('namespaces_seen')} AS "Tables", {pm_latest('seal_ref_lives')} AS "Live parts",
+       {pm_latest('ref_log_keys_listed')} AS "Write-log entries" /* now */
+FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+WHERE {PHASE_WHERE} AND event_date >= today() - 7
+{SETTINGS}""", fmt="table", table="cas_gc_log")],
+        {"Tables": {"fixed": "blue"}, "Live parts": {"fixed": "blue"}, "Write-log entries": {"fixed": "blue"}},
+        links=[DRILLDOWN_LINK], w=6, h=8)
+    data_objects = P.metric_ts(
+        "Data objects: new vs deleted per second",
+        "Data objects are the pieces of table data in the shared storage. New: objects uploaded; Deleted: objects removed by "
+        "garbage collection. Over days the two should balance; deleted staying at zero while new grows means garbage "
+        "collection is not removing anything.",
+        {"New": P.r(_m("CASBlobHeadMiss")), "Deleted": P.r(_m("CASBlobDelete"))}, unit="ops", w=6)
+    part_descriptions = P.metric_ts(
+        "Part descriptions: new vs deleted per second",
+        "Every data part has one description object in the shared storage. New ones appear on insert and merge, deleted "
+        "ones follow part removal.",
+        {"New": P.r(_m("CASManifestPut")), "Deleted": P.r(_m("CASManifestDelete"))}, unit="ops", w=6)
+    write_log = P.metric_ts(
+        "Write-log entries: written vs cleaned per second",
+        "Each insert or delete appends an entry to the table's write log in the shared storage; garbage collection compacts "
+        "old entries away. Written staying above cleaned for a long time means the logs keep growing.",
+        {"Written": P.r(_m("CASRootPut")), "Cleaned": P.r(_m("CASRootDelete"))}, unit="ops", w=6)
+    uploaded = P.raw_ts(
+        "Data uploaded per second, by kind",
+        "Bytes written to the shared storage: table data, part descriptions, write logs and collector state. This is "
+        "traffic, not the amount stored; stored totals are not available yet.",
+        f"""SELECT $timeSeries AS t, multiIf(p2 = 'blobs', 'Table data', p2 = 'cas' AND p3 = 'manifests', 'Part descriptions',
+                                     p2 = 'cas' AND p3 = 'ns', 'Write logs', p2 = 'gc', 'Collector state', 'Other') AS kind, sum(data_size) / $interval
+FROM {UPLOADS_FROM}
+GROUP BY t, kind ORDER BY t
+{SETTINGS}""", table="blob_storage_log", unit="Bps", stack=True, interval="5m", w=24)
     verbs = P.metric_ts(
         "S3 requests per second, by type",
         "All requests the cluster sends to the object storage. Cost drivers are PUT and LIST; GET and HEAD are cheap. "
@@ -266,6 +304,7 @@ ORDER BY t
         P.row("Needs attention", [attention], collapsed=False),
         P.row("Storage and writes", [lease, writes, delay], collapsed=False),
         P.row("Garbage collection", [rounds, duration, stages, backlog], collapsed=False),
+        P.row("Objects", [inventory, data_objects, part_descriptions, write_log, uploaded], collapsed=False),
         P.row("S3 requests", [verbs, throttling], collapsed=False),
     ]
 

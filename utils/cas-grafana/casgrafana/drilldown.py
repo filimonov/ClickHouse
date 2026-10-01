@@ -29,6 +29,115 @@ ORDER BY t
     return P.raw_ts(title, desc, sql, unit=unit, draw=draw, w=w, h=h)
 
 
+PHASE_WHERE = "disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase'"
+
+
+def pm_latest(key: str) -> str:
+    """Value of a phase_metrics key in the most recent Phase row that carries it; NULL when no row does."""
+    return (f"if(countIf(mapContains(phase_metrics, '{key}')) = 0, NULL, "
+            f"argMaxIf(phase_metrics['{key}'], event_time, mapContains(phase_metrics, '{key}')))")
+
+
+def pm_round(key: str) -> str:
+    """Value of a phase_metrics key within one round (rows grouped by round_id)."""
+    return f"maxIf(phase_metrics['{key}'], mapContains(phase_metrics, '{key}'))"
+
+
+INVENTORY_LATEST_SQL = f"""SELECT {pm_latest('namespaces_seen')} AS "Namespaces", {pm_latest('tables_scanned')} AS "Tables scanned",
+       {pm_latest('seal_ref_lives')} AS "Live refs (parts)", {pm_latest('ref_log_keys_listed')} AS "Ref-log keys",
+       {pm_latest('ref_keys_listed')} - {pm_latest('ref_log_keys_listed')} AS "Snapshots + checkpoints" /* now */
+FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+WHERE {PHASE_WHERE} AND event_date >= today() - 7
+{SETTINGS}"""
+
+INVENTORY_PER_ROUND_SQL = f"""SELECT toUInt64(max(event_time)) * 1000 AS t, {pm_round('namespaces_seen')} AS "Namespaces",
+       {pm_round('seal_ref_lives')} AS "Live refs (parts)", {pm_round('ref_log_keys_listed')} AS "Ref-log keys",
+       {pm_round('ref_keys_listed')} - {pm_round('ref_log_keys_listed')} AS "Snapshots + checkpoints"
+FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+WHERE {PHASE_WHERE} AND $timeFilter
+GROUP BY round_id ORDER BY t
+{SETTINGS}"""
+
+NAMESPACES_PER_ROUND_SQL = f"""SELECT t, seen - lagInFrame(seen, 1, seen) OVER (ORDER BY t) + removed AS "Added", removed AS "Removed", changed AS "Changed"
+FROM (SELECT toUInt64(max(event_time)) * 1000 AS t, {pm_round('namespaces_seen')} AS seen,
+             {pm_round('namespace_removals')} AS removed, {pm_round('tables_changed')} AS changed
+      FROM clusterAllReplicas('$cluster', system.cas_gc_log)
+      WHERE {PHASE_WHERE} AND $timeFilter
+      GROUP BY round_id)
+ORDER BY t
+{SETTINGS}"""
+
+NET_CHANGE_SQL = f"""SELECT t, sum(b) OVER (ORDER BY t) AS "Blobs", sum(m) OVER (ORDER BY t) AS "Manifests", sum(r) OVER (ORDER BY t) AS "Ref keys (logs + snapshots)"
+FROM (SELECT $timeSeries AS t,
+             sum(ProfileEvent_CASBlobHeadMiss) - sum(ProfileEvent_CASBlobDelete) AS b,
+             sum(ProfileEvent_CASManifestPut) - sum(ProfileEvent_CASManifestDelete) AS m,
+             sum(ProfileEvent_CASRootPut) - sum(ProfileEvent_CASRootDelete) AS r
+      FROM clusterAllReplicas('$cluster', system.metric_log)
+      WHERE hostName() IN ($host) AND $timeFilter
+      GROUP BY t)
+ORDER BY t
+{SETTINGS}"""
+
+
+UPLOAD_CLASS = ("multiIf(p2 = 'blobs', 'blobs', p2 = 'cas' AND p3 = 'manifests', 'manifests', p2 = 'cas' AND p3 = 'ns', 'refs (cas/ns)', "
+                "p2 = 'gc', 'gc', 'other')")
+UPLOADS_FROM = f"""(SELECT event_time, event_date, data_size, splitByChar('/', remote_path)[2] AS p2, splitByChar('/', remote_path)[3] AS p3
+      FROM clusterAllReplicas('$cluster', system.blob_storage_log)
+      WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('Upload', 'MultiPartUploadWrite') AND $timeFilter)"""
+
+BYTES_BY_CLASS_SQL = f"""SELECT $timeSeries AS t, {UPLOAD_CLASS} AS class, sum(data_size)
+FROM {UPLOADS_FROM}
+GROUP BY t, class ORDER BY t
+{SETTINGS}"""
+
+UPLOADS_TABLE_SQL = f"""SELECT {UPLOAD_CLASS} AS "Class", count() AS "Uploads", sum(data_size) AS "Bytes", round(avg(data_size)) AS "Avg size"
+FROM {UPLOADS_FROM}
+GROUP BY "Class" ORDER BY "Bytes" DESC
+{SETTINGS}"""
+
+BLOB_BYTES_SQL = f"""SELECT $timeSeries AS t,
+       sumIf(toUInt64OrZero(detail['size']), event_type = 'blob_put') AS "Published",
+       sumIf(toUInt64OrZero(detail['size']), event_type = 'blob_reuse_adopt') AS "Reused (size known)"
+FROM clusterAllReplicas('$cluster', system.cas_log)
+WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('blob_put', 'blob_reuse_adopt') AND $timeFilter
+GROUP BY t ORDER BY t
+{SETTINGS}"""
+
+
+def inventory_row() -> dict:
+    latest = P.stat("Inventory, latest round",
+                    "Population counts the fold records in `phase_metrics` of the newest round: `namespaces_seen`, `tables_scanned`, `seal_ref_lives` (live refs = live parts), `ref_log_keys_listed` and `ref_keys_listed − ref_log_keys_listed` (snapshot and checkpoint keys). Blob and manifest totals are not recorded anywhere (CAS-289.6).",
+                    [P.target(INVENTORY_LATEST_SQL, fmt="table", table="cas_gc_log")],
+                    {"Namespaces": {"fixed": "blue"}, "Tables scanned": {"fixed": "blue"}, "Live refs (parts)": {"fixed": "blue"},
+                     "Ref-log keys": {"fixed": "blue"}, "Snapshots + checkpoints": {"fixed": "blue"}}, w=8, h=8)
+    per_round = P.raw_ts("Inventory per round", "The same counts from every round in the range.", INVENTORY_PER_ROUND_SQL, w=16)
+    blobs = P.metric_ts("Blobs per 5 minutes: new, deduplicated, deleted",
+                        "`CASBlobHeadMiss` (a new content hash was uploaded), `CASBlobPutDeduplicated` (the hash already existed), `CASBlobDelete` (blob keys deleted by GC).",
+                        {"New": c("CASBlobHeadMiss"), "Deduplicated": c("CASBlobPutDeduplicated"), "Deleted": c("CASBlobDelete")})
+    manifests = P.metric_ts("Manifests per 5 minutes: new, deleted", "`CASManifestPut` and `CASManifestDelete` (also `manifests_deleted` per round in GC: stage flow).",
+                            {"New": c("CASManifestPut"), "Deleted": c("CASManifestDelete")})
+    refs = P.metric_ts("Ref objects per 5 minutes: log keys written, snapshots, checkpoints, cleaned",
+                       "`CASRootPut` (ref-log keys), `CASRefSnapshotPublishDispatched`, `CASRefCheckpointPublished`; `CASRootDelete` counts every root-class key deleted (logs, snapshots and checkpoints together), `CASRefCleanupObjectsDeleted` the ref cleanup's own deletions.",
+                       {"Log keys written": c("CASRootPut"), "Snapshots published": c("CASRefSnapshotPublishDispatched"),
+                        "Checkpoints published": c("CASRefCheckpointPublished"), "Keys deleted (CASRootDelete)": c("CASRootDelete"),
+                        "Ref cleanup deletions": c("CASRefCleanupObjectsDeleted")})
+    net = P.raw_ts("Net change over the period: blobs, manifests, ref keys",
+                   "Running sum of new − deleted since the start of the range. Absolute totals for blobs and manifests do not exist (CAS-289.6); this is the change, not the population.",
+                   NET_CHANGE_SQL, table="metric_log", interval="5m")
+    namespaces = P.raw_ts("Namespaces per round: added, removed, changed",
+                          "Added = `namespaces_seen` minus the previous round's plus `namespace_removals`; Removed = `namespace_removals`; Changed = `tables_changed` (namespaces whose ref log advanced).",
+                          NAMESPACES_PER_ROUND_SQL, draw="bars")
+    bytes_by_class = P.raw_ts("Bytes uploaded per 5 minutes, by object class",
+                              "`blob_storage_log` uploads grouped by key prefix: `blobs/` (data), `cas/manifests`, `cas/ns` (ref logs, snapshots, checkpoints), `gc/` (collector state). Bytes in flight, not bytes stored: totals per class are not recorded anywhere (CAS-289.6).",
+                              BYTES_BY_CLASS_SQL, table="blob_storage_log", unit="bytes", stack=True, interval="5m")
+    uploads_table = P.table("Uploads in range, by object class", "Count, bytes and average object size per class over the selected range, from `blob_storage_log`.",
+                            UPLOADS_TABLE_SQL, table="blob_storage_log", w=8)
+    blob_bytes = P.raw_ts("Blob bytes per 5 minutes: published vs reused",
+                          "From `cas_log`: `blob_put` rows carry the blob size; `blob_reuse_adopt` rows carry it only for `observed` reuse — the `delete_tmp` re-adoption rows record size 0, so bytes saved by deduplication are understated (CAS-289.6). Reuse by count is in Writes: blobs and dedup.",
+                          BLOB_BYTES_SQL, table="cas_log", unit="bytes", interval="5m")
+    return P.row("GC: pool inventory", [latest, per_round, blobs, manifests, refs, net, namespaces, bytes_by_class, uploads_table, blob_bytes])
+
+
 def gc_rows() -> list:
     rounds = P.raw_ts(
         "Rounds per interval, by outcome and host",
@@ -140,6 +249,7 @@ ORDER BY event_time DESC LIMIT 200
     return [
         P.row("GC: rounds", [rounds, leader, duration, last_rounds]),
         P.row("GC: stage flow", [stages, outcomes, manifests, cumulative]),
+        inventory_row(),
         P.row("GC: phases", [phases_stack, phases_table]),
         P.row("GC: round cost", [cost, per_object, enumeration, readahead, memory]),
         P.row("GC: ref-log cleanup", [reflog, sweeps]),

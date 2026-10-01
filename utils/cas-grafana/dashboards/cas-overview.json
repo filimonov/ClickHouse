@@ -1869,6 +1869,444 @@
       },
       "id": 18,
       "panels": [],
+      "title": "Objects",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "vertamedia-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "What the shared storage holds right now, as counted by the last garbage-collection round. Tables: tables with data in the storage. Live parts: data parts currently referenced by those tables. Write-log entries: records of inserts and deletes not yet compacted away. The counts of data objects and part descriptions are not available yet.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "color": "#8e8e8e",
+                  "index": 0,
+                  "text": "no data"
+                }
+              },
+              "type": "special"
+            }
+          ],
+          "noValue": "no data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tables"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Live parts"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Write-log entries"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 35
+      },
+      "id": 19,
+      "links": [
+        {
+          "targetBlank": false,
+          "title": "Open CAS / Drilldown",
+          "url": "/d/cas-drilldown/cas-drilldown?${__url_time_range}&${__all_variables}"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 12,
+          "valueSize": 20
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "targets": [
+        {
+          "database": "system",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "event_date",
+          "dateTimeColDataType": "event_time",
+          "dateTimeType": "DATETIME",
+          "extrapolate": false,
+          "format": "table",
+          "intervalFactor": 1,
+          "query": "SELECT if(countIf(mapContains(phase_metrics, 'namespaces_seen')) = 0, NULL, argMaxIf(phase_metrics['namespaces_seen'], event_time, mapContains(phase_metrics, 'namespaces_seen'))) AS \"Tables\", if(countIf(mapContains(phase_metrics, 'seal_ref_lives')) = 0, NULL, argMaxIf(phase_metrics['seal_ref_lives'], event_time, mapContains(phase_metrics, 'seal_ref_lives'))) AS \"Live parts\",\n       if(countIf(mapContains(phase_metrics, 'ref_log_keys_listed')) = 0, NULL, argMaxIf(phase_metrics['ref_log_keys_listed'], event_time, mapContains(phase_metrics, 'ref_log_keys_listed'))) AS \"Write-log entries\" /* now */\nFROM clusterAllReplicas('$cluster', system.cas_gc_log)\nWHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type = 'Phase' AND event_date >= today() - 7\nSETTINGS skip_unavailable_shards = 1",
+          "rawQuery": "",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": false,
+          "table": "cas_gc_log"
+        }
+      ],
+      "title": "Tables and live parts",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "vertamedia-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Data objects are the pieces of table data in the shared storage. New: objects uploaded; Deleted: objects removed by garbage collection. Over days the two should balance; deleted staying at zero while new grows means garbage collection is not removing anything.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 35
+      },
+      "id": 20,
+      "interval": "5m",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "database": "system",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "event_date",
+          "dateTimeColDataType": "event_time",
+          "dateTimeType": "DATETIME",
+          "extrapolate": false,
+          "format": "time_series",
+          "intervalFactor": 1,
+          "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASBlobHeadMiss) / $interval AS \"New\", sum(ProfileEvent_CASBlobDelete) / $interval AS \"Deleted\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+          "rawQuery": "",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": false,
+          "table": "metric_log"
+        }
+      ],
+      "title": "Data objects: new vs deleted per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "vertamedia-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Every data part has one description object in the shared storage. New ones appear on insert and merge, deleted ones follow part removal.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 35
+      },
+      "id": 21,
+      "interval": "5m",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "database": "system",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "event_date",
+          "dateTimeColDataType": "event_time",
+          "dateTimeType": "DATETIME",
+          "extrapolate": false,
+          "format": "time_series",
+          "intervalFactor": 1,
+          "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASManifestPut) / $interval AS \"New\", sum(ProfileEvent_CASManifestDelete) / $interval AS \"Deleted\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+          "rawQuery": "",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": false,
+          "table": "metric_log"
+        }
+      ],
+      "title": "Part descriptions: new vs deleted per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "vertamedia-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Each insert or delete appends an entry to the table's write log in the shared storage; garbage collection compacts old entries away. Written staying above cleaned for a long time means the logs keep growing.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 35
+      },
+      "id": 22,
+      "interval": "5m",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "database": "system",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "event_date",
+          "dateTimeColDataType": "event_time",
+          "dateTimeType": "DATETIME",
+          "extrapolate": false,
+          "format": "time_series",
+          "intervalFactor": 1,
+          "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASRootPut) / $interval AS \"Written\", sum(ProfileEvent_CASRootDelete) / $interval AS \"Cleaned\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+          "rawQuery": "",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": false,
+          "table": "metric_log"
+        }
+      ],
+      "title": "Write-log entries: written vs cleaned per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "vertamedia-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Bytes written to the shared storage: table data, part descriptions, write logs and collector state. This is traffic, not the amount stored; stored totals are not available yet.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "lineWidth": 1,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "id": 23,
+      "interval": "5m",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "database": "system",
+          "datasource": {
+            "type": "vertamedia-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "dateColDataType": "event_date",
+          "dateTimeColDataType": "event_time",
+          "dateTimeType": "DATETIME",
+          "extrapolate": false,
+          "format": "time_series",
+          "intervalFactor": 1,
+          "query": "SELECT $timeSeries AS t, multiIf(p2 = 'blobs', 'Table data', p2 = 'cas' AND p3 = 'manifests', 'Part descriptions',\n                                     p2 = 'cas' AND p3 = 'ns', 'Write logs', p2 = 'gc', 'Collector state', 'Other') AS kind, sum(data_size) / $interval\nFROM (SELECT event_time, event_date, data_size, splitByChar('/', remote_path)[2] AS p2, splitByChar('/', remote_path)[3] AS p3\n      FROM clusterAllReplicas('$cluster', system.blob_storage_log)\n      WHERE disk_name IN ($disk) AND hostName() IN ($host) AND event_type IN ('Upload', 'MultiPartUploadWrite') AND $timeFilter)\nGROUP BY t, kind ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+          "rawQuery": "",
+          "refId": "A",
+          "round": "0s",
+          "skip_comments": false,
+          "table": "blob_storage_log"
+        }
+      ],
+      "title": "Data uploaded per second, by kind",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "id": 24,
+      "panels": [],
       "title": "S3 requests",
       "type": "row"
     },
@@ -1904,9 +2342,9 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 52
       },
-      "id": 19,
+      "id": 25,
       "interval": "5m",
       "options": {
         "legend": {
@@ -1975,9 +2413,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 52
       },
-      "id": 20,
+      "id": 26,
       "interval": "5m",
       "options": {
         "legend": {

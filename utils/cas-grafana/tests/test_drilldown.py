@@ -13,7 +13,7 @@ def panel(rows, title):
 class GcRows(unittest.TestCase):
     def test_row_titles(self):
         self.assertEqual([r["title"] for r in drilldown.gc_rows()],
-                         ["GC: rounds", "GC: stage flow", "GC: phases", "GC: round cost", "GC: ref-log cleanup", "GC: anomalies"])
+                         ["GC: rounds", "GC: stage flow", "GC: pool inventory", "GC: phases", "GC: round cost", "GC: ref-log cleanup", "GC: anomalies"])
         self.assertTrue(all(r["collapsed"] for r in drilldown.gc_rows()))
 
     def test_rounds_panel_groups_by_outcome(self):
@@ -48,6 +48,50 @@ class GcRows(unittest.TestCase):
         known, async_prefixes = checks.load_known_names(ROOT)
         probs = [p for p in checks.check_dashboards([drilldown.build()], known, async_prefixes) if "variables" not in p]
         self.assertEqual(probs, [])
+
+
+class InventoryRow(unittest.TestCase):
+    def test_inventory_row_follows_stage_flow(self):
+        titles = [r["title"] for r in drilldown.gc_rows()]
+        self.assertEqual(titles.index("GC: pool inventory"), titles.index("GC: stage flow") + 1)
+
+    def test_latest_round_inventory_reads_phase_metrics(self):
+        sql = panel(drilldown.gc_rows(), "Inventory, latest round")["targets"][0]["query"]
+        for key in ("namespaces_seen", "seal_ref_lives", "ref_log_keys_listed", "ref_keys_listed", "tables_scanned"):
+            self.assertIn(f"mapContains(phase_metrics, '{key}')", sql)
+        self.assertIn("/* now */", sql)
+
+    def test_flows_use_class_counters(self):
+        blobs = panel(drilldown.gc_rows(), "Blobs per 5 minutes: new, deduplicated, deleted")["targets"][0]["query"]
+        for m in ("CASBlobHeadMiss", "CASBlobPutDeduplicated", "CASBlobDelete"):
+            self.assertIn(m, blobs)
+        net = panel(drilldown.gc_rows(), "Net change over the period: blobs, manifests, ref keys")["targets"][0]["query"]
+        self.assertIn("sum(b) OVER (ORDER BY t)", net)
+        self.assertIn("ProfileEvent_CASRootDelete", net)
+
+    def test_namespaces_per_round_derives_added(self):
+        sql = panel(drilldown.gc_rows(), "Namespaces per round: added, removed, changed")["targets"][0]["query"]
+        self.assertIn("lagInFrame", sql)
+        self.assertIn("namespace_removals", sql)
+        self.assertIn("GROUP BY round_id", sql)
+
+
+class InventoryBytes(unittest.TestCase):
+    def test_bytes_by_class_from_blob_storage_log(self):
+        sql = panel(drilldown.gc_rows(), "Bytes uploaded per 5 minutes, by object class")["targets"][0]["query"]
+        self.assertIn("system.blob_storage_log", sql)
+        self.assertIn("event_type IN ('Upload', 'MultiPartUploadWrite')", sql)
+        for cls in ("'blobs'", "'manifests'", "'refs (cas/ns)'", "'gc'"):
+            self.assertIn(cls, sql)
+
+    def test_published_bytes_from_cas_log(self):
+        sql = panel(drilldown.gc_rows(), "Blob bytes per 5 minutes: published vs reused")["targets"][0]["query"]
+        self.assertIn("toUInt64OrZero(detail['size'])", sql)
+        self.assertIn("event_type = 'blob_put'", sql)
+
+    def test_uploads_table_in_range(self):
+        p = panel(drilldown.gc_rows(), "Uploads in range, by object class")
+        self.assertEqual(p["type"], "table")
 
 
 class WritesRows(unittest.TestCase):

@@ -71,7 +71,7 @@ class Tiles(unittest.TestCase):
 class Rows(unittest.TestCase):
     def test_rows_present_and_expanded(self):
         rows = overview.rows()
-        self.assertEqual([r["title"] for r in rows], ["Needs attention", "Storage and writes", "Garbage collection", "S3 requests"])
+        self.assertEqual([r["title"] for r in rows], ["Needs attention", "Storage and writes", "Garbage collection", "Objects", "S3 requests"])
         self.assertTrue(all(r["collapsed"] is False for r in rows))
 
     def test_needs_attention_unions_three_sources(self):
@@ -79,6 +79,16 @@ class Rows(unittest.TestCase):
         self.assertEqual(sql.count("UNION ALL"), 3)
         for needle in ("system.cas_log", "system.cas_gc_log", "outcome IN ('Error', 'Aborted', 'Stopped')", "gc_fence_out", "ORDER BY \"Time\" DESC LIMIT 100"):
             self.assertIn(needle, sql)
+
+    def test_objects_row_in_plain_words(self):
+        row = next(r for r in overview.rows() if r["title"] == "Objects")
+        titles = [p["title"] for p in row["panels"]]
+        self.assertEqual(titles, ["Tables and live parts", "Data objects: new vs deleted per second",
+                                  "Part descriptions: new vs deleted per second", "Write-log entries: written vs cleaned per second",
+                                  "Data uploaded per second, by kind"])
+        stat = row["panels"][0]
+        self.assertEqual(stat["type"], "stat")
+        self.assertIn("mapContains(phase_metrics, 'seal_ref_lives')", stat["targets"][0]["query"])
 
     def test_insert_delay_is_wait_per_mutation(self):
         p = next(p for r in overview.rows() for p in r["panels"] if p["title"] == "Insert delay caused by storage (ms per operation)")
