@@ -1,5 +1,5 @@
 ---
-description: 'Problem statement and options: the CAS mount lease settings name mechanism internals, so the configured 30 s lease stops writes after 14 s and the operator cannot tell why. Records the arithmetic, the timeouts behind it, and five ways to make the settings say what happens. No decision yet.'
+description: 'Problem statement and options: the CAS mount lease settings name mechanism internals, so the configured 30 s lease stops writes after 14 s and the operator cannot tell why. Records the arithmetic, the timeouts behind it, five ways to make the settings say what happens, and the answers to three open questions. No decision yet.'
 sidebar_label: 'Mount lease settings: UX notes'
 sidebar_position: 104
 slug: /superpowers/specs/cas-mount-lease-settings-ux-notes
@@ -81,7 +81,7 @@ So a write is started only if it can finish before the deadline:
 | Part of the reserve | Purpose | Needed for safety? |
 |---|---|---|
 | 7 s, first envelope | the `PUT` ends or times out before the deadline | yes |
-| 7 s, second envelope | the read that settles an unclear `PUT` also ends before the deadline, so the outcome is known | not established. A read changes nothing in the store; without the reserve the operation ends unresolved and the existing wedge resolution handles it. To be proven before it is relied on |
+| 7 s, second envelope | the read that settles an unclear `PUT` also ends before the deadline, so the outcome is known | no, by a code audit ([answers](#answers)). It buys a settled outcome and, by accident, 7 s of slack for a `PUT` that overruns its envelope |
 | 2 s, margin | scheduling and clock granularity | belt |
 
 Without any reserve: a `PUT` sent at 29.9 s can be in flight until about 37 s. A successor may act from
@@ -114,10 +114,7 @@ SDK defaults, from `contrib`:
 
 ClickHouse replaces both with its own HTTP client and the values of the first table.
 
-Open point: in `PocoHTTPClient` the request timeout is set as the socket send and receive timeout, that
-is, per socket operation. No deadline for the whole request was found. If there is none, "a request
-ends within one envelope" holds for a response that arrives or stalls, and not for one that trickles.
-The reserve rests on that statement.
+The request timeout bounds one socket operation, not the request: see [answers](#answers), question 2.
 
 ## What the current work changes {#current-work}
 
@@ -183,20 +180,85 @@ Properties:
 
 D and E combine: the tick is what the operator sets, the outcome names are what the operator reads.
 
+## Answers to the first three questions {#answers}
+
+Three read-only studies, in full in
+[the studies file](../cas/2026-10-02-mount-lease-settings-studies.md). Code was read at `e1c38ca7478`;
+nothing was built or run.
+
+### 1. The second envelope is not a safety matter {#answer-second-envelope}
+
+- With one envelope, an unclear `PUT` near the deadline ends as a give-up that says "sent, outcome not
+  observed". The engine returns that same value today on three paths, one pinned by a test
+  (`CASRequestsConnectHint.GatesRefuseTheReissue`).
+- All ten consumers of a give-up were read: none acknowledges the write, none treats it as "did not
+  land". A ref append becomes a wedged lane that keeps the exact key and bytes; it is settled later by a
+  conditional create, never by a bare read.
+- `remove`, batch delete and blob publish already reserve one envelope. No observer uses an envelope.
+- Cost of one envelope: a `PUT` that goes unclear 9 to 16 s before the deadline wedges its lane, where
+  today it is refused cleanly.
+- Not proven: late landing of conditional writes outside the ref ledger (checkpoints, catalog, blob
+  metadata) and callers above the CAS directory. The TLA+ models have no request duration.
+- The second envelope has a side effect that matters: today every conditional `PUT` ends at least 9 s
+  before the deadline; with one envelope, 2 s. Those 7 s are the only slack against the next answer.
+
+### 2. One attempt is not bounded by a wall-clock deadline {#answer-request-deadline}
+
+The connect, send and receive timeouts each bound one socket operation; every `recv` or `send` restarts
+the timeout (`SocketImpl::receiveBytes`, `sendBytes`). No deadline for the whole attempt exists in
+`PocoHTTPClient`, the AWS SDK path, `S3::Client`, the CAS backend or the CAS request engine;
+`CasOperation::fits` checks the deadline only before an attempt is issued. GCS takes the same path.
+
+| Case | Duration of one attempt |
+|---|---|
+| one phase stalls completely | up to 7 s: the envelope holds |
+| several phases each near its timeout | 12 s for a `GET` with a stalled body; 17 s or more for a `PUT` with `Expect: 100-continue` |
+| a response that trickles, one byte every 4 s | unbounded |
+| `307` redirects or the `S3::Client::doRequest` loop | up to 11 requests in one attempt |
+| client-side throttler (`s3_max_put_rps`, off by default) | unbounded |
+| credentials fetched at signing (STS, GCP OAuth) | not bounded by the envelope |
+
+The reserve rests on "one attempt ends within one envelope". The stall cases stay inside the reserve
+plus the observer's margin by a small amount; the others do not. Tracked as CAS-343
+(`docs/superpowers/cas/backlog`). The smallest fix found: one absolute deadline per attempt, set by the
+CAS backend, to which the HTTP session clamps every connect, send and receive. It touches shared code
+(`base/poco`, `src/IO/S3`).
+
+### 3. Measured latency does not decide the request timeout yet {#answer-latency}
+
+No readable source has per-request latency of control-plane requests with a tail.
+
+| Store | Typical | Bad moments |
+|---|---|---|
+| AWS S3, demo stand, one week, 14.8 million conditional writes | `GET` mean 25 ms | 0.05 % of writes ended unresolved (timeout, conflict, connection loss and 5xx together) |
+| MinIO in CI under ASan | mean 8 to 10 ms; p99.9 of the per-second mean 148 ms | one write took 10.7 s during a host stall |
+| GCS over a WAN | `GET` 50 to 100 ms, write 150 to 400 ms, connect 40 to 85 ms | a ten-minute storm of connect timeouts; a two-minute DNS outage |
+
+Typical requests are far below 3 s. Every observed stall lasted 5 to 12 s, which neither 3 s nor 5 s
+survives, so this data shows no difference between the two. The tail of the connect time is not
+measured anywhere. To decide: read the `S3FirstByte` and `DiskS3FirstByte` histograms and the request
+spans on the demo stand for a week or more, or add a duration histogram for control-plane requests.
+
 ## Open questions {#open-questions}
 
-1. Is the second envelope of the reserve needed for safety, or only to avoid an unresolved outcome?
-2. Is there a deadline for a whole control-plane request, or only per socket operation?
-3. Measured latency of control-plane requests (p99.9) on the soak and demo stands: does a 3 s request
-   timeout hold?
+1. Late landing of conditional writes outside the ref ledger, before the reserve is reduced (answer 1).
+2. Where the per-attempt deadline lives: in the HTTP session, in the S3 client, or in both (CAS-343).
+3. A week of per-request latency from the demo stand (answer 3).
 4. Nothing verifies that the servers of a pool agree on the lease length and the renewal period.
    Should the mount body carry them, so that a mismatch is refused at mount?
 5. Defaults: keep the 30 s lease (no stopped-pool change) or lengthen it.
 
 ## Recommendation {#recommendation}
 
-E for what the operator sets, with the common items for what the operator reads, and no change to the
-protocol: the reserve stays on the writer's side. Questions 1 to 3 are answered first; they decide the
-tick's composition and whether the tolerated outage can be 10 s with today's lease. It is a separate
-change after the renewal work, because it touches write admission and reporting that the renewal
-work restructures.
+In this order:
+
+1. CAS-343 first. Until one attempt is bounded, "a request ends within one envelope" is a hope, the
+   second envelope is the only slack, and neither the reserve nor a tick may shrink.
+2. The common items for what the operator reads: they need no protocol change and remove the worst
+   mismatch (`live` while writes are refused).
+3. E for what the operator sets, with the reserve kept on the writer's side. The tick's composition
+   follows from answers 1 to 3: with a bounded attempt and one envelope proven enough, the reserve is
+   one tick; otherwise two.
+
+It is a separate change after the renewal work, because it touches write admission and reporting that
+the renewal work restructures.

@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-02 05:58'
+updated_date: '2026-10-02 06:01'
 labels:
   - 'area:mounts'
   - 'area:requests'
@@ -57,3 +58,9 @@ Study: `tmp/issue-2431/ux/q2-request-deadline.md` (phase table with file, functi
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-02: the study behind this task is in `docs/superpowers/cas/2026-10-02-mount-lease-settings-studies.md` (section Q2, phase table with file, function and line per claim); the consequence for the write reserve and the settings is in `docs/superpowers/specs/2026-10-02-cas-mount-lease-settings-ux-notes.md` (Answers). A companion audit there (Q1) found that the second envelope of the write reserve is not needed for safety by itself but is today's only slack against an attempt that overruns its envelope: do not reduce the reserve before this task lands.
+<!-- SECTION:NOTES:END -->
