@@ -270,7 +270,8 @@ reduced.
 
 ### 3. Measured latency of control-plane requests {#answer-latency}
 
-One stand, one region, one kind of S3: the figures are indicative only.
+A few stands, each in one place with one kind of store: the figures are indicative only. They differ by
+more than an order of magnitude between a server next to its store and one a continent away.
 
 | Store | Typical | Bad moments |
 |---|---|---|
@@ -290,9 +291,35 @@ Reading the demo-stand tail:
 - Percentiles of per-second means, as in the MinIO row, are a different statistic from request
   percentiles.
 
-Not measured: `GET` and `HEAD` latency per request (the reads that settle a write), other stores
-(GCS, MinIO and other S3 implementations), and the tail of the connect time. A measurement on the AWS S3
-and GCS soak stands is pending.
+Two short soak runs from one machine, 2026-10-02, 15 minutes of load each, control-plane `PUT`s from
+`system.blob_storage_log` (every key outside `blobs/`, up to 64 KiB). The duration covers the whole call,
+retries inside the client included, so it is not the latency of one attempt:
+
+| Store | Network round trip | `PUT`s | p50 | p99 | p99.9 | max | above 0.5 s | above 1 s | above 3 s | above 5 s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| AWS S3, `us-east-1` | 113 ms | 8,962 | 152 ms | 3.9 s | 8.5 s | 8.6 s | 7.0 % | 2.5 % | 1.3 % | 0.31 % |
+| the same without one burst | | 8,509 | | 1.7 s | 3.9 s | 4.1 s | 5.7 % | 1.7 % | 0.60 % | 0 |
+| GCS | 10 ms | 8,729 | 163 ms | 0.76 s | 1.3 s | 2.9 s | 4.3 % | 0.30 % | 0 | 0 |
+
+- AWS: every request above 5 s fell in one burst of about 70 `PUT`s of 2.8 to 8.6 s on one server, with
+  connect timeouts in the log. Shorter bursts of 2 to 4 s also occurred.
+- New connections slower than 0.5 s: 25 to 37 % on AWS and 4 to 17 % on GCS by the connect histogram
+  (it appears to include the TLS handshake; not verified in the source).
+- GCS: the soak driver stopped at its first GC checkpoint on a harness bound; the load before it is what
+  the row measures. About 485 checkpoint writes met the store's per-object mutation rate limit.
+
+What the three measurements say together:
+
+- Next to its store (the demo stand) a control-plane `PUT` almost never takes 0.5 s. From another
+  continent 1.3 % of whole calls take more than 3 s, and a quarter or more of new connections take more
+  than 0.5 s, which is the connect limit of a first attempt: part of the long calls are retries after
+  that limit fired.
+- A 0.5 s connect timeout cannot be a universal default. For the request timeout the data is not
+  enough: it needs latency per attempt, which no source records.
+- So either the tick is chosen per deployment, or the fractions of a tick given to a connect and to a
+  request are larger than in the table of option E.
+- Not measured anywhere: `GET` and `HEAD` latency per request (the reads that settle a write), and
+  latency per attempt (the first-byte histograms stamp before the response).
 
 ## External study {#external-study}
 
