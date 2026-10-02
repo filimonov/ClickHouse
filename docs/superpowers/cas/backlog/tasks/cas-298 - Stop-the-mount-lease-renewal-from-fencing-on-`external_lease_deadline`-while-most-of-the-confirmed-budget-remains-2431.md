@@ -3,9 +3,10 @@ id: CAS-298
 title: >-
   Stop the mount-lease renewal from fencing on `external_lease_deadline` while
   most of the confirmed budget remains (#2431)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-26 12:37'
+updated_date: '2026-10-02 02:10'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -59,3 +60,9 @@ Provenance: GitHub issue #2431 (open, no assignee), reconciled by u17-github-cas
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-02: implemented on local branch `fix/antalya-26.6/cas-mount-renewal-no-deadline` (worktree `cas-95-1`, base `41824f955e7`, head `7443ccd3a86`, not pushed, no PR yet). The background renewal retries one tuple until a definitive answer, a stop or a remount request (`MountRenewPolicy::UntilDefinitive`, spacing 1000 ms, own request plane); the lease TTL alone bounds write authority; an expired lease shows as `lifecycle_reason = 'lease_expired'` in `system.cas_mounts`, `CASMountLeaseExpired` counts restores, `expired_ms` in `watermark_renew`. Commits `c0e112dbc14`..`98776bf591d` (tasks 3 to 5 of the plan) plus tests, docs and review fixes up to the head. With defaults a conditional write is refused once less than 16 s of the lease remain, about 4 s after a due renewal starts failing: the outage now costs refused writes with a transient error, not a fence and a remount. Open for the owner: a log line at the moment of expiry; whether to widen that 4 s window (renew period, TTL or the two-envelope reservation). Simplification (one lease thread, one renewal path) is a second plan. Gates on the head: `CAS*` unit gate 2604 passed; integration module `test_cas_mount_renewal_retry` 6 passed. No ASan run yet. Two whole-branch reviews found no defect in production code. Spec: `docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md`; plan: `docs/superpowers/plans/2026-10-02-cas-mount-renewal-without-lease-deadline-part1.md`.
+<!-- SECTION:NOTES:END -->

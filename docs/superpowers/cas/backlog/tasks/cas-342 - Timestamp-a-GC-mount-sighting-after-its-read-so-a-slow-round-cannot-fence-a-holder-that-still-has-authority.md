@@ -3,10 +3,10 @@ id: CAS-342
 title: >-
   Timestamp a GC mount sighting after its read so a slow round cannot fence a
   holder that still has authority
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-01 19:31'
-updated_date: '2026-10-01 22:44'
+updated_date: '2026-10-02 02:10'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -79,4 +79,6 @@ Provenance: found in the review of the CAS-298 spec, 2026-10-01; the timestamp m
 The fix and its tests are specified as step one of docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md (section 'Step one: GC counts a sighting from after its read').
 
 Model result (CaMountObserveCore, commit 11a0675f8d3): the defect is reachable in today's code without the new renewal rule when the renewal thread is stalled, because the holder then keeps authority to start + TTL; the early self-fence hides it only when renewals fail. Sabotages sab_sighting_before_read and sab_redecision_stale_sample reproduce it; the walk bound is threshold - TTL (11.5 s, 10 s with 5 percent drift).
+
+2026-10-02: implemented on local branch `fix/antalya-26.6/cas-mount-renewal-no-deadline` (worktree `cas-95-1`, base `41824f955e7`, head `7443ccd3a86`, not pushed, no PR yet). Commits `703b9ab01b0` (`TokenWatch` replaces both hand-written copies) and `38c5ac5fb65` (`computeHeartbeatFloor` takes the clock function and dates every sighting after its read, including the re-decision after a refused fence-out). Tests `CASTokenWatch.CountsFromAfterTheRead`, `CASHeartbeat.GcCountsASightingFromAfterItsRead` (red on the base). The `rebuildBaseline` caller has no test of its own. Gates on the head: `CAS*` unit gate 2604 passed; integration module `test_cas_mount_renewal_retry` 6 passed. No ASan run yet. Two whole-branch reviews found no defect in production code. Spec: `docs/superpowers/specs/2026-10-01-cas-mount-renewal-without-lease-deadline-design.md`; plan: `docs/superpowers/plans/2026-10-02-cas-mount-renewal-without-lease-deadline-part1.md`.
 <!-- SECTION:NOTES:END -->
