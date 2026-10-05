@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
 # no-parallel -- a server-wide failpoint pauses the next lightweight update on any table.
 # no-replicated-database -- the local timing of `UPDATE`, `ALTER` and `OPTIMIZE` is assumed.
 # no-shared-merge-tree -- the merged part version under test is chosen by StorageMergeTree.

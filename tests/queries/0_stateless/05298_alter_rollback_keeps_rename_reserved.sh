@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
 # no-parallel -- server-wide failpoints force and pause the alter's durable-rollback interval.
 # no-replicated-database -- this exercises the non-replicated durable-rollback path directly.
 # no-shared-merge-tree -- the retained block holder under test is `StorageMergeTree::alter`'s.

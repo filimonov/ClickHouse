@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree, no-ordinary-database
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree, no-ordinary-database
 # no-parallel -- server-wide failpoints pause the next mutation's block allocation, the next
 # mutation registration, and the next explicit `OPTIMIZE`'s merge selection.
 # no-replicated-database -- the local timing of `DELETE`, `INSERT` and `OPTIMIZE` is assumed.

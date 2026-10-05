@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
 # no-parallel -- server-wide failpoints pause the projection stage of every merge and stop mutation selection on any table.
 # no-replicated-database -- the local timing of `OPTIMIZE` and `ALTER` is assumed.
 # no-shared-merge-tree -- the `OPTIMIZE FINAL` retry under test is StorageMergeTree's.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, no-shared-merge-tree
+# Tags: no-parallel, no-fasttest, no-replicated-database, no-shared-merge-tree
 # no-parallel -- server-wide failpoints make the alter's in-memory commit throw.
 # no-replicated-database -- this exercises the non-replicated durable rollback, and `DETACH TABLE` is refused there.
 # no-shared-merge-tree -- the rollback under test is `StorageMergeTree::alter`'s.

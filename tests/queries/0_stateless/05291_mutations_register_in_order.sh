@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-shared-merge-tree, no-replicated-database
+# Tags: no-parallel, no-fasttest, no-shared-merge-tree, no-replicated-database
 # no-parallel -- the pause failpoint is server-wide: it would hold any mutation started on any MergeTree table.
 # no-shared-merge-tree -- the ordering under test is the in-memory mutation registration of StorageMergeTree.
 # no-replicated-database -- a Replicated database runs DELETE through replicated DDL, not with the direct local timing assumed here.
