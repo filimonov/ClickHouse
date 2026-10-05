@@ -6,6 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-05 15:50'
+updated_date: '2026-10-05 15:54'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -21,6 +22,7 @@ references:
   - CA/Gc/CasGc.cpp
   - CA/Gc/CasNamespaceJanitor.cpp
   - tests/integration/test_cas_janitor_drain/test.py
+  - 'https://github.com/Altinity/ClickHouse/pull/2484'
 parent_task_id: CAS-29.9
 priority: medium
 type: enhancement
@@ -58,3 +60,9 @@ What is left after draft PR #2483 (the smaller replacement of PR #2468) for the 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-05: item 1 is draft PR #2484 (branch `fix/antalya-26.6/cas-batch-delete-key-limit`, head 7946c7cb53f). Still open for AC #1: green CI and the failing-first run of the `CASS3BatchDelete` error-name test.
+<!-- SECTION:NOTES:END -->
