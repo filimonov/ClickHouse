@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-01 12:20'
+updated_date: '2026-10-05 15:50'
 labels:
   - gc
   - performance
@@ -34,3 +35,9 @@ Measured 2026-10-01 on the CAS-29.9 A/B stand (RustFS, support_batch_delete=fals
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-05: draft PR #2483 adds `Gc::removeWriteOnceOnIoPool` (split write-once keys across the GC I/O pool, one `removeChunkWriteOnceOrOneByOne` per job, leak-only failures) for the namespace janitor. Phases 15 and 17 can reuse it; their per-cohort accounting and `authorityHolds` read are not covered by it.
+<!-- SECTION:NOTES:END -->

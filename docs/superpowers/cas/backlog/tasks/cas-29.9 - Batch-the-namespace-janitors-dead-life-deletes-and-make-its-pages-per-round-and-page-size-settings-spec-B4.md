@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-01 19:48'
+updated_date: '2026-10-05 15:50'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -22,6 +22,8 @@ references:
   - CA/Gc/CasGc.cpp
   - CA/Gc/CasNamespaceJanitor.cpp
   - 'https://github.com/Altinity/ClickHouse/issues/2298'
+  - 'https://github.com/Altinity/ClickHouse/pull/2483'
+  - 'https://github.com/Altinity/ClickHouse/pull/2468'
 documentation:
   - >-
     docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md#b4-janitor
@@ -54,14 +56,14 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 - [ ] #1 A dead life with P write-once keys drains in ceil(P/1000) delete requests
 - [ ] #2 The pages-per-round and page-size settings are honoured and documented
 - [ ] #3 An A/B on the msan rig with pages=10 shows `CASGCPendingReclaim` and round duration no longer growing with the run
-- [ ] #4 Exact-token deletes remain for every non-write-once key the janitor removes
+- [x] #4 Exact-token deletes remain for every non-write-once key the janitor removes
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
-- [ ] #2 ASan lane green for touched suites
-- [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
+- [x] #1 CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests
+- [x] #2 ASan lane green for touched suites
+- [x] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
 
@@ -69,4 +71,7 @@ Provenance: BACKLOG/gc.md#janitor-page-hardcoded (formerly [gc-backlog-runaway]/
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-01 21:45: after owner-driven simplification rounds (pool pattern from #2351 instead of a window; telemetry/events/seams/duplicate tests cut; YAGNI cuts 1–5) PR #2468 head is 22afe53066b: +3296/−729 (src +719/−252, tests +2505/−431, docs +72/−46), down from +4123/−723 at the first push. Spec synced 1b3cf19130b.
+
+2026-10-05: draft PR #2483 (branch `fix/antalya-26.6/cas-gc-janitor-time-budget`, head a39bccb67de, 19 files, +858/−65) replaces PR #2468. `Gc::runNamespaceJanitor` repeats `NamespaceJanitor::runOnePage` while a page deleted something, under a 20 s soft budget; dead `_log`/`_snap` keys go as write-once batches split evenly across the GC I/O pool; `_ckpt`/`_files` keep the exact-token delete. Local gates on the pushed tree: debug `CAS*` 2569, ASan `CAS*` 2573, `tests/integration/test_cas_janitor_drain` 2/2.
+AC #1 is not met as written: a 1000-key page goes as up to `cas_gc_io_concurrency` requests (16 x 63 keys), not one. AC #2 was replaced by the time budget (no pages-per-round or page-size setting). AC #3 (A/B) is not done. Remaining work is in the subtask created today.
 <!-- SECTION:NOTES:END -->

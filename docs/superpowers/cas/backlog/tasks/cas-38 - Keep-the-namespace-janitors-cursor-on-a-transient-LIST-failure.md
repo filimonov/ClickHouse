@@ -4,7 +4,7 @@ title: Keep the namespace janitor's cursor on a transient LIST failure
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-10-05 15:50'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -16,6 +16,7 @@ dependencies: []
 references:
   - CA/Gc/CasNamespaceJanitor.cpp
   - src/Disks/tests/gtest_cas_namespace_janitor.cpp
+  - 'https://github.com/Altinity/ClickHouse/pull/2483'
 priority: low
 type: bug
 ordinal: 48000
@@ -51,4 +52,6 @@ Provenance: BACKLOG/gc.md#janitor-cursor-rewind-on-list-error (2031-triage CAS-0
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-078')
+
+2026-10-05: partly covered by draft PR #2483. A `LIST` failure on a page after the first of a pass keeps the cursor the previous page published (`CASNamespaceJanitorBatches.ListFailureAfterTheFirstPageKeepsTheCursor`). The first page of a pass still resets the cursor on any `LIST` failure, transient or not, so AC #1 holds only for later pages and AC #2 is unchanged.
 <!-- SECTION:NOTES:END -->
