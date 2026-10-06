@@ -511,6 +511,7 @@ bool BackupWriterS3::tryNativeCopyFromContentAddressedDisk(
             src_path,
             payload_size);
 
+    /// You can copy a range only if the source object is greater than 5 MB.
     if (plan->object.bytes_size <= MIN_S3_OBJECT_SIZE_FOR_RANGE_COPY)
         return false;
 
