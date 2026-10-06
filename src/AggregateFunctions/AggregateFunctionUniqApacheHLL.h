@@ -115,8 +115,6 @@ public:
         if (rhs.sk_union)
             u->update(rhs.sk_union->get_result(datasketches::HLL_8));
 
-        /// Fold our own pending sketch last: a lower-resolution `rhs` sketch is then taken first,
-        /// instead of a union at the declared `lg_k` being built and downsampled afterwards.
         foldUpdateIntoUnionIfNeeded();
     }
 
