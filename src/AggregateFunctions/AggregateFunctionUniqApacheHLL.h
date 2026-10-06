@@ -88,19 +88,19 @@ public:
         getSkUpdate(lg_config_k, tgt_type)->update(static_cast<const void *>(data), size);
     }
 
-    UInt64 size(datasketches::target_hll_type tgt_type) const
+    UInt64 size() const
     {
         foldUpdateIntoUnionIfNeeded();
 
         /// Rounding preserves exact cardinalities despite floating-point error.
         if (sk_union)
-            return static_cast<UInt64>(std::llround(sk_union->get_result(tgt_type).get_estimate()));
+            return static_cast<UInt64>(std::llround(sk_union->get_estimate()));
         if (sk_update)
             return static_cast<UInt64>(std::llround(sk_update->get_estimate()));
         return 0;
     }
 
-    void merge(const HllSketchData & rhs, uint8_t lg_config_k, datasketches::target_hll_type tgt_type)
+    void merge(const HllSketchData & rhs, uint8_t lg_config_k)
     {
         if (!rhs.sk_update && !rhs.sk_union)
             return;
@@ -110,8 +110,10 @@ public:
         /// `rhs` may hold both sketches; take both without modifying it.
         if (rhs.sk_update)
             u->update(*rhs.sk_update);
+
+        /// The union accepts a sketch of any type, and `HLL_8` is its own type, so there is no re-encoding.
         if (rhs.sk_union)
-            u->update(rhs.sk_union->get_result(tgt_type));
+            u->update(rhs.sk_union->get_result(datasketches::HLL_8));
 
         /// Fold our own pending sketch last: a lower-resolution `rhs` sketch is then taken first,
         /// instead of a union at the declared `lg_k` being built and downsampled afterwards.
@@ -251,7 +253,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), lg_config_k, target_type);
+        this->data(place).merge(this->data(rhs), lg_config_k);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -266,7 +268,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size(target_type));
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
 };
 
