@@ -84,6 +84,8 @@ namespace ErrorCodes
 
 namespace
 {
+constexpr size_t MIN_S3_OBJECT_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
+
 class S3BackupClientCreator
 {
 public:
@@ -508,6 +510,9 @@ bool BackupWriterS3::tryNativeCopyFromContentAddressedDisk(
             start_pos + length,
             src_path,
             payload_size);
+
+    if (plan->object.bytes_size <= MIN_S3_OBJECT_SIZE_FOR_RANGE_COPY)
+        return false;
 
     const UInt64 src_offset = plan->payload_offset + start_pos;
 
