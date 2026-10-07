@@ -1,0 +1,8 @@
+--- no metadata file before the transaction
+absent
+--- the first store wrote a removal lock for a part created outside a transaction
+1
+1
+--- the part survives the reload
+3	3
+1
