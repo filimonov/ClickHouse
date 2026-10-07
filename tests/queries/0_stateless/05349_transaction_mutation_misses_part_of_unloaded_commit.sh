@@ -3,7 +3,8 @@
 # Tag rationale: the failpoints are server-wide and hold the transaction log of every other test.
 
 # Correct: a mutation after `SET TRANSACTION SNAPSHOT` to a commit not yet loaded into the log mutates that commit's part too.
-# Today: the mutation commits and the part of that commit stays unmutated.
+# Today: the mutation hangs, because selection tests visibility at the start CSN (see the raised-snapshot test).
+# With that fixed it commits and leaves that commit's part unmutated, which is what the reference rules out.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

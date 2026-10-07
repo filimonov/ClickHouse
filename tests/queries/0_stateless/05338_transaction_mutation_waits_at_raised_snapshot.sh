@@ -3,6 +3,7 @@
 
 # Correct: a mutation in a transaction rewrites every part visible at the raised snapshot, and finishes.
 # Today: it waits for the part of the commit the snapshot was raised past, which is never selected.
+# A lowered target (for example `SET TRANSACTION SNAPSHOT 3`) hangs the same way: selection tests visibility at the start CSN.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
