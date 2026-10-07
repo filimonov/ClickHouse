@@ -1,0 +1,7 @@
+--- before the cleanup may run
+tx3	1
+--- after the cleanup had its chance
+tx3	1
+part kept: 1
+--- once the transaction ended the part is removed
+part kept: 0
