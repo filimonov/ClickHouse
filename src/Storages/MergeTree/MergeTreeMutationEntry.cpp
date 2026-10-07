@@ -119,7 +119,7 @@ void MergeTreeMutationEntry::removeFile()
     }
 }
 
-void MergeTreeMutationEntry::writeCSN(CSN csn_)
+void MergeTreeMutationEntry::writeCSN(CSN csn_, bool sync_directory)
 {
     /// Fault injection for tests: fail before any I/O, so the old file stays intact.
     fiu_do_on(FailPoints::transaction_mutation_csn_store_fail,
@@ -139,6 +139,11 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_)
     *out << "csn: " << csn_ << "\n";
     out->finalize();
     out->sync();
+    /// The rename is durable only once the directory is synced; the guard does it on destruction,
+    /// as for `txn_version.txt` in `VersionMetadataOnDisk::storeInfoToDataPartStorage`.
+    SyncGuardPtr sync_guard;
+    if (sync_directory)
+        sync_guard = disk->getDirectorySyncGuard(path_prefix);
     disk->replaceFile(path_prefix + tmp_file_name, path_prefix + file_name);
     csn = csn_;
 }

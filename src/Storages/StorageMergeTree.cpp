@@ -135,6 +135,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
@@ -1342,7 +1343,7 @@ void StorageMergeTree::setMutationCSN(const String & mutation_id, CSN csn)
         LOG_WARNING(log, "Mutation {} was killed before its CSN {} could be stored", mutation_id, csn);
         return;
     }
-    it->second.writeCSN(csn);
+    it->second.writeCSN(csn, (*getSettings())[MergeTreeSetting::fsync_part_directory]);
 }
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
@@ -1803,7 +1804,7 @@ void StorageMergeTree::loadMutations()
                     if (auto csn = TransactionManager::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
-                        entry.writeCSN(csn);
+                        entry.writeCSN(csn, (*getSettings())[MergeTreeSetting::fsync_part_directory]);
                     }
                     else
                     {
