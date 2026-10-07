@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-encrypted-storage, no-object-storage, no-parallel
+# Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-encrypted-storage, no-object-storage, no-parallel, no-fasttest
 # Tag rationale: enables server-wide failpoints; reads raw metadata files from the data directory.
 # Replicated databases route the transactional ALTER UPDATE through replicated DDL, which is refused inside a transaction.
 #
