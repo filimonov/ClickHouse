@@ -217,9 +217,10 @@ Fallback applies to `s3` / `iceberg` / engines / catalog tables that use the
 - A missing or unknown `object_storage_remote_initiator_cluster`. That setting must still resolve
   to a real cluster.
 
-With a remote initiator, the original initiator may not know `object_storage_cluster` at all. It
-sends a plain `s3(...)` / `iceberg(...)` and the remote initiator decides whether to fan out or
-fall back locally.
+With `object_storage_remote_initiator_cluster` set, the original initiator sends a plain
+`s3(...)` / `iceberg(...)` and forwards `object_storage_cluster` as a query setting when it is
+set. The remote initiator then decides whether to fan the scan out or fall back locally. The
+cluster name is not written into a `*Cluster` call, so fallback on the remote node still applies.
 
 ### `storage_type` for Iceberg {#storage-type}
 
@@ -305,7 +306,9 @@ files, hands out tasks, and merges partial results. For that, the initiator must
 connections to **every** swarm node that participates in the query.
 
 `object_storage_remote_initiator = 1` is optional. It picks a **random swarm node** and runs the
-query there as if you had written:
+query there. When that node is chosen from `object_storage_cluster` (no separate
+`object_storage_remote_initiator_cluster`), the sent query is a cluster function, as if you had
+written:
 
 ```sql
 SELECT count()
@@ -384,12 +387,16 @@ On swarm nodes, the profile of the user used for that remote connection:
 </profiles>
 ```
 
-The initiator then sends a non-cluster function (`iceberg(...)` / `s3(...)`) to the remote
-initiator. That node applies its own `object_storage_cluster` and fans the scan out internally.
+The initiator sends a plain `iceberg(...)` / `s3(...)`, not `icebergCluster` / `s3Cluster`. If
+`object_storage_cluster` is also set on the initiator query, it is forwarded as a query setting
+and is not baked into the function name. The remote initiator resolves that name (or, if the
+setting was empty on the initiator, the value from its own profile) and can still fall back
+locally when `object_storage_cluster_fallback_to_local_if_empty` is enabled there.
 
-If `object_storage_cluster` is also set on the initiator query, the rewritten query is a cluster
-function (`icebergCluster('swarm', ...)`) and the remote initiator uses **that** name, which must
-exist on the swarm node.
+A `*Cluster` rewrite (`remote('swarm_node', icebergCluster('swarm', ...))`) is used only when
+`object_storage_remote_initiator` is set without `object_storage_remote_initiator_cluster`. In
+that case the initiator cluster is `object_storage_cluster` itself, and that name must exist on
+the remote node. An explicit `*Cluster` function does not fall back when the cluster is empty.
 
 ### Limitations {#remote-initiator-limitations}
 
