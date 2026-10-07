@@ -84,6 +84,10 @@ namespace ErrorCodes
 
 namespace
 {
+/// S3 accepts `x-amz-copy-source-range` on UploadPartCopy only if the source object is greater
+/// than 5 MB and answers InvalidRequest otherwise. The limit is on the source object, not on the
+/// part, so `s3_min_upload_part_size` does not cover it.
+/// https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
 constexpr size_t MIN_S3_OBJECT_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
 
 class S3BackupClientCreator
