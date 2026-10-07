@@ -1,0 +1,8 @@
+--- the uncommitted part is visible, the drop is refused
+tx2	2
+SERIALIZATION_ERROR
+--- the creating transaction is unaffected
+1
+2
+--- a transaction may drop its own uncommitted part
+1
