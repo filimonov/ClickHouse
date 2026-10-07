@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 21:59'
-updated_date: '2026-09-30 21:59'
+updated_date: '2026-10-07 20:29'
 labels:
   - cas
   - gc
@@ -38,3 +38,9 @@ Fix: the publisher never turns `Condemned` into `Clean`, on both paths of `recon
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-07: issue https://github.com/Altinity/ClickHouse/issues/2486 (graduation read-ahead accepts the marker copy, not a GET at the gate) is the same residual seen from the gate side: model flag `MarkerPrefetch` (363b4193634) shows the read-ahead adds no loss class, the only violation is extdrop (10.1). This task closes it for good — after it a publisher never writes Clean over Condemned, so the age of the gate's read stops mattering. Comment-only follow-up: CAS-345.
+<!-- SECTION:NOTES:END -->
