@@ -24,6 +24,7 @@ CONFIGS=(
     "pm_g1_nojob                  violation  JobSparesPendingGuard"
     "pm_g1_norestamp_live         violation  NoWedgedCarry"
     "pm_g1_extdrop_noregistry     violation  NoDangle"
+    "pm_g1_mpf_extdrop            violation  NoDangle"
     "fix                          green      -"
     "fix_pconf                    green      -"
     "fix_prefetch                 green      -"
@@ -36,6 +37,9 @@ CONFIGS=(
     "pm_g1_live                   green      -"
     "pm_g1_late_resolved          green      -"
     "pm_g1_late_resolved_version  green      -"
+    "pm_g1_mpf_noregistry         green      -"
+    "rv_g1_mpf_noregistry         green      -"
+    "pm_g1_mpf_late_resolved      green      -"
 )
 
 selected()

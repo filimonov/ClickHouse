@@ -65,6 +65,8 @@
 (*   EtagIsContent      a late request matches equal bytes (S3); FALSE: it matches     *)
 (*                      only while no write replaced the version it read (GCS).        *)
 (*   TrackRetry         records a completed retry write for NoWedgedCarry.             *)
+(*   MarkerPrefetch     the gate decides on a marker GET issued earlier in the round   *)
+(*                      (the graduation read-ahead), not on the marker at the gate.    *)
 EXTENDS Naturals
 
 CONSTANTS
@@ -73,7 +75,8 @@ CONSTANTS
   RealCandidate, Respawn, AsyncMarker, GateAlwaysReads, WriterLeavesMarker, DeleteReads, ExternalDrop,
   Witness, GateTouched, ForgetOnTouch, SuppressRounds,
   Registry, RegRound, StaleAttempts, ExactAbsentPath,
-  RetryStampsCurrent, OutstandingReconcile, EtagIsContent, TrackRetry
+  RetryStampsCurrent, OutstandingReconcile, EtagIsContent, TrackRetry,
+  MarkerPrefetch
 
 NoTok == 0
 Writers == IF TwoWriters THEN {1, 2} ELSE {1}
@@ -97,10 +100,12 @@ VARIABLES
   reg,         \* in-process confirmations <<token, round>> held by the live leader's process
   sa_done,     \* the one stale attempt a behaviour may contain has happened
   late,        \* a publisher's Clean If-Match request still in flight: [pending, expect]
-  late_moved   \* the marker changed since that request read it
+  late_moved,  \* the marker changed since that request read it
+  mobs         \* the graduation read-ahead's marker GET: taken this round, and the meta it returned
 
 vars == <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret,
-          observed, observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, late, late_moved>>
+          observed, observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, late, late_moved,
+          mobs>>
 
 TypeOK ==
   /\ round \in 1..MaxRounds
@@ -114,6 +119,7 @@ TypeOK ==
   /\ reg \subseteq (0..MaxGen) \X (0..MaxRounds)
   /\ late \in [pending : BOOLEAN, expect : MetaVals]
   /\ late_moved \in BOOLEAN
+  /\ mobs \in [on : BOOLEAN, m : MetaVals]
 
 Init ==
   /\ round = 1 /\ cut_taken = FALSE /\ folded = FALSE
@@ -135,6 +141,7 @@ Init ==
   /\ reg = {}
   /\ sa_done = FALSE
   /\ late = NoLate /\ late_moved = FALSE
+  /\ mobs = [on |-> FALSE, m |-> Absent]
 
 Fresh == next_gen <= MaxGen
 Cond == meta.st = "condemned"
@@ -152,14 +159,14 @@ Seed ==
   /\ seeded' = TRUE
   /\ IF ExactAbsentPath THEN dirty' = dirty ELSE Touch
   /\ UNCHANGED <<round, cut_taken, folded, meta, edge, adopted, committed, ret, observed, observed_tok, mdq, recon,
-                 touched, premeta, mjob, wit, reg, sa_done>>
+                 touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 WPrecommit(w) ==
   /\ seeded /\ edge[w] = "none"
   /\ edge' = [edge EXCEPT ![w] = "landed"]
   /\ Touch
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, adopted, committed, ret, observed, observed_tok,
-                 mdq, recon, touched, premeta, mjob, wit, reg, sa_done>>
+                 mdq, recon, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* Absent meta is backfilled Clean (putMetaIfAbsent); either reads as not condemned. *)
 WAdopt(w) ==
@@ -168,7 +175,7 @@ WAdopt(w) ==
   /\ adopted' = [adopted EXCEPT ![w] = body.tok]
   /\ meta' = IF meta.st = "absent" THEN CleanMeta ELSE meta
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, committed, ret, observed, observed_tok, mdq,
-                 recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* Publication of a fresh incarnation (resurrect over Condemned, or create over an absent
    body), followed by the reconcile to Clean. Atomic unless SplitPublish; the reconcile may
@@ -196,7 +203,7 @@ WPublish(w) ==
         /\ meta' = meta
         /\ recon' = recon
   /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret, observed, observed_tok, mdq, dirty, touched,
-                 mjob, wit, reg, sa_done>>
+                 mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* `reconcileMetaClean`: the first conditional write wins only if the meta is still what
    the publication decided from; on S3 the etag is the bytes, so equal bytes win (ABA).
@@ -227,7 +234,7 @@ WReconcile(w) ==
         /\ adopted' = [adopted EXCEPT ![w] = NoTok]
         /\ late' = [pending |-> TRUE, expect |-> meta]
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, committed, ret, observed, observed_tok, mdq,
-                 dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* The request a reconcile left in flight lands, or dies. It writes Clean only if its precondition still
    matches: equal bytes under EtagIsContent, otherwise an unreplaced version. *)
@@ -237,19 +244,19 @@ WLateLand ==
   /\ meta' = CleanMeta
   /\ late' = NoLate
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, adopted, committed, ret, observed,
-                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 WLateDie ==
   /\ late.pending
   /\ late' = NoLate
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
-                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 WCommit(w) ==
   /\ edge[w] = "landed" /\ adopted[w] /= NoTok /\ ~committed[w] /\ ~recon[w]
   /\ committed' = [committed EXCEPT ![w] = TRUE]
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, ret, observed, observed_tok,
-                 mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* The writer's own abort follows its reconcile (the upload fan-out waits for every task
    before unwinding); ExternalDrop is a namespace removal that lands while it is owed. *)
@@ -259,14 +266,14 @@ WDrop(w) ==
   /\ committed' = [committed EXCEPT ![w] = FALSE]
   /\ Touch
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, adopted, ret, observed, observed_tok, mdq,
-                 recon, touched, premeta, mjob, wit, reg, sa_done>>
+                 recon, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 WRespawn(w) ==
   /\ Respawn /\ edge[w] = "dropped" /\ ~recon[w]
   /\ edge' = [edge EXCEPT ![w] = "none"]
   /\ adopted' = [adopted EXCEPT ![w] = NoTok]
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, committed, ret, observed, observed_tok, mdq,
-                 recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 GCut ==
   /\ ~cut_taken /\ round < MaxRounds
@@ -278,18 +285,29 @@ GCut ==
   /\ ret' = IF ForgetOnTouch /\ dirty /\ ret.st = "condemned" THEN [ret EXCEPT !.conf = FALSE, !.pconf = FALSE] ELSE ret
   /\ reg' = IF ForgetOnTouch /\ dirty /\ ret.st = "condemned" THEN RegForget(ret.tok) ELSE reg
   /\ UNCHANGED <<round, body, meta, next_gen, seeded, edge, adopted, committed, observed, observed_tok, mdq, recon,
-                 premeta, mjob, wit, sa_done>>
+                 premeta, mjob, wit, sa_done, mobs, mobs>>
 
 EndRound == /\ cut_taken' = FALSE
             /\ round' = round + 1
             /\ observed' = FALSE /\ observed_tok' = NoTok
+            /\ mobs' = [on |-> FALSE, m |-> Absent]
 
 GObserve ==
   /\ Prefetch /\ cut_taken /\ ~observed
   /\ observed' = TRUE
   /\ observed_tok' = IF body.present THEN body.tok ELSE NoTok
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret, mdq, recon,
-                 dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
+
+(* The graduation read-ahead: the marker GET is issued after the cut and before the gate, and
+   the gate decides on what it returned. Anything that lands on the marker in between is unseen. *)
+GObserveMeta ==
+  /\ MarkerPrefetch /\ cut_taken /\ ~mobs.on
+  /\ mobs' = [on |-> TRUE, m |-> meta]
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+
+SeenMeta == IF MarkerPrefetch /\ mobs.on THEN mobs.m ELSE meta
 
 SeenPresent == IF Prefetch /\ observed THEN observed_tok /= NoTok ELSE body.present
 SeenTok     == IF Prefetch /\ observed THEN observed_tok ELSE body.tok
@@ -307,10 +325,13 @@ CondemnedAfterWrite(r) ==
 (* The graduation re-read: a Condemned meta guards this entry. *)
 MetaGuards == Cond /\ (~GateRoundCheck \/ meta.cr >= ret.cr)
 
+(* The same test on the value the gate holds: the marker itself, or the read-ahead's copy of it. *)
+GateMetaGuards == SeenMeta.st = "condemned" /\ (~GateRoundCheck \/ SeenMeta.cr >= ret.cr)
+
 (* G1 drops the in-process shortcut; the re-read decides alone. G7 drops it only in a
    touched round. *)
 EffConfirmed == Confirmed /\ ~(GateTouched /\ touched)
-GateOK == ~GateOnMarker \/ (IF GateAlwaysReads THEN MetaGuards ELSE EffConfirmed \/ MetaGuards)
+GateOK == ~GateOnMarker \/ (IF GateAlwaysReads THEN GateMetaGuards ELSE EffConfirmed \/ GateMetaGuards)
 
 (* `closeBlob`'s supersede branch: a carried row, touched at zero, whose current token
    differs. It pre-empts every other settlement of the row. *)
@@ -345,7 +366,7 @@ GMarkerJob ==
         /\ ret' = ret
         /\ reg' = reg
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, adopted, committed, observed, observed_tok,
-                 mdq, recon, dirty, touched, premeta, wit, sa_done>>
+                 mdq, recon, dirty, touched, premeta, wit, sa_done, mobs, mobs>>
 
 GSettleCondemn ==
   /\ cut_taken /\ ret.st = "none" /\ SeenPresent /\ ~folded
@@ -372,7 +393,7 @@ GSettleGraduate ==
   /\ cut_taken /\ ret.st = "condemned" /\ ~folded /\ ret.cr < round /\ ~SupersedeDue
   /\ GateOK
   /\ ret' = [ret EXCEPT !.st = "pending", !.conf = TRUE, !.pconf = PersistConf]
-  /\ reg' = IF ~(~GateAlwaysReads /\ EffConfirmed) /\ MetaGuards THEN RegAdd(ret.tok, meta.cr) ELSE reg
+  /\ reg' = IF ~(~GateAlwaysReads /\ EffConfirmed) /\ GateMetaGuards THEN RegAdd(ret.tok, SeenMeta.cr) ELSE reg
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed, mdq, recon, dirty, touched, premeta,
                  mjob, wit, sa_done>>
@@ -382,7 +403,7 @@ GSettleGraduateDeferred ==
   /\ cut_taken /\ ret.st = "condemned" /\ ~folded /\ ret.cr < round /\ ~SupersedeDue
   /\ GateOK
   /\ ret' = [ret EXCEPT !.conf = TRUE, !.pconf = TRUE]
-  /\ reg' = IF ~(~GateAlwaysReads /\ EffConfirmed) /\ MetaGuards THEN RegAdd(ret.tok, meta.cr) ELSE reg
+  /\ reg' = IF ~(~GateAlwaysReads /\ EffConfirmed) /\ GateMetaGuards THEN RegAdd(ret.tok, SeenMeta.cr) ELSE reg
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed, mdq, recon, dirty, touched, premeta,
                  mjob, wit, sa_done>>
@@ -460,7 +481,7 @@ GMetaDeleteJob(c) ==
   /\ meta' = IF ~JobRoundCheck THEN Absent
              ELSE IF Cond /\ meta.cr <= c THEN Absent ELSE meta
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, adopted, committed, ret, observed, observed_tok,
-                 recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* A deposed leader's condemn-marker write at its own (possibly old) round, or a marker an
    aborted attempt of the current round left behind. Confirms nothing the live leader reads. *)
@@ -468,7 +489,7 @@ GStaleMarkerWrite(r) ==
   /\ StaleMarkers
   /\ meta' = CondemnedAfterWrite(r)
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, adopted, committed, ret, observed, observed_tok,
-                 mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done>>
+                 mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* A restart, or leadership passing to a process whose registry holds nothing for this
    hash. With Registry a process that regains leadership keeps its registry, so
@@ -479,7 +500,7 @@ GRestart ==
        THEN /\ reg /= {} /\ reg' = {} /\ ret' = ret
        ELSE /\ ret.st = "condemned" /\ ret.conf /\ ret' = [ret EXCEPT !.conf = FALSE] /\ reg' = reg
   /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, observed, observed_tok,
-                 mdq, recon, dirty, touched, premeta, mjob, wit, sa_done>>
+                 mdq, recon, dirty, touched, premeta, mjob, wit, sa_done, mobs, mobs>>
 
 (* An uncommitted attempt of this process at round r (stalled, then losing its gc/state
    CAS): its HEAD sees the current token, its marker job lands and its confirmation stays
@@ -490,7 +511,7 @@ GStaleAttempt(r) ==
   /\ meta' = CondemnedAfterWrite(r)
   /\ reg' = RegAdd(body.tok, r)
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, adopted, committed, ret, observed, observed_tok,
-                 mdq, recon, dirty, touched, premeta, mjob, wit>>
+                 mdq, recon, dirty, touched, premeta, mjob, wit, mobs, mobs>>
 
 (* Every step that changes the marker moves the version a late request read. *)
 LateMovedTrack ==
@@ -511,6 +532,7 @@ Next ==
   \/ \E w \in Writers : WRespawn(w) /\ LateStill
   \/ GCut /\ LateStill
   \/ GObserve /\ LateStill
+  \/ GObserveMeta /\ LateStill
   \/ GMarkerJob /\ LateStill
   \/ GSettleCondemn /\ LateStill
   \/ GSettleIdle /\ LateStill

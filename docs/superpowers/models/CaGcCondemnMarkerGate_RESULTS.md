@@ -35,6 +35,7 @@ Three violation rows are accepted residuals, not sabotage: `pm_g1_late_resolved_
 | `OutstandingReconcile` | `"none"` | `"resolved"` / `"gaveup"`: a reconcile leaves one Clean If-Match request in flight |
 | `EtagIsContent` | `TRUE` | S3: equal bytes match; `FALSE`: only an unreplaced version matches (GCS) |
 | `TrackRetry` | `FALSE` | records a completed retry write for `NoWedgedCarry` |
+| `MarkerPrefetch` | `FALSE` | `TRUE`: the gate decides on a copy of the marker taken after the cut and before the gate (the graduation read-ahead of `CasGc.cpp`, `GraduationReadHints`); `GObserveMeta` takes the copy, `SeenMeta` is what `GateOK` tests. Issue #2486 |
 
 Fault switches: `AsyncMarker`, `Prefetch`, `ReconcileFault`, `StaleMarkers`, `StaleAttempts`, `SuppressRounds`. `ExactAbsentPath` makes publication only into a key with neither body nor meta.
 
@@ -68,12 +69,16 @@ All cfgs are committed next to the module; `run_condemnmarker.sh` asserts the in
 | `pm_g1_late_resolved` | green | `green` | 675,800 | 2 | - |
 | `pm_g1_late_resolved_entry` | violation | `violation:NoDangle` | 380,644 | 1 | the carried entry is cr2 and the retry stamps the entry's round; a reconcile resolves Clean and leaves a request expecting Condemned(cr2); the retry recreates identical bytes Condemned(cr2); the entry graduates on it, then the late request lands (equal bytes) as Clean and the redelete removes the body under a landed edge. |
 | `pm_g1_late_resolved_version` | green | `green` | 13,862,134 | 47 | - |
+| `pm_g1_mpf_noregistry` | green | `green` | 370,480 | 2 | `pm_g1_noregistry` with `MarkerPrefetch`: the read-ahead copy decides, no loss |
+| `rv_g1_mpf_noregistry` | green | `green` | 1,913,847 | 9 | `rv_g1_noregistry` with `MarkerPrefetch` |
+| `pm_g1_mpf_late_resolved` | green | `green` | 1,147,984 | 4 | `pm_g1_late_resolved` with `MarkerPrefetch` |
 | `pm_g1_late_resolved_stale` | violation | `violation:NoDangle` | 542,881 | 2 | residual. A stale marker write Condemned(cr1) is the version the reconcile read; the reconcile resolves Clean, its request stays in flight; the round-1 condemn's own marker job (not a retry) recreates identical bytes Condemned(cr1); the entry graduates, a second writer's edge lands, the late request lands Clean and the body is deleted under a landed edge. |
 | `pm_g1_late_gaveup` | violation | `violation:NoDangle` | 298,083 | 1 | residual. The reconcile faults and gives up with a request in flight expecting Condemned(cr2); the entry graduates to pending on that unchanged marker; the late request lands Clean; the redelete removes the body under a landed edge. |
 | `pm_g1_nogateround_noregistry` | violation | `violation:NoDangle` | 4,010,406 | 12 | gate without the round check accepts a stale Condemned(cr1) for an entry of round 4; the stale delete job removes then a writer's Clean lands; entry deletes the body under a landed edge. |
 | `pm_g1_nojob` | violation | `violation:JobSparesPendingGuard` | 38,082 | 1 | `JobRoundCheck` off, the only constant that differs from `pm_g1_noregistry` (its invariant list is shorter); a queued job captured at round 1 would delete the Condemned(cr4) marker guarding the pending entry (the invariant fires one step before the delete). |
 | `pm_g1_norestamp_live` | violation | `violation:NoWedgedCarry` | 21,959 | 0 | `Restamp` off; a writer republishes the body over Condemned(cr1) with a faulted reconcile; the entry is superseded at round 2 and its marker job leaves Condemned(cr1) in place; the retry write at round 3 completes (`retried`) and the marker is still older than the entry's round 2. |
 | `pm_g1_extdrop_noregistry` | violation | `violation:NoDangle` | 46,592 | 1 | residual. The first writer's edge is dropped externally while its reconcile is owed; a second writer's edge lands; the first writer's owed reconcile then writes Clean over Condemned(cr2) and the entry deletes the body under a landed edge. |
+| `pm_g1_mpf_extdrop` | violation | `violation:NoDangle` | 85,254 | 1 | the same residual with `MarkerPrefetch`: the read-ahead adds no loss class. Every green row above stays green with the flag (`*_mpf_*`); the only violation it reaches is the externally dropped edge, which the marker read at the gate does not close either. |
 | `rv_bug` | violation | `violation:NoDangle` | 14,238 | 1 | a publisher's Clean overwrites the entry's Condemned(cr1) marker; the in-process confirmation lets the entry graduate; body deleted while a writer's edge landed. |
 | `f1_bug` | violation | `violation:NoDangle` | 1,299,275 | 3 | stale job deletes the marker, a new writer publishes over the absent marker and cleans, the entry (cr4) graduates on the old in-process confirmation and deletes the body under a landed edge. |
 
