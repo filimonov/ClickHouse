@@ -18,6 +18,7 @@ these conditions is refused rather than trusted.
 | Requirement | Interface method | Why it is needed |
 |---|---|---|
 | Read-after-write on a fresh key | `Backend::get` / `Backend::head` | Recovery listings and point reads must see what was just written |
+| A `GET` of an absent key answers `404` with the code `NoSuchKey` | `Backend::get` | Only that answer proves a key absent. A `GET` `404` without a code (no body, or a body that is not an S3 error document) is retried as a transient error until the request deadline, so a store or proxy that answers this way cannot mount. A `HEAD` `404` has no body and is absence |
 | Conditional create (`If-None-Match: *`) | `Backend::putIfAbsent`, `Backend::casPut` with expected absence | Write-once creation of manifests and control/log objects; blob bodies use unconditional publication after `HEAD` |
 | Conditional overwrite (`If-Match: <token>`) | `Backend::putOverwrite`, `Backend::casPut` | The one mutual-exclusion primitive: mount leases, `gc/state` |
 | Unconditional complete-object publication | `Backend::publishBlob` | An absent or condemned content-addressed body is replaced atomically; native stores may use multipart |
