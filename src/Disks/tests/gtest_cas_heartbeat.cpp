@@ -479,13 +479,8 @@ TEST(CASHeartbeat, FarewellIsAdmittedUnderADifferentEnvelope)
     EXPECT_EQ(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
 }
 
-/// The derived window alone is not the whole story: mount-control activity must also never run past
-/// the point this node's own fence may already be gone. A 5000 ms TTL with a 2000 ms safety margin
-/// leaves only 3000 ms of lease-safe remaining time at release -- far short of the 7000 ms envelope's
-/// own 16000 ms derived window (2 * 7000 + 2000 slack) -- so the LEASE bound, not the derived window,
-/// must be what refuses this write, and it must refuse it before any physical attempt: a write that
-/// cannot land inside the lease-safe remainder gains nothing by being sent anyway.
-TEST(CASHeartbeat, FarewellIsRefusedWhenTheLeaseExpiresBeforeItsDerivedWindow)
+/// The farewell is conditional on our own token, so an expired lease does not forbid it: a moved slot refuses it.
+TEST(CASHeartbeat, FarewellAfterTheLeaseExpiredIsWrittenUnderOurToken)
 {
     auto backend = std::make_shared<DefaultEnvelopeBackend>();
     Layout layout("pool");
@@ -502,29 +497,46 @@ TEST(CASHeartbeat, FarewellIsRefusedWhenTheLeaseExpiresBeforeItsDerivedWindow)
                             [&] { return boot_ms; });
     renewer.start(claimed);
 
-    now_ms = 2000;
-    String message;
-    int code = 0;
-    bool threw = false;
-    try
-    {
-        renewer.release();
-    }
-    catch (const DB::Exception & e)
-    {
-        threw = true;
-        message = e.message();
-        code = e.code();
-    }
-    EXPECT_TRUE(threw) << "a farewell whose reservation cannot fit inside the lease-safe remaining "
-                           "time must be refused, not admitted past the point this node's fence may "
-                           "already be gone";
-    EXPECT_EQ(code, DB::ErrorCodes::NETWORK_ERROR) << message;
-    EXPECT_NE(message.find("gave up at the lease deadline after zero attempt(s)"), String::npos) << message;
+    boot_ms = 100 + 5000 + 1000;
+    now_ms = 7000;
+    EXPECT_NO_THROW(renewer.release());
 
     auto m = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
-    EXPECT_NE(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max())
-        << "the refused write must not have landed";
+    EXPECT_EQ(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
+    EXPECT_LE(m.expires_at_ms, now_ms);
+}
+
+TEST(CASHeartbeat, AFarewellAfterExpiryLeavesAGcFenceUntouched)
+{
+    auto backend = std::make_shared<DefaultEnvelopeBackend>();
+    Layout layout("pool");
+    const String srid = "test";
+    const UInt128 uuid(0x1234);
+    uint64_t now_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops(backend, &boot_ms);
+    const MountClaimed claimed = seedOwnClaim(ops.op, layout, srid, uuid, /*epoch=*/9, now_ms, /*ttl_ms=*/5000, [&] { return boot_ms; });
+
+    MountLeaseRenewer renewer(ops.mount, ops.farewell, layout, srid, uuid, /*writer_epoch=*/9,
+                            std::chrono::milliseconds(5000), [&] { return now_ms; },
+                            [] { return uint64_t{5}; }, {}, std::chrono::milliseconds(2000),
+                            [&] { return boot_ms; });
+    renewer.start(claimed);
+
+    const String key = layout.mountKey(srid);
+    const auto observed = ops.op.read(key, Retry::standard());
+    ASSERT_TRUE(observed.has_value());
+    MountLease fenced = decodeMountLease(observed->bytes);
+    fenced.gc_fenced = true;
+    mustCommit(ops.op.replace(key, encodeMountLease(fenced), observed->etag, Retry::standard()), "GC fence");
+
+    boot_ms = 100 + 5000 + 1000;
+    now_ms = 7000;
+    EXPECT_NO_THROW(renewer.release());
+
+    auto m = decodeMountLease(ops.op.read(key, Retry::standard())->bytes);
+    EXPECT_TRUE(m.gc_fenced);
+    EXPECT_NE(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
 }
 
 /// The lease bound added above must not change what an ordinary Conflict outcome does: a successor

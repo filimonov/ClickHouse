@@ -5,7 +5,9 @@
 #include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 
+#include <atomic>
 #include <limits>
+#include <memory>
 
 using namespace DB::Cas;
 
@@ -54,4 +56,21 @@ TEST(CASFarewellRules, AClosedPoolWritesNoSecondFarewell)
 
     store.reset();
     EXPECT_EQ(backend->putOverwriteCount(key), before + 1);
+}
+
+TEST(CASFarewellRules, ATeardownAfterTheLeaseExpiredStillWritesTheFarewell)
+{
+    auto backend = std::make_shared<tests::CountingBackend>();
+    auto boot = std::make_shared<std::atomic<uint64_t>>(1'000'000);
+    PoolConfig config;
+    config.pool_prefix = "p";
+    config.server_root_id = "test";
+    config.boot_ms_fn = [boot] { return boot->load(); };
+    auto store = Pool::open(backend, config);
+    const String key = store->layout().mountKey("test");
+
+    *boot += 31'000;
+    store.reset();
+
+    EXPECT_EQ(farewellSentinel(*backend, key), kTerminated);
 }
