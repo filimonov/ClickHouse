@@ -264,7 +264,7 @@ DB::ObjectStoragePtr makeThrowingS3StorageForTest()
 
 }
 
-/// The full S3 IAM permutation table (spec §2): a raw NO_SUCH_KEY/NO_SUCH_BUCKET/ACCESS_DENIED HEAD
+/// The full S3 IAM permutation table (spec §2): a raw NO_SUCH_KEY/NO_SUCH_BUCKET/ACCESS_DENIED GET
 /// error must classify EXACTLY, and anything unmodeled must fail closed to Indeterminate.
 TEST(CASSentinelProbe, NativeClassifiesNoSuchKeyAsKeyAbsent)
 {
@@ -277,11 +277,9 @@ TEST(CASSentinelProbe, NativeClassifiesNoSuchKeyAsKeyAbsent)
     EXPECT_EQ(probeSentinel(op, nativeKeyUnder(storage, "some/key"), Retry::standard()).outcome, ProbeOutcome::KeyAbsent);
 }
 
-/// A real S3 HEAD's 404 has no response body, so the SDK cannot parse a `NoSuchKey` `<Code>` and
-/// instead derives `RESOURCE_NOT_FOUND` straight from the HTTP status (see `isNotFoundError`,
-/// `src/IO/S3/getObjectInfo.cpp`) — THIS is the code a genuinely absent key throws on real S3, not
-/// `NO_SUCH_KEY`. Without classifying it, every real-S3 absence would be `Indeterminate` forever.
-TEST(CASSentinelProbe, NativeClassifiesResourceNotFoundAsKeyAbsent)
+/// The probe reads by `GET`, whose 404 carries a body. `RESOURCE_NOT_FOUND` means the SDK found no
+/// `NoSuchKey` in it, which a misrouted request or a proxy also produces.
+TEST(CASSentinelProbe, NativeClassifiesUnnamedNotFoundAsIndeterminate)
 {
     auto storage = std::static_pointer_cast<ThrowingS3ObjectStorage>(makeThrowingS3StorageForTest());
     storage->throwOnObjectAccess(Aws::S3::S3Errors::RESOURCE_NOT_FOUND);
@@ -289,7 +287,7 @@ TEST(CASSentinelProbe, NativeClassifiesResourceNotFoundAsKeyAbsent)
 
     auto requests = makeRequests(backend);
     auto op = requests.admit();
-    EXPECT_EQ(probeSentinel(op, nativeKeyUnder(storage, "some/key"), Retry::standard()).outcome, ProbeOutcome::KeyAbsent);
+    EXPECT_EQ(probeSentinel(op, nativeKeyUnder(storage, "some/key"), Retry::once()).outcome, ProbeOutcome::Indeterminate);
 }
 
 TEST(CASSentinelProbe, NativeClassifiesNoSuchBucketAsContainerAbsent)

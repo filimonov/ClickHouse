@@ -253,6 +253,56 @@ struct Rig
 std::optional<String> declineObject(const std::optional<Object> &) { return std::nullopt; }
 std::optional<String> declineMeta(const std::optional<Meta> &) { return std::nullopt; }
 
+/// What a generic HTTP server answers a request routed to the wrong place.
+VerbRecordingServer::Answer unparseableNotFound()
+{
+    return notFound([](auto & response)
+    {
+        const std::string body = "404 page not found\n";
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+        response.setContentType("text/plain");
+        response.setContentLength(body.size());
+        response.send() << body;
+    });
+}
+
+/// A `GET` 404 the SDK could not name proves nothing about the key: every read reports a fault, and no
+/// write is decided on it.
+void expectUnnamedGetNotFoundIsNotAbsence(VerbRecordingServer::Answer answer)
+{
+    Rig rig(std::move(answer));
+    auto op = rig.requests.admit();
+
+    try
+    {
+        (void)op.read("k", Retry::once());
+        ADD_FAILURE() << "a GET 404 the store did not name must not read as an absent key";
+    }
+    catch (const DB::S3Exception & e)
+    {
+        EXPECT_EQ(e.getS3ErrorCode(), Aws::S3::S3Errors::RESOURCE_NOT_FOUND);
+    }
+    EXPECT_EQ(op.probeSentinel("k", Retry::once()).outcome, ProbeOutcome::Indeterminate);
+    EXPECT_THROW((void)op.stream("k", Retry::once()), DB::S3Exception);
+
+    bool decided = false;
+    const WriteResult rmw = op.readModifyWrite("k", [&](const std::optional<Object> &) -> std::optional<String>
+    {
+        decided = true;
+        return String("v");
+    }, Retry::once());
+    EXPECT_FALSE(decided);
+    const auto * gave_up = std::get_if<GaveUp>(&rmw);
+    ASSERT_NE(gave_up, nullptr);
+    EXPECT_TRUE(std::holds_alternative<NotObserved>(gave_up->last_seen));
+    EXPECT_EQ(rig.server.takeMethods(), (Methods{"GET", "GET", "GET", "GET"})) << "no write may follow the failed read";
+
+    const WriteResult created = op.create("k", "v", Retry::once());
+    const auto * conflict = std::get_if<Conflict>(&created);
+    ASSERT_NE(conflict, nullptr);
+    EXPECT_TRUE(std::holds_alternative<NotObserved>(conflict->seen));
+}
+
 }
 
 TEST(CASAbsencePerVerb, EachEngineReadGoesByItsVerb)
@@ -331,6 +381,30 @@ TEST(CASAbsencePerVerb, HeadNotFoundIsProvenAbsent)
     }, Retry::once());
     EXPECT_TRUE(decided_on_absence);
     EXPECT_EQ(rig.server.takeMethods(), (Methods{"HEAD", "HEAD"}));
+}
+
+TEST(CASAbsencePerVerb, GetBodylessNotFoundIsNotAbsence)
+{
+    expectUnnamedGetNotFoundIsNotAbsence(bodylessNotFound());
+}
+
+TEST(CASAbsencePerVerb, GetUnparseableNotFoundIsNotAbsence)
+{
+    expectUnnamedGetNotFoundIsNotAbsence(unparseableNotFound());
+}
+
+/// The engine reissues an unnamed 404 like any other fault and gives up at the deadline.
+TEST(CASAbsencePerVerb, UnnamedGetNotFoundIsReissuedToTheDeadline)
+{
+    Rig rig(bodylessNotFound());
+    auto op = rig.requests.admit();
+
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "gave up at the policy deadline",
+        [&] { (void)op.read("k", Retry::standard()); });
+    const Methods methods = rig.server.takeMethods();
+    EXPECT_GE(methods.size(), 2u);
+    for (const auto & method : methods)
+        EXPECT_EQ(method, "GET");
 }
 
 #endif

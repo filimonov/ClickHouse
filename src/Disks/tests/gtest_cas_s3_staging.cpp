@@ -1067,14 +1067,9 @@ public:
         std::lock_guard lock(mutex);
         auto it = objects.find(object.remote_path);
         if (it == objects.end())
-            /// `RESOURCE_NOT_FOUND`, not a plain `DB::Exception`: `Backend::probeSentinelRaw`'s Native
-            /// path (`CasObjectStorageBackend.cpp`) classifies absence ONLY from a caught `S3Exception`
-            /// carrying `NO_SUCH_KEY`/`RESOURCE_NOT_FOUND` (or the matching exception name) -- anything
-            /// else, including an unrecognized exception TYPE, falls through to `ProbeOutcome::
-            /// Indeterminate` (fail-closed). A bodyless HEAD on a real absent S3 key throws exactly this
-            /// code, since the SDK cannot parse a `<Code>` from a body that was never sent.
+            /// A store's `GET` 404 names the miss; the Native backend takes only that name as absence.
             throw DB::S3Exception("FakeGenerationObjectStorage: object does not exist",
-                                   Aws::S3::S3Errors::RESOURCE_NOT_FOUND);
+                                   Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey");
         /// Copies the bytes, matching a real remote read (no shared ownership with the stored entry, so
         /// a later overwrite of this key cannot mutate bytes a caller is still reading).
         return std::make_unique<DB::ReadBufferFromOwnMemoryFile>(object.remote_path, it->second.bytes);
@@ -1139,7 +1134,7 @@ public:
         auto it = objects.find(object.remote_path);
         if (it == objects.end())
             throw DB::S3Exception("FakeGenerationObjectStorage: object does not exist",
-                                   Aws::S3::S3Errors::RESOURCE_NOT_FOUND);
+                                   Aws::S3::S3Errors::NO_SUCH_KEY, "NoSuchKey");
         DB::SmallObjectDataWithMetadata result;
         result.data = it->second.bytes;
         result.metadata.size_bytes = it->second.bytes.size();
