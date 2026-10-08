@@ -1027,6 +1027,7 @@ HeartbeatFloor computeHeartbeatFloor(CasOperation & op, const Layout & l, uint64
                                      uint64_t stable_threshold_ms, MountObservationMap & obs)
 {
     HeartbeatFloor floor;
+    /// Taken before any read: it can confirm that a token held, never date a sighting.
     const uint64_t round_start_ms = mono_ms_fn();
 
     /// `obs` is keyed by every srid this leader has EVER observed, but a
@@ -1093,8 +1094,9 @@ HeartbeatFloor computeHeartbeatFloor(CasOperation & op, const Layout & l, uint64
 
                 if (!stable)
                 {
+                    /// A sample from before this read would count the walk to the slot as time watched.
                     if (it == obs.end() || it->second.etag != observed->etag)
-                        obs.insert_or_assign(srid, MountIncarnationObservation{observed->etag, round_start_ms});
+                        obs.insert_or_assign(srid, MountIncarnationObservation{observed->etag, mono_ms_fn()});
                     ++floor.live;
                     return std::nullopt;
                 }

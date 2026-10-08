@@ -1899,6 +1899,78 @@ TEST(CASHeartbeatFloor, SampleOlderThanTheSightingNeverFences)
     EXPECT_EQ(floor.live, 1u);
 }
 
+namespace
+{
+constexpr uint64_t kWalkMs = 4'000;
+}
+
+TEST(CASHeartbeatFloor, FirstSightingCountsFromAfterItsRead)
+{
+    uint64_t mono = 0;
+    auto b = std::make_shared<SlotClockBackend>(mono);
+    Layout l("p");
+    Ops ops(b);
+    seedMount(ops.op, l, "s1", /*expires*/ 10, /*fenced*/ false, /*min_active_build_sequence*/ 0);
+    const auto clock = [&mono] { return mono; };
+    MountObservationMap obs;
+
+    /// The call starts at 0 and reaches the slot at `kWalkMs`.
+    b->read_cost_ms = kWalkMs;
+    ASSERT_EQ(computeHeartbeatFloor(ops.op, l, kNowMs, clock, kStableThresholdMs, obs).fenced_now, 0u);
+    ASSERT_TRUE(obs.contains("s1"));
+    EXPECT_EQ(obs.at("s1").first_seen_mono_ms, kWalkMs);
+
+    /// One threshold after the first call started, less than one after its read.
+    b->read_cost_ms = 0;
+    mono = kStableThresholdMs;
+    const HeartbeatFloor early = computeHeartbeatFloor(ops.op, l, kNowMs, clock, kStableThresholdMs, obs);
+    EXPECT_EQ(early.fenced_now, 0u) << "fenced a token watched for less than the threshold";
+    EXPECT_EQ(early.live, 1u);
+
+    mono = kWalkMs + kStableThresholdMs;
+    EXPECT_EQ(computeHeartbeatFloor(ops.op, l, kNowMs, clock, kStableThresholdMs, obs).fenced_now, 1u);
+}
+
+TEST(CASHeartbeatFloor, RedecisionAfterARefusedFenceCountsFromItsRead)
+{
+    uint64_t mono = 0;
+    auto b = std::make_shared<SlotClockBackend>(mono);
+    Layout l("p");
+    Ops ops(b);
+    seedMount(ops.op, l, "s1", /*expires*/ 10, /*fenced*/ false, /*min_active_build_sequence*/ 0);
+    const auto clock = [&mono] { return mono; };
+    MountObservationMap obs;
+
+    computeHeartbeatFloor(ops.op, l, kNowMs, clock, kStableThresholdMs, obs);
+    ASSERT_TRUE(obs.contains("s1"));
+    const Etag first = obs.at("s1").etag;
+
+    /// Stable at this call's start, so it tries the fence-out. The holder renews first, the write is
+    /// refused, and the call decides again on the new token after reading it.
+    mono = kStableThresholdMs;
+    b->read_cost_ms = kWalkMs;
+    b->renew_before_next_fence = true;
+    const HeartbeatFloor refused = computeHeartbeatFloor(ops.op, l, kNowMs, clock, kStableThresholdMs, obs);
+    ASSERT_FALSE(b->renew_before_next_fence) << "the call never attempted the fence-out";
+    ASSERT_EQ(refused.fenced_now, 0u);
+    ASSERT_EQ(refused.live, 1u);
+    ASSERT_NE(obs.at("s1").etag, first);
+
+    /// Nothing reads after the re-decision, so the clock holds the value of the last read.
+    const uint64_t reread_at = mono;
+    ASSERT_GT(reread_at, kStableThresholdMs);
+    EXPECT_EQ(obs.at("s1").first_seen_mono_ms, reread_at);
+
+    /// One threshold after that call started, less than one after its re-read.
+    b->read_cost_ms = 0;
+    mono = 2 * kStableThresholdMs;
+    EXPECT_EQ(computeHeartbeatFloor(ops.op, l, kNowMs, clock, kStableThresholdMs, obs).fenced_now, 0u)
+        << "fenced the renewed token before it was watched for the threshold";
+
+    mono = reread_at + kStableThresholdMs;
+    EXPECT_EQ(computeHeartbeatFloor(ops.op, l, kNowMs, clock, kStableThresholdMs, obs).fenced_now, 1u);
+}
+
 TEST(CASHeartbeatFloor, EmptyPrefixYieldsNoLiveMounts)
 {
     auto b = std::make_shared<InMemoryBackend>();
