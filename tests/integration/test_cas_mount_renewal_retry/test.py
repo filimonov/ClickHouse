@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import subprocess
 import threading
 import time
@@ -211,9 +212,9 @@ def _log_count_since_last_restart(node, pattern):
         "| sort -t. -k3,3rn); do zcat \"$f\" >> \"$combined\"; done; "
         "cat /var/log/clickhouse-server/clickhouse-server.log >> \"$combined\"; "
         "start_line=$(grep -n 'Starting ClickHouse' \"$combined\" | tail -1 | cut -d: -f1); "
-        "tail -n +\"${start_line:-1}\" \"$combined\" | grep -c -- '%s' || true; "
+        "tail -n +\"${start_line:-1}\" \"$combined\" | grep -c -- %s || true; "
         "rm -f \"$combined\""
-    ) % pattern
+    ) % shlex.quote(pattern)
     return int(node.exec_in_container(["bash", "-c", script]).strip())
 
 

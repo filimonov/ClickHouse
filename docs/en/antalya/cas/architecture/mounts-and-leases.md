@@ -93,7 +93,7 @@ watermark — there is no separate watermark object. `MountLease` fields: `serve
   a credential refusal. The startup re-anchor and the remount re-anchor stay bounded by the last
   confirmed lease minus the safety margin.
 - **Cadence.** The runtime normally starts a logical renewal every `cas_mount_renew_period_ms` (default
-  10 s), with TTL `cas_mount_lease_ttl_ms` (default 30 s, TTL/3 renewal ratio). The next beat is anchored
+  10 s), with lease `cas_mount_lease_ms` (default 30 s, TTL/3 renewal ratio). The next beat is anchored
   at the committed body's pre-I/O BOOTTIME start. A slow recovery therefore causes an immediate
   catch-up beat when the nominal cadence has elapsed; it does not wait a fresh full period after the
   response.
@@ -114,11 +114,30 @@ terminal because that request may still land.
 
 **An expired lease is a pause.** While the store does not answer, writes stop being admitted once the
 remaining lease cannot cover them, and the lease expires at its deadline. `system.cas_mounts` then
-shows `lifecycle = 'paused'` and `lifecycle_reason = 'lease_expired'`, and the server logs one
-`WARNING`: `CAS mount lease of '<server_root_id>' expired <N> ms ago under writer_epoch <E>`. Nothing
+shows `lifecycle = 'paused'` and `lifecycle_reason = 'lease_expired'`. Nothing
 is remounted. The first confirmed renewal whose start plus the lease is still ahead resumes writes
 under the same `writer_epoch`; a renewal confirmed later than that leaves writes paused, and the next
 one starts at once.
+
+**Thresholds.** A writable mount logs every threshold at start:
+
+```text
+CAS disk 'cas1' (server_root_id=r1): renewal starts every 10 s. Without a confirmed renewal conditional changes pause after 14 s; deletes, publishes and uncached reads after 21 s; the lease ends after 30 s. Operations resume under the same writer_epoch after a confirmed renewal that leaves enough lease. A renewal that takes the full request envelope of 7 s ends at 17 s, after conditional changes pause. Another server may take this slot after it has seen the token unchanged for 31.5 s plus its own poll step (cas_mount_lease_ms=30000, cas_mount_renew_period_ms=10000, request envelope 7 s, cas_lease_safety_margin_ms=2000).
+```
+
+Each pause, expiry and resumption is one log line, written by the renewing thread:
+
+```text
+CAS disk 'cas1' (server_root_id=r1): conditional changes paused 0 s ago: the confirmed lease left is not more than their reserve of 16 s; renewal keeps retrying under writer_epoch 3
+CAS disk 'cas1' (server_root_id=r1): the mount lease ended 0.25 s ago under writer_epoch 3; renewal keeps retrying and operations that need the lease are refused until a renewal is confirmed
+CAS disk 'cas1' (server_root_id=r1): operations resumed under writer_epoch 3 after a pause of 16.25 s
+```
+
+A refused operation names the reserve and the last renewal error:
+
+```text
+CAS disk 'cas1': this change is not admitted: 14 s of the confirmed lease remain and a conditional change needs more than 16 s (two requests of 7 s plus 2 s). Renewal keeps retrying; changes resume after a confirmation that leaves enough lease. Last renewal error: PUT gc/server-roots/r1/mount: transport SlowDown slow down.
+```
 
 After the renewer call returns, `CasMountRuntime` consumes the result. A terminal result trips the
 local fence (latches `lost`, bumps the fence generation, moves the in-process runtime to
@@ -139,8 +158,8 @@ configured `TTL`/`period`; nothing about the writer's timing travels on the wire
 authorization; local fencing is derived instead from the confirmed request's pre-I/O `BOOTTIME`
 anchor plus the TTL, and wall-clock `now` stays audit-only.
 
-Every server sharing a pool must therefore run the identical `cas_mount_lease_ttl_ms` and
-`cas_mount_renew_period_ms`: a member or GC leader configured with a shorter threshold than its
+Every server sharing a pool must therefore run the identical `cas_mount_lease_ms`
+(`cas_mount_renew_period_ms` is local to each server): a member or GC leader configured with a shorter threshold than its
 peers can fence out a healthy peer whose token-update gap merely exceeds that shorter threshold —
 a peer renewing frequently stays live, one that missed a renewal does not. Change these values only
 with every member of the pool stopped; a graceful restart removes only that member's own startup

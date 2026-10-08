@@ -105,6 +105,24 @@ shown". A server restart resets `system.events` to zero, so a cumulative `CAS` t
 restart has to be computed from summed per-second deltas in `system.metric_log`, not read directly
 off `system.events`.
 
+### Terminal mount states {#terminal-mount-states}
+
+Entering `identity_lost` or `vanished`/`closed` increments its counter and logs at `ERROR`. A restart
+or the named action recovers the disk. `CASMountExclusivityViolation` is not a lifecycle state.
+
+| Counter | State | Operator action |
+|---|---|---|
+| `CASIdentityLost` | `identity_lost` | Restart the server or run `SYSTEM CAS FORGET` |
+| `CASDataRootVanished` | `vanished(replaced)` or `closed(forgotten)` | Restart re-registers the disk |
+| `CASMountExclusivityViolation` | n/a (the single-writer guarantee was broken) | Must stay `0`; investigate any increase |
+
+The `ERROR` lines for the first two:
+
+```text
+Content-addressed pool '<server_root_id>' entered IdentityLost: ...
+Content-addressed pool '<server_root_id>' entered Vanished(<replaced|forgotten>): ...
+```
+
 ## Reading GC health from cas_gc_log {#gc-health}
 
 Round outcomes over the last day, per disk:

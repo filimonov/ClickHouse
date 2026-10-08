@@ -203,8 +203,9 @@ mount slot stays in place as a resume anchor rather than being fully retired.
 **Preconditions.** Confirm the member is actually and permanently dead before running this: the
 operation fences that `server_root_id` out even if the server comes back online, and it deletes
 namespace and drain state that cannot be recovered. Check `system.cas_mounts` for the member's
-`state` and `last_success_age_seconds` first — a `live` row, or one with a recent lease renewal,
-means the member is not a decommission candidate yet.
+`state` and `expires_at`: a `live` row, or an `expires_at` that keeps moving, is not a candidate yet.
+A member stopped without a clean farewell becomes removable once its row shows `state = 'fenced'`,
+which needs GC on some member.
 
 **Verification.** After the command reports `slot_removed = true` with no warnings, the member's
 `server_root_id` no longer appears as a row in `system.cas_mounts` on any peer, and a subsequent
