@@ -242,9 +242,10 @@ id — an unresolved write can never silently become a gap, and the ledger never
 retry, or recovery of a retained attempt finds an object at the lane's own id, only the attempt's
 exact bytes let the lane continue: an earlier attempt of the same transaction landed. Anything
 else is a fault: a foreign transaction, a successor's `EpochSeal` (a successor exists, so this
-mount was already deposed), or an object that does not decode. The lane becomes `Faulted`, the
-mount's write fence closes, a remount is requested, and the server logs an error and a
-`foreign_interference` event naming the key and what was read.
+mount was already deposed), or an object that does not decode. The append and wedge sites leave the
+lane `Faulted`; recovery leaves it in `NeedsRecovery`. In every case the mount's write fence closes,
+a remount is requested, and the server logs an error and a `foreign_interference` event naming the
+key and what was read.
 
 Crash points: between the `PUT` and the install, the object is durable and unapplied — the next
 mount's recovery replays it. Between a precommit and its promote, a dangling precommit is reclaimed

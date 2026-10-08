@@ -875,7 +875,7 @@ TEST(CASRefWedgeEveryAttempt, ADefiniteRefusalAfterAnAmbiguousAttemptOfTheSameCa
 /// `prev_epoch_seal` on the wire
 /// ===================================================================================
 
-/// The wire round trip of the same rule, driven from the OTHER producer of `last_epoch_seal`:
+/// The wire round trip of the same rule, driven from the producer of `last_epoch_seal`:
 /// recovery's CAS-walk, represented here by its test seam. The point is the encode call
 /// site.
 TEST(CASRefWedgeEveryAttempt, OrdinaryFirstAppendAfterASealedTransitionCarriesTheExactPrevEpochSeal)
@@ -1180,7 +1180,7 @@ TEST(CASRefWedgeEveryAttempt, KnownDurableInstallFailureMovesDirectlyToRecovery)
 /// from ordinary debris at cleanup time. The cleanup was removed entirely rather than patched (see
 /// `CasRefLedger.cpp`'s comment at the removed call sites for why a captured token does not close the
 /// gap either). The trade, named rather than hidden: a creation `_ckpt` whose first ref-log
-/// `NamespaceBirth` is conclusively rejected now SURVIVES -- a drained server root carrying it will refuse
+/// `NamespaceBirth` faults now SURVIVES -- a drained server root carrying it will refuse
 /// decommission (`claimOwnerOrThrow` -> `CORRUPTED_DATA`) until `{#ckpt-neverborn-gc-backstop}` lands --
 /// which is the right side of the trade against an unrecoverable delete of a live successor's only
 /// genesis record.
@@ -1215,7 +1215,7 @@ TEST(CASRefWedgeEveryAttempt, CreationCkptSurvivesASealAtTheFirstRefLogId)
 /// the only code that ever deleted `_ckpt` on this path at all, but kept as its own pin: the fixture
 /// has already made `ns` `Live`; then two initial ref-log chunks (precommit-add, then promote) and a
 /// THIRD chunk meet the
-/// identical successor-seal conflict the test above exercises -- same conclusive rejection -- and the
+/// identical successor-seal conflict the test above exercises -- the same fault -- and the
 /// creation `_ckpt` must survive it byte-for-byte. `_ckpt` has no repair
 /// path (BACKLOG `{#ckpt-damage-no-repair-path}`), so this is the row that would catch a future
 /// reintroduction of the removed cleanup landing back on an already-Live namespace's `_ckpt`.
@@ -1344,9 +1344,8 @@ TEST(CASRefWedgeEveryAttempt, CreationCkptSurvivesFirstNamespaceBirthForeignInte
 }
 
 /// A conflict that names NO occupant. The store refused this create's precondition, and the settling
-/// read then found the key gone -- so nothing can be adjudicated: fencing the mount would be a guess,
-/// and reporting a conclusive rejection would acknowledge a deposition nobody observed. We decide
-/// NEITHER and WEDGE, which is what the wedge-resolution site does with the identical observation. The
+/// read then found the key gone -- so nothing can be adjudicated: faulting would be a guess. We
+/// WEDGE instead, which is what the wedge-resolution site does with the identical observation. The
 /// lane must therefore stay recoverable: the next flush re-creates at the same key and adjudicates
 /// whatever it finds. A terminal `Faulted` here would cost the table its writes until a remount over a
 /// read that the very next attempt may complete.
@@ -1498,15 +1497,14 @@ TEST(CASRefWedgeEveryAttempt, ALiveEpochSealIsNeverStampedAsItsOwnPrevEpochSeal)
     /// can have been stamped anywhere.
     /// The refusal must be terminal, not merely "an error", so all four halves are pinned:
     ///
-    ///   1. the class is INVALID_STATE -- the conclusive-rejection class,
-    ///      NOT the retry-later class. This is the one that matters most: a retryable error here would
+    ///   1. the class is INVALID_STATE, NOT the retry-later class. This is the one that matters most: a retryable error here would
     ///      have every caller re-derive the same impossible transaction forever, and the deposition
     ///      would never surface anywhere;
     ///   2. the message says the lane resumes only under a later epoch -- that IS the deposition,
     ///      reported to the caller and the operator;
     ///   3. NOTHING is written, so no self-pointer can have been stamped and no request was spent;
-    ///   4. a SECOND flush behaves identically instead of looping or degrading.
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    ///   4. a SECOND flush sends nothing either: the refusal faulted the mount, so the fence refuses it.
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     const size_t puts_before = backend->putCount(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), RefTxnId{epoch + 1, 1}));  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     try
     {
@@ -1524,14 +1522,13 @@ TEST(CASRefWedgeEveryAttempt, ALiveEpochSealIsNeverStampedAsItsOwnPrevEpochSeal)
     EXPECT_EQ(backend->putCount(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), RefTxnId{epoch + 1, 1})), puts_before)
         << "and no request was spent learning what the lane could already prove about itself";
 
-    /// The second flush: same conclusive answer, still no traffic. A lane that re-derived and re-sent
-    /// here would be exactly the spin this arm exists to prevent.
-    expectThrowsCode(DB::ErrorCodes::INVALID_STATE, [&] { store->dropRef(ns, "x"); });
+    /// The second flush: still no traffic. A lane that re-derived and re-sent here would be exactly the
+    /// spin this arm exists to prevent.
+    expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
     EXPECT_EQ(backend->putCount(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), RefTxnId{epoch + 1, 1})), puts_before);
 
-    /// NO remount is scheduled, this lane learned the deposition from recovered state, not from an
-    /// occupied id, and only an occupied id is a fault.
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
+    /// A known successor means this mount is already gone: the refusal requested one remount.
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
 }
 
 /// ================================================================================================
@@ -1785,10 +1782,12 @@ void expectAppendSiteFault(const String & ns_name, OccupantKind kind)
     backend->conflict_count = 1;
     const auto faults = recordFaultEvents(store);
     const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    const size_t tail_before = store->tailSinceSnapshotCountForTest(ns);
     ASSERT_TRUE(store->mayMutate());
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "x"); });
 
+    EXPECT_EQ(store->tailSinceSnapshotCountForTest(ns), tail_before) << "the faulted transaction was never applied";
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "a fault records no epoch seal";
@@ -1814,10 +1813,12 @@ void expectWedgeFault(const String & ns_name, OccupantKind kind)
         backend->putAsSuccessor(wedged_key, occupantBytes(kind, ns, parsed->txn_id))));
     const auto faults = recordFaultEvents(store);
     const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    const size_t tail_before = store->tailSinceSnapshotCountForTest(ns);
     ASSERT_TRUE(store->mayMutate());
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "y"); });
 
+    EXPECT_EQ(store->tailSinceSnapshotCountForTest(ns), tail_before) << "the faulted wedged transaction was never applied";
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "a fault records no epoch seal";
@@ -2101,4 +2102,60 @@ TEST(CASRefLaneFault, BadAllocInsideTheAppendPropagates)
     EXPECT_TRUE(faults->snapshot().empty());
     EXPECT_NO_THROW(store->dropRef(ns, "y"));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
+}
+
+/// A lane holding the seal of its own live epoch knows a successor exists, so this mount is already
+/// gone: the refusal latches the fault first, although no id is occupied.
+TEST(CASRefLaneFault, DeposedLaneLatchesBeforeTheReport)
+{
+    auto backend = std::make_shared<WedgeTestBackend>();
+    auto store = openPool(backend);
+    const RootNamespace ns{"srv1/fault_deposed_lane"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    const uint64_t epoch = store->liveWriterEpoch();
+    store->setLiveWriterEpochForTest(epoch + 1);
+    store->setLastEpochSealForTest(ns, RefTxnId{epoch + 1, 7});
+    const auto faults = recordFaultEvents(store);
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    ASSERT_TRUE(store->mayMutate());
+
+    expectThrowsCode(DB::ErrorCodes::INVALID_STATE, [&] { store->dropRef(ns, "x"); });
+
+    EXPECT_FALSE(store->mayMutate());
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+    expectOneLatchedFault(*faults, remounts_before, "a successor already closed it");
+}
+
+/// A description that fails, here for lack of memory, still leaves the caller and the report a message
+/// naming the fault, and still requests the remount.
+TEST(CASRefLaneFault, FaultWhoseDescriptionThrowsStillNamesTheFault)
+{
+    auto backend = std::make_shared<WedgeTestBackend>();
+    auto store = openPool(backend);
+    const RootNamespace ns{"srv1/fault_describe_throws"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    const RefTxnId next{store->liveWriterEpoch(), 3};
+    backend->conflict_substr = store->layout().refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), next);
+    backend->conflict_bytes = occupantBytes(OccupantKind::ForeignTxn, ns, next);
+    backend->conflict_count = 1;
+    const auto faults = recordFaultEvents(store);
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    store->setRefLaneFaultDescribeHookForTest([] { throw std::bad_alloc(); });
+
+    try
+    {
+        store->dropRef(ns, "x");
+        FAIL() << "the fault must reach the caller";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA) << e.message();
+        EXPECT_NE(e.message().find("CAS ref lane fault"), String::npos) << e.message();
+    }
+    store->setRefLaneFaultDescribeHookForTest(nullptr);
+
+    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
+    expectOneLatchedFault(*faults, remounts_before, "ref lane fault");
 }

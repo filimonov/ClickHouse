@@ -691,13 +691,11 @@ public:
     ///
     /// Wedge semantics: at most one unresolved `PUT` per table. An
     /// `Unresolved` outcome wedges this namespace's lane -- no later id is allocated until that SAME
-    /// (key, bytes) reaches a conclusive outcome. There are exactly three, and the middle one is the
-    /// reason a wedge is no longer a one-way door:
+    /// (key, bytes) reaches a conclusive outcome. There are exactly three:
     ///   it resolves DURABLE -- either an earlier attempt landed, or the bounded retry's own
     ///     conditional create lands it now -- and is applied to the cache before the next id;
-    ///   a successor's `EpochSeal` occupies the key, which PROVES our bytes never landed and never can:
-    ///     the wedge clears, its callers fail permanently (they were never acknowledged), and the lane
-    ///     resumes only under a later writer epoch;
+    ///   any other object occupies the key, a successor's `EpochSeal` included: a fault -- the lane
+    ///     is `Faulted`, the mount fence closes and a remount is requested;
     ///   or the process unmounts.
     /// Every item in the failing batch receives the SAME uncertainty exception (`NETWORK_ERROR`, the
     /// retry-later class); items already wedged from an EARLIER flush are retried by the NEXT call into
@@ -929,7 +927,7 @@ private:
     bool refAppendFenceOk() const;
 
     /// The reaction to a ref lane fault the ledger has already latched through `latch_mount_fault`.
-    /// Requests the remount first, because nothing else would and everything after it can throw; then
+    /// Requests the remount first, because nothing else would and anything after it may throw; then
     /// `LOG_ERROR`, a `ForeignInterference` CasEvent, and ONE background GET of `key` for diagnosis
     /// that never blocks or throws on the caller's thread.
     void reportImpossibleInterference(const String & key, const String & reason,
@@ -967,7 +965,7 @@ public:
     bool needsStalePrecommitSweepForTest(const RootNamespace & ns);
 
     /// Number of ref-append lanes currently wedged (an uncertain PUT exhausted its retry budget and
-    /// the lane blocks until the same key resolves durable or is conclusively rejected). Per-disk GC
+    /// the lane blocks until the same key resolves durable or holds another object, a fault). Per-disk GC
     /// health for system.cas_mounts. O(live tables); takes each runtime state lock.
     size_t wedgedRefLaneCount();
 
@@ -1035,6 +1033,10 @@ public:
     void setWedgeBeforeSlotOccupyHookForTest(std::function<void()> hook)
     {
         ref_ledger.setWedgeBeforeSlotOccupyHookForTest(std::move(hook));
+    }
+    void setRefLaneFaultDescribeHookForTest(std::function<void()> hook)
+    {
+        ref_ledger.setRefLaneFaultDescribeHookForTest(std::move(hook));
     }
     void setNamespacePresenceProbeAfterFirstReadHookForTest(std::function<void()> hook)
     {

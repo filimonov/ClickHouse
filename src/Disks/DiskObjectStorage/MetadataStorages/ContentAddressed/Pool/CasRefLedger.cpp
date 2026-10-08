@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int S3_ERROR;
     extern const int POCO_EXCEPTION;
+    extern const int UNKNOWN_FORMAT_VERSION;
     extern const int SOCKET_TIMEOUT;
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int TIMEOUT_EXCEEDED;
@@ -112,7 +113,10 @@ bool isTransientRecoveryError(int code)
         || code == ErrorCodes::TIMEOUT_EXCEEDED;
 }
 
-/// What an occupied ref-log id holds, for the fault report only: no outcome depends on it.
+/// What an occupied ref-log id holds, for the fault report only: no outcome depends on it. Only the
+/// malformed-object codes say the bytes do not decode; any other exception is quoted as it is. The
+/// memory limit cannot occur at the append and wedge sites, which hold `LockMemoryExceptionInThread`,
+/// but can at the recovery site. `std::bad_alloc` propagates to the report's fallback text.
 String describeRefLogOccupant(const RootNamespace & ns, const RefTxnId & id, const String & occupant_bytes)
 {
     try
@@ -122,10 +126,11 @@ String describeRefLogOccupant(const RootNamespace & ns, const RefTxnId & id, con
             return "an epoch seal of this namespace";
         return fmt::format("a transaction of this namespace with {} ops", txn.ops.size());
     }
-    catch (...)
+    catch (const Exception & e)
     {
-        return fmt::format("{} bytes that do not decode: {}", occupant_bytes.size(),
-                           getCurrentExceptionMessage(/*with_stacktrace*/ false));
+        if (e.code() == ErrorCodes::CORRUPTED_DATA || e.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
+            return fmt::format("{} bytes that do not decode: {}", occupant_bytes.size(), e.message());
+        return fmt::format("{} bytes that could not be decoded here: {}", occupant_bytes.size(), e.message());
     }
 }
 
@@ -181,13 +186,17 @@ String CasRefLedger::reportLatchedFault(const RootNamespace & ns, Describe && de
     std::optional<String> offending_ns;
     try
     {
+        if (ref_lane_fault_describe_hook_for_test)
+            ref_lane_fault_describe_hook_for_test();
         describe(key, detail);
         offending_ns = ns.string();
     }
-    catch (...)   // NOLINT(bugprone-empty-catch)
+    catch (...)
     {
         /// The fence is already closed and only the report requests the remount, so a failure to
-        /// describe the fault must not skip it.
+        /// describe the fault must not skip it. The literal fits the small-string buffer, so this
+        /// assignment cannot allocate.
+        detail = "ref lane fault";
     }
     on_impossible_interference(key, detail, offending_ns);
     return detail;
@@ -2680,7 +2689,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
                         "and the resolve read found NOTHING at slot '{}' — either the read itself failed, "
                         "or the occupant that rejected the create was DELETED under a live epoch, which is "
                         "a GC invariant alarm rather than routine contention. The lane stays wedged until "
-                        "the SAME slot resolves durable or a conclusive rejection is observed",
+                        "the SAME slot resolves durable, or holds another object (a fault)",
                         ns.string(), txn, wedge.key);
                     break;
                 case Reason::StaleState:
@@ -2876,12 +2885,14 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
     /// delayed. A retry-later class here would be the real bug: every caller would re-derive the same
     /// impossible transaction forever, and the deposition would never be visible anywhere.
     ///
-    /// Not a remount trigger: no id is occupied here, and only an occupied id is a fault.
+    /// A fault: a seal of the live epoch means a successor exists, so this mount is already gone. Both
+    /// causes below take this path; only the diagnosis differs.
     if (table_live)
     {
         const RefTxnId next_id = working.nextTxnId(live_epoch_fn());
         if (next_id.ref_sequence == 1 && !chainLinkFor(next_id, preview_epoch_seal))
         {
+            latch_mount_fault();
             /// The two causes are reported SEPARATELY. They are different facts about the world and the
             /// message must not assert the one it did not observe: holding a seal OF this epoch is
             /// positive evidence that a successor closed it, while holding no seal at all says only that
@@ -2889,16 +2900,22 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
             /// is identical either way (a `Live` table at sequence 1 with no usable link can construct
             /// nothing legal), so only the diagnosis differs, and only the diagnosis is at risk of
             /// being wrong.
-            const String cause = preview_epoch_seal
-                ? fmt::format("the only seal it holds, {}-{}, is of that SAME epoch — a successor already "
-                              "closed it", preview_epoch_seal->writer_epoch, preview_epoch_seal->ref_sequence)
-                : String("it holds no epoch seal at all, so it has no chain link to name");
+            const String detail = reportLatchedFault(ns, [&](String & key, String & text)
+            {
+                key = layout.refLogKey(rt->life, next_id);
+                const String cause = preview_epoch_seal
+                    ? fmt::format("the only seal it holds, {}-{}, is of that SAME epoch — a successor already "
+                                  "closed it", preview_epoch_seal->writer_epoch, preview_epoch_seal->ref_sequence)
+                    : String("it holds no epoch seal at all, so it has no chain link to name");
+                text = fmt::format(
+                    "ref-log append for namespace '{}': writer epoch {} cannot be opened by this mount — its "
+                    "next transaction would be {}-{}, sequence 1 of an epoch it holds no closing seal BELOW: {}. "
+                    "Nothing legal can be written here and nothing was sent. This mount's append lane resumes "
+                    "only under a later epoch",
+                    ns.string(), next_id.writer_epoch, next_id.writer_epoch, next_id.ref_sequence, cause);
+            });
             complete_error(carve_all_pending(), std::make_exception_ptr(Exception(ErrorCodes::INVALID_STATE,
-                "CAS ref-log append for namespace '{}': writer epoch {} cannot be opened by this mount — its "
-                "next transaction would be {}-{}, sequence 1 of an epoch it holds no closing seal BELOW: {}. "
-                "Nothing legal can be written here and nothing was sent. This mount's append lane resumes "
-                "only under a later epoch",
-                ns.string(), next_id.writer_epoch, next_id.writer_epoch, next_id.ref_sequence, cause)));
+                "CAS {}", detail)));
             ProfileEvents::increment(ProfileEvents::CASRefAppendSealRejected);
             return;
         }
@@ -3472,8 +3489,8 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
                     "ref-log append reached new-id allocation while the lane was in state {} instead of Ready",
                     static_cast<uint8_t>(lane_state));
             });
-            /// `Faulted` is a TERMINAL lane state (same as the two other `Faulted` arms further down this
-            /// function, which both report `CORRUPTED_DATA`) -- reporting it via
+            /// `Faulted` is a TERMINAL lane state (same as the other `Faulted` arm further down this
+            /// function, which reports `CORRUPTED_DATA`) -- reporting it via
             /// `makeCasWriteRetryLaterExceptionPtr` would tell the caller a state the lane can never leave
             /// on its own is transient. The arm is self-limiting today (the next flush's
             /// `resolveWedgeOnce` takes the `invalid_lane_state` `Reason` arm and re-reports it the same
@@ -3764,7 +3781,7 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
             complete_error(chunk_survivors, makeCasWriteRetryLaterExceptionPtr(fmt::format(
                 "CAS ref-log append for namespace '{}': the store refused txn {}-{}'s create and the "
                 "settling read named no occupant (observed {}) — the append lane is wedged until the "
-                "SAME key resolves durable or a conclusive rejection is observed",
+                "SAME key resolves durable, or holds another object (a fault)",
                 ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(conflict->seen))));
             return false;
         }
@@ -3876,8 +3893,8 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
         ProfileEvents::increment(ProfileEvents::CASRefAppendWedged);
         complete_error(chunk_survivors, makeCasWriteRetryLaterExceptionPtr(fmt::format(
             "CAS ref-log append for namespace '{}' txn {}-{} is UNCERTAIN (last observed {}) — "
-            "the append lane is wedged until the SAME key resolves durable or a conclusive rejection "
-            "is observed; this outcome is unproven, not failure",
+            "the append lane is wedged until the SAME key resolves durable, or holds another object "
+            "(a fault); this outcome is unproven, not failure",
             ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(gave_up->last_seen))));
         return false;
     }
