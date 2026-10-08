@@ -2227,8 +2227,8 @@ private:
 class ScopedParkedRenewalLogCapture
 {
 public:
-    ScopedParkedRenewalLogCapture()
-        : logger(getLogger("CasMountLeaseRenewer"))
+    explicit ScopedParkedRenewalLogCapture(const String & logger_name = "CasMountLeaseRenewer")
+        : logger(getLogger(logger_name))
         , channel(new Poco::StreamChannel(stream))
         , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
@@ -4775,6 +4775,45 @@ TEST(CASPoolShutdown, PreSendCancellationAllowsFarewellButAmbiguityDoesNot)
 
     EXPECT_EQ(run(false), std::numeric_limits<uint64_t>::max());
     EXPECT_NE(run(true), std::numeric_limits<uint64_t>::max());
+}
+
+TEST(CASPoolShutdown, AnAmbiguousRenewalAtStopIsNamedInTheUncleanLine)
+{
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    const Layout layout("shutdown-ambiguous-line");
+    uint64_t wall_ms = 1000;
+    uint64_t boot_ms = 100;
+    const UInt128 uuid{1};
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
+    DB::Cas::tests::ManualBarrier barrier;
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
+                    .boot_ms_fn = [&] { return boot_ms; }},
+        "test", sink, runtimeRenewBudget(), [] { return false; });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
+    runtime.armMountFence(uuid, 1, anchor + 1000);
+    backend->barrier = &barrier;
+    backend->fault = RuntimeRenewBackend::Fault::BlockThenThrow;
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
+    barrier.waitUntilArrived();
+    auto stop = std::async(std::launch::async, [&] { runtime.stopBackgroundWorkers(); });
+    barrier.release();
+    stop.get();
+
+    ScopedParkedRenewalLogCapture capture("CasPool");
+    runtime.finishTeardown({});
+
+    EXPECT_NE(
+        decodeMountLease(readObj(*backend, layout.mountKey("test"))->bytes).min_active_build_sequence,
+        std::numeric_limits<uint64_t>::max());
+    EXPECT_NE(
+        capture.captured().find("marker: the last renewal ended without a confirmed lease;"), String::npos)
+        << capture.captured();
 }
 
 TEST(CASPool, DirectAndStartupTerminalFailuresRethrowTypedExceptions)
