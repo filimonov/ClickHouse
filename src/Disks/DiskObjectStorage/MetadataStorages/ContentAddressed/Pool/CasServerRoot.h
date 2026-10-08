@@ -456,9 +456,12 @@ struct MountInfo
     String state;
 };
 
-/// Enumerate every mount slot under `gc/server-roots/`, decoded and classified — the read-only sibling
-/// of `computeHeartbeatFloor`: ZERO writes (no fence-out), per-row fail-open. One LIST + one GET per slot.
-std::vector<MountInfo> listMounts(CasOperation & op, const Layout & layout, uint64_t now_ms, uint64_t skew_margin_ms);
+/// The `state` word of `system.cas_mounts` for a decoded body: `fenced`, `terminated`, `live` or `expired`.
+String classifyMountBody(const MountLease & lease, uint64_t now_ms, uint64_t skew_margin_ms);
+/// Every mount slot under `gc/server-roots/` except `skip_srid`'s, decoded and classified; zero writes.
+/// One LIST per page and one GET per slot, each under `retry`; a failed request ends the call.
+std::vector<MountInfo> listMounts(CasOperation & op, const Layout & layout, uint64_t now_ms, uint64_t skew_margin_ms,
+                                  const Retry & retry = Retry::standard(), std::string_view skip_srid = {});
 
 /// Whether the mounted writer identified by `(server_root_id, writer_epoch)` (the two fields of a
 /// `CatalogEntry::creator` / `CreatorFence`, `ref_catalog`'s spec INV-3 §3, that this predicate actually

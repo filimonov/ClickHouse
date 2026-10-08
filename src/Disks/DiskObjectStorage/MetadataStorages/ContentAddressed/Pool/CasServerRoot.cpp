@@ -1187,7 +1187,19 @@ std::vector<NonTerminalMountSlot> probeNonTerminalMountSlots(CasOperation & op, 
     return slots;
 }
 
-std::vector<MountInfo> listMounts(CasOperation & op, const Layout & layout, uint64_t now_ms, uint64_t skew_margin_ms)
+String classifyMountBody(const MountLease & lease, uint64_t now_ms, uint64_t skew_margin_ms)
+{
+    if (lease.gc_fenced)
+        return "fenced";
+    if (lease.min_active_build_sequence == std::numeric_limits<uint64_t>::max())
+        return "terminated";
+    if (now_ms <= lease.expires_at_ms + skew_margin_ms)
+        return "live";
+    return "expired";
+}
+
+std::vector<MountInfo> listMounts(CasOperation & op, const Layout & layout, uint64_t now_ms, uint64_t skew_margin_ms,
+                                  const Retry & retry, std::string_view skip_srid)
 {
     std::vector<MountInfo> out;
     const String prefix = layout.serverRootsPrefix();
@@ -1196,14 +1208,17 @@ std::vector<MountInfo> listMounts(CasOperation & op, const Layout & layout, uint
         static constexpr std::string_view suffix = "/mount";
         if (!listed.key.ends_with(suffix))
             return true;
-        const auto got = op.read(listed.key, Retry::standard());
-        if (!got)
-            return true;   /// raced a delete — read-only view, skip the row
         MountInfo info;
         /// The srid is the path segment between `serverRootsPrefix()` and the `/mount` suffix —
         /// may itself contain `/` (e.g. `shard-01/replica-a`), so slice by prefix length rather
         /// than `rfind('/')`, matching `computeHeartbeatFloor`'s extraction.
         info.srid = listed.key.substr(prefix.size(), listed.key.size() - prefix.size() - suffix.size());
+        /// A `server_root_id` is never empty, so an empty `skip_srid` skips nothing.
+        if (info.srid == skip_srid)
+            return true;
+        const auto got = op.read(listed.key, retry);
+        if (!got)
+            return true;   /// raced a delete — read-only view, skip the row
         try
         {
             info.lease = decodeMountLease(got->bytes);
@@ -1214,17 +1229,10 @@ std::vector<MountInfo> listMounts(CasOperation & op, const Layout & layout, uint
             out.push_back(std::move(info));
             return true;
         }
-        if (info.lease.gc_fenced)
-            info.state = "fenced";
-        else if (info.lease.min_active_build_sequence == std::numeric_limits<uint64_t>::max())
-            info.state = "terminated";
-        else if (now_ms <= info.lease.expires_at_ms + skew_margin_ms)
-            info.state = "live";
-        else
-            info.state = "expired";
+        info.state = classifyMountBody(info.lease, now_ms, skew_margin_ms);
         out.push_back(std::move(info));
         return true;
-    }, Retry::standard());
+    }, retry);
     return out;
 }
 
