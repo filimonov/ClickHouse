@@ -156,10 +156,8 @@ bool CasMountRuntime::refAppendFenceOk() const
 {
     /// Two envelopes' worth of room under the live generation -- a write and its settlement read, which
     /// is what `writeLoop` reserves -- so a ref-log attempt is not started when it cannot plausibly
-    /// finish, safety margin included, before the lease expires.
-    const uint64_t envelope_ms = cas_request_budget.attemptEnvelopeMs();
-    const uint64_t needed_ms = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
-        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
+    /// finish, safety margin included, before the lease expires. `admit` adds the margin itself.
+    const uint64_t needed_ms = conditionalReserveMs() - cas_request_budget.lease_safety_margin_ms;
     return admit(fenceGeneration(), needed_ms) == Fence::Admit::Ok;
 }
 
