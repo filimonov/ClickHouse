@@ -46,7 +46,8 @@ CTL_PORT = int(os.environ.get("S3_PROXY_CTL_PORT", "8474"))
 _cfg_lock = threading.Lock()
 _DEFAULT_CFG = {
     "rate": 0.0,                       # fraction of matched requests that get a fault
-    "modes": ["503"],                  # subset of {503,429,slow,reset,drop_after_forward}
+    "modes": ["503"],                  # subset of {503,429,404,412,slow,reset,drop_after_forward}
+    "method_modes": None,              # optional {method: mode}; overrides `modes` for a matched request
     "methods": ["GET", "PUT", "HEAD", "POST"],  # HTTP methods eligible for S22 faults
     "slow_ms": 1500,                   # latency for the "slow" mode
     "seed": 1,
@@ -119,6 +120,9 @@ def _reset():
 _SLOWDOWN_BODY = (b'<?xml version="1.0" encoding="UTF-8"?>'
                   b'<Error><Code>SlowDown</Code><Message>Please reduce your request rate.</Message>'
                   b'<Resource>/</Resource><RequestId>fault-proxy</RequestId></Error>')
+_PRECONDITION_FAILED_BODY = (b'<?xml version="1.0" encoding="UTF-8"?>'
+                             b'<Error><Code>PreconditionFailed</Code><Message>At least one of the pre-conditions '
+                             b'you specified did not hold</Message><RequestId>fault-proxy</RequestId></Error>')
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -172,6 +176,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Connection", "keep-alive")
             self.end_headers()
             self.wfile.write(_SLOWDOWN_BODY)
+        elif mode == "404":
+            # Bodyless, as a proxy or a misrouted request answers: nothing names the key or the bucket.
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+        elif mode == "412":
+            self.send_response(412)
+            self.send_header("Content-Type", "application/xml")
+            self.send_header("Content-Length", str(len(_PRECONDITION_FAILED_BODY)))
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            self.wfile.write(_PRECONDITION_FAILED_BODY)
         elif mode == "slow":
             time.sleep(_get_cfg()["slow_ms"] / 1000.0)
             self._forward()  # after the delay, serve the real response
@@ -295,6 +312,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                   f"TE={self.headers.get('Transfer-Encoding')} CE={self.headers.get('Content-Encoding')} "
                   f"Expect={self.headers.get('Expect')} read={len(self._cached_body)}", flush=True)
         mode = self._should_fault(cfg)
+        if mode is not None and cfg.get("method_modes") and self.command in cfg["method_modes"]:
+            mode = cfg["method_modes"][self.command]
         if mode is None:
             self._forward()
         else:

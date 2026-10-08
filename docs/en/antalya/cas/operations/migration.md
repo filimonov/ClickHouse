@@ -211,3 +211,24 @@ means the member is not a decommission candidate yet.
 `SYSTEM CAS GC RUN` on the pool will no longer wait on or fence its heartbeat. See
 [mount, unmount, crash](/antalya/cas/architecture/mounts-and-leases#mount-lifecycle) for how the
 claim, drain, and retirement steps fit into the mount-slot lifecycle.
+
+### Re-adding a server whose identity cannot be claimed {#re-add}
+
+A server whose start is refused because its `cas_server_root_id` cannot be claimed comes back in one of
+these ways, by refusal:
+
+| Refusal | Keeps the data | Otherwise |
+|---|---|---|
+| `owned by a different server` (usually a regenerated local `uuid` file) | Restore the old `uuid` file and restart | Re-add under a new `cas_server_root_id`; the old id's tables can then be removed with [`SYSTEM CAS DROP POOL MEMBER`](#decommission), like any dead member's |
+| `explicitly decommissioned by an operator` | — (the member was already dropped) | Re-add under a new `cas_server_root_id` |
+| `identity lost over existing data` | Restore the owner object `gc/server-roots/<server_root_id>/owner` from a backup of the bucket and restart | Re-add under a new `cas_server_root_id` |
+
+To re-add, set the new id in the disk configuration and restart. What re-adding does not do:
+
+- **The old tables stay behind.** Table namespaces are owned by the `<server_root_id>/` prefix, so a server
+  under a new id does not adopt the old id's tables. They remain the old member's data.
+- **After a lost owner anchor, nothing removes the old id's data or slot.** `SYSTEM CAS DROP POOL MEMBER`
+  is refused with the same `identity lost over existing data` error, so that data stays in the bucket.
+
+Keep the server's `uuid` file on a persistent volume: a regenerated `uuid` makes the next start a
+foreign owner of its own `cas_server_root_id`.

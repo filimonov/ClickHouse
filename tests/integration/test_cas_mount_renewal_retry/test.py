@@ -253,6 +253,21 @@ def start_cluster():
         main_configs=["configs/request_budget_disks.xml"],
         with_rustfs=True,
     )
+    # Each one holds the only writable CAS disk of its server, so a lost slot stops exactly that server.
+    cluster.add_instance(
+        "stop_node",
+        main_configs=["configs/stop_disks.xml"],
+        with_rustfs=True,
+        stay_alive=True,
+    )
+    cluster.add_instance(
+        "stop_node_watchdog",
+        main_configs=["configs/stop_disks_watchdog.xml"],
+        with_rustfs=True,
+        stay_alive=True,
+        env_variables={"CLICKHOUSE_WATCHDOG_ENABLE": "1"},
+        instance_env_variables=True,
+    )
     cluster.base_cmd.extend(
         ["--file", os.path.join(os.path.dirname(__file__), "docker_compose_proxy.yml")]
     )
@@ -278,6 +293,8 @@ def start_cluster():
         yield {
             "node": node,
             "budget_probe": cluster.instances["budget_probe"],
+            "stop_node": cluster.instances["stop_node"],
+            "stop_node_watchdog": cluster.instances["stop_node_watchdog"],
             "control_url": control_url,
         }
     finally:
@@ -783,3 +800,116 @@ def test_local_row_answers_while_a_foreign_slot_read_hangs(start_cluster):
     assert _query_events(node, "pr09a-hung-local", ["S3ListObjects", "S3GetObject", "S3HeadObject"]) == 0
     # A read-only disk holds no slot, so its listing keeps the slot under its own server_root_id.
     assert listing.get("rows") == [SERVER_ROOT_ID, peer], listing
+
+
+STOP_DISK = "disk_cas_stop"
+STOP_SERVER_ROOT_ID = "itest-cas-stop"
+STOP_MOUNT_KEY = "cas_mount_stop/gc/server-roots/{}/mount".format(STOP_SERVER_ROOT_ID)
+WATCHDOG_STOP_DISK = "disk_cas_stop_wd"
+WATCHDOG_STOP_MOUNT_KEY = "cas_mount_stop_wd/gc/server-roots/itest-cas-wd-stop/mount"
+STOP_DEADLINE_S = 40
+
+
+def _local_lease(node, disk, timeout=None):
+    row = node.query(
+        "SELECT lifecycle, lifecycle_reason, writer_epoch FROM system.cas_mounts "
+        "WHERE disk = '{}' AND is_local = 1 FORMAT TSV".format(disk),
+        timeout=timeout,
+    ).rstrip("\n")
+    assert row, "the local CAS mount row must be visible"
+    lifecycle, reason, epoch = row.split("\t")
+    return lifecycle, reason, int(epoch)
+
+
+def _clickhouse_processes(node):
+    # The same pattern `get_process_pid` uses: the server and, under the watchdog, its parent.
+    return int(node.exec_in_container(["bash", "-c", "pgrep -c -f '^[^ ]*clickhouse' || true"]).strip() or 0)
+
+
+def _restart_after_stop(node, control_url, mount_key):
+    # A stopped server left its slot as the test damaged it; without the slot the restart claims afresh.
+    try:
+        _control(control_url, "/config", {"reset": True})
+    except Exception:
+        pass
+    if node.get_process_pid("clickhouse") is None:
+        try:
+            _rustfs_client(10).remove_object(cluster.rustfs_bucket, mount_key)
+        except Exception:
+            pass
+        node.start_clickhouse()
+
+
+def test_proxy_404_on_get_and_list_does_not_stop_the_server(start_cluster):
+    # A store that answers 404 to every read of the slot, LIST included, proves no absence: the renewal
+    # keeps reading and commits once the store answers again.
+    node = start_cluster["stop_node"]
+    control_url = start_cluster["control_url"]
+    _control(control_url, "/config", {"reset": True})
+    _wait_until(lambda deadline: _local_lease(node, STOP_DISK, timeout=deadline.remaining())[0] == "live", timeout=60)
+    pid_before = node.get_process_pid("clickhouse")
+    epoch_before = _local_lease(node, STOP_DISK)[2]
+    stops_before = int(node.count_in_log("server stop requested").strip())
+    try:
+        _control(
+            control_url,
+            "/config",
+            {"rate": 1.0, "methods": ["GET", "PUT"], "path_substring": STOP_SERVER_ROOT_ID,
+             "method_modes": {"PUT": "412", "GET": "404"}, "seed": 1201},
+        )
+        _wait_until(
+            lambda deadline: _control(control_url, "/stats", timeout=deadline.remaining())["by_mode"].get("404", 0) >= 2,
+            timeout=STOP_DEADLINE_S,
+        )
+    finally:
+        _restart_after_stop(node, control_url, STOP_MOUNT_KEY)
+
+    _wait_until(
+        lambda deadline: _local_lease(node, STOP_DISK, timeout=deadline.remaining())[:2] == ("live", ""),
+        timeout=STOP_DEADLINE_S,
+    )
+    assert node.get_process_pid("clickhouse") == pid_before
+    assert _local_lease(node, STOP_DISK)[2] == epoch_before
+    assert int(node.count_in_log("server stop requested").strip()) == stops_before
+
+
+def test_a_slot_deleted_by_hand_stops_the_server(start_cluster):
+    node = start_cluster["stop_node"]
+    control_url = start_cluster["control_url"]
+    _control(control_url, "/config", {"reset": True})
+    _wait_until(lambda deadline: _local_lease(node, STOP_DISK, timeout=deadline.remaining())[0] == "live", timeout=60)
+    try:
+        _rustfs_client(10).remove_object(cluster.rustfs_bucket, STOP_MOUNT_KEY)
+        _wait_until(lambda deadline: node.get_process_pid("clickhouse") is None, timeout=STOP_DEADLINE_S)
+        assert node.contains_in_log("the mount slot is absent")
+        assert node.contains_in_log("Received termination signal")
+    finally:
+        _restart_after_stop(node, control_url, STOP_MOUNT_KEY)
+    _wait_until(lambda deadline: _local_lease(node, STOP_DISK, timeout=deadline.remaining())[0] == "live", timeout=60)
+
+
+def test_a_foreign_body_stops_the_server_under_the_watchdog(start_cluster):
+    node = start_cluster["stop_node_watchdog"]
+    control_url = start_cluster["control_url"]
+    _control(control_url, "/config", {"reset": True})
+    _wait_until(
+        lambda deadline: _local_lease(node, WATCHDOG_STOP_DISK, timeout=deadline.remaining())[0] == "live", timeout=60
+    )
+    assert _clickhouse_processes(node) >= 2, "the server must run under the watchdog"
+    try:
+        client = _rustfs_client(10)
+        response = client.get_object(cluster.rustfs_bucket, WATCHDOG_STOP_MOUNT_KEY)
+        try:
+            body = response.read()
+        finally:
+            response.close()
+            response.release_conn()
+        ours = _decode_mount(body)["server_uuid"]
+        foreign = body.replace(ours.encode(), b"f" * len(ours))
+        assert foreign != body, ours
+        client.put_object(cluster.rustfs_bucket, WATCHDOG_STOP_MOUNT_KEY, io.BytesIO(foreign), len(foreign))
+        _wait_until(lambda deadline: _clickhouse_processes(node) == 0, timeout=STOP_DEADLINE_S)
+        assert node.contains_in_log("holds a body of another incarnation")
+    finally:
+        _restart_after_stop(node, control_url, WATCHDOG_STOP_MOUNT_KEY)
+

@@ -2808,3 +2808,79 @@ TEST(CASMountLease, RemountRenewalIsAdmittedOffTheMountFence)
     CasOperation reader = open_requests.admit();
     EXPECT_EQ(decodeMountLease(reader.read(l.mountKey("r"), Retry::standard())->bytes).seq, 2u);
 }
+
+namespace
+{
+
+String startRefusal(const std::shared_ptr<InMemoryBackend> & backend, UInt128 server_id)
+{
+    try
+    {
+        (void)Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_id = server_id, .server_root_id = "test"});
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA) << e.message();
+        return e.message();
+    }
+    ADD_FAILURE() << "the start must be refused";
+    return {};
+}
+
+void putRaw(Backend & backend, const String & key, const String & bytes)
+{
+    DB::Cas::tests::OperationForTest op(backend);
+    if (const auto current = (*op).read(key, Retry::once()))
+        ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(key, bytes, current->etag, Retry::once())));
+    else
+        ASSERT_TRUE(std::holds_alternative<Committed>((*op).create(key, bytes, Retry::once())));
+}
+
+}
+
+/// Each owner-identity refusal names a way back, and following it opens the disk.
+TEST(CASMountIdentityRefusal, EachRefusalNamesARecoveryThatOpens)
+{
+    const Layout layout("p");
+    const String re_add = "re-add this server under a new <cas_server_root_id>";
+    const auto opens = [](const std::shared_ptr<InMemoryBackend> & backend, UInt128 server_id, const String & srid)
+    {
+        EXPECT_NO_THROW((void)Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_id = server_id, .server_root_id = srid}))
+            << srid;
+    };
+    {
+        auto backend = std::make_shared<InMemoryBackend>();
+        (void)Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_id = UInt128{1}, .server_root_id = "test"});
+        const String message = startRefusal(backend, UInt128{2});
+        EXPECT_TRUE(message.contains("owned by a different server")) << message;
+        EXPECT_TRUE(message.contains(re_add)) << message;
+        EXPECT_FALSE(message.contains("DROP POOL MEMBER")) << message;
+        opens(backend, UInt128{2}, "test-readded");
+    }
+    {
+        auto backend = std::make_shared<InMemoryBackend>();
+        (void)Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_id = UInt128{1}, .server_root_id = "test"});
+        putRaw(*backend, layout.ownerKey("test"), encodeOwner(OwnerObject{.server_uuid = UInt128{1}, .retired_at_ms = 1752537600000ULL}));
+        const String message = startRefusal(backend, UInt128{1});
+        EXPECT_TRUE(message.contains("decommissioned")) << message;
+        EXPECT_TRUE(message.contains(re_add)) << message;
+        EXPECT_FALSE(message.contains("DROP POOL MEMBER")) << message;
+        opens(backend, UInt128{1}, "test-readded");
+    }
+    {
+        /// The owner anchor is gone over a member's data.
+        auto backend = std::make_shared<InMemoryBackend>();
+        (void)Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_id = UInt128{1}, .server_root_id = "test"});
+        putRaw(*backend, layout.serverRootDataPrefix("test") + "clickhouse_access_check", "x");
+        {
+            DB::Cas::tests::OperationForTest op(*backend);
+            const auto owner = (*op).read(layout.ownerKey("test"), Retry::once());
+            ASSERT_TRUE(owner.has_value());
+            ASSERT_EQ((*op).remove(layout.ownerKey("test"), owner->etag, Retry::once()), Removal::Removed);
+        }
+        const String message = startRefusal(backend, UInt128{1});
+        EXPECT_TRUE(message.contains("identity lost over existing data")) << message;
+        EXPECT_TRUE(message.contains("Recover the owner object from a backup of the bucket, or " + re_add)) << message;
+        opens(backend, UInt128{1}, "test-readded");
+    }
+}

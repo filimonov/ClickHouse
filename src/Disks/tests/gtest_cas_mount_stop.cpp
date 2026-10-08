@@ -180,6 +180,23 @@ TEST(CASMountStop, ALossBetweenForgetIntentAndClosedStops)
     EXPECT_EQ(store->mountEnd(), MountEnd::SlotTaken);
 }
 
+/// The renewer is still `Active` after a ledger fault, and FORGET drains for real: only the loss end
+/// keeps the teardown from writing a farewell under an identity another process may hold.
+TEST(CASMountStop, ForgetAfterALossWritesNoFarewell)
+{
+    auto backend = std::make_shared<DB::Cas::tests::CountingBackend>();
+    auto store = DB::Cas::tests::openPoolForTest(backend);
+    DB::Cas::tests::processStopLog().reset();
+    const String key = store->layout().mountKey("test");
+    ASSERT_TRUE(store->latchMountEndForTest(MountEnd::LedgerFault));
+    const uint64_t slot_writes_before = backend->putOverwriteCount(key);
+
+    store->forgetDisk({}, "r");
+
+    EXPECT_EQ(backend->putOverwriteCount(key), slot_writes_before);
+    EXPECT_EQ(store->mountEnd(), MountEnd::LedgerFault);
+}
+
 TEST(CASMountStop, ForgetClosesWithoutAStop)
 {
     auto backend = std::make_shared<InMemoryBackend>();

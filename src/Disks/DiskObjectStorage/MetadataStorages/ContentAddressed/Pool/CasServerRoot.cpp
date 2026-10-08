@@ -485,9 +485,8 @@ std::optional<OwnerLost> retiredOwner(const OwnerObject & owner, const String & 
 
     return lostOwner(OwnerLost::Why::Tombstoned, Exception(ErrorCodes::CORRUPTED_DATA,
         "CAS server-root '{}' was explicitly decommissioned by an operator (tombstoned at {} ms) "
-        "and is refusing to silently resume — if you genuinely intend to bring this server-root "
-        "back, manually clear the owner object's tombstone field and restart "
-        "(same manual-recovery pattern as an owner anchor lost over existing data)",
+        "and is refusing to silently resume — re-add this server under a new <cas_server_root_id>; the retired "
+        "identity stays retired",
         srid, *owner.retired_at_ms));
 }
 }
@@ -588,9 +587,9 @@ OwnerClaim claimOwnerStep(
             "CAS server-root '{}' is owned by a different server (owner server_uuid={}, ours={}) — refusing to claim. "
             "This usually means THIS server's local uuid file was regenerated (e.g. /var/lib/clickhouse was wiped, "
             "or the container/pod was recreated without a persistent volume) while the pool kept the old identity. "
-            "Recover by restoring the old local uuid file; or configure a fresh <cas_server_root_id> for this disk; "
-            "or — only after verifying that NO server uses this root — manually delete the owner object '{}' and restart.",
-            srid, u128ToHex(owner->server_uuid), u128ToHex(our_uuid), key));
+            "Recover by restoring the old local uuid file, or re-add this server under a new <cas_server_root_id>; "
+            "this identity stays with its owner.",
+            srid, u128ToHex(owner->server_uuid), u128ToHex(our_uuid)));
     }
 
     if (authority == OwnershipAuthority::Reacquire)
@@ -605,7 +604,8 @@ OwnerClaim claimOwnerStep(
     if (!serverRootSubtreeEmpty(op, l, srid, std::get<RefCatalog>(catalog)))
         return lostOwner(OwnerLost::Why::Absent, Exception(ErrorCodes::CORRUPTED_DATA,
             "CAS server-root '{}' has no owner anchor but its data subtree is non-empty "
-            "(identity lost over existing data) — refusing to re-claim",
+            "(identity lost over existing data) — refusing to re-claim. Recover the owner object from a backup "
+            "of the bucket, or re-add this server under a new <cas_server_root_id>.",
             srid));
 
     const std::optional<Observation> occupant = conflictOrThrow(

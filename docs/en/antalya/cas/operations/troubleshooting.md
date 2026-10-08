@@ -24,7 +24,7 @@ tools.
 | `SYSTEM CAS DROP POOL MEMBER` returns a non-empty `warnings` column | A per-object drain step could not confirm emptiness; the mount slot is left terminated but not fully drained, as a resume anchor | Rerun the same command — it is resumable and skips namespaces already marked removed, reporting them under `namespaces_already_removed` |
 | Writes or `ALTER`s on a `CAS` disk fail with a `READONLY`-class error | The disk's metadata storage rejects every mutating entry point; this is deliberate for a disk opened with `<readonly>true</readonly>`, used by every offline `clickhouse-disks` tool | Confirm whether the disk was intentionally configured read-only (offline inspection, `cas-fsck`, `cas-gc-dryrun`, `cas-gc-rebuild`, `cas-drop-member` all require it); a production disk serving writes must not carry `<readonly>true</readonly>` |
 | A table stays unavailable after a transient network error during startup | `AsyncLoader` has no retry/requeue path for a failed table load job: a transient S3 `NETWORK_ERROR` during `CAS` ref-table startup recovery can leave the job permanently `FAILED` | Restart the server, or issue a fresh load for the table; this is a one-shot job design, not a `CAS`-specific bug |
-| A mounted pool directory was removed or renamed out of band | Renewal observes an absent, foreign, successor, or otherwise conflicting mount body and terminates the keeper with a typed fail-closed exception; the runtime closes the local write fence and requests remount rather than adopting the body | Never remove or rename a live pool's storage path. To retire a member permanently use [`SYSTEM CAS DROP POOL MEMBER`](/antalya/cas/operations/migration#decommission) instead of raw filesystem operations; collect the `watermark_renew` classification (`vanished` for an absent body, `conflict` for a foreign, successor, or otherwise conflicting one) and the subsequent `mount_remount` step |
+| A mounted pool directory was removed or renamed out of band | Renewal observes an absent, foreign, successor, or otherwise conflicting mount body and terminates the keeper with a typed fail-closed exception; the runtime closes the local write fence and stops the server (see [`server stop requested`](#server-stop-requested)) rather than adopting the body | Never remove or rename a live pool's storage path. To retire a member permanently use [`SYSTEM CAS DROP POOL MEMBER`](/antalya/cas/operations/migration#decommission) instead of raw filesystem operations; collect the `watermark_renew` classification (`vanished` for an absent body, `conflict` for a foreign, successor, or otherwise conflicting one) and the `CasPool` line that names what was in the slot |
 | Stale-looking part metadata after an out-of-band change to the pool | The part-folder view cache may be serving a retained (not re-validated) view | Set the disk-level `cas_part_folder_cache_bytes = 0` to disable view retention and `cas_manifest_decode_cache_bytes = 0` to make every manifest read fetch the body, then run `fsck`; both are diagnostic kill switches, not steady-state settings |
 | A wide merge (many thousands of columns) fails with a port-exhaustion error from the network layer | Each column in a wide part can cost a separate object-store operation in one merge, and a very wide part can issue on the order of the column count in requests, exhausting local ephemeral TCP ports under load | Reduce concurrent merge parallelism on that table, or increase the host's ephemeral port range; this is a general high-fan-out-merge limit, not specific to content addressing |
 
@@ -52,9 +52,9 @@ Start with the `watermark_renew` timeline described in
    `Active` and emits no failed aggregate row; during graceful shutdown that is the expected
    clean-release path.
 4. **Confirmed conflict.** `classification = 'conflict'` means exact resolution found another body;
-   inspect `server_root_id`, `writer_epoch`, `seq`, and `write_attempt_id`. Same-pair twins, GC-fenced
-   bodies, successor epochs, and foreign holders all remain fail closed. Do not delete or rewrite the
-   mount key by hand.
+   inspect `server_root_id`, `writer_epoch`, `seq`, and `write_attempt_id`. A GC fence of our own body
+   remounts; same-pair twins, successor epochs, and foreign holders stop the server (see
+   [`server stop requested`](#server-stop-requested)). Do not delete or rewrite the mount key by hand.
 5. **Fence or lifecycle loss.** `classification = 'fence_or_lifecycle_lost'` means another local loss,
    remount park request, or terminal lifecycle closed admission while the operation was active. A
    parked result reuses the already-requested recovery generation and must not double-count
@@ -69,3 +69,22 @@ The default-level log policy is intentionally bounded: one warning on the first 
 then one recovery info or terminal fence warning, plus one final line per whole-chain remount attempt.
 Use `system.cas_log` and counter deltas to reconstruct the incident; `DEBUG` contains individual
 physical retries when that extra transport detail is necessary.
+
+### "server stop requested" {#server-stop-requested}
+
+A CAS disk found its mount slot no longer holds this incarnation and asked the server to stop. The
+`ERROR` line on the `CasPool` logger starts with `CAS disk '<disk>' (server_root_id=<srid>):` and says
+what was in the slot; [when the mount slot is lost](/antalya/cas/architecture/mounts-and-leases#slot-lost)
+lists every reason.
+
+| The line says | Check |
+|---|---|
+| `the mount slot holds a body of another incarnation (...)` | Two servers with one `cas_server_root_id`, or two starts with one `uuid` file: compare `hostname`, `pid` and `server_uuid` in the line with every server that mounts this pool |
+| `the mount slot is absent; a slot is deleted by SYSTEM CAS DROP POOL MEMBER or by hand` | Who ran `SYSTEM CAS DROP POOL MEMBER` for this member, or removed `gc/server-roots/<srid>/mount` from the bucket |
+| `the mount slot holds a body of this server's (server_uuid, writer_epoch) that this server did not write (...)` | Another process started with this server's identity and epoch: a copied data directory or a second container on one volume |
+| `the mount slot holds bytes that do not decode as a mount lease` | What wrote `gc/server-roots/<srid>/mount`: a tool, a bucket replication rule, or another format generation |
+| `... The process ends now without a shutdown: ...` (`FATAL`) | A ref-log fault or a defect of the renewal machine; collect the log before the restart, see [debugging](/antalya/cas/operations/debugging#filing-a-bug) |
+
+Restart the server once the cause is removed; a restart claims the slot again. The stop is a `SIGTERM`
+shutdown, not a crash: a supervisor restarts it on its own only when configured to restart on any exit
+(systemd `Restart=always`).

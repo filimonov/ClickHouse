@@ -226,14 +226,18 @@ stateDiagram-v2
     TransientNotLive --> IdentityLost: pool meta and owner both authoritatively absent
     TransientNotLive --> VanishedReplaced: foreign pool_id observed
     Live --> VanishedForgotten: SYSTEM CAS FORGET
+    Live --> Stopping: the slot is lost, see below
+    TransientNotLive --> Stopping: the self-remount finds another incarnation
     IdentityLost --> [*]
     VanishedReplaced --> [*]
     VanishedForgotten --> [*]
+    Stopping --> [*]
 ```
 
-`IdentityLost`, `VanishedReplaced` and `VanishedForgotten` are terminal and absorbing: the remount
-and GC threads self-exit, and there is deliberately no auto-revive — an identity disappearing
-under a live mount is an operator-level event.
+`IdentityLost`, `VanishedReplaced`, `VanishedForgotten` and `Stopping` are terminal and absorbing, with
+deliberately no auto-revive — an identity disappearing under a live mount is an operator-level event.
+The remount thread self-exits in all four. The GC scheduler self-exits in the first three; on
+`Stopping` it keeps running until the server shuts down or the disk is torn down.
 
 ## Mount, unmount, crash {#mount-lifecycle}
 
@@ -274,6 +278,43 @@ drops every ref-bearing namespace, sweeps manifest debris before the slot (delet
 removes the watermark authority), drains staging and roots, then — only with zero warnings —
 retires in order: mount, epoch, a final liveness re-check, owner tombstone.
 
+## When the mount slot is lost {#slot-lost}
+
+A renewal whose conditional write is refused reads the slot. If the slot no longer holds a body of
+this incarnation, the mount ends for good: the write fence closes first, then the server is asked to
+stop, then one `ERROR` line on the `CasPool` logger says what was in the slot. The first end wins;
+`system.cas_mounts` shows `lifecycle = 'stopping'` with the reason in `lifecycle_reason`.
+
+| `lifecycle_reason` | What was found | What happens |
+|---|---|---|
+| `slot_taken` | a body of another server, or of another `writer_epoch` of this server, or a copy of our own body under a token we did not write | graceful server stop |
+| `slot_absent` | no slot, and a `LIST` of the key agrees with the `GET` | graceful server stop |
+| `slot_corrupt` | bytes that do not decode, or a body of our own `(server_uuid, writer_epoch)` that this server did not write | graceful server stop |
+| `ledger_fault` | a ref-log id this writer owns holds an object it did not write, or a ref lane contradicts itself | `LOG_FATAL`, the process ends at once without a shutdown |
+| `local_defect` | the renewal machine itself failed (not the store, not the memory limit) | `LOG_FATAL`, the process ends at once without a shutdown |
+
+- **Graceful stop** is `SIGTERM` to the own process: every CAS disk of the server stops with it. A
+  stopping disk refuses new changes as retry-later, writes no farewell and does not drain its ref lanes,
+  so a shutdown over a dead store does not wait on it.
+- **The end without a shutdown** is for a broken process invariant: a shutdown writes the farewell and
+  the checkpoints under an identity another process may hold.
+- **Our own GC fence** (`gc_fenced` on the body this server wrote) is not a loss: the self-remount takes a
+  fresh epoch as before. A self-remount that finds another server, a newer epoch of this server, or a
+  body of the fenced pair that keeps changing stops the server too. A body of the fenced pair that does
+  not change is reclaimed after the token-stability observation, as after a crash.
+- **A `GET` 404 alone proves nothing**: a proxy or a misrouted request answers it as well. Absence counts
+  only when a `LIST` of the key agrees; otherwise the background renewal reads again.
+- **`SYSTEM CAS FORGET`** closes the disk and the server keeps running. A loss latched before FORGET
+  finishes wins: the disk stays `stopping`.
+- **Read-only mounts** have no renewer and never stop the server. **Decommission** fails its command
+  and deletes nothing more. A writable mount opened without background workers (tools) closes the disk
+  instead of stopping the process.
+- **Restart policy:** the graceful stop is a `SIGTERM` shutdown, not a crash. If the server should come
+  back on its own, configure the supervisor to restart it on any exit (systemd `Restart=always`).
+- **`clickhouse-local`** installs no `SIGTERM` handler, so the stop ends it at once.
+- **Not detected:** a byte-identical clone, a second process that writes exactly this server's bytes:
+  the store cannot tell its write from ours.
+
 ## `system.cas_mounts` {#mounts-table}
 
 Per CAS disk, one row for this server's own mount, built from memory (`is_local = 1`), and one row per
@@ -288,7 +329,7 @@ row with `listing_error` set.
 | `writer_epoch`, `renewal_sequence`, `started_at`, `expires_at`, `min_active_build_sequence`, `gc_fenced` | lease state (`DateTime64(3)` columns; the millisecond-integer field names live only in the internal `MountLease` struct and the on-disk body) |
 | `state` | one of `live`, `expired`, `terminated`, `fenced`, `corrupt` |
 | `is_leader`, `pending_reclaim`, `last_success_age_seconds`, `wedged_namespace_count` | GC health, process-local; **`NULL` on every peer row** — a process-local fact must never be stamped onto another server's row |
-| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `remounting`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began, for a pause from the lease clock when the current reason's threshold was crossed (for `lease_expired`, the lease deadline); `NULL` while live |
+| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `remounting`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `stopping` (`lifecycle_reason` as in [the table above](#slot-lost)), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began, for a pause from the lease clock when the current reason's threshold was crossed (for `lease_expired`, the lease deadline); `NULL` while live |
 | `renewal_in_progress`, `renewal_attempts`, `last_renewal_error` | the running (or last) lease renewal: conditional `PUT`s sent so far and the last failed request, updated per attempt; **`NULL` on every peer row** |
 
 The lifecycle snapshot is I/O-free and ungated, so a not-live, never-started, or vanished disk
