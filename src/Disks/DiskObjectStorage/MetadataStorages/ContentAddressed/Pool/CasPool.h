@@ -763,8 +763,8 @@ public:
     /// operation admitted here is refused the moment the fence trips, is re-armed under a fresh lease
     /// incarnation, or runs out of room before the lease expires.
     CasRequests & mountRequests() { return mount_requests; }
-    /// The lease plane, on an open fence: the renewer's claim and adoption, the remount re-anchor and
-    /// the farewell. None of them may be refused for want of the lease they establish or hand back.
+    /// The lease plane, on an open fence: the background renewal, the remount re-anchor and the
+    /// farewell. None of them may be refused for want of the lease they establish or hand back.
     CasRequests & leaseRequests() { return lease_requests; }
     /// The open-fence plane: GC, the offline tools, this pool's own reads, and the bootstrap-control
     /// claims. None of them hold a mount lease -- the claims are what ESTABLISHES one, so gating them

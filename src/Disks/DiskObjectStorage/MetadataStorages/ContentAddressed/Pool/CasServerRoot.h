@@ -239,6 +239,22 @@ enum class MountPriorState
     UncleanUnsafe,     /// the operator's explicit `cas_unsafe_remount_no_delay` authorization carried the slot's exact token
 };
 
+/// What one read of the mount slot established; `Object` keeps the exact bytes and their ETag.
+using SlotObservation = std::variant<Object, ProvenAbsent, NotObserved>;
+
+/// A claim this server confirmed: its body, those exact bytes, the ETag they landed under, and the
+/// `CLOCK_BOOTTIME` instant taken before the body was built — the lease runs from it.
+struct MountClaimed
+{
+    MountLease body;
+    String bytes;
+    Etag etag;
+    uint64_t start_boot_ms = 0;
+};
+
+/// The lease `seen` holds, when it holds one.
+std::optional<MountLease> observedLease(const SlotObservation & seen);
+
 /// Startup decision for the mount lease (`gc/server-roots/<srid>/mount`), run AFTER the owner gate
 /// (so `our_uuid` is the established owner). The lease is LIVENESS, not identity — the owner object
 /// already settled who may write; the lease settles whether a live incarnation currently holds the
@@ -270,22 +286,6 @@ enum class MountPriorState
 ///         caller must never conclude death from a bare timestamp read);
 ///   - different `server_uuid` → `ForeignOwner` (do NOT write, regardless of expiry or prior state).
 ///
-/// What one read of the mount slot established; `Object` keeps the exact bytes and their ETag.
-using SlotObservation = std::variant<Object, ProvenAbsent, NotObserved>;
-
-/// A claim this server confirmed: its body, those exact bytes, the ETag they landed under, and the
-/// `CLOCK_BOOTTIME` instant taken before the body was built — the lease runs from it.
-struct MountClaimed
-{
-    MountLease body;
-    String bytes;
-    Etag etag;
-    uint64_t start_boot_ms = 0;
-};
-
-/// The lease `seen` holds, when it holds one.
-std::optional<MountLease> observedLease(const SlotObservation & seen);
-
 /// The claim's verdict, with what decided it kept whole: the confirmed claim for `Claimed`, the
 /// observation for every other `Kind`.
 struct MountClaimResult
@@ -576,23 +576,16 @@ bool isCreatorFenceTerminal(CasOperation & op, const Layout & layout, const Stri
 /// `CasMountRuntime` is the sole driver: this class never creates a thread, invokes a callback into the
 /// runtime, or performs a durable write from its destructor.
 ///
-/// ADOPT RULE (critical): the steady-state flow is `claimMount(...)` writes the live mount under
-/// (our_uuid, our_epoch), THEN `renewer.start()`. So `start`'s `claim` hook must ADOPT a live mount
-/// that is ALREADY ours — same `server_uuid` AND same `writer_epoch` — instead of self-tripping the
-/// live-double-start guard. The discriminator is the (uuid, epoch) pair:
-///   - same uuid + same epoch  → our own just-written claim (or a replay) → adopt: `replace`
-///     against the observed incarnation to refresh seq/expiry (no fail);
-///   - same uuid + DIFFERENT live epoch → a newer incarnation superseded us → fail closed;
-///   - foreign uuid → fail closed;
-///   - absent → `create`; expired-our-uuid (any epoch) → `replace` reclaim.
+/// It starts from the slot `claimMount` confirmed and never writes it to take over: one start or
+/// remount writes the slot once.
 ///
 /// PLANES. The bounded renewal (`renew`: startup and direct calls) is admitted under the mount fence,
-/// because it writes under the authority the fence tracks. The background renewal, the claim, the
-/// remount re-anchor and the farewell run on the lease plane, whose fence is open: the background
-/// renewal must outlive its lease, a self-remount claims with the fence already latched lost, and a
-/// farewell refused because the fence ran down would leave the slot looking live until GC fences it
-/// out. None is unguarded: every write is conditional, and a caller with shutdown facts hands them
-/// over as a `Liveness`.
+/// because it writes under the authority the fence tracks. The background renewal, the remount
+/// re-anchor and the farewell run on the lease plane, whose fence is open: the background renewal must
+/// outlive its lease, a self-remount re-anchors with the fence already latched lost, and a farewell
+/// refused because the fence ran down would leave the slot looking live until GC fences it out. None is
+/// unguarded: every write is conditional, and a caller with shutdown facts hands them over as a
+/// `Liveness`.
 class MountLeaseRenewer
 {
 public:
@@ -607,16 +600,15 @@ public:
         /// tests and wired by CasMountRuntime::installRenewer.
         std::function<uint64_t()> boot_ms_fn_ = {});
 
-    /// Adopt the already-claimed mount. Returns the exact pre-I/O BOOTTIME anchor. `liveness` carries
-    /// the caller's shutdown terms; the mount fence is deliberately not consulted here.
-    uint64_t start(Liveness liveness = {});
+    /// Take over the slot `claimMount` just confirmed. No request: the lease runs from the claim's start.
+    void start(const MountClaimed & claimed);
     /// The bounded renewal, admitted under the mount fence: the startup re-anchor and direct calls.
     MountRenewResult renew(const MountRenewOperationEnvironment & environment);
     /// The remount's re-anchor, which is bootstrap control rather than steady state: a remount renews
     /// BEFORE it arms the fence for the new incarnation, so the fence is still latched lost and an
     /// operation admitted under it would be refused before its first attempt. It admits on this
-    /// renewer's own open plane, the one the claim and the farewell use, so there is no plane for a
-    /// caller to get wrong. Same policy and same verdicts as `renew`.
+    /// renewer's own open plane, the one the background renewal and the farewell use, so there is no
+    /// plane for a caller to get wrong. Same policy and same verdicts as `renew`.
     MountRenewResult renewForRemount(const MountRenewOperationEnvironment & environment = {});
     /// The background renewal, on the lease plane, retried until a definitive answer: a commit, a
     /// conflict the read observed, a local failure, or `environment.live` refusing. A refusal sends the
@@ -643,7 +635,6 @@ private:
     /// slot. `NotObserved` only when `op` is no longer admitted.
     Observation readUntilObserved(CasOperation & op, const Retry & policy,
                                   const MountRenewOperationEnvironment & environment) const;
-    Etag claim(CasOperation & op, const String & body);
     [[noreturn]] void throwRenewConflict(const Observation & seen) const;
     MountRenewResult terminalResult(MountRenewResult result);
     void terminate(CasOperation & op);
@@ -666,7 +657,7 @@ private:
     MountLeaseRenewerState renewer_state = MountLeaseRenewerState::New;
     uint64_t seq = 0;
     /// The incarnation our last landed write created; every renewal and the farewell name it as the
-    /// precondition. Unset only before `start` has landed one.
+    /// precondition. Unset only before `start`.
     std::optional<Etag> last_etag;
     /// The bytes `last_etag` names. A read that returns them under that token says the slot did not move.
     String last_body;

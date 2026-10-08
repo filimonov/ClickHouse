@@ -2666,7 +2666,7 @@ inline void awaitLatchEntered(MetaWriteLatchBackend & backend)
 }
 
 /// Runs a caller-supplied action ONCE, immediately before the named backend call, so a test can make
-/// the mount slot change inside a window `MountLeaseRenewer::claim` holds open. Each hook clears
+/// the mount slot change inside a window a mount claim holds open. Each hook clears
 /// itself after firing.
 class MountSlotRaceBackend : public DB::Cas::InMemoryBackend
 {

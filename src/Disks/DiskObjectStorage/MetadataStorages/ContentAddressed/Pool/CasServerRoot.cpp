@@ -36,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int BAD_ARGUMENTS;
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
@@ -1557,113 +1558,25 @@ const Etag & MountLeaseRenewer::precondition() const
     return *last_etag;
 }
 
-Etag MountLeaseRenewer::claim(CasOperation & op, const String & body)
-{
-    /// One read decides the branch AND supplies the precondition, so both the mint and the adoption
-    /// are two requests: a separate presence probe would only re-ask what these bytes already answer.
-    const std::optional<Object> got = op.read(key, Retry::standard());
-    if (!got)
-    {
-        WriteResult minted = op.create(key, body, Retry::standard());
-        if (std::holds_alternative<Conflict>(minted))
-            throw Exception(
-                ErrorCodes::ABORTED,
-                "CAS mount-lease: key '{}' appeared between the read and the create", key);
-        const std::optional<Etag> etag
-            = orThrow(std::move(minted), fmt::format("CAS mount-lease mint of key '{}'", key));
-        emitMountEvent(
-            event_sink, CasEventType::MountClaim, srid, "mint", nullptr,
-            "mount slot absent -- renewer minted it directly");
-        return *etag;
-    }
-
-    const MountLease observed = decodeMountLease(got->bytes);
-    if (observed.server_uuid != server_uuid)
-    {
-        emitMountEvent(
-            event_sink, CasEventType::MountConflict, srid, "adopt", &observed,
-            "mount slot is held by a foreign server -- failing closed");
-        throw Exception(
-            ErrorCodes::ABORTED,
-            "CAS mount-lease: key '{}' is held by a foreign server ({}) -- failing closed",
-            key, describeMountHolder(observed));
-    }
-    if (observed.writer_epoch != writer_epoch)
-    {
-        emitMountEvent(
-            event_sink, CasEventType::MountConflict, srid, "adopt", &observed,
-            "mount slot is held by a different writer_epoch -- failing closed");
-        throw Exception(
-            ErrorCodes::ABORTED,
-            "CAS mount-lease: key '{}' is held by a different writer_epoch {} rather than ours {} -- failing closed",
-            key, observed.writer_epoch, writer_epoch);
-    }
-    if (observed.gc_fenced)
-    {
-        emitMountEvent(
-            event_sink, CasEventType::MountConflict, srid, "fenced_by_gc", &observed,
-            "own mount slot was fenced by GC before renewer adoption");
-        throw MountFencedException(fmt::format(
-            "CAS mount-lease: key '{}' was fenced by GC before renewer adoption ({})",
-            key, describeMountHolder(observed)));
-    }
-
-    WriteResult adopted = op.replace(key, body, got->etag, Retry::standard());
-    if (const Conflict * conflict = std::get_if<Conflict>(&adopted))
-    {
-        /// The write's own resolve read is the re-read: it observed what took the key from us.
-        if (const Object * occupant = std::get_if<Object>(&conflict->seen))
-        {
-            const MountLease lease = decodeMountLease(occupant->bytes);
-            if (lease.server_uuid == server_uuid && lease.gc_fenced)
-                throw MountFencedException(fmt::format(
-                    "CAS mount-lease: key '{}' was fenced by GC inside the adoption window ({})",
-                    key, describeMountHolder(lease)));
-            throw Exception(
-                ErrorCodes::ABORTED,
-                "CAS mount-lease: key '{}' changed while adopting our own mount slot ({})",
-                key, describeMountHolder(lease));
-        }
-        if (std::holds_alternative<ProvenAbsent>(conflict->seen))
-            throw Exception(
-                ErrorCodes::ABORTED,
-                "CAS mount-lease: key '{}' vanished while adopting our own mount slot", key);
-    }
-    const std::optional<Etag> etag
-        = orThrow(std::move(adopted), fmt::format("CAS mount-lease adoption of key '{}'", key));
-
-    emitMountEvent(
-        event_sink, CasEventType::MountClaim, srid, "adopt", &observed,
-        "adopted our own already-live mount slot");
-    return *etag;
-}
-
-uint64_t MountLeaseRenewer::start(Liveness liveness)
+void MountLeaseRenewer::start(const MountClaimed & claimed)
 {
     if (renewer_state != MountLeaseRenewerState::New)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount-lease: start is allowed only in New state for key '{}'", key);
-
-    const uint64_t wall_ms = now_ms_fn();
-    const uint64_t attempt_start_boot_ms = boot_ms_fn();
-    const MountLease lease_body = makeBody(/*seq_=*/1, wall_ms, min_active_build_sequence_fn(), newMountWriteAttemptId());
-    const String body = encodeMountLease(lease_body);
-    /// Off the mount fence: a self-remount claims with the fence already latched lost, and a claim
-    /// admitted under it would be refused on every request. What makes the claim safe is that every
-    /// write below is conditional.
-    CasOperation op = open_requests.admit(std::move(liveness));
-    const Etag etag = claim(op, body);
-
-    seq = 1;
-    last_etag = etag;
-    last_body = body;
-    last_committed_attempt_start_boot_ms = attempt_start_boot_ms;
-    last_confirmed_body = lease_body;
+    if (claimed.body.server_uuid != server_uuid || claimed.body.writer_epoch != writer_epoch)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "CAS mount-lease: key '{}' was claimed for server_uuid={} writer_epoch={}, not this renewer's "
+                        "server_uuid={} writer_epoch={}",
+                        key, u128ToHex(claimed.body.server_uuid), claimed.body.writer_epoch,
+                        u128ToHex(server_uuid), writer_epoch);
+    seq = claimed.body.seq;
+    last_etag = claimed.etag;
+    last_body = claimed.bytes;
+    last_committed_attempt_start_boot_ms = claimed.start_boot_ms;
+    last_confirmed_body = claimed.body;
     const uint64_t ttl_ms = static_cast<uint64_t>(ttl.count());
-    confirmed_deadline_boot_ms = attempt_start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
-        ? std::numeric_limits<uint64_t>::max()
-        : attempt_start_boot_ms + ttl_ms;
+    confirmed_deadline_boot_ms = claimed.start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
+        ? std::numeric_limits<uint64_t>::max() : claimed.start_boot_ms + ttl_ms;
     renewer_state = MountLeaseRenewerState::Active;
-    return attempt_start_boot_ms;
 }
 
 [[noreturn]] void MountLeaseRenewer::throwRenewConflict(const Observation & seen) const

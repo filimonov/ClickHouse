@@ -1470,102 +1470,6 @@ TEST(CASPool, ListMirroredChildren)
     EXPECT_EQ(children[1], "bk2");
 }
 
-namespace
-{
-
-/// Delegating backend that fences the mount slot IN PLACE the first time a `get` returns a present
-/// body for the armed key — reproducing the S13 window: the GC's token-guarded fence-out lands
-/// between the renewer adopt's GET and its CAS. The caller's subsequent token-guarded `putOverwrite`
-/// then fails `PreconditionFailed`, the adopt re-reads, sees `gc_fenced`, and throws
-/// `MountFencedException` — which `Pool::open`'s fence-recovery loop must turn into a fresh-epoch
-/// retry rather than a permanent wedge (P3.1 vector C).
-class FenceInAdoptWindowBackend final : public DB::Cas::Backend
-{
-public:
-    explicit FenceInAdoptWindowBackend(std::shared_ptr<DB::Cas::Backend> inner_) : inner(std::move(inner_)) {}
-    String fence_key;   /// empty = fault disarmed; set to the mount key to arm the one-shot fence
-
-    bool supportsListTokens() const override { return inner->supportsListTokens(); }
-
-    /// The fault sits on the READ PRIMITIVE: the renewer's adopt reads the mount slot through it.
-    std::optional<Raw> read(const String & key, TransportAccess & access) override
-    {
-        auto got = inner->read(key, access);
-        if (!fence_key.empty() && key == fence_key && got.has_value())
-        {
-            /// One-shot: fence the slot in place exactly as `computeHeartbeatFloor` does (preserve the
-            /// body, gc_fenced = true, seq + 1, guarded against the incarnation we just read), then
-            /// disarm so the retry can adopt cleanly.
-            DB::Cas::MountLease fenced = DB::Cas::decodeMountLease(got->bytes);
-            fenced.gc_fenced = true;
-            fenced.seq += 1;
-            (void)inner->write(key, DB::Cas::encodeMountLease(fenced), got->value, access);
-            fence_key.clear();
-        }
-        return got;
-    }
-    std::optional<RawMeta> head(const String & key, TransportAccess & access) override { return inner->head(key, access); }
-    RawListPage list(const String & prefix, const String & cursor, size_t limit, TransportAccess & access) override { return inner->list(prefix, cursor, limit, access); }
-    RawRemoval remove(const String & key, const String & expected_value, TransportAccess & access) override { return inner->remove(key, expected_value, access); }
-    void removeManyWriteOnce(const std::vector<WriteOnceKey> & keys, TransportAccess & access) override { inner->removeManyWriteOnce(keys, access); }
-    size_t bulkDeleteKeyLimit() const override { return inner->bulkDeleteKeyLimit(); }
-    std::expected<String, RawConflict> write(const String & key, const String & bytes,
-                                             const std::optional<String> & expected_value, TransportAccess & access) override
-    {
-        return inner->write(key, bytes, expected_value, access);
-    }
-    std::unique_ptr<DB::ReadBuffer> stream(const String & key, TransportAccess & access) override { return inner->stream(key, access); }
-    void publish(const BlobPublishRequest & request, TransportAccess & access) override { inner->publish(request, access); }
-    Dialect dialect() const override { return inner->dialect(); }
-
-private:
-    std::shared_ptr<DB::Cas::Backend> inner;
-};
-
-}
-
-TEST(CASPoolMountFence, OpenRecoversFromFenceInAdoptWindowWithFreshEpoch)
-{
-    auto inner = std::make_shared<InMemoryBackend>();
-    auto fencing = std::make_shared<FenceInAdoptWindowBackend>(inner);
-    /// Arm the one-shot fence on the mount slot. Pool::open first claims the mount (fresh mint), then
-    /// the renewer adopts it — the adopt's GET trips the fence, its CAS fails, and open must recover.
-    const DB::Cas::Layout layout("p");
-    fencing->fence_key = layout.mountKey("test");
-
-    /// The retry that recovers from the fence reclaims a same-uuid, different-epoch, `gc_fenced` body
-    /// -> `MountPriorState::Fenced` (a fenced prior is reclaimed on the first attempt, with no
-    /// observation polling -- see `CASMountOpenWaits.FencedPriorReclaimsWithoutAnyWait`). The injected
-    /// `boot_ms_fn`/`wait_sleep_fn` below keep this test off the real clock regardless.
-    /// Held in a shared atomic, not a plain local: `wait_sleep_fn` below mutates it, and the Pool can
-    /// outlive this stack frame (a background publish holds `shared_from_this()`), so a by-reference
-    /// capture of a local would dangle.
-    auto fake_boot = std::make_shared<std::atomic<uint64_t>>(0);
-    DB::Cas::PoolPtr store;
-    ASSERT_NO_THROW(
-        store = DB::Cas::Pool::open(fencing,
-            DB::Cas::PoolConfig{.pool_prefix = "p", .server_root_id = "test",
-                .boot_ms_fn = [fake_boot]
-                {
-                    return fake_boot->load();
-                },
-                .wait_sleep_fn = [fake_boot](uint64_t ms)
-                {
-                    *fake_boot += ms;
-                }}))
-        << "open must recover from a fence in the adopt window, not wedge (exit-49 S13 bug)";
-    ASSERT_TRUE(store);
-
-    /// The final live lease is unfenced and at a HIGHER writer_epoch than the first attempt (a fence
-    /// costs an epoch): the first claim took epoch 1, got fenced, the retry took epoch 2 and mounted.
-    const auto got = readObj(*inner, layout.mountKey("test"));
-    ASSERT_TRUE(got.has_value());
-    const MountLease final_lease = decodeMountLease(got->bytes);
-    EXPECT_FALSE(final_lease.gc_fenced);
-    EXPECT_GT(final_lease.writer_epoch, 1u) << "recovery must draw a fresh writer_epoch";
-    EXPECT_TRUE(fencing->fence_key.empty()) << "the one-shot fence must have fired";
-}
-
 /// Task 12: the write-fence deadline is a CLOCK_BOOTTIME instant (boottime includes VM-suspend time,
 /// so a resumed sleeper sees its fence expired — unlike CLOCK_MONOTONIC, which freezes across suspend).
 /// A CLOCK_MONOTONIC freeze cannot be simulated in a unit test, so we exercise the injected-fn seam: a
@@ -1749,58 +1653,37 @@ TEST(CASPoolRemount, ShutdownGuardRefusesToArmRemount)
 
 namespace
 {
-/// A sequenced fake boot clock: the first N `bootMsNow()` calls return the values queued via
-/// `.queue`, in order; every call after the queue drains returns `.steady`. `CasMountRuntime::bootMsNow`
-/// re-invokes `PoolConfig::boot_ms_fn` on EVERY call, with zero memoization -- so a plain call-counter
-/// deterministically distinguishes an early (anchor) reading from a later (response-time) one, with no
-/// real sleep and no threads.
-struct SequencedBootClock
+/// Runs `stall` once, inside the next conditional write of `mount_key`, before it lands.
+class MountWriteStallBackend final : public DB::Cas::InMemoryBackend
 {
-    std::vector<uint64_t> queue;
-    size_t next = 0;
-    uint64_t steady = 0;
+public:
+    String mount_key;
+    std::function<void()> stall;
 
-    uint64_t operator()()
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+        const std::optional<String> & expected_value, DB::Cas::TransportAccess & access) override
     {
-        if (next < queue.size())
-            return queue[next++];
-        return steady;
+        if (key == mount_key && expected_value && stall)
+            std::exchange(stall, {})();
+        return InMemoryBackend::write(key, bytes, expected_value, access);
     }
 };
 }
 
-/// Phase B addendum 2 (task 5b review, reviewer's probe): the self-remount arm must anchor at the
-/// claim attempt's pre-I/O instant (`remount_anchor_boot_ms`, captured right after `installRenewer`
-/// and right before `renewerStart()` in `Pool::tryRemountOnce`), never at a later reading taken after
-/// `renewerStart`/`quiesceRefTablesForRemount` have already run.
-///
-/// The two `bootMsNow()` calls of interest, in the ORDER each code version issues them:
-///   - FIXED code: call #1 = the new anchor (`remount_anchor_boot_ms`, before `renewerStart`);
-///     call #2 = `MountLeaseRenewer::prepareRenew`'s own internal boot read inside `renewerStart`'s
-///     `doStart` (feeds only the renewer's OWN internal `confirmed_deadline_ms` -- unrelated to the
-///     Pool-level arm -- so its value is irrelevant to the arm post-fix).
-///   - PRE-FIX code (no anchor line): call #1 = that SAME `prepareRenew` read (now the first boot
-///     call of the attempt, since nothing reads the clock before `renewerStart`); call #2 = the
-///     arm-site's own `mount_runtime.bootMsNow()`, read AFTER `renewerStart` returns -- the stale,
-///     response-time reading this whole fix exists to stop using.
-/// A sequenced clock returning 10000 then 11000 (a later response-time reading that remains inside
-/// the normal renewal window) therefore arms the FIXED code from 10000 and the PRE-FIX code from
-/// 11000, regardless of which call site reads which value -- letting a single deterministic probe
-/// (`mayMutate()` at boot == 10000+ttl) tell
-/// them apart with no sleep and no thread. (TDD evidence for both branches is recorded in the task-5
-/// report, not re-asserted here: this test body only encodes the FIXED expectation.)
+/// The self-remount arm anchors at the claim's own start, taken before its write is sent, never at a
+/// reading taken after the write returns.
 TEST(CASPoolRemount, RemountArmAnchorsAtClaimAttemptNotResponseTime)
 {
     /// Heap-owned, not a plain stack local: the Pool can outlive this stack frame (a background
     /// publish holds `shared_from_this()`), so a by-reference capture of a local would dangle.
-    auto clock = std::make_shared<SequencedBootClock>();
-    auto backend = std::make_shared<InMemoryBackend>();
+    auto boot = std::make_shared<std::atomic<uint64_t>>(0);
+    auto backend = std::make_shared<MountWriteStallBackend>();
     auto store = DB::Cas::Pool::open(backend, DB::Cas::PoolConfig{
         .pool_prefix = "p", .server_root_id = "test",
         .mount_lease_ttl_ms = std::chrono::milliseconds(30'000),
-        .boot_ms_fn = [clock]
+        .boot_ms_fn = [boot]
         {
-            return (*clock)();
+            return boot->load();
         },
     });
     ASSERT_TRUE(store);
@@ -1808,23 +1691,18 @@ TEST(CASPoolRemount, RemountArmAnchorsAtClaimAttemptNotResponseTime)
     /// Trip the fence exactly as every other remount test in this file does.
     fenceOutMount(*backend, store->layout().mountKey("test"));
 
-    /// Arm the sequence for the upcoming remount attempt: the initial `open` above already drained
-    /// an unrelated number of `bootMsNow()` calls (all served from `.steady = 0` -- irrelevant, since
-    /// nothing probes the resulting arm before this point). Reset the counter so the FIRST call from
-    /// here on is the remount attempt's own call #1.
-    clock->queue = {10000, 11000};
-    clock->next = 0;
-
+    /// The remount's claim starts at 10000 and its write answers at 11000.
+    boot->store(10'000);
+    backend->mount_key = store->layout().mountKey("test");
+    backend->stall = [boot] { *boot += 1'000; };
     ASSERT_TRUE(store->tryRemountOnce());
+    ASSERT_FALSE(backend->stall) << "the remount's claim write was never stalled";
 
-    /// Probe at boot == anchor + ttl (10000 + 30000 = 40000): the fixed code armed from the anchor
-    /// (10000), so the fence has JUST expired here -- `mayMutate` must be false. (The pre-fix code
-    /// would still read `mayMutate` as true here, armed from 11000 + 30000 -- see the TDD run in the
-    /// report.)
-    clock->steady = 40000;
+    boot->store(39'999);
+    EXPECT_TRUE(store->mayMutate());
+    boot->store(40'000);
     EXPECT_FALSE(store->mayMutate())
-        << "the remount arm must anchor at the claim attempt's pre-I/O instant, not a later "
-           "response-time reading taken after renewerStart/quiesceRefTablesForRemount";
+        << "the remount arm must anchor at the claim's start (10000 + ttl), not at the write's answer";
 }
 
 /// ==== self-remount vs. a live successor carrying the same uuid under the unsafe-reclaim knob ====
@@ -2157,7 +2035,8 @@ void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behav
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, server_root_id, uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, server_root_id, uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
 
     std::vector<CasEvent> events;
     bool reentered = false;
@@ -2199,7 +2078,7 @@ void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behav
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
 
     DB::Cas::tests::OperationForTest successor_op(*backend);
@@ -2769,8 +2648,8 @@ TEST(CASMountOpenWaits, PublicationHorizonUsesTheEnvelope)
     /// Opens with a boot clock costing `per_call_ms` per read (models a faster or slower claim) and
     /// returns how many times the mount key was written. attempt 100, cap 100: envelope =
     /// 100 + 2*100 = 300, so 2*envelope = 600; the old code reserved 2*attempt = 200. Empirically the
-    /// claim path's own anchor read and the horizon check's own `now_boot_ms` read are five reads apart,
-    /// so `remaining = safe_deadline(TTL 1000 - margin 50 = 950) - now = 950 - 5 * per_call_ms`.
+    /// claim's own start read and the horizon check's own `now_boot_ms` read are three reads apart,
+    /// so `remaining = safe_deadline(TTL 710 - margin 50 = 660) - now = 660 - 3 * per_call_ms`.
     const auto mountWriteCount = [](uint64_t per_call_ms) -> uint64_t
     {
         auto b = std::make_shared<DB::Cas::tests::CountingBackend>();
@@ -2783,7 +2662,7 @@ TEST(CASMountOpenWaits, PublicationHorizonUsesTheEnvelope)
         PoolPtr store;
         store = Pool::open(b, PoolConfig{
             .pool_prefix = "p", .server_id = UInt128(1), .server_root_id = "test",
-            .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+            .mount_lease_ttl_ms = std::chrono::milliseconds(710),
             .cas_request_budget = CasRequestBudget{.attempt_timeout_ms = 100, .lease_safety_margin_ms = 50, .connect_timeout_cap_ms = 100},
             .boot_ms_fn = [fake_boot, per_call_ms]
             {
@@ -2799,17 +2678,17 @@ TEST(CASMountOpenWaits, PublicationHorizonUsesTheEnvelope)
         return b->putOverwriteCount(l.mountKey("test")) + b->putCount(l.mountKey("test"));
     };
 
-    /// remaining = 945 (per_call_ms=1): both 2*attempt(200) and 2*envelope(600) fit -- two writes (the
-    /// claim's own reclaim, then the renewer's adopt) and no re-anchor.
-    EXPECT_EQ(mountWriteCount(1), 2u) << "a horizon that fits both windows must not re-anchor";
-    /// remaining = 450 (per_call_ms=100): 2*attempt(200) fits, 2*envelope(600) does not -- the
+    /// remaining = 657 (per_call_ms=1): both 2*attempt(200) and 2*envelope(600) fit -- one write (the
+    /// claim's own reclaim) and no re-anchor.
+    EXPECT_EQ(mountWriteCount(1), 1u) << "a horizon that fits both windows must not re-anchor";
+    /// remaining = 570 (per_call_ms=30): 2*attempt(200) fits, 2*envelope(600) does not -- the
     /// re-anchor costs one extra write. This is the discriminator: reverting the reservation to
-    /// 2*attempt would make this case behave like the one above (two writes).
-    EXPECT_EQ(mountWriteCount(100), 3u) << "the old 2*attempt window fit here; only the envelope window must redo";
-    /// remaining = 600 (per_call_ms=70) exactly equals 2*envelope: STRICT ("<", not "<=") refuses
+    /// 2*attempt would make this case behave like the one above (one write).
+    EXPECT_EQ(mountWriteCount(30), 2u) << "the old 2*attempt window fit here; only the envelope window must redo";
+    /// remaining = 600 (per_call_ms=20) exactly equals 2*envelope: STRICT ("<", not "<=") refuses
     /// equality too, so this must also redo -- reverting the strict comparison to "<=" would make this
-    /// case behave like the fits-both case (two writes).
-    EXPECT_EQ(mountWriteCount(70), 3u) << "an exact boundary (renewal_window_ms == remaining) must be refused, not accepted";
+    /// case behave like the fits-both case (one write).
+    EXPECT_EQ(mountWriteCount(20), 2u) << "an exact boundary (renewal_window_ms == remaining) must be refused, not accepted";
 }
 
 /// Same reservation change as `PublicationHorizonUsesTheEnvelope` above, exercised through the remount
@@ -2890,33 +2769,28 @@ namespace
 {
 /// Stalls the CLAIM ITSELF past the lease TTL, and counts what the open writes afterwards.
 ///
-/// The mount key is written twice before the write fence arms: once by `claimMount`'s reclaim, then
-/// once by the renewer's adopt -- and the fence's anchor is taken BETWEEN them. So advancing the
-/// injected boot clock on the SECOND write models exactly the thing the Phase B redo exists for: the
-/// claim's own I/O outliving the lease it is about to arm a fence under. (This used to be modelled by
-/// a materialization grace long enough to consume the TTL; that wait is retired, and the guard it
-/// motivated is not -- a stalled socket can still outlive a validated request budget.)
+/// The fence's anchor is the claim's start, taken before the claim's write is sent. So advancing the
+/// injected boot clock on that write models the claim's own I/O outliving the lease it is about to arm
+/// a fence under -- a stalled socket can outlive a validated request budget.
 class StalledMountClaimBackend final : public DB::Cas::InMemoryBackend
 {
 public:
     String mount_key;
-    std::function<void()> on_second_mount_write;
+    std::function<void()> on_first_mount_write;
     std::atomic<int> mount_writes{0};
     std::atomic<int> mount_writes_after_stall{0};
 
-    /// The hook sits on the WRITE PRIMITIVE: both the reclaim and the renewer's adopt reach the mount
-    /// slot through it. It counts only CONDITIONAL overwrites, which is what every production mount-slot
-    /// write is -- the unconditional create that seeds the predecessor lease reaches this same virtual
-    /// too, and counting it would shift the stall onto the reclaim instead of the adopt.
+    /// It counts only CONDITIONAL overwrites, which is what the reclaim and the redo are -- the
+    /// unconditional create that seeds the predecessor lease reaches this same virtual too.
     std::expected<String, RawConflict> write(const String & key, const String & bytes,
         const std::optional<String> & expected_value, DB::Cas::TransportAccess & access) override
     {
         if (key == mount_key && expected_value)
         {
             const int n = ++mount_writes;
-            if (n == 2 && on_second_mount_write)
-                on_second_mount_write();
-            else if (n > 2)
+            if (n == 1 && on_first_mount_write)
+                on_first_mount_write();
+            else if (n > 1)
                 ++mount_writes_after_stall;
         }
         return InMemoryBackend::write(key, bytes, expected_value, access);
@@ -2941,8 +2815,8 @@ TEST(CASPool, StartupArmRedoesLeaseWriteWhenTheClaimConsumesTtl)
     /// carries `next_writer_epoch = 8`, so THIS pool's own first-allocated `writer_epoch` is 8 --
     /// non-colliding with the seeded epoch-7 prior by construction. With no collision the first
     /// (and only) claim attempt reclaims directly with MountPriorState::Fenced, with no silent
-    /// FencedSelf fence-recovery detour to account for -- so the mount key is written exactly twice
-    /// before the arm, which is what the stall hook counts on.
+    /// FencedSelf fence-recovery detour to account for -- so the claim is the only mount write before
+    /// the arm, which is what the stall hook counts on.
     {
         DB::Cas::MountLease prior;
         prior.server_uuid = uuid;
@@ -2957,7 +2831,7 @@ TEST(CASPool, StartupArmRedoesLeaseWriteWhenTheClaimConsumesTtl)
     /// before the mount claim); seed that durable epoch object here too, or `Pool::open`'s own
     /// `allocateWriterEpoch` trips the Phase C guard (epoch absent, mount present -> fail closed).
     createObj(*backend, layout.epochKey(srid), DB::Cas::encodeServerEpoch(DB::Cas::ServerEpoch{.next_writer_epoch = 8}));
-    /// Held in a shared atomic, not a plain local: `on_second_mount_write` below mutates it, and the
+    /// Held in a shared atomic, not a plain local: `on_first_mount_write` below mutates it, and the
     /// Pool can outlive this stack frame (a background publish holds `shared_from_this()`), so a
     /// by-reference capture of a local would dangle.
     auto fake_boot_ms = std::make_shared<std::atomic<uint64_t>>(10'000);
@@ -2971,10 +2845,10 @@ TEST(CASPool, StartupArmRedoesLeaseWriteWhenTheClaimConsumesTtl)
     {
         return fake_boot_ms->load();
     };
-    /// The renewer's adopt write stalls for 15 s of boot clock. That consumes the publication horizon
+    /// The claim's write stalls for 15 s of boot clock. That consumes the publication horizon
     /// (one 10 s cadence plus one 5 s attempt) while leaving one physical attempt admissible inside
-    /// the old lease's safety window, so the synchronous redo can safely re-anchor.
-    backend->on_second_mount_write = [fake_boot_ms]
+    /// the claim's lease safety window, so the synchronous redo can safely re-anchor.
+    backend->on_first_mount_write = [fake_boot_ms]
     {
         *fake_boot_ms += 15'000;
     };
@@ -2982,10 +2856,10 @@ TEST(CASPool, StartupArmRedoesLeaseWriteWhenTheClaimConsumesTtl)
     auto store = DB::Cas::Pool::open(backend, cfg);
     ASSERT_NE(store, nullptr);
 
-    ASSERT_EQ(backend->mount_writes.load(), 3)
-        << "the fixture assumes exactly two mount writes before the redo (the reclaim and the renewer's "
-           "adopt, with the fence anchor between them); a different sequence would make the stall land "
-           "somewhere else and this test would stop testing the redo";
+    ASSERT_EQ(backend->mount_writes.load(), 2)
+        << "the fixture assumes exactly one mount write before the redo (the reclaim, whose start is the "
+           "fence anchor); a different sequence would make the stall land somewhere else and this test "
+           "would stop testing the redo";
     EXPECT_EQ(backend->mount_writes_after_stall.load(), 1)
         << "a TTL-consuming claim must be followed by exactly ONE fresh conditional lease write "
            "(the re-anchoring redo) before the write fence arms";
@@ -3411,7 +3285,8 @@ TEST(CASPoolRemount, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout, MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000),
@@ -3419,7 +3294,7 @@ TEST(CASPoolRemount, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
         "test", sink, runtimeRenewBudget(), [] { return false; });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
 
     DB::Cas::tests::ManualBarrier barrier;
@@ -3442,7 +3317,8 @@ TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeParkRequest)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier admitted;
     DB::Cas::tests::ManualBarrier remount;
     CasEventSink sink;
@@ -3460,7 +3336,7 @@ TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeParkRequest)
         });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
     admitted.waitUntilArrived();
@@ -3482,7 +3358,8 @@ TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeStop)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier admitted;
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
@@ -3495,7 +3372,7 @@ TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeStop)
         "test", sink, runtimeRenewBudget(), [] { return false; });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
     admitted.waitUntilArrived();
@@ -3514,7 +3391,8 @@ TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
@@ -3523,7 +3401,7 @@ TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop
         "test", sink, runtimeRenewBudget(), [] { return false; });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.stopBackgroundWorkers();
@@ -3540,7 +3418,8 @@ TEST(CASPoolRemount, RemountWaitsForRenewalParkedBeforeReplacement)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 10'000;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier renewal_barrier;
     DB::Cas::tests::ManualBarrier remount_barrier;
     std::atomic<uint64_t> remount_calls{0};
@@ -3557,7 +3436,7 @@ TEST(CASPoolRemount, RemountWaitsForRenewalParkedBeforeReplacement)
         });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     backend->barrier = &renewal_barrier;
     backend->fault = RuntimeRenewBackend::Fault::BlockThenDelegate;
@@ -3584,7 +3463,8 @@ TEST(CASPoolRemount, DueRenewalIsNotSentWhileTheRemountAttemptRuns)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 10'000;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     std::atomic<uint64_t> renewal_writes{0};
     std::latch hold_worker{1};
     std::once_flag hold_once;
@@ -3622,7 +3502,7 @@ TEST(CASPoolRemount, DueRenewalIsNotSentWhileTheRemountAttemptRuns)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     backend->on_guarded_write = [&] { ++renewal_writes; };
     runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
@@ -3643,7 +3523,8 @@ TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     std::atomic<uint64_t> worker_exits{0};
     RuntimeWorkerFactory factory = [&](std::function<void()> worker_body)
     {
@@ -3661,7 +3542,7 @@ TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
         "test", sink, runtimeRenewBudget(), [] { return false; });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.stopBackgroundWorkers();
@@ -3682,7 +3563,8 @@ TEST(CASPoolRemount, NaturalTerminalTransitionMakesBothPersistentWorkersSelfExit
         uint64_t wall_ms = 1000;
         uint64_t boot_ms = 100;
         const UInt128 uuid{1};
-        ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+        const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+        ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
         WorkerExitLatch exits;
         DB::Cas::tests::ManualBarrier transitioned;
         RuntimeWorkerFactory factory = [&](std::function<void()> worker_body)
@@ -3714,7 +3596,7 @@ TEST(CASPoolRemount, NaturalTerminalTransitionMakesBothPersistentWorkersSelfExit
         CasMountRuntime & runtime = *runtime_holder;
         runtime_ptr = &runtime;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-        const uint64_t anchor = runtime.startRenewer();
+        const uint64_t anchor = runtime.startRenewer(*claim.claimed);
         runtime.armMountFence(uuid, 1, anchor + 1000);
         runtime.startBackgroundWorkers(std::chrono::hours(1));
         runtime.tripMountLost();
@@ -3740,7 +3622,8 @@ TEST(CASPoolRemount, ParkedRenewalCannotMissNaturalTerminalPublication)
         uint64_t wall_ms = 1000;
         uint64_t boot_ms = 100;
         const UInt128 uuid{1};
-        ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+        const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+        ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
         WorkerExitLatch exits;
         std::latch renewal_before_driver_lock{1};
         std::latch release_renewal{1};
@@ -3823,7 +3706,7 @@ TEST(CASPoolRemount, ParkedRenewalCannotMissNaturalTerminalPublication)
         CasMountRuntime & runtime = *runtime_holder;
         runtime_ptr = &runtime;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-        const uint64_t anchor = runtime.startRenewer();
+        const uint64_t anchor = runtime.startRenewer(*claim.claimed);
         runtime.armMountFence(uuid, 1, anchor + 1000);
         runtime.startBackgroundWorkers(std::chrono::hours(1));
         renewal_before_driver_lock.wait();
@@ -3849,7 +3732,8 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     WorkerExitLatch exits;
     RuntimeWorkerFactory factory = [&](std::function<void()> worker_body)
     {
@@ -3876,7 +3760,7 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
         "test", sink, runtimeRenewBudget(), [] { return false; });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.tripMountLost();
@@ -3919,7 +3803,8 @@ TEST(CASPoolRemount, WorkerConstructionRollbackFailsOpenClosed)
             return ThreadFromGlobalPool(std::move(fn));
         };
         const UInt128 uuid{1};
-        ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+        const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+        ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
         CasEventSink sink;
         RuntimeUnderTest runtime_holder(
             backend, layout,
@@ -3928,7 +3813,7 @@ TEST(CASPoolRemount, WorkerConstructionRollbackFailsOpenClosed)
             "test", sink, runtimeRenewBudget(), [] { return false; });
         CasMountRuntime & runtime = *runtime_holder;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-        const uint64_t anchor = runtime.startRenewer();
+        const uint64_t anchor = runtime.startRenewer(*claim.claimed);
         runtime.armMountFence(uuid, 1, anchor + 1000);
         EXPECT_THROW(runtime.startBackgroundWorkers(std::chrono::milliseconds(10)), DB::Exception);
         EXPECT_FALSE(runtime.mayMutate());
@@ -3944,7 +3829,8 @@ TEST(CASPoolRemount, ExternalLossDuringRenewalUsesOneRecoveryGeneration)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100'000;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier renewal_barrier;
     DB::Cas::tests::ManualBarrier remount_barrier;
     std::atomic<uint64_t> remount_calls{0};
@@ -3962,12 +3848,12 @@ TEST(CASPoolRemount, ExternalLossDuringRenewalUsesOneRecoveryGeneration)
             ++remount_calls;
             ++fresh_epochs;
             fenceOutMount(*backend, layout.mountKey("test"));
-            const MountClaimResult fresh = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 2, wall_ms, 1000);
+            const MountClaimResult fresh = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 2, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
             EXPECT_EQ(fresh.kind, MountClaimResult::Claimed);
             if (fresh.kind != MountClaimResult::Claimed)
                 return false;
             runtime_ptr->installRenewer(uuid, 2, [&] { return wall_ms; });
-            const uint64_t fresh_anchor = runtime_ptr->startRenewer();
+            const uint64_t fresh_anchor = runtime_ptr->startRenewer(fresh.claimed.value());
             runtime_ptr->setProcessEpoch(2, std::memory_order_release);
             runtime_ptr->setLiveWriterEpoch(2);
             runtime_ptr->armMountFence(uuid, 2, fresh_anchor + 1000);
@@ -3978,7 +3864,7 @@ TEST(CASPoolRemount, ExternalLossDuringRenewalUsesOneRecoveryGeneration)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     backend->barrier = &renewal_barrier;
     backend->fault = RuntimeRenewBackend::Fault::BlockThenDelegate;
@@ -4005,7 +3891,8 @@ TEST(CASPoolRemount, TerminalDepositionDoesNotTouchRenewerAfterReplacement)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier terminal_deposited;
     DB::Cas::tests::ManualBarrier remount;
     std::atomic<bool> replaced{false};
@@ -4033,7 +3920,7 @@ TEST(CASPoolRemount, TerminalDepositionDoesNotTouchRenewerAfterReplacement)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     /// A definitive answer ends the worker's renewal; a transient fault would only be retried.
     fenceOutMount(*backend, layout.mountKey("test"));
@@ -4054,7 +3941,8 @@ TEST(CASPoolRemount, ConcurrentRemountRequestIsProcessedAfterActiveGeneration)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier first;
     DB::Cas::tests::ManualBarrier second;
     std::atomic<uint64_t> calls{0};
@@ -4071,7 +3959,7 @@ TEST(CASPoolRemount, ConcurrentRemountRequestIsProcessedAfterActiveGeneration)
         });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.tripMountLost();
@@ -4094,7 +3982,8 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 10'000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 10'000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier first;
     DB::Cas::tests::ManualBarrier second;
     std::atomic<uint64_t> calls{0};
@@ -4112,12 +4001,12 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
             if (call == 1)
             {
                 fenceOutMount(*backend, layout.mountKey("test"));
-                const MountClaimResult fresh = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 2, wall_ms, 10'000);
+                const MountClaimResult fresh = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 2, wall_ms, 10'000, {}, {}, {}, [&] { return boot_ms; });
                 EXPECT_EQ(fresh.kind, MountClaimResult::Claimed);
                 if (fresh.kind != MountClaimResult::Claimed)
                     return false;
                 runtime_ptr->installRenewer(uuid, 2, [&] { return wall_ms; });
-                const uint64_t fresh_anchor = runtime_ptr->startRenewer();
+                const uint64_t fresh_anchor = runtime_ptr->startRenewer(fresh.claimed.value());
                 runtime_ptr->armMountFence(uuid, 2, fresh_anchor + 10'000);
                 runtime_ptr->noteRemounted();
                 boot_ms = 2'000;
@@ -4132,7 +4021,7 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 10'000);
     runtime.startBackgroundWorkers(std::chrono::milliseconds(1000));
     runtime.tripMountLost();
@@ -4157,8 +4046,8 @@ TEST(CASMountRuntime, AnOldEpochRenewalDoesNotMoveTheNewEpochDeadline)
     std::atomic<uint64_t> boot_ms{100};
     const UInt128 uuid{1};
     constexpr uint64_t ttl_ms = 10'000;
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, ttl_ms).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, ttl_ms, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier finished;
     DB::Cas::tests::ManualBarrier remounted;
     DB::Cas::tests::ManualBarrier back_in_loop;
@@ -4186,10 +4075,10 @@ TEST(CASMountRuntime, AnOldEpochRenewalDoesNotMoveTheNewEpochDeadline)
         {
             fenceOutMount(*backend, layout.mountKey("test"));
             const MountClaimResult fresh = claimMount(
-                *DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 2, wall_ms, ttl_ms);
+                *DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 2, wall_ms, ttl_ms, {}, {}, {}, [&] { return boot_ms.load(); });
             EXPECT_EQ(fresh.kind, MountClaimResult::Claimed);
             runtime_ptr->installRenewer(uuid, 2, [&] { return wall_ms; });
-            const uint64_t fresh_anchor = runtime_ptr->startRenewer();
+            const uint64_t fresh_anchor = runtime_ptr->startRenewer(fresh.claimed.value());
             runtime_ptr->armMountFence(uuid, 2, fresh_anchor + 5 * ttl_ms);
             runtime_ptr->noteRemounted();
             remounted.arriveAndWait();
@@ -4198,7 +4087,7 @@ TEST(CASMountRuntime, AnOldEpochRenewalDoesNotMoveTheNewEpochDeadline)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + ttl_ms);
     /// The epoch-1 renewal is due at once and inside its lease. The epoch-2 renewer is not driven before
     /// the check: the worker waits in its second loop pass.
@@ -4239,8 +4128,8 @@ TEST(CASMountRuntime, ALongOutageIsAPauseUnderTheSameEpoch)
     DB::Cas::tests::ManualBarrier second_commit;
     CasMountRuntime * runtime_ptr = nullptr;
     auto backend = std::make_shared<RuntimeRenewBackend>();
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
@@ -4266,7 +4155,7 @@ TEST(CASMountRuntime, ALongOutageIsAPauseUnderTheSameEpoch)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     const uint64_t generation = runtime.fenceGeneration();
     runtime_holder.setRetrySleepForTest([&](uint64_t ms) { boot_ms += ms; });
@@ -4306,8 +4195,8 @@ TEST(CASMountRuntime, ALateCommitReportsARecoveredRenewalWithATruthfulReason)
     CasMountRuntime * runtime_ptr = nullptr;
     DB::Cas::tests::ManualBarrier first_commit;
     auto backend = std::make_shared<RuntimeRenewBackend>();
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink = [&](CasEvent event)
     {
         if (event.type != CasEventType::WatermarkRenew || event.outcome != "recovered")
@@ -4332,7 +4221,7 @@ TEST(CASMountRuntime, ALateCommitReportsARecoveredRenewalWithATruthfulReason)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime_holder.setRetrySleepForTest([&](uint64_t ms) { boot_ms += ms; });
     boot_ms = anchor + 500;
@@ -4376,8 +4265,8 @@ TEST(CASMountRuntime, ARemountRequestEndsARenewalRetryingPastTheLease)
     DB::Cas::tests::ManualBarrier holding;
     DB::Cas::tests::ManualBarrier remount_entered;
     auto backend = std::make_shared<RuntimeRenewBackend>();
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
@@ -4391,7 +4280,7 @@ TEST(CASMountRuntime, ARemountRequestEndsARenewalRetryingPastTheLease)
         });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     /// Five lease lengths on: a renewal bounded by its lease ended long before.
     past_the_lease = anchor + 5'000;
@@ -4428,8 +4317,8 @@ TEST(CASMountRuntime, AStopEndsTheCredentialRefusalWaitAtOnce)
     std::atomic<bool> first_write{true};
     DB::Cas::tests::ManualBarrier denied;
     auto backend = std::make_shared<RuntimeRenewBackend>();
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 2 * period_ms).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 2 * period_ms, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
@@ -4438,7 +4327,7 @@ TEST(CASMountRuntime, AStopEndsTheCredentialRefusalWaitAtOnce)
         "test", sink, runtimeRenewBudget(), [] { return false; });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 2 * period_ms);
     backend->deny_writes = std::numeric_limits<uint32_t>::max();
     backend->on_guarded_write = [&]
@@ -4470,8 +4359,8 @@ TEST(CASMountRuntime, AParkRequestEndsTheCredentialRefusalWaitAtOnce)
     DB::Cas::tests::ManualBarrier denied;
     DB::Cas::tests::ManualBarrier remount_entered;
     auto backend = std::make_shared<RuntimeRenewBackend>();
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 2 * period_ms).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 2 * period_ms, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
@@ -4484,7 +4373,7 @@ TEST(CASMountRuntime, AParkRequestEndsTheCredentialRefusalWaitAtOnce)
         });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 2 * period_ms);
     backend->deny_writes = std::numeric_limits<uint32_t>::max();
     backend->on_guarded_write = [&]
@@ -4519,8 +4408,8 @@ TEST(CASMountRuntime, ACredentialRefusalWaitsOneRenewalPeriod)
     std::atomic<bool> committed_once{false};
     DB::Cas::tests::ManualBarrier committed;
     auto backend = std::make_shared<RuntimeRenewBackend>();
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 10'000).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 10'000, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
@@ -4537,7 +4426,7 @@ TEST(CASMountRuntime, ACredentialRefusalWaitsOneRenewalPeriod)
         "test", sink, runtimeRenewBudget(), [] { return false; });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 10'000);
     backend->deny_writes = 2;
     backend->on_guarded_write = [&] { write_at.push_back(boot_ms.load()); };
@@ -4569,8 +4458,8 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     DB::Cas::tests::ManualBarrier second_commit;
     CasMountRuntime * runtime_ptr = nullptr;
     auto backend = std::make_shared<RuntimeRenewBackend>();
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind,
-              MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
@@ -4590,7 +4479,7 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime_holder.setRetrySleepForTest([&](uint64_t ms) { boot_ms += ms; });
     boot_ms = anchor + 500;
@@ -4652,8 +4541,8 @@ TEST(CASPoolRemount, StaleRemountAnchorPerformsParkedRedo)
     const uint64_t writes_before = backend->putOverwriteCount(key);
     ASSERT_TRUE(store->scheduleRemountForTest());
     committed->waitUntilArrived();
-    EXPECT_GE(backend->putOverwriteCount(key), writes_before + 3)
-        << "claim, renewer start, and the stale-anchor parked redo must all write";
+    EXPECT_GE(backend->putOverwriteCount(key), writes_before + 2)
+        << "the claim and the stale-anchor parked redo must both write";
     committed->release();
 }
 
@@ -4845,7 +4734,7 @@ TEST(CASPoolShutdown, PreSendCancellationAllowsFarewellButAmbiguityDoesNot)
         uint64_t wall_ms = 1000;
         uint64_t boot_ms = 100;
         const UInt128 uuid{1};
-        const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000);
+        const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
         EXPECT_EQ(claim.kind, MountClaimResult::Claimed);
         if (claim.kind != MountClaimResult::Claimed)
             return uint64_t{0};
@@ -4858,7 +4747,7 @@ TEST(CASPoolShutdown, PreSendCancellationAllowsFarewellButAmbiguityDoesNot)
             "test", sink, runtimeRenewBudget(), [] { return false; });
         CasMountRuntime & runtime = *runtime_holder;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-        const uint64_t anchor = runtime.startRenewer();
+        const uint64_t anchor = runtime.startRenewer(*claim.claimed);
         runtime.armMountFence(uuid, 1, anchor + 1000);
         if (ambiguous)
         {
@@ -4894,7 +4783,8 @@ TEST(CASPool, DirectAndStartupTerminalFailuresRethrowTypedExceptions)
         uint64_t boot_ms = 100;
         std::atomic<bool> renewal_live{true};
         const UInt128 uuid{1};
-        ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+        const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+        ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
         CasEventSink sink;
         RuntimeUnderTest runtime_holder(
             backend, layout,
@@ -4905,7 +4795,7 @@ TEST(CASPool, DirectAndStartupTerminalFailuresRethrowTypedExceptions)
             "test", sink, runtimeRenewBudget(), [] { return false; });
         CasMountRuntime & runtime = *runtime_holder;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-        const uint64_t anchor = runtime.startRenewer();
+        const uint64_t anchor = runtime.startRenewer(*claim.claimed);
         runtime.armMountFence(uuid, 1, anchor + 1000);
         if (refusal == Refusal::PreAttemptDeadline)
             /// Past the point where the lease has more room left than the safety margin (deadline
@@ -4990,7 +4880,7 @@ TEST(CASPool, DisabledBackgroundDoesNotReserveRenewalCadence)
     };
     auto store = Pool::open(backend, config);
     const String key = store->layout().mountKey("test");
-    EXPECT_EQ(backend->putOverwriteCount(key), 1u)
+    EXPECT_EQ(backend->putOverwriteCount(key), 0u)
         << "a disabled worker cadence must not force a synchronous startup redo";
 }
 
@@ -5001,7 +4891,8 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier remount_entered;
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
@@ -5015,7 +4906,7 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
         });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     /// A definitive answer ends the worker's renewal; a transient fault would only be retried.
     fenceOutMount(*backend, layout.mountKey("test"));

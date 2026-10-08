@@ -927,7 +927,7 @@ void runExpiredMountFenceOutScenario(const PoolConfig & config)
     auto store = Pool::open(backend, config);
     const Layout & layout = store->layout();
 
-    // srid2's renewer claims ONE lease via `start` and is never renewed again — tests never enable
+    // srid2 claims ONE lease and its renewer is never renewed again — tests never enable
     // the runtime-owned renewal worker (`background_watermark` defaults to false), so this alone models a
     // crashed process: a body that is live-shaped (not terminated, not fenced) but whose write token
     // never changes again.
@@ -937,7 +937,11 @@ void runExpiredMountFenceOutScenario(const PoolConfig & config)
         /*writer_epoch=*/1,
         std::chrono::milliseconds(100), [] { return 1000u; }, [] { return 0u; }, {},
         std::chrono::milliseconds(0), [] { return 0u; });
-    srid2_renewer.start();
+    CasOperation srid2_claim_op = renewer_requests.admit();
+    const MountClaimResult srid2_claim = claimMount(srid2_claim_op, layout, srid2, DB::UInt128(0x2222), /*our_epoch=*/1,
+                                                    /*now_ms=*/1000, /*ttl_ms=*/100, {}, {}, {}, [] { return uint64_t{0}; });
+    ASSERT_EQ(srid2_claim.kind, MountClaimResult::Claimed);
+    srid2_renewer.start(*srid2_claim.claimed);
     ASSERT_FALSE(decodeMountLease(readObj(*backend, layout.mountKey(srid2))->bytes).gc_fenced);
 
     // The fence-out threshold on the GC leader's OWN monotonic clock — mirrors the production formula
@@ -1080,7 +1084,11 @@ void runSlowWalkSightingScenario(SightingCall sighting_call)
         /*writer_epoch=*/1,
         std::chrono::milliseconds(100), [] { return 1000u; }, [] { return 0u; }, {},
         std::chrono::milliseconds(0), [] { return 0u; });
-    srid2_renewer.start();
+    CasOperation srid2_claim_op = renewer_requests.admit();
+    const MountClaimResult srid2_claim = claimMount(srid2_claim_op, layout, srid2, DB::UInt128(0x2222), /*our_epoch=*/1,
+                                                    /*now_ms=*/1000, /*ttl_ms=*/100, {}, {}, {}, [] { return uint64_t{0}; });
+    ASSERT_EQ(srid2_claim.kind, MountClaimResult::Claimed);
+    srid2_renewer.start(*srid2_claim.claimed);
     backend->watched_reads = 0;
 
     backend->read_cost_ms = walk_ms;
@@ -1174,7 +1182,11 @@ TEST(CASGCAckFloor, DefaultMonoClockTracksPoolsInjectedBootClockNotWallClock)
         {
             return fake_boot->load();
         });
-    srid2_renewer.start();
+    CasOperation srid2_claim_op = renewer_requests.admit();
+    const MountClaimResult srid2_claim = claimMount(srid2_claim_op, layout, srid2, DB::UInt128(0x2222), /*our_epoch=*/1,
+                                                    /*now_ms=*/1000, /*ttl_ms=*/100);
+    ASSERT_EQ(srid2_claim.kind, MountClaimResult::Claimed);
+    srid2_renewer.start(*srid2_claim.claimed);
     ASSERT_FALSE(decodeMountLease(readObj(*backend, layout.mountKey(srid2))->bytes).gc_fenced);
 
     const uint64_t ttl_ms = static_cast<uint64_t>(store->poolConfig().mount_lease_ttl_ms.count());

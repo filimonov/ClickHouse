@@ -397,7 +397,7 @@ public:
 
     /// ---- mount-lease renewer and persistent workers ----
     void installRenewer(UInt128 our_uuid, uint64_t writer_epoch, const std::function<uint64_t()> & now_ms);
-    uint64_t startRenewer();
+    uint64_t startRenewer(const MountClaimed & claimed);
     uint64_t renewRenewerForStartupOnce();
     uint64_t renewRenewerForRemountOnce();
     void renewerReset();

@@ -445,11 +445,9 @@ PoolPtr Pool::open(BackendPtr backend, PoolConfig config)
                 /// This gate is the PRIMARY defence, not a nicety, because the mount fence cannot be
                 /// relied on to catch a straggler afterwards. Clearing the prefix also destroys the
                 /// durable writer-epoch counter, so a recreation by the SAME server uuid is handed the
-                /// very `(uuid, epoch)` the survivor still holds -- and the two are then indistinguishable
-                /// to the lease protocol, which reads the survivor's renewal as its own renewer adopting a
-                /// refreshed body. The fence only bites when the recreating mount is DISTINGUISHABLE (a
-                /// different server uuid, or a surviving epoch counter): then the survivor's next renewal
-                /// finds a slot it cannot hold and its local fence latches shut.
+                /// very `(uuid, epoch)` the survivor still holds. The fence only bites when the recreating
+                /// mount is DISTINGUISHABLE (a different server uuid, or a surviving epoch counter): then the
+                /// survivor's next renewal finds a slot it cannot hold and its local fence latches shut.
                 ///
                 /// What catches the ambiguous case is INV-1, after the fact: the straggler's append lands
                 /// at `{E, 1}`-relative ids in a table the recreated pool sees as empty, and the first
@@ -688,12 +686,10 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     /// token-guarded (see `claimMountAwaitingExpiry`), so a live twin is never stolen from.
     /// `NoWait` skips this observation entirely (see the policy branch below).
     ///
-    /// Fence-recovery loop: if the GC fences our own fresh lease while we are opening
-    /// (the lease expired mid-open — e.g. a slow first beat — and a GC round fenced it), that is a
-    /// RECOVERABLE state, not a wedge: a fence costs an epoch, so allocate a fresh writer_epoch and
-    /// re-claim. Bounded so a pathological fence storm still fails closed. The fence can surface two
-    /// ways: `claimMount` observes an already-fenced own slot (`FencedSelf`), or the renewer's adopt
-    /// races a fence between its GET and CAS (`MountFencedException` from `start()`).
+    /// Fence-recovery loop: `claimMount` finds a GC-fenced body of our own `(uuid, epoch)`
+    /// (`FencedSelf`), which another process allocated the same epoch for. A fence costs an epoch, so
+    /// allocate a fresh writer_epoch and re-claim. Bounded so a pathological fence storm still fails
+    /// closed.
     /// which certificate of death (if any) justified the reclaim FINALLY adopted below
     /// (the last iteration's `claim` before `break` -- `claim` itself is loop-scoped). Read after the
     /// loop to classify (and log) an unclean reclaim.
@@ -752,9 +748,9 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         {
             if (fence_recovery >= max_fence_recoveries)
                 throw Exception(ErrorCodes::ABORTED,
-                    "CAS mount '{}': our own mount lease was GC-fenced repeatedly during open "
-                    "({} recoveries exhausted) — a fresh writer_epoch kept being fenced before we "
-                    "could adopt it. This should not persist; investigate GC fence-out timing.",
+                    "CAS mount '{}': the mount slot held a GC-fenced body of our own writer_epoch "
+                    "repeatedly during open ({} recoveries exhausted) — each fresh writer_epoch was "
+                    "already claimed and fenced. This should not persist; investigate GC fence-out timing.",
                     srid, max_fence_recoveries);
             CasOperation reallocate_op = store->gc_requests.admit();
             writer_epoch = allocateWriterEpoch(
@@ -789,27 +785,10 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         claimed_prior = claim.prior;
 
         /// The mount object now holds OUR live (uuid, epoch) body. `installRenewer` constructs the renewer
-        /// -- which ADOPTS that very (uuid, epoch) slot rather than self-tripping the double-start guard --
         /// AND wires its `minActive` build-watermark reader, its event sink, and the fence-coupling
         /// runtime-owned synchronous renewal driver, all captured on `mount_runtime`.
         store->mount_runtime.installRenewer(our_uuid, writer_epoch, now_ms);
-        try
-        {
-            claim_anchor_boot_ms = store->mount_runtime.startRenewer();
-        }
-        catch (const MountFencedException &)
-        {
-            /// The GC fenced our fresh lease between the renewer's adopt GET and CAS. Recoverable:
-            /// drop this renewer, take a fresh epoch, and re-claim.
-            if (fence_recovery >= max_fence_recoveries)
-                throw;
-            store->mount_runtime.renewerReset();
-            CasOperation refenced_epoch_op = store->gc_requests.admit();
-            writer_epoch = allocateWriterEpoch(
-                refenced_epoch_op, store->pool_layout, srid, epoch_policy, now_ms(), observe_catalog);
-            store->mount_runtime.setProcessEpoch(writer_epoch, std::memory_order_relaxed);
-            continue;
-        }
+        claim_anchor_boot_ms = store->mount_runtime.startRenewer(*claim.claimed);
         break;
     }
 
@@ -882,17 +861,9 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         && renewal_window_ms < safe_deadline - now_boot_ms;
     if (!renewal_window_fits)
     {
-        /// The claim path outlived the lease TTL: its anchor can no longer authorize an armed fence (a
-        /// successor may have legally started reclaiming). Re-anchor with ONE fresh conditional lease
-        /// write -- it fails closed (Phase A classification) if anything took the slot meanwhile -- and
-        /// arm from the new attempt's anchor (rev.4 Phase B, round-3 finding 2).
-        ///
-        /// The unbounded operator-configured wait this guard was written for (`T_mat`) is gone, so
-        /// reaching it now means the claim's adoption write outran the safe lease window
-        /// TTL, which `validateCasRequestBudget` already refuses to configure. It stays because a stalled
-        /// socket can still outlive a budget, and its recovery is one conditional write that fails closed;
-        /// it is LOUD rather than fatal because a slow open under a healthy protocol is not a reason to
-        /// refuse to start.
+        /// The lease runs from the claim's own start. A claim that confirmed late leaves too little of it
+        /// to arm the fence; one conditional renewal re-anchors first. The renewal needs its own two
+        /// attempt envelopes before `start + lease - margin`, so when they do not fit the start fails.
         LOG_WARNING(getLogger("CasPool"),
             "Content-addressed mount {}: the mount claim consumed the lease TTL ({} ms) before the write "
             "fence could be armed; re-writing the lease first", srid, ttl_ms_u);
@@ -908,8 +879,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     /// Gate the two persistent runtime workers with `background_watermark`: they run only in production
     /// (`background_watermark` = context != nullptr && !read_only), never in unit tests — which
     /// drive `renewWatermarkOnce` explicitly and rely on the armed sub-TTL deadline, never on a loop.
-    /// The synchronous renewer is still started above (it must adopt the mount and arm the fence on
-    /// every writable open); only the worker pair is conditional. The merged
+    /// The synchronous renewer is still started above; only the worker pair is conditional. The merged
     /// heartbeat renews at `mount_renew_period` — one beat now renews the lease and the floor.
     if (store->config.background_watermark)
         store->mount_runtime.startBackgroundWorkers(store->config.mount_renew_period);
@@ -1506,7 +1476,7 @@ bool Pool::tryRemountOnce()
         step = "renewer_install";
         mount_runtime.installRenewer(our_uuid, writer_epoch, now_ms);
         step = "renewer_start";
-        uint64_t remount_anchor_boot_ms = mount_runtime.startRenewer();
+        uint64_t remount_anchor_boot_ms = mount_runtime.startRenewer(*claim.claimed);
 
         /// Re-establish the ref-protocol incarnation BEFORE re-arming the fence. Order is load-bearing:
         /// Starting the renewer does NOT clear `lost`, so the fence stays closed here and no append/publish can race the

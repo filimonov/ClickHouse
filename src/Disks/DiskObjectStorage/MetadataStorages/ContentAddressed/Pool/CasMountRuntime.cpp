@@ -441,7 +441,7 @@ void CasMountRuntime::installRenewer(
     mount_renewer = std::move(replacement);
 }
 
-uint64_t CasMountRuntime::startRenewer()
+uint64_t CasMountRuntime::startRenewer(const MountClaimed & claimed)
 {
     RenewalDriverState active;
     RenewalDriverState destination;
@@ -472,10 +472,10 @@ uint64_t CasMountRuntime::startRenewer()
     }
 
     DriverLease lease(*this, active);
-    const uint64_t anchor = renewer->start([this] { return !renewalCancelled(); });
+    renewer->start(claimed);
     publishConfirmedBody(renewer->lastConfirmedBody());
     (void)lease.finish(destination);
-    return anchor;
+    return claimed.start_boot_ms;
 }
 
 RenewalProgress CasMountRuntime::renewalProgress() const

@@ -475,8 +475,7 @@ TEST(CASRefContiguousAlloc, RecreationProceedsOnceTheHolderIsTerminal)
 /// The recreating mount here is a DIFFERENT server (its own `server_id`), which is what makes the
 /// survivor's renewal conclusive. Clearing the prefix also resets the durable writer-epoch counter, so
 /// a recreation by the SAME server uuid can be handed the very same `(uuid, epoch)` the survivor still
-/// holds -- and the two are then indistinguishable to the lease protocol, which reads the survivor's
-/// renewal as its own renewer adopting a refreshed body. That is precisely why the refusal above is the
+/// holds. That is precisely why the refusal above is the
 /// primary defence and this fence is only the backstop: quiescing the holder BEFORE the prefix is
 /// cleared is what keeps the ambiguous case from arising at all.
 TEST(CASRefContiguousAlloc, SurvivingWriterIsFencedByTheRecreatedPoolsMount)

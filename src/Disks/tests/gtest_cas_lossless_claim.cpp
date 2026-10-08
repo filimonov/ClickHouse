@@ -6,7 +6,10 @@
 #include <Disks/tests/cas_test_helpers.h>
 #include <Poco/Exception.h>
 
-namespace DB::ErrorCodes { extern const int ABORTED; }
+#include "config.h"
+#include <IO/S3Common.h>
+
+namespace DB::ErrorCodes { extern const int ABORTED; extern const int NETWORK_ERROR; }
 using namespace DB::Cas;
 using DB::Cas::tests::OperationForTest;
 
@@ -36,7 +39,7 @@ MountLease lease(UInt128 uuid, uint64_t epoch, uint64_t seq, bool fenced, uint64
 /// What a GC fence-out does: keep the body, set `gc_fenced`, bump `seq`.
 void fenceOut(Backend & b) { MountLease m = slot(b); m.gc_fenced = true; ++m.seq; put(b, kLayout.mountKey(kSrid), encodeMountLease(m)); }
 /// Counts writes of the mount slot; `stall_ms` moves the boot clock once, before the next one lands;
-/// `hook` replaces the next one.
+/// `hook` replaces the next one. While `refuse_mount_reads` is positive, a read of the slot is denied.
 class MountWriteClock : public InMemoryBackend
 {
 public:
@@ -45,6 +48,21 @@ public:
     std::atomic<int> mount_writes{0};
     uint64_t stall_ms = 0;
     Hook hook;
+    uint32_t refuse_mount_reads = 0;
+
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
+    {
+        if (key == kLayout.mountKey(kSrid) && refuse_mount_reads > 0)
+        {
+            --refuse_mount_reads;
+#if USE_AWS_S3
+            throw DB::S3Exception("injected read access denial", Aws::S3::S3Errors::ACCESS_DENIED);
+#else
+            throw DB::Exception(DB::ErrorCodes::ABORTED, "store refusals need the S3 client");
+#endif
+        }
+        return InMemoryBackend::read(key, access);
+    }
 
     WriteAnswer write(const String & key, const String & bytes, const std::optional<String> & expected, TransportAccess & access) override
     {
@@ -69,11 +87,12 @@ PoolConfig poolConfig(const std::shared_ptr<MountWriteClock> & b)
     return c;
 }
 /// Epoch 7 (seq 7) was fenced by GC: a start allocates epoch 8 and reclaims at once with seq 8.
-std::shared_ptr<MountWriteClock> fencedPredecessor()
+/// `occupant_epoch = 8` instead leaves a fenced body of the epoch the start allocates.
+std::shared_ptr<MountWriteClock> fencedPredecessor(uint64_t occupant_epoch = 7)
 {
     auto b = std::make_shared<MountWriteClock>();
     DB::Cas::tests::seedPoolMetaForRestart(*b, "pool");
-    put(*b, kLayout.mountKey(kSrid), encodeMountLease(lease(kUuid, 7, 7, true)));
+    put(*b, kLayout.mountKey(kSrid), encodeMountLease(lease(kUuid, occupant_epoch, 7, true)));
     put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 8}));
     b->mount_writes = 0;
     return b;
@@ -184,4 +203,69 @@ TEST(CASLosslessClaim, ARefusedClaimOverAnEmptySlotReportsTheAbsence)
     const MountClaimResult r = claim(*b);
     EXPECT_EQ(r.kind, MountClaimResult::LiveDoubleStart);
     EXPECT_TRUE(std::holds_alternative<ProvenAbsent>(r.seen)) << "absence is not 'nothing observed'";
+}
+
+TEST(CASLosslessClaim, StartWritesTheSlotOnceAndRunsTheLeaseFromTheClaim)
+{
+    auto b = fencedPredecessor();
+    b->stall_ms = 1'000;
+    auto store = Pool::open(b, poolConfig(b));
+    EXPECT_EQ(b->mount_writes.load(), 1) << "no second write after the claim";
+    EXPECT_EQ(slot(*b).seq, 8u);
+    b->boot->store(39'999);
+    EXPECT_TRUE(store->mayMutate());
+    b->boot->store(40'000);
+    EXPECT_FALSE(store->mayMutate()) << "the deadline is the claim's start (10 000) plus the lease";
+}
+
+TEST(CASLosslessClaim, ALateClaimRenewsBeforeWritesOpenAndATooLateOneFailsTheStart)
+{
+    auto late = fencedPredecessor();
+    late->stall_ms = 18'000;   /// 10 s of the lease-safe window left: below the publication horizon
+    auto store = Pool::open(late, poolConfig(late));
+    EXPECT_EQ(late->mount_writes.load(), 2);
+    EXPECT_EQ(slot(*late).seq, 9u) << "the second write renews the claim";
+    auto too_late = fencedPredecessor();
+    too_late->stall_ms = 29'000;   /// confirmed at 39 000, after start + lease - margin = 38 000
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "external_lease_deadline, no attempt sent",
+                                                [&] { Pool::open(too_late, poolConfig(too_late)); });
+    EXPECT_EQ(too_late->mount_writes.load(), 1) << "no renewal fits inside the claim's lease";
+}
+
+TEST(CASLosslessClaim, RemountWritesTheSlotOnce)
+{
+    auto b = fencedPredecessor();
+    auto store = Pool::open(b, poolConfig(b));
+    fenceOut(*b);
+    b->mount_writes = 0;
+    ASSERT_TRUE(store->tryRemountOnce());
+    EXPECT_EQ(b->mount_writes.load(), 1);
+}
+
+#if USE_AWS_S3
+TEST(CASLosslessClaim, ARefusedClaimWhoseReadFailsReportsNothingObserved)
+{
+    auto b = std::make_shared<MountWriteClock>();
+    b->hook = [&b](InMemoryBackend &, const String &, const std::optional<String> &, TransportAccess &) -> WriteAnswer
+    {
+        b->refuse_mount_reads = 1;
+        return std::unexpected(RawConflict{});
+    };
+    const MountClaimResult r = claim(*b);
+    EXPECT_EQ(r.kind, MountClaimResult::LiveDoubleStart);
+    EXPECT_TRUE(std::holds_alternative<NotObserved>(r.seen)) << "a failed resolve read proves no absence";
+    EXPECT_EQ(b->refuse_mount_reads, 0u) << "the resolve read was never refused";
+}
+#endif
+
+/// Another process was allocated our epoch and its body is fenced: the start takes the next epoch and
+/// reclaims that body.
+TEST(CASLosslessClaim, AFencedBodyOfOurEpochRecoversWithAFreshEpoch)
+{
+    auto b = fencedPredecessor(/*occupant_epoch=*/8);
+    auto store = Pool::open(b, poolConfig(b));
+    ASSERT_TRUE(store);
+    EXPECT_EQ(slot(*b).writer_epoch, 9u);
+    EXPECT_FALSE(slot(*b).gc_fenced);
+    EXPECT_TRUE(store->mayMutate());
 }

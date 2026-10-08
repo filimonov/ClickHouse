@@ -383,7 +383,11 @@ TEST(CASEvent, DeepReentrancyPreservesDeterministicPhysicalAttemptTruth)
             sinks[index],
             std::chrono::milliseconds(0),
             [&] { return boot_ms; });
-        renewers[index]->start();
+        CasOperation claim_op = planes[index]->admit();
+        const MountClaimResult claim = claimMount(claim_op, *layouts[index], server_root_ids[index], UInt128(index + 1), 7,
+                                                  wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+        ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
+        renewers[index]->start(*claim.claimed);
 
         if (index + 1 < depth)
         {
