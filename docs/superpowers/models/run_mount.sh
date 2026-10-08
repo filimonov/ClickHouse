@@ -86,15 +86,6 @@
 #                                                        uuid and epoch in the slot, which a twin that
 #                                                        shares the epoch may have written
 #
-#   --- 2026-10-08 immutable claim (`ImmutableClaim = TRUE`, `Reserve = 1`) ---
-#   sab_claimdeadlineatconfirm -> LocalFenceWithinStamp  the local fence runs from the confirmation, not
-#                                                        from the claim's start
-#   sab_opennoreserve     -> OpenLeavesReserve           the gate opens writes whatever is left before
-#                                                        the stamp
-#   sab_claimresolvebypair -> OneWritableIncarnationPerUuid  an unclear claim is confirmed by finding our
-#                                                        uuid and epoch in the slot, which a twin that
-#                                                        shares the epoch may have written
-#
 # The first two v9 sabotages target the SAME pre-existing invariant, deliberately: an old-generation
 # publication IS a mutation by a superseded incarnation, which is what that invariant already says,
 # and inventing a parallel property per sabotage is how a suite ends up with six near-duplicates.
@@ -109,7 +100,6 @@
 #   twins_drift           -> GREEN   two incarnations of one uuid, Drift = 1
 #   twins_immalloc        -> GREEN   two incarnations of one uuid, immutable allocation
 #   twins_immclaim        -> GREEN   the same, with the claim as one immutable operation (reduced bounds)
-#   twins_immclaim        -> GREEN   the same, with the claim as one immutable operation
 #
 # Witnesses are negated reachability -- a VIOLATION is the evidence. They exist because BFS reports
 # the SHORTEST counterexample, so a branch no red travels would silently rot:
@@ -140,9 +130,6 @@
 #   witness_reacquirestops              -> W_ReacquireStops  a reacquire sees a foreign advance and stops
 #   witness_straggler_landed            -> W_StragglerLanded  an adopt write lands while the fence is latched
 #                                          across an allocation. Runs `CaCasMountCoreStraggler.tla`
-#
-#   witness_lateclaimrenews             -> W_LateClaimRenewsThenOpens  a claim confirmed with too little
-#                                          left is renewed and then opens writes
 #
 #   witness_lateclaimrenews             -> W_LateClaimRenewsThenOpens  a claim confirmed with too little
 #                                          left is renewed and then opens writes
@@ -204,16 +191,12 @@ CONFIGS=(
   "sab_claimdeadlineatconfirm            violation  LocalFenceWithinStamp"
   "sab_opennoreserve                     violation  OpenLeavesReserve"
   "sab_claimresolvebypair                violation  OneWritableIncarnationPerUuid"
-  "sab_claimdeadlineatconfirm            violation  LocalFenceWithinStamp"
-  "sab_opennoreserve                     violation  OpenLeavesReserve"
-  "sab_claimresolvebypair                violation  OneWritableIncarnationPerUuid"
   "stage1                                green      -"
   "v9_recoverygen                        green      -"
   "twins                                 green      -"
   "twins_v9                              green      -"
   "twins_drift                           green      -"
   "twins_immalloc                        green      -"
-  "twins_immclaim                        green      -"
   "twins_immclaim                        green      -"
   "witness_reclaim                       violation  W_SameUuidReclaimsExpired"
   "witness_remountafterfence             violation  W_RemountAfterFence"
@@ -228,7 +211,6 @@ CONFIGS=(
   "witness_samebytes                     violation  W_SameBytesCollision"
   "witness_reacquirestops                violation  W_ReacquireStops"
   "witness_straggler_landed              violation  W_StragglerLanded  CaCasMountCoreStraggler"
-  "witness_lateclaimrenews               violation  W_LateClaimRenewsThenOpens"
   "witness_lateclaimrenews               violation  W_LateClaimRenewsThenOpens"
 )
 [[ "${SLOW:-0}" == "1" ]] && CONFIGS+=("rev6_observe  incomplete  -")
