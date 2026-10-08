@@ -1927,7 +1927,9 @@ TEST(CASRefRecoveryCasWalk, WriterRecoveryRejectsDifferentOrdinaryBytesAtTheReta
     EXPECT_EQ(readCkptForTest(backend, layout, life)->ckpt.committed_through, (RefTxnId{1, 1}));
 }
 
-TEST(CASRefRecoveryCasWalk, RetainedOldWriterAttemptLosesConclusiveToASuccessorSeal)
+/// The retained attempt is this writer's own, so a successor's seal at its id means this mount was
+/// deposed: a fault, not a record to replay.
+TEST(CASRefRecoveryCasWalk, RetainedWriterAttemptMeetingASuccessorSealFaultsTheMount)
 {
     auto backend = std::make_shared<HidingListBackend>();
     const Layout layout("p");
@@ -1947,14 +1949,16 @@ TEST(CASRefRecoveryCasWalk, RetainedOldWriterAttemptLosesConclusiveToASuccessorS
             sealObject(FormatId::RefLog, encodeRefLogTxn(successor_seal)),
             original->etag, Retry::once())));
     }
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    ASSERT_TRUE(store->mayMutate());
 
-    const auto refs = store->listRefs(ns);
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { (void)store->listRefs(ns); });
 
-    EXPECT_FALSE(refs.contains("b")) << "the old writer's retained ordinary bytes lost at the sealed slot";
-    EXPECT_EQ(store->lastEpochSealForTest(ns), std::make_optional(successor_id));
-    EXPECT_EQ(readCkptForTest(backend, layout, life)->ckpt.committed_through, successor_id);
-    EXPECT_EQ(readCkptForTest(backend, layout, life)->ckpt.last_epoch_seal, successor_id);
-    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
+    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery);
+    EXPECT_FALSE(store->mayMutate()) << "the fault latches the mount fence";
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+    EXPECT_EQ(readCkptForTest(backend, layout, life)->ckpt.committed_through, (RefTxnId{1, 1}))
+        << "the seal must not be published as this writer's frontier";
 }
 
 /// ---------------------------------------------------------------------------------------------
