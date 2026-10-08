@@ -38,7 +38,9 @@ Start with the `watermark_renew` timeline described in
    `CASMountRenewalRecovered` rises while `CASMountLeaseLost` and all remount counters stay flat. No
    intervention is needed unless the rate is sustained; investigate backend throttling/latency before
    the blips consume the lease budget.
-2. **External lease-safety exhaustion.** The failed row has
+2. **External lease-safety exhaustion.** Only a bounded renewal ends this way: the startup re-anchor or
+   the remount re-anchor. The background renewal keeps retrying; a long outage shows as
+   `lifecycle_reason = 'lease_expired'` and resumes under the same `writer_epoch`. The failed row has
    `classification = 'external_lease_deadline'`; `CASMountRenewalDeadlineExceeded` and
    `CASMountLeaseLost` rise. The runtime correctly refused to manufacture authority beyond the last
    confirmed lease. Check object-store latency and BOOTTIME/suspend history, then follow the ensuing
