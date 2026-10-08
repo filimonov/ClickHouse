@@ -28,16 +28,16 @@ The battery ran with:
 docs/superpowers/models/run_reflane.sh
 ```
 
-All 35 expectations passed:
+All 36 expectations passed:
 
 - one honest exhaustive configuration was green;
-- fifteen single-rule sabotages violated their named invariant;
+- sixteen single-rule sabotages violated their named invariant or property;
 - nineteen reachability witnesses violated their negated witness invariant.
 
 The honest run (re-run 2026-10-08 with occupant outcomes and the fault latch) generated 4,086,679
 states, found 1,226,710 distinct states, reached depth 28, and exhausted the queue. The run summary
 is `tmp/lease-series/pr10-reflane.log`; detailed TLC output is under
-`build/tlc-runs/reflane/20261008T115841-1140830`.
+`build/tlc-runs/reflane/20261008T125949-1309896`.
 
 The sabotage controls cover arming before send, retaining uncertain attempts, blocking later
 appends, complete recovery, exact attempt identity, and mount fencing. Two independent controls
@@ -80,12 +80,15 @@ relaxed guard in the post-`PUT`, pre-install window and not only `Ready`. It vio
 The resolver and the append site's conflict both classify an occupant that is not the attempt's
 bytes as `Foreign`, `Unreadable`, `ClassifyMemory` or `ClassifyDefect`; recovery can meet a foreign
 object at its retained attempt. Every terminal observation latches the fence in the same step
-(`FaultHasExit`), a latched runtime is never current again, and a terminal observation never
-returns the lane to `Ready` (`TerminalObservationIsTerminal`, `FaultedAbsorbing`). A memory-limit
-classification returns the append to `Ready` and leaves a wedge wedged. `sab_unlatchedfault`
-(fault without latch) and `sab_recoverafterfault` (recovery ignoring the latch) are red on their
-target. Not modelled: a non-`Ready` lane at new-id allocation (`StartWrite` requires `Ready`) and
-remount liveness; `W_FaultThenRemount` only shows the remount is reachable after a latch.
+(`FaultHasExit`). A terminal observation never returns the lane to `Ready`
+(`TerminalObservationIsTerminal`), and a `Faulted` lane never leaves `Faulted` (`FaultedAbsorbing`).
+A memory-limit classification returns the append to `Ready` and leaves a wedge wedged.
+`sab_unlatchedfault` (fault without latch), `sab_recoverafterfault` (recovery ignoring the latch)
+and `sab_leavefaulted` (`Faulted -> NeedsRecovery`, which no invariant forbids) are red on their
+target. The latch is never reset, so after a latch the model explores no further writes, the
+remounted runtime included. Not modelled: a non-`Ready` lane at new-id allocation (`StartWrite`
+requires `Ready`) and remount liveness; `W_FaultThenRemount` only shows the remount is reachable
+after a latch.
 
 ## Relink composition {#relink-composition}
 

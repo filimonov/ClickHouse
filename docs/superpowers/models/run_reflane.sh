@@ -29,6 +29,7 @@ CONFIGS=(
   "sab_missingconfirmation violation MissingNameConfirmationAllocatesNothing"
   "sab_unlatchedfault     violation FaultHasExit"
   "sab_recoverafterfault  violation TerminalObservationIsTerminal"
+  "sab_leavefaulted       violation FaultedAbsorbing"
   "safe                   green     -"
   "witness_commit         violation W_Commit"
   "witness_unresolved     violation W_Unresolved"
@@ -66,7 +67,7 @@ for row in "${CONFIGS[@]}"; do
     if grep -q "No error has been found" "$log"; then
         result=green
     elif grep -q "is violated" "$log"; then
-        result="violation:$(grep -oE '(Invariant|Property) [A-Za-z0-9_]+ is violated' "$log" | head -1 | awk '{print $2}')"
+        result="violation:$(grep -oE '(Invariant|[Pp]roperty) [A-Za-z0-9_]+ is violated' "$log" | head -1 | awk '{print $2}')"
     else
         result=error
     fi

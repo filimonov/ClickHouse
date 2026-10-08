@@ -31,7 +31,8 @@ CONSTANTS
     SabotageMissingConfirmationAllocation,
     SabotageObservationRetarget,
     SabotageUnlatchedFault,
-    SabotageRecoverAfterFault
+    SabotageRecoverAfterFault,
+    SabotageLeaveFaulted
 
 Bindings == {"token", "other", "none"}
 Tokens == {"a", "b"}
@@ -1044,6 +1045,18 @@ WriteConflictScoped(o) ==
                     resolverProvenanceVars, lane_effect_target, runtime_cache_marker,
                     runtime_durable_marker, bad_lane_retarget, saw_rebirth_old_action >>
 
+(* Control for `FaultedAbsorbing`: a faulted lane re-enters recovery, which no other invariant forbids. *)
+LeaveFaulted ==
+    /\ SabotageLeaveFaulted
+    /\ lane = "Faulted"
+    /\ lane' = "NeedsRecovery"
+    /\ UNCHANGED << cache_id, durable_id, cache_binding, durable_binding, attempt,
+                    runtime_generation, authority_generation, resolver_attempt,
+                    resolver_generation, observation, bad_append, bad_install,
+                    bad_certification, saw_commit, saw_unresolved, saw_retry_created,
+                    saw_durable_adoption, saw_recovery, saw_stale_result, saw_closed,
+                    saw_faulted, saw_certified_while_outstanding, runtimeVars, faultVars >>
+
 (* Recovery meets a different object at the retained attempt's id above the checkpoint. *)
 RecoveryFindsForeign ==
     /\ lane = "NeedsRecovery"
@@ -1091,6 +1104,7 @@ Next ==
     \/ ApplyResolutionScoped
     \/ \E o \in OccupantOutcomes : WriteConflictScoped(o)
     \/ RecoveryFindsForeign
+    \/ LeaveFaulted
 
 Spec == Init /\ [][Next]_vars
 
