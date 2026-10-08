@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS reference lane TLA+ results {#cas-reference-lane-tla-results}
 
-**Date:** 2026-08-01, updated 2026-09-02. **Verdict:** pass.
+**Date:** 2026-08-01, updated 2026-10-08. **Verdict:** pass.
 
 ## Lane model {#lane-model}
 
@@ -28,16 +28,16 @@ The battery ran with:
 docs/superpowers/models/run_reflane.sh
 ```
 
-All 28 expectations passed:
+All 35 expectations passed:
 
 - one honest exhaustive configuration was green;
-- thirteen single-rule sabotages violated their named invariant;
-- fourteen reachability witnesses violated their negated witness invariant.
+- fifteen single-rule sabotages violated their named invariant;
+- nineteen reachability witnesses violated their negated witness invariant.
 
-The honest run (re-run 2026-09-02 with `Certify`'s touch-scoped guard) generated 1,309,289 states,
-found 409,361 distinct states, reached depth 26, and exhausted the queue. The retained run summary
-is `build/tlc_reflane_task2_fix1_final.log`; detailed TLC output is under
-`build/tlc-runs/reflane/20260902T181501-3413931`.
+The honest run (re-run 2026-10-08 with occupant outcomes and the fault latch) generated 4,086,679
+states, found 1,226,710 distinct states, reached depth 28, and exhausted the queue. The run summary
+is `tmp/lease-series/pr10-reflane.log`; detailed TLC output is under
+`build/tlc-runs/reflane/20261008T115841-1140830`.
 
 The sabotage controls cover arming before send, retaining uncertain attempts, blocking later
 appends, complete recovery, exact attempt identity, and mount fencing. Two independent controls
@@ -74,6 +74,18 @@ every non-target invariant: 223,716 generated / 62,061 distinct states, empty qu
 outstanding and already durable, so the honest run's green `CertifiedViewIsCurrent` covers the
 relaxed guard in the post-`PUT`, pre-install window and not only `Ready`. It violates
 `W_CertifiedWhileOutstanding` after 62 generated / 39 distinct states at depth 4.
+
+## Occupant outcomes and the fault latch {#occupant-outcomes-fault-latch}
+
+The resolver and the append site's conflict both classify an occupant that is not the attempt's
+bytes as `Foreign`, `Unreadable`, `ClassifyMemory` or `ClassifyDefect`; recovery can meet a foreign
+object at its retained attempt. Every terminal observation latches the fence in the same step
+(`FaultHasExit`), a latched runtime is never current again, and a terminal observation never
+returns the lane to `Ready` (`TerminalObservationIsTerminal`, `FaultedAbsorbing`). A memory-limit
+classification returns the append to `Ready` and leaves a wedge wedged. `sab_unlatchedfault`
+(fault without latch) and `sab_recoverafterfault` (recovery ignoring the latch) are red on their
+target. Not modelled: a non-`Ready` lane at new-id allocation (`StartWrite` requires `Ready`) and
+remount liveness; `W_FaultThenRemount` only shows the remount is reachable after a latch.
 
 ## Relink composition {#relink-composition}
 

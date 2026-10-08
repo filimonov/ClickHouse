@@ -27,6 +27,8 @@ CONFIGS=(
   "sab_lateinvalidation   violation ExactPredecessorInvalidationPreservesSuccessor"
   "sab_fencelosspublication violation PublishedRuntimeHasAcceptedIdentity"
   "sab_missingconfirmation violation MissingNameConfirmationAllocatesNothing"
+  "sab_unlatchedfault     violation FaultHasExit"
+  "sab_recoverafterfault  violation TerminalObservationIsTerminal"
   "safe                   green     -"
   "witness_commit         violation W_Commit"
   "witness_unresolved     violation W_Unresolved"
@@ -42,6 +44,11 @@ CONFIGS=(
   "witness_missingconfirmation violation W_MissingConfirmation"
   "witness_rebirthresolver violation W_RebirthResolverScope"
   "witness_certifyoutstanding violation W_CertifiedWhileOutstanding"
+  "witness_unreadablefault violation W_UnreadableFault"
+  "witness_defectfault    violation W_DefectFault"
+  "witness_recoveryforeign violation W_RecoveryForeign"
+  "witness_classifyretry  violation W_ClassifyRetry"
+  "witness_faultremount   violation W_FaultThenRemount"
 )
 
 overall=0
