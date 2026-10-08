@@ -16,7 +16,7 @@ MARK_FAILPOINT=version_metadata_store_creation_csn_fail
 # A test killed by the runner's timeout must not leave a failpoint armed for the tests that follow.
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t" 2>/dev/null || true
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $STORE_FAILPOINT" 2>/dev/null || true
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $MARK_FAILPOINT" 2>/dev/null || true
 }
@@ -26,7 +26,6 @@ trap 'exit 1' TERM INT HUP
 $CLICKHOUSE_CLIENT -n <<'SQL'
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS old_parts_lifetime = 3600;
-SYSTEM STOP MERGES;
 SYSTEM STOP MERGES t;
 INSERT INTO t VALUES (1);
 INSERT INTO t VALUES (2);

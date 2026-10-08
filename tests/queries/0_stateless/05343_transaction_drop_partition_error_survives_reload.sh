@@ -15,7 +15,7 @@ FAILPOINT=non_transactional_removal_store_fail_after_first_part
 # A test killed by the runner's timeout must not leave the failpoint armed for the tests that follow.
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t" 2>/dev/null || true
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT $FAILPOINT" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -32,7 +32,6 @@ function fail_statement()
 $CLICKHOUSE_CLIENT -n <<'EOF'
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS old_parts_lifetime = 3600;
-SYSTEM STOP MERGES;
 SYSTEM STOP MERGES t;
 INSERT INTO t VALUES (1);
 INSERT INTO t VALUES (2);
