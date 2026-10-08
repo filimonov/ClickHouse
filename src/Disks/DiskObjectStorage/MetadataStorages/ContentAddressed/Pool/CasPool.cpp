@@ -781,7 +781,9 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
                              "so the holder is unknown to this server");
                 throw Exception(ErrorCodes::ABORTED,
                     "CAS decommission '{}': pool member is alive or contended — {}. Refusing (no FORCE "
-                    "variant exists; stop the server or wait for its lease to lapse).",
+                    "variant exists). A member stopped without a clean farewell becomes removable once a GC "
+                    "round on another member fences its slot: wait until system.cas_mounts shows state = "
+                    "'fenced' for it, or stop it cleanly.",
                     srid, holder);
             }
             /// LiveDoubleStart (waited out the bound → a live twin) or ForeignOwner → fail closed

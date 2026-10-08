@@ -667,7 +667,7 @@ uint64_t allocateWriterEpoch(
                                 throw Exception(ErrorCodes::ABORTED,
                                     "CAS decommission '{}': epoch object missing but a LIVE mount lease "
                                     "exists ({}) — refusing to re-mint an epoch under a live member "
-                                    "(stop the server or wait for its lease to lapse)",
+                                    "(stop the server cleanly, or wait until system.cas_mounts shows state = 'fenced' for it)",
                                     srid, describeMountHolder(surviving));
                             /// Terminal mount: proceed, but mint an epoch DISTINCT from the survivor's
                             /// by construction — the same-pair state is unrepresentable on this path.

@@ -505,6 +505,16 @@ TEST(CASDecommission, RefusesLiveMember)
     });
 }
 
+TEST(CASDecommission, ALiveMemberRefusalNamesTheFencedState)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    auto victim = openVictim(backend);
+    DB::Cas::tests::expectThrowsCodeWithMessage(ErrorCodes::ABORTED, "system.cas_mounts shows state = 'fenced'", [&]
+    {
+        Pool::openForDecommission(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "admin"}, "victim");
+    });
+}
+
 TEST(CASDecommission, ClaimsDeadMemberAndBumpsEpoch)
 {
     auto backend = std::make_shared<InMemoryBackend>();
