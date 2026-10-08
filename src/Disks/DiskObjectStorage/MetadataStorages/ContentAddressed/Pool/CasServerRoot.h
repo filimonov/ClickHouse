@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCatalogFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasOwnershipOutcome.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/Exception.h>
@@ -61,6 +62,10 @@ struct MountRenewResult
     /// committed one -- no deadline ended it, so naming one would invent a fact.
     std::optional<GaveUp::Source> deadline_source;
     std::exception_ptr failure;
+    /// For a conflict: what the read after it says about our slot.
+    std::optional<MountSlotReading> slot;
+    /// This machine failed, not the store.
+    bool local_fault = false;
 };
 
 struct MountRenewOperationEnvironment
@@ -635,7 +640,9 @@ private:
     /// slot. `NotObserved` only when `op` is no longer admitted.
     Observation readUntilObserved(CasOperation & op, const Retry & policy,
                                   const MountRenewOperationEnvironment & environment) const;
-    [[noreturn]] void throwRenewConflict(const Observation & seen) const;
+    /// The failure a conflict ends the renewal with, given what the read after it found.
+    std::exception_ptr renewConflictFailure(const MountSlotReading & slot) const;
+    OwnMountBodies ownBodies(const MountLease & in_flight) const;
     MountRenewResult terminalResult(MountRenewResult result);
     void terminate(CasOperation & op);
 

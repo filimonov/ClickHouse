@@ -1755,7 +1755,7 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
         << "the unsafe reclaim must have minted B a fresh epoch over A's slot";
 
     /// A's next renewal meets the token guard: same uuid, a newer epoch now sits on the slot. Pin the
-    /// terminal classification directly (the "superseded" branch of `throwRenewConflict`, the one
+    /// terminal classification directly (the "superseded" branch of `renewConflictFailure`, the one
     /// that maps to `MountRenewOutcome::Terminal`) rather than accepting any exception -- no accessor
     /// exposes the renewer's outcome/state today, so the error code and the classification's own
     /// wording are what distinguish this from every other terminal reason (foreign owner, GC fence,
@@ -1768,7 +1768,7 @@ TEST(CASMountRemount, SupersededIncarnationDoesNotReclaimALiveSuccessor)
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED);
-        EXPECT_NE(e.message().find("superseded by a newer incarnation"), std::string::npos)
+        EXPECT_NE(e.message().find("superseded by another incarnation"), std::string::npos)
             << "actual message: " << e.message();
     }
     EXPECT_FALSE(pool_a->mayMutate()) << "the superseded classification must trip A's local write fence closed";

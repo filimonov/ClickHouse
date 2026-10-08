@@ -23,6 +23,8 @@ namespace DB::ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int ABORTED;
     extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using namespace DB::Cas;
@@ -104,6 +106,7 @@ public:
         ThrowAccessDenied,
         ThrowMalformed,
         RefusePrecondition,
+        ThrowNotImplemented,
     };
 
     struct Attempt
@@ -122,6 +125,8 @@ public:
     const uint64_t * clock = nullptr;
     /// While positive, a read of a mount slot fails with an access denial.
     uint32_t refuse_reads = 0;
+    /// While positive, a read of a mount slot returns nothing, as a proxy 404 does.
+    uint32_t absent_reads = 0;
     /// How many guarded mount writes had been sent when each read was made.
     std::vector<size_t> puts_at_read;
     std::vector<uint64_t> read_at_ms;
@@ -161,6 +166,8 @@ public:
         }
         if (action == Action::RefusePrecondition)
             return std::unexpected(RawConflict{});
+        if (action == Action::ThrowNotImplemented)
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "injected local defect in the renewal write");
 
         if (action == Action::ThrowBefore || action == Action::ThrowBeforeThenLandAfterResolve)
         {
@@ -194,6 +201,11 @@ public:
 #else
             throw DB::Exception(DB::ErrorCodes::ABORTED, "store refusals need the S3 client");
 #endif
+        }
+        if (absent_reads > 0 && key.ends_with("/mount"))
+        {
+            --absent_reads;
+            return std::nullopt;
         }
         std::optional<Raw> result = InMemoryBackend::read(key, access);
         if (pending && pending->key == key)
@@ -534,11 +546,9 @@ TEST(CASHeartbeat, ForeignIncarnationDuringFarewellLeavesTheSuccessorUntouchedAn
     EXPECT_EQ(m.writer_epoch, successor.writer_epoch);
 }
 
-/// Phase A (spec rev.4 2026-07-24): a confirmed renewal mismatch whose re-read shows OUR OWN
-/// (uuid, epoch), unfenced, is state UNCERTAINTY (an ambiguous landed renewal of ours, or a
-/// same-pair twin after epoch-state loss) — fail closed via fence + self-remount, never an
-/// exception that aborts debug/ASan builds at construction.
-TEST(CASHeartbeat, SameEpochUnfencedTouchIsUncertainNotFatal)
+/// A body of OUR OWN (uuid, epoch) that is neither of the two bodies this renewer wrote was written by
+/// another process: fail closed, never an exception that aborts debug/ASan builds at construction.
+TEST(CASHeartbeat, SameEpochBodyWeDidNotWriteIsCorruptNotFatal)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     Layout layout("pool");
@@ -574,12 +584,9 @@ TEST(CASHeartbeat, SameEpochUnfencedTouchIsUncertainNotFatal)
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED) << e.message();
-        EXPECT_NE(e.message().find("state uncertain"), String::npos) << e.message();
-        /// Forensics must ride in the message: the observed seq and our local seq.
+        EXPECT_NE(e.message().find("this server did not write"), String::npos) << e.message();
+        /// Forensics must ride in the message: the observed holder's seq.
         EXPECT_NE(e.message().find("seq=99"), String::npos) << e.message();
-        /// The local-seq fragment specifically -- not just any "seq=99" substring (which the
-        /// OBSERVED holder's own describeMountHolder text could also satisfy on its own).
-        EXPECT_NE(e.message().find("vs our seq="), String::npos) << e.message();
     }
 }
 
@@ -620,7 +627,7 @@ TEST(CASHeartbeat, SupersededTouchIsFailClosedNotFatal)
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED) << e.message();
-        EXPECT_NE(e.message().find("superseded by a newer incarnation"), String::npos) << e.message();
+        EXPECT_NE(e.message().find("superseded by another incarnation"), String::npos) << e.message();
     }
 }
 
@@ -1623,4 +1630,164 @@ TEST(CASHeartbeat, RenewalStopsBeforeTheCutoffWhenEveryAttemptConsumesTheEnvelop
     const MountRenewResult result = renewer.renew(renewalEnvironment(boot_ms));
     EXPECT_EQ(result.outcome, MountRenewOutcome::Terminal);
     EXPECT_LE(boot_ms, cutoff) << "the last attempt started inside the cutoff and the engine did not start one that could not finish";
+}
+
+namespace
+{
+
+/// A renewer of `(uuid 1, epoch 9)` started from its own claim on a `RenewalScriptBackend`.
+struct ScriptedRenewal
+{
+    std::shared_ptr<RenewalScriptBackend> backend = std::make_shared<RenewalScriptBackend>();
+    Layout layout{"pool"};
+    uint64_t wall_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops{backend, &boot_ms};
+    MountLeaseRenewer renewer{
+        ops.mount, ops.farewell, layout, "test", UInt128{1}, 9, std::chrono::milliseconds(1000),
+        [this] { return wall_ms; }, [] { return uint64_t{0}; }, {}, std::chrono::milliseconds(20),
+        [this] { return boot_ms; }};
+
+    ScriptedRenewal()
+    {
+        renewer.start(seedOwnClaim(ops.op, layout, "test", UInt128{1}, 9, wall_ms, 1000, [this] { return boot_ms; }));
+        backend->attempts.clear();
+        backend->read_calls = 0;
+    }
+
+    String key() const { return layout.mountKey("test"); }
+
+    void rewriteSlot(const std::function<void(MountLease &)> & edit)
+    {
+        auto got = ops.op.read(key(), Retry::standard());
+        MountLease body = decodeMountLease(got->bytes);
+        edit(body);
+        mustCommit(ops.op.replace(key(), encodeMountLease(body), got->etag, Retry::standard()), "rewritten slot");
+    }
+};
+
+/// Rethrown rather than read from a copy: a copied `DB::Exception` no longer has the thrown type.
+bool failsAsAFence(const MountRenewResult & result)
+{
+    try
+    {
+        std::rethrow_exception(result.failure);
+    }
+    catch (const MountFencedException &)
+    {
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
+DB::Exception terminalFailureOf(const MountRenewResult & result)
+{
+    EXPECT_EQ(result.outcome, MountRenewOutcome::Terminal);
+    try
+    {
+        std::rethrow_exception(result.failure);
+    }
+    catch (const DB::Exception & e)
+    {
+        return e;
+    }
+    catch (...)
+    {
+        ADD_FAILURE() << "terminal renewer failure was not a typed DB::Exception";
+    }
+    return DB::Exception(DB::ErrorCodes::ABORTED, "missing terminal exception");
+}
+
+}
+
+/// A proxy 404 on the read after a refused precondition is not an absence while a LIST still names the
+/// slot: the renewal reads again, finds its own body and sends the same tuple.
+TEST(CASHeartbeat, AProxyAbsenceTheListContradictsKeepsReading)
+{
+    ScriptedRenewal r;
+    r.backend->actions = {RenewalScriptBackend::Action::RefusePrecondition, RenewalScriptBackend::Action::Delegate};
+    r.backend->absent_reads = 1;
+
+    const MountRenewResult renewed = r.renewer.renewUntilDefinitive(renewalEnvironment(r.boot_ms));
+
+    ASSERT_EQ(renewed.outcome, MountRenewOutcome::Committed);
+    ASSERT_EQ(r.backend->attempts.size(), 2u);
+    EXPECT_EQ(r.backend->attempts[1].bytes, r.backend->attempts[0].bytes);
+    EXPECT_EQ(r.backend->attempts[1].expected, r.backend->attempts[0].expected);
+    EXPECT_EQ(r.backend->read_calls, 2u);
+}
+
+TEST(CASHeartbeat, OurUuidFencedAtAnotherEpochIsTaken)
+{
+    ScriptedRenewal r;
+    r.rewriteSlot([](MountLease & m) { ++m.writer_epoch; m.gc_fenced = true; ++m.seq; });
+
+    const MountRenewResult result = r.renewer.renew(renewalEnvironment(r.boot_ms));
+
+    const DB::Exception failure = terminalFailureOf(result);
+    EXPECT_FALSE(failsAsAFence(result)) << "only a GC fence of our own body is a fence: " << failure.message();
+    EXPECT_EQ(failure.code(), DB::ErrorCodes::ABORTED) << failure.message();
+    ASSERT_TRUE(result.slot.has_value());
+    EXPECT_EQ(result.slot->verdict, MountSlotVerdict::SlotTaken);
+}
+
+TEST(CASHeartbeat, AnUnknownFencedBodyOfOurPairIsCorrupt)
+{
+    ScriptedRenewal r;
+    r.rewriteSlot([](MountLease & m) { m.gc_fenced = true; m.seq += 5; });
+
+    const MountRenewResult result = r.renewer.renew(renewalEnvironment(r.boot_ms));
+
+    const DB::Exception failure = terminalFailureOf(result);
+    EXPECT_FALSE(failsAsAFence(result)) << "only a GC fence of our own body is a fence: " << failure.message();
+    EXPECT_EQ(failure.code(), DB::ErrorCodes::ABORTED) << failure.message();
+    ASSERT_TRUE(result.slot.has_value());
+    EXPECT_EQ(result.slot->verdict, MountSlotVerdict::SlotCorrupt);
+}
+
+TEST(CASHeartbeat, AnAbsenceTheListConfirmsIsSlotAbsent)
+{
+    ScriptedRenewal r;
+    auto got = r.ops.op.read(r.key(), Retry::standard());
+    ASSERT_EQ(r.ops.op.remove(r.key(), got->etag, Retry::standard()), Removal::Removed);
+
+    const MountRenewResult result = r.renewer.renew(renewalEnvironment(r.boot_ms));
+
+    EXPECT_EQ(terminalFailureOf(result).code(), DB::ErrorCodes::FILE_DOESNT_EXIST);
+    ASSERT_TRUE(result.slot.has_value());
+    EXPECT_EQ(result.slot->verdict, MountSlotVerdict::SlotAbsent);
+}
+
+/// The renewal's own write landed and the GC fenced that body before the response came back.
+TEST(CASHeartbeat, AGcFenceOfTheUnclearRenewalIsAFence)
+{
+    ScriptedRenewal r;
+    r.backend->actions = {RenewalScriptBackend::Action::LandThenThrow};
+    r.backend->cancel_after_write = [&r]
+    {
+        r.backend->cancel_after_write = {};
+        r.rewriteSlot([](MountLease & m) { m.gc_fenced = true; ++m.seq; });
+    };
+
+    const MountRenewResult result = r.renewer.renew(renewalEnvironment(r.boot_ms));
+
+    EXPECT_TRUE(failsAsAFence(result)) << terminalFailureOf(result).message();
+    ASSERT_TRUE(result.slot.has_value());
+    EXPECT_EQ(result.slot->verdict, MountSlotVerdict::FencedByGc);
+    EXPECT_FALSE(result.local_fault);
+}
+
+TEST(CASHeartbeat, AnInjectedLocalFailureIsALocalFault)
+{
+    ScriptedRenewal r;
+    r.backend->actions = {RenewalScriptBackend::Action::ThrowNotImplemented};
+
+    const MountRenewResult result = r.renewer.renew(renewalEnvironment(r.boot_ms));
+
+    EXPECT_EQ(terminalFailureOf(result).code(), DB::ErrorCodes::NOT_IMPLEMENTED);
+    EXPECT_TRUE(result.local_fault);
+    EXPECT_FALSE(result.slot.has_value());
 }

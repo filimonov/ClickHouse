@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 }
 
@@ -1579,71 +1580,85 @@ void MountLeaseRenewer::start(const MountClaimed & claimed)
     renewer_state = MountLeaseRenewerState::Active;
 }
 
-[[noreturn]] void MountLeaseRenewer::throwRenewConflict(const Observation & seen) const
+OwnMountBodies MountLeaseRenewer::ownBodies(const MountLease & in_flight) const
 {
-    if (const Object * occupant = std::get_if<Object>(&seen))
+    return OwnMountBodies{
+        .server_uuid = server_uuid,
+        .writer_epoch = writer_epoch,
+        .confirmed = last_confirmed_body,
+        .confirmed_bytes = last_body,
+        .confirmed_etag = last_etag,
+        .in_flight = in_flight,
+    };
+}
+
+std::exception_ptr MountLeaseRenewer::renewConflictFailure(const MountSlotReading & slot) const
+{
+    const MountLease * holder = slot.holder ? &*slot.holder : nullptr;
+    switch (slot.verdict)
     {
-        markMountRenewTermination(MountRenewTerminalClassification::Conflict);
-        const MountLease current = decodeMountLease(occupant->bytes);
-        if (current.server_uuid == server_uuid && current.gc_fenced)
-        {
+        case MountSlotVerdict::FencedByGc:
+            markMountRenewTermination(MountRenewTerminalClassification::Conflict);
             emitMountEvent(
-                event_sink, CasEventType::MountConflict, srid, "fenced_by_gc", &current,
+                event_sink, CasEventType::MountConflict, srid, "fenced_by_gc", holder,
                 "own mount slot was fenced by GC after lease expiry");
-            throw MountFencedException(fmt::format(
+            return std::make_exception_ptr(MountFencedException(fmt::format(
                 "CAS mount-lease: key '{}' was fenced by GC after lease expiry ({})",
-                key, describeMountHolder(current)));
-        }
-        if (current.server_uuid == server_uuid && current.writer_epoch == writer_epoch)
-        {
+                key, describeMountHolder(*holder))));
+        case MountSlotVerdict::SlotTaken:
+            markMountRenewTermination(MountRenewTerminalClassification::Conflict);
+            if (holder->server_uuid == server_uuid)
+            {
+                emitMountEvent(
+                    event_sink, CasEventType::MountConflict, srid, "superseded", holder,
+                    "mount slot is held by another incarnation of this server");
+                return std::make_exception_ptr(Exception(
+                    ErrorCodes::ABORTED,
+                    "CAS mount-lease: key '{}' was superseded by another incarnation ({})",
+                    key, describeMountHolder(*holder)));
+            }
+            /// This decoded authoritative observation is the exact point at which this incarnation learns
+            /// that a foreign successor owns the slot. Terminal teardown intentionally performs no release
+            /// I/O, so account the skipped farewell here, once, before the renewer enters its terminal state.
+            /// The renewal may be parked under `remount_mutex`; keep the increment trace-free.
+            ProfileEvents::incrementNoTrace(ProfileEvents::CASMountReleaseSkippedForeignOccupant);
             emitMountEvent(
-                event_sink, CasEventType::MountConflict, srid, "same_epoch_state_uncertain", &current,
-                "own mount slot advanced past our incarnation -- state uncertain");
-            throw Exception(
+                event_sink, CasEventType::MountConflict, srid, "foreign_writer", holder,
+                "mount slot is held by a foreign server -- failing closed");
+            return std::make_exception_ptr(Exception(
                 ErrorCodes::ABORTED,
-                "CAS mount-lease: key '{}' advanced under our own (uuid, epoch); state uncertain ({} vs our seq={})",
-                key, describeMountHolder(current), seq);
-        }
-        if (current.server_uuid == server_uuid)
-        {
+                "CAS mount-lease: key '{}' is held by a foreign server ({}) -- failing closed",
+                key, describeMountHolder(*holder)));
+        case MountSlotVerdict::SlotCorrupt:
+            markMountRenewTermination(MountRenewTerminalClassification::Conflict);
             emitMountEvent(
-                event_sink, CasEventType::MountConflict, srid, "superseded", &current,
-                "mount slot is held by a newer writer epoch");
-            throw Exception(
-                ErrorCodes::ABORTED,
-                "CAS mount-lease: key '{}' was superseded by a newer incarnation ({})",
-                key, describeMountHolder(current));
-        }
-
-        /// This decoded authoritative observation is the exact point at which this incarnation learns
-        /// that a foreign successor owns the slot. Terminal teardown intentionally performs no release
-        /// I/O, so account the skipped farewell here, once, before the renewer enters its terminal state.
-        /// The renewal may be parked under `remount_mutex`; keep the increment trace-free.
-        ProfileEvents::incrementNoTrace(ProfileEvents::CASMountReleaseSkippedForeignOccupant);
-        emitMountEvent(
-            event_sink, CasEventType::MountConflict, srid, "foreign_writer", &current,
-            "mount slot is held by a foreign server -- failing closed");
-        throw Exception(
-            ErrorCodes::ABORTED,
-            "CAS mount-lease: key '{}' is held by a foreign server ({}) -- failing closed",
-            key, describeMountHolder(current));
-    }
-
-    if (std::holds_alternative<ProvenAbsent>(seen))
-    {
-        markMountRenewTermination(MountRenewTerminalClassification::Vanished);
-        emitMountEvent(
-            event_sink, CasEventType::MountConflict, srid, "vanished", nullptr,
-            "mount slot vanished while renewing -- failing closed");
-        throw Exception(
-            ErrorCodes::FILE_DOESNT_EXIST,
-            "CAS mount-lease: key '{}' vanished while renewing -- failing closed", key);
+                event_sink, CasEventType::MountConflict, srid, "slot_corrupt", holder,
+                "mount slot holds a body this server did not write -- failing closed");
+            if (holder)
+                return std::make_exception_ptr(Exception(
+                    ErrorCodes::ABORTED,
+                    "CAS mount-lease: key '{}' holds a body of our (uuid, epoch) this server did not write ({})",
+                    key, describeMountHolder(*holder)));
+            return std::make_exception_ptr(Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "CAS mount-lease: key '{}' holds bytes that do not decode as a mount lease", key));
+        case MountSlotVerdict::SlotAbsent:
+            markMountRenewTermination(MountRenewTerminalClassification::Vanished);
+            emitMountEvent(
+                event_sink, CasEventType::MountConflict, srid, "vanished", nullptr,
+                "mount slot vanished while renewing -- failing closed");
+            return std::make_exception_ptr(Exception(
+                ErrorCodes::FILE_DOESNT_EXIST,
+                "CAS mount-lease: key '{}' vanished while renewing -- failing closed", key));
+        case MountSlotVerdict::Ours:
+        case MountSlotVerdict::NotObserved:
+            break;
     }
 
     /// The precondition was refused but nothing identifiable was read back: neither the successor nor
     /// an absence is established, so the only honest verdict is that this renewal settled nothing.
     markMountRenewTermination(MountRenewTerminalClassification::Unresolved);
-    throwCasWriteRetryLater(fmt::format(
+    return makeCasWriteRetryLaterExceptionPtr(fmt::format(
         "CAS mount-lease: key '{}' refused our precondition and the resolving read established neither "
         "an occupant nor an absence", key));
 }
@@ -1702,9 +1717,13 @@ Observation MountLeaseRenewer::readUntilObserved(
         try
         {
             std::optional<Object> got = op.read(key, policy);
-            if (!got)
-                return ProvenAbsent{};
-            return std::move(*got);
+            if (got)
+                return std::move(*got);
+            Observation absence = corroborateAbsence(op, key, ProvenAbsent{});
+            if (!std::holds_alternative<NotObserved>(absence))
+                return absence;
+            credential_refusal = false;
+            continue;
         }
         catch (const Exception & e)
         {
@@ -1790,6 +1809,7 @@ MountRenewResult MountLeaseRenewer::renewOn(
             }
             else if (Conflict * conflict = std::get_if<Conflict>(&*written))
             {
+                conflict->seen = corroborateAbsence(op, key, std::move(conflict->seen));
                 if (std::holds_alternative<NotObserved>(conflict->seen))
                     conflict->seen = readUntilObserved(op, policy, environment);
                 if (std::holds_alternative<NotObserved>(conflict->seen))
@@ -1800,8 +1820,7 @@ MountRenewResult MountLeaseRenewer::renewOn(
                 /// Our last confirmed body under the token we named: the slot did not move. A new call is
                 /// safe because a call with an unclear attempt returns `Conflict` only once the token
                 /// moved, so this call left no copy of ours that could land.
-                const Object * seen = std::get_if<Object>(&conflict->seen);
-                if (!seen || seen->etag != expected || seen->bytes != last_body)
+                if (classifyMountSlot(conflict->seen, ownBodies(lease_body)).verdict != MountSlotVerdict::Ours)
                     break;
             }
             else
@@ -1817,9 +1836,11 @@ MountRenewResult MountLeaseRenewer::renewOn(
     }
     catch (...)
     {
-        /// The engine surfaces a deterministic local failure unchanged rather than reissuing it.
+        /// The engine surfaces a deterministic local failure unchanged rather than reissuing it. The server
+        /// memory limit is not a defect of this machine.
         markMountRenewTermination(MountRenewTerminalClassification::DeterministicFailure);
         result.failure = std::current_exception();
+        result.local_fault = getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
         result.attempts_sent = attempts_sent;
         return terminalResult(std::move(result));
     }
@@ -1842,16 +1863,20 @@ MountRenewResult MountLeaseRenewer::renewOn(
         return result;
     }
 
-    if (const Conflict * conflict = std::get_if<Conflict>(&*written))
+    if (Conflict * conflict = std::get_if<Conflict>(&*written))
     {
         result.sent_any = true;
         result.attempts_sent = attempts_sent;
         try
         {
-            throwRenewConflict(conflict->seen);
+            if (!until_definitive)
+                conflict->seen = corroborateAbsence(op, key, std::move(conflict->seen));
+            result.slot = classifyMountSlot(conflict->seen, ownBodies(lease_body));
+            result.failure = renewConflictFailure(*result.slot);
         }
         catch (...)
         {
+            result.slot.reset();
             result.failure = std::current_exception();
         }
         return terminalResult(std::move(result));
