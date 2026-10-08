@@ -33,6 +33,8 @@
 #   sab_secondstop              -> OneProcessStop          no once-flag: a second disk stops the process
 #                                                          again
 #   sab_lossremounts            -> I9LossTerminates        a loss observation requests a remount
+#   sab_farewellonstopping      -> NoFarewellOnStopping    the teardown writes the farewell on a Stopping
+#                                                          pool
 #   main                        -> GREEN   every invariant, the action properties and the liveness
 #                                          properties under FairSpec
 #   step1_norequestrace         -> GREEN   with LossStops no request appears off Top and no reclaim
@@ -58,7 +60,9 @@
 #
 # Exits nonzero if any expectation is unmet.
 #
-# This is a whole-suite runner: it owns the config list and takes no arguments. To run one
+# ROWS="name1 name2" runs only those rows; TLC_TIMEOUT=<seconds> overrides the per-row timeout.
+#
+# This is a whole-suite runner: it owns the config list and takes no positional arguments. To run one
 # config by hand:
 #   java -XX:+UseParallelGC -cp ../../../tmp/tla2tools.jar tlc2.TLC -workers 1 \
 #        -config CaDiskLifecycle_<name>.cfg CaDiskLifecycle.tla
@@ -93,6 +97,7 @@ CONFIGS=(
   "sab_forgetlosesarm           violation  ForgetWinsArm"
   "sab_secondstop               violation  OneProcessStop"
   "sab_lossremounts             violation  I9LossTerminates"
+  "sab_farewellonstopping       violation  NoFarewellOnStopping"
   "main                         green      -"
   "step1_norequestrace          green      -"
   "witness_forgetdone           violation  WForgetNeverDone"
@@ -122,12 +127,13 @@ overall=0
 printf '%-30s %-11s %-40s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"; do
   read -r name expect want <<<"$row"
+  if [[ -n "${ROWS:-}" && " $ROWS " != *" $name "* ]]; then continue; fi
   cfg="${MODULE}_${name}.cfg"
   log="../../../tmp/tlc_${MODULE}_${name}.log"
   meta="../../../tmp/tlc-meta-lifecycle-${name}"
   rm -rf "$meta"
   start=$SECONDS
-  timeout 3600 /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
+  timeout "${TLC_TIMEOUT:-3600}" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
     -metadir "$meta" -workers "${TLC_WORKERS:-1}" -config "$cfg" "$MODULE.tla" >"$log" 2>&1
   rc=$?
   elapsed=$((SECONDS - start))

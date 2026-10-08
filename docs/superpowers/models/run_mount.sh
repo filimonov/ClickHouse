@@ -77,6 +77,12 @@
 #                                                        share a (uuid, epoch); the second refreshes
 #                                                        the first's live body
 #
+#   --- 2026-10-09 two-step absence (`TwoStepAbsence = TRUE`) ---
+#   sab_proxy404stop      -> AbsenceStopIsTrue           a GET miss alone stops the incarnation, so a proxy
+#                                                        404 on an existing slot stops a healthy one
+#   absence_twostep       -> GREEN   GET miss then LIST miss stops; a proxy 404 never does
+#   witness_absencestop   -> W_NoAbsenceStop             a real deletion stops the incarnation
+#
 #   --- 2026-10-08 immutable claim (`ImmutableClaim = TRUE`, `Reserve = 1`) ---
 #   sab_claimdeadlineatconfirm -> LocalFenceWithinStamp  the local fence runs from the confirmation, not
 #                                                        from the claim's start
@@ -143,6 +149,8 @@
 #
 # Exits nonzero if any expectation is unmet.
 #
+# ROWS="name1 name2" runs only those rows; TLC_TIMEOUT=<seconds> overrides the per-row timeout.
+#
 # `-workers 1`, NOT `-workers auto`, and that is deliberate (see run_refcatalog.sh for the full
 # rationale: parallel BFS visits states in a nondeterministic order, so the reported depth, the
 # abort runs' state counts and WHICH shortest counterexample TLC prints all vary between identical
@@ -191,6 +199,7 @@ CONFIGS=(
   "sab_claimdeadlineatconfirm            violation  LocalFenceWithinStamp"
   "sab_opennoreserve                     violation  OpenLeavesReserve"
   "sab_claimresolvebypair                violation  OneWritableIncarnationPerUuid"
+  "sab_proxy404stop                      violation  AbsenceStopIsTrue"
   "stage1                                green      -"
   "v9_recoverygen                        green      -"
   "twins                                 green      -"
@@ -198,6 +207,7 @@ CONFIGS=(
   "twins_drift                           green      -"
   "twins_immalloc                        green      -"
   "twins_immclaim                        green      -"
+  "absence_twostep                       green      -"
   "witness_reclaim                       violation  W_SameUuidReclaimsExpired"
   "witness_remountafterfence             violation  W_RemountAfterFence"
   "witness_observedreclaim               violation  W_ObservedReclaim"
@@ -212,6 +222,7 @@ CONFIGS=(
   "witness_reacquirestops                violation  W_ReacquireStops"
   "witness_straggler_landed              violation  W_StragglerLanded  CaCasMountCoreStraggler"
   "witness_lateclaimrenews               violation  W_LateClaimRenewsThenOpens"
+  "witness_absencestop                   violation  W_NoAbsenceStop"
 )
 [[ "${SLOW:-0}" == "1" ]] && CONFIGS+=("rev6_observe  incomplete  -")
 
@@ -219,6 +230,7 @@ overall=0
 printf '%-38s %-11s %-40s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"; do
   read -r name expect want module <<<"$row"
+  if [[ -n "${ROWS:-}" && " $ROWS " != *" $name "* ]]; then continue; fi
   module="${module:-$MODULE}"
   cfg="${MODULE}_${name}.cfg"
   log="../../../tmp/tlc_${MODULE}_${name}.log"
@@ -231,7 +243,7 @@ for row in "${CONFIGS[@]}"; do
   fi
   # rev6_observe is the only config allowed to run out of time; every other one must finish, and a
   # timeout there has to read as a FAILURE rather than as a quiet "error".
-  tmo=3600; [[ "$expect" == "incomplete" ]] && tmo=10800
+  tmo=${TLC_TIMEOUT:-3600}; [[ "$expect" == "incomplete" ]] && tmo=10800
   rm -rf "$meta"
   start=$SECONDS
   timeout "$tmo" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \

@@ -185,3 +185,27 @@ and a reclaim never begins on an armed fence.
   request starts is not modelled.
 - No sabotage turns these red, so they are not shown to fence anything: `StopFollowsLatch`,
   `ClosedRequestsNoStop`, `PauseKeepsEpochAndGeneration`, `StopIsRequested`, `NoRequestRace`.
+
+## 2026-10-09 no farewell on a `Stopping` pool {#2026-10-09-no-farewell-on-stopping}
+
+`FTeardown` writes the farewell only if the pool is not `Stopping`; the `SabFarewellOnStopping` constant
+(`FALSE` in every cfg except the new sabotage) restores the old behaviour. New invariant
+`NoFarewellOnStopping == ~(farewell /\ everStopping)`, checked by `main`. The fatal class (ledger fault,
+local defect) is not modelled: the process ends and no action follows.
+
+| cfg | expected | result | generated | distinct |
+|---|---|---|---:|---:|
+| `sab_farewellonstopping` (new) | violation | `NoFarewellOnStopping` | 94,318 | 22,353 |
+| `main` | green | green, exhaustive | 366,263 | 77,064 |
+| `step1_norequestrace` | green | green | - | - |
+| `witness_forgetfarewell` | violation | `WNoForgetFarewell` | - | - |
+| `witness_racedreplaced` | violation | `WNoRacedStopping` | - | - |
+| `witness_forgetdone` | violation | `WForgetNeverDone` | - | - |
+| `sab_secondstop` | violation | `OneProcessStop` | - | - |
+
+`main` ran 367,607 generated and 77,640 distinct states on the committed model; the lower count is the
+farewell no longer being written on `Stopping`. Counterexample of the sabotage (14 states): `FStart`,
+`FCheckProceed`, `XInterfere`, `LExit` (the loss enters `Stopping`), `FIntent`, `FTrip1`, the GC stop and
+join, `FJoinSignal`, `FJoinWait`, `FTrip2`, `FDrain`, `FTeardown` writes the farewell. This is the probe
+trace recorded under "A farewell is still written on a `Stopping` pool" in the step 1 section; the row is
+now kept.

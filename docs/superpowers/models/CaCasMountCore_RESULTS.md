@@ -1271,3 +1271,51 @@ were.
 Limit: `OpenLeavesReserve` restates the guard of `ClaimOpen`; its evidence is `sab_opennoreserve` and
 `witness_lateclaimrenews`. Code cross-check: `ClaimBegin` is the boot sample before `makeMountBody`,
 `ClaimResolve` is the byte compare in `writeLoop`, `ClaimOpen` is `renewal_window_fits`.
+
+## 2026-10-09 two-step slot absence {#2026-10-09-two-step-absence}
+
+`TwoStepAbsence = TRUE` adds the renewal's absence rule: a renewal whose GET finds no slot (`RenewGetMiss`)
+stops only if a following LIST also finds nothing (`RenewListStep`). `ProxyMay404` lets a proxy answer
+404 to the GET and fail the LIST while the slot exists (`ProxyToggle`). `SabAbsenceGetOnly` stops on the
+GET miss alone. Stopping sets `localLost`, as a fenced or foreign body does in `Renew`. New history:
+`falseAbsenceStop` (a stop while the slot existed), `absenceStopped`. New invariant `AbsenceStopIsTrue`,
+new witness `W_NoAbsenceStop`. Every pre-existing cfg sets the three constants to `FALSE`: the new
+actions are disabled and the new variables stay at their `Init` values.
+
+Changes against the plan text:
+- First run of `absence_twostep` was red on `SupersededWriterMakesNoMutation` (depth 12): `AdoptRead`
+  observed the slot, `ClearExpiredMount` removed it, the stop set `localLost`, then `AdoptWrite`
+  re-installed a body and `Write` fired with `localLost` set. The stop is terminal in the product, so
+  `AbsenceStop` now drops the pending adopt observation (`adoptObs`), as `Die` does. This is a model
+  change beyond the plan text.
+- `LiveIncarnation` requires `fenceUntil[a] > 0` (the incarnation has claimed). Without it
+  `witness_absencestop` reached the stop through `mount = None` before any claim, which is not a deletion.
+- The three new cfgs use `Actors = {A}`. At `stage1`'s two actors `absence_twostep` passed 54M generated
+  and 10.4M distinct states in three minutes with 3.9M queued, and was stopped.
+
+| cfg | expected | result | trace states | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `sab_proxy404stop` (new) | violation | `AbsenceStopIsTrue` | 6 | 916 | 442 |
+| `witness_absencestop` (new) | violation | `W_NoAbsenceStop` | 9 | 235 | 155 |
+| `absence_twostep` (new) | green | green, exhaustive, depth 30 | - | 65,781,231 | 10,293,448 |
+| `stage1` (control) | green | green, exhaustive, depth 28 | - | 57,855,349 | 10,599,769 |
+| `twins` (control) | green | green, exhaustive, depth 25 | - | 138,643,328 | 18,080,420 |
+
+Counterexamples:
+- `sab_proxy404stop`: `ClaimOwnerEmpty`, `AllocEpoch`, `ClaimMount`, `ProxyToggle`, `RenewGetMiss`. The
+  proxy 404s the GET on a live slot and the GET miss alone stops the incarnation.
+- `witness_absencestop`: `ClaimMount`, `Tick`, `Tick`, `ClearExpiredMount`, `RenewGetMiss`,
+  `RenewListStep`. A real deletion stops the incarnation after the GET miss and the LIST miss.
+
+Counts: `twins` is unchanged from step 2a. `stage1` equals the count of the committed model before this
+change (57,855,349 / 10,599,769, run on `HEAD`); the 51,231,925 / 10,616,665 in the tables above predate
+the allocation and claim steps. Also re-run, all with their expected verdicts: `sab_epochreset`,
+`sab_claimresolvebypair`, `sab_reacquireredecides`, `witness_reclaim`, `witness_lateclaimrenews`,
+`witness_straggler_landed`, `witness_laterenew` (both history wrappers compile with the new variables).
+The `absence_twostep` count above is from the final model; `stage1` and `twins` ran one edit earlier
+(`LiveIncarnation` gained `fenceUntil[a] > 0`), which only changes a guard that is disabled when
+`TwoStepAbsence = FALSE`.
+
+Limits: the LIST step reads the slot and the proxy flag at one instant, so a LIST that races a delete
+or a claim is not modelled. `AbsenceStopIsTrue` checks the stop decision only; it does not check what the
+product does after the stop.
