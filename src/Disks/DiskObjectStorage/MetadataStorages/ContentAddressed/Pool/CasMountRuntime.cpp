@@ -433,6 +433,12 @@ RenewalProgress CasMountRuntime::renewalProgress() const
 
 MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_call)
 {
+    uint64_t period_ms = 0;
+    if (worker_call)
+    {
+        std::lock_guard lock(driver_mutex);
+        period_ms = static_cast<uint64_t>(std::max<int64_t>(0, renewal_period.count()));
+    }
     return MountRenewOperationEnvironment{
         .boot_ms = [this] { return bootMsNow(); },
         .live = [this, worker_call]
@@ -463,6 +469,7 @@ MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_c
                 }
             },
         },
+        .credential_refusal_pause_ms = period_ms,
     };
 }
 
@@ -507,12 +514,7 @@ void CasMountRuntime::consumeRenewResult(
         && result.deadline_source == GaveUp::Source::Lease)
         ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalDeadlineExceeded);
 
-    if (result.outcome == MountRenewOutcome::Committed)
-    {
-        reportMountRenewCompletion(result);
-        return;
-    }
-    if (result.outcome == MountRenewOutcome::NotAttempted)
+    if (result.outcome != MountRenewOutcome::Terminal)
     {
         reportMountRenewCompletion(result);
         return;
@@ -571,9 +573,12 @@ uint64_t CasMountRuntime::renewRenewerOnce(
     MountRenewResult result;
     {
         SCOPE_EXIT({ std::lock_guard lock(renewal_progress_mutex); renewal_progress.in_progress = false; });
-        result = active == RenewalDriverState::RemountCall
-            ? call.renewer->renewForRemount(renewalEnvironment(worker_call))
-            : call.renewer->renew(renewalEnvironment(worker_call));
+        if (active == RenewalDriverState::RemountCall)
+            result = call.renewer->renewForRemount(renewalEnvironment(worker_call));
+        else if (worker_call)
+            result = call.renewer->renewUntilDefinitive(renewalEnvironment(worker_call));
+        else
+            result = call.renewer->renew(renewalEnvironment(worker_call));
     }
     const RenewalDriverState destination = active == RenewalDriverState::WorkerCall
         ? RenewalDriverState::WorkerIdle

@@ -1005,7 +1005,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
             if (definitely_refused && !state.any_ambiguous)
             {
                 ProfileEvents::increment(ProfileEvents::CASRequestRefused);
-                return Refused{e.code(), e.message(), state.attempts_sent};
+                return Refused{e.code(), e.message(), state.attempts_sent, credential_answer};
             }
             /// A refusal-class exception is never a hint, even when an earlier ambiguity of this inner
             /// write kept it from ending the call above: that earlier attempt's fate is what the read
