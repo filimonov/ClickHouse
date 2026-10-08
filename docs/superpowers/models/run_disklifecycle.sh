@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Run every CaDiskLifecycle config and print a one-line PASS/FAIL verdict per config.
-# Model: the pool lifecycle of a writable CAS mount, its one lease thread (renewal and reclaim in
-# sequence), the GC scheduler, and the `SYSTEM CONTENT ADDRESSED FORGET` protocol.
+# Model: the pool lifecycle of a writable CAS mount (absorbing Stopping and Closed), its one lease
+# thread (renewal and reclaim in sequence), the process-stop request shared by two disks, the GC
+# scheduler, and the `SYSTEM CONTENT ADDRESSED FORGET` protocol.
 #
 # Expectations are asserted BY NAME. Sabotages run first: a green is only evidence once the property
 # it rests on has been seen red.
 #
-#   sab_nogcselfexit            -> GcExitsAfterVanished (temporal)  the GC scheduler never exits on a
-#                                                                   natural Vanished transition
+#   sab_nogcselfexit            -> GcExitsAfterTerminal (temporal)  the GC scheduler never exits on a
+#                                                                   terminal pool
 #   sab_armafterintent          -> NoJoinWindowReclaim     arming ignores a stop and a terminal
 #                                                          lifecycle: a reclaim arms inside the join window
 #   sab_notrip2                 -> I1ForgetTerminal        the same, and no re-trip after the join: FORGET
@@ -22,19 +23,33 @@
 #   sab_ackrequested            -> I7RequestNotLost        a reclaim acknowledges the current request,
 #                                                          not its snapshot
 #   sab_reclaimnotrip           -> I4aTransientImpliesLost a reclaim's step 0 leaves the fence armed
-#   sab_reclaimnotrip_vanished  -> I4bVanishedImpliesLost  the same, ending Replaced on an armed fence
-#   main                        -> GREEN   every invariant, the four action properties and the three
-#                                          liveness properties under FairSpec
+#   sab_reclaimnotrip_vanished  -> I4bTerminalImpliesLost  the same, ending Stopping on an armed fence
+#     (the five rows above and witness_requestduringreclaim run with LossStops = FALSE: their race
+#      needs an interference report that requests a remount)
+#   sab_latesuccessrearm        -> NoArmAfterLatch         a renewal success arms a latched pool
+#   sab_interferearmrace        -> TerminalAbsorbing       interference between the reclaim's arming
+#                                                          decision and the open loses
+#   sab_forgetlosesarm          -> ForgetWinsArm           FORGET's intent in the same window loses
+#   sab_secondstop              -> OneProcessStop          no once-flag: a second disk stops the process
+#                                                          again
+#   sab_lossremounts            -> I9LossTerminates        a loss observation requests a remount
+#   main                        -> GREEN   every invariant, the action properties and the liveness
+#                                          properties under FairSpec
+#   step1_norequestrace         -> GREEN   with LossStops no request appears off Top and no reclaim
+#                                          begins on an armed fence
 #
 # Witnesses are negated reachability -- a VIOLATION is the evidence:
 #
 #   witness_forgetdone            -> WForgetNeverDone         FORGET completes
-#   witness_racedreplaced         -> WNoRacedReplaced         FORGET completes on a pool a racing
-#                                                             natural promotion left VanishedReplaced
+#   witness_racedreplaced         -> WNoRacedStopping         FORGET completes on a pool a racing
+#                                                             loss observation left Stopping
 #   witness_livebyrenewal         -> WNoLiveByRenewal         a renewal arms and reports Live for a
 #                                                             reclaim whose claim was too old
 #   witness_requestduringreclaim  -> WNoRequestDuringReclaim  a remount request is raised during a reclaim
 #   witness_forgetfarewell        -> WNoForgetFarewell        FORGET still writes the farewell
+#   witness_pauseresume           -> WNoPauseResume           expiry, renewal, writes under the same epoch
+#   witness_interferencestop      -> WNoInterferenceStop      interference stops the disk; both disks
+#                                                             raise; one request
 #
 # TLC names no property in a liveness counterexample ("Error: Temporal properties were violated."),
 # so the `temporal` expectation asserts what can be asserted: a temporal violation happened, NO
@@ -62,7 +77,7 @@ MODULE=CaDiskLifecycle
 
 # name  expectation(green|violation|temporal)  expected-invariant/property(asserted, not just logged)
 CONFIGS=(
-  "sab_nogcselfexit             temporal   GcExitsAfterVanished"
+  "sab_nogcselfexit             temporal   GcExitsAfterTerminal"
   "sab_armafterintent           violation  NoJoinWindowReclaim"
   "sab_notrip2                  violation  I1ForgetTerminal"
   "sab_unearnedfarewell         violation  I2EarnedFarewell"
@@ -72,13 +87,21 @@ CONFIGS=(
   "sab_reclaimarmpending        violation  NoArmWhileRequestPending"
   "sab_ackrequested             violation  I7RequestNotLost"
   "sab_reclaimnotrip            violation  I4aTransientImpliesLost"
-  "sab_reclaimnotrip_vanished   violation  I4bVanishedImpliesLost"
+  "sab_reclaimnotrip_vanished   violation  I4bTerminalImpliesLost"
+  "sab_latesuccessrearm         violation  NoArmAfterLatch"
+  "sab_interferearmrace         violation  TerminalAbsorbing"
+  "sab_forgetlosesarm           violation  ForgetWinsArm"
+  "sab_secondstop               violation  OneProcessStop"
+  "sab_lossremounts             violation  I9LossTerminates"
   "main                         green      -"
+  "step1_norequestrace          green      -"
   "witness_forgetdone           violation  WForgetNeverDone"
-  "witness_racedreplaced        violation  WNoRacedReplaced"
+  "witness_racedreplaced        violation  WNoRacedStopping"
   "witness_livebyrenewal        violation  WNoLiveByRenewal"
   "witness_requestduringreclaim violation  WNoRequestDuringReclaim"
   "witness_forgetfarewell       violation  WNoForgetFarewell"
+  "witness_pauseresume          violation  WNoPauseResume"
+  "witness_interferencestop     violation  WNoInterferenceStop"
 )
 check_tlc_temporal_expectations "$JAR" "${CONFIGS[@]}" || exit 4
 

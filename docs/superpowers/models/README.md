@@ -142,7 +142,7 @@ exact-delete authorization.
 | `CaRefWriterCleanupCore.tla` | writer ownership lifecycle plus unresolved-grant duty queue and retirement guard | CURRENT (Task 8A extension 2026-08-02) | `run_refwcleanup.sh` |
 | `CaRelinkConfirmCore.tla` | publish-then-confirm relink: gate 1 (exact-`ManifestRef` equality, ref-scoped mutation refusal (the mutation's `MutationScope`), poison, mount fence) and the publish-before-confirm order, each proven load-bearing — **plus the finding that the theorem is violable independently of the protocol under an honest fold cursor** | CURRENT (gates unlanded Part B; `_main` is CONDITIONAL on `LIST` completeness) | `run_relinkconfirm.sh` |
 | `CaErasureProof.tla` | rev.7 natural `Vanished(erased)` proof soundness: writer paths closed by op-gate + guard counter + LIST-reset + grace ([D1] grace proven load-bearing); two GC-side windows found — evidence in the decision to excise the natural-erasure stack from v1 | HISTORICAL (design excised before activation) | `run_erasureproof.sh` |
-| `CaDiskLifecycle.tla` | pool lifecycle with one lease thread (renew and reclaim in sequence): one-way-ness, the `FORGET` protocol (no arm in the join window, earned farewell, first-terminal-wins), GC self-exit on `Vanished`, no renewal after the FORGET intent, one arming rule, `Live` only when a write can be admitted, no lost remount request | CURRENT | `run_disklifecycle.sh` |
+| `CaDiskLifecycle.tla` | pool lifecycle with one lease thread (renew and reclaim in sequence): absorbing `Stopping` and `Closed`, nothing arms after the latch, one process-stop request for two disks, the `FORGET` protocol (no arm in the join window, earned farewell, first-terminal-wins), GC self-exit on a terminal pool, no renewal after the FORGET intent, one arming rule, `Live` only when a write can be admitted, no lost remount request | CURRENT | `run_disklifecycle.sh` |
 | `CaB140DangleMerge.tla` (+ `m_*.cfg`) | journal-trim dangle across a lease handoff: trim-gate + cursor-in-snap jointly necessary | HISTORICAL | `run_b140danglemerge.sh` |
 
 ## Model groups {#model-groups}
@@ -490,35 +490,13 @@ Gates for the "throw-when-uncertain" disk-lifecycle redesign
 2026-07-23 to FORGET-only v1 — the natural `Vanished(erased)` proof stack was excised). Full run
 evidence and trace analysis: `.superpowers/sdd/tla-rev7-report.md`.
 
-- **`CaDiskLifecycle.tla`** — the lifecycle state machine (`Vanished` = `Replaced` | `Forgotten`;
-  `IdentityLost` on authoritative sentinel absence), the `SYSTEM CONTENT ADDRESSED FORGET` step
-  order (`Pool::forgetDisk`), the one lease thread of the 2026-10-01 mount-renewal design, external
-  remount requests (`reportImpossibleInterference`), lease expiry, the GC scheduler with its
-  self-exit on `Vanished`, and the `GC STOP`/`GC START` verbs. The thread exits on a stop or on
-  `remountTerminal` (FORGET intent or `IdentityLost`); a reclaim past its step-0 bail may still
-  finish mid-FORGET. Proves:
-  - FORGET ends with the fence latched and a terminal state, and no reclaim arms the fence inside
-    its join window. The arming rule makes the second `tripMountLost` a second line: it matters
-    only when arming ignores the intent (`_sab_armafterintent`, `_sab_notrip2` red);
-  - a farewell only after a drain, from an `Active` renewer, with the thread joined
-    (`_sab_unearnedfarewell` red, `_witness_forgetfarewell` reachable);
-  - no renewal starts after the FORGET intent (`_sab_renewafterintent` red) or while a remount
-    request is pending;
-  - one arming rule for a reclaim and a renewal: the fence is armed and `Live` reported only with no
-    remount request pending, no stop and no terminal lifecycle (`_sab_livependingrequest`,
-    `_sab_reclaimarmpending` red);
-  - `Live` only when a write can be admitted: with a too-old claim the reclaim leaves the fence
-    latched and the next successful renewal arms it (`_sab_liveunready` red,
-    `_witness_livebyrenewal` reachable);
-  - a reclaim acknowledges only the generation it snapshotted (`_sab_ackrequested` red);
-  - a non-`Live` pool and a `Vanished` pool have a latched fence; a reclaim's step 0 trips the fence
-    (`_sab_reclaimnotrip`, `_sab_reclaimnotrip_vanished` red);
-  - one-way `IdentityLost`/`Vanished`; FORGET leaves GC destroyed; first-terminal-wins
-    (`_witness_racedreplaced`);
-  - liveness under `FairSpec`: a started FORGET completes, GC stops once `Vanished`
-    (`_sab_nogcselfexit` red), and the lease thread exits on a stop or a terminal lifecycle.
-
-  `MaxGen = 2` bounds remount requests.
+- **`CaDiskLifecycle.tla`** — the lifecycle state machine (`Live`, `Transient`, absorbing `Stopping`
+  on a loss observation and `Closed` by FORGET), the `SYSTEM CONTENT ADDRESSED FORGET` step order
+  (`Pool::forgetDisk`), the one lease thread of the 2026-10-01 mount-renewal design, interference
+  reports (`reportImpossibleInterference`), a process-stop request shared with a second disk, lease
+  expiry, the GC scheduler with its self-exit on a terminal pool, and the `GC STOP`/`GC START` verbs.
+  Only an own `gc_fenced` body requests a remount. Rows, expectations and counterexamples:
+  `CaDiskLifecycle_RESULTS.md`. `MaxGen = 2` bounds remount requests.
 - **`CaErasureProof.tla`** — HISTORICAL: soundness analysis of the natural `Vanished(erased)`
   promotion (spec §2 [C2][C3][D1]), the design excised from v1 before it ever activated in
   production — this model's GC-side traces are part of the evidence behind that decision. Verdict
