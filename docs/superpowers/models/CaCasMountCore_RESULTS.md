@@ -1226,3 +1226,48 @@ latch set and bumps the token to 2. So the green `twins_immalloc` includes a str
 96,230,328 distinct, depth 33) are those of the final model, not of the earlier model that blocked adopt
 during an allocation (512,891,703 / 68,982,696). The wrapper adds no step to `Next`; `CaCasMountCore.tla`
 is unchanged by this commit.
+
+## 2026-10-08 step 2b: the claim as one immutable operation {#2026-10-08-step-2b}
+
+`ImmutableClaim = TRUE` replaces the atomic `ClaimMount` with `ClaimBegin` (read the slot, decide, take
+`claimStart` before the body is built), `ClaimAttempt` (applied and answered, applied with the answer lost,
+lost before applying, or refused because the slot moved), `ClaimResolve` (an unclear write is confirmed by
+our exact write) and `ClaimOpen` (the gate that opens writes with `Reserve` ticks left). The stamp and the
+local fence both run from `claimStart`. `ImmutableClaim` requires `ImmutableAlloc`. Every pre-existing cfg
+sets the five new constants to `FALSE`/`0`: the new actions are disabled and the new variables stay at
+their `Init` values.
+
+Changes against the plan text:
+- `ClaimBegin` sets `fenceLatched`: a start is one thread (allocate, claim, open), so no write happens from
+  claim start until `ClaimOpen`, and `AllocBegin` requires `claimState = "idle"`. Without both, TLC found
+  three counterexamples in turn, each a second allocation or claim by an already-running incarnation:
+  `ClaimOpen` cleared a latch set by a later `AllocBegin` (depth 16); an unconfirmed re-claim was renewed
+  while `localLost` was TRUE (depth 17); the same through the straggler `AdoptRead`/`AdoptWrite` pair
+  (depth 18).
+- `ClaimBegin` and `ClaimAttempt` do not require `~crashed`: a rebirth is a claim and `Confirm` clears it.
+- `Confirm` and the end of a claim reset `claimStart`, `claimExp` and `claimTok`.
+
+| cfg | expected | result | trace states | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `sab_claimdeadlineatconfirm` | violation | `LocalFenceWithinStamp` | 7 | 678 | 344 |
+| `sab_opennoreserve` | violation | `OpenLeavesReserve` | 8 | 1,808 | 865 |
+| `sab_claimresolvebypair` | violation | `OneWritableIncarnationPerUuid` | 12 | 136,605 | 43,702 |
+| `witness_lateclaimrenews` | violation | `W_LateClaimRenewsThenOpens` | 9 | 5,008 | 2,256 |
+| `twins_immclaim` (MaxClock 2, MaxEpoch 2, MaxToken 5) | green | green, exhaustive, depth 37 | - | 118,022,005 | 15,830,246 |
+
+`twins_immclaim` at the bounds of `twins_immalloc` (MaxClock 3, MaxEpoch 3, MaxToken 7): no violation to
+depth 25 and 197,832,071 distinct states, then stopped for disk (29 GB of spilled state); not exhaustive.
+At MaxEpoch 2 and MaxToken 5 with MaxClock 3 the run did not finish in 20 minutes (462M generated, 68M
+distinct, depth 28). The reduced row lowers `MaxClock` as well, which is the bound that multiplies the
+claim machinery: every claim records `claimStart`, so each extra tick multiplies the starts in flight.
+Its generated count exceeds the 30M estimate and it finished in 4 min 26 s.
+
+The 20 pre-existing sabotage rows and 17 witness/green rows were run on the plan-literal model with all
+counts unchanged from step 2a (`twins` 138,643,328 / 18,080,420, `twins_immalloc` 739,842,367 /
+96,230,328). The final model adds only the `ClaimBegin` latch and the `AllocBegin` guard, both inert when
+`ImmutableClaim = FALSE` (`claimState` stays `"idle"`), so those rows were not re-run; the five new rows
+were.
+
+Limit: `OpenLeavesReserve` restates the guard of `ClaimOpen`; its evidence is `sab_opennoreserve` and
+`witness_lateclaimrenews`. Code cross-check: `ClaimBegin` is the boot sample before `makeMountBody`,
+`ClaimResolve` is the byte compare in `writeLoop`, `ClaimOpen` is `renewal_window_fits`.

@@ -298,8 +298,24 @@ CONSTANTS
                           \* `N + 1`: a foreign advance is told apart from our own write, and a
                           \* reacquire that sees one stops. FALSE in every pre-existing cfg: the new
                           \* actions are disabled, the new variables stay at their `Init` values.
-    SabReacquireRedecides \* FALSE = honest: a reacquire that saw a foreign advance stops. TRUE = it
+    SabReacquireRedecides, \* FALSE = honest: a reacquire that saw a foreign advance stops. TRUE = it
                           \* re-decides like a start and allocates again.
+    ImmutableClaim,       \* FALSE = the claim as one atomic action (`ClaimMount`). TRUE = the claim as
+                          \* one immutable conditional write whose deadline is fixed before the body is
+                          \* built, confirmed by its exact bytes when the answer is lost, and followed
+                          \* by a gate that opens writes only with `Reserve` left. Requires
+                          \* `ImmutableAlloc`. FALSE in every pre-existing cfg: the new actions are
+                          \* disabled, the new variables stay at their `Init` values.
+    Reserve,              \* ticks that must remain before the stamp for writes to open. 0 in every
+                          \* pre-existing cfg.
+    SabClaimDeadlineAtConfirm, \* FALSE = honest: the local fence runs from the claim's start. TRUE = it
+                          \* runs from the moment the claim is confirmed.
+    SabOpenWithoutReserve, \* FALSE = honest: writes open only with `Reserve` ticks left before the
+                          \* stamp. TRUE = they open whatever is left.
+    SabClaimResolveByPair \* FALSE = honest: an unclear claim is confirmed by our exact write. TRUE = by
+                          \* finding a body with our uuid and epoch, which a twin may have written.
+
+ASSUME ImmutableClaim => ImmutableAlloc
 
 VARIABLES
     owner,        \* Actors \cup {None}; sticky once non-None
@@ -427,16 +443,32 @@ VARIABLES
     fenceLatched,     \* [Incs -> BOOLEAN]; set at `AllocBegin`, cleared only by the incarnation's next
                       \* claim. A write needs an armed fence and only a claim of the local epoch arms
                       \* it, so an allocation alone never grants writes: `Write` is disabled meanwhile.
-    claimedAfterForeign \* history: TRUE once an incarnation claimed the mount after it saw a foreign
-                        \* advance in reacquire mode (`ReacquireStopsOnForeignAdvance`)
+    claimedAfterForeign, \* history: TRUE once an incarnation claimed the mount after it saw a foreign
+                         \* advance in reacquire mode (`ReacquireStopsOnForeignAdvance`)
+    \* --- immutable claim (all frozen when ImmutableClaim = FALSE) --------------------------------
+    claimStart,       \* [Incs -> 0..MaxClock]; the clock sampled before the body is built: the stamp
+                      \* and the local fence both run from it
+    claimExp,         \* [Incs -> {NoPend, Absent} \cup 0..MaxToken]; what the claim saw in the slot:
+                      \* the token it expects, or `Absent` for create-if-absent
+    claimTok,         \* [Incs -> {NoPend} \cup 0..MaxToken]; the token our write produced, once applied
+    claimAmbig,       \* [Incs -> BOOLEAN]; the write's outcome is unclear to the caller
+    claimState,       \* [Incs -> {"idle", "pending", "ontime", "late"}]; "ontime"/"late": confirmed
+                      \* with / without `Reserve` ticks left before `claimStart + TTL`
+    openedShort,      \* history: TRUE once writes opened with fewer than `Reserve` ticks left
+    lateOpened        \* history: TRUE once writes opened after a claim confirmed late
 
-vars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, localLost, crashed, rejected,
+baseVars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, localLost, crashed, rejected,
            adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
            lostThenWrote, reclaimed, remountedAfterFence,
            fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote,
            recGen, wedgeGen, wedgeOp, slot, acked, durable, admissions, staleRefusedEver,
            sealRejectedEver, epochRegressed, bodyWriter,
            allocPend, allocAmbig, allocStopped, reacqSawForeign, fenceLatched, claimedAfterForeign >>
+
+\* The immutable claim's variables. Every action that does not touch a claim leaves them unchanged.
+claimVars == << claimStart, claimExp, claimTok, claimAmbig, claimState, openedShort, lateOpened >>
+
+vars == << baseVars, claimVars >>
 
 \* The per-incarnation allocation variables. A restart is a new process, so `Die` resets them.
 allocVars == << allocPend, allocAmbig, allocStopped, reacqSawForeign, fenceLatched, claimedAfterForeign >>
@@ -463,6 +495,7 @@ OwnBody(a) == TwinUuids = {} \/ bodyWriter = a
 CanWrite(i) == ~rejected[i] /\ ~wedged[i] /\ ~crashed[i] /\ owner = Uuid(i) /\ clock < fenceUntil[i]
 
 NoPend == -1
+Absent == -2   \* `claimExp`: the claim saw an empty slot
 
 \* Lost its slot to a GC fence and still running: it allocates as a reacquire.
 ReacqMode(a) == localLost[a] /\ ~crashed[a] /\ localEpoch[a] > 0
@@ -518,6 +551,13 @@ Init ==
     /\ reacqSawForeign = [a \in Incs |-> FALSE]
     /\ fenceLatched = [a \in Incs |-> FALSE]
     /\ claimedAfterForeign = FALSE
+    /\ claimStart = [a \in Incs |-> 0]
+    /\ claimExp = [a \in Incs |-> NoPend]
+    /\ claimTok = [a \in Incs |-> NoPend]
+    /\ claimAmbig = [a \in Incs |-> FALSE]
+    /\ claimState = [a \in Incs |-> "idle"]
+    /\ openedShort = FALSE
+    /\ lateOpened = FALSE
 
 ----------------------------------------------------------------------------
 \* Claim an empty, unowned server_root: first-writer-wins, sticky from here on.
@@ -533,6 +573,7 @@ ClaimOwnerEmpty(a) ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* A foreign uuid hits an already-owned root: fail closed, permanently rejected.
 RejectForeignOwner(a) ==
@@ -546,6 +587,7 @@ RejectForeignOwner(a) ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* The owner bumps the durable epoch counter and records it as its live epoch.
 \* rev.6 round 5: guarded against firing while `a`'s own mount record is still UNFENCED --
@@ -591,6 +633,7 @@ AllocEpoch(a) ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* An allocation whose conditional increment came back ambiguous, resolved by reading the counter:
 \* the incarnation takes the counter's current value as its epoch without bumping it. Two starts
@@ -612,6 +655,7 @@ AllocResolvedByRead(a) ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* Claim/reclaim the mount lease (the free-function `claimMount`, ONE atomic CAS in the
 \* model: its real get+putOverwrite failure mode is a clean LiveDoubleStart retry, not
@@ -661,10 +705,11 @@ AllocResolvedByRead(a) ==
 \* no cancellation can recall. Modeling the cancel here would make the post-I/O generation recheck
 \* unfalsifiable (the stale result could never return), so the modeled arm is refuse-on-return --
 \* see `Install`/`RecoveryRefused`/`WedgeAbandonStale` and the module header's decision 1.
-ClaimMount(a) ==
+\* What `a` may decide from the slot it reads. `ClaimMount` decides and writes in one step; the
+\* immutable claim decides at `ClaimBegin` and writes at `ClaimAttempt`.
+ClaimAllowed(a) ==
     LET expired    == (mount # None) /\ (mount.deadline <= clock)
         observedDead == (mount # None) /\ (mount.deadline + Drift <= clock)
-        ownExpired == expired /\ (mount.uuid = Uuid(a))
         ownerOK    == IF SabForeignTakeover /\ expired THEN TRUE ELSE owner = Uuid(a)
         strictOK   == IF SabForeignTakeover /\ expired THEN TRUE ELSE localEpoch[a] >= epoch
         monotoneOK == IF SabForeignTakeover /\ expired THEN TRUE
@@ -672,12 +717,10 @@ ClaimMount(a) ==
         sameEpoch  == (mount # None) /\ (mount.uuid = Uuid(a)) /\ (mount.epoch = localEpoch[a])
         refreshOK  == sameEpoch /\ (~mount.fenced \/ SabAdoptIgnoresFence)
                       /\ (Twins(a) = {} \/ SabRefreshOwnPair)
-        equalOverOther == sameEpoch /\ TwinUuids # {} /\ bodyWriter # a
         fencedReclaim == (mount # None) /\ (mount.uuid = Uuid(a)) /\ mount.fenced
                          /\ (mount.epoch # localEpoch[a])
         canClaim   == (mount = None /\ strictOK) \/ refreshOK \/ (fencedReclaim /\ monotoneOK)
                       \/ (observedDead /\ ~sameEpoch /\ monotoneOK)
-        wasFenced  == \E e \in 0..MaxEpoch : << Uuid(a), e >> \in fencedEpochs
     IN
     /\ ~rejected[a] /\ ~wedged[a]
     \* An incarnation claims only after it allocated (`Pool::mountWritable`'s order). The epoch-0
@@ -687,17 +730,29 @@ ClaimMount(a) ==
     /\ mtoken < MaxToken
     /\ ownerOK
     /\ canClaim
+
+\* History the claim's write books, as `ClaimMount` always did.
+ClaimOwnExpired(a) ==
+    mount # None /\ mount.deadline <= clock /\ mount.uuid = Uuid(a)
+ClaimEqualOverOther(a) ==
+    mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ TwinUuids # {} /\ bodyWriter # a
+ClaimWasFenced(a) ==
+    \E e \in 0..MaxEpoch : << Uuid(a), e >> \in fencedEpochs
+
+ClaimMount(a) ==
+    /\ ~ImmutableClaim
+    /\ ClaimAllowed(a)
     /\ mount' = [uuid |-> Uuid(a), epoch |-> localEpoch[a], deadline |-> clock + TTL, fenced |-> FALSE]
-    /\ epochRegressed' = (epochRegressed \/ RegressesEpoch(Uuid(a), localEpoch[a]) \/ equalOverOther)
+    /\ epochRegressed' = (epochRegressed \/ RegressesEpoch(Uuid(a), localEpoch[a]) \/ ClaimEqualOverOther(a))
     /\ bodyWriter' = WriterTag(a)
     /\ mtoken' = mtoken + 1
     /\ \E d \in 0..Drift : fenceUntil' = [fenceUntil EXCEPT ![a] = clock + TTL + d]  \* rev.6: TRUE local fence, stamp + skew
     /\ localLost' = [localLost EXCEPT ![a] = FALSE]
     /\ crashed' = [crashed EXCEPT ![a] = FALSE]
     /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
-    /\ reclaimed' = IF ownExpired THEN [reclaimed EXCEPT ![a] = TRUE] ELSE reclaimed
+    /\ reclaimed' = IF ClaimOwnExpired(a) THEN [reclaimed EXCEPT ![a] = TRUE] ELSE reclaimed
     /\ remountedAfterFence' =
-         IF wasFenced THEN [remountedAfterFence EXCEPT ![a] = TRUE] ELSE remountedAfterFence
+         IF ClaimWasFenced(a) THEN [remountedAfterFence EXCEPT ![a] = TRUE] ELSE remountedAfterFence
     /\ UNCHANGED << epochCeiling, epochWiped, owner, epoch, clock, localEpoch, rejected, fencedEpochs, wedged,
                     wrote, rootEmpty, firstOwner, lostThenWrote,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
@@ -705,6 +760,133 @@ ClaimMount(a) ==
     /\ claimedAfterForeign' = (claimedAfterForeign \/ reacqSawForeign[a])
     /\ fenceLatched' = [fenceLatched EXCEPT ![a] = FALSE]
     /\ UNCHANGED << allocPend, allocAmbig, allocStopped, reacqSawForeign >>
+    /\ UNCHANGED claimVars
+
+\* --- The immutable claim (`ImmutableClaim = TRUE`) ----------------------------------------
+\* The claim as one conditional write, in the steps a caller sees. `ClaimBegin` reads the slot, decides
+\* and takes `claimStart` before the body is built; the stamp and the local fence both run from it, so
+\* the answer arriving late never lengthens the fence beyond what the body backs. `ClaimAttempt` is the
+\* write: applied and answered, applied with the answer lost, lost before applying, or refused because
+\* the slot moved. `ClaimResolve` settles an unclear write by our exact write. `ClaimOpen` is the gate
+\* that opens writes: a claim confirmed with too little left stays closed until `Renew` extends it.
+
+OwnLive(a) ==
+    mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ OwnBody(a) /\ ~mount.fenced
+
+\* The write is conditional on the slot as `ClaimBegin` read it.
+ClaimPrecondition(a) ==
+    /\ mtoken < MaxToken
+    /\ IF claimExp[a] = Absent THEN mount = None ELSE mount # None /\ mtoken = claimExp[a]
+
+\* Variables no claim action touches.
+ClaimFrame == << owner, epoch, epochCeiling, epochWiped, clock, localEpoch, rejected, fencedEpochs, wedged,
+                 wrote, rootEmpty, firstOwner, lostThenWrote, obsToken, obsSince, observedReclaimEver,
+                 supersededThenWrote, rgVars, allocPend, allocAmbig, allocStopped, reacqSawForeign >>
+
+\* The claim body lands in the slot (history as `ClaimMount` books it).
+ClaimApplyBody(a) ==
+    /\ mount' = [uuid |-> Uuid(a), epoch |-> localEpoch[a], deadline |-> claimStart[a] + TTL, fenced |-> FALSE]
+    /\ epochRegressed' = (epochRegressed \/ RegressesEpoch(Uuid(a), localEpoch[a]) \/ ClaimEqualOverOther(a))
+    /\ bodyWriter' = WriterTag(a)
+    /\ mtoken' = mtoken + 1
+    /\ reclaimed' = IF ClaimOwnExpired(a) THEN [reclaimed EXCEPT ![a] = TRUE] ELSE reclaimed
+    /\ remountedAfterFence' =
+         IF ClaimWasFenced(a) THEN [remountedAfterFence EXCEPT ![a] = TRUE] ELSE remountedAfterFence
+    /\ claimedAfterForeign' = (claimedAfterForeign \/ reacqSawForeign[a])
+
+\* The claim is confirmed: the local fence runs from the claim's start, not from now.
+ClaimConfirmBody(a) ==
+    /\ \E d \in 0..Drift :
+         fenceUntil' = [fenceUntil EXCEPT ![a] = (IF SabClaimDeadlineAtConfirm THEN clock ELSE claimStart[a]) + TTL + d]
+    /\ claimState' = [claimState EXCEPT ![a] = IF clock + Reserve < claimStart[a] + TTL THEN "ontime" ELSE "late"]
+    /\ localLost' = [localLost EXCEPT ![a] = FALSE]
+    /\ crashed' = [crashed EXCEPT ![a] = FALSE]
+    /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
+    /\ claimStart' = [claimStart EXCEPT ![a] = 0]
+    /\ claimExp' = [claimExp EXCEPT ![a] = NoPend]
+    /\ claimTok' = [claimTok EXCEPT ![a] = NoPend]
+    /\ claimAmbig' = [claimAmbig EXCEPT ![a] = FALSE]
+
+\* The claim ends without a mount: the caller starts over.
+ClaimEndBody(a) ==
+    /\ claimState' = [claimState EXCEPT ![a] = "idle"]
+    /\ claimStart' = [claimStart EXCEPT ![a] = 0]
+    /\ claimExp' = [claimExp EXCEPT ![a] = NoPend]
+    /\ claimTok' = [claimTok EXCEPT ![a] = NoPend]
+    /\ claimAmbig' = [claimAmbig EXCEPT ![a] = FALSE]
+
+ClaimBegin(a) ==
+    /\ ImmutableClaim /\ claimState[a] = "idle"
+    /\ ClaimAllowed(a)
+    /\ claimStart' = [claimStart EXCEPT ![a] = clock]
+    /\ claimExp' = [claimExp EXCEPT ![a] = IF mount = None THEN Absent ELSE mtoken]
+    /\ claimState' = [claimState EXCEPT ![a] = "pending"]
+    \* A start is one thread: no write until the gate opens, and no allocation between a claim and its open.
+    /\ fenceLatched' = [fenceLatched EXCEPT ![a] = TRUE]
+    /\ UNCHANGED << ClaimFrame, mount, mtoken, localLost, crashed, adoptObs, reclaimed, remountedAfterFence,
+                    fenceUntil, epochRegressed, bodyWriter, claimedAfterForeign,
+                    claimTok, claimAmbig, openedShort, lateOpened >>
+
+ClaimAttempt(a) ==
+    /\ ImmutableClaim /\ claimState[a] = "pending" /\ ~claimAmbig[a]
+    /\ \/ /\ ClaimPrecondition(a)
+          /\ ClaimApplyBody(a)
+          /\ ClaimConfirmBody(a)
+          /\ UNCHANGED << ClaimFrame, fenceLatched, openedShort, lateOpened >>
+       \/ /\ ClaimPrecondition(a)
+          /\ ClaimApplyBody(a)
+          /\ claimTok' = [claimTok EXCEPT ![a] = mtoken + 1]
+          /\ claimAmbig' = [claimAmbig EXCEPT ![a] = TRUE]
+          /\ UNCHANGED << ClaimFrame, localLost, crashed, adoptObs, fenceUntil, fenceLatched,
+                          claimStart, claimExp, claimState, openedShort, lateOpened >>
+       \/ /\ claimAmbig' = [claimAmbig EXCEPT ![a] = TRUE]
+          /\ UNCHANGED << ClaimFrame, mount, mtoken, localLost, crashed, adoptObs, reclaimed,
+                          remountedAfterFence, fenceUntil, epochRegressed, bodyWriter, fenceLatched,
+                          claimedAfterForeign, claimStart, claimExp, claimTok, claimState,
+                          openedShort, lateOpened >>
+       \/ /\ ~ClaimPrecondition(a)
+          /\ ClaimEndBody(a)
+          /\ UNCHANGED << ClaimFrame, mount, mtoken, localLost, crashed, adoptObs, reclaimed,
+                          remountedAfterFence, fenceUntil, epochRegressed, bodyWriter, fenceLatched,
+                          claimedAfterForeign, openedShort, lateOpened >>
+
+\* An unclear write is settled by looking at the slot. Honest: the slot holds exactly our write.
+\* `SabClaimResolveByPair`: it holds a body with our uuid and epoch, which a twin may have written.
+ClaimResolve(a) ==
+    LET ours == IF SabClaimResolveByPair
+                THEN mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
+                ELSE claimTok[a] # NoPend /\ mtoken = claimTok[a]
+    IN
+    /\ ImmutableClaim /\ claimState[a] = "pending" /\ claimAmbig[a]
+    /\ \/ /\ ours
+          /\ ClaimConfirmBody(a)
+          /\ UNCHANGED << ClaimFrame, mount, mtoken, reclaimed, remountedAfterFence, epochRegressed,
+                          bodyWriter, fenceLatched, claimedAfterForeign, openedShort, lateOpened >>
+       \/ /\ ~ours /\ claimTok[a] = NoPend /\ ClaimPrecondition(a)
+          /\ claimAmbig' = [claimAmbig EXCEPT ![a] = FALSE]
+          /\ UNCHANGED << ClaimFrame, mount, mtoken, localLost, crashed, adoptObs, reclaimed,
+                          remountedAfterFence, fenceUntil, epochRegressed, bodyWriter, fenceLatched,
+                          claimedAfterForeign, claimStart, claimExp, claimTok, claimState,
+                          openedShort, lateOpened >>
+       \/ /\ ~ours /\ ~(claimTok[a] = NoPend /\ ClaimPrecondition(a))
+          /\ ClaimEndBody(a)
+          /\ UNCHANGED << ClaimFrame, mount, mtoken, localLost, crashed, adoptObs, reclaimed,
+                          remountedAfterFence, fenceUntil, epochRegressed, bodyWriter, fenceLatched,
+                          claimedAfterForeign, openedShort, lateOpened >>
+
+\* The gate that opens writes: the claim is confirmed and the body still backs the local fence with
+\* `Reserve` ticks to spare. A late claim passes once `Renew` has extended the stamp.
+ClaimOpen(a) ==
+    /\ ImmutableClaim /\ claimState[a] \in {"ontime", "late"}
+    /\ ~crashed[a] /\ ~localLost[a] /\ OwnLive(a)
+    /\ SabOpenWithoutReserve \/ clock + Reserve < mount.deadline
+    /\ fenceLatched' = [fenceLatched EXCEPT ![a] = FALSE]
+    /\ claimState' = [claimState EXCEPT ![a] = "idle"]
+    /\ openedShort' = (openedShort \/ clock + Reserve >= mount.deadline)
+    /\ lateOpened' = (lateOpened \/ claimState[a] = "late")
+    /\ UNCHANGED << ClaimFrame, mount, mtoken, localLost, crashed, adoptObs, reclaimed, remountedAfterFence,
+                    fenceUntil, epochRegressed, bodyWriter, claimedAfterForeign,
+                    claimStart, claimExp, claimTok, claimAmbig >>
 
 \* The mount holder renews atomically. This action is intentionally more permissive than the
 \* current split-phase implementation: it may fire after the modeled deadline, including after a
@@ -742,6 +924,7 @@ Renew(a) ==
                     remountedAfterFence, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* The pool's GC fences an EXPIRED, unfenced mount (computeHeartbeatFloor's token-guarded
 \* fence-out): gc_fenced = true, uuid/epoch/deadline preserved, token bumped. The fence is
@@ -799,6 +982,7 @@ GcFence ==
                     remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* --- The keeper's NON-ATOMIC adopt (MountLeaseKeeper::claim: GET, decide, CAS) --------
 \* AdoptRead: observe our own same-epoch slot and remember the token. The FIXED protocol
@@ -825,6 +1009,7 @@ AdoptRead(a) ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* AdoptWrite: the CAS against the observed token. The GcFence may land between AdoptRead
 \* and AdoptWrite -- THE S13 window.
@@ -894,6 +1079,7 @@ AdoptWrite(a) ==
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* Abstract time advances (so a deadline can pass -> fence + reclaim reachable).
 Tick ==
@@ -905,6 +1091,7 @@ Tick ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* A server process crashes: later Ticks pass the deadline without the holder renewing.
 \* An in-flight adopt observation dies with the process. rev.6 round 3: this sets
@@ -927,6 +1114,12 @@ Die(a) ==
     /\ reacqSawForeign' = [reacqSawForeign EXCEPT ![a] = FALSE]
     /\ fenceLatched' = [fenceLatched EXCEPT ![a] = FALSE]
     /\ UNCHANGED claimedAfterForeign
+    /\ claimStart' = [claimStart EXCEPT ![a] = 0]
+    /\ claimExp' = [claimExp EXCEPT ![a] = NoPend]
+    /\ claimTok' = [claimTok EXCEPT ![a] = NoPend]
+    /\ claimAmbig' = [claimAmbig EXCEPT ![a] = FALSE]
+    /\ claimState' = [claimState EXCEPT ![a] = "idle"]
+    /\ UNCHANGED << openedShort, lateOpened >>
 
 \* A mutation under the mount. rev.6 round 8 (P2, consult/review-reconciled): `Write` is now
 \* a PURE LOCAL check, matching the product's actual write path exactly --
@@ -979,6 +1172,7 @@ Write(a) ==
                     remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* SABOTAGE action (only enabled under SabEpochReset): zero the durable epoch
 \* counter when the mount is cleared. Breaks epoch monotonicity.
@@ -993,6 +1187,7 @@ SabResetEpoch ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* Clear an expired UNFENCED mount (lets SabResetEpoch fire; also a benign honest step).
 \* A fenced slot is never cleared: in the implementation mount objects persist, and the
@@ -1022,6 +1217,7 @@ ClearExpiredMount ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* --- rev.6: observation-based reclaim vs wall-clock sabotage -------------------------
 \* StartObservation: a reclaimer (GC leader, or a same-uuid successor probing an
@@ -1039,6 +1235,7 @@ StartObservation ==
                     observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* ObservedReclaim: the FIXED protocol -- the SUCCESSOR reclaim (epoch-advancing), NOT the
 \* GC fence-out (`GcFence`, non-epoch-advancing, `gc_fenced=TRUE`, uuid/epoch preserved).
@@ -1091,6 +1288,7 @@ ObservedReclaim ==
                     reclaimed, remountedAfterFence, fenceUntil, obsSince, supersededThenWrote >>
     /\ UNCHANGED rgVars
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* WallClockReclaim: the SABOTAGE. Trusts the stamp directly (clock > mount.deadline)
 \* with NO observation wait at all -- exactly the old cross-node wall-clock comparison
@@ -1129,6 +1327,7 @@ WallClockReclaim ==
                     observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED rgVars
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* --- 2026-07-24 fence-not-rescue gate (spec rev.4): the epoch-wipe twin + re-mint guard ---
 \* WipeEpoch: environmental sabotage-adjacent action (always enabled, subject to the
@@ -1158,6 +1357,7 @@ WipeEpoch ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* RemintEpoch: the code's absent-epoch branch of `allocateWriterEpoch` -- distinct from
 \* `AllocEpoch` above, which models the CAS bump over a PRESENT epoch object. Fires only when
@@ -1186,6 +1386,7 @@ RemintEpoch(a) ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* RemintEpochDecom: Phase C's `DecommissionRecovery` branch -- also re-mints over a lost
 \* (epoch = 0) durable counter, but ONLY when a mount record still exists (`mount # None`,
@@ -1236,6 +1437,7 @@ RemintEpochDecom(a) ==
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* --- 2026-07-28 v9 recovery-generation layer (spec §3 "Recovery ownership", §9 r9-5) ---------
 \* Every action below is gated on `RecoveryGenOn`, so the whole layer is inert in every
@@ -1280,6 +1482,7 @@ RecoveryStart(a) ==
                     wedgeGen, wedgeOp, slot, acked, durable, staleRefusedEver, sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* SealSlot(a): the recovery walk finds the key `Created` (absent) and the seal OCCUPIES it --
 \* INV-2's "`Created` -> the seal occupies `(E, T+1)` and the `Late Predecessor PUT` ghost can
@@ -1303,6 +1506,7 @@ SealSlot(a) ==
                     admissions, recGen, wedgeGen, wedgeOp, acked, durable, staleRefusedEver, sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* Install(a): the recovery result RETURNS FROM I/O and is published. §9 r9-5 puts the generation
 \* recheck exactly here -- "post-I/O, immediately before every install/unwedge/`_ckpt`
@@ -1339,6 +1543,7 @@ Install(a) ==
                     admissions, wedgeGen, wedgeOp, slot, acked, durable, staleRefusedEver, sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* RecoveryRefused(a): the honest r9-5 outcome -- the post-I/O recheck finds the captured
 \* generation stale and the result is DISCARDED (nothing published). Also the layer's anti-dead-end
@@ -1359,6 +1564,7 @@ RecoveryRefused(a) ==
                     admissions, wedgeGen, wedgeOp, slot, acked, durable, sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* --- the wedged lane (INV-1's every-attempt rule) --------------------------------------------
 \* WedgeAdmit(a): an operation is admitted into `a`'s lane and its send comes back AMBIGUOUS, so
@@ -1385,6 +1591,7 @@ WedgeAdmit(a) ==
                     recGen, slot, acked, durable, staleRefusedEver, sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* StragglerLands(a): the ambiguous attempt's IN-FLIGHT PUT actually lands. This is the model's
 \* `Late Predecessor PUT` (`CaRefTableSnapshotLogCore`'s `LatePredecessorPut`, flipped in v9 from
@@ -1414,6 +1621,7 @@ StragglerLands(a) ==
                     sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* WedgeRetryCreate(a): the lane's ONE bounded same-(key, bytes) conditional create (INV-1: "each
 \* later caller's flush performs at most one bounded same-(key, bytes) conditional create under
@@ -1454,6 +1662,7 @@ WedgeRetryCreate(a) ==
                     admissions, recGen, staleRefusedEver, sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* WedgeRetryOccupied(a): the retry's `slot-occupy` returns `Occupied`. NO generation guard on this
 \* action: reading the key is not a mutation, and r9-5 puts the recheck POST-I/O -- a stale lane
@@ -1523,6 +1732,7 @@ WedgeRetryOccupied(a) ==
                     admissions, recGen, slot, durable, staleRefusedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 \* WedgeAbandonStale(a): the post-I/O recheck refuses the lane's publication -- its captured
 \* generation is no longer current, so it can neither create nor unwedge, and the successor
@@ -1544,14 +1754,16 @@ WedgeAbandonStale(a) ==
                     admissions, recGen, slot, acked, durable, sealRejectedEver >>
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
+    /\ UNCHANGED claimVars
 
 allocFrame == << owner, epochWiped, mount, mtoken, clock, localLost, crashed, rejected, adoptObs,
                  fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
                  remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver,
-                 supersededThenWrote, rgVars, epochRegressed, bodyWriter >>
+                 supersededThenWrote, rgVars, epochRegressed, bodyWriter, claimVars >>
 \* One immutable conditional write: the expected value and the bytes `allocPend[a] + 1` are fixed here.
 AllocBegin(a) ==
     /\ ImmutableAlloc /\ ~rejected[a] /\ ~wedged[a] /\ ~allocStopped[a] /\ allocPend[a] = NoPend
+    /\ claimState[a] = "idle"   \* a start allocates, then claims, then opens; nothing interleaves
     /\ owner = Uuid(a) /\ epoch < MaxEpoch /\ (epoch > 0 \/ epochCeiling = 0)
     /\ ~(mount # None /\ mount.uuid = Uuid(a) /\ ~mount.fenced /\ OwnBody(a))
     /\ allocPend' = [allocPend EXCEPT ![a] = epoch]
@@ -1611,6 +1823,10 @@ Next ==
     \/ \E a \in Incs : AllocAttempt(a)
     \/ \E a \in Incs : AllocResolve(a)
     \/ \E a \in Incs : ClaimMount(a)
+    \/ \E a \in Incs : ClaimBegin(a)
+    \/ \E a \in Incs : ClaimAttempt(a)
+    \/ \E a \in Incs : ClaimResolve(a)
+    \/ \E a \in Incs : ClaimOpen(a)
     \/ \E a \in Incs : Renew(a)
     \/ \E a \in Incs : AdoptRead(a)
     \/ \E a \in Incs : AdoptWrite(a)
@@ -1687,6 +1903,13 @@ TypeOK ==
     /\ reacqSawForeign \in [Incs -> BOOLEAN]
     /\ fenceLatched \in [Incs -> BOOLEAN]
     /\ claimedAfterForeign \in BOOLEAN
+    /\ claimStart \in [Incs -> 0..MaxClock]
+    /\ claimExp \in [Incs -> {NoPend, Absent} \union (0..MaxToken)]
+    /\ claimTok \in [Incs -> {NoPend} \union (0..MaxToken)]
+    /\ claimAmbig \in [Incs -> BOOLEAN]
+    /\ claimState \in [Incs -> {"idle", "pending", "ontime", "late"}]
+    /\ openedShort \in BOOLEAN
+    /\ lateOpened \in BOOLEAN
 
 \* Owner is sticky: once set it never transitions to a different non-None value.
 NoTwoServerUuidsOwnSameServerRoot ==
@@ -1809,6 +2032,15 @@ AckedOpsAreDurable ==
 ClaimNeverRegressesEpoch ==
     ~epochRegressed
 
+\* A confirmed claim's local fence never outlives what the stored body backs: the fence runs from the
+\* claim's start, the stamp from the same instant.
+LocalFenceWithinStamp ==
+    \A a \in Incs : OwnLive(a) => fenceUntil[a] <= mount.deadline + Drift
+
+\* Writes never open with fewer than `Reserve` ticks left before the stamp. This restates the guard of
+\* `ClaimOpen`; its evidence is `SabOpenWithoutReserve` going red and `W_LateClaimRenewsThenOpens`.
+OpenLeavesReserve == ~openedShort
+
 \* At most one incarnation of a uuid can write at a time.
 OneWritableIncarnationPerUuid ==
     \A i, j \in Incs : (i # j /\ Uuid(i) = Uuid(j)) => ~(CanWrite(i) /\ CanWrite(j))
@@ -1898,6 +2130,9 @@ W_SameBytesCollision ==
     ~\E i, j \in Incs : /\ i # j /\ Uuid(i) = Uuid(j) /\ ~crashed[i] /\ ~crashed[j]
                        /\ localEpoch[i] > 0 /\ localEpoch[i] = localEpoch[j]
 W_ReacquireStops == ~\E a \in Incs : allocStopped[a]
+
+\* A claim confirmed with too little left is renewed and only then opens writes.
+W_LateClaimRenewsThenOpens == ~lateOpened
 
 ----------------------------------------------------------------------------
 \* STATE CONSTRAINTS (referenced from cfgs via `CONSTRAINT`, never from `Next`).
