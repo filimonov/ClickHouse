@@ -1168,15 +1168,72 @@ TEST(CASRequests, ALeaseRefusalCarriesTheFenceExplanation)
     FakeClock clock;
     auto backend = std::make_shared<CountingBackend>();
     Fence fence{[] { return uint64_t{0}; }, [](uint64_t, uint64_t) { return Fence::Admit::NoBudget; }, [](uint64_t) {},
-                [](uint64_t) { return String("CAS disk 'cas1': this change is not admitted"); }};
+                [](uint64_t, LeaseClass) { return String("CAS disk 'cas1': this change is not admitted"); }};
     auto requests = makeRequests(backend, clock, fence);
     auto op = requests.admit();
-    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "create: CAS disk 'cas1': this change is not admitted",
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "create: gave up at the lease deadline after zero attempt(s): CAS disk 'cas1': this change is not admitted",
                                 [&] { (void)orThrow(op.create("k", "v", Retry::standard()), "create"); });
     DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "CAS disk 'cas1': this change is not admitted",
                                 [&] { (void)op.read("k", Retry::standard()); });
     EXPECT_EQ(backend->writeTotal(), 0u);
     EXPECT_EQ(backend->getTotal(), 0u);
+}
+
+/// A write already proven durable is never described as "not admitted": the explanation stays off it.
+TEST(CASRequests, ALeaseRefusalAfterADurableWriteCarriesNoExplanation)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    Fence fence{[] { return uint64_t{0}; },
+                [&](uint64_t, uint64_t) { return backend->writeTotal() > 0 ? Fence::Admit::NoBudget : Fence::Admit::Ok; },
+                [](uint64_t) {},
+                [](uint64_t, LeaseClass) { return String("CAS disk 'cas1': this change is not admitted"); }};
+    auto requests = makeRequests(backend, clock, fence);
+    auto op = requests.admit();
+    try
+    {
+        (void)orThrow(op.create("k", "v", Retry::standard()), "create");
+        FAIL() << "expected DB::Exception";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::NETWORK_ERROR);
+        EXPECT_NE(e.message().find("create: gave up at the lease deadline after one or more attempt(s)"), String::npos) << e.message();
+        EXPECT_EQ(e.message().find("not admitted"), String::npos) << e.message();
+    }
+}
+
+/// The call site names the class; a read is a request, a write a conditional change.
+TEST(CASRequests, TheRefusedClassIsTheCallSitesNotTheNeedsSize)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    std::vector<LeaseClass> kinds;
+    Fence fence{[] { return uint64_t{0}; }, [](uint64_t, uint64_t) { return Fence::Admit::NoBudget; }, [](uint64_t) {},
+                [&](uint64_t, LeaseClass kind) { kinds.push_back(kind); return String("x"); }};
+    auto requests = makeRequests(backend, clock, fence);
+    auto op = requests.admit();
+    (void)op.create("k", "v", Retry::standard());
+    EXPECT_THROW((void)op.read("k", Retry::standard()), DB::Exception);
+    ASSERT_EQ(kinds.size(), 2u);
+    EXPECT_EQ(kinds[0], LeaseClass::ConditionalChange);
+    EXPECT_EQ(kinds[1], LeaseClass::SingleRequest);
+}
+
+/// A description that throws leaves the refusal a returned value, not an exception from the gate.
+TEST(CASRequests, AThrowingRefusalDescriptionStillRefusesAsAValue)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    Fence fence{[] { return uint64_t{0}; }, [](uint64_t, uint64_t) { return Fence::Admit::NoBudget; }, [](uint64_t) {},
+                [](uint64_t, LeaseClass) -> String { throw std::bad_alloc(); }};
+    auto requests = makeRequests(backend, clock, fence);
+    auto op = requests.admit();
+    WriteResult result = op.create("k", "v", Retry::standard());
+    const auto * gave_up = std::get_if<GaveUp>(&result);
+    ASSERT_NE(gave_up, nullptr);
+    EXPECT_EQ(gave_up->deadline_source, GaveUp::Source::Lease);
+    EXPECT_EQ(gave_up->lease_refusal, "the confirmed lease does not cover this operation");
 }
 
 TEST(CASRequests, AFenceWithNoBudgetForTheRequestSendsNothingAndNamesTheLease)

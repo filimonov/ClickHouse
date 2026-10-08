@@ -351,7 +351,9 @@ public:
     void logLeaseTransition() noexcept;
     /// Why `admit` refused an operation needing `needed_ms`: the lease left, the reserve and the last
     /// renewal error. Reads atomics and the renewal-progress lock only, so it is safe on any thread.
-    String describeAdmissionRefusal(uint64_t needed_ms) const;
+    String describeAdmissionRefusal(uint64_t needed_ms, LeaseClass kind) const;
+    /// Why `mayMutate` is false: a tripped fence, or the refusal of a conditional change at the lease left.
+    String describeMutationRefusal() const;
     /// The one set of thresholds admission, the mount line and the operator texts read.
     const CasLeaseThresholds & leaseThresholds() const { return lease_thresholds; }
 

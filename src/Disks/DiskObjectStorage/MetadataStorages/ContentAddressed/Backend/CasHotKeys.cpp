@@ -109,7 +109,7 @@ WriteResult CasHotKeys::submit(const String & key, CasOperation & op, const Retr
         /// an exhausted lease is reported as the lease.
         std::optional<WriteResult> leaving;
         CasOperation::WriteState nothing_sent;
-        switch (op.gate(0))
+        switch (op.gate(0, LeaseClass::ConditionalChange))
         {
             case CasOperation::Gate::FenceLost:
                 leaving = op.gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), nothing_sent);

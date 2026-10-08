@@ -168,13 +168,20 @@ uint64_t CasMountRuntime::conditionalReserveMs() const
     return lease_thresholds.conditionalReserveMs();
 }
 
-String CasMountRuntime::describeAdmissionRefusal(uint64_t needed_ms) const
+String CasMountRuntime::describeMutationRefusal() const
+{
+    if (mount_fence.lost.load(std::memory_order_acquire))
+        return fmt::format("CAS disk '{}': the mount fence is tripped; system.cas_mounts shows the lifecycle", config.disk_name);
+    return describeAdmissionRefusal(lease_thresholds.conditionalNeedMs(), LeaseClass::ConditionalChange);
+}
+
+String CasMountRuntime::describeAdmissionRefusal(uint64_t needed_ms, LeaseClass kind) const
 {
     const uint64_t now = bootMsNow();
     const uint64_t deadline = mount_fence.deadline_boot_ms.load(std::memory_order_acquire);
     const RenewalProgress progress = renewalProgress();
     return describeLeaseRefusal(config.disk_name, lease_thresholds,
-        now < deadline ? std::optional<uint64_t>(deadline - now) : std::nullopt, needed_ms,
+        now < deadline ? std::optional<uint64_t>(deadline - now) : std::nullopt, needed_ms, kind,
         progress.last_error, progress.refused_code);
 }
 
@@ -252,6 +259,7 @@ void CasMountRuntime::armMountFence(UInt128 server_uuid, uint64_t writer_epoch, 
     mount_fence.server_uuid = server_uuid;
     mount_fence.writer_epoch = writer_epoch;
     mount_fence.deadline_boot_ms.store(deadline_boot_ms, std::memory_order_release);
+    logged_pause.store(LeasePause::None, std::memory_order_relaxed);
     /// A fresh lease incarnation is a fresh generation too: a durable-effect caller admitted under the
     /// PRIOR incarnation must re-check and abort rather than ride this re-arm through (rev.7 [C2]).
     fence_generation.fetch_add(1, std::memory_order_acq_rel);

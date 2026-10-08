@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestBudget.h>
 #include <base/types.h>
 
 namespace DB::Cas
@@ -20,7 +21,7 @@ struct Fence
     /// Throw if `admitted_generation` is no longer the fence's live generation.
     std::function<void(uint64_t admitted_generation)> check_or_throw;
     /// Why `admit` refused `needed_ms` with `NoBudget`, for the caller's error text. Empty explains nothing.
-    std::function<String(uint64_t needed_ms)> describe_no_budget = {};
+    std::function<String(uint64_t needed_ms, LeaseClass kind)> describe_no_budget = {};
 
     /// A fence that never trips: generation 0 forever, `admit` always `Ok`, `check_or_throw` never
     /// throws. For backends with no mount lease to enforce (in-memory, tests).

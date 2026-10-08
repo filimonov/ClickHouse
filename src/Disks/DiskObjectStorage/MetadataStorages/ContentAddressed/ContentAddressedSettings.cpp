@@ -157,8 +157,15 @@ void ContentAddressedSettings::loadFromConfig(
                 "one", config_prefix, key, key);
     }
 
-    /// A setting and its synonym name one value; two different values are a configuration error.
-    std::map<std::string, std::pair<std::string, std::string>> by_setting;
+    /// A setting and its synonym name one value; two different values are a configuration error. A
+    /// repeated key is rejected above, so only a pair of different spellings reaches the comparison.
+    struct Spelling
+    {
+        std::string key;
+        std::string name;
+        std::string value;
+    };
+    std::map<std::string, Spelling> by_setting;
     for (const std::string & key : config_keys)
     {
         const std::string_view base = splitRepeatIndex(key).base;
@@ -167,11 +174,12 @@ void ContentAddressedSettings::loadFromConfig(
             continue;
         std::string value = config.getString(config_prefix + "." + key);
         const auto [it, inserted] = by_setting.try_emplace(
-            std::string(ContentAddressedSettingsTraits::resolveName(name)), std::string(base), value);
-        if (!inserted && it->second.second != value)
+            std::string(ContentAddressedSettingsTraits::resolveName(name)),
+            Spelling{std::string(base), std::string(name), value});
+        if (!inserted && it->second.name != name && it->second.value != value)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "content_addressed disk `{}`: `{}` ({}) and `{}` ({}) set the same setting to different values; keep one",
-                config_prefix, it->second.first, it->second.second, base, value);
+                config_prefix, it->second.key, it->second.value, base, value);
     }
 
     for (const std::string & key : config_keys)

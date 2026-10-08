@@ -172,7 +172,8 @@ public:
               [] { return true; },
               [] { return uint64_t{1}; },
               [] { return uint64_t{0}; },
-              [] { return true; },
+              [this] { return may_mutate_flag.load(); },
+              [] { return String("the lease explanation of the runtime"); },
               [](const String &, const String &, const std::optional<String> &) {},
               [this](std::function<void(DetachedStopToken)> task)
               {
@@ -230,6 +231,8 @@ public:
     std::shared_ptr<FinalAuthorityBackend> backend;
     Layout layout{"p"};
     CasEventSink event_sink;
+    /// What the ledger's `may_mutate` answers; a test flips it to refuse the next flush.
+    std::atomic<bool> may_mutate_flag{true};
     std::shared_ptr<DetachedRegistryState> registry = std::make_shared<DetachedRegistryState>();
     Gate final_install_reached;
     Gate release_final_install;
@@ -1027,4 +1030,22 @@ TEST(CASDetachedWork, StopAfterRecoveryMaterializationPreventsFinalInstall)
     EXPECT_EQ(fixture.ledger.recoveryInstallCountForTest(), installs_before)
         << "recovery installed a materialized result after detached stop was latched";
     EXPECT_EQ(fixture.ledger.laneStateForTest(ns), RefLaneState::NeedsRecovery);
+}
+
+/// The flush's own `may_mutate` refusal carries the runtime's explanation to every queued caller.
+TEST(CASDetachedWork, AFlushRefusedByTheMountFenceNamesTheRuntimesExplanation)
+{
+    ManualDetachedLedger fixture;
+    fixture.may_mutate_flag = false;
+    String text;
+    try
+    {
+        publishRef(fixture.ledger, RootNamespace{"srv1/flush_refused"}, "ref_1", 1);
+    }
+    catch (const DB::Exception & e)
+    {
+        text = e.message();
+    }
+    EXPECT_NE(text.find("CAS mount lost / lease expired"), String::npos) << text;
+    EXPECT_NE(text.find("the lease explanation of the runtime"), String::npos) << text;
 }

@@ -270,7 +270,9 @@ public:
     void pause(uint64_t ms) { owner.sleep_ms(ms); }
     /// The verdict point: is this operation still admitted? For the sites that guard a decision rather
     /// than a request.
-    bool admitted() const { return gate(0) == Gate::Ok; }
+    bool admitted() const { return gate(0, LeaseClass::SingleRequest) == Gate::Ok; }
+    /// The fence's explanation of the last refused gate, empty when it gave none.
+    const String & leaseRefusal() const { return last_lease_refusal; }
     void observeRequests(RequestObserver observer_) { observer = std::move(observer_); }
 
     /// The write lane for keys several writers of this pool share.
@@ -337,7 +339,7 @@ private:
 
     enum class Gate : uint8_t { Ok, FenceLost, NoBudget };
     /// The admission point: the fence for `needed_ms` from now, then the caller's own facts.
-    Gate gate(uint64_t needed_ms) const;
+    Gate gate(uint64_t needed_ms, LeaseClass kind) const;
 
     /// Everything ONE logical write call accumulates. `attempts_sent`, `sent_any`, `last_seen`,
     /// `reissues` and `refresh_attempted` outlive each attempt and, for `readModifyWrite`, each inner
@@ -492,7 +494,7 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
     for (uint32_t attempt_no = 1, ordinary_reissues = 0;; ++attempt_no)
     {
         const uint64_t reservation = reservedFor(0, 1);
-        switch (gate(reservation))
+        switch (gate(reservation, LeaseClass::SingleRequest))
         {
             case Gate::FenceLost: giveUpReadFenceLost(verb, subject, "before the request");
             case Gate::NoBudget:  giveUpReadNoBudget(verb, subject, "for one more request");
@@ -532,7 +534,7 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
             if (fuse)
             {
                 const uint64_t needed = reservedFor(0, 1);
-                switch (gate(needed))
+                switch (gate(needed, LeaseClass::SingleRequest))
                 {
                     case Gate::FenceLost: giveUpReadFenceLost(verb, subject, "before the reissue");
                     case Gate::NoBudget:  giveUpReadNoBudget(verb, subject, "for the reissue");
@@ -549,7 +551,7 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
         const uint64_t pause_ms = reissuePause(
             policy, attempt_started_ms, [ordinary_reissues] { return Retry::backoff(ordinary_reissues); });
         const uint64_t needed = reservedFor(pause_ms, 1);
-        switch (gate(needed))
+        switch (gate(needed, LeaseClass::SingleRequest))
         {
             case Gate::FenceLost: giveUpReadFenceLost(verb, subject, "before the reissue");
             case Gate::NoBudget:  giveUpReadNoBudget(verb, subject, "for the reissue");

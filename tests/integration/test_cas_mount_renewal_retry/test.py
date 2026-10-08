@@ -565,6 +565,8 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
 
 
 EXPIRY_WARNING = "the mount lease ended"
+PAUSE_WARNING = "conditional changes paused"
+RESUMED_INFO = "operations resumed under writer_epoch"
 
 
 def _lease_state(node, timeout=None):
@@ -589,6 +591,8 @@ def test_long_mount_put_outage_pauses_under_the_same_epoch(start_cluster):
     epoch_before = _lease_state(node)[2]
     counters_before = _profile_events(node)
     warnings_before = _log_count_since_last_restart(node, EXPIRY_WARNING)
+    paused_before = _log_count_since_last_restart(node, PAUSE_WARNING)
+    resumed_before = _log_count_since_last_restart(node, RESUMED_INFO)
     outage_s = (MOUNT_LEASE_TTL_MS + MOUNT_RENEW_PERIOD_MS) / 1000.0
 
     _control(
@@ -603,7 +607,7 @@ def test_long_mount_put_outage_pauses_under_the_same_epoch(start_cluster):
             timeout=30,
         )
         error = node.query_and_get_error("INSERT INTO renewal_probe VALUES (301, 'during-outage')", timeout=60)
-        assert error, "a write must be refused while the lease is expired"
+        assert "is not admitted" in error and "the confirmed lease has ended" in error, error
         time.sleep(max(0.0, outage_s - (time.monotonic() - armed_at)))
     finally:
         _control(control_url, "/config", {"rate": 0.0})
@@ -615,6 +619,8 @@ def test_long_mount_put_outage_pauses_under_the_same_epoch(start_cluster):
     assert delta["CASMountLeaseLost"] == 0, delta
     assert delta["CASMountRenewalRetries"] > 0, delta
     assert _log_count_since_last_restart(node, EXPIRY_WARNING) - warnings_before == 1
+    assert _log_count_since_last_restart(node, PAUSE_WARNING) - paused_before == 1
+    assert _log_count_since_last_restart(node, RESUMED_INFO) - resumed_before == 1
 
     node.query("INSERT INTO renewal_probe VALUES (302, 'after-outage')")
     assert node.query("SELECT count() FROM renewal_probe WHERE id IN (301, 302)").strip() == "1"

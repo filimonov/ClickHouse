@@ -438,7 +438,7 @@ private:
 
 }
 
-CasOperation::Gate CasOperation::gate(uint64_t needed_ms) const
+CasOperation::Gate CasOperation::gate(uint64_t needed_ms, LeaseClass kind) const
 {
     last_lease_refusal.clear();
     switch (owner.fence.admit(admitted_generation, needed_ms))
@@ -446,7 +446,17 @@ CasOperation::Gate CasOperation::gate(uint64_t needed_ms) const
         case Fence::Admit::LostOrRearmed: return Gate::FenceLost;
         case Fence::Admit::NoBudget:
             if (owner.fence.describe_no_budget)
-                last_lease_refusal = owner.fence.describe_no_budget(needed_ms);
+            {
+                /// The explanation is a diagnostic; failing to build it must not turn a refusal into a throw.
+                try
+                {
+                    last_lease_refusal = owner.fence.describe_no_budget(needed_ms, kind);
+                }
+                catch (...) // NOLINT(bugprone-empty-catch)
+                {
+                    last_lease_refusal = "the confirmed lease does not cover this operation";
+                }
+            }
             return Gate::NoBudget;
         case Fence::Admit::Ok: break;
     }
@@ -674,7 +684,7 @@ Removal CasOperation::removeCurrent(const String & key, const Retry & policy)
         /// like every other reissue: the reservation covers the next `head` and the `remove` after it.
         const uint64_t pause_ms = Retry::backoff(attempt);
         const uint64_t needed = reservedFor(pause_ms, 2);
-        switch (gate(needed))
+        switch (gate(needed, LeaseClass::SingleRequest))
         {
             case Gate::FenceLost: giveUpReadFenceLost("removeCurrent", key, "before the reissue");
             case Gate::NoBudget:  giveUpReadNoBudget("removeCurrent", key, "for the reissue");
@@ -694,7 +704,7 @@ SentinelProbeResult CasOperation::probeSentinel(const String & key, const Retry 
     for (uint32_t attempt = 1;; ++attempt)
     {
         const uint64_t reservation = reservedFor(0, 1);
-        switch (gate(reservation))
+        switch (gate(reservation, LeaseClass::SingleRequest))
         {
             case Gate::FenceLost: giveUpReadFenceLost("probeSentinel", key, "before the request");
             case Gate::NoBudget:  giveUpReadNoBudget("probeSentinel", key, "for one more request");
@@ -735,7 +745,7 @@ SentinelProbeResult CasOperation::probeSentinel(const String & key, const Retry 
         const uint64_t needed = reservedFor(pause_ms, 1);
         /// A lost fence and a spent lease budget are not things the store said, so they are reported the
         /// way every other read verb reports them rather than being dressed up as an outcome.
-        switch (gate(needed))
+        switch (gate(needed, LeaseClass::SingleRequest))
         {
             case Gate::FenceLost: giveUpReadFenceLost("probeSentinel", key, "before the reissue");
             case Gate::NoBudget:  giveUpReadNoBudget("probeSentinel", key, "for the reissue");
@@ -864,14 +874,16 @@ WriteResult CasOperation::postCommit(Etag inc, bool resolved_by_read, WriteState
 {
     /// Admission once more, now that the write is proven durable: a fence lost here means the object
     /// may well exist, but this call must never claim it -- the caller has to resolve the key instead.
-    switch (gate(0))
+    switch (gate(0, LeaseClass::ConditionalChange))
     {
         case Gate::FenceLost:
             ProfileEvents::increment(ProfileEvents::CASRequestFenceLostPostWrite);
             return gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), state);
         case Gate::NoBudget:
             /// The fence's budget IS the mount lease, so its refusal names the lease as the bound that
-            /// ended this call, whichever bound produced the policy's own deadline.
+            /// ended this call, whichever bound produced the policy's own deadline. The write is durable,
+            /// so "not admitted" would be false here: no explanation travels with this give-up.
+            last_lease_refusal.clear();
             return gaveUp(GaveUp::Why::Deadline, GaveUp::Source::Lease, state);
         case Gate::Ok: break;
     }
@@ -882,7 +894,7 @@ std::optional<WriteResult> CasOperation::gatedPause(uint64_t pause_ms, uint32_t 
                                                     const Retry::Bound & bound, void (*record)(), bool should_sleep)
 {
     const uint64_t needed = reservedFor(pause_ms, envelopes);
-    switch (gate(needed))
+    switch (gate(needed, LeaseClass::ConditionalChange))
     {
         case Gate::FenceLost: return gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), state);
         case Gate::NoBudget:  return gaveUp(GaveUp::Why::Deadline, GaveUp::Source::Lease, state);
@@ -947,7 +959,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         /// A write reserves TWO envelopes: the attempt, and the exact read that settles it. That is
         /// what keeps "every conflict is settled by one read" true at the deadline edge.
         const uint64_t reservation = reservedFor(0, 2);
-        switch (gate(reservation))
+        switch (gate(reservation, LeaseClass::ConditionalChange))
         {
             case Gate::FenceLost: return gaveUp(GaveUp::Why::FenceLost, sourceFor(bound), state);
             case Gate::NoBudget:  return gaveUp(GaveUp::Why::Deadline, GaveUp::Source::Lease, state);

@@ -119,6 +119,8 @@ public:
         std::function<uint64_t()> fence_generation_fn_,
         std::function<uint64_t()> boot_ms_now_fn_,
         std::function<bool()> may_mutate_,
+        /// Why `may_mutate_` said no: the lease left, the reserve and the last renewal error.
+        std::function<String()> describe_mutation_refusal_,
         std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference_,
         /// Launch one tracked detached task through the owning pool. Returns false when the dispatch was
         /// refused or failed -- never throws out of the launch itself.
@@ -708,6 +710,7 @@ private:
     std::function<uint64_t()> fence_generation_fn;
     std::function<uint64_t()> boot_ms_now_fn;
     std::function<bool()> may_mutate;
+    std::function<String()> describe_mutation_refusal;
     std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference;
     std::function<bool(std::function<void(DetachedStopToken)>)> dispatch_detached;
     std::function<void()> publish_error_hook;

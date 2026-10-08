@@ -4589,8 +4589,9 @@ TEST(CASMountRuntime, OneSnapshotTurnsAdmissionTextAndLogTogether)
     runtime.logLeaseTransition();   /// a second call at the same state logs nothing
     EXPECT_FALSE(runtime.refAppendFenceOk());
     EXPECT_EQ(runtime.leasePause().pause, LeasePause::RenewalOverdue);
-    EXPECT_EQ(runtime.describeAdmissionRefusal(t.conditionalNeedMs()),
-              describeLeaseRefusal("cas1", t, t.conditionalReserveMs(), t.conditionalNeedMs(), std::nullopt, std::nullopt));
+    EXPECT_EQ(runtime.describeAdmissionRefusal(t.conditionalNeedMs(), LeaseClass::ConditionalChange),
+              describeLeaseRefusal("cas1", t, t.conditionalReserveMs(), t.conditionalNeedMs(), LeaseClass::ConditionalChange,
+                                   std::nullopt, std::nullopt));
     EXPECT_EQ(count(where + "conditional changes paused 0 s ago: the confirmed lease left is not more than their reserve of 16 s"), 1u);
     boot_ms = anchor + 30'250;
     runtime.logLeaseTransition();

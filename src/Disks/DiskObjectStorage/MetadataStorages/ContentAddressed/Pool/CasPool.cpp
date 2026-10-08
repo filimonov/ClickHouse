@@ -180,7 +180,7 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
           [this] { return mount_runtime.fenceGeneration(); },
           [this](uint64_t g, uint64_t needed) { return mount_runtime.admit(g, needed); },
           [this](uint64_t g) { mount_runtime.checkFenceOrThrow(g); },
-          [this](uint64_t needed) { return mount_runtime.describeAdmissionRefusal(needed); }},
+          [this](uint64_t needed, LeaseClass kind) { return mount_runtime.describeAdmissionRefusal(needed, kind); }},
           config.boot_ms_fn,
           config.retry_sleep_fn ? config.retry_sleep_fn : mountPlaneSleepFn(),
           &hot_keys)
@@ -236,6 +236,7 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
           [this] { return mount_runtime.fenceGeneration(); },
           [this] { return bootMsNow(); },
           [this] { return mayMutate(); },
+          [this] { return mount_runtime.describeMutationRefusal(); },
           [this] (const String & key, const String & reason, const std::optional<String> & offending_ns)
               { reportImpossibleInterference(key, reason, offending_ns); },
           [this] (std::function<void(DetachedStopToken)> task) { return tryDispatchDetached(std::move(task)); },
@@ -562,7 +563,7 @@ PoolPtr Pool::open(BackendPtr backend, PoolConfig config)
     /// durably admitted (the invariant this whole design rests on).
     chassert(store->isAlgoAdmitted(write_algo));
 
-    if (!store->config.read_only)
+    if (store->config.background_watermark)
         LOG_INFO(getLogger("CasPool"), "{}",
             describeMountTimeline(store->config.disk_name, store->config.server_root_id, store->leaseThresholds()));
 

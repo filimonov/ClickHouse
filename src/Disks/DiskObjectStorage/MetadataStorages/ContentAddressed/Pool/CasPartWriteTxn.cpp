@@ -676,11 +676,12 @@ ManifestId PartWriteTxn::stageManifest(std::vector<ManifestEntry> entries)
         /// Unlike the ref-log lane there is nothing to wedge: this id was never named by any owner
         /// transition (`next_manifest_ordinal` is already past it, so no re-stage ever reuses the key),
         /// and a late-landing body is inert unreferenced debris for the orphan-manifest sweep.
-        [&](GaveUp &) -> Etag
+        [&](GaveUp & gave_up) -> Etag
         {
             throwCasWriteRetryLater(fmt::format(
                 "stageManifest: part-manifest PUT at '{}' is UNCERTAIN (retry budget exhausted) — "
-                "nothing conclusive was named; the caller re-stages with a fresh ManifestId", key));
+                "nothing conclusive was named; the caller re-stages with a fresh ManifestId{}", key,
+                gave_up.lease_refusal.empty() ? String() : ": " + gave_up.lease_refusal));
         }},
         staged);
 

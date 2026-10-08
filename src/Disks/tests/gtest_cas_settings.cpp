@@ -119,6 +119,15 @@ TEST(CASContentAddressedSettings, LeaseSynonymLoadsAndAConflictNamesBothKeys)
         "same setting to different values; keep one");
 }
 
+/// A repeated key keeps its own rejection; the synonym check does not widen it.
+TEST(CASContentAddressedSettings, ARepeatedKeyIsStillRejectedAsRepeated)
+{
+    expectLoadFailureWithExactMessage(
+        "<cas_server_root_id>srv1</cas_server_root_id><cas_gc_shards>2</cas_gc_shards><cas_gc_shards>3</cas_gc_shards>",
+        ErrorCodes::BAD_ARGUMENTS,
+        "content_addressed disk `disk`: `cas_gc_shards` is set more than once");
+}
+
 TEST(CASContentAddressedSettings, DefaultsAndOverridesLand)
 {
     auto cfg = makeConfig("<cas_server_root_id>srv1</cas_server_root_id><cas_gc_shards>4</cas_gc_shards>");

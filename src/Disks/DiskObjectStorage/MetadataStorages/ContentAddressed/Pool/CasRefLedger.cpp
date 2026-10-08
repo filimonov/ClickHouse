@@ -207,6 +207,7 @@ CasRefLedger::CasRefLedger(
     std::function<uint64_t()> fence_generation_fn_,
     std::function<uint64_t()> boot_ms_now_fn_,
     std::function<bool()> may_mutate_,
+    std::function<String()> describe_mutation_refusal_,
     std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference_,
     std::function<bool(std::function<void(DetachedStopToken)>)> dispatch_detached_,
     std::function<void()> publish_error_hook_,
@@ -223,6 +224,7 @@ CasRefLedger::CasRefLedger(
     , fence_generation_fn(std::move(fence_generation_fn_))
     , boot_ms_now_fn(std::move(boot_ms_now_fn_))
     , may_mutate(std::move(may_mutate_))
+    , describe_mutation_refusal(std::move(describe_mutation_refusal_))
     , on_impossible_interference(std::move(on_impossible_interference_))
     , dispatch_detached(std::move(dispatch_detached_))
     , publish_error_hook(std::move(publish_error_hook_))
@@ -262,7 +264,8 @@ void CasRefLedger::refuseUnlessAdmitted(const CasOperation & op, std::string_vie
     throwCasTransientUnavailable(
         fmt::format("content-addressed pool '{}'", server_root_id),
         fmt::format("{}: the operation is no longer admitted -- the mount lease has too little time left "
-                    "for another request, or this table's runtime was detached", what));
+                    "for another request, or this table's runtime was detached{}", what,
+                    op.leaseRefusal().empty() ? String() : ": " + op.leaseRefusal()));
 }
 
 void CasRefLedger::setCasRetrySleepForTest(std::function<void(uint64_t)> sleep_fn)
@@ -2798,8 +2801,8 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
     if (!may_mutate())
     {
         complete_error(carve_all_pending(), makeCasWriteRetryLaterExceptionPtr(fmt::format(
-            "CAS mount lost / lease expired — refusing to append ref-log transactions for server_root '{}'",
-            config.server_root_id)));
+            "CAS mount lost / lease expired — refusing to append ref-log transactions for server_root '{}': {}",
+            config.server_root_id, describe_mutation_refusal())));
         return;
     }
 
@@ -3950,8 +3953,9 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
             complete_error(chunk_survivors, makeCasWriteRetryLaterExceptionPtr(fmt::format(
                 "CAS ref-log append for namespace '{}' txn {}-{} was refused BEFORE any request was "
                 "sent — the append lane is NOT wedged (nothing can be durable, so there is "
-                "nothing to resolve) and the txn id is not consumed (a retry re-derives it)",
-                ns.string(), id.writer_epoch, id.ref_sequence)));
+                "nothing to resolve) and the txn id is not consumed (a retry re-derives it){}",
+                ns.string(), id.writer_epoch, id.ref_sequence,
+                gave_up->lease_refusal.empty() ? String() : ": " + gave_up->lease_refusal)));
             return false;
         }
         {
@@ -3964,8 +3968,9 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
         complete_error(chunk_survivors, makeCasWriteRetryLaterExceptionPtr(fmt::format(
             "CAS ref-log append for namespace '{}' txn {}-{} is UNCERTAIN (last observed {}) — "
             "the append lane is wedged until the SAME key resolves durable or a conclusive rejection "
-            "is observed; this outcome is unproven, not failure",
-            ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(gave_up->last_seen))));
+            "is observed; this outcome is unproven, not failure{}",
+            ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(gave_up->last_seen),
+            gave_up->lease_refusal.empty() ? String() : ": " + gave_up->lease_refusal)));
         return false;
     }
 

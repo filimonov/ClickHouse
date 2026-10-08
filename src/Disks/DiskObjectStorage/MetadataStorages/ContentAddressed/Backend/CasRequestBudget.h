@@ -67,10 +67,15 @@ String formatSeconds(uint64_t ms);
 /// The line a writable mount logs at start: every threshold in seconds and the settings behind them.
 String describeMountTimeline(const String & disk, const String & server_root_id, const CasLeaseThresholds & t);
 
-/// Why an operation that needs `needed_ms` of lease was not admitted. `remaining_ms` is empty once the
-/// confirmed lease has ended; `refused_code` is set when the renewal's last error is a store refusal.
+/// What the refused operation is, for the text only: a conditional change (a write and its settlement
+/// read) or any other request, which the spec admits against a smaller reserve.
+enum class LeaseClass : uint8_t { ConditionalChange, SingleRequest };
+
+/// Why an operation of class `kind` that needs `needed_ms` of lease was not admitted. `remaining_ms` is
+/// empty once the confirmed lease has ended; `refused_code` is set when the renewal's last error is a
+/// store refusal.
 String describeLeaseRefusal(const String & disk, const CasLeaseThresholds & t, std::optional<uint64_t> remaining_ms,
-                            uint64_t needed_ms, const std::optional<String> & last_renewal_error,
+                            uint64_t needed_ms, LeaseClass kind, const std::optional<String> & last_renewal_error,
                             const std::optional<String> & refused_code);
 
 /// Startup validation: a writable mount refuses to open with an inconsistent budget rather than
