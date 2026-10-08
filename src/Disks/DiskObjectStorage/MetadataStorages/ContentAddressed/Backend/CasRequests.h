@@ -50,6 +50,8 @@ bool isFirstAttemptFuseTimeout(const std::exception & e, size_t attempt_no);
 bool isDeterministicLocalFailure(int code);
 /// An exception the store or the transport raised, as opposed to a local fault.
 bool isStoreAnswer(const std::exception & e);
+/// The store's error name when it sent one, else the exception's own name.
+String requestFailureCode(const std::exception & e);
 /// `VERB key: refused|transport code message`; `code` is the store's error name when it sent one.
 String describeRequestFailure(std::string_view verb, const String & key, const std::exception & e);
 
@@ -471,6 +473,8 @@ private:
     /// Written immediately before a read-class give-up throws, cleared and read only by the resolve
     /// read that swallows it. Every other caller lets the exception carry the verdict.
     std::optional<ReadStop> last_read_stop;
+    /// The fence's explanation of the last gate, if it said `NoBudget`.
+    mutable String last_lease_refusal;
     RequestObserver observer;
 };
 

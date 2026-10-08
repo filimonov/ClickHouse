@@ -67,6 +67,12 @@ String formatSeconds(uint64_t ms);
 /// The line a writable mount logs at start: every threshold in seconds and the settings behind them.
 String describeMountTimeline(const String & disk, const String & server_root_id, const CasLeaseThresholds & t);
 
+/// Why an operation that needs `needed_ms` of lease was not admitted. `remaining_ms` is empty once the
+/// confirmed lease has ended; `refused_code` is set when the renewal's last error is a store refusal.
+String describeLeaseRefusal(const String & disk, const CasLeaseThresholds & t, std::optional<uint64_t> remaining_ms,
+                            uint64_t needed_ms, const std::optional<String> & last_renewal_error,
+                            const std::optional<String> & refused_code);
+
 /// Startup validation: a writable mount refuses to open with an inconsistent budget rather than
 /// silently falling back to an unbounded or unsafe retry policy. Throws `BAD_ARGUMENTS` unless
 /// envelope + margin < lease and, with background renewal, period + conditional reserve < lease.

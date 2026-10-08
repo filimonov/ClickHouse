@@ -68,6 +68,8 @@ struct GaveUp
     /// that GAVE UP as well as of one that committed, and `sent_any` cannot say how many. It stays
     /// beside this because the readers that only branch on "was anything sent" branch on it by name.
     uint32_t attempts_sent = 0;
+    /// The fence's explanation when the lease bound ended the call; empty otherwise.
+    String lease_refusal = {};
 };
 using WriteResult = std::variant<Committed, Declined, Conflict, Refused, GaveUp>;
 
@@ -120,6 +122,8 @@ inline std::optional<Etag> orThrow(WriteResult && result, std::string_view what)
                 case GaveUp::Why::FenceLost:
                     throwCasTransientUnavailable(String(what), "mount fence tripped: the durable write is refused because this node no longer holds the mount incarnation it was admitted under");
                 case GaveUp::Why::Deadline:
+                    if (!g.lease_refusal.empty())
+                        throwCasWriteRetryLater(fmt::format("{}: {}", what, g.lease_refusal));
                     throwCasWriteRetryLater(fmt::format("{}: gave up at the {} deadline after {} attempt(s)", what, g.deadline_source == GaveUp::Source::Lease ? "lease" : "policy", g.sent_any ? "one or more" : "zero"));
                 case GaveUp::Why::Unresolved:
                     throwCasWriteRetryLater(fmt::format("{}: the write is unresolved (sent, resolve read found {})", what, renderObservation(g.last_seen)));

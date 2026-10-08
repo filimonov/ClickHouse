@@ -179,7 +179,8 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
     , mount_requests(pool_backend, Fence{
           [this] { return mount_runtime.fenceGeneration(); },
           [this](uint64_t g, uint64_t needed) { return mount_runtime.admit(g, needed); },
-          [this](uint64_t g) { mount_runtime.checkFenceOrThrow(g); }},
+          [this](uint64_t g) { mount_runtime.checkFenceOrThrow(g); },
+          [this](uint64_t needed) { return mount_runtime.describeAdmissionRefusal(needed); }},
           config.boot_ms_fn,
           config.retry_sleep_fn ? config.retry_sleep_fn : mountPlaneSleepFn(),
           &hot_keys)

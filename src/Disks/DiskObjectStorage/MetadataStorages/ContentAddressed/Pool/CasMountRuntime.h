@@ -145,6 +145,8 @@ struct RenewalProgress
     bool in_progress = false;
     uint32_t attempts_sent = 0;
     std::optional<String> last_error;
+    /// The store's error name when the last error is a definite refusal.
+    std::optional<String> refused_code;
 };
 
 /// Why a `Live` mount refuses lease-bound operations, derived from the deadline and the clock:
@@ -344,6 +346,9 @@ public:
     LeasePauseState leasePause() const;
     /// Two attempt envelopes and the safety margin: the reserve `refAppendFenceOk` admits against.
     uint64_t conditionalReserveMs() const;
+    /// Why `admit` refused an operation needing `needed_ms`: the lease left, the reserve and the last
+    /// renewal error. Reads atomics and the renewal-progress lock only, so it is safe on any thread.
+    String describeAdmissionRefusal(uint64_t needed_ms) const;
     /// The one set of thresholds admission, the mount line and the operator texts read.
     const CasLeaseThresholds & leaseThresholds() const { return lease_thresholds; }
 

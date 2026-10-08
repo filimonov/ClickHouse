@@ -168,6 +168,16 @@ uint64_t CasMountRuntime::conditionalReserveMs() const
     return lease_thresholds.conditionalReserveMs();
 }
 
+String CasMountRuntime::describeAdmissionRefusal(uint64_t needed_ms) const
+{
+    const uint64_t now = bootMsNow();
+    const uint64_t deadline = mount_fence.deadline_boot_ms.load(std::memory_order_acquire);
+    const RenewalProgress progress = renewalProgress();
+    return describeLeaseRefusal(config.disk_name, lease_thresholds,
+        now < deadline ? std::optional<uint64_t>(deadline - now) : std::nullopt, needed_ms,
+        progress.last_error, progress.refused_code);
+}
+
 LeasePauseState CasMountRuntime::leasePause() const
 {
     if (const std::optional<uint64_t> expired_at = leaseExpiredAtBootMs())
@@ -525,8 +535,11 @@ MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_c
                 try
                 {
                     String error = describeRequestFailure(verb, key, e);
+                    std::optional<String> refused_code
+                        = isDefinitelyRefusedWrite(e) ? std::optional<String>(requestFailureCode(e)) : std::nullopt;
                     std::lock_guard lock(renewal_progress_mutex);
                     renewal_progress.last_error = std::move(error);
+                    renewal_progress.refused_code = std::move(refused_code);
                 }
                 catch (...)
                 {
@@ -651,7 +664,7 @@ uint64_t CasMountRuntime::renewRenewerOnce(
     /// `renewRenewerForRemountOnce` alone.
     {
         std::lock_guard lock(renewal_progress_mutex);
-        renewal_progress = RenewalProgress{.in_progress = true, .attempts_sent = 0, .last_error = std::nullopt};
+        renewal_progress = RenewalProgress{.in_progress = true, .attempts_sent = 0, .last_error = std::nullopt, .refused_code = std::nullopt};
     }
     MountRenewResult result;
     {

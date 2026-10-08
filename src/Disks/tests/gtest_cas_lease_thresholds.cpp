@@ -39,3 +39,20 @@ TEST(CASLeaseThresholds, SettingTextsSayTheRuleAndWhatMustMatch)
     EXPECT_NE(text.find("must run the same cas_mount_lease_ms;"), String::npos) << text;
     EXPECT_NE(text.find("cas_mount_renew_period_ms is local to each server"), String::npos) << text;
 }
+
+TEST(CASLeaseThresholds, RefusalTextsNameTheReserveAndTheLastError)
+{
+    const CasLeaseThresholds t = leaseThresholds(CasRequestBudget{}, 30'000, 10'000);
+    EXPECT_EQ(describeLeaseRefusal("cas1", t, 14'000, 14'000, String("PUT gc/server-roots/r1/mount: transport SlowDown slow down"), std::nullopt),
+        "CAS disk 'cas1': this change is not admitted: 14 s of the confirmed lease remain and a conditional change "
+        "needs more than 16 s (two requests of 7 s plus 2 s). Renewal keeps retrying; changes resume after a "
+        "confirmation that leaves enough lease. Last renewal error: PUT gc/server-roots/r1/mount: transport SlowDown slow down.");
+    EXPECT_EQ(describeLeaseRefusal("cas1", t, std::nullopt, 7'000, String("PUT k: refused AccessDenied denied"), String("AccessDenied")),
+        "CAS disk 'cas1': this request is not admitted: the confirmed lease has ended and a single request needs "
+        "more than 9 s (one request of 7 s plus 2 s). The object store refuses the renewal request (AccessDenied); "
+        "requests resume after the cause is fixed and a renewal is confirmed.");
+    EXPECT_EQ(describeLeaseRefusal("cas1", t, 15'000, 15'200, std::nullopt, std::nullopt),
+        "CAS disk 'cas1': this change is not admitted: 15 s of the confirmed lease remain and a conditional change "
+        "needs more than 17.2 s (15.2 s of requests and retry pauses plus 2 s). Renewal keeps retrying; changes "
+        "resume after a confirmation that leaves enough lease.");
+}

@@ -79,6 +79,35 @@ String describeMountTimeline(const String & disk, const String & server_root_id,
         formatSeconds(t.envelope_ms), t.margin_ms);
 }
 
+String describeLeaseRefusal(const String & disk, const CasLeaseThresholds & t, std::optional<uint64_t> remaining_ms,
+                            uint64_t needed_ms, const std::optional<String> & last_renewal_error,
+                            const std::optional<String> & refused_code)
+{
+    const bool conditional = needed_ms >= t.conditionalNeedMs();
+    String need;
+    if (needed_ms == t.conditionalNeedMs())
+        need = fmt::format("a conditional change needs more than {} s (two requests of {} s plus {} s)",
+            formatSeconds(t.conditionalReserveMs()), formatSeconds(t.envelope_ms), formatSeconds(t.margin_ms));
+    else if (needed_ms == t.envelope_ms)
+        need = fmt::format("a single request needs more than {} s (one request of {} s plus {} s)",
+            formatSeconds(t.singleRequestReserveMs()), formatSeconds(t.envelope_ms), formatSeconds(t.margin_ms));
+    else
+        need = fmt::format("{} needs more than {} s ({} s of requests and retry pauses plus {} s)",
+            conditional ? "a conditional change" : "a request", formatSeconds(satAdd(needed_ms, t.margin_ms)),
+            formatSeconds(needed_ms), formatSeconds(t.margin_ms));
+    const char * what = conditional ? "changes" : "requests";
+    String tail = refused_code
+        ? fmt::format("The object store refuses the renewal request ({}); {} resume after the cause is fixed and a "
+                      "renewal is confirmed.", *refused_code, what)
+        : fmt::format("Renewal keeps retrying; {} resume after a confirmation that leaves enough lease.", what);
+    if (!refused_code && last_renewal_error)
+        tail += fmt::format(" Last renewal error: {}.", *last_renewal_error);
+    return fmt::format("CAS disk '{}': this {} is not admitted: {} and {}. {}", disk, conditional ? "change" : "request",
+        remaining_ms ? fmt::format("{} s of the confirmed lease remain", formatSeconds(*remaining_ms))
+                     : String("the confirmed lease has ended"),
+        need, tail);
+}
+
 void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_lease_ttl_ms,
                               uint64_t mount_renew_period_ms, bool background_renewal)
 {

@@ -1162,6 +1162,23 @@ TEST(CASRequests, AResolveReadRefusedForLeaseBudgetIsReportedAsTheLeaseDeadline)
     EXPECT_EQ(backend->getTotal(), 0u);    /// the resolve read never started
 }
 
+/// The fence's explanation of a lease refusal reaches the caller, on a write and on a read.
+TEST(CASRequests, ALeaseRefusalCarriesTheFenceExplanation)
+{
+    FakeClock clock;
+    auto backend = std::make_shared<CountingBackend>();
+    Fence fence{[] { return uint64_t{0}; }, [](uint64_t, uint64_t) { return Fence::Admit::NoBudget; }, [](uint64_t) {},
+                [](uint64_t) { return String("CAS disk 'cas1': this change is not admitted"); }};
+    auto requests = makeRequests(backend, clock, fence);
+    auto op = requests.admit();
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "create: CAS disk 'cas1': this change is not admitted",
+                                [&] { (void)orThrow(op.create("k", "v", Retry::standard()), "create"); });
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "CAS disk 'cas1': this change is not admitted",
+                                [&] { (void)op.read("k", Retry::standard()); });
+    EXPECT_EQ(backend->writeTotal(), 0u);
+    EXPECT_EQ(backend->getTotal(), 0u);
+}
+
 TEST(CASRequests, AFenceWithNoBudgetForTheRequestSendsNothingAndNamesTheLease)
 {
     FakeClock clock;

@@ -285,9 +285,8 @@ bool isStoreAnswer(const std::exception & e)
     return dynamic_cast<const Poco::Exception *>(&e) && !(db && isDeterministicLocalFailure(db->code()));
 }
 
-String describeRequestFailure(std::string_view verb, const String & key, const std::exception & e)
+String requestFailureCode(const std::exception & e)
 {
-    const auto & poco = dynamic_cast<const Poco::Exception &>(e);
     String code;
 #if USE_AWS_S3
     if (const auto * s3 = dynamic_cast<const S3Exception *>(&e))
@@ -296,8 +295,15 @@ String describeRequestFailure(std::string_view verb, const String & key, const s
     if (const auto * db = dynamic_cast<const Exception *>(&e); code.empty() && db)
         code = String(ErrorCodes::getName(db->code()));
     if (code.empty())
-        code = poco.name();
-    return fmt::format("{} {}: {} {} {}", verb, key, isDefinitelyRefusedWrite(e) ? "refused" : "transport", code, poco.message());
+        code = dynamic_cast<const Poco::Exception &>(e).name();
+    return code;
+}
+
+String describeRequestFailure(std::string_view verb, const String & key, const std::exception & e)
+{
+    const auto & poco = dynamic_cast<const Poco::Exception &>(e);
+    return fmt::format("{} {}: {} {} {}", verb, key, isDefinitelyRefusedWrite(e) ? "refused" : "transport",
+        requestFailureCode(e), poco.message());
 }
 
 CasRequests::CasRequests(BackendPtr backend_, Fence fence_,
@@ -434,10 +440,14 @@ private:
 
 CasOperation::Gate CasOperation::gate(uint64_t needed_ms) const
 {
+    last_lease_refusal.clear();
     switch (owner.fence.admit(admitted_generation, needed_ms))
     {
         case Fence::Admit::LostOrRearmed: return Gate::FenceLost;
-        case Fence::Admit::NoBudget:      return Gate::NoBudget;
+        case Fence::Admit::NoBudget:
+            if (owner.fence.describe_no_budget)
+                last_lease_refusal = owner.fence.describe_no_budget(needed_ms);
+            return Gate::NoBudget;
         case Fence::Admit::Ok: break;
     }
     /// The caller's own facts are the second half of admission, and the engine does not need to know
@@ -511,7 +521,8 @@ void CasOperation::giveUpReadFenceLost(std::string_view verb, const String & sub
 void CasOperation::giveUpReadNoBudget(std::string_view verb, const String & subject, std::string_view what)
 {
     last_read_stop = ReadStop::NoBudgetLease;
-    throwReadRefused(Fence::Admit::NoBudget, verb, subject, what);
+    throwReadRefused(Fence::Admit::NoBudget, verb, subject,
+                     last_lease_refusal.empty() ? String(what) : fmt::format("{}: {}", what, last_lease_refusal));
 }
 
 void CasOperation::giveUpReadDeadline(std::string_view verb, const String & subject,
@@ -818,7 +829,10 @@ CasOperation::Resolved CasOperation::observePresence(const String & key, const R
 WriteResult CasOperation::gaveUp(GaveUp::Why why, GaveUp::Source source, WriteState & state) const
 {
     ProfileEvents::increment(ProfileEvents::CASRequestGaveUp);
-    return GaveUp{why, source, state.sent_any, state.last_seen, state.attempts_sent};
+    GaveUp result{why, source, state.sent_any, state.last_seen, state.attempts_sent};
+    if (source == GaveUp::Source::Lease)
+        result.lease_refusal = last_lease_refusal;
+    return result;
 }
 
 WriteResult CasOperation::gaveUpForReadStop(ReadStop stop, WriteState & state, const Retry::Bound & bound) const
