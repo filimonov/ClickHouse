@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database
+# Tags: no-fasttest, no-parallel, no-ordinary-database
 # no-parallel: the failpoint is global and fires once for whichever statement stores a removal batch first.
 # All merges are stopped: a merge of any table stores a removal batch and would consume the global failpoint.
 
-# Correct: a failed non-transactional `TRUNCATE` leaves the table intact, also after the table is loaded again.
-# Today: the table is empty after the reload.
+# Correct: a failed non-transactional `DROP PARTITION` leaves no part with a removal stamp, and the rows stay visible.
+# Today: the part stamped before the failure stays stamped and is invisible to every transaction.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,13 +38,19 @@ INSERT INTO t VALUES (1);
 INSERT INTO t VALUES (2);
 EOF
 
-fail_statement "TRUNCATE TABLE t"
+fail_statement "ALTER TABLE t DROP PARTITION tuple()"
 
-$CLICKHOUSE_CLIENT -q "SELECT 'after failed truncate', count(), sum(n) FROM t"
+$CLICKHOUSE_CLIENT -q "SELECT 'stamped parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND removal_csn != 0"
 
-$CLICKHOUSE_CLIENT -q "DETACH TABLE t"
-$CLICKHOUSE_CLIENT -q "ATTACH TABLE t"
+$CLICKHOUSE_CLIENT -n <<'EOF'
+SET throw_on_unsupported_query_inside_transaction = 0;
+BEGIN TRANSACTION;
+SELECT 'rows seen by a transaction', count(), sum(n) FROM t;
+ROLLBACK;
+EOF
 
-$CLICKHOUSE_CLIENT -q "SELECT 'after reload', count(), sum(n) FROM t"
+# The failure left no lock behind: the same statement succeeds now.
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP PARTITION tuple()"
+$CLICKHOUSE_CLIENT -q "SELECT 'after retry', count() FROM t"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"

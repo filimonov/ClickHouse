@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database
+# Tags: no-fasttest, no-parallel, no-ordinary-database
 # no-parallel: the failpoint is global and fires once for whichever statement stores a removal batch first.
 # All merges are stopped: a merge of any table stores a removal batch and would consume the global failpoint.
 
-# Correct: a failed non-transactional `DROP PARTITION` leaves no part with a removal stamp, and the rows stay visible.
-# Today: the part stamped before the failure stays stamped and is invisible to every transaction.
+# Correct: a failed non-transactional `REPLACE PARTITION` leaves the destination as it was.
+# Today: the new part stays committed next to the parts that were not replaced.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,27 +30,24 @@ function fail_statement()
 }
 
 $CLICKHOUSE_CLIENT -n <<'EOF'
-DROP TABLE IF EXISTS t;
-CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS old_parts_lifetime = 3600;
+DROP TABLE IF EXISTS src;
+DROP TABLE IF EXISTS dst;
+CREATE TABLE src (n UInt64) ENGINE = MergeTree ORDER BY n;
+CREATE TABLE dst (n UInt64) ENGINE = MergeTree ORDER BY n;
 SYSTEM STOP MERGES;
-SYSTEM STOP MERGES t;
-INSERT INTO t VALUES (1);
-INSERT INTO t VALUES (2);
+SYSTEM STOP MERGES dst;
+INSERT INTO src VALUES (100);
+INSERT INTO dst VALUES (1);
+INSERT INTO dst VALUES (2);
 EOF
 
-fail_statement "ALTER TABLE t DROP PARTITION tuple()"
+fail_statement "ALTER TABLE dst REPLACE PARTITION tuple() FROM src"
 
-$CLICKHOUSE_CLIENT -q "SELECT 'stamped parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't' AND removal_csn != 0"
-
-$CLICKHOUSE_CLIENT -n <<'EOF'
-SET throw_on_unsupported_query_inside_transaction = 0;
-BEGIN TRANSACTION;
-SELECT 'rows seen by a transaction', count(), sum(n) FROM t;
-ROLLBACK;
-EOF
+$CLICKHOUSE_CLIENT -q "SELECT 'after failed replace', arraySort(groupArray(n)) FROM dst"
 
 # The failure left no lock behind: the same statement succeeds now.
-$CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP PARTITION tuple()"
-$CLICKHOUSE_CLIENT -q "SELECT 'after retry', count() FROM t"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE dst REPLACE PARTITION tuple() FROM src"
+$CLICKHOUSE_CLIENT -q "SELECT 'after retry', arraySort(groupArray(n)) FROM dst"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t"
+$CLICKHOUSE_CLIENT -q "DROP TABLE src"
+$CLICKHOUSE_CLIENT -q "DROP TABLE dst"

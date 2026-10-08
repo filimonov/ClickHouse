@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database
+# Tags: no-fasttest, no-parallel, no-ordinary-database
 # no-parallel: the failpoint is global and fires once for whichever statement stores a removal batch first.
 # All merges are stopped: a merge of any table stores a removal batch and would consume the global failpoint.
 
-# Correct: a failed `DROP PARTITION` leaves the partition intact, also after the table is loaded again.
-# Today: the partition is empty after the reload.
+# Correct: a failed non-transactional `TRUNCATE` leaves the table intact, also after the table is loaded again.
+# Today: the table is empty after the reload.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,9 +38,9 @@ INSERT INTO t VALUES (1);
 INSERT INTO t VALUES (2);
 EOF
 
-fail_statement "ALTER TABLE t DROP PARTITION tuple()"
+fail_statement "TRUNCATE TABLE t"
 
-$CLICKHOUSE_CLIENT -q "SELECT 'after failed drop', count(), sum(n) FROM t"
+$CLICKHOUSE_CLIENT -q "SELECT 'after failed truncate', count(), sum(n) FROM t"
 
 $CLICKHOUSE_CLIENT -q "DETACH TABLE t"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE t"

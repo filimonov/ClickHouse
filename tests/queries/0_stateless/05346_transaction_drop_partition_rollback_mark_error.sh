@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database
+# Tags: no-fasttest, no-parallel, no-ordinary-database
 # no-parallel: both failpoints are global and fire once for whichever statement reaches them first.
 # All merges are stopped: a merge of any table stores a removal batch and would consume the global failpoint.
 

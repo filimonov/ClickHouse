@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-replicated-database, no-parallel, no-parallel-replicas
+# Tags: no-fasttest, no-ordinary-database, no-replicated-database, no-parallel, no-parallel-replicas
 # no-parallel: the failpoint is global and pauses whichever statement reaches it first.
 
 # Correct: a `DROP PARTITION` that races with a transaction removing one of its parts fails with `SERIALIZATION_ERROR`.

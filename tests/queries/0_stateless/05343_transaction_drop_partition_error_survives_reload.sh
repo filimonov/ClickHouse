@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database
+# Tags: no-fasttest, no-parallel, no-ordinary-database
 # no-parallel: the failpoint is global and fires once for whichever statement stores a removal batch first.
 # All merges are stopped: a merge of any table stores a removal batch and would consume the global failpoint.
 
-# Correct: a failed non-transactional `REPLACE PARTITION` leaves the destination as it was.
-# Today: the new part stays committed next to the parts that were not replaced.
+# Correct: a failed `DROP PARTITION` leaves the partition intact, also after the table is loaded again.
+# Today: the partition is empty after the reload.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,24 +30,21 @@ function fail_statement()
 }
 
 $CLICKHOUSE_CLIENT -n <<'EOF'
-DROP TABLE IF EXISTS src;
-DROP TABLE IF EXISTS dst;
-CREATE TABLE src (n UInt64) ENGINE = MergeTree ORDER BY n;
-CREATE TABLE dst (n UInt64) ENGINE = MergeTree ORDER BY n;
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS old_parts_lifetime = 3600;
 SYSTEM STOP MERGES;
-SYSTEM STOP MERGES dst;
-INSERT INTO src VALUES (100);
-INSERT INTO dst VALUES (1);
-INSERT INTO dst VALUES (2);
+SYSTEM STOP MERGES t;
+INSERT INTO t VALUES (1);
+INSERT INTO t VALUES (2);
 EOF
 
-fail_statement "ALTER TABLE dst REPLACE PARTITION tuple() FROM src"
+fail_statement "ALTER TABLE t DROP PARTITION tuple()"
 
-$CLICKHOUSE_CLIENT -q "SELECT 'after failed replace', arraySort(groupArray(n)) FROM dst"
+$CLICKHOUSE_CLIENT -q "SELECT 'after failed drop', count(), sum(n) FROM t"
 
-# The failure left no lock behind: the same statement succeeds now.
-$CLICKHOUSE_CLIENT -q "ALTER TABLE dst REPLACE PARTITION tuple() FROM src"
-$CLICKHOUSE_CLIENT -q "SELECT 'after retry', arraySort(groupArray(n)) FROM dst"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE t"
+$CLICKHOUSE_CLIENT -q "ATTACH TABLE t"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE src"
-$CLICKHOUSE_CLIENT -q "DROP TABLE dst"
+$CLICKHOUSE_CLIENT -q "SELECT 'after reload', count(), sum(n) FROM t"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t"

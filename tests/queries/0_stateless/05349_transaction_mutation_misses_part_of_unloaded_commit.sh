@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-ordinary-database, no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+# Tags: no-fasttest, no-parallel, no-ordinary-database, no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 # Tag rationale: the failpoints are server-wide and hold the transaction log of every other test.
 
 # Correct: a mutation after `SET TRANSACTION SNAPSHOT` to a commit not yet loaded into the log mutates that commit's part too.
