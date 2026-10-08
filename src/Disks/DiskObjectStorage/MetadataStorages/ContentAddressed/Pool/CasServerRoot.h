@@ -74,7 +74,7 @@ struct MountRenewOperationEnvironment
     RequestObserver requests;
     /// The background renewal's wait before its next request after a credential refusal, about one
     /// renewal period: each request loop may refresh the credentials once, so a one-second pace would
-    /// refresh every second. Empty: no wait.
+    /// refresh every second. Empty: the ordinary spacing.
     std::function<void()> credential_refusal_pause;
 };
 

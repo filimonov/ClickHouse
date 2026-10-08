@@ -4325,6 +4325,55 @@ TEST(CASMountRuntime, AStopEndsTheCredentialRefusalWaitAtOnce)
     runtime.finishTeardown(false);
 }
 
+/// A remount request during the wait that follows a credential refusal ends it at once.
+TEST(CASMountRuntime, AParkRequestEndsTheCredentialRefusalWaitAtOnce)
+{
+    const Layout layout("until-definitive-credential-park");
+    const UInt128 uuid{1};
+    uint64_t wall_ms = 1000;
+    std::atomic<uint64_t> boot_ms{100};
+    constexpr uint64_t period_ms = 30'000;
+    std::atomic<bool> first_write{true};
+    DB::Cas::tests::ManualBarrier denied;
+    DB::Cas::tests::ManualBarrier remount_entered;
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 2 * period_ms).kind,
+              MountClaimResult::Claimed);
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(2 * period_ms), .background_watermark = true,
+                    .boot_ms_fn = [&] { return boot_ms.load(); }},
+        "test", sink, runtimeRenewBudget(), [&]
+        {
+            remount_entered.arriveAndWait();
+            return false;
+        });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer();
+    runtime.armMountFence(uuid, 1, anchor + 2 * period_ms);
+    backend->deny_writes = std::numeric_limits<uint32_t>::max();
+    backend->on_guarded_write = [&]
+    {
+        if (first_write.exchange(false))
+            denied.arriveAndWait();
+    };
+    boot_ms = anchor + period_ms;
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(period_ms));
+
+    denied.waitUntilArrived();
+    denied.release();
+    const auto park_requested = std::chrono::steady_clock::now();
+    runtime.scheduleRemount();
+    remount_entered.waitUntilArrived();
+    const auto park_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - park_requested);
+    EXPECT_LT(park_ms.count(), 10'000) << "the park request waited out the renewal period";
+    remount_entered.release();
+    runtime.stopBackgroundWorkers();
+    runtime.finishTeardown(false);
+}
+
 /// After each credential refusal the worker waits one renewal period before its next engine call.
 TEST(CASMountRuntime, ACredentialRefusalWaitsOneRenewalPeriod)
 {

@@ -1590,7 +1590,7 @@ Observation MountLeaseRenewer::readUntilObserved(
     {
         if (credential_refusal && environment.credential_refusal_pause)
             environment.credential_refusal_pause();
-        else if (!credential_refusal)
+        else
             op.pause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs));
         try
         {
@@ -1700,10 +1700,10 @@ MountRenewResult MountLeaseRenewer::renewOn(
             {
                 break;
             }
-            if (!credential_refusal)
-                op.pause(Retry::spacedPause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs), last_attempt_start_boot_ms, boot_clock()));
-            else if (environment.credential_refusal_pause)
+            if (credential_refusal && environment.credential_refusal_pause)
                 environment.credential_refusal_pause();
+            else
+                op.pause(Retry::spacedPause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs), last_attempt_start_boot_ms, boot_clock()));
             written = op.replace(key, body, expected, policy);
         }
     }

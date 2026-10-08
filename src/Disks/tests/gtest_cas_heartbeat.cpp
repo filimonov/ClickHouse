@@ -1138,6 +1138,44 @@ TEST(CASHeartbeat, ACredentialRefusedReadWaitsOneRenewalPeriod)
     EXPECT_EQ(backend->read_at_ms[3] - backend->read_at_ms[2], 10'000u);
 }
 
+/// Without a credential wait, a credential refusal of a read or of a write is still spaced.
+TEST(CASHeartbeat, ACredentialRefusalWithoutAWaitIsStillSpaced)
+{
+    auto backend = std::make_shared<RenewalScriptBackend>();
+    Layout layout("pool");
+    const UInt128 uuid{0x1234};
+    uint64_t wall_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops(backend, &boot_ms);
+    backend->clock = &boot_ms;
+    seedOwnClaim(ops.op, layout, "test", uuid, 9, wall_ms, 1000);
+    MountLeaseRenewer renewer(
+        ops.mount, ops.farewell, layout, "test", uuid, 9, std::chrono::milliseconds(1000),
+        [&] { return wall_ms; }, [] { return uint64_t{7}; }, {}, std::chrono::milliseconds(20),
+        [&] { return boot_ms; });
+    renewer.start();
+    backend->attempts.clear();
+    backend->read_calls = 0;
+    backend->puts_at_read.clear();
+    backend->actions = {RenewalScriptBackend::Action::RefusePrecondition, RenewalScriptBackend::Action::ThrowAccessDenied,
+                        RenewalScriptBackend::Action::Delegate};
+    backend->refuse_reads = 3;
+    backend->read_at_ms.clear();
+
+    const MountRenewResult renewed = renewer.renewUntilDefinitive(renewalEnvironment(boot_ms));
+
+    ASSERT_EQ(renewed.outcome, MountRenewOutcome::Committed);
+    ASSERT_EQ(backend->read_at_ms.size(), 4u);
+    for (size_t i = 1; i < backend->read_at_ms.size(); ++i)
+    {
+        EXPECT_GE(backend->read_at_ms[i] - backend->read_at_ms[i - 1], 800u) << "read " << i;
+        EXPECT_LE(backend->read_at_ms[i] - backend->read_at_ms[i - 1], 1'200u) << "read " << i;
+    }
+    ASSERT_EQ(backend->attempts.size(), 3u);
+    EXPECT_GE(backend->attempts[2].at_ms - backend->attempts[1].at_ms, 800u);
+    EXPECT_LE(backend->attempts[2].at_ms - backend->attempts[1].at_ms, 1'200u);
+}
+
 /// A renewal that ends after an earlier engine call sent an attempt reports that attempt.
 TEST(CASHeartbeat, AGiveUpAfterARefusedCallCountsItsAttempts)
 {
