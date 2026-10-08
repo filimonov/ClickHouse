@@ -597,14 +597,12 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     const ObserveRefCatalog observe_catalog = [s = store.get()]()
     {
         CasOperation op = s->gc_requests.admit();
-        CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(op, s->pool_layout);
-        snapshot.life_index.throwIfAmbiguous("CAS server-root mount safety");
-        return snapshot.catalog;
+        return CasRefCatalog::observe(op, s->pool_layout, "CAS server-root mount safety");
     };
     /// Existing matching owner and epoch objects take fast paths that do not need an emptiness
     /// observation. Validate the mandatory authority object unconditionally before either fast path
     /// can reach a slot mutation; the callback remains available for fresh conflict rechecks below.
-    (void)observe_catalog();
+    (void)catalogOrThrow(observe_catalog());
 
     /// 2. Owner anchor — IDENTITY (clock-free). A foreign uuid fails closed; an absent owner over a
     ///    non-empty subtree is CORRUPTED_DATA; a fresh empty root is claimed.
@@ -1431,14 +1429,12 @@ bool Pool::tryRemountOnce()
         const ObserveRefCatalog observe_catalog = [this]()
         {
             CasOperation op = gc_requests.admit();
-            CasRefCatalog::Snapshot snapshot = CasRefCatalog::read(op, pool_layout);
-            snapshot.life_index.throwIfAmbiguous("CAS server-root remount safety");
-            return snapshot.catalog;
+            return CasRefCatalog::observe(op, pool_layout, "CAS server-root remount safety");
         };
         /// The present-owner/present-epoch fast path would otherwise skip the observer entirely.
         /// Require the catalog before allocating a new epoch or replacing the mount slot.
         step = "ref_catalog_observe";
-        (void)observe_catalog();
+        (void)catalogOrThrow(observe_catalog());
         step = "owner_claim";
         /// The open plane throughout: the mount fence is latched lost here (starting the renewer does
         /// not clear it), so an operation admitted under the fence could never make the claim that

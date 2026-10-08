@@ -554,7 +554,7 @@ void claimOwnerOrThrow(
 
     /// Owner absent. Claiming is allowed ONLY over a provably-empty subtree; an absent owner over
     /// existing data means the identity was lost and must never be silently re-claimed.
-    if (!serverRootSubtreeEmpty(op, l, srid, observe_catalog()))
+    if (!serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "CAS server-root '{}' has no owner anchor but its data subtree is non-empty "
             "(identity lost over existing data) — refusing to re-claim",
@@ -569,7 +569,7 @@ void claimOwnerOrThrow(
 
     /// The conditional create conflicted. Recompute the whole catalog + manifest + roots bundle;
     /// no stale emptiness result is carried across the conflict.
-    if (!serverRootSubtreeEmpty(op, l, srid, observe_catalog()))
+    if (!serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "CAS server-root '{}' owner claim conflicted and newly visible owned work blocks recreation", srid);
 
@@ -612,7 +612,7 @@ uint64_t allocateWriterEpoch(
     WriteResult result = op.readModifyWrite(key,
         [&](const std::optional<Object> & observed) -> std::optional<String>
         {
-            if (previous_decision_saw_no_epoch && !serverRootSubtreeEmpty(op, l, srid, observe_catalog()))
+            if (previous_decision_saw_no_epoch && !serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "CAS server-root '{}' writer_epoch allocation conflicted and newly visible owned "
                     "work blocks recreation",
@@ -628,7 +628,7 @@ uint64_t allocateWriterEpoch(
             {
                 /// A missing `epoch` over a non-empty subtree is a reset hazard (durable monotone
                 /// counter cannot be reconstructed) — fail closed.
-                if (!serverRootSubtreeEmpty(op, l, srid, observe_catalog()))
+                if (!serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
                     throw Exception(ErrorCodes::CORRUPTED_DATA,
                         "CAS server-root '{}' has no durable epoch object but its data subtree is "
                         "non-empty (writer_epoch reset hazard) — refusing to proceed",

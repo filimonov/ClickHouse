@@ -3,10 +3,12 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasFoldSealFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasOwnershipOutcome.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <functional>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace DB::Cas
@@ -35,6 +37,10 @@ public:
     /// `policy` lets a hand-written loop pass the bound it froze at entry, so its resolution reads end
     /// with the rest of the loop instead of each starting a fresh window.
     static Snapshot read(CasOperation & op, const Layout & layout, const Retry & policy = Retry::standard());
+
+    /// `read` for an ownership decision: a failed request is transient; an absent, undecodable or
+    /// ambiguous catalog is corrupt.
+    static CatalogObservation observe(CasOperation & op, const Layout & layout, std::string_view consumer);
 
     /// Materializes the explicit empty catalog for a prefix already proven new by
     /// `probePoolBootstrapResidual`. This is the only absence-tolerant catalog operation: no

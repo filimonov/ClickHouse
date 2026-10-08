@@ -27,9 +27,9 @@ namespace
 
 /// The one verdict for an absent mandatory catalog, so the read entry point and the mutation's own
 /// `decide` cannot drift apart on what absence means.
-[[noreturn]] void throwMandatoryCatalogAbsent(const String & key)
+Exception mandatoryCatalogAbsent(const String & key)
 {
-    throw Exception(ErrorCodes::CORRUPTED_DATA,
+    return Exception(ErrorCodes::CORRUPTED_DATA,
         "Mandatory CAS ref catalog '{}' is absent -- refusing to interpret opaque life "
         "objects as an empty ownership universe",
         key);
@@ -65,8 +65,51 @@ CasRefCatalog::Snapshot CasRefCatalog::read(CasOperation & op, const Layout & la
 {
     Snapshot snapshot = readOptionalForBootstrap(op, layout, policy);
     if (!snapshot.etag)
-        throwMandatoryCatalogAbsent(layout.refCatalogKey());
+        throw mandatoryCatalogAbsent(layout.refCatalogKey());
     return snapshot;
+}
+
+CatalogObservation CasRefCatalog::observe(CasOperation & op, const Layout & layout, std::string_view consumer)
+{
+    const String key = layout.refCatalogKey();
+    std::optional<Object> got;
+    try
+    {
+        got = op.read(key, Retry::standard());
+    }
+    catch (const Exception & e)
+    {
+        if (isDeterministicLocalFailure(e.code()))
+            throw;
+        return OwnershipTransient{std::current_exception()};
+    }
+    if (!got)
+        return OwnershipCorrupt{OwnershipCorrupt::Cause::Absent, std::make_exception_ptr(mandatoryCatalogAbsent(key))};
+
+    RefCatalog catalog;
+    try
+    {
+        catalog = decodeRefCatalog(got->bytes);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::LOGICAL_ERROR)
+            throw;
+        return OwnershipCorrupt{OwnershipCorrupt::Cause::Undecodable, std::current_exception()};
+    }
+
+    if (const CatalogLifeIndex life_index(catalog); life_index.hasAmbiguity())
+    {
+        try
+        {
+            life_index.throwIfAmbiguous(consumer);
+        }
+        catch (const Exception &)
+        {
+            return OwnershipCorrupt{OwnershipCorrupt::Cause::Ambiguous, std::current_exception()};
+        }
+    }
+    return catalog;
 }
 
 CasRefCatalog::Snapshot CasRefCatalog::initializeEmptyForNewPool(CasOperation & op, const Layout & layout)
@@ -167,7 +210,7 @@ RefCatalog casUpdateImpl(
         /// Absence of the mandatory catalog is corruption, not a fresh bootstrap. Refusing here is
         /// what stops any mutation from replacing every other namespace with a one-update catalog.
         if (!current)
-            throwMandatoryCatalogAbsent(key);
+            throw mandatoryCatalogAbsent(key);
         const RefCatalog durable = decodeRefCatalog(current->bytes);
         CatalogLifeIndex(durable).throwIfAmbiguous("CAS ref catalog mutation");
         RefCatalog candidate = mutate(durable);
@@ -502,7 +545,7 @@ CasRefCatalog::CompletedRemovingDeleteResult CasRefCatalog::deleteCompletedRemov
         /// A caller-supplied cut without an incarnation cannot state a precondition, and an erase that
         /// fell back to an unconditional write would delete whatever a concurrent writer had put there.
         if (!catalog_snapshot.etag)
-            throwMandatoryCatalogAbsent(layout.refCatalogKey());
+            throw mandatoryCatalogAbsent(layout.refCatalogKey());
         const auto observed_it = findEntry(catalog_snapshot.catalog, observed.ns);
         if (observed_it == catalog_snapshot.catalog.entries.end() || *observed_it != observed)
             return resolved_result(CompletedRemovingDeleteOutcome::EntryChanged);

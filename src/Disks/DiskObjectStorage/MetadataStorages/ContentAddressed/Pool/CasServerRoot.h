@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCatalogFormat.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasOwnershipOutcome.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
@@ -138,8 +139,9 @@ bool serverRootSubtreeEmpty(
     CasOperation & op, const Layout & l, const String & srid, const RefCatalog & catalog_observation);
 
 /// Supplied by the pool layer so the low-level server-root protocol always observes the mandatory
-/// catalog. Every absent-control retry obtains a fresh, successfully decoded observation.
-using ObserveRefCatalog = std::function<RefCatalog()>;
+/// catalog. Every absent-control retry obtains a fresh observation; anything but a catalog ends the
+/// step with that outcome.
+using ObserveRefCatalog = std::function<CatalogObservation()>;
 
 /// Read the owner anchor (`gc/server-roots/<srid>/owner`) WITHOUT claiming or validating identity —
 /// a plain GET+decode. nullopt = anchor absent. Pool-member decommission uses this to read the

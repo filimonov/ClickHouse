@@ -87,6 +87,32 @@ void expectStartRefused(const BackendPtr & b, const String & text)
 {
     DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::CORRUPTED_DATA, text, [&] { Pool::open(b, config()); });
 }
+
+/// An open-fence operation whose sleeps advance its own clock, so a bounded retry ends at once.
+struct Plane
+{
+    explicit Plane(BackendPtr b) : requests(DB::Cas::tests::openRequestsForTest(std::move(b))), op(requests.admit())
+    {
+        requests.setNowFnForTest([this] { return clock; });
+        requests.setSleepFnForTest([this](uint64_t ms) { clock += ms; });
+    }
+    uint64_t clock = 0;
+    CasRequests requests;
+    CasOperation op;
+};
+const ObserveRefCatalog kEmpty = [] { return RefCatalog{}; };
+class FailingCatalogReads : public InMemoryBackend
+{
+public:
+    using Backend::read;
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
+    {
+        if (fail && key == kLayout.refCatalogKey())
+            throw Poco::TimeoutException("injected");
+        return InMemoryBackend::read(key, access);
+    }
+    bool fail = false;
+};
 }
 
 TEST(CASOwnershipStartGolden, FreshRootCreatesOwnerAndCounter)
@@ -168,4 +194,20 @@ TEST(CASOwnershipStartGolden, OwnEpochFencedBeforeClaimTakesAFreshOne)
     EXPECT_EQ(Pool::open(b, config())->writerEpoch(), 2u);
     EXPECT_EQ(counterNext(*b), 3u);
     EXPECT_FALSE(b->hook) << "the injected write ran";
+}
+
+TEST(CASOwnershipPrimitives, CatalogObservationIsTyped)
+{
+    auto b = std::make_shared<FailingCatalogReads>();
+    Plane p(b);
+    const auto cause = [&] { return std::get<OwnershipCorrupt>(CasRefCatalog::observe(p.op, kLayout, "t")).cause; };
+    EXPECT_EQ(cause(), OwnershipCorrupt::Cause::Absent);
+    put(*b, kLayout.refCatalogKey(), "garbage");
+    EXPECT_EQ(cause(), OwnershipCorrupt::Cause::Undecodable);
+    put(*b, kLayout.refCatalogKey(), ambiguousCatalog());
+    EXPECT_EQ(cause(), OwnershipCorrupt::Cause::Ambiguous);
+    put(*b, kLayout.refCatalogKey(), encodeRefCatalog(RefCatalog{}));
+    EXPECT_TRUE(std::holds_alternative<RefCatalog>(CasRefCatalog::observe(p.op, kLayout, "t")));
+    b->fail = true;
+    EXPECT_TRUE(std::holds_alternative<OwnershipTransient>(CasRefCatalog::observe(p.op, kLayout, "t")));
 }
