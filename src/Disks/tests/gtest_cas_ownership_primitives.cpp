@@ -211,3 +211,21 @@ TEST(CASOwnershipPrimitives, CatalogObservationIsTyped)
     b->fail = true;
     EXPECT_TRUE(std::holds_alternative<OwnershipTransient>(CasRefCatalog::observe(p.op, kLayout, "t")));
 }
+TEST(CASOwnershipPrimitives, OwnerOutcomesAreTyped)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    Plane p(b);
+    const auto claim = [&](OwnershipAuthority a) { return claimOwner(p.op, kLayout, kSrid, kUuid, a, kEmpty); };
+    const auto why = [](OwnerClaim c) { return std::get<OwnerLost>(c).why; };
+    put(*b, kLayout.ownerKey(kSrid), encodeOwner(OwnerObject{.server_uuid = UInt128(99), .retired_at_ms = std::nullopt}));
+    EXPECT_EQ(why(claim(OwnershipAuthority::Startup)), OwnerLost::Why::Foreign);
+    put(*b, kLayout.ownerKey(kSrid), encodeOwner(OwnerObject{.server_uuid = kUuid, .retired_at_ms = 1}));
+    EXPECT_EQ(why(claim(OwnershipAuthority::Reacquire)), OwnerLost::Why::Tombstoned);
+    put(*b, kLayout.ownerKey(kSrid), "garbage");
+    EXPECT_TRUE(std::holds_alternative<OwnershipCorrupt>(claim(OwnershipAuthority::Startup)));
+    erase(*b, kLayout.ownerKey(kSrid));
+    EXPECT_EQ(why(claim(OwnershipAuthority::Reacquire)), OwnerLost::Why::Absent);
+    EXPECT_FALSE(get(*b, kLayout.ownerKey(kSrid))) << "a reacquire creates no owner anchor";
+    EXPECT_TRUE(std::holds_alternative<OwnerHeld>(claim(OwnershipAuthority::Startup)));
+    EXPECT_TRUE(get(*b, kLayout.ownerKey(kSrid)));
+}

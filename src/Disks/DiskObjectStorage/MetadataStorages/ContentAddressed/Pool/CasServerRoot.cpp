@@ -438,17 +438,52 @@ std::optional<OwnerObject> readOwnerObject(CasOperation & op, const Layout & l, 
     return decodeOwner(got->bytes);
 }
 
-void throwIfOwnerRetired(const OwnerObject & owner, const String & srid)
+/// Every refusal inside a step is returned, so an escaping `CORRUPTED_DATA` is a decode failure.
+/// Caller bugs and the decommission refusal propagate; anything else is the store not answering.
+template <typename Outcome, typename Step>
+Outcome runOwnershipStep(Step && step)
+{
+    try
+    {
+        return step();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::CORRUPTED_DATA)
+            return OwnershipCorrupt{OwnershipCorrupt::Cause::Undecodable, std::current_exception()};
+        if (isDeterministicLocalFailure(e.code()) || e.code() == ErrorCodes::ABORTED)
+            throw;
+        return OwnershipTransient{std::current_exception()};
+    }
+}
+
+/// The failure an observation carries, as the step's outcome; nullopt for a catalog.
+template <typename Outcome>
+std::optional<Outcome> catalogFailure(CatalogObservation & observation)
+{
+    if (auto * transient = std::get_if<OwnershipTransient>(&observation))
+        return Outcome{std::move(*transient)};
+    if (auto * corrupt = std::get_if<OwnershipCorrupt>(&observation))
+        return Outcome{std::move(*corrupt)};
+    return std::nullopt;
+}
+
+OwnerLost lostOwner(OwnerLost::Why why, Exception e)
+{
+    return OwnerLost{why, std::make_exception_ptr(std::move(e))};
+}
+
+std::optional<OwnerLost> retiredOwner(const OwnerObject & owner, const String & srid)
 {
     if (!owner.retired_at_ms)
-        return;
+        return std::nullopt;
 
-    throw Exception(ErrorCodes::CORRUPTED_DATA,
+    return lostOwner(OwnerLost::Why::Tombstoned, Exception(ErrorCodes::CORRUPTED_DATA,
         "CAS server-root '{}' was explicitly decommissioned by an operator (tombstoned at {} ms) "
         "and is refusing to silently resume — if you genuinely intend to bring this server-root "
         "back, manually clear the owner object's tombstone field and restart "
         "(same manual-recovery pattern as an owner anchor lost over existing data)",
-        srid, *owner.retired_at_ms);
+        srid, *owner.retired_at_ms));
 }
 }
 
@@ -522,12 +557,12 @@ std::optional<UInt128> readOwnerUuid(CasOperation & op, const Layout & l, const 
     return owner->server_uuid;
 }
 
-void claimOwnerOrThrow(
-    CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid,
+namespace
+{
+OwnerClaim claimOwnerStep(
+    CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid, OwnershipAuthority authority,
     const ObserveRefCatalog & observe_catalog)
 {
-    if (!observe_catalog)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS server-root '{}': catalog observer is required", srid);
     const String key = l.ownerKey(srid);
 
     /// Owner present → it is identity: equal UUID is ok, a different UUID fails closed regardless
@@ -536,42 +571,53 @@ void claimOwnerOrThrow(
     {
         if (owner->server_uuid == our_uuid)
         {
-            throwIfOwnerRetired(*owner, srid);
-            return;
+            if (auto lost = retiredOwner(*owner, srid))
+                return std::move(*lost);
+            return OwnerHeld{};
         }
         /// Mirror mountDoubleStartMessage's operator guidance: the by-far most common cause is a
         /// REGENERATED local ClickHouse uuid file (wiped /var/lib/clickhouse, a pod rescheduled
         /// without a persistent volume) while the pool kept the old identity — name it and the
         /// recovery options instead of a bare refusal.
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
+        return lostOwner(OwnerLost::Why::Foreign, Exception(ErrorCodes::CORRUPTED_DATA,
             "CAS server-root '{}' is owned by a different server (owner server_uuid={}, ours={}) — refusing to claim. "
             "This usually means THIS server's local uuid file was regenerated (e.g. /var/lib/clickhouse was wiped, "
             "or the container/pod was recreated without a persistent volume) while the pool kept the old identity. "
             "Recover by restoring the old local uuid file; or configure a fresh <cas_server_root_id> for this disk; "
             "or — only after verifying that NO server uses this root — manually delete the owner object '{}' and restart.",
-            srid, u128ToHex(owner->server_uuid), u128ToHex(our_uuid), key);
+            srid, u128ToHex(owner->server_uuid), u128ToHex(our_uuid), key));
     }
+
+    if (authority == OwnershipAuthority::Reacquire)
+        return lostOwner(OwnerLost::Why::Absent, Exception(ErrorCodes::CORRUPTED_DATA,
+            "CAS server-root '{}' has no owner anchor; a remount never creates one", srid));
 
     /// Owner absent. Claiming is allowed ONLY over a provably-empty subtree; an absent owner over
     /// existing data means the identity was lost and must never be silently re-claimed.
-    if (!serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
+    CatalogObservation catalog = observe_catalog();
+    if (auto failure = catalogFailure<OwnerClaim>(catalog))
+        return std::move(*failure);
+    if (!serverRootSubtreeEmpty(op, l, srid, std::get<RefCatalog>(catalog)))
+        return lostOwner(OwnerLost::Why::Absent, Exception(ErrorCodes::CORRUPTED_DATA,
             "CAS server-root '{}' has no owner anchor but its data subtree is non-empty "
             "(identity lost over existing data) — refusing to re-claim",
-            srid);
+            srid));
 
     const std::optional<Observation> occupant = conflictOrThrow(
         op.create(key, encodeOwner(OwnerObject{.server_uuid = our_uuid, .retired_at_ms = std::nullopt}),
                   Retry::standard()),
         fmt::format("CAS server-root '{}' owner claim", srid));
     if (!occupant)
-        return;
+        return OwnerHeld{};
 
     /// The conditional create conflicted. Recompute the whole catalog + manifest + roots bundle;
     /// no stale emptiness result is carried across the conflict.
-    if (!serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "CAS server-root '{}' owner claim conflicted and newly visible owned work blocks recreation", srid);
+    CatalogObservation recheck = observe_catalog();
+    if (auto failure = catalogFailure<OwnerClaim>(recheck))
+        return std::move(*failure);
+    if (!serverRootSubtreeEmpty(op, l, srid, std::get<RefCatalog>(recheck)))
+        return lostOwner(OwnerLost::Why::Absent, Exception(ErrorCodes::CORRUPTED_DATA,
+            "CAS server-root '{}' owner claim conflicted and newly visible owned work blocks recreation", srid));
 
     /// Race: another process claimed between our read and our create. The write's own resolve read
     /// already observed who took the key, and reading again would answer a later question than the one
@@ -582,17 +628,42 @@ void claimOwnerOrThrow(
     else if (!std::holds_alternative<ProvenAbsent>(*occupant))
         reread = readOwnerObject(op, l, srid);
     if (!reread)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "CAS server-root '{}' owner anchor vanished during claim", srid);
+        return lostOwner(OwnerLost::Why::Absent, Exception(ErrorCodes::CORRUPTED_DATA,
+            "CAS server-root '{}' owner anchor vanished during claim", srid));
     if (reread->server_uuid == our_uuid)
     {
-        throwIfOwnerRetired(*reread, srid);
-        return;
+        if (auto lost = retiredOwner(*reread, srid))
+            return std::move(*lost);
+        return OwnerHeld{};
     }
-    throw Exception(ErrorCodes::CORRUPTED_DATA,
+    return lostOwner(OwnerLost::Why::Foreign, Exception(ErrorCodes::CORRUPTED_DATA,
         "CAS server-root '{}' was claimed by a different server during our claim (foreign owner) "
         "— refusing to proceed",
-        srid);
+        srid));
+}
+}
+
+OwnerClaim claimOwner(
+    CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid, OwnershipAuthority authority,
+    const ObserveRefCatalog & observe_catalog)
+{
+    if (!observe_catalog)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS server-root '{}': catalog observer is required", srid);
+    return runOwnershipStep<OwnerClaim>([&] { return claimOwnerStep(op, l, srid, our_uuid, authority, observe_catalog); });
+}
+
+void throwUnlessHeld(OwnerClaim && claim)
+{
+    std::visit(detail::Overload{
+        [](OwnerHeld &) {},
+        [](auto & failure) { std::rethrow_exception(failure.error); }}, claim);
+}
+
+void claimOwnerOrThrow(
+    CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid,
+    const ObserveRefCatalog & observe_catalog)
+{
+    throwUnlessHeld(claimOwner(op, l, srid, our_uuid, OwnershipAuthority::Startup, observe_catalog));
 }
 
 uint64_t allocateWriterEpoch(

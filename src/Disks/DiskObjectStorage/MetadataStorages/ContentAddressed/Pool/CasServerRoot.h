@@ -18,6 +18,7 @@
 #include <optional>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace DB
@@ -149,6 +150,23 @@ using ObserveRefCatalog = std::function<CatalogObservation()>;
 /// counterpart used by normal opens and reuses this GET+decode path.
 std::optional<UInt128> readOwnerUuid(CasOperation & op, const Layout & l, const String & server_root_id);
 
+/// `Startup` may create the owner anchor and the epoch counter and re-decides when another process
+/// moves the counter; `Reacquire` creates nothing and stops there.
+enum class OwnershipAuthority : uint8_t
+{
+    Startup,
+    Reacquire,
+};
+
+struct OwnerHeld {};
+struct OwnerLost
+{
+    enum class Why : uint8_t { Foreign, Tombstoned, Absent };
+    Why why;
+    std::exception_ptr error;
+};
+using OwnerClaim = std::variant<OwnerHeld, OwnerLost, OwnershipTransient, OwnershipCorrupt>;
+
 /// Claim (or validate) the sticky owner anchor that binds `srid` to a server UUID (identity).
 ///   - owner present, equal `our_uuid`, and not tombstoned → ok (return);
 ///   - owner present and tombstoned → throw `CORRUPTED_DATA` (explicitly retired — fail closed);
@@ -157,6 +175,12 @@ std::optional<UInt128> readOwnerUuid(CasOperation & op, const Layout & l, const 
 ///   - owner absent BUT the subtree is non-empty → throw `CORRUPTED_DATA` (identity lost over
 ///     existing data — never silently re-claim).
 /// The owner object is never deleted and never reassigned to a different UUID.
+/// Under `Reacquire` an absent anchor is `OwnerLost{Absent}`. `claimOwnerOrThrow` is `claimOwner`
+/// under `Startup`, throwing the outcome's exception.
+OwnerClaim claimOwner(
+    CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid, OwnershipAuthority authority,
+    const ObserveRefCatalog & observe_catalog);
+void throwUnlessHeld(OwnerClaim && claim);
 void claimOwnerOrThrow(
     CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid,
     const ObserveRefCatalog & observe_catalog);
