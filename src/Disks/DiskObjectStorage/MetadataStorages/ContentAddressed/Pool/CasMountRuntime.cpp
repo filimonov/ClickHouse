@@ -1,5 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasProcessStop.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -17,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 }
 
@@ -48,6 +50,44 @@ int64_t wallClockNowSeconds()
 {
     return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+/// The end a terminal renewal latches. A GC fence of our own body is not an end: the self-remount
+/// recovers from it.
+MountEnd mountEndOf(const MountRenewResult & result, MountLossReaction reaction)
+{
+    if (result.outcome != MountRenewOutcome::Terminal)
+        return MountEnd::None;
+    if (result.local_fault)
+        return MountEnd::LocalDefect;
+    if (!result.slot)
+        return MountEnd::None;
+    switch (result.slot->verdict)
+    {
+        case MountSlotVerdict::SlotTaken: return MountEnd::SlotTaken;
+        case MountSlotVerdict::SlotAbsent: return MountEnd::SlotAbsent;
+        case MountSlotVerdict::SlotCorrupt: return MountEnd::SlotCorrupt;
+        case MountSlotVerdict::FencedByGc:
+            /// The decommission pool impersonates a dead member; a remount would take its slot again.
+            return reaction == MountLossReaction::FailDecommission ? MountEnd::FencedByGc : MountEnd::None;
+        case MountSlotVerdict::Ours:
+        case MountSlotVerdict::NotObserved:
+            return MountEnd::None;
+    }
+    return MountEnd::None;
+}
+
+String failureText(const MountRenewResult & result) noexcept
+{
+    try
+    {
+        if (result.failure)
+            return getExceptionMessage(result.failure, /*with_stacktrace=*/ false);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+    return {};
 }
 }
 
@@ -230,7 +270,62 @@ void CasMountRuntime::armMountFence(UInt128 server_uuid, uint64_t writer_epoch, 
     /// Open the gate LAST. A caller that observes `lost == false` with acquire semantics must also see
     /// the fresh generation; publishing the latch first exposes one admission window in which the dead
     /// generation looks live again.
-    mount_fence.lost.store(false, std::memory_order_release);
+    mount_fence.lost.store(false, std::memory_order_seq_cst);
+    /// `seq_cst` with the store above and in `latchMountEnd`: whichever runs second sees the other.
+    if (mount_end.load(std::memory_order_seq_cst) != MountEnd::None)
+    {
+        mount_fence.lost.store(true, std::memory_order_seq_cst);
+        fence_generation.fetch_add(1, std::memory_order_acq_rel);
+    }
+}
+
+bool CasMountRuntime::latchMountEnd(MountEnd end) noexcept
+{
+    MountEnd expected = MountEnd::None;
+    if (!mount_end.compare_exchange_strong(expected, end, std::memory_order_seq_cst))
+        return false;
+    /// `seq_cst` with the store and re-check in `armMountFence`: whichever runs second sees the other.
+    mount_fence.lost.store(true, std::memory_order_seq_cst);
+    fence_generation.fetch_add(1, std::memory_order_acq_rel);
+    if (isLossEnd(end))
+    {
+        lifecycle_since_wall_s.store(wallClockNowSeconds(), std::memory_order_release);
+        pool_lifecycle.store(PoolLifecycle::Stopping, std::memory_order_release);
+        ProfileEvents::incrementNoTrace(ProfileEvents::CASMountLeaseLost);
+    }
+    return true;
+}
+
+void CasMountRuntime::reactToMountEnd(
+    MountEnd end, const std::optional<MountLease> & holder, std::string_view detail) noexcept
+{
+    /// No lock: a waiter that misses this wakes on its own timeout or on stop, and the ledger may call
+    /// here with its own locks held.
+    driver_cv.notify_all();
+    const auto line = [&] { return describeMountEnd(end, config.loss_reaction, config.disk_name, server_root_id, holder, detail); };
+    if (config.loss_reaction == MountLossReaction::StopServer && endsWithoutShutdown(end))
+    {
+        try
+        {
+            const String text = line();
+            LOG_FATAL(getLogger("CasPool"), "{}", text);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+        terminateProcess();
+        return;
+    }
+    if (config.loss_reaction == MountLossReaction::StopServer)
+        requestGracefulProcessStop();
+    try
+    {
+        const String text = line();
+        LOG_ERROR(getLogger("CasPool"), "{}", text);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
 }
 
 uint64_t CasMountRuntime::minActive()
@@ -368,7 +463,8 @@ RenewalDriverState CasMountRuntime::DriverLease::finish(
         runtime.renewal_driver_state = RenewalDriverState::Parked;
     else
         runtime.renewal_driver_state = ordinary_destination;
-    if (result && result->outcome == MountRenewOutcome::Terminal)
+    /// The latch closed the fence; its winner reacts.
+    if (result && result->outcome == MountRenewOutcome::Terminal && runtime.mountEnd() == MountEnd::None)
     {
         if (runtime.renewal_driver_state == RenewalDriverState::WorkerIdle
             || active == RenewalDriverState::DirectCall)
@@ -668,11 +764,16 @@ uint64_t CasMountRuntime::renewRenewerOnce(
     const RenewalDriverState destination = active == RenewalDriverState::WorkerCall
         ? RenewalDriverState::WorkerIdle
         : (active == RenewalDriverState::RemountCall ? RenewalDriverState::Parked : RenewalDriverState::Dormant);
+    /// A startup renewal ends in the open's own exception: nothing is running yet that a stop would end.
+    const MountEnd end = active == RenewalDriverState::StartupCall ? MountEnd::None : mountEndOf(result, config.loss_reaction);
+    const bool latched = end != MountEnd::None && latchMountEnd(end);
     const RenewalDriverState returned_state = call.lease->finish(destination, &result, call.renewer);
     if (config.renewal_finished_hook_for_test)
         config.renewal_finished_hook_for_test(result);
     if (result.outcome == MountRenewOutcome::Terminal && config.renewal_terminal_deposited_hook_for_test)
         config.renewal_terminal_deposited_hook_for_test();
+    if (latched)
+        reactToMountEnd(end, result.slot ? result.slot->holder : std::nullopt, failureText(result));
     consumeRenewResult(result, active, returned_state, propagate_failure);
     return result.attempt_start_boot_ms;
 }
@@ -848,23 +949,26 @@ void CasMountRuntime::renewalLoop()
         catch (...)
         {
             /// The worker path does not propagate renewal failures, so anything arriving here is this
-            /// loop's own state machine reporting that it was driven out of contract. A background loop
-            /// must not take the process down, but it must not keep driving a state machine that just
-            /// proved wrong either: every later renewal would be unaudited.
-            ///
-            /// Exiting is safe because write admission is bounded by the fence deadline, not by this
-            /// thread's existence -- `mayMutate` requires `bootMsNow() < mount_fence.deadline_boot_ms`, so
-            /// writes stop being admitted within one TTL whether or not anyone is renewing. Tripping the
-            /// fence first brings that boundary forward instead of waiting for the TTL to lapse.
-            ///
-            /// Residual, deliberately not handled here: `scheduleRemount` also has an external caller, so
-            /// a later remount can still re-arm the fence and buy another bounded TTL. That makes the pool
-            /// flap rather than settle. Pairing this exit with a terminal publication would settle it, but
-            /// which terminal state means "this runtime's own driver broke" is a user-visible choice that
-            /// does not belong in a rescue path.
-            tripMountLost();
-            tryLogCurrentException(getLogger("CasPool"), "CAS mount-lease renewal loop");
-            chassert(false);
+            /// loop's own state machine reporting that it was driven out of contract: every later renewal
+            /// would be unaudited. The server memory limit is not such a defect; it keeps the bounded exit,
+            /// where write admission still ends with the fence deadline.
+            if (getCurrentExceptionCode() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            {
+                tripMountLost();
+                tryLogCurrentException(getLogger("CasPool"), "CAS mount-lease renewal loop");
+                chassert(false);
+                return;
+            }
+            String detail;
+            try
+            {
+                detail = getCurrentExceptionMessage(/*with_stacktrace=*/ false);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
+            if (latchMountEnd(MountEnd::LocalDefect))
+                reactToMountEnd(MountEnd::LocalDefect, std::nullopt, detail);
             return;
         }
     }
@@ -1122,9 +1226,15 @@ void CasMountRuntime::enterVanished(PoolLifecycle which, const String & reason)
         case PoolLifecycle::Live:
         case PoolLifecycle::TransientNotLive:
         case PoolLifecycle::IdentityLost:
+        case PoolLifecycle::Stopping:
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "CasMountRuntime::enterVanished called with a non-terminal lifecycle value");
     }
+
+    /// First end wins: a loss latched earlier keeps the pool `Stopping`.
+    const MountEnd end = which == PoolLifecycle::VanishedReplaced ? MountEnd::Replaced : MountEnd::Forgotten;
+    if (!latchMountEnd(end) && mountEnd() != end)
+        return;
 
     if (terminal_state_published.load(std::memory_order_acquire))
         return;
@@ -1254,6 +1364,10 @@ uint64_t CasMountRuntime::remountRequestedGenerationForTest() const
 void CasMountRuntime::finishTeardown(bool drained)
 {
     stopBackgroundWorkers();
+
+    /// No farewell: our slot holds another body, or our identity may be held by another process.
+    if (isLossEnd(mountEnd()))
+        return;
 
     if (!mount_renewer)
         return;

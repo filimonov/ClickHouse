@@ -339,6 +339,9 @@ String Pool::lifecycleReasonDetail(PoolLifecycle lc) const
         case PoolLifecycle::VanishedReplaced:
             return "data root replaced by a foreign pool (pool_id mismatch) — our generation is gone; "
                    "restart re-registers the name.";
+        case PoolLifecycle::Stopping:
+            return describeMountEnd(mount_runtime.mountEnd(), config.mount_loss_reaction, config.disk_name,
+                                    config.server_root_id, std::nullopt, "");
         case PoolLifecycle::VanishedForgotten:
         {
             /// The forgotten detail carries the operator's decommission TIMESTAMP, threaded through
@@ -364,6 +367,12 @@ void Pool::throwIfLifecycleTerminal() const
     const PoolLifecycle lc = mount_runtime.lifecycle();
     if (lc == PoolLifecycle::Live || lc == PoolLifecycle::TransientNotLive)
         return;
+    /// Retry-later, not terminal: a terminal error lets the part checker detach parts while the server stops.
+    if (lc == PoolLifecycle::Stopping)
+        throwCasTransientUnavailable(
+            fmt::format("content-addressed pool '{}'", config.server_root_id),
+            fmt::format("this disk is stopping ({}); the server is shutting down or the disk stays closed until restart",
+                        mountEndWord(mount_runtime.mountEnd())));
     throw Exception(ErrorCodes::INVALID_STATE,
         "content-addressed pool '{}' {}", config.server_root_id, lifecycleReasonDetail(lc));
 }
@@ -378,6 +387,7 @@ Pool::LifecycleSnapshot Pool::lifecycleSnapshot() const
     snap.lifecycle = mount_runtime.lifecycle();
     snap.detail = lifecycleReasonDetail(snap.lifecycle);
     snap.since = mount_runtime.lifecycleSinceWallS();
+    snap.end = mount_runtime.mountEnd();
     if (snap.lifecycle == PoolLifecycle::Live)
     {
         const LeasePauseState pause = mount_runtime.leasePause();
@@ -1008,6 +1018,9 @@ Pool::~Pool()
     {
         if (config.teardown_phase2_throw_for_test)
             config.teardown_phase2_throw_for_test();
+        /// A lost slot writes no farewell, so there is nothing to earn; its lanes may wait on a dead store.
+        if (isLossEnd(mount_runtime.mountEnd()))
+            return;
         const bool ref_lanes_drained = ref_ledger.drainRefLanesForShutdown(
             config.cas_request_budget.attemptEnvelopeMs() + config.cas_request_budget.lease_safety_margin_ms);
         drained = ref_lanes_drained && !writerCleanupDutiesPending();
@@ -1534,6 +1547,8 @@ bool Pool::tryRemountOnce()
         /// No-throw commit section: publish the fence and lifecycle only after epoch, renewer, recovery
         /// cancellation, and ref-runtime quiescence are complete.
         step = "arm_fence";
+        if (mount_runtime.mountEnd() != MountEnd::None)
+            return false;
         mount_runtime.armMountFence(
             our_uuid,
             writer_epoch,

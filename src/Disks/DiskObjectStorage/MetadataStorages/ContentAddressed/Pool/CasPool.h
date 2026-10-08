@@ -330,6 +330,10 @@ struct PoolConfig
     /// retained log-tail bytes; both are already tracked, so a mutation costs no extra encode.
     uint64_t ref_table_cache_bytes = 256ULL << 20;   /// 256 MiB
 
+    /// What a lost mount slot does beyond this pool, and the disk name the line that says so carries.
+    MountLossReaction mount_loss_reaction = MountLossReaction::StopServer;
+    String disk_name = {};
+
     /// Projection accessors: build the per-owner typed slice from
     /// the flat fields above, for BY-VALUE injection into the ref-ledger / mount-runtime components.
     /// The fields stay flat here so every external caller (wiring, tests) that sets them is unchanged;
@@ -359,6 +363,8 @@ struct PoolConfig
             .boot_ms_fn = boot_ms_fn,
             .wait_sleep_fn = wait_sleep_fn,
             .worker_factory = worker_factory,
+            .loss_reaction = mount_loss_reaction,
+            .disk_name = disk_name,
         };
     }
 };
@@ -519,6 +525,10 @@ public:
     /// ---- pool lifecycle condition (rev.7 §1; owned by `mount_runtime`) ----
     /// Atomic read of the current lifecycle condition. Thin forwarder; safe to call from any thread.
     PoolLifecycle lifecycle() const { return mount_runtime.lifecycle(); }
+    /// Why the mount ended for good; `None` while it can still renew or remount.
+    MountEnd mountEnd() const { return mount_runtime.mountEnd(); }
+    /// Test seam: latch `end` as a renewal that found it would, without the reaction.
+    bool latchMountEndForTest(MountEnd end) { return mount_runtime.latchMountEnd(end); }
     /// Whether the pool has reached one of the two fully-terminal `Vanished` values
     /// (`VanishedReplaced` / `VanishedForgotten`).
     bool isVanished() const { return mount_runtime.isVanished(); }
@@ -549,6 +559,7 @@ public:
         time_t since = 0;
         /// Set only for `Live`; `since` is then when its threshold was crossed (for `LeaseExpired`, the deadline).
         LeasePause pause = LeasePause::None;
+        MountEnd end = MountEnd::None;
     };
     LifecycleSnapshot lifecycleSnapshot() const;
     RenewalProgress renewalProgress() const { return mount_runtime.renewalProgress(); }

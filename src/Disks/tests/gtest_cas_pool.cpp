@@ -8,6 +8,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasFsck.h>
+#include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -2025,6 +2026,7 @@ enum class ForeignConflictSinkBehavior : uint8_t
 
 void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behavior)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<RuntimeRenewBackend>();
     const Layout layout(
         behavior == ForeignConflictSinkBehavior::ReenterSameRuntime
@@ -2124,7 +2126,9 @@ void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behav
     EXPECT_EQ(failure_code, DB::ErrorCodes::ABORTED) << failure_message;
     EXPECT_NE(failure_message.find("held by a foreign server"), String::npos) << failure_message;
     EXPECT_FALSE(runtime.mayMutate());
-    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::TransientNotLive);
+    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::Stopping);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().graceful(), 1u);
+    EXPECT_EQ(runtime.scheduleRemountCallCountForTest(), 0u) << "a loss never remounts";
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountReleaseSkippedForeignOccupant].load(),
               skipped_before + 1);
     const auto failed = std::find_if(events.begin(), events.end(), [](const CasEvent & event)

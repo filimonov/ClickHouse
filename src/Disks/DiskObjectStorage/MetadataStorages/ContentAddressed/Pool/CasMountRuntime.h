@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
@@ -37,6 +38,8 @@ using PartWriteTxnPtr = std::shared_ptr<PartWriteTxn>;
 ///                          restart or `SYSTEM CAS FORGET`.
 ///   - `Vanished*`        — fully terminal truth: the data root was replaced by a foreign pool, or the
 ///                          disk was decommissioned by `FORGET`. Store-class access fails loud from here.
+///   - `Stopping`         — a latched loss end (`CasMountRuntime::mountEnd`): the slot is no longer ours, so
+///                          the mount never opens again; the server stops or the disk stays closed.
 enum class PoolLifecycle : uint8_t
 {
     Live,
@@ -44,6 +47,7 @@ enum class PoolLifecycle : uint8_t
     IdentityLost,
     VanishedReplaced,
     VanishedForgotten,
+    Stopping,
 };
 
 enum class RenewalDriverState : uint8_t
@@ -111,6 +115,9 @@ struct MountConfig
     /// Deterministic test interposition on the renewing thread right after `DriverLease::finish`
     /// returned driver ownership, before the result is consumed. Runs without `driver_mutex`.
     std::function<void(const MountRenewResult &)> renewal_finished_hook_for_test = {};
+    /// How a loss end reaches beyond this mount; `disk_name` names the disk in the line that says so.
+    MountLossReaction loss_reaction = MountLossReaction::StopServer;
+    String disk_name = {};
 };
 
 /// Local, in-memory write fence. It is deliberately not checked by reading the object store for every
@@ -204,6 +211,17 @@ public:
     bool mayMutate() const;
     /// Permanently latch the local fence as lost for this runtime incarnation.
     void tripMountLost();
+
+    /// ---- the end of the mount ----
+    /// Latches `end` unless an end is already latched (first end wins, lock-free), closes the fence for
+    /// good and, for a loss end, moves the lifecycle to `Stopping`. True only for the winner, which alone
+    /// calls `reactToMountEnd`. Safe under any lock: it takes none.
+    bool latchMountEnd(MountEnd end) noexcept;
+    MountEnd mountEnd() const { return mount_end.load(std::memory_order_seq_cst); }
+    /// Says what ended the mount and acts on it by `MountConfig::loss_reaction`: the server-stop request
+    /// before the `ERROR` line, so a throwing log cannot cancel the stop; for an end that must not run a
+    /// shutdown, `LOG_FATAL` and the process ends at once.
+    void reactToMountEnd(MountEnd end, const std::optional<MountLease> & holder, std::string_view detail) noexcept;
     /// Publish the BOOTTIME deadline from a successful lease renewal.
     void setMountDeadline(uint64_t deadline_boot_ms);
     /// Arm a new lease incarnation and clear any loss latched for the prior incarnation.
@@ -353,7 +371,8 @@ public:
     bool remountTerminal() const
     {
         return vanished_intent.load(std::memory_order_acquire)
-            || lifecycle() == PoolLifecycle::IdentityLost;
+            || lifecycle() == PoolLifecycle::IdentityLost
+            || mountEnd() != MountEnd::None;
     }
 
     /// The inter-attempt sleep the mount plane runs on. A plain sleep would hold a parked or stopping
@@ -568,6 +587,8 @@ private:
     std::atomic<uint64_t> fence_generation{0};
     std::atomic<bool> lease_expiry_warned{false};
     std::function<void()> arm_mount_fence_interposition_hook_for_test;
+    /// See `latchMountEnd`. Read `seq_cst` by `armMountFence`, which must see a latch that raced its re-arm.
+    std::atomic<MountEnd> mount_end{MountEnd::None};
 
     /// The pool lifecycle condition (rev.7 §1). Starts `Live`. Non-terminal transitions
     /// (`noteLeaseLost`/`noteRemounted`) are lock-free compare-exchanges guarded by their exact

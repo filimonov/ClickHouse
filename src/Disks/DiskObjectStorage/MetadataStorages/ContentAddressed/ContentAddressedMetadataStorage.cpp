@@ -110,6 +110,7 @@ std::pair<const char *, const char *> casLifecycleWords(const Cas::Pool::Lifecyc
         case Cas::PoolLifecycle::IdentityLost:      return {"identity_lost", ""};
         case Cas::PoolLifecycle::VanishedReplaced:  return {"vanished", "replaced"};
         case Cas::PoolLifecycle::VanishedForgotten: return {"closed", "forgotten"};
+        case Cas::PoolLifecycle::Stopping:          return {"stopping", Cas::mountEndWord(ps.end).data()};
     }
     return {"unknown", ""};
 }
@@ -765,6 +766,9 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     pool_config.server_root_id = server_root_id;
     /// A read-only (`<readonly>`) disk opens with no background watermark and no write probe.
     pool_config.background_watermark = context_available && !read_only;
+    pool_config.disk_name = disk_name;
+    /// Without background workers (tools) there is no server to stop: the disk closes instead.
+    pool_config.mount_loss_reaction = context_available ? Cas::MountLossReaction::StopServer : Cas::MountLossReaction::CloseMount;
     pool_config.read_only = read_only;
     pool_config.skip_access_check = skip_access_check;
     /// The node-local write algorithm: `PoolMeta::createOrValidate` accepts it with no write once
@@ -1264,6 +1268,13 @@ CasOpAdmission ContentAddressedMetadataStorage::checkOpAdmitted(CasOpClass op) c
             fmt::format("content-addressed disk '{}'", disk_name),
             "mount lease not held; backing may be temporarily unreachable; the operation is admitted "
             "again once the disk recovers to Live");
+
+    /// Retry-later as well: a terminal error lets the part checker detach parts while the server stops.
+    if (lc == Cas::PoolLifecycle::Stopping)
+        Cas::throwCasTransientUnavailable(
+            fmt::format("content-addressed disk '{}'", disk_name),
+            fmt::format("this disk is stopping ({}); the server is shutting down or the disk stays closed until restart",
+                        Cas::mountEndWord(pool->mountEnd())));
 
     /// `IdentityLost` and the terminal `Vanished*` states carry the typed per-reason [D5] message the pool
     /// owns (single source). A SETTLED `Vanished` pool answers `Probe`/`Remove` truthfully without touching
