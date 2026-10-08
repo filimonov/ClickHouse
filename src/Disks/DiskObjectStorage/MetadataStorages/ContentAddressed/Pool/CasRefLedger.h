@@ -45,8 +45,8 @@ enum class ResolveAudit : uint8_t { Emit, Deferred };
 /// exact attempt before its first possible send. `Wedged` owns that same attempt after an ambiguous
 /// result and certifies nothing. `NeedsRecovery` means a transaction is known durable but cannot be
 /// installed in this cache; it is a hard write and certification fence until replay completes. `Closed`
-/// records a successor's epoch seal, and `Faulted` records foreign or internally inconsistent durable
-/// state.
+/// is what an observer reads for a name with no runtime, and `Faulted` records a fault: our slot holding
+/// anything but our own bytes, or a lane state this machine cannot produce.
 enum class RefLaneState : uint8_t
 {
     Ready,
@@ -119,6 +119,10 @@ public:
         std::function<uint64_t()> fence_generation_fn_,
         std::function<uint64_t()> boot_ms_now_fn_,
         std::function<bool()> may_mutate_,
+        /// Closes the mount's write fence on a ref lane fault. Called before anything that can throw,
+        /// so it must not allocate, block or throw.
+        std::function<void()> latch_mount_fault_,
+        /// Reports a fault already latched: the offending key, what was read there, the namespace.
         std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference_,
         /// Launch one tracked detached task through the owning pool. Returns false when the dispatch was
         /// refused or failed -- never throws out of the launch itself.
@@ -708,6 +712,7 @@ private:
     std::function<uint64_t()> fence_generation_fn;
     std::function<uint64_t()> boot_ms_now_fn;
     std::function<bool()> may_mutate;
+    std::function<void()> latch_mount_fault;
     std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference;
     std::function<bool(std::function<void(DetachedStopToken)>)> dispatch_detached;
     std::function<void()> publish_error_hook;
@@ -805,16 +810,9 @@ private:
         /// at global epoch 5 therefore appends `{5, 1}` with NO `prev_epoch_seal`; its first transition
         /// (5 -> 6) seals `{5, T+1}`, and the `{6, 1}` that follows carries that seal.
         ///
-        /// THREE producers set it, and only one of them is the one `commitRefChunk` normally reads from.
-        /// Recovery's CAS-walk installs the last seal of the chain it walked (Task 6): that is the
-        /// production path, because a real epoch change arrives with a self-remount, which DISCARDS every
-        /// cached runtime (`quiesceRefTablesForRemount`) and hands the fresh one its chain link through
-        /// recovery. The other two are the conclusive-rejection arms -- `resolveWedgeOnce`'s and
-        /// `commitRefChunk`'s -- which record a seal this runtime observed with its own eyes at a key it
-        /// owns. Within THIS runtime that record is mostly introspection (the seal it saw closes the
-        /// epoch it is still living in, so the stamp guard correctly suppresses it); it is written anyway
-        /// because it is durable evidence nothing else holds, and because it becomes the right answer the
-        /// moment the live epoch advances past the seal's. Nothing else writes it: a seal is durable
+        /// Recovery's CAS-walk installs the last seal of the chain it walked: a real epoch change arrives
+        /// with a self-remount, which DISCARDS every cached runtime (`quiesceRefTablesForRemount`) and
+        /// hands the fresh one its chain link through recovery. Nothing else writes it: a seal is durable
         /// evidence, never a local guess.
         std::optional<RefTxnId> last_epoch_seal;
         uint64_t recovery_restarts = 0;           /// diagnostic: exact-GET restarts forced by a vanished object
@@ -1099,7 +1097,7 @@ private:
     /// the caller presents the same value once more immediately before installing.
     /// `retained_attempt` is copied under `state_mutex` before the unlocked walk. It is evidence from
     /// this runtime's admitted writer, not a second recovery authority: only the exact slot it names
-    /// is compared byte-for-byte, and a successor seal remains the existing conclusive-loss case.
+    /// is compared byte-for-byte.
     /// `cancelled` is the CALLER's latch, threaded in rather than kept locally: a cancellation is
     /// reported through the retry-later class (the caller should retry, against the FRESH incarnation),
     /// so without it the transient loop reads the stop as a blip and re-drives the very work the remount
@@ -1153,7 +1151,6 @@ private:
     {
         NoWedge,
         Adopted,
-        Rejected,
         StillWedged,
         Corrupted,
     };
@@ -1199,7 +1196,7 @@ private:
     /// once the object may be durable. Arming that attempt into the runtime is NOT preparation (it
     /// mutates `RefTableRuntime`) and stays here, between preparation and the first send.
     /// Returns true when the chunk committed durably; false on any non-throwing failure (a rejected
-    /// apply / DefiniteFailure / unresolved wedge / a conclusive PUT rejection / an encode failure),
+    /// apply / DefiniteFailure / unresolved wedge / a ref lane fault / an encode failure),
     /// after having already failed `chunk_survivors` with the appropriate error. Past the durable `PUT`
     /// it does not throw at all.
     /// PRECONDITION: the caller has already released its scratch `working` copy so the post-commit
@@ -1211,6 +1208,12 @@ private:
     /// Enters the hard recovery fence after a transaction is known durable but cannot be installed.
     /// The exact attempt is discarded because replay, not another write, is now the only legal owner.
     static void requireRecovery(RefTableRuntime & rt, const RootNamespace & ns, std::string_view region) noexcept;
+
+    /// Reports a fault the caller has already latched, with the key and detail `describe(key, detail)`
+    /// fills in. The report runs even when `describe` throws, because only the report requests the
+    /// remount. Returns the detail.
+    template <typename Describe>
+    String reportLatchedFault(const RootNamespace & ns, Describe && describe);
 
     /// Leadership-exit guard for `appendRefOps`: under `ref_queue_mutex`, completes every still-unfinished
     /// item this leader owned (with `flush_exception` when unwinding, or a fail-closed `LOGICAL_ERROR`

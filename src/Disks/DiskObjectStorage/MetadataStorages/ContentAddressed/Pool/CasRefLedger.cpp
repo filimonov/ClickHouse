@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
@@ -112,28 +113,38 @@ bool isTransientRecoveryError(int code)
         || code == ErrorCodes::TIMEOUT_EXCEEDED;
 }
 
-/// What sits at a ref-log key that our own conditional create just lost to.
-enum class Occupant : uint8_t
+/// What an occupied ref-log id holds, for the fault report only: no outcome depends on it. Only the
+/// malformed-object codes say the bytes do not decode; any other exception is quoted as it is. The
+/// memory limit cannot occur at the append and wedge sites, which hold `LockMemoryExceptionInThread`,
+/// but can at the recovery site. `std::bad_alloc` propagates to the report's fallback text.
+String describeRefLogOccupant(const RootNamespace & ns, const RefTxnId & id, const String & occupant_bytes)
 {
-    NotOccupied,     /// the create won, or the outcome is unresolved -- nothing was read
-    Ours,            /// byte-for-byte the transaction this attempt intended: an earlier attempt landed
-    SuccessorSeal,   /// this namespace's epoch-closing record, written by a successor (spec INV-2)
-    Foreign,         /// none of the above -- impossible under mount-lease exclusivity
-};
+    try
+    {
+        const RefLogTxn txn = decodeRefLogTxn(openObject(FormatId::RefLog, occupant_bytes), ns.string(), id);
+        if (refLogTxnIsEpochSeal(txn))
+            return "an epoch seal of this namespace";
+        return fmt::format("a transaction of this namespace with {} ops", txn.ops.size());
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::CORRUPTED_DATA || e.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
+            return fmt::format("{} bytes that do not decode: {}", occupant_bytes.size(), e.message());
+        return fmt::format("{} bytes that could not be decoded here: {}", occupant_bytes.size(), e.message());
+    }
+}
 
-/// The `mine | successor's seal | foreign` adjudication both write sites owe (the primitive that read
-/// the occupant deliberately does none of it). "Mine" means BYTE EQUALITY -- never a shape or
-/// generation match, which is the aliasing the phase-0 model rejected.
+/// The `prev_epoch_seal` a transaction at `id` carries, given what this table knows about the seal that
+/// closed its previous epoch. INV-2's grammar in one place, because there are now FOUR constructions of
+/// the same transaction -- the real one and its three previews -- and the read side REJECTS a mismatch:
+/// a preview built without the link previews a transaction the writer would never send.
 ///
-/// The `catch` is narrow ON PURPOSE, and it is the whole reason this is a function rather than three
-/// lines inline. A blanket `catch (...)` here would launder a TRANSIENT failure -- an allocation
-/// failure or a memory-limit hit while decoding -- into a `Foreign` verdict, and `Foreign` fences the
-/// mount closed and raises a foreign-interference alarm. A perfectly ordinary successor handover plus a
-/// memory blip would then read as corruption. Only the two codes that actually mean "these bytes are
-/// not a well-formed ref-log transaction of this namespace at this id" are absorbed: the decode layer
-/// normalises every malformed-input class to `CORRUPTED_DATA` and passes `UNKNOWN_FORMAT_VERSION`
-/// through (an object this build cannot read is still not a seal it can consume). Everything else
-/// propagates, leaving the caller's lane exactly as it was.
+/// The epoch comparison is not belt-and-braces, it is the DEPOSED-LANE case. A successor that seals an
+/// EMPTY epoch writes its record at `{E, 1}`, and a lane still live at E re-derives exactly `{E, 1}`.
+/// Stamping the seal there would produce a self-pointer, which `validateEpochSealGrammarStructural`
+/// refuses at ENCODE: the lane would fail with a self-inflicted `CORRUPTED_DATA` on every attempt and
+/// never reach the collision that is supposed to fence it. Stamping nothing lets the attempt go out and
+/// meet the seal, which faults the mount.
 std::optional<RefTxnId> chainLinkFor(const RefTxnId & id, const std::optional<RefTxnId> & last_epoch_seal)
 {
     return id.ref_sequence == 1 && last_epoch_seal
@@ -165,34 +176,29 @@ RefLogTxn makeEpochSealTxn(const RootNamespace & ns, const RefTxnId & id, const 
     return seal;
 }
 
-/// The `prev_epoch_seal` a transaction at `id` carries, given what this table knows about the seal that
-/// closed its previous epoch. INV-2's grammar in one place, because there are now FOUR constructions of
-/// the same transaction -- the real one and its three previews -- and the read side REJECTS a mismatch:
-/// a preview built without the link previews a transaction the writer would never send.
-///
-/// The epoch comparison is not belt-and-braces, it is the DEPOSED-LANE case. A successor that seals an
-/// EMPTY epoch writes its record at `{E, 1}`, and a lane still live at E re-derives exactly `{E, 1}`.
-/// Stamping the seal there would produce a self-pointer, which `validateEpochSealGrammarStructural`
-/// refuses at ENCODE: the lane would fail with a self-inflicted `CORRUPTED_DATA` on every attempt and
-/// never reach the collision that is supposed to fence it. Stamping nothing lets the attempt go out and
-/// meet the seal, which is the intended conclusive rejection.
-Occupant classifyRefLogOccupant(const RootNamespace & ns, const RefTxnId & id, const String & occupant_bytes,
-                                const String & expected_bytes)
+}
+
+template <typename Describe>
+String CasRefLedger::reportLatchedFault(const RootNamespace & ns, Describe && describe)
 {
-    if (occupant_bytes == expected_bytes)
-        return Occupant::Ours;
+    String key;
+    String detail;
+    std::optional<String> offending_ns;
     try
     {
-        return refLogTxnIsEpochSeal(decodeRefLogTxn(openObject(FormatId::RefLog, occupant_bytes), ns.string(), id))
-            ? Occupant::SuccessorSeal : Occupant::Foreign;
+        describe(key, detail);
+        offending_ns = ns.string();
     }
-    catch (const Exception & e)
+    catch (...)
     {
-        if (e.code() != ErrorCodes::CORRUPTED_DATA && e.code() != ErrorCodes::UNKNOWN_FORMAT_VERSION)
-            throw;
-        return Occupant::Foreign;
+        /// The fence is already closed and only the report requests the remount, so a failure to
+        /// describe the fault must not skip it. `describe` can throw only at the recovery site, which
+        /// runs without the memory-exception lock, or on a defect; the report must still carry a
+        /// readable detail. The literal fits the small-string buffer, so this assignment cannot allocate.
+        detail = "ref lane fault";
     }
-}
+    on_impossible_interference(key, detail, offending_ns);
+    return detail;
 }
 
 CasRefLedger::CasRefLedger(
@@ -207,6 +213,7 @@ CasRefLedger::CasRefLedger(
     std::function<uint64_t()> fence_generation_fn_,
     std::function<uint64_t()> boot_ms_now_fn_,
     std::function<bool()> may_mutate_,
+    std::function<void()> latch_mount_fault_,
     std::function<void(const String &, const String &, const std::optional<String> &)> on_impossible_interference_,
     std::function<bool(std::function<void(DetachedStopToken)>)> dispatch_detached_,
     std::function<void()> publish_error_hook_,
@@ -223,6 +230,7 @@ CasRefLedger::CasRefLedger(
     , fence_generation_fn(std::move(fence_generation_fn_))
     , boot_ms_now_fn(std::move(boot_ms_now_fn_))
     , may_mutate(std::move(may_mutate_))
+    , latch_mount_fault(std::move(latch_mount_fault_))
     , on_impossible_interference(std::move(on_impossible_interference_))
     , dispatch_detached(std::move(dispatch_detached_))
     , publish_error_hook(std::move(publish_error_hook_))
@@ -972,21 +980,24 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
                 /// successor as `F+1`; both are recovered from the exact checkpoint and stream alone.
                 const bool above_sampled_frontier = sampled_ckpt
                     && (!sampled_frontier || *sampled_frontier < id);
-                if (above_sampled_frontier && retained_attempt && retained_attempt->txn_id == id)
+                if (above_sampled_frontier && retained_attempt && retained_attempt->txn_id == id
+                    && got->bytes != retained_attempt->bytes)
                 {
-                    /// `NeedsRecovery` retains the writer's complete attempted bytes exactly for this
-                    /// adjudication. A storage violation can replace a write-once log object between the
-                    /// failed frontier publish and recovery; accepting another ordinary transaction here
-                    /// would acknowledge history the admitted writer never created. A successor seal is
-                    /// the one conclusive, already-defined loss case: it closes the old writer's epoch
-                    /// and is replayed below as the durable stream record.
-                    const Occupant occupant = classifyRefLogOccupant(ns, id, got->bytes, retained_attempt->bytes);
-                    if (occupant == Occupant::Foreign)
-                        throw Exception(ErrorCodes::CORRUPTED_DATA,
-                            "CAS ref-table recovery for namespace '{}': a DIFFERENT object occupies retained "
-                            "writer txn {}-{} above the exact checkpoint frontier; recovery must not publish "
-                            "or install it as that writer's history",
-                            ns.string(), id.writer_epoch, id.ref_sequence);
+                    /// `NeedsRecovery` retains the writer's exact bytes for this check. The id is this
+                    /// writer's own, so anything else there -- a successor's seal included, which means
+                    /// this mount was deposed -- is a fault, never history to replay.
+                    latch_mount_fault();
+                    const String detail = reportLatchedFault(ns, [&](String & key, String & text)
+                    {
+                        key = layout.refLogKey(life, id);
+                        text = fmt::format(
+                            "ref-table recovery for namespace '{}' found retained writer txn {}-{} above the "
+                            "exact checkpoint frontier holding {}",
+                            ns.string(), id.writer_epoch, id.ref_sequence,
+                            describeRefLogOccupant(ns, id, got->bytes));
+                    });
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "CAS {}; recovery must not publish or install it as that writer's history", detail);
                 }
                 RefLogTxn txn = decodeRefLogTxn(openObject(FormatId::RefLog, got->bytes), ns.string(), id);
                 const bool is_seal = refLogTxnIsEpochSeal(txn);
@@ -1052,9 +1063,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
                     /// This epoch is closed. Its stream cannot continue, so the next durable id of this
                     /// namespace is sequence 1 of the next epoch -- including when that epoch is at or
                     /// above our own live one, which is what a mount deposed by a higher-epoch successor
-                    /// sees. Reading on is honest (the transactions ARE this namespace's) and harmless:
-                    /// our own appends then collide with the seal and are conclusively rejected, which is
-                    /// exactly how INV-2 tells a deposed writer it has been deposed.
+                    /// sees. Reading on is honest: the transactions ARE this namespace's.
                     ++epoch;
                     sequence = 1;
                     slot_attempts_this_epoch = 0;
@@ -1684,9 +1693,9 @@ void CasRefLedger::installRecoveryResult(RefTableRuntime & rt, RecoveryResult &&
     rt.state = std::move(result.state);
     rt.newest_snapshot_id = result.newest_snapshot_id;
     /// The chain link the CAS-walk ended on -- the `prev_epoch_seal` this table's next sequence-1 append
-    /// must name. This is the PRODUCTION producer of `last_epoch_seal` (the two writer-side arms record
-    /// only what they happened to observe): a real epoch change arrives with a self-remount, which
-    /// discards every cached runtime, so the fresh one gets its link from exactly here.
+    /// must name. This is the only production producer of `last_epoch_seal`: a real epoch change arrives
+    /// with a self-remount, which discards every cached runtime, so the fresh one gets its link from
+    /// exactly here.
     rt.last_epoch_seal = result.last_epoch_seal;
     rt.tail_count_since_snapshot.store(result.tail_count, std::memory_order_relaxed);
     rt.tail_bytes_since_snapshot.store(result.tail_bytes, std::memory_order_relaxed);
@@ -2255,6 +2264,10 @@ void CasRefLedger::requireRecovery(RefTableRuntime & rt, const RootNamespace & n
 CasRefLedger::WedgeResolutionResult
 CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt)
 {
+    /// The tracker still counts the resolution's allocations but never throws on them: a memory-limit
+    /// exception here would keep the wedge for no reason the store gave. `Global`, because a
+    /// `User`-level lock leaves the server limit enforced.
+    LockMemoryExceptionInThread memory_exception_lock(VariableContext::Global);
     WedgeResolutionResult result;
 
     /// WHY the lane is not proceeding, decided under `state_mutex` and rendered into a message AFTER it
@@ -2375,21 +2388,18 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
         return result;
     }
 
-    /// ---- Classify the occupant OFF the lock: pure, and the decode allocates ----
-    /// The three-way `mine | successor's seal | foreign` adjudication is the CALLER's job by
-    /// construction (the engine never compares bytes for meaning), and "mine" means BYTE EQUALITY --
-    /// never a shape or generation match, which is the aliasing the phase-0 model rejected.
+    /// ---- Name the occupant: our exact bytes, or a fault ----
+    /// "Ours" means BYTE EQUALITY, never a shape or generation match: two attempts can share both
+    /// and differ in bytes. Anything else at our slot, a successor's seal included, is a fault.
     const auto * conflict = std::get_if<Conflict>(&*attempted);
     const auto * occupant_object = conflict ? std::get_if<Object>(&conflict->seen) : nullptr;
     const auto * gave_up = std::get_if<GaveUp>(&*attempted);
     /// A conflict whose settling read observed nothing is as unresolved as a give-up: the key holds
     /// something this call could not name, so nothing may be adopted or unwedged from it.
     const bool unresolved = gave_up || (conflict && !occupant_object);
-    const Occupant occupant = occupant_object
-        ? classifyRefLogOccupant(ns, wedge.txn_id, occupant_object->bytes, wedge.bytes)
-        : Occupant::NotOccupied;
-    const bool exact_attempt_is_durable
-        = std::holds_alternative<Committed>(*attempted) || occupant == Occupant::Ours;
+    const bool occupied_by_ours = occupant_object && occupant_object->bytes == wedge.bytes;
+    const bool occupied_by_other = occupant_object && !occupied_by_ours;
+    const bool exact_attempt_is_durable = std::holds_alternative<Committed>(*attempted) || occupied_by_ours;
     /// Caller holds `state_mutex`. Keeping the identity predicate in one place is part of the safety
     /// rule: adding a frontier must not create yet another subtly different notion of "same attempt".
     const auto same_wedge_under_lock = [&]
@@ -2403,9 +2413,8 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
 
     /// A durable ref-log object is not yet admissible history. Exactly as on the ordinary committed
     /// append path, publish its frontier under the SAME admission before the cached table can install
-    /// it, return to `Ready`, or wake a surviving caller. This deliberately runs only for `Created` or
-    /// byte-identical `Ours`: a successor seal is conclusive evidence that OUR transaction did not land
-    /// and retains the rejection path below without publishing our frontier.
+    /// it, return to `Ready`, or wake a surviving caller. This runs only for `Created` or our
+    /// exact bytes: any other occupant means our transaction did not land.
     bool same_wedge_before_frontier = false;
     {
         std::lock_guard lock(rt->state_mutex);
@@ -2502,30 +2511,10 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
                 ? Reason::RefusedPreAttempt : Reason::ResolveFoundNothing;
             result.kind = WedgeResolution::StillWedged;
         }
-        else if (occupant == Occupant::SuccessorSeal)
+        else if (occupied_by_other)
         {
-            /// THE conclusive rejection (spec INV-2). The ref-log key is write-once and a successor put
-            /// its epoch-closing record there, so our bytes provably never landed and never can. The
-            /// operation was never acknowledged, so nothing is lost by failing it permanently -- and it
-            /// must be permanent, not "retry later": no later attempt in this epoch can ever succeed.
-            ///
-            /// The seal IS this namespace's epoch-closing record, so it is also the `prev_epoch_seal`
-            /// that the first transaction of a LATER epoch must name. In this runtime that record is
-            /// mostly introspection: a real epoch change arrives with a self-remount, which discards
-            /// this runtime, and the fresh one gets its chain link from recovery's CAS-walk (Task 6).
-            /// It is recorded anyway because it is durable evidence this runtime holds and nothing else
-            /// would, and because `commitRefChunk` consumes it the moment the live epoch does advance
-            /// past the seal's.
-            ///
-            rt->append_attempt.reset();
-            rt->last_epoch_seal = wedge.txn_id;
-            rt->lane_state = RefLaneState::Closed;
-            result.kind = WedgeResolution::Rejected;
-        }
-        else if (occupant == Occupant::Foreign)
-        {
-            /// Impossible under mount-lease exclusivity. The terminal state carries the verdict; no
-            /// uncertain attempt remains to be retried.
+            /// Under mount-lease exclusivity nothing else may write our slot, and a successor's seal
+            /// means this mount was already deposed. The lane is done; nothing remains to retry.
             rt->append_attempt.reset();
             rt->lane_state = RefLaneState::Faulted;
             result.kind = WedgeResolution::Corrupted;
@@ -2621,32 +2610,30 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
         }
     }
 
+    if (result.kind == WedgeResolution::Corrupted)
+        latch_mount_fault();
+
     /// ---- Everything that allocates or reacts, now that `state_mutex` is released ----
     switch (result.kind)
     {
         case WedgeResolution::Adopted:
             ProfileEvents::increment(ProfileEvents::CASRefAppendUnwedged);
             break;
-        case WedgeResolution::Rejected:
-            result.survivor_error = std::make_exception_ptr(Exception(ErrorCodes::INVALID_STATE,
-                "CAS ref-log append for namespace '{}': writer epoch {} was CLOSED by a successor's epoch "
-                "seal at {}-{}, which conclusively rejects the wedged transaction (it was never "
-                "acknowledged). This mount's append lane resumes only under a later epoch",
-                ns.string(), wedge.txn_id.writer_epoch,
-                wedge.txn_id.writer_epoch, wedge.txn_id.ref_sequence));
-            break;
         case WedgeResolution::Corrupted:
-            on_impossible_interference(wedge.key,
-                fmt::format("ref-log wedge resolution for namespace '{}' txn {}-{} observed a foreign object "
-                    "at the wedged slot: neither this attempt's own bytes nor an epoch seal of this namespace",
-                    ns.string(), wedge.txn_id.writer_epoch, wedge.txn_id.ref_sequence),
-                ns.string());
+        {
+            const String detail = reportLatchedFault(ns, [&](String & key, String & text)
+            {
+                key = wedge.key;
+                text = fmt::format(
+                    "ref-log wedge resolution for namespace '{}' txn {}-{} found the wedged slot holding {}",
+                    ns.string(), wedge.txn_id.writer_epoch, wedge.txn_id.ref_sequence,
+                    describeRefLogOccupant(ns, wedge.txn_id, occupant_object->bytes));
+            });
             result.survivor_error = std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
-                "CAS ref-log append for namespace '{}': impossible foreign interference observed at the "
-                "wedged slot '{}' — the mount is fenced closed and a remount is scheduled; the lane is "
-                "deliberately left wedged for inspection. See the anomaly diagnostics log",
-                ns.string(), wedge.key));
+                "CAS {} — the mount is fenced closed, a remount is scheduled, and the lane is faulted until "
+                "then", detail));
             break;
+        }
         case WedgeResolution::StillWedged:
         {
             const String txn = fmt::format("{}-{}", wedge.txn_id.writer_epoch, wedge.txn_id.ref_sequence);
@@ -2700,7 +2687,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
                         "and the resolve read found NOTHING at slot '{}' — either the read itself failed, "
                         "or the occupant that rejected the create was DELETED under a live epoch, which is "
                         "a GC invariant alarm rather than routine contention. The lane stays wedged until "
-                        "the SAME slot resolves durable or a conclusive rejection is observed",
+                        "the SAME slot resolves durable, or holds another object (a fault)",
                         ns.string(), txn, wedge.key);
                     break;
                 case Reason::StaleState:
@@ -2760,8 +2747,7 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
     /// allocation-free by construction (spec §A1) -- and `resolveWedgeOnce` reports every ORDINARY
     /// outcome, including a fence that moved under it, through its own result rather than by throwing.
     /// The paths that can still throw are the wedge-resolution candidate build, which runs BEFORE the
-    /// bounded retry and therefore before anything is proven; a TRANSIENT failure while decoding a
-    /// foreign occupant (deliberately not laundered into a verdict); and an allocation failure in this
+    /// bounded retry and therefore before anything is proven; and an allocation failure in this
     /// function's own bookkeeping (e.g. the chunk-boundary reseed). All are contained by
     /// `appendRefOps`' catch, which completes every still-unfinished survivor and restores the leader
     /// bookkeeping, so no caller hangs.
@@ -2837,7 +2823,6 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
                 /// single-in-flight gate), and off-lock as that call requires.
                 maybeScheduleSnapshotPublish(ns, rt);
                 break;
-            case WedgeResolution::Rejected:
             case WedgeResolution::StillWedged:
             case WedgeResolution::Corrupted:
                 complete_error(carve_all_pending(), resolution.survivor_error);
@@ -2892,18 +2877,13 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
     /// self-pointer the ENCODER refuses; stamping nothing leaves an uncertified epoch crossing the
     /// READER refuses. Both are dead ends, and both are provable from what this lane already knows.
     ///
-    /// The OUTCOME here must be the same one the collision produced, not merely "an error". Before this
-    /// gate the lane sent its create, met the successor's seal at the key, and took the conclusive
-    /// rejection arm; skipping the request must not skip the CONCLUSION. So this is a permanent
-    /// rejection in the same class and the same words -- the operation was never acknowledged, no later
+    /// The outcome is a permanent rejection: the operation was never acknowledged, no later
     /// attempt in this epoch can ever succeed, and the lane resumes only under a later epoch, which is
     /// what tells the caller (and the operator) that this mount has been deposed rather than merely
     /// delayed. A retry-later class here would be the real bug: every caller would re-derive the same
     /// impossible transaction forever, and the deposition would never be visible anywhere.
     ///
-    /// Deliberately NOT a remount trigger, exactly as the collision arm is not: a successor closing our
-    /// epoch is a legitimate handover, and the mount lease is what resolves it. See `resolveWedgeOnce`'s
-    /// `SuccessorSeal` arm, whose reasoning this mirrors.
+    /// Not a fault of this lane machine: nothing is occupied; the deposition is reported by the error.
     if (table_live)
     {
         const RefTxnId next_id = working.nextTxnId(live_epoch_fn());
@@ -3337,6 +3317,12 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
                                   const std::vector<RefOp> & chunk_ops,
                                   const std::vector<std::shared_ptr<RefMutationItem>> & chunk_survivors)
 {
+    /// The tracker still counts the append's allocations but never throws on them: a memory-limit
+    /// exception after the PUT would wedge the lane or strand a durable object over memory pressure
+    /// that says nothing about the store. `Global`, because a `User`-level lock leaves the server
+    /// limit enforced. `std::bad_alloc` is not affected.
+    LockMemoryExceptionInThread memory_exception_lock(VariableContext::Global);
+
     /// Reconstructed locally so this arm has the SAME completion + fence semantics as when it lived
     /// inline in `flushRefBatch`: `complete_error` wakes a chunk's waiters under `ref_queue_mutex`, and
     /// `runtime_live` folds `superseded_by_remount` into the append operation's liveness so a
@@ -3471,25 +3457,30 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
     /// explicit `Faulted` state and route it through the same anomaly policy as foreign interference.
     {
         RefLaneState lane_state = RefLaneState::Faulted;
-        std::optional<String> attempt_key;
         {
             std::lock_guard lock(rt->state_mutex);
             lane_state = rt->lane_state;
-            if (rt->append_attempt)
-                attempt_key = rt->append_attempt->key;
         }
         if (lane_state != RefLaneState::Ready)
         {
+            latch_mount_fault();
+            String attempt_key;
             {
                 std::lock_guard lock(rt->state_mutex);
+                if (rt->append_attempt)
+                    attempt_key = std::move(rt->append_attempt->key);
                 rt->append_attempt.reset();
                 rt->lane_state = RefLaneState::Faulted;
             }
-            on_impossible_interference(attempt_key.value_or(""), fmt::format(
-                "ref-log append reached new-id allocation while the lane was in state {} instead of Ready",
-                static_cast<uint8_t>(lane_state)), ns.string());
-            /// `Faulted` is a TERMINAL lane state (same as the two other `Faulted` arms further down this
-            /// function, which both report `CORRUPTED_DATA`) -- reporting it via
+            reportLatchedFault(ns, [&](String & key, String & text)
+            {
+                key = attempt_key;
+                text = fmt::format(
+                    "ref-log append reached new-id allocation while the lane was in state {} instead of Ready",
+                    static_cast<uint8_t>(lane_state));
+            });
+            /// `Faulted` is a TERMINAL lane state (same as the other `Faulted` arm further down this
+            /// function, which reports `CORRUPTED_DATA`) -- reporting it via
             /// `makeCasWriteRetryLaterExceptionPtr` would tell the caller a state the lane can never leave
             /// on its own is transient. The arm is self-limiting today (the next flush's
             /// `resolveWedgeOnce` takes the `invalid_lane_state` `Reason` arm and re-reports it the same
@@ -3500,7 +3491,7 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
             complete_error(chunk_survivors, std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
                 "CAS ref-log append for namespace '{}': refusing to allocate a new ref-log id while the "
                 "lane is not Ready (state {}, attempt key '{}'); the lane is faulted until remount",
-                ns.string(), static_cast<uint8_t>(lane_state), attempt_key.value_or(""))));
+                ns.string(), static_cast<uint8_t>(lane_state), attempt_key)));
             return false;
         }
     }
@@ -3749,13 +3740,8 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
 
     if (const auto * conflict = std::get_if<Conflict>(&*written))
     {
-        /// THREE-WAY ADJUDICATION, the same one the wedge resolution owes. "A different
-        /// object at our derived key" is not one situation but two, and they call for opposite
-        /// reactions. One of them is EXPECTED: a successor that sealed our epoch put its epoch-closing
-        /// record at exactly the id we keep re-deriving, and INV-2 says we must keep re-deriving it
-        /// ("a dying lane that observes the seal retries T+1, never mints T+2"). Treating that as
-        /// foreign interference would fence the mount and raise an anomaly alarm on the designed path.
-        /// The other is a genuine breach of write-exclusivity and must be exactly as loud as before.
+        /// Our exact bytes mean an earlier attempt of this transaction landed; anything else at our id is
+        /// a fault.
         ///
         /// The occupant arrives WITH the conflict: the write's own settling read already observed the
         /// key, so no second request is issued here.
@@ -3785,104 +3771,38 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
             complete_error(chunk_survivors, makeCasWriteRetryLaterExceptionPtr(fmt::format(
                 "CAS ref-log append for namespace '{}': the store refused txn {}-{}'s create and the "
                 "settling read named no occupant (observed {}) — the append lane is wedged until the "
-                "SAME key resolves durable or a conclusive rejection is observed",
+                "SAME key resolves durable, or holds another object (a fault)",
                 ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(conflict->seen))));
             return false;
         }
 
-        Occupant occupant = Occupant::Foreign;
-        bool classified = false;
-        try
+        if (occupant_object->bytes != active_attempt.bytes)
         {
-            occupant = classifyRefLogOccupant(ns, id, occupant_object->bytes, active_attempt.bytes);
-            classified = true;
-        }
-        catch (...)   // NOLINT(bugprone-empty-catch)
-        {
-            /// Left unclassified deliberately -- see below. The conflict itself is what the survivors
-            /// are told about; the adjudication's own failure is not their business.
-        }
-        if (!classified)
-        {
-            /// An occupant WAS observed, and naming it raised something other than the malformed-object
-            /// codes `classifyRefLogOccupant` answers `Foreign` for. We could not learn WHICH of the two
-            /// situations this is, so we decide NEITHER: reporting foreign interference would fence the
-            /// mount on a guess, and reporting a conclusive rejection would acknowledge a deposition we
-            /// did not observe.
-            ///
-            /// It must be COUNTED, for the same reason the arm above is.
-            ProfileEvents::increment(ProfileEvents::CASRefAppendOccupantUnreadable);
+            latch_mount_fault();
+            String attempt_key;
             {
                 std::lock_guard lock(rt->state_mutex);
+                if (rt->append_attempt)
+                    attempt_key = std::move(rt->append_attempt->key);
                 rt->append_attempt.reset();
                 rt->lane_state = RefLaneState::Faulted;
             }
-            complete_error(chunk_survivors, std::make_exception_ptr(Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "CAS ref-log append for namespace '{}': a DIFFERENT object occupies the id {}-{} this table "
-                "derived, and telling a successor's epoch seal from foreign interference did not succeed "
-                "(observed {}) — the lane is faulted until remount recovery adjudicates durable state",
-                ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(conflict->seen))));
-            return false;
-        }
-        if (occupant == Occupant::SuccessorSeal)
-        {
-            /// Conclusive rejection, identical in meaning to the wedge site's: our bytes provably never
-            /// landed and never can, the operation was never acknowledged, and the seal IS this
-            /// namespace's epoch-closing record. No anomaly, no fence -- this is the protocol working.
-            /// Counted anyway: "the protocol working" here means THIS writer was deposed, and a lane that
-            /// keeps landing on this arm is a mount that has lost its lease and does not know it yet.
-            ProfileEvents::increment(ProfileEvents::CASRefAppendSealRejected);
+            const String fault_detail = reportLatchedFault(ns, [&](String & key, String & text)
             {
-                std::lock_guard lock(rt->state_mutex);
-                rt->last_epoch_seal = id;
-                rt->append_attempt.reset();
-                rt->lane_state = RefLaneState::Closed;
-            }
-            complete_error(chunk_survivors, std::make_exception_ptr(Exception(ErrorCodes::INVALID_STATE,
-                "CAS ref-log append for namespace '{}': writer epoch {} was CLOSED by a successor's epoch "
-                "seal at {}-{}, which conclusively rejects this transaction (it was never acknowledged). "
-                "This mount's append lane resumes only under a later epoch",
-                ns.string(), id.writer_epoch, id.writer_epoch, id.ref_sequence)));
-            return false;
-        }
-        if (occupant != Occupant::Ours)
-        {
-            /// A genuine breach. This table's appends are now BLOCKED, and that is the intended contract:
-            /// under mount-lease exclusivity this key is exclusively ours, so a foreign object at it is
-            /// corruption or a protocol breach, not a race. The id is not consumed, so the next attempt
-            /// derives the SAME id and hits the SAME conflict, loudly, until a remount-level recovery (a
-            /// fresh writer epoch is a fresh key namespace) clears it. Advancing past the occupant, which is
-            /// what the pool-wide allocator did, would have written this table's stream around a foreign
-            /// object and hidden the violation -- and produced a hole in a stream that must stay dense.
-            ///
-            /// Route it through the anomaly policy, exactly as the wedge-resolution site does for the
-            /// identical observation. Failing closed is right, but failing closed FOREVER is
-            /// not: without this the mount stays blocked on this table until somebody notices and remounts
-            /// by hand. One impossibility, one reaction. The report is deliberately BEFORE the survivors are
-            /// completed, so the fence is closed by the time any caller wakes and can retry.
-            const String attempt_key = active_attempt.key;
-            {
-                std::lock_guard lock(rt->state_mutex);
-                rt->append_attempt.reset();
-                rt->lane_state = RefLaneState::Faulted;
-            }
-            const String interference_detail = fmt::format(
-                "ref-log append for namespace '{}' txn {}-{} observed a DIFFERENT object already at the id it "
-                "derived, and it is not an epoch seal of this namespace (observed {})",
-                ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(conflict->seen));
-            on_impossible_interference(attempt_key, interference_detail, ns.string());
+                key = std::move(attempt_key);
+                text = fmt::format(
+                    "ref-log append for namespace '{}' txn {}-{} found the id it derived holding {} (observed {})",
+                    ns.string(), id.writer_epoch, id.ref_sequence,
+                    describeRefLogOccupant(ns, id, occupant_object->bytes),
+                    detail::renderObservation(conflict->seen));
+            });
             complete_error(chunk_survivors, std::make_exception_ptr(Exception(
-                ErrorCodes::CORRUPTED_DATA, "CAS {}", interference_detail)));
+                ErrorCodes::CORRUPTED_DATA, "CAS {}", fault_detail)));
             return false;
         }
-        /// `Occupant::Ours`: our OWN bytes at the id we derived, so an earlier attempt of this exact
-        /// transaction is already durable and byte equality is the proof (never a shape or generation
-        /// match). This lane's state machine does not produce it -- an attempt that may have landed
-        /// leaves the lane `Wedged`, and resolving that wedge advances the id -- but it is decided here
-        /// rather than left to the arm above, because reporting this table's own content as foreign
-        /// interference would fence the mount. The commit path below installs it, exactly as the wedge
-        /// site's identical observation does.
+        /// Our own bytes: an earlier attempt of this exact transaction is durable. The lane machine
+        /// does not produce this here (a maybe-landed attempt wedges), but it is our content, so it is
+        /// installed below like a fresh commit rather than reported.
     }
     else if (const auto * refused = std::get_if<Refused>(&*written))
     {
@@ -3963,8 +3883,8 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
         ProfileEvents::increment(ProfileEvents::CASRefAppendWedged);
         complete_error(chunk_survivors, makeCasWriteRetryLaterExceptionPtr(fmt::format(
             "CAS ref-log append for namespace '{}' txn {}-{} is UNCERTAIN (last observed {}) — "
-            "the append lane is wedged until the SAME key resolves durable or a conclusive rejection "
-            "is observed; this outcome is unproven, not failure",
+            "the append lane is wedged until the SAME key resolves durable, or holds another object "
+            "(a fault); this outcome is unproven, not failure",
             ns.string(), id.writer_epoch, id.ref_sequence, detail::renderObservation(gave_up->last_seen))));
         return false;
     }

@@ -235,6 +235,7 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
           [this] { return mount_runtime.fenceGeneration(); },
           [this] { return bootMsNow(); },
           [this] { return mayMutate(); },
+          [this] { mount_runtime.tripMountLost(); },
           [this] (const String & key, const String & reason, const std::optional<String> & offending_ns)
               { reportImpossibleInterference(key, reason, offending_ns); },
           [this] (std::function<void(DetachedStopToken)> task) { return tryDispatchDetached(std::move(task)); },
@@ -1758,9 +1759,14 @@ BlobLocation Pool::locate(const ManifestEntry & entry) const
 void Pool::reportImpossibleInterference(const String & key, const String & reason,
                                           const std::optional<String> & offending_ns)
 {
+    /// First: the ledger already closed the fence, and only this requests the remount.
+    mount_runtime.scheduleRemount();
+    if (config.ref_lane_fault_report_hook_for_test)
+        config.ref_lane_fault_report_hook_for_test();
+
     LOG_ERROR(getLogger("CasPool"),
-        "CAS anomaly policy: impossible foreign interference for server_root '{}' (namespace='{}', key='{}'): "
-        "{} -- fencing this mount closed and scheduling a remount",
+        "CAS ref lane fault for server_root '{}' (namespace='{}', key='{}'): {} -- this mount is fenced closed; "
+        "a remount is scheduled",
         config.server_root_id, offending_ns.value_or(String{}), key, reason);
 
     EventEmitter{*this}.emit([&](CasEvent & e)
@@ -1771,11 +1777,6 @@ void Pool::reportImpossibleInterference(const String & key, const String & reaso
         e.reason = reason;
         e.detail = {{"key", key}, {"server_root_id", config.server_root_id}};
     });
-
-    /// Incidental-only detection has the same fail-closed reaction as a foreign/superseded lease
-    /// renewal. The fence and persistent self-remount ownership live on `mount_runtime`.
-    mount_runtime.tripMountLost();
-    mount_runtime.scheduleRemount();
 
     /// Diagnosis off the critical path: a background task may spend a FEW
     /// requests -- never the caller's thread, and never blocking this call's own return.
@@ -1790,8 +1791,8 @@ void Pool::reportImpossibleInterference(const String & key, const String & reaso
                 return;
             try
             {
-                /// The open plane: this diagnostic runs after the fence was deliberately tripped a few
-                /// lines above, and a stop request ends it through the operation's own liveness.
+                /// The open plane: this diagnostic runs after the fence was deliberately tripped,
+                /// and a stop request ends it through the operation's own liveness.
                 CasOperation op = gc_requests.admit([token] { return !token.stopping(); });
                 const auto got = op.read(key, Retry::standard());
                 if (!got)
