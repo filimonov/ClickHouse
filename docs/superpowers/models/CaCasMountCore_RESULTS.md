@@ -1180,25 +1180,26 @@ bytes. A foreign advance makes a start re-decide and makes a reacquire stop (`al
 pre-existing cfg sets `ImmutableAlloc = FALSE`: the new actions are disabled and the new variables stay
 at their `Init` values.
 
-`AdoptRead` and `AdoptWrite` of an incarnation are disabled while its allocation is in flight
-(`allocPend[a] # NoPend`). The allocation runs on the mount driver with the background renewal parked,
-so no adopt write of the same process lands between the begin and the apply. Without the guard
-`twins_immalloc` is red: a stale `AdoptWrite` re-creates the live `(A, 1)` body after `AllocBegin`
-passed its guard, the apply then bumps the counter to 2 beside it, and the incarnation writes after
-`Renew` marks it lost (`SupersededWriterMakesNoMutation`, 14-state trace). The guard is a no-op when
-`ImmutableAlloc = FALSE`.
+A write needs an armed fence, and only a claim of the local epoch arms it: an allocation alone never
+grants writes. `fenceLatched[a]` is set at `AllocBegin`, cleared only by `ClaimMount`, and `Write` is
+disabled while it is set. Adopt stays enabled during an allocation, because a renewal write already sent
+when the park starts can land after it. The first version of this step blocked adopt instead; that was
+the wrong mechanism. Without the latch `twins_immalloc` is red: a straggler `AdoptWrite` re-creates the
+live `(A, 1)` body after `AllocBegin` passed its guard, the apply bumps the counter to 2 beside it, and
+the incarnation writes after `Renew` marks it lost (`SupersededWriterMakesNoMutation`, 14-state trace).
+The latch is never set when `ImmutableAlloc = FALSE`, so the pre-existing rows are unchanged.
 
-Run: `TLC_WORKERS=4`, `-Xmx8g`, `nice -n 10`. The first full battery (before the guard) passed every
-row except `twins_immalloc`, and its five existing greens matched the 2026-10-08 counts. After the guard
+Run: `TLC_WORKERS=4`, `-Xmx8g`, `nice -n 10`. The first full battery (before the latch) passed every
+row except `twins_immalloc`, and its five existing greens matched the 2026-10-08 counts. After the latch
 only the rows it can affect were re-run, with `twins` as the control.
 
 | cfg | expected | result | depth | generated | distinct |
 |---|---|---|---:|---:|---:|
-| `twins_immalloc` (new) | green | green | 31 | 512,891,703 | 68,982,696 |
-| `sab_reacquireredecides` (new) | violation | `ReacquireStopsOnForeignAdvance` | 16 | 2,825,873 | 685,474 |
-| `sab_refreshownpair_immalloc` (new) | violation | `ClaimNeverRegressesEpoch` | 11 | 6,651 | 2,541 |
-| `witness_samebytes` (new) | violation | `W_SameBytesCollision` | 8 | 605 | 321 |
-| `witness_reacquirestops` (new) | violation | `W_ReacquireStops` | 11 | 20,388 | 7,145 |
+| `twins_immalloc` (new) | green | green | 33 | 739,842,367 | 96,230,328 |
+| `sab_reacquireredecides` (new) | violation | `ReacquireStopsOnForeignAdvance` | 16 | 3,100,998 | 759,694 |
+| `sab_refreshownpair_immalloc` (new) | violation | `ClaimNeverRegressesEpoch` | 10 | 5,170 | 2,073 |
+| `witness_samebytes` (new) | violation | `W_SameBytesCollision` | 9 | 600 | 323 |
+| `witness_reacquirestops` (new) | violation | `W_ReacquireStops` | 11 | 24,207 | 8,467 |
 | `twins` (control) | green | green | 25 | 138,643,328 | 18,080,420 |
 
 Counterexamples:
@@ -1212,20 +1213,3 @@ Counterexamples:
 
 Violation-row counts come from a 4-worker run and vary between runs; green counts do not. A collision's
 exclusivity is `ClaimMount`'s strict monotonicity, not the counter's.
-
-### Straggler row {#2026-10-08-step-2a-straggler}
-
-`twins_immalloc` disables an incarnation's adopt while its allocation is in flight. The product does not:
-a renewal write already sent when the park starts can land after the allocation. `StragglerAdopt = TRUE`
-lifts the guard and latches the mount fence lost from `AllocBegin` until the incarnation's next claim
-(`fenceLatched`); `Write` is disabled while it is set. The red trace of `twins_immalloc` without any
-guard writes with `localLost = TRUE` and a fence stamped by the stale adopt, so the latch is what the
-product relies on and the model had no equivalent.
-
-| cfg | expected | result | depth | generated | distinct |
-|---|---|---|---:|---:|---:|
-| `twins_immalloc_straggler` (new) | green | green | 33 | 813,294,843 | 96,230,328 |
-
-The four new violation rows were re-run on the final model (`StragglerAdopt = FALSE` in them) and end as
-before. The row has no witness that a landed straggler is reached; the lifted guard makes it reachable by
-construction, and the `Write` latch is the only difference from `twins_immalloc` on that path.

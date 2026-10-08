@@ -90,7 +90,6 @@
 #   twins_v9              -> GREEN   two incarnations of one uuid, layer on
 #   twins_drift           -> GREEN   two incarnations of one uuid, Drift = 1
 #   twins_immalloc        -> GREEN   two incarnations of one uuid, immutable allocation
-#   twins_immalloc_straggler -> GREEN  as above, a renewal write may land after the allocation
 #
 # Witnesses are negated reachability -- a VIOLATION is the evidence. They exist because BFS reports
 # the SHORTEST counterexample, so a branch no red travels would silently rot:
@@ -180,7 +179,6 @@ CONFIGS=(
   "twins_v9                              green      -"
   "twins_drift                           green      -"
   "twins_immalloc                        green      -"
-  "twins_immalloc_straggler              green      -"
   "witness_reclaim                       violation  W_SameUuidReclaimsExpired"
   "witness_remountafterfence             violation  W_RemountAfterFence"
   "witness_observedreclaim               violation  W_ObservedReclaim"
