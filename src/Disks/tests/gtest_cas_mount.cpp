@@ -2064,7 +2064,10 @@ TEST(CASListMounts, SkipsOneSlotAndTriesOnce)
         backend->failNextReadWith(layout.mountKey("b"),
             std::make_exception_ptr(DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected transient read")));
     gets = backend->getTotal();
-    EXPECT_ANY_THROW(listMounts(ops.op, layout, now_ms, ttl_ms / 2, Retry::once(), "a"));
+    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&]
+    {
+        listMounts(ops.op, layout, now_ms, ttl_ms / 2, Retry::once(), "a");
+    });
     EXPECT_EQ(backend->getTotal() - gets, 1u);
 }
 
