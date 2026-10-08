@@ -1170,3 +1170,45 @@ rows) also met every expectation.
 | `witness_delayedstart` (new) | violation | `W_DelayedStartOverNewerBody` | 8 | 5,024 | 2,114 | 1,593 | 0 |
 
 For violation rows, depth is the length of the counterexample in states. `rev6_observe` was not run.
+
+## 2026-10-08 step 2a: immutable epoch allocation {#2026-10-08-step-2a}
+
+`ImmutableAlloc = TRUE` models the epoch allocation as one conditional write of the bytes `N + 1`:
+`AllocBegin` fixes the expected value, `AllocAttempt` applies it (applied and answered, applied with the
+answer lost, lost before applying, or refused), `AllocResolve` settles an unclear attempt by our exact
+bytes. A foreign advance makes a start re-decide and makes a reacquire stop (`allocStopped`). Every
+pre-existing cfg sets `ImmutableAlloc = FALSE`: the new actions are disabled and the new variables stay
+at their `Init` values.
+
+`AdoptRead` and `AdoptWrite` of an incarnation are disabled while its allocation is in flight
+(`allocPend[a] # NoPend`). The allocation runs on the mount driver with the background renewal parked,
+so no adopt write of the same process lands between the begin and the apply. Without the guard
+`twins_immalloc` is red: a stale `AdoptWrite` re-creates the live `(A, 1)` body after `AllocBegin`
+passed its guard, the apply then bumps the counter to 2 beside it, and the incarnation writes after
+`Renew` marks it lost (`SupersededWriterMakesNoMutation`, 14-state trace). The guard is a no-op when
+`ImmutableAlloc = FALSE`.
+
+Run: `TLC_WORKERS=4`, `-Xmx8g`, `nice -n 10`. The first full battery (before the guard) passed every
+row except `twins_immalloc`, and its five existing greens matched the 2026-10-08 counts. After the guard
+only the rows it can affect were re-run, with `twins` as the control.
+
+| cfg | expected | result | depth | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `twins_immalloc` (new) | green | green | 31 | 512,891,703 | 68,982,696 |
+| `sab_reacquireredecides` (new) | violation | `ReacquireStopsOnForeignAdvance` | 16 | 2,825,873 | 685,474 |
+| `sab_refreshownpair_immalloc` (new) | violation | `ClaimNeverRegressesEpoch` | 11 | 6,651 | 2,541 |
+| `witness_samebytes` (new) | violation | `W_SameBytesCollision` | 8 | 605 | 321 |
+| `witness_reacquirestops` (new) | violation | `W_ReacquireStops` | 11 | 20,388 | 7,145 |
+| `twins` (control) | green | green | 25 | 138,643,328 | 18,080,420 |
+
+Counterexamples:
+- `sab_reacquireredecides`: a fenced incarnation's allocation is refused cleanly after its twin's; it
+  re-decides, allocates and reclaims its own fenced body.
+- `sab_refreshownpair_immalloc`: two starts that wrote the same bytes share a `(uuid, epoch)`; the second
+  refreshes the first's live body.
+- `witness_samebytes`: two live incarnations hold the same epoch after writing `N + 1` over the same
+  read value.
+- `witness_reacquirestops`: a reacquire sees the counter moved by another process and stops.
+
+Violation-row counts come from a 4-worker run and vary between runs; green counts do not. A collision's
+exclusivity is `ClaimMount`'s strict monotonicity, not the counter's.
