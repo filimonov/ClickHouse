@@ -371,8 +371,8 @@ using MountObservationMap = std::map<String, MountIncarnationObservation>;
 ///     terminated marker;
 ///   - otherwise, observation-based liveness (the same
 ///     principle `claimMountAwaitingExpiry` uses for a mount's OWN reopen, applied here to the GC's
-///     fence-out): `obs` remembers, per srid, the incarnation last seen and the leader's OWN
-///     monotonic clock reading (`mono_now_ms`) at the moment it first saw it. A body whose
+///     fence-out): `obs` remembers, per srid, the incarnation last seen and the reading of the
+///     leader's OWN monotonic clock (`mono_ms_fn`) when it first saw it. A body whose
 ///     CURRENT incarnation differs from (or is absent from) `obs` is (re)started fresh — counted `live`,
 ///     never fenced this call, regardless of what its stamped `expires_at_ms` claims (a bare
 ///     wall-clock stamp is never trusted — see `claimMount`'s "certificate of death" doc). Only once
@@ -386,7 +386,7 @@ using MountObservationMap = std::map<String, MountIncarnationObservation>;
 ///
 /// `now_ms` is WALL clock, used only for the audit/diagnostic log line — it never participates in the
 /// fence decision (mirrors `claimMountAwaitingExpiry`'s `now_ms_fn` vs `mono_ms_fn` split).
-/// `mono_now_ms` is the OBSERVATION clock: the caller's OWN monotonic reading, never compared against
+/// `mono_ms_fn` is the OBSERVATION clock: the caller's OWN monotonic clock, never compared against
 /// any other node's clock. `obs` is owned by the caller and threaded across consecutive calls (one GC
 /// leader instance, `Cas::Gc::mount_obs`) — a fresh leader starts with an empty map (safe: delays
 /// fencing one round, never fences early).
@@ -407,8 +407,8 @@ struct HeartbeatFloor
 };
 
 HeartbeatFloor computeHeartbeatFloor(CasOperation & op, const Layout & l, uint64_t now_ms,
-                                     uint64_t mono_now_ms, uint64_t stable_threshold_ms,
-                                     MountObservationMap & obs);
+                                     const std::function<uint64_t()> & mono_ms_fn,
+                                     uint64_t stable_threshold_ms, MountObservationMap & obs);
 
 /// One `gc/server-roots/<srid>/mount` slot whose holder is not provably finished with the prefix.
 struct NonTerminalMountSlot
