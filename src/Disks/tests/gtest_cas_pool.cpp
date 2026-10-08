@@ -1579,6 +1579,7 @@ TEST(CASPoolRemount, OldEpochBuildFailsClosedAfterRemount)
 
 TEST(CASPoolRemount, ForeignOwnerIsNeverTakenOver)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = DB::Cas::tests::openPoolForTest(backend);
     const String mount_key = store->layout().mountKey("test");
@@ -1593,6 +1594,8 @@ TEST(CASPoolRemount, ForeignOwnerIsNeverTakenOver)
         (*overwrite_op).replace(mount_key, encodeMountLease(foreign), got->etag, Retry::standard())));
 
     EXPECT_FALSE(store->tryRemountOnce());
+    EXPECT_EQ(store->mountEnd(), MountEnd::SlotTaken) << "the remount that finds a foreign owner stops the server";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().graceful(), 1u);
     /// The foreign body is untouched (no takeover, ever).
     EXPECT_EQ(decodeMountLease(readObj(*backend, mount_key)->bytes).server_uuid, foreign.server_uuid);
 
@@ -1601,7 +1604,7 @@ TEST(CASPoolRemount, ForeignOwnerIsNeverTakenOver)
     fenceOutMount(*backend, mount_key);
     store.reset();
 
-    /// A foreign owner is never taken over — at remount OR at release. This was an `EXPECT_DEATH`
+    /// A foreign owner is never taken over at release either. This was an `EXPECT_DEATH`
     /// pinning a `LOGICAL_ERROR` abort on the release half; the abort fired from `~Pool` and defeated
     /// `finishTeardown`'s own catch by aborting at exception construction. The runtime never observed a
     /// deposition (the slot was overwritten out of band), so the release takes the
@@ -1619,8 +1622,6 @@ TEST(CASPoolRemount, ForeignOwnerIsNeverTakenOver)
         foreign_mount_key, encodeMountLease(foreign_lease), foreign_got->etag, Retry::standard())));
     const auto occupant_before = readObj(*foreign_backend, foreign_mount_key);
     ASSERT_TRUE(occupant_before.has_value());
-
-    EXPECT_FALSE(invalid_store->tryRemountOnce()) << "a foreign owner is never taken over at remount";
 
     const uint64_t violations_before
         = ProfileEvents::global_counters[ProfileEvents::CASMountExclusivityViolation].load();

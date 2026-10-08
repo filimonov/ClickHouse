@@ -280,3 +280,124 @@ TEST(CASMountStop, AnInjectedLocalFailureEndsTheProcess)
     EXPECT_EQ(events[1], "fatal:closed/local_defect");
     EXPECT_EQ(log.graceful(), 0u);
 }
+
+namespace
+{
+
+/// R8: the GC fenced our own body, the renewal ends, and the self-remount is due.
+void fenceOutAndFailTheRenewal(Pool & store, Backend & backend)
+{
+    fenceOutMount(backend, store.layout().mountKey("test"));
+    EXPECT_THROW(store.renewWatermarkOnce(), DB::Exception);
+    ASSERT_EQ(store.mountEnd(), MountEnd::None);
+}
+
+/// While armed, every read of a mount slot times out.
+class MountReadOutageBackend : public InMemoryBackend
+{
+public:
+    std::atomic<bool> outage{false};
+
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
+    {
+        if (outage.load() && key.ends_with("/mount"))
+            throw Poco::TimeoutException("injected mount slot read timeout");
+        return InMemoryBackend::read(key, access);
+    }
+};
+
+}
+
+TEST(CASMountStop, ARemountThatFindsATwinStops)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    auto store = DB::Cas::tests::openPoolForTest(backend);
+    auto & log = DB::Cas::tests::processStopLog();
+    log.reset();
+    fenceOutAndFailTheRenewal(*store, *backend);
+    rewriteSlot(*backend, store->layout().mountKey("test"), [](MountLease & m)
+    {
+        m.writer_epoch += 5;
+        m.gc_fenced = false;
+        m.write_attempt_id = DB::UInt128{55};
+    });
+
+    EXPECT_FALSE(store->tryRemountOnce());
+
+    EXPECT_EQ(store->mountEnd(), MountEnd::SlotTaken);
+    EXPECT_EQ(store->lifecycle(), PoolLifecycle::Stopping);
+    EXPECT_EQ(log.graceful(), 1u);
+}
+
+TEST(CASMountStop, ARemountThatFindsAForeignServerStops)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    auto store = DB::Cas::tests::openPoolForTest(backend);
+    auto & log = DB::Cas::tests::processStopLog();
+    log.reset();
+    fenceOutAndFailTheRenewal(*store, *backend);
+    rewriteSlot(*backend, store->layout().mountKey("test"), [](MountLease & m)
+    {
+        m.server_uuid = DB::UInt128{0xF0F0};
+        m.gc_fenced = false;
+    });
+
+    EXPECT_FALSE(store->tryRemountOnce());
+
+    EXPECT_EQ(store->mountEnd(), MountEnd::SlotTaken);
+    EXPECT_EQ(log.graceful(), 1u);
+}
+
+/// Another process keeps renewing a body of the pair the GC fenced: the remount's observation never
+/// settles, and what it watched is not ours.
+TEST(CASMountStop, ARemountThatFindsAnUnknownBodyOfTheFencedPairStops)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    auto store = DB::Cas::tests::openPoolForTest(backend);
+    auto & log = DB::Cas::tests::processStopLog();
+    log.reset();
+    fenceOutAndFailTheRenewal(*store, *backend);
+    const String key = store->layout().mountKey("test");
+    rewriteSlot(*backend, key, [](MountLease & m)
+    {
+        m.gc_fenced = false;
+        m.hostname = "elsewhere";
+    });
+    store->setWaitSleepForTest([&](uint64_t)
+    {
+        rewriteSlot(*backend, key, [](MountLease & m)
+        {
+            ++m.seq;
+            m.write_attempt_id = DB::UInt128{m.seq};
+        });
+    });
+
+    EXPECT_FALSE(store->tryRemountOnce());
+
+    EXPECT_EQ(store->mountEnd(), MountEnd::SlotCorrupt);
+    EXPECT_EQ(log.graceful(), 1u);
+}
+
+TEST(CASMountStop, ARemountOverAStoreOutageStillRetries)
+{
+    auto backend = std::make_shared<MountReadOutageBackend>();
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(1'000'000);
+    const auto advance = [boot_ms](uint64_t ms) { boot_ms->fetch_add(ms); };
+    auto store = Pool::open(backend, PoolConfig{
+        .pool_prefix = "p",
+        .server_root_id = "test",
+        .boot_ms_fn = [boot_ms] { return boot_ms->load(); },
+        .retry_sleep_fn = advance,
+        .wait_sleep_fn = advance,
+    });
+    auto & log = DB::Cas::tests::processStopLog();
+    log.reset();
+    fenceOutAndFailTheRenewal(*store, *backend);
+    backend->outage = true;
+
+    EXPECT_FALSE(store->tryRemountOnce());
+
+    EXPECT_EQ(store->mountEnd(), MountEnd::None);
+    EXPECT_EQ(store->lifecycle(), PoolLifecycle::TransientNotLive);
+    EXPECT_TRUE(log.events().empty());
+}

@@ -205,6 +205,8 @@ public:
     /// The body this server last confirmed in its slot; empty before the first claim. Takes only
     /// `renewal_progress_mutex`, so a renewal stuck in a request never holds up the reader.
     std::optional<MountLease> confirmedMountBody() const;
+    /// The live incarnation's pair and its last confirmed body, before a self-remount replaces them.
+    OwnMountBodies fencedIdentity() const;
 
     /// ---- local write fence ----
     /// Return whether a mutable operation may start under the locally observed lease state.

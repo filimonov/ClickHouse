@@ -945,6 +945,13 @@ private:
     void reportImpossibleInterference(const String & key, const String & reason,
                                        const std::optional<String> & offending_ns = {});
 
+    /// A self-remount that finds another incarnation in the slot (`SlotTaken`) or a body of the fenced pair
+    /// this server did not write (`SlotCorrupt`) latches that end and must stop; `stop` gets the reading to
+    /// react to once `remount_mutex` is released, when this call won the latch. A missing slot is not an
+    /// end here: the remount re-creates it.
+    bool stopOnRemountObservation(const Observation & seen, const OwnMountBodies & fenced,
+                                  std::optional<MountSlotReading> & stop);
+
 
 public:
     /// Test seams: observe resident recovery/wedge state without a private-member friend hack. These

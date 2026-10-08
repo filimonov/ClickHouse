@@ -586,6 +586,15 @@ std::optional<MountLease> CasMountRuntime::confirmedMountBody() const
     return confirmed_body;
 }
 
+OwnMountBodies CasMountRuntime::fencedIdentity() const
+{
+    return OwnMountBodies{
+        .server_uuid = mount_fence.server_uuid,
+        .writer_epoch = liveWriterEpoch(),
+        .confirmed = confirmedMountBody(),
+    };
+}
+
 void CasMountRuntime::publishConfirmedBody(const std::optional<MountLease> & body)
 {
     std::lock_guard lock(renewal_progress_mutex);

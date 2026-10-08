@@ -52,10 +52,10 @@ struct OwnMountBodies
 {
     UInt128 server_uuid{};
     uint64_t writer_epoch = 0;
-    std::optional<MountLease> confirmed;
-    String confirmed_bytes;
-    std::optional<Etag> confirmed_etag;
-    std::optional<MountLease> in_flight;
+    std::optional<MountLease> confirmed = std::nullopt;
+    String confirmed_bytes = {};
+    std::optional<Etag> confirmed_etag = std::nullopt;
+    std::optional<MountLease> in_flight = std::nullopt;
 };
 
 struct MountSlotReading

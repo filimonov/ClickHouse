@@ -1237,8 +1237,13 @@ bool Pool::tryRemountOnce()
     bool succeeded = false;
     uint64_t result_writer_epoch = 0;
     String error;
+    std::optional<MountSlotReading> stop;
     SCOPE_EXIT(
     {
+        if (stop)
+            mount_runtime.reactToMountEnd(
+                stop->verdict == MountSlotVerdict::SlotTaken ? MountEnd::SlotTaken : MountEnd::SlotCorrupt, stop->holder, "");
+
         /// A parked redo completed while the whole-chain serializer was held. Drain its POD snapshot
         /// first, after lock destruction, so renewal recovery/failure precedes and correlates with the
         /// containing remount result without any callback or allocation under `remount_mutex`.
@@ -1448,20 +1453,47 @@ bool Pool::tryRemountOnce()
         /// own observation poll above.
         const auto sleep_ms = [this](uint64_t ms) { mount_runtime.waitSleep(ms); };
         step = "mount_claim";
+        const OwnMountBodies fenced = mount_runtime.fencedIdentity();
         CasOperation claim_op = gc_requests.admit();
-        const MountClaimResult claim = claimMountAwaitingExpiry(
-            claim_op, pool_layout, srid, our_uuid, writer_epoch,
-            now_ms, [this] { return bootMsNow(); }, ttl_ms, poll_interval_ms, sleep_ms,
-            [&srid](const MountLease & held, uint64_t threshold_ms)
+        MountClaimResult claim;
+        try
+        {
+            claim = claimMountAwaitingExpiry(
+                claim_op, pool_layout, srid, our_uuid, writer_epoch,
+                now_ms, [this] { return bootMsNow(); }, ttl_ms, poll_interval_ms, sleep_ms,
+                [&srid](const MountLease & held, uint64_t threshold_ms)
+                {
+                    LOG_INFO(getLogger("CasPool"),
+                        "CAS self-remount '{}': observing a stale-looking mount's write-token (uuid={} "
+                        "epoch={} expires_at_ms={}) for up to ~{} ms before reclaiming",
+                        srid, u128ToHex(held.server_uuid), held.writer_epoch, held.expires_at_ms, threshold_ms);
+                },
+                emit_mount_event);
+        }
+        catch (const Exception & e)
+        {
+            /// A newer epoch of ours and undecodable bytes are refusals, not observations; only a read names the loss.
+            if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CORRUPTED_DATA)
+                throw;
+            Observation seen = NotObserved{};
+            try
             {
-                LOG_INFO(getLogger("CasPool"),
-                    "CAS self-remount '{}': observing a stale-looking mount's write-token (uuid={} "
-                    "epoch={} expires_at_ms={}) for up to ~{} ms before reclaiming",
-                    srid, u128ToHex(held.server_uuid), held.writer_epoch, held.expires_at_ms, threshold_ms);
-            },
-            emit_mount_event);
+                CasOperation read_op = gc_requests.admit();
+                const std::optional<Object> got = read_op.read(pool_layout.mountKey(srid), Retry::once());
+                seen = corroborateAbsence(read_op, pool_layout.mountKey(srid), got ? Observation{*got} : Observation{ProvenAbsent{}});
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
+            if (stopOnRemountObservation(seen, fenced, stop))
+                return false;
+            throw;
+        }
         if (claim.kind != MountClaimResult::Claimed)
         {
+            const Observation seen = std::visit([](const auto & observed) -> Observation { return observed; }, claim.seen);
+            if (stopOnRemountObservation(seen, fenced, stop))
+                return false;
             LOG_WARNING(getLogger("CasPool"),
                 "CAS self-remount '{}': mount not claimable ({}); will retry", srid,
                 claim.kind == MountClaimResult::ForeignOwner ? "foreign owner — never taking over"
@@ -1753,6 +1785,22 @@ PartManifest Pool::readManifest(const ManifestId & id)
 BlobLocation Pool::locate(const ManifestEntry & entry) const
 {
     return manifest_reader.locate(entry);
+}
+
+bool Pool::stopOnRemountObservation(const Observation & seen, const OwnMountBodies & fenced,
+                                    std::optional<MountSlotReading> & stop)
+{
+    MountSlotReading reading = classifyMountSlot(seen, fenced);
+    MountEnd end = MountEnd::None;
+    if (reading.verdict == MountSlotVerdict::SlotTaken)
+        end = MountEnd::SlotTaken;
+    else if (reading.verdict == MountSlotVerdict::SlotCorrupt)
+        end = MountEnd::SlotCorrupt;
+    else
+        return false;
+    if (mount_runtime.latchMountEnd(end))
+        stop = std::move(reading);
+    return true;
 }
 
 void Pool::reportImpossibleInterference(const String & key, const String & reason,
