@@ -3575,6 +3575,67 @@ TEST(CASPoolRemount, RemountWaitsForRenewalParkedBeforeReplacement)
     runtime.finishTeardown(false);
 }
 
+/// The remount attempt, which allocates the writer epoch, runs with the renewal driver parked: a renewal
+/// that is already due is not sent while the attempt runs. The bounded wait is only hang protection.
+TEST(CASPoolRemount, DueRenewalIsNotSentWhileTheRemountAttemptRuns)
+{
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    const Layout layout("runtime-park-quiet");
+    uint64_t wall_ms = 1000;
+    uint64_t boot_ms = 10'000;
+    const UInt128 uuid{1};
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    std::atomic<uint64_t> renewal_writes{0};
+    std::latch hold_worker{1};
+    std::once_flag hold_once;
+    std::promise<void> declined;
+    std::shared_future<void> worker_declined = declined.get_future().share();
+    std::once_flag declined_once;
+    std::latch attempt_done{1};
+    std::once_flag attempt_once;
+    bool saw_decline = false;
+    RenewalDriverState state_during_attempt = RenewalDriverState::Dormant;
+    uint64_t writes_during_attempt = 0;
+    CasMountRuntime * runtime_ptr = nullptr;
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{
+            .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+            .background_watermark = true,
+            .boot_ms_fn = [&] { return boot_ms; },
+            .remount_parked_hook_for_test = [&] { hold_worker.count_down(); },
+            .renewal_before_driver_lock_hook_for_test = [&] { std::call_once(hold_once, [&] { hold_worker.wait(); }); },
+            .renewal_parked_predicate_false_hook_for_test = [&] { std::call_once(declined_once, [&] { declined.set_value(); }); }},
+        "test", sink, runtimeRenewBudget(), [&]
+        {
+            std::call_once(attempt_once, [&]
+            {
+                const uint64_t before = renewal_writes.load();
+                saw_decline = worker_declined.wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+                state_during_attempt = runtime_ptr->renewalDriverStateForTest();
+                writes_during_attempt = renewal_writes.load() - before;
+                attempt_done.count_down();
+            });
+            return false;
+        });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime_ptr = &runtime;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer();
+    runtime.armMountFence(uuid, 1, anchor + 1000);
+    backend->on_guarded_write = [&] { ++renewal_writes; };
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
+    /// The fence stays armed, so a renewal admitted now would really be sent.
+    runtime.scheduleRemount();
+    attempt_done.wait();
+    EXPECT_TRUE(saw_decline) << "the renewal worker must find the driver parked during the attempt";
+    EXPECT_EQ(state_during_attempt, RenewalDriverState::Parked);
+    EXPECT_EQ(writes_during_attempt, 0u);
+    runtime.stopBackgroundWorkers();
+    runtime.finishTeardown(false);
+}
+
 TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();

@@ -438,8 +438,9 @@ std::optional<OwnerObject> readOwnerObject(CasOperation & op, const Layout & l, 
     return decodeOwner(got->bytes);
 }
 
-/// Every refusal inside a step is returned, so an escaping `CORRUPTED_DATA` is a decode failure.
-/// Caller bugs and the decommission refusal propagate; anything else is the store not answering.
+/// Every refusal inside a step is returned, so an escaping `CORRUPTED_DATA` is an answer that cannot be
+/// trusted: an undecodable object or an invalid incarnation.
+/// Caller bugs and the decommission refusal propagate; anything else reached no verdict.
 template <typename Outcome, typename Step>
 Outcome runOwnershipStep(Step && step)
 {
@@ -750,7 +751,21 @@ EpochAllocation allocateEpochStep(CasOperation & op, const Layout & l, const Str
 {
     const String key = l.epochKey(srid);
     const Retry bound = op.freeze(Retry::standard());
-    std::optional<Object> current = op.read(key, bound);
+    /// A failed counter read reports as the allocation, with the code and text a failed write uses.
+    const auto read_counter = [&]() -> std::optional<Object>
+    {
+        try
+        {
+            return op.read(key, bound);
+        }
+        catch (const Exception & e)
+        {
+            if (isDeterministicLocalFailure(e.code()))
+                throw;
+            throwCasWriteRetryLater(fmt::format("CAS server-root '{}' writer_epoch allocation: {}", srid, e.message()));
+        }
+    };
+    std::optional<Object> current = read_counter();
     /// Set when the PREVIOUS decision wrote against an absent epoch. Its conflict means a winner may
     /// have installed an epoch while owned work became visible, so the emptiness bundle that
     /// authorized that attempt is recomputed before this decision accepts any epoch state at all.
@@ -797,7 +812,7 @@ EpochAllocation allocateEpochStep(CasOperation & op, const Layout & l, const Str
         if (const Object * object = std::get_if<Object>(&conflict->seen))
             seen = *object;
         else if (std::holds_alternative<NotObserved>(conflict->seen))
-            seen = op.read(key, bound);
+            seen = read_counter();
         if (authority == OwnershipAuthority::Reacquire)
         {
             if (!seen)

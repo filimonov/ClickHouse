@@ -79,6 +79,8 @@ CatalogObservation CasRefCatalog::observe(CasOperation & op, const Layout & layo
     }
     catch (const Exception & e)
     {
+        if (e.code() == ErrorCodes::CORRUPTED_DATA)
+            return OwnershipCorrupt{OwnershipCorrupt::Cause::Undecodable, std::current_exception()};
         if (isDeterministicLocalFailure(e.code()))
             throw;
         return OwnershipTransient{std::current_exception()};

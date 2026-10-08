@@ -7,7 +7,7 @@
 namespace DB::Cas
 {
 
-/// An ownership step the store did not answer; retry it. `error` is what a startup caller throws.
+/// An ownership step that reached no verdict; retry it. `error` is what a startup caller throws.
 struct OwnershipTransient { std::exception_ptr error; };
 
 /// An ownership object or the ref catalog was read and cannot be trusted. `error` is what a startup

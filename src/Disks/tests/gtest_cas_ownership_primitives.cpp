@@ -7,7 +7,7 @@
 #include <Disks/tests/cas_test_helpers.h>
 #include <Poco/Exception.h>
 
-namespace DB::ErrorCodes { extern const int CORRUPTED_DATA; }
+namespace DB::ErrorCodes { extern const int CORRUPTED_DATA; extern const int NETWORK_ERROR; }
 using namespace DB::Cas;
 using DB::Cas::tests::OperationForTest;
 
@@ -107,11 +107,16 @@ public:
     using Backend::read;
     std::optional<Raw> read(const String & key, TransportAccess & access) override
     {
-        if (fail && key == kLayout.refCatalogKey())
+        if (fail && key == failing_key)
             throw Poco::TimeoutException("injected");
-        return InMemoryBackend::read(key, access);
+        std::optional<Raw> raw = InMemoryBackend::read(key, access);
+        if (raw && invalid_incarnation && key == failing_key)
+            raw->value.clear();
+        return raw;
     }
+    String failing_key = kLayout.refCatalogKey();
     bool fail = false;
+    bool invalid_incarnation = false;
 };
 }
 
@@ -196,6 +201,26 @@ TEST(CASOwnershipStartGolden, OwnEpochFencedBeforeClaimTakesAFreshOne)
     EXPECT_FALSE(b->hook) << "the injected write ran";
 }
 
+TEST(CASOwnershipStartGolden, FailedCounterReadReportsAsTheAllocation)
+{
+    auto b = std::make_shared<FailingCatalogReads>();
+    put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 5}));
+    b->failing_key = kLayout.epochKey(kSrid);
+    b->fail = true;
+    Plane p(b);
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "CAS server-root 'test' writer_epoch allocation",
+        [&] { allocateWriterEpoch(p.op, kLayout, kSrid, EpochMintPolicy::NormalMount, 0, kEmpty); });
+}
+TEST(CASOwnershipPrimitives, CatalogWithAnInvalidIncarnationIsCorrupt)
+{
+    auto b = std::make_shared<FailingCatalogReads>();
+    put(*b, kLayout.refCatalogKey(), encodeRefCatalog(RefCatalog{}));
+    b->invalid_incarnation = true;
+    Plane p(b);
+    const CatalogObservation observed = CasRefCatalog::observe(p.op, kLayout, "t");
+    ASSERT_TRUE(std::holds_alternative<OwnershipCorrupt>(observed));
+    EXPECT_EQ(std::get<OwnershipCorrupt>(observed).cause, OwnershipCorrupt::Cause::Undecodable);
+}
 TEST(CASOwnershipPrimitives, CatalogObservationIsTyped)
 {
     auto b = std::make_shared<FailingCatalogReads>();
@@ -288,4 +313,26 @@ TEST(CASOwnershipPrimitives, UnclearReacquireAllocationIsResolvedByOurBytes)
         p.op, kLayout, kSrid, OwnershipAuthority::Reacquire, EpochMintPolicy::NormalMount, 0, kEmpty)).writer_epoch, 5u);
     EXPECT_EQ(counterNext(*b), 6u);
     EXPECT_FALSE(b->hook) << "the injected write ran";
+}
+TEST(CASOwnershipReacquire, RemountDoesNotRecreateADeletedOwnerAnchor)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    auto pool = Pool::open(b, config());
+    MountLease fenced = decodeMountLease(get(*b, kLayout.mountKey(kSrid))->bytes);
+    fenced.gc_fenced = true;
+    ++fenced.seq;
+    put(*b, kLayout.mountKey(kSrid), encodeMountLease(fenced));
+    erase(*b, kLayout.ownerKey(kSrid));
+    EXPECT_FALSE(pool->tryRemountOnce());
+    EXPECT_FALSE(get(*b, kLayout.ownerKey(kSrid)));
+    EXPECT_EQ(pool->writerEpoch(), 1u);
+}
+TEST(CASOwnershipReacquire, RemountDoesNotRecreateADeletedEpochCounter)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    auto pool = Pool::open(b, config());
+    erase(*b, kLayout.epochKey(kSrid));
+    erase(*b, kLayout.mountKey(kSrid));
+    EXPECT_FALSE(pool->tryRemountOnce());
+    EXPECT_FALSE(get(*b, kLayout.epochKey(kSrid)));
 }

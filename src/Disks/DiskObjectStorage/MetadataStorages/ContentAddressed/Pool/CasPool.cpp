@@ -1439,12 +1439,14 @@ bool Pool::tryRemountOnce()
         /// The open plane throughout: the mount fence is latched lost here (starting the renewer does
         /// not clear it), so an operation admitted under the fence could never make the claim that
         /// re-establishes it.
+        /// A remount creates neither the owner anchor nor the counter, and another process advancing
+        /// the counter fails the attempt.
         CasOperation owner_op = gc_requests.admit();
-        claimOwnerOrThrow(owner_op, pool_layout, srid, our_uuid, observe_catalog);
+        throwUnlessHeld(claimOwner(owner_op, pool_layout, srid, our_uuid, OwnershipAuthority::Reacquire, observe_catalog));
         step = "writer_epoch_allocate";
         CasOperation epoch_op = gc_requests.admit();
-        const uint64_t writer_epoch = allocateWriterEpoch(
-            epoch_op, pool_layout, srid, EpochMintPolicy::NormalMount, 0, observe_catalog);
+        const uint64_t writer_epoch = epochOrThrow(allocateEpoch(
+            epoch_op, pool_layout, srid, OwnershipAuthority::Reacquire, EpochMintPolicy::NormalMount, 0, observe_catalog));
         result_writer_epoch = writer_epoch;
 
         /// Mount-slot writer audit: `this` is already fully open (setEventSink ran long ago), so
