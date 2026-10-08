@@ -114,7 +114,7 @@ terminal because that request may still land.
 
 **An expired lease is a pause.** While the store does not answer, writes stop being admitted once the
 remaining lease cannot cover them, and the lease expires at its deadline. `system.cas_mounts` then
-shows `lifecycle = 'not_live'` and `lifecycle_reason = 'lease_expired'`, and the server logs one
+shows `lifecycle = 'paused'` and `lifecycle_reason = 'lease_expired'`, and the server logs one
 `WARNING`: `CAS mount lease of '<server_root_id>' expired <N> ms ago under writer_epoch <E>`. Nothing
 is remounted. The first confirmed renewal whose start plus the lease is still ahead resumes writes
 under the same `writer_epoch`; a renewal confirmed later than that leaves writes paused, and the next
@@ -279,7 +279,7 @@ becomes `state = 'corrupt'`, never an exception). Shows every `server_root_id` i
 | `writer_epoch`, `renewal_sequence`, `started_at`, `expires_at`, `min_active_build_sequence`, `gc_fenced` | lease state (`DateTime64(3)` columns; the millisecond-integer field names live only in the internal `MountLease` struct and the on-disk body) |
 | `state` | one of `live`, `expired`, `terminated`, `fenced`, `corrupt` |
 | `is_leader`, `pending_reclaim`, `last_success_age_seconds`, `wedged_namespace_count` | GC health, process-local; **`NULL` on every peer row** — a process-local fact must never be stamped onto another server's row |
-| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is one of `live`, `not_live`, `identity_lost`, `vanished`, `constructing`, `shutdown`; `lifecycle_reason` distinguishes `replaced` from `forgotten` for a `vanished` disk; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began (`NULL` while live) |
+| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `remounting`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began (`NULL` while live) |
 | `renewal_in_progress`, `renewal_attempts`, `last_renewal_error` | the running (or last) lease renewal: conditional `PUT`s sent so far and the last failed request, updated per attempt; **`NULL` on every peer row** |
 
 The lifecycle snapshot is I/O-free and ungated, so a not-live, never-started, or vanished disk
