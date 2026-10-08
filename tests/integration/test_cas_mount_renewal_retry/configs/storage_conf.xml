@@ -34,6 +34,23 @@
                 <cas_attempt_timeout_ms>500</cas_attempt_timeout_ms>
                 <cas_lease_safety_margin_ms>500</cas_lease_safety_margin_ms>
             </disk_cas_renewal>
+            <!-- A read-only view of the same pool through the proxy. It holds no mount slot, so it adds
+                 no renewal or claim to `node`. Its attempt timeout is long enough for the proxy's `slow`
+                 mode to hold one of its requests in flight while another query runs. -->
+            <disk_cas_renewal_view>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
+                <cas_server_root_id>itest-cas-renewal</cas_server_root_id>
+                <endpoint>http://s3proxy:11121/test/cas_mount_renewal/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <readonly>true</readonly>
+                <cas_gc_enabled>false</cas_gc_enabled>
+                <cas_attempt_timeout_ms>30000</cas_attempt_timeout_ms>
+            </disk_cas_renewal_view>
         </disks>
         <policies>
             <cas_mount_renewal>

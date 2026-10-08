@@ -3,6 +3,7 @@ import io
 import json
 import os
 import subprocess
+import threading
 import time
 import urllib.request
 
@@ -17,6 +18,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 DISK = "disk_cas_renewal"
+VIEW_DISK = "disk_cas_renewal_view"
 SERVER_ROOT_ID = "itest-cas-renewal"
 STORAGE_POLICY = "cas_mount_renewal"
 MOUNT_OBJECT_KEY = "cas_mount_renewal/gc/server-roots/{}/mount".format(SERVER_ROOT_ID)
@@ -736,3 +738,51 @@ def test_a_disk_filter_lists_only_that_disk(start_cluster):
     node.query("SELECT count() FROM system.cas_mounts", query_id="pr09a-both")
     assert _query_events(node, "pr09a-one", ["S3ListObjects"]) == 1
     assert _query_events(node, "pr09a-both", ["S3ListObjects"]) == 2
+
+
+def test_local_row_answers_while_a_foreign_slot_read_hangs(start_cluster):
+    # The proxy holds the GET of a foreign slot, so a listing query waits in it; the local rows still
+    # answer from memory, with no request, while that GET is in flight.
+    node = start_cluster["node"]
+    control_url = start_cluster["control_url"]
+    body, _ = _read_mount_object()
+    peer = "itest-hung-peer"
+    peer_key = "cas_mount_renewal/gc/server-roots/{}/mount".format(peer)
+    _rustfs_client(10).put_object(cluster.rustfs_bucket, peer_key, io.BytesIO(body), len(body))
+    _control(control_url, "/config", {"reset": True})
+    _control(
+        control_url,
+        "/config",
+        {"rate": 1.0, "modes": ["slow"], "slow_ms": 20000, "methods": ["GET"],
+         "path_substring": "/{}/mount".format(peer), "remaining_faults": 1, "seed": 902},
+    )
+    listing = {}
+
+    def list_foreign():
+        listing["rows"] = node.query(
+            "SELECT server_root_id FROM system.cas_mounts WHERE disk = '{}' AND is_local = 0 "
+            "ORDER BY server_root_id FORMAT TSV".format(VIEW_DISK), timeout=90).split()
+
+    lister = threading.Thread(target=list_foreign)
+    lister.start()
+    try:
+        _wait_until(
+            lambda deadline: _control(control_url, "/stats", timeout=deadline.remaining())["by_mode"].get("slow", 0) == 1,
+            timeout=30,
+        )
+        local = node.query(
+            "SELECT disk, server_root_id FROM system.cas_mounts WHERE disk IN ('{}', '{}') AND is_local = 1 "
+            "ORDER BY disk FORMAT TSV".format(DISK, VIEW_DISK), query_id="pr09a-hung-local", timeout=10).strip()
+        listing_held = lister.is_alive()
+    finally:
+        lister.join(timeout=90)
+        _control(control_url, "/config", {"rate": 0.0})
+        _rustfs_client(10).remove_object(cluster.rustfs_bucket, peer_key)
+    assert listing_held, "the local query must answer while the foreign GET is still held"
+    assert local.splitlines() == [
+        "{}\t{}".format(DISK, SERVER_ROOT_ID),
+        "{}\t{}".format(VIEW_DISK, SERVER_ROOT_ID),
+    ], local
+    assert _query_events(node, "pr09a-hung-local", ["S3ListObjects", "S3GetObject", "S3HeadObject"]) == 0
+    # A read-only disk holds no slot, so its listing keeps the slot under its own server_root_id.
+    assert listing.get("rows") == [SERVER_ROOT_ID, peer], listing
