@@ -763,6 +763,7 @@ ContentAddressedMetadataStorage::PoolView ContentAddressedMetadataStorage::openP
     pool_config.pool_prefix = pool_prefix;
     pool_config.server_id = serverIdToU128(server_id);
     pool_config.server_root_id = server_root_id;
+    pool_config.disk_name = disk_name;
     /// A read-only (`<readonly>`) disk opens with no background watermark and no write probe.
     pool_config.background_watermark = context_available && !read_only;
     pool_config.read_only = read_only;

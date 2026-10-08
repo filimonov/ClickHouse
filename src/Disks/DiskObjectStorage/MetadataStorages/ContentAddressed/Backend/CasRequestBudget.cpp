@@ -1,8 +1,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequestBudget.h>
 
 #include <limits>
+#include <fmt/format.h>
 #include <Common/Exception.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -27,6 +27,58 @@ uint64_t CasRequestBudget::attemptEnvelopeMs() const
         : attempt_timeout_ms + connects;
 }
 
+namespace
+{
+uint64_t satAdd(uint64_t a, uint64_t b)
+{
+    return a > std::numeric_limits<uint64_t>::max() - b ? std::numeric_limits<uint64_t>::max() : a + b;
+}
+
+uint64_t satSub(uint64_t a, uint64_t b)
+{
+    return a > b ? a - b : 0;
+}
+}
+
+uint64_t CasLeaseThresholds::conditionalNeedMs() const { return satAdd(envelope_ms, envelope_ms); }
+uint64_t CasLeaseThresholds::conditionalReserveMs() const { return satAdd(conditionalNeedMs(), margin_ms); }
+uint64_t CasLeaseThresholds::singleRequestReserveMs() const { return satAdd(envelope_ms, margin_ms); }
+uint64_t CasLeaseThresholds::conditionalPauseAfterMs() const { return satSub(lease_ms, conditionalReserveMs()); }
+uint64_t CasLeaseThresholds::singleRequestPauseAfterMs() const { return satSub(lease_ms, singleRequestReserveMs()); }
+
+CasLeaseThresholds leaseThresholds(const CasRequestBudget & budget, uint64_t lease_ms, uint64_t renew_period_ms)
+{
+    return {lease_ms, renew_period_ms, budget.attemptEnvelopeMs(), budget.lease_safety_margin_ms};
+}
+
+String formatSeconds(uint64_t ms)
+{
+    if (ms % 1000 == 0)
+        return fmt::format("{}", ms / 1000);
+    String text = fmt::format("{}.{:03}", ms / 1000, ms % 1000);
+    while (text.back() == '0')
+        text.pop_back();
+    return text;
+}
+
+String describeMountTimeline(const String & disk, const String & server_root_id, const CasLeaseThresholds & t)
+{
+    const uint64_t renewal_end_ms = satAdd(t.renew_period_ms, t.envelope_ms);
+    return fmt::format(
+        "CAS disk '{}' (server_root_id={}): renewal starts every {} s. Without a confirmed renewal conditional "
+        "changes pause after {} s; deletes, publishes and uncached reads after {} s; the lease ends after {} s. "
+        "Operations resume under the same writer_epoch after a confirmed renewal that leaves enough lease. A renewal "
+        "that takes the full request envelope of {} s ends at {} s, {} conditional changes pause. Another server "
+        "may take this slot after it has seen the token unchanged for {} s plus its own poll step "
+        "(cas_mount_lease_ms={}, cas_mount_renew_period_ms={}, request envelope {} s, cas_lease_safety_margin_ms={}).",
+        disk, server_root_id, formatSeconds(t.renew_period_ms),
+        formatSeconds(t.conditionalPauseAfterMs()), formatSeconds(t.singleRequestPauseAfterMs()),
+        formatSeconds(t.lease_ms), formatSeconds(t.envelope_ms), formatSeconds(renewal_end_ms),
+        renewal_end_ms >= t.conditionalPauseAfterMs() ? "after" : "before",
+        formatSeconds(satAdd(t.lease_ms, t.lease_ms / 20)), t.lease_ms, t.renew_period_ms,
+        formatSeconds(t.envelope_ms), t.margin_ms);
+}
+
 void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_lease_ttl_ms,
                               uint64_t mount_renew_period_ms, bool background_renewal)
 {
@@ -41,31 +93,21 @@ void validateCasRequestBudget(const CasRequestBudget & budget, uint64_t mount_le
     if (!one_envelope_fits)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "CAS request budget rejected: the attempt envelope ({} ms = attempt_timeout_ms {} + connect cap {}) "
-            "plus lease_safety_margin_ms ({}) must be strictly less than the mount lease TTL ({} ms). "
+            "plus lease_safety_margin_ms ({}) must be strictly less than cas_mount_lease_ms ({}). "
             "A writable mount refuses to open with this budget.",
             envelope, budget.attempt_timeout_ms, budget.connect_timeout_cap_ms.value_or(0), budget.lease_safety_margin_ms, mount_lease_ttl_ms);
     if (background_renewal)
     {
-        /// A renewal is a write: two envelopes (the attempt and its settlement read) after one period.
-        /// Saturating doubling first (matching the production horizon checks' own arithmetic), then
-        /// subtraction-based comparisons against the TTL -- no truncating division, so this enforces
-        /// exactly the inequality the exception message states, not an off-by-one-tighter one.
-        const uint64_t two_envelope = envelope > std::numeric_limits<uint64_t>::max() / 2
-            ? std::numeric_limits<uint64_t>::max() : 2 * envelope;
-        const bool cadence_fits = mount_renew_period_ms < mount_lease_ttl_ms
-            && two_envelope < mount_lease_ttl_ms - mount_renew_period_ms
-            && budget.lease_safety_margin_ms < mount_lease_ttl_ms - mount_renew_period_ms - two_envelope;
-        if (!cadence_fits)
+        /// A renewal must start while conditional changes are still admitted; each is a write plus its
+        /// settlement read. Comparing against the pause time, not a sum, keeps absurd values from wrapping.
+        const CasLeaseThresholds t = leaseThresholds(budget, mount_lease_ttl_ms, mount_renew_period_ms);
+        if (mount_renew_period_ms >= t.conditionalPauseAfterMs())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "CAS mount renewal cadence rejected: mount_renew_period_ms ({}) + 2 × attempt envelope ({} ms) + "
-                "lease_safety_margin_ms ({}) must be strictly less than the mount lease TTL ({} ms)",
-                mount_renew_period_ms, envelope, budget.lease_safety_margin_ms, mount_lease_ttl_ms);
+                "CAS disk: a renewal must start while conditional changes are still admitted: "
+                "cas_mount_renew_period_ms ({}) plus the conditional reserve ({} = 2 × request envelope {} + "
+                "cas_lease_safety_margin_ms {}) must be less than cas_mount_lease_ms ({})",
+                mount_renew_period_ms, t.conditionalReserveMs(), t.envelope_ms, t.margin_ms, mount_lease_ttl_ms);
     }
-    LOG_INFO(getLogger("CasRequestBudget"),
-        "CAS request budget in effect: attempt_timeout_ms={} connect_timeout_cap_ms={} envelope_ms={} lease_safety_margin_ms={} "
-        "(mount_lease_ttl_ms={} mount_renew_period_ms={})",
-        budget.attempt_timeout_ms, budget.connect_timeout_cap_ms.value_or(0), envelope, budget.lease_safety_margin_ms,
-        mount_lease_ttl_ms, mount_renew_period_ms);
 }
 
 }

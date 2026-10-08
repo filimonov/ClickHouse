@@ -55,6 +55,8 @@ struct PoolConfig
     /// (clean relative path); `ServerUUID`/`server_id` is demoted to an
     /// owner token. Validated via `Cas::validateServerRootId`.
     String server_root_id;
+    /// For operator texts only.
+    String disk_name = {};
     uint64_t blob_header_len = 256;           /// creation-time only; the pool is authoritative on reopen
     /// CAS mixed-algo pools: the
     /// NODE-LOCAL algo this Pool writes NEW content with (`Pool::writeAlgo()`). NOT durable pool
@@ -355,6 +357,7 @@ struct PoolConfig
             .boot_ms_fn = boot_ms_fn,
             .wait_sleep_fn = wait_sleep_fn,
             .worker_factory = worker_factory,
+            .disk_name = disk_name,
         };
     }
 };
@@ -456,6 +459,7 @@ public:
     /// ---- per-server watermark surface ----
     /// process_epoch: random nonzero per Pool (process). GC checks epoch EQUALITY, never ordering.
     uint64_t epoch() const { return mount_runtime.epoch(); }
+    const CasLeaseThresholds & leaseThresholds() const { return mount_runtime.leaseThresholds(); }
     /// The durable-monotone writer_epoch allocated at writable open. On a
     /// writable Pool this is the value bridged into `process_epoch` (so the watermark + the manifest
     /// manifest ref carries it); on a read-only open the random `process_epoch` is unchanged and

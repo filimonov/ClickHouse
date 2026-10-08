@@ -111,6 +111,8 @@ struct MountConfig
     /// Deterministic test interposition on the renewing thread right after `DriverLease::finish`
     /// returned driver ownership, before the result is consumed. Runs without `driver_mutex`.
     std::function<void(const MountRenewResult &)> renewal_finished_hook_for_test = {};
+    /// For operator texts only.
+    String disk_name = {};
 };
 
 /// Local, in-memory write fence. It is deliberately not checked by reading the object store for every
@@ -342,6 +344,8 @@ public:
     LeasePauseState leasePause() const;
     /// Two attempt envelopes and the safety margin: the reserve `refAppendFenceOk` admits against.
     uint64_t conditionalReserveMs() const;
+    /// The one set of thresholds admission, the mount line and the operator texts read.
+    const CasLeaseThresholds & leaseThresholds() const { return lease_thresholds; }
 
     /// TRUE once the pool has reached — or is being driven toward — a state on which the self-remount
     /// worker must stop: a published terminal `Vanished` intent (`vanished_intent` — set early by
@@ -506,6 +510,7 @@ private:
     String server_root_id;
     const CasEventSink & event_sink;
     CasRequestBudget cas_request_budget;
+    const CasLeaseThresholds lease_thresholds;
     std::function<bool()> remount_attempt;
 
     /// Per-server build watermark. `process_epoch` is a random

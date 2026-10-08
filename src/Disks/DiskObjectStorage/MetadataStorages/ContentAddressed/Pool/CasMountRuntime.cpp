@@ -69,6 +69,9 @@ CasMountRuntime::CasMountRuntime(
     , server_root_id(std::move(server_root_id_))
     , event_sink(event_sink_)
     , cas_request_budget(cas_request_budget_)
+    , lease_thresholds(::DB::Cas::leaseThresholds(
+          cas_request_budget, static_cast<uint64_t>(config.mount_lease_ttl_ms.count()),
+          static_cast<uint64_t>(config.mount_renew_period.count())))
     , remount_attempt(std::move(remount_attempt_))
 {
 }
@@ -147,7 +150,7 @@ Fence::Admit CasMountRuntime::admit(uint64_t admitted_generation, uint64_t neede
     /// Compared by subtraction rather than as the sum `needed_ms + margin`, which can wrap for an
     /// absurd configuration and then read as if there were room.
     const uint64_t remaining = deadline - now;
-    if (needed_ms >= remaining || cas_request_budget.lease_safety_margin_ms >= remaining - needed_ms)
+    if (needed_ms >= remaining || lease_thresholds.margin_ms >= remaining - needed_ms)
         return Fence::Admit::NoBudget;
     return Fence::Admit::Ok;
 }
@@ -157,17 +160,12 @@ bool CasMountRuntime::refAppendFenceOk() const
     /// Two envelopes' worth of room under the live generation -- a write and its settlement read, which
     /// is what `writeLoop` reserves -- so a ref-log attempt is not started when it cannot plausibly
     /// finish, safety margin included, before the lease expires. `admit` adds the margin itself.
-    const uint64_t needed_ms = conditionalReserveMs() - cas_request_budget.lease_safety_margin_ms;
-    return admit(fenceGeneration(), needed_ms) == Fence::Admit::Ok;
+    return admit(fenceGeneration(), lease_thresholds.conditionalNeedMs()) == Fence::Admit::Ok;
 }
 
 uint64_t CasMountRuntime::conditionalReserveMs() const
 {
-    const uint64_t envelope_ms = cas_request_budget.attemptEnvelopeMs();
-    const uint64_t two = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
-        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
-    const uint64_t margin = cas_request_budget.lease_safety_margin_ms;
-    return two > std::numeric_limits<uint64_t>::max() - margin ? std::numeric_limits<uint64_t>::max() : two + margin;
+    return lease_thresholds.conditionalReserveMs();
 }
 
 LeasePauseState CasMountRuntime::leasePause() const
@@ -429,7 +427,7 @@ void CasMountRuntime::installRenewer(
         config.mount_lease_ttl_ms, now_ms,
         [this] { return minActive(); },
         [this](CasEvent e) { emitEvent(std::move(e)); },
-        std::chrono::milliseconds(cas_request_budget.lease_safety_margin_ms),
+        std::chrono::milliseconds(lease_thresholds.margin_ms),
         [this] { return bootMsNow(); });
 
     std::lock_guard lock(driver_mutex);

@@ -561,6 +561,10 @@ PoolPtr Pool::open(BackendPtr backend, PoolConfig config)
     /// durably admitted (the invariant this whole design rests on).
     chassert(store->isAlgoAdmitted(write_algo));
 
+    if (!store->config.read_only)
+        LOG_INFO(getLogger("CasPool"), "{}",
+            describeMountTimeline(store->config.disk_name, store->config.server_root_id, store->leaseThresholds()));
+
     /// Per-server watermark: mint the random NONZERO `process_epoch`
     /// once per Pool (GC checks it for equality only -- a different epoch == a dead incarnation). The
     /// masking/redraw detail lives in `CasMountRuntime::mintRandomProcessEpoch`.

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <optional>
+#include <base/types.h>
 
 namespace DB::Cas
 {
@@ -17,9 +18,7 @@ struct CasRequestBudget
     /// every attempt it starts; the actual socket-level wait is configured on the object storage's
     /// client (the object storage backend's single-attempt client), not by this struct.
     uint64_t attempt_timeout_ms = 5000;
-    /// Startup-only margin folded into `validateCasRequestBudget`'s inequality against the mount lease
-    /// TTL. Not consulted at runtime by the engine itself -- the caller's fence (backed by the local
-    /// write fence's own deadline) is what actually gates lease-relative timing per attempt.
+    /// Reserved on top of the attempt envelopes in every admission.
     uint64_t lease_safety_margin_ms = 2000;
 
     /// The cap the single-attempt client puts on one TCP connect and again on one TLS handshake,
@@ -46,13 +45,31 @@ struct CasRequestBudget
     uint64_t recovery_retry_max_backoff_ms = 30000;
 };
 
+/// The thresholds of one writable mount, computed once from its configuration. Admission, the mount line,
+/// `system.cas_mounts` and the refusal texts read this one value, so what is printed is what is enforced.
+/// Admission refuses an operation when the confirmed lease left is not more than its reserve.
+struct CasLeaseThresholds
+{
+    uint64_t lease_ms = 0;
+    uint64_t renew_period_ms = 0;
+    uint64_t envelope_ms = 0;
+    uint64_t margin_ms = 0;
+    uint64_t conditionalNeedMs() const;         /// two envelopes: a write and its settlement read
+    uint64_t conditionalReserveMs() const;      /// the need plus the margin
+    uint64_t singleRequestReserveMs() const;    /// one envelope plus the margin
+    /// Time after the start of the last confirmed renewal at which each class stops being admitted.
+    uint64_t conditionalPauseAfterMs() const;
+    uint64_t singleRequestPauseAfterMs() const;
+};
+CasLeaseThresholds leaseThresholds(const CasRequestBudget & budget, uint64_t lease_ms, uint64_t renew_period_ms);
+/// `14000` -> `14`, `31500` -> `31.5`.
+String formatSeconds(uint64_t ms);
+/// The line a writable mount logs at start: every threshold in seconds and the settings behind them.
+String describeMountTimeline(const String & disk, const String & server_root_id, const CasLeaseThresholds & t);
+
 /// Startup validation: a writable mount refuses to open with an inconsistent budget rather than
-/// silently falling back to an unbounded or unsafe retry policy. Throws
-/// `BAD_ARGUMENTS` unless:
-///   attemptEnvelopeMs() + lease_safety_margin_ms < mount_lease_ttl_ms
-/// and, when `background_renewal` is true (the mount runs a background renewer):
-///   mount_renew_period_ms + 2 × attemptEnvelopeMs() + lease_safety_margin_ms < mount_lease_ttl_ms
-/// (a renewal is a write: two envelopes for the attempt and its settlement read).
+/// silently falling back to an unbounded or unsafe retry policy. Throws `BAD_ARGUMENTS` unless
+/// envelope + margin < lease and, with background renewal, period + conditional reserve < lease.
 ///
 /// A successor mounting over an unclean predecessor waits at least one lease TTL, plus its
 /// materialization grace period, before trusting recovery listings. This is long enough for any

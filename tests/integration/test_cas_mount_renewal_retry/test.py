@@ -290,21 +290,20 @@ def start_cluster():
 
 
 def test_openpoolview_handoff_freezes_the_connect_cap_from_the_real_disk(start_cluster):
-    # `ContentAddressedMetadataStorage::openPoolView` derives `connect_timeout_cap_ms` from the
-    # disk's OWN S3 client (`freezeConnectTimeoutCapMs`) and hands it into the pool's request budget;
-    # `Pool::open` logs that budget once, at startup, through logger `CasRequestBudget`. This proves
-    # the handoff end to end through the two disks' real startup, not through a test-constructed
-    # backend: `disk_cas_budget_capped` (connect_timeout_ms=1000) must show the derived cap 1000 and
-    # envelope 7000; `disk_cas_budget_unbounded` (connect_timeout_ms=0, Poco's "unbounded") must show
-    # the cap falling back to the attempt timeout itself, 5000, and envelope 15000. Either disk
-    # opening with the base client's own timeout instead (1000/1000/... or 2000/...) would mean the
-    # freeze was skipped or the frozen value never reached the backend.
+    # `ContentAddressedMetadataStorage::openPoolView` derives `connect_timeout_cap_ms` from the disk's OWN
+    # S3 client (`freezeConnectTimeoutCapMs`) and hands it into the pool's request budget; `Pool::open`
+    # logs the mount line from it once, at startup. The request envelope in that line proves the cap:
+    # 7 s with `disk_cas_budget_capped`'s frozen 1000 ms cap, 15 s with `disk_cas_budget_unbounded`'s
+    # fallback to the 5000 ms attempt timeout (`connect_timeout_ms=0` is Poco's "unbounded"). Opening with
+    # the base client's own timeout instead would mean the freeze was skipped.
     node = start_cluster["budget_probe"]
+    capped = "CAS disk 'disk_cas_budget_capped' (server_root_id=itest-cas-budget-capped): renewal starts every 10 s"
+    assert _log_count_since_last_restart(node, capped) == 1
     assert _log_count_since_last_restart(
-        node, "CAS request budget in effect: attempt_timeout_ms=5000 connect_timeout_cap_ms=1000 envelope_ms=7000"
+        node, "(cas_mount_lease_ms=30000, cas_mount_renew_period_ms=10000, request envelope 7 s, cas_lease_safety_margin_ms=2000)"
     ) == 1
     assert _log_count_since_last_restart(
-        node, "CAS request budget in effect: attempt_timeout_ms=5000 connect_timeout_cap_ms=5000 envelope_ms=15000"
+        node, "(cas_mount_lease_ms=50000, cas_mount_renew_period_ms=10000, request envelope 15 s, cas_lease_safety_margin_ms=2000)"
     ) == 1
 
 
