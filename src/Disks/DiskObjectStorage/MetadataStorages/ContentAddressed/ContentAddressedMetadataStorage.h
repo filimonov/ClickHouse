@@ -97,12 +97,13 @@ enum class CasOpAdmission : uint8_t
 ///   - `reason`         — one word: `renewal_overdue` / `lease_expired` / `remounting` for `paused`,
 ///                        `replaced` for `vanished`, `forgotten` for `closed`, empty otherwise. Kept a small
 ///                        closed vocabulary so a downstream `lifecycle || '(' || reason || ')'` yields e.g.
-///                        exactly `closed(forgotten)` — the [D5] free text lives in `detail`, never here.
+///                        exactly `closed(forgotten)` — the free text lives in `detail`, never here.
 ///   - `detail`         — the full [D5] reason text naming the actual failure (the replaced
 ///                        diagnosis, the timestamped `FORGET` message, or the identity-loss message); spec §1
 ///                        requires it appear verbatim in the snapshot. Empty while `live` and for a null pool.
 ///   - `since`          — wall-clock second the current non-`live` state was entered (for a pause derived
-///                        from the clock, when it began); 0 while `live`/no pool.
+///                        from the clock, when its threshold was crossed: for `lease_expired`, the
+///                        deadline); 0 while `live`/no pool.
 ///   - `pool_id`        — last-known pool UUID (empty before the first `startup`); the disk stays
 ///                        introspectable under its identity even once the pool is gone.
 ///   - `server_root_id` — this server's node-local root id owning the mount slot.

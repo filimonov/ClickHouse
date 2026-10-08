@@ -117,7 +117,7 @@ TEST(CASLifecycleSnapshot, IdentityLostHasDetailAndSince)
 
 /// (c) VanishedForgotten via the REAL verb (`storage->forgetDisk()`): the snapshot reads `closed` with the
 /// enum-clean `reason` word `forgotten` (so Task 14's `lifecycle || '(' || lifecycle_reason || ')'` reads
-/// EXACTLY `closed(forgotten)`), the [D5] `detail` carrying the operator's decommission timestamp, `since`
+/// EXACTLY `closed(forgotten)`), the `detail` carrying the operator's decommission timestamp, `since`
 /// set, and the identity still present.
 TEST(CASLifecycleSnapshot, VanishedForgottenIsEnumCleanWithTimestampedDetail)
 {

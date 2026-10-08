@@ -269,9 +269,11 @@ retires in order: mount, epoch, a final liveness re-check, owner tombstone.
 
 ## `system.cas_mounts` {#mounts-table}
 
-A read-only view of the same heartbeat-floor computation GC uses: one `LIST` of
-`gc/server-roots/` plus one `GET` per slot, zero writes, per-row fail-open (an undecodable body
-becomes `state = 'corrupt'`, never an exception). Shows every `server_root_id` in the pool, including peers.
+Per CAS disk, one row for this server's own mount, built from memory (`is_local = 1`), and one row per
+other mount slot (`is_local = 0`). The other slots come from one `LIST` of `gc/server-roots/` plus one
+`GET` per slot, one attempt each, zero writes; an undecodable body becomes `state = 'corrupt'`. A writable
+disk's own slot is not read: its row shows the body this server last confirmed. A failed listing is one
+row with `listing_error` set.
 
 | Column | Notes |
 |---|---|
@@ -279,7 +281,7 @@ becomes `state = 'corrupt'`, never an exception). Shows every `server_root_id` i
 | `writer_epoch`, `renewal_sequence`, `started_at`, `expires_at`, `min_active_build_sequence`, `gc_fenced` | lease state (`DateTime64(3)` columns; the millisecond-integer field names live only in the internal `MountLease` struct and the on-disk body) |
 | `state` | one of `live`, `expired`, `terminated`, `fenced`, `corrupt` |
 | `is_leader`, `pending_reclaim`, `last_success_age_seconds`, `wedged_namespace_count` | GC health, process-local; **`NULL` on every peer row** — a process-local fact must never be stamped onto another server's row |
-| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `remounting`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began (`NULL` while live) |
+| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `remounting`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began, for a pause from the lease clock when the current reason's threshold was crossed (for `lease_expired`, the lease deadline); `NULL` while live |
 | `renewal_in_progress`, `renewal_attempts`, `last_renewal_error` | the running (or last) lease renewal: conditional `PUT`s sent so far and the last failed request, updated per attempt; **`NULL` on every peer row** |
 
 The lifecycle snapshot is I/O-free and ungated, so a not-live, never-started, or vanished disk

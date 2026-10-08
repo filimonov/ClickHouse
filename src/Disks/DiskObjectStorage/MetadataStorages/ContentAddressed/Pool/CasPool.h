@@ -543,7 +543,7 @@ public:
         PoolLifecycle lifecycle = PoolLifecycle::Live;
         String detail;
         time_t since = 0;
-        /// Set only for `Live`; `since` is then when the pause began.
+        /// Set only for `Live`; `since` is then when its threshold was crossed (for `LeaseExpired`, the deadline).
         LeasePause pause = LeasePause::None;
     };
     LifecycleSnapshot lifecycleSnapshot() const;

@@ -18,12 +18,13 @@ Content-addressed (`CAS`) storage exposes three system tables and a family of `C
 
 | Table | Grain | Use it for |
 |---|---|---|
-| [`system.cas_mounts`](/operations/system-tables/cas_mounts) | One row per mount slot in the pool, read live from the backend on every query | Who is in the pool right now, lease/epoch state, which node holds GC leadership |
+| [`system.cas_mounts`](/operations/system-tables/cas_mounts) | Per CAS disk, this server's own mount from memory plus every other mount slot listed from the pool | Who is in the pool right now, lease/epoch state, which node holds GC leadership |
 | [`system.cas_gc_log`](/operations/system-tables/cas_gc_log) | One `Start`/`Finish` row per GC round, plus one `Phase` row per phase reached | GC round outcomes, duration, and where a round's `LIST`/`GET`/`PUT`/`DELETE` budget went |
 | [`system.cas_log`](/operations/system-tables/cas_log) | One row per writer/GC decision (blob puts, dedup adoptions, retire decisions, dangling-access findings) | Fine-grained forensics for one part, one blob hash, or one round |
 
-`system.cas_mounts` is the only one of the three with no persisted backing log — it is a live view,
-so a transient backend error on one disk is skipped rather than blinding the whole query. The other
+`system.cas_mounts` is the only one of the three with no persisted backing log. Its `is_local = 1`
+rows need no request to the object store; a failed listing of a disk is one row with `listing_error`
+set, and the other rows still appear. The other
 two are ordinary `system.*_log` tables and follow the usual flush/retention settings.
 
 ## Key metrics {#key-metrics}

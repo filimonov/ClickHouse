@@ -57,7 +57,7 @@ ColumnsDescription StorageSystemContentAddressedMounts::getColumnsDescription()
         {"lifecycle", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "This server's lifecycle for the disk, from the confirmed lease and the clock: live, paused, identity_lost, vanished, closed, constructing (never started) or shutdown (torn down). NULL on rows of other servers' mounts."},
         {"lifecycle_reason", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "One word: renewal_overdue, lease_expired or remounting for paused, replaced for vanished, forgotten for closed, empty otherwise. NULL on rows of other servers' mounts."},
         {"lifecycle_detail", std::make_shared<DataTypeString>(), "The full typed reason text naming the actual cause when not live: the vanish diagnosis (data root replaced by a foreign pool / decommissioned by SYSTEM CAS FORGET at <time>) or the identity-loss message. Empty when live. Empty on rows of other servers' mounts."},
-        {"lifecycle_since", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "When this server entered the current non-live lifecycle state; for a pause from the lease clock, when the pause began. NULL when live (or the state is not backed by a live pool). NULL on rows of other servers' mounts."},
+        {"lifecycle_since", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "When this server entered the current non-live lifecycle state; for a pause from the lease clock, when the current reason's threshold was crossed (for lease_expired, the lease deadline). NULL when live (or the state is not backed by a live pool). NULL on rows of other servers' mounts."},
         {"renewal_in_progress", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "1 while this server renews its mount lease. NULL on rows describing other servers' mounts."},
         {"renewal_attempts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Conditional PUTs sent by the current lease renewal, or by the last one once it ended. NULL on rows describing other servers' mounts."},
         {"last_renewal_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The last failed request of that renewal: '<VERB> <key>: <refused|transport> <code> <message>'. NULL when none failed, and on rows describing other servers' mounts."},
@@ -176,7 +176,7 @@ void StorageSystemContentAddressedMounts::fillData(
         }
         catch (...)
         {
-            /// One row, so a failed LIST does not read as an empty pool.
+            /// One row, so a failed listing does not read as an empty pool.
             tryLogCurrentException(getLogger("StorageSystemContentAddressedMounts"), "listing mounts for disk '" + disk + "'");
             emit(disk, "", Cas::MountLease{}, "", nullptr, getCurrentExceptionMessage(false));
             return;

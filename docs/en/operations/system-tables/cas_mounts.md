@@ -9,16 +9,19 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-The `system.cas_mounts` table contains one row per mount slot discovered on every
-content-addressed (CAS) disk configured on the node. A pool may be shared by several servers (or
-several `server_root_id` mounts on the same server), and this table lists every mount visible in
-the pool's backend at query time, not only the querying server's own mount — it exists for
-incident-time diagnosis of leases, epochs, and GC leadership across a shared pool.
+The `system.cas_mounts` table describes the mounts of every content-addressed (CAS) disk configured
+on the node: this server's own mount and the mounts of the other servers sharing the pool. It exists
+for incident-time diagnosis of leases, epochs, and GC leadership across a shared pool.
 
 Per CAS disk the table has one row for this server's own mount (`is_local = 1`), built from memory
 without a request to the object store, and one row per other mount slot listed from the pool
 (`is_local = 0`), one attempt per request. `WHERE is_local = 1` sends no request, so it answers while
 the store is down. A failed listing is one row with `listing_error` set.
+
+A read-only CAS disk holds no mount slot. Its `is_local = 1` row carries only the disk, the
+`server_root_id` and the local-only columns: the lease columns are zero (`server_uuid` all zeros,
+`started_at` at the epoch) and `state` is empty. The slot under its `server_root_id`, if any, belongs
+to another disk and is listed as an `is_local = 0` row.
 
 ## Columns {#columns}
 
@@ -41,7 +44,7 @@ the store is down. A failed listing is one row with `listing_error` set.
 - `lifecycle` ([Nullable(String)](/sql-reference/data-types/nullable)) — This server's lifecycle for the disk, from the confirmed lease and the clock: `live`, `paused`, `identity_lost`, `vanished`, `closed`, `constructing` (never started) or `shutdown` (torn down). `NULL` on rows of other servers' mounts.
 - `lifecycle_reason` ([Nullable(String)](/sql-reference/data-types/nullable)) — One word: `renewal_overdue`, `lease_expired` or `remounting` for `paused`, `replaced` for `vanished`, `forgotten` for `closed`, empty otherwise. `lifecycle || '(' || lifecycle_reason || ')'` reads e.g. `closed(forgotten)`. `NULL` on rows of other servers' mounts.
 - `lifecycle_detail` ([String](/sql-reference/data-types/string)) — The full typed reason text naming the actual cause when not live: the vanish diagnosis (a data root replaced by a foreign pool, or decommissioned by `SYSTEM CAS FORGET` at a given time) or the identity-loss message. Empty when live. Empty on rows of other servers' mounts.
-- `lifecycle_since` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — When this server entered the current non-live lifecycle state. For a pause from the lease clock, when the pause began. `NULL` when live, or when the state has no backing pool to date from. `NULL` on rows of other servers' mounts.
+- `lifecycle_since` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — When this server entered the current non-live lifecycle state. For a pause from the lease clock, when the current reason's threshold was crossed (for `lease_expired`, the lease deadline). `NULL` when live, or when the state has no backing pool to date from. `NULL` on rows of other servers' mounts.
 - `renewal_in_progress` ([Nullable(UInt8)](/sql-reference/data-types/nullable)) — `1` while this server renews its mount lease.
 - `renewal_attempts` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Conditional `PUT`s sent by the current renewal, or by the last one once it ended. Updated per attempt, so a renewal stuck in retries is visible before it ends.
 - `last_renewal_error` ([Nullable(String)](/sql-reference/data-types/nullable)) — The last failed request of that renewal, as `<VERB> <key>: <class> <code> <message>`. `class` is `refused` when the store definitely refused the request (access denied, malformed request, entity too large), `transport` otherwise; `code` is the store's error name, such as `SlowDown`. `NULL` when no request failed.
