@@ -25,7 +25,8 @@ struct Retry
     /// called.
     std::optional<uint64_t> policy_deadline_ms = std::nullopt;
     /// When set, a reissue in `CasOperation`'s write and read loops waits until a draw from [0.8, 1.2]
-    /// of this has passed since the failed attempt started, instead of the growing backoff.
+    /// of this has passed since the failed attempt started, instead of the growing backoff. A
+    /// first-attempt fuse timeout is still reissued at once.
     std::optional<uint64_t> attempt_spacing_ms = std::nullopt;
 
     static constexpr uint64_t kDefinitiveAttemptSpacingMs = 1'000;
