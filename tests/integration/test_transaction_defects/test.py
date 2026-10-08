@@ -120,15 +120,52 @@ def tx_answer_with_error(session, query):
     return node.http_query_and_get_answer_with_error(None, data=query, params=params)
 
 
+def wait_for_no_merges(timeout=60):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if node.query("SELECT count() FROM system.merges").strip() == "0":
+            return
+        time.sleep(0.2)
+    raise RuntimeError(
+        "merges are still running: "
+        + node.query("SELECT database, table FROM system.merges")
+    )
+
+
 @contextlib.contextmanager
 def merges_stopped():
-    """The removal-store failpoint fires once, for whichever batch of two or more parts reaches
-    it first -- a merge of any table, a system log included, would consume it."""
+    """Stops every merge, which the removal-store failpoint needs: it fires once, on the first
+    batch of two or more parts to reach `NonTransactionalRemovalLocks::store`, and a merge of any
+    table -- a system log included -- is indistinguishable there, both callers passing
+    `LockKind::REMOVAL`.
+
+    Enter this only once the test's tables exist. `SYSTEM STOP MERGES` without a table iterates
+    the tables of every database and takes an action lock per table
+    (`InterpreterSystemQuery::startStopAction`), so a table created afterwards is not covered. It
+    also leaves a merge that is already running alone, hence the wait.
+    """
     node.query("SYSTEM STOP MERGES")
     try:
+        wait_for_no_merges()
         yield
     finally:
         node.query("SYSTEM START MERGES")
+
+
+def require_parts(table, expected):
+    """A precondition, not an assertion about the server: raises so the failure is distinguishable
+    from the defect each test asserts."""
+    actual = int(
+        node.query(
+            "SELECT count() FROM system.parts WHERE database = currentDatabase() "
+            f"AND table = '{table}' AND active"
+        ).strip()
+    )
+    if actual != expected:
+        raise RuntimeError(
+            f"{table} has {actual} active parts, expected {expected}: a merge got there first and "
+            "the removal batch would not hold two parts"
+        )
 
 
 @contextlib.contextmanager
@@ -420,8 +457,9 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
     "for removal, which hides it from every transaction",
 )
 def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
+    two_parts("t_drop_stamp")
     with merges_stopped():
-        two_parts("t_drop_stamp")
+        require_parts("t_drop_stamp", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = node.query_and_get_error(
                 "ALTER TABLE t_drop_stamp DROP PARTITION tuple()"
@@ -449,8 +487,9 @@ def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
     reason="Known bug #124486: a failed DROP PARTITION empties the partition after a reload",
 )
 def test_failed_drop_partition_survives_reload(start_cluster):
+    two_parts("t_drop_reload")
     with merges_stopped():
-        two_parts("t_drop_reload")
+        require_parts("t_drop_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = node.query_and_get_error(
                 "ALTER TABLE t_drop_reload DROP PARTITION tuple()"
@@ -469,8 +508,9 @@ def test_failed_drop_partition_survives_reload(start_cluster):
     reason="Known bug #124486: a failed TRUNCATE empties the table after a reload",
 )
 def test_failed_truncate_survives_reload(start_cluster):
+    two_parts("t_truncate_reload")
     with merges_stopped():
-        two_parts("t_truncate_reload")
+        require_parts("t_truncate_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = node.query_and_get_error("TRUNCATE TABLE t_truncate_reload")
         assert "CANNOT_WRITE_TO_FILE" in error, error
@@ -488,15 +528,16 @@ def test_failed_truncate_survives_reload(start_cluster):
     "did not replace",
 )
 def test_failed_replace_partition_leaves_destination_intact(start_cluster):
-    with merges_stopped():
-        node.query("DROP TABLE IF EXISTS t_replace_src SYNC")
-        node.query("DROP TABLE IF EXISTS t_replace_dst SYNC")
-        node.query("CREATE TABLE t_replace_src (n UInt64) ENGINE = MergeTree ORDER BY n")
-        node.query("CREATE TABLE t_replace_dst (n UInt64) ENGINE = MergeTree ORDER BY n")
-        node.query("INSERT INTO t_replace_src VALUES (100)")
-        node.query("INSERT INTO t_replace_dst VALUES (1)")
-        node.query("INSERT INTO t_replace_dst VALUES (2)")
+    node.query("DROP TABLE IF EXISTS t_replace_src SYNC")
+    node.query("DROP TABLE IF EXISTS t_replace_dst SYNC")
+    node.query("CREATE TABLE t_replace_src (n UInt64) ENGINE = MergeTree ORDER BY n")
+    node.query("CREATE TABLE t_replace_dst (n UInt64) ENGINE = MergeTree ORDER BY n")
+    node.query("INSERT INTO t_replace_src VALUES (100)")
+    node.query("INSERT INTO t_replace_dst VALUES (1)")
+    node.query("INSERT INTO t_replace_dst VALUES (2)")
 
+    with merges_stopped():
+        require_parts("t_replace_dst", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = node.query_and_get_error(
                 "ALTER TABLE t_replace_dst REPLACE PARTITION tuple() FROM t_replace_src"
@@ -525,8 +566,9 @@ def test_failed_replace_partition_leaves_destination_intact(start_cluster):
     "still empties the table after a reload",
 )
 def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cluster):
+    two_parts("t_rollback_mark")
     with merges_stopped():
-        two_parts("t_rollback_mark")
+        require_parts("t_rollback_mark", 2)
         with failpoints(
             "non_transactional_removal_store_fail_after_first_part",
             "version_metadata_store_creation_csn_fail",
