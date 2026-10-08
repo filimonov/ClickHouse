@@ -403,6 +403,7 @@ static struct InitFiu
     ONCE(non_transactional_removal_store_fail_after_first_part) \
     ONCE(version_metadata_store_creation_csn_fail) \
     PAUSEABLE(transaction_rollback_pause_after_mark) \
+    PAUSEABLE(version_metadata_store_pause_before_rename) \
     REGULAR(transaction_slow_resolve_removal_csn) \
     PAUSEABLE_ONCE(smt_merge_commit_pause_after_state_swap) \
     PAUSEABLE_ONCE(smt_metadata_update_pause_before_apply) \
