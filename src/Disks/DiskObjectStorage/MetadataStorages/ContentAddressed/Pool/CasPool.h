@@ -205,8 +205,8 @@ struct PoolConfig
     /// Empty in production; a test uses it to verify diagnostics cannot replace the caller's exception.
     std::function<void()> diagnostic_dispatch_error_hook_for_test = {};
 
-    /// TEST SEAM: invoked in the ref lane fault report right after the remount request and before
-    /// logging, so a test can make the report throw. Empty in production.
+    /// TEST SEAM: invoked in the ref lane fault report before the event, so a test can make the report
+    /// throw. Empty in production.
     std::function<void()> ref_lane_fault_report_hook_for_test = {};
 
     /// TEST SEAM: invoked immediately before ref-table recovery issues its first backend request.
@@ -939,10 +939,9 @@ private:
     /// attempt envelopes (a write and its settlement read) plus the safety margin.
     bool refAppendFenceOk() const;
 
-    /// The reaction to a ref lane fault the ledger has already latched through `latch_mount_fault`.
-    /// Requests the remount first, because nothing else would and anything after it may throw; then
-    /// `LOG_ERROR`, a `ForeignInterference` CasEvent, and ONE background GET of `key` for diagnosis
-    /// that never blocks or throws on the caller's thread.
+    /// The reaction to a ref lane fault the ledger has already latched through `latch_mount_fault`: the
+    /// event, one background `GET` for diagnosis, then the end of the mount — for a server's own mount, of
+    /// the process.
     void reportImpossibleInterference(const String & key, const String & reason,
                                        const std::optional<String> & offending_ns = {});
 

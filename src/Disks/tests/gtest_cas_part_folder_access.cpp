@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
+#include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/ProfileEvents.h>
 #include <Poco/Exception.h>
@@ -361,6 +362,7 @@ TEST(CASPartFolderAccess, RepublishRefIdempotentRedriveAndConflict)
 /// append (precommitAdd's own append is let through first via `skip`).
 TEST(CASPartFolderAccess, PublishEntriesAbandonsBuildOnPromoteFailure)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<PromoteConflictOnceBackend>();
     auto store = Cas::Pool::open(backend, Cas::PoolConfig{.pool_prefix = "p", .server_root_id = "test"});
     const Cas::RootNamespace ns{"srv/t1"};
@@ -387,9 +389,7 @@ TEST(CASPartFolderAccess, PublishEntriesAbandonsBuildOnPromoteFailure)
     /// EXACTLY two ref-log create attempts reach the store: precommitAdd's own append and the promote's
     /// faulted one. Both of the cleanup appends that follow -- `promote`'s catch-abandon and the handle
     /// destructor's backstop -- are refused at the mount-fence gate before they reach the store, because
-    /// proving a different object at our own key now fences the mount closed and schedules a remount
-    /// (review I5: the append site self-heals like the wedge-resolve site instead of leaving this table
-    /// blocked until a manual remount).
+    /// proving a different object at our own key fences the mount closed and ends the process.
     ///
     /// COVERAGE NOTE, deliberately explicit: this count no longer DISCRIMINATES whether the catch-abandon
     /// ran. It used to (four attempts with it, three without), and that only worked because the
@@ -397,15 +397,15 @@ TEST(CASPartFolderAccess, PublishEntriesAbandonsBuildOnPromoteFailure)
     /// fence closed both cleanups are refused identically and unobservably, so the assertion below is a
     /// shape check, not the regression guard it was. The guard cannot be restored in THIS scenario --
     /// nothing the cleanup does is observable once the mount is fenced -- and it is not silently
-    /// dropped: the property it protected is stated here, and reclaiming the binding is now the
-    /// scheduled remount's job (a fresh incarnation re-derives the table and the stale-precommit sweep
-    /// reclaims), not this best-effort abandon's.
+    /// dropped: the property it protected is stated here, and reclaiming the binding is the next
+    /// incarnation's job (it re-derives the table and the stale-precommit sweep reclaims), not this
+    /// best-effort abandon's.
     EXPECT_EQ(backend->matching_put_attempts, attempts_before + 2)
         << "only precommitAdd's append and the promote's faulted one may reach the store; every cleanup "
            "append after the anomaly is refused at the fence";
     EXPECT_FALSE(store->mayMutate()) << "the proven conflict must fence this mount closed";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 1u)
-        << "and must schedule exactly one remount -- the self-heal that replaces the manual one";
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     /// And nothing was written ABOVE the damage: the occupant is the GREATEST log id in the namespace
     /// (keys render the id in fixed-width hex, so lexical order is id order). An append that carved a

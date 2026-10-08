@@ -10,6 +10,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
+#include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
@@ -44,7 +45,7 @@
 /// `slotOccupy` per later caller's flush: the ref-log key is write-once, so a conditional CREATE of
 /// the SAME bytes either makes the transaction durable (adopt it) or conflicts with whatever is
 /// there, which the follow-up read then names -- our own earlier write (adopt), or anything else, a
-/// successor's `EpochSeal` included (a fault: the mount is fenced and remounts).
+/// successor's `EpochSeal` included (a fault: the mount is fenced and the process ends).
 ///
 /// Two cross-cutting rules are exercised throughout rather than in one place:
 ///   - the ADMISSION FENCE: a wedge carries the mount-fence generation it was admitted under, every
@@ -934,15 +935,16 @@ TEST(CASRefWedgeEveryAttempt, GenesisBirthAtAHighEpochCarriesNoPrevEpochSeal)
 }
 
 /// ===================================================================================
-/// A foreign occupant is impossible, so it is loud -- and the mount self-heals
+/// A foreign occupant is impossible, so it is loud -- and the process ends
 /// ===================================================================================
 
 /// Under mount-lease exclusivity the wedged key is exclusively ours, so a foreign non-seal object at
 /// it is corruption or a protocol breach. Fail closed with `CORRUPTED_DATA`, KEEP the wedge for
-/// inspection, and route the anomaly so the mount remounts itself rather than staying stuck until
+/// inspection, and route the anomaly so the process ends rather than the mount staying stuck until
 /// someone notices.
-TEST(CASRefWedgeEveryAttempt, ForeignNonSealOccupantIsCorruptedDataAndSchedulesARemount)
+TEST(CASRefWedgeEveryAttempt, ForeignNonSealOccupantIsCorruptedDataAndEndsTheProcess)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<WedgeTestBackend>();
     auto store = openPool(backend, wedgeTestBudget());
     auto clock = VirtualRetryClock::installOn(store);
@@ -964,16 +966,17 @@ TEST(CASRefWedgeEveryAttempt, ForeignNonSealOccupantIsCorruptedDataAndSchedulesA
 
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
-    EXPECT_GT(store->scheduleRemountCallCountForTest(), remounts_before)
-        << "the impossible-interference route must schedule a remount";
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before) << "a ref lane fault never remounts";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "the impossible-interference route must end the process";
 }
 
 /// I5, the OTHER site with the same shape: the ordinary append's own conditional create can prove a
 /// different object sits at the id it derived. Task 3 made that fail closed -- correctly -- but it
 /// left the mount stuck there until a manual remount, unlike the wedge-resolution site. Both are the
-/// same impossibility and both must self-heal by remount.
-TEST(CASRefWedgeEveryAttempt, AppendSiteProvenDifferentObjectAlsoSchedulesARemount)
+/// same impossibility and both must end the process.
+TEST(CASRefWedgeEveryAttempt, AppendSiteProvenDifferentObjectAlsoEndsTheProcess)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<CountingBackend>();
     auto store = openPool(backend);
     const Layout & layout = store->layout();
@@ -991,7 +994,8 @@ TEST(CASRefWedgeEveryAttempt, AppendSiteProvenDifferentObjectAlsoSchedulesARemou
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "x"); });
 
     EXPECT_FALSE(store->refLaneWedgedForTest(ns)) << "a proven different object is conclusive, never a wedge";
-    EXPECT_GT(store->scheduleRemountCallCountForTest(), remounts_before)
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before) << "a ref lane fault never remounts";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u)
         << "the append site must route through the same impossible-interference reaction as the wedge site";
 }
 
@@ -1283,7 +1287,7 @@ TEST(CASRefWedgeEveryAttempt, CreationCkptSurvivesWhenTheFirstNamespaceBirthIsAm
 /// The other two former cleanup call sites, given their own first-`NamespaceBirth` survival rows: an
 /// unnameable occupant, and genuine foreign interference. Neither had such a row, because
 /// `AppendSiteWedgesWhenTheSettlingReadNamesNoOccupant`,
-/// `ForeignNonSealOccupantIsCorruptedDataAndSchedulesARemount` and `WellFormedNonSealOccupantIsStillForeign`
+/// `ForeignNonSealOccupantIsCorruptedDataAndEndsTheProcess` and `WellFormedNonSealOccupantIsStillForeign`
 /// all `publishEmptyPart` FIRST, so none of them ever carries a `birth_contribution` -- a reinstated
 /// guarded cleanup at either site would pass the whole suite with no first-transaction case to catch it.
 TEST(CASRefWedgeEveryAttempt, CreationCkptSurvivesWhenTheFirstNamespaceBirthNamesNoOccupant)
@@ -1438,6 +1442,7 @@ TEST(CASRefWedgeEveryAttempt, AppendSiteWedgesWhenTheSettlingReadItselfIsRefused
 /// "foreign" purely from decode failures and nothing would notice.
 TEST(CASRefWedgeEveryAttempt, WellFormedNonSealOccupantIsStillForeign)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<WedgeTestBackend>();
     auto store = openPool(backend);
     const Layout & layout = store->layout();
@@ -1458,7 +1463,8 @@ TEST(CASRefWedgeEveryAttempt, WellFormedNonSealOccupantIsStillForeign)
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "x"); });
 
-    EXPECT_GT(store->scheduleRemountCallCountForTest(), remounts_before)
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before) << "a ref lane fault never remounts";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u)
         << "a well-formed non-seal occupant is still a breach of write-exclusivity";
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "and is emphatically not an epoch seal";
 }
@@ -1761,17 +1767,21 @@ std::shared_ptr<FaultEventLog> recordFaultEvents(const PoolPtr & store)
     return log;
 }
 
-void expectOneLatchedFault(const FaultEventLog & log, uint64_t remounts_before, std::string_view description)
+void expectOneLatchedFault(const FaultEventLog & log, const PoolPtr & store, uint64_t remounts_before, std::string_view description)
 {
     const auto events = log.snapshot();
     ASSERT_EQ(events.size(), 1u);
     EXPECT_TRUE(events[0].fence_closed) << "the latch must precede the report";
-    EXPECT_EQ(events[0].remounts_requested, remounts_before + 1) << "the remount must be requested before the event";
+    EXPECT_EQ(events[0].remounts_requested, remounts_before) << "a ref lane fault never remounts";
     EXPECT_NE(events[0].reason.find(description), String::npos) << events[0].reason;
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().graceful(), 0u);
+    EXPECT_EQ(store->mountEnd(), MountEnd::LedgerFault);
 }
 
 void expectAppendSiteFault(const String & ns_name, OccupantKind kind)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<WedgeTestBackend>();
     auto store = openPool(backend);
     const RootNamespace ns{ns_name};
@@ -1793,12 +1803,13 @@ void expectAppendSiteFault(const String & ns_name, OccupantKind kind)
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "a fault records no epoch seal";
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
-    expectOneLatchedFault(*faults, remounts_before, occupantDescription(kind));
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
+    expectOneLatchedFault(*faults, store, remounts_before, occupantDescription(kind));
 }
 
 void expectWedgeFault(const String & ns_name, OccupantKind kind)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<WedgeTestBackend>();
     auto store = openPool(backend, wedgeTestBudget());
     auto clock = VirtualRetryClock::installOn(store);
@@ -1824,13 +1835,14 @@ void expectWedgeFault(const String & ns_name, OccupantKind kind)
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "a fault records no epoch seal";
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
-    expectOneLatchedFault(*faults, remounts_before, occupantDescription(kind));
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
+    expectOneLatchedFault(*faults, store, remounts_before, occupantDescription(kind));
 }
 
 /// Recovery finds something other than the retained attempt's bytes at its id above the checkpoint.
 void expectRecoveryFault(const String & ns_name, OccupantKind kind)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<WedgeTestBackend>();
     auto store = openPool(backend, wedgeTestBudget());
     auto clock = VirtualRetryClock::installOn(store);
@@ -1854,8 +1866,8 @@ void expectRecoveryFault(const String & ns_name, OccupantKind kind)
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery);
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
-    expectOneLatchedFault(*faults, remounts_before, occupantDescription(kind));
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
+    expectOneLatchedFault(*faults, store, remounts_before, occupantDescription(kind));
 }
 
 template <typename BackendT>
@@ -1934,6 +1946,7 @@ TEST(CASRefLaneFault, RecoveryUndecodableOccupantAtTheRetainedIdIsAFault)
 
 TEST(CASRefLaneFault, NonReadyLaneAtNewIdLatchesBeforeTheReport)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<WedgeTestBackend>();
     auto store = openPool(backend);
     const RootNamespace ns{"srv1/fault_non_ready"};
@@ -1951,7 +1964,7 @@ TEST(CASRefLaneFault, NonReadyLaneAtNewIdLatchesBeforeTheReport)
     store->setRefPreCarveHookForTest(nullptr);
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
-    expectOneLatchedFault(*faults, remounts_before, "instead of Ready");
+    expectOneLatchedFault(*faults, store, remounts_before, "instead of Ready");
 }
 
 /// A lane in `NeedsRecovery` leaves it on the next touch once its checkpoint reads again, with no
@@ -1986,9 +1999,10 @@ TEST(CASRefLaneFault, NeedsRecoveryLaneLeavesAfterADamagedCkptIsRestoredWithoutR
     EXPECT_TRUE(store->mayMutate());
 }
 
-/// Everything in the report after the remount request can throw; the request must already be made.
-TEST(CASRefLaneFault, RemountIsRequestedWhenTheFaultReportThrows)
+/// Everything in the report can throw; the end of the process must still be requested.
+TEST(CASRefLaneFault, TerminateIsRequestedWhenTheFaultReportThrows)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<WedgeTestBackend>();
     auto store = openPoolWithFaultReportHook(backend, []
     {
@@ -2007,7 +2021,110 @@ TEST(CASRefLaneFault, RemountIsRequestedWhenTheFaultReportThrows)
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
+}
+
+namespace
+{
+
+/// After `kill`, every request is counted and times out, as a store that went away does.
+class DyingBackend : public WedgeTestBackend
+{
+public:
+    std::atomic<bool> dead{false};
+    std::atomic<uint64_t> requests_after_death{0};
+
+    std::optional<DB::Cas::Backend::Raw> read(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        dieIfDead();
+        return WedgeTestBackend::read(key, access);
+    }
+    std::optional<DB::Cas::Backend::RawMeta> head(const String & key, DB::Cas::TransportAccess & access) override
+    {
+        dieIfDead();
+        return WedgeTestBackend::head(key, access);
+    }
+    DB::Cas::Backend::RawListPage list(const String & prefix, const String & cursor, size_t limit,
+                                       DB::Cas::TransportAccess & access) override
+    {
+        dieIfDead();
+        return WedgeTestBackend::list(prefix, cursor, limit, access);
+    }
+    std::expected<String, DB::Cas::Backend::RawConflict> write(
+        const String & key, const String & bytes, const std::optional<String> & expected_value,
+        DB::Cas::TransportAccess & access) override
+    {
+        dieIfDead();
+        return WedgeTestBackend::write(key, bytes, expected_value, access);
+    }
+    DB::Cas::Backend::RawRemoval remove(const String & key, const String & expected_value,
+                                        DB::Cas::TransportAccess & access) override
+    {
+        dieIfDead();
+        return WedgeTestBackend::remove(key, expected_value, access);
+    }
+
+private:
+    void dieIfDead()
+    {
+        if (!dead.load(std::memory_order_acquire))
+            return;
+        requests_after_death.fetch_add(1, std::memory_order_relaxed);
+        throw Poco::TimeoutException("DyingBackend: the store is gone");
+    }
+};
+
+}
+
+/// Shutdown does not hang on a dead CAS disk: after a ref lane fault the teardown writes no farewell and
+/// drains nothing, so it sends no request and waits on no retry.
+TEST(CASRefLaneFault, ShutdownAfterAFaultSendsNothing)
+{
+    DB::Cas::tests::processStopLog().reset();
+    auto backend = std::make_shared<DyingBackend>();
+    std::atomic<uint64_t> retry_sleeps{0};
+    std::mutex diagnosis_mutex;
+    std::condition_variable diagnosis_cv;
+    bool diagnosis_released = false;
+    DB::Cas::tests::seedPoolMetaForRestart(*backend);
+    backend->setAttemptTimeoutMs(CasRequestBudget{}.attempt_timeout_ms);
+    PoolConfig config{.pool_prefix = "p", .server_root_id = "test"};
+    config.retry_sleep_fn = [&](uint64_t) { retry_sleeps.fetch_add(1); };
+    /// The diagnostic `GET` the fault dispatches holds the pool until it is done; wait for it before
+    /// the store dies, so the teardown below is the only thing left to send anything.
+    config.detached_lease_release_hook_for_test = [&]
+    {
+        std::lock_guard lock(diagnosis_mutex);
+        diagnosis_released = true;
+        diagnosis_cv.notify_all();
+    };
+    auto store = Pool::open(backend, std::move(config));
+    const RootNamespace ns{"srv1/fault_then_shutdown"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    const RefTxnId next{store->liveWriterEpoch(), 3};
+    backend->conflict_substr = store->layout().refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), next);
+    backend->conflict_bytes = occupantBytes(OccupantKind::ForeignTxn, ns, next);
+    backend->conflict_count = 1;
+    {
+        std::lock_guard lock(diagnosis_mutex);
+        diagnosis_released = false;
+    }
+
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "x"); });
+    EXPECT_EQ(store->mountEnd(), MountEnd::LedgerFault);
+    {
+        std::unique_lock lock(diagnosis_mutex);
+        ASSERT_TRUE(diagnosis_cv.wait_for(lock, std::chrono::seconds(60), [&] { return diagnosis_released; }));
+    }
+    backend->dead.store(true, std::memory_order_release);
+    const uint64_t sleeps_before = retry_sleeps.load();
+
+    store.reset();
+
+    EXPECT_EQ(backend->requests_after_death.load(), 0u);
+    EXPECT_EQ(retry_sleeps.load(), sleeps_before);
 }
 
 /// An allocation over the server limit between the PUT and the install neither fails nor faults.

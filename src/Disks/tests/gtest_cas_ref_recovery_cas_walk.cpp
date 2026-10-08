@@ -13,6 +13,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
+#include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
@@ -1931,6 +1932,7 @@ TEST(CASRefRecoveryCasWalk, WriterRecoveryRejectsDifferentOrdinaryBytesAtTheReta
 /// deposed: a fault, not a record to replay.
 TEST(CASRefRecoveryCasWalk, RetainedWriterAttemptMeetingASuccessorSealFaultsTheMount)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<HidingListBackend>();
     const Layout layout("p");
     const RootNamespace ns{"srv1/recovery_successor_seal"};
@@ -1956,7 +1958,8 @@ TEST(CASRefRecoveryCasWalk, RetainedWriterAttemptMeetingASuccessorSealFaultsTheM
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery);
     EXPECT_FALSE(store->mayMutate()) << "the fault latches the mount fence";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
     EXPECT_EQ(readCkptForTest(backend, layout, life)->ckpt.committed_through, (RefTxnId{1, 1}))
         << "the seal must not be published as this writer's frontier";
 }

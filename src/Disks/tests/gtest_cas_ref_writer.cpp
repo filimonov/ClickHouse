@@ -11,6 +11,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefSnapshotFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasTextFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
+#include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -1872,19 +1873,19 @@ TEST(CASRefWriterAppendLane, WedgedRefLaneCountTracksExactlyTheWedgedTableThroug
 /// bookkeeping is restored, proven by a bounded wait on both a same-table and an independent-table
 /// append.
 ///
-/// The reaction is now the mount's, not the table's: a foreign object at a key that
-/// mount-lease exclusivity says is exclusively ours contradicts the exclusivity itself, so the append
-/// site routes through `reportImpossibleInterference` exactly as the wedge-resolve site does -- fence
-/// closed, remount scheduled. The fence is released only after remount, so there are two separate scopes to keep straight, and this test
-/// pins both:
+/// The reaction is the mount's, not the table's: a foreign object at a key that mount-lease exclusivity
+/// says is exclusively ours contradicts the exclusivity itself, so the append site routes through
+/// `reportImpossibleInterference` exactly as the wedge-resolve site does -- fence closed, process
+/// ended. There are two separate scopes to keep straight, and this test pins both:
 ///   the FENCE is mount-wide -- while it is closed EVERY lane is refused, including untouched ones;
-///   the DAMAGE is per-namespace -- a real remount replaces both immutable runtimes, then recovery of
-///   the damaged stream still refuses while the unrelated table commits normally.
+///   the DAMAGE is per-namespace -- the next incarnation's recovery of the damaged stream still refuses
+///   while the unrelated table commits normally.
 TEST(CASRefWriterAppendLane, I1AppendCorruptionSurfacesAndFencesTheMountForRemount)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<RefWriterTestBackend>();
     auto store = openPool(backend);
-    const Layout & layout = store->layout();
+    const Layout layout = store->layout();
     const RootNamespace ns{"srv1/i1_append"};
     const RootNamespace other{"srv1/i1_other"};
     publishEmptyPart(store, ns, "x");
@@ -1899,8 +1900,8 @@ TEST(CASRefWriterAppendLane, I1AppendCorruptionSurfacesAndFencesTheMountForRemou
     EXPECT_FALSE(store->refLaneWedgedForTest(ns)) << "a proven different-object conflict must not wedge the lane";
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
     EXPECT_FALSE(store->mayMutate()) << "the impossible-interference reaction must fence this mount closed";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 1u)
-        << "the append site must schedule the remount that re-derives this table from the durable log";
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     /// Mount-wide while fenced -- and, crucially, PROMPT: a real cv hang would time out this wait, which
     /// is the regression this test was written for.
@@ -1909,9 +1910,8 @@ TEST(CASRefWriterAppendLane, I1AppendCorruptionSurfacesAndFencesTheMountForRemou
         << "the independent-table append hung -- the queue's leader bookkeeping was not restored";
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { fenced.get(); });
 
-    /// Drive the scheduled production recovery boundary. A direct fence re-arm is intentionally NOT a
-    /// substitute anymore: immutable runtimes retain the generation that admitted them and cannot be
-    /// rebound to the new one.
+    /// The next incarnation: the process ended without a farewell, and the GC fence lets a restart
+    /// reclaim the slot at once.
     const String mount_key = layout.mountKey("test");
     const auto mount = readOf(backend, mount_key);
     ASSERT_TRUE(mount);
@@ -1923,7 +1923,9 @@ TEST(CASRefWriterAppendLane, I1AppendCorruptionSurfacesAndFencesTheMountForRemou
         CasOperation op = requests.admit();
         ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(mount_key, encodeMountLease(fenced_mount), mount->etag, Retry::standard())));
     }
-    ASSERT_TRUE(store->tryRemountOnce());
+    EXPECT_FALSE(store->tryRemountOnce()) << "an ended mount never remounts";
+    store.reset();
+    store = openPool(backend);
 
     auto same = std::async(std::launch::async, [&] { store->dropRef(ns, "x"); });
     ASSERT_EQ(same.wait_for(std::chrono::seconds(10)), std::future_status::ready)
@@ -2012,6 +2014,7 @@ TEST(CASRefWriterAppendLane, I1WedgeResolveCorruptionSurfacesAndFaultsLane)
 /// used to stand in for debug/sanitizer builds went with it.
 TEST(CASAnomalyPolicy, ForeignBytesAtWedgeKeyTripFenceAndRemount)
 {
+    DB::Cas::tests::processStopLog().reset();
     const CasRequestBudget budget = wedgeTestBudget();
 
     auto backend = std::make_shared<RefWriterTestBackend>();
@@ -2051,15 +2054,8 @@ TEST(CASAnomalyPolicy, ForeignBytesAtWedgeKeyTripFenceAndRemount)
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted)
         << "foreign interference must fault the lane";
     EXPECT_FALSE(store->mayMutate()) << "the local write fence must trip closed on the anomaly";
-    /// Positively pins that `reportImpossibleInterference` called `scheduleRemount` (not just
-    /// `tripMountLost`, which alone already accounts for `mayMutate() == false` above). Counted at
-    /// `scheduleRemount`'s own entry regardless of `background_watermark` -- see that accessor's
-    /// comment for why this test deliberately does NOT enable `background_watermark` to observe a real
-    /// automatic recovery: doing so was tried and makes the store's self-remount attempt race its own
-    /// still-live renewer for 30+ seconds per call (confirmed while building this test), which is not
-    /// something a fast unit test should be driving.
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 1u)
-        << "reportImpossibleInterference must have called scheduleRemount exactly once";
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     const std::vector<CasEvent> observed = seen->snapshot();
     const auto has_event = std::any_of(observed.begin(), observed.end(),
@@ -2072,6 +2068,7 @@ TEST(CASAnomalyPolicy, ForeignBytesAtWedgeKeyTripFenceAndRemount)
 /// resolver gate, so it represents an internal lifecycle contradiction rather than a normal wedge.
 TEST(CASAnomalyPolicy, NonReadyAtNewIdAllocationFaultsAndFailsClosed)
 {
+    DB::Cas::tests::processStopLog().reset();
     auto backend = std::make_shared<RefWriterTestBackend>();
     /// Heap-owned, not a plain local: declaring it before the Pool (ASan 2026-07-09) only protects
     /// against an ordinary same-thread unwind, not a detached background completion holding an extra
@@ -2128,11 +2125,8 @@ TEST(CASAnomalyPolicy, NonReadyAtNewIdAllocationFaultsAndFailsClosed)
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted)
         << "the invariant violation must have one explicit terminal state";
     EXPECT_FALSE(store->mayMutate()) << "the local write fence must trip closed on the wedge-contract violation";
-    /// See the sibling test's comment on why this checks the call-count seam (never
-    /// `background_watermark` plus automatic recovery -- that combination makes the store's self-remount
-    /// race its own still-live renewer).
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 1u)
-        << "reportImpossibleInterference must have called scheduleRemount exactly once";
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     const std::vector<CasEvent> observed = seen->snapshot();
     const auto has_event = std::any_of(observed.begin(), observed.end(),

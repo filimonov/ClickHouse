@@ -235,7 +235,7 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
           [this] { return mount_runtime.fenceGeneration(); },
           [this] { return bootMsNow(); },
           [this] { return mayMutate(); },
-          [this] { mount_runtime.tripMountLost(); },
+          [this] { (void)mount_runtime.latchMountEnd(MountEnd::LedgerFault); },
           [this] (const String & key, const String & reason, const std::optional<String> & offending_ns)
               { reportImpossibleInterference(key, reason, offending_ns); },
           [this] (std::function<void(DetachedStopToken)> task) { return tryDispatchDetached(std::move(task)); },
@@ -1758,15 +1758,25 @@ BlobLocation Pool::locate(const ManifestEntry & entry) const
 void Pool::reportImpossibleInterference(const String & key, const String & reason,
                                           const std::optional<String> & offending_ns)
 {
-    /// First: the ledger already closed the fence, and only this requests the remount.
-    mount_runtime.scheduleRemount();
+    /// Runs even when the hook, the event or the dispatch below throws. An end that won earlier reacted
+    /// for itself.
+    SCOPE_EXIT(
+    {
+        if (mount_runtime.mountEnd() == MountEnd::LedgerFault)
+        {
+            String detail;
+            try
+            {
+                detail = fmt::format("ref lane fault for namespace '{}' at '{}': {}", offending_ns.value_or(String{}), key, reason);
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
+            mount_runtime.reactToMountEnd(MountEnd::LedgerFault, std::nullopt, detail);
+        }
+    });
     if (config.ref_lane_fault_report_hook_for_test)
         config.ref_lane_fault_report_hook_for_test();
-
-    LOG_ERROR(getLogger("CasPool"),
-        "CAS ref lane fault for server_root '{}' (namespace='{}', key='{}'): {} -- this mount is fenced closed; "
-        "a remount is scheduled",
-        config.server_root_id, offending_ns.value_or(String{}), key, reason);
 
     EventEmitter{*this}.emit([&](CasEvent & e)
     {

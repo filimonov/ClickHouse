@@ -191,7 +191,7 @@ String CasRefLedger::reportLatchedFault(const RootNamespace & ns, Describe && de
     }
     catch (...)
     {
-        /// The fence is already closed and only the report requests the remount, so a failure to
+        /// The fence is already closed and only the report ends the mount, so a failure to
         /// describe the fault must not skip it. `describe` can throw only at the recovery site, which
         /// runs without the memory-exception lock, or on a defect; the report must still carry a
         /// readable detail. The literal fits the small-string buffer, so this assignment cannot allocate.
@@ -2630,8 +2630,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
                     describeRefLogOccupant(ns, wedge.txn_id, occupant_object->bytes));
             });
             result.survivor_error = std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
-                "CAS {} — the mount is fenced closed, a remount is scheduled, and the lane is faulted until "
-                "then", detail));
+                "CAS {} — the mount is fenced closed and the lane is faulted", detail));
             break;
         }
         case WedgeResolution::StillWedged:
@@ -3490,7 +3489,7 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
             /// class needed to change).
             complete_error(chunk_survivors, std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
                 "CAS ref-log append for namespace '{}': refusing to allocate a new ref-log id while the "
-                "lane is not Ready (state {}, attempt key '{}'); the lane is faulted until remount",
+                "lane is not Ready (state {}, attempt key '{}'); the lane is faulted",
                 ns.string(), static_cast<uint8_t>(lane_state), attempt_key)));
             return false;
         }

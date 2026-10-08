@@ -6,14 +6,19 @@
 #include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 
+#include <Poco/Exception.h>
+
+#include <atomic>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <tuple>
 #include <vector>
 
 namespace DB::ErrorCodes
 {
     extern const int NETWORK_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using namespace DB::Cas;
@@ -234,4 +239,44 @@ TEST(CASMountStop, ACloseOnlyMountClosesWithoutAStop)
     const auto events = log.events();
     ASSERT_EQ(events.size(), 1u);
     EXPECT_TRUE(events[0].starts_with("error-line:") && events[0].ends_with("this disk stays closed until restart.")) << events[0];
+}
+
+namespace
+{
+
+/// While armed, a guarded write of a mount slot fails as a defect of this machine would.
+class LocalDefectBackend : public InMemoryBackend
+{
+public:
+    std::atomic<bool> armed{false};
+
+    std::expected<String, RawConflict> write(const String & key, const String & bytes,
+                                             const std::optional<String> & expected_value,
+                                             TransportAccess & access) override
+    {
+        if (armed.load() && expected_value && key.ends_with("/mount"))
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "injected local defect in the mount write");
+        return InMemoryBackend::write(key, bytes, expected_value, access);
+    }
+};
+
+}
+
+/// The line is written before the end: the process does not outlive `terminateProcess`.
+TEST(CASMountStop, AnInjectedLocalFailureEndsTheProcess)
+{
+    auto backend = std::make_shared<LocalDefectBackend>();
+    auto store = DB::Cas::tests::openPoolForTest(backend);
+    auto & log = DB::Cas::tests::processStopLog();
+    log.reset([&] { return stateWord(*store); });
+    DB::Cas::tests::ScopedStopLineCapture lines;
+    backend->armed = true;
+
+    EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+
+    const auto events = log.events();
+    ASSERT_EQ(events.size(), 2u);
+    EXPECT_TRUE(events[0].starts_with("fatal-line:CAS disk ''") && events[0].contains("without a shutdown")) << events[0];
+    EXPECT_EQ(events[1], "fatal:closed/local_defect");
+    EXPECT_EQ(log.graceful(), 0u);
 }
