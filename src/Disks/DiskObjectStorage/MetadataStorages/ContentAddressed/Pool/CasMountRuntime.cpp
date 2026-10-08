@@ -438,7 +438,6 @@ MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_c
         .requests = RequestObserver{
             .on_write_attempt = [this](uint32_t attempts_sent)
             {
-                /// Counted as sent, so a renewal stuck in retries shows in `system.events` before it ends.
                 ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalAttempts);
                 if (attempts_sent > 1)
                     ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalRetries);
@@ -563,10 +562,7 @@ uint64_t CasMountRuntime::renewRenewerOnce(
     }
     MountRenewResult result;
     {
-        SCOPE_EXIT({
-            std::lock_guard lock(renewal_progress_mutex);
-            renewal_progress.in_progress = false;
-        });
+        SCOPE_EXIT({ std::lock_guard lock(renewal_progress_mutex); renewal_progress.in_progress = false; });
         result = active == RenewalDriverState::RemountCall
             ? call.renewer->renewForRemount(renewalEnvironment(worker_call))
             : call.renewer->renew(renewalEnvironment(worker_call));

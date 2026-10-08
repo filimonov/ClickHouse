@@ -50,8 +50,7 @@ bool isFirstAttemptFuseTimeout(const std::exception & e, size_t attempt_no);
 bool isDeterministicLocalFailure(int code);
 /// An exception the store or the transport raised, as opposed to a local fault.
 bool isStoreAnswer(const std::exception & e);
-/// `VERB key: class code message`, `class` being `refused` or `transport`; `code` is the store's error
-/// name (`SlowDown`) when it sent one, else the error code or exception name.
+/// `VERB key: refused|transport code message`; `code` is the store's error name when it sent one.
 String describeRequestFailure(std::string_view verb, const String & key, const std::exception & e);
 
 /// Throw the recoverable "CAS write could not be committed, retry later" condition.
@@ -137,8 +136,7 @@ struct ListPage
 /// The walk's callback: FALSE stops the walk.
 using ListedKeyFn = std::function<bool(const ListedKey &)>;
 
-/// Live progress of one operation, for a caller that publishes it while the operation runs. Called
-/// on the operation's thread from inside the engine's retry loops; neither may throw.
+/// Live progress of one operation, called on its thread inside the engine's retry loops; must not throw.
 struct RequestObserver
 {
     /// A conditional write is about to send its `attempts_sent`-th physical attempt.
