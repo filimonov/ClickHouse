@@ -70,3 +70,14 @@ TEST(CASRequestObserver, ALocalFailureIsNotReportedAsAStoreAnswer)
     EXPECT_THROW((void)f.op.replace("k", "v2", f.etag, Retry::standard()), DB::Exception);
     EXPECT_EQ(f.events, (std::vector<String>{"attempt 1"}));
 }
+
+/// A local failure of the resolve read is not published either, only the store answer before it.
+TEST(CASRequestObserver, ALocalFailureOfTheResolveReadIsNotReported)
+{
+    Fixture f;
+    f.backend->failNextWriteWith("k", std::make_exception_ptr(Poco::TimeoutException("injected write timeout")));
+    f.backend->failNextReadWith("k", std::make_exception_ptr(DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "injected local failure")));
+
+    EXPECT_THROW((void)f.op.replace("k", "v2", f.etag, Retry::standard()), DB::Exception);
+    EXPECT_EQ(f.events, (std::vector<String>{"attempt 1", "PUT k: transport Timeout injected write timeout"}));
+}

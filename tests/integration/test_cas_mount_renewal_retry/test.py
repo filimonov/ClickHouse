@@ -397,7 +397,6 @@ def test_transient_mount_renewal_retries_without_remount(start_cluster):
     assert node.query("SELECT payload FROM renewal_probe WHERE id = 0").strip() == "after-retry"
 
 
-
 def test_renewal_progress_is_visible_while_the_renewal_retries(start_cluster):
     node = start_cluster["node"]
     control_url = start_cluster["control_url"]
@@ -446,6 +445,7 @@ def test_renewal_progress_is_visible_while_the_renewal_retries(start_cluster):
         ).strip() == "live\t0",
         timeout=60,
     )
+
 
 def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
     node = start_cluster["node"]
