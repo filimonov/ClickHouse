@@ -2257,6 +2257,10 @@ void CasRefLedger::requireRecovery(RefTableRuntime & rt, const RootNamespace & n
 CasRefLedger::WedgeResolutionResult
 CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<RefTableRuntime> & rt)
 {
+    /// The tracker still counts the resolution's allocations but never throws on them: a memory-limit
+    /// exception here would keep the wedge for no reason the store gave. `Global`, because a
+    /// `User`-level lock leaves the server limit enforced.
+    LockMemoryExceptionInThread memory_exception_lock(VariableContext::Global);
     WedgeResolutionResult result;
 
     /// WHY the lane is not proceeding, decided under `state_mutex` and rendered into a message AFTER it
@@ -3306,6 +3310,12 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
                                   const std::vector<RefOp> & chunk_ops,
                                   const std::vector<std::shared_ptr<RefMutationItem>> & chunk_survivors)
 {
+    /// The tracker still counts the append's allocations but never throws on them: a memory-limit
+    /// exception after the PUT would wedge the lane or strand a durable object over memory pressure
+    /// that says nothing about the store. `Global`, because a `User`-level lock leaves the server
+    /// limit enforced. `std::bad_alloc` is not affected.
+    LockMemoryExceptionInThread memory_exception_lock(VariableContext::Global);
+
     /// Reconstructed locally so this arm has the SAME completion + fence semantics as when it lived
     /// inline in `flushRefBatch`: `complete_error` wakes a chunk's waiters under `ref_queue_mutex`, and
     /// `runtime_live` folds `superseded_by_remount` into the append operation's liveness so a

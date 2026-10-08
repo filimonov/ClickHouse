@@ -11,9 +11,13 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <Disks/tests/cas_test_helpers.h>
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadStatus.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Exception.h>
 
@@ -22,6 +26,7 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <thread>
@@ -1861,6 +1866,27 @@ PoolPtr openPoolWithFaultReportHook(const std::shared_ptr<BackendT> & backend, s
     return Pool::open(backend, std::move(config));
 }
 
+/// Larger than the untracked batch a thread keeps before it reports to its tracker, so the allocation
+/// reaches the trackers at once.
+constexpr Int64 over_limit_allocation_bytes = 8 * 1024 * 1024;
+
+/// One allocation through the enforcing tracker path while a `Global`-level tracker above this thread
+/// is over its hard limit. The tracker is spliced in between this thread's tracker and its parent, so
+/// no other thread can hit the limit. Throws `MEMORY_LIMIT_EXCEEDED` unless this thread holds a
+/// `Global`-level `LockMemoryExceptionInThread`.
+void allocateOverTheGlobalLimit()
+{
+    DB::CurrentThread::flushUntrackedMemory();
+    MemoryTracker & thread_tracker = *DB::CurrentThread::getMemoryTracker();
+    MemoryTracker * const parent = thread_tracker.getParent();
+    MemoryTracker over_limit(parent, VariableContext::Global);
+    over_limit.setHardLimit(1);
+    thread_tracker.setParent(&over_limit);
+    SCOPE_EXIT({ thread_tracker.setParent(parent); });
+    std::ignore = CurrentMemoryTracker::alloc(over_limit_allocation_bytes);
+    std::ignore = CurrentMemoryTracker::free(over_limit_allocation_bytes);
+}
+
 }
 
 TEST(CASRefLaneFault, AppendSiteForeignTxnLatchesBeforeTheReport)
@@ -1980,4 +2006,99 @@ TEST(CASRefLaneFault, RemountIsRequestedWhenTheFaultReportThrows)
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
     EXPECT_FALSE(store->mayMutate());
     EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+}
+
+/// An allocation over the server limit between the PUT and the install neither fails nor faults.
+TEST(CASRefLaneFault, AppendCompletesOverTheGlobalMemoryLimit)
+{
+    /// The splice needs a thread tracker; a debug build already has one on this thread.
+    std::optional<DB::ThreadStatus> thread_status{DB::current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
+    auto backend = std::make_shared<WedgeTestBackend>();
+    auto store = openPool(backend);
+    const RootNamespace ns{"srv1/fault_append_memory_limit"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    const auto faults = recordFaultEvents(store);
+    bool allocated = false;
+    store->setCarveHookForTest([&](CasRefLedger::CarvePhaseForTest phase)
+    {
+        if (phase != CasRefLedger::CarvePhaseForTest::PostDurableInstall || allocated)
+            return;
+        allocated = true;
+        allocateOverTheGlobalLimit();
+    });
+
+    EXPECT_NO_THROW(store->dropRef(ns, "x"));
+    store->setCarveHookForTest(nullptr);
+
+    EXPECT_TRUE(allocated);
+    EXPECT_FALSE(store->resolveRef(ns, "x").has_value());
+    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
+    EXPECT_TRUE(store->mayMutate());
+    EXPECT_TRUE(faults->snapshot().empty());
+}
+
+/// The same inside the wedge resolution: the retry lands and is adopted.
+TEST(CASRefLaneFault, WedgeResolvesOverTheGlobalMemoryLimit)
+{
+    std::optional<DB::ThreadStatus> thread_status{DB::current_thread ? std::nullopt : std::optional<DB::ThreadStatus>(std::in_place)};
+    auto backend = std::make_shared<WedgeTestBackend>();
+    auto store = openPool(backend, wedgeTestBudget());
+    auto clock = VirtualRetryClock::installOn(store);
+    const RootNamespace ns{"srv1/fault_wedge_memory_limit"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    publishEmptyPart(store, ns, "y");
+    wedgeLaneOnUnresolvedAppend(*clock, *backend, store, ns, [&] { store->dropRef(ns, "x"); });
+    bool allocated = false;
+    store->setWedgeBeforeSlotOccupyHookForTest([&]
+    {
+        if (allocated)
+            return;
+        allocated = true;
+        allocateOverTheGlobalLimit();
+    });
+
+    EXPECT_NO_THROW(store->dropRef(ns, "y"));
+    store->setWedgeBeforeSlotOccupyHookForTest(nullptr);
+
+    EXPECT_TRUE(allocated);
+    EXPECT_FALSE(store->refLaneWedgedForTest(ns));
+    EXPECT_FALSE(store->resolveRef(ns, "x").has_value()) << "the adopted wedge applied its drop";
+    EXPECT_FALSE(store->resolveRef(ns, "y").has_value());
+    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
+}
+
+/// The guard is not a catch: an allocation failure in the commit path reaches the caller unchanged and
+/// is not a fault.
+TEST(CASRefLaneFault, BadAllocInsideTheAppendPropagates)
+{
+    auto backend = std::make_shared<WedgeTestBackend>();
+    auto store = openPool(backend);
+    const RootNamespace ns{"srv1/fault_bad_alloc"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    publishEmptyPart(store, ns, "y");
+    const auto faults = recordFaultEvents(store);
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    auto planned = std::make_exception_ptr(std::bad_alloc());
+    auto fired = std::make_shared<std::atomic<bool>>(false);
+    store->setInstallRegionProbeForTest([planned, fired]
+    {
+        if (fired->exchange(true))
+            return;
+        ALLOW_ALLOCATIONS_IN_SCOPE;
+        std::rethrow_exception(planned);
+    });
+
+    EXPECT_THROW(store->dropRef(ns, "x"), std::bad_alloc);
+    store->setInstallRegionProbeForTest(nullptr);
+
+    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery)
+        << "the install failed after the PUT, so replay owns the transaction";
+    EXPECT_TRUE(store->mayMutate());
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
+    EXPECT_TRUE(faults->snapshot().empty());
+    EXPECT_NO_THROW(store->dropRef(ns, "y"));
+    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
 }
