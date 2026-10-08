@@ -37,13 +37,10 @@ CONSTANTS
 Bindings == {"token", "other", "none"}
 Tokens == {"a", "b"}
 LaneStates == {"Ready", "Writing", "Wedged", "NeedsRecovery", "Closed", "Faulted"}
-Observations == {"none", "pending", "Durable", "Unknown", "SuccessorSeal",
-                 "Foreign", "Unreadable", "ClassifyMemory", "ClassifyDefect"}
-(* What the classifier can answer for an object that is not this attempt's bytes. *)
-OccupantOutcomes == {"Foreign", "Unreadable", "ClassifyMemory", "ClassifyDefect"}
-FaultOutcomes == {"Foreign", "Unreadable", "ClassifyDefect"}
-ResolvedObservations == {"Durable", "Unknown", "SuccessorSeal"} \cup OccupantOutcomes
-FaultRecords == {"none", "RecoveryForeign"} \cup FaultOutcomes
+Observations == {"none", "pending", "Durable", "Unknown", "Occupied"}
+(* An occupied slot is our exact bytes ("Durable") or a fault; nothing in between. *)
+ResolvedObservations == {"Durable", "Unknown", "Occupied"}
+FaultRecords == {"none", "Occupied", "RecoveryOccupied"}
 AttemptValues == [id : 1..MaxTxn, token : Tokens, binding : Bindings]
 NoAttempt == [id |-> 0, token |-> "none", binding |-> "none"]
 
@@ -87,7 +84,6 @@ VARIABLES
     saw_durable_adoption,
     saw_recovery,
     saw_stale_result,
-    saw_closed,
     saw_faulted,
     saw_certified_while_outstanding,
     slot_runtime,
@@ -119,15 +115,14 @@ VARIABLES
     saw_missing_confirmation,
     fault_latched,
     terminal_observed,
-    fault_record,
-    saw_classify_retry
+    fault_record
 
 laneVars ==
     << lane, cache_id, durable_id, cache_binding, durable_binding, attempt,
        runtime_generation, authority_generation, resolver_attempt,
        resolver_generation, observation, bad_append, bad_install,
        bad_certification, saw_commit, saw_unresolved, saw_retry_created,
-       saw_durable_adoption, saw_recovery, saw_stale_result, saw_closed, saw_faulted,
+       saw_durable_adoption, saw_recovery, saw_stale_result, saw_faulted,
        saw_certified_while_outstanding >>
 
 runtimeVars ==
@@ -154,7 +149,7 @@ runtimeAuxVars ==
 
 resolverProvenanceVars == << observation_runtime, resolver_scope_phase >>
 
-faultVars == << fault_latched, terminal_observed, fault_record, saw_classify_retry >>
+faultVars == << fault_latched, terminal_observed, fault_record >>
 
 vars == << laneVars, runtimeVars, faultVars >>
 
@@ -187,7 +182,6 @@ Init ==
     /\ saw_durable_adoption = FALSE
     /\ saw_recovery = FALSE
     /\ saw_stale_result = FALSE
-    /\ saw_closed = FALSE
     /\ saw_faulted = FALSE
     /\ saw_certified_while_outstanding = FALSE
     /\ slot_runtime = "r1"
@@ -222,7 +216,6 @@ Init ==
     /\ fault_latched = FALSE
     /\ terminal_observed = FALSE
     /\ fault_record = "none"
-    /\ saw_classify_retry = FALSE
 
 StartWrite(new_binding, token) ==
     /\ ~SabotageNoArm
@@ -237,7 +230,7 @@ StartWrite(new_binding, token) ==
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 (* Sabotage: make the durable effect while the lane still advertises `Ready`. *)
 UnarmedWrite(new_binding) ==
@@ -253,7 +246,7 @@ UnarmedWrite(new_binding) ==
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 WriteLands ==
     /\ lane = "Writing"
@@ -265,7 +258,7 @@ WriteLands ==
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 InstallCommitted ==
     /\ lane = "Writing"
@@ -281,7 +274,7 @@ InstallCommitted ==
                     authority_generation, resolver_attempt, resolver_generation,
                     observation, bad_append, bad_install, bad_certification,
                     saw_unresolved, saw_retry_created, saw_durable_adoption,
-                    saw_recovery, saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_recovery, saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 WriteDefinitelyRejected ==
     /\ lane = "Writing"
@@ -293,7 +286,7 @@ WriteDefinitelyRejected ==
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 WriteUnresolved ==
     /\ lane = "Writing"
@@ -304,7 +297,7 @@ WriteUnresolved ==
                     resolver_attempt, resolver_generation, observation,
                     bad_append, bad_install, bad_certification, saw_commit,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 DropUncertain ==
     /\ SabotageDropUncertain
@@ -316,7 +309,7 @@ DropUncertain ==
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 BeginResolve ==
     /\ lane = "Wedged"
@@ -329,7 +322,7 @@ BeginResolve ==
                     authority_generation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 ObserveDurable ==
     /\ observation = "pending"
@@ -343,7 +336,7 @@ ObserveDurable ==
                     runtime_generation, authority_generation, resolver_attempt,
                     resolver_generation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved, saw_durable_adoption,
-                    saw_recovery, saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_recovery, saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 ObserveUnknown ==
     /\ observation = "pending"
@@ -354,30 +347,18 @@ ObserveUnknown ==
                     resolver_generation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
-ObserveSuccessorSeal ==
+ObserveOccupied ==
     /\ observation = "pending"
-    /\ observation' = "SuccessorSeal"
+    /\ observation' = "Occupied"
     /\ UNCHANGED << lane, cache_id, durable_id, cache_binding,
                     durable_binding, attempt, runtime_generation,
                     authority_generation, resolver_attempt,
                     resolver_generation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
-
-ObserveOccupant(o) ==
-    /\ o \in OccupantOutcomes
-    /\ observation = "pending"
-    /\ observation' = o
-    /\ UNCHANGED << lane, cache_id, durable_id, cache_binding,
-                    durable_binding, attempt, runtime_generation,
-                    authority_generation, resolver_attempt,
-                    resolver_generation, bad_append, bad_install,
-                    bad_certification, saw_commit, saw_unresolved,
-                    saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 SameResolution ==
     /\ lane = "Wedged"
@@ -397,36 +378,27 @@ ApplyResolution ==
                            /\ bad_install' =
                                (bad_install \/ (~SabotageSkipIdentity /\ resolver_attempt # attempt))
                            /\ saw_durable_adoption' = TRUE
-                           /\ UNCHANGED << saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                           /\ UNCHANGED << saw_faulted, saw_certified_while_outstanding >>
                       ELSE /\ lane' = "NeedsRecovery"
                            /\ attempt' = NoAttempt
                            /\ UNCHANGED << cache_id, cache_binding, bad_install,
-                                           saw_durable_adoption, saw_closed, saw_faulted, saw_certified_while_outstanding >>
-               [] observation \in {"Unknown", "ClassifyMemory"} ->
+                                           saw_durable_adoption, saw_faulted, saw_certified_while_outstanding >>
+               [] observation = "Unknown" ->
                     /\ lane' = lane
                     /\ UNCHANGED << cache_id, cache_binding, attempt, bad_install,
-                                    saw_durable_adoption, saw_closed, saw_faulted, saw_certified_while_outstanding >>
-               [] observation = "SuccessorSeal" ->
-                    IF CurrentRuntime \/ SabotageNoFence
-                      THEN /\ lane' = "Closed"
-                           /\ attempt' = NoAttempt
-                           /\ saw_closed' = TRUE
-                           /\ UNCHANGED << cache_id, cache_binding, bad_install,
-                                           saw_durable_adoption, saw_faulted, saw_certified_while_outstanding >>
-                      ELSE /\ UNCHANGED << lane, cache_id, cache_binding, attempt,
-                                           bad_install, saw_durable_adoption, saw_closed, saw_faulted, saw_certified_while_outstanding >>
-               [] observation \in FaultOutcomes ->
+                                    saw_durable_adoption, saw_faulted, saw_certified_while_outstanding >>
+               [] observation = "Occupied" ->
                     IF CurrentRuntime \/ SabotageNoFence
                       THEN /\ lane' = "Faulted"
                            /\ attempt' = NoAttempt
                            /\ saw_faulted' = TRUE
                            /\ UNCHANGED << cache_id, cache_binding, bad_install,
-                                           saw_durable_adoption, saw_closed, saw_certified_while_outstanding >>
+                                           saw_durable_adoption, saw_certified_while_outstanding >>
                       ELSE /\ UNCHANGED << lane, cache_id, cache_binding, attempt,
-                                           bad_install, saw_durable_adoption, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                                           bad_install, saw_durable_adoption, saw_faulted, saw_certified_while_outstanding >>
           ELSE /\ UNCHANGED << lane, cache_id, cache_binding, attempt, bad_install,
                               saw_durable_adoption >>
-               /\ UNCHANGED << saw_closed, saw_faulted, saw_certified_while_outstanding >>
+               /\ UNCHANGED << saw_faulted, saw_certified_while_outstanding >>
     /\ resolver_attempt' = NoAttempt
     /\ resolver_generation' = 0
     /\ observation' = "none"
@@ -452,7 +424,7 @@ KnownDurableInstallFailure ==
                     runtime_generation, authority_generation, bad_append,
                     bad_install, bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 Recover ==
     /\ lane = "NeedsRecovery"
@@ -466,7 +438,7 @@ Recover ==
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_stale_result,
-                    saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_faulted, saw_certified_while_outstanding >>
 
 AppendWhileBlocked ==
     /\ SabotageAppendBlocked
@@ -480,7 +452,7 @@ AppendWhileBlocked ==
                     resolver_generation, observation, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 ReplaceAttempt ==
     /\ SabotageSkipIdentity
@@ -493,7 +465,7 @@ ReplaceAttempt ==
                     resolver_attempt, resolver_generation, observation,
                     bad_append, bad_install, bad_certification, saw_commit,
                     saw_unresolved, saw_retry_created, saw_durable_adoption,
-                    saw_recovery, saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_recovery, saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 ApplyWithoutIdentity ==
     /\ SabotageSkipIdentity
@@ -513,7 +485,7 @@ ApplyWithoutIdentity ==
     /\ UNCHANGED << durable_id, durable_binding, runtime_generation,
                     authority_generation, bad_append, bad_certification,
                     saw_commit, saw_unresolved, saw_retry_created, saw_durable_adoption,
-                    saw_recovery, saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_recovery, saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 FenceMove ==
     /\ authority_generation = 1
@@ -538,7 +510,7 @@ FenceMove ==
                     resolver_attempt, resolver_generation, observation,
                     bad_append, bad_install, bad_certification, saw_commit,
                     saw_unresolved, saw_retry_created, saw_durable_adoption,
-                    saw_recovery, saw_stale_result, saw_closed, saw_faulted,
+                    saw_recovery, saw_stale_result, saw_faulted,
                     saw_certified_while_outstanding,
                     old_handle_runtime, lane_runtime, attempt_runtime,
                     resolver_runtime, resolverProvenanceVars, lane_effect_target, runtime_cache_marker,
@@ -560,7 +532,7 @@ ForeignWrite ==
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_faulted, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_faulted, saw_certified_while_outstanding >>
 
 BeginRearm ==
     /\ arm_phase = "Fenced"
@@ -611,7 +583,7 @@ AcceptRearm ==
                     resolver_attempt, resolver_generation, observation,
                     bad_append, bad_install, bad_certification, saw_commit,
                     saw_unresolved, saw_retry_created, saw_durable_adoption,
-                    saw_recovery, saw_stale_result, saw_closed, saw_faulted,
+                    saw_recovery, saw_stale_result, saw_faulted,
                     saw_certified_while_outstanding,
                     old_handle_runtime, lane_runtime, attempt_runtime,
                     resolver_runtime, resolverProvenanceVars, lane_effect_target, runtime_cache_marker,
@@ -774,7 +746,7 @@ Certify ==
                     authority_generation, resolver_attempt,
                     resolver_generation, observation, bad_append, bad_install,
                     saw_commit, saw_unresolved, saw_retry_created, saw_durable_adoption,
-                    saw_recovery, saw_stale_result, saw_closed, saw_faulted >>
+                    saw_recovery, saw_stale_result, saw_faulted >>
 
 StartWriteScoped(new_binding, token) ==
     /\ StartWrite(new_binding, token)
@@ -898,28 +870,9 @@ ObserveUnknownScoped ==
                     runtime_cache_marker, runtime_durable_marker,
                     saw_rebirth_old_action >>
 
-ObserveSuccessorSealScoped ==
-    /\ ObserveSuccessorSeal
+ObserveOccupiedScoped ==
+    /\ ObserveOccupied
     /\ LET source == ObservationTarget(resolver_runtime)
-       IN /\ source \in RuntimeIds
-          /\ observation_runtime' = source
-          /\ bad_lane_retarget' =
-                (bad_lane_retarget \/ source # resolver_runtime)
-          /\ resolver_scope_phase' =
-                IF /\ live_runtimes = RuntimeIds
-                   /\ runtime_identity["r2"].life = 2
-                   /\ slot_runtime = "r2"
-                   /\ source = resolver_runtime
-                  THEN "observed"
-                  ELSE resolver_scope_phase
-    /\ UNCHANGED << runtimeObjectVars, runtimeAuxVars, attempt_runtime,
-                    resolver_runtime, lane_effect_target,
-                    runtime_cache_marker, runtime_durable_marker,
-                    saw_rebirth_old_action >>
-
-ObserveOccupantScoped(o) ==
-    /\ ObserveOccupant(o)
-    /\ LET source == resolver_runtime
        IN /\ source \in RuntimeIds
           /\ observation_runtime' = source
           /\ bad_lane_retarget' =
@@ -966,7 +919,6 @@ ApplyResolutionScoped ==
                /\ fault_latched' = (fault_latched \/ ~SabotageUnlatchedFault)
                /\ fault_record' = observation
           ELSE UNCHANGED << fault_latched, terminal_observed, fault_record >>
-    /\ UNCHANGED saw_classify_retry
 
 KnownDurableInstallFailureScoped ==
     /\ KnownDurableInstallFailure
@@ -1013,33 +965,26 @@ ApplyWithoutIdentityScoped ==
                     resolver_scope_phase,
                     saw_rebirth_old_action >>
 
-(* The append's conditional create lost to an object that is not this attempt's bytes, so the
-   attempt did not land. A memory-limit classification returns the lane to Ready; every other
-   outcome faults the lane and latches in the same step. *)
-WriteConflict(o) ==
-    /\ o \in OccupantOutcomes
+(* The append's conditional create lost to an object that is not this attempt's bytes. The
+   attempt did not land; the lane faults and latches in the same step. *)
+WriteConflict ==
     /\ lane = "Writing"
     /\ durable_id = cache_id
     /\ attempt' = NoAttempt
-    /\ IF o = "ClassifyMemory"
-          THEN /\ lane' = "Ready"
-               /\ saw_classify_retry' = TRUE
-               /\ UNCHANGED << saw_faulted, fault_latched, terminal_observed, fault_record >>
-          ELSE /\ lane' = "Faulted"
-               /\ saw_faulted' = TRUE
-               /\ terminal_observed' = TRUE
-               /\ fault_latched' = (fault_latched \/ ~SabotageUnlatchedFault)
-               /\ fault_record' = o
-               /\ UNCHANGED saw_classify_retry
+    /\ lane' = "Faulted"
+    /\ saw_faulted' = TRUE
+    /\ terminal_observed' = TRUE
+    /\ fault_latched' = (fault_latched \/ ~SabotageUnlatchedFault)
+    /\ fault_record' = "Occupied"
     /\ UNCHANGED << cache_id, durable_id, cache_binding, durable_binding,
                     runtime_generation, authority_generation, resolver_attempt,
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved,
                     saw_retry_created, saw_durable_adoption, saw_recovery,
-                    saw_stale_result, saw_closed, saw_certified_while_outstanding >>
+                    saw_stale_result, saw_certified_while_outstanding >>
 
-WriteConflictScoped(o) ==
-    /\ WriteConflict(o)
+WriteConflictScoped ==
+    /\ WriteConflict
     /\ attempt_runtime' = NoRuntime
     /\ UNCHANGED << runtimeObjectVars, runtimeAuxVars, resolver_runtime,
                     resolverProvenanceVars, lane_effect_target, runtime_cache_marker,
@@ -1054,17 +999,17 @@ LeaveFaulted ==
                     runtime_generation, authority_generation, resolver_attempt,
                     resolver_generation, observation, bad_append, bad_install,
                     bad_certification, saw_commit, saw_unresolved, saw_retry_created,
-                    saw_durable_adoption, saw_recovery, saw_stale_result, saw_closed,
+                    saw_durable_adoption, saw_recovery, saw_stale_result,
                     saw_faulted, saw_certified_while_outstanding, runtimeVars, faultVars >>
 
-(* Recovery meets a different object at the retained attempt's id above the checkpoint. *)
-RecoveryFindsForeign ==
+(* Recovery meets anything but the retained attempt's bytes at its id above the checkpoint. *)
+RecoveryFindsOccupied ==
     /\ lane = "NeedsRecovery"
     /\ CurrentRuntime
     /\ terminal_observed' = TRUE
     /\ fault_latched' = (fault_latched \/ ~SabotageUnlatchedFault)
-    /\ fault_record' = "RecoveryForeign"
-    /\ UNCHANGED << laneVars, runtimeVars, saw_classify_retry >>
+    /\ fault_record' = "RecoveryOccupied"
+    /\ UNCHANGED << laneVars, runtimeVars >>
 
 LaneNext ==
     Certify
@@ -1079,10 +1024,9 @@ CoreNext ==
     \/ WriteUnresolvedScoped
     \/ DropUncertainScoped
     \/ BeginResolveScoped
-    \/ ObserveSuccessorSealScoped
+    \/ ObserveOccupiedScoped
     \/ ObserveDurableScoped
     \/ ObserveUnknownScoped
-    \/ \E o \in OccupantOutcomes : ObserveOccupantScoped(o)
     \/ KnownDurableInstallFailureScoped
     \/ RecoverScoped
     \/ AppendWhileBlockedScoped
@@ -1102,8 +1046,8 @@ CoreNext ==
 Next ==
     \/ (CoreNext /\ UNCHANGED faultVars)
     \/ ApplyResolutionScoped
-    \/ \E o \in OccupantOutcomes : WriteConflictScoped(o)
-    \/ RecoveryFindsForeign
+    \/ WriteConflictScoped
+    \/ RecoveryFindsOccupied
     \/ LeaveFaulted
 
 Spec == Init /\ [][Next]_vars
@@ -1129,7 +1073,6 @@ TypeOK ==
     /\ saw_durable_adoption \in BOOLEAN
     /\ saw_recovery \in BOOLEAN
     /\ saw_stale_result \in BOOLEAN
-    /\ saw_closed \in BOOLEAN
     /\ saw_faulted \in BOOLEAN
     /\ saw_certified_while_outstanding \in BOOLEAN
     /\ cache_id <= durable_id
@@ -1165,7 +1108,6 @@ TypeOK ==
     /\ fault_latched \in BOOLEAN
     /\ terminal_observed \in BOOLEAN
     /\ fault_record \in FaultRecords
-    /\ saw_classify_retry \in BOOLEAN
 
 ReadyCaughtUp ==
     (lane = "Ready" /\ CurrentRuntime)
@@ -1233,20 +1175,16 @@ W_RetryCreated == ~saw_retry_created
 W_DurableAdoption == ~saw_durable_adoption
 W_Recovery == ~saw_recovery
 W_StaleResult == ~saw_stale_result
-W_Closed == ~saw_closed
-W_Faulted == ~saw_faulted
+W_Faulted == ~(saw_faulted /\ lane = "Faulted" /\ fault_latched /\ fault_record = "Occupied")
 W_RebirthOldAction == ~saw_rebirth_old_action
 W_SelfRemount == ~saw_self_remount
 W_LateInvalidationPreserved == ~saw_late_invalidation_preserved
 W_MissingConfirmation == ~saw_missing_confirmation
-W_UnreadableFault == ~(fault_record = "Unreadable" /\ lane = "Faulted" /\ fault_latched)
-W_DefectFault == ~(fault_record = "ClassifyDefect" /\ lane = "Faulted" /\ fault_latched)
-W_RecoveryForeign == ~(fault_record = "RecoveryForeign" /\ lane = "NeedsRecovery" /\ fault_latched)
-W_ClassifyRetry == ~(saw_classify_retry /\ lane = "Ready")
+W_RecoveryOccupied == ~(fault_record = "RecoveryOccupied" /\ lane = "NeedsRecovery" /\ fault_latched)
 W_FaultThenRemount == ~(fault_latched /\ saw_self_remount)
 W_RebirthResolverScope ==
     ~(resolver_scope_phase = "applied"
-      /\ saw_closed
+      /\ saw_faulted
       /\ lane_effect_target = lane_runtime
       /\ ~bad_lane_retarget)
 

@@ -37,7 +37,6 @@ CONFIGS=(
   "witness_durableadoption violation W_DurableAdoption"
   "witness_recovery       violation W_Recovery"
   "witness_staleresult    violation W_StaleResult"
-  "witness_closed         violation W_Closed"
   "witness_faulted        violation W_Faulted"
   "witness_rebirtholdaction violation W_RebirthOldAction"
   "witness_selfremount    violation W_SelfRemount"
@@ -45,10 +44,7 @@ CONFIGS=(
   "witness_missingconfirmation violation W_MissingConfirmation"
   "witness_rebirthresolver violation W_RebirthResolverScope"
   "witness_certifyoutstanding violation W_CertifiedWhileOutstanding"
-  "witness_unreadablefault violation W_UnreadableFault"
-  "witness_defectfault    violation W_DefectFault"
-  "witness_recoveryforeign violation W_RecoveryForeign"
-  "witness_classifyretry  violation W_ClassifyRetry"
+  "witness_recoveryoccupied violation W_RecoveryOccupied"
   "witness_faultremount   violation W_FaultThenRemount"
 )
 
