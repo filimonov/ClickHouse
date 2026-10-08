@@ -961,3 +961,178 @@ the observer's own clock. `CaMountObserveCore` models that watch and checks
 unchanged: `stage1` 51,231,925 generated and 10,616,665 distinct at depth 28; `v9_recoverygen`
 82,299,033 generated and 15,658,147 distinct at depth 26. `rev6_observe` (`Drift = 2`) is still not
 part of the default run and has still never completed.
+
+## 2026-10-08 — incarnations and claim monotonicity (CAS-178) {#2026-10-08-incarnations}
+
+Step 1 of the `CaCasMountCore` row in section 9 of
+`docs/superpowers/specs/2026-10-07-cas-mount-lease-series-design.md`, checked before PR 7. The
+claim operation, the `Reacquire` certificate and partial continuation (step 2) are not modelled.
+
+### What changed {#2026-10-08-changes}
+
+- **Processes are incarnations.** `Incs == (Actors \X {1}) \union (TwinUuids \X {2})`, with
+  `Uuid(i)` and `Twins(i)`. Indexed by incarnation: `localEpoch`, `localLost`, `crashed`,
+  `rejected`, `adoptObs`, `fenceUntil` (no longer a shared scalar), `wedged`, `reclaimed`,
+  `remountedAfterFence`, `recGen`, `wedgeGen`, `wedgeOp`. Tagged by incarnation: `wrote`,
+  `slot.by`, `acked`, `durable`. Durable objects keep the uuid: `owner`, `firstOwner`,
+  `mount.uuid`, `fencedEpochs`.
+- **New constants.** `TwinUuids` (`{}` in all 25 pre-existing cfgs, so each uuid has one
+  incarnation and `Twins(i) = {}`) and `SabClaimNonMonotone`.
+- **`ClaimMount`.**
+  - The two replacement branches (`fencedReclaim`, observed death) need `monotoneOK`: the new
+    epoch is strictly greater than the replaced body's. It replaces `strictOK` there; `strictOK`
+    (`localEpoch[a] >= epoch`) stays on the fresh mint only.
+  - The observed-death branch is `mount.deadline + Drift <= clock` (`observedDead`); it was the
+    bare stamp `mount.deadline <= clock`.
+  - With twins, an incarnation claims only after it allocated (`localEpoch[a] > 0`).
+  - `epochRegressed'` is set when the installed epoch is below the replaced same-uuid body's.
+- **`AllocEpoch`.** A live body that is a twin's current claim does not block allocation:
+  `Pool::mountWritable` calls `allocateWriterEpoch` before `claimMount`.
+- **`ObservedReclaim`, `WallClockReclaim`.** Also compute `epochRegressed'`.
+- **New operators.** `RegressesEpoch`, `CanWrite` (now `Write`'s guard), invariants
+  `ClaimNeverRegressesEpoch` and `OneWritableIncarnationPerUuid`, witnesses
+  `W_TwoLiveIncarnations` and `W_DelayedStartOverNewerBody`, constraint `NoEpochWipe`.
+- **`ClaimNeverRegressesEpoch`** added to `_stage1` and `_v9_recoverygen`.
+- **`CaCasMountCoreLateRenew.tla`** quantifies over `Incs` and reads `fenceUntil[a]`.
+- **New cfgs.** `_sab_claimregress`, `_twins`, `_twins_v9`, `_twins_drift`, `_witness_twolive`,
+  `_witness_delayedstart`. `run_mount.sh` grows from 23 to 29 rows.
+
+### Code cross-check {#2026-10-08-code}
+
+Checked at `5b7c9f503df` (merge of #2484), `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/`:
+
+- `claimMount`, same uuid and different epoch, reclaims on `gc_fenced`, the clean marker
+  (`min_active_build_sequence == UINT64_MAX`), `proven_dead_incarnation` or
+  `unsafe_reclaim_authorization`. None of the four compares `our_epoch` with
+  `existing.writer_epoch`. `_sab_claimregress` is this code.
+- `claimMount` over an absent slot creates the body with `our_epoch`; it reads no epoch object.
+- `allocateWriterEpoch`, epoch present: bumps `next_writer_epoch` without looking at the mount.
+  Epoch absent with `DecommissionRecovery`: mints `max(1, surviving.writer_epoch + 1)`, which the
+  model's `RemintEpochDecom` already does.
+- `claimMountAwaitingExpiry` passes `proven_dead_incarnation` only after the token held for
+  `mountObservationThresholdMs` on its own clock. The model's observed-death branch stands for it.
+
+### Sabotage `_sab_claimregress` {#2026-10-08-sab-claimregress}
+
+Violates `ClaimNeverRegressesEpoch` at depth 8 (4,408 generated, 1,798 distinct). Trace:
+
+1. `ClaimOwnerEmpty(<<A,1>>)`, `AllocEpoch(<<A,1>>)`: the first start allocates epoch 1 and stalls.
+2. `AllocEpoch(<<A,2>>)`, `ClaimMount(<<A,2>>)`: the second start allocates 2 and mints `(A, 2)`.
+3. `Tick`, `Tick`: `(A, 2)` expires (`clock = 2`, `fenceUntil[<<A,2>>] = 2`).
+4. `ClaimMount(<<A,1>>)`: the first start resumes and replaces `(A, 2)` with `(A, 1)` on the
+   observed-death branch. In the code this is the `proven_dead` reclaim.
+
+This is the CAS-178 scenario with epochs 1 and 2. Through a `GcFence` the same replacement takes
+one more step; `_witness_delayedstart` reaches that state (below), and with the honest guard no
+claim is enabled there. The honest counterpart of this cfg, with the same bounds, is `_twins`
+(green).
+
+### Witnesses {#2026-10-08-witnesses}
+
+- `_witness_twolive`, depth 5: `ClaimOwnerEmpty`, `AllocEpoch(<<A,1>>)`, `AllocEpoch(<<A,2>>)`,
+  `ClaimMount(<<A,2>>)`. `<<A,2>>` can write while `<<A,1>>` holds epoch 1 and is alive.
+- `_witness_delayedstart`, depth 8: as above, then `Tick`, `Tick`, `GcFence`. `<<A,1>>` never
+  claimed and reads the fenced `(A, 2)`.
+
+### Scratch experiments {#2026-10-08-scratch}
+
+Run from `tmp/mount-incarnations/` with the runner's JVM flags; not runner rows.
+
+| Variant of `_twins` | Result | Trace |
+|---|---|---|
+| `GlobalSupersededWriterMakesNoMutation` only | violated, 127 distinct | `<<A,1>>` claims `(A, 1)`; `<<A,2>>` allocates 2; `<<A,1>>` writes |
+| without `NoEpochWipe` | `OneWritableIncarnationPerUuid` violated, 859 distinct | `<<A,1>>` allocates 1; `WipeEpoch`; `RemintEpoch(<<A,2>>)` gives 1 again; both claim, the second on the refresh branch |
+| `Drift = 1`, bare `mount.deadline <= clock` on observed death | `OneWritableIncarnationPerUuid` violated, 4,462 distinct | `<<A,2>>` replaces `(A, 1)` at `clock = 2` while `fenceUntil[<<A,1>>] = 3` |
+| `Drift = 1`, `MaxClock = 4`, Drift-aware | killed after 11 min, 16.5 M distinct, queue growing | — |
+
+The Drift-aware `Drift = 1` variant at `MaxClock = 3` is the committed `_twins_drift` (green).
+
+### Findings {#2026-10-08-findings}
+
+1. **`GlobalSupersededWriterMakesNoMutation` over-reports with two incarnations.** It reads the
+   durable counter (`epoch > localEpoch[a]`). A second start that allocates and then gets
+   `LiveDoubleStart` advances the counter without taking the slot, and the live holder's next
+   write sets the flag. The spec agrees this is harmless: "Пропуск номера epoch (неясный
+   инкремент, разрешённый чтением) безвреден". The twin cfgs therefore omit this invariant. Step 2
+   needs a superseded-writer invariant over installed bodies instead of the counter.
+2. **Fresh mint over an absent slot is not covered by the rule.** The rule: "новая инкарнация не
+   ставит epoch, меньший или равный epoch заменяемого тела того же `uuid`". Over an absent slot
+   nothing is replaced, and `claimMount` mints with whatever epoch the caller allocated. The
+   model keeps `strictOK`, a read of the counter, on that branch, so the model is stricter than
+   the code there. It does not reproduce what the code does for a delayed start whose slot was
+   removed meanwhile (`SYSTEM CAS DROP POOL MEMBER`, or by hand).
+3. **The epoch-wipe residual allows two writable incarnations.** `_stage1.cfg` describes the
+   residual as "degrading to a remount, never to two silently-live writers persisting". With two
+   incarnations, loss of the epoch object between one start's allocation and its claim lets
+   `RemintEpoch` hand the same epoch to the second start (no mount exists, so the guard passes);
+   both then claim and both can write. `NoEpochWipe` prunes this from the twin cfgs. In the code
+   the same path needs the epoch object to vanish while the mount slot is absent and the subtree
+   is empty.
+4. **The holder-side argument for the bare `expired` branch was scoped to one actor per uuid.**
+   It said the replaced body is the claimer's own record, so no second live fence exists. With
+   two incarnations the body can belong to a live twin, and the bare stamp lets the twin keep
+   writing (scratch row 3). The branch is now Drift-aware; at `Drift = 0` it is unchanged.
+5. **Decommission with two incarnations is not exercised.** `RemintEpochDecom` needs a wiped
+   epoch, which `NoEpochWipe` prunes. Decommission over a present epoch is `AllocEpoch` followed by
+   `ClaimMount`, the same actions as a start, so `monotoneOK` covers it. `_stage1` checks
+   `ClaimNeverRegressesEpoch` with `RemintEpochDecom` enabled and one incarnation per uuid.
+
+No result contradicts the spec's rule for replaced bodies.
+
+### Legacy rows {#2026-10-08-legacy}
+
+With `TwinUuids = {}` the `AllocEpoch` guard and the claim-after-allocate conjunct reduce to the
+previous ones. Two changes reach the legacy cfgs: `monotoneOK` replaces `strictOK` on replacements,
+and the observed-death branch is Drift-aware (affects only `Drift > 0` cfgs). Distinct-state counts
+are unchanged for every row except `stage1` (10,616,665 → 10,599,769),
+`sab_decomblindbypass` (528,248 → 527,809) and `witness_recoveryafterobservedreclaim`
+(12,981,026 → 12,979,508, an abort run). Generated counts are higher on most rows; depths are
+unchanged. Every verdict matches the 2026-10-02 battery.
+
+### Bounds {#2026-10-08-bounds}
+
+`_twins` at `MaxClock = 4` (the `_stage1` bound) was green in 23 min 31 s: 258,276,393 generated,
+34,944,038 distinct, depth 27. The committed cfgs `_twins`, `_sab_claimregress`,
+`_witness_twolive` and `_witness_delayedstart` use `MaxClock = 3`. No pre-existing cfg's
+constants changed.
+
+### Battery {#2026-10-08-battery}
+
+`TLC_JAVA_OPTS=-Xmx16g nice -n 10 docs/superpowers/models/run_mount.sh`, one worker, TLC
+`2026.07.18.145032`, jar sha256 `cc4803dc...e516b3`. Exit 0, `ALL EXPECTATIONS MET`, 29 rows, 3,072 s
+of TLC time. The host's load average was 15–19 from other jobs, so wall times are about twice the
+2026-08-24 figures and not comparable to them.
+
+| cfg | expected | result | depth | generated | distinct | queue | s |
+|---|---|---|---:|---:|---:|---:|---:|
+| `sab_epochreset` | violation | `WriterEpochMonotoneUnique` | 6 | 570 | 321 | 230 | 1 |
+| `sab_foreigntakeover` | violation | `ForeignUuidNeverAutoTakesOver` | 6 | 621 | 339 | 242 | 1 |
+| `sab_adoptwedge` | violation | `NoPermanentWedge` | 6 | 705 | 372 | 264 | 0 |
+| `sab_fenceresurrect` | violation | `FenceCostsEpoch` | 7 | 2,773 | 1,088 | 750 | 1 |
+| `sab_wallclockreclaim` | violation | `GlobalSupersededWriterMakesNoMutation` | 9 | 123,795 | 24,905 | 15,382 | 1 |
+| `sab_epochwipelive` | violation | `SupersededWriterMakesNoMutation` | 9 | 23,225 | 8,606 | 5,581 | 1 |
+| `sab_decomblindbypass` | violation | `FenceCostsEpoch` | 14 | 1,941,123 | 527,809 | 259,241 | 12 |
+| `sab_staleinstall` | violation | `GlobalSupersededWriterMakesNoMutation` | 10 | 192,057 | 54,878 | 34,670 | 2 |
+| `sab_wedgeretryoldgen` | violation | `GlobalSupersededWriterMakesNoMutation` | 10 | 190,313 | 54,956 | 34,720 | 2 |
+| `sab_slotnocompare` | violation | `AckedOpsAreDurable` | 7 | 5,460 | 2,276 | 1,682 | 0 |
+| `sab_staleinstall_strictorder` | violation | `GlobalSupersededWriterMakesNoMutation` | 11 | 241,476 | 63,123 | 39,811 | 3 |
+| `sab_wedgeretryoldgen_strictorder` | violation | `GlobalSupersededWriterMakesNoMutation` | 11 | 239,449 | 63,188 | 39,850 | 2 |
+| `sab_slotnocompare_strictorder` | violation | `AckedOpsAreDurable` | 8 | 7,197 | 2,660 | 1,965 | 0 |
+| `sab_claimregress` (new) | violation | `ClaimNeverRegressesEpoch` | 8 | 4,408 | 1,798 | 1,346 | 1 |
+| `stage1` | green | green | 28 | 57,855,349 | 10,599,769 | **0** | 356 |
+| `v9_recoverygen` | green | green | 26 | 89,644,605 | 15,658,147 | **0** | 528 |
+| `twins` (new) | green | green | 24 | 75,744,067 | 9,966,840 | **0** | 433 |
+| `twins_v9` (new) | green | green | 25 | 127,345,625 | 16,701,928 | **0** | 800 |
+| `twins_drift` (new) | green | green | 24 | 98,995,491 | 11,146,936 | **0** | 509 |
+| `witness_reclaim` | violation | `W_SameUuidReclaimsExpired` | 6 | 620 | 338 | 241 | 1 |
+| `witness_remountafterfence` | violation | `W_RemountAfterFence` | 8 | 8,226 | 3,266 | 2,178 | 0 |
+| `witness_observedreclaim` | violation | `W_ObservedReclaim` | 10 | 323,842 | 59,375 | 34,702 | 3 |
+| `witness_recoveryafterobservedreclaim` | violation | `W_RecoveryAfterObservedReclaim` | 18 | 95,994,220 | 12,979,508 | 5,612,048 | 404 |
+| `witness_genrefused` | violation | `W_GenerationRefused` | 9 | 62,149 | 20,209 | 13,632 | 1 |
+| `witness_sealrejected` | violation | `W_SealRejectedRetry` | 12 | 1,152,134 | 295,419 | 161,651 | 7 |
+| `witness_ackhappened` | violation | `W_AckHappened` | 5 | 221 | 140 | 105 | 1 |
+| `witness_laterenew` | violation | `W_LateRenewThenLaneAndWrite` | 10 | 112,628 | 33,366 | 23,186 | 1 |
+| `witness_twolive` (new) | violation | `W_TwoLiveIncarnations` | 5 | 50 | 32 | 18 | 1 |
+| `witness_delayedstart` (new) | violation | `W_DelayedStartOverNewerBody` | 8 | 4,406 | 1,796 | 1,344 | 0 |
+
+For violation rows, depth is the length of the counterexample in states. `rev6_observe` was not run.

@@ -440,7 +440,11 @@ ordered scan and cleanup deletes only what it observed durable. The migration is
   `_witness_*` reachability checks. `_witness_laterenew` runs `CaCasMountCoreLateRenew.tla`, a
   history wrapper that extends the module without changing its reachable states: the lease
   expires, `Renew` extends it under the same epoch, then `WedgeRetryCreate` and `Write` run under
-  the same generation. Run evidence, state counts and traces: `CaCasMountCore_RESULTS.md`.
+  the same generation. Processes are incarnations of a uuid; `TwinUuids` gives a uuid a second
+  one. `_twins`, `_twins_v9` and `_twins_drift` are the greens with two incarnations of one uuid,
+  `_sab_claimregress` is a delayed start replacing a newer body with its older epoch, and
+  `_witness_twolive` / `_witness_delayedstart` show both incarnations alive and the delayed start's
+  state. Run evidence, state counts and traces: `CaCasMountCore_RESULTS.md`.
 - **`CaMountObserveCore.tla`** — observer timing of the mount lease, for one holder, one observer
   and one slot. The holder's clock and the observer's clock are separate variables coupled only by
   a bounded rate difference. The observer samples its clock, reads the slot later, dates a new

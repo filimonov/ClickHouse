@@ -61,6 +61,11 @@
 #   invariant, same bounds -- what changes is only which counterexample is shortest, which is the
 #   point: these reds are about a generation TRANSITION, not about the bootstrap value.
 #
+#   --- 2026-10-08 incarnations (two processes of uuid A) ---
+#   sab_claimregress      -> ClaimNeverRegressesEpoch    a delayed start reclaims a newer fenced body
+#                                                        of its own uuid with its older epoch: the
+#                                                        unguarded `claimMount`
+#
 # The first two v9 sabotages target the SAME pre-existing invariant, deliberately: an old-generation
 # publication IS a mutation by a superseded incarnation, which is what that invariant already says,
 # and inventing a parallel property per sabotage is how a suite ends up with six near-duplicates.
@@ -70,6 +75,9 @@
 #
 #   stage1                -> GREEN   the legacy positive gate (recovery-generation layer inert)
 #   v9_recoverygen        -> GREEN   THE v9 gate: the layer on, every sabotage off
+#   twins                 -> GREEN   two incarnations of one uuid, layer off
+#   twins_v9              -> GREEN   two incarnations of one uuid, layer on
+#   twins_drift           -> GREEN   two incarnations of one uuid, Drift = 1
 #
 # Witnesses are negated reachability -- a VIOLATION is the evidence. They exist because BFS reports
 # the SHORTEST counterexample, so a branch no red travels would silently rot:
@@ -91,6 +99,10 @@
 #                                          extends it under the same epoch, then `WedgeRetryCreate`
 #                                          and `Write` run under the same generation. Runs the
 #                                          history wrapper `CaCasMountCoreLateRenew.tla`
+#   witness_twolive                     -> W_TwoLiveIncarnations  one incarnation of uuid A can
+#                                          write while another has allocated its own epoch
+#   witness_delayedstart                -> W_DelayedStartOverNewerBody  an incarnation that never
+#                                          claimed reads a fenced body of its uuid with a higher epoch
 #
 # NOT in the default suite: CaCasMountCore_rev6_observe.cfg. It does not complete in an interactive
 # budget and that is PRE-EXISTING, confirmed against the pre-2026-07-24 committed model (Drift = 2
@@ -142,8 +154,12 @@ CONFIGS=(
   "sab_staleinstall_strictorder          violation  GlobalSupersededWriterMakesNoMutation"
   "sab_wedgeretryoldgen_strictorder      violation  GlobalSupersededWriterMakesNoMutation"
   "sab_slotnocompare_strictorder         violation  AckedOpsAreDurable"
+  "sab_claimregress                      violation  ClaimNeverRegressesEpoch"
   "stage1                                green      -"
   "v9_recoverygen                        green      -"
+  "twins                                 green      -"
+  "twins_v9                              green      -"
+  "twins_drift                           green      -"
   "witness_reclaim                       violation  W_SameUuidReclaimsExpired"
   "witness_remountafterfence             violation  W_RemountAfterFence"
   "witness_observedreclaim               violation  W_ObservedReclaim"
@@ -152,6 +168,8 @@ CONFIGS=(
   "witness_sealrejected                  violation  W_SealRejectedRetry"
   "witness_ackhappened                   violation  W_AckHappened"
   "witness_laterenew                     violation  W_LateRenewThenLaneAndWrite  CaCasMountCoreLateRenew"
+  "witness_twolive                       violation  W_TwoLiveIncarnations"
+  "witness_delayedstart                  violation  W_DelayedStartOverNewerBody"
 )
 [[ "${SLOW:-0}" == "1" ]] && CONFIGS+=("rev6_observe  incomplete  -")
 

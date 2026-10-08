@@ -14,7 +14,7 @@ EXTENDS CaCasMountCore
 
 VARIABLES
     lateStage,  \* 0..4: how much of the sequence has happened
-    lateActor,  \* the holder, None before the first step
+    lateActor,  \* the holder incarnation, None before the first step
     lateGen     \* the generation its lane was admitted under, None before the first step
 
 wvars == << vars, lateStage, lateActor, lateGen >>
@@ -26,7 +26,7 @@ InitW ==
 \* 1. A lane is admitted while the lease is valid.
 LaneAdmittedInsideLease(a) ==
     /\ lateStage = 0
-    /\ clock < fenceUntil
+    /\ clock < fenceUntil[a]
     /\ WedgeAdmit(a)
     /\ lateStage' = 1 /\ lateActor' = a /\ lateGen' = localEpoch[a]
 
@@ -38,8 +38,8 @@ SameGeneration(a) ==
 RenewAfterExpiry(a) ==
     /\ lateStage = 1
     /\ SameGeneration(a)
-    /\ clock >= fenceUntil
-    /\ mount # None /\ mount.uuid = a /\ mount.epoch = lateGen /\ ~mount.fenced
+    /\ clock >= fenceUntil[a]
+    /\ mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = lateGen /\ ~mount.fenced
     /\ Renew(a)
     /\ lateStage' = 2 /\ UNCHANGED << lateActor, lateGen >>
 
@@ -59,17 +59,17 @@ WriteAfterRenew(a) ==
     /\ lateStage' = 4 /\ UNCHANGED << lateActor, lateGen >>
 
 NextW ==
-    \/ \E a \in Actors : LaneAdmittedInsideLease(a)
-    \/ \E a \in Actors : RenewAfterExpiry(a)
-    \/ \E a \in Actors : LaneRetriesAfterRenew(a)
-    \/ \E a \in Actors : WriteAfterRenew(a)
+    \/ \E a \in Incs : LaneAdmittedInsideLease(a)
+    \/ \E a \in Incs : RenewAfterExpiry(a)
+    \/ \E a \in Incs : LaneRetriesAfterRenew(a)
+    \/ \E a \in Incs : WriteAfterRenew(a)
     \/ Next /\ UNCHANGED << lateStage, lateActor, lateGen >>
 
 SpecW == InitW /\ [][NextW]_wvars
 
 TypeOKW ==
     /\ lateStage \in 0..4
-    /\ lateActor \in Actors \union {None}
+    /\ lateActor \in Incs \union {None}
     /\ lateGen \in (0..MaxEpoch) \union {None}
 
 \* Witness, negated reachability: the whole sequence happens.

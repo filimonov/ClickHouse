@@ -3,8 +3,8 @@
 (* TLA+ safety gate for the content-addressed "mount ownership + server-   *)
 (* root identity" subsystem.                                               *)
 (*                                                                         *)
-(* One modeled server_root_id, three objects + two server Actors (A,B,     *)
-(* each a distinct fixed ServerUUID):                                      *)
+(* One modeled server_root_id, three objects, and server processes        *)
+(* (`Incs`, incarnations `<< uuid, k >>` of the uuids in `Actors`):        *)
 (*                                                                         *)
 (*   owner   : Actors \cup {None}  -- sticky identity; once set never      *)
 (*             changes (the server_root claim is first-writer-wins).       *)
@@ -218,11 +218,20 @@
 (* same-`-workers` baseline of the committed model -- see                  *)
 (* `CaCasMountCore_RESULTS.md`). The layer is exercised only by the new    *)
 (* cfgs.                                                                   *)
+(*                                                                         *)
+(* 2026-10-08 incarnations and claim monotonicity. Every per-process       *)
+(* variable (`localEpoch`, `localLost`, `crashed`, `rejected`, `adoptObs`, *)
+(* `fenceUntil`, `wedged`, `recGen`, `wedgeGen`, `wedgeOp`) is indexed by  *)
+(* an incarnation, so two live processes of one uuid are representable.    *)
+(* `TwinUuids = {}` keeps one incarnation per uuid. A claim that replaces  *)
+(* a same-uuid body needs a strictly greater epoch (`ClaimMount`'s         *)
+(* `monotoneOK`); `ClaimNeverRegressesEpoch` checks it on every mount      *)
+(* write, and `SabClaimNonMonotone` is the unguarded `claimMount`.         *)
 (***************************************************************************)
 EXTENDS Integers, FiniteSets
 
 CONSTANTS
-    Actors,               \* server identities (distinct ServerUUIDs), e.g. {A, B}
+    Actors,               \* server uuids, e.g. {A, B}; processes are the incarnations `Incs` below
     None,                 \* "no owner / no mount" sentinel (distinct from any Actor)
     MaxClock,             \* bound on abstract clock (TLC finiteness)
     MaxEpoch,             \* bound on the durable epoch counter
@@ -258,7 +267,7 @@ CONSTANTS
                           \* honest -- an `Occupied` result is resolved BY COMPARING BYTES, and only
                           \* the lane's OWN bytes let it ack. TRUE skips the comparison and acks
                           \* regardless: acked-then-lost.
-    MaxAdmissions         \* 2026-07-28 v9: STATE-SPACE BOUND -- how many operations/recoveries may be
+    MaxAdmissions,        \* 2026-07-28 v9: STATE-SPACE BOUND -- how many operations/recoveries may be
                           \* admitted per behavior in total (`RecoveryStart` + `WedgeAdmit`). NOT a
                           \* safety claim, in the identical spirit to `epochWiped`'s one-shot
                           \* `WipeEpoch` guard (see its own comment): without a bound, `recGen` and
@@ -275,6 +284,11 @@ CONSTANTS
                           \* whole suite at another value to show the bound is not doing the work.
                           \* 0 in every pre-existing cfg (where `RecoveryGenOn = FALSE` already
                           \* disables both admission actions).
+    TwinUuids,            \* SUBSET Actors: uuids that get a second incarnation `<< u, 2 >>`. `{}` gives
+                          \* one incarnation per uuid, which is the uuid-actor model before incarnations.
+    SabClaimNonMonotone   \* FALSE = honest: a claim replaces a same-uuid body only with a strictly
+                          \* greater epoch. TRUE drops that check, as `claimMount` does today: a
+                          \* delayed starter installs its older epoch over a newer terminal body.
 
 VARIABLES
     owner,        \* Actors \cup {None}; sticky once non-None
@@ -303,25 +317,25 @@ VARIABLES
     mount,        \* None, or [uuid |-> Actor, epoch |-> Nat, deadline |-> Nat, fenced |-> BOOLEAN]
     mtoken,       \* 0..MaxToken; bumped by EVERY mount write (claim/renew/fence/adopt/reclaim)
     clock,        \* 0..MaxClock; abstract time
-    localEpoch,   \* [Actors -> 0..MaxEpoch]; the epoch an actor last allocated for itself
-    localLost,    \* [Actors -> BOOLEAN]; TRUE once the actor learned it was superseded/fenced --
+    localEpoch,   \* [Incs -> 0..MaxEpoch]; the epoch an incarnation last allocated for itself
+    localLost,    \* [Incs -> BOOLEAN]; TRUE once the incarnation learned it was superseded/fenced --
                   \* PURE KNOWLEDGE (round 3): appears in NO safety guard, only in the dedicated
                   \* knowledge-based witness (`lostThenWrote`/`SupersededWriterMakesNoMutation`)
-    crashed,      \* rev.6 round 3: [Actors -> BOOLEAN]; TRUE = a MECHANICAL fact -- this actor's
+    crashed,      \* rev.6 round 3: [Incs -> BOOLEAN]; TRUE = a MECHANICAL fact -- this actor's
                   \* process is genuinely dead (set by `Die`). A crashed process not writing is
                   \* PHYSICS, not politeness, so `Write` gates on `~crashed[a]` directly -- disjoint
                   \* from `localLost` (knowledge), which a dead process cannot even possess.
-    rejected,     \* [Actors -> BOOLEAN]; TRUE once a foreign actor was permanently rejected
-    adoptObs,     \* [Actors -> (0..MaxToken) \cup {None}]; the token AdoptRead observed (in-flight adopt)
+    rejected,     \* [Incs -> BOOLEAN]; TRUE once a foreign actor was permanently rejected
+    adoptObs,     \* [Incs -> (0..MaxToken) \cup {None}]; the token AdoptRead observed (in-flight adopt)
     fencedEpochs, \* SUBSET (Actors \X (0..MaxEpoch)); every (uuid, epoch) a GcFence ever stamped
-    wedged,       \* [Actors -> BOOLEAN]; TRUE = permanent fail-closed abort (the S13 wedge state)
-    wrote,        \* SUBSET (Actors \X (0..MaxEpoch)); mutations performed, tagged by live epoch
+    wedged,       \* [Incs -> BOOLEAN]; TRUE = permanent fail-closed abort (the S13 wedge state)
+    wrote,        \* SUBSET (Incs \X (0..MaxEpoch)); mutations performed, tagged by live epoch
     rootEmpty,    \* BOOLEAN; FALSE once any Write happened
     firstOwner,   \* history: the first actor to ever own (sticky-owner witness)
     lostThenWrote,\* history: TRUE if a superseded actor ever entered a NEW write (must stay FALSE)
-    reclaimed,    \* history: [Actors -> BOOLEAN]; TRUE once a reclaimed its OWN expired mount
-    remountedAfterFence, \* history: [Actors -> BOOLEAN]; TRUE once a re-mounted after being fenced
-    fenceUntil,   \* rev.6: holder's TRUE local-fence expiry (stamp + nondet skew <= Drift)
+    reclaimed,    \* history: [Incs -> BOOLEAN]; TRUE once a reclaimed its OWN expired mount
+    remountedAfterFence, \* history: [Incs -> BOOLEAN]; TRUE once a re-mounted after being fenced
+    fenceUntil,   \* [Incs -> Nat]; each incarnation's TRUE local-fence expiry (stamp + nondet skew <= Drift)
     obsToken,     \* rev.6: reclaimer's observation -- mtoken value first seen (None = unarmed)
     obsSince,     \* rev.6: clock tick at which obsToken was first observed
     observedReclaimEver, \* rev.6 history: TRUE once ObservedReclaim has ever completed (witness)
@@ -329,12 +343,12 @@ VARIABLES
                         \* the durable counter) had already advanced past the writer's OWN
                         \* `localEpoch[a]` -- i.e. a completed reclaim the writer did not know about
     \* --- 2026-07-28 v9 recovery-generation layer (all frozen when RecoveryGenOn = FALSE) --------
-    recGen,       \* [Actors -> (0..MaxEpoch) \cup {None}]; the mount-fence generation captured when
+    recGen,       \* [Incs -> (0..MaxEpoch) \cup {None}]; the mount-fence generation captured when
                   \* a RECOVERY was admitted (spec §3 "captured at admission"). None = no recovery
                   \* result outstanding for this actor. This IS the model's whole representation of
                   \* recovery: `RecoveryStart` issues it, `Install` re-presents it under the install
                   \* lock, `RecoveryRefused` drops it when the recheck refuses.
-    wedgeOp,      \* [Actors -> (1..MaxAdmissions) \cup {None}]; 2026-07-28 fix round 1 -- the OPERATION
+    wedgeOp,      \* [Incs -> (1..MaxAdmissions) \cup {None}]; 2026-07-28 fix round 1 -- the OPERATION
                   \* IDENTITY of whatever the wedged lane is carrying, drawn from the monotone
                   \* `admissions` counter so every operation admitted in a behavior gets a DISTINCT id.
                   \* None exactly when `wedgeGen[a] = None`.
@@ -353,7 +367,7 @@ VARIABLES
                   \* later caller's flush", which is explicitly about multiple callers WITHIN one
                   \* incarnation -- is modelled too, and it is now the shortest counterexample
                   \* `_sab_slotnocompare.cfg` finds.
-    wedgeGen,     \* [Actors -> (0..MaxEpoch) \cup {None}]; the generation a WEDGED lane stored at
+    wedgeGen,     \* [Incs -> (0..MaxEpoch) \cup {None}]; the generation a WEDGED lane stored at
                   \* its own admission (INV-1: "the wedge stores its admission fence generation").
                   \* None = no wedged lane. Kept DISJOINT from `recGen`: they are two independent
                   \* consumers of the same generation, and collapsing them into one variable would
@@ -368,9 +382,9 @@ VARIABLES
                   \* deletes or overwrites the key: a seal only ever occupies an ABSENT one (INV-2),
                   \* which is why `durable` below is monotone. ONE key, not a walk -- see the `slot`
                   \* bound note in _RESULTS.md.
-    acked,        \* SUBSET (Actors \X (0..MaxEpoch) \X (1..MaxAdmissions)); operations whose SUCCESS
+    acked,        \* SUBSET (Incs \X (0..MaxEpoch) \X (1..MaxAdmissions)); operations whose SUCCESS
                   \* was reported to their caller. Monotone.
-    durable,      \* SUBSET (Actors \X (0..MaxEpoch) \X (1..MaxAdmissions)); operations whose bytes
+    durable,      \* SUBSET (Incs \X (0..MaxEpoch) \X (1..MaxAdmissions)); operations whose bytes
                   \* ever became durable at the frontier key. Monotone (see `slot`).
                   \* `acked \subseteq durable` is `AckedOpsAreDurable`, the acked-then-lost property.
                   \* The third component is the op id -- see `wedgeOp` for why identifying an
@@ -382,17 +396,33 @@ VARIABLES
     admissions,   \* 0..MaxAdmissions; how many operations/recoveries have been admitted so far.
                   \* Purely a state-space bound (see `MaxAdmissions`): it appears in no safety guard
                   \* and no invariant, only in the two admission actions' enabling conditions.
-    sealRejectedEver  \* history: TRUE once a lane's retry met a SUCCESSOR generation's `EpochSeal`
+    sealRejectedEver, \* history: TRUE once a lane's retry met a SUCCESSOR generation's `EpochSeal`
                       \* at the key and was conclusively rejected -- INV-2's walk-terminating
                       \* branch, task 1's second hand-off. Note SUCCESSOR: a seal planted under the
                       \* lane's OWN generation does not set this. See `WedgeRetryOccupied`.
+    epochRegressed    \* history: TRUE once a mount write replaced a body of the same uuid with a
+                      \* lower epoch. Computed from the bodies before and after the write, so it
+                      \* does not restate any action's guard. See `ClaimNeverRegressesEpoch`.
 
 vars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, localLost, crashed, rejected,
            adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
            lostThenWrote, reclaimed, remountedAfterFence,
            fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote,
            recGen, wedgeGen, wedgeOp, slot, acked, durable, admissions, staleRefusedEver,
-           sealRejectedEver >>
+           sealRejectedEver, epochRegressed >>
+
+\* A process is an incarnation `<< uuid, k >>`. Two incarnations of one uuid are two processes that
+\* both started as that server: a delayed first start and a second start, for example.
+Incs == (Actors \X {1}) \union (TwinUuids \X {2})
+Uuid(i) == i[1]
+Twins(i) == { j \in Incs : j # i /\ Uuid(j) = Uuid(i) }
+
+\* A mount write that installs epoch `e` for uuid `u` over the current body regresses when that body
+\* belongs to the same uuid and carries a higher epoch.
+RegressesEpoch(u, e) == mount # None /\ mount.uuid = u /\ e < mount.epoch
+
+\* `Write`'s enabling condition: a local check only (see `Write`).
+CanWrite(i) == ~rejected[i] /\ ~wedged[i] /\ ~crashed[i] /\ owner = Uuid(i) /\ clock < fenceUntil[i]
 
 \* 2026-07-28: the recovery-generation layer's own variables as one tuple, so each of the 19
 \* PRE-EXISTING actions declares them unchanged with a SINGLE extra conjunct instead of having its
@@ -410,33 +440,34 @@ Init ==
     /\ mount = None
     /\ mtoken = 0
     /\ clock = 0
-    /\ localEpoch = [a \in Actors |-> 0]
-    /\ localLost = [a \in Actors |-> FALSE]
-    /\ crashed = [a \in Actors |-> FALSE]
-    /\ rejected = [a \in Actors |-> FALSE]
-    /\ adoptObs = [a \in Actors |-> None]
+    /\ localEpoch = [a \in Incs |-> 0]
+    /\ localLost = [a \in Incs |-> FALSE]
+    /\ crashed = [a \in Incs |-> FALSE]
+    /\ rejected = [a \in Incs |-> FALSE]
+    /\ adoptObs = [a \in Incs |-> None]
     /\ fencedEpochs = {}
-    /\ wedged = [a \in Actors |-> FALSE]
+    /\ wedged = [a \in Incs |-> FALSE]
     /\ wrote = {}
     /\ rootEmpty = TRUE
     /\ firstOwner = None
     /\ lostThenWrote = FALSE
-    /\ reclaimed = [a \in Actors |-> FALSE]
-    /\ remountedAfterFence = [a \in Actors |-> FALSE]
-    /\ fenceUntil = 0
+    /\ reclaimed = [a \in Incs |-> FALSE]
+    /\ remountedAfterFence = [a \in Incs |-> FALSE]
+    /\ fenceUntil = [a \in Incs |-> 0]
     /\ obsToken = None
     /\ obsSince = 0
     /\ observedReclaimEver = FALSE
     /\ supersededThenWrote = FALSE
-    /\ recGen = [a \in Actors |-> None]
-    /\ wedgeGen = [a \in Actors |-> None]
-    /\ wedgeOp = [a \in Actors |-> None]
+    /\ recGen = [a \in Incs |-> None]
+    /\ wedgeGen = [a \in Incs |-> None]
+    /\ wedgeOp = [a \in Incs |-> None]
     /\ slot = None
     /\ acked = {}
     /\ durable = {}
     /\ admissions = 0
     /\ staleRefusedEver = FALSE
     /\ sealRejectedEver = FALSE
+    /\ epochRegressed = FALSE
 
 ----------------------------------------------------------------------------
 \* Claim an empty, unowned server_root: first-writer-wins, sticky from here on.
@@ -444,25 +475,25 @@ ClaimOwnerEmpty(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
     /\ owner = None
     /\ rootEmpty
-    /\ owner' = a
-    /\ firstOwner' = IF firstOwner = None THEN a ELSE firstOwner
+    /\ owner' = Uuid(a)
+    /\ firstOwner' = IF firstOwner = None THEN Uuid(a) ELSE firstOwner
     /\ UNCHANGED << epochCeiling, epochWiped, epoch, mount, mtoken, clock, localEpoch, localLost, crashed, rejected,
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* A foreign uuid hits an already-owned root: fail closed, permanently rejected.
 RejectForeignOwner(a) ==
     /\ owner # None
-    /\ owner # a
+    /\ owner # Uuid(a)
     /\ ~rejected[a]
     /\ rejected' = [rejected EXCEPT ![a] = TRUE]
     /\ UNCHANGED << epochCeiling, epochWiped, owner, epoch, mount, mtoken, clock, localEpoch, localLost, crashed,
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* The owner bumps the durable epoch counter and records it as its live epoch.
 \* rev.6 round 5: guarded against firing while `a`'s own mount record is still UNFENCED --
@@ -480,9 +511,12 @@ RejectForeignOwner(a) ==
 \* at/after the wall-clock deadline while `mount.fenced` was still FALSE, reproducing the
 \* SAME false alarm this round already fixed once (verified via TLC after the first,
 \* deadline-keyed attempt at this guard came back RED with an identical trace).
+\* A live body that is a TWIN's current claim does not block: a second start allocates before it
+\* reads the slot (`Pool::mountWritable` calls `allocateWriterEpoch` before `claimMount`). With one
+\* incarnation per uuid `Twins(a)` is empty and the guard is the uuid-level one above.
 AllocEpoch(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
-    /\ owner = a
+    /\ owner = Uuid(a)
     /\ epoch < MaxEpoch
     /\ (epoch > 0 \/ epochCeiling = 0)   \* 2026-07-24: the PRESENT-epoch CAS-bump branch --
                                          \* `epoch = 0 /\ epochCeiling > 0` is a genuine WIPE
@@ -494,7 +528,8 @@ AllocEpoch(a) ==
                                          \* mints here as before (byte-identical to every
                                          \* pre-existing cfg, none of which could ever reach
                                          \* `epoch = 0 /\ epochCeiling > 0` before `WipeEpoch`).
-    /\ ~(mount # None /\ mount.uuid = a /\ ~mount.fenced)
+    /\ ~(/\ mount # None /\ mount.uuid = Uuid(a) /\ ~mount.fenced
+         /\ ~\E j \in Twins(a) : mount.epoch = localEpoch[j])
     /\ epoch' = epoch + 1
     /\ epochCeiling' = IF epoch' > epochCeiling THEN epoch' ELSE epochCeiling
     /\ localEpoch' = [localEpoch EXCEPT ![a] = epoch + 1]
@@ -502,7 +537,7 @@ AllocEpoch(a) ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* Claim/reclaim the mount lease (the free-function `claimMount`, ONE atomic CAS in the
 \* model: its real get+putOverwrite failure mode is a clean LiveDoubleStart retry, not
@@ -512,50 +547,34 @@ AllocEpoch(a) ==
 \*   same uuid + SAME epoch  -> "refresh"; FIXED protocol refuses when fenced (a fence
 \*                              costs an epoch -- no same-epoch resurrection)
 \*   fenced (diff epoch)     -> reclaim IMMEDIATELY, expiry regardless (fence is terminal)
-\*   expired                 -> reclaim
+\*   observed dead           -> reclaim
 \*   mount = None            -> fresh mint
 \* A same-uuid DIFFERENT-epoch LIVE unfenced mount is NOT claimable -> double-start blocked.
 \* SabForeignTakeover drops the owner=a guard on the expired branch.
-\* A successful (re)claim starts a FRESH incarnation: localLost resets, in-flight adopt
+\* A successful (re)claim re-arms the claiming incarnation: localLost resets, in-flight adopt
 \* observation resets. History: reclaimed (own expired), remountedAfterFence (was fenced).
 \* rev.6 round 3: `crashed` ALSO resets here -- this model's only rebirth path for a
-\* crashed actor IS a successful (re)claim (a process restart), so a fresh incarnation
+\* crashed incarnation IS a successful (re)claim (a process restart), so the claim
 \* must clear the mechanical "dead" fact along with the knowledge flag, or `witness_reclaim`
 \* / `witness_remountafterfence` (which require the SAME uuid to write again after
 \* recovering) would become permanently unable to `Write` post-crash.
-\* rev.6 round 8 (P4, STRICT-ORDER guard, consult/review-reconciled -- closes round-7's
-\* Finding A): `strictOK == localEpoch[a] >= epoch` (same `SabForeignTakeover /\ expired`
-\* bypass as `ownerOK`) gates the THREE claim-ESTABLISHING disjuncts -- fresh mint
-\* (`mount = None`), `fencedReclaim`, and `expired /\ ~sameEpoch` -- mirroring
-\* `CasStore.cpp:312-316`'s STRICT ORDER ("allocate durable writer_epoch -> claim the mount
-\* lease"): an actor only ever claims/mints/reclaims with the LATEST durable epoch it holds.
-\* `>=`, not `=`: `sab_epochreset`'s post-`SabResetEpoch` re-mint (`localEpoch[a]` unchanged,
-\* `epoch` zeroed) must still land to reach its own violation; `=` would wedge that cfg.
-\* `refreshOK` (the SAME-epoch continuation) is deliberately NOT strictOK-gated: with P1
-\* (below) installing the successor's body on every reclaim, `sameEpoch` (`mount.epoch =
-\* localEpoch[a]`) can only hold when `a`'s own body is still exactly what it last wrote,
-\* which already implies `localEpoch[a] = epoch` (no reclaim has landed since), making
-\* `strictOK` redundant there.
 \*
-\* rev.6 round 10 (bare-wall-clock audit, HOLDER-side, no `+ Drift` needed): `expired`
-\* (`mount.deadline <= clock`, bare wall-clock, deliberately NOT touched this round) looks
-\* like `GcFence`/`ClearExpiredMount`'s pattern but is NOT an observer-side death verdict on
-\* a DIFFERENT still-alive party -- in the honest protocol `ownerOK` forces `mount.uuid = a =
-\* owner` (sticky), so this is `a` examining its OWN prior record. The model's deliberately
-\* permissive atomic `Renew` has no expiry guard; the current split-phase implementation's
-\* stricter absolute gate is outside this abstraction. Whatever `expired` decides, `ClaimMount`
-\* always installs a FRESH `fenceUntil` for `a` itself (below), so there is no second party
-\* whose STILL-VALID fence a premature verdict could ignore -- unlike `GcFence`/
-\* `ClearExpiredMount`, which act on a mount whose TRUE holder may be a physically distinct,
-\* still-alive process with its own independent `fenceUntil`. (The ONE place `expired` lets a
-\* DIFFERENT actor take over -- the `SabForeignTakeover` bypass on `ownerOK`/`strictOK` -- is
-\* the deliberate, already-flagged SABOTAGE this task exists to catch via
-\* `ForeignUuidNeverAutoTakesOver`, not a hidden honest-path gap.) Separately, `expired /\
-\* ~sameEpoch /\ strictOK` (the one `canClaim` disjunct that reads `expired` at all) is
-\* REACHABILITY-VACUOUS in the honest protocol: `refreshOK` already covers same-epoch+unfenced
-\* regardless of `expired`, `fencedReclaim` already covers fenced+diff-epoch regardless of
-\* `expired`, and the only way to reach unfenced+diff-epoch is a completed reclaim that has
-\* already advanced `epoch` past `a`'s own `localEpoch[a]` -- which `strictOK` then blocks.
+\* `strictOK == localEpoch[a] >= epoch` gates the fresh mint (`mount = None`). It reads the durable
+\* counter, which `claimMount` does not: the product mints over an absent slot with whatever epoch the
+\* caller allocated, so here the model is stricter than the product. `>=`, not `=`:
+\* `sab_epochreset`'s re-mint after `SabResetEpoch` zeroes `epoch` must still land.
+\*
+\* A REPLACEMENT (`fencedReclaim`, or the observed-death branch) installs `localEpoch[a]` over a body
+\* of the same uuid and another epoch. `monotoneOK` requires the new epoch to be strictly greater
+\* than that body's; it compares the two bodies and reads no counter. A delayed starter whose epoch is
+\* older than the body it reads has no enabled claim, so its start fails. `SabClaimNonMonotone`
+\* drops the check: that is `claimMount` today, which reclaims on `gc_fenced`, the clean marker, a
+\* proven-dead token or the unsafe authorization without comparing epochs.
+\*
+\* The observed-death branch uses `mount.deadline + Drift <= clock`, like `GcFence`: the body may
+\* belong to another live incarnation of this uuid, whose own `fenceUntil` can outlive the stamp by
+\* `Drift`. In the product this branch is the proven-dead token reclaim. `expired` (bare stamp) is kept
+\* only for the `SabForeignTakeover` bypass and the `reclaimed` history.
 \*
 \* 2026-07-28 v9: this action IS the self-remount spec §3 names, and it deliberately does NOT
 \* clear `recGen[a]`/`wedgeGen[a]` (`UNCHANGED rgVars` below). §3 offers two arms -- "self-remount
@@ -566,24 +585,31 @@ AllocEpoch(a) ==
 \* see `Install`/`RecoveryRefused`/`WedgeAbandonStale` and the module header's decision 1.
 ClaimMount(a) ==
     LET expired    == (mount # None) /\ (mount.deadline <= clock)
-        ownExpired == expired /\ (mount.uuid = a)
-        ownerOK    == IF SabForeignTakeover /\ expired THEN TRUE ELSE owner = a
+        observedDead == (mount # None) /\ (mount.deadline + Drift <= clock)
+        ownExpired == expired /\ (mount.uuid = Uuid(a))
+        ownerOK    == IF SabForeignTakeover /\ expired THEN TRUE ELSE owner = Uuid(a)
         strictOK   == IF SabForeignTakeover /\ expired THEN TRUE ELSE localEpoch[a] >= epoch
-        sameEpoch  == (mount # None) /\ (mount.uuid = a) /\ (mount.epoch = localEpoch[a])
+        monotoneOK == IF SabForeignTakeover /\ expired THEN TRUE
+                      ELSE SabClaimNonMonotone \/ localEpoch[a] > mount.epoch
+        sameEpoch  == (mount # None) /\ (mount.uuid = Uuid(a)) /\ (mount.epoch = localEpoch[a])
         refreshOK  == sameEpoch /\ (~mount.fenced \/ SabAdoptIgnoresFence)
-        fencedReclaim == (mount # None) /\ (mount.uuid = a) /\ mount.fenced
+        fencedReclaim == (mount # None) /\ (mount.uuid = Uuid(a)) /\ mount.fenced
                          /\ (mount.epoch # localEpoch[a])
-        canClaim   == (mount = None /\ strictOK) \/ refreshOK \/ (fencedReclaim /\ strictOK)
-                      \/ (expired /\ ~sameEpoch /\ strictOK)
-        wasFenced  == \E e \in 0..MaxEpoch : << a, e >> \in fencedEpochs
+        canClaim   == (mount = None /\ strictOK) \/ refreshOK \/ (fencedReclaim /\ monotoneOK)
+                      \/ (observedDead /\ ~sameEpoch /\ monotoneOK)
+        wasFenced  == \E e \in 0..MaxEpoch : << Uuid(a), e >> \in fencedEpochs
     IN
     /\ ~rejected[a] /\ ~wedged[a]
+    \* An incarnation claims only after it allocated (`Pool::mountWritable`'s order). The epoch-0
+    \* claim stays possible with one incarnation per uuid, so those configs keep their state spaces.
+    /\ (localEpoch[a] > 0 \/ Twins(a) = {})
     /\ mtoken < MaxToken
     /\ ownerOK
     /\ canClaim
-    /\ mount' = [uuid |-> a, epoch |-> localEpoch[a], deadline |-> clock + TTL, fenced |-> FALSE]
+    /\ mount' = [uuid |-> Uuid(a), epoch |-> localEpoch[a], deadline |-> clock + TTL, fenced |-> FALSE]
+    /\ epochRegressed' = (epochRegressed \/ RegressesEpoch(Uuid(a), localEpoch[a]))
     /\ mtoken' = mtoken + 1
-    /\ \E d \in 0..Drift : fenceUntil' = clock + TTL + d  \* rev.6: TRUE local fence, stamp + skew
+    /\ \E d \in 0..Drift : fenceUntil' = [fenceUntil EXCEPT ![a] = clock + TTL + d]  \* rev.6: TRUE local fence, stamp + skew
     /\ localLost' = [localLost EXCEPT ![a] = FALSE]
     /\ crashed' = [crashed EXCEPT ![a] = FALSE]
     /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
@@ -614,13 +640,13 @@ ClaimMount(a) ==
 Renew(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
     /\ mount # None
-    /\ mount.uuid = a
+    /\ mount.uuid = Uuid(a)
     /\ IF mount.epoch = localEpoch[a]
        THEN IF ~mount.fenced
             THEN /\ mtoken < MaxToken
                  /\ mount' = [mount EXCEPT !.deadline = clock + TTL]
                  /\ mtoken' = mtoken + 1
-                 /\ \E d \in 0..Drift : fenceUntil' = clock + TTL + d  \* rev.6
+                 /\ \E d \in 0..Drift : fenceUntil' = [fenceUntil EXCEPT ![a] = clock + TTL + d]  \* rev.6
                  /\ UNCHANGED localLost
             ELSE /\ localLost' = [localLost EXCEPT ![a] = TRUE]
                  /\ UNCHANGED << mount, mtoken, fenceUntil >>
@@ -629,7 +655,7 @@ Renew(a) ==
     /\ UNCHANGED << epochCeiling, epochWiped, owner, epoch, clock, localEpoch, crashed, rejected, adoptObs, fencedEpochs,
                     wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
                     remountedAfterFence, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* The pool's GC fences an EXPIRED, unfenced mount (computeHeartbeatFloor's token-guarded
 \* fence-out): gc_fenced = true, uuid/epoch/deadline preserved, token bumped. The fence is
@@ -643,7 +669,7 @@ Renew(a) ==
 \* task's scope. Round 8 exposed exactly why the bare wall-clock form (`mount.deadline <=
 \* clock`) was unsound: it let a fence land while the holder's TRUE local fence
 \* (`fenceUntil`, bounded by `mount.deadline + Drift` -- see `ClaimMount`/`Renew`/
-\* `AdoptWrite`'s `\E d \in 0..Drift : fenceUntil' = clock + TTL + d`) had NOT yet expired,
+\* `AdoptWrite`'s `\E d \in 0..Drift : fenceUntil' = [fenceUntil EXCEPT ![a] = clock + TTL + d]`) had NOT yet expired,
 \* a false alarm previously invisible only because `Write`'s old `~mount.fenced` conjunct
 \* (removed round 8, P2) blindly trusted every fence regardless of whether it was premature.
 \*
@@ -685,7 +711,7 @@ GcFence ==
     /\ UNCHANGED << epochCeiling, epochWiped, owner, epoch, clock, localEpoch, localLost, crashed, rejected, adoptObs,
                     wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
                     remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* --- The keeper's NON-ATOMIC adopt (MountLeaseKeeper::claim: GET, decide, CAS) --------
 \* AdoptRead: observe our own same-epoch slot and remember the token. The FIXED protocol
@@ -698,7 +724,7 @@ AdoptRead(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
     /\ adoptObs[a] = None
     /\ mount # None
-    /\ mount.uuid = a
+    /\ mount.uuid = Uuid(a)
     /\ mount.epoch = localEpoch[a]
     /\ IF mount.fenced /\ ~SabAdoptIgnoresFence
        THEN /\ localLost' = [localLost EXCEPT ![a] = TRUE]   \* refuse: recover via new epoch
@@ -709,7 +735,7 @@ AdoptRead(a) ==
                     fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* AdoptWrite: the CAS against the observed token. The GcFence may land between AdoptRead
 \* and AdoptWrite -- THE S13 window.
@@ -721,7 +747,7 @@ AdoptRead(a) ==
 \* rev.6 round 4: the "classify by BODY" this comment has always claimed is now actually
 \* implemented -- re-reading `mount` (already directly visible; no extra model step needed)
 \* and checking uuid/epoch/fenced BEFORE concluding loss. If the body still shows
-\* `mount.uuid = a /\ mount.epoch = localEpoch[a] /\ ~mount.fenced`, the token moved for a
+\* `mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ ~mount.fenced`, the token moved for a
 \* provably benign, self-caused reason -- no loss, no wedge (matches the product's real
 \* `MountLeaseKeeper::claim`, `CasServerRoot.cpp:711-737`, which performs exactly this
 \* re-read-and-classify; see the task report's round-4 section for the product-vs-model
@@ -752,16 +778,16 @@ AdoptWrite(a) ==
     \* without touching `adoptObs` (a reachable state even pre-round-4), so a re-read CAN
     \* legitimately find nothing there; that is the product's "vanished while adopting"
     \* branch (`CasServerRoot.cpp:735-736`), which also fails closed (not self-caused).
-    LET selfCaused == mount # None /\ mount.uuid = a /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
+    LET selfCaused == mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
     IN
     /\ ~rejected[a] /\ ~wedged[a]
     /\ adoptObs[a] # None
     /\ IF mtoken = adoptObs[a]
        THEN /\ mtoken < MaxToken
-            /\ mount' = [uuid |-> a, epoch |-> localEpoch[a],
+            /\ mount' = [uuid |-> Uuid(a), epoch |-> localEpoch[a],
                          deadline |-> clock + TTL, fenced |-> FALSE]
             /\ mtoken' = mtoken + 1
-            /\ \E d \in 0..Drift : fenceUntil' = clock + TTL + d  \* rev.6
+            /\ \E d \in 0..Drift : fenceUntil' = [fenceUntil EXCEPT ![a] = clock + TTL + d]  \* rev.6
             /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
             /\ UNCHANGED << localLost, wedged >>
        ELSE /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
@@ -776,7 +802,7 @@ AdoptWrite(a) ==
     /\ UNCHANGED << epochCeiling, epochWiped, owner, epoch, clock, localEpoch, crashed, rejected, fencedEpochs, wrote,
                     rootEmpty, firstOwner, lostThenWrote, reclaimed, remountedAfterFence,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* Abstract time advances (so a deadline can pass -> fence + reclaim reachable).
 Tick ==
@@ -786,7 +812,7 @@ Tick ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* A server process crashes: later Ticks pass the deadline without the holder renewing.
 \* An in-flight adopt observation dies with the process. rev.6 round 3: this sets
@@ -795,14 +821,14 @@ Tick ==
 Die(a) ==
     /\ ~rejected[a]
     /\ mount # None
-    /\ mount.uuid = a
+    /\ mount.uuid = Uuid(a)
     /\ crashed' = [crashed EXCEPT ![a] = TRUE]
     /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
     /\ UNCHANGED << epochCeiling, epochWiped, owner, epoch, mount, mtoken, clock, localEpoch, localLost, rejected,
                     fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* A mutation under the mount. rev.6 round 8 (P2, consult/review-reconciled): `Write` is now
 \* a PURE LOCAL check, matching the product's actual write path exactly --
@@ -812,9 +838,7 @@ Die(a) ==
 \* (`mount.epoch = localEpoch[a]`), and `~mount.fenced` are ALL removed as unfaithful --
 \* they modeled a per-write body check the product never performs. `owner = a` is KEPT as
 \* the identity anchor (not a body read: `owner` is the sticky, clock-free, constant
-\* identity object, a faithful proxy for the writer's own cached (uuid) -- without it a
-\* non-owner could write on the shared scalar `fenceUntil`; making `fenceUntil` per-actor
-\* instead is a bigger, deliberately out-of-scope refactor). `clock < fenceUntil` remains
+\* identity object, a faithful proxy for the writer's own cached (uuid)). `clock < fenceUntil` remains
 \* the SOLE mechanical liveness check -- the drift-aware TRUE local-fence-deadline, never
 \* the stamp (`mount.deadline`). `~crashed[a]` remains -- the process is actually alive (a
 \* MECHANICAL fact set by `Die`).
@@ -846,10 +870,7 @@ Die(a) ==
 Write(a) ==
     LET trulySuperseded == epoch > localEpoch[a]
     IN
-    /\ ~rejected[a] /\ ~wedged[a]
-    /\ ~crashed[a]
-    /\ owner = a
-    /\ clock < fenceUntil
+    /\ CanWrite(a)
     /\ wrote' = wrote \union {<< a, localEpoch[a] >>}
     /\ rootEmpty' = FALSE
     /\ lostThenWrote' = (lostThenWrote \/ localLost[a])
@@ -857,7 +878,7 @@ Write(a) ==
     /\ UNCHANGED << epochCeiling, epochWiped, owner, epoch, mount, mtoken, clock, localEpoch, localLost, crashed, rejected,
                     adoptObs, fencedEpochs, wedged, firstOwner, reclaimed,
                     remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* SABOTAGE action (only enabled under SabEpochReset): zero the durable epoch
 \* counter when the mount is cleared. Breaks epoch monotonicity.
@@ -870,7 +891,7 @@ SabResetEpoch ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* Clear an expired UNFENCED mount (lets SabResetEpoch fire; also a benign honest step).
 \* A fenced slot is never cleared: in the implementation mount objects persist, and the
@@ -897,7 +918,7 @@ ClearExpiredMount ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* --- rev.6: observation-based reclaim vs wall-clock sabotage -------------------------
 \* StartObservation: a reclaimer (GC leader, or a same-uuid successor probing an
@@ -913,7 +934,7 @@ StartObservation ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence, fenceUntil,
                     observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* ObservedReclaim: the FIXED protocol -- the SUCCESSOR reclaim (epoch-advancing), NOT the
 \* GC fence-out (`GcFence`, non-epoch-advancing, `gc_fenced=TRUE`, uuid/epoch preserved).
@@ -957,6 +978,7 @@ ObservedReclaim ==
     /\ epochCeiling' = IF epoch' > epochCeiling THEN epoch' ELSE epochCeiling
     /\ mtoken' = mtoken + 1
     /\ mount' = [uuid |-> mount.uuid, epoch |-> epoch', deadline |-> clock + TTL, fenced |-> FALSE]
+    /\ epochRegressed' = (epochRegressed \/ RegressesEpoch(mount.uuid, epoch'))
     /\ obsToken' = None
     /\ observedReclaimEver' = TRUE
     /\ UNCHANGED << owner, epochWiped, clock, localEpoch, localLost, crashed, rejected,
@@ -993,6 +1015,7 @@ WallClockReclaim ==
     /\ epochCeiling' = IF epoch' > epochCeiling THEN epoch' ELSE epochCeiling
     /\ mtoken' = mtoken + 1
     /\ mount' = [uuid |-> mount.uuid, epoch |-> epoch', deadline |-> clock + TTL, fenced |-> FALSE]
+    /\ epochRegressed' = (epochRegressed \/ RegressesEpoch(mount.uuid, epoch'))
     /\ UNCHANGED << owner, epochWiped, clock, localEpoch, localLost, crashed, rejected,
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote,
                     reclaimed, remountedAfterFence, fenceUntil, obsToken, obsSince,
@@ -1025,7 +1048,7 @@ WipeEpoch ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* RemintEpoch: the code's absent-epoch branch of `allocateWriterEpoch` -- distinct from
 \* `AllocEpoch` above, which models the CAS bump over a PRESENT epoch object. Fires only when
@@ -1037,7 +1060,7 @@ WipeEpoch ==
 \* while `mount # None` still holds a live (unfenced) incarnation.
 RemintEpoch(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
-    /\ owner = a
+    /\ owner = Uuid(a)
     /\ epoch = 0
     /\ epochCeiling > 0   \* a genuine WIPE of a previously-allocated epoch, not bare genesis
                           \* (epoch = 0 alone is ambiguous with "never yet allocated" -- the
@@ -1051,7 +1074,7 @@ RemintEpoch(a) ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* RemintEpochDecom: Phase C's `DecommissionRecovery` branch -- also re-mints over a lost
 \* (epoch = 0) durable counter, but ONLY when a mount record still exists (`mount # None`,
@@ -1064,7 +1087,7 @@ RemintEpoch(a) ==
 \* regardless of whether the mount is still LIVE.
 RemintEpochDecom(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
-    /\ owner = a
+    /\ owner = Uuid(a)
     /\ epoch = 0
     /\ epochCeiling > 0   \* a genuine WIPE of a previously-allocated epoch, not bare genesis
                           \* (see RemintEpoch's identical guard for the rationale)
@@ -1073,7 +1096,7 @@ RemintEpochDecom(a) ==
                           \* surviving mount left behind by a DIFFERENT process/run -- never
                           \* the same still-live process examining its own in-flight mount).
                           \* This model has no separate "decommission operator" identity
-                          \* distinct from `Actors` (round-3 finding-5's actor-uuid caveat),
+                          \* distinct from the victim's incarnations,
                           \* so `crashed[a]` (the model's existing "this process genuinely
                           \* died, a fresh incarnation is now running" marker -- see
                           \* `ClaimMount`'s own comment on `crashed`-reset-on-reclaim) is the
@@ -1099,7 +1122,7 @@ RemintEpochDecom(a) ==
                     adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
                     lostThenWrote, reclaimed, remountedAfterFence,
                     fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
-    /\ UNCHANGED rgVars
+    /\ UNCHANGED << rgVars, epochRegressed >>
 
 \* --- 2026-07-28 v9 recovery-generation layer (spec §3 "Recovery ownership", §9 r9-5) ---------
 \* Every action below is gated on `RecoveryGenOn`, so the whole layer is inert in every
@@ -1131,8 +1154,8 @@ RecoveryStart(a) ==
     /\ RecoveryGenOn
     /\ ~rejected[a] /\ ~wedged[a] /\ ~crashed[a]
     /\ recGen[a] = None
-    /\ owner = a
-    /\ mount # None /\ mount.uuid = a /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
+    /\ owner = Uuid(a)
+    /\ mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
     /\ admissions < MaxAdmissions        \* state-space bound only -- see `MaxAdmissions`
     /\ admissions' = admissions + 1
     /\ recGen' = [recGen EXCEPT ![a] = localEpoch[a]]
@@ -1141,6 +1164,7 @@ RecoveryStart(a) ==
                     firstOwner, lostThenWrote, reclaimed, remountedAfterFence, fenceUntil,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote,
                     wedgeGen, wedgeOp, slot, acked, durable, staleRefusedEver, sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* SealSlot(a): the recovery walk finds the key `Created` (absent) and the seal OCCUPIES it --
 \* INV-2's "`Created` -> the seal occupies `(E, T+1)` and the `Late Predecessor PUT` ghost can
@@ -1153,8 +1177,8 @@ SealSlot(a) ==
     /\ ~rejected[a] /\ ~wedged[a] /\ ~crashed[a]
     /\ recGen[a] # None
     /\ GenerationCurrent(a, recGen[a])
-    /\ owner = a
-    /\ clock < fenceUntil
+    /\ owner = Uuid(a)
+    /\ clock < fenceUntil[a]
     /\ slot = None
     /\ slot' = [by |-> a, gen |-> recGen[a], op |-> None, seal |-> TRUE]
     /\ UNCHANGED << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch,
@@ -1162,6 +1186,7 @@ SealSlot(a) ==
                     firstOwner, lostThenWrote, reclaimed, remountedAfterFence, fenceUntil,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote,
                     admissions, recGen, wedgeGen, wedgeOp, acked, durable, staleRefusedEver, sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* Install(a): the recovery result RETURNS FROM I/O and is published. §9 r9-5 puts the generation
 \* recheck exactly here -- "post-I/O, immediately before every install/unwedge/`_ckpt`
@@ -1183,8 +1208,8 @@ Install(a) ==
     /\ RecoveryGenOn
     /\ ~rejected[a] /\ ~wedged[a] /\ ~crashed[a]
     /\ recGen[a] # None
-    /\ owner = a
-    /\ clock < fenceUntil
+    /\ owner = Uuid(a)
+    /\ clock < fenceUntil[a]
     /\ (SabStaleInstall \/ GenerationCurrent(a, recGen[a]))
     /\ recGen' = [recGen EXCEPT ![a] = None]
     /\ wrote' = wrote \union {<< a, recGen[a] >>}
@@ -1196,6 +1221,7 @@ Install(a) ==
                     reclaimed, remountedAfterFence, fenceUntil, obsToken, obsSince,
                     observedReclaimEver,
                     admissions, wedgeGen, wedgeOp, slot, acked, durable, staleRefusedEver, sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* RecoveryRefused(a): the honest r9-5 outcome -- the post-I/O recheck finds the captured
 \* generation stale and the result is DISCARDED (nothing published). Also the layer's anti-dead-end
@@ -1214,6 +1240,7 @@ RecoveryRefused(a) ==
                     firstOwner, lostThenWrote, reclaimed, remountedAfterFence, fenceUntil,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote,
                     admissions, wedgeGen, wedgeOp, slot, acked, durable, sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* --- the wedged lane (INV-1's every-attempt rule) --------------------------------------------
 \* WedgeAdmit(a): an operation is admitted into `a`'s lane and its send comes back AMBIGUOUS, so
@@ -1226,8 +1253,8 @@ WedgeAdmit(a) ==
     /\ RecoveryGenOn
     /\ ~rejected[a] /\ ~wedged[a] /\ ~crashed[a]
     /\ wedgeGen[a] = None
-    /\ owner = a
-    /\ mount # None /\ mount.uuid = a /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
+    /\ owner = Uuid(a)
+    /\ mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
     /\ admissions < MaxAdmissions        \* state-space bound only -- see `MaxAdmissions`
     /\ admissions' = admissions + 1
     /\ wedgeGen' = [wedgeGen EXCEPT ![a] = localEpoch[a]]
@@ -1237,6 +1264,7 @@ WedgeAdmit(a) ==
                     firstOwner, lostThenWrote, reclaimed, remountedAfterFence, fenceUntil,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote,
                     recGen, slot, acked, durable, staleRefusedEver, sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* StragglerLands(a): the ambiguous attempt's IN-FLIGHT PUT actually lands. This is the model's
 \* `Late Predecessor PUT` (`CaRefTableSnapshotLogCore`'s `LatePredecessorPut`, flipped in v9 from
@@ -1264,6 +1292,7 @@ StragglerLands(a) ==
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote,
                     admissions, recGen, wedgeGen, wedgeOp, acked, staleRefusedEver,
                     sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* WedgeRetryCreate(a): the lane's ONE bounded same-(key, bytes) conditional create (INV-1: "each
 \* later caller's flush performs at most one bounded same-(key, bytes) conditional create under
@@ -1284,8 +1313,8 @@ WedgeRetryCreate(a) ==
     /\ RecoveryGenOn
     /\ ~rejected[a] /\ ~wedged[a] /\ ~crashed[a]
     /\ wedgeGen[a] # None
-    /\ owner = a
-    /\ clock < fenceUntil
+    /\ owner = Uuid(a)
+    /\ clock < fenceUntil[a]
     /\ (SabWedgeRetryOldGen \/ GenerationCurrent(a, wedgeGen[a]))
     /\ slot = None
     /\ slot' = [by |-> a, gen |-> wedgeGen[a], op |-> wedgeOp[a], seal |-> FALSE]
@@ -1302,6 +1331,7 @@ WedgeRetryCreate(a) ==
                     reclaimed, remountedAfterFence, fenceUntil, obsToken, obsSince,
                     observedReclaimEver,
                     admissions, recGen, staleRefusedEver, sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* WedgeRetryOccupied(a): the retry's `slot-occupy` returns `Occupied`. NO generation guard on this
 \* action: reading the key is not a mutation, and r9-5 puts the recheck POST-I/O -- a stale lane
@@ -1329,9 +1359,7 @@ WedgeRetryCreate(a) ==
 \*
 \* "SOMEONE ELSE" IS BOTH KINDS OF OTHER, and getting that right took a review round (see `wedgeOp`).
 \* The operation identity is `<< actor, generation, op >>`:
-\*   - a different GENERATION is a different incarnation of this uuid -- this module's established
-\*     idiom for a second writer, since actors ARE uuids and only the sticky owner holds the slot
-\*     (the same substitution `CaCasMountCore_sab_epochwipelive.cfg` documents);
+\*   - a different GENERATION is a different incarnation of this uuid;
 \*   - a different OP at the SAME generation is INV-1's "each later caller's flush", which is
 \*     explicitly about multiple callers within ONE incarnation.
 \* The first cut had only the generation component, which ALIASED the second kind: `mine` came out
@@ -1348,7 +1376,7 @@ WedgeRetryOccupied(a) ==
     /\ RecoveryGenOn
     /\ ~rejected[a] /\ ~wedged[a] /\ ~crashed[a]
     /\ wedgeGen[a] # None
-    /\ owner = a
+    /\ owner = Uuid(a)
     /\ slot # None
     /\ wedgeGen' = [wedgeGen EXCEPT ![a] = None]
     /\ wedgeOp' = [wedgeOp EXCEPT ![a] = None]
@@ -1371,6 +1399,7 @@ WedgeRetryOccupied(a) ==
                     firstOwner, lostThenWrote, reclaimed, remountedAfterFence, fenceUntil,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote,
                     admissions, recGen, slot, durable, staleRefusedEver >>
+    /\ UNCHANGED epochRegressed
 
 \* WedgeAbandonStale(a): the post-I/O recheck refuses the lane's publication -- its captured
 \* generation is no longer current, so it can neither create nor unwedge, and the successor
@@ -1390,37 +1419,38 @@ WedgeAbandonStale(a) ==
                     firstOwner, lostThenWrote, reclaimed, remountedAfterFence, fenceUntil,
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote,
                     admissions, recGen, slot, acked, durable, sealRejectedEver >>
+    /\ UNCHANGED epochRegressed
 
 Next ==
     \/ Tick
     \/ ClearExpiredMount
     \/ SabResetEpoch
     \/ GcFence
-    \/ \E a \in Actors : ClaimOwnerEmpty(a)
-    \/ \E a \in Actors : RejectForeignOwner(a)
-    \/ \E a \in Actors : AllocEpoch(a)
-    \/ \E a \in Actors : ClaimMount(a)
-    \/ \E a \in Actors : Renew(a)
-    \/ \E a \in Actors : AdoptRead(a)
-    \/ \E a \in Actors : AdoptWrite(a)
-    \/ \E a \in Actors : Die(a)
-    \/ \E a \in Actors : Write(a)
+    \/ \E a \in Incs : ClaimOwnerEmpty(a)
+    \/ \E a \in Incs : RejectForeignOwner(a)
+    \/ \E a \in Incs : AllocEpoch(a)
+    \/ \E a \in Incs : ClaimMount(a)
+    \/ \E a \in Incs : Renew(a)
+    \/ \E a \in Incs : AdoptRead(a)
+    \/ \E a \in Incs : AdoptWrite(a)
+    \/ \E a \in Incs : Die(a)
+    \/ \E a \in Incs : Write(a)
     \/ StartObservation
     \/ ObservedReclaim
     \/ WallClockReclaim
     \/ WipeEpoch
-    \/ \E a \in Actors : RemintEpoch(a)
-    \/ \E a \in Actors : RemintEpochDecom(a)
+    \/ \E a \in Incs : RemintEpoch(a)
+    \/ \E a \in Incs : RemintEpochDecom(a)
     \* 2026-07-28 v9 recovery-generation layer (all inert when RecoveryGenOn = FALSE)
-    \/ \E a \in Actors : RecoveryStart(a)
-    \/ \E a \in Actors : SealSlot(a)
-    \/ \E a \in Actors : Install(a)
-    \/ \E a \in Actors : RecoveryRefused(a)
-    \/ \E a \in Actors : WedgeAdmit(a)
-    \/ \E a \in Actors : StragglerLands(a)
-    \/ \E a \in Actors : WedgeRetryCreate(a)
-    \/ \E a \in Actors : WedgeRetryOccupied(a)
-    \/ \E a \in Actors : WedgeAbandonStale(a)
+    \/ \E a \in Incs : RecoveryStart(a)
+    \/ \E a \in Incs : SealSlot(a)
+    \/ \E a \in Incs : Install(a)
+    \/ \E a \in Incs : RecoveryRefused(a)
+    \/ \E a \in Incs : WedgeAdmit(a)
+    \/ \E a \in Incs : StragglerLands(a)
+    \/ \E a \in Incs : WedgeRetryCreate(a)
+    \/ \E a \in Incs : WedgeRetryOccupied(a)
+    \/ \E a \in Incs : WedgeAbandonStale(a)
 
 Spec == Init /\ [][Next]_vars
 
@@ -1437,37 +1467,38 @@ TypeOK ==
           /\ mount.epoch \in 0..MaxEpoch
           /\ mount.deadline \in 0..(MaxClock + TTL)
           /\ mount.fenced \in BOOLEAN
-    /\ localEpoch \in [Actors -> 0..MaxEpoch]
-    /\ localLost \in [Actors -> BOOLEAN]
-    /\ crashed \in [Actors -> BOOLEAN]
-    /\ rejected \in [Actors -> BOOLEAN]
-    /\ adoptObs \in [Actors -> (0..MaxToken) \union {None}]
+    /\ localEpoch \in [Incs -> 0..MaxEpoch]
+    /\ localLost \in [Incs -> BOOLEAN]
+    /\ crashed \in [Incs -> BOOLEAN]
+    /\ rejected \in [Incs -> BOOLEAN]
+    /\ adoptObs \in [Incs -> (0..MaxToken) \union {None}]
     /\ fencedEpochs \subseteq (Actors \X (0..MaxEpoch))
-    /\ wedged \in [Actors -> BOOLEAN]
-    /\ wrote \subseteq (Actors \X (0..MaxEpoch))
+    /\ wedged \in [Incs -> BOOLEAN]
+    /\ wrote \subseteq (Incs \X (0..MaxEpoch))
     /\ rootEmpty \in BOOLEAN
     /\ firstOwner \in Actors \union {None}
     /\ lostThenWrote \in BOOLEAN
-    /\ reclaimed \in [Actors -> BOOLEAN]
-    /\ remountedAfterFence \in [Actors -> BOOLEAN]
-    /\ fenceUntil \in 0..(MaxClock + TTL + Drift)
+    /\ reclaimed \in [Incs -> BOOLEAN]
+    /\ remountedAfterFence \in [Incs -> BOOLEAN]
+    /\ fenceUntil \in [Incs -> 0..(MaxClock + TTL + Drift)]
     /\ obsToken \in (0..MaxToken) \union {None}
     /\ obsSince \in 0..MaxClock
     /\ observedReclaimEver \in BOOLEAN
     /\ supersededThenWrote \in BOOLEAN
-    /\ recGen \in [Actors -> (0..MaxEpoch) \union {None}]
-    /\ wedgeGen \in [Actors -> (0..MaxEpoch) \union {None}]
-    /\ wedgeOp \in [Actors -> (1..MaxAdmissions) \union {None}]
+    /\ recGen \in [Incs -> (0..MaxEpoch) \union {None}]
+    /\ wedgeGen \in [Incs -> (0..MaxEpoch) \union {None}]
+    /\ wedgeOp \in [Incs -> (1..MaxAdmissions) \union {None}]
     /\ \/ slot = None
-       \/ /\ slot.by \in Actors
+       \/ /\ slot.by \in Incs
           /\ slot.gen \in 0..MaxEpoch
           /\ slot.op \in (1..MaxAdmissions) \union {None}
           /\ slot.seal \in BOOLEAN
-    /\ acked \subseteq (Actors \X (0..MaxEpoch) \X (1..MaxAdmissions))
-    /\ durable \subseteq (Actors \X (0..MaxEpoch) \X (1..MaxAdmissions))
+    /\ acked \subseteq (Incs \X (0..MaxEpoch) \X (1..MaxAdmissions))
+    /\ durable \subseteq (Incs \X (0..MaxEpoch) \X (1..MaxAdmissions))
     /\ admissions \in 0..MaxAdmissions
     /\ staleRefusedEver \in BOOLEAN
     /\ sealRejectedEver \in BOOLEAN
+    /\ epochRegressed \in BOOLEAN
 
 \* Owner is sticky: once set it never transitions to a different non-None value.
 NoTwoServerUuidsOwnSameServerRoot ==
@@ -1554,7 +1585,7 @@ FenceCostsEpoch ==
 \* Store::open abort). Under the FIXED protocol `wedged` is unreachable; the
 \* SabAdoptWedgeOnTouch cfg must violate this (reproducing the S13 wedge).
 NoPermanentWedge ==
-    \A a \in Actors : ~wedged[a]
+    \A a \in Incs : ~wedged[a]
 
 \* 2026-07-28 v9, the ONE invariant this round adds (spec §2 INV-1's every-attempt rule + INV-2's
 \* `slot-occupy` resolution): every operation whose SUCCESS was reported to its caller is durably
@@ -1583,18 +1614,28 @@ NoPermanentWedge ==
 AckedOpsAreDurable ==
     acked \subseteq durable
 
+\* No mount write replaces a body of its own uuid with a lower epoch: not a startup claim, not a
+\* decommission (`RemintEpochDecom` then `ClaimMount`), not a reclaim. An equal epoch over an
+\* unfenced body is the refresh branch, and over a fenced body `ClaimMount` refuses it.
+ClaimNeverRegressesEpoch ==
+    ~epochRegressed
+
+\* At most one incarnation of a uuid can write at a time.
+OneWritableIncarnationPerUuid ==
+    \A i, j \in Incs : (i # j /\ Uuid(i) = Uuid(j)) => ~(CanWrite(i) /\ CanWrite(j))
+
 ----------------------------------------------------------------------------
 \* LIVENESS WITNESSES (asserted as invariants in dedicated cfgs so TLC reports them
 \* VIOLATED when the good state is REACHABLE).
 
 \* Some actor reclaims a mount it had to expiry.
 W_SameUuidReclaimsExpired ==
-    ~(\E a \in Actors : reclaimed[a])
+    ~(\E a \in Incs : reclaimed[a])
 
 \* Some actor whose (uuid, epoch) was FENCED later holds a live mount again (with a new
 \* epoch, by FenceCostsEpoch) -- the no-permanent-wedge recovery loop actually completes.
 W_RemountAfterFence ==
-    ~(\E a \in Actors : remountedAfterFence[a])
+    ~(\E a \in Incs : remountedAfterFence[a])
 
 \* rev.6: the FIXED (observation-based) reclaim rule actually fires at least once --
 \* the "wait for full token stability" recovery path is not vacuous.
@@ -1614,7 +1655,7 @@ W_ObservedReclaim ==
 \* proves honest-path safety is not "safe by permanent dead-end" -- the recovered
 \* incarnation writes again.
 W_RecoveryAfterObservedReclaim ==
-    ~(observedReclaimEver /\ (\E a \in Actors : remountedAfterFence[a]))
+    ~(observedReclaimEver /\ (\E a \in Incs : remountedAfterFence[a]))
 
 \* 2026-07-28 v9: the honest post-I/O generation recheck actually REFUSES a returning result at
 \* least once. Without this, `_v9_recoverygen`'s green would be consistent with a recheck that
@@ -1649,6 +1690,19 @@ W_SealRejectedRetry ==
 W_AckHappened ==
     acked = {}
 
+\* Two incarnations of one uuid are alive at once: one can write, the other has allocated an epoch.
+W_TwoLiveIncarnations ==
+    ~\E i, j \in Incs : /\ i # j /\ Uuid(i) = Uuid(j) /\ CanWrite(i)
+                       /\ ~crashed[j] /\ localEpoch[j] > 0 /\ localEpoch[j] # localEpoch[i]
+
+\* A delayed start: an incarnation that allocated an epoch and never claimed (`fenceUntil` still 0)
+\* reads a terminal body of its uuid with a higher epoch. `SabClaimNonMonotone` regresses the slot
+\* from this state.
+W_DelayedStartOverNewerBody ==
+    ~\E i \in Incs : /\ ~crashed[i] /\ localEpoch[i] > 0 /\ fenceUntil[i] = 0
+                     /\ mount # None /\ mount.uuid = Uuid(i) /\ mount.fenced
+                     /\ mount.epoch > localEpoch[i]
+
 ----------------------------------------------------------------------------
 \* STATE CONSTRAINTS (referenced from cfgs via `CONSTRAINT`, never from `Next`).
 
@@ -1671,4 +1725,10 @@ W_AckHappened ==
 \* counterexamples, never invent one.
 StrictOrderMount ==
     mount = None \/ mount.epoch > 0
+
+\* Prune every state after a `WipeEpoch`. A wipe followed by `RemintEpoch` re-mints an epoch a live
+\* incarnation may still hold, which is the documented same-pair twin residual, not a claim-order
+\* question. Used only by the configs with two incarnations of one uuid.
+NoEpochWipe ==
+    ~epochWiped
 =============================================================================
