@@ -65,6 +65,7 @@ extern const int CORRUPTED_DATA;
 extern const int INVALID_STATE;
 extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int NETWORK_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 using namespace DB::Cas;
@@ -1850,6 +1851,16 @@ void expectRecoveryFault(const String & ns_name, OccupantKind kind)
     expectOneLatchedFault(*faults, remounts_before, occupantDescription(kind));
 }
 
+template <typename BackendT>
+PoolPtr openPoolWithFaultReportHook(const std::shared_ptr<BackendT> & backend, std::function<void()> hook)
+{
+    DB::Cas::tests::seedPoolMetaForRestart(*backend);
+    backend->setAttemptTimeoutMs(CasRequestBudget{}.attempt_timeout_ms);
+    PoolConfig config{.pool_prefix = "p", .server_root_id = "test"};
+    config.ref_lane_fault_report_hook_for_test = std::move(hook);
+    return Pool::open(backend, std::move(config));
+}
+
 }
 
 TEST(CASRefLaneFault, AppendSiteForeignTxnLatchesBeforeTheReport)
@@ -1945,4 +1956,28 @@ TEST(CASRefLaneFault, NeedsRecoveryLaneLeavesAfterADamagedCkptIsRestoredWithoutR
     EXPECT_FALSE(store->resolveRef(ns, "y").has_value());
     EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
     EXPECT_TRUE(store->mayMutate());
+}
+
+/// Everything in the report after the remount request can throw; the request must already be made.
+TEST(CASRefLaneFault, RemountIsRequestedWhenTheFaultReportThrows)
+{
+    auto backend = std::make_shared<WedgeTestBackend>();
+    auto store = openPoolWithFaultReportHook(backend, []
+    {
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "injected failure inside the fault report");
+    });
+    const RootNamespace ns{"srv1/fault_report_throws"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    const RefTxnId next{store->liveWriterEpoch(), 3};
+    backend->conflict_substr = store->layout().refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), next);
+    backend->conflict_bytes = occupantBytes(OccupantKind::ForeignTxn, ns, next);
+    backend->conflict_count = 1;
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+
+    expectThrowsCode(DB::ErrorCodes::NOT_IMPLEMENTED, [&] { store->dropRef(ns, "x"); });
+
+    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
+    EXPECT_FALSE(store->mayMutate());
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
 }

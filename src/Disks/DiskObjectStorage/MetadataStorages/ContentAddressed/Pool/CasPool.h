@@ -205,6 +205,10 @@ struct PoolConfig
     /// Empty in production; a test uses it to verify diagnostics cannot replace the caller's exception.
     std::function<void()> diagnostic_dispatch_error_hook_for_test = {};
 
+    /// TEST SEAM: invoked in the ref lane fault report right after the remount request and before
+    /// logging, so a test can make the report throw. Empty in production.
+    std::function<void()> ref_lane_fault_report_hook_for_test = {};
+
     /// TEST SEAM: invoked immediately before ref-table recovery issues its first backend request.
     std::function<void()> recovery_pre_first_request_hook_for_test = {};
 

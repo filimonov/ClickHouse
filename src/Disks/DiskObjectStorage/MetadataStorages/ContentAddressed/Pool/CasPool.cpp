@@ -1761,6 +1761,8 @@ void Pool::reportImpossibleInterference(const String & key, const String & reaso
 {
     /// First: the ledger already closed the fence, and only this requests the remount.
     mount_runtime.scheduleRemount();
+    if (config.ref_lane_fault_report_hook_for_test)
+        config.ref_lane_fault_report_hook_for_test();
 
     LOG_ERROR(getLogger("CasPool"),
         "CAS ref lane fault for server_root '{}' (namespace='{}', key='{}'): {} -- this mount is fenced closed; "
