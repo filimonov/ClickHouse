@@ -4055,6 +4055,81 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
     runtime.finishTeardown(false);
 }
 
+/// A renewal of the old epoch whose result is consumed after a remount armed the new epoch does not
+/// move the new epoch's deadline.
+TEST(CASMountRuntime, AnOldEpochRenewalDoesNotMoveTheNewEpochDeadline)
+{
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    const Layout layout("runtime-old-epoch-deadline");
+    uint64_t wall_ms = 1000;
+    std::atomic<uint64_t> boot_ms{100};
+    const UInt128 uuid{1};
+    constexpr uint64_t ttl_ms = 10'000;
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, ttl_ms).kind,
+              MountClaimResult::Claimed);
+    DB::Cas::tests::ManualBarrier finished;
+    DB::Cas::tests::ManualBarrier remounted;
+    DB::Cas::tests::ManualBarrier back_in_loop;
+    std::atomic<uint32_t> commits{0};
+    std::atomic<uint32_t> loop_passes{0};
+    CasMountRuntime * runtime_ptr = nullptr;
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{
+            .mount_lease_ttl_ms = std::chrono::milliseconds(ttl_ms),
+            .background_watermark = true,
+            .boot_ms_fn = [&] { return boot_ms.load(); },
+            .renewal_before_driver_lock_hook_for_test = [&]
+            {
+                if (++loop_passes == 2)
+                    back_in_loop.arriveAndWait();
+            },
+            .renewal_finished_hook_for_test = [&](const MountRenewResult & result)
+            {
+                if (result.outcome == MountRenewOutcome::Committed && ++commits == 1)
+                    finished.arriveAndWait();
+            }},
+        "test", sink, runtimeRenewBudget(), [&]
+        {
+            fenceOutMount(*backend, layout.mountKey("test"));
+            const MountClaimResult fresh = claimMount(
+                *DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 2, wall_ms, ttl_ms);
+            EXPECT_EQ(fresh.kind, MountClaimResult::Claimed);
+            runtime_ptr->installRenewer(uuid, 2, [&] { return wall_ms; });
+            const uint64_t fresh_anchor = runtime_ptr->startRenewer();
+            runtime_ptr->armMountFence(uuid, 2, fresh_anchor + 5 * ttl_ms);
+            runtime_ptr->noteRemounted();
+            remounted.arriveAndWait();
+            return true;
+        });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime_ptr = &runtime;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer();
+    runtime.armMountFence(uuid, 1, anchor + ttl_ms);
+    /// The epoch-1 renewal is due at once and inside its lease. The epoch-2 renewer is not driven before
+    /// the check: the worker waits in its second loop pass.
+    const uint64_t renewal_start = anchor + 1'000;
+    boot_ms = renewal_start;
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(1'000));
+
+    finished.waitUntilArrived();
+    runtime.tripMountLost();
+    runtime.scheduleRemount();
+    remounted.waitUntilArrived();
+    remounted.release();
+    finished.release();
+    back_in_loop.waitUntilArrived();
+
+    /// Past the old renewal's deadline (its start plus one lease), before the new epoch's.
+    boot_ms = renewal_start + 2 * ttl_ms;
+    EXPECT_TRUE(runtime.mayMutate()) << "the old epoch's renewal moved the new epoch's deadline";
+    back_in_loop.release();
+    runtime.stopBackgroundWorkers();
+    runtime.finishTeardown(false);
+}
+
 TEST(CASPoolRemount, StaleRemountAnchorPerformsParkedRedo)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
