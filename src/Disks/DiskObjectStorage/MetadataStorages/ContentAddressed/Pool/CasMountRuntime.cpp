@@ -178,6 +178,49 @@ String CasMountRuntime::describeAdmissionRefusal(uint64_t needed_ms) const
         progress.last_error, progress.refused_code);
 }
 
+void CasMountRuntime::logLeaseTransition() noexcept
+{
+    try
+    {
+        /// A tripped fence or a non-live pool is the remount's to report.
+        if (lifecycle() != PoolLifecycle::Live || mount_fence.lost.load(std::memory_order_acquire))
+            return;
+        const LeasePauseState state = leasePause();
+        const LeasePause before = logged_pause.exchange(state.pause, std::memory_order_relaxed);
+        if (before == state.pause)
+            return;
+        if (before == LeasePause::None)
+            logged_pause_since_boot_ms.store(state.since_boot_ms, std::memory_order_relaxed);
+        const uint64_t now = bootMsNow();
+        const String where = fmt::format("CAS disk '{}' (server_root_id={})", config.disk_name, server_root_id);
+        const String ago = formatSeconds(now > state.since_boot_ms ? now - state.since_boot_ms : 0);
+        switch (state.pause)
+        {
+            case LeasePause::RenewalOverdue:
+                LOG_WARNING(getLogger("CasPool"), "{}: conditional changes paused {} s ago: the confirmed lease left is "
+                    "not more than their reserve of {} s; renewal keeps retrying under writer_epoch {}",
+                    where, ago, formatSeconds(lease_thresholds.conditionalReserveMs()), liveWriterEpoch());
+                return;
+            case LeasePause::LeaseExpired:
+                LOG_WARNING(getLogger("CasPool"), "{}: the mount lease ended {} s ago under writer_epoch {}; renewal "
+                    "keeps retrying and operations that need the lease are refused until a renewal is confirmed",
+                    where, ago, liveWriterEpoch());
+                return;
+            case LeasePause::None:
+            {
+                const uint64_t since = logged_pause_since_boot_ms.load(std::memory_order_relaxed);
+                LOG_INFO(getLogger("CasPool"), "{}: operations resumed under writer_epoch {} after a pause of {} s",
+                    where, liveWriterEpoch(), formatSeconds(now > since ? now - since : 0));
+                return;
+            }
+        }
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// A lost diagnostic must not change how the renewal ends.
+    }
+}
+
 LeasePauseState CasMountRuntime::leasePause() const
 {
     if (const std::optional<uint64_t> expired_at = leaseExpiredAtBootMs())
@@ -199,26 +242,6 @@ std::optional<uint64_t> CasMountRuntime::leaseExpiredAtBootMs() const
     return deadline;
 }
 
-void CasMountRuntime::warnOnceIfLeaseExpired() noexcept
-{
-    try
-    {
-        const std::optional<uint64_t> expired_at = leaseExpiredAtBootMs();
-        if (!expired_at || lease_expiry_warned.exchange(true, std::memory_order_relaxed))
-            return;
-        /// Written at the first attempt after the expiry, so a renewal stuck in a request reports late; the
-        /// age says by how much.
-        LOG_WARNING(getLogger("CasPool"),
-            "CAS mount lease of '{}' expired {} ms ago under writer_epoch {}; the renewal keeps retrying "
-            "and writes resume after a confirmed renewal that leaves enough lease",
-            server_root_id, bootMsNow() - *expired_at, liveWriterEpoch());
-    }
-    catch (...) // NOLINT(bugprone-empty-catch)
-    {
-        /// A lost diagnostic must not change how the renewal ends.
-    }
-}
-
 void CasMountRuntime::setMountDeadline(uint64_t deadline_boot_ms)
 {
     mount_fence.deadline_boot_ms.store(deadline_boot_ms, std::memory_order_release);
@@ -229,7 +252,6 @@ void CasMountRuntime::armMountFence(UInt128 server_uuid, uint64_t writer_epoch, 
     mount_fence.server_uuid = server_uuid;
     mount_fence.writer_epoch = writer_epoch;
     mount_fence.deadline_boot_ms.store(deadline_boot_ms, std::memory_order_release);
-    lease_expiry_warned.store(false, std::memory_order_relaxed);
     /// A fresh lease incarnation is a fresh generation too: a durable-effect caller admitted under the
     /// PRIOR incarnation must re-check and abort rather than ride this re-arm through (rev.7 [C2]).
     fence_generation.fetch_add(1, std::memory_order_acq_rel);
@@ -522,7 +544,7 @@ MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_c
         .requests = RequestObserver{
             .on_write_attempt = [this](uint32_t attempts_sent)
             {
-                warnOnceIfLeaseExpired();
+                logLeaseTransition();
                 ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalAttempts);
                 if (attempts_sent > 1)
                     ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalRetries);
@@ -644,8 +666,6 @@ void CasMountRuntime::publishRenewedDeadline(uint64_t attempt_start_boot_ms)
         ? std::numeric_limits<uint64_t>::max()
         : attempt_start_boot_ms + ttl_ms;
     setMountDeadline(deadline);
-    if (bootMsNow() < deadline)
-        lease_expiry_warned.store(false, std::memory_order_relaxed);
 }
 
 uint64_t CasMountRuntime::renewRenewerOnce(
@@ -680,6 +700,7 @@ uint64_t CasMountRuntime::renewRenewerOnce(
         ? RenewalDriverState::WorkerIdle
         : (active == RenewalDriverState::RemountCall ? RenewalDriverState::Parked : RenewalDriverState::Dormant);
     const RenewalDriverState returned_state = call.lease->finish(destination, &result, call.renewer);
+    logLeaseTransition();
     if (config.renewal_finished_hook_for_test)
         config.renewal_finished_hook_for_test(result);
     if (result.outcome == MountRenewOutcome::Terminal && config.renewal_terminal_deposited_hook_for_test)
@@ -1111,7 +1132,7 @@ void CasMountRuntime::enterIdentityLost()
     driver_cv.notify_all();
 
     ProfileEvents::increment(ProfileEvents::CASIdentityLost);
-    LOG_WARNING(getLogger("CasPool"),
+    LOG_ERROR(getLogger("CasPool"),
         "Content-addressed pool '{}' entered IdentityLost: the pool sentinels (_pool_meta and the owner "
         "anchor) are authoritatively absent (both KeyAbsent). This is a fail-loud TERMINAL state: "
         "store-class access now fails loud and this pool's remount + GC threads self-exit. "
@@ -1185,7 +1206,7 @@ void CasMountRuntime::enterVanished(PoolLifecycle which, const String & reason)
         return;
 
     ProfileEvents::increment(ProfileEvents::CASDataRootVanished);
-    LOG_WARNING(getLogger("CasPool"),
+    LOG_ERROR(getLogger("CasPool"),
         "Content-addressed pool '{}' entered Vanished({}): {}. The disk stays registered but store-class "
         "access now fails loud with a typed error (truth); restart re-registers the name.",
         server_root_id, label, reason);

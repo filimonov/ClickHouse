@@ -563,7 +563,7 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
     print("targeted request count (landed response lost): {}".format(stats["faults"]), flush=True)
 
 
-EXPIRY_WARNING = "ms ago under writer_epoch"
+EXPIRY_WARNING = "the mount lease ended"
 
 
 def _lease_state(node, timeout=None):

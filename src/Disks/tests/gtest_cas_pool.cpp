@@ -2313,14 +2313,14 @@ private:
 class ScopedRemountLogCapture
 {
 public:
-    ScopedRemountLogCapture()
+    explicit ScopedRemountLogCapture(const String & level = "information")
         : logger(getLogger("CasPool"))
         , channel(new Poco::StreamChannel(stream))
         , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
     {
         logger->setChannel(channel.get());
-        logger->setLevel("information");
+        logger->setLevel(level);
     }
 
     ~ScopedRemountLogCapture()
@@ -2339,6 +2339,14 @@ private:
     Poco::AutoPtr<Poco::Channel> old_channel;
     int old_level;
 };
+
+size_t countOccurrences(const String & haystack, const String & needle)
+{
+    size_t count = 0;
+    for (size_t at = haystack.find(needle); at != String::npos; at = haystack.find(needle, at + 1))
+        ++count;
+    return count;
+}
 
 class ScopedParkedRenewalLogCapture
 {
@@ -4539,11 +4547,8 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     runtime.startBackgroundWorkers(std::chrono::milliseconds(500));
 
     second_commit.waitUntilArrived();
-    const String prefix = "CAS mount lease of 'test' expired ";
-    size_t warnings = 0;
-    for (size_t at = log_at_second_commit.find(prefix); at != String::npos; at = log_at_second_commit.find(prefix, at + 1))
-        ++warnings;
-    EXPECT_EQ(warnings, 1u) << log_at_second_commit;
+    const String prefix = "the mount lease ended ";
+    EXPECT_EQ(countOccurrences(log_at_second_commit, prefix), 1u) << log_at_second_commit;
     ASSERT_GE(expired_at_write.size(), 3u);
     EXPECT_FALSE(expired_at_write.front().has_value()) << "the first attempt runs inside the lease";
     EXPECT_EQ(expired_at_write.back(), std::optional<uint64_t>(anchor + 1000));
@@ -4551,6 +4556,72 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     second_commit.release();
     runtime.stopBackgroundWorkers();
     runtime.finishTeardown(false);
+}
+
+/// Admission, the lease pause, the refusal text and the log line all turn at the printed threshold.
+TEST(CASMountRuntime, OneSnapshotTurnsAdmissionTextAndLogTogether)
+{
+    ScopedRemountLogCapture logs;
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    const Layout layout("one-snapshot");
+    std::atomic<uint64_t> boot_ms{100};
+    uint64_t wall_ms = 1000;
+    const UInt128 uuid{1};
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 30'000).kind,
+              MountClaimResult::Claimed);
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(backend, layout,
+        MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(30'000), .boot_ms_fn = [&] { return boot_ms.load(); }, .disk_name = "cas1"},
+        "test", sink, CasRequestBudget{}, [] { return false; });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer();
+    runtime.armMountFence(uuid, 1, anchor + 30'000);
+    const CasLeaseThresholds & t = runtime.leaseThresholds();
+    const auto count = [&](const String & needle) { return countOccurrences(logs.captured(), needle); };
+    const String where = "CAS disk 'cas1' (server_root_id=test): ";
+    boot_ms = anchor + t.conditionalPauseAfterMs() - 1;
+    runtime.logLeaseTransition();
+    EXPECT_TRUE(runtime.refAppendFenceOk());
+    EXPECT_EQ(count(where), 0u);
+    boot_ms = anchor + t.conditionalPauseAfterMs();
+    runtime.logLeaseTransition();
+    runtime.logLeaseTransition();   /// a second call at the same state logs nothing
+    EXPECT_FALSE(runtime.refAppendFenceOk());
+    EXPECT_EQ(runtime.leasePause().pause, LeasePause::RenewalOverdue);
+    EXPECT_EQ(runtime.describeAdmissionRefusal(t.conditionalNeedMs()),
+              describeLeaseRefusal("cas1", t, t.conditionalReserveMs(), t.conditionalNeedMs(), std::nullopt, std::nullopt));
+    EXPECT_EQ(count(where + "conditional changes paused 0 s ago: the confirmed lease left is not more than their reserve of 16 s"), 1u);
+    boot_ms = anchor + 30'250;
+    runtime.logLeaseTransition();
+    runtime.setMountDeadline(boot_ms + 30'000);
+    runtime.logLeaseTransition();
+    EXPECT_EQ(count(where + "the mount lease ended 0.25 s ago"), 1u);
+    EXPECT_EQ(count(where + "operations resumed under writer_epoch"), 1u);
+    EXPECT_EQ(count("after a pause of 16.25 s"), 1u) << logs.captured();
+    runtime.finishTeardown(false);
+}
+
+/// Entering a terminal state logs at ERROR, the level operators alert on.
+TEST(CASMountRuntime, TerminalTransitionsLogAtError)
+{
+    for (const bool identity : {true, false})
+    {
+        ScopedRemountLogCapture errors("error");
+        auto backend = std::make_shared<RuntimeRenewBackend>();
+        const Layout layout("terminal-log");
+        CasEventSink sink;
+        RuntimeUnderTest runtime_holder(backend, layout, MountConfig{}, "test", sink, runtimeRenewBudget(), [] { return false; });
+        CasMountRuntime & runtime = *runtime_holder;
+        runtime.setLifecycleForTest(PoolLifecycle::TransientNotLive);
+        if (identity)
+            runtime.enterIdentityLost();
+        else
+            runtime.enterVanished(PoolLifecycle::VanishedReplaced, "test");
+        EXPECT_NE(errors.captured().find(identity ? "entered IdentityLost" : "entered Vanished(replaced)"), String::npos)
+            << errors.captured();
+        runtime.finishTeardown(false);
+    }
 }
 
 TEST(CASPoolRemount, StaleRemountAnchorPerformsParkedRedo)

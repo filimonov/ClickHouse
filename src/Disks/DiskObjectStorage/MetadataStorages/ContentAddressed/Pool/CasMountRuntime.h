@@ -346,6 +346,9 @@ public:
     LeasePauseState leasePause() const;
     /// Two attempt envelopes and the safety margin: the reserve `refAppendFenceOk` admits against.
     uint64_t conditionalReserveMs() const;
+    /// One line when the clock pause starts, becomes an expiry, or ends; a renewing thread stuck in a
+    /// request reports late and says how late.
+    void logLeaseTransition() noexcept;
     /// Why `admit` refused an operation needing `needed_ms`: the lease left, the reserve and the last
     /// renewal error. Reads atomics and the renewal-progress lock only, so it is safe on any thread.
     String describeAdmissionRefusal(uint64_t needed_ms) const;
@@ -489,8 +492,6 @@ private:
     /// Publish a committed renewal's deadline, its start plus the lease. Requires `driver_mutex`.
     void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
     void publishConfirmedBody(const std::optional<MountLease> & body);
-    /// One `WARNING` per expiry, at the first renewal attempt after it.
-    void warnOnceIfLeaseExpired() noexcept;
     /// The background renewal's wait after a credential refusal. Wakes on stop and on a park request;
     /// `MountConfig::wait_sleep_fn` replaces it in tests.
     void waitBeforeNextRenewalCall(uint64_t ms);
@@ -576,7 +577,8 @@ private:
     /// Fence-generation token (rev.7 [C2]): bumped by `tripMountLost` and `armMountFence`. See
     /// `fenceGeneration`/`checkFenceOrThrow`.
     std::atomic<uint64_t> fence_generation{0};
-    std::atomic<bool> lease_expiry_warned{false};
+    std::atomic<LeasePause> logged_pause{LeasePause::None};
+    std::atomic<uint64_t> logged_pause_since_boot_ms{0};
     std::function<void()> arm_mount_fence_interposition_hook_for_test;
 
     /// The pool lifecycle condition (rev.7 §1). Starts `Live`. Non-terminal transitions
