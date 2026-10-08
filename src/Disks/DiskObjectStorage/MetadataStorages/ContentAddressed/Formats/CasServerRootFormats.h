@@ -58,6 +58,8 @@ struct MountLease
     /// One holder-originated body identity. Every physical retry of that one logical write reuses
     /// it; a GC fence copies the observed value while every successor holder body mints a new one.
     UInt128 write_attempt_id{};
+
+    bool operator==(const MountLease &) const = default;
 };
 
 /// Encode the owner anchor as canonical text with the `cas_owner` header and a final newline. The

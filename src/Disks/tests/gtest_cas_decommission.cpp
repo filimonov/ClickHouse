@@ -1659,7 +1659,12 @@ TEST(CASDecommission, ALostClaimFailsTheCommandAndDeletesNothingMore)
         admin->latchMountEndForTest(MountEnd::SlotTaken);
     };
     PoolConfig config{.pool_prefix = "p", .server_root_id = "admin"};
-    config.admin_opened_hook_for_test = [&admin](Pool & pool) { admin = &pool; };
+    config.admin_opened_hook_for_test = [&admin](Pool & pool)
+    {
+        EXPECT_EQ(pool.poolConfig().mount_loss_reaction, MountLossReaction::FailDecommission)
+            << "a decommission that finds a twin fails its command, it does not stop the server";
+        admin = &pool;
+    };
     const uint64_t removes_before = backend->removes.load();
 
     try

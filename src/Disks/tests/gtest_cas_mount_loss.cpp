@@ -199,3 +199,10 @@ TEST(CASMountLoss, TheStopLinesNameWhatWasFound)
               "CAS disk 'cas1' (server_root_id=srv): the mount slot is absent; a slot is deleted by SYSTEM CAS DROP "
               "POOL MEMBER or by hand. New changes are closed; this disk stays closed until restart.");
 }
+
+TEST(CASMountLoss, AnEndWithoutDetailNamesItself)
+{
+    EXPECT_EQ(describeMountEnd(MountEnd::LedgerFault, MountLossReaction::CloseMount, "cas1", "srv", std::nullopt, ""),
+              "CAS disk 'cas1' (server_root_id=srv): the mount ended (ledger_fault). New changes are closed; this disk "
+              "stays closed until restart.");
+}

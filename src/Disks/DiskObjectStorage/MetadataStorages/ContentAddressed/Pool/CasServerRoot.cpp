@@ -1872,11 +1872,21 @@ MountRenewResult MountLeaseRenewer::renewOn(
             if (!until_definitive)
                 conflict->seen = corroborateAbsence(op, key, std::move(conflict->seen));
             result.slot = classifyMountSlot(conflict->seen, ownBodies(lease_body));
+        }
+        catch (...)
+        {
+            markMountRenewTermination(MountRenewTerminalClassification::DeterministicFailure);
+            result.failure = std::current_exception();
+            result.local_fault = getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+            return terminalResult(std::move(result));
+        }
+        /// A loss already classified stays one even when its message cannot be built.
+        try
+        {
             result.failure = renewConflictFailure(*result.slot);
         }
         catch (...)
         {
-            result.slot.reset();
             result.failure = std::current_exception();
         }
         return terminalResult(std::move(result));

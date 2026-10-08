@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
+#include <Disks/tests/cas_process_stop_log.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Interpreters/ContentAddressedLog.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -23,6 +24,7 @@ namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int NETWORK_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::Cas
@@ -41,6 +43,8 @@ public:
     bool throw_before_next_write = false;
     bool throw_nonretryable_next_write = false;
     bool vanish_on_next_write = false;
+    /// A LIST fails as a defect of this machine would.
+    bool throw_on_list = false;
     /// Runs just before an armed fault throws. The engine draws its inter-attempt backoff randomly and
     /// admits the reissue against that drawn duration, so a test that needs the ambiguity refused
     /// rather than reissued has to move the injected clock here -- from inside the attempt, the only
@@ -113,6 +117,13 @@ public:
             throw Poco::TimeoutException("injected renewal timeout before commit");
         }
         return InMemoryBackend::write(key, bytes, expected_value, access);
+    }
+
+    RawListPage list(const String & prefix, const String & cursor, size_t limit, DB::Cas::TransportAccess & access) override
+    {
+        if (throw_on_list)
+            throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "injected local defect in a LIST");
+        return InMemoryBackend::list(prefix, cursor, limit, access);
     }
 
 private:
@@ -765,3 +776,33 @@ TEST(CASEvent, LifecycleReconstructionFromRows)
     EXPECT_LT(i_indeg, i_observe) << "in-degree hit 0 before GC observed it";
     EXPECT_LT(i_observe, i_delete) << "GC observed it before deleting it";
 }
+
+/// A defect while classifying the slot after a conflict ends the renewal as the same deterministic
+/// failure a defect in the write does.
+TEST(CASEvent, AClassificationDefectIsADeterministicFailure)
+{
+    DB::Cas::tests::processStopLog().reset();
+    auto backend = std::make_shared<RenewalEventBackend>();
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
+    auto events = std::make_shared<DB::Cas::tests::SharedEventLog>();
+    auto store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-classification-defect");
+    store->setEventSink([events](CasEvent event)
+    {
+        events->push(std::move(event));
+    });
+    /// The slot vanishes under the renewal, so the absence is corroborated by a LIST, which fails.
+    backend->vanish_on_next_write = true;
+    backend->throw_on_list = true;
+
+    EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+
+    EXPECT_EQ(store->mountEnd(), MountEnd::LocalDefect);
+    const std::vector<CasEvent> renewals = watermarkRenewEvents(events->snapshot());
+    const auto failed = std::find_if(renewals.begin(), renewals.end(), [](const CasEvent & event)
+    {
+        return event.outcome == "failed";
+    });
+    ASSERT_NE(failed, renewals.end());
+    EXPECT_EQ(failed->detail.at("classification"), "deterministic_failure");
+}
+

@@ -2,7 +2,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Common/Exception.h>
 #include <fmt/format.h>
-#include <tuple>
 
 namespace DB::ErrorCodes
 {
@@ -15,12 +14,6 @@ namespace DB::Cas
 namespace
 {
 
-auto allFields(const MountLease & m)
-{
-    return std::tie(m.server_uuid, m.writer_epoch, m.hostname, m.pid, m.started_at_ms, m.seq, m.expires_at_ms,
-                    m.min_active_build_sequence, m.gc_fenced, m.write_attempt_id);
-}
-
 /// The body `computeHeartbeatFloor` writes when it fences `own` out.
 bool isGcFenceOf(const MountLease & seen, const MountLease & own)
 {
@@ -29,7 +22,7 @@ bool isGcFenceOf(const MountLease & seen, const MountLease & own)
     MountLease unfenced = seen;
     unfenced.gc_fenced = false;
     unfenced.seq = own.seq;
-    return allFields(unfenced) == allFields(own);
+    return unfenced == own;
 }
 
 String describeHolder(const std::optional<MountLease> & holder)
@@ -118,7 +111,7 @@ MountSlotReading classifyMountSlot(const Observation & seen, const OwnMountBodie
         if (isGcFenceOf(body, **mine))
             return {MountSlotVerdict::FencedByGc, std::move(body)};
         /// Our bytes under an incarnation we did not write: another process sent them.
-        if (allFields(body) == allFields(**mine))
+        if (body == **mine)
             return {MountSlotVerdict::SlotTaken, std::move(body)};
     }
     return {MountSlotVerdict::SlotCorrupt, std::move(body)};
@@ -175,10 +168,13 @@ String describeMountEnd(MountEnd end, MountLossReaction reaction, const String &
                 + String(reactionSuffix(end, reaction));
         case MountEnd::LedgerFault:
         case MountEnd::LocalDefect:
+        {
+            const String what = detail.empty() ? fmt::format("the mount ended ({})", mountEndWord(end)) : String(detail);
             if (reaction == MountLossReaction::StopServer)
                 return head + fmt::format("{}. The process ends now without a shutdown: a shutdown writes the farewell "
-                                          "and the checkpoints under an identity another process may hold.", detail);
-            return head + fmt::format("{}.", detail) + String(reactionSuffix(end, reaction));
+                                          "and the checkpoints under an identity another process may hold.", what);
+            return head + fmt::format("{}.", what) + String(reactionSuffix(end, reaction));
+        }
         case MountEnd::None:
         case MountEnd::Replaced:
         case MountEnd::Forgotten:

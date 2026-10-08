@@ -367,9 +367,9 @@ public:
     /// worker must stop: a published terminal `Vanished` intent (`vanished_intent` — set early by
     /// FORGET, or by a natural `enterVanished`, and already subsuming every settled `Vanished*` state since
     /// it is published before the state store) OR `IdentityLost` (a fail-loud TERMINAL state — no
-    /// demoted observer; recovery is restart or FORGET). Consulted by `scheduleRemount` before arming and by
-    /// the remount loop at every step boundary. (The GC scheduler applies the same three-way test through
-    /// `Pool`.)
+    /// demoted observer; recovery is restart or FORGET) OR a latched mount end (`mountEnd`). Consulted by
+    /// `scheduleRemount` before arming and by the remount loop at every step boundary. The GC scheduler,
+    /// through `Pool`, applies the first two only: it keeps running on a mount end.
     bool remountTerminal() const
     {
         return vanished_intent.load(std::memory_order_acquire)

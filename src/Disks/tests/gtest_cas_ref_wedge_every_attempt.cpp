@@ -2221,3 +2221,58 @@ TEST(CASRefLaneFault, BadAllocInsideTheAppendPropagates)
     EXPECT_NO_THROW(store->dropRef(ns, "y"));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
 }
+
+namespace
+{
+
+/// A graceful loss over a store that went away, with a wedged lane left behind: the teardown writes no
+/// farewell, sends nothing and waits on no retry.
+void expectShutdownAfterAGracefulLossSendsNothing(const std::function<void(DyingBackend &, const String &)> & damage_slot)
+{
+    DB::Cas::tests::processStopLog().reset();
+    auto backend = std::make_shared<DyingBackend>();
+    auto store = openPool(backend, wedgeTestBudget());
+    auto clock = VirtualRetryClock::installOn(store);
+    const RootNamespace ns{"srv1/graceful_loss_then_shutdown"};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    wedgeLaneOnUnresolvedAppend(*clock, *backend, store, ns, [&] { store->dropRef(ns, "x"); });
+    ASSERT_TRUE(store->refLaneWedgedForTest(ns)) << "the drain would have work to do";
+
+    damage_slot(*backend, store->layout().mountKey("test"));
+    EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
+    ASSERT_EQ(store->lifecycle(), PoolLifecycle::Stopping);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().graceful(), 1u);
+    backend->dead.store(true, std::memory_order_release);
+    const size_t pauses_before = clock->pauseCount();
+
+    store.reset();
+
+    EXPECT_EQ(backend->requests_after_death.load(), 0u);
+    EXPECT_EQ(clock->pauseCount(), pauses_before);
+}
+
+}
+
+TEST(CASRefLaneFault, ShutdownAfterATakenSlotSendsNothing)
+{
+    expectShutdownAfterAGracefulLossSendsNothing([](DyingBackend & backend, const String & key)
+    {
+        const auto current = readObj(backend, key);
+        ASSERT_TRUE(current);
+        MountLease foreign = decodeMountLease(current->bytes);
+        foreign.server_uuid = UInt128{0xF0F0};
+        replaceObj(backend, key, encodeMountLease(foreign));
+    });
+}
+
+TEST(CASRefLaneFault, ShutdownAfterAnAbsentSlotSendsNothing)
+{
+    expectShutdownAfterAGracefulLossSendsNothing([](DyingBackend & backend, const String & key)
+    {
+        const auto current = readObj(backend, key);
+        ASSERT_TRUE(current);
+        DB::Cas::tests::OperationForTest op(backend);
+        ASSERT_EQ((*op).remove(key, current->etag, Retry::once()), Removal::Removed);
+    });
+}

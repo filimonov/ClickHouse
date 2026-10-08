@@ -1021,9 +1021,6 @@ Pool::~Pool()
     {
         if (config.teardown_phase2_throw_for_test)
             config.teardown_phase2_throw_for_test();
-        /// A lost slot writes no farewell, so there is nothing to earn; its lanes may wait on a dead store.
-        if (isLossEnd(mount_runtime.mountEnd()))
-            return;
         const bool ref_lanes_drained = ref_ledger.drainRefLanesForShutdown(
             config.cas_request_budget.attemptEnvelopeMs() + config.cas_request_budget.lease_safety_margin_ms);
         drained = ref_lanes_drained && !writerCleanupDutiesPending();

@@ -294,8 +294,8 @@ stop, then one `ERROR` line on the `CasPool` logger says what was in the slot. T
 | `local_defect` | the renewal machine itself failed (not the store, not the memory limit) | `LOG_FATAL`, the process ends at once without a shutdown |
 
 - **Graceful stop** is `SIGTERM` to the own process: every CAS disk of the server stops with it. A
-  stopping disk refuses new changes as retry-later, writes no farewell and does not drain its ref lanes,
-  so a shutdown over a dead store does not wait on it.
+  stopping disk refuses new changes as retry-later and writes no farewell; its ref-lane drain sends no
+  request, so a shutdown over a dead store does not wait on it.
 - **The end without a shutdown** is for a broken process invariant: a shutdown writes the farewell and
   the checkpoints under an identity another process may hold.
 - **Our own GC fence** (`gc_fenced` on the body this server wrote) is not a loss: the self-remount takes a
