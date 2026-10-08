@@ -330,7 +330,7 @@ No run contradicts R1–R7. Points for the implementation and the spec text:
   samples `attempt_start_boot_ms`, draws `newMountWriteAttemptId` and encodes the body on every
   call. A new engine call through `renewOn` would be `sab_new_call_new_attempt_id` plus
   `sab_refresh_resets_start`. Today `renewOn` also terminalizes `Refused` and, through
-  `throwRenewConflict`, `Conflict{NotObserved}`; PR 7 removes both.
+  `throwRenewConflict`, `Conflict{NotObserved}`; PR 8 of the series spec removes both.
 - **The `Refused` precondition is load-bearing.** `safe` keeps `OwnLandedBodyNeverLost` green;
   `sab_refused_while_ambiguous` drops only the guard and violates it. The guard in `writeLoop` is
   `definitely_refused && !state.any_ambiguous`. `state.any_ambiguous` resets at the start of each
