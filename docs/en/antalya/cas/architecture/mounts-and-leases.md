@@ -84,9 +84,9 @@ watermark — there is no separate watermark object. `MountLease` fields: `serve
   follows after a pause. A same-pair twin, GC-fenced body, successor, foreign holder, or absent
   body is never treated as this renewal.
 - **Deadline from the start.** Renewal uses `CLOCK_BOOTTIME`, not `CLOCK_MONOTONIC`, so a VM resumed
-  from suspend correctly observes itself expired. A confirmed renewal sets the deadline to its own
-  start plus the lease; a retry, `GET`, response timestamp, or wall-clock step never moves it. The
-  background renewal has no deadline of its own: it retries one body every 0.8–1.2 s (measured from
+  from suspend correctly observes itself expired. A confirmed renewal or claim sets the deadline to
+  its own start plus the lease; a retry, `GET`, response timestamp, or wall-clock step never moves
+  it. The background renewal has no deadline of its own: it retries one body every 0.8–1.2 s (measured from
   the start of the previous attempt) until the store answers about the slot, or until a stop, a
   remount park request, a lost fence or a pool leaving `Live` ends it. A
   refusal (`AccessDenied`, `MalformedXML`, …) sends the same body again, one renewal period later for
@@ -239,10 +239,13 @@ under a live mount is an operator-level event.
 
 **Writable open** runs in a strict order: bootstrap-residual proof, capability probe under a
 random per-mount prefix, pool-meta create-or-validate, `validateServerRootId`, owner claim,
-`allocateWriterEpoch`, mount claim and synchronous renewer start, arm the fence, then create and
-release the runtime-owned renewal and remount workers before the writable pool becomes externally
-visible. If the claim consumed the TTL, one fresh synchronous renewal re-anchors the deadline
-before the fence is armed.
+`allocateWriterEpoch`, mount claim (one conditional write; the renewer starts from its confirmed
+body), arm the fence, then create and release the runtime-owned renewal and remount workers before
+the writable pool becomes externally visible. The lease runs from the claim's start; if too little
+is left to arm the fence, one synchronous renewal re-anchors it. That renewal needs two attempt
+envelopes before the lease-safe deadline, or the start fails. Without the background renewal worker
+the fence asks for the same two envelopes, so a start whose claim needs that renewal fails unless
+exactly two envelopes remain.
 Failure to construct either worker joins the partial pair, closes the fence, and fails the writable
 open. No incident path constructs a thread.
 
