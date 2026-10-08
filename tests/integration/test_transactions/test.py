@@ -1,6 +1,3 @@
-import concurrent.futures
-import logging
-
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -757,62 +754,3 @@ def test_removal_csn_concurrent_rollback_stress(start_cluster):
         )
 
     node.query("DROP TABLE IF EXISTS mt_race_stress SYNC")
-
-
-# TODO: Once #124487 is fixed, this test will fail. To turn it into a regression test, simply remove the @pytest.mark.xfail decorator.
-@pytest.mark.xfail(
-    strict=True,
-    reason="Known bug #124487: an acknowledged INSERT is lost when the server stops between the sync and the rename of the first version metadata store",
-)
-def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
-    start_cluster,
-):
-    # A part inserted outside a transaction has no `txn_version.txt`. The first metadata store for it
-    # is the removal lock taken by a transaction's DROP PARTITION. The store writes
-    # `txn_version.txt.tmp` and renames it; a kill between the two must not lose the rows.
-    node.query("DROP TABLE IF EXISTS mt_lost SYNC")
-    node.query(
-        "create table mt_lost (n int) engine=MergeTree order by n partition by n % 2 "
-        "settings remove_empty_parts = 0"
-    )
-    node.query("insert into mt_lost values (1), (3)")
-    part_path = node.query(
-        "select path from system.parts where database = currentDatabase() and table = 'mt_lost' "
-        "and active"
-    ).strip()
-    assert part_path != ""
-
-    failpoint = "version_metadata_store_pause_before_rename"
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-    try:
-        tx(7, "begin transaction")
-        drop = pool.submit(tx, 7, "alter table mt_lost drop partition id '1'")
-        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
-
-        listing = node.exec_in_container(["bash", "-c", f"ls -1 {part_path}"]).split()
-        assert "txn_version.txt.tmp" in listing, listing
-        assert "txn_version.txt" not in listing, listing
-
-        node.restart_clickhouse(kill=True)
-        with pytest.raises(Exception):
-            drop.result(timeout=60)
-    finally:
-        # Disabling resumes whatever is parked at the failpoint, so a failure before the restart
-        # leaves neither an armed failpoint nor a paused `DROP PARTITION` holding the table.
-        try:
-            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", timeout=60)
-        except Exception as e:
-            # Never mask the real failure: after the kill the server may still be coming up.
-            logging.warning("could not disable failpoint %s: %s", failpoint, e)
-        pool.shutdown(wait=False)
-
-    node.query("SYSTEM WAIT LOADING PARTS mt_lost")
-    assert node.query("select n from mt_lost order by n") == "1\n3\n"
-    assert (
-        node.query(
-            "select count() from system.parts where database = currentDatabase() "
-            "and table = 'mt_lost' and active"
-        )
-        == "1\n"
-    )

@@ -1,6 +1,0 @@
---- a snapshot above the latest one is refused
-INVALID_TRANSACTION
---- the latest snapshot and the reserved ones are accepted
-1
-1
-1

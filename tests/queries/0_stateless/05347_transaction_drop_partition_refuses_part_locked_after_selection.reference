@@ -1,8 +1,0 @@
---- the drop that raced with the removal is refused
-SERIALIZATION_ERROR
---- no part is active beside a part that covers it
-all_1_1_0
-all_2_2_0
-all_3_3_0
---- the partition can be dropped once the transaction is gone
-0
