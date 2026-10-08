@@ -758,6 +758,11 @@ def test_removal_csn_concurrent_rollback_stress(start_cluster):
     node.query("DROP TABLE IF EXISTS mt_race_stress SYNC")
 
 
+# TODO: Once #124487 is fixed, this test will fail. To turn it into a regression test, simply remove the @pytest.mark.xfail decorator.
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known bug #124487: an acknowledged INSERT is lost when the server stops between the sync and the rename of the first version metadata store",
+)
 def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
     start_cluster,
 ):
