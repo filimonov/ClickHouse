@@ -145,6 +145,15 @@ struct RenewalProgress
     std::optional<String> last_error;
 };
 
+/// Why a `Live` mount refuses lease-bound operations, derived from the deadline and the clock:
+/// the lease left is not more than a conditional change's reserve, or the deadline has passed.
+enum class LeasePause : uint8_t { None, RenewalOverdue, LeaseExpired };
+struct LeasePauseState
+{
+    LeasePause pause = LeasePause::None;
+    uint64_t since_boot_ms = 0;   /// when the threshold was crossed; 0 for `None`
+};
+
 /// Owns the live writer-incarnation mechanics shared by the pool's mount and recovery orchestration:
 /// the `MountLeaseRenewer`, local `MountFence`, build watermark and in-flight build registry,
 /// `live_writer_epoch`, unclean-boundary marker, and both persistent workers. `Pool` retains the higher-level
@@ -311,7 +320,7 @@ public:
     /// lease-loss/remount edges (`noteLeaseLost`, `noteRemounted`) stamp it in the compare-exchange's
     /// SUCCESS branch — after the CAS — because they may run on an already-terminal pool (`noteLeaseLost` is
     /// called before the caller's `isVanished()` gate), where a pre-CAS stamp would clobber the terminal
-    /// `since`; a reader may therefore momentarily observe a just-entered `not_live` with `since` not yet
+    /// `since`; a reader may therefore momentarily observe a just-entered `paused` with `since` not yet
     /// updated, a benign introspection artifact that converges within nanoseconds.
     time_t lifecycleSinceWallS() const
     {
@@ -326,6 +335,10 @@ public:
     /// The confirmed deadline, once it has passed while the pool is `Live` and the fence is not lost: the
     /// lease expired and the renewal keeps retrying. Empty otherwise. I/O-free.
     std::optional<uint64_t> leaseExpiredAtBootMs() const;
+    /// I/O-free; `None` unless the pool is `Live` and the fence is not lost.
+    LeasePauseState leasePause() const;
+    /// Two attempt envelopes and the safety margin: the reserve `refAppendFenceOk` admits against.
+    uint64_t conditionalReserveMs() const;
 
     /// TRUE once the pool has reached — or is being driven toward — a state on which the self-remount
     /// worker must stop: a published terminal `Vanished` intent (`vanished_intent` — set early by

@@ -92,18 +92,17 @@ enum class CasOpAdmission : uint8_t
 /// truthful in EVERY state — including a not-live / vanished pool the store()-class surface refuses, and a
 /// null pool (before `startup` / after `shutdown`). This is what keeps a disappearing disk VISIBLE to the
 /// operator instead of silently missing from the table.
-///   - `lifecycle`      — one of `live` / `not_live` / `identity_lost` / `vanished` (a live pool), or
-///                        `constructing` / `shutdown` (no pool published).
-///   - `reason`         — the ENUM-CLEAN sub-state word: `replaced` / `forgotten` for a
-///                        `vanished` pool, `lease_expired` for a `not_live` row whose pool is `Live` but
-///                        whose lease expired, empty otherwise. Kept a small closed vocabulary so a downstream
-///                        `lifecycle || '(' || reason || ')'` yields e.g. exactly `vanished(forgotten)` —
-///                        the [D5] free text lives in `detail`, never here.
+///   - `lifecycle`      — one of `live` / `paused` / `identity_lost` / `vanished` / `closed` (a published
+///                        pool), or `constructing` / `shutdown` (no pool published).
+///   - `reason`         — one word: `renewal_overdue` / `lease_expired` / `remounting` for `paused`,
+///                        `replaced` for `vanished`, `forgotten` for `closed`, empty otherwise. Kept a small
+///                        closed vocabulary so a downstream `lifecycle || '(' || reason || ')'` yields e.g.
+///                        exactly `closed(forgotten)` — the [D5] free text lives in `detail`, never here.
 ///   - `detail`         — the full [D5] reason text naming the actual failure (the replaced
 ///                        diagnosis, the timestamped `FORGET` message, or the identity-loss message); spec §1
 ///                        requires it appear verbatim in the snapshot. Empty while `live` and for a null pool.
-///   - `since`          — wall-clock second the current non-`live` state was entered (for
-///                        `lease_expired`, the deadline that passed); 0 while `live`/no pool.
+///   - `since`          — wall-clock second the current non-`live` state was entered (for a pause derived
+///                        from the clock, when it began); 0 while `live`/no pool.
 ///   - `pool_id`        — last-known pool UUID (empty before the first `startup`); the disk stays
 ///                        introspectable under its identity even once the pool is gone.
 ///   - `server_root_id` — this server's node-local root id owning the mount slot.

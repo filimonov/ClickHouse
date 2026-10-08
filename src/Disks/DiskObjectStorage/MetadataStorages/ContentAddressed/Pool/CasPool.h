@@ -543,8 +543,8 @@ public:
         PoolLifecycle lifecycle = PoolLifecycle::Live;
         String detail;
         time_t since = 0;
-        /// `Live`, but the lease expired; `since` is then the deadline that passed.
-        bool lease_expired = false;
+        /// Set only for `Live`; `since` is then when the pause began.
+        LeasePause pause = LeasePause::None;
     };
     LifecycleSnapshot lifecycleSnapshot() const;
     RenewalProgress renewalProgress() const { return mount_runtime.renewalProgress(); }

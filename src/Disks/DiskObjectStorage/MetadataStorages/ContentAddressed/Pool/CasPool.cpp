@@ -379,10 +379,12 @@ Pool::LifecycleSnapshot Pool::lifecycleSnapshot() const
     snap.since = mount_runtime.lifecycleSinceWallS();
     if (snap.lifecycle == PoolLifecycle::Live)
     {
-        if (const std::optional<uint64_t> expired_at = mount_runtime.leaseExpiredAtBootMs())
+        const LeasePauseState pause = mount_runtime.leasePause();
+        snap.pause = pause.pause;
+        if (pause.pause != LeasePause::None)
         {
-            snap.lease_expired = true;
-            const uint64_t ago_s = (mount_runtime.bootMsNow() - *expired_at) / 1000;
+            const uint64_t now_boot_ms = mount_runtime.bootMsNow();
+            const uint64_t ago_s = now_boot_ms > pause.since_boot_ms ? (now_boot_ms - pause.since_boot_ms) / 1000 : 0;
             snap.since = ::time(nullptr) - static_cast<time_t>(ago_s);
         }
     }

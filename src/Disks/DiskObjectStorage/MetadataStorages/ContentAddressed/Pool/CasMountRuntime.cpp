@@ -163,6 +163,26 @@ bool CasMountRuntime::refAppendFenceOk() const
     return admit(fenceGeneration(), needed_ms) == Fence::Admit::Ok;
 }
 
+uint64_t CasMountRuntime::conditionalReserveMs() const
+{
+    const uint64_t envelope_ms = cas_request_budget.attemptEnvelopeMs();
+    const uint64_t two = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
+        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
+    const uint64_t margin = cas_request_budget.lease_safety_margin_ms;
+    return two > std::numeric_limits<uint64_t>::max() - margin ? std::numeric_limits<uint64_t>::max() : two + margin;
+}
+
+LeasePauseState CasMountRuntime::leasePause() const
+{
+    if (const std::optional<uint64_t> expired_at = leaseExpiredAtBootMs())
+        return {LeasePause::LeaseExpired, *expired_at};
+    if (lifecycle() != PoolLifecycle::Live || mount_fence.lost.load(std::memory_order_acquire) || refAppendFenceOk())
+        return {};
+    const uint64_t deadline = mount_fence.deadline_boot_ms.load(std::memory_order_acquire);
+    const uint64_t reserve = conditionalReserveMs();
+    return {LeasePause::RenewalOverdue, deadline > reserve ? deadline - reserve : 0};
+}
+
 std::optional<uint64_t> CasMountRuntime::leaseExpiredAtBootMs() const
 {
     if (lifecycle() != PoolLifecycle::Live || mount_fence.lost.load(std::memory_order_acquire))
@@ -994,8 +1014,8 @@ bool CasMountRuntime::noteLeaseLost()
     if (pool_lifecycle.compare_exchange_strong(
             expected, PoolLifecycle::TransientNotLive, std::memory_order_acq_rel, std::memory_order_acquire))
     {
-        /// The `since` the lifecycle snapshot reports for `not_live` — the wall-clock instant this became
-        /// non-`Live`. Only the winning transition writes it (the guard above), so it is not re-stamped.
+        /// The `since` the lifecycle snapshot reports for `paused(remounting)` — the wall-clock instant this
+        /// became non-`Live`. Only the winning transition writes it (the guard above), so it is not re-stamped.
         lifecycle_since_wall_s.store(wallClockNowSeconds(), std::memory_order_release);
         /// This transition can be reached while the renewal driver or remount serializer lock is
         /// held. Trace-profile collection may allocate and enqueue a stack trace, so the lock-safe
