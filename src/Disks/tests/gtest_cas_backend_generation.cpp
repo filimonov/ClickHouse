@@ -58,10 +58,10 @@ namespace
 /// A `LocalObjectStorage` that records which of the two metadata-read virtuals a caller reached, so a
 /// test can prove `nativeHead` calls `tryGetObjectMetadataWithNativeToken` specifically -- reverting
 /// that one line back to `tryGetObjectMetadata` makes `NativeHeadUsesNativeTokenMetadataApi` fail.
-class RecordingObjectStorage : public DB::LocalObjectStorage
+class RecordingObjectStorage : public DB::Cas::tests::LocalObjectStorageWithTempRoot
 {
 public:
-    using DB::LocalObjectStorage::LocalObjectStorage;
+    using DB::Cas::tests::LocalObjectStorageWithTempRoot::LocalObjectStorageWithTempRoot;
 
     mutable int ordinary_calls = 0;
     mutable int native_calls = 0;
@@ -99,11 +99,11 @@ std::shared_ptr<RecordingObjectStorage> makeRecordingObjectStorageForTest()
 /// the three outcomes `checkPoolPreconditions` distinguishes — verified disabled, verified enabled,
 /// and unverifiable — can each be driven exactly. The base `IObjectStorage` default answers only the
 /// third.
-class VersioningObjectStorage : public DB::LocalObjectStorage
+class VersioningObjectStorage : public DB::Cas::tests::LocalObjectStorageWithTempRoot
 {
 public:
     VersioningObjectStorage(DB::LocalObjectStorageSettings settings_, std::optional<bool> versioned_)
-        : DB::LocalObjectStorage(std::move(settings_)), versioned(versioned_)
+        : DB::Cas::tests::LocalObjectStorageWithTempRoot(std::move(settings_)), versioned(versioned_)
     {
     }
 

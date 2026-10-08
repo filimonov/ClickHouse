@@ -134,6 +134,11 @@ TEST(CASShutdownExitTest, EmitAfterResetSharedContextExitsCleanly)
             emitTestEvent(*storage);
             context->resetSharedContext();
             emitTestEvent(*storage);
+            /// `_Exit` skips destructors and the test listener, so shut down and remove the temp paths here.
+            storage->shutdown();
+            std::error_code ec;
+            std::filesystem::remove_all(storage->objectStorage()->getCommonKeyPrefix(), ec);
+            DB::Cas::tests::removeTestTempPaths();
             std::_Exit(0);
         },
         ::testing::ExitedWithCode(0), "");

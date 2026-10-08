@@ -400,6 +400,7 @@ std::shared_ptr<DB::ContentAddressedMetadataStorage> openRecordingStorage(
     static std::atomic<uint64_t> counter{0};
     const String unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_ns_file_profile_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
     std::filesystem::create_directories(root, ec);

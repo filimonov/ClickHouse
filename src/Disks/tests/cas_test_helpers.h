@@ -27,6 +27,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasBlobUploadPool.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 
@@ -232,6 +233,49 @@ inline void ensureBlobUploadPoolForTest(size_t size = 8)
 }
 
 
+/// Directories a test creates under `temp_directory_path()` outside any `LocalObjectStorageWithTempRoot`.
+/// They are removed when the test ends, so a full `CAS*` run leaves nothing in `/tmp`, whose tmpfs has a
+/// limited inode count. Removal failure is logged, never thrown.
+inline std::mutex & testTempPathsMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+inline std::vector<std::filesystem::path> & testTempPaths()
+{
+    static std::vector<std::filesystem::path> paths;
+    return paths;
+}
+
+inline void registerTestTempPath(const std::filesystem::path & path)
+{
+    std::lock_guard lock(testTempPathsMutex());
+    testTempPaths().push_back(path);
+}
+
+/// Also called directly by a death-test child, which leaves through `std::_Exit` and so never reaches the listener.
+inline void removeTestTempPaths()
+{
+    std::lock_guard lock(testTempPathsMutex());
+    for (const auto & path : testTempPaths())
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+        if (ec)
+            LOG_WARNING(getLogger("CasTestTempRoot"), "cannot remove test temp path {}: {}", path.string(), ec.message());
+    }
+    testTempPaths().clear();
+}
+
+class TestTempPathCleaner : public testing::EmptyTestEventListener
+{
+    void OnTestEnd(const testing::TestInfo &) override { removeTestTempPaths(); }
+};
+
+inline const bool test_temp_path_cleaner_installed
+    = (testing::UnitTest::GetInstance()->listeners().Append(new TestTempPathCleaner), true);
+
 /// Minimal `ContentAddressedSettings` for a direct-construction gtest fixture: sets only
 /// `server_root_id` and `scratch_path` (the two values every positional-ctor call site used to pass
 /// explicitly) and validates, so the cached enum-valued accessors (`stagingBackend`, `blobHashAlgo`)
@@ -241,9 +285,15 @@ inline void ensureBlobUploadPoolForTest(size_t size = 8)
 /// themselves before constructing.
 inline DB::ContentAddressedSettings makeSettingsForTest(const std::string & server_root_id, const std::filesystem::path & scratch_path)
 {
+    /// Unique per call, so that concurrent test processes never share (or remove) one another's scratch.
+    static std::atomic<uint64_t> counter{0};
+    const auto unique_scratch = std::filesystem::path(
+        scratch_path.string() + "_" + std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1)));
+    registerTestTempPath(unique_scratch);
+
     DB::ContentAddressedSettings settings;
     settings[DB::ContentAddressedSetting::server_root_id] = server_root_id;
-    settings[DB::ContentAddressedSetting::scratch_path] = scratch_path.string();
+    settings[DB::ContentAddressedSetting::scratch_path] = unique_scratch.string();
     settings.validate();
     return settings;
 }
@@ -311,6 +361,30 @@ inline void expectBytes(const DB::Cas::BackendPtr & backend, const String & key,
     expectBytes(*backend, key, expected);
 }
 
+/// A `LocalObjectStorage` that removes its root directory when it dies.
+///
+/// The root is a per-test pool under `temp_directory_path()`, whose tmpfs has a limited inode count.
+/// Removal failure is logged, never thrown, so teardown cannot fail a passing test.
+class LocalObjectStorageWithTempRoot : public DB::LocalObjectStorage
+{
+public:
+    explicit LocalObjectStorageWithTempRoot(DB::LocalObjectStorageSettings settings_)
+        : DB::LocalObjectStorage(settings_), root(settings_.key_prefix)
+    {
+    }
+
+    ~LocalObjectStorageWithTempRoot() override
+    {
+        std::error_code ec;
+        std::filesystem::remove_all(root, ec);
+        if (ec)
+            LOG_WARNING(getLogger("CasTestTempRoot"), "cannot remove test object storage root {}: {}", root, ec.message());
+    }
+
+private:
+    const std::string root;
+};
+
 /// Build a `LocalObjectStorage` rooted at a fresh, unique temporary directory (one per call).
 ///
 /// Used by the unit tests that exercise the `Cas::Backend` seam against a real on-disk object storage
@@ -334,7 +408,7 @@ inline DB::ObjectStoragePtr makeLocalObjectStorageForTest()
         throw std::runtime_error("cannot create test object storage root " + root + ": " + ec.message());
 
     DB::LocalObjectStorageSettings settings("test", root, /*read_only_=*/false);
-    return std::make_shared<DB::LocalObjectStorage>(std::move(settings));
+    return std::make_shared<LocalObjectStorageWithTempRoot>(std::move(settings));
 }
 
 /// Anchor a key under an object storage's own root, for the `Mode::Native` tests.

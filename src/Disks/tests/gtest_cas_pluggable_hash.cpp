@@ -255,7 +255,8 @@ TEST(CASPluggableHash, ConcurrentAdmissionUnions)
 TEST(CASPluggableHash, ContentWriteBufferLocalModeHashesWithSelectedAlgoXxh3)
 {
     const std::string payload = makeMultiBlockPayload();
-    const auto temp_dir = (std::filesystem::temp_directory_path() / "cas_pluggable_hash_xxh3_local").string();
+    const auto temp_dir = (std::filesystem::temp_directory_path() / ("cas_pluggable_hash_xxh3_local_" + std::to_string(::getpid()))).string();
+    DB::Cas::tests::registerTestTempPath(temp_dir);
 
     std::string got_hash_hex;
     size_t got_size = 0;
@@ -292,7 +293,8 @@ TEST(CASPluggableHash, ContentWriteBufferLocalModeHashesWithSelectedAlgoXxh3)
 TEST(CASPluggableHash, ContentWriteBufferLocalModeCityHash128Unchanged)
 {
     const std::string payload = makeMultiBlockPayload();
-    const auto temp_dir = (std::filesystem::temp_directory_path() / "cas_pluggable_hash_ch128_local").string();
+    const auto temp_dir = (std::filesystem::temp_directory_path() / ("cas_pluggable_hash_ch128_local_" + std::to_string(::getpid()))).string();
+    DB::Cas::tests::registerTestTempPath(temp_dir);
 
     std::string got_hash_hex;
     auto buf = std::make_unique<DB::Cas::CaContentWriteBuffer>(

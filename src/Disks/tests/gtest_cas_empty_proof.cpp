@@ -70,9 +70,11 @@ void commitOnePart(ContentAddressedMetadataStorage & storage)
 /// A read-only mount over a backing a writable mount already bootstrapped (`_pool_meta` present). The
 /// writable mount minted the pool identity then shut down; the read-only mount validates `_pool_meta`,
 /// takes NO lease and runs NO erasure observer (it stays `Live` forever) -- exactly the state in which
-/// enumeration is the ONLY line of defense against a later erasure. Returns {ro storage, backing root}.
+/// enumeration is the ONLY line of defense against a later erasure. Fields: `rw_os` owns the backing (its
+/// temp root dies with it), `ro` is the read-only mount, `root` is the backing root path.
 struct ReadOnlyMount
 {
+    DB::ObjectStoragePtr rw_os;
     std::shared_ptr<ContentAddressedMetadataStorage> ro;
     std::string root;
 };
@@ -133,7 +135,7 @@ ReadOnlyMount openReadOnlyOverBootstrappedBacking()
     auto ro = std::make_shared<ContentAddressedMetadataStorage>(
         ro_os, "pool", "srv1", "", nullptr, settings);
     ro->startup();
-    return {std::move(ro), root};
+    return {std::move(rw_os), std::move(ro), root};
 }
 
 }

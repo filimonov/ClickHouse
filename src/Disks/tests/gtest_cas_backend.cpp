@@ -927,6 +927,7 @@ std::shared_ptr<PublicationRecordingLocalObjectStorage> makePublicationRecording
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_publish_blob_unit_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
@@ -1324,6 +1325,7 @@ ThrowOnReadFixture makeThrowOnReadStorageForTest(const std::string & key_suffix)
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_midget_unit_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
@@ -1508,6 +1510,7 @@ DB::ObjectStoragePtr makeFixedEtagStorageForTest()
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_fixed_etag_unit_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
@@ -1604,6 +1607,7 @@ DB::ObjectStoragePtr makeFixedNumericEtagStorageForTest(const String & etag)
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_fixed_numeric_etag_unit_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
@@ -1638,6 +1642,7 @@ DB::ObjectStoragePtr makeClockEtagStorageForTest(const std::shared_ptr<std::atom
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_clock_etag_unit_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

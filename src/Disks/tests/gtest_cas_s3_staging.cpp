@@ -109,6 +109,7 @@ std::shared_ptr<FakeNativeCopyObjectStorage> makeFakeNativeCopyStorage(bool nati
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_s3_staging_native_copy_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
@@ -1285,6 +1286,7 @@ std::shared_ptr<FakeGenerationObjectStorage> makeFakeGenerationObjectStorageForT
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("cas_s3_staging_generation_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
 
     std::error_code ec;
     std::filesystem::remove_all(root, ec);

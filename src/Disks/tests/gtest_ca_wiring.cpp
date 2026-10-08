@@ -2130,6 +2130,7 @@ std::shared_ptr<FaultyLocalObjectStorage> makeFaultyStorageForTest()
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("ca_b122_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
     std::filesystem::create_directories(root, ec);
@@ -2193,6 +2194,7 @@ TEST(CASWiringReadOnly, ObserveOnlyOpenReadsButRejectsWrites)
     /// 1. Writable storage publishes a part into a fixed root.
     const auto root = (std::filesystem::temp_directory_path()
                        / ("ca_ro_" + std::to_string(::getpid()))).string();
+    DB::Cas::tests::registerTestTempPath(root);
     std::error_code ec; std::filesystem::remove_all(root, ec); std::filesystem::create_directories(root, ec);
     auto writable_os = std::make_shared<DB::LocalObjectStorage>(
         DB::LocalObjectStorageSettings("test", root, /*read_only_=*/false));
@@ -2352,6 +2354,7 @@ std::shared_ptr<RecordingLocalObjectStorage> makeRecordingStorageForTest(const s
     static std::atomic<uint64_t> counter{0};
     const auto unique = std::to_string(::getpid()) + "_" + std::to_string(counter.fetch_add(1));
     const auto root = (std::filesystem::temp_directory_path() / ("ca_b188_" + tag + "_" + unique)).string();
+    DB::Cas::tests::registerTestTempPath(root);
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
     std::filesystem::create_directories(root, ec);
@@ -3067,7 +3070,8 @@ TEST(CASWiringResurrect, PromoteWithoutLivePrecommitAbortsWithoutResurrect)
 /// (`test_cancel_backup`'s NoTrashChecker, Altinity PR#2073).
 TEST(CASWiring, TryFromDiskOnLocalDiskIsExceptionFreeAndCountsNoError)
 {
-    auto tmp = std::filesystem::temp_directory_path() / "ca_wiring_tryfromdisk_test";
+    auto tmp = std::filesystem::temp_directory_path() / ("ca_wiring_tryfromdisk_test_" + std::to_string(::getpid()));
+    DB::Cas::tests::registerTestTempPath(tmp);
     std::filesystem::create_directories(tmp);
     const DB::DiskPtr local = std::make_shared<DB::DiskLocal>("tryfromdisk_local", tmp.string());
 
