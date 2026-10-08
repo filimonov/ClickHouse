@@ -1,4 +1,5 @@
 import concurrent.futures
+import logging
 
 import pytest
 
@@ -787,7 +788,7 @@ def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
     try:
         tx(7, "begin transaction")
         drop = pool.submit(tx, 7, "alter table mt_lost drop partition id '1'")
-        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
         listing = node.exec_in_container(["bash", "-c", f"ls -1 {part_path}"]).split()
         assert "txn_version.txt.tmp" in listing, listing
@@ -797,6 +798,13 @@ def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
         with pytest.raises(Exception):
             drop.result(timeout=60)
     finally:
+        # Disabling resumes whatever is parked at the failpoint, so a failure before the restart
+        # leaves neither an armed failpoint nor a paused `DROP PARTITION` holding the table.
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", timeout=60)
+        except Exception as e:
+            # Never mask the real failure: after the kill the server may still be coming up.
+            logging.warning("could not disable failpoint %s: %s", failpoint, e)
         pool.shutdown(wait=False)
 
     node.query("SYSTEM WAIT LOADING PARTS mt_lost")
