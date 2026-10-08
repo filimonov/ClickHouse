@@ -48,6 +48,11 @@ bool isFirstAttemptFuseTimeout(const std::exception & e, size_t attempt_no);
 /// same failure and buries the root cause behind a retryable exception. The set is `LOGICAL_ERROR`,
 /// `NOT_IMPLEMENTED`, `BAD_ARGUMENTS` and `CORRUPTED_DATA`.
 bool isDeterministicLocalFailure(int code);
+/// An exception the store or the transport raised, as opposed to a local fault.
+bool isStoreAnswer(const std::exception & e);
+/// `VERB key: class code message`, `class` being `refused` or `transport`; `code` is the store's error
+/// name (`SlowDown`) when it sent one, else the error code or exception name.
+String describeRequestFailure(std::string_view verb, const String & key, const std::exception & e);
 
 /// Throw the recoverable "CAS write could not be committed, retry later" condition.
 ///
@@ -131,6 +136,16 @@ struct ListPage
 };
 /// The walk's callback: FALSE stops the walk.
 using ListedKeyFn = std::function<bool(const ListedKey &)>;
+
+/// Live progress of one operation, for a caller that publishes it while the operation runs. Called
+/// on the operation's thread from inside the engine's retry loops; neither may throw.
+struct RequestObserver
+{
+    /// A conditional write is about to send its `attempts_sent`-th physical attempt.
+    std::function<void(uint32_t attempts_sent)> on_write_attempt;
+    /// A conditional `PUT` or a body `GET` failed with a store answer (`isStoreAnswer`).
+    std::function<void(std::string_view verb, const String & key, const std::exception & e)> on_failure;
+};
 
 namespace detail
 {
@@ -256,6 +271,7 @@ public:
     /// The verdict point: is this operation still admitted? For the sites that guard a decision rather
     /// than a request.
     bool admitted() const { return gate(0) == Gate::Ok; }
+    void observeRequests(RequestObserver observer_) { observer = std::move(observer_); }
 
     /// The write lane for keys several writers of this pool share.
     CasHotKeys & hotKeys() const { return *owner.hot_keys; }
@@ -445,6 +461,7 @@ private:
     /// Written immediately before a read-class give-up throws, cleared and read only by the resolve
     /// read that swallows it. Every other caller lets the exception carry the verdict.
     std::optional<ReadStop> last_read_stop;
+    RequestObserver observer;
 };
 
 template <typename Fn>
@@ -476,6 +493,8 @@ auto CasOperation::readLoop(std::string_view verb, const String & subject, const
         }
         catch (const std::exception & e)
         {
+            if (observer.on_failure && verb == "read" && isStoreAnswer(e))
+                observer.on_failure("GET", subject, e);
             bool refreshed = false;
             if (refreshAndClassifyReadFault(e, refresh_attempted, refreshed))
                 throw;
