@@ -108,6 +108,9 @@ struct MountConfig
     /// Test-only override of the renewal's liveness predicate, for exact pre/post-send gate
     /// interleavings. FALSE ends the renewal exactly as a lost fence does.
     std::function<bool()> renewal_live_for_test = {};
+    /// Deterministic test interposition on the renewing thread right after `DriverLease::finish`
+    /// returned driver ownership, before the result is consumed. Runs without `driver_mutex`.
+    std::function<void(const MountRenewResult &)> renewal_finished_hook_for_test = {};
 };
 
 /// Local, in-memory write fence. It is deliberately not checked by reading the object store for every
@@ -420,7 +423,8 @@ private:
     public:
         DriverLease(CasMountRuntime & runtime_, RenewalDriverState active_);
         ~DriverLease();
-        RenewalDriverState finish(RenewalDriverState ordinary_destination, const MountRenewResult * result = nullptr);
+        RenewalDriverState finish(RenewalDriverState ordinary_destination,
+            const MountRenewResult * result = nullptr, const MountLeaseRenewer * renewer = nullptr);
 
     private:
         CasMountRuntime & runtime;
@@ -453,6 +457,8 @@ private:
         RenewalDriverState active_state,
         RenewalDriverState returned_state,
         bool propagate_failure);
+    /// Publish a committed renewal's deadline, its start plus the lease. Requires `driver_mutex`.
+    void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
     void renewalLoop();
     void remountLoop();
     ThreadFromGlobalPool makeWorker(std::function<void()> body);
