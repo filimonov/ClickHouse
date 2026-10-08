@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 
 namespace DB::Cas
@@ -141,6 +142,14 @@ struct MountFence
 /// the ref-ledger locks. The runtime receives its backend, layout, configuration, event sink, request
 /// budget, and a callback that performs one pool-level remount attempt, so it has no `Pool` back-reference.
 /// `Pool` delegates preserve the existing callers and test seams.
+/// The current logical renewal of the mount lease so far, or the last one once it ended.
+struct RenewalProgress
+{
+    bool in_progress = false;
+    uint32_t attempts_sent = 0;
+    std::optional<String> last_error;
+};
+
 class CasMountRuntime
 {
 public:
@@ -172,6 +181,8 @@ public:
     /// Renew the merged mount heartbeat once, including its build-watermark floor. A read-only runtime
     /// has no renewer and fails with a logical exception rather than fabricating a heartbeat.
     void renewWatermarkOnce();
+    /// Takes only its own lock, so a renewal stuck in a request never holds up the reader.
+    RenewalProgress renewalProgress() const;
 
     /// ---- local write fence ----
     /// Return whether a mutable operation may start under the locally observed lease state.
@@ -508,6 +519,9 @@ private:
     uint64_t remount_handled_generation = 0;
     ThreadFromGlobalPool renewal_worker;
     ThreadFromGlobalPool remount_worker;
+    /// A leaf lock, never held across I/O.
+    mutable std::mutex renewal_progress_mutex;
+    RenewalProgress renewal_progress;
     /// Counted entries into `scheduleRemount`; retained as a test-only observability seam.
     std::atomic<uint64_t> schedule_remount_calls_for_test{0};
 
