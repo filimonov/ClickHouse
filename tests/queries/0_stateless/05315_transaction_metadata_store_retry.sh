@@ -3,7 +3,7 @@
 # Tag rationale: enables server-wide failpoints; reads raw metadata files from the data directory.
 # Replicated databases route the transactional ALTER UPDATE through replicated DDL, which is refused inside a transaction.
 #
-# A metadata write that fails inside the noexcept commit/rollback callbacks of a
+# A transient storage error in a metadata write made inside the noexcept commit/rollback callbacks of a
 # transaction must be retried instead of terminating the server. Each scenario makes
 # the first write of the callback fail exactly once with a ONCE failpoint and checks
 # that the statement completed and the retry was logged once. Scenarios A and B also
@@ -31,17 +31,23 @@ function report_retry_lines()
 {
     local kind=$1
     local table=$2
-    local uuid
+    local uuid where
     uuid=$($CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = '${table}'")
+    if [ "$kind" = part ]; then
+        where="of ${CLICKHOUSE_DATABASE}.${table} (${uuid})"
+    else
+        # The mutation file's path is relative to the disk: `store/<uuid prefix>/<uuid>/`.
+        where="at store/${uuid:0:3}/${uuid}/"
+    fi
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
     $CLICKHOUSE_CLIENT -q "
         WITH
-            (SELECT groupUniqArray(extract(message, 'for (${kind} .+ \\\\(.+\\\\)), will retry')) FROM system.text_log
-                WHERE event_date >= yesterday() AND message LIKE 'Cannot store transaction metadata for ${kind} % of ${CLICKHOUSE_DATABASE}.${table} (${uuid}), will retry%') AS retried,
-            (SELECT groupArray(extract(message, 'for (${kind} .+ \\\\(.+\\\\)) after')) FROM system.text_log
-                WHERE event_date >= yesterday() AND message LIKE 'Stored transaction metadata for ${kind} % of ${CLICKHOUSE_DATABASE}.${table} (${uuid}) after % attempts') AS stored,
+            (SELECT groupUniqArray(extract(message, 'for (${kind} .+), will retry')) FROM system.text_log
+                WHERE event_date >= yesterday() AND message LIKE 'Cannot store transaction metadata for ${kind} % ${where}, will retry%') AS retried,
+            (SELECT groupArray(extract(message, 'for (${kind} .+) after [0-9]+ attempts')) FROM system.text_log
+                WHERE event_date >= yesterday() AND message LIKE 'Stored transaction metadata for ${kind} % ${where} after % attempts') AS stored,
             (SELECT groupUniqArray(toUInt64OrZero(extract(message, 'after ([0-9]+) attempts'))) FROM system.text_log
-                WHERE event_date >= yesterday() AND message LIKE 'Stored transaction metadata for ${kind} % of ${CLICKHOUSE_DATABASE}.${table} (${uuid}) after % attempts') AS attempts
+                WHERE event_date >= yesterday() AND message LIKE 'Stored transaction metadata for ${kind} % ${where} after % attempts') AS attempts
         SELECT 'retried objects', length(retried), 'stored after retry', length(stored), 'same object', retried = stored, 'attempts', attempts
         FORMAT TSV"
 }

@@ -14,6 +14,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/retryTransientStoreError.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/TransactionID.h>
@@ -28,7 +29,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int NOT_IMPLEMENTED;
-extern const int FAULT_INJECTED;
+extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
 namespace FailPoints
@@ -388,14 +389,21 @@ void VersionMetadataOnDisk::removeTmpMetadataFile()
 void VersionMetadataOnDisk::storeInfoToDataPartStorage(
     const MergeTreeData & mt_data, IDataPartStorage & data_part_storage, const VersionInfo & new_info)
 {
-    /// Fault injection for tests: fail before any I/O, so the old file stays intact.
-    fiu_do_on(FailPoints::transaction_metadata_store_fail,
-    {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while storing version metadata");
-    });
-
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = TMP_TXN_VERSION_METADATA_FILE_NAME;
+
+    /// A transient storage error is retried here, in the one place that writes the file: the
+    /// callers after the commit point of a transaction are `noexcept` and could only terminate.
+    retryTransientStoreError(
+        mt_data.log.load(),
+        fmt::format("part {} of {}", data_part_storage.getPartDirectory(), mt_data.getStorageID().getNameForLogs()),
+        [&]
+    {
+    /// Fault injection for tests: a transient failure before any I/O, so the old file stays intact.
+    fiu_do_on(FailPoints::transaction_metadata_store_fail,
+    {
+        throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Injected transient failure while storing version metadata");
+    });
 
     try
     {
@@ -428,5 +436,6 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         }
         throw;
     }
+    });
 }
 }

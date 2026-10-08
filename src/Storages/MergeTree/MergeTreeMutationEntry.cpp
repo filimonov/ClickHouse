@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Storages/MergeTree/retryTransientStoreError.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
@@ -18,7 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FAULT_INJECTED;
+    extern const int CANNOT_WRITE_TO_OSTREAM;
 }
 
 namespace FailPoints
@@ -121,10 +122,14 @@ void MergeTreeMutationEntry::removeFile()
 
 void MergeTreeMutationEntry::writeCSN(CSN csn_, bool sync_directory)
 {
-    /// Fault injection for tests: fail before any I/O, so the old file stays intact.
+    /// A transient storage error is retried here: the caller after the commit point of a
+    /// transaction is `noexcept` and could only terminate.
+    retryTransientStoreError(getLogger("MergeTreeMutationEntry"), fmt::format("mutation {} at {}", file_name, path_prefix), [&]
+    {
+    /// Fault injection for tests: a transient failure before any I/O, so the old file stays intact.
     fiu_do_on(FailPoints::transaction_mutation_csn_store_fail,
     {
-        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure while storing mutation CSN");
+        throw Exception(ErrorCodes::CANNOT_WRITE_TO_OSTREAM, "Injected transient failure while storing mutation CSN");
     });
 
     /// The whole record is rewritten through a temporary file instead of appending the
@@ -145,6 +150,7 @@ void MergeTreeMutationEntry::writeCSN(CSN csn_, bool sync_directory)
     if (sync_directory)
         sync_guard = disk->getDirectorySyncGuard(path_prefix);
     disk->replaceFile(path_prefix + tmp_file_name, path_prefix + file_name);
+    });
     csn = csn_;
 }
 
