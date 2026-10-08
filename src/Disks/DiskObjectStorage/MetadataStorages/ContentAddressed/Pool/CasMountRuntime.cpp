@@ -156,11 +156,29 @@ bool CasMountRuntime::refAppendFenceOk() const
 {
     /// Two envelopes' worth of room under the live generation -- a write and its settlement read, which
     /// is what `writeLoop` reserves -- so a ref-log attempt is not started when it cannot plausibly
-    /// finish, safety margin included, before the lease expires.
-    const uint64_t envelope_ms = cas_request_budget.attemptEnvelopeMs();
-    const uint64_t needed_ms = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
-        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
+    /// finish, safety margin included, before the lease expires. `admit` adds the margin itself.
+    const uint64_t needed_ms = conditionalReserveMs() - cas_request_budget.lease_safety_margin_ms;
     return admit(fenceGeneration(), needed_ms) == Fence::Admit::Ok;
+}
+
+uint64_t CasMountRuntime::conditionalReserveMs() const
+{
+    const uint64_t envelope_ms = cas_request_budget.attemptEnvelopeMs();
+    const uint64_t two = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
+        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
+    const uint64_t margin = cas_request_budget.lease_safety_margin_ms;
+    return two > std::numeric_limits<uint64_t>::max() - margin ? std::numeric_limits<uint64_t>::max() : two + margin;
+}
+
+LeasePauseState CasMountRuntime::leasePause() const
+{
+    if (const std::optional<uint64_t> expired_at = leaseExpiredAtBootMs())
+        return {LeasePause::LeaseExpired, *expired_at};
+    if (lifecycle() != PoolLifecycle::Live || mount_fence.lost.load(std::memory_order_acquire) || refAppendFenceOk())
+        return {};
+    const uint64_t deadline = mount_fence.deadline_boot_ms.load(std::memory_order_acquire);
+    const uint64_t reserve = conditionalReserveMs();
+    return {LeasePause::RenewalOverdue, deadline > reserve ? deadline - reserve : 0};
 }
 
 std::optional<uint64_t> CasMountRuntime::leaseExpiredAtBootMs() const
@@ -339,7 +357,10 @@ RenewalDriverState CasMountRuntime::DriverLease::finish(
     /// Published before the driver leaves the call, so a remount cannot arm a new epoch between this
     /// renewal's commit and its deadline; a renewer that was replaced moves nothing.
     if (result && result->outcome == MountRenewOutcome::Committed && renewer && renewer == runtime.mount_renewer.get())
+    {
         runtime.publishRenewedDeadline(result->attempt_start_boot_ms);
+        runtime.publishConfirmedBody(renewer->lastConfirmedBody());
+    }
     if (runtime.workers_stop_requested)
         runtime.renewal_driver_state = RenewalDriverState::Stopping;
     else if (active == RenewalDriverState::WorkerCall
@@ -452,6 +473,7 @@ uint64_t CasMountRuntime::startRenewer()
 
     DriverLease lease(*this, active);
     const uint64_t anchor = renewer->start([this] { return !renewalCancelled(); });
+    publishConfirmedBody(renewer->lastConfirmedBody());
     (void)lease.finish(destination);
     return anchor;
 }
@@ -460,6 +482,18 @@ RenewalProgress CasMountRuntime::renewalProgress() const
 {
     std::lock_guard lock(renewal_progress_mutex);
     return renewal_progress;
+}
+
+std::optional<MountLease> CasMountRuntime::confirmedMountBody() const
+{
+    std::lock_guard lock(renewal_progress_mutex);
+    return confirmed_body;
+}
+
+void CasMountRuntime::publishConfirmedBody(const std::optional<MountLease> & body)
+{
+    std::lock_guard lock(renewal_progress_mutex);
+    confirmed_body = body;
 }
 
 MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_call)
@@ -989,8 +1023,8 @@ bool CasMountRuntime::noteLeaseLost()
     if (pool_lifecycle.compare_exchange_strong(
             expected, PoolLifecycle::TransientNotLive, std::memory_order_acq_rel, std::memory_order_acquire))
     {
-        /// The `since` the lifecycle snapshot reports for `not_live` — the wall-clock instant this became
-        /// non-`Live`. Only the winning transition writes it (the guard above), so it is not re-stamped.
+        /// The `since` the lifecycle snapshot reports for `paused(remounting)` — the wall-clock instant this
+        /// became non-`Live`. Only the winning transition writes it (the guard above), so it is not re-stamped.
         lifecycle_since_wall_s.store(wallClockNowSeconds(), std::memory_order_release);
         /// This transition can be reached while the renewal driver or remount serializer lock is
         /// held. Trace-profile collection may allocate and enqueue a stack trace, so the lock-safe

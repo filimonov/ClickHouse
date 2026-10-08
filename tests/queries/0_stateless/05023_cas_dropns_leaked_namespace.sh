@@ -202,7 +202,7 @@ $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal \
 LIFECYCLE=$($CLICKHOUSE_CLIENT --query "
     SELECT lifecycle || '(' || lifecycle_reason || ')' FROM system.cas_mounts
     WHERE disk = '${DISK_NAME}'")
-[ "${LIFECYCLE}" = "vanished(forgotten)" ] || {
+[ "${LIFECYCLE}" = "closed(forgotten)" ] || {
     echo "unexpected lifecycle after FORGET: ${LIFECYCLE}"; exit 1; }
 
 rm -rf "${POOL_DIR:?}"   # safe: FORGET stopped and joined every CAS thread for this disk

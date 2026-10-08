@@ -12,7 +12,7 @@
 # DROP, draining the retire pipeline via `SYSTEM CAS GC RUN` then running `FSCK` on the
 # running disk (T13) reads back zero `unreachable`/`dangling` objects (no mutated-away or patch-part
 # blobs left behind), and that `_pool_meta` survives. Teardown is fail-closed (spec rev.8 §5/§9): FORGET
-# the disk, verify `vanished(forgotten)`, then rm.
+# the disk, verify `closed(forgotten)`, then rm.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -115,7 +115,7 @@ else
 fi
 
 # Fail-closed teardown (spec rev.8 §5/§9): FORGET the disk (force-Vanish, node-local; the table is
-# already dropped above), verify it reads exactly `vanished(forgotten)` in the mounts table, and only
+# already dropped above), verify it reads exactly `closed(forgotten)` in the mounts table, and only
 # then rm. A failed FORGET or an unexpected lifecycle aborts with the pool dir left in place. FORGET logs
 # an operator WARNING; the harness runs the client at --send_logs_level=warning, so that expected warning
 # would stream to stderr and be flagged as a failure -- suppress it for this call.
@@ -125,7 +125,7 @@ $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal \
 LIFECYCLE=$($CLICKHOUSE_CLIENT --query "
     SELECT lifecycle || '(' || lifecycle_reason || ')' FROM system.cas_mounts
     WHERE disk = '${DISK_NAME}'")
-[ "${LIFECYCLE}" = "vanished(forgotten)" ] || {
+[ "${LIFECYCLE}" = "closed(forgotten)" ] || {
     echo "unexpected lifecycle after FORGET: ${LIFECYCLE}"; exit 1; }
 
 rm -rf "${POOL_DIR:?}"   # safe: FORGET stopped and joined every CAS thread for this disk

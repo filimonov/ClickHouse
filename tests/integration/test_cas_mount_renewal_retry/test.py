@@ -1,7 +1,9 @@
 import hashlib
+import io
 import json
 import os
 import subprocess
+import threading
 import time
 import urllib.request
 
@@ -16,6 +18,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 DISK = "disk_cas_renewal"
+VIEW_DISK = "disk_cas_renewal_view"
 SERVER_ROOT_ID = "itest-cas-renewal"
 STORAGE_POLICY = "cas_mount_renewal"
 MOUNT_OBJECT_KEY = "cas_mount_renewal/gc/server-roots/{}/mount".format(SERVER_ROOT_ID)
@@ -596,7 +599,7 @@ def test_long_mount_put_outage_pauses_under_the_same_epoch(start_cluster):
     armed_at = time.monotonic()
     try:
         _wait_until(
-            lambda deadline: _lease_state(node, timeout=deadline.remaining())[:2] == ("not_live", "lease_expired"),
+            lambda deadline: _lease_state(node, timeout=deadline.remaining())[:2] == ("paused", "lease_expired"),
             timeout=30,
         )
         error = node.query_and_get_error("INSERT INTO renewal_probe VALUES (301, 'during-outage')", timeout=60)
@@ -679,3 +682,104 @@ def test_hard_restart_observes_then_the_unsafe_knob_skips_the_observation(start_
         assert epoch_after_knob_restart > epoch_after_safe_restart
     finally:
         node.exec_in_container(["rm", "-f", "/etc/clickhouse-server/config.d/unsafe_remount.xml"])
+
+
+def _query_events(node, query_id, names):
+    node.query("SYSTEM FLUSH LOGS")
+    return int(node.query(
+        "SELECT {} FROM system.query_log WHERE query_id = '{}' AND type = 'QueryFinish'".format(
+            " + ".join("ProfileEvents['{}']".format(n) for n in names), query_id)).strip())
+
+
+def test_local_row_sends_no_request_and_a_failed_listing_is_one_row(start_cluster):
+    # Every request fails: the local row answers from memory; the listing makes one LIST attempt.
+    node = start_cluster["node"]
+    control_url = start_cluster["control_url"]
+    _control(control_url, "/config", {"reset": True})
+    _control(control_url, "/config", {"rate": 1.0, "modes": ["503"], "seed": 901})
+    try:
+        local = node.query(
+            "SELECT server_root_id, lifecycle IS NOT NULL, toTypeName(lifecycle) FROM system.cas_mounts "
+            "WHERE disk = '{}' AND is_local = 1 FORMAT TSV".format(DISK), query_id="pr09a-local", timeout=10).strip()
+        failed = node.query(
+            "SELECT server_root_id, state, listing_error != '' FROM system.cas_mounts WHERE disk = '{}' "
+            "AND listing_error IS NOT NULL FORMAT TSV".format(DISK), query_id="pr09a-failed", timeout=30).rstrip("\n")
+    finally:
+        _control(control_url, "/config", {"rate": 0.0})
+    assert local == "{}\t1\tNullable(String)".format(SERVER_ROOT_ID), local
+    assert failed == "\t\t1", failed
+    assert _query_events(node, "pr09a-local", ["S3ListObjects", "S3GetObject", "S3HeadObject"]) == 0
+    assert _query_events(node, "pr09a-failed", ["S3ListObjects"]) == 1
+    _wait_until(lambda deadline: _lease_state(node, timeout=deadline.remaining())[:2] == ("live", ""), timeout=60)
+
+
+def test_foreign_rows_carry_no_local_facts(start_cluster):
+    node = start_cluster["node"]
+    body, _ = _read_mount_object()
+    peer_key = "cas_mount_renewal/gc/server-roots/itest-peer/mount"
+    _rustfs_client(10).put_object(cluster.rustfs_bucket, peer_key, io.BytesIO(body), len(body))
+    try:
+        rows = node.query(
+            "SELECT server_root_id, is_local, lifecycle IS NULL, lifecycle_reason IS NULL, is_leader IS NULL, "
+            "renewal_in_progress IS NULL, listing_error IS NULL FROM system.cas_mounts WHERE disk = '{}' "
+            "ORDER BY is_local FORMAT TSV".format(DISK)).strip().splitlines()
+    finally:
+        _rustfs_client(10).remove_object(cluster.rustfs_bucket, peer_key)
+    # is_leader is NULL on the local row too: GC is off on this disk.
+    assert rows == ["itest-peer\t0\t1\t1\t1\t1\t1", "{}\t1\t0\t0\t1\t0\t1".format(SERVER_ROOT_ID)], rows
+
+
+def test_a_disk_filter_lists_only_that_disk(start_cluster):
+    node = start_cluster["budget_probe"]
+    node.query("SELECT count() FROM system.cas_mounts WHERE disk = 'disk_cas_budget_capped'", query_id="pr09a-one")
+    node.query("SELECT count() FROM system.cas_mounts", query_id="pr09a-both")
+    assert _query_events(node, "pr09a-one", ["S3ListObjects"]) == 1
+    assert _query_events(node, "pr09a-both", ["S3ListObjects"]) == 2
+
+
+def test_local_row_answers_while_a_foreign_slot_read_hangs(start_cluster):
+    # The proxy holds the GET of a foreign slot, so a listing query waits in it; the local rows still
+    # answer from memory, with no request, while that GET is in flight.
+    node = start_cluster["node"]
+    control_url = start_cluster["control_url"]
+    body, _ = _read_mount_object()
+    peer = "itest-hung-peer"
+    peer_key = "cas_mount_renewal/gc/server-roots/{}/mount".format(peer)
+    _rustfs_client(10).put_object(cluster.rustfs_bucket, peer_key, io.BytesIO(body), len(body))
+    _control(control_url, "/config", {"reset": True})
+    _control(
+        control_url,
+        "/config",
+        {"rate": 1.0, "modes": ["slow"], "slow_ms": 20000, "methods": ["GET"],
+         "path_substring": "/{}/mount".format(peer), "remaining_faults": 1, "seed": 902},
+    )
+    listing = {}
+
+    def list_foreign():
+        listing["rows"] = node.query(
+            "SELECT server_root_id FROM system.cas_mounts WHERE disk = '{}' AND is_local = 0 "
+            "ORDER BY server_root_id FORMAT TSV".format(VIEW_DISK), timeout=90).split()
+
+    lister = threading.Thread(target=list_foreign)
+    lister.start()
+    try:
+        _wait_until(
+            lambda deadline: _control(control_url, "/stats", timeout=deadline.remaining())["by_mode"].get("slow", 0) == 1,
+            timeout=30,
+        )
+        local = node.query(
+            "SELECT disk, server_root_id FROM system.cas_mounts WHERE disk IN ('{}', '{}') AND is_local = 1 "
+            "ORDER BY disk FORMAT TSV".format(DISK, VIEW_DISK), query_id="pr09a-hung-local", timeout=10).strip()
+        listing_held = lister.is_alive()
+    finally:
+        lister.join(timeout=90)
+        _control(control_url, "/config", {"rate": 0.0})
+        _rustfs_client(10).remove_object(cluster.rustfs_bucket, peer_key)
+    assert listing_held, "the local query must answer while the foreign GET is still held"
+    assert local.splitlines() == [
+        "{}\t{}".format(DISK, SERVER_ROOT_ID),
+        "{}\t{}".format(VIEW_DISK, SERVER_ROOT_ID),
+    ], local
+    assert _query_events(node, "pr09a-hung-local", ["S3ListObjects", "S3GetObject", "S3HeadObject"]) == 0
+    # A read-only disk holds no slot, so its listing keeps the slot under its own server_root_id.
+    assert listing.get("rows") == [SERVER_ROOT_ID, peer], listing

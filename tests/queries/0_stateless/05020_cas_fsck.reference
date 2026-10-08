@@ -4,4 +4,4 @@ disk	reachable	dangling	unreachable	pending_gc	awaiting_gc	unaccounted	stale_edg
 <disk>	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0
 fsck_non_ca_disk_rejected: 1
 fsck_requires_disk: 1
-second_forget_idempotent: vanished(forgotten)
+second_forget_idempotent: closed(forgotten)

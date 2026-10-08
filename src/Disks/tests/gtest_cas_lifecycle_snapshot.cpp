@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 
 /// Task 12 (rev.7 spec §7, [C5]-visibility): the NON-GATED lifecycle snapshot backing
 /// `system.cas_mounts`. A Factory-class read (spec §1): I/O-free, no `store()`/`poolAccess`,
@@ -114,9 +115,9 @@ TEST(CASLifecycleSnapshot, IdentityLostHasDetailAndSince)
     EXPECT_EQ(snap.pool_id, storage->getPoolUUID());
 }
 
-/// (c) VanishedForgotten via the REAL verb (`storage->forgetDisk()`): the snapshot reads `vanished` with the
+/// (c) VanishedForgotten via the REAL verb (`storage->forgetDisk()`): the snapshot reads `closed` with the
 /// enum-clean `reason` word `forgotten` (so Task 14's `lifecycle || '(' || lifecycle_reason || ')'` reads
-/// EXACTLY `vanished(forgotten)`), the [D5] `detail` carrying the operator's decommission timestamp, `since`
+/// EXACTLY `closed(forgotten)`), the `detail` carrying the operator's decommission timestamp, `since`
 /// set, and the identity still present.
 TEST(CASLifecycleSnapshot, VanishedForgottenIsEnumCleanWithTimestampedDetail)
 {
@@ -127,10 +128,10 @@ TEST(CASLifecycleSnapshot, VanishedForgottenIsEnumCleanWithTimestampedDetail)
     storage->forgetDisk();
 
     const CasLifecycleSnapshot snap = storage->lifecycleSnapshot();
-    EXPECT_EQ(snap.lifecycle, "vanished");
+    EXPECT_EQ(snap.lifecycle, "closed");
     EXPECT_EQ(snap.reason, "forgotten");
     /// Task 14's teardown check depends on this exact concatenation.
-    EXPECT_EQ(snap.lifecycle + "(" + snap.reason + ")", "vanished(forgotten)");
+    EXPECT_EQ(snap.lifecycle + "(" + snap.reason + ")", "closed(forgotten)");
     EXPECT_NE(snap.detail.find("SYSTEM CAS FORGET at "), std::string::npos) << snap.detail;
     EXPECT_NE(snap.detail.find("erasure was NOT verified"), std::string::npos) << snap.detail;
     EXPECT_NE(snap.since, 0);
@@ -237,9 +238,9 @@ TEST(CASLifecycleSnapshot, NaturalIdentityLostMatchesThrowDetail)
         << "\n  thrown: " << thrown;
 }
 
-/// An expired lease while the lifecycle stays `Live`: `not_live` / `lease_expired`, `since` is the
+/// An expired lease while the lifecycle stays `Live`: `paused` / `lease_expired`, `since` is the
 /// deadline as wall time, and a deadline back in the future returns the row to `live`.
-TEST(CASLifecycleSnapshot, ExpiredLeaseIsNotLiveUntilRestored)
+TEST(CASLifecycleSnapshot, ExpiredLeaseIsPausedUntilRestored)
 {
     auto storage = openSnapshotStorage();
     commitOnePart(*storage);
@@ -255,7 +256,7 @@ TEST(CASLifecycleSnapshot, ExpiredLeaseIsNotLiveUntilRestored)
     const CasLifecycleSnapshot expired = storage->lifecycleSnapshot();
     const int64_t after_s = wall_now_s();
 
-    EXPECT_EQ(expired.lifecycle, "not_live");
+    EXPECT_EQ(expired.lifecycle, "paused");
     EXPECT_EQ(expired.reason, "lease_expired");
     EXPECT_GE(static_cast<int64_t>(expired.since), before_s - 6);
     EXPECT_LE(static_cast<int64_t>(expired.since), after_s - 4);
@@ -266,4 +267,66 @@ TEST(CASLifecycleSnapshot, ExpiredLeaseIsNotLiveUntilRestored)
     EXPECT_EQ(restored.lifecycle, "live");
     EXPECT_TRUE(restored.reason.empty()) << restored.reason;
     EXPECT_EQ(restored.since, 0);
+}
+
+/// Lease left but not more than a conditional change's reserve: `paused` / `renewal_overdue`, `since` is
+/// the instant the reserve was crossed.
+TEST(CASLifecycleSnapshot, RenewalOverdueIsPausedBeforeTheLeaseEnds)
+{
+    auto storage = openSnapshotStorage();
+    commitOnePart(*storage);
+    auto pool = storage->store();
+    const auto & budget = pool->poolConfig().cas_request_budget;
+    const uint64_t reserve = 2 * budget.attemptEnvelopeMs() + budget.lease_safety_margin_ms;
+    const int64_t before_s = ::time(nullptr);
+    pool->setMountDeadline(pool->bootMsNow() + reserve - 1'000);
+    const CasLifecycleSnapshot overdue = storage->lifecycleSnapshot();
+    const int64_t after_s = ::time(nullptr);
+    EXPECT_EQ(overdue.lifecycle, "paused");
+    EXPECT_EQ(overdue.reason, "renewal_overdue");
+    EXPECT_GE(static_cast<int64_t>(overdue.since), before_s - 2);
+    EXPECT_LE(static_cast<int64_t>(overdue.since), after_s - 1);
+    pool->setMountDeadline(pool->bootMsNow() + reserve + 60'000);
+    EXPECT_EQ(storage->lifecycleSnapshot().lifecycle, "live");
+}
+
+/// Today's lifecycle values in the new vocabulary.
+TEST(CASLifecycleSnapshot, OldLifecycleValuesMapToTheNewVocabulary)
+{
+    const auto read = [](PoolLifecycle lc)
+    {
+        auto storage = openSnapshotStorage();
+        storage->store()->setLifecycleForTest(lc);
+        const CasLifecycleSnapshot snap = storage->lifecycleSnapshot();
+        return snap.lifecycle + "(" + snap.reason + ")";
+    };
+    EXPECT_EQ(read(PoolLifecycle::TransientNotLive), "paused(remounting)");
+    EXPECT_EQ(read(PoolLifecycle::IdentityLost), "identity_lost()");
+    EXPECT_EQ(read(PoolLifecycle::VanishedReplaced), "vanished(replaced)");
+}
+
+/// The local row's body is the last confirmed one; reading it sends nothing while a renewal is stuck.
+TEST(CASLifecycleSnapshot, ConfirmedBodyIsReadWithoutIoWhileARenewalIsStuck)
+{
+    auto backend = std::make_shared<CountingBackend>();
+    auto store = DB::Cas::tests::openPoolForTest(backend);
+    const auto requests = [&] { return backend->getTotal() + backend->headTotal() + backend->putTotal() + backend->listTotal(); };
+    const std::optional<DB::Cas::MountLease> first = store->confirmedMountBody();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(first->writer_epoch, store->writerEpoch());
+    DB::Cas::tests::ManualBarrier in_put;
+    backend->onBeforeWrite(store->layout().mountKey(kSrid), [&] { in_put.arriveAndWait(); });
+    std::thread renewal([&] { store->renewWatermarkOnce(); });
+    in_put.waitUntilArrived();
+    const uint64_t before = requests();
+    const std::optional<DB::Cas::MountLease> during = store->confirmedMountBody();
+    (void)store->lifecycleSnapshot();
+    (void)store->renewalProgress();
+    EXPECT_EQ(requests(), before);
+    ASSERT_TRUE(during.has_value());
+    EXPECT_EQ(during->seq, first->seq) << "a renewal in flight is not confirmed yet";
+    in_put.release();
+    renewal.join();
+    backend->onBeforeWrite(store->layout().mountKey(kSrid), {});
+    EXPECT_EQ(store->confirmedMountBody()->seq, first->seq + 1);
 }

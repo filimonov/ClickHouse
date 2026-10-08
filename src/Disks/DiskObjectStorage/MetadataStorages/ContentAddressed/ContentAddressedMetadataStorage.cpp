@@ -33,6 +33,7 @@
 #include <chrono>
 #include <filesystem>
 #include <ctime>
+#include <tuple>
 #include <unordered_set>
 
 namespace fs = std::filesystem;
@@ -94,38 +95,23 @@ namespace ContentAddressedSetting
 
 namespace
 {
-/// The `lifecycle` column value for `system.cas_mounts` (spec §7): the pool lifecycle
-/// condition collapsed to the operator-facing vocabulary. The two `Vanished*` sub-states both map to the
-/// bare `vanished` -- the sub-state (replaced/forgotten) lives in the `lifecycle_reason` column,
-/// so a `NULL`-free `lifecycle` stays a small, stable enumerated set.
-const char * casLifecycleToString(Cas::PoolLifecycle lc)
+/// `lifecycle` and the one-word `lifecycle_reason` of `system.cas_mounts`; the full text is `detail`.
+std::pair<const char *, const char *> casLifecycleWords(const Cas::Pool::LifecycleSnapshot & ps)
 {
-    switch (lc)
-    {
-        case Cas::PoolLifecycle::Live:              return "live";
-        case Cas::PoolLifecycle::TransientNotLive:  return "not_live";
-        case Cas::PoolLifecycle::IdentityLost:      return "identity_lost";
-        case Cas::PoolLifecycle::VanishedReplaced:
-        case Cas::PoolLifecycle::VanishedForgotten: return "vanished";
-    }
-    return "unknown";
-}
-
-/// The ENUM-CLEAN `lifecycle_reason` word: the `vanished` sub-state (replaced/forgotten) so a
-/// downstream `lifecycle || '(' || lifecycle_reason || ')'` yields exactly e.g. `vanished(forgotten)`.
-/// Empty for every non-`vanished` state (the `lifecycle` column already fully names those). The rich [D5]
-/// text is carried separately in `lifecycle_detail`.
-const char * casLifecycleReasonWord(Cas::PoolLifecycle lc)
-{
-    switch (lc)
+    switch (ps.lifecycle)
     {
         case Cas::PoolLifecycle::Live:
-        case Cas::PoolLifecycle::TransientNotLive:
-        case Cas::PoolLifecycle::IdentityLost:      return "";
-        case Cas::PoolLifecycle::VanishedReplaced:  return "replaced";
-        case Cas::PoolLifecycle::VanishedForgotten: return "forgotten";
+            if (ps.pause == Cas::LeasePause::RenewalOverdue)
+                return {"paused", "renewal_overdue"};
+            if (ps.pause == Cas::LeasePause::LeaseExpired)
+                return {"paused", "lease_expired"};
+            return {"live", ""};
+        case Cas::PoolLifecycle::TransientNotLive:  return {"paused", "remounting"};
+        case Cas::PoolLifecycle::IdentityLost:      return {"identity_lost", ""};
+        case Cas::PoolLifecycle::VanishedReplaced:  return {"vanished", "replaced"};
+        case Cas::PoolLifecycle::VanishedForgotten: return {"closed", "forgotten"};
     }
-    return "";
+    return {"unknown", ""};
 }
 }
 
@@ -465,8 +451,7 @@ CasLifecycleSnapshot ContentAddressedMetadataStorage::lifecycleSnapshot() const
     }
 
     const Cas::Pool::LifecycleSnapshot ps = pool->lifecycleSnapshot();
-    snap.lifecycle = ps.lease_expired ? "not_live" : casLifecycleToString(ps.lifecycle);
-    snap.reason = ps.lease_expired ? "lease_expired" : casLifecycleReasonWord(ps.lifecycle);
+    std::tie(snap.lifecycle, snap.reason) = casLifecycleWords(ps);
     snap.detail = ps.detail;
     snap.since = ps.since;
     return snap;

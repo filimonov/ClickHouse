@@ -145,6 +145,15 @@ struct RenewalProgress
     std::optional<String> last_error;
 };
 
+/// Why a `Live` mount refuses lease-bound operations, derived from the deadline and the clock:
+/// the lease left is not more than a conditional change's reserve, or the deadline has passed.
+enum class LeasePause : uint8_t { None, RenewalOverdue, LeaseExpired };
+struct LeasePauseState
+{
+    LeasePause pause = LeasePause::None;
+    uint64_t since_boot_ms = 0;   /// when the threshold was crossed; 0 for `None`
+};
+
 /// Owns the live writer-incarnation mechanics shared by the pool's mount and recovery orchestration:
 /// the `MountLeaseRenewer`, local `MountFence`, build watermark and in-flight build registry,
 /// `live_writer_epoch`, unclean-boundary marker, and both persistent workers. `Pool` retains the higher-level
@@ -186,6 +195,9 @@ public:
     void renewWatermarkOnce();
     /// Takes only its own lock, so a renewal stuck in a request never holds up the reader.
     RenewalProgress renewalProgress() const;
+    /// The body this server last confirmed in its slot; empty before the first claim. Takes only
+    /// `renewal_progress_mutex`, so a renewal stuck in a request never holds up the reader.
+    std::optional<MountLease> confirmedMountBody() const;
 
     /// ---- local write fence ----
     /// Return whether a mutable operation may start under the locally observed lease state.
@@ -311,7 +323,7 @@ public:
     /// lease-loss/remount edges (`noteLeaseLost`, `noteRemounted`) stamp it in the compare-exchange's
     /// SUCCESS branch — after the CAS — because they may run on an already-terminal pool (`noteLeaseLost` is
     /// called before the caller's `isVanished()` gate), where a pre-CAS stamp would clobber the terminal
-    /// `since`; a reader may therefore momentarily observe a just-entered `not_live` with `since` not yet
+    /// `since`; a reader may therefore momentarily observe a just-entered `paused` with `since` not yet
     /// updated, a benign introspection artifact that converges within nanoseconds.
     time_t lifecycleSinceWallS() const
     {
@@ -326,6 +338,10 @@ public:
     /// The confirmed deadline, once it has passed while the pool is `Live` and the fence is not lost: the
     /// lease expired and the renewal keeps retrying. Empty otherwise. I/O-free.
     std::optional<uint64_t> leaseExpiredAtBootMs() const;
+    /// I/O-free; `None` unless the pool is `Live` and the fence is not lost.
+    LeasePauseState leasePause() const;
+    /// Two attempt envelopes and the safety margin: the reserve `refAppendFenceOk` admits against.
+    uint64_t conditionalReserveMs() const;
 
     /// TRUE once the pool has reached — or is being driven toward — a state on which the self-remount
     /// worker must stop: a published terminal `Vanished` intent (`vanished_intent` — set early by
@@ -463,6 +479,7 @@ private:
         bool propagate_failure);
     /// Publish a committed renewal's deadline, its start plus the lease. Requires `driver_mutex`.
     void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
+    void publishConfirmedBody(const std::optional<MountLease> & body);
     /// One `WARNING` per expiry, at the first renewal attempt after it.
     void warnOnceIfLeaseExpired() noexcept;
     /// The background renewal's wait after a credential refusal. Wakes on stop and on a park request;
@@ -537,6 +554,7 @@ private:
     /// A leaf lock, never held across I/O.
     mutable std::mutex renewal_progress_mutex;
     RenewalProgress renewal_progress;
+    std::optional<MountLease> confirmed_body;   /// guarded by `renewal_progress_mutex`
     /// Counted entries into `scheduleRemount`; retained as a test-only observability seam.
     std::atomic<uint64_t> schedule_remount_calls_for_test{0};
 

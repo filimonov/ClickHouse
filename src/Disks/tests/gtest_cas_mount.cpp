@@ -24,6 +24,7 @@ namespace DB::ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int NETWORK_ERROR;
 }
 
 namespace ProfileEvents
@@ -2043,6 +2044,31 @@ TEST(CASListMounts, NestedSridIsNotTruncated)
     ASSERT_EQ(mounts.size(), 1u);
     EXPECT_EQ(mounts[0].srid, "shard-01/replica-a");
     EXPECT_EQ(mounts[0].state, "live");
+}
+
+/// The skipped slot is not read, and a failed read ends the call at its first attempt.
+TEST(CASListMounts, SkipsOneSlotAndTriesOnce)
+{
+    auto backend = std::make_shared<DB::Cas::tests::CountingBackend>();
+    Layout layout("pool");
+    const uint64_t now_ms = 1'000'000, ttl_ms = 10'000;
+    Ops ops(backend);
+    for (const String srid : {"a", "b"})
+        ASSERT_EQ(claimMount(ops.op, layout, srid, UInt128{1}, 1, now_ms, ttl_ms).kind, MountClaimResult::Claimed);
+    uint64_t gets = backend->getTotal();
+    const std::vector<MountInfo> rows = listMounts(ops.op, layout, now_ms, ttl_ms / 2, Retry::once(), "a");
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].srid, "b");
+    EXPECT_EQ(backend->getTotal() - gets, 1u) << "the skipped slot must not be read";
+    for (int i = 0; i < 2; ++i)
+        backend->failNextReadWith(layout.mountKey("b"),
+            std::make_exception_ptr(DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected transient read")));
+    gets = backend->getTotal();
+    DB::Cas::tests::expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&]
+    {
+        listMounts(ops.op, layout, now_ms, ttl_ms / 2, Retry::once(), "a");
+    });
+    EXPECT_EQ(backend->getTotal() - gets, 1u);
 }
 
 /// "A fence costs an epoch": a same-(uuid, epoch) re-claim must NOT refresh a `gc_fenced` body in
