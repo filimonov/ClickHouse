@@ -548,6 +548,7 @@ public:
     };
     LifecycleSnapshot lifecycleSnapshot() const;
     RenewalProgress renewalProgress() const { return mount_runtime.renewalProgress(); }
+    std::optional<MountLease> confirmedMountBody() const { return mount_runtime.confirmedMountBody(); }
 
     /// `SYSTEM CAS FORGET` — the operator force-Vanish (spec §5). Drives THIS pool to
     /// `Vanished(forgotten)` with the fence-first protocol, node-locally, regardless of the current

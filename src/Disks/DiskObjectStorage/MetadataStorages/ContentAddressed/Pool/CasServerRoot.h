@@ -572,8 +572,10 @@ public:
     MountLeaseRenewerState state() const { return renewer_state; }
     bool canRelease() const { return renewer_state == MountLeaseRenewerState::Active; }
     uint64_t lastCommittedAttemptStartBootMs() const { return last_committed_attempt_start_boot_ms; }
+    const std::optional<MountLease> & lastConfirmedBody() const { return last_confirmed_body; }
 
 private:
+    MountLease makeBody(uint64_t seq_, uint64_t wall_ms, uint64_t min_active_build_sequence, UInt128 write_attempt_id) const;
     String encodeBody(uint64_t seq_, uint64_t wall_ms, uint64_t min_active_build_sequence, UInt128 write_attempt_id) const;
     /// The incarnation every guarded write of this slot names. Engaged for exactly the states that
     /// admit such a write: `start` establishes it and each committed renewal replaces it.
@@ -614,6 +616,7 @@ private:
     String last_body;
     uint64_t confirmed_deadline_boot_ms = 0;
     uint64_t last_committed_attempt_start_boot_ms = 0;
+    std::optional<MountLease> last_confirmed_body;
 };
 
 /// Mount-lease-scoped staging sweeper for objects left behind by S3-native staging.

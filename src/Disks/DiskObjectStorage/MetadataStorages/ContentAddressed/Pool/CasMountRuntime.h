@@ -195,6 +195,9 @@ public:
     void renewWatermarkOnce();
     /// Takes only its own lock, so a renewal stuck in a request never holds up the reader.
     RenewalProgress renewalProgress() const;
+    /// The body this server last confirmed in its slot; empty before the first claim. Takes only
+    /// `renewal_progress_mutex`, so a renewal stuck in a request never holds up the reader.
+    std::optional<MountLease> confirmedMountBody() const;
 
     /// ---- local write fence ----
     /// Return whether a mutable operation may start under the locally observed lease state.
@@ -476,6 +479,7 @@ private:
         bool propagate_failure);
     /// Publish a committed renewal's deadline, its start plus the lease. Requires `driver_mutex`.
     void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
+    void publishConfirmedBody(const std::optional<MountLease> & body);
     /// One `WARNING` per expiry, at the first renewal attempt after it.
     void warnOnceIfLeaseExpired() noexcept;
     /// The background renewal's wait after a credential refusal. Wakes on stop and on a park request;
@@ -550,6 +554,7 @@ private:
     /// A leaf lock, never held across I/O.
     mutable std::mutex renewal_progress_mutex;
     RenewalProgress renewal_progress;
+    std::optional<MountLease> confirmed_body;   /// guarded by `renewal_progress_mutex`
     /// Counted entries into `scheduleRemount`; retained as a test-only observability seam.
     std::atomic<uint64_t> schedule_remount_calls_for_test{0};
 

@@ -1336,14 +1336,14 @@ MountLeaseRenewer::MountLeaseRenewer(
 {
 }
 
-String MountLeaseRenewer::encodeBody(
+MountLease MountLeaseRenewer::makeBody(
     uint64_t seq_, uint64_t wall_ms, uint64_t min_active_build_sequence, UInt128 write_attempt_id) const
 {
     const uint64_t ttl_ms = static_cast<uint64_t>(ttl.count());
     const uint64_t expires_at_ms = wall_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
         ? std::numeric_limits<uint64_t>::max()
         : wall_ms + ttl_ms;
-    return encodeMountLease(MountLease{
+    return MountLease{
         .server_uuid = server_uuid,
         .writer_epoch = writer_epoch,
         .hostname = getFQDNOrHostName(),
@@ -1353,7 +1353,13 @@ String MountLeaseRenewer::encodeBody(
         .expires_at_ms = expires_at_ms,
         .min_active_build_sequence = min_active_build_sequence,
         .write_attempt_id = write_attempt_id,
-    });
+    };
+}
+
+String MountLeaseRenewer::encodeBody(
+    uint64_t seq_, uint64_t wall_ms, uint64_t min_active_build_sequence, UInt128 write_attempt_id) const
+{
+    return encodeMountLease(makeBody(seq_, wall_ms, min_active_build_sequence, write_attempt_id));
 }
 
 const Etag & MountLeaseRenewer::precondition() const
@@ -1453,7 +1459,8 @@ uint64_t MountLeaseRenewer::start(Liveness liveness)
 
     const uint64_t wall_ms = now_ms_fn();
     const uint64_t attempt_start_boot_ms = boot_ms_fn();
-    const String body = encodeBody(/*seq_=*/1, wall_ms, min_active_build_sequence_fn(), newMountWriteAttemptId());
+    const MountLease lease_body = makeBody(/*seq_=*/1, wall_ms, min_active_build_sequence_fn(), newMountWriteAttemptId());
+    const String body = encodeMountLease(lease_body);
     /// Off the mount fence: a self-remount claims with the fence already latched lost, and a claim
     /// admitted under it would be refused on every request. What makes the claim safe is that every
     /// write below is conditional.
@@ -1464,6 +1471,7 @@ uint64_t MountLeaseRenewer::start(Liveness liveness)
     last_etag = etag;
     last_body = body;
     last_committed_attempt_start_boot_ms = attempt_start_boot_ms;
+    last_confirmed_body = lease_body;
     const uint64_t ttl_ms = static_cast<uint64_t>(ttl.count());
     confirmed_deadline_boot_ms = attempt_start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
         ? std::numeric_limits<uint64_t>::max()
@@ -1632,7 +1640,8 @@ MountRenewResult MountLeaseRenewer::renewOn(
     const uint64_t attempt_start_boot_ms = boot_clock();
     const uint64_t next_seq = seq + 1;
     const UInt128 write_attempt_id = newMountWriteAttemptId();
-    const String body = encodeBody(next_seq, wall_ms, min_active_build_sequence_fn(), write_attempt_id);
+    const MountLease lease_body = makeBody(next_seq, wall_ms, min_active_build_sequence_fn(), write_attempt_id);
+    const String body = encodeMountLease(lease_body);
 
     if (observability_registration != MountRenewObservabilityRegistration::Ignored)
     {
@@ -1722,6 +1731,7 @@ MountRenewResult MountLeaseRenewer::renewOn(
         last_etag = std::move(committed->etag);
         last_body = body;
         last_committed_attempt_start_boot_ms = attempt_start_boot_ms;
+        last_confirmed_body = lease_body;
         const uint64_t ttl_ms = static_cast<uint64_t>(ttl.count());
         confirmed_deadline_boot_ms = attempt_start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
             ? std::numeric_limits<uint64_t>::max()

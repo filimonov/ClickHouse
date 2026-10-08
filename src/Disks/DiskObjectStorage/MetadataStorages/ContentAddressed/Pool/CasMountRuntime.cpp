@@ -359,7 +359,10 @@ RenewalDriverState CasMountRuntime::DriverLease::finish(
     /// Published before the driver leaves the call, so a remount cannot arm a new epoch between this
     /// renewal's commit and its deadline; a renewer that was replaced moves nothing.
     if (result && result->outcome == MountRenewOutcome::Committed && renewer && renewer == runtime.mount_renewer.get())
+    {
         runtime.publishRenewedDeadline(result->attempt_start_boot_ms);
+        runtime.publishConfirmedBody(renewer->lastConfirmedBody());
+    }
     if (runtime.workers_stop_requested)
         runtime.renewal_driver_state = RenewalDriverState::Stopping;
     else if (active == RenewalDriverState::WorkerCall
@@ -472,6 +475,7 @@ uint64_t CasMountRuntime::startRenewer()
 
     DriverLease lease(*this, active);
     const uint64_t anchor = renewer->start([this] { return !renewalCancelled(); });
+    publishConfirmedBody(renewer->lastConfirmedBody());
     (void)lease.finish(destination);
     return anchor;
 }
@@ -480,6 +484,18 @@ RenewalProgress CasMountRuntime::renewalProgress() const
 {
     std::lock_guard lock(renewal_progress_mutex);
     return renewal_progress;
+}
+
+std::optional<MountLease> CasMountRuntime::confirmedMountBody() const
+{
+    std::lock_guard lock(renewal_progress_mutex);
+    return confirmed_body;
+}
+
+void CasMountRuntime::publishConfirmedBody(const std::optional<MountLease> & body)
+{
+    std::lock_guard lock(renewal_progress_mutex);
+    confirmed_body = body;
 }
 
 MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_call)

@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 
 /// Task 12 (rev.7 spec §7, [C5]-visibility): the NON-GATED lifecycle snapshot backing
 /// `system.cas_mounts`. A Factory-class read (spec §1): I/O-free, no `store()`/`poolAccess`,
@@ -302,4 +303,30 @@ TEST(CASLifecycleSnapshot, OldLifecycleValuesMapToTheNewVocabulary)
     EXPECT_EQ(read(PoolLifecycle::TransientNotLive), "paused(remounting)");
     EXPECT_EQ(read(PoolLifecycle::IdentityLost), "identity_lost()");
     EXPECT_EQ(read(PoolLifecycle::VanishedReplaced), "vanished(replaced)");
+}
+
+/// The local row's body is the last confirmed one; reading it sends nothing while a renewal is stuck.
+TEST(CASLifecycleSnapshot, ConfirmedBodyIsReadWithoutIoWhileARenewalIsStuck)
+{
+    auto backend = std::make_shared<CountingBackend>();
+    auto store = DB::Cas::tests::openPoolForTest(backend);
+    const auto requests = [&] { return backend->getTotal() + backend->headTotal() + backend->putTotal() + backend->listTotal(); };
+    const std::optional<DB::Cas::MountLease> first = store->confirmedMountBody();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(first->writer_epoch, store->writerEpoch());
+    DB::Cas::tests::ManualBarrier in_put;
+    backend->onBeforeWrite(store->layout().mountKey(kSrid), [&] { in_put.arriveAndWait(); });
+    std::thread renewal([&] { store->renewWatermarkOnce(); });
+    in_put.waitUntilArrived();
+    const uint64_t before = requests();
+    const std::optional<DB::Cas::MountLease> during = store->confirmedMountBody();
+    (void)store->lifecycleSnapshot();
+    (void)store->renewalProgress();
+    EXPECT_EQ(requests(), before);
+    ASSERT_TRUE(during.has_value());
+    EXPECT_EQ(during->seq, first->seq) << "a renewal in flight is not confirmed yet";
+    in_put.release();
+    renewal.join();
+    backend->onBeforeWrite(store->layout().mountKey(kSrid), {});
+    EXPECT_EQ(store->confirmedMountBody()->seq, first->seq + 1);
 }
