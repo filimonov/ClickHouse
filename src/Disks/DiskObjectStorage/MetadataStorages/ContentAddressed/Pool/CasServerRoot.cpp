@@ -666,116 +666,176 @@ void claimOwnerOrThrow(
     throwUnlessHeld(claimOwner(op, l, srid, our_uuid, OwnershipAuthority::Startup, observe_catalog));
 }
 
-uint64_t allocateWriterEpoch(
-    CasOperation & op, const Layout & l, const String & srid, EpochMintPolicy policy, uint64_t now_ms,
-    const ObserveRefCatalog & observe_catalog)
+namespace
 {
-    if (!observe_catalog)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS server-root '{}': catalog observer is required", srid);
-    const String key = l.epochKey(srid);
+/// The absent-counter branch of an allocation at startup: the value to mint, or why none may be.
+EpochAllocation decideAbsentCounter(CasOperation & op, const Layout & l, const String & srid, EpochMintPolicy policy,
+                                    uint64_t now_ms, const ObserveRefCatalog & observe_catalog)
+{
+    /// A missing `epoch` over a non-empty subtree is a reset hazard (durable monotone
+    /// counter cannot be reconstructed) — fail closed.
+    CatalogObservation catalog = observe_catalog();
+    if (auto failure = catalogFailure<EpochAllocation>(catalog))
+        return std::move(*failure);
+    if (!serverRootSubtreeEmpty(op, l, srid, std::get<RefCatalog>(catalog)))
+        return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
+            "CAS server-root '{}' has no durable epoch object but its data subtree is "
+            "non-empty (writer_epoch reset hazard) — refusing to proceed",
+            srid))};
 
-    uint64_t allocated = 0;
+    uint64_t next = 0;
+    /// Same hazard through the CONTROL objects: an absent epoch while a mount object
+    /// exists means epoch state was lost under a live/recent mount — re-minting epoch 1
+    /// there is how a same-(uuid, epoch) twin is born. This is a lifecycle decision, so it
+    /// uses the authoritative probe, never a read's absence (which flattens transport
+    /// faults into "not found").
+    const SentinelProbeResult mount_probe = op.probeSentinel(l.mountKey(srid), Retry::standard());
+    switch (mount_probe.outcome)
+    {
+        case ProbeOutcome::KeyAbsent:
+            break;   /// authoritative absence — fresh-root bootstrap proceeds below
+        case ProbeOutcome::Present:
+        {
+            if (policy == EpochMintPolicy::DecommissionRecovery)
+            {
+                chassert(now_ms != 0);   /// the decommission caller must pass its clock
+                const MountLease surviving = decodeMountLease(*mount_probe.body);
+                /// Deliberately weaker than claimMount's reclaim gate, which never trusts a
+                /// bare wall-clock comparison alone (only gc_fenced / the clean-farewell
+                /// min_active_build_sequence==UINT64_MAX marker / a caller-proven-dead
+                /// incarnation justify a reclaim there, because clock skew can misjudge
+                /// liveness). This is still safe: (a) the mint below is DISTINCT from the
+                /// survivor's epoch by construction, so no same-(uuid, epoch) pair is ever
+                /// representable even if this liveness read is wrong; (b) claimMount right
+                /// after this still applies its own STRONG liveness gate and refuses a
+                /// genuinely live member regardless of what happens here. So a clock-skewed
+                /// "terminal" misread can only burn one epoch number on a doomed
+                /// decommission attempt that aborts at claimMount — it can never admit a
+                /// claim over a live member.
+                const bool live = !surviving.gc_fenced && surviving.expires_at_ms > now_ms;
+                if (live)
+                    throw Exception(ErrorCodes::ABORTED,
+                        "CAS decommission '{}': epoch object missing but a LIVE mount lease "
+                        "exists ({}) — refusing to re-mint an epoch under a live member "
+                        "(stop the server or wait for its lease to lapse)",
+                        srid, describeMountHolder(surviving));
+                /// Terminal mount: proceed, but mint an epoch DISTINCT from the survivor's
+                /// by construction — the same-pair state is unrepresentable on this path.
+                next = std::max<uint64_t>(1, surviving.writer_epoch + 1);
+                break;
+            }
+            return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
+                "CAS server-root '{}' has no durable epoch object but a mount lease exists — "
+                "durable epoch state was lost while a mount is live or recently live; "
+                "refusing to re-mint epoch 1. If no server is live on this root, "
+                "decommission it or manually remove the stale mount object '{}'.",
+                srid, l.mountKey(srid)))};
+        }
+        case ProbeOutcome::ContainerAbsent:
+        case ProbeOutcome::AccessDenied:
+        case ProbeOutcome::Indeterminate:
+            return OwnershipTransient{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
+                "CAS server-root '{}': cannot verify mount-lease absence before re-minting "
+                "the writer epoch (probe outcome: {}) — absence was never proven; failing closed",
+                srid, magic_enum::enum_name(mount_probe.outcome)))};
+    }
+
+    if (next == 0)
+        next = 1;
+    return EpochAllocated{next};
+}
+
+EpochAllocation allocateEpochStep(CasOperation & op, const Layout & l, const String & srid, OwnershipAuthority authority,
+                                  EpochMintPolicy policy, uint64_t now_ms, const ObserveRefCatalog & observe_catalog)
+{
+    const String key = l.epochKey(srid);
+    const Retry bound = op.freeze(Retry::standard());
+    std::optional<Object> current = op.read(key, bound);
     /// Set when the PREVIOUS decision wrote against an absent epoch. Its conflict means a winner may
     /// have installed an epoch while owned work became visible, so the emptiness bundle that
     /// authorized that attempt is recomputed before this decision accepts any epoch state at all.
     bool previous_decision_saw_no_epoch = false;
-
-    WriteResult result = op.readModifyWrite(key,
-        [&](const std::optional<Object> & observed) -> std::optional<String>
+    for (uint32_t unclear_conflicts = 0;;)
+    {
+        if (previous_decision_saw_no_epoch)
         {
-            if (previous_decision_saw_no_epoch && !serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
+            CatalogObservation catalog = observe_catalog();
+            if (auto failure = catalogFailure<EpochAllocation>(catalog))
+                return std::move(*failure);
+            if (!serverRootSubtreeEmpty(op, l, srid, std::get<RefCatalog>(catalog)))
+                return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
                     "CAS server-root '{}' writer_epoch allocation conflicted and newly visible owned "
                     "work blocks recreation",
-                    srid);
-            previous_decision_saw_no_epoch = !observed;
+                    srid))};
+        }
+        previous_decision_saw_no_epoch = !current;
+        uint64_t next = 0;
+        if (current)
+            next = decodeServerEpoch(current->bytes).next_writer_epoch;
+        else if (authority == OwnershipAuthority::Reacquire)
+            return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
+                "CAS server-root '{}' has no durable epoch object; a remount never mints one", srid))};
+        else if (EpochAllocation fresh = decideAbsentCounter(op, l, srid, policy, now_ms, observe_catalog);
+                 std::holds_alternative<EpochAllocated>(fresh))
+            next = std::get<EpochAllocated>(fresh).writer_epoch;
+        else
+            return fresh;
 
-            ServerEpoch current;
-            if (observed)
-            {
-                current = decodeServerEpoch(observed->bytes);
-            }
-            else
-            {
-                /// A missing `epoch` over a non-empty subtree is a reset hazard (durable monotone
-                /// counter cannot be reconstructed) — fail closed.
-                if (!serverRootSubtreeEmpty(op, l, srid, catalogOrThrow(observe_catalog())))
-                    throw Exception(ErrorCodes::CORRUPTED_DATA,
-                        "CAS server-root '{}' has no durable epoch object but its data subtree is "
-                        "non-empty (writer_epoch reset hazard) — refusing to proceed",
-                        srid);
+        const String bytes = encodeServerEpoch(ServerEpoch{.next_writer_epoch = next + 1});
+        WriteResult result = current ? op.replace(key, bytes, current->etag, bound) : op.create(key, bytes, bound);
+        if (std::holds_alternative<Committed>(result))
+            return EpochAllocated{next};
+        const Conflict * conflict = std::get_if<Conflict>(&result);
+        if (!conflict)
+        {
+            orThrow(std::move(result), fmt::format("CAS server-root '{}' writer_epoch allocation", srid));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS server-root '{}': a conditional write was declined", srid);
+        }
+        /// An attempt of ours that landed is reported as committed, so what is there now is another
+        /// process's -- even our own bytes, read after a clean refusal.
+        std::optional<Object> seen;
+        if (const Object * object = std::get_if<Object>(&conflict->seen))
+            seen = *object;
+        else if (std::holds_alternative<NotObserved>(conflict->seen))
+            seen = op.read(key, bound);
+        if (authority == OwnershipAuthority::Reacquire)
+        {
+            if (!seen)
+                return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
+                    "CAS server-root '{}': the writer epoch counter vanished during a remount", srid))};
+            const uint64_t observed = decodeServerEpoch(seen->bytes).next_writer_epoch;
+            return EpochAdvancedByOther{next, observed, std::make_exception_ptr(Exception(ErrorCodes::ABORTED,
+                "CAS server-root '{}': the writer epoch counter of this server_root_id was advanced by another process "
+                "(read next_writer_epoch {}, found {})",
+                srid, next, observed))};
+        }
+        op.pause(conflict->any_ambiguous ? Retry::backoff(++unclear_conflicts) : Retry::conflictBackoff());
+        current = std::move(seen);
+    }
+}
+}
 
-                /// Same hazard through the CONTROL objects: an absent epoch while a mount object
-                /// exists means epoch state was lost under a live/recent mount — re-minting epoch 1
-                /// there is how a same-(uuid, epoch) twin is born. This is a lifecycle decision, so it
-                /// uses the authoritative probe, never a read's absence (which flattens transport
-                /// faults into "not found").
-                const SentinelProbeResult mount_probe = op.probeSentinel(l.mountKey(srid), Retry::standard());
-                switch (mount_probe.outcome)
-                {
-                    case ProbeOutcome::KeyAbsent:
-                        break;   /// authoritative absence — fresh-root bootstrap proceeds below
-                    case ProbeOutcome::Present:
-                    {
-                        if (policy == EpochMintPolicy::DecommissionRecovery)
-                        {
-                            chassert(now_ms != 0);   /// the decommission caller must pass its clock
-                            const MountLease surviving = decodeMountLease(*mount_probe.body);
-                            /// Deliberately weaker than claimMount's reclaim gate, which never trusts a
-                            /// bare wall-clock comparison alone (only gc_fenced / the clean-farewell
-                            /// min_active_build_sequence==UINT64_MAX marker / a caller-proven-dead
-                            /// incarnation justify a reclaim there, because clock skew can misjudge
-                            /// liveness). This is still safe: (a) the mint below is DISTINCT from the
-                            /// survivor's epoch by construction, so no same-(uuid, epoch) pair is ever
-                            /// representable even if this liveness read is wrong; (b) claimMount right
-                            /// after this still applies its own STRONG liveness gate and refuses a
-                            /// genuinely live member regardless of what happens here. So a clock-skewed
-                            /// "terminal" misread can only burn one epoch number on a doomed
-                            /// decommission attempt that aborts at claimMount — it can never admit a
-                            /// claim over a live member.
-                            const bool live = !surviving.gc_fenced && surviving.expires_at_ms > now_ms;
-                            if (live)
-                                throw Exception(ErrorCodes::ABORTED,
-                                    "CAS decommission '{}': epoch object missing but a LIVE mount lease "
-                                    "exists ({}) — refusing to re-mint an epoch under a live member "
-                                    "(stop the server or wait for its lease to lapse)",
-                                    srid, describeMountHolder(surviving));
-                            /// Terminal mount: proceed, but mint an epoch DISTINCT from the survivor's
-                            /// by construction — the same-pair state is unrepresentable on this path.
-                            current.next_writer_epoch = std::max<uint64_t>(1, surviving.writer_epoch + 1);
-                            break;
-                        }
-                        throw Exception(ErrorCodes::CORRUPTED_DATA,
-                            "CAS server-root '{}' has no durable epoch object but a mount lease exists — "
-                            "durable epoch state was lost while a mount is live or recently live; "
-                            "refusing to re-mint epoch 1. If no server is live on this root, "
-                            "decommission it or manually remove the stale mount object '{}'.",
-                            srid, l.mountKey(srid));
-                    }
-                    case ProbeOutcome::ContainerAbsent:
-                    case ProbeOutcome::AccessDenied:
-                    case ProbeOutcome::Indeterminate:
-                        throw Exception(ErrorCodes::CORRUPTED_DATA,
-                            "CAS server-root '{}': cannot verify mount-lease absence before re-minting "
-                            "the writer epoch (probe outcome: {}) — absence was never proven; failing closed",
-                            srid, magic_enum::enum_name(mount_probe.outcome));
-                }
+EpochAllocation allocateEpoch(CasOperation & op, const Layout & l, const String & srid, OwnershipAuthority authority,
+                              EpochMintPolicy policy, uint64_t now_ms, const ObserveRefCatalog & observe_catalog)
+{
+    if (!observe_catalog)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS server-root '{}': catalog observer is required", srid);
+    return runOwnershipStep<EpochAllocation>(
+        [&] { return allocateEpochStep(op, l, srid, authority, policy, now_ms, observe_catalog); });
+}
 
-                if (current.next_writer_epoch == 0)
-                    current.next_writer_epoch = 1;
-            }
+uint64_t epochOrThrow(EpochAllocation && allocation)
+{
+    return std::visit(detail::Overload{
+        [](EpochAllocated & allocated) { return allocated.writer_epoch; },
+        [](auto & failure) -> uint64_t { std::rethrow_exception(failure.error); }}, allocation);
+}
 
-            allocated = current.next_writer_epoch;
-            return encodeServerEpoch(ServerEpoch{.next_writer_epoch = allocated + 1});
-        },
-        Retry::standard());
-
-    /// Non-convergence used to be `CORRUPTED_DATA`, on the reasoning that a hundred lost conditional
-    /// writes really is evidence of something wrong. The bound is a wall-clock deadline now, and ninety
-    /// seconds of a throttled store is not evidence of anything, so `orThrow`'s retry-later class is
-    /// the honest verdict. Both fail closed at `Pool::open`.
-    orThrow(std::move(result), fmt::format("CAS server-root '{}' writer_epoch allocation", srid));
-    return allocated;
+uint64_t allocateWriterEpoch(
+    CasOperation & op, const Layout & l, const String & srid, EpochMintPolicy policy, uint64_t now_ms,
+    const ObserveRefCatalog & observe_catalog)
+{
+    return epochOrThrow(allocateEpoch(op, l, srid, OwnershipAuthority::Startup, policy, now_ms, observe_catalog));
 }
 
 namespace

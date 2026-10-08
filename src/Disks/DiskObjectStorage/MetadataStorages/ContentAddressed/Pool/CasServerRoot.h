@@ -209,11 +209,23 @@ enum class EpochMintPolicy : uint8_t
 ///         distinct from the survivor's by construction (`now_ms` is required, nonzero, here);
 ///       - anything else (`ContainerAbsent`/`AccessDenied`/`Indeterminate`) → throw
 ///         `CORRUPTED_DATA` (absence was never proven; fail closed);
-///   - otherwise read `next = current.next_writer_epoch`, write `{next + 1}` against the observed
-///     incarnation, re-deciding on conflict, and return `next`.
+///   - otherwise write `{next + 1}` against the read incarnation as one conditional write; another
+///     process's advance re-decides at startup and is `EpochAdvancedByOther` under `Reacquire`, which
+///     also never mints over an absent counter.
 uint64_t allocateWriterEpoch(CasOperation & op, const Layout & l, const String & srid,
                              EpochMintPolicy policy, uint64_t now_ms,
                              const ObserveRefCatalog & observe_catalog);
+
+struct EpochAllocated { uint64_t writer_epoch; };
+struct EpochAdvancedByOther { uint64_t read_next; uint64_t observed_next; std::exception_ptr error; };
+struct EpochCounterLost { std::exception_ptr error; };
+using EpochAllocation
+    = std::variant<EpochAllocated, EpochAdvancedByOther, EpochCounterLost, OwnershipTransient, OwnershipCorrupt>;
+
+/// `allocateWriterEpoch` under `authority`, as an outcome; `epochOrThrow` rethrows a failure's `error`.
+EpochAllocation allocateEpoch(CasOperation & op, const Layout & l, const String & srid, OwnershipAuthority authority,
+                              EpochMintPolicy policy, uint64_t now_ms, const ObserveRefCatalog & observe_catalog);
+uint64_t epochOrThrow(EpochAllocation && allocation);
 
 /// Which certificate of death, or the operator's explicit unsafe authorization, justified a
 /// same-uuid, older-epoch mount reclaim. `None` when no reclaim of that kind happened (a fresh

@@ -229,3 +229,63 @@ TEST(CASOwnershipPrimitives, OwnerOutcomesAreTyped)
     EXPECT_TRUE(std::holds_alternative<OwnerHeld>(claim(OwnershipAuthority::Startup)));
     EXPECT_TRUE(get(*b, kLayout.ownerKey(kSrid)));
 }
+TEST(CASOwnershipPrimitives, ReacquireCreatesNoCounter)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    Plane p(b);
+    EXPECT_TRUE(std::holds_alternative<EpochCounterLost>(allocateEpoch(
+        p.op, kLayout, kSrid, OwnershipAuthority::Reacquire, EpochMintPolicy::NormalMount, 0, kEmpty)));
+    EXPECT_FALSE(get(*b, kLayout.epochKey(kSrid)));
+}
+TEST(CASOwnershipPrimitives, ForeignAdvanceRepeatsAtStartupAndStopsAReacquire)
+{
+    for (const auto authority : {OwnershipAuthority::Startup, OwnershipAuthority::Reacquire})
+    {
+        auto b = std::make_shared<EpochWriteHook>();
+        put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 5}));
+        b->hook = raceHook;
+        Plane p(b);
+        const EpochAllocation got = allocateEpoch(p.op, kLayout, kSrid, authority, EpochMintPolicy::NormalMount, 0, kEmpty);
+        if (authority == OwnershipAuthority::Startup)
+            EXPECT_EQ(std::get<EpochAllocated>(got).writer_epoch, 6u);
+        else
+            EXPECT_EQ(std::get<EpochAdvancedByOther>(got).observed_next, 6u);
+        EXPECT_EQ(counterNext(*b), authority == OwnershipAuthority::Startup ? 7u : 6u);
+    }
+}
+/// Another process advances the counter before every write of ours, until `kCap` writes.
+class CounterAlwaysAdvanced : public InMemoryBackend
+{
+public:
+    static constexpr size_t kCap = 10000;
+    WriteAnswer write(const String & key, const String & bytes, const std::optional<String> & expected, TransportAccess & access) override
+    {
+        if (!armed || key != kLayout.epochKey(kSrid) || races == kCap)
+            return InMemoryBackend::write(key, bytes, expected, access);
+        ++races;
+        return raceHook(*this, bytes, expected, access);
+    }
+    bool armed = false;
+    size_t races = 0;
+};
+TEST(CASOwnershipPrimitives, StartupAllocationEndsAtOneFrozenDeadline)
+{
+    auto b = std::make_shared<CounterAlwaysAdvanced>();
+    put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 5}));
+    b->armed = true;
+    Plane p(b);
+    EXPECT_TRUE(std::holds_alternative<OwnershipTransient>(allocateEpoch(
+        p.op, kLayout, kSrid, OwnershipAuthority::Startup, EpochMintPolicy::NormalMount, 0, kEmpty)));
+    EXPECT_LT(b->races, CounterAlwaysAdvanced::kCap) << "the allocation outlived its deadline";
+}
+TEST(CASOwnershipPrimitives, UnclearReacquireAllocationIsResolvedByOurBytes)
+{
+    auto b = std::make_shared<EpochWriteHook>();
+    put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 5}));
+    b->hook = lostAnswerHook;
+    Plane p(b);
+    EXPECT_EQ(std::get<EpochAllocated>(allocateEpoch(
+        p.op, kLayout, kSrid, OwnershipAuthority::Reacquire, EpochMintPolicy::NormalMount, 0, kEmpty)).writer_epoch, 5u);
+    EXPECT_EQ(counterNext(*b), 6u);
+    EXPECT_FALSE(b->hook) << "the injected write ran";
+}
