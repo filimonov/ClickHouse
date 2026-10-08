@@ -764,8 +764,8 @@ SentinelProbeResult ObjectStorageBackend::probeSentinelUnder(const String & key,
                 case Aws::S3::S3Errors::ACCESS_DENIED:
                     return {ProbeOutcome::AccessDenied, std::nullopt};
                 default:
-                    /// Everything else (timeouts, 5xx, throttling, a 404 the SDK could not name, an unmodeled code) is inconclusive —
-                    /// NEVER promoted to KeyAbsent, per the IAM permutation table in spec §2.
+                    /// Everything else (timeouts, 5xx, throttling, a 404 the SDK could not name, an
+                    /// unmodeled code) is inconclusive -- NEVER promoted to KeyAbsent.
                     return {ProbeOutcome::Indeterminate, std::nullopt};
             }
         }

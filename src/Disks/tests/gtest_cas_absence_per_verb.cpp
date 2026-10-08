@@ -195,6 +195,27 @@ VerbRecordingServer::Answer bodylessNotFound()
     return notFound([](auto & response) { sendEmpty(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND); });
 }
 
+/// A present object whose every write is refused with 412: a read returns an `Etag` to write against.
+VerbRecordingServer::Answer presentObject()
+{
+    return [](const std::string & method, Poco::Net::HTTPServerResponse & response)
+    {
+        if (method == "GET")
+        {
+            const std::string body = "v";
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+            response.set("ETag", "\"e1\"");
+            response.setContentType("application/octet-stream");
+            response.setContentLength(body.size());
+            response.send() << body;
+        }
+        else if (method == "PUT")
+            sendXmlError(response, Poco::Net::HTTPResponse::HTTP_PRECONDITION_FAILED, "PreconditionFailed");
+        else
+            sendEmpty(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+    };
+}
+
 /// A genuine `S3ObjectStorage` over `endpoint`, with no SDK retry and one `ReadBufferFromS3` attempt, so
 /// the recorded methods are exactly the requests the engine sent.
 std::shared_ptr<DB::S3ObjectStorage> makeStorage(const std::string & endpoint)
@@ -324,6 +345,23 @@ TEST(CASAbsencePerVerb, EachEngineReadGoesByItsVerb)
     EXPECT_EQ(rig.server.takeMethods(), (Methods{"HEAD"}));
     (void)op.readModifyWriteOnPresence("k", declineMeta, Retry::once());
     EXPECT_EQ(rig.server.takeMethods(), (Methods{"HEAD"}));
+}
+
+/// The slot claim and renewal write with `replace`; its resolve read must stay a `GET`, because a
+/// `HEAD` 404 would read as absence.
+TEST(CASAbsencePerVerb, RefusedOverwriteResolvesByGet)
+{
+    Rig rig(presentObject());
+    auto op = rig.requests.admit();
+
+    const auto seen = op.read("k", Retry::once());
+    ASSERT_TRUE(seen.has_value());
+    EXPECT_EQ(rig.server.takeMethods(), (Methods{"GET"}));
+
+    (void)op.replace("k", "w", seen->etag, Retry::once());
+    EXPECT_EQ(rig.server.takeMethods(), (Methods{"PUT", "GET"}));
+    (void)op.readModifyWrite("k", [](const std::optional<Object> &) -> std::optional<String> { return String("w"); }, Retry::once());
+    EXPECT_EQ(rig.server.takeMethods(), (Methods{"GET", "PUT", "GET"}));
 }
 
 TEST(CASAbsencePerVerb, GetNamedNoSuchKeyIsProvenAbsent)
