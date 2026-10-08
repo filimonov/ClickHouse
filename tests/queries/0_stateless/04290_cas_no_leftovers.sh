@@ -20,7 +20,7 @@
 #       strictly stronger no-leftovers oracle than polling the pool directory ever was.
 # `_pool_meta` (durable single-owner marker) and the `store/` metadata tree are expected to remain.
 # Teardown is fail-closed (spec rev.8 §5/§9): `SYSTEM CAS FORGET` the disk (force-Vanish,
-# node-local), verify it reads `vanished(forgotten)` in system.cas_mounts, and only then
+# node-local), verify it reads `closed(forgotten)` in system.cas_mounts, and only then
 # `rm -rf` — FORGET stopped and joined every CAS background thread for this disk.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -116,7 +116,7 @@ else
 fi
 
 # (7) Fail-closed teardown (spec rev.8 §5/§9): FORGET the disk (force-Vanish, node-local; the table is
-#     already dropped above), verify it reads exactly `vanished(forgotten)` in the mounts table, and
+#     already dropped above), verify it reads exactly `closed(forgotten)` in the mounts table, and
 #     only then rm. A failed FORGET or an unexpected lifecycle aborts with the pool dir left in place.
 #     FORGET logs an operator WARNING; the harness runs the client at --send_logs_level=warning, so that
 #     expected warning would stream to stderr and be flagged as a failure -- suppress it for this call.
@@ -126,7 +126,7 @@ $CLICKHOUSE_CLIENT --allow_repeated_settings --send_logs_level=fatal \
 LIFECYCLE=$($CLICKHOUSE_CLIENT --query "
     SELECT lifecycle || '(' || lifecycle_reason || ')' FROM system.cas_mounts
     WHERE disk = '${DISK_NAME}'")
-[ "${LIFECYCLE}" = "vanished(forgotten)" ] || {
+[ "${LIFECYCLE}" = "closed(forgotten)" ] || {
     echo "unexpected lifecycle after FORGET: ${LIFECYCLE}"; exit 1; }
 
 rm -rf "${POOL_DIR:?}"   # safe: FORGET stopped and joined every CAS thread for this disk

@@ -8,7 +8,7 @@
 # set carries the retire pipeline's REMAINING (not this-round-delta) `pending_*` columns; on a disk with
 # nothing outstanding to reclaim they read 0. Teardown is fail-closed: DROP the table, `SYSTEM CONTENT
 # ADDRESSED FORGET` the disk (force-Vanish, node-local), verify via system.cas_mounts that
-# it reads exactly `vanished(forgotten)`, and only THEN `rm -rf` the pool dir (FORGET stopped and joined
+# it reads exactly `closed(forgotten)`, and only THEN `rm -rf` the pool dir (FORGET stopped and joined
 # every CAS background thread for this disk). A failed FORGET or an unexpected lifecycle aborts the test
 # with the pool dir left in place (the scripts have no `set -e`, so the checks are explicit).
 
@@ -57,7 +57,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM CAS FSCK" 2>&1 \
     | grep -cm1 "Syntax error"
 
 # --- Fail-closed teardown (spec rev.8 §5/§9): DROP the table, FORGET the disk (force-Vanish, node-local),
-#     verify it reads exactly `vanished(forgotten)`, and only then rm. A failed FORGET or an unexpected
+#     verify it reads exactly `closed(forgotten)`, and only then rm. A failed FORGET or an unexpected
 #     lifecycle aborts here, leaving the pool dir in place. ---
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_fsck SYNC"
 # FORGET logs an operator WARNING (the decommission is deliberately prominent in the server log); the
@@ -69,10 +69,10 @@ ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
 LIFECYCLE=$(${CLICKHOUSE_CLIENT} --query "
     SELECT lifecycle || '(' || lifecycle_reason || ')' FROM system.cas_mounts
     WHERE disk = '${DISK_NAME}'")
-[ "${LIFECYCLE}" = "vanished(forgotten)" ] || {
+[ "${LIFECYCLE}" = "closed(forgotten)" ] || {
     echo "unexpected lifecycle after FORGET: ${LIFECYCLE}"; exit 1; }
 
-# --- A second FORGET is idempotent: it succeeds and the disk stays `vanished(forgotten)` (an already
+# --- A second FORGET is idempotent: it succeeds and the disk stays `closed(forgotten)` (an already
 #     terminal Vanished pool is the terminal truth — nothing to force, nothing to double-retire). ---
 ${CLICKHOUSE_CLIENT} --allow_repeated_settings --send_logs_level=fatal \
     --query "SYSTEM CAS FORGET '${DISK_NAME}'" || {

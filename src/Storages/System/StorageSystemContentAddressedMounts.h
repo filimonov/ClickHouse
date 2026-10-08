@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -8,31 +8,22 @@ namespace DB
 
 class Context;
 
-/// system.cas_mounts: one row per CAS mount slot (`gc/server-roots/<server_root_id>/mount`)
-/// visible from every content-addressed disk — live lease state for operators (who holds which
-/// slot, renewal health, fenced/terminated). Read-only, one LIST + one GET per slot per disk.
+/// system.cas_mounts: per content-addressed disk, this server's mount built from memory (`is_local = 1`,
+/// no object-store request) and every other mount slot listed from the pool (`is_local = 0`, one attempt
+/// per request). A predicate on `disk` and `is_local` runs before any request.
 /// The `is_leader` column is per-disk and supersedes the retired process-global `CasGcIsLeader` metric.
-class StorageSystemContentAddressedMounts final : public StorageWithCommonVirtualColumns
+class StorageSystemContentAddressedMounts final : public IStorageSystemOneBlock
 {
 public:
     explicit StorageSystemContentAddressedMounts(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemContentAddressedMounts"; }
 
-    static VirtualColumnsDescription createVirtuals();
+    static ColumnsDescription getColumnsDescription();
 
-    using StorageWithCommonVirtualColumns::read;
-
-    Pipe read(
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams) override;
-
-    bool isSystemStorage() const override { return true; }
+protected:
+    void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const override;
+    Block getFilterSampleBlock() const override;
 };
 
 }

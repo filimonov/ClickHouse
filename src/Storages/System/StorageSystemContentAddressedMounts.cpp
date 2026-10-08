@@ -7,15 +7,13 @@
 #include <Columns/ColumnsDateTime.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/ContentAddressedMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <QueryPipeline/Pipe.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
@@ -32,10 +30,13 @@ namespace ErrorCodes
 }
 
 StorageSystemContentAddressedMounts::StorageSystemContentAddressedMounts(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(ColumnsDescription(
+}
+
+ColumnsDescription StorageSystemContentAddressedMounts::getColumnsDescription()
+{
+    return ColumnsDescription
     {
         {"disk", std::make_shared<DataTypeString>(), "Name of the content-addressed disk."},
         {"server_root_id", std::make_shared<DataTypeString>(), "Server root id owning the mount slot."},
@@ -48,251 +49,171 @@ StorageSystemContentAddressedMounts::StorageSystemContentAddressedMounts(const S
         {"expires_at", std::make_shared<DataTypeDateTime64>(3), "Time when the lease expires."},
         {"min_active_build_sequence", std::make_shared<DataTypeUInt64>(), "Oldest in-flight build sequence (UINT64_MAX means the mount said farewell)."},
         {"gc_fenced", std::make_shared<DataTypeUInt8>(), "1 if GC fenced this slot out (terminal)."},
-        {"state", std::make_shared<DataTypeString>(), "Mount slot state: live, expired, terminated, fenced or corrupt."},
+        {"state", std::make_shared<DataTypeString>(), "Mount slot state: live, expired, terminated, fenced or corrupt. On the local row, the state of the body this server last confirmed, not read from the store."},
         {"is_leader", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "1 if this server's GC scheduler holds this disk's leadership lease. NULL on rows describing other servers' mounts."},
         {"pending_reclaim", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()), "Cumulative condemned-minus-deleted backlog observed by this process's GC on this disk. NULL on rows describing other servers' mounts."},
         {"last_success_age_seconds", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Seconds since this disk's GC last led a round (0 if it never led). NULL on rows describing other servers' mounts."},
         {"wedged_namespace_count", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Ref-append lanes currently wedged on this disk. NULL on rows describing other servers' mounts."},
-        {"lifecycle", std::make_shared<DataTypeString>(), "This server's content-addressed pool lifecycle for the disk (non-gated snapshot, always populated so a not-live disk stays visible): live, not_live, identity_lost, vanished, constructing (never started) or shutdown (torn down)."},
-        {"lifecycle_reason", std::make_shared<DataTypeString>(), "The enum-clean sub-state word: replaced or forgotten for a vanished disk, lease_expired for a not_live disk whose mount lease expired while its renewal keeps retrying. Empty for every other lifecycle (so lifecycle || '(' || lifecycle_reason || ')' reads e.g. vanished(forgotten))."},
-        {"lifecycle_detail", std::make_shared<DataTypeString>(), "The full typed reason text naming the actual cause when not live: the vanish diagnosis (data root replaced by a foreign pool / decommissioned by SYSTEM CAS FORGET at <time>) or the identity-loss message. Empty when live."},
-        {"lifecycle_since", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "When this server entered the current non-live lifecycle state; for lease_expired, the lease deadline that passed. NULL when live (or the state is not backed by a live pool)."},
+        {"lifecycle", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "This server's lifecycle for the disk, from the confirmed lease and the clock: live, paused, identity_lost, vanished, closed, constructing (never started) or shutdown (torn down). NULL on rows of other servers' mounts."},
+        {"lifecycle_reason", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "One word: renewal_overdue, lease_expired or remounting for paused, replaced for vanished, forgotten for closed, empty otherwise. NULL on rows of other servers' mounts."},
+        {"lifecycle_detail", std::make_shared<DataTypeString>(), "The full typed reason text naming the actual cause when not live: the vanish diagnosis (data root replaced by a foreign pool / decommissioned by SYSTEM CAS FORGET at <time>) or the identity-loss message. Empty when live. Empty on rows of other servers' mounts."},
+        {"lifecycle_since", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "When this server entered the current non-live lifecycle state; for a pause from the lease clock, when the pause began. NULL when live (or the state is not backed by a live pool). NULL on rows of other servers' mounts."},
         {"renewal_in_progress", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "1 while this server renews its mount lease. NULL on rows describing other servers' mounts."},
         {"renewal_attempts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Conditional PUTs sent by the current lease renewal, or by the last one once it ended. NULL on rows describing other servers' mounts."},
         {"last_renewal_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The last failed request of that renewal: '<VERB> <key>: <refused|transport> <code> <message>'. NULL when none failed, and on rows describing other servers' mounts."},
-    }));
-    storage_metadata.setVirtuals(createVirtuals());
-    setInMemoryMetadata(storage_metadata);
+        {"is_local", std::make_shared<DataTypeUInt8>(), "1 for this server's own mount, built from memory without a request to the object store; 0 for a slot listed from the pool."},
+        {"listing_error", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "The error of a failed listing, on the one row it produces. NULL on every other row."},
+    };
 }
 
-VirtualColumnsDescription StorageSystemContentAddressedMounts::createVirtuals()
+Block StorageSystemContentAddressedMounts::getFilterSampleBlock() const
 {
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
+    return {
+        {{}, std::make_shared<DataTypeString>(), "disk"},
+        {{}, std::make_shared<DataTypeUInt8>(), "is_local"},
+    };
 }
 
-Pipe StorageSystemContentAddressedMounts::read(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr context,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    const size_t /*max_block_size*/,
-    const size_t /*num_streams*/)
+namespace
 {
-    storage_snapshot->check(column_names);
+/// Facts about this server; absent on rows listed from the pool.
+struct LocalFacts
+{
+    CasLifecycleSnapshot lifecycle;
+    std::optional<Cas::CasGcScheduler::GcHealth> health;
+    std::optional<Cas::RenewalProgress> progress;
+};
 
-    MutableColumnPtr col_disk = ColumnString::create();
-    MutableColumnPtr col_srid = ColumnString::create();
-    MutableColumnPtr col_uuid = ColumnUUID::create();
-    MutableColumnPtr col_host = ColumnString::create();
-    MutableColumnPtr col_pid = ColumnUInt64::create();
-    MutableColumnPtr col_epoch = ColumnUInt64::create();
-    MutableColumnPtr col_seq = ColumnUInt64::create();
-    MutableColumnPtr col_started = ColumnDateTime64::create(0, 3);
-    MutableColumnPtr col_expires = ColumnDateTime64::create(0, 3);
-    MutableColumnPtr col_min_active = ColumnUInt64::create();
-    MutableColumnPtr col_fenced = ColumnUInt8::create();
-    MutableColumnPtr col_state = ColumnString::create();
-    MutableColumnPtr col_is_leader = ColumnNullable::create(ColumnUInt8::create(), ColumnUInt8::create());
-    MutableColumnPtr col_pending = ColumnNullable::create(ColumnInt64::create(), ColumnUInt8::create());
-    MutableColumnPtr col_last_success = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
-    MutableColumnPtr col_wedged = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
-    MutableColumnPtr col_lifecycle = ColumnString::create();
-    MutableColumnPtr col_lifecycle_reason = ColumnString::create();
-    MutableColumnPtr col_lifecycle_detail = ColumnString::create();
-    MutableColumnPtr col_lifecycle_since = ColumnNullable::create(ColumnDateTime::create(), ColumnUInt8::create());
-    MutableColumnPtr col_renewal_in_progress = ColumnNullable::create(ColumnUInt8::create(), ColumnUInt8::create());
-    MutableColumnPtr col_renewal_attempts = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
-    MutableColumnPtr col_last_renewal_error = ColumnNullable::create(ColumnString::create(), ColumnUInt8::create());
-
-    const uint64_t now_ms = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-
-    /// The three lifecycle columns are the same for every row of a given disk (one snapshot per disk).
-    /// A lambda keeps them in lockstep with the row-emitting arms below so no arm can forget one.
-    const auto appendLifecycle = [&](const CasLifecycleSnapshot & snap)
+/// A disk that is not mounted or is terminal gets a local row and no listing.
+Cas::PoolPtr storeOrNull(ContentAddressedMetadataStorage & ca)
+{
+    try
     {
-        col_lifecycle->insert(snap.lifecycle);
-        col_lifecycle_reason->insert(snap.reason);
-        col_lifecycle_detail->insert(snap.detail);
-        if (snap.since != 0)
-            col_lifecycle_since->insert(static_cast<UInt64>(snap.since));
-        else
-            col_lifecycle_since->insertDefault();   /// NULL while live / no backing pool
+        return ca.store();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::INVALID_STATE)
+            throw;
+        return nullptr;
+    }
+}
+
+uint64_t skewMarginMs(const Cas::Pool & store)
+{
+    return static_cast<uint64_t>(store.poolConfig().mount_lease_ttl_ms.count()) / 2;
+}
+}
+
+void StorageSystemContentAddressedMounts::fillData(
+    MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
+{
+    const uint64_t now_ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+
+    const auto emit = [&](const String & disk, const String & srid, const Cas::MountLease & b, const String & state,
+                          const LocalFacts * local, const std::optional<String> & listing_error)
+    {
+        const auto health = local ? local->health : std::nullopt;
+        const auto progress = local ? local->progress : std::nullopt;
+        size_t c = 0;
+        res_columns[c++]->insert(disk);
+        res_columns[c++]->insert(srid);
+        assert_cast<ColumnUUID &>(*res_columns[c++]).insertValue(UUID(b.server_uuid));
+        res_columns[c++]->insert(b.hostname);
+        res_columns[c++]->insert(b.pid);
+        res_columns[c++]->insert(b.writer_epoch);
+        res_columns[c++]->insert(b.seq);
+        assert_cast<ColumnDateTime64 &>(*res_columns[c++]).insertValue(static_cast<Decimal64>(b.started_at_ms));
+        assert_cast<ColumnDateTime64 &>(*res_columns[c++]).insertValue(static_cast<Decimal64>(b.expires_at_ms));
+        res_columns[c++]->insert(b.min_active_build_sequence);
+        res_columns[c++]->insert(static_cast<UInt8>(b.gc_fenced));
+        res_columns[c++]->insert(state);
+        res_columns[c++]->insert(health ? Field(static_cast<UInt64>(health->is_leader)) : Field());
+        res_columns[c++]->insert(health ? Field(health->pending_reclaim) : Field());
+        res_columns[c++]->insert(health ? Field(health->last_success_age_seconds) : Field());
+        res_columns[c++]->insert(health ? Field(health->wedged_namespace_count) : Field());
+        res_columns[c++]->insert(local ? Field(local->lifecycle.lifecycle) : Field());
+        res_columns[c++]->insert(local ? Field(local->lifecycle.reason) : Field());
+        res_columns[c++]->insert(local ? local->lifecycle.detail : String{});
+        res_columns[c++]->insert(local && local->lifecycle.since != 0 ? Field(static_cast<UInt64>(local->lifecycle.since)) : Field());
+        res_columns[c++]->insert(progress ? Field(static_cast<UInt64>(progress->in_progress)) : Field());
+        res_columns[c++]->insert(progress ? Field(static_cast<UInt64>(progress->attempts_sent)) : Field());
+        res_columns[c++]->insert(progress && progress->last_error ? Field(*progress->last_error) : Field());
+        res_columns[c++]->insert(static_cast<UInt64>(local != nullptr));
+        res_columns[c++]->insert(listing_error ? Field(*listing_error) : Field());
     };
 
-    /// Process-local like GC health: NULL on peer rows.
-    const auto appendRenewalProgress = [&](const std::optional<Cas::RenewalProgress> & progress)
+    const auto emitLocal = [&](const String & disk, ContentAddressedMetadataStorage & ca)
     {
-        col_renewal_in_progress->insert(progress ? Field(static_cast<UInt64>(progress->in_progress)) : Field());
-        col_renewal_attempts->insert(progress ? Field(static_cast<UInt64>(progress->attempts_sent)) : Field());
-        col_last_renewal_error->insert(progress && progress->last_error ? Field(*progress->last_error) : Field());
+        LocalFacts local{.lifecycle = ca.lifecycleSnapshot(), .health = ca.gcHealth(), .progress = {}};
+        std::optional<Cas::MountLease> body;
+        String state;
+        if (const Cas::PoolPtr store = storeOrNull(ca))
+        {
+            local.progress = store->renewalProgress();
+            body = store->confirmedMountBody();
+            if (body)
+                state = Cas::classifyMountBody(*body, now_ms, skewMarginMs(*store));
+        }
+        emit(disk, local.lifecycle.server_root_id, body.value_or(Cas::MountLease{}), state, &local, std::nullopt);
     };
 
-    for (const auto & [disk_name, disk] : context->getDisksMap())
+    const auto emitListed = [&](const String & disk, ContentAddressedMetadataStorage & ca)
     {
-        auto * ca = ContentAddressedMetadataStorage::tryFromDisk(disk);
-        if (!ca)
-            continue;
-
-        /// The NON-GATED lifecycle snapshot (spec §7, Factory class): I/O-free, truthful in EVERY state.
-        /// This is what makes a not-live / stopped / vanished / never-started disk VISIBLE — the
-        /// store()/listMounts path below may refuse or return nothing, but the disk still gets a row
-        /// carrying its lifecycle truth, instead of silently vanishing from the table (the old behavior,
-        /// where a store() refusal or an empty vanished-pool listing dropped the very disk under investigation).
-        const CasLifecycleSnapshot snap = ca->lifecycleSnapshot();
-
-        bool emitted_row = false;
-
-        /// store() -> poolAccess() throws INVALID_STATE both when the disk is NOT MOUNTED (never started /
-        /// shut down / unmounted) AND when the pool is TERMINAL (Vanished/IdentityLost, via
-        /// throwIfLifecycleTerminal) -- exactly the states that must still produce a visible row. Only a
-        /// Live or TransientNotLive pool returns a live handle and reaches the mount-listing path below; a
-        /// terminal or unmounted disk falls through to the synthesized snapshot row. Catch ONLY that typed
-        /// refusal: any OTHER exception is a genuine fault, so let it escape rather than fold a real bug
-        /// into a benign-looking synthesized row.
-        Cas::PoolPtr store;
+        const Cas::PoolPtr store = storeOrNull(ca);
+        if (!store)
+            return;
+        /// A read-only disk holds no slot: the slot under its `server_root_id` belongs to another disk.
+        const auto & config = store->poolConfig();
+        const String own_srid = config.read_only ? String{} : config.server_root_id;
+        std::vector<Cas::MountInfo> mounts;
         try
         {
-            store = ca->store();
+            /// The open fence: these rows matter most when the local mount fence has run down.
+            Cas::CasOperation op = store->openRequests().admit();
+            mounts = Cas::listMounts(op, store->layout(), now_ms, skewMarginMs(*store), Cas::Retry::once(), own_srid);
         }
-        catch (const Exception & e)
+        catch (...)
         {
-            if (e.code() != ErrorCodes::INVALID_STATE)
-                throw;
-            store = nullptr;
+            /// One row, so a failed LIST does not read as an empty pool.
+            tryLogCurrentException(getLogger("StorageSystemContentAddressedMounts"), "listing mounts for disk '" + disk + "'");
+            emit(disk, "", Cas::MountLease{}, "", nullptr, getCurrentExceptionMessage(false));
+            return;
         }
+        for (const auto & m : mounts)
+            emit(disk, m.srid, m.lease, m.state, nullptr, std::nullopt);
+    };
 
-        std::optional<Cas::RenewalProgress> progress;
-        if (store)
+    const auto disks = context->getDisksMap();
+    MutableColumnPtr candidate_disk = ColumnString::create();
+    MutableColumnPtr candidate_is_local = ColumnUInt8::create();
+    for (const auto & [disk_name, disk] : disks)
+    {
+        if (!ContentAddressedMetadataStorage::tryFromDisk(disk))
+            continue;
+        for (const UInt8 is_local : {UInt8{1}, UInt8{0}})
         {
-            progress = store->renewalProgress();
-            const uint64_t skew_margin_ms = static_cast<uint64_t>(store->poolConfig().mount_lease_ttl_ms.count()) / 2;
-            std::vector<Cas::MountInfo> mounts;
-            bool list_ok = true;
-            try
-            {
-                /// Introspection reads on the open fence: a row describing this disk's mount slots must
-                /// still be produced when the local mount fence has already run down -- that is exactly
-                /// the state an operator opens this table to look at.
-                Cas::CasOperation op = store->openRequests().admit();
-                mounts = Cas::listMounts(op, store->layout(), now_ms, skew_margin_ms);
-            }
-            catch (...)
-            {
-                /// A transient backend error listing THIS disk's mounts must not blind the operator to the
-                /// other disks' rows, nor drop this disk entirely: fall through to the snapshot-only row so
-                /// the lifecycle is still reported (the whole reason the table is non-gated).
-                tryLogCurrentException(getLogger("StorageSystemContentAddressedMounts"),
-                                       "listing mounts for disk '" + disk_name + "'");
-                list_ok = false;
-            }
-
-            if (list_ok)
-            {
-                const auto health = ca->gcHealth();
-                const String & local_srid = store->poolConfig().server_root_id;
-                for (const auto & m : mounts)
-                {
-                    col_disk->insert(disk_name);
-                    col_srid->insert(m.srid);
-                    assert_cast<ColumnUUID &>(*col_uuid).insertValue(UUID(m.lease.server_uuid));
-                    col_host->insert(m.lease.hostname);
-                    col_pid->insert(m.lease.pid);
-                    col_epoch->insert(m.lease.writer_epoch);
-                    col_seq->insert(m.lease.seq);
-                    assert_cast<ColumnDateTime64 &>(*col_started).insertValue(static_cast<Decimal64>(m.lease.started_at_ms));
-                    assert_cast<ColumnDateTime64 &>(*col_expires).insertValue(static_cast<Decimal64>(m.lease.expires_at_ms));
-                    col_min_active->insert(m.lease.min_active_build_sequence);
-                    col_fenced->insert(static_cast<UInt8>(m.lease.gc_fenced));
-                    col_state->insert(m.state);
-
-                    /// GC health is a process-local fact about THIS server's scheduler. Stamping it onto
-                    /// peer rows misreads as "peer B is GC leader" during incidents — NULL there instead.
-                    const bool is_local_row = (m.srid == local_srid);
-                    if (is_local_row && health)
-                    {
-                        col_is_leader->insert(static_cast<UInt8>(health->is_leader));
-                        col_pending->insert(health->pending_reclaim);
-                        col_last_success->insert(health->last_success_age_seconds);
-                        col_wedged->insert(health->wedged_namespace_count);
-                    }
-                    else
-                    {
-                        col_is_leader->insertDefault();
-                        col_pending->insertDefault();
-                        col_last_success->insertDefault();
-                        col_wedged->insertDefault();
-                    }
-
-                    /// The lifecycle snapshot describes THIS server's pool condition for the disk; it is the
-                    /// same for every mount slot listed, peer rows included.
-                    appendLifecycle(snap);
-                    appendRenewalProgress(is_local_row ? progress : std::nullopt);
-                    emitted_row = true;
-                }
-            }
-        }
-
-        /// Ensure the disk is VISIBLE even when no mount row was emitted: not mounted, store() refused,
-        /// listMounts failed, or a vanished (replaced/forgotten) pool with no slots left. Synthesize ONE row from the
-        /// non-gated snapshot, with every live/lease and GC-health column defaulted (0) / NULL.
-        if (!emitted_row)
-        {
-            col_disk->insert(disk_name);
-            col_srid->insert(snap.server_root_id);
-            col_uuid->insertDefault();
-            col_host->insertDefault();
-            col_pid->insertDefault();
-            col_epoch->insertDefault();
-            col_seq->insertDefault();
-            col_started->insertDefault();
-            col_expires->insertDefault();
-            col_min_active->insertDefault();
-            col_fenced->insertDefault();
-            col_state->insertDefault();
-            col_is_leader->insertDefault();
-            col_pending->insertDefault();
-            col_last_success->insertDefault();
-            col_wedged->insertDefault();
-            appendLifecycle(snap);
-            appendRenewalProgress(progress);
+            candidate_disk->insert(disk_name);
+            candidate_is_local->insert(is_local);
         }
     }
-
-    Columns res_columns;
-    res_columns.emplace_back(std::move(col_disk));
-    res_columns.emplace_back(std::move(col_srid));
-    res_columns.emplace_back(std::move(col_uuid));
-    res_columns.emplace_back(std::move(col_host));
-    res_columns.emplace_back(std::move(col_pid));
-    res_columns.emplace_back(std::move(col_epoch));
-    res_columns.emplace_back(std::move(col_seq));
-    res_columns.emplace_back(std::move(col_started));
-    res_columns.emplace_back(std::move(col_expires));
-    res_columns.emplace_back(std::move(col_min_active));
-    res_columns.emplace_back(std::move(col_fenced));
-    res_columns.emplace_back(std::move(col_state));
-    res_columns.emplace_back(std::move(col_is_leader));
-    res_columns.emplace_back(std::move(col_pending));
-    res_columns.emplace_back(std::move(col_last_success));
-    res_columns.emplace_back(std::move(col_wedged));
-    res_columns.emplace_back(std::move(col_lifecycle));
-    res_columns.emplace_back(std::move(col_lifecycle_reason));
-    res_columns.emplace_back(std::move(col_lifecycle_detail));
-    res_columns.emplace_back(std::move(col_lifecycle_since));
-    res_columns.emplace_back(std::move(col_renewal_in_progress));
-    res_columns.emplace_back(std::move(col_renewal_attempts));
-    res_columns.emplace_back(std::move(col_last_renewal_error));
-
-    UInt64 num_rows = res_columns.at(0)->size();
-    Chunk chunk(std::move(res_columns), num_rows);
-
-    return Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock()), std::move(chunk)));
+    Block candidates{
+        {ColumnPtr(std::move(candidate_disk)), std::make_shared<DataTypeString>(), "disk"},
+        {ColumnPtr(std::move(candidate_is_local)), std::make_shared<DataTypeUInt8>(), "is_local"},
+    };
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, candidates, context);
+    const IColumn & kept_disk = *candidates.getByName("disk").column;
+    const IColumn & kept_is_local = *candidates.getByName("is_local").column;
+    for (size_t i = 0; i < candidates.rows(); ++i)
+    {
+        const String disk_name = kept_disk[i].safeGet<String>();
+        auto & ca = *ContentAddressedMetadataStorage::tryFromDisk(disks.at(disk_name));
+        if (kept_is_local.getUInt(i))
+            emitLocal(disk_name, ca);
+        else
+            emitListed(disk_name, ca);
+    }
 }
 
 }
