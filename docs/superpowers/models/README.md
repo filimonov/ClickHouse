@@ -465,7 +465,9 @@ retries past the confirmed deadline with no exhaustion. It also covers exact-`GE
 terminalization, late and stale delivery, and attempt-start cadence. Write authority is the
 holder's own timer: `clock < confirmedDeadline`, the deadline being the committed renewal's first
 send plus the lease. `NoAuthorityAfterEntitledTakeover` checks that an observer that waited one
-lease never overlaps that authority. `CaCasMountCore.Renew` remains an atomic, deliberately
+lease never overlaps that authority. A renewal may span engine calls: `Refused` resends the same
+tuple in a new call, `Conflict{NotObserved}` repeats only the read, and writes open only through
+the explicit `OpenWrites` step. `CaCasMountCore.Renew` remains an atomic, deliberately
 permissive safety abstraction. A focused `Committed` result corresponds to its durable body/token
 and deadline postconditions; a focused terminal result enters its fenced/remount boundary. There is
 no claimed refinement. Run evidence: `CaMountRenewRetryCore_RESULTS.md`.

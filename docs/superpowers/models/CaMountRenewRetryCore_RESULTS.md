@@ -176,3 +176,190 @@ locally unconfirmed states that the atomic action abstracts away. When the focus
 reaches local `Committed`, its durable body/token and deadline satisfy the atomic postconditions;
 terminal focused outcomes trip the fence at the existing remount boundary. This correspondence is
 an audit aid, not a machine-checked refinement.
+
+## 2026-10-08: `Refused` and `Conflict{NotObserved}` continue the same tuple {#2026-10-08-refused-and-notobserved-continue}
+
+This section supersedes the verdict and the run table above. The model now follows rules R1–R7 of
+`docs/superpowers/specs/2026-10-07-cas-mount-lease-series-design.md` (section "Продление") and the
+`CaMountRenewRetryCore` row of its section "Модели". The battery passed: `EXECUTED ROWS: 30/30` and
+`ALL EXPECTATIONS MET`.
+
+### What changed {#2026-10-08-what-changed}
+
+- **Engine calls.** A logical renewal can now span several calls of `CasOperation::writeLoop`.
+  `callAmbiguous` is the engine's `any_ambiguous`: an attempt of the current call has an unknown
+  fate. `ResponseLoss` sets it. `NewEngineCall` clears it.
+- **Current attempt vs ghosts.** `LandCopy` and `RefuseCopy` are split. `LandCurrent` and
+  `RefuseCurrent` answer the attempt the holder waits on. `LandGhost` and `RefuseGhost` resolve an
+  earlier copy whose answer nobody waits for (`GhostExists`). Before the split, a `412` for a
+  ghost after our own copy landed moved `Landed` to `Conflict` and terminalized on our own body.
+- **`Refused`.** `DenyCurrent` is a definite refusal (`AccessDenied`, `MalformedXML`, ...). It
+  yields `Refused` only when `~callAmbiguous`. Otherwise the read settles the call, as in
+  `writeLoop`. `NewEngineCall` resends the same attempt ID, body, expected token and start.
+  `LocalTerminalize` no longer fires on `Refused`.
+- **`Conflict{NotObserved}`.** A `412` with `~callAmbiguous` goes to `CleanConflict`.
+  `ResolvingRead` either observes the slot and concludes `Conflict`, or fails and moves to
+  `NotObserved`. From `NotObserved` only `ResolvingRead` runs again. `ExactResolve` gained a
+  read-failure branch: with an ambiguous attempt, a failed read reissues the `PUT`, as
+  `preconditionStillSatisfiable` does for `NotObserved`.
+- **Credential refresh.** `CredentialRefresh` is the first credential answer of a call. Without
+  an ambiguous attempt the engine reissues at once; with one the read settles first. It keeps the
+  tuple and the start.
+- **Explicit arm.** `writesOpen` starts `TRUE`. `AdvanceTime` closes it at the confirmed
+  deadline. `LocalTerminalize` closes it. Only `OpenWrites` opens it: committed, not terminal, fence
+  intact, `clock < confirmedDeadline`.
+- New constant `MaxEngineCalls = 1`: one new engine call per logical renewal. It bounds the state
+  space only.
+- Runner: six sabotage rows, four witness rows and one green evidence row
+  (`env_repeat_put_harmless`). Every cfg declares `MaxEngineCalls`.
+
+### New safety invariants {#2026-10-08-new-invariants}
+
+The honest and witness configurations check sixteen invariants: the twelve above and these four.
+
+- `OwnLandedBodyNeverLost`: a resolving read after a clean `412` never finds our exact body.
+  This is the safety argument for `NewEngineCall`: a call reported free of ambiguity left no copy
+  that could land.
+- `NotObservedRepeatsOnlyTheRead`: no `PUT` is sent after a clean `412` of the same logical
+  renewal. Every sending action (`RetrySend`, `NewEngineCall`, `CredentialRefresh`'s reissue, the
+  sabotage action) sets the history flag when `preconditionRefused` holds.
+- `NotObservedNeverConcludes`: a failed resolving read never concludes `Conflict`. It is a
+  history flag that only the sabotage branch sets. It checks that no honest path concludes on a
+  failed read; it does not model the loss-table classification.
+- `LateSuccessNeverOpensWrites`: `writesOpen => ~fenceLost /\ clock < confirmedDeadline`.
+  Together with `AuthorityEndsAtConfirmedDeadline`, an open write implies the clock is before the
+  committed renewal's first start plus the lease.
+
+`AuthorityEndsAtConfirmedDeadline` is unchanged and green. It now also covers `NewEngineCall` and
+`CredentialRefresh`: neither writes `firstSendAt`, and the deadline still equals
+`firstSendAt[committedRound] + LeaseDuration`.
+
+### Recorded complete run {#2026-10-08-recorded-complete-run}
+
+TLC row-log run ID: `CaMountRenewRetryCore-217265-1791413803271456719`. One TLC worker, `-Xmx16g`, `nice -n 10`. Wall time is the runner's
+`SECONDS` column.
+
+| Configuration | Expected | Exact observed result | Generated | Distinct | Depth | Wall (s) |
+|---|---|---|---:|---:|---:|---:|
+| `sab_ignore_attempt_id` | violation | `ExactAttemptOnly` | 1,833 | 1,044 | 6 | 0 |
+| `sab_refresh_deadline_from_response` | violation | `ConfirmedDeadlineNeverExtendedByResponse` | 254 | 186 | 5 | 1 |
+| `sab_response_deadline_outlives_observer` | violation | `NoAuthorityAfterEntitledTakeover` | 59,075 | 23,247 | 9 | 1 |
+| `sab_anchor_deadline_at_retry` | violation | `AuthorityEndsAtConfirmedDeadline` | 51,961 | 21,237 | 9 | 0 |
+| `sab_retry_with_new_body` | violation | `OneLogicalBodyPerExpectedToken` | 1,700 | 974 | 6 | 1 |
+| `sab_accept_after_terminal` | violation | `TerminalNeverRearmsAuthority` | 2,024 | 1,129 | 6 | 0 |
+| `sab_accept_successor` | violation | `ForeignOrSuccessorNeverAdopted` | 1,894 | 1,064 | 6 | 1 |
+| `sab_drop_pending_on_terminal` | violation | `PendingSurvivesLocalTerminal` | 84 | 74 | 4 | 0 |
+| `sab_late_rearm` | violation | `TerminalNeverRearmsAuthority` | 532 | 354 | 5 | 1 |
+| `sab_response_relative_cadence` | violation | `CadenceAnchoredAtAttemptStart` | 1,388 | 826 | 6 | 0 |
+| `sab_double_conditional_landing` | violation | `OneIncarnationPerPredecessor` | 6,740 | 3,346 | 7 | 1 |
+| `sab_refused_while_ambiguous` | violation | `OwnLandedBodyNeverLost` | 280,760 | 98,367 | 11 | 2 |
+| `sab_repeat_put_after_not_observed` | violation | `NotObservedRepeatsOnlyTheRead` | 2,610 | 1,390 | 6 | 0 |
+| `sab_not_observed_concludes` | violation | `NotObservedNeverConcludes` | 578 | 371 | 5 | 0 |
+| `sab_open_writes_on_late_success` | violation | `LateSuccessNeverOpensWrites` | 46,958 | 19,163 | 9 | 1 |
+| `sab_refresh_resets_start` | violation | `AuthorityEndsAtConfirmedDeadline` | 1,489 | 911 | 6 | 1 |
+| `sab_new_call_new_attempt_id` | violation | `OneLogicalBodyPerExpectedToken` | 64 | 60 | 4 | 0 |
+| `safe` | green | `green` | 441,259,980 | 95,092,214 | 39 | 2058 |
+| `env_repeat_put_harmless` | green | `green` | 669,350,428 | 142,568,542 | 41 | 3169 |
+| `witness_direct_retry` | witness | `WitnessDirectRetry` | 21,656 | 9,550 | 8 | 1 |
+| `witness_read_adoption` | witness | `WitnessReadAdoption` | 1,956 | 1,084 | 6 | 1 |
+| `witness_late_before_reclaim` | witness | `WitnessLateBeforeReclaim` | 8,959 | 4,228 | 7 | 1 |
+| `witness_late_after_successor` | witness | `WitnessLateAfterSuccessor` | 2,479 | 1,343 | 6 | 0 |
+| `witness_catchup` | witness | `WitnessImmediateCatchup` | 5,167 | 2,652 | 7 | 0 |
+| `witness_retry_past_deadline` | witness | `WitnessRetryPastDeadline` | 28,976 | 12,199 | 9 | 0 |
+| `witness_authority_restored` | witness | `WitnessAuthorityRestored` | 796,836 | 257,285 | 13 | 5 |
+| `witness_refused_then_commit` | witness | `WitnessRefusedThenCommit` | 2,082 | 1,154 | 6 | 1 |
+| `witness_not_observed_then_observed` | witness | `WitnessNotObservedThenObserved` | 2,608 | 1,389 | 6 | 0 |
+| `witness_refresh_then_commit` | witness | `WitnessRefreshThenCommit` | 1,462 | 870 | 6 | 0 |
+| `witness_writes_reopened` | witness | `WitnessWritesReopened` | 9,983 | 4,641 | 8 | 1 |
+
+The battery took 5,248 s (87 min) end to end. Two rows exceed 20 min: `safe` (2,058 s) and
+`env_repeat_put_harmless` (3,169 s). Their constants were not reduced, because each one is needed
+by a row: `MaxTime = 5` by the late-success cases, `MaxOutstanding = 2` by ghosts, `MaxRetries =
+1` by `sab_refused_while_ambiguous`. The honest graph grew
+from 2,775,783 to 95,092,214 distinct states.
+
+### New sabotages: counterexamples {#2026-10-08-sabotage-counterexamples}
+
+- `sab_refused_while_ambiguous` (`OwnLandedBodyNeverLost`): `SendRenewal` → `ResponseLoss` →
+  `LandGhost` (our copy lands, unseen) → `ExactResolve` (read fails) → `EnterRetryWait` →
+  `RetrySend` → `DenyCurrent` returns `Refused` despite the ambiguity → `NewEngineCall` starts
+  clean → `RefuseCurrent` is now a clean `412` → `ResolvingRead` finds our own exact body and
+  concludes `Conflict`. The renewal terminalizes on its own landed body. Depth 11.
+- `sab_repeat_put_after_not_observed` (`NotObservedRepeatsOnlyTheRead`): `SendRenewal` →
+  `SamePairTwin` → `RefuseCurrent` (clean `412`) → `ResolvingRead` fails →
+  `RepeatPutAfterNotObserved`. Depth 6.
+- `sab_not_observed_concludes` (`NotObservedNeverConcludes`): a clean `412` and a failed read
+  conclude `Conflict`.
+- `sab_open_writes_on_late_success` (`LateSuccessNeverOpensWrites`): `SendRenewal` at 0 →
+  `AdvanceTime` to 3 closes writes → clock 4 → `LandCurrent` → `AcknowledgeRenewal` confirms
+  deadline 4 at clock 4 → `OpenWrites` opens writes. Depth 9.
+- `sab_refresh_resets_start` (`AuthorityEndsAtConfirmedDeadline`): `SendRenewal` at 0 →
+  `AdvanceTime` → `CredentialRefresh` at 1 re-samples the start → `LandCurrent` →
+  `AcknowledgeRenewal` confirms deadline 5 instead of 4. Depth 6.
+- `sab_new_call_new_attempt_id` (`OneLogicalBodyPerExpectedToken`): `SendRenewal` →
+  `DenyCurrent` → `NewEngineCall` with another attempt ID. Depth 4.
+
+The eleven earlier sabotages still violate exactly their mapped invariant.
+
+### New witnesses {#2026-10-08-new-witnesses}
+
+- `WitnessRefusedThenCommit`: `SendRenewal` → `DenyCurrent` (`Refused`) → `NewEngineCall` →
+  `LandCurrent` → `AcknowledgeRenewal`, deadline 4 from start 0.
+- `WitnessNotObservedThenObserved`: a clean `412`, a failed read, then a repeated read observes
+  the slot.
+- `WitnessRefreshThenCommit`: `SendRenewal` at 0 → `AdvanceTime` → `CredentialRefresh` at 1 →
+  `LandCurrent` → `AcknowledgeRenewal`, deadline 4 (first start plus lease), not 5.
+- `WitnessWritesReopened`: writes close at 3 → `SendRenewal` at 3 → commit with deadline 7 →
+  `OpenWrites`.
+
+### Findings against the spec {#2026-10-08-findings}
+
+No run contradicts R1–R7. Points for the implementation and the spec text:
+
+- **The re-`PUT` after `Conflict{NotObserved}` is not a safety defect in this model.** R2 says:
+  "После `Conflict{NotObserved}` повторяется только чтение: `412` уже доказал, что precondition
+  ушёл, и повторный `PUT` с тем же ETag даст `412` снова". Row `env_repeat_put_harmless` enables
+  that sabotage and checks every other safety invariant: green. A consumed token never returns, so
+  the repeated `PUT` cannot land. In this model the rule saves requests; it does not protect the
+  slot. `NotObservedRepeatsOnlyTheRead` checks the protocol shape only.
+- **With an ambiguous attempt the engine does re-`PUT` after a `412` and a failed read.**
+  `preconditionStillSatisfiable` returns `true` for `NotObserved`, so `writeLoop` reissues. R2
+  covers only the `Conflict{NotObserved}` the engine returns, so this is consistent. The model
+  keeps the reissue in `ExactResolve`.
+- **R1 needs the tuple hoisted out of the per-call code.** `MountLeaseRenewer::renewOn` today
+  samples `attempt_start_boot_ms`, draws `newMountWriteAttemptId` and encodes the body on every
+  call. A new engine call through `renewOn` would be `sab_new_call_new_attempt_id` plus
+  `sab_refresh_resets_start`. Today `renewOn` also terminalizes `Refused` and, through
+  `throwRenewConflict`, `Conflict{NotObserved}`; PR 7 removes both.
+- **The `Refused` precondition is load-bearing.** `safe` keeps `OwnLandedBodyNeverLost` green;
+  `sab_refused_while_ambiguous` drops only the guard and violates it. The guard in `writeLoop` is
+  `definitely_refused && !state.any_ambiguous`. `state.any_ambiguous` resets at the start of each
+  `writeLoop`, so a refactor that splits one renewal into several engine calls must not carry a
+  ghost across that reset.
+
+### Scope added in this revision {#2026-10-08-scope}
+
+- One new engine call per logical renewal, one retry, at most two outstanding copies. A second
+  `Refused` in the same renewal is not explored.
+- The credential refresh is one per engine call. A second credential answer in the same call is
+  a `DenyCurrent`.
+- The admission margin ("остатка не хватает на запись") is not modelled: `OpenWrites` needs only
+  `clock < confirmedDeadline`.
+- Epoch is fixed. The R5 rule that an old epoch's result does not touch the new epoch's deadline
+  is out of scope here.
+- R4 pacing and R6/R7 (request plane, pause leaves epoch and ref tables) are not modelled.
+
+### Reproduction {#2026-10-08-reproduction}
+
+Run from `docs/superpowers/models`:
+
+```bash
+TLC_JAVA_OPTS=-Xmx16g nice -n 10 ./run_mountrenewretry.sh > ../../../tmp/lease-series/renewretry-full.log 2>&1
+```
+
+The command exited `0`. Its final lines were:
+
+```text
+EXECUTED ROWS: 30/30
+ALL EXPECTATIONS MET
+```

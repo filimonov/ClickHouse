@@ -21,9 +21,13 @@ SAFETY_INVARIANTS=(
     CadenceAnchoredAtAttemptStart
     AuthorityEndsAtConfirmedDeadline
     NoAuthorityAfterEntitledTakeover
+    OwnLandedBodyNeverLost
+    NotObservedRepeatsOnlyTheRead
+    NotObservedNeverConcludes
+    LateSuccessNeverOpensWrites
 )
 
-# Sabotages run first, followed by the safe graph and seven negated-reachability witnesses.
+# Sabotages run first, followed by the safe graph and the negated-reachability witnesses.
 # name                                  expectation  exact invariant/witness
 CONFIGS=(
     "sab_ignore_attempt_id                  violation  ExactAttemptOnly"
@@ -37,7 +41,14 @@ CONFIGS=(
     "sab_late_rearm                         violation  TerminalNeverRearmsAuthority"
     "sab_response_relative_cadence          violation  CadenceAnchoredAtAttemptStart"
     "sab_double_conditional_landing         violation  OneIncarnationPerPredecessor"
+    "sab_refused_while_ambiguous            violation  OwnLandedBodyNeverLost"
+    "sab_repeat_put_after_not_observed      violation  NotObservedRepeatsOnlyTheRead"
+    "sab_not_observed_concludes             violation  NotObservedNeverConcludes"
+    "sab_open_writes_on_late_success        violation  LateSuccessNeverOpensWrites"
+    "sab_refresh_resets_start               violation  AuthorityEndsAtConfirmedDeadline"
+    "sab_new_call_new_attempt_id            violation  OneLogicalBodyPerExpectedToken"
     "safe                                  green      -"
+    "env_repeat_put_harmless               green      -"
     "witness_direct_retry                  witness    WitnessDirectRetry"
     "witness_read_adoption                 witness    WitnessReadAdoption"
     "witness_late_before_reclaim           witness    WitnessLateBeforeReclaim"
@@ -45,6 +56,10 @@ CONFIGS=(
     "witness_catchup                       witness    WitnessImmediateCatchup"
     "witness_retry_past_deadline           witness    WitnessRetryPastDeadline"
     "witness_authority_restored            witness    WitnessAuthorityRestored"
+    "witness_refused_then_commit           witness    WitnessRefusedThenCommit"
+    "witness_not_observed_then_observed    witness    WitnessNotObservedThenObserved"
+    "witness_refresh_then_commit           witness    WitnessRefreshThenCommit"
+    "witness_writes_reopened               witness    WitnessWritesReopened"
 )
 
 selected()

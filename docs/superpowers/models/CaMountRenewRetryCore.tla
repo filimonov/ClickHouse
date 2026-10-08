@@ -19,6 +19,14 @@ foreign holder. They never touch local state. A takeover is entitled once the cu
 been stable for one lease (`tokenStableUntil`), or for the successor once the old runtime is locally
 terminal. Honest conditional landing consumes the expected token; the multiplicity sabotage is the
 sole action that lets two copies replace it.
+
+Each logical renewal runs as one or more engine calls (`CasOperation::writeLoop`). `callAmbiguous`
+is the engine's "an attempt of this call has an unknown fate". A definite refusal of the current
+attempt (`DenyCurrent`) or a clean `412` (`RefuseCurrent`) ends the call only while the call has no
+ambiguous attempt; otherwise a read settles it. `Refused` continues with a new engine call that
+carries the same tuple. A clean `412` whose resolving read fails (`Conflict{NotObserved}`) repeats
+only the read. Copies whose answer the holder no longer waits for are ghosts (`GhostExists`).
+Writes open only through `OpenWrites`, and the holder's own timer closes them in `AdvanceTime`.
 *)
 EXTENDS Naturals, FiniteSets
 
@@ -42,6 +50,7 @@ CONSTANTS
     CadencePeriod,
     MaxRetries,
     MaxOutstanding,
+    MaxEngineCalls,
     Defects
 
 AllowedDefects ==
@@ -54,7 +63,13 @@ AllowedDefects ==
      "drop_pending_on_terminal",
      "late_rearm",
      "response_relative_cadence",
-     "double_conditional_landing"}
+     "double_conditional_landing",
+     "refused_while_ambiguous",
+     "repeat_put_after_not_observed",
+     "not_observed_concludes",
+     "open_writes_on_late_success",
+     "refresh_resets_start",
+     "new_call_new_attempt_id"}
 
 Defect(name) == name \in Defects
 
@@ -80,8 +95,8 @@ BodyNames ==
 DurableKinds == {"Predecessor", "Renewal", "Twin", "Successor", "Foreign", "Absent"}
 LocalStates ==
     {"Idle", "Sent", "Landed", "ResponseLost", "Resolved", "RetryWait",
-     "Committed", "Conflict", "Unresolved"}
-ResolveOutcomes == {"None", "Exact", "Predecessor", "Conflict"}
+     "Committed", "Conflict", "Unresolved", "Refused", "CleanConflict", "NotObserved"}
+ResolveOutcomes == {"None", "Exact", "Predecessor", "Conflict", "NotObserved"}
 AdoptedKinds == {"None", "Renewal", "Twin", "Successor", "Foreign", "GCFenced"}
 
 TokenSet ==
@@ -121,7 +136,14 @@ HistoryState ==
      catchupReached : BOOLEAN,
      retryPastDeadlineReached : BOOLEAN,
      staleSuccessSeen : BOOLEAN,
-     authorityRestoredReached : BOOLEAN]
+     authorityRestoredReached : BOOLEAN,
+     ownLandingLost : BOOLEAN,
+     putAfterCleanConflict : BOOLEAN,
+     concludedUnobserved : BOOLEAN,
+     refusedThenCommitReached : BOOLEAN,
+     notObservedThenObservedReached : BOOLEAN,
+     refreshThenCommitReached : BOOLEAN,
+     writesReopenedReached : BOOLEAN]
 
 InitialDurable ==
     [kind |-> "Predecessor",
@@ -162,7 +184,14 @@ InitialHistory ==
      catchupReached |-> FALSE,
      retryPastDeadlineReached |-> FALSE,
      staleSuccessSeen |-> FALSE,
-     authorityRestoredReached |-> FALSE]
+     authorityRestoredReached |-> FALSE,
+     ownLandingLost |-> FALSE,
+     putAfterCleanConflict |-> FALSE,
+     concludedUnobserved |-> FALSE,
+     refusedThenCommitReached |-> FALSE,
+     notObservedThenObservedReached |-> FALSE,
+     refreshThenCommitReached |-> FALSE,
+     writesReopenedReached |-> FALSE]
 
 VARIABLES
     clock,
@@ -197,7 +226,14 @@ VARIABLES
     nextBeatScheduled,
     nextBeat,
     reclaimSeen,
+    callAmbiguous,
+    engineCalls,
+    refreshedInCall,
+    preconditionRefused,
+    writesOpen,
     history
+
+CallVars == <<callAmbiguous, engineCalls, refreshedInCall, preconditionRefused>>
 
 vars ==
     <<clock, durable, gcFenced, tokenStableUntil,
@@ -207,7 +243,7 @@ vars ==
       attemptStartedAt, cadenceAnchor, firstSendAt,
       retryCount, outstanding, staleOutstanding, landings,
       adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-      nextBeatScheduled, nextBeat, reclaimSeen, history>>
+      nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
 Init ==
     /\ clock = 0
@@ -242,6 +278,11 @@ Init ==
     /\ nextBeatScheduled = FALSE
     /\ nextBeat = 0
     /\ reclaimSeen = FALSE
+    /\ callAmbiguous = FALSE
+    /\ engineCalls = 0
+    /\ refreshedInCall = FALSE
+    /\ preconditionRefused = FALSE
+    /\ writesOpen = TRUE
     /\ history = InitialHistory
 
 LogicalCreated == round > 0
@@ -334,6 +375,7 @@ TypeOK ==
     /\ CadencePeriod = 2
     /\ MaxRetries = 1
     /\ MaxOutstanding = 2
+    /\ MaxEngineCalls = 1
     /\ Defects \subseteq AllowedDefects
     /\ Cardinality(Defects) <= 1
     /\ clock \in 0..MaxTime
@@ -368,13 +410,20 @@ TypeOK ==
     /\ nextBeatScheduled \in BOOLEAN
     /\ nextBeat \in 0..(MaxTime + CadencePeriod)
     /\ reclaimSeen \in BOOLEAN
+    /\ callAmbiguous \in BOOLEAN
+    /\ engineCalls \in 0..MaxEngineCalls
+    /\ refreshedInCall \in BOOLEAN
+    /\ preconditionRefused \in BOOLEAN
+    /\ writesOpen \in BOOLEAN
     /\ history \in HistoryState
     /\ (LogicalCreated => requestDeadline = firstSendAt[round] + LeaseDuration)
     /\ (nextBeatScheduled => localState = "Committed")
 
+(* The holder's own timer closes writes at the confirmed deadline; nothing else needs to. *)
 AdvanceTime ==
     /\ clock < MaxTime
     /\ clock' = clock + 1
+    /\ writesOpen' = (writesOpen /\ clock + 1 < confirmedDeadline)
     /\ UNCHANGED
         <<durable, gcFenced, tokenStableUntil,
           confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
@@ -383,7 +432,7 @@ AdvanceTime ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, history>>
 
 (* The first renewal starts at any time; the second one when the cadence after a commit is due.
    Neither needs authority: the start may already be past the confirmed deadline. *)
@@ -409,18 +458,24 @@ SendRenewal ==
     /\ outstanding' = 1
     /\ staleOutstanding' = staleOutstanding + outstanding
     /\ nextBeatScheduled' = FALSE
+    /\ callAmbiguous' = FALSE
+    /\ engineCalls' = 0
+    /\ refreshedInCall' = FALSE
+    /\ preconditionRefused' = FALSE
     /\ UNCHANGED
         <<clock, durable, gcFenced, tokenStableUntil,
           confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
           fenceLost, landings, adoptedAttempt, adoptedKind,
-          terminalSeen, cancelled, successObservedAt, nextBeat, reclaimSeen, history>>
+          terminalSeen, cancelled, successObservedAt, nextBeat, reclaimSeen, writesOpen, history>>
 
+(* The current attempt's answer is lost, so its fate is unknown for the rest of this engine call. *)
 ResponseLoss ==
     /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState \in {"Sent", "Landed"}
     /\ localState' = "ResponseLost"
     /\ resolveOutcome' = "None"
+    /\ callAmbiguous' = TRUE
     /\ history' =
         [history EXCEPT
             !.sawNonLandedTransient = @ \/ (localState = "Sent"),
@@ -432,12 +487,18 @@ ResponseLoss ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen,
+          engineCalls, refreshedInCall, preconditionRefused, writesOpen>>
 
-LandCopy ==
+(* In `Sent` one of the outstanding copies is the attempt the holder is waiting on. *)
+GhostExists ==
+    outstanding > (IF localState = "Sent" THEN 1 ELSE 0)
+
+(* The attempt the holder is waiting on lands and its success response is still to come. *)
+LandCurrent ==
     /\ LogicalCreated
     /\ ~terminalSeen
-    /\ localState \notin {"Committed", "Unresolved"}
+    /\ localState = "Sent"
     /\ outstanding > 0
     /\ PredecessorStillCurrent
     /\ landings[round] < MaxOutstanding
@@ -446,24 +507,48 @@ LandCopy ==
     /\ tokenStableUntil' = clock + LeaseDuration
     /\ outstanding' = outstanding - 1
     /\ landings' = [landings EXCEPT ![round] = @ + 1]
-    /\ localState' = IF localState = "ResponseLost" THEN localState ELSE "Landed"
+    /\ localState' = "Landed"
     /\ UNCHANGED
         <<clock, confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor,
           committedRound, fenceLost, resolveOutcome,
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, staleOutstanding,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
-RefuseCopy ==
+(* An earlier copy of this renewal lands; nobody waits for its answer. *)
+LandGhost ==
     /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState \notin {"Committed", "Unresolved"}
+    /\ GhostExists
+    /\ PredecessorStillCurrent
+    /\ landings[round] < MaxOutstanding
+    /\ durable' = RequestDurable
+    /\ gcFenced' = FALSE
+    /\ tokenStableUntil' = clock + LeaseDuration
+    /\ outstanding' = outstanding - 1
+    /\ landings' = [landings EXCEPT ![round] = @ + 1]
+    /\ UNCHANGED
+        <<clock, confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor,
+          committedRound, fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, staleOutstanding,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
+
+(* A `412` for the attempt the holder waits on. With an ambiguous attempt in the call the read must
+   settle that attempt; without one the `412` is the answer and the read only names the occupant. *)
+RefuseCurrent ==
+    /\ LogicalCreated
+    /\ ~terminalSeen
+    /\ localState = "Sent"
     /\ outstanding > 0
     /\ ~PredecessorStillCurrent
     /\ outstanding' = outstanding - 1
-    /\ localState' = IF localState = "ResponseLost" THEN localState ELSE "Conflict"
-    /\ resolveOutcome' = IF localState = "ResponseLost" THEN resolveOutcome ELSE "Conflict"
+    /\ localState' = IF callAmbiguous THEN "ResponseLost" ELSE "CleanConflict"
+    /\ resolveOutcome' = "None"
+    /\ preconditionRefused' = (preconditionRefused \/ ~callAmbiguous)
     /\ UNCHANGED
         <<clock, durable, gcFenced, tokenStableUntil,
           confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
@@ -471,7 +556,155 @@ RefuseCopy ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen,
+          callAmbiguous, engineCalls, refreshedInCall, writesOpen, history>>
+
+RefuseGhost ==
+    /\ LogicalCreated
+    /\ ~terminalSeen
+    /\ localState \notin {"Committed", "Unresolved"}
+    /\ GhostExists
+    /\ ~PredecessorStillCurrent
+    /\ outstanding' = outstanding - 1
+    /\ UNCHANGED
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
+
+(* A definite refusal (`AccessDenied`, `MalformedXML`, ...): the attempt did not apply. The engine
+   returns `Refused` only when no attempt of the call is ambiguous; otherwise the read settles. *)
+DenyCurrent ==
+    /\ LogicalCreated
+    /\ ~terminalSeen
+    /\ localState = "Sent"
+    /\ outstanding > 0
+    /\ outstanding' = outstanding - 1
+    /\ localState' =
+        IF callAmbiguous /\ ~Defect("refused_while_ambiguous")
+        THEN "ResponseLost"
+        ELSE "Refused"
+    /\ resolveOutcome' = "None"
+    /\ UNCHANGED
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
+
+(* The first credential answer of a call refreshes credentials. Without an ambiguous attempt the
+   engine reissues at once; with one the read settles first. The tuple and start stay. *)
+CredentialRefresh ==
+    /\ LogicalCreated
+    /\ ~terminalSeen
+    /\ localState = "Sent"
+    /\ outstanding > 0
+    /\ ~refreshedInCall
+    /\ refreshedInCall' = TRUE
+    /\ IF callAmbiguous
+       THEN /\ outstanding' = outstanding - 1
+            /\ localState' = "ResponseLost"
+            /\ resolveOutcome' = "None"
+       ELSE UNCHANGED <<outstanding, localState, resolveOutcome>>
+    /\ attemptStartedAt' =
+        IF Defect("refresh_resets_start") THEN clock ELSE attemptStartedAt
+    /\ history' =
+        [history EXCEPT
+            !.putAfterCleanConflict = @ \/ (~callAmbiguous /\ preconditionRefused)]
+    /\ UNCHANGED
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen,
+          callAmbiguous, engineCalls, preconditionRefused, writesOpen>>
+
+(* `Refused` is not an outcome of the renewal: a new engine call resends the same tuple. *)
+NewEngineCall ==
+    /\ LogicalCreated
+    /\ ~terminalSeen
+    /\ ~cancelled
+    /\ localState = "Refused"
+    /\ engineCalls < MaxEngineCalls
+    /\ outstanding < MaxOutstanding
+    /\ localState' = "Sent"
+    /\ resolveOutcome' = "None"
+    /\ outstanding' = outstanding + 1
+    /\ engineCalls' = engineCalls + 1
+    /\ callAmbiguous' = FALSE
+    /\ refreshedInCall' = FALSE
+    /\ requestAttempt' =
+        IF Defect("new_call_new_attempt_id") THEN OtherAttempt ELSE requestAttempt
+    /\ history' =
+        [history EXCEPT
+            !.tupleChanged = @ \/ Defect("new_call_new_attempt_id"),
+            !.putAfterCleanConflict = @ \/ preconditionRefused]
+    /\ UNCHANGED
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, preconditionRefused, writesOpen>>
+
+(* The read after a clean `412`, repeated while it fails. Only an observation of the slot concludes;
+   the loss table classifies it outside this model. *)
+ResolvingRead ==
+    /\ LogicalCreated
+    /\ ~terminalSeen
+    /\ localState \in {"CleanConflict", "NotObserved"}
+    /\ \/ /\ localState' = "Conflict"
+          /\ resolveOutcome' = "Conflict"
+          /\ history' =
+              [history EXCEPT
+                  !.ownLandingLost = @ \/ ExactRequestDurable,
+                  !.notObservedThenObservedReached = @ \/ (localState = "NotObserved")]
+       \/ /\ ~Defect("not_observed_concludes")
+          /\ localState' = "NotObserved"
+          /\ resolveOutcome' = "NotObserved"
+          /\ UNCHANGED history
+       \/ /\ Defect("not_observed_concludes")
+          /\ localState' = "Conflict"
+          /\ resolveOutcome' = "Conflict"
+          /\ history' = [history EXCEPT !.concludedUnobserved = TRUE]
+    /\ UNCHANGED
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
+
+RepeatPutAfterNotObserved ==
+    /\ Defect("repeat_put_after_not_observed")
+    /\ LogicalCreated
+    /\ ~terminalSeen
+    /\ ~cancelled
+    /\ localState = "NotObserved"
+    /\ outstanding < MaxOutstanding
+    /\ localState' = "Sent"
+    /\ resolveOutcome' = "None"
+    /\ outstanding' = outstanding + 1
+    /\ history' =
+        [history EXCEPT !.putAfterCleanConflict = @ \/ preconditionRefused]
+    /\ UNCHANGED
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 (* A copy of the previous renewal is conditional on a token that renewal already replaced. *)
 StaleCopyDelivery ==
@@ -491,7 +724,7 @@ StaleCopyDelivery ==
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, outstanding,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
 DoubleConditionalLanding ==
     /\ Defect("double_conditional_landing")
@@ -512,7 +745,7 @@ DoubleConditionalLanding ==
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, staleOutstanding,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
 (* The history a commit of the current renewal at `clock` leaves; `newDeadline` is what it sets. *)
 CommitHistory(newDeadline) ==
@@ -521,7 +754,9 @@ CommitHistory(newDeadline) ==
         !.staleSuccessSeen =
             @ \/ (round = 1 /\ firstSendAt[1] + LeaseDuration < clock),
         !.authorityRestoredReached =
-            @ \/ (round = 2 /\ history.staleSuccessSeen /\ ~fenceLost /\ clock < newDeadline)]
+            @ \/ (round = 2 /\ history.staleSuccessSeen /\ ~fenceLost /\ clock < newDeadline),
+        !.refusedThenCommitReached = @ \/ (engineCalls > 0),
+        !.refreshThenCommitReached = @ \/ (refreshedInCall /\ firstSendAt[round] < clock)]
 
 CommittedDeadline ==
     IF Defect("refresh_deadline_from_response")
@@ -555,27 +790,31 @@ AcknowledgeRenewal ==
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
-          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
+          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
+(* The read that settles an ambiguous attempt. A failed read settles nothing, so the engine
+   reissues, as `preconditionStillSatisfiable` does for `NotObserved`. *)
 ExactResolve ==
     /\ LogicalCreated
     /\ ~terminalSeen
     /\ localState = "ResponseLost"
-    /\ IF ExactRequestDurable
-       THEN
-           /\ localState' = "Resolved"
-           /\ resolveOutcome' = "Exact"
-       ELSE IF PredecessorStillCurrent
-       THEN
-           /\ localState' = "Resolved"
-           /\ resolveOutcome' = "Predecessor"
-       ELSE IF Defect("ignore_attempt_id") /\ TwinMatchesIgnoringId
-       THEN
-           /\ localState' = "Resolved"
-           /\ resolveOutcome' = "Exact"
-       ELSE
-           /\ localState' = "Conflict"
-           /\ resolveOutcome' = "Conflict"
+    /\ \/ IF ExactRequestDurable
+          THEN
+              /\ localState' = "Resolved"
+              /\ resolveOutcome' = "Exact"
+          ELSE IF PredecessorStillCurrent
+          THEN
+              /\ localState' = "Resolved"
+              /\ resolveOutcome' = "Predecessor"
+          ELSE IF Defect("ignore_attempt_id") /\ TwinMatchesIgnoringId
+          THEN
+              /\ localState' = "Resolved"
+              /\ resolveOutcome' = "Exact"
+          ELSE
+              /\ localState' = "Conflict"
+              /\ resolveOutcome' = "Conflict"
+       \/ /\ localState' = "Resolved"
+          /\ resolveOutcome' = "NotObserved"
     /\ UNCHANGED
         <<clock, durable, gcFenced, tokenStableUntil,
           confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
@@ -583,7 +822,7 @@ ExactResolve ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
 AcceptResolved ==
     /\ LogicalCreated
@@ -610,14 +849,14 @@ AcceptResolved ==
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
-          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
+          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 EnterRetryWait ==
     /\ LogicalCreated
     /\ ~terminalSeen
     /\ ~cancelled
     /\ localState = "Resolved"
-    /\ resolveOutcome = "Predecessor"
+    /\ resolveOutcome \in {"Predecessor", "NotObserved"}
     /\ localState' = "RetryWait"
     /\ UNCHANGED
         <<clock, durable, gcFenced, tokenStableUntil,
@@ -627,7 +866,7 @@ EnterRetryWait ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
 (* `MaxRetries` bounds the state space only: running out of it is not a transition. *)
 RetrySend ==
@@ -649,14 +888,15 @@ RetrySend ==
         [history EXCEPT
             !.tupleChanged = @ \/ Defect("retry_with_new_body"),
             !.sawRetrySent = TRUE,
-            !.retryPastDeadlineReached = @ \/ (clock >= confirmedDeadline)]
+            !.retryPastDeadlineReached = @ \/ (clock >= confirmedDeadline),
+            !.putAfterCleanConflict = @ \/ preconditionRefused]
     /\ UNCHANGED
         <<clock, durable, gcFenced, tokenStableUntil,
           confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
           fenceLost, round, requestAttempt, requestExpectedToken, requestDeadline,
           cadenceAnchor, firstSendAt, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 (* A stop or a remount request after the renewal sent something. *)
 Cancel ==
@@ -673,8 +913,9 @@ Cancel ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
+(* Only a cancel or an observed occupant ends the renewal; `Refused` and `NotObserved` do not. *)
 LocalTerminalize ==
     /\ LogicalCreated
     /\ ~terminalSeen
@@ -682,6 +923,7 @@ LocalTerminalize ==
     /\ (cancelled \/ localState = "Conflict")
     /\ terminalSeen' = TRUE
     /\ fenceLost' = TRUE
+    /\ writesOpen' = FALSE
     /\ localState' = "Unresolved"
     /\ resolveOutcome' = "Conflict"
     /\ outstanding' =
@@ -699,7 +941,26 @@ LocalTerminalize ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars>>
+
+(* The explicit arm step: a commit opens writes only while its own deadline is still ahead. *)
+OpenWrites ==
+    /\ ~writesOpen
+    /\ ~terminalSeen
+    /\ ~fenceLost
+    /\ localState = "Committed"
+    /\ (clock < confirmedDeadline \/ Defect("open_writes_on_late_success"))
+    /\ writesOpen' = TRUE
+    /\ history' = [history EXCEPT !.writesReopenedReached = TRUE]
+    /\ UNCHANGED
+        <<clock, durable, gcFenced, tokenStableUntil,
+          confirmedBody, confirmedToken, confirmedDeadline, confirmedAnchor, committedRound,
+          fenceLost, localState, resolveOutcome,
+          round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
+          attemptStartedAt, cadenceAnchor, firstSendAt,
+          retryCount, outstanding, staleOutstanding, landings,
+          adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars>>
 
 SamePairTwin ==
     /\ LogicalCreated
@@ -716,7 +977,7 @@ SamePairTwin ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen, history>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen, history>>
 
 GCFence ==
     /\ durable.kind /= "Absent"
@@ -733,7 +994,7 @@ GCFence ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 (* Same process, new epoch: entitled by waiting, or by the old runtime being locally terminal. *)
 SuccessorClaim ==
@@ -752,7 +1013,7 @@ SuccessorClaim ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 ForeignHolderWrite ==
     /\ LogicalCreated
@@ -770,7 +1031,7 @@ ForeignHolderWrite ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 Reclaim ==
     /\ gcFenced
@@ -791,7 +1052,7 @@ Reclaim ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat>>
+          nextBeatScheduled, nextBeat, CallVars, writesOpen>>
 
 LateDeliveryLands ==
     /\ terminalSeen
@@ -817,7 +1078,7 @@ LateDeliveryLands ==
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt, retryCount, staleOutstanding,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 LateDeliveryRefused ==
     /\ terminalSeen
@@ -838,7 +1099,7 @@ LateDeliveryRefused ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          nextBeatScheduled, nextBeat, reclaimSeen>>
+          nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 AcceptAfterTerminal ==
     /\ Defect("accept_after_terminal")
@@ -863,7 +1124,7 @@ AcceptAfterTerminal ==
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
-          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
+          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 AcceptSuccessor ==
     /\ Defect("accept_successor")
@@ -888,7 +1149,7 @@ AcceptSuccessor ==
           round, requestAttempt, requestBody, requestExpectedToken, requestDeadline,
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
-          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen>>
+          terminalSeen, cancelled, nextBeatScheduled, nextBeat, reclaimSeen, CallVars, writesOpen>>
 
 ScheduleNextBeat ==
     /\ localState = "Committed"
@@ -911,14 +1172,21 @@ ScheduleNextBeat ==
           attemptStartedAt, cadenceAnchor, firstSendAt,
           retryCount, outstanding, staleOutstanding, landings,
           adoptedAttempt, adoptedKind, terminalSeen, cancelled, successObservedAt,
-          reclaimSeen>>
+          reclaimSeen, CallVars, writesOpen>>
 
 Next ==
     \/ AdvanceTime
     \/ SendRenewal
     \/ ResponseLoss
-    \/ LandCopy
-    \/ RefuseCopy
+    \/ LandCurrent
+    \/ LandGhost
+    \/ RefuseCurrent
+    \/ RefuseGhost
+    \/ DenyCurrent
+    \/ CredentialRefresh
+    \/ NewEngineCall
+    \/ ResolvingRead
+    \/ RepeatPutAfterNotObserved
     \/ StaleCopyDelivery
     \/ DoubleConditionalLanding
     \/ AcknowledgeRenewal
@@ -928,6 +1196,7 @@ Next ==
     \/ RetrySend
     \/ Cancel
     \/ LocalTerminalize
+    \/ OpenWrites
     \/ SamePairTwin
     \/ GCFence
     \/ SuccessorClaim
@@ -1003,6 +1272,23 @@ AuthorityEndsAtConfirmedDeadline ==
 NoAuthorityAfterEntitledTakeover ==
     history.entitledTakeover => ~LocalAuthority
 
+(* A clean `412` never meets our own landed body: no earlier attempt of the renewal can have landed
+   once the engine reported the call free of ambiguity. *)
+OwnLandedBodyNeverLost ==
+    ~history.ownLandingLost
+
+(* After a clean `412` the renewal sends no further `PUT` on the expected token it refused. *)
+NotObservedRepeatsOnlyTheRead ==
+    ~history.putAfterCleanConflict
+
+(* A failed resolving read concludes nothing: not an absence, not an occupant. *)
+NotObservedNeverConcludes ==
+    ~history.concludedUnobserved
+
+(* Open writes imply the confirmed deadline is ahead and the fence is intact. *)
+LateSuccessNeverOpensWrites ==
+    writesOpen => (~fenceLost /\ clock < confirmedDeadline)
+
 (* Negated reachability checks: TLC must violate each exact witness name. *)
 WitnessDirectRetry == ~history.directRetryReached
 WitnessReadAdoption == ~history.readAdoptionReached
@@ -1011,5 +1297,9 @@ WitnessLateAfterSuccessor == ~history.lateAfterSuccessorReached
 WitnessImmediateCatchup == ~history.catchupReached
 WitnessRetryPastDeadline == ~history.retryPastDeadlineReached
 WitnessAuthorityRestored == ~history.authorityRestoredReached
+WitnessRefusedThenCommit == ~history.refusedThenCommitReached
+WitnessNotObservedThenObserved == ~history.notObservedThenObservedReached
+WitnessRefreshThenCommit == ~history.refreshThenCommitReached
+WitnessWritesReopened == ~history.writesReopenedReached
 
 ================================================================================
