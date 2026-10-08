@@ -152,6 +152,7 @@ public:
     /// See Backend::probeSentinelRaw. Native: ONE `read`, classified by the S3 error it throws. A GET
     /// 404 carries a response body, so the SDK can parse its `<Code>` and tell `NoSuchKey` from
     /// `NoSuchBucket` -- a distinction a bodyless HEAD 404 cannot make.
+    /// A 404 the SDK could not name is `Indeterminate`.
     /// EmulatedSingleProcess (Local): stats the configured container directory (`emu_root`) first --
     /// `ContainerAbsent` if it is gone -- then the key.
     SentinelProbeResult probeSentinelRaw(const String & key, TransportAccess & access) override;

@@ -323,13 +323,12 @@ std::expected<String, Backend::RawConflict> ObjectStorageBackend::nativeConditio
     return normalizeTokenValue(buf->getResultObjectETag().value_or(String{}));
 }
 
-/// True when an exception from a read means "the KEY is simply not there".
-/// Two surfaces:
-///   1. S3/RustFS: `S3Exception` with `S3Errors::NO_SUCH_KEY` (the modeled enum — the primary
-///      signal), `getExceptionName() == "NoSuchKey"` (the canonical XML `<Code>` string, present when
-///      the SDK was able to parse it; mirrors `finalizeConditionalWrite`'s detection), or
-///      `RESOURCE_NOT_FOUND`, the generic code the SDK derives from a 404 whose body it could not
-///      parse into a name.
+/// True when an exception from a `GET` means "the KEY is simply not there".
+///   1. S3: the store named the miss `NoSuchKey` in the 404 body -- the SDK's `NO_SUCH_KEY`, or the
+///      name where the throw site attaches it. A 404 the SDK could not name (`RESOURCE_NOT_FOUND`: no
+///      body, or one it could not parse) is not proof: a misrouted request or a proxy answers the same
+///      way. It propagates and is reissued like any other fault. A `HEAD` has no body to carry a name;
+///      its absence is decided by `S3::getObjectInfoIfExists`.
 ///   2. Local / emulated: `DB::Exception` with `ErrorCodes::FILE_DOESNT_EXIST` (from
 ///      `ReadBufferFromFile` when `open(2)` returns ENOENT).
 ///
@@ -342,7 +341,6 @@ static bool isObjectNotFound(const std::exception & e)
 #if USE_AWS_S3
     if (const auto * s3e = dynamic_cast<const S3Exception *>(&e))
         return s3e->getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY
-            || s3e->getS3ErrorCode() == Aws::S3::S3Errors::RESOURCE_NOT_FOUND
             || s3e->getExceptionName() == "NoSuchKey";
 #endif
     if (const auto * dbe = dynamic_cast<const Exception *>(&e))
@@ -766,8 +764,8 @@ SentinelProbeResult ObjectStorageBackend::probeSentinelUnder(const String & key,
                 case Aws::S3::S3Errors::ACCESS_DENIED:
                     return {ProbeOutcome::AccessDenied, std::nullopt};
                 default:
-                    /// Everything else (timeouts, 5xx, throttling, an unmodeled code) is inconclusive —
-                    /// NEVER promoted to KeyAbsent, per the IAM permutation table in spec §2.
+                    /// Everything else (timeouts, 5xx, throttling, a 404 the SDK could not name, an
+                    /// unmodeled code) is inconclusive -- NEVER promoted to KeyAbsent.
                     return {ProbeOutcome::Indeterminate, std::nullopt};
             }
         }
