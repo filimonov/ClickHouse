@@ -1017,6 +1017,11 @@ MountClaimResult claimMountAwaitingExpiry(
     }
 }
 
+bool MountIncarnationObservation::heldFor(uint64_t threshold_ms, uint64_t sample_ms) const
+{
+    return sample_ms >= first_seen_mono_ms && sample_ms - first_seen_mono_ms >= threshold_ms;
+}
+
 HeartbeatFloor computeHeartbeatFloor(CasOperation & op, const Layout & l, uint64_t now_ms,
                                      const std::function<uint64_t()> & mono_ms_fn,
                                      uint64_t stable_threshold_ms, MountObservationMap & obs)
@@ -1084,7 +1089,7 @@ HeartbeatFloor computeHeartbeatFloor(CasOperation & op, const Layout & l, uint64
                 /// counts as `live` this call.
                 const auto it = obs.find(srid);
                 const bool stable = it != obs.end() && it->second.etag == observed->etag
-                    && round_start_ms - it->second.first_seen_mono_ms >= stable_threshold_ms;
+                    && it->second.heldFor(stable_threshold_ms, round_start_ms);
 
                 if (!stable)
                 {

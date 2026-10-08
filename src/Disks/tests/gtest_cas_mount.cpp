@@ -1881,6 +1881,24 @@ TEST(CASHeartbeatFloor, FailedSlotReadKeepsTheWatch)
         << "a failed read restarted the observation";
 }
 
+TEST(CASHeartbeatFloor, SampleOlderThanTheSightingNeverFences)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    Layout l("p");
+    Ops ops(b);
+    seedMount(ops.op, l, "s1", /*expires*/ 10, /*fenced*/ false, /*min_active_build_sequence*/ 0);
+    MountObservationMap obs;
+
+    computeHeartbeatFloor(ops.op, l, kNowMs, frozenClock(kStableThresholdMs), kStableThresholdMs, obs);
+    ASSERT_EQ(obs.at("s1").first_seen_mono_ms, kStableThresholdMs);
+
+    /// A clock that went back: the unsigned difference would wrap past any threshold.
+    const HeartbeatFloor floor = computeHeartbeatFloor(ops.op, l, kNowMs, frozenClock(kStableThresholdMs - 1),
+                                                       kStableThresholdMs, obs);
+    EXPECT_EQ(floor.fenced_now, 0u);
+    EXPECT_EQ(floor.live, 1u);
+}
+
 TEST(CASHeartbeatFloor, EmptyPrefixYieldsNoLiveMounts)
 {
     auto b = std::make_shared<InMemoryBackend>();

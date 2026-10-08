@@ -353,6 +353,10 @@ struct MountIncarnationObservation
 {
     Etag etag;
     uint64_t first_seen_mono_ms = 0;
+
+    /// `sample_ms` is taken before the read that confirmed `etag`. A sample older than the sighting
+    /// says nothing about how long the token held, so it never counts as held.
+    bool heldFor(uint64_t threshold_ms, uint64_t sample_ms) const;
 };
 
 /// Keyed by `server_root_id`. In-memory only: a fresh leader (after a steal, or a process restart)
