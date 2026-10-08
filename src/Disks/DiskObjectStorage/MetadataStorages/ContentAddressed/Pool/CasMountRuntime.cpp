@@ -163,6 +163,36 @@ bool CasMountRuntime::refAppendFenceOk() const
     return admit(fenceGeneration(), needed_ms) == Fence::Admit::Ok;
 }
 
+std::optional<uint64_t> CasMountRuntime::leaseExpiredAtBootMs() const
+{
+    if (lifecycle() != PoolLifecycle::Live || mount_fence.lost.load(std::memory_order_acquire))
+        return std::nullopt;
+    const uint64_t deadline = mount_fence.deadline_boot_ms.load(std::memory_order_acquire);
+    if (bootMsNow() < deadline)
+        return std::nullopt;
+    return deadline;
+}
+
+void CasMountRuntime::warnOnceIfLeaseExpired() noexcept
+{
+    try
+    {
+        const std::optional<uint64_t> expired_at = leaseExpiredAtBootMs();
+        if (!expired_at || lease_expiry_warned.exchange(true, std::memory_order_relaxed))
+            return;
+        /// Written at the first attempt after the expiry, so a renewal stuck in a request reports late; the
+        /// age says by how much.
+        LOG_WARNING(getLogger("CasPool"),
+            "CAS mount lease of '{}' expired {} ms ago under writer_epoch {}; the renewal keeps retrying "
+            "and writes are refused until a renewal is confirmed",
+            server_root_id, bootMsNow() - *expired_at, liveWriterEpoch());
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// A lost diagnostic must not change how the renewal ends.
+    }
+}
+
 void CasMountRuntime::setMountDeadline(uint64_t deadline_boot_ms)
 {
     mount_fence.deadline_boot_ms.store(deadline_boot_ms, std::memory_order_release);
@@ -173,6 +203,7 @@ void CasMountRuntime::armMountFence(UInt128 server_uuid, uint64_t writer_epoch, 
     mount_fence.server_uuid = server_uuid;
     mount_fence.writer_epoch = writer_epoch;
     mount_fence.deadline_boot_ms.store(deadline_boot_ms, std::memory_order_release);
+    lease_expiry_warned.store(false, std::memory_order_relaxed);
     /// A fresh lease incarnation is a fresh generation too: a durable-effect caller admitted under the
     /// PRIOR incarnation must re-check and abort rather than ride this re-arm through (rev.7 [C2]).
     fence_generation.fetch_add(1, std::memory_order_acq_rel);
@@ -449,6 +480,7 @@ MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_c
         .requests = RequestObserver{
             .on_write_attempt = [this](uint32_t attempts_sent)
             {
+                warnOnceIfLeaseExpired();
                 ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalAttempts);
                 if (attempts_sent > 1)
                     ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalRetries);
@@ -552,9 +584,12 @@ void CasMountRuntime::consumeRenewResult(
 void CasMountRuntime::publishRenewedDeadline(uint64_t attempt_start_boot_ms)
 {
     const uint64_t ttl_ms = static_cast<uint64_t>(config.mount_lease_ttl_ms.count());
-    setMountDeadline(attempt_start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
+    const uint64_t deadline = attempt_start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
         ? std::numeric_limits<uint64_t>::max()
-        : attempt_start_boot_ms + ttl_ms);
+        : attempt_start_boot_ms + ttl_ms;
+    setMountDeadline(deadline);
+    if (bootMsNow() < deadline)
+        lease_expiry_warned.store(false, std::memory_order_relaxed);
 }
 
 uint64_t CasMountRuntime::renewRenewerOnce(

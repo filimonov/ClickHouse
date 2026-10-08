@@ -377,6 +377,15 @@ Pool::LifecycleSnapshot Pool::lifecycleSnapshot() const
     snap.lifecycle = mount_runtime.lifecycle();
     snap.detail = lifecycleReasonDetail(snap.lifecycle);
     snap.since = mount_runtime.lifecycleSinceWallS();
+    if (snap.lifecycle == PoolLifecycle::Live)
+    {
+        if (const std::optional<uint64_t> expired_at = mount_runtime.leaseExpiredAtBootMs())
+        {
+            snap.lease_expired = true;
+            const uint64_t ago_s = (mount_runtime.bootMsNow() - *expired_at) / 1000;
+            snap.since = ::time(nullptr) - static_cast<time_t>(ago_s);
+        }
+    }
     return snap;
 }
 
