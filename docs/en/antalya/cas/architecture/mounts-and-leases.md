@@ -81,13 +81,14 @@ watermark — there is no separate watermark object. `MountLease` fields: `serve
   after a flat pause and settled by the reissue's own answer (a 2xx) or by the exact `GET` that
   follows its `412`. The renewer adopts the result only when the complete body, including `write_attempt_id`,
   equals its immutable request. If the predecessor token is still current, another identical `PUT`
-  may follow bounded backoff. A same-pair twin, GC-fenced body, successor, foreign holder, or absent
+  follows after a pause. A same-pair twin, GC-fenced body, successor, foreign holder, or absent
   body is never treated as this renewal.
 - **Deadline from the start.** Renewal uses `CLOCK_BOOTTIME`, not `CLOCK_MONOTONIC`, so a VM resumed
   from suspend correctly observes itself expired. A confirmed renewal sets the deadline to its own
   start plus the lease; a retry, `GET`, response timestamp, or wall-clock step never moves it. The
   background renewal has no deadline of its own: it retries one body every 0.8–1.2 s (measured from
-  the start of the previous attempt) until the store answers about the slot or the server stops. A
+  the start of the previous attempt) until the store answers about the slot, or until a stop, a
+  remount park request, a lost fence or a pool leaving `Live` ends it. A
   refusal (`AccessDenied`, `MalformedXML`, …) sends the same body again, one renewal period later for
   a credential refusal. The startup re-anchor and the remount re-anchor stay bounded by the last
   confirmed lease minus the safety margin.
@@ -124,8 +125,8 @@ local fence (latches `lost`, bumps the fence generation, moves the in-process ru
 `TransientNotLive`) and latches one self-remount generation. A confirmed foreign/successor or
 same-pair conflict remains a typed fail-closed error; it is never adopted. A real fence still costs
 only an epoch: recovery reclaims with a fresh one, bounded at three whole-chain attempts. This is the
-general CAS posture: doubt about the source fails closed, while transport ambiguity may retry only
-inside authority already proved by the last confirmed lease.
+general CAS posture: doubt about the source fails closed, while transport ambiguity is retried until a
+definitive answer and writes are admitted only inside the last confirmed lease.
 
 GC's own view of a dead server is symmetric and clock-skew-immune: a slot becomes fence-eligible
 only after the leader observes the *same* renewal token hold stable, on its own monotonic clock,
