@@ -269,6 +269,25 @@ enum class MountPriorState
 ///         is unsafe because a clock-skewed or merely late-observing
 ///         caller must never conclude death from a bare timestamp read);
 ///   - different `server_uuid` → `ForeignOwner` (do NOT write, regardless of expiry or prior state).
+///
+/// What one read of the mount slot established; `Object` keeps the exact bytes and their ETag.
+using SlotObservation = std::variant<Object, ProvenAbsent, NotObserved>;
+
+/// A claim this server confirmed: its body, those exact bytes, the ETag they landed under, and the
+/// `CLOCK_BOOTTIME` instant taken before the body was built — the lease runs from it.
+struct MountClaimed
+{
+    MountLease body;
+    String bytes;
+    Etag etag;
+    uint64_t start_boot_ms = 0;
+};
+
+/// The lease `seen` holds, when it holds one.
+std::optional<MountLease> observedLease(const SlotObservation & seen);
+
+/// The claim's verdict, with what decided it kept whole: the confirmed claim for `Claimed`, the
+/// observation for every other `Kind`.
 struct MountClaimResult
 {
     /// Plain (unscoped) enum: callers compare with `MountClaimResult::Claimed` directly.
@@ -283,24 +302,15 @@ struct MountClaimResult
         FencedSelf,
     };
     Kind kind = ForeignOwner;
-    /// The lease this result is ABOUT. For `Claimed` it is the body this server installed; for
-    /// `ForeignOwner`, `FencedSelf` and `LiveDoubleStart` it is the body that was observed at the key,
-    /// which is what `mountDoubleStartMessage` renders as the existing mount. EMPTY exactly when a
-    /// raced write's conflict settled to no observation at all -- nobody was seen, so no operator
-    /// message may name a holder, and the lease this server merely PROPOSED is not one. An optional
-    /// rather than the proposal, because a caller cannot check a convention it cannot see.
-    std::optional<MountLease> body;
+    /// Engaged exactly for `Claimed`.
+    std::optional<MountClaimed> claimed = std::nullopt;
+    /// For every other `Kind`, what decided it. A raced write reports its resolve read, which may have
+    /// proven the slot absent or seen nothing, and then no message may name a holder.
+    SlotObservation seen = NotObserved{};
     /// Which certificate of death, or the operator's explicit unsafe authorization, justified a
     /// same-uuid, older-epoch `Claimed` reclaim (`None` for
     /// every other `Kind`, and for the absent-slot `Claimed` case).
     MountPriorState prior = MountPriorState::None;
-    /// The incarnation of the body this result observed, for
-    /// `LiveDoubleStart` only (a fresh `Claimed`/`FencedSelf`/`ForeignOwner` write/observe has no
-    /// separate "prior body's incarnation to remember" use). `claimMountAwaitingExpiry`'s observation
-    /// loop would otherwise re-read the mount key just to recover what `claimMount` had already read
-    /// one line earlier and thrown away -- one wasted read per iteration. Empty for every other
-    /// `Kind` (nothing to compare against).
-    std::optional<Etag> etag;
 };
 
 /// Thrown when a mount operation observes that OUR OWN (uuid, epoch) slot was `gc_fenced` by the GC
@@ -327,10 +337,12 @@ public:
 /// off a same-uuid, different-epoch slot before authorizing this reclaim, with no observation at all.
 /// Never reused from `proven_dead_incarnation`: that one says the token was OBSERVED dead, this one
 /// says the operator accepted the risk. Absent (`{}`, the default) when the knob is off.
+/// `boot_ms_fn` dates the claim's start (`CLOCK_BOOTTIME` when empty); pass the renewer's clock.
 MountClaimResult claimMount(
     CasOperation & op, const Layout & l, const String & srid, UInt128 our_uuid, uint64_t our_epoch,
     uint64_t now_ms, uint64_t ttl_ms, const std::optional<Etag> & proven_dead_incarnation = {},
-    const CasEventSink & sink = {}, const std::optional<Etag> & unsafe_reclaim_authorization = {});
+    const CasEventSink & sink = {}, const std::optional<Etag> & unsafe_reclaim_authorization = {},
+    const std::function<uint64_t()> & boot_ms_fn = {});
 
 /// Format the operator-actionable startup error shown when the mount lease is held by a genuinely
 /// live second server (the same `server_root_id` is mounted twice). Produced only AFTER this server

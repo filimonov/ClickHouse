@@ -2335,10 +2335,9 @@ TEST(CASClaimMountMonotonicity, TwoAllocatorsSharingAnEpochDoNotShareTheSlot)
 
     const MountClaimResult ours = claimMount(ops.op, l, "r", UInt128(1), shared_epoch, 2000, 30000);
     EXPECT_EQ(ours.kind, MountClaimResult::LiveDoubleStart);
-    ASSERT_TRUE(ours.body.has_value());
-    EXPECT_EQ(ours.body->write_attempt_id, decodeMountLease(competitor->bytes).write_attempt_id);
-    ASSERT_TRUE(ours.etag.has_value());
-    EXPECT_TRUE(*ours.etag == competitor->etag);
+    ASSERT_TRUE(std::holds_alternative<Object>(ours.seen));
+    EXPECT_EQ(observedLease(ours.seen)->write_attempt_id, decodeMountLease(competitor->bytes).write_attempt_id);
+    EXPECT_TRUE(std::get<Object>(ours.seen).etag == competitor->etag);
     EXPECT_EQ(ops.op.read(l.mountKey("r"), Retry::standard())->bytes, competitor->bytes) << "the slot was written";
 }
 
@@ -2419,10 +2418,10 @@ TEST(CASClaimMountMonotonicity, AConfirmedLandedReclaimIsStillClaimed)
     ASSERT_FALSE(b->armed) << "the lost response was never injected";
     EXPECT_EQ(r.kind, MountClaimResult::Claimed);
     EXPECT_EQ(r.prior, MountPriorState::Fenced);
-    ASSERT_TRUE(r.body.has_value());
+    ASSERT_TRUE(r.claimed.has_value());
     const MountLease slot = decodeMountLease(ops.op.read(b->key, Retry::standard())->bytes);
     EXPECT_EQ(slot.writer_epoch, 8u);
-    EXPECT_EQ(slot.write_attempt_id, r.body->write_attempt_id);
+    EXPECT_EQ(slot.write_attempt_id, r.claimed->body.write_attempt_id);
 }
 
 /// ---- rev.6 Task 4: observation-based lease reclaim (no cross-node wall-clock trust) ----

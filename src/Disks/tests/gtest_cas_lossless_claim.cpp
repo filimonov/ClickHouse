@@ -133,3 +133,55 @@ TEST(CASLosslessClaim, GoldenOpenAndRemountPaths)
     ASSERT_TRUE(Pool::open(b, poolConfig(b))) << "a clean farewell is reclaimed at once";
     EXPECT_EQ(slot(*b).writer_epoch, 10u);
 }
+
+TEST(CASLosslessClaim, ClaimedCarriesTheLandedBytesTheirEtagAndTheStart)
+{
+    auto b = std::make_shared<MountWriteClock>();
+    b->stall_ms = 1'000;
+    OperationForTest op(*b);
+    const MountClaimResult r = claimMount(*op, kLayout, kSrid, kUuid, 8, 1000, 30'000, {}, {}, {}, [&] { return b->boot->load(); });
+    ASSERT_EQ(r.kind, MountClaimResult::Claimed);
+    EXPECT_EQ(r.claimed->bytes, get(*b)->bytes);
+    EXPECT_EQ(r.claimed->etag, get(*b)->etag);
+    EXPECT_EQ(r.claimed->start_boot_ms, 10'000u) << "taken before the body is built, not when the write returns";
+    EXPECT_EQ(b->boot->load(), 11'000u);
+}
+
+TEST(CASLosslessClaim, AnUnclearClaimThatLandedIsConfirmedByItsBytes)
+{
+    auto b = std::make_shared<MountWriteClock>();
+    b->hook = [](InMemoryBackend & s, const String & bytes, const std::optional<String> & expected, TransportAccess & access) -> WriteAnswer
+    {
+        (void)s.InMemoryBackend::write(kLayout.mountKey(kSrid), bytes, expected, access);
+        throw Poco::TimeoutException("injected: the claim landed and its answer was lost");
+    };
+    const MountClaimResult r = claim(*b);
+    ASSERT_EQ(r.kind, MountClaimResult::Claimed);
+    EXPECT_EQ(r.claimed->etag, get(*b)->etag);
+    EXPECT_EQ(b->mount_writes.load(), 1) << "confirmed by reading our bytes, not by writing again";
+}
+
+TEST(CASLosslessClaim, AnotherBodyOfOurPairAfterAnUnclearClaimIsReportedWithItsBytes)
+{
+    auto b = std::make_shared<MountWriteClock>();
+    const String other = encodeMountLease(lease(kUuid, 8, 1, false));
+    b->hook = [other](InMemoryBackend & s, const String &, const std::optional<String> &, TransportAccess & access) -> WriteAnswer
+    {
+        (void)s.InMemoryBackend::write(kLayout.mountKey(kSrid), other, std::nullopt, access);
+        throw Poco::TimeoutException("injected: another process of our pair landed first");
+    };
+    const MountClaimResult r = claim(*b);
+    EXPECT_EQ(r.kind, MountClaimResult::LiveDoubleStart);
+    ASSERT_TRUE(std::holds_alternative<Object>(r.seen));
+    EXPECT_EQ(std::get<Object>(r.seen).bytes, other);
+}
+
+TEST(CASLosslessClaim, ARefusedClaimOverAnEmptySlotReportsTheAbsence)
+{
+    auto b = std::make_shared<MountWriteClock>();
+    b->hook = [](InMemoryBackend &, const String &, const std::optional<String> &, TransportAccess &) -> WriteAnswer
+    { return std::unexpected(RawConflict{}); };
+    const MountClaimResult r = claim(*b);
+    EXPECT_EQ(r.kind, MountClaimResult::LiveDoubleStart);
+    EXPECT_TRUE(std::holds_alternative<ProvenAbsent>(r.seen)) << "absence is not 'nothing observed'";
+}

@@ -678,6 +678,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     const auto emit_mount_event = [s = store.get()](CasEvent e) { s->emitEvent(std::move(e)); };
 
     Pool * raw = store.get();
+    const auto boot_ms = [raw] { return raw->bootMsNow(); };
 
     /// Crash-recovery (`WaitForExpiry` only): a hard-killed prior incarnation leaves a stale,
     /// unreleased mount lease. Rather than aborting, OBSERVE that lease's write-token (never its
@@ -717,11 +718,14 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
                 /// freshly minted) falls through to the ordinary observed path
                 /// below.
                 claim = claimMount(claim_op, store->pool_layout, srid, our_uuid, writer_epoch, now_ms(), ttl_ms,
-                                   /*proven_dead_incarnation=*/{}, emit_mount_event);
-                if (claim.kind == MountClaimResult::LiveDoubleStart && claim.etag
-                    && claim.body && claim.body->server_uuid == our_uuid)
+                                   /*proven_dead_incarnation=*/{}, emit_mount_event, {}, boot_ms);
+                const std::optional<MountLease> holder = observedLease(claim.seen);
+                if (claim.kind == MountClaimResult::LiveDoubleStart && holder && holder->server_uuid == our_uuid)
+                {
+                    const Etag seen_etag = std::get<Object>(claim.seen).etag;
                     claim = claimMount(claim_op, store->pool_layout, srid, our_uuid, writer_epoch, now_ms(), ttl_ms,
-                                       {}, emit_mount_event, /*unsafe_reclaim_authorization=*/claim.etag);
+                                       {}, emit_mount_event, /*unsafe_reclaim_authorization=*/seen_etag, boot_ms);
+                }
             }
             /// A `FencedSelf`, a foreign-uuid `LiveDoubleStart`/`ForeignOwner`, or a raced
             /// `LiveDoubleStart` the authorization above did not cover falls through here and re-runs
@@ -732,7 +736,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
             if (!unsafe || claim.kind != MountClaimResult::Claimed)
                 claim = claimMountAwaitingExpiry(
                     claim_op, store->pool_layout, srid, our_uuid, writer_epoch,
-                    [&now_ms]() { return now_ms(); }, [raw] { return raw->bootMsNow(); },
+                    [&now_ms]() { return now_ms(); }, boot_ms,
                     ttl_ms, poll_interval_ms, sleep_ms, on_wait_start, emit_mount_event);
         }
         else
@@ -742,7 +746,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
             /// immediately.
             CasOperation claim_op = store->gc_requests.admit();
             claim = claimMount(claim_op, store->pool_layout, srid, our_uuid, writer_epoch,
-                now_ms(), ttl_ms, /*proven_dead_incarnation=*/{}, emit_mount_event);
+                now_ms(), ttl_ms, /*proven_dead_incarnation=*/{}, emit_mount_event, {}, boot_ms);
         }
         if (claim.kind == MountClaimResult::FencedSelf)
         {
@@ -766,10 +770,11 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
                 /// or foreign-owner lease as an immediate refusal. A raced write that observed nobody
                 /// has no holder to describe, and the lease this server merely proposed is not one --
                 /// naming it would send an operator after this very process.
-                const String holder = claim.body
+                const std::optional<MountLease> held = observedLease(claim.seen);
+                const String holder = held
                     ? fmt::format("mount lease held by uuid={} epoch={} pid={} hostname={} (expires_at_ms={})",
-                                  u128ToHex(claim.body->server_uuid), claim.body->writer_epoch,
-                                  claim.body->pid, claim.body->hostname, claim.body->expires_at_ms)
+                                  u128ToHex(held->server_uuid), held->writer_epoch,
+                                  held->pid, held->hostname, held->expires_at_ms)
                     : String("the conditional write that lost the mount slot observed nothing at the key, "
                              "so the holder is unknown to this server");
                 throw Exception(ErrorCodes::ABORTED,
@@ -779,7 +784,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
             }
             /// LiveDoubleStart (waited out the bound → a live twin) or ForeignOwner → fail closed
             /// with the actionable, multi-line startup error.
-            throw Exception(ErrorCodes::ABORTED, "{}", mountDoubleStartMessage(srid, claim.body));
+            throw Exception(ErrorCodes::ABORTED, "{}", mountDoubleStartMessage(srid, observedLease(claim.seen)));
         }
         claimed_prior = claim.prior;
 

@@ -214,11 +214,11 @@ TEST(CASMountClaimConflicts, ALostCreateReportsTheOccupantNotTheProposer)
     const MountClaimResult claim = claimMount(op, layout, "r", DB::UInt128(1), 7, now, /*ttl_ms=*/100);
 
     EXPECT_EQ(claim.kind, MountClaimResult::LiveDoubleStart);
-    ASSERT_TRUE(claim.body.has_value());
-    EXPECT_EQ(claim.body->server_uuid, DB::UInt128(2)) << "the result named this server's own proposal";
-    EXPECT_EQ(claim.body->writer_epoch, 1u);
-    ASSERT_TRUE(claim.etag.has_value()) << "the observed occupant's incarnation is what was read";
-    EXPECT_NE(mountDoubleStartMessage("r", claim.body).find(u128ToHex(DB::UInt128(2))), String::npos)
+    const std::optional<MountLease> holder = observedLease(claim.seen);
+    ASSERT_TRUE(holder.has_value()) << "the observed occupant's incarnation is what was read";
+    EXPECT_EQ(holder->server_uuid, DB::UInt128(2)) << "the result named this server's own proposal";
+    EXPECT_EQ(holder->writer_epoch, 1u);
+    EXPECT_NE(mountDoubleStartMessage("r", holder).find(u128ToHex(DB::UInt128(2))), String::npos)
         << "the operator message must name the foreign holder";
 }
 
@@ -251,10 +251,10 @@ TEST(CASMountClaimConflicts, ALostReclaimReportsTheObservedBodyNotTheProposer)
     const MountClaimResult claim = claimMount(op, layout, "r", DB::UInt128(1), 8, now, /*ttl_ms=*/100);
 
     EXPECT_EQ(claim.kind, MountClaimResult::LiveDoubleStart);
-    ASSERT_TRUE(claim.body.has_value());
-    EXPECT_EQ(claim.body->pid, 4242);
-    EXPECT_EQ(claim.body->seq, 99u);
-    ASSERT_TRUE(claim.etag.has_value());
+    const std::optional<MountLease> holder = observedLease(claim.seen);
+    ASSERT_TRUE(holder.has_value());
+    EXPECT_EQ(holder->pid, 4242);
+    EXPECT_EQ(holder->seq, 99u);
 }
 
 /// The residue of the same rule: a raced write whose conflict settles to no observation saw nobody, so
@@ -286,9 +286,9 @@ TEST(CASMountClaimConflicts, ARacedReclaimThatObservedNothingNamesNoHolder)
     const MountClaimResult claim = claimMount(op, layout, "r", DB::UInt128(1), 8, now, /*ttl_ms=*/100);
 
     EXPECT_EQ(claim.kind, MountClaimResult::LiveDoubleStart);
-    EXPECT_FALSE(claim.etag.has_value());
-    EXPECT_FALSE(claim.body.has_value()) << "a result that observed nobody reported a lease anyway";
-    const String message = mountDoubleStartMessage("r", claim.body);
+    EXPECT_TRUE(std::holds_alternative<ProvenAbsent>(claim.seen));
+    EXPECT_FALSE(observedLease(claim.seen).has_value()) << "a result that observed nobody reported a lease anyway";
+    const String message = mountDoubleStartMessage("r", observedLease(claim.seen));
     EXPECT_NE(message.find("could not be observed"), String::npos)
         << "the message named a holder nobody saw: " << message;
 }
