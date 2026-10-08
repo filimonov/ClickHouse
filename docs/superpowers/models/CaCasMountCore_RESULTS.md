@@ -1212,3 +1212,20 @@ Counterexamples:
 
 Violation-row counts come from a 4-worker run and vary between runs; green counts do not. A collision's
 exclusivity is `ClaimMount`'s strict monotonicity, not the counter's.
+
+### Straggler row {#2026-10-08-step-2a-straggler}
+
+`twins_immalloc` disables an incarnation's adopt while its allocation is in flight. The product does not:
+a renewal write already sent when the park starts can land after the allocation. `StragglerAdopt = TRUE`
+lifts the guard and latches the mount fence lost from `AllocBegin` until the incarnation's next claim
+(`fenceLatched`); `Write` is disabled while it is set. The red trace of `twins_immalloc` without any
+guard writes with `localLost = TRUE` and a fence stamped by the stale adopt, so the latch is what the
+product relies on and the model had no equivalent.
+
+| cfg | expected | result | depth | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `twins_immalloc_straggler` (new) | green | green | 33 | 813,294,843 | 96,230,328 |
+
+The four new violation rows were re-run on the final model (`StragglerAdopt = FALSE` in them) and end as
+before. The row has no witness that a landed straggler is reached; the lifted guard makes it reachable by
+construction, and the `Write` latch is the only difference from `twins_immalloc` on that path.

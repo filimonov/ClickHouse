@@ -298,8 +298,12 @@ CONSTANTS
                           \* `N + 1`: a foreign advance is told apart from our own write, and a
                           \* reacquire that sees one stops. FALSE in every pre-existing cfg: the new
                           \* actions are disabled, the new variables stay at their `Init` values.
-    SabReacquireRedecides \* FALSE = honest: a reacquire that saw a foreign advance stops. TRUE = it
+    SabReacquireRedecides,\* FALSE = honest: a reacquire that saw a foreign advance stops. TRUE = it
                           \* re-decides like a start and allocates again.
+    StragglerAdopt        \* FALSE = an incarnation's adopt is disabled while its allocation is in flight.
+                          \* TRUE = a renewal write already sent can land after the allocation, and the
+                          \* process's fence is latched lost from `AllocBegin` until its next claim:
+                          \* `Write` is disabled meanwhile.
 
 VARIABLES
     owner,        \* Actors \cup {None}; sticky once non-None
@@ -424,6 +428,8 @@ VARIABLES
     allocAmbig,       \* [Incs -> BOOLEAN]; the in-flight write's outcome is unclear to the caller
     allocStopped,     \* [Incs -> BOOLEAN]; a reacquire gave up: it saw a foreign advance
     reacqSawForeign,  \* [Incs -> BOOLEAN]; a reacquire saw the counter moved by another process
+    fenceLatched,     \* [Incs -> BOOLEAN]; only with `StragglerAdopt`: set at `AllocBegin`, cleared by the
+                      \* next claim of the incarnation. `Write` is disabled while it is set.
     claimedAfterForeign \* history: TRUE once an incarnation claimed the mount after it saw a foreign
                         \* advance in reacquire mode (`ReacquireStopsOnForeignAdvance`)
 
@@ -433,10 +439,10 @@ vars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEp
            fenceUntil, obsToken, obsSince, observedReclaimEver, supersededThenWrote,
            recGen, wedgeGen, wedgeOp, slot, acked, durable, admissions, staleRefusedEver,
            sealRejectedEver, epochRegressed, bodyWriter,
-           allocPend, allocAmbig, allocStopped, reacqSawForeign, claimedAfterForeign >>
+           allocPend, allocAmbig, allocStopped, reacqSawForeign, fenceLatched, claimedAfterForeign >>
 
 \* The per-incarnation allocation variables. A restart is a new process, so `Die` resets them.
-allocVars == << allocPend, allocAmbig, allocStopped, reacqSawForeign, claimedAfterForeign >>
+allocVars == << allocPend, allocAmbig, allocStopped, reacqSawForeign, fenceLatched, claimedAfterForeign >>
 
 \* A process is an incarnation `<< uuid, k >>`. Two incarnations of one uuid are two processes that
 \* both started as that server: a delayed first start and a second start, for example.
@@ -513,6 +519,7 @@ Init ==
     /\ allocAmbig = [a \in Incs |-> FALSE]
     /\ allocStopped = [a \in Incs |-> FALSE]
     /\ reacqSawForeign = [a \in Incs |-> FALSE]
+    /\ fenceLatched = [a \in Incs |-> FALSE]
     /\ claimedAfterForeign = FALSE
 
 ----------------------------------------------------------------------------
@@ -699,6 +706,7 @@ ClaimMount(a) ==
                     obsToken, obsSince, observedReclaimEver, supersededThenWrote >>
     /\ UNCHANGED rgVars
     /\ claimedAfterForeign' = (claimedAfterForeign \/ reacqSawForeign[a])
+    /\ fenceLatched' = [fenceLatched EXCEPT ![a] = FALSE]
     /\ UNCHANGED << allocPend, allocAmbig, allocStopped, reacqSawForeign >>
 
 \* The mount holder renews atomically. This action is intentionally more permissive than the
@@ -805,8 +813,9 @@ GcFence ==
 AdoptRead(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
     \* The allocation runs on the mount driver with the background renewal parked, so no adopt
-    \* write of the same process lands while an allocation is in flight.
-    /\ allocPend[a] = NoPend
+    \* write of the same process lands while an allocation is in flight. `StragglerAdopt` lifts
+    \* this: a renewal already sent when the park starts can still land.
+    /\ (StragglerAdopt \/ allocPend[a] = NoPend)
     /\ adoptObs[a] = None
     /\ mount # None
     /\ mount.uuid = Uuid(a)
@@ -869,8 +878,9 @@ AdoptWrite(a) ==
     IN
     /\ ~rejected[a] /\ ~wedged[a]
     \* The allocation runs on the mount driver with the background renewal parked, so no adopt
-    \* write of the same process lands while an allocation is in flight.
-    /\ allocPend[a] = NoPend
+    \* write of the same process lands while an allocation is in flight. `StragglerAdopt` lifts
+    \* this: a renewal already sent when the park starts can still land.
+    /\ (StragglerAdopt \/ allocPend[a] = NoPend)
     /\ adoptObs[a] # None
     /\ IF mtoken = adoptObs[a]
        THEN /\ mtoken < MaxToken
@@ -926,6 +936,7 @@ Die(a) ==
     /\ allocAmbig' = [allocAmbig EXCEPT ![a] = FALSE]
     /\ allocStopped' = [allocStopped EXCEPT ![a] = FALSE]
     /\ reacqSawForeign' = [reacqSawForeign EXCEPT ![a] = FALSE]
+    /\ fenceLatched' = [fenceLatched EXCEPT ![a] = FALSE]
     /\ UNCHANGED claimedAfterForeign
 
 \* A mutation under the mount. rev.6 round 8 (P2, consult/review-reconciled): `Write` is now
@@ -969,6 +980,7 @@ Write(a) ==
     LET trulySuperseded == epoch > localEpoch[a]
     IN
     /\ CanWrite(a)
+    /\ ~(StragglerAdopt /\ fenceLatched[a])   \* the mount fence is latched lost across a reallocation
     /\ wrote' = wrote \union {<< a, localEpoch[a] >>}
     /\ rootEmpty' = FALSE
     /\ lostThenWrote' = (lostThenWrote \/ localLost[a])
@@ -1554,6 +1566,7 @@ AllocBegin(a) ==
     /\ owner = Uuid(a) /\ epoch < MaxEpoch /\ (epoch > 0 \/ epochCeiling = 0)
     /\ ~(mount # None /\ mount.uuid = Uuid(a) /\ ~mount.fenced /\ OwnBody(a))
     /\ allocPend' = [allocPend EXCEPT ![a] = epoch]
+    /\ fenceLatched' = [fenceLatched EXCEPT ![a] = StragglerAdopt \/ fenceLatched[a]]
     /\ UNCHANGED << epoch, epochCeiling, localEpoch, allocAmbig, allocStopped, reacqSawForeign,
                     claimedAfterForeign, allocFrame >>
 \* Our bytes after an unclear attempt are ours, even when another process that read the same value
@@ -1591,10 +1604,10 @@ AllocAttempt(a) ==
        \/ /\ allocAmbig' = [allocAmbig EXCEPT ![a] = TRUE]
           /\ UNCHANGED << epoch, epochCeiling, localEpoch, allocPend, allocStopped, reacqSawForeign >>
        \/ /\ epoch # allocPend[a] /\ AllocSettle(a, FALSE) /\ UNCHANGED << epoch, epochCeiling >>
-    /\ UNCHANGED << claimedAfterForeign, allocFrame >>
+    /\ UNCHANGED << claimedAfterForeign, fenceLatched, allocFrame >>
 AllocResolve(a) ==
     /\ ImmutableAlloc /\ allocAmbig[a] /\ AllocSettle(a, TRUE)
-    /\ UNCHANGED << epoch, epochCeiling, claimedAfterForeign, allocFrame >>
+    /\ UNCHANGED << epoch, epochCeiling, claimedAfterForeign, fenceLatched, allocFrame >>
 
 Next ==
     \/ Tick
@@ -1683,6 +1696,7 @@ TypeOK ==
     /\ allocAmbig \in [Incs -> BOOLEAN]
     /\ allocStopped \in [Incs -> BOOLEAN]
     /\ reacqSawForeign \in [Incs -> BOOLEAN]
+    /\ fenceLatched \in [Incs -> BOOLEAN]
     /\ claimedAfterForeign \in BOOLEAN
 
 \* Owner is sticky: once set it never transitions to a different non-None value.
