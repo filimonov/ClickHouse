@@ -1462,6 +1462,7 @@ uint64_t MountLeaseRenewer::start(Liveness liveness)
 
     seq = 1;
     last_etag = etag;
+    last_body = body;
     last_committed_attempt_start_boot_ms = attempt_start_boot_ms;
     const uint64_t ttl_ms = static_cast<uint64_t>(ttl.count());
     confirmed_deadline_boot_ms = attempt_start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
@@ -1568,16 +1569,42 @@ MountRenewResult MountLeaseRenewer::terminalResult(MountRenewResult result)
 
 MountRenewResult MountLeaseRenewer::renew(const MountRenewOperationEnvironment & environment)
 {
-    return renewOn(mount_requests, environment);
+    return renewOn(mount_requests, environment, /*until_definitive=*/false);
 }
 
 MountRenewResult MountLeaseRenewer::renewForRemount(const MountRenewOperationEnvironment & environment)
 {
-    return renewOn(open_requests, environment);
+    return renewOn(open_requests, environment, /*until_definitive=*/false);
+}
+
+MountRenewResult MountLeaseRenewer::renewUntilDefinitive(const MountRenewOperationEnvironment & environment)
+{
+    return renewOn(open_requests, environment, /*until_definitive=*/true);
+}
+
+Observation MountLeaseRenewer::readUntilObserved(CasOperation & op, const Retry & policy) const
+{
+    while (op.admitted())
+    {
+        op.pause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs));
+        try
+        {
+            std::optional<Object> got = op.read(key, policy);
+            if (!got)
+                return ProvenAbsent{};
+            return std::move(*got);
+        }
+        catch (const Exception & e)
+        {
+            if (isDeterministicLocalFailure(e.code()))
+                throw;
+        }
+    }
+    return NotObserved{};
 }
 
 MountRenewResult MountLeaseRenewer::renewOn(
-    CasRequests & plane, const MountRenewOperationEnvironment & environment)
+    CasRequests & plane, const MountRenewOperationEnvironment & environment, bool until_definitive)
 {
     const MountRenewObservabilityRegistration observability_registration = beginMountRenewObservabilityCall();
     const MountRenewObservabilityCallGuard observability_guard(observability_registration);
@@ -1617,18 +1644,66 @@ MountRenewResult MountLeaseRenewer::renewOn(
     result.attempt_start_boot_ms = attempt_start_boot_ms;
 
     CasOperation op = plane.admit(environment.live);
-    op.observeRequests(environment.requests);
+    /// Counted here rather than taken from one engine call: the background renewal may span several.
+    uint32_t attempts_sent = 0;
+    uint64_t last_attempt_start_boot_ms = attempt_start_boot_ms;
+    op.observeRequests(RequestObserver{
+        .on_write_attempt = [&](uint32_t)
+        {
+            ++attempts_sent;
+            last_attempt_start_boot_ms = boot_clock();
+            if (environment.requests.on_write_attempt)
+                environment.requests.on_write_attempt(attempts_sent);
+        },
+        .on_failure = environment.requests.on_failure,
+    });
+    const Etag expected = precondition();
+    const Retry policy = until_definitive
+        ? Retry::untilDefinitive()
+        : Retry::untilLeaseSafe(confirmed_deadline_boot_ms, static_cast<uint64_t>(lease_safety_margin.count()));
     std::optional<WriteResult> written;
     try
     {
-        written = op.replace(key, body, precondition(),
-            Retry::untilLeaseSafe(confirmed_deadline_boot_ms, static_cast<uint64_t>(lease_safety_margin.count())));
+        written = op.replace(key, body, expected, policy);
+        while (until_definitive)
+        {
+            bool credential_refusal = false;
+            if (const Refused * refused = std::get_if<Refused>(&*written))
+            {
+                /// `writeLoop` refuses only when no attempt of the call is unclear, so no copy of ours
+                /// can land behind a new call with the same tuple.
+                credential_refusal = refused->credential;
+            }
+            else if (Conflict * conflict = std::get_if<Conflict>(&*written))
+            {
+                if (std::holds_alternative<NotObserved>(conflict->seen))
+                    conflict->seen = readUntilObserved(op, policy);
+                if (std::holds_alternative<NotObserved>(conflict->seen))
+                {
+                    written = GaveUp{GaveUp::Why::FenceLost, GaveUp::Source::Policy, attempts_sent != 0, NotObserved{}, attempts_sent};
+                    break;
+                }
+                /// Our last confirmed body under the token we named: the store refused, the slot did not move.
+                const Object * seen = std::get_if<Object>(&conflict->seen);
+                if (!seen || seen->etag != expected || seen->bytes != last_body)
+                    break;
+            }
+            else
+            {
+                break;
+            }
+            op.pause(credential_refusal
+                ? environment.credential_refusal_pause_ms
+                : Retry::spacedPause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs), last_attempt_start_boot_ms, boot_clock()));
+            written = op.replace(key, body, expected, policy);
+        }
     }
     catch (...)
     {
         /// The engine surfaces a deterministic local failure unchanged rather than reissuing it.
         markMountRenewTermination(MountRenewTerminalClassification::DeterministicFailure);
         result.failure = std::current_exception();
+        result.attempts_sent = attempts_sent;
         return terminalResult(std::move(result));
     }
 
@@ -1636,22 +1711,23 @@ MountRenewResult MountLeaseRenewer::renewOn(
     {
         seq = next_seq;
         last_etag = std::move(committed->etag);
+        last_body = body;
         last_committed_attempt_start_boot_ms = attempt_start_boot_ms;
         const uint64_t ttl_ms = static_cast<uint64_t>(ttl.count());
         confirmed_deadline_boot_ms = attempt_start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
             ? std::numeric_limits<uint64_t>::max()
             : attempt_start_boot_ms + ttl_ms;
         result.outcome = MountRenewOutcome::Committed;
-        result.attempts_sent = committed->attempts_sent;
+        result.attempts_sent = attempts_sent;
         result.resolved_by_read = committed->resolved_by_read;
-        result.sent_any = committed->attempts_sent != 0;
+        result.sent_any = attempts_sent != 0;
         return result;
     }
 
     if (const Conflict * conflict = std::get_if<Conflict>(&*written))
     {
         result.sent_any = true;
-        result.attempts_sent = conflict->attempts_sent;
+        result.attempts_sent = attempts_sent;
         try
         {
             throwRenewConflict(conflict->seen);
@@ -1666,7 +1742,7 @@ MountRenewResult MountLeaseRenewer::renewOn(
     if (const Refused * refused = std::get_if<Refused>(&*written))
     {
         result.sent_any = true;
-        result.attempts_sent = refused->attempts_sent;
+        result.attempts_sent = attempts_sent;
         markMountRenewTermination(MountRenewTerminalClassification::DeterministicFailure);
         result.failure = std::make_exception_ptr(Exception(
             refused->store_error,
@@ -1677,7 +1753,7 @@ MountRenewResult MountLeaseRenewer::renewOn(
     if (const GaveUp * gave_up = std::get_if<GaveUp>(&*written))
     {
         result.sent_any = gave_up->sent_any;
-        result.attempts_sent = gave_up->attempts_sent;
+        result.attempts_sent = attempts_sent;
         if (gave_up->why == GaveUp::Why::Deadline)
             result.deadline_source = gave_up->deadline_source;
 
@@ -1771,6 +1847,7 @@ void MountLeaseRenewer::terminate(CasOperation & op)
     {
         seq += 1;
         last_etag = std::move(committed->etag);
+        last_body = body;
         emitMountEvent(
             event_sink, CasEventType::MountRelease, srid, "farewell", nullptr,
             "graceful release -- lease stamped already-expired and watermark retired");
