@@ -78,7 +78,7 @@ namespace ContentAddressedSetting
     extern const ContentAddressedSettingsUInt64 gc_round_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_handoff_prefix_wholesale_budget;
     extern const ContentAddressedSettingsUInt64 gc_round_outcome_entry_budget;
-    extern const ContentAddressedSettingsUInt64 mount_lease_ttl_ms;
+    extern const ContentAddressedSettingsUInt64 mount_lease_ms;
     extern const ContentAddressedSettingsUInt64 mount_renew_period_ms;
     extern const ContentAddressedSettingsBool unsafe_remount_no_delay;
     extern const ContentAddressedSettingsUInt64 part_folder_cache_bytes;
@@ -287,7 +287,7 @@ ContentAddressedMetadataStorage::ContentAddressedMetadataStorage(
     , gc_round_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_prefix_wholesale_budget].value)
     , gc_round_handoff_prefix_wholesale_budget(settings_[ContentAddressedSetting::gc_round_handoff_prefix_wholesale_budget].value)
     , gc_round_outcome_entry_budget(settings_[ContentAddressedSetting::gc_round_outcome_entry_budget].value)
-    , mount_lease_ttl(std::chrono::milliseconds(settings_[ContentAddressedSetting::mount_lease_ttl_ms].value))
+    , mount_lease_ttl(std::chrono::milliseconds(settings_[ContentAddressedSetting::mount_lease_ms].value))
     , mount_renew_period(std::chrono::milliseconds(settings_[ContentAddressedSetting::mount_renew_period_ms].value))
     , cas_unsafe_remount_no_delay(settings_[ContentAddressedSetting::unsafe_remount_no_delay].value)
     , cas_part_folder_cache_bytes(settings_[ContentAddressedSetting::part_folder_cache_bytes].value)

@@ -9,6 +9,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <string_view>
 #include <vector>
 
@@ -70,8 +71,8 @@ constexpr std::string_view CAS_KEY_PREFIX = "cas_";
     DECLARE(UInt64, gc_round_prefix_wholesale_budget, 20000, "Generation-prefix wholesale delete (prune only) object cap per round (0 = unbounded)", 0) \
     DECLARE(UInt64, gc_round_handoff_prefix_wholesale_budget, 5000, "Post-CAS hand-off generation-prefix reclaim object cap per round, reserved separately from gc_round_prefix_wholesale_budget so a prune-heavy round cannot starve the one-shot hand-off (0 = unbounded)", 0) \
     DECLARE(UInt64, gc_round_outcome_entry_budget, 5000, "GcOutcomes per-round entry cap across the redelete/spared audit log (0 = unbounded)", 0) \
-    DECLARE(UInt64, mount_lease_ttl_ms, 30000, "Mount lease validity after a successful claim or renewal, in milliseconds", 0) \
-    DECLARE(UInt64, mount_renew_period_ms, 10000, "Interval between background mount lease renewals, in milliseconds", 0) \
+    ALIAS(UInt64, mount_lease_ms, 30000, "How long a confirmed renewal entitles this server to write, from the renewal's start, in milliseconds. Operations stop earlier; the mount line prints when. Must be the same on every server of the pool", 0, mount_lease_ttl_ms) \
+    DECLARE(UInt64, mount_renew_period_ms, 10000, "How often a renewal starts, in milliseconds; also the step at which this server observes other slots. Local to this server", 0) \
     DECLARE(Bool, unsafe_remount_no_delay, false, "Reclaim a mount slot that carries this server's own uuid at once after a hard restart, without observing the slot's token for the lease TTL. Unsafe whenever two processes can hold the same server_uuid (a copied uuid file, a stalled predecessor): after such a reclaim the predecessor can still start conditional writes until its own cutoff (confirmed deadline − margin − 2 × envelope) or until its next renewal meets the token guard, and a request it already sent may materialize later. Ref-log keys carry (writer_epoch, sequence) and creates are conditional, so two writers can never commit different bodies to one key, and recovery's epoch seal settles stragglers -- the exposure is availability, not data: recovery fails closed after 64 successive seal-create attempts displaced by newly materializing old-epoch transactions. Intended for test stands and deployments that guarantee one process per uuid", 0) \
     DECLARE(String, server_root_id, "", "REQUIRED explicit layout subtree identity; macros expand as in the s3 endpoint", 0) \
     DECLARE(UInt64, part_folder_cache_bytes, 64ULL << 20, "Part-folder view cache byte budget (0 disables retention)", 0) \
@@ -82,7 +83,7 @@ constexpr std::string_view CAS_KEY_PREFIX = "cas_";
     DECLARE(UInt64, gc_io_concurrency, 16, "Maximum number of threads in the GC I/O pool. Used for fold and rebuild read-ahead, orphan-manifest sweep planning reads, and pending_deletes HEAD plus conditional DELETE. Per-hash meta writes use gc_meta_pool_size; other GC requests run on the round thread. 1 disables parallel GC I/O", 0) \
     DECLARE(UInt64, gc_bulk_delete_chunk_keys, 1000, "Keys per batch delete request in GC's write-once families (owner-removed manifest bodies, covered ref logs and snapshots), capped by the storage's batch-delete limit; 1 to 1000", 0) \
     DECLARE(UInt64, attempt_timeout_ms, 5000, "Budget for one HTTP attempt of a writable Native mount's control-plane requests (read, head, list, remove, conditional write), at least 1. With the connect cap it forms the attempt envelope the lease arithmetic reserves", 0) \
-    DECLARE(UInt64, lease_safety_margin_ms, 2000, "Startup-only margin validated against the mount lease TTL: attempt envelope + this must be strictly less than the TTL, and renew period + 2 × envelope + this too", 0) \
+    DECLARE(UInt64, lease_safety_margin_ms, 2000, "Margin reserved on top of the request envelopes in every admission, in milliseconds", 0) \
     DECLARE(String, staging_backend, "local", "Blob staging backend (local | s3); s3 is opt-in", 0) \
 
 DECLARE_SETTINGS_TRAITS(ContentAddressedSettingsTraits, LIST_OF_CONTENT_ADDRESSED_SETTINGS, CONTENT_ADDRESSED_SETTINGS_SUPPORTED_TYPES)
@@ -154,6 +155,23 @@ void ContentAddressedSettings::loadFromConfig(
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "content_addressed disk `{}`: both `{}` and `cas_{}` are set; remove the unprefixed "
                 "one", config_prefix, key, key);
+    }
+
+    /// A setting and its synonym name one value; two different values are a configuration error.
+    std::map<std::string, std::pair<std::string, std::string>> by_setting;
+    for (const std::string & key : config_keys)
+    {
+        const std::string_view base = splitRepeatIndex(key).base;
+        const std::string_view name = base.starts_with(CAS_KEY_PREFIX) ? base.substr(CAS_KEY_PREFIX.size()) : base;
+        if (!ContentAddressedSettingsImpl::hasBuiltin(name))
+            continue;
+        std::string value = config.getString(config_prefix + "." + key);
+        const auto [it, inserted] = by_setting.try_emplace(
+            std::string(ContentAddressedSettingsTraits::resolveName(name)), std::string(base), value);
+        if (!inserted && it->second.second != value)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "content_addressed disk `{}`: `{}` ({}) and `{}` ({}) set the same setting to different values; keep one",
+                config_prefix, it->second.first, it->second.second, base, value);
     }
 
     for (const std::string & key : config_keys)
@@ -247,10 +265,10 @@ void ContentAddressedSettings::validate()
             "content_addressed disk: cas_attempt_timeout_ms must be >= 1 (got {})",
             settings[ContentAddressedSetting::attempt_timeout_ms].value);
 
-    if (settings[ContentAddressedSetting::mount_lease_ttl_ms] == 0)
+    if (settings[ContentAddressedSetting::mount_lease_ms] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "content_addressed disk: cas_mount_lease_ttl_ms must be >= 1 (got {})",
-            settings[ContentAddressedSetting::mount_lease_ttl_ms].value);
+            "content_addressed disk: cas_mount_lease_ms must be >= 1 (got {})",
+            settings[ContentAddressedSetting::mount_lease_ms].value);
 
     if (settings[ContentAddressedSetting::mount_renew_period_ms] == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

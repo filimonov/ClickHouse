@@ -25,6 +25,7 @@ namespace DB::ContentAddressedSetting
     extern const ContentAddressedSettingsBool gc_enabled;
     extern const ContentAddressedSettingsUInt64 gc_shards;
     extern const ContentAddressedSettingsUInt64 gc_interval_sec;
+    extern const ContentAddressedSettingsUInt64 mount_lease_ms;
     extern const ContentAddressedSettingsUInt64 gc_bulk_delete_chunk_keys;
     extern const ContentAddressedSettingsString scratch_path;
     extern const ContentAddressedSettingsBool unsafe_remount_no_delay;
@@ -98,6 +99,24 @@ void expectLoadFailureWithExactMessage(const String & config, int code, const St
         EXPECT_EQ(e.message(), message);
     }
 }
+}
+
+TEST(CASContentAddressedSettings, LeaseSynonymLoadsAndAConflictNamesBothKeys)
+{
+    for (const char * keys : {"<cas_mount_lease_ttl_ms>40000</cas_mount_lease_ttl_ms>",
+                              "<cas_mount_lease_ms>40000</cas_mount_lease_ms><cas_mount_lease_ttl_ms>40000</cas_mount_lease_ttl_ms>"})
+    {
+        auto cfg = makeConfig(String("<cas_server_root_id>srv1</cas_server_root_id>") + keys);
+        ContentAddressedSettings s;
+        s.loadFromConfig(*cfg, "disk", "/scratch", "/scratch", identity_macros);
+        EXPECT_EQ(s[ContentAddressedSetting::mount_lease_ms].value, 40000u) << keys;
+    }
+    expectLoadFailureWithExactMessage(
+        "<cas_server_root_id>srv1</cas_server_root_id><cas_mount_lease_ms>40000</cas_mount_lease_ms>"
+        "<cas_mount_lease_ttl_ms>50000</cas_mount_lease_ttl_ms>",
+        ErrorCodes::BAD_ARGUMENTS,
+        "content_addressed disk `disk`: `cas_mount_lease_ms` (40000) and `cas_mount_lease_ttl_ms` (50000) set the "
+        "same setting to different values; keep one");
 }
 
 TEST(CASContentAddressedSettings, DefaultsAndOverridesLand)
