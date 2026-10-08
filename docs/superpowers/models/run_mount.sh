@@ -118,6 +118,8 @@
 #   witness_samebytes                   -> W_SameBytesCollision  two live incarnations hold one epoch
 #                                          after writing the same bytes
 #   witness_reacquirestops              -> W_ReacquireStops  a reacquire sees a foreign advance and stops
+#   witness_straggler_landed            -> W_StragglerLanded  an adopt write lands while the fence is latched
+#                                          across an allocation. Runs `CaCasMountCoreStraggler.tla`
 #
 # NOT in the default suite: CaCasMountCore_rev6_observe.cfg. It does not complete in an interactive
 # budget and that is PRE-EXISTING, confirmed against the pre-2026-07-24 committed model (Drift = 2
@@ -191,6 +193,7 @@ CONFIGS=(
   "witness_delayedstart                  violation  W_DelayedStartOverNewerBody"
   "witness_samebytes                     violation  W_SameBytesCollision"
   "witness_reacquirestops                violation  W_ReacquireStops"
+  "witness_straggler_landed              violation  W_StragglerLanded  CaCasMountCoreStraggler"
 )
 [[ "${SLOW:-0}" == "1" ]] && CONFIGS+=("rev6_observe  incomplete  -")
 

@@ -1213,3 +1213,16 @@ Counterexamples:
 
 Violation-row counts come from a 4-worker run and vary between runs; green counts do not. A collision's
 exclusivity is `ClaimMount`'s strict monotonicity, not the counter's.
+
+### Straggler witness {#2026-10-08-step-2a-straggler-witness}
+
+The straggler path is reached: `witness_straggler_landed` (module `CaCasMountCoreStraggler.tla`, a history
+wrapper) violates `W_StragglerLanded` at depth 13 (102,246 generated, 31,111 distinct). Trace tail:
+`AdoptRead` observes token 1, `AllocBegin` latches the fence (`allocPend = 1`), `AdoptWrite` lands with the
+latch set and bumps the token to 2. So the green `twins_immalloc` includes a straggler adopt write; the
+`Write` latch is what keeps it safe.
+
+`twins_immalloc` has no flag that turns the straggler off, so its counts (739,842,367 generated,
+96,230,328 distinct, depth 33) are those of the final model, not of the earlier model that blocked adopt
+during an allocation (512,891,703 / 68,982,696). The wrapper adds no step to `Next`; `CaCasMountCore.tla`
+is unchanged by this commit.
