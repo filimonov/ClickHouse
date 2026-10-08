@@ -887,22 +887,27 @@ std::optional<WriteResult> CasOperation::gatedPause(uint64_t pause_ms, uint32_t 
     return std::nullopt;
 }
 
-std::optional<WriteResult> CasOperation::pauseAndReissue(WriteState & state, const Retry::Bound & bound)
+std::optional<WriteResult> CasOperation::pauseAndReissue(WriteState & state, const Retry & policy, const Retry::Bound & bound)
 {
-    return gatedPause(Retry::backoff(++state.reissues), 2, state, bound, detail::recordReissue, /*should_sleep=*/true);
+    ++state.reissues;
+    const uint64_t pause_ms = reissuePause(
+        policy, state.attempt_started_ms, [reissues = state.reissues] { return Retry::backoff(reissues); });
+    return gatedPause(pause_ms, 2, state, bound, detail::recordReissue, /*should_sleep=*/true);
 }
 
-std::optional<WriteResult> CasOperation::pauseForConflict(WriteState & state, const Retry::Bound & bound)
+std::optional<WriteResult> CasOperation::pauseForConflict(WriteState & state, const Retry & policy, const Retry::Bound & bound)
 {
-    return gatedPause(Retry::conflictBackoff(), 2, state, bound, detail::recordConflictPause, /*should_sleep=*/true);
+    const uint64_t pause_ms = reissuePause(policy, state.attempt_started_ms, Retry::conflictBackoff);
+    return gatedPause(pause_ms, 2, state, bound, detail::recordConflictPause, /*should_sleep=*/true);
 }
 
 /// A flat pause before reissuing an attempt whose failure text named a failed connection.
 static constexpr uint64_t kConnectHintPauseMs = 50;
 
-std::optional<WriteResult> CasOperation::pauseFlat(WriteState & state, const Retry::Bound & bound)
+std::optional<WriteResult> CasOperation::pauseFlat(WriteState & state, const Retry & policy, const Retry::Bound & bound)
 {
-    return gatedPause(kConnectHintPauseMs, 2, state, bound, detail::recordReissue, /*should_sleep=*/true);
+    const uint64_t pause_ms = reissuePause(policy, state.attempt_started_ms, [] { return kConnectHintPauseMs; });
+    return gatedPause(pause_ms, 2, state, bound, detail::recordReissue, /*should_sleep=*/true);
 }
 
 std::optional<WriteResult> CasOperation::reissueAtOnce(WriteState & state, const Retry::Bound & bound)
@@ -937,6 +942,8 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         if (!fits(reservation, bound))
             return gaveUp(GaveUp::Why::Deadline, sourceFor(bound), state);
 
+        if (policy.attempt_spacing_ms)
+            state.attempt_started_ms = owner.now_ms();
         detail::recordAttempt();
         ++state.attempts_sent;
         state.sent_any = true;
@@ -1047,7 +1054,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         /// inner write is unresolved either. Re-send it under the credentials the refresh installed.
         if (refresh_owns_reissue)
         {
-            if (auto given_up = pauseAndReissue(state, bound))
+            if (auto given_up = pauseAndReissue(state, policy, bound))
                 return *given_up;
             continue;
         }
@@ -1059,7 +1066,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
         /// the read below settles it.
         if (connect_hint && !policy.single_attempt)
         {
-            if (auto given_up = pauseFlat(state, bound))
+            if (auto given_up = pauseFlat(state, policy, bound))
                 return *given_up;
             continue;
         }
@@ -1115,7 +1122,7 @@ WriteResult CasOperation::writeLoop(const String & key, const String & bytes, co
                 return *given_up;
             continue;
         }
-        if (auto given_up = pauseAndReissue(state, bound))
+        if (auto given_up = pauseAndReissue(state, policy, bound))
             return *given_up;
     }
 }
@@ -1171,7 +1178,7 @@ WriteResult CasOperation::readModifyWrite(const String & key, const DecideOnObje
         /// A clean lost race is settled: the resolve read holds the fresh object and the next
         /// iteration decides on it. Only a conflict that settled a transport fault is paced by the
         /// growing schedule.
-        if (auto given_up = state.any_ambiguous ? pauseAndReissue(state, bound) : pauseForConflict(state, bound))
+        if (auto given_up = state.any_ambiguous ? pauseAndReissue(state, policy, bound) : pauseForConflict(state, policy, bound))
             return *given_up;
 
         /// Only when the resolve settled nothing is a fresh read owed; otherwise `current` already is
@@ -1228,7 +1235,7 @@ WriteResult CasOperation::readModifyWriteOnPresence(const String & key, const De
         /// A clean lost race is settled: the resolve read holds the fresh object and the next
         /// iteration decides on it. Only a conflict that settled a transport fault is paced by the
         /// growing schedule.
-        if (auto given_up = state.any_ambiguous ? pauseAndReissue(state, bound) : pauseForConflict(state, bound))
+        if (auto given_up = state.any_ambiguous ? pauseAndReissue(state, policy, bound) : pauseForConflict(state, policy, bound))
             return *given_up;
 
         if (std::holds_alternative<NotObserved>(state.last_seen))
