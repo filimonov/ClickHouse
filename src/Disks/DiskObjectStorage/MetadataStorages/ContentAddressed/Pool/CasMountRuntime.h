@@ -323,6 +323,10 @@ public:
     /// it cannot plausibly finish before the fence expires.
     bool refAppendFenceOk() const;
 
+    /// The confirmed deadline, once it has passed while the pool is `Live` and the fence is not lost: the
+    /// lease expired and the renewal keeps retrying. Empty otherwise. I/O-free.
+    std::optional<uint64_t> leaseExpiredAtBootMs() const;
+
     /// TRUE once the pool has reached — or is being driven toward — a state on which the self-remount
     /// worker must stop: a published terminal `Vanished` intent (`vanished_intent` — set early by
     /// FORGET, or by a natural `enterVanished`, and already subsuming every settled `Vanished*` state since
@@ -459,6 +463,8 @@ private:
         bool propagate_failure);
     /// Publish a committed renewal's deadline, its start plus the lease. Requires `driver_mutex`.
     void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
+    /// One `WARNING` per expiry, at the first renewal attempt after it.
+    void warnOnceIfLeaseExpired() noexcept;
     void renewalLoop();
     void remountLoop();
     ThreadFromGlobalPool makeWorker(std::function<void()> body);
@@ -539,6 +545,7 @@ private:
     /// Fence-generation token (rev.7 [C2]): bumped by `tripMountLost` and `armMountFence`. See
     /// `fenceGeneration`/`checkFenceOrThrow`.
     std::atomic<uint64_t> fence_generation{0};
+    std::atomic<bool> lease_expiry_warned{false};
     std::function<void()> arm_mount_fence_interposition_hook_for_test;
 
     /// The pool lifecycle condition (rev.7 §1). Starts `Live`. Non-terminal transitions

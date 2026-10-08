@@ -4337,6 +4337,66 @@ TEST(CASMountRuntime, ARemountRequestEndsARenewalRetryingPastTheLease)
     runtime.finishTeardown(false);
 }
 
+/// One `WARNING` per expiry, written at the first attempt after it, and the expiry is visible while it lasts.
+TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
+{
+    ScopedRemountLogCapture logs;
+    const Layout layout("until-definitive-expiry-log");
+    const UInt128 uuid{1};
+    uint64_t wall_ms = 1000;
+    std::atomic<uint64_t> boot_ms{100};
+    std::atomic<uint64_t> outage_until{0};
+    std::vector<std::optional<uint64_t>> expired_at_write;
+    std::atomic<uint32_t> commits{0};
+    String log_at_second_commit;
+    DB::Cas::tests::ManualBarrier second_commit;
+    CasMountRuntime * runtime_ptr = nullptr;
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind,
+              MountClaimResult::Claimed);
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{
+            .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
+            .background_watermark = true,
+            .boot_ms_fn = [&] { return boot_ms.load(); },
+            .renewal_finished_hook_for_test = [&](const MountRenewResult & result)
+            {
+                if (result.outcome == MountRenewOutcome::Committed && ++commits == 2)
+                {
+                    log_at_second_commit = logs.captured();
+                    second_commit.arriveAndWait();
+                }
+            }},
+        "test", sink, runtimeRenewBudget(), [] { return false; });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime_ptr = &runtime;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer();
+    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime_holder.setRetrySleepForTest([&](uint64_t ms) { boot_ms += ms; });
+    boot_ms = anchor + 500;
+    outage_until = anchor + 3'500;
+    backend->on_outage_write = [&] { expired_at_write.push_back(runtime_ptr->leaseExpiredAtBootMs()); };
+    backend->outage = [&] { return boot_ms.load() < outage_until.load(); };
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(500));
+
+    second_commit.waitUntilArrived();
+    const String prefix = "CAS mount lease of 'test' expired ";
+    size_t warnings = 0;
+    for (size_t at = log_at_second_commit.find(prefix); at != String::npos; at = log_at_second_commit.find(prefix, at + 1))
+        ++warnings;
+    EXPECT_EQ(warnings, 1u) << log_at_second_commit;
+    ASSERT_GE(expired_at_write.size(), 3u);
+    EXPECT_FALSE(expired_at_write.front().has_value()) << "the first attempt runs inside the lease";
+    EXPECT_EQ(expired_at_write.back(), std::optional<uint64_t>(anchor + 1000));
+    EXPECT_FALSE(runtime.leaseExpiredAtBootMs().has_value()) << "a renewal with lease left ends the expiry";
+    second_commit.release();
+    runtime.stopBackgroundWorkers();
+    runtime.finishTeardown(false);
+}
+
 TEST(CASPoolRemount, StaleRemountAnchorPerformsParkedRedo)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
