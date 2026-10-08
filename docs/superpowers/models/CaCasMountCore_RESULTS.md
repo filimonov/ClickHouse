@@ -992,10 +992,20 @@ claim operation, the `Reacquire` certificate and partial continuation (step 2) a
 - **New operators.** `RegressesEpoch`, `CanWrite` (now `Write`'s guard), invariants
   `ClaimNeverRegressesEpoch` and `OneWritableIncarnationPerUuid`, witnesses
   `W_TwoLiveIncarnations` and `W_DelayedStartOverNewerBody`, constraint `NoEpochWipe`.
+- **Equal epoch.** `ClaimNeverRegressesEpoch` is strict: a claim also may not replace ANOTHER
+  incarnation's body with an equal epoch. Supporting changes, all inert with `TwinUuids = {}`:
+  - ghost `bodyWriter`: the incarnation whose claim wrote the current body (`WriterTag`), None
+    after a successor reclaim or `ClearExpiredMount`; `OwnBody(a)` reads it;
+  - `AllocResolvedByRead`: an ambiguous allocation resolved by reading the counter, which takes
+    the current value without bumping it; two starts can land on one epoch this way;
+  - the refresh branch is off for twins (constant `SabRefreshOwnPair` keeps it);
+  - `Renew`'s extend branch, `AdoptRead`, `RecoveryStart`, `WedgeAdmit` and the `AllocEpoch` /
+    `AllocResolvedByRead` live-body guard use `OwnBody(a)`: only the writer of a body holds its
+    token.
 - **`ClaimNeverRegressesEpoch`** added to `_stage1` and `_v9_recoverygen`.
 - **`CaCasMountCoreLateRenew.tla`** quantifies over `Incs` and reads `fenceUntil[a]`.
-- **New cfgs.** `_sab_claimregress`, `_twins`, `_twins_v9`, `_twins_drift`, `_witness_twolive`,
-  `_witness_delayedstart`. `run_mount.sh` grows from 23 to 29 rows.
+- **New cfgs.** `_sab_claimregress`, `_sab_refreshownpair`, `_twins`, `_twins_v9`, `_twins_drift`,
+  `_witness_twolive`, `_witness_delayedstart`. `run_mount.sh` grows from 23 to 30 rows.
 
 ### Code cross-check {#2026-10-08-code}
 
@@ -1014,7 +1024,7 @@ Checked at `5b7c9f503df` (merge of #2484), `src/Disks/DiskObjectStorage/Metadata
 
 ### Sabotage `_sab_claimregress` {#2026-10-08-sab-claimregress}
 
-Violates `ClaimNeverRegressesEpoch` at depth 8 (4,408 generated, 1,798 distinct). Trace:
+Violates `ClaimNeverRegressesEpoch` at depth 8 (5,027 generated, 2,116 distinct). Trace:
 
 1. `ClaimOwnerEmpty(<<A,1>>)`, `AllocEpoch(<<A,1>>)`: the first start allocates epoch 1 and stalls.
 2. `AllocEpoch(<<A,2>>)`, `ClaimMount(<<A,2>>)`: the second start allocates 2 and mints `(A, 2)`.
@@ -1027,6 +1037,26 @@ one more step; `_witness_delayedstart` reaches that state (below), and with the 
 claim is enabled there. The honest counterpart of this cfg, with the same bounds, is `_twins`
 (green).
 
+### Sabotage `_sab_refreshownpair` {#2026-10-08-sab-refreshownpair}
+
+The equal-epoch case. `claimMount`'s "own claim replayed" refresh branch overwrites an unfenced
+body of the same `(uuid, epoch)`; PR 7 removes it. Violates `ClaimNeverRegressesEpoch` at depth 6
+(217 generated, 127 distinct):
+
+1. `ClaimOwnerEmpty(<<A,1>>)`, `AllocEpoch(<<A,1>>)`: epoch 1.
+2. `AllocResolvedByRead(<<A,2>>)`: the second start resolves an ambiguous allocation to 1 too.
+3. `ClaimMount(<<A,1>>)`: mints `(A, 1)`.
+4. `ClaimMount(<<A,2>>)`: the refresh branch overwrites it. Both incarnations now have
+   `fenceUntil = 2` at `clock = 0`, so both can write.
+
+The honest counterpart is `_twins`, which includes `AllocResolvedByRead`.
+
+The first run of this change failed the honest twin rows on `SupersededWriterMakesNoMutation`, for
+two model errors. The `AllocEpoch` twin guard compared epochs (`mount.epoch = localEpoch[j]` for a
+twin `j`), which a shared epoch defeats: the holder re-allocated under its own live body. And
+`AdoptWrite` did not set `bodyWriter`, though after `ClearExpiredMount` (which bumps no token) its
+"unchanged token" write recreates the body. Both now go through `bodyWriter`.
+
 ### Witnesses {#2026-10-08-witnesses}
 
 - `_witness_twolive`, depth 5: `ClaimOwnerEmpty`, `AllocEpoch(<<A,1>>)`, `AllocEpoch(<<A,2>>)`,
@@ -1036,7 +1066,8 @@ claim is enabled there. The honest counterpart of this cfg, with the same bounds
 
 ### Scratch experiments {#2026-10-08-scratch}
 
-Run from `tmp/mount-incarnations/` with the runner's JVM flags; not runner rows.
+Run from `tmp/mount-incarnations/` with the runner's JVM flags; not runner rows. They ran on the model
+before the equal-epoch change.
 
 | Variant of `_twins` | Result | Trace |
 |---|---|---|
@@ -1091,48 +1122,51 @@ unchanged. Every verdict matches the 2026-10-02 battery.
 
 ### Bounds {#2026-10-08-bounds}
 
-`_twins` at `MaxClock = 4` (the `_stage1` bound) was green in 23 min 31 s: 258,276,393 generated,
-34,944,038 distinct, depth 27. The committed cfgs `_twins`, `_sab_claimregress`,
-`_witness_twolive` and `_witness_delayedstart` use `MaxClock = 3`. No pre-existing cfg's
-constants changed.
+`_twins` at `MaxClock = 4` (the `_stage1` bound), before the equal-epoch change, was green in
+23 min 31 s: 258,276,393 generated, 34,944,038 distinct, depth 27. The committed `_twins`,
+`_sab_claimregress`, `_sab_refreshownpair`, `_witness_twolive` and `_witness_delayedstart` use
+`MaxClock = 3`. `_twins_v9` uses `MaxAdmissions = 2`: at 3, after the equal-epoch change, it passed
+30 M distinct states in 20 min with about 9 M still queued. No pre-existing cfg's constants changed.
 
 ### Battery {#2026-10-08-battery}
 
 `TLC_JAVA_OPTS=-Xmx16g nice -n 10 docs/superpowers/models/run_mount.sh`, one worker, TLC
-`2026.07.18.145032`, jar sha256 `cc4803dc...e516b3`. Exit 0, `ALL EXPECTATIONS MET`, 29 rows, 3,072 s
-of TLC time. The host's load average was 15–19 from other jobs, so wall times are about twice the
-2026-08-24 figures and not comparable to them.
+`2026.07.18.145032`, jar sha256 `cc4803dc...e516b3`, on the model with the equal-epoch change.
+Exit 0, `ALL EXPECTATIONS MET`, 30 rows, 4,009 s of TLC time. Other jobs loaded the host, so wall
+times are not comparable to the 2026-08-24 figures. The battery before the equal-epoch change (29
+rows) also met every expectation.
 
 | cfg | expected | result | depth | generated | distinct | queue | s |
 |---|---|---|---:|---:|---:|---:|---:|
 | `sab_epochreset` | violation | `WriterEpochMonotoneUnique` | 6 | 570 | 321 | 230 | 1 |
-| `sab_foreigntakeover` | violation | `ForeignUuidNeverAutoTakesOver` | 6 | 621 | 339 | 242 | 1 |
-| `sab_adoptwedge` | violation | `NoPermanentWedge` | 6 | 705 | 372 | 264 | 0 |
+| `sab_foreigntakeover` | violation | `ForeignUuidNeverAutoTakesOver` | 6 | 621 | 339 | 242 | 0 |
+| `sab_adoptwedge` | violation | `NoPermanentWedge` | 6 | 705 | 372 | 264 | 1 |
 | `sab_fenceresurrect` | violation | `FenceCostsEpoch` | 7 | 2,773 | 1,088 | 750 | 1 |
 | `sab_wallclockreclaim` | violation | `GlobalSupersededWriterMakesNoMutation` | 9 | 123,795 | 24,905 | 15,382 | 1 |
 | `sab_epochwipelive` | violation | `SupersededWriterMakesNoMutation` | 9 | 23,225 | 8,606 | 5,581 | 1 |
-| `sab_decomblindbypass` | violation | `FenceCostsEpoch` | 14 | 1,941,123 | 527,809 | 259,241 | 12 |
-| `sab_staleinstall` | violation | `GlobalSupersededWriterMakesNoMutation` | 10 | 192,057 | 54,878 | 34,670 | 2 |
+| `sab_decomblindbypass` | violation | `FenceCostsEpoch` | 14 | 1,941,123 | 527,809 | 259,241 | 13 |
+| `sab_staleinstall` | violation | `GlobalSupersededWriterMakesNoMutation` | 10 | 192,057 | 54,878 | 34,670 | 1 |
 | `sab_wedgeretryoldgen` | violation | `GlobalSupersededWriterMakesNoMutation` | 10 | 190,313 | 54,956 | 34,720 | 2 |
-| `sab_slotnocompare` | violation | `AckedOpsAreDurable` | 7 | 5,460 | 2,276 | 1,682 | 0 |
-| `sab_staleinstall_strictorder` | violation | `GlobalSupersededWriterMakesNoMutation` | 11 | 241,476 | 63,123 | 39,811 | 3 |
+| `sab_slotnocompare` | violation | `AckedOpsAreDurable` | 7 | 5,460 | 2,276 | 1,682 | 1 |
+| `sab_staleinstall_strictorder` | violation | `GlobalSupersededWriterMakesNoMutation` | 11 | 241,476 | 63,123 | 39,811 | 2 |
 | `sab_wedgeretryoldgen_strictorder` | violation | `GlobalSupersededWriterMakesNoMutation` | 11 | 239,449 | 63,188 | 39,850 | 2 |
-| `sab_slotnocompare_strictorder` | violation | `AckedOpsAreDurable` | 8 | 7,197 | 2,660 | 1,965 | 0 |
-| `sab_claimregress` (new) | violation | `ClaimNeverRegressesEpoch` | 8 | 4,408 | 1,798 | 1,346 | 1 |
-| `stage1` | green | green | 28 | 57,855,349 | 10,599,769 | **0** | 356 |
-| `v9_recoverygen` | green | green | 26 | 89,644,605 | 15,658,147 | **0** | 528 |
-| `twins` (new) | green | green | 24 | 75,744,067 | 9,966,840 | **0** | 433 |
-| `twins_v9` (new) | green | green | 25 | 127,345,625 | 16,701,928 | **0** | 800 |
-| `twins_drift` (new) | green | green | 24 | 98,995,491 | 11,146,936 | **0** | 509 |
+| `sab_slotnocompare_strictorder` | violation | `AckedOpsAreDurable` | 8 | 7,197 | 2,660 | 1,965 | 1 |
+| `sab_claimregress` (new) | violation | `ClaimNeverRegressesEpoch` | 8 | 5,027 | 2,116 | 1,595 | 1 |
+| `sab_refreshownpair` (new) | violation | `ClaimNeverRegressesEpoch` | 6 | 217 | 127 | 90 | 0 |
+| `stage1` | green | green | 28 | 57,855,349 | 10,599,769 | **0** | 333 |
+| `v9_recoverygen` | green | green | 26 | 89,644,605 | 15,658,147 | **0** | 550 |
+| `twins` (new) | green | green | 25 | 138,643,328 | 18,080,420 | **0** | 808 |
+| `twins_v9` (new) | green | green | 24 | 132,360,643 | 17,182,030 | **0** | 898 |
+| `twins_drift` (new) | green | green | 25 | 155,853,272 | 18,820,548 | **0** | 950 |
 | `witness_reclaim` | violation | `W_SameUuidReclaimsExpired` | 6 | 620 | 338 | 241 | 1 |
-| `witness_remountafterfence` | violation | `W_RemountAfterFence` | 8 | 8,226 | 3,266 | 2,178 | 0 |
-| `witness_observedreclaim` | violation | `W_ObservedReclaim` | 10 | 323,842 | 59,375 | 34,702 | 3 |
-| `witness_recoveryafterobservedreclaim` | violation | `W_RecoveryAfterObservedReclaim` | 18 | 95,994,220 | 12,979,508 | 5,612,048 | 404 |
+| `witness_remountafterfence` | violation | `W_RemountAfterFence` | 8 | 8,226 | 3,266 | 2,178 | 1 |
+| `witness_observedreclaim` | violation | `W_ObservedReclaim` | 10 | 323,842 | 59,375 | 34,702 | 2 |
+| `witness_recoveryafterobservedreclaim` | violation | `W_RecoveryAfterObservedReclaim` | 18 | 95,994,220 | 12,979,508 | 5,612,048 | 426 |
 | `witness_genrefused` | violation | `W_GenerationRefused` | 9 | 62,149 | 20,209 | 13,632 | 1 |
-| `witness_sealrejected` | violation | `W_SealRejectedRetry` | 12 | 1,152,134 | 295,419 | 161,651 | 7 |
-| `witness_ackhappened` | violation | `W_AckHappened` | 5 | 221 | 140 | 105 | 1 |
-| `witness_laterenew` | violation | `W_LateRenewThenLaneAndWrite` | 10 | 112,628 | 33,366 | 23,186 | 1 |
-| `witness_twolive` (new) | violation | `W_TwoLiveIncarnations` | 5 | 50 | 32 | 18 | 1 |
-| `witness_delayedstart` (new) | violation | `W_DelayedStartOverNewerBody` | 8 | 4,406 | 1,796 | 1,344 | 0 |
+| `witness_sealrejected` | violation | `W_SealRejectedRetry` | 12 | 1,152,134 | 295,419 | 161,651 | 8 |
+| `witness_ackhappened` | violation | `W_AckHappened` | 5 | 221 | 140 | 105 | 0 |
+| `witness_laterenew` | violation | `W_LateRenewThenLaneAndWrite` | 10 | 112,628 | 33,366 | 23,186 | 2 |
+| `witness_twolive` (new) | violation | `W_TwoLiveIncarnations` | 5 | 56 | 35 | 21 | 1 |
+| `witness_delayedstart` (new) | violation | `W_DelayedStartOverNewerBody` | 8 | 5,024 | 2,114 | 1,593 | 0 |
 
 For violation rows, depth is the length of the counterexample in states. `rev6_observe` was not run.

@@ -65,6 +65,9 @@
 #   sab_claimregress      -> ClaimNeverRegressesEpoch    a delayed start reclaims a newer fenced body
 #                                                        of its own uuid with its older epoch: the
 #                                                        unguarded `claimMount`
+#   sab_refreshownpair    -> ClaimNeverRegressesEpoch    two starts resolved ambiguous allocations to
+#                                                        one epoch; the second refreshes the first's
+#                                                        live body (`claimMount`'s refresh branch)
 #
 # The first two v9 sabotages target the SAME pre-existing invariant, deliberately: an old-generation
 # publication IS a mutation by a superseded incarnation, which is what that invariant already says,
@@ -155,6 +158,7 @@ CONFIGS=(
   "sab_wedgeretryoldgen_strictorder      violation  GlobalSupersededWriterMakesNoMutation"
   "sab_slotnocompare_strictorder         violation  AckedOpsAreDurable"
   "sab_claimregress                      violation  ClaimNeverRegressesEpoch"
+  "sab_refreshownpair                    violation  ClaimNeverRegressesEpoch"
   "stage1                                green      -"
   "v9_recoverygen                        green      -"
   "twins                                 green      -"
