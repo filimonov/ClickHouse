@@ -31,6 +31,9 @@ CONFIGS=(
     "stale_stamps_long_walk                violation  NoFenceInsideAuthority"
     "stale_stamps_nodrift_long_walk        violation  NoFenceInsideAuthority"
     "env_drift_exceeds_allowance           violation  NoFenceInsideAuthority"
+    "sab_own_lease_only                    violation  NoFenceInsideAuthority"
+    "sab_own_lease_only_wait               violation  FencingWaitCoversDeclaredLease"
+    "old_body_longer_holder                violation  NoFenceInsideAuthority"
     "margin_gc_tight                       violation  FenceMarginAtLeast"
     "margin_remount_tight                  violation  FenceMarginAtLeast"
     "margin_earlyfence_tight               violation  FenceMarginAtLeast"
@@ -41,16 +44,19 @@ CONFIGS=(
     "stale_stamps_nodrift_short_walk       green      -"
     "healthy_gc                            green      -"
     "healthy_remount                       green      -"
+    "mixed_longer_holder                   green      -"
+    "mixed_shorter_holder                  green      -"
     "witness_observer_fences               witness    W_ObserverFences"
     "witness_failing_holder_keeps_lease    witness    W_FailingHolderKeepsLeaseToItsEnd"
     "witness_refused_fence_redecided       witness    W_RefusedFenceIsRedecided"
     "witness_healthy_outlives_threshold    witness    W_HealthyHolderOutlivesTheThreshold"
+    "witness_declared_wait_covers_holder_lease  witness  W_FencingWaitCoversHolderLease"
 )
 
 # SWEEP=1. Each point asserts that the fence margin is EXACTLY `margin` holder ticks: green with
 # `MinMargin = margin`, `FenceMarginAtLeast` violated with `MinMargin = margin + 1`. The horizon is
 # `Threshold + 3`. Every sabotage is off.
-# name            TTL Period Allowance Cadence AuthoritySpan GainEvery  margin
+# name            Lease Period Allowance Cadence AuthoritySpan GainEvery  margin
 MARGIN_POINTS=(
     "nodrift_gc        4  2  1  2  4  0   3"
     "nodrift_remount   4  2  1  1  4  0   2"
@@ -281,7 +287,9 @@ sweep_cfg()
 SPECIFICATION Spec
 CONSTANTS
     None = NoneVal
-    TTL = $ttl
+    HolderLease = $ttl
+    ObserverLease = $ttl
+    Declares = TRUE
     Period = $period
     Allowance = $allowance
     Cadence = $cadence
@@ -295,6 +303,7 @@ CONSTANTS
     SabSightingBeforeRead = FALSE
     SabRedecisionStaleSample = FALSE
     SabWrappingStability = FALSE
+    SabOwnLeaseOnly = FALSE
 CHECK_DEADLOCK FALSE
 INVARIANTS
     TypeOK

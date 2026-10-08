@@ -11,6 +11,10 @@
 (* own clock and fences by a write conditional on that token once the      *)
 (* token stayed unchanged for `Threshold`.                                 *)
 (*                                                                         *)
+(* The holder and the observer have separate lease settings. The holder    *)
+(* writes its own into the body; the observer waits the longer of its own  *)
+(* and the one it read from the body, 0 when the body carries none.        *)
+(*                                                                         *)
 (* The two clocks are separate variables and nothing compares them. Their  *)
 (* only coupling is a bounded rate difference (`GainEvery`).               *)
 (*                                                                         *)
@@ -26,12 +30,16 @@ EXTENDS Integers
 
 CONSTANTS
     None,
-    TTL,            \* lease length on the holder's clock (`cas_mount_lease_ttl_ms`)
+    HolderLease,    \* the holder's lease on its clock: what it writes into the body as
+                    \* `expires - started` and what bounds its authority
+    ObserverLease,  \* the observer's own lease setting
+    Declares,       \* TRUE: the body carries the holder's lease. FALSE: an old body, no stamps.
     Period,         \* renewal cadence on the holder's clock (`cas_mount_renew_period_ms`)
-    Allowance,      \* drift term of the threshold (`TTL / 20` in `mountObservationThresholdMs`)
+    Allowance,      \* drift term of the threshold (`lease / 20` in `mountObservationThresholdMs`),
+                    \* sized for the longer of the two leases
     Cadence,        \* cadence term of the threshold: `Period` for GC, `Period / 2` for a re-mount
     AuthoritySpan,  \* authority lasts this long after the start of the last acknowledged renewal.
-                    \* `TTL` when the holder keeps the lease until it expires; smaller when a
+                    \* `HolderLease` when the holder keeps the lease until it expires; smaller when a
                     \* holder with failing renewals fences itself early.
     GainEvery,      \* rate bound: per `GainEvery` joint ticks one clock may gain one tick on the
                     \* other, and one such tick may be banked. 0 = the clocks run at one rate.
@@ -44,17 +52,20 @@ CONSTANTS
     MinMargin,      \* `FenceMarginAtLeast`: holder ticks between the end of authority and the fence
     SabSightingBeforeRead,     \* a first sighting is dated with the sample taken before its read
     SabRedecisionStaleSample,  \* a sighting made after a refused fence is dated with that sample
-    SabWrappingStability       \* the stability test wraps when its sample precedes the sighting
+    SabWrappingStability,      \* the stability test wraps when its sample precedes the sighting
+    SabOwnLeaseOnly            \* the threshold ignores the declared lease
 
 ASSUME
-    /\ TTL \in Nat \ {0} /\ Period \in Nat \ {0}
+    /\ HolderLease \in Nat \ {0} /\ ObserverLease \in Nat \ {0} /\ Period \in Nat \ {0}
+    /\ Declares \in BOOLEAN
     /\ Allowance \in Nat /\ Cadence \in Nat /\ GainEvery \in Nat
-    /\ AuthoritySpan \in 1..TTL
+    /\ AuthoritySpan \in 1..HolderLease
     /\ MaxClock \in Nat /\ MaxWalk \in Nat /\ MaxLatency \in Nat /\ MinMargin \in Int
     /\ Healthy \in BOOLEAN
     /\ SabSightingBeforeRead \in BOOLEAN
     /\ SabRedecisionStaleSample \in BOOLEAN
     /\ SabWrappingStability \in BOOLEAN
+    /\ SabOwnLeaseOnly \in BOOLEAN
 
 VARIABLES
     hclock,          \* the holder's clock
@@ -84,7 +95,11 @@ clockVars    == << hclock, oclock, credit >>
 
 Min(a, b) == IF a < b THEN a ELSE b
 
-Threshold      == TTL + Allowance + Cadence
+Max(a, b) == IF a > b THEN a ELSE b
+
+DeclaredLease  == IF Declares THEN HolderLease ELSE 0
+ObservedLease  == IF SabOwnLeaseOnly THEN ObserverLease ELSE Max(ObserverLease, DeclaredLease)
+Threshold      == ObservedLease + Allowance + Cadence
 AuthorityEnd   == lastStart + AuthoritySpan
 RenewalFailing == rn # None /\ ~rn.landed
 
@@ -283,6 +298,10 @@ TypeOK ==
     /\ wroteAfterFence \in BOOLEAN
     /\ redecided \in BOOLEAN
 
+\* A decision to fence follows an observation at least as long as the lease the body declared.
+FencingWaitCoversDeclaredLease ==
+    opc = "fencing" => roundSample - watchSince >= DeclaredLease
+
 \* When the fence lands the holder has no authority, and it gains none afterwards.
 NoFenceInsideAuthority ==
     slotFenced => hclock >= AuthorityEnd
@@ -316,6 +335,11 @@ W_FailingHolderKeepsLeaseToItsEnd ==
 \* lands.
 W_RefusedFenceIsRedecided ==
     ~(slotFenced /\ redecided)
+
+\* With a declaring body and a shorter own lease, the observer still waits the holder's whole
+\* lease before it decides to fence.
+W_FencingWaitCoversHolderLease ==
+    ~(opc = "fencing" /\ roundSample - watchSince >= HolderLease)
 
 \* The observer waits out the whole threshold and then finds that a healthy holder moved the token.
 W_HealthyHolderOutlivesTheThreshold ==
