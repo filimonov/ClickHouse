@@ -3,10 +3,10 @@ id: CAS-151
 title: >-
   Add full jitter to the self-remount backoff so nodes that lost the lease
   together do not retry in lockstep
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'complexity:trivial'
@@ -54,4 +54,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#remount-backoff-no-jitter; verified 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (2d670967bfa, by 'remount-backoff-no-jitter')
+
+2026-10-08: resolved by design. A later series PR removes the remount loop; the renewal's reissue spacing draws ±20 % (https://github.com/Altinity/ClickHouse/pull/2517).
 <!-- SECTION:NOTES:END -->

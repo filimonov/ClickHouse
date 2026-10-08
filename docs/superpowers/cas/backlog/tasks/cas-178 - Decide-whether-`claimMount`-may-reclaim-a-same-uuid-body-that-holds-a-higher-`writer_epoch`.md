@@ -3,10 +3,10 @@ id: CAS-178
 title: >-
   Decide whether `claimMount` may reclaim a same-uuid body that holds a higher
   `writer_epoch`
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'area:ref-ledger'
@@ -59,4 +59,6 @@ Provenance: BACKLOG/ref-protocol.md#ref-protocol-rev6 [MOUNT-CLAIM-EPOCH-REGRESS
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-29 (a4fcc6b3e56, by 'MOUNT-CLAIM-EPOCH-REGRESSION')
+
+2026-10-08: decided. A same-uuid body with a higher `writer_epoch` is never replaced (ABORTED); implemented in https://github.com/Altinity/ClickHouse/pull/2512.
 <!-- SECTION:NOTES:END -->

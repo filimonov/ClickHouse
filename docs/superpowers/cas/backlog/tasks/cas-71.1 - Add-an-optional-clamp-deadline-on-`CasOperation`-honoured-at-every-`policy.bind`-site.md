@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -53,4 +53,6 @@ Provenance: BACKLOG/performance.md#hot-key-lane-phase-b item 3. Verified 2026-09
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (b1c34d03479, by 'hot-key-lane-phase-b item 3')
+
+2026-10-08: deferred by the owner with CAS-343. The transport wall-clock deadline (series item 17b) is not being done now; `cas_request_deadline_ms` does not exist.
 <!-- SECTION:NOTES:END -->

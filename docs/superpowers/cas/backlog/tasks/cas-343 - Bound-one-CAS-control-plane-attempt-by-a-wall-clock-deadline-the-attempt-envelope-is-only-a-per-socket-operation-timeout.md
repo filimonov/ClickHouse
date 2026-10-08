@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-02 05:58'
-updated_date: '2026-10-02 06:01'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'area:requests'
@@ -63,4 +63,6 @@ Study: `tmp/issue-2431/ux/q2-request-deadline.md` (phase table with file, functi
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-02: the study behind this task is in `docs/superpowers/cas/2026-10-02-mount-lease-settings-studies.md` (section Q2, phase table with file, function and line per claim); the consequence for the write reserve and the settings is in `docs/superpowers/specs/2026-10-02-cas-mount-lease-settings-ux-notes.md` (Answers). A companion audit there (Q1) found that the second envelope of the write reserve is not needed for safety by itself but is today's only slack against an attempt that overruns its envelope: do not reduce the reserve before this task lands.
+
+2026-10-08: deferred by the owner. The transport wall-clock deadline (series item 17b) is not being done now; `cas_request_deadline_ms` does not exist.
 <!-- SECTION:NOTES:END -->

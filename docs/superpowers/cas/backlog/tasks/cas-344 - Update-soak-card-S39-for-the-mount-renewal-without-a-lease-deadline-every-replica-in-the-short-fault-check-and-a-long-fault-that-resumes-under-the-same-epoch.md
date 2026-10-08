@@ -7,6 +7,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-02 09:23'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'area:soak'
@@ -51,3 +52,9 @@ Integration coverage that exists meanwhile: `tests/integration/test_cas_mount_re
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: s39/s43 updated for the 9a lifecycle values (master commit 3f5ad504ea3). Leg B (one lease loss and a remount) still needs rewriting to the pause behaviour and a stand run.
+<!-- SECTION:NOTES:END -->

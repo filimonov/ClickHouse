@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -63,4 +63,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#mount-lease-budget-derived-timeout; 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (43b3a043935, by 'mount-lease-budget-derived-timeout')
+
+2026-10-08: 9b (branch `fix/antalya-26.6/cas-operator-budget-contract`) prints the derivation at mount; the connect-cap clamp is not in it. Opens after https://github.com/Altinity/ClickHouse/pull/2517 merges.
 <!-- SECTION:NOTES:END -->

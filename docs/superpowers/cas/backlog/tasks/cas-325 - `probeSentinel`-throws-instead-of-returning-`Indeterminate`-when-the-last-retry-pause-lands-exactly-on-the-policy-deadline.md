@@ -3,10 +3,10 @@ id: CAS-325
 title: >-
   `probeSentinel` throws instead of returning `Indeterminate` when the last
   retry pause lands exactly on the policy deadline
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-30 10:30'
-updated_date: '2026-09-30 10:30'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:backend'
   - 'complexity:small'
@@ -47,3 +47,9 @@ Not touched by the GC request-cuts branch or by the base commits merged on 2026-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08: PR https://github.com/Altinity/ClickHouse/pull/2510 is open.
+<!-- SECTION:NOTES:END -->

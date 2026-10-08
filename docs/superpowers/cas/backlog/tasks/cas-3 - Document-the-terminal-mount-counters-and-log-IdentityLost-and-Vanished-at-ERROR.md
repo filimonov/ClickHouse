@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:observability'
   - 'area:docs'
@@ -57,4 +57,6 @@ Provenance: BACKLOG/operability-and-introspection.md#terminal-counters-undocumen
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-22 (f07a9ed680d, by 'terminal-counters-undocumented-and-warned')
+
+2026-10-08: 9a is ready locally (branch `lease/antalya-26.6/pr09a-squash`) with the `lifecycle`, `is_local` and `listing_error` columns. Opens after https://github.com/Altinity/ClickHouse/pull/2517 merges.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'area:soak'
@@ -63,4 +63,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#renewal-gives-up-with-budget-left; v
 First recorded: 2026-09-01 (71b002a1047, by 'renewal-gives-up-with-budget-left')
 
 Issue #2431 (open, 2026-09-24) reproduces a renewal giving up with budget left at dev scale on 26.6.4: fenced after 2-2.6 s with ~17 s of `remaining_confirmed_budget_ms`, `classification=external_lease_deadline`. The 'does not reproduce at dev/ci' line no longer holds; the fix is tracked by the u17 task `renewal-fences-with-budget-left`, which this task may close into.
+
+2026-10-08: the full-scale S03 rerun is the acceptance run of 17b and is deferred with it (owner decision).
 <!-- SECTION:NOTES:END -->

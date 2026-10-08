@@ -4,7 +4,7 @@ title: Expose the remaining CAS pacing and budget knobs as disk settings
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -57,4 +57,6 @@ Provenance: BACKLOG/operability-and-introspection.md#pool-pacing-knobs-no-config
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (2583e3427aa, by 'pool-pacing-knobs-no-config-surface')
+
+2026-10-08: 9b is ready locally (branch `fix/antalya-26.6/cas-operator-budget-contract`): one `CasLeaseThresholds` value drives admission, the mount line and `system.cas_mounts`; synonym `cas_mount_lease_ms`; derivation printed at mount. Opens after https://github.com/Altinity/ClickHouse/pull/2517 merges.
 <!-- SECTION:NOTES:END -->

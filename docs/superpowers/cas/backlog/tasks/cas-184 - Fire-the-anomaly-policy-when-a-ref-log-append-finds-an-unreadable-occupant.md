@@ -4,7 +4,7 @@ title: Fire the anomaly policy when a ref-log append finds an unreadable occupan
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -48,4 +48,6 @@ Provenance: BACKLOG/ref-protocol.md#lane-residuals-2031-cas-017 residual 2. Veri
 First recorded: 2026-08-21 (7a9b839cd49, by 'lane-residuals-2031-cas-017')
 
 2031-triage CAS-017: residual 2 (a `Faulted` lane with no automatic remount).
+
+2026-10-08: PR 10 v2 (branch `fix/antalya-26.6/cas-ref-lane-fault-latch-squash`): any occupant but our own bytes is one fault, latched first. Independent of the other series PRs; opens on command.
 <!-- SECTION:NOTES:END -->

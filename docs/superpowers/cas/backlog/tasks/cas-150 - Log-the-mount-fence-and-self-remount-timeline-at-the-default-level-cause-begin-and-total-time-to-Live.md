@@ -3,10 +3,10 @@ id: CAS-150
 title: >-
   Log the mount fence and self-remount timeline at the default level: cause,
   begin, and total time to Live
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-28'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -71,4 +71,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#mount-fence [fence-window observabil
 First recorded: 2026-07-28 (1605b049a33, by 'fence-window observability')
 
 Correction: issue #2421 was closed on 2026-09-26 as not reproducible. Its one reproduced Code 210 was the soak harness (RustFS at Docker's `nofile` 1024 returned `os error 24` on the renewal), not the canary. The msan fence window and audit F28 evidence stand.
+
+2026-10-08: renewal progress columns are in https://github.com/Altinity/ClickHouse/pull/2513; the pause/resume log lines land with 9b (branch `fix/antalya-26.6/cas-operator-budget-contract`, opens after https://github.com/Altinity/ClickHouse/pull/2517 merges).
 <!-- SECTION:NOTES:END -->

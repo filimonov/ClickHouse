@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'area:write-path'
@@ -54,4 +54,6 @@ Provenance: BACKLOG/ref-protocol.md#cas-transient-lease-fence-surfaces-to-client
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (bbe9972e7a1, by 'cas-transient-lease-fence-surfaces-to-clients')
+
+2026-10-08: decision deferred by the owner.
 <!-- SECTION:NOTES:END -->

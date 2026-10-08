@@ -3,10 +3,10 @@ id: CAS-153
 title: >-
   Reclaim the mount lease at once on self-remount when the slot holds a body
   this runtime wrote
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'complexity:large'
@@ -64,4 +64,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#self-authored-mount-reclaim; verifie
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-01 (2a230dddce4, by 'self-authored-mount-reclaim')
+
+2026-10-08: resolved by design. The renewal keeps the same `writer_epoch` through an outage (https://github.com/Altinity/ClickHouse/pull/2517); there is no in-process reclaim path.
 <!-- SECTION:NOTES:END -->

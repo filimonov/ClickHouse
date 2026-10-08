@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-26 12:37'
-updated_date: '2026-10-02 16:26'
+updated_date: '2026-10-08 16:49'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -69,4 +69,6 @@ Provenance: GitHub issue #2431 (open, no assignee), reconciled by u17-github-cas
 2026-10-02 (later): the fix branch gained one WARNING per lease expiry (head `e1c38ca7478`; all gates green, ASan on its exact tree included). The simplification of the spec's steps 4 to 8 is done on the local branch `refactor/antalya-26.6/cas-mount-one-lease-thread` (head `56897c5ccbc`, contains the fix branch; not pushed): one lease thread, one renewal path, a result-returning renewal, cleanups; production net -624 lines against the fix branch; unit gate 2613, integration 6 passed, ASan 2617 with no error. It is a separate pull request, to be opened after the fix branch merges. Plan and contract: `docs/superpowers/plans/2026-10-02-cas-mount-one-lease-thread-part2.md` and `…-part2-contract.md`. Follow-ups: CAS-343 (bound one control-plane attempt by a wall-clock deadline), CAS-344 (soak card S39), the settings notes `docs/superpowers/specs/2026-10-02-cas-mount-lease-settings-ux-notes.md` with the external study.
 
 2026-10-02 (evening): both branches pushed to `altinity`. Draft pull requests: https://github.com/Altinity/ClickHouse/pull/2474 (the fix, into `antalya-26.6`) and https://github.com/Altinity/ClickHouse/pull/2475 (the simplification, stacked on the fix branch to keep its diff readable; retarget to `antalya-26.6` after 2474 merges).
+
+2026-10-08: claim part is in https://github.com/Altinity/ClickHouse/pull/2512 (strictly greater epoch); renewal part is in https://github.com/Altinity/ClickHouse/pull/2517 (retries until a definitive answer; an expired lease is a pause).
 <!-- SECTION:NOTES:END -->
