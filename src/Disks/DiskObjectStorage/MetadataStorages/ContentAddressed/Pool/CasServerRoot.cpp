@@ -1582,11 +1582,16 @@ MountRenewResult MountLeaseRenewer::renewUntilDefinitive(const MountRenewOperati
     return renewOn(open_requests, environment, /*until_definitive=*/true);
 }
 
-Observation MountLeaseRenewer::readUntilObserved(CasOperation & op, const Retry & policy) const
+Observation MountLeaseRenewer::readUntilObserved(
+    CasOperation & op, const Retry & policy, const MountRenewOperationEnvironment & environment) const
 {
+    bool credential_refusal = false;
     while (op.admitted())
     {
-        op.pause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs));
+        if (credential_refusal && environment.credential_refusal_pause)
+            environment.credential_refusal_pause();
+        else
+            op.pause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs));
         try
         {
             std::optional<Object> got = op.read(key, policy);
@@ -1598,6 +1603,7 @@ Observation MountLeaseRenewer::readUntilObserved(CasOperation & op, const Retry 
         {
             if (isDeterministicLocalFailure(e.code()))
                 throw;
+            credential_refusal = isRefreshableCredentialError(e);
         }
     }
     return NotObserved{};
@@ -1677,13 +1683,15 @@ MountRenewResult MountLeaseRenewer::renewOn(
             else if (Conflict * conflict = std::get_if<Conflict>(&*written))
             {
                 if (std::holds_alternative<NotObserved>(conflict->seen))
-                    conflict->seen = readUntilObserved(op, policy);
+                    conflict->seen = readUntilObserved(op, policy, environment);
                 if (std::holds_alternative<NotObserved>(conflict->seen))
                 {
                     written = GaveUp{GaveUp::Why::FenceLost, GaveUp::Source::Policy, attempts_sent != 0, NotObserved{}, attempts_sent};
                     break;
                 }
-                /// Our last confirmed body under the token we named: the store refused, the slot did not move.
+                /// Our last confirmed body under the token we named: the slot did not move. A new call is
+                /// safe because a call with an unclear attempt returns `Conflict` only once the token
+                /// moved, so this call left no copy of ours that could land.
                 const Object * seen = std::get_if<Object>(&conflict->seen);
                 if (!seen || seen->etag != expected || seen->bytes != last_body)
                     break;
@@ -1692,9 +1700,10 @@ MountRenewResult MountLeaseRenewer::renewOn(
             {
                 break;
             }
-            op.pause(credential_refusal
-                ? environment.credential_refusal_pause_ms
-                : Retry::spacedPause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs), last_attempt_start_boot_ms, boot_clock()));
+            if (credential_refusal && environment.credential_refusal_pause)
+                environment.credential_refusal_pause();
+            else
+                op.pause(Retry::spacedPause(Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs), last_attempt_start_boot_ms, boot_clock()));
             written = op.replace(key, body, expected, policy);
         }
     }
@@ -1752,14 +1761,15 @@ MountRenewResult MountLeaseRenewer::renewOn(
 
     if (const GaveUp * gave_up = std::get_if<GaveUp>(&*written))
     {
-        result.sent_any = gave_up->sent_any;
+        /// Across every engine call of this renewal, not only the call that gave up.
+        result.sent_any = attempts_sent != 0;
         result.attempts_sent = attempts_sent;
         if (gave_up->why == GaveUp::Why::Deadline)
             result.deadline_source = gave_up->deadline_source;
 
         /// Nothing was sent and the node was already stopping: the lease is exactly as it was, so this
         /// is a renewal that never ran, not one that lost its authority.
-        if (gave_up->why == GaveUp::Why::FenceLost && !gave_up->sent_any && cancelled)
+        if (gave_up->why == GaveUp::Why::FenceLost && !result.sent_any && cancelled)
         {
             markMountRenewTermination(MountRenewTerminalClassification::Cancelled);
             result.outcome = MountRenewOutcome::NotAttempted;
@@ -1789,7 +1799,7 @@ MountRenewResult MountLeaseRenewer::renewOn(
             "observation: {})",
             key,
             terminalClassificationName(classification),
-            gave_up->sent_any ? "at least one" : "no",
+            result.sent_any ? "at least one" : "no",
             detail::renderObservation(gave_up->last_seen)));
         return terminalResult(std::move(result));
     }
