@@ -1063,7 +1063,8 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
                     /// This epoch is closed. Its stream cannot continue, so the next durable id of this
                     /// namespace is sequence 1 of the next epoch -- including when that epoch is at or
                     /// above our own live one, which is what a mount deposed by a higher-epoch successor
-                    /// sees. Reading on is honest: the transactions ARE this namespace's.
+                    /// sees. Reading on is honest: the transactions ARE this namespace's, and the check
+                    /// after the walk faults the mount on such a seal.
                     ++epoch;
                     sequence = 1;
                     slot_attempts_this_epoch = 0;
@@ -1242,6 +1243,29 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
             sequence = 1;
             slot_attempts_this_epoch = 0;
         }
+    }
+
+    /// A writing mount mints seals only below its live epoch, so a seal at or above it, or any record
+    /// above it, was written by a successor: this mount is already gone. An observe-only mount never
+    /// claimed a writer epoch (it reads as 0) and reads a writer's records without either meaning that.
+    const bool this_mount_writes = live_epoch != 0;
+    const bool sealed_by_successor = last_epoch_seal && last_epoch_seal->writer_epoch >= live_epoch;
+    const bool written_by_successor = private_frontier && private_frontier->writer_epoch > live_epoch;
+    if (this_mount_writes && (sealed_by_successor || written_by_successor))
+    {
+        latch_mount_fault();
+        const String detail = reportLatchedFault(ns, [&](String & key, String & text)
+        {
+            const RefTxnId evidence = sealed_by_successor ? *last_epoch_seal : *private_frontier;
+            key = layout.refLogKey(life, evidence);
+            text = fmt::format(
+                "ref-table recovery for namespace '{}' found a successor's {} {}-{} at or above live writer "
+                "epoch {}",
+                ns.string(), sealed_by_successor ? "epoch seal" : "transaction",
+                evidence.writer_epoch, evidence.ref_sequence, live_epoch);
+        });
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "CAS {}; recovery must not install a table a successor has written", detail);
     }
 
     /// The sealer's checkpoint contribution is durable before the authority cut is validated. This is
@@ -2884,6 +2908,8 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
     /// impossible transaction forever, and the deposition would never be visible anywhere.
     ///
     /// Not a fault of this lane machine: nothing is occupied; the deposition is reported by the error.
+    /// Recovery faults the mount instead of installing a lane holding a seal of its live epoch, so this
+    /// is a defensive check.
     if (table_live)
     {
         const RefTxnId next_id = working.nextTxnId(live_epoch_fn());

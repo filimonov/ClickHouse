@@ -9,6 +9,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/CurrentMemoryTracker.h>
@@ -2103,4 +2104,70 @@ TEST(CASRefLaneFault, BadAllocInsideTheAppendPropagates)
     EXPECT_TRUE(faults->snapshot().empty());
     EXPECT_NO_THROW(store->dropRef(ns, "y"));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
+}
+
+namespace
+{
+
+/// A successor replayed the drop that left this lane `NeedsRecovery`, sealed the live epoch right after
+/// it and published that seal to `_ckpt`; with `write_next_epoch` it also closed the next epoch at
+/// `{E+1, 1}`. The lane's recovery must fault the mount instead of installing a writable table.
+void expectRecoveryOverASuccessorSealFaults(const String & ns_name, bool write_next_epoch)
+{
+    auto backend = std::make_shared<WedgeTestBackend>();
+    auto store = openPool(backend, wedgeTestBudget());
+    auto clock = VirtualRetryClock::installOn(store);
+    const RootNamespace ns{ns_name};
+    admitProperlyBornEntry(backend, store->layout(), ns);
+    publishEmptyPart(store, ns, "x");
+    publishEmptyPart(store, ns, "y");
+    const Layout & layout = store->layout();
+    const NamespaceLifeId life = *store->refTableLifeForTest(ns);
+    const String ckpt_key = layout.refCkptKey(life);
+    const RefCkpt ckpt_before = decodeRefCkpt(readObj(*backend, ckpt_key)->bytes);
+    ASSERT_TRUE(ckpt_before.committed_through);
+    enterNeedsRecoveryOnDrop(*backend, store, ns, ckpt_key, "x");
+
+    const RefTxnId seal{ckpt_before.committed_through->writer_epoch, ckpt_before.committed_through->ref_sequence + 2};
+    ASSERT_EQ(seal.writer_epoch, store->liveWriterEpoch());
+    const RefTxnId past_seal{seal.writer_epoch, seal.ref_sequence + 1};
+    createObj(*backend, layout.refLogKey(life, seal), epochSealBytes(ns, seal));
+    std::optional<RefTxnId> successor_frontier = seal;
+    std::optional<RefTxnId> successor_seal = seal;
+    if (write_next_epoch)
+    {
+        const RefTxnId next_epoch_seal{seal.writer_epoch + 1, 1};
+        createObj(*backend, layout.refLogKey(life, next_epoch_seal), epochSealBytes(ns, next_epoch_seal, seal));
+        successor_frontier = next_epoch_seal;
+        successor_seal = next_epoch_seal;
+    }
+    {
+        DB::Cas::tests::OperationForTest op(*backend);
+        publishCkpt(*op, layout, life, RefCkpt{.life_epoch = std::nullopt, .committed_through = successor_frontier,
+                                               .checkpoint_snapshot_id = std::nullopt, .last_epoch_seal = successor_seal});
+    }
+    const auto faults = recordFaultEvents(store);
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    const size_t puts_before = backend->putCount(layout.refLogKey(life, past_seal));
+    ASSERT_TRUE(store->mayMutate());
+
+    expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "y"); });
+
+    EXPECT_FALSE(store->mayMutate());
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+    EXPECT_EQ(backend->putCount(layout.refLogKey(life, past_seal)), puts_before)
+        << "nothing may be written past the successor's seal";
+    expectOneLatchedFault(*faults, remounts_before, "found a successor's");
+}
+
+}
+
+TEST(CASRefLaneFault, RecoveryOverASuccessorSealOfTheLiveEpochFaults)
+{
+    expectRecoveryOverASuccessorSealFaults("srv1/fault_recovery_live_seal", /*write_next_epoch*/ false);
+}
+
+TEST(CASRefLaneFault, RecoveryOverASuccessorsNextEpochFaults)
+{
+    expectRecoveryOverASuccessorSealFaults("srv1/fault_recovery_next_epoch", /*write_next_epoch*/ true);
 }
