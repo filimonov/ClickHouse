@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-05 15:50'
-updated_date: '2026-10-05 15:54'
+updated_date: '2026-10-08 20:37'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -23,6 +23,7 @@ references:
   - CA/Gc/CasNamespaceJanitor.cpp
   - tests/integration/test_cas_janitor_drain/test.py
   - 'https://github.com/Altinity/ClickHouse/pull/2484'
+  - 'https://github.com/Altinity/ClickHouse/pull/2483#issuecomment-6061665123'
 parent_task_id: CAS-29.9
 priority: medium
 type: enhancement
@@ -51,6 +52,7 @@ What is left after draft PR #2483 (the smaller replacement of PR #2468) for the 
 - [ ] #4 The stand A/B of PR 2483 is recorded: rounds to drain, delete_requests and wall time for 20k keys, 7k keys at 20 ms RTT, 100k keys, and 20k keys without a batch delete
 - [ ] #5 PR 2468 is closed with a link to PR 2483 once PR 2483 is accepted
 - [ ] #6 Each leftover of item 4 is fixed or closed with a written reason
+- [ ] #7 The phase 16 doc states why a delete issued after gc/state is lost but before the page ends is harmless: the page's catalog cut already proved the life dead and a dead life is never reborn under its incarnation
 <!-- AC:END -->
 
 ## Definition of Done
@@ -65,4 +67,6 @@ What is left after draft PR #2483 (the smaller replacement of PR #2468) for the 
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-05: item 1 is draft PR #2484 (branch `fix/antalya-26.6/cas-batch-delete-key-limit`, head 7946c7cb53f). Still open for AC #1: green CI and the failing-first run of the `CASS3BatchDelete` error-name test.
+
+2026-10-08: the distributed-systems audit of PR #2483 found no defect and listed three operational caveats. 1.1 (a lagging `LIST` keeps the pass busy because absent keys of a successful batch count as deleted) is item 4 here; its proposed fix, count only keys this request removed, is not implementable on S3: `DeleteObjects` reports `Deleted` for absent keys too. 2.1 (a leaked key waits for the cursor to lap) is the leak-only design the janitor had before this PR; remembering leaked keys for the next round would need new durable state (format frozen) or leader-local state, rejected for now. 3.1 (phase row `ProfileEvents` miss pool deletes) is CAS-135. Kept from the audit: its wording of the safe window after lost authority, added as an AC above.
 <!-- SECTION:NOTES:END -->

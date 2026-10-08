@@ -4,7 +4,7 @@ title: Attribute S3 requests made on GC worker pools to the phase that scheduled
 status: To Do
 assignee: []
 created_date: '2026-09-03'
-updated_date: '2026-09-30 22:10'
+updated_date: '2026-10-08 20:37'
 labels:
   - 'area:observability'
   - 'area:gc'
@@ -22,6 +22,7 @@ references:
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcReadAhead.cpp
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcMetaWriter.cpp
+  - 'https://github.com/Altinity/ClickHouse/pull/2483'
 priority: medium
 type: enhancement
 ordinal: 177000
@@ -82,4 +83,6 @@ Facts for the fix:
 What stays correct today: counters incremented on the round thread (all `CAS*` take-site counters, synchronous GET/PUT) and the semantic `metrics` map.
 
 Blocks CAS-289.3 (CAS Grafana dashboard v2): see docs/superpowers/specs/2026-09-30-cas-grafana-dashboards-design.md §8.
+
+2026-10-08: a third case since PR #2483: the namespace janitor's batch deletes run on the GC I/O pool (`Gc::removeWriteOnceOnIoPool`), so the `namespace_cleanup` row's `ProfileEvents` miss them too; the row carries a `delete_requests` phase metric as the workaround and `cas_gc_log.md` says so. Raised again by the distributed-systems audit of PR #2483 (item 3.1, https://github.com/Altinity/ClickHouse/pull/2483#issuecomment-6061665123).
 <!-- SECTION:NOTES:END -->
