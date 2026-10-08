@@ -184,7 +184,7 @@ void CasMountRuntime::warnOnceIfLeaseExpired() noexcept
         /// age says by how much.
         LOG_WARNING(getLogger("CasPool"),
             "CAS mount lease of '{}' expired {} ms ago under writer_epoch {}; the renewal keeps retrying "
-            "and writes are refused until a renewal is confirmed",
+            "and writes resume after a confirmed renewal that leaves enough lease",
             server_root_id, bootMsNow() - *expired_at, liveWriterEpoch());
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -501,7 +501,9 @@ MountRenewOperationEnvironment CasMountRuntime::renewalEnvironment(bool worker_c
                 }
             },
         },
-        .credential_refusal_pause_ms = period_ms,
+        .credential_refusal_pause = worker_call
+            ? std::function<void()>([this, period_ms] { waitBeforeNextRenewalCall(period_ms); })
+            : std::function<void()>{},
     };
 }
 
@@ -521,6 +523,20 @@ bool CasMountRuntime::renewalCancelled() const
 {
     std::lock_guard lock(driver_mutex);
     return workers_stop_requested;
+}
+
+void CasMountRuntime::waitBeforeNextRenewalCall(uint64_t ms)
+{
+    if (config.wait_sleep_fn)
+    {
+        config.wait_sleep_fn(ms);
+        return;
+    }
+    std::unique_lock lock(driver_mutex);
+    driver_cv.wait_for(lock, std::chrono::milliseconds(ms), [this]
+    {
+        return workers_stop_requested || renewal_driver_state == RenewalDriverState::ParkRequested;
+    });
 }
 
 void CasMountRuntime::sleepInterruptibly(uint64_t ms)

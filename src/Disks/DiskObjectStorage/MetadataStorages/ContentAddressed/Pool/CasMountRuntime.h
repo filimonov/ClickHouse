@@ -465,6 +465,9 @@ private:
     void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
     /// One `WARNING` per expiry, at the first renewal attempt after it.
     void warnOnceIfLeaseExpired() noexcept;
+    /// The background renewal's wait after a credential refusal. Wakes on stop and on a park request;
+    /// `MountConfig::wait_sleep_fn` replaces it in tests.
+    void waitBeforeNextRenewalCall(uint64_t ms);
     void renewalLoop();
     void remountLoop();
     ThreadFromGlobalPool makeWorker(std::function<void()> body);

@@ -72,9 +72,10 @@ struct MountRenewOperationEnvironment
     /// sampling it afterwards would read a flag that the refusal itself may have set.
     std::function<bool()> cancelled;
     RequestObserver requests;
-    /// How long the background renewal waits before its next engine call after a credential refusal.
-    /// Each call may refresh the credentials once, so a one-second pace would refresh every second.
-    uint64_t credential_refusal_pause_ms = 0;
+    /// The background renewal's wait before its next request after a credential refusal, about one
+    /// renewal period: each request loop may refresh the credentials once, so a one-second pace would
+    /// refresh every second. Empty: no wait.
+    std::function<void()> credential_refusal_pause;
 };
 
 /// Validate a `server_root_id` — the explicit, configured identity of the content-addressed layout
@@ -579,9 +580,11 @@ private:
     const Etag & precondition() const;
     /// One renewal admitted on `plane`; `renew` and `renewForRemount` differ only in which they pass.
     MountRenewResult renewOn(CasRequests & plane, const MountRenewOperationEnvironment & environment, bool until_definitive);
-    /// Repeats the read of a slot whose precondition was refused, one spacing apart, until it observes
-    /// the slot. `NotObserved` only when `op` is no longer admitted.
-    Observation readUntilObserved(CasOperation & op, const Retry & policy) const;
+    /// Repeats the read of a slot whose precondition was refused, one spacing apart, or after
+    /// `credential_refusal_pause` when the read was refused for credentials, until it observes the
+    /// slot. `NotObserved` only when `op` is no longer admitted.
+    Observation readUntilObserved(CasOperation & op, const Retry & policy,
+                                  const MountRenewOperationEnvironment & environment) const;
     Etag claim(CasOperation & op, const String & body);
     [[noreturn]] void throwRenewConflict(const Observation & seen) const;
     MountRenewResult terminalResult(MountRenewResult result);

@@ -12,10 +12,13 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <IO/S3Common.h>
 #include <Poco/Exception.h>
 #include <Poco/StreamChannel.h>
+#include "config.h"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <latch>
@@ -2024,6 +2027,10 @@ public:
     /// Runs inside every write `outage` fails, before it throws.
     std::function<void()> on_outage_write;
     std::atomic<uint64_t> outage_writes{0};
+    /// Runs first in every guarded write.
+    std::function<void()> on_guarded_write;
+    /// While positive, every guarded write is refused with an access denial.
+    std::atomic<uint32_t> deny_writes{0};
 
     /// The fault sits on the WRITE PRIMITIVE, and only on a CONDITIONAL one: a lease renewal is a
     /// replace, so a create on the same key must not consume the one-shot fault.
@@ -2032,6 +2039,17 @@ public:
     {
         if (!expected_value)
             return DB::Cas::tests::CountingBackend::write(key, bytes, expected_value, access);
+        if (on_guarded_write)
+            on_guarded_write();
+        if (deny_writes.load() > 0)
+        {
+            deny_writes.fetch_sub(1);
+#if USE_AWS_S3
+            throw DB::S3Exception("injected mount PUT access denial", Aws::S3::S3Errors::ACCESS_DENIED);
+#else
+            throw DB::Exception(DB::ErrorCodes::ABORTED, "store refusals need the S3 client");
+#endif
+        }
         if (outage && outage())
         {
             outage_writes.fetch_add(1, std::memory_order_relaxed);
@@ -4264,6 +4282,95 @@ TEST(CASMountRuntime, ARemountRequestEndsARenewalRetryingPastTheLease)
     runtime.stopBackgroundWorkers();
     runtime.finishTeardown(false);
 }
+
+#if USE_AWS_S3
+/// A stop during the wait that follows a credential refusal ends it at once, not one renewal period later.
+TEST(CASMountRuntime, AStopEndsTheCredentialRefusalWaitAtOnce)
+{
+    const Layout layout("until-definitive-credential-stop");
+    const UInt128 uuid{1};
+    uint64_t wall_ms = 1000;
+    std::atomic<uint64_t> boot_ms{100};
+    constexpr uint64_t period_ms = 30'000;
+    std::atomic<bool> first_write{true};
+    DB::Cas::tests::ManualBarrier denied;
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 2 * period_ms).kind,
+              MountClaimResult::Claimed);
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(2 * period_ms), .background_watermark = true,
+                    .boot_ms_fn = [&] { return boot_ms.load(); }},
+        "test", sink, runtimeRenewBudget(), [] { return false; });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer();
+    runtime.armMountFence(uuid, 1, anchor + 2 * period_ms);
+    backend->deny_writes = std::numeric_limits<uint32_t>::max();
+    backend->on_guarded_write = [&]
+    {
+        if (first_write.exchange(false))
+            denied.arriveAndWait();
+    };
+    boot_ms = anchor + period_ms;
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(period_ms));
+
+    denied.waitUntilArrived();
+    denied.release();
+    const auto stop_started = std::chrono::steady_clock::now();
+    runtime.stopBackgroundWorkers();
+    const auto stop_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - stop_started);
+    EXPECT_LT(stop_ms.count(), 10'000) << "the stop waited out the renewal period";
+    runtime.finishTeardown(false);
+}
+
+/// After each credential refusal the worker waits one renewal period before its next engine call.
+TEST(CASMountRuntime, ACredentialRefusalWaitsOneRenewalPeriod)
+{
+    const Layout layout("until-definitive-credential-period");
+    const UInt128 uuid{1};
+    uint64_t wall_ms = 1000;
+    std::atomic<uint64_t> boot_ms{100};
+    constexpr uint64_t period_ms = 700;
+    std::vector<uint64_t> write_at;
+    std::atomic<bool> committed_once{false};
+    DB::Cas::tests::ManualBarrier committed;
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 10'000).kind,
+              MountClaimResult::Claimed);
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{
+            .mount_lease_ttl_ms = std::chrono::milliseconds(10'000),
+            .background_watermark = true,
+            .boot_ms_fn = [&] { return boot_ms.load(); },
+            .wait_sleep_fn = [&](uint64_t ms) { boot_ms += ms; },
+            .renewal_finished_hook_for_test = [&](const MountRenewResult & result)
+            {
+                if (result.outcome == MountRenewOutcome::Committed && !committed_once.exchange(true))
+                    committed.arriveAndWait();
+            }},
+        "test", sink, runtimeRenewBudget(), [] { return false; });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer();
+    runtime.armMountFence(uuid, 1, anchor + 10'000);
+    backend->deny_writes = 2;
+    backend->on_guarded_write = [&] { write_at.push_back(boot_ms.load()); };
+    boot_ms = anchor + period_ms;
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(period_ms));
+
+    committed.waitUntilArrived();
+    ASSERT_EQ(write_at.size(), 3u);
+    EXPECT_EQ(write_at[1] - write_at[0], period_ms);
+    EXPECT_EQ(write_at[2] - write_at[1], period_ms);
+    committed.release();
+    runtime.stopBackgroundWorkers();
+    runtime.finishTeardown(false);
+}
+#endif
 
 /// One `WARNING` per expiry, written at the first attempt after it, and the expiry is visible while it lasts.
 TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
