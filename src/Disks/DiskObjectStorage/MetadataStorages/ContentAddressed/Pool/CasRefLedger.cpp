@@ -186,16 +186,15 @@ String CasRefLedger::reportLatchedFault(const RootNamespace & ns, Describe && de
     std::optional<String> offending_ns;
     try
     {
-        if (ref_lane_fault_describe_hook_for_test)
-            ref_lane_fault_describe_hook_for_test();
         describe(key, detail);
         offending_ns = ns.string();
     }
     catch (...)
     {
         /// The fence is already closed and only the report requests the remount, so a failure to
-        /// describe the fault must not skip it. The literal fits the small-string buffer, so this
-        /// assignment cannot allocate.
+        /// describe the fault must not skip it. `describe` can throw only at the recovery site, which
+        /// runs without the memory-exception lock, or on a defect; the report must still carry a
+        /// readable detail. The literal fits the small-string buffer, so this assignment cannot allocate.
         detail = "ref lane fault";
     }
     on_impossible_interference(key, detail, offending_ns);
@@ -1064,8 +1063,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
                     /// This epoch is closed. Its stream cannot continue, so the next durable id of this
                     /// namespace is sequence 1 of the next epoch -- including when that epoch is at or
                     /// above our own live one, which is what a mount deposed by a higher-epoch successor
-                    /// sees. Reading on is honest (the transactions ARE this namespace's) and harmless:
-                    /// our own appends then collide with the seal, which faults the mount.
+                    /// sees. Reading on is honest: the transactions ARE this namespace's.
                     ++epoch;
                     sequence = 1;
                     slot_attempts_this_epoch = 0;
@@ -1695,9 +1693,9 @@ void CasRefLedger::installRecoveryResult(RefTableRuntime & rt, RecoveryResult &&
     rt.state = std::move(result.state);
     rt.newest_snapshot_id = result.newest_snapshot_id;
     /// The chain link the CAS-walk ended on -- the `prev_epoch_seal` this table's next sequence-1 append
-    /// must name. This is the PRODUCTION producer of `last_epoch_seal` (the two writer-side arms record
-    /// only what they happened to observe): a real epoch change arrives with a self-remount, which
-    /// discards every cached runtime, so the fresh one gets its link from exactly here.
+    /// must name. This is the only production producer of `last_epoch_seal`: a real epoch change arrives
+    /// with a self-remount, which discards every cached runtime, so the fresh one gets its link from
+    /// exactly here.
     rt.last_epoch_seal = result.last_epoch_seal;
     rt.tail_count_since_snapshot.store(result.tail_count, std::memory_order_relaxed);
     rt.tail_bytes_since_snapshot.store(result.tail_bytes, std::memory_order_relaxed);
@@ -2885,14 +2883,12 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
     /// delayed. A retry-later class here would be the real bug: every caller would re-derive the same
     /// impossible transaction forever, and the deposition would never be visible anywhere.
     ///
-    /// A fault: a seal of the live epoch means a successor exists, so this mount is already gone. Both
-    /// causes below take this path; only the diagnosis differs.
+    /// Not a fault of this lane machine: nothing is occupied; the deposition is reported by the error.
     if (table_live)
     {
         const RefTxnId next_id = working.nextTxnId(live_epoch_fn());
         if (next_id.ref_sequence == 1 && !chainLinkFor(next_id, preview_epoch_seal))
         {
-            latch_mount_fault();
             /// The two causes are reported SEPARATELY. They are different facts about the world and the
             /// message must not assert the one it did not observe: holding a seal OF this epoch is
             /// positive evidence that a successor closed it, while holding no seal at all says only that
@@ -2900,22 +2896,16 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
             /// is identical either way (a `Live` table at sequence 1 with no usable link can construct
             /// nothing legal), so only the diagnosis differs, and only the diagnosis is at risk of
             /// being wrong.
-            const String detail = reportLatchedFault(ns, [&](String & key, String & text)
-            {
-                key = layout.refLogKey(rt->life, next_id);
-                const String cause = preview_epoch_seal
-                    ? fmt::format("the only seal it holds, {}-{}, is of that SAME epoch — a successor already "
-                                  "closed it", preview_epoch_seal->writer_epoch, preview_epoch_seal->ref_sequence)
-                    : String("it holds no epoch seal at all, so it has no chain link to name");
-                text = fmt::format(
-                    "ref-log append for namespace '{}': writer epoch {} cannot be opened by this mount — its "
-                    "next transaction would be {}-{}, sequence 1 of an epoch it holds no closing seal BELOW: {}. "
-                    "Nothing legal can be written here and nothing was sent. This mount's append lane resumes "
-                    "only under a later epoch",
-                    ns.string(), next_id.writer_epoch, next_id.writer_epoch, next_id.ref_sequence, cause);
-            });
+            const String cause = preview_epoch_seal
+                ? fmt::format("the only seal it holds, {}-{}, is of that SAME epoch — a successor already "
+                              "closed it", preview_epoch_seal->writer_epoch, preview_epoch_seal->ref_sequence)
+                : String("it holds no epoch seal at all, so it has no chain link to name");
             complete_error(carve_all_pending(), std::make_exception_ptr(Exception(ErrorCodes::INVALID_STATE,
-                "CAS {}", detail)));
+                "CAS ref-log append for namespace '{}': writer epoch {} cannot be opened by this mount — its "
+                "next transaction would be {}-{}, sequence 1 of an epoch it holds no closing seal BELOW: {}. "
+                "Nothing legal can be written here and nothing was sent. This mount's append lane resumes "
+                "only under a later epoch",
+                ns.string(), next_id.writer_epoch, next_id.writer_epoch, next_id.ref_sequence, cause)));
             ProfileEvents::increment(ProfileEvents::CASRefAppendSealRejected);
             return;
         }

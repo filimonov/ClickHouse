@@ -1034,10 +1034,6 @@ public:
     {
         ref_ledger.setWedgeBeforeSlotOccupyHookForTest(std::move(hook));
     }
-    void setRefLaneFaultDescribeHookForTest(std::function<void()> hook)
-    {
-        ref_ledger.setRefLaneFaultDescribeHookForTest(std::move(hook));
-    }
     void setNamespacePresenceProbeAfterFirstReadHookForTest(std::function<void()> hook)
     {
         ref_ledger.setNamespacePresenceProbeAfterFirstReadHookForTest(std::move(hook));

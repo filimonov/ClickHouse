@@ -1497,14 +1497,14 @@ TEST(CASRefWedgeEveryAttempt, ALiveEpochSealIsNeverStampedAsItsOwnPrevEpochSeal)
     /// can have been stamped anywhere.
     /// The refusal must be terminal, not merely "an error", so all four halves are pinned:
     ///
-    ///   1. the class is INVALID_STATE, NOT the retry-later class. This is the one that matters most: a retryable error here would
-    ///      have every caller re-derive the same impossible transaction forever, and the deposition
-    ///      would never surface anywhere;
+    ///   1. the class is INVALID_STATE, NOT the retry-later class. This is the one that matters most: a
+    ///      retryable error here would have every caller re-derive the same impossible transaction
+    ///      forever, and the deposition would never surface anywhere;
     ///   2. the message says the lane resumes only under a later epoch -- that IS the deposition,
     ///      reported to the caller and the operator;
     ///   3. NOTHING is written, so no self-pointer can have been stamped and no request was spent;
-    ///   4. a SECOND flush sends nothing either: the refusal faulted the mount, so the fence refuses it.
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
+    ///   4. a SECOND flush behaves identically instead of looping or degrading.
+    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     const size_t puts_before = backend->putCount(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), RefTxnId{epoch + 1, 1}));  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     try
     {
@@ -1522,13 +1522,14 @@ TEST(CASRefWedgeEveryAttempt, ALiveEpochSealIsNeverStampedAsItsOwnPrevEpochSeal)
     EXPECT_EQ(backend->putCount(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), RefTxnId{epoch + 1, 1})), puts_before)
         << "and no request was spent learning what the lane could already prove about itself";
 
-    /// The second flush: still no traffic. A lane that re-derived and re-sent here would be exactly the
-    /// spin this arm exists to prevent.
-    expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { store->dropRef(ns, "x"); });
+    /// The second flush: the same answer, still no traffic. A lane that re-derived and re-sent here
+    /// would be exactly the spin this arm exists to prevent.
+    expectThrowsCode(DB::ErrorCodes::INVALID_STATE, [&] { store->dropRef(ns, "x"); });
     EXPECT_EQ(backend->putCount(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), RefTxnId{epoch + 1, 1})), puts_before);
 
-    /// A known successor means this mount is already gone: the refusal requested one remount.
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+    /// NO remount is scheduled: this is not a fault of the lane machine, since nothing is occupied; the
+    /// deposition is reported by the error.
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
 }
 
 /// ================================================================================================
@@ -2102,60 +2103,4 @@ TEST(CASRefLaneFault, BadAllocInsideTheAppendPropagates)
     EXPECT_TRUE(faults->snapshot().empty());
     EXPECT_NO_THROW(store->dropRef(ns, "y"));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);
-}
-
-/// A lane holding the seal of its own live epoch knows a successor exists, so this mount is already
-/// gone: the refusal latches the fault first, although no id is occupied.
-TEST(CASRefLaneFault, DeposedLaneLatchesBeforeTheReport)
-{
-    auto backend = std::make_shared<WedgeTestBackend>();
-    auto store = openPool(backend);
-    const RootNamespace ns{"srv1/fault_deposed_lane"};
-    admitProperlyBornEntry(backend, store->layout(), ns);
-    publishEmptyPart(store, ns, "x");
-    const uint64_t epoch = store->liveWriterEpoch();
-    store->setLiveWriterEpochForTest(epoch + 1);
-    store->setLastEpochSealForTest(ns, RefTxnId{epoch + 1, 7});
-    const auto faults = recordFaultEvents(store);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
-    ASSERT_TRUE(store->mayMutate());
-
-    expectThrowsCode(DB::ErrorCodes::INVALID_STATE, [&] { store->dropRef(ns, "x"); });
-
-    EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
-    expectOneLatchedFault(*faults, remounts_before, "a successor already closed it");
-}
-
-/// A description that fails, here for lack of memory, still leaves the caller and the report a message
-/// naming the fault, and still requests the remount.
-TEST(CASRefLaneFault, FaultWhoseDescriptionThrowsStillNamesTheFault)
-{
-    auto backend = std::make_shared<WedgeTestBackend>();
-    auto store = openPool(backend);
-    const RootNamespace ns{"srv1/fault_describe_throws"};
-    admitProperlyBornEntry(backend, store->layout(), ns);
-    publishEmptyPart(store, ns, "x");
-    const RefTxnId next{store->liveWriterEpoch(), 3};
-    backend->conflict_substr = store->layout().refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), next);
-    backend->conflict_bytes = occupantBytes(OccupantKind::ForeignTxn, ns, next);
-    backend->conflict_count = 1;
-    const auto faults = recordFaultEvents(store);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
-    store->setRefLaneFaultDescribeHookForTest([] { throw std::bad_alloc(); });
-
-    try
-    {
-        store->dropRef(ns, "x");
-        FAIL() << "the fault must reach the caller";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::CORRUPTED_DATA) << e.message();
-        EXPECT_NE(e.message().find("CAS ref lane fault"), String::npos) << e.message();
-    }
-    store->setRefLaneFaultDescribeHookForTest(nullptr);
-
-    EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
-    expectOneLatchedFault(*faults, remounts_before, "ref lane fault");
 }

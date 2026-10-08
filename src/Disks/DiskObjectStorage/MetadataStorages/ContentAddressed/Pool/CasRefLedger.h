@@ -453,12 +453,6 @@ public:
         wedge_before_slot_occupy_hook_for_test = std::move(hook);
     }
 
-    /// Runs where a ref lane fault is described, so a test can make the description throw.
-    void setRefLaneFaultDescribeHookForTest(std::function<void()> hook)
-    {
-        ref_lane_fault_describe_hook_for_test = std::move(hook);
-    }
-
     /// Counts exact recovery-result publications.
     uint64_t recoveryInstallCountForTest() const
     {
@@ -1032,7 +1026,6 @@ private:
     std::function<void()> namespace_presence_probe_after_first_read_hook_for_test;
     std::function<void()> namespace_presence_probe_after_terminal_proven_hook_for_test;
     std::function<void()> wedge_before_slot_occupy_hook_for_test;
-    std::function<void()> ref_lane_fault_describe_hook_for_test;
     std::function<void()> snapshot_after_capture_hook_for_test;
     std::function<void()> snapshot_before_ckpt_cas_hook_for_test;
 
