@@ -1285,9 +1285,12 @@ actions are disabled and the new variables stay at their `Init` values.
 Changes against the plan text:
 - First run of `absence_twostep` was red on `SupersededWriterMakesNoMutation` (depth 12): `AdoptRead`
   observed the slot, `ClearExpiredMount` removed it, the stop set `localLost`, then `AdoptWrite`
-  re-installed a body and `Write` fired with `localLost` set. The stop is terminal in the product, so
-  `AbsenceStop` now drops the pending adopt observation (`adoptObs`), as `Die` does. This is a model
-  change beyond the plan text.
+  re-installed a body and `Write` fired. A first fix cleared the pending adopt observation at the stop.
+  That was wrong: it made the model more optimistic than the product, where a renewal request already
+  sent can still land after the stop. What the product guarantees is the latch: the stop latches the write
+  fence first and never re-arms it. `AbsenceStop` now sets `stopLatch[a]` for good, `CanWrite` requires it
+  clear, and `adoptObs` is left alone. A straggler body may still land in the slot; it is a dead server's
+  live-looking body that observers wait out.
 - `LiveIncarnation` requires `fenceUntil[a] > 0` (the incarnation has claimed). Without it
   `witness_absencestop` reached the stop through `mount = None` before any claim, which is not a deletion.
 - The three new cfgs use `Actors = {A}`. At `stage1`'s two actors `absence_twostep` passed 54M generated
@@ -1297,7 +1300,7 @@ Changes against the plan text:
 |---|---|---|---:|---:|---:|
 | `sab_proxy404stop` (new) | violation | `AbsenceStopIsTrue` | 6 | 916 | 442 |
 | `witness_absencestop` (new) | violation | `W_NoAbsenceStop` | 9 | 235 | 155 |
-| `absence_twostep` (new) | green | green, exhaustive, depth 30 | - | 65,781,231 | 10,293,448 |
+| `absence_twostep` (new) | green | green, exhaustive | - | 65,452,863 | 10,531,108 |
 | `stage1` (control) | green | green, exhaustive, depth 28 | - | 57,855,349 | 10,599,769 |
 | `twins` (control) | green | green, exhaustive, depth 25 | - | 138,643,328 | 18,080,420 |
 

@@ -467,7 +467,8 @@ VARIABLES
     proxy404,         \* BOOLEAN; a proxy currently answers 404 to a GET and fails a LIST
     absPend,          \* [Incs -> {"none", "getmiss"}]; the renewal's GET missed and awaits the LIST
     falseAbsenceStop, \* history: TRUE once an incarnation stopped on an absence while the slot existed
-    absenceStopped    \* history: TRUE once an incarnation stopped on an absence
+    absenceStopped,   \* history: TRUE once an incarnation stopped on an absence
+    stopLatch         \* [Incs -> BOOLEAN]; the incarnation stopped on an absence: it never writes again
 
 baseVars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, localLost, crashed, rejected,
            adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
@@ -481,7 +482,7 @@ baseVars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, loc
 claimVars == << claimStart, claimExp, claimTok, claimAmbig, claimState, openedShort, lateOpened >>
 
 \* The two-step absence variables. Every action that does not touch them leaves them unchanged.
-absVars == << proxy404, absPend, falseAbsenceStop, absenceStopped >>
+absVars == << proxy404, absPend, falseAbsenceStop, absenceStopped, stopLatch >>
 
 vars == << baseVars, claimVars, absVars >>
 
@@ -507,7 +508,7 @@ WriterTag(a) == IF TwinUuids = {} THEN None ELSE a
 OwnBody(a) == TwinUuids = {} \/ bodyWriter = a
 
 \* `Write`'s enabling condition: a local check only (see `Write`).
-CanWrite(i) == ~rejected[i] /\ ~wedged[i] /\ ~crashed[i] /\ owner = Uuid(i) /\ clock < fenceUntil[i]
+CanWrite(i) == ~stopLatch[i] /\ ~rejected[i] /\ ~wedged[i] /\ ~crashed[i] /\ owner = Uuid(i) /\ clock < fenceUntil[i]
 
 NoPend == -1
 Absent == -2   \* `claimExp`: the claim saw an empty slot
@@ -577,6 +578,7 @@ Init ==
     /\ absPend = [a \in Incs |-> "none"]
     /\ falseAbsenceStop = FALSE
     /\ absenceStopped = FALSE
+    /\ stopLatch = [a \in Incs |-> FALSE]
 
 ----------------------------------------------------------------------------
 \* Claim an empty, unowned server_root: first-writer-wins, sticky from here on.
@@ -1150,7 +1152,7 @@ Die(a) ==
     /\ claimState' = [claimState EXCEPT ![a] = "idle"]
     /\ UNCHANGED << openedShort, lateOpened >>
     /\ absPend' = [absPend EXCEPT ![a] = "none"]
-    /\ UNCHANGED << proxy404, falseAbsenceStop, absenceStopped >>
+    /\ UNCHANGED << proxy404, falseAbsenceStop, absenceStopped, stopLatch >>
 
 \* A mutation under the mount. rev.6 round 8 (P2, consult/review-reconciled): `Write` is now
 \* a PURE LOCAL check, matching the product's actual write path exactly --
@@ -1864,18 +1866,20 @@ AllocResolve(a) ==
 ProxyToggle ==
     /\ ProxyMay404
     /\ proxy404' = ~proxy404
-    /\ UNCHANGED << baseVars, claimVars, absPend, falseAbsenceStop, absenceStopped >>
+    /\ UNCHANGED << baseVars, claimVars, absPend, falseAbsenceStop, absenceStopped, stopLatch >>
 
 \* The renewer's incarnation is running and has claimed the mount (`fenceUntil` is set by a claim).
 LiveIncarnation(a) == localEpoch[a] > 0 /\ fenceUntil[a] > 0 /\ ~localLost[a] /\ ~crashed[a]
 
-\* The renewal stops on an absence: the same knowledge a fenced or foreign body gives `Renew`.
+\* The renewal stops on an absence: the same knowledge a fenced or foreign body gives `Renew`, and the
+\* write fence latches for good. A renewal already sent may still land a body (`AdoptWrite`); the
+\* stopped incarnation writes nothing either way.
 AbsenceStop(a) ==
     /\ localLost' = [localLost EXCEPT ![a] = TRUE]
     /\ absenceStopped' = TRUE
     /\ falseAbsenceStop' = (falseAbsenceStop \/ mount # None)
     /\ absPend' = [absPend EXCEPT ![a] = "none"]
-    /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
+    /\ stopLatch' = [stopLatch EXCEPT ![a] = TRUE]
 
 \* The renewal's GET found no slot (a real deletion, or a proxy 404). It retries after a LIST.
 RenewGetMiss(a) ==
@@ -1886,10 +1890,10 @@ RenewGetMiss(a) ==
     /\ IF SabAbsenceGetOnly
        THEN AbsenceStop(a)
        ELSE /\ absPend' = [absPend EXCEPT ![a] = "getmiss"]
-            /\ UNCHANGED << localLost, adoptObs, falseAbsenceStop, absenceStopped >>
+            /\ UNCHANGED << localLost, falseAbsenceStop, absenceStopped, stopLatch >>
     /\ UNCHANGED << proxy404 >>
     /\ UNCHANGED << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, crashed, rejected,
-                    fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
+                    adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
                     remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver,
                     supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
@@ -1904,11 +1908,11 @@ RenewListStep(a) ==
     /\ absPend[a] = "getmiss"
     /\ IF proxy404 \/ mount # None
        THEN /\ absPend' = [absPend EXCEPT ![a] = "none"]
-            /\ UNCHANGED << localLost, adoptObs, falseAbsenceStop, absenceStopped >>
+            /\ UNCHANGED << localLost, falseAbsenceStop, absenceStopped, stopLatch >>
        ELSE AbsenceStop(a)
     /\ UNCHANGED << proxy404 >>
     /\ UNCHANGED << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, crashed, rejected,
-                    fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
+                    adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
                     remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver,
                     supersededThenWrote >>
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
@@ -2023,6 +2027,7 @@ TypeOK ==
     /\ absPend \in [Incs -> {"none", "getmiss"}]
     /\ falseAbsenceStop \in BOOLEAN
     /\ absenceStopped \in BOOLEAN
+    /\ stopLatch \in [Incs -> BOOLEAN]
 
 \* Owner is sticky: once set it never transitions to a different non-None value.
 NoTwoServerUuidsOwnSameServerRoot ==
