@@ -1088,6 +1088,10 @@ public:
     {
         ref_ledger.setSnapshotBeforeCkptCasHookForTest(std::move(hook));
     }
+    void setShutdownPublishWaitHookForTest(std::function<void()> hook)
+    {
+        ref_ledger.setShutdownPublishWaitHookForTest(std::move(hook));
+    }
 
     /// Test-only: replace the inter-attempt backoff sleep (e.g. with a clock-advancing no-op) on all
     /// three request planes and on ref-table recovery, for tests that drive a persistent write fault to

@@ -2042,7 +2042,18 @@ RefLaneDrain CasRefLedger::drainRefLanesForShutdown(uint64_t wait_budget_ms)
             any_wedge = true;
     }
 
-    return {.lane_unsettled = timed_out || any_wedge};
+    /// A snapshot publish holds no lane, yet its snapshot and `_ckpt` writes can land after the farewell.
+    bool publish_in_flight = false;
+    for (const auto & rt : runtimes)
+    {
+        std::unique_lock<std::mutex> lock(rt->state_mutex);
+        const auto settled = [&] { return rt->pending_snapshot_publishes.load(std::memory_order_relaxed) == 0; };
+        if (!settled() && shutdown_publish_wait_hook_for_test)
+            shutdown_publish_wait_hook_for_test();
+        if (!rt->publish_settle_cv.wait_until(lock, deadline, settled))
+            publish_in_flight = true;
+    }
+    return {.lane_unsettled = timed_out || any_wedge, .snapshot_publish_in_flight = publish_in_flight};
 }
 
 
