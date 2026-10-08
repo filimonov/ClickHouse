@@ -220,6 +220,7 @@ flowchart TD
     W -->|yes| WR["resolve the wedge by its exact key first"]
     WR -->|resolved durable| INST0["install candidate, clear wedge"]
     WR -->|still unresolved| FAIL1["fail the queue, stay wedged, never allocate a new id"]
+    WR -->|"other bytes at the slot"| FAULT["fault: lane Faulted, fence closed, remount requested"]
     W -->|no| CARVE["two-phase carve: plan may throw, publish never throws"]
     CARVE --> VAL["per-item validation: caps, shape, byte budget<br/>a failing item fails alone"]
     VAL --> PREP["build candidate state and the complete wedge before the PUT"]
@@ -228,6 +229,7 @@ flowchart TD
     PUT -->|DefiniteFailure| GAP["fail survivors, id not consumed"]
     PUT -->|"Unresolved, provably nothing sent"| NOSEND["do not wedge"]
     PUT -->|"Unresolved, otherwise"| WEDGE["install the prepared wedge, survivors fail Uncertain"]
+    PUT -->|"Conflict, other bytes at the id"| FAULT
     OK --> SNAP["maybe schedule a snapshot publish"]
 ```
 
@@ -235,6 +237,14 @@ The **wedge** is the mechanism that makes fail-closed ambiguity concrete: at mos
 recording the single conditional `PUT` whose outcome is unknown, complete with the key and the
 sealed bytes. The next flush must resolve *that exact key* before it may allocate a new transaction
 id — an unresolved write can never silently become a gap, and the ledger never double-publishes.
+
+**An occupied id.** Ref-log keys are write-once. When the lane's conditional `PUT`, a wedge's
+retry, or recovery of a retained attempt finds an object at the lane's own id, only the attempt's
+exact bytes let the lane continue: an earlier attempt of the same transaction landed. Anything
+else is a fault: a foreign transaction, a successor's `EpochSeal` (a successor exists, so this
+mount was already deposed), or an object that does not decode. The lane becomes `Faulted`, the
+mount's write fence closes, a remount is requested, and the server logs an error and a
+`foreign_interference` event naming the key and what was read.
 
 Crash points: between the `PUT` and the install, the object is durable and unapplied — the next
 mount's recovery replays it. Between a precommit and its promote, a dangling precommit is reclaimed
