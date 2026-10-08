@@ -1370,8 +1370,10 @@ uint64_t CasMountRuntime::remountRequestedGenerationForTest() const
     return remount_requested_generation;
 }
 
-void CasMountRuntime::finishTeardown(bool drained)
+void CasMountRuntime::finishTeardown(const FarewellBlockers & blockers)
 {
+    const bool drained = !(blockers.drain_failed || blockers.ref_lane_unsettled || blockers.snapshot_publish_in_flight
+        || blockers.cleanup_duty_pending);
     stopBackgroundWorkers();
 
     /// No farewell: our slot holds another body, or our identity may be held by another process.

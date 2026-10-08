@@ -161,6 +161,16 @@ struct LeasePauseState
     uint64_t since_boot_ms = 0;   /// when the threshold was crossed; 0 for `None`
 };
 
+/// What the teardown found unsettled. The farewell certifies that no write of this incarnation lands
+/// after it, so any field set withholds it.
+struct FarewellBlockers
+{
+    bool drain_failed = false;
+    bool ref_lane_unsettled = false;
+    bool snapshot_publish_in_flight = false;
+    bool cleanup_duty_pending = false;
+};
+
 /// Owns the live writer-incarnation mechanics shared by the pool's mount and recovery orchestration:
 /// the `MountLeaseRenewer`, local `MountFence`, build watermark and in-flight build registry,
 /// `live_writer_epoch`, unclean-boundary marker, and both persistent workers. `Pool` retains the higher-level
@@ -441,7 +451,7 @@ public:
     uint64_t remountRequestedGenerationForTest() const;
 
     /// Join both persistent workers before an `Active` renewer may write its clean farewell.
-    void finishTeardown(bool drained);
+    void finishTeardown(const FarewellBlockers & blockers);
 
     /// Sleep through the injected test hook when present; otherwise use the production thread sleep.
     /// `Pool` claim observation and materialization grace waits share this seam so tests control both.

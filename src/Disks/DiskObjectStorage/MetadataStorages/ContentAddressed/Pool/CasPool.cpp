@@ -1014,26 +1014,33 @@ Pool::~Pool()
     /// bounded by one attempt's worth of budget plus the lease safety margin, and stays on `Pool`
     /// between the two mount-runtime teardown steps.
     ///
-    /// False by default, rather than assigned from the drain: swallowing a drain failure must never
-    /// forge the clean-release marker.
-    bool drained = false;
-    guarded([this, &drained]
+    /// Fail closed: a drain that threw must never let the farewell through.
+    FarewellBlockers blockers{.drain_failed = true};
+    guarded([this, &blockers]
     {
         if (config.teardown_phase2_throw_for_test)
             config.teardown_phase2_throw_for_test();
-        const bool ref_lanes_drained = ref_ledger.drainRefLanesForShutdown(
-            config.cas_request_budget.attemptEnvelopeMs() + config.cas_request_budget.lease_safety_margin_ms);
-        drained = ref_lanes_drained && !writerCleanupDutiesPending();
+        blockers = drainForShutdown();
     }, "CAS pool teardown: draining ref lanes");
 
     /// 3. Retire the merged heartbeat. This always runs after phase 2, even when that phase failed, and
     /// gets the captured fail-closed drain result.
-    guarded([this, drained]
+    guarded([this, blockers]
     {
         if (config.teardown_phase3_throw_for_test)
             config.teardown_phase3_throw_for_test();
-        mount_runtime.finishTeardown(drained);
+        mount_runtime.finishTeardown(blockers);
     }, "CAS pool teardown: finishing mount teardown");
+}
+
+FarewellBlockers Pool::drainForShutdown()
+{
+    const RefLaneDrain drain = ref_ledger.drainRefLanesForShutdown(
+        config.cas_request_budget.attemptEnvelopeMs() + config.cas_request_budget.lease_safety_margin_ms);
+    return {
+        .ref_lane_unsettled = drain.lane_unsettled,
+        .snapshot_publish_in_flight = drain.snapshot_publish_in_flight,
+        .cleanup_duty_pending = writerCleanupDutiesPending()};
 }
 
 bool Pool::tryDispatchDetached(std::function<void(DetachedStopToken)> task)
@@ -1176,14 +1183,11 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
 
     /// (5b) Drain the ref lanes (bounded by one attempt's budget + safety margin) to learn whether a clean
     /// farewell is EARNED — exactly the `~Pool` rule.
-    const bool ref_lanes_drained = ref_ledger.drainRefLanesForShutdown(
-        config.cas_request_budget.attemptEnvelopeMs() + config.cas_request_budget.lease_safety_margin_ms);
-    const bool drained = ref_lanes_drained && !writerCleanupDutiesPending();
-
+    ///
     /// (3+5c) Retire the merged heartbeat: a clean-release farewell ONLY if the lanes provably drained,
     /// otherwise publish NO terminal marker so the lease expires by observation (never an unearned
     /// clean farewell). The workers were already joined above. Outside `remount_mutex`.
-    mount_runtime.finishTeardown(drained);
+    mount_runtime.finishTeardown(drainForShutdown());
 
     /// The pool object OUTLIVES this FORGET (it stays registered, `Vanished(forgotten)`, until DROP/restart),
     /// so `~Pool` will re-run the same teardown. Drop the renewer now so that later teardown finds none and

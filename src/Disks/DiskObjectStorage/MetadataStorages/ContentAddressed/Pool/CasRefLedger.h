@@ -75,6 +75,14 @@ enum class RefLaneState : uint8_t
 /// consumer that treats `No` as knowledge; only `Yes` is gated on the fence.
 enum class ConfirmAnswer : uint8_t { Yes, No, Unknown };
 
+/// What `drainRefLanesForShutdown` could not settle by its deadline.
+struct RefLaneDrain
+{
+    /// A queue not idle, or a lane writing or wedged.
+    bool lane_unsettled = false;
+    bool snapshot_publish_in_flight = false;
+};
+
 /// Coordinates the writer-side ref-log and ref-table protocol for all namespaces in one mounted pool.
 /// It owns the recovered whole-table cache, the flat-combining append lane and its unresolved-`PUT`
 /// wedge, snapshot publication, stale-precommit cleanup, cache-budget eviction, and remount/shutdown
@@ -290,7 +298,7 @@ public:
     /// Closes admission, snapshots the current table set, and waits up to `wait_budget_ms` for queued
     /// mutations and leaders to finish. The check and enqueue paths share `ref_queue_mutex`, so no new
     /// mutation can appear after shutdown has taken its snapshot.
-    bool drainRefLanesForShutdown(uint64_t wait_budget_ms);
+    RefLaneDrain drainRefLanesForShutdown(uint64_t wait_budget_ms);
 
     /// A staged conditional create on the mount plane. Callers reach the store only through these, so
     /// every attempt observes the same mount admission rule. `Conflict` names what occupies the key; a

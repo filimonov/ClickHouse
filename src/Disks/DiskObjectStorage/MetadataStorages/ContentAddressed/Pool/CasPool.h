@@ -1178,6 +1178,8 @@ private:
     /// watermark floor. The drain calls `ref_ledger` directly to avoid re-entering this Pool wrapper.
     void drainWriterCleanupDuties(const RootNamespace & ns);
     bool writerCleanupDutiesPending() const;
+    /// Drains the ref lanes and reports what still blocks the farewell.
+    FarewellBlockers drainForShutdown();
 
     /// The single admission seam for durable ref mutations exposed by `Pool`. Keeping drain-before-call
     /// here makes a new forwarding entry point visibly choose between servicing writer cleanup and
