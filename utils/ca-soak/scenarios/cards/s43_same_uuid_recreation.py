@@ -206,10 +206,10 @@ class S43(Scenario):
             except QueryError as e:
                 forgotten[repr(node)] = f"ERROR: {str(e)[:160]}"
         result.observations["forget"] = forgotten
-        all_vanished = all("vanished" in v for v in forgotten.values())
+        all_vanished = all(v == "closed(forgotten)" for v in forgotten.values())
         result.add(Verdict.check(
             "both mounts FORGOT the pool before its prefix was reused",
-            "system.cas_mounts reports vanished(...) on every node",
+            "system.cas_mounts reports closed(forgotten) on every node",
             forgotten, all_vanished,
             "" if all_vanished else "a mount still holds the pool, so emptying the prefix would be "
                                     "pulling bytes out from under it rather than recreating a pool"))

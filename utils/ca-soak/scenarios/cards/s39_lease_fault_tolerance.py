@@ -487,10 +487,10 @@ class S39(Scenario):
             },
         )
         long_deadline = time.monotonic() + long_s
-        saw_not_live = False
+        saw_paused = False
         while time.monotonic() < long_deadline:
             try:
-                saw_not_live = saw_not_live or _mount_lifecycle(node)[0] == "not_live"
+                saw_paused = saw_paused or _mount_lifecycle(node)[0] == "paused"
             except Exception:
                 pass
             time.sleep(0.5)
@@ -581,7 +581,7 @@ class S39(Scenario):
             "counter_delta": long_delta,
             "aggregate_outcomes": long_outcomes,
             "targeted_proxy_faults": long_fault_stats["faults"],
-            "saw_not_live": saw_not_live,
+            "saw_paused": saw_paused,
             "final_mount": final_lifecycle,
             "post_clear_probe_count": post_clear_probe_count,
             "post_clear_probe_errors": post_clear_probe_errors,
@@ -591,14 +591,14 @@ class S39(Scenario):
             long_delta["CASMountLeaseLost"] == 1
             and long_outcomes.get("failed", 0) == 1
             and long_fault_stats["faults"] > 0
-            and saw_not_live
+            and saw_paused
         )
         result.add(
             Verdict.check(
                 "leg B: sustained disruption fails closed in one recovery generation",
                 "lease_lost=1, failed aggregate event=1, targeted faults>0",
                 f"delta={long_delta} outcomes={long_outcomes} faults={long_fault_stats['faults']} "
-                f"saw_not_live={saw_not_live}",
+                f"saw_paused={saw_paused}",
                 loss_ok,
                 _failure_note(
                     loss_ok,
