@@ -911,7 +911,7 @@ private:
     /// ref-log / ref-table subsystem moved to the `ref_ledger` member (Pool/CasRefLedger.h) and the mount/
     /// watermark/build-registry state to `mount_runtime` (Pool/CasMountRuntime.h); these remain here
     /// because the ledger is injected with them as callbacks (`fence_ok_fn` / `cancel_inflight_builds` /
-    /// `on_impossible_interference`) at construction and they bind to `Pool`.
+    /// `latch_mount_fault` / `on_impossible_interference`) at construction and they bind to `Pool`.
 
     /// Delegate to `mount_runtime`: the build registry (`inflight_builds`/`builds_mutex`) moved there.
     /// Cancel every in-flight build targeting `ns` once its removal transaction is durable; this
@@ -924,18 +924,10 @@ private:
     /// attempt envelopes (a write and its settlement read) plus the safety margin.
     bool refAppendFenceOk() const;
 
-    /// incidental-detection reaction for a foreign-interference
-    /// anomaly -- a signal that arrives on an operation the writer already performs (never a dedicated
-    /// probe) and that is impossible under legitimate single-writer operation once the mount lease
-    /// makes `key` exclusively ours: foreign bytes observed at our own wedge key, or the wedge hard
-    /// contract itself violated at new-id-allocation time. LOG_ERROR with full context, emit a
-    /// `ForeignInterference` CasEvent, then fence this mount closed and arm the SAME bounded
-    /// self-remount a foreign/superseded lease renewal already drives (`tripMountLost` followed by
-    /// `scheduleRemount`). Diagnosis is strictly off the
-    /// critical path: ONE background GET of `key` (best-effort, single attempt), decoded as far as its
-    /// ref-log header parses, logged -- never blocking or throwing on the caller's thread. Does NOT
-    /// itself throw: every call site raises its OWN `LOGICAL_ERROR` immediately after this returns, so
-    /// the message can name the specific contract that broke.
+    /// The reaction to a ref lane fault the ledger has already latched through `latch_mount_fault`.
+    /// Requests the remount first, because nothing else would and everything after it can throw; then
+    /// `LOG_ERROR`, a `ForeignInterference` CasEvent, and ONE background GET of `key` for diagnosis
+    /// that never blocks or throws on the caller's thread.
     void reportImpossibleInterference(const String & key, const String & reason,
                                        const std::optional<String> & offending_ns = {});
 

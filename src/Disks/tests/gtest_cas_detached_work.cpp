@@ -173,6 +173,7 @@ public:
               [] { return uint64_t{1}; },
               [] { return uint64_t{0}; },
               [] { return true; },
+              [] {},
               [](const String &, const String &, const std::optional<String> &) {},
               [this](std::function<void(DetachedStopToken)> task)
               {
