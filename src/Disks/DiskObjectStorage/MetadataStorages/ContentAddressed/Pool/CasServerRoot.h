@@ -346,8 +346,8 @@ MountClaimResult claimMountAwaitingExpiry(
 
 /// One `server_root_id`'s cross-round incarnation-stability observation,
 /// owned by the GC leader instance (`Cas::Gc::mount_obs`) and threaded through consecutive
-/// `computeHeartbeatFloor` calls. Each call decides once per slot; `first_seen_mono_ms` is the
-/// reading taken when the slot read that first returned `etag` came back.
+/// `computeHeartbeatFloor` calls. `first_seen_mono_ms` is the reading taken when the slot read
+/// that first returned `etag` came back.
 struct MountIncarnationObservation
 {
     Etag etag;
