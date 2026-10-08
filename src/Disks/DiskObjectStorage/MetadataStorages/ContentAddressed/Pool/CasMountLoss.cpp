@@ -124,6 +124,34 @@ MountSlotReading classifyMountSlot(const Observation & seen, const OwnMountBodie
     return {MountSlotVerdict::SlotCorrupt, std::move(body)};
 }
 
+Observation corroborateAbsence(CasOperation & op, const String & key, Observation seen)
+{
+    if (!std::holds_alternative<ProvenAbsent>(seen))
+        return seen;
+    try
+    {
+        /// `key` sorts first among the keys it prefixes, so one entry decides.
+        const ListPage page = op.list(key, "", 1, Retry::once());
+        if (!page.keys.empty() && page.keys.front().key == key)
+            return NotObserved{};
+        return ProvenAbsent{};
+    }
+    catch (const std::bad_alloc &)
+    {
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        if (isDeterministicLocalFailure(e.code()))
+            throw;
+        return NotObserved{};
+    }
+    catch (const std::exception &)
+    {
+        return NotObserved{};
+    }
+}
+
 String describeMountEnd(MountEnd end, MountLossReaction reaction, const String & disk_name,
                         const String & server_root_id, const std::optional<MountLease> & holder, std::string_view detail)
 {

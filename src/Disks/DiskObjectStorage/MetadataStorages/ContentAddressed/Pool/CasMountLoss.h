@@ -1,4 +1,5 @@
 #pragma once
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasWriteResult.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <base/types.h>
@@ -65,6 +66,11 @@ struct MountSlotReading
 
 /// Total: one verdict for every observation. Bodies are compared decoded, not as bytes.
 MountSlotReading classifyMountSlot(const Observation & seen, const OwnMountBodies & own);
+
+/// ProvenAbsent only when a LIST of key as a prefix agrees: a proxy or a misrouted request answers a GET
+/// with 404 too. A failed LIST, or one that lists the key, is NotObserved; any other observation is
+/// returned unchanged.
+Observation corroborateAbsence(CasOperation & op, const String & key, Observation seen);
 
 String describeMountEnd(MountEnd end, MountLossReaction reaction, const String & disk_name,
                         const String & server_root_id, const std::optional<MountLease> & holder, std::string_view detail);
