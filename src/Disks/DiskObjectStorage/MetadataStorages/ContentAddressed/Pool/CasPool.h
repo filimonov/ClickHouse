@@ -34,6 +34,7 @@
 namespace DB::Cas
 {
 
+class Pool;
 
 enum class DetachedDispatchFault
 {
@@ -211,6 +212,9 @@ struct PoolConfig
 
     /// TEST SEAM: invoked immediately before ref-table recovery issues its first backend request.
     std::function<void()> recovery_pre_first_request_hook_for_test = {};
+
+    /// TEST SEAM: `Pool::openForDecommission` hands its admin pool here before returning it.
+    std::function<void(Pool &)> admin_opened_hook_for_test = {};
 
     /// TEST SEAM: invoked at the start of each `Pool` teardown phase.
     std::function<void()> teardown_phase1_throw_for_test = {};

@@ -913,6 +913,7 @@ PoolPtr Pool::openForDecommission(BackendPtr backend, PoolConfig config, const S
     /// The admin claim must be RENEWED like any writable mount: the host disk may be observe-only
     /// (background_watermark=false), but an unrenewed claim (TTL ~30s) aborts any long drain midway.
     config.background_watermark = true;
+    config.mount_loss_reaction = MountLossReaction::FailDecommission;
     validateWritableMountTiming(config);
 
     Layout layout(config.pool_prefix);
@@ -967,6 +968,8 @@ PoolPtr Pool::openForDecommission(BackendPtr backend, PoolConfig config, const S
     /// freshly allocated durable `writer_epoch` before anything could observe the zero-initialized
     /// default.
     mountWritable(store, *victim_uuid, MountClaimPolicy::NoWait);
+    if (store->config.admin_opened_hook_for_test)
+        store->config.admin_opened_hook_for_test(*store);
     return store;
 }
 

@@ -1,3 +1,4 @@
+#include "cas_process_stop_log.h"
 #include "cas_test_helpers.h"
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasDecommission.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasRequests.h>
@@ -5,12 +6,15 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <algorithm>
 #include <atomic>
+#include <functional>
+#include <utility>
 #include <limits>
 #include <stdexcept>
 #include <tuple>
 
 namespace DB::ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CORRUPTED_DATA;
 }
 
@@ -1602,4 +1606,119 @@ TEST(CASDecommission, MidRetirementCrashResumesViaMountLeaseFallback)
     {
         decommissionPoolMember(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "a3"}, "victim");
     });
+}
+
+namespace
+{
+
+/// Counts every delete that reaches the store; the first staging delete runs `on_first_staging_remove`.
+class DeleteHookBackend : public InMemoryBackend
+{
+public:
+    std::atomic<uint64_t> removes{0};
+    std::function<void()> on_first_staging_remove;
+
+    RawRemoval remove(const String & key, const String & expected_value, TransportAccess & access) override
+    {
+        removes.fetch_add(1);
+        if (key.contains("/staging/") && on_first_staging_remove)
+            std::exchange(on_first_staging_remove, {})();
+        return InMemoryBackend::remove(key, expected_value, access);
+    }
+};
+
+void rewriteMountSlot(Backend & backend, const String & key, const std::function<void(MountLease &)> & edit)
+{
+    OperationForTest op(backend);
+    const auto got = (*op).read(key, Retry::once());
+    ASSERT_TRUE(got.has_value());
+    MountLease m = decodeMountLease(got->bytes);
+    edit(m);
+    ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(key, encodeMountLease(m), got->etag, Retry::once())));
+}
+
+}
+
+TEST(CASDecommission, ALostClaimFailsTheCommandAndDeletesNothingMore)
+{
+    auto backend = std::make_shared<DeleteHookBackend>();
+    {
+        auto victim = Pool::open(backend, PoolConfig{.pool_prefix = "p", .server_root_id = "victim"});
+    }
+    {
+        OperationForTest seed_op(*backend);
+        for (const char * name : {"upload1.tmp", "upload2.tmp", "upload3.tmp"})
+            (*seed_op).create(String("p/staging/victim/") + name, "x", Retry::once());
+    }
+    auto & log = processStopLog();
+    log.reset();
+    Pool * admin = nullptr;
+    backend->on_first_staging_remove = [&admin]
+    {
+        ASSERT_NE(admin, nullptr);
+        admin->latchMountEndForTest(MountEnd::SlotTaken);
+    };
+    PoolConfig config{.pool_prefix = "p", .server_root_id = "admin"};
+    config.admin_opened_hook_for_test = [&admin](Pool & pool) { admin = &pool; };
+    const uint64_t removes_before = backend->removes.load();
+
+    try
+    {
+        (void)decommissionPoolMember(backend, std::move(config), "victim");
+        ADD_FAILURE() << "a lost decommission claim must fail the command";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ABORTED) << e.message();
+        EXPECT_TRUE(e.message().contains("the decommission claim")) << e.message();
+    }
+
+    EXPECT_EQ(backend->removes.load(), removes_before + 1) << "not one delete after the claim ended";
+    EXPECT_EQ(log.graceful(), 0u);
+}
+
+TEST(CASDecommission, AnAdminRenewalThatFindsATwinClosesWithoutAStop)
+{
+    const auto open_admin = [](const std::shared_ptr<InMemoryBackend> & backend)
+    {
+        return Pool::open(backend, PoolConfig{
+            .pool_prefix = "p", .server_root_id = "victim", .mount_loss_reaction = MountLossReaction::FailDecommission});
+    };
+    auto & log = processStopLog();
+    {
+        auto backend = std::make_shared<InMemoryBackend>();
+        auto admin = open_admin(backend);
+        log.reset();
+        ScopedStopLineCapture lines;
+        rewriteMountSlot(*backend, admin->layout().mountKey("victim"), [](MountLease & m)
+        {
+            ++m.writer_epoch;
+            m.write_attempt_id = UInt128{77};
+        });
+
+        EXPECT_THROW(admin->renewWatermarkOnce(), DB::Exception);
+
+        EXPECT_EQ(admin->lifecycle(), PoolLifecycle::Stopping);
+        EXPECT_EQ(log.graceful(), 0u);
+        const auto events = log.events();
+        ASSERT_EQ(events.size(), 1u);
+        EXPECT_TRUE(events[0].starts_with("error-line:") && events[0].ends_with("deletes nothing more.")) << events[0];
+    }
+    {
+        auto backend = std::make_shared<InMemoryBackend>();
+        auto admin = open_admin(backend);
+        log.reset();
+        const uint64_t remounts_before = admin->scheduleRemountCallCountForTest();
+        rewriteMountSlot(*backend, admin->layout().mountKey("victim"), [](MountLease & m)
+        {
+            m.gc_fenced = true;
+            ++m.seq;
+        });
+
+        EXPECT_THROW(admin->renewWatermarkOnce(), DB::Exception);
+
+        EXPECT_EQ(admin->mountEnd(), MountEnd::FencedByGc);
+        EXPECT_EQ(admin->scheduleRemountCallCountForTest(), remounts_before) << "the decommission pool never remounts";
+        EXPECT_EQ(log.graceful(), 0u);
+    }
 }

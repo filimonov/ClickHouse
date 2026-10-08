@@ -20,6 +20,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CORRUPTED_DATA;
 }
 }
@@ -34,6 +35,14 @@ uint64_t nowMs()
 {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+void throwIfClaimLost(const Pool & admin, const String & victim_srid)
+{
+    if (admin.mountEnd() != MountEnd::None)
+        throw Exception(ErrorCodes::ABORTED,
+            "CAS decommission '{}': the decommission claim was lost ({}); the command stops and deletes nothing more",
+            victim_srid, mountEndWord(admin.mountEnd()));
 }
 
 std::string_view removalName(Removal r)
@@ -189,6 +198,12 @@ DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
         requests.setSleepFnForTest(drain_sleep_fn);
     }
     CasOperation op = requests.admit();
+    /// After the admin claim ends, not one more delete: the victim may be writing again.
+    CasOperation drain_op = requests.admit([pool = std::weak_ptr<Pool>(admin)]
+    {
+        const auto p = pool.lock();
+        return p && p->mountEnd() == MountEnd::None;
+    });
 
     EventEmitter{*admin}.emit([&](CasEvent & e)
     {
@@ -232,6 +247,7 @@ DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
                 "refusing destructive work",
                 ns_str);
 
+        throwIfClaimLost(*admin, victim_srid);
         if (selected_entry.state == NsState::Removing)
         {
             if (!op.head(admin->layout().refCkptKey(life), Retry::standard()).has_value())
@@ -274,10 +290,11 @@ DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
     /// writer epoch, so every build prefix with `prefix.writer_epoch < w.writer_epoch` is eligible here.
     /// Group the listed keys by namespace and build prefix so each group can use the exact-token orphan
     /// sweep while the mount body still supplies its authority.
+    throwIfClaimLost(*admin, victim_srid);
     {
         const String debris_prefix = admin->layout().casManifestsServerPrefix(victim_srid);
         std::set<std::tuple<String, uint64_t, uint64_t>> groups;   /// (namespace, writer epoch, build sequence)
-        op.forEachListedKey(debris_prefix, [&](const ListedKey & listed)
+        drain_op.forEachListedKey(debris_prefix, [&](const ListedKey & listed)
         {
             if (const auto parsed = admin->layout().parseManifestKey(listed.key))
                 groups.emplace(parsed->root_namespace.string(), parsed->ref.writer_epoch, parsed->ref.build_sequence);
@@ -291,14 +308,16 @@ DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
     /// Drain the victim's own `<pool_prefix>/staging/<srid>/` area. The live-mount staging helper uses
     /// an `IObjectStorage`, while this command intentionally works at the `Backend` layer, so the same
     /// prefix is listed and deleted directly. The claim fences the victim's writers during this sweep.
+    throwIfClaimLost(*admin, victim_srid);
     report.staging_objects_removed += deleteListedPrefix(
-        op, admin->poolConfig().pool_prefix + "/staging/" + victim_srid + "/", report.warnings);
+        drain_op, admin->poolConfig().pool_prefix + "/staging/" + victim_srid + "/", report.warnings);
 
     /// Drain the victim's mountpoint objects. These are loose, non-content-addressed files under
     /// `Layout::serverRootDataPrefix`; they have no writer epoch of their own, so the claim is what
     /// prevents a returning victim from racing this deletion.
+    throwIfClaimLost(*admin, victim_srid);
     report.mountpoint_objects_removed += deleteListedPrefix(
-        op, admin->layout().serverRootDataPrefix(victim_srid), report.warnings);
+        drain_op, admin->layout().serverRootDataPrefix(victim_srid), report.warnings);
 
     /// The catalog, not physical debris, owns the slot-retirement decision. A terminal append only
     /// moves a row to `Removing`; GC must fold/prune/delete it before the member's ownership anchor can
@@ -363,6 +382,7 @@ DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
         /// Graceful close stamps an already-expired lease and the watermark farewell
         /// (`min_active_build_sequence = UINT64_MAX`), making the slot `terminated` before its mutable control objects
         /// are removed and its owner anchor is tombstoned.
+        throwIfClaimLost(*admin, victim_srid);
         admin.reset();
 
         /// Read the farewell immediately after `finishTeardown` wrote it. Its exact incarnation is the
