@@ -141,6 +141,14 @@ def test_drop_dead_pool_member_heals_the_pool():
             )
             seen_disks.add(disk)
 
+    # (3c) A read-only disk holds no slot, so its listing keeps the slot under its own server_root_id;
+    #      the writable disk's listing skips that slot because its local row describes it.
+    for disk, expected in ((RO_DISK, "1"), (CA_DISK, "0")):
+        assert node1.query(
+            "SELECT count() FROM system.cas_mounts WHERE disk = '{}' AND is_local = 0 "
+            "AND server_root_id = '{}'".format(disk, SRID1)
+        ).strip() == expected, disk
+
     # (4) Hard-kill node2: SIGKILL, no graceful farewell -- node2's mount lease is left to expire
     #     naturally, exactly the scenario decommission exists for.
     node2.stop_clickhouse(kill=True)
