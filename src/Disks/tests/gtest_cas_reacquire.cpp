@@ -217,26 +217,6 @@ TEST(CASReacquire, AnAbsentSlotStops)
     EXPECT_FALSE(read(*f.backend, kLayout.mountKey(kSrid)).has_value()) << "a reacquire never creates the slot";
 }
 
-TEST(CASReacquire, CountersSayHowEachReacquireEnded)
-{
-    const auto at = [](ProfileEvents::Event e) { return ProfileEvents::global_counters[e].load(); };
-    {
-        Fenced f;
-        const uint64_t attempts = at(ProfileEvents::CASMountReacquireAttempts);
-        const uint64_t succeeded = at(ProfileEvents::CASMountReacquireSucceeded);
-        ASSERT_EQ(f.store->runReacquireForTest(), ReacquireOutcome::Open);
-        EXPECT_EQ(at(ProfileEvents::CASMountReacquireAttempts) - attempts, 1u);
-        EXPECT_EQ(at(ProfileEvents::CASMountReacquireSucceeded) - succeeded, 1u);
-    }
-    {
-        Fenced f;
-        erase(*f.backend, kLayout.mountKey(kSrid));
-        const uint64_t failed = at(ProfileEvents::CASMountReacquireFailed);
-        expectStoppedOn(f, f.store->runReacquireForTest(), MountEnd::SlotAbsent);
-        EXPECT_EQ(at(ProfileEvents::CASMountReacquireFailed) - failed, 1u);
-    }
-}
-
 TEST(CASReacquire, AForeignBodyStops)
 {
     Fenced f;
@@ -611,6 +591,40 @@ TEST(CASReacquire, AnAnchorAbsenceTheListContradictsRetries)
 
     backend->hidden = false;
     EXPECT_EQ(store->runReacquireForTest(), ReacquireOutcome::Open);
+}
+
+TEST(CASReacquire, CountersSayHowEachReacquireEnded)
+{
+    const auto at = [](ProfileEvents::Event e) { return ProfileEvents::global_counters[e].load(); };
+    {
+        Fenced f;
+        const uint64_t attempts = at(ProfileEvents::CASMountReacquireAttempts);
+        const uint64_t succeeded = at(ProfileEvents::CASMountReacquireSucceeded);
+        ASSERT_EQ(f.store->runReacquireForTest(), ReacquireOutcome::Open);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireAttempts) - attempts, 1u);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireSucceeded) - succeeded, 1u);
+    }
+    {
+        auto backend = std::make_shared<HiddenKeyBackend>();
+        backend->key = kLayout.ownerKey(kSrid);
+        auto store = openPool(backend, newBoot());
+        fenceAndRenew(*store, *backend);
+        backend->hidden = true;
+        const uint64_t attempts = at(ProfileEvents::CASMountReacquireAttempts);
+        const uint64_t succeeded = at(ProfileEvents::CASMountReacquireSucceeded);
+        const uint64_t failed = at(ProfileEvents::CASMountReacquireFailed);
+        ASSERT_EQ(store->runReacquireForTest(), ReacquireOutcome::Retry);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireAttempts) - attempts, 1u);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireSucceeded) - succeeded, 0u);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireFailed) - failed, 0u);
+    }
+    {
+        Fenced f;
+        erase(*f.backend, kLayout.mountKey(kSrid));
+        const uint64_t failed = at(ProfileEvents::CASMountReacquireFailed);
+        expectStoppedOn(f, f.store->runReacquireForTest(), MountEnd::SlotAbsent);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireFailed) - failed, 1u);
+    }
 }
 
 TEST(CASReacquire, AnAbsentCounterIsPoolIdentityLost)

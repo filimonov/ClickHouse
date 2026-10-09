@@ -669,16 +669,12 @@ TEST(CASHeartbeat, SupersededTouchIsFailClosedNotFatal)
     mustCommit(ops.op.replace(layout.mountKey(srid), encodeMountLease(successor), observed->etag,
                               Retry::standard()), "successor slot");
 
-    try
-    {
-        renewOrThrow(renewer);
-        FAIL() << "renew must return a terminal conflict";
-    }
-    catch (const DB::Exception & e)
-    {
-        EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED) << e.message();
-        EXPECT_NE(e.message().find("superseded by another incarnation"), String::npos) << e.message();
-    }
+    const MountRenewResult result = renewer.renew(MountRenewOperationEnvironment{});
+    ASSERT_EQ(result.outcome, MountRenewOutcome::Terminal) << "renew must return a terminal conflict";
+    EXPECT_EQ(result.classification, MountRenewClassification::Conflict);
+    const DB::Exception e = terminalException(result);
+    EXPECT_EQ(e.code(), DB::ErrorCodes::ABORTED) << e.message();
+    EXPECT_NE(e.message().find("superseded by another incarnation"), String::npos) << e.message();
 }
 
 /// A foreign server holding our mount slot must FAIL CLOSED — and must not take the process with it.
@@ -1247,6 +1243,7 @@ TEST(CASHeartbeat, AGiveUpAfterARefusedCallCountsItsAttempts)
     ASSERT_EQ(renewed.outcome, MountRenewOutcome::Terminal);
     EXPECT_EQ(renewed.attempts_sent, 1u);
     EXPECT_TRUE(renewed.sent_any);
+    EXPECT_EQ(renewed.classification, MountRenewClassification::FenceOrLifecycleLost);
     const DB::Exception e = terminalException(renewed);
     EXPECT_NE(e.message().find("at least one attempt sent"), String::npos) << e.message();
 }
@@ -1391,6 +1388,8 @@ TEST(CASHeartbeat, CancellationAfterSendIsTerminalAndForbidsRelease)
     const DB::Exception failure = terminalException(result);
     EXPECT_EQ(failure.code(), DB::ErrorCodes::NETWORK_ERROR);
     EXPECT_TRUE(result.sent_any);
+    /// `cancelled` is sampled once, before the write, so a stop that arrives during the send is a lost fence.
+    EXPECT_EQ(result.classification, MountRenewClassification::FenceOrLifecycleLost);
     EXPECT_EQ(backend->read_calls, 0u) << "post-write cancellation must not start a diagnostic read";
     EXPECT_EQ(renewer.state(), MountLeaseRenewerState::RenewalTerminal);
     const String bytes_before = ops.op.read(layout.mountKey("test"), Retry::standard())->bytes;
@@ -1448,6 +1447,7 @@ TEST(CASHeartbeat, SamePairTwinAndForeignOrSuccessorStayTerminal)
         const MountRenewResult result = renewer.renew(renewalEnvironment(boot_ms));
         const DB::Exception failure = terminalException(result);
         EXPECT_NE(failure.code(), DB::ErrorCodes::LOGICAL_ERROR);
+        EXPECT_EQ(result.classification, MountRenewClassification::Conflict);
         EXPECT_EQ(renewer.state(), MountLeaseRenewerState::RenewalTerminal);
         EXPECT_EQ(backend->read_calls, 1u) << "the write's own resolving read must be the only terminal read";
     };
@@ -1511,8 +1511,10 @@ TEST(CASHeartbeat, GcFenceAndVanishedMountStayTerminal)
             mustCommit(ops.op.replace(key, encodeMountLease(fenced), got->etag, Retry::standard()),
                        "fence-out");
         }
-        const DB::Exception failure = terminalException(renewer.renew(renewalEnvironment(boot_ms)));
+        const MountRenewResult result = renewer.renew(renewalEnvironment(boot_ms));
+        const DB::Exception failure = terminalException(result);
         EXPECT_NE(failure.code(), DB::ErrorCodes::LOGICAL_ERROR);
+        EXPECT_EQ(result.classification, vanish ? MountRenewClassification::Vanished : MountRenewClassification::Conflict);
         EXPECT_EQ(renewer.state(), MountLeaseRenewerState::RenewalTerminal);
     };
     run_case(false);
@@ -1677,6 +1679,7 @@ TEST(CASHeartbeat, RenewalStopsBeforeTheCutoffWhenEveryAttemptConsumesTheEnvelop
     backend->armed = true;
     const MountRenewResult result = renewer.renew(renewalEnvironment(boot_ms));
     EXPECT_EQ(result.outcome, MountRenewOutcome::Terminal);
+    EXPECT_EQ(result.classification, MountRenewClassification::Deadline);
     EXPECT_LE(boot_ms, cutoff) << "the last attempt started inside the cutoff and the engine did not start one that could not finish";
 }
 
@@ -1794,6 +1797,34 @@ TEST(CASHeartbeat, AnUnknownFencedBodyOfOurPairIsCorrupt)
     EXPECT_EQ(failure.code(), DB::ErrorCodes::ABORTED) << failure.message();
     ASSERT_TRUE(result.slot.has_value());
     EXPECT_EQ(result.slot->verdict, MountSlotVerdict::SlotCorrupt);
+    EXPECT_EQ(result.classification, MountRenewClassification::Conflict);
+}
+
+/// A refused precondition whose read finds our own last body names no rival and settles nothing.
+TEST(CASHeartbeat, ARefusalOverOurOwnBodyIsUnresolved)
+{
+    ScriptedRenewal r;
+    r.backend->actions = {RenewalScriptBackend::Action::RefusePrecondition};
+
+    const MountRenewResult result = r.renewer.renew(renewalEnvironment(r.boot_ms));
+
+    ASSERT_EQ(result.outcome, MountRenewOutcome::Terminal);
+    ASSERT_TRUE(result.slot.has_value());
+    EXPECT_EQ(result.slot->verdict, MountSlotVerdict::Ours);
+    EXPECT_EQ(result.classification, MountRenewClassification::Unresolved);
+}
+
+/// A refused precondition whose every resolving read fails settles nothing about the slot.
+TEST(CASHeartbeat, ARefusalNoReadCanSettleIsUnresolved)
+{
+    ScriptedRenewal r;
+    r.backend->actions = {RenewalScriptBackend::Action::RefusePrecondition};
+    r.backend->refuse_reads = 1'000;
+
+    const MountRenewResult result = r.renewer.renew(renewalEnvironment(r.boot_ms));
+
+    ASSERT_EQ(result.outcome, MountRenewOutcome::Terminal);
+    EXPECT_EQ(result.classification, MountRenewClassification::Unresolved);
 }
 
 TEST(CASHeartbeat, AnAbsenceTheListConfirmsIsSlotAbsent)
@@ -1825,6 +1856,7 @@ TEST(CASHeartbeat, AGcFenceOfTheUnclearRenewalIsAFence)
     EXPECT_TRUE(failsAsAFence(result)) << terminalFailureOf(result).message();
     ASSERT_TRUE(result.slot.has_value());
     EXPECT_EQ(result.slot->verdict, MountSlotVerdict::FencedByGc);
+    EXPECT_EQ(result.classification, MountRenewClassification::Conflict);
     EXPECT_FALSE(result.local_fault);
 }
 
