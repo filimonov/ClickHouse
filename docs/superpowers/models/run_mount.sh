@@ -92,6 +92,22 @@
 #                                                        uuid and epoch in the slot, which a twin that
 #                                                        shares the epoch may have written
 #
+#   --- 2026-10-09 certificate reacquire (`CertReacquire = TRUE`, `FarewellOn = TRUE`) ---
+#   sab_reacqanyfenced    -> ReacquireTakesOnlyItsOwnFence  a reacquire also replaces any fenced body of
+#                                                        its uuid
+#   sab_reacqclean        -> ReacquireTakesOnlyItsOwnFence  a reacquire also replaces a twin's clean marker
+#   sab_reacqunknownpair  -> ReacquireTakesOnlyItsOwnFence  a renewal certifies a fenced body of its pair
+#                                                        that a twin wrote
+#   sab_reacqforgetsstep  -> ReacquireKeepsItsOwnClaim  an unclear reacquire claim is not recognised and
+#                                                        the incarnation stops over its own bytes
+#   sab_reacqearly        -> NoStragglerInReacquire     a renewal read overlaps a running reacquire and an
+#                                                        adopt write lands while the fence is latched
+#                                                        (`CaCasMountCoreStraggler.tla`)
+#   reacq_cert            -> GREEN   the reacquire by certificate, every property
+#   reacq_nostraggler     -> GREEN   no adopt write lands during a reacquire (wrapper)
+#   witness_reacqopens    -> W_ReacquireOpens       a certified reacquire completes and writes again
+#   witness_reacqcontinues-> W_ReacquireContinues   a reacquire claim whose answer was lost is settled as ours
+#
 # The first two v9 sabotages target the SAME pre-existing invariant, deliberately: an old-generation
 # publication IS a mutation by a superseded incarnation, which is what that invariant already says,
 # and inventing a parallel property per sabotage is how a suite ends up with six near-duplicates.
@@ -200,6 +216,11 @@ CONFIGS=(
   "sab_opennoreserve                     violation  OpenLeavesReserve"
   "sab_claimresolvebypair                violation  OneWritableIncarnationPerUuid"
   "sab_proxy404stop                      violation  AbsenceStopIsTrue"
+  "sab_reacqanyfenced                    violation  ReacquireTakesOnlyItsOwnFence"
+  "sab_reacqclean                        violation  ReacquireTakesOnlyItsOwnFence"
+  "sab_reacqunknownpair                  violation  ReacquireTakesOnlyItsOwnFence"
+  "sab_reacqforgetsstep                  violation  ReacquireKeepsItsOwnClaim"
+  "sab_reacqearly                        violation  NoStragglerInReacquire  CaCasMountCoreStraggler"
   "stage1                                green      -"
   "v9_recoverygen                        green      -"
   "twins                                 green      -"
@@ -208,6 +229,8 @@ CONFIGS=(
   "twins_immalloc                        green      -"
   "twins_immclaim                        green      -"
   "absence_twostep                       green      -"
+  "reacq_cert                            green      -"
+  "reacq_nostraggler                     green      -  CaCasMountCoreStraggler"
   "witness_reclaim                       violation  W_SameUuidReclaimsExpired"
   "witness_remountafterfence             violation  W_RemountAfterFence"
   "witness_observedreclaim               violation  W_ObservedReclaim"
@@ -223,6 +246,8 @@ CONFIGS=(
   "witness_straggler_landed              violation  W_StragglerLanded  CaCasMountCoreStraggler"
   "witness_lateclaimrenews               violation  W_LateClaimRenewsThenOpens"
   "witness_absencestop                   violation  W_NoAbsenceStop"
+  "witness_reacqopens                    violation  W_ReacquireOpens"
+  "witness_reacqcontinues                violation  W_ReacquireContinues"
 )
 [[ "${SLOW:-0}" == "1" ]] && CONFIGS+=("rev6_observe  incomplete  -")
 

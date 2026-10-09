@@ -1322,3 +1322,117 @@ The `absence_twostep` count above is from the final model; `stage1` and `twins` 
 Limits: the LIST step reads the slot and the proxy flag at one instant, so a LIST that races a delete
 or a claim is not modelled. `AbsenceStopIsTrue` checks the stop decision only; it does not check what the
 product does after the stop.
+
+## 2026-10-09 step 3: certificate and partial reacquire {#2026-10-09-step-3}
+
+`CertReacquire = TRUE` (requires `ImmutableClaim`) changes what happens after a renewal reads the GC's
+fence on its own body. The renewal keeps that read as a certificate (`reacqCert`, the slot token;
+`reacqOld`, the fenced epoch). The reacquire claim then has one ground: the slot still holds exactly the
+certified token (`ClaimAllowed`, `reacqClaim`). A claim that is refused, or whose settled write finds the
+slot moved, stops the incarnation for good (`stopLatch`, `ReacqClaimEnds`). An unclear claim is settled by
+our exact bytes as before; `SabReacqForgetsStep` drops that for a reacquire. `TwinFarewell` (`FarewellOn`)
+lets an incarnation with a twin release its live body as a clean marker (`cleanTok` names the token of that
+state). New invariants: `ReacquireTakesOnlyItsOwnFence`, `ReacquireKeepsItsOwnClaim`. New witnesses:
+`W_ReacquireOpens`, `W_ReacquireContinues`. In `CaCasMountCoreStraggler.tla`: `reacqStraggler` and
+`NoStragglerInReacquire`. Every pre-existing cfg sets the seven new constants to `FALSE`: the new actions
+and guards are disabled and the new variables stay at their `Init` values.
+
+Changes against the plan text:
+- Variable frames. The new variables are `reacqVars`; `stopLatch` and `reacqVars` form `latchVars`, which
+  every action that does not touch them keeps unchanged. `absVars` no longer holds `stopLatch`.
+- `AdoptRead` and `AdoptWrite` classify a fenced own body as `Renew` does (`CertLoss`): both are the model's
+  renewal read, so a fenced body read there certifies too, and any other loss stops the incarnation.
+- One thread per incarnation. The plan lists the `AllocBegin` and `AdoptRead` guards. TLC found more
+  interleavings that the product's single renewal thread excludes, and each is now a guard under
+  `CertReacquire`. All of them are scoped to the cfgs with the switch on.
+  - `Renew` and `AdoptRead` need `Started` (the incarnation claimed the mount and its process is alive).
+    Traces without it: a crashed incarnation (`Die`) read the fence and certified; an incarnation that
+    never claimed certified a twin's fenced body.
+  - `Renew` is refused while the incarnation holds a certificate or its allocation or claim is in progress
+    (`ThreadInReacquireOrStart`); a confirmed claim that has not opened writes may still be renewed.
+    Trace: a renewal certified in the middle of a start's allocation.
+  - A started incarnation allocates and claims again only with a certificate. Trace: a started incarnation
+    began a start-style allocation while its renewal read was still in flight, and the read then landed.
+  - A certificate read from a confirmed claim that has not opened writes abandons that claim
+    (`claimState` back to `idle`, the latch stays). Without it the incarnation could neither open writes
+    nor allocate.
+- `SabReacqUnknownPair` certifies any fenced body of the uuid, not only one of the pair that a twin wrote.
+  With the guards above, a started incarnation cannot read a fenced body of its own epoch that a twin
+  wrote: the plan's version was red only through a crashed or never-started incarnation renewing.
+- `FenceCostsEpoch` is not in the new cfgs. The first `sab_reacqanyfenced` run listed it and was red on it
+  with no certificate in the trace: a start's pending create-if-absent landed a live body at a fenced epoch
+  after `ClearExpiredMount`. That is the residual `_twins` already documents for this invariant.
+- `W_ReacquireOpens` requires a certificate taken in this life of the incarnation (`reacqOld`) and a newer
+  epoch. The plan's form is also satisfied by a plain start after a fence.
+- The wrapper's `LandedInReacquire` ignores steps that move `claimState`: with the immutable claim a claim
+  also consumes `adoptObs` and bumps the token while the latch stays set, which the first wrapper run
+  counted as a landed adopt write (red at depth 15).
+- `reacq_cert` and `reacq_nostraggler` use `VIEW`. The first run of `reacq_cert` at the plan's bounds had
+  no VIEW and was stopped by the 5 GB disk guard at 36.7M distinct states (depth 21, no violation, not
+  exhaustive). `ViewNoHistory` drops `wrote`, `reclaimed`, `remountedAfterFence`, `supersededThenWrote`,
+  `observedReclaimEver`, `fencedEpochs` and `rootEmpty`; no guard, no effect on a kept variable and no
+  invariant of these cfgs reads them (argument in the module). Cross-check at `MaxEpoch = 2`,
+  `MaxToken = 5`: green with and without the VIEW, 3,734,980 distinct states with it and 11,337,858 without.
+- The guards are written as `IF CertReacquire THEN ... ELSE TRUE`, not as `~CertReacquire \/ ...`. TLC
+  branches on a disjunction in a guard and generates the successor of each true disjunct, which raised the
+  generated count of the pre-existing cfgs (`twins_immclaim` 123,390,571 instead of 118,022,005) without
+  changing the distinct count.
+
+| cfg | expected | result | trace states | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `sab_reacqanyfenced` (new) | violation | `ReacquireTakesOnlyItsOwnFence` | 19 | 19,478,052 | 5,411,842 |
+| `sab_reacqclean` (new) | violation | `ReacquireTakesOnlyItsOwnFence` | 18 | 9,932,930 | 2,836,097 |
+| `sab_reacqunknownpair` (new) | violation | `ReacquireTakesOnlyItsOwnFence` | 16 | 3,162,203 | 954,966 |
+| `sab_reacqforgetsstep` (new) | violation | `ReacquireKeepsItsOwnClaim` | 15 | 513,464 | 171,845 |
+| `sab_reacqearly` (new, wrapper) | violation | `NoStragglerInReacquire` | 16 | 1,462,509 | 456,264 |
+| `witness_reacqopens` (new) | violation | `W_ReacquireOpens` | 14 | 636,310 | 211,742 |
+| `witness_reacqcontinues` (new) | violation | `W_ReacquireContinues` | 14 | 732,297 | 243,762 |
+| `reacq_cert` (new, VIEW) | green | green, exhaustive, depth 39 | - | 121,932,190 | 22,936,759 |
+| `reacq_nostraggler` (new, wrapper, VIEW) | green | green, exhaustive, depth 39 | - | 121,932,190 | 22,936,759 |
+
+`reacq_cert` and `reacq_nostraggler` have the same counts because the VIEW leaves out the wrapper's
+history variable `stragglerLanded` and `reacqStraggler` never becomes TRUE in the honest model. Bounds of
+the new rows: `TTL = 1`, `Reserve = 0`, `MaxClock = 2`, `MaxEpoch = 3`, `MaxToken = 6`, `Actors = {A}` with
+`TwinUuids = {A}`. Trace lengths and counts of the red rows vary between runs with four workers.
+
+Counterexamples (action sequences, `A1` and `A2` are the two incarnations):
+- `sab_reacqanyfenced`: `A1` allocates and claims epoch 1, the GC fences it, `A1` certifies it. `A2`
+  allocates epoch 2, claims over the fenced body, the GC fences that body too. `A1` allocates epoch 3 and
+  its claim replaces `A2`'s fenced body.
+- `sab_reacqclean`: the same until `A2` has claimed epoch 2. `A2` releases its body (`TwinFarewell`) and
+  `A1`'s claim replaces the clean marker.
+- `sab_reacqunknownpair`: `A2` claims and its body is cleared (`ClearExpiredMount`); a pending claim of
+  `A1` then creates epoch 1 in the empty slot and the GC fences it. `A2` reads that fence, certifies it
+  and its claim replaces `A1`'s body.
+- `sab_reacqforgetsstep`: `A1` claims, the GC fences, `A1` certifies and allocates; its claim lands but
+  the answer is lost, `ClaimResolve` does not recognise the bytes and stops over them.
+- `sab_reacqearly`: a reacquire holds its certificate and its claim is pending; a renewal read overlaps it
+  and its `AdoptWrite` lands while the fence is latched.
+- `witness_reacqopens`: claim, expiry, fence, certificate, allocation, claim, `ClaimOpen`.
+- `witness_reacqcontinues`: the same, but the claim lands with its answer lost and `ClaimResolve` settles
+  it as ours.
+
+Controls, all on the final model. The pre-existing rows below keep their verdicts and counts:
+
+| cfg | expected | result | generated | distinct |
+|---|---|---|---:|---:|
+| `twins_immclaim` | green | green, exhaustive, depth 37 | 118,022,005 | 15,830,246 |
+| `twins` | green | green, exhaustive, depth 25 | 138,643,328 | 18,080,420 |
+| `stage1` | green | green, exhaustive, depth 28 | 57,855,349 | 10,599,769 |
+| `absence_twostep` | green | green, exhaustive, depth 30 | 65,452,863 | 10,531,108 |
+| `sab_reacquireredecides`, `sab_adoptwedge`, `sab_fenceresurrect`, `sab_epochreset`, `sab_claimresolvebypair`, `sab_proxy404stop` | violation | their own invariants | - | - |
+| `witness_laterenew`, `witness_straggler_landed`, `witness_absencestop` | violation | their own witnesses | - | - |
+
+Limits:
+- `ReacquireTakesOnlyItsOwnFence` is a ghost-authorship property (`bodyWriter`). Its evidence is the three
+  sabotages `sab_reacqanyfenced`, `sab_reacqclean` and `sab_reacqunknownpair`.
+- A reacquire whose certified token has already moved before `ClaimBegin` has no enabled claim: the
+  incarnation waits, writes nothing and does not set `stopLatch`. The stop is modelled only for a claim
+  whose write is refused after `ClaimBegin` and for a settled claim that finds the slot moved.
+- `NoStragglerInReacquire` is green because `AdoptRead` is refused while the fence is latched and
+  `AllocBegin` waits for a pending adopt of a certified incarnation. `SabReacqEarly` lifts both, and the
+  `Renew` guard.
+- The farewell is a token bump on the current body. The legacy start grounds (`startClaim`) are unchanged
+  and do not take a clean marker earlier than before.
+- The new cfgs use `TwoStepAbsence = FALSE`, `Drift = 0` and `Reserve = 0`, so `OpenLeavesReserve` is not
+  listed and the absence stop is not combined with the certificate.
