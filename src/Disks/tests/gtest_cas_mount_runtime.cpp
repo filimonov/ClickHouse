@@ -33,7 +33,8 @@ public:
               CasRequestBudget{.attempt_timeout_ms = attempt_timeout_ms,
                                .lease_safety_margin_ms = lease_safety_margin_ms,
                                .connect_timeout_cap_ms = connect_timeout_cap_ms},
-              [] { return false; })
+              [] { return false; },
+              [](ReacquireStep &) { return ReacquireOutcome::Abandoned; })
     {
     }
 

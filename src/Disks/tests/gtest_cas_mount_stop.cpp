@@ -113,7 +113,7 @@ TEST(CASMountStop, EachSlotLossLatchesThenStopsThenLogs)
     }
 }
 
-TEST(CASMountStop, OurOwnFenceStillRemountsAndNothingMore)
+TEST(CASMountStop, OurOwnFenceIsReacquiredAndNothingMore)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = DB::Cas::tests::openPoolForTest(backend);
@@ -125,10 +125,11 @@ TEST(CASMountStop, OurOwnFenceStillRemountsAndNothingMore)
     EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
 
     EXPECT_EQ(store->mountEnd(), MountEnd::None);
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before + 1);
+    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
     EXPECT_EQ(store->lifecycle(), PoolLifecycle::TransientNotLive);
     EXPECT_TRUE(log.events().empty());
-    EXPECT_TRUE(store->tryRemountOnce());
+    EXPECT_EQ(store->runReacquireForTest(), ReacquireOutcome::Open);
+    EXPECT_TRUE(log.events().empty());
 }
 
 TEST(CASMountStop, ALatchedMountNeverOpensAgain)

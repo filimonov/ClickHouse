@@ -4,7 +4,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCatalogFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountReacquire.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasOwnershipOutcome.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/Exception.h>
@@ -134,6 +133,8 @@ inline void validateServerRootId(const String & id)
 /// without duplicating the wire-format implementation.
 
 class Layout;
+struct ReacquireCertificate;
+struct MountReacquireClaim;
 
 /// Mount-safety claim logic. These are the identity and epoch-allocation steps a server
 /// runs at startup over its `server_root_id` subtree, BEFORE any ordinary data write. They fail

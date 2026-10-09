@@ -287,6 +287,8 @@ struct PoolConfig
     std::function<void(uint64_t)> wait_sleep_fn = {};   /// test hook for open/remount waits
     RuntimeWorkerFactory worker_factory = {};           /// internal test seam; never parsed from disk config
     std::function<void()> remount_quiesce_hook_for_test = {};
+    /// Runs in the reacquire's last stage, right before it decides to open the fence.
+    std::function<void()> reacquire_before_open_hook_for_test = {};
 
     /// a table becomes a publish candidate once its retained
     /// tail -- every applied txn strictly above the newest published snapshot, no age filter -- exceeds
@@ -855,6 +857,9 @@ public:
     /// `reportImpossibleInterference`) actually invoked `scheduleRemount`, as opposed to merely observing
     /// `mayMutate() == false` (which `tripMountLost` alone already accounts for).
     uint64_t scheduleRemountCallCountForTest() const { return mount_runtime.scheduleRemountCallCountForTest(); }
+    /// Test seam without workers: one pass of the reacquire a renewal found owed, or of the step a
+    /// previous call left at `Retry`.
+    ReacquireOutcome runReacquireForTest() { return mount_runtime.runReacquireForTest(); }
     /// Test seam: publish the same worker-stop request as `~Pool` without tearing the pool down, so a
     /// test can assert `scheduleRemount` refuses to latch work once teardown has begun.
     void beginShutdownForTest();
@@ -955,6 +960,10 @@ private:
     /// end here: the remount re-creates it.
     bool stopOnRemountObservation(const Observation & seen, const OwnMountBodies & fenced,
                                   std::optional<MountSlotReading> & stop);
+
+    /// One pass of the reacquire after a GC fence of our own body: runs `step` from its stage until it
+    /// opens, ends or fails a stage. Serialized with `tryRemountOnce` by `remount_mutex`.
+    ReacquireOutcome reacquireOnce(ReacquireStep & step);
 
 
 public:

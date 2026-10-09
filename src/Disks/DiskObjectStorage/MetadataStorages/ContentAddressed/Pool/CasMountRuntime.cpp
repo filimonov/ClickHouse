@@ -102,7 +102,8 @@ CasMountRuntime::CasMountRuntime(
     String server_root_id_,
     const CasEventSink & event_sink_,
     CasRequestBudget cas_request_budget_,
-    std::function<bool()> remount_attempt_)
+    std::function<bool()> remount_attempt_,
+    std::function<ReacquireOutcome(ReacquireStep &)> reacquire_attempt_)
     : backend_ptr(std::move(backend_ptr_))
     , mount_requests(mount_requests_)
     , lease_requests(lease_requests_)
@@ -112,6 +113,7 @@ CasMountRuntime::CasMountRuntime(
     , event_sink(event_sink_)
     , cas_request_budget(cas_request_budget_)
     , remount_attempt(std::move(remount_attempt_))
+    , reacquire_attempt(std::move(reacquire_attempt_))
 {
 }
 
@@ -468,7 +470,15 @@ RenewalDriverState CasMountRuntime::DriverLease::finish(
     /// The latch closed the fence; its winner reacts.
     if (result && result->outcome == MountRenewOutcome::Terminal && runtime.mountEnd() == MountEnd::None)
     {
-        if (runtime.renewal_driver_state == RenewalDriverState::WorkerIdle
+        const MountSlotReading * slot = result->slot ? &*result->slot : nullptr;
+        if (slot && slot->verdict == MountSlotVerdict::FencedByGc && slot->fenced && slot->holder
+            && active == RenewalDriverState::DirectCall)
+        {
+            /// The fence is our own body: the reacquire replaces exactly it, by the ETag read here.
+            runtime.tripMountLost();
+            runtime.owed_reacquire = ReacquireCertificate{.fenced = *slot->fenced, .body = *slot->holder};
+        }
+        else if (runtime.renewal_driver_state == RenewalDriverState::WorkerIdle
             || active == RenewalDriverState::DirectCall)
         {
             runtime.tripMountLost();
@@ -744,16 +754,17 @@ void CasMountRuntime::publishRenewedDeadline(uint64_t attempt_start_boot_ms)
         lease_expiry_warned.store(false, std::memory_order_relaxed);
 }
 
-uint64_t CasMountRuntime::renewRenewerOnce(
+MountRenewResult CasMountRuntime::renewRenewerOnce(
     AdmittedRenewerCall call,
     RenewalDriverState active,
     bool propagate_failure,
-    bool worker_call)
+    bool worker_call,
+    bool reacquire_call)
 {
     /// Configuration is pointer/POD-only. A parked redo retains its completed observation for the
-    /// whole-chain finalizer to deliver after `remount_mutex` is released.
+    /// whole-chain finalizer to deliver after `remount_mutex` is released; a reacquire has no finalizer.
     configureMountRenewObservability(
-        &server_root_id, &event_sink, active == RenewalDriverState::RemountCall);
+        &server_root_id, &event_sink, active == RenewalDriverState::RemountCall && !reacquire_call);
     /// The remount redo re-anchors the lease BEFORE `armMountFence`, with the fence still latched lost,
     /// so it renews on the renewer's open plane: admitted under the mount fence it could only ever give
     /// up, and every remount would fail at this step. `RemountCall` is reached from
@@ -765,7 +776,13 @@ uint64_t CasMountRuntime::renewRenewerOnce(
     MountRenewResult result;
     {
         SCOPE_EXIT({ std::lock_guard lock(renewal_progress_mutex); renewal_progress.in_progress = false; });
-        if (active == RenewalDriverState::RemountCall)
+        if (reacquire_call)
+        {
+            MountRenewOperationEnvironment environment = renewalEnvironment(worker_call);
+            environment.live = [this] { return reacquireLive(); };
+            result = call.renewer->renewUntilDefinitive(environment);
+        }
+        else if (active == RenewalDriverState::RemountCall)
             result = call.renewer->renewForRemount(renewalEnvironment(worker_call));
         else if (worker_call)
             result = call.renewer->renewUntilDefinitive(renewalEnvironment(worker_call));
@@ -786,7 +803,7 @@ uint64_t CasMountRuntime::renewRenewerOnce(
     if (latched)
         reactToMountEnd(end, result.slot ? result.slot->holder : std::nullopt, failureText(result));
     consumeRenewResult(result, active, returned_state, propagate_failure);
-    return result.attempt_start_boot_ms;
+    return result;
 }
 
 uint64_t CasMountRuntime::renewRenewerForStartupOnce()
@@ -796,7 +813,7 @@ uint64_t CasMountRuntime::renewRenewerForStartupOnce()
         std::move(call),
         RenewalDriverState::StartupCall,
         /*propagate_failure=*/true,
-        /*worker_call=*/false);
+        /*worker_call=*/false).attempt_start_boot_ms;
 }
 
 uint64_t CasMountRuntime::renewRenewerForRemountOnce()
@@ -806,7 +823,68 @@ uint64_t CasMountRuntime::renewRenewerForRemountOnce()
         std::move(call),
         RenewalDriverState::RemountCall,
         /*propagate_failure=*/true,
-        /*worker_call=*/false);
+        /*worker_call=*/false).attempt_start_boot_ms;
+}
+
+MountRenewResult CasMountRuntime::renewForReacquireOnce()
+{
+    auto call = admitRenewerCall(RenewalDriverState::Parked, RenewalDriverState::RemountCall);
+    return renewRenewerOnce(
+        std::move(call),
+        RenewalDriverState::RemountCall,
+        /*propagate_failure=*/false,
+        /*worker_call=*/false,
+        /*reacquire_call=*/true);
+}
+
+bool CasMountRuntime::reacquireLive() const
+{
+    std::lock_guard lock(driver_mutex);
+    return !workers_stop_requested && !vanishedIntentPublished() && mountEnd() == MountEnd::None;
+}
+
+bool CasMountRuntime::openAfterReacquire(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms)
+{
+    /// One step with the decision: a latch or an expiry between them must keep the fence closed.
+    std::lock_guard lock(driver_mutex);
+    if (workers_stop_requested || vanishedIntentPublished() || mountEnd() != MountEnd::None
+        || lifecycle() != PoolLifecycle::TransientNotLive)
+        return false;
+    const uint64_t now = bootMsNow();
+    if (deadline_boot_ms <= now || deadline_boot_ms - now <= conditionalReserveMs())
+        return false;
+    armMountFence(server_uuid, writer_epoch, deadline_boot_ms);
+    noteRemounted();
+    renewal_driver_state = workers_started ? RenewalDriverState::WorkerIdle : RenewalDriverState::Dormant;
+    driver_cv.notify_all();
+    return true;
+}
+
+ReacquireOutcome CasMountRuntime::runReacquireForTest()
+{
+    {
+        std::lock_guard lock(driver_mutex);
+        if (workers_started)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount runtime: a test reacquire runs without workers");
+        if (owed_reacquire)
+        {
+            reacquire_step_for_test = ReacquireStep{.certificate = std::move(*owed_reacquire)};
+            owed_reacquire.reset();
+        }
+        if (!reacquire_step_for_test)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount runtime: no reacquire is owed");
+        if (renewal_driver_state == RenewalDriverState::Dormant)
+            renewal_driver_state = RenewalDriverState::Parked;
+    }
+    const ReacquireOutcome outcome = reacquire_attempt(*reacquire_step_for_test);
+    {
+        std::lock_guard lock(driver_mutex);
+        if (renewal_driver_state == RenewalDriverState::Parked)
+            renewal_driver_state = RenewalDriverState::Dormant;
+    }
+    if (outcome != ReacquireOutcome::Retry)
+        reacquire_step_for_test.reset();
+    return outcome;
 }
 
 void CasMountRuntime::renewerReset()

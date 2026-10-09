@@ -1975,7 +1975,7 @@ public:
               [this](uint64_t g, uint64_t needed) { return runtime.admit(g, needed); },
               [this](uint64_t g) { runtime.checkFenceOrThrow(g); }})
         , lease(backend, DB::Cas::Fence::open())
-        , runtime(backend, mount, lease, std::forward<Args>(args)...)
+        , runtime(backend, mount, lease, std::forward<Args>(args)..., [](ReacquireStep &) { return ReacquireOutcome::Abandoned; })
     {
         /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the
         /// budget field alone; every construction of this holder pairs the two via `runtimeRenewBudget`,

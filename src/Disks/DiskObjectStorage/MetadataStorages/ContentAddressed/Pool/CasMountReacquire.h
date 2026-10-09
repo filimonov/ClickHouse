@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasWriteResult.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <base/types.h>
 #include <cstdint>
 #include <optional>
@@ -47,5 +48,41 @@ struct ReacquireSlotReading
 /// the fenced pair under another ETag is corrupt even when it looks like a GC fence: a fence never repeats.
 ReacquireSlotReading classifyReacquireSlot(const Observation & seen, const ReacquireCertificate & certificate,
                                            const std::optional<MountReacquireClaim> & claim);
+
+enum class ReacquireStage : uint8_t
+{
+    CloseOldEpoch,
+    ProbeIdentity,
+    ObserveCatalog,
+    ClaimOwner,
+    AllocateEpoch,
+    ClaimSlot,
+    StartRenewer,
+    Open,
+};
+
+/// One reacquire, kept across retries of its stages: a retry resumes at `stage` with the same fixed writes.
+struct ReacquireStep
+{
+    ReacquireStage stage = ReacquireStage::CloseOldEpoch;
+    ReacquireCertificate certificate;
+    std::optional<EpochWrite> allocation = std::nullopt;
+    std::optional<uint64_t> writer_epoch = std::nullopt;
+    std::optional<MountReacquireClaim> claim = std::nullopt;
+    std::optional<MountClaimed> claimed = std::nullopt;
+    /// Zero until `StartRenewer` started the renewer from the claim.
+    uint64_t deadline_boot_ms = 0;
+    bool retry_warned = false;
+};
+
+/// `Retry`: a stage failed transiently; `Ended`: a loss was latched; `Abandoned`: stop, FORGET or an end
+/// latched by another thread.
+enum class ReacquireOutcome : uint8_t
+{
+    Open,
+    Retry,
+    Ended,
+    Abandoned,
+};
 
 }

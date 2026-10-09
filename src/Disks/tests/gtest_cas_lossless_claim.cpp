@@ -2,6 +2,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPool.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountReacquire.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Poco/Exception.h>

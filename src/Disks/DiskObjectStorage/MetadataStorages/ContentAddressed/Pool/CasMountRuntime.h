@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasEvent.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountReacquire.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
@@ -195,7 +196,9 @@ public:
         CasRequestBudget cas_request_budget_,
         /// One pool-level recovery attempt. The callback captures the owning `Pool` and is invoked only
         /// after construction, from the recovery thread.
-        std::function<bool()> remount_attempt_);
+        std::function<bool()> remount_attempt_,
+        /// One pass of the reacquire step machine over a GC fence of our own body.
+        std::function<ReacquireOutcome(ReacquireStep &)> reacquire_attempt_);
 
     /// ---- per-server watermark and identity ----
     /// `process_epoch` is random and nonzero for this pool incarnation. GC compares it for equality,
@@ -431,6 +434,16 @@ public:
     uint64_t startRenewer(const MountClaimed & claimed);
     uint64_t renewRenewerForStartupOnce();
     uint64_t renewRenewerForRemountOnce();
+    /// The reacquire's renewal before it opens: repeated until definitive on the lease plane, because a
+    /// lease that ran out while the reacquire waited can only be regained by a renewal that outlives it.
+    MountRenewResult renewForReacquireOnce();
+    /// Whether a reacquire may go on: no stop, no FORGET intent, no latched end.
+    bool reacquireLive() const;
+    /// Opens the fence for the reacquired epoch, unless an end, a stop or FORGET intent is set, the pool
+    /// is not paused, or the lease left at `deadline_boot_ms` cannot cover a conditional change.
+    bool openAfterReacquire(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms);
+    /// Without workers: one pass of the owed reacquire, or of the step a previous pass left unsettled.
+    ReacquireOutcome runReacquireForTest();
     void renewerReset();
     void startBackgroundWorkers(std::chrono::milliseconds period);
     void stopBackgroundWorkers();
@@ -498,11 +511,12 @@ private:
     bool renewalWorkerMayRenew() const;
 
     AdmittedRenewerCall admitRenewerCall(RenewalDriverState required, RenewalDriverState active);
-    uint64_t renewRenewerOnce(
+    MountRenewResult renewRenewerOnce(
         AdmittedRenewerCall call,
         RenewalDriverState active,
         bool propagate_failure,
-        bool worker_call);
+        bool worker_call,
+        bool reacquire_call = false);
     MountRenewOperationEnvironment renewalEnvironment(bool worker_call);
     void consumeRenewResult(
         const MountRenewResult & result,
@@ -539,6 +553,7 @@ private:
     const CasEventSink & event_sink;
     CasRequestBudget cas_request_budget;
     std::function<bool()> remount_attempt;
+    std::function<ReacquireOutcome(ReacquireStep &)> reacquire_attempt;
 
     /// Per-server build watermark. `process_epoch` is a random
     /// nonzero u64 minted once at open: GC checks it for EQUALITY (an object stamped with a different
@@ -587,6 +602,10 @@ private:
     mutable std::mutex renewal_progress_mutex;
     RenewalProgress renewal_progress;
     std::optional<MountLease> confirmed_body;   /// guarded by `renewal_progress_mutex`
+    /// The certificate of a GC fence of our own body that a renewal found, until a reacquire takes it.
+    std::optional<ReacquireCertificate> owed_reacquire;   /// guarded by `driver_mutex`
+    /// The step `runReacquireForTest` left unsettled; only the test thread touches it.
+    std::optional<ReacquireStep> reacquire_step_for_test;
     /// Counted entries into `scheduleRemount`; retained as a test-only observability seam.
     std::atomic<uint64_t> schedule_remount_calls_for_test{0};
 
