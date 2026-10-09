@@ -4,7 +4,7 @@ title: Earn the clean mount farewell only when no snapshot publish is in flight
 status: To Do
 assignee: []
 created_date: '2026-08-24'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-10-09 05:44'
 labels:
   - 'area:ref-ledger'
   - 'area:mounts'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/ref-protocol.md#shutdown-drain-misses-snapshot-publishes (op
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-24 (45efac389eb, by 'shutdown-drain-misses-snapshot-publishes')
+
+PR 15 (fix/antalya-26.6/cas-remove-remount-machine) keeps `quiesceRefTablesForReacquire` (renamed): the reacquire's `CloseOldEpoch` calls it and quiescence stays unbounded. The bound remains open.
 <!-- SECTION:NOTES:END -->

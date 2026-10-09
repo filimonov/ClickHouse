@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 16:33'
+updated_date: '2026-10-09 05:44'
 labels:
   - 'area:ref-ledger'
   - 'area:remount'
@@ -39,3 +40,9 @@ During `tryRemountOnce`, step 1 (`setLiveWriterEpoch(E')`) lands before step 3 m
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC #3 checked against PR 15 (fix/antalya-26.6/cas-remove-remount-machine): the window survives, narrower. `flushRefBatch` re-checks `superseded_by_reacquire` and two statements later reads `live_epoch_fn()` with no lock held. The reacquire sets the flag in `CloseOldEpoch` and publishes E' in `StartRenewer`, several store round trips later, so the leader must be preempted between those two statements for the whole sequence. The fix sketch (read the epoch, then re-check the flag) closes it: the flag store happens-before the epoch store on the renewal thread. Not fixed in PR 15.
+<!-- SECTION:NOTES:END -->

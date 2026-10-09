@@ -4,7 +4,7 @@ title: 'Extract the remount thread and the namespace listing from `Cas::Pool`'
 status: To Do
 assignee: []
 created_date: '2026-07-13'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-10-09 05:44'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -54,4 +54,6 @@ Provenance: BACKLOG/docs-and-cleanup.md#refactoring [refactor: Store de-god-clas
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-13 (45a6c8ee2b6, by 'refactor: Store de-god-classing')
+
+PR 15 (fix/antalya-26.6/cas-remove-remount-machine, c64cf779b15) deleted the remount thread instead of moving it: `tryRemountOnce` and `remountLoop` are gone. Only the namespace listing half remains.
 <!-- SECTION:NOTES:END -->

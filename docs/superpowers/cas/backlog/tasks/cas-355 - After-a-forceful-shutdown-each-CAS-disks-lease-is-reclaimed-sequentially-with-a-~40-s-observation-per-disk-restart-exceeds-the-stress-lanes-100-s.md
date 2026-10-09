@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 20:51'
+updated_date: '2026-10-09 05:44'
 labels:
   - 'area:lifecycle'
   - 'area:ci'
@@ -48,3 +49,9 @@ Evidence: tmp/lease-series/rca/ci-rca-2513-2510.md (Item 3); PR https://github.c
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+PR 15 (fix/antalya-26.6/cas-remove-remount-machine) does not touch startup's per-disk observation; unchanged.
+<!-- SECTION:NOTES:END -->

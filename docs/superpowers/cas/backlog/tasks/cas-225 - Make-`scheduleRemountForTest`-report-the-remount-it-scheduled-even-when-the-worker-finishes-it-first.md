@@ -3,10 +3,10 @@ id: CAS-225
 title: >-
   Make `scheduleRemountForTest` report the remount it scheduled even when the
   worker finishes it first
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-10-09 05:44'
 labels:
   - 'area:testing'
   - 'area:mounts'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/testing-and-ci.md#remount-test-seam-stale-generation-race (f
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (0b1e807ecba, by 'remount-test-seam-stale-generation-race')
+
+PR 15 (fix/antalya-26.6/cas-remove-remount-machine, c64cf779b15, not yet merged) deleted `scheduleRemountForTest` with the remount worker; nothing is left to fix.
 <!-- SECTION:NOTES:END -->
