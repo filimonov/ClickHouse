@@ -859,6 +859,84 @@ uint64_t allocateWriterEpoch(
 
 namespace
 {
+EpochAllocation counterAbsence(CasOperation & op, const String & key, const String & srid)
+{
+    if (std::holds_alternative<ProvenAbsent>(corroborateAbsence(op, key, ProvenAbsent{})))
+        return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
+            "CAS server-root '{}' has no durable epoch object; a reacquire never mints one", srid))};
+    return OwnershipTransient{makeCasWriteRetryLaterExceptionPtr(fmt::format(
+        "CAS server-root '{}': the writer epoch counter read found nothing, but a LIST still lists it", srid))};
+}
+}
+
+std::variant<EpochWrite, EpochAllocation> beginEpochWrite(CasOperation & op, const Layout & l, const String & srid)
+{
+    const String key = l.epochKey(srid);
+    using Begun = std::variant<EpochWrite, EpochAllocation>;
+    /// One read: a failed one ends here and the caller repeats the step.
+    return runOwnershipStep<Begun>([&]() -> Begun
+    {
+        const std::optional<Object> current = op.read(key, Retry::once());
+        if (!current)
+            return counterAbsence(op, key, srid);
+        return EpochWrite{.expected = current->etag, .read_next = decodeServerEpoch(current->bytes).next_writer_epoch};
+    });
+}
+
+EpochAllocation writeEpochOnce(CasOperation & op, const Layout & l, const String & srid, EpochWrite & write)
+{
+    const String key = l.epochKey(srid);
+    const String bytes = encodeServerEpoch(ServerEpoch{.next_writer_epoch = write.read_next + 1});
+    return runOwnershipStep<EpochAllocation>([&]() -> EpochAllocation
+    {
+        WriteResult result = op.replace(key, bytes, write.expected, Retry::untilDefinitive());
+        if (std::holds_alternative<Committed>(result))
+            return EpochAllocated{write.read_next};
+        if (const GaveUp * gave_up = std::get_if<GaveUp>(&result))
+            write.unclear |= gave_up->sent_any;
+        Conflict * conflict = std::get_if<Conflict>(&result);
+        if (!conflict)
+        {
+            try
+            {
+                orThrow(std::move(result), fmt::format("CAS server-root '{}' writer_epoch write", srid));
+            }
+            catch (const Exception & e)
+            {
+                if (isDeterministicLocalFailure(e.code()))
+                    throw;
+                return OwnershipTransient{std::current_exception()};
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS server-root '{}': the writer epoch write was declined", srid);
+        }
+
+        write.unclear |= conflict->any_ambiguous;
+        if (std::holds_alternative<ProvenAbsent>(conflict->seen))
+            return counterAbsence(op, key, srid);
+        const Object * seen = std::get_if<Object>(&conflict->seen);
+        if (!seen)
+            return OwnershipTransient{makeCasWriteRetryLaterExceptionPtr(fmt::format(
+                "CAS server-root '{}': the writer epoch counter write was refused and the read after it saw nothing", srid))};
+        /// Our bytes after an attempt of ours that may have landed: nobody else writes them unless it read
+        /// what we read, and then the claim under our epoch settles which of us holds the slot.
+        if (write.unclear && seen->bytes == bytes)
+            return EpochAllocated{write.read_next};
+        const uint64_t observed = decodeServerEpoch(seen->bytes).next_writer_epoch;
+        if (observed == write.read_next)
+        {
+            write.expected = seen->etag;
+            return OwnershipTransient{makeCasWriteRetryLaterExceptionPtr(fmt::format(
+                "CAS server-root '{}': the writer epoch counter was rewritten with the value read", srid))};
+        }
+        return EpochAdvancedByOther{write.read_next, observed, std::make_exception_ptr(Exception(ErrorCodes::ABORTED,
+            "CAS server-root '{}': the writer epoch counter of this server_root_id was advanced by another process "
+            "(read next_writer_epoch {}, found {})",
+            srid, write.read_next, observed))};
+    });
+}
+
+namespace
+{
 /// Every holder-originated mount body gets a random durable identity. UUIDv4 cannot be zero, but
 /// keep the postcondition explicit because zero is reserved as an uninitialized in-memory value.
 UInt128 newMountWriteAttemptId()

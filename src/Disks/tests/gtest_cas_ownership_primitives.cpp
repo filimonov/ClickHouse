@@ -7,7 +7,16 @@
 #include <Disks/tests/cas_test_helpers.h>
 #include <Poco/Exception.h>
 
-namespace DB::ErrorCodes { extern const int CORRUPTED_DATA; extern const int NETWORK_ERROR; }
+#include "config.h"
+
+#if USE_AWS_S3
+#include <IO/S3Common.h>
+#endif
+
+#include <stdexcept>
+#include <vector>
+
+namespace DB::ErrorCodes { extern const int ABORTED; extern const int CORRUPTED_DATA; extern const int NETWORK_ERROR; }
 using namespace DB::Cas;
 using DB::Cas::tests::OperationForTest;
 
@@ -334,5 +343,178 @@ TEST(CASOwnershipReacquire, RemountDoesNotRecreateADeletedEpochCounter)
     erase(*b, kLayout.epochKey(kSrid));
     erase(*b, kLayout.mountKey(kSrid));
     EXPECT_FALSE(pool->tryRemountOnce());
+    EXPECT_FALSE(get(*b, kLayout.epochKey(kSrid)));
+}
+
+namespace
+{
+
+/// An open-fence operation like `Plane`, admitted under a liveness the test turns off and on.
+struct LivePlane
+{
+    explicit LivePlane(BackendPtr b) : requests(DB::Cas::tests::openRequestsForTest(std::move(b))), op(admit())
+    {
+    }
+    CasOperation admit()
+    {
+        requests.setNowFnForTest([this] { return clock; });
+        requests.setSleepFnForTest([this](uint64_t ms) { clock += ms; });
+        return requests.admit([this] { return live; });
+    }
+    uint64_t clock = 0;
+    bool live = true;
+    CasRequests requests;
+    CasOperation op;
+};
+
+/// Records every write and read of the epoch counter.
+class CounterRecorder : public EpochWriteHook
+{
+public:
+    struct Write { String bytes; std::optional<String> expected; };
+    WriteAnswer write(const String & key, const String & bytes, const std::optional<String> & expected, TransportAccess & access) override
+    {
+        if (key == kLayout.epochKey(kSrid))
+            writes.push_back({bytes, expected});
+        return EpochWriteHook::write(key, bytes, expected, access);
+    }
+    std::optional<Raw> read(const String & key, TransportAccess & access) override
+    {
+        if (key == kLayout.epochKey(kSrid))
+        {
+            ++reads;
+            if (hidden)
+                return std::nullopt;
+        }
+        return EpochWriteHook::read(key, access);
+    }
+    std::vector<Write> writes;
+    size_t reads = 0;
+    bool hidden = false;
+};
+
+std::shared_ptr<CounterRecorder> counterAt(uint64_t next)
+{
+    auto b = std::make_shared<CounterRecorder>();
+    put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = next}));
+    b->writes.clear();
+    b->reads = 0;
+    return b;
+}
+
+EpochWrite beginOrFail(CasOperation & op)
+{
+    auto begun = beginEpochWrite(op, kLayout, kSrid);
+    if (!std::holds_alternative<EpochWrite>(begun))
+        throw std::runtime_error("the counter write did not begin");
+    return std::get<EpochWrite>(begun);
+}
+
+}
+
+#if USE_AWS_S3
+TEST(CASOwnershipPrimitives, ARefusedCounterWriteRepeatsTheSameTuple)
+{
+    auto b = counterAt(5);
+    b->hook = [](InMemoryBackend &, const String &, const std::optional<String> &, TransportAccess &) -> WriteAnswer
+    {
+        throw DB::S3Exception("injected counter access denial", Aws::S3::S3Errors::ACCESS_DENIED);
+    };
+    Plane p(b);
+    EpochWrite write = beginOrFail(p.op);
+
+    EXPECT_TRUE(std::holds_alternative<OwnershipTransient>(writeEpochOnce(p.op, kLayout, kSrid, write)));
+    EXPECT_FALSE(write.unclear) << "a refused write never landed";
+    EXPECT_EQ(std::get<EpochAllocated>(writeEpochOnce(p.op, kLayout, kSrid, write)).writer_epoch, 5u);
+
+    ASSERT_EQ(b->writes.size(), 2u);
+    EXPECT_EQ(b->writes[0].bytes, b->writes[1].bytes);
+    EXPECT_EQ(b->writes[0].expected, b->writes[1].expected);
+    EXPECT_EQ(b->reads, 1u);
+    EXPECT_EQ(counterNext(*b), 6u);
+}
+#endif
+
+TEST(CASOwnershipPrimitives, AnUnclearLandedWriteIsSettledByReading)
+{
+    auto b = counterAt(5);
+    b->injectAmbiguousLandedWrite(kLayout.epochKey(kSrid));
+    Plane p(b);
+    EpochWrite write = beginOrFail(p.op);
+
+    EXPECT_EQ(std::get<EpochAllocated>(writeEpochOnce(p.op, kLayout, kSrid, write)).writer_epoch, 5u);
+    EXPECT_EQ(counterNext(*b), 6u);
+}
+
+TEST(CASOwnershipPrimitives, OurBytesAfterAnEarlierUnclearCallAreOurs)
+{
+    auto b = counterAt(5);
+    LivePlane p(b);
+    b->hook = [&p](InMemoryBackend & backend, const String & bytes, const std::optional<String> & expected, TransportAccess & access)
+    {
+        p.live = false;
+        return lostAnswerHook(backend, bytes, expected, access);
+    };
+    EpochWrite write = beginOrFail(p.op);
+
+    EXPECT_TRUE(std::holds_alternative<OwnershipTransient>(writeEpochOnce(p.op, kLayout, kSrid, write)));
+    EXPECT_TRUE(write.unclear);
+    p.live = true;
+    EXPECT_EQ(std::get<EpochAllocated>(writeEpochOnce(p.op, kLayout, kSrid, write)).writer_epoch, 5u);
+    EXPECT_EQ(counterNext(*b), 6u);
+}
+
+TEST(CASOwnershipPrimitives, TheSameBytesWithoutAnUnclearAttemptAreAnotherProcess)
+{
+    auto b = counterAt(5);
+    b->hook = raceHook;
+    Plane p(b);
+    EpochWrite write = beginOrFail(p.op);
+
+    const EpochAllocation got = writeEpochOnce(p.op, kLayout, kSrid, write);
+
+    ASSERT_TRUE(std::holds_alternative<EpochAdvancedByOther>(got));
+    EXPECT_EQ(std::get<EpochAdvancedByOther>(got).read_next, 5u);
+    EXPECT_EQ(std::get<EpochAdvancedByOther>(got).observed_next, 6u);
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::ABORTED, "advanced by another process (read next_writer_epoch 5, found 6)",
+        [&] { std::rethrow_exception(std::get<EpochAdvancedByOther>(got).error); });
+}
+
+TEST(CASOwnershipPrimitives, ACounterMovedFurtherStops)
+{
+    auto b = counterAt(5);
+    Plane p(b);
+    EpochWrite write = beginOrFail(p.op);
+    put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 7}));
+
+    const EpochAllocation got = writeEpochOnce(p.op, kLayout, kSrid, write);
+
+    ASSERT_TRUE(std::holds_alternative<EpochAdvancedByOther>(got));
+    EXPECT_EQ(std::get<EpochAdvancedByOther>(got).observed_next, 7u);
+    EXPECT_EQ(counterNext(*b), 7u);
+}
+
+TEST(CASOwnershipPrimitives, ARewrittenEqualCounterRefreshesTheExpectedEtag)
+{
+    auto b = counterAt(5);
+    Plane p(b);
+    EpochWrite write = beginOrFail(p.op);
+    put(*b, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = 5}));
+
+    EXPECT_TRUE(std::holds_alternative<OwnershipTransient>(writeEpochOnce(p.op, kLayout, kSrid, write)));
+    EXPECT_EQ(std::get<EpochAllocated>(writeEpochOnce(p.op, kLayout, kSrid, write)).writer_epoch, 5u);
+    EXPECT_EQ(counterNext(*b), 6u);
+}
+
+TEST(CASOwnershipPrimitives, AnAbsentCounterNeedsAList)
+{
+    auto b = counterAt(5);
+    b->hidden = true;
+    Plane p(b);
+    EXPECT_TRUE(std::holds_alternative<OwnershipTransient>(std::get<EpochAllocation>(beginEpochWrite(p.op, kLayout, kSrid))));
+
+    b->hidden = false;
+    erase(*b, kLayout.epochKey(kSrid));
+    EXPECT_TRUE(std::holds_alternative<EpochCounterLost>(std::get<EpochAllocation>(beginEpochWrite(p.op, kLayout, kSrid))));
     EXPECT_FALSE(get(*b, kLayout.epochKey(kSrid)));
 }

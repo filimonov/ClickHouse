@@ -232,6 +232,21 @@ EpochAllocation allocateEpoch(CasOperation & op, const Layout & l, const String 
                               EpochMintPolicy policy, uint64_t now_ms, const ObserveRefCatalog & observe_catalog);
 uint64_t epochOrThrow(EpochAllocation && allocation);
 
+/// A reacquire's counter write, fixed by `beginEpochWrite`: `{read_next + 1}` under the read ETag. A retry
+/// sends exactly this; `unclear` remembers an attempt that may have landed unconfirmed.
+struct EpochWrite
+{
+    Etag expected;
+    uint64_t read_next = 0;
+    bool unclear = false;
+};
+/// Reads the counter; an absent one is `EpochCounterLost` only when a LIST agrees, else `OwnershipTransient`.
+std::variant<EpochWrite, EpochAllocation> beginEpochWrite(CasOperation & op, const Layout & l, const String & srid);
+/// One engine call of `write`. Our bytes found after an unclear attempt of ours are ours; `{read_next}` under
+/// another ETag refreshes `expected` and is transient; anything else is `EpochAdvancedByOther`; absence that a
+/// LIST confirms is `EpochCounterLost`.
+EpochAllocation writeEpochOnce(CasOperation & op, const Layout & l, const String & srid, EpochWrite & write);
+
 /// Which certificate of death, or the operator's explicit unsafe authorization, justified a
 /// same-uuid, older-epoch mount reclaim. `None` when no reclaim of that kind happened (a fresh
 /// claim, `LiveDoubleStart`, `ForeignOwner`, `FencedSelf`).
