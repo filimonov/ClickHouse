@@ -130,10 +130,10 @@ row followed by a `recovered` one — and the older `unresolved_reason`, `deadli
 - `outcome = 'recovered'` means an in-budget renewal landed, in the same epoch. `classification`
   says how: `committed_by_read` means an exact `GET` proved a landed request; `committed_after_retry`
   means a later identical physical `PUT` completed and the response itself proved it.
-- `outcome = 'failed'` carries the decisive `classification`: `external_lease_deadline` (a
-  startup re-anchor only: the confirmed lease's own safety margin, not the request policy, ran out first — check object-store
-  latency or `BOOTTIME` advancement before anything else), `request_deadline` (a startup
-  re-anchor only: the ninety-second request policy exhausted first), `unresolved` (every attempt was ambiguous and never settled by
+- `outcome = 'failed'` carries the decisive `classification`: `deadline` (only the startup
+  renewal, which is bounded by the lease it was claimed under: the lease-safety margin or the request
+  policy ran out before the write settled — check object-store latency and `BOOTTIME` advancement),
+  `unresolved` (every attempt was ambiguous and never settled by
   the time the operation gave up), `conflict` (an exact resolve read found another body — a
   same-pair twin, a GC-fenced body, a successor epoch, or a foreign holder), `cancelled` (a
   renewal in flight was cancelled by shutdown; expected during graceful shutdown), `fence_or_lifecycle_lost` (another local fence loss or a terminal lifecycle transition
@@ -144,8 +144,7 @@ row followed by a `recovered` one — and the older `unresolved_reason`, `deadli
   renewal). `terminal_unclassified` means the renewal terminated through a path that assigned no
   classification; that is a defect to report together with the surrounding rows, not an operator
   condition. Do not collapse these into a generic timeout — the action
-  differs by classification, and only `external_lease_deadline` and `request_deadline` are about a
-  deadline at all.
+  differs by classification, and only `deadline` is about a deadline.
 - A `conflict` that found our own body fenced by GC is followed by a `mount_claim` row with
   `outcome = 'reacquire'` once the reacquire takes the slot under a fresh `writer_epoch`. The server log
   says `writer_epoch <E> was fenced by a GC leader (possibly this server's); reacquiring the mount slot`,

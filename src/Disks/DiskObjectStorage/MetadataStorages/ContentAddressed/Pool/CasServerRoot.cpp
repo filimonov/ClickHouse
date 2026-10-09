@@ -182,8 +182,7 @@ std::string_view toString(MountRenewClassification classification)
         case MountRenewClassification::Vanished: return "vanished";
         case MountRenewClassification::Cancelled: return "cancelled";
         case MountRenewClassification::FenceOrLifecycleLost: return "fence_or_lifecycle_lost";
-        case MountRenewClassification::ExternalLeaseDeadline: return "external_lease_deadline";
-        case MountRenewClassification::RequestDeadline: return "request_deadline";
+        case MountRenewClassification::Deadline: return "deadline";
         case MountRenewClassification::Unresolved: return "unresolved";
         case MountRenewClassification::Unclassified: return "terminal_unclassified";
     }
@@ -1650,8 +1649,6 @@ MountRenewResult MountLeaseRenewer::renewOn(
         /// Across every engine call of this renewal, not only the call that gave up.
         result.sent_any = attempts_sent != 0;
         result.attempts_sent = attempts_sent;
-        if (gave_up->why == GaveUp::Why::Deadline)
-            result.deadline_source = gave_up->deadline_source;
 
         /// Nothing was sent and the node was already stopping: the lease is exactly as it was, so this
         /// is a renewal that never ran, not one that lost its authority.
@@ -1671,9 +1668,7 @@ MountRenewResult MountLeaseRenewer::renewOn(
                     : MountRenewClassification::FenceOrLifecycleLost;
                 break;
             case GaveUp::Why::Deadline:
-                classification = gave_up->deadline_source == GaveUp::Source::Lease
-                    ? MountRenewClassification::ExternalLeaseDeadline
-                    : MountRenewClassification::RequestDeadline;
+                classification = MountRenewClassification::Deadline;
                 break;
             case GaveUp::Why::Unresolved:
                 classification = MountRenewClassification::Unresolved;

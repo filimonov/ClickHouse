@@ -296,8 +296,7 @@ TEST(CASEvent, EveryRenewalClassificationHasItsEventName)
     EXPECT_EQ(toString(MountRenewClassification::Vanished), "vanished");
     EXPECT_EQ(toString(MountRenewClassification::Cancelled), "cancelled");
     EXPECT_EQ(toString(MountRenewClassification::FenceOrLifecycleLost), "fence_or_lifecycle_lost");
-    EXPECT_EQ(toString(MountRenewClassification::ExternalLeaseDeadline), "external_lease_deadline");
-    EXPECT_EQ(toString(MountRenewClassification::RequestDeadline), "request_deadline");
+    EXPECT_EQ(toString(MountRenewClassification::Deadline), "deadline");
     EXPECT_EQ(toString(MountRenewClassification::Unresolved), "unresolved");
     EXPECT_EQ(toString(MountRenewClassification::Unclassified), "terminal_unclassified");
 }
@@ -353,7 +352,7 @@ TEST(CASEvent, AnAmbiguityPastTheLeaseBoundNeverStartsTheResolvingRead)
     ASSERT_EQ(renewals.size(), 1u);
     EXPECT_EQ(renewals[0].outcome, "failed");
     EXPECT_EQ(renewals[0].detail.at("attempts_sent"), "1");
-    EXPECT_EQ(renewals[0].detail.at("classification"), "external_lease_deadline");
+    EXPECT_EQ(renewals[0].detail.at("classification"), "deadline");
 }
 
 TEST(CASEvent, WatermarkRenewSinkFailureCannotChangeOutcome)
@@ -433,7 +432,7 @@ TEST(CASEvent, TerminalRenewalDetailsPreservePhysicalTruthAndClassification)
         const std::optional<CasEvent> failed = one_failed_event(events->snapshot());
         ASSERT_TRUE(failed.has_value()) << "the refused admission must reach the event log";
         EXPECT_EQ(failed->detail.at("attempts_sent"), "0");
-        EXPECT_EQ(failed->detail.at("classification"), "external_lease_deadline");
+        EXPECT_EQ(failed->detail.at("classification"), "deadline");
     }
 }
 

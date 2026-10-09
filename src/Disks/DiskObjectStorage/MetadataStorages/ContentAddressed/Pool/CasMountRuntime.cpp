@@ -33,7 +33,6 @@ namespace ProfileEvents
     extern const Event CASMountRenewalRetries;
     extern const Event CASMountRenewalResolved;
     extern const Event CASMountRenewalRecovered;
-    extern const Event CASMountRenewalDeadlineExceeded;
 }
 
 namespace DB::Cas
@@ -601,9 +600,6 @@ void CasMountRuntime::consumeRenewResult(const MountRenewResult & result, bool p
 
     if (result.outcome == MountRenewOutcome::Committed && (result.attempts_sent > 1 || result.resolved_by_read))
         ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalRecovered);
-    if (result.outcome == MountRenewOutcome::Terminal
-        && result.deadline_source == GaveUp::Source::Lease)
-        ProfileEvents::incrementNoTrace(ProfileEvents::CASMountRenewalDeadlineExceeded);
 
     if (result.outcome != MountRenewOutcome::Terminal)
     {

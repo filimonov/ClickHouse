@@ -1337,10 +1337,8 @@ TEST(CASHeartbeat, DeadlineBeforeSendTerminalizesWithTypedFailure)
     const DB::Exception failure = terminalException(result);
     EXPECT_EQ(failure.code(), DB::ErrorCodes::NETWORK_ERROR);
     EXPECT_NE(failure.message().find("no attempt sent"), String::npos) << failure.message();
-    EXPECT_NE(failure.message().find("external_lease_deadline"), String::npos) << failure.message();
+    EXPECT_EQ(result.classification, MountRenewClassification::Deadline);
     EXPECT_FALSE(result.sent_any);
-    ASSERT_TRUE(result.deadline_source.has_value());
-    EXPECT_EQ(*result.deadline_source, GaveUp::Source::Lease);
     EXPECT_TRUE(backend->attempts.empty());
     EXPECT_EQ(backend->read_calls, 0u) << "a pre-send terminal deadline must perform no diagnostic read";
 }

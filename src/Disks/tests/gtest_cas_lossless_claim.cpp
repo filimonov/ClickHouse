@@ -223,7 +223,7 @@ TEST(CASLosslessClaim, ALateClaimRenewsBeforeWritesOpenAndATooLateOneFailsTheSta
     EXPECT_EQ(slot(*late).seq, 9u) << "the second write renews the claim";
     auto too_late = fencedPredecessor();
     too_late->stall_ms = 29'000;   /// confirmed at 39 000, after start + lease - margin = 38 000
-    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "external_lease_deadline, no attempt sent",
+    DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "(deadline, no attempt sent",
                                                 [&] { Pool::open(too_late, poolConfig(too_late)); });
     EXPECT_EQ(too_late->mount_writes.load(), 1) << "no renewal fits inside the claim's lease";
 }
