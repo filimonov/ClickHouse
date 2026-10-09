@@ -1006,12 +1006,12 @@ Pool::~Pool()
         mount_runtime.stopBackgroundWorkers();
     }, "CAS pool teardown: stopping background workers");
 
-    /// 2. The farewell marker the renewer's `release` writes is a certificate that no in-flight ref-log
-    /// conditional PUT from this incarnation can land after it. A successor treats it as proof of a
-    /// clean death (`MountPriorState::Clean`, no observation wait needed). Writing it without an actual
-    /// drain would be a protocol-safety bug: an uncertain PUT this incarnation is still resolving could
-    /// land after the successor already reclaimed and started mutating. `drainRefLanesForShutdown` is
-    /// bounded by one attempt's worth of budget plus the lease safety margin, and stays on `Pool`
+    /// 2. The farewell marker the renewer's `release` writes is a certificate that no write of this
+    /// incarnation (ref-log PUT, snapshot publish, cleanup duty) can land after it. A successor treats
+    /// it as proof of a clean death (`MountPriorState::Clean`, no observation wait needed). Writing it
+    /// without an actual drain would be a protocol-safety bug: an uncertain PUT this incarnation is still
+    /// resolving could land after the successor already reclaimed and started mutating.
+    /// `drainForShutdown` is bounded by one attempt's worth of budget plus the lease safety margin, and stays on `Pool`
     /// between the two mount-runtime teardown steps.
     ///
     /// Fail closed: a drain that threw must never let the farewell through.
@@ -1181,11 +1181,11 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
     /// `finishTeardown` below (it operates on whatever renewer is current — the reclaimed one).
     mount_runtime.tripMountLost();
 
-    /// (5b) Drain the ref lanes (bounded by one attempt's budget + safety margin) to learn whether a clean
-    /// farewell is EARNED — exactly the `~Pool` rule.
+    /// (5b) Drain (bounded by one attempt's budget + safety margin) to learn whether a clean farewell is
+    /// EARNED — exactly the `~Pool` rule.
     ///
-    /// (3+5c) Retire the merged heartbeat: a clean-release farewell ONLY if the lanes provably drained,
-    /// otherwise publish NO terminal marker so the lease expires by observation (never an unearned
+    /// (3+5c) Retire the merged heartbeat: a clean-release farewell ONLY if nothing in `FarewellBlockers`
+    /// is set, otherwise publish NO terminal marker so the lease expires by observation (never an unearned
     /// clean farewell). The workers were already joined above. Outside `remount_mutex`.
     mount_runtime.finishTeardown(drainForShutdown());
 

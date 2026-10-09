@@ -539,10 +539,10 @@ TEST(CASHeartbeat, AFarewellAfterExpiryLeavesAGcFenceUntouched)
     EXPECT_NE(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
 }
 
-/// The lease bound added above must not change what an ordinary Conflict outcome does: a successor
-/// that took the slot (a different, unfenced incarnation) before this node's own shutdown could
-/// publish its farewell must be left untouched, and the release must report the conflict rather than
-/// silently succeeding or overwriting the successor's incarnation.
+/// The farewell's precondition must leave a successor untouched: a successor that took the slot
+/// (a different, unfenced incarnation) before this node's own shutdown could publish its farewell
+/// must be left untouched, and the release must report the conflict rather than silently succeeding
+/// or overwriting the successor's incarnation.
 TEST(CASHeartbeat, ForeignIncarnationDuringFarewellLeavesTheSuccessorUntouchedAndReportsTheConflict)
 {
     auto backend = std::make_shared<InMemoryBackend>();

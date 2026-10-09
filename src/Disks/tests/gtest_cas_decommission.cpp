@@ -1463,15 +1463,9 @@ TEST(CASDecommission, ManifestDebrisFailureKeepsSlotThenResumes)
         << "the slot is still the resume anchor -- nothing was retired against unreclaimed debris";
 }
 
-/// CI run 7 (PR #2300): `drain_now_fn` fakes the drain's own request clock, but the mount lease's
-/// farewell deadline is bound to `PoolConfig::boot_ms_fn`, a distinct clock that -- before this test's
-/// fix -- stayed on the real boot clock regardless. On a freshly booted CI host (real boot time below
-/// `FakeClock`'s starting instant) the two clocks disagreed enough that the farewell's own bound looked
-/// already-expired, so `admin.reset()` released nothing and the slot was never retired -- passing locally
-/// only because a long-lived dev box's real uptime dwarfs the fake clock. Pin the fake clock far beyond
-/// ANY real host's boot time (rather than relying on the host actually being fresh) so the mismatch --
-/// and the fix -- are exercised deterministically on every machine.
-TEST(CASDecommission, DrainClockUnifiesWithTheFarewellBootClockRegardlessOfHostUptime)
+/// With the fake clock pinned far beyond ANY real host's boot time, one decommission call still
+/// retires the slot: the farewell commits and no leftover mount remains to resume against.
+TEST(CASDecommission, DecommissionRetiresTheSlotInOneCallOnAFakeClockFarAheadOfHostUptime)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     { auto victim = openVictim(backend); }   /// identity only -- no namespace, so retirement runs straight
@@ -1495,8 +1489,8 @@ TEST(CASDecommission, DrainClockUnifiesWithTheFarewellBootClockRegardlessOfHostU
     EXPECT_TRUE(report.slot_removed);
     OperationForTest raw_op(*backend);
     EXPECT_FALSE((*raw_op).head("p/gc/server-roots/victim/mount", Retry::once()).has_value())
-        << "one clock for both the request engine and the mount lease -- the farewell must commit and the "
-           "slot must retire in a single call, with no leftover mount to resume against";
+        << "the farewell must commit and the slot must retire in a single call, with no leftover mount to "
+           "resume against";
 }
 
 /// Review round 9r2: folding `drain_now_fn` into `config.boot_ms_fn` alone left `Pool::openForDecommission`'s

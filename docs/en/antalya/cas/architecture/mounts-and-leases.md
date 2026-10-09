@@ -260,12 +260,14 @@ including while an older generation is active. Before renewer replacement, remou
 is in flight. A successful remount handles only its snapshotted generation; a newer request is
 processed before renewal resumes.
 
-**Clean unmount:** request stop and join both persistent workers, drain the ref lanes, and only if
-the drain *certified* quiescence call `MountLeaseRenewer::release` on an `Active` renewer to write the
-terminal farewell (`expires_at_ms` already expired, `min_active_build_sequence = UINT64_MAX`). That sentinel is what
-lets a successor reclaim instantly. A `RenewalTerminal` renewer, an unresolved ref write, or a sent
-renewal ambiguity writes no farewell — an unearned farewell would let a successor start mutating
-while a stale conditional request from the predecessor is still in flight.
+**Clean unmount:** stop and join both persistent workers, drain the ref lanes and wait for snapshot
+publishes, then `release` on an `Active` renewer writes the farewell (`expires_at_ms` expired,
+`min_active_build_sequence = UINT64_MAX`), so a successor reclaims at once. The write is conditional on
+this mount's token, so it is written after the lease expired too; a moved slot refuses it. No farewell is
+written while a ref lane is writing or wedged, a publish is in flight, a cleanup duty is undrained, the
+last renewal ended without a confirmed lease, or the shutdown drain itself failed. The line
+`CAS store shutdown without the clean-release marker: <causes>` says which. A `stopping` disk writes none;
+`SYSTEM CAS FORGET` writes it under these rules before `closed`.
 
 **Crash:** no farewell; the renewal token freezes. Recovery is either the same server restarting
 and waiting out the token-stability observation, or the GC leader fencing the slot first, after

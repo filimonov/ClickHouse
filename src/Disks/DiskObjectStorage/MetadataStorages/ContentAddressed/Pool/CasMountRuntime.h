@@ -450,7 +450,8 @@ public:
     bool workersRunningForTest() const;
     uint64_t remountRequestedGenerationForTest() const;
 
-    /// Join both persistent workers before an `Active` renewer may write its clean farewell.
+    /// Join both persistent workers, then write the clean farewell only if `blockers` is empty, the mount
+    /// did not end in a loss, and the renewer is `Active`; otherwise log every cause and write none.
     void finishTeardown(const FarewellBlockers & blockers);
 
     /// Sleep through the injected test hook when present; otherwise use the production thread sleep.
