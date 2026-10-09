@@ -1373,6 +1373,11 @@ Changes against the plan text:
   `observedReclaimEver`, `fencedEpochs` and `rootEmpty`; no guard, no effect on a kept variable and no
   invariant of these cfgs reads them (argument in the module). Cross-check at `MaxEpoch = 2`,
   `MaxToken = 5`: green with and without the VIEW, 3,734,980 distinct states with it and 11,337,858 without.
+  Soundness (checked 2026-10-09, `.superpowers/sdd/2026-10-09-cas-lease-pr14-reacquire-in-lease-thread/view-soundness.md`):
+  neither cfg lists PROPERTIES; `rootEmpty` is read by the `ClaimOwnerEmpty` guard but `owner` is never reset
+  to `None`, so on reachable states `owner = None` implies `rootEmpty`. The VIEW stops being sound if these
+  cfgs gain `WriterEpochMonotoneUnique`, `GlobalSuperseded…`, `FenceCostsEpoch`, a reclaim/remount witness,
+  or an action that resets `owner` to `None` — drop the VIEW (or the variable) before adding any of them.
 - The guards are written as `IF CertReacquire THEN ... ELSE TRUE`, not as `~CertReacquire \/ ...`. TLC
   branches on a disjunction in a guard and generates the successor of each true disjunct, which raised the
   generated count of the pre-existing cfgs (`twins_immclaim` 123,390,571 instead of 118,022,005) without
