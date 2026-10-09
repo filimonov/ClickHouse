@@ -180,13 +180,13 @@ void PartWriteTxn::requireAlive() const
         throwCasWriteRetryLater(
             "PartWriteTxn cancelled: its owning namespace was removed (dropNamespace) while this build was "
             "in flight; restart the build only after the namespace is recreated");
-    /// Self-remount (fence-out recovery) supersedes the mount incarnation this build was minted
+    /// The reacquire (fence-out recovery) supersedes the mount incarnation this build was minted
     /// under; its write fence already interrupted the build mid-flight, so every further step fails
     /// closed and the caller restarts the build under the live epoch.
     if (const uint64_t live = store->liveWriterEpoch(); epoch != live)
         throwCasWriteRetryLater(fmt::format(
             "PartWriteTxn (writer_epoch {}) belongs to a superseded mount incarnation (live epoch {}) — "
-            "the mount was fenced out and self-remounted; restart the build", epoch, live));
+            "the mount was fenced out and reacquired; restart the build", epoch, live));
 }
 
 PutBlobResult PartWriteTxn::putBlob(const BlobRef & ref, BlobSource source)

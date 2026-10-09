@@ -163,7 +163,7 @@ TEST(CASReacquire, TheOldEpochClosesBeforeTheCounterMoves)
     std::vector<uint64_t> counter_at_close;
     auto store = openPool(backend, newBoot(), [&](PoolConfig & c)
     {
-        c.remount_quiesce_hook_for_test = [&] { counter_at_close.push_back(counterNext(*backend)); };
+        c.reacquire_quiesce_hook_for_test = [&] { counter_at_close.push_back(counterNext(*backend)); };
     });
     const uint64_t epoch = store->writerEpoch();
     fenceAndRenew(*store, *backend);

@@ -179,7 +179,7 @@ TEST(CASOperationGate, ContentReadOnVanishedThrowsTypedPerReasonMessage)
               std::string::npos);
 }
 
-/// (d1) Every class but Factory refuses on `TransientNotLive` — and the refusal carries the TRANSIENT
+/// (d1) Every class but Factory refuses on `Reacquiring` — and the refusal carries the TRANSIENT
 /// class (`NETWORK_ERROR`), not the terminal 668. The split from a terminal state (test d2) is the whole
 /// point: a lease blip is unavailability, a terminal state is not, and consumers outside CAS act on
 /// the difference. `ReplicatedMergeTreePartCheckThread` declares a part broken and detaches it for any
@@ -189,7 +189,7 @@ TEST(CASOperationGate, EveryClassThrowsRetryableTransientOnTransientNotLive)
 {
     auto storage = openGateStorage();
     commitOnePart(*storage);
-    storage->store()->setLifecycleForTest(PoolLifecycle::TransientNotLive);   /// one force from Live
+    storage->store()->setLifecycleForTest(PoolLifecycle::Reacquiring);   /// one force from Live
 
     /// Probe
     Cas::tests::expectThrowsCode(ErrorCodes::NETWORK_ERROR, [&] { storage->existsFile(kPartFile); });
@@ -231,7 +231,7 @@ TEST(CASOperationGate, TransientRefusalIsUpstreamRetryableTerminalIsNot)
     {
         auto storage = openGateStorage();
         commitOnePart(*storage);
-        storage->store()->setLifecycleForTest(PoolLifecycle::TransientNotLive);
+        storage->store()->setLifecycleForTest(PoolLifecycle::Reacquiring);
         EXPECT_TRUE(isRetryableException(exceptionOf([&] { storage->getFileSize(kPartFile); })))
             << "a lease blip must not read as part damage to the part-check thread";
     }
@@ -277,7 +277,7 @@ TEST(CASOperationGate, TryGetInManifestBytesPropagatesTypedError)
         storage->tryGetInManifestBytes(kTableDir + "/format_version.txt");
     });
 
-    pool->setLifecycleForTest(PoolLifecycle::TransientNotLive);
+    pool->setLifecycleForTest(PoolLifecycle::Reacquiring);
     Cas::tests::expectThrowsCode(ErrorCodes::NETWORK_ERROR, [&] {
         storage->tryGetInManifestBytes(kTableDir + "/format_version.txt");
     });
@@ -314,7 +314,7 @@ TEST(CASOperationGate, GcEntryPointsRefuseOnNotLive)
     pool->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
     EXPECT_NE(messageOf([&] { storage->runOneGcRoundForTest(); }).find("erasure was NOT verified"), std::string::npos);
 
-    pool->setLifecycleForTest(PoolLifecycle::TransientNotLive);
+    pool->setLifecycleForTest(PoolLifecycle::Reacquiring);
     Cas::tests::expectThrowsCode(ErrorCodes::NETWORK_ERROR, [&] { storage->runOneGcRoundForTest(); });
 }
 
@@ -336,7 +336,7 @@ TEST(CASOperationGate, GcSchedulerIsQuiescentReflectsRoundInFlight)
 /// (j) (acceptance matrix — transient auto-recovery / DROP-drain round-trip) The full §4 recovery arc on ONE
 /// storage: a Remove-class op (the DROP shape) throws the typed transient refusal while the mount lease is
 /// lost, then SUCCEEDS and actually drains once the disk reacquires back to Live — no operator action,
-/// no restart. Where test (d) forces `TransientNotLive` via the setter to pin the gap, this drives a REAL
+/// no restart. Where test (d) forces `Reacquiring` via the setter to pin the gap, this drives a REAL
 /// transient→Live recovery (GC fence → renewal → reacquire) so the throw-then-drain is one
 /// continuous arc on the same pool. Closes the "access throws in the gap, auto-recovers, a Remove re-queues
 /// and drains" matrix row end-to-end (the per-table DROP re-queue itself is the MergeTree caller's job; the
@@ -349,9 +349,9 @@ TEST(CASOperationGate, RemoveThrowsDuringTransientAndDrainsAfterRecovery)
     ASSERT_EQ(pool->lifecycle(), PoolLifecycle::Live);
     ASSERT_TRUE(storage->existsDirectory(kPartDir));   /// Live baseline: the part is present.
 
-    /// The mount lease is transiently lost — the pool goes TransientNotLive.
+    /// The mount lease is transiently lost — the pool goes Reacquiring.
     Cas::tests::fenceOwnSlotAndRenew(*pool, *pool->poolBackendPtr());
-    ASSERT_EQ(pool->lifecycle(), PoolLifecycle::TransientNotLive);
+    ASSERT_EQ(pool->lifecycle(), PoolLifecycle::Reacquiring);
 
     /// In the gap, EVERY store-class access throws the typed transient refusal — the Remove (DROP shape)
     /// included, and a content read too. Nothing is answered benign, nothing is silently dropped.

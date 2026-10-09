@@ -3662,8 +3662,8 @@ TEST(CASRefWriterStalePrecommitSweep, VerifiedCleanSweepClearsFlagWithoutEvents)
 }
 
 /// ===================================================================================
-/// C1: self-remount establishes a fresh ref-protocol incarnation (spec §Startup And Recovery /
-/// §write-fence). A self-remount bumps the durable writer_epoch, so every ref transaction it stamps
+/// C1: reacquire establishes a fresh ref-protocol incarnation (spec §Startup And Recovery /
+/// §write-fence). A reacquire bumps the durable writer_epoch, so every ref transaction it stamps
 /// afterward sorts strictly above any log a dead-incarnation or same-uuid twin left durable under an
 /// older epoch, and it drops its stale in-memory cache so the next touch re-recovers under the new
 /// epoch. The unfixed code kept the open-time `process_epoch` and the cached tables across the fence-out.
@@ -3788,7 +3788,7 @@ TEST(CASRefWriterRemount, FailedRemountPublishesNoRuntimeUnderFenceLossGeneratio
 }
 
 /// C1/N1 (stale cache): a warm table whose committed ref a twin durably dropped must re-recover to the
-/// twin's view after a self-remount. The unfixed code kept the stale cache and still resolved the ref.
+/// twin's view after a reacquire. The unfixed code kept the stale cache and still resolved the ref.
 TEST(CASRefWriterRemount, ReRecoversStaleCacheToTwinDrop)
 {
     auto backend = std::make_shared<RefWriterTestBackend>();
@@ -3815,7 +3815,7 @@ TEST(CASRefWriterRemount, ReRecoversStaleCacheToTwinDrop)
     /// The remount dropped the stale runtime: the next read re-recovers from the durable objects and
     /// adopts the twin's drop -- "a" is gone.
     EXPECT_FALSE(store->resolveRef(ns, "a").has_value())
-        << "a self-remount must re-recover the table under the new epoch, adopting the twin's drop";
+        << "a reacquire must re-recover the table under the new epoch, adopting the twin's drop";
     EXPECT_NE(store->refTableRuntimeIdentityForTest(ns), predecessor_runtime);
     EXPECT_EQ(store->refTableLifeForTest(ns), predecessor_life);
     EXPECT_NE(store->refTableRuntimeAdmittedFenceGenerationForTest(ns), predecessor_generation);
@@ -3851,11 +3851,11 @@ TEST(CASRefWriterRemount, PostRemountAppendCarriesLiveEpochSortingAboveTwinLogs)
         << "the post-remount append must sort strictly above the twin's log";
 }
 
-/// C1 (wedge disposition): a wedged append lane's runtime (and its wedge) is dropped on a self-remount,
+/// C1 (wedge disposition): a wedged append lane's runtime (and its wedge) is dropped on a reacquire,
 /// the next touch re-recovers a clean lane, and appends resume without hanging. The unfixed code kept the
 /// wedged runtime cached across the remount. The drop is a plain cache detach and needs to certify
 /// nothing: the undecided PUT the wedge describes is settled by the seal the next recovery writes into
-/// its slot -- see `quiesceRefTablesForRemount`'s doc comment (`CasPool.h`).
+/// its slot -- see `quiesceRefTablesForReacquire`'s doc comment (`CasPool.h`).
 TEST(CASRefWriterRemount, DiscardsWedgeAndLaneRemainsUsable)
 {
     const CasRequestBudget budget = wedgeTestBudget();
@@ -3886,7 +3886,7 @@ TEST(CASRefWriterRemount, DiscardsWedgeAndLaneRemainsUsable)
     DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
 
     EXPECT_FALSE(store->refLaneWedgedForTest(ns))
-        << "a self-remount discards the in-memory wedge with the detached runtime";
+        << "a reacquire discards the in-memory wedge with the detached runtime";
 
     /// The lane is usable, not hung: a fresh append completes and carries the live epoch.
     EXPECT_NO_THROW(store->dropRef(ns, "y"));
@@ -3896,10 +3896,10 @@ TEST(CASRefWriterRemount, DiscardsWedgeAndLaneRemainsUsable)
     EXPECT_EQ(greatest->writer_epoch, store->liveWriterEpoch());
 }
 
-/// C1 residual: a flush leader that passed the top-of-flush gate BEFORE a self-remount and stalled
+/// C1 residual: a flush leader that passed the top-of-flush gate BEFORE a reacquire and stalled
 /// mid-flush (here parked at the pre-carve hook, post-top-gate / pre-allocate) across the whole
 /// fence-loss + remount window must NOT, on resume, allocate an id and PUT a transaction validated
-/// against its now-stale detached cache. The pre-allocate `superseded_by_remount` re-check fails it
+/// against its now-stale detached cache. The pre-allocate `superseded_by_reacquire` re-check fails it
 /// closed: the caller gets the failure and no backend `_log` object is created.
 TEST(CASRefWriterRemount, SupersededLeaderMidFlushFailsClosedCreatesNoObject)
 {
@@ -3959,7 +3959,7 @@ TEST(CASRefWriterRemount, SupersededLeaderMidFlushFailsClosedCreatesNoObject)
     ASSERT_EQ(fut.wait_for(std::chrono::seconds(10)), std::future_status::ready)
         << "the superseded leader hung instead of failing closed";
     const std::string result = fut.get();
-    EXPECT_NE(result.find("superseded by a self-remount"), std::string::npos)
+    EXPECT_NE(result.find("superseded by a reacquire"), std::string::npos)
         << "expected a superseded fail-closed, got: " << result;
 
     /// No new ref-log object was created: the greatest durable log id is unchanged.

@@ -443,9 +443,9 @@ String epochSealBytes(const RootNamespace & ns, const RefTxnId & id, std::option
     return sealObject(FormatId::RefLog, encodeRefLogTxn(txn));
 }
 
-/// Re-arm the mount fence WITHOUT a self-remount: the generation moves (twice -- trip, then re-arm)
+/// Re-arm the mount fence WITHOUT a reacquire: the generation moves (twice -- trip, then re-arm)
 /// while the cached runtime survives, which is what isolates the generation check as the sole
-/// detector. A real self-remount also quiesces the runtimes; that path is Task 6's.
+/// detector. A real reacquire also quiesces the runtimes; that path is Task 6's.
 void bumpFenceGeneration(const PoolPtr & store, uint64_t writer_epoch)
 {
     store->tripMountLost();

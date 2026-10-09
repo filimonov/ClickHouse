@@ -194,7 +194,6 @@ def test_the_writer_survives_the_fault(start_cluster, gc_peer, scenario):
     if not gc_peer:
         assert reacquires == 0, RESULTS
     assert node.query("SELECT count() FROM matrix_probe WHERE id = {}".format(row_id)).strip() == "1"
-    assert _log_count_since_start(node, "whole-chain remount") == 0
 
 
 def test_the_gc_peer_fenced_in_some_scenario():

@@ -1437,10 +1437,10 @@ TEST(CASRefRecoveryCasWalk, FenceBumpedAfterCkptCasBeforeInstallPublishesNoState
 }
 
 /// ---------------------------------------------------------------------------------------------
-/// The self-remount barrier
+/// The reacquire barrier
 /// ---------------------------------------------------------------------------------------------
 
-/// Spec §3: "self-remount cancels or waits out recovery before rearming." The install recheck alone is
+/// Spec §3: the reacquire cancels or waits out recovery before re-arming. The install recheck alone is
 /// not that rule -- it protects the install, not the WINDOW. A recovery paused in its I/O while the
 /// fence is re-armed would still be holding an admitted generation that is about to be superseded, and
 /// the barrier is what guarantees no `_ckpt` CAS and no install can follow the re-arm.

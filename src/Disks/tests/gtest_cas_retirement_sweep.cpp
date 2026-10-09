@@ -412,7 +412,7 @@ TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoveryS
     ASSERT_FALSE(headExists(*backend, layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot)))
         << "the slot must be empty before recovery -- otherwise this test proves nothing about who won";
 
-    /// Fence and reacquire. No wait: this is the case that used to cost 30 seconds.
+    /// Fence and reacquire. No wait: a dead epoch is closed by the recovery seal, not waited out.
     DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
     ASSERT_EQ(store->liveWriterEpoch(), 2u);
     EXPECT_TRUE(waits->empty())

@@ -567,7 +567,7 @@ OwnerClaim claimOwnerStep(
 
     if (authority == OwnershipAuthority::Reacquire)
         return lostOwner(OwnerLost::Why::Absent, Exception(ErrorCodes::CORRUPTED_DATA,
-            "CAS server-root '{}' has no owner anchor; a remount never creates one", srid));
+            "CAS server-root '{}' has no owner anchor; a reacquire never creates one", srid));
 
     /// Owner absent. Claiming is allowed ONLY over a provably-empty subtree; an absent owner over
     /// existing data means the identity was lost and must never be silently re-claimed.
@@ -766,7 +766,7 @@ EpochAllocation allocateEpochStep(CasOperation & op, const Layout & l, const Str
             next = decodeServerEpoch(current->bytes).next_writer_epoch;
         else if (authority == OwnershipAuthority::Reacquire)
             return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
-                "CAS server-root '{}' has no durable epoch object; a remount never mints one", srid))};
+                "CAS server-root '{}' has no durable epoch object; a reacquire never mints one", srid))};
         else if (EpochAllocation fresh = decideAbsentCounter(op, l, srid, policy, now_ms, observe_catalog);
                  std::holds_alternative<EpochAllocated>(fresh))
             next = std::get<EpochAllocated>(fresh).writer_epoch;
@@ -794,7 +794,7 @@ EpochAllocation allocateEpochStep(CasOperation & op, const Layout & l, const Str
         {
             if (!seen)
                 return EpochCounterLost{std::make_exception_ptr(Exception(ErrorCodes::CORRUPTED_DATA,
-                    "CAS server-root '{}': the writer epoch counter vanished during a remount", srid))};
+                    "CAS server-root '{}': the writer epoch counter vanished during a reacquire", srid))};
             const uint64_t observed = decodeServerEpoch(seen->bytes).next_writer_epoch;
             return EpochAdvancedByOther{next, observed, std::make_exception_ptr(Exception(ErrorCodes::ABORTED,
                 "CAS server-root '{}': the writer epoch counter of this server_root_id was advanced by another process "
@@ -1064,8 +1064,8 @@ MountClaimResult claimMount(
     /// wall-clock trust — never by comparing `expires_at_ms` against `now_ms`:
     ///   - `gc_fenced` → the fence-out is terminal for that incarnation by construction (its renewer's
     ///     every renewal fails the token guard forever, so it can never write again) — there is no
-    ///     liveness left to wait for. This is what makes self-remount (and a fast restart after a
-    ///     fence-out) instant instead of an observation wait.
+    ///     liveness left to wait for. This is what makes a fast restart after a
+    ///     fence-out instant instead of an observation wait.
     ///   - the clean marker (`min_active_build_sequence == UINT64_MAX`) → the predecessor's OWN graceful farewell
     ///     (`MountLeaseRenewer::terminate`) — no observation needed either.
     ///   - `proven_dead_incarnation` matches the one we just read → the CALLER
@@ -1701,7 +1701,7 @@ std::exception_ptr MountLeaseRenewer::renewConflictFailure(const MountSlotReadin
             /// This decoded authoritative observation is the exact point at which this incarnation learns
             /// that a foreign successor owns the slot. Terminal teardown intentionally performs no release
             /// I/O, so account the skipped farewell here, once, before the renewer enters its terminal state.
-            /// The renewal may be parked under `remount_mutex`; keep the increment trace-free.
+            /// The reacquire's renewal runs under `reacquire_mutex`; keep the increment trace-free.
             ProfileEvents::incrementNoTrace(ProfileEvents::CASMountReleaseSkippedForeignOccupant);
             emitMountEvent(
                 event_sink, CasEventType::MountConflict, srid, "foreign_writer", holder,

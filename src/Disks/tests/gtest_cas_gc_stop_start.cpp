@@ -440,7 +440,7 @@ TEST(CASGCStopStart, RequestRoundSoonConcurrentWithStopStartDoesNotRace)
 }
 
 /// (T11 cannot-verify, acceptance matrix) Operator intent PERSISTS across a transient recovery: after the
-/// operator STOPs GC, the disk loses its mount lease (transient-not-live) and self-remounts back to Live —
+/// operator STOPs GC, the disk loses its mount lease (transient-not-live) and reacquires back to Live —
 /// and NOTHING restarts the GC scheduler. Recovery is a Pool-internal operation with no reference to the
 /// scheduler; only an explicit START (`SYSTEM CAS GC START`) resumes it. We prove the scheduler
 /// was genuinely running+leading first, STOP it, drive a real transient→Live recovery on the pool, then show
@@ -467,10 +467,10 @@ TEST(CASGCStopStart, OperatorStopPersistsAcrossTransientRecovery)
     ASSERT_FALSE(sched.gcHealth().is_leader);
     const size_t after_stop = sink.mark();
 
-    /// The disk now suffers a transient mount-lease loss and self-remounts back to Live (a fresh
+    /// The disk now suffers a transient mount-lease loss and reacquires back to Live (a fresh
     /// incarnation), WITHOUT any operator action — exactly the recovery §4 describes.
     DB::Cas::tests::fenceOwnSlotAndRenew(*store, *backend);
-    ASSERT_EQ(store->lifecycle(), PoolLifecycle::TransientNotLive);
+    ASSERT_EQ(store->lifecycle(), PoolLifecycle::Reacquiring);
     DB::Cas::tests::reacquireUntilOpen(*store);
     ASSERT_EQ(store->lifecycle(), PoolLifecycle::Live) << "the pool must auto-recover to Live";
 
@@ -480,7 +480,7 @@ TEST(CASGCStopStart, OperatorStopPersistsAcrossTransientRecovery)
     EXPECT_FALSE(sched.gcHealth().is_leader);
     EXPECT_TRUE(sched.isQuiescent());
     EXPECT_FALSE(sink.waitForSuccessFinish(after_stop, kStayStoppedWindow).has_value())
-        << "a self-remount recovery must NOT restart an operator-STOPped GC scheduler";
+        << "a reacquire recovery must NOT restart an operator-STOPped GC scheduler";
 
     /// Positive control: only an explicit START resumes rounds, on the SAME instance (gc_id preserved).
     /// This also proves the sink WOULD have caught a round, so the negative above is meaningful.

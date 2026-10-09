@@ -122,7 +122,7 @@ TEST(CASMountStop, OurOwnFenceIsReacquiredAndNothingMore)
     EXPECT_THROW(store->renewWatermarkOnce(), DB::Exception);
 
     EXPECT_EQ(store->mountEnd(), MountEnd::None);
-    EXPECT_EQ(store->lifecycle(), PoolLifecycle::TransientNotLive);
+    EXPECT_EQ(store->lifecycle(), PoolLifecycle::Reacquiring);
     EXPECT_TRUE(log.events().empty());
     EXPECT_EQ(store->runReacquireForTest(), ReacquireOutcome::Open);
     EXPECT_TRUE(log.events().empty());

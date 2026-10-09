@@ -256,7 +256,7 @@ public:
     ///   - null pool (the storage-level Constructing/ShutDown lifecycle -- before `startup`/after
     ///     `shutdown`) -> throws "not started" for EVERY class, `Probe` included: a storage that has
     ///     never published a pool (or torn one down) has no benign "absent" answer to give.
-    ///   - `TransientNotLive` / `Stopping` -> throws the retry-later class for every class but `Factory`
+    ///   - `Reacquiring` / `Stopping` -> throws the retry-later class for every class but `Factory`
     ///     (uncertain backing; the sub-state distinction is surfaced in `system.cas_mounts`, not the
     ///     op error).
     ///   - `VanishedForgotten` -> `Probe`/`Remove` answer `TruthAbsent` (absent-empty / no-op success);

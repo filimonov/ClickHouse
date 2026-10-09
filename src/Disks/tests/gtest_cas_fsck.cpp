@@ -1560,7 +1560,7 @@ TEST(CASFsckRunning, FsckOnMountedDiskSucceeds)
 /// terminal (668).
 TEST(CASFsckRunning, FsckOnNotLiveDiskRefusesTransientRetryableAndForgottenTerminal)
 {
-    for (const auto & [lc, code] : {std::pair{PoolLifecycle::TransientNotLive, DB::ErrorCodes::NETWORK_ERROR},
+    for (const auto & [lc, code] : {std::pair{PoolLifecycle::Reacquiring, DB::ErrorCodes::NETWORK_ERROR},
                                     std::pair{PoolLifecycle::VanishedForgotten, DB::ErrorCodes::INVALID_STATE}})
     {
         auto storage = openRunningStorageForTest();

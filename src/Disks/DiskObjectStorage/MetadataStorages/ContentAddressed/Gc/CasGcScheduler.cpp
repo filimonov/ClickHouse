@@ -352,7 +352,7 @@ void CasGcScheduler::loop()
                 return;
             round_requested = false;
         }
-        /// rev.7 §3 [C1] + rev.8 §9 item 8: self-exit the pacing loop the moment the pool reaches — or is
+        /// Self-exit the pacing loop the moment the pool reaches — or is
         /// being driven toward — the terminal state, at the earliest signal: a published FORGET intent
         /// (`vanishedIntentPublished`, still pre-terminal). Clearing `i_am_leader` before returning keeps
         /// `gcHealth` honest (a terminal, self-exited scheduler reports it no longer leads). The thread exits
@@ -470,7 +470,7 @@ void CasGcScheduler::heartbeatLoop()
                 { return scheduler_state == SchedulerState::Stopped; }))
                 return;
         }
-        /// rev.7 §3 [C1] + rev.8 §9 item 8: self-exit on a terminal (or FORGET-intent) pool, same as `loop()`.
+        /// Self-exit on a terminal (or FORGET-intent) pool, same as `loop()`.
         if (store->isVanished() || store->vanishedIntentPublished())
         {
             {

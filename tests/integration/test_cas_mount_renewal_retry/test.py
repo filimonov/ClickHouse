@@ -29,9 +29,6 @@ RENEWAL_EVENTS = (
     "CASMountRenewalResolved",
     "CASMountRenewalRecovered",
     "CASMountLeaseLost",
-    "CASRemountAttempts",
-    "CASRemountSucceeded",
-    "CASRemountFailed",
 )
 
 # The lease timing `configs/storage_conf.xml` compiles into `disk_cas_renewal`. One fixed budget for
@@ -405,9 +402,6 @@ def test_transient_mount_renewal_retries_without_remount(start_cluster):
     assert delta["CASMountRenewalAttempts"] > 1, delta
     assert delta["CASMountRenewalRetries"] > 0, delta
     assert delta["CASMountRenewalRecovered"] > 0, delta
-    assert delta["CASRemountAttempts"] == 0, delta
-    assert delta["CASRemountSucceeded"] == 0, delta
-    assert delta["CASRemountFailed"] == 0, delta
     assert mount_after["state"] == "live", mount_after
     assert mount_after["lifecycle"] == "live", mount_after
     assert mount_after["gc_fenced"] == 0, mount_after
@@ -435,7 +429,7 @@ def test_renewal_progress_is_visible_while_the_renewal_retries(start_cluster):
     _control(control_url, "/config", {"reset": True})
     # 503s on the mount PUT only: LIST and GET pass, so the table's own listing answers. Four faults
     # back off at most 3 s in total, well inside one renewal's lease budget, so a burst never forces
-    # a remount; a burst that ends between two polls is re-armed once its renewal has ended.
+    # a reacquire; a burst that ends between two polls is re-armed once its renewal has ended.
     fault_burst = {"rate": 1.0, "modes": ["503"], "methods": ["PUT"], "path_substring": MOUNT_REQUEST_PATH,
                    "remaining_faults": 4, "seed": 802}
     _control(control_url, "/config", fault_burst)
@@ -470,7 +464,7 @@ def test_renewal_progress_is_visible_while_the_renewal_retries(start_cluster):
     assert "gc/server-roots/{}/mount: transport SlowDown ".format(SERVER_ROOT_ID) in error, row
 
     # Later tests diff the renewal counters, so the retried renewal must end first, live again whether
-    # it recovered or remounted.
+    # it recovered or reacquired.
     _wait_until(
         lambda deadline: node.query(
             "SELECT lifecycle, renewal_in_progress {} FORMAT TSV".format(local_row), timeout=deadline.remaining()
@@ -581,9 +575,6 @@ def test_landed_response_lost_adopts_exact_mount_write(start_cluster):
     assert delta["CASMountRenewalRetries"] == 0, delta
     assert delta["CASMountRenewalResolved"] == 1, delta
     assert delta["CASMountRenewalRecovered"] == 1, delta
-    assert delta["CASRemountAttempts"] == 0, delta
-    assert delta["CASRemountSucceeded"] == 0, delta
-    assert delta["CASRemountFailed"] == 0, delta
     assert mount_after["state"] == "live", mount_after
     assert mount_after["lifecycle"] == "live", mount_after
     assert mount_after["gc_fenced"] == 0, mount_after
@@ -641,7 +632,6 @@ def test_long_mount_put_outage_pauses_under_the_same_epoch(start_cluster):
     _wait_until(lambda deadline: _lease_state(node, timeout=deadline.remaining())[:2] == ("live", ""), timeout=40)
     delta = _event_delta(counters_before, _profile_events(node))
     assert _lease_state(node)[2] == epoch_before
-    assert delta["CASRemountAttempts"] == 0, delta
     assert delta["CASMountLeaseLost"] == 0, delta
     assert delta["CASMountRenewalRetries"] > 0, delta
     assert _log_count_since_last_restart(node, EXPIRY_WARNING) - warnings_before == 1
@@ -988,9 +978,6 @@ def _expect_reacquired(node, control_url, pid_before, epoch_before, counters_bef
     assert _local_lease(node, REACQ_DISK)[2] == epoch_before + 1
     assert slot["gc_fenced"] is False, slot
     assert int(slot["writer_epoch"]) == epoch_before + 1, slot
-    assert delta["CASRemountAttempts"] == 0, delta
-    assert delta["CASRemountSucceeded"] == 0, delta
-    assert _log_count_since_last_restart(node, "whole-chain remount") == 0
     assert _log_count_since_last_restart(node, "reacquired under writer_epoch {} (was {})".format(epoch_before + 1, epoch_before)) == 1
     node.query("INSERT INTO reacq_probe VALUES ({}, 'after')".format(ids[1]))
     assert node.query("SELECT count() FROM reacq_probe WHERE id IN ({}, {})".format(*ids)).strip() == "2"

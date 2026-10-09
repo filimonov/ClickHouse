@@ -41,9 +41,9 @@ to another disk and is listed as an `is_local = 0` row.
 - `pending_reclaim` ([Nullable(Int64)](/sql-reference/data-types/nullable)) — Cumulative two-phase deletion backlog observed by this process's GC on this disk (condemned entries minus executed exact-token deletes).
 - `last_success_age_seconds` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Seconds since this disk's GC last led a round (`0` if it has never led or GC is not running here).
 - `wedged_namespace_count` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Ref-append lanes currently wedged on this disk (an uncertain `PUT` exhausted its retry budget).
-- `lifecycle` ([Nullable(String)](/sql-reference/data-types/nullable)) — This server's lifecycle for the disk, from the confirmed lease and the clock: `live`, `paused`, `identity_lost`, `vanished`, `closed`, `constructing` (never started) or `shutdown` (torn down). `NULL` on rows of other servers' mounts.
-- `lifecycle_reason` ([Nullable(String)](/sql-reference/data-types/nullable)) — One word: `renewal_overdue`, `lease_expired` or `remounting` for `paused`, `replaced` for `vanished`, `forgotten` for `closed`, empty otherwise. `lifecycle || '(' || lifecycle_reason || ')'` reads e.g. `closed(forgotten)`. `NULL` on rows of other servers' mounts.
-- `lifecycle_detail` ([String](/sql-reference/data-types/string)) — The full typed reason text naming the actual cause when not live: the vanish diagnosis (a data root replaced by a foreign pool, or decommissioned by `SYSTEM CAS FORGET` at a given time) or the identity-loss message. Empty when live. Empty on rows of other servers' mounts.
+- `lifecycle` ([Nullable(String)](/sql-reference/data-types/nullable)) — This server's lifecycle for the disk, from the confirmed lease and the clock: `live`, `paused`, `stopping`, `closed`, `constructing` (never started) or `shutdown` (torn down). `NULL` on rows of other servers' mounts.
+- `lifecycle_reason` ([Nullable(String)](/sql-reference/data-types/nullable)) — One word: `renewal_overdue`, `lease_expired` or `fenced_by_gc` for `paused`, the end word for `stopping`, `forgotten` for `closed`, empty otherwise. `lifecycle || '(' || lifecycle_reason || ')'` reads e.g. `closed(forgotten)`. `NULL` on rows of other servers' mounts.
+- `lifecycle_detail` ([String](/sql-reference/data-types/string)) — The full typed reason text naming the actual cause when not live: what ended the mount, or the decommission by `SYSTEM CAS FORGET` at a given time. Empty when live. Empty on rows of other servers' mounts.
 - `lifecycle_since` ([Nullable(DateTime)](/sql-reference/data-types/nullable)) — When this server entered the current non-live lifecycle state. For a pause from the lease clock, when the current reason's threshold was crossed (for `lease_expired`, the lease deadline). `NULL` when live, or when the state has no backing pool to date from. `NULL` on rows of other servers' mounts.
 - `renewal_in_progress` ([Nullable(UInt8)](/sql-reference/data-types/nullable)) — `1` while this server renews its mount lease.
 - `renewal_attempts` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Conditional `PUT`s sent by the current renewal, or by the last one once it ended. Updated per attempt, so a renewal stuck in retries is visible before it ends.
@@ -52,8 +52,8 @@ to another disk and is listed as an `is_local = 0` row.
 - `listing_error` ([Nullable(String)](/sql-reference/data-types/nullable)) — The error of a failed listing, on the one row it produces. `NULL` on every other row.
 
 `lifecycle`/`lifecycle_reason`/`lifecycle_detail`/`lifecycle_since` are the SQL surface for
-diagnosing an identity-lost or forgotten disk without reading server logs — see the
-`IdentityLost`/`VanishedReplaced`/`VanishedForgotten` states on the
+diagnosing a stopping or forgotten disk without reading server logs — see the
+`Stopping`/`VanishedForgotten` states on the
 [mount-slot behavioral model](/antalya/cas/architecture/mounts-and-leases#mount-state-machines) for
 what each lifecycle value means, and [`SYSTEM CAS FORGET`](/antalya/cas/operations/debugging#sql-forget)
 for the command that produces `closed(forgotten)`.

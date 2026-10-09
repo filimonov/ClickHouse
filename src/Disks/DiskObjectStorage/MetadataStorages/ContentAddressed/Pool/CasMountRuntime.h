@@ -31,7 +31,7 @@ using PartWriteTxnPtr = std::shared_ptr<PartWriteTxn>;
 /// published pool -- before `startup`/after `shutdown`) the metadata storage tracks. Ordering of the
 /// enumerators is not significant; membership tests do the work.
 ///   - `Live`             — the steady state; the mount lease is (or was last) held.
-///   - `TransientNotLive` — a GC fence of our own body was found; access is uncertain and the reacquire
+///   - `Reacquiring` — a GC fence of our own body was found; access is uncertain and the reacquire
 ///                          retries.
 ///   - `VanishedForgotten` — fully terminal: the disk was decommissioned by `FORGET`. Store-class access
 ///                          fails loud from here.
@@ -40,7 +40,7 @@ using PartWriteTxnPtr = std::shared_ptr<PartWriteTxn>;
 enum class PoolLifecycle : uint8_t
 {
     Live,
-    TransientNotLive,
+    Reacquiring,
     VanishedForgotten,
     Stopping,
 };
@@ -55,7 +55,7 @@ struct MountConfig
     std::chrono::milliseconds mount_lease_ttl_ms{30000};
     std::chrono::milliseconds mount_renew_period{10000};
     /// When false, tests drive `renewWatermarkOnce` explicitly. In production this flag enables both
-    /// the merged mount-lease/build-watermark heartbeat and self-remount recovery.
+    /// the merged mount-lease/build-watermark heartbeat and the reacquire after a GC fence.
     bool background_watermark = false;
     std::function<uint64_t()> boot_ms_fn = {};
     std::function<void(uint64_t)> wait_sleep_fn = {};
@@ -130,7 +130,7 @@ struct FarewellBlockers
 /// Owns the live writer-incarnation mechanics shared by the pool's mount and recovery orchestration:
 /// the `MountLeaseRenewer`, local `MountFence`, build watermark and in-flight build registry,
 /// `live_writer_epoch`, unclean-boundary marker, and the renewal thread. `Pool` retains the higher-level
-/// claim/recovery sequence and its `remount_mutex`; in particular, the runtime does not acquire or own
+/// claim/recovery sequence and its `reacquire_mutex`; in particular, the runtime does not acquire or own
 /// the ref-ledger locks. The runtime receives its backend, layout, configuration, event sink, request
 /// budget, and a callback that runs one pass of the reacquire, so it has no `Pool` back-reference.
 /// `Pool` delegates preserve the existing callers and test seams.
@@ -207,7 +207,7 @@ public:
 
     /// ---- fence-generation admission (rev.7 [C2]/[D1]) ----
     /// Bumped by EVERY `tripMountLost` (a fence loss) and EVERY `armMountFence` (a re-arm -- a fresh
-    /// lease incarnation, e.g. after a self-remount). A durable-effect caller captures this value once
+    /// lease incarnation, e.g. after a reacquire). A durable-effect caller captures this value once
     /// at admission and compares it again immediately before its durable backend call: a DIFFERENT
     /// value means the lease incarnation moved from under it since admission -- even when the fence
     /// happens to be live again under a brand-new incarnation, the caller's write is stale and must not
@@ -228,21 +228,21 @@ public:
     /// Whether the pool reached `VanishedForgotten`.
     bool isVanished() const;
     /// Whether the terminal-intent latch (`vanished_intent`) is published — set by `enterVanished`, OR
-    /// EARLY (spec §5 step 1) by FORGET's `publishVanishedIntent`. This is the EARLIEST terminal signal: it can already be true
+    /// EARLY by FORGET's `publishVanishedIntent`. This is the EARLIEST terminal signal: it can already be true
     /// while the state is still pre-terminal (mid-FORGET). Consulted alongside `isVanished()` by every
     /// background worker that must self-exit the moment the pool is (being driven) terminal — the renewal
     /// thread and the GC scheduler.
     bool vanishedIntentPublished() const { return vanished_intent.load(std::memory_order_acquire); }
 
-    /// Non-terminal lease-loss transition: `Live -> TransientNotLive`. Idempotent and lock-free; a
+    /// Non-terminal lease-loss transition: `Live -> Reacquiring`. Idempotent and lock-free; a
     /// compare-exchange FROM `Live` only, so it never downgrades a terminal state. `tripMountLost`
     /// calls this (the lease-loss primitive). Returns true only to the compare-exchange winner, which owns
     /// the one-per-loss metric.
     bool noteLeaseLost();
-    /// Non-terminal recovery transition: `TransientNotLive -> Live`. Called after a self-remount
-    /// reclaimed a fresh incarnation. A compare-exchange FROM `TransientNotLive` only, so it NEVER
+    /// Non-terminal recovery transition: `Reacquiring -> Live`. Called after a reacquire
+    /// reclaimed a fresh incarnation. A compare-exchange FROM `Reacquiring` only, so it NEVER
     /// revives a terminal state ([D3]).
-    void noteRemounted();
+    void noteReacquired();
 
     /// Test seam: force the lifecycle condition directly to `lc`, bypassing the natural transition
     /// preconditions (used by the operation-gate tests to pin each class × state cell without driving a
@@ -251,7 +251,7 @@ public:
     void setLifecycleForTest(PoolLifecycle lc);
 
     /// Publish the terminal-intent latch (`vanished_intent`) WITHOUT settling the lifecycle state. This is
-    /// spec §5 step 1 of `SYSTEM CAS FORGET`: publishing the latch FIRST makes a reacquire in flight
+    /// the first step of `SYSTEM CAS FORGET`: publishing the latch FIRST makes a reacquire in flight
     /// abandon at its next stage and the renewal thread exit, so FORGET's subsequent join is bounded to one
     /// stage + one backend timeout. The state store + WARN happen later, in `enterVanished` at step 6.
     /// Idempotent. Publication is serialized by `driver_mutex` and followed by a condition-variable
@@ -263,7 +263,7 @@ public:
     /// `CASDataRootVanished` ProfileEvent. Idempotent: the first terminal STATE transition wins (a
     /// dedicated latch keyed separately from `vanished_intent`, because FORGET publishes that intent latch
     /// early at step 1). `reason` is surfaced verbatim in the [D5] error message (see `vanishedReason`).
-    /// Must be called under the caller's remount serialization (Pool::remount_mutex).
+    /// Must be called under the caller's reacquire serialization (Pool::reacquire_mutex).
     void enterVanished(const String & reason);
 
     /// The reason string recorded by the winning `enterVanished`, or empty when none has run (a
@@ -277,14 +277,14 @@ public:
     /// Wall-clock second (`system_clock`, seconds since epoch) at which the pool ENTERED its current
     /// non-`Live` lifecycle state, or 0 while `Live`. This is the `since` the non-gated
     /// `system.cas_mounts` lifecycle snapshot (spec §7) reports. Written (release) at each
-    /// lifecycle edge — `noteLeaseLost`/`enterVanished` set it to now, `noteRemounted`
+    /// lifecycle edge — `noteLeaseLost`/`enterVanished` set it to now, `noteReacquired`
     /// clears it to 0 — and by `setLifecycleForTest`, so a forced state carries a `since` indistinguishable
     /// from a naturally-reached one.
     ///
     /// Ordering vs the `pool_lifecycle` transition it accompanies: the TERMINAL edge (`enterVanished`)
     /// publishes this store BEFORE the state store, so a reader that acquire-observes a
     /// terminal state is guaranteed (release/acquire handoff) to observe this timestamp. The lock-free
-    /// lease-loss/remount edges (`noteLeaseLost`, `noteRemounted`) stamp it in the compare-exchange's
+    /// lease-loss/reacquire edges (`noteLeaseLost`, `noteReacquired`) stamp it in the compare-exchange's
     /// SUCCESS branch — after the CAS — because they may run on an already-terminal pool (`noteLeaseLost` is
     /// called before the caller's `isVanished()` gate), where a pre-CAS stamp would clobber the terminal
     /// `since`; a reader may therefore momentarily observe a just-entered `paused` with `since` not yet
@@ -313,13 +313,13 @@ public:
     /// published before the state store) OR a latched mount end (`mountEnd`). Consulted by the renewal
     /// thread at every wait. The GC scheduler, through `Pool`, applies the first only: it keeps running on
     /// a mount end.
-    bool remountTerminal() const
+    bool workersMustExit() const
     {
         return vanished_intent.load(std::memory_order_acquire) || mountEnd() != MountEnd::None;
     }
 
-    /// The inter-attempt sleep the mount plane runs on. A plain sleep would hold a parked or stopping
-    /// renewal for the whole capped backoff; this one wakes on the same stop signal the workers watch.
+    /// The inter-attempt sleep the mount plane runs on. A plain sleep would hold a stopping renewal for the
+    /// whole capped backoff; this one wakes on the same stop signal the renewal thread watches.
     /// It shortens a stop, not a fence loss: the fence cannot see a stop request, so a woken operation
     /// still reissues unless its own liveness predicate refuses.
     void sleepInterruptibly(uint64_t ms);
@@ -352,7 +352,7 @@ public:
     /// Mint the random nonzero process identity used by GC's equality check.
     void mintRandomProcessEpoch();
     /// Set `process_epoch` to the durable `writer_epoch`. The caller supplies the memory order because
-    /// the initial writable claim and a later self-remount have different publication requirements.
+    /// the initial writable claim and a later reacquire have different publication requirements.
     void setProcessEpoch(uint64_t v, std::memory_order order);
     /// Publish the live-incarnation `live_writer_epoch` with release ordering.
     void setLiveWriterEpoch(uint64_t v);
@@ -394,7 +394,7 @@ public:
     /// incarnation's own poll) cannot express that through `PoolConfig::wait_sleep_fn` alone, since
     /// that value is fixed at open time. Unsynchronized against `waitSleep`'s `const` read of the same
     /// field: safe only called from the test's own thread before any worker is running (no persistent
-    /// renewal/remount worker reads `config.wait_sleep_fn` concurrently with this write).
+    /// renewal thread reads `config.wait_sleep_fn` concurrently with this write).
     void setWaitSleepForTest(std::function<void(uint64_t)> fn) { config.wait_sleep_fn = std::move(fn); }
 
     /// Forward renewer events to the injected sink. The sink is held by reference so it observes the
@@ -463,8 +463,8 @@ private:
     /// per-process counter (monotonicity is load-bearing — a seq is never reused or lowered);
     /// active_build_seqs holds the seqs of in-flight builds, so `minActive` yields the GC floor. The floor
     /// is published by the merged `mount_renewer`
-    /// beat (there is no standalone watermark object anymore). ATOMIC because a self-remount re-stamps it
-    /// (kept equal to `live_writer_epoch`) from the runtime-owned remount worker while `epoch`/`writerEpoch`
+    /// beat (there is no standalone watermark object anymore). ATOMIC because a reacquire re-stamps it
+    /// (kept equal to `live_writer_epoch`) from the renewal thread while `epoch`/`writerEpoch`
     /// may observe it; the ref-lane hot readers were moved to `liveWriterEpoch`, so this now backs only
     /// the identity accessors.
     std::atomic<uint64_t> process_epoch{0};
@@ -521,12 +521,12 @@ private:
     std::atomic<MountEnd> mount_end{MountEnd::None};
 
     /// The pool lifecycle condition (rev.7 §1). Starts `Live`. Non-terminal transitions
-    /// (`noteLeaseLost`/`noteRemounted`) are lock-free compare-exchanges guarded by their exact
+    /// (`noteLeaseLost`/`noteReacquired`) are lock-free compare-exchanges guarded by their exact
     /// predecessor state; terminal predicate publication is serialized with worker waits by
-    /// `driver_mutex`, while the caller's `Pool::remount_mutex` serializes the higher-level remount flow.
+    /// `driver_mutex`, while the caller's `Pool::reacquire_mutex` serializes the higher-level reacquire flow.
     std::atomic<PoolLifecycle> pool_lifecycle{PoolLifecycle::Live};
     /// Terminal-intent latch (spec §3), published before the state store by `enterVanished`, or EARLY
-    /// (step 1) by `publishVanishedIntent` for FORGET. Consulted by `remountTerminal` and `reacquireLive`, so
+    /// (step 1) by `publishVanishedIntent` for FORGET. Consulted by `workersMustExit` and `reacquireLive`, so
     /// no claim/allocate/write happens after the pool is (being driven) terminal.
     std::atomic<bool> vanished_intent{false};
     /// Idempotency guard for the terminal STATE transition (`enterVanished`'s body). Distinct from

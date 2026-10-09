@@ -60,10 +60,9 @@ Pool lifecycle and teardown. A non-zero value here is an incident signal.
 
 | Event | Type | Description |
 | --- | --- | --- |
-| `CASDataRootVanished` | `Number` | Counts CAS pools that entered a terminal Vanished lifecycle state (replaced / forgotten): the pool's data root was proven foreign (pool_id mismatch) or was decommissioned by SYSTEM CAS FORGET. The disk stays registered but store-class access fails loud with a typed error naming the sub-state; restart re-registers the name. |
+| `CASDataRootVanished` | `Number` | Counts CAS pools that entered the terminal Vanished(forgotten) lifecycle state: the disk was decommissioned by SYSTEM CAS FORGET. The disk stays registered but store-class access fails loud with a typed error; restart re-registers the name. |
 | `CASDetachedWorkDrainTimeouts` | `Number` | Counts CAS storage teardowns whose bounded wait for detached background work expired with work still in flight. The teardown proceeds, but for that teardown it could not be established that no tracked task still holds the pool. Expected to stay at zero. |
 | `CASEventDroppedContextExpired` | `Number` | Number of CAS system-log events dropped because the storage's `Context` reference expired before delivery. A non-zero value indicates event production outlived the owning server context. |
-| `CASIdentityLost` | `Number` | Counts CAS pools that entered the IdentityLost lifecycle state: the pool sentinels (_pool_meta and the owner anchor) were observed authoritatively absent (both KeyAbsent). IdentityLost is a fail-loud TERMINAL state -- store-class access fails loud from this point and this pool's background threads (remount + GC) self-exit; there is no observer. Recover by restart or SYSTEM CAS FORGET; a matching-sentinel restore does not auto-revive. |
 
 #### Blob requests {#cas-blob-requests}
 
@@ -244,7 +243,7 @@ These counters cover ref-log appends, recovery, snapshots, and reachability edge
 | `CASRefMaterializeInPlace` | `Number` | Number of CAS ref-table COW container materializations that folded the overlay into a uniquely-owned base in place (the production flush fast path, O(overlay)). Compare with CASRefMaterializeCopy: a high ratio confirms the fast path is firing in production. |
 | `CASRefNeedsRecovery` | `Number` | Number of CAS ref append lanes moved to `NeedsRecovery` because a known-durable transaction could not be installed. Such a lane refuses writes, snapshots, and confirmation until durable replay completes. |
 | `CASRefQueueWaitMicroseconds` | `Microseconds` | Total time CAS ref writers spent queued, in microseconds. A rising value indicates ref-write contention or backend latency. |
-| `CASRefRecoveryCancelled` | `Number` | Number of CAS ref-table recovery attempts abandoned because a self-remount requested cancellation before re-arming the mount fence. Non-zero means remounts are overlapping recoveries; nothing is written or installed on this path. |
+| `CASRefRecoveryCancelled` | `Number` | Number of CAS ref-table recovery attempts abandoned because a reacquire requested cancellation before re-arming the mount fence. Non-zero means reacquires are overlapping recoveries; nothing is written or installed on this path. |
 | `CASRefRecoveryEpochSealAdopted` | `Number` | Number of dead CAS ref writer epochs a recovery compare-and-swap walk found ALREADY closed by a concurrent recoverer's seal and adopted. A peer that got there first is the designed outcome, not contention to alarm on. |
 | `CASRefRecoveryEpochSealed` | `Number` | Number of CAS ref epoch-seal transactions MINTED by a recovery compare-and-swap walk, one per dead writer epoch it closed. Each seal occupies the exact log key a dying predecessor's in-flight PUT would take, so growth tracks epoch transitions over touched namespaces (including burned, never-written epochs), not anomalies. |
 | `CASRefRecoveryRestarts` | `Number` | Number of CAS ref-table recovery retries after a snapshot or log vanished during reading. A non-zero value indicates concurrent cleanup or backend inconsistency. |
@@ -283,24 +282,13 @@ window.
 | Event | Type | Description |
 | --- | --- | --- |
 | `CASMountExclusivityViolation` | `Number` | Counts CAS mount releases where a runtime that still BELIEVED IT OWNED the mount (no deposition ever observed) found a FOREIGN occupant in the slot. This is the single-writer guarantee being broken, not a failover: the release refuses, the slot is left untouched, and the write fence is latched so the runtime stops trusting itself. This must always be zero. |
-| `CASMountLeaseLost` | `Number` | Counts exactly once per operational CAS mount-lease Live-to-TransientNotLive loss/recovery generation. The initiating external loss or the first ordinary terminal renewal consumer owns the increment; parked/classification/shutdown paths do not duplicate it. |
+| `CASMountLeaseLost` | `Number` | Counts CAS mount-lease losses: a terminal renewal that moves the mount out of Live, and every loss end latched. One loss can count twice: a reacquire that ends in a loss end, or a background renewal that ends as local_defect. Shutdown and SYSTEM CAS FORGET do not count. |
 | `CASMountReleaseSkippedForeignOccupant` | `Number` | Counts conclusive CAS mount-renewal observations that found a FOREIGN successor in the slot. This is the EXPECTED end state of a failover: renewal fences the deposed runtime, terminal teardown skips the farewell without backend I/O, and the successor's slot is left byte-for-byte untouched. Steady non-zero values on a cluster that is not failing over are worth investigating; a value that tracks failovers is normal. |
 | `CASMountRenewalAttempts` | `Number` | Number of physical conditional renewal PUTs sent for CAS mount leases. This counts transport attempts, not logical renewals. |
-| `CASMountRenewalDeadlineExceeded` | `Number` | Number of bounded CAS mount-lease renewals (the startup and remount re-anchors) stopped by the external lease-safety deadline. Growth means the last confirmed lease no longer had enough safe time for another physical attempt. The background renewal has no such deadline. |
+| `CASMountRenewalDeadlineExceeded` | `Number` | Number of bounded CAS mount-lease renewals (the startup re-anchor) stopped by the external lease-safety deadline. Growth means the last confirmed lease no longer had enough safe time for another physical attempt. The background renewal has no such deadline. |
 | `CASMountRenewalRecovered` | `Number` | Number of logical CAS mount-lease renewals that committed after a physical retry or exact resolving GET. |
 | `CASMountRenewalResolved` | `Number` | Number of CAS mount-lease renewals whose committed outcome was proved by an exact resolving GET. |
 | `CASMountRenewalRetries` | `Number` | Number of physical conditional renewal PUTs sent after the first attempt of one logical CAS mount-lease renewal. |
-
-#### Remount {#cas-remount}
-
-These counters cover whole-chain remount attempts after a mount leaves `Live`.
-
-| Event | Type | Description |
-| --- | --- | --- |
-| `CASRemountAttempts` | `Number` | Number of invocations of the CAS whole-chain remount attempt. |
-| `CASRemountFailed` | `Number` | Number of CAS whole-chain remount attempts that returned without restoring Live, including caught step exceptions. |
-| `CASRemountHeldTransient` | `Number` | Counts CAS remount attempts that could not decide the pool's identity and were held transient: the `_pool_meta` probe was inconclusive or its body could not be decoded (a partially written object, an unreadable store, or a pool whose format this build no longer reads). The mount stays fenced closed and the remount loop retries; a value that keeps growing means the pool will never remount without operator action -- read the accompanying warning for the probe's own reason. |
-| `CASRemountSucceeded` | `Number` | Number of CAS whole-chain remount attempts that restored Live under a fresh writer epoch. |
 
 #### Request contract {#cas-request-contract}
 
@@ -361,8 +349,8 @@ These counters cover fetch-by-relink confirms that this server answered `Unknown
 | Event | Type | Description |
 | --- | --- | --- |
 | `CASRelinkConfirmRefusedLaneBroken` | `Number` | Number of CAS fetch-by-relink confirms answered Unknown because the namespace's ref lane is in NeedsRecovery, Closed or Faulted state, or is Writing with nothing carved. A growing value outside induced faults is a lane defect, not load. |
-| `CASRelinkConfirmRefusedLaneWedged` | `Number` | Number of CAS fetch-by-relink confirms answered Unknown because the namespace's ref lane holds an unresolved append (a wedge). Lasts until the next flush or a remount resolves it. |
-| `CASRelinkConfirmRefusedMountCannotSpeak` | `Number` | Number of CAS fetch-by-relink confirms answered Unknown because this mount cannot speak for the namespace: its ref table is unrecovered or mid-recovery, its catalog life was invalidated, its runtime was superseded by a remount, or its mount fence is no longer held. Neither a lane defect nor write load. A growing value means this writer is losing, or has already lost, its claim to the namespace. |
+| `CASRelinkConfirmRefusedLaneWedged` | `Number` | Number of CAS fetch-by-relink confirms answered Unknown because the namespace's ref lane holds an unresolved append (a wedge). Lasts until the next flush or a reacquire resolves it. |
+| `CASRelinkConfirmRefusedMountCannotSpeak` | `Number` | Number of CAS fetch-by-relink confirms answered Unknown because this mount cannot speak for the namespace: its ref table is unrecovered or mid-recovery, its catalog life was invalidated, its runtime was superseded by a reacquire, or its mount fence is no longer held. Neither a lane defect nor write load. A growing value means this writer is losing, or has already lost, its claim to the namespace. |
 | `CASRelinkConfirmRefusedRefMutationInFlight` | `Number` | Number of CAS fetch-by-relink confirms this server answered Unknown because a queued or in-flight ref-lane mutation names the asked-about ref or the whole namespace. Expected under write load; the receiver retries the fetch. |
 | `CASRelinkConfirmRefusedStateLockBusy` | `Number` | Number of CAS fetch-by-relink confirms answered Unknown because the ref table's state lock was held. Under write load the usual holder is the table's own append leader, arming or installing a chunk; otherwise a recovery, a listing or a snapshot publish. The confirm never waits for it. |
 

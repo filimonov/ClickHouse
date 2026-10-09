@@ -17,7 +17,7 @@ enum class MountEnd : uint8_t
     SlotTaken,
     SlotAbsent,
     SlotCorrupt,
-    FencedByGc,    /// the decommission pool only: it impersonates a dead member and never remounts
+    FencedByGc,    /// the decommission pool only: it impersonates a dead member and never reacquires
     LedgerFault,
     LocalDefect,
     Forgotten,     /// `SYSTEM CAS FORGET`
@@ -29,7 +29,7 @@ bool isLossEnd(MountEnd end);                  /// every end but `None` and `For
 bool endsWithoutShutdown(MountEnd end);        /// `LedgerFault`, `LocalDefect`
 
 /// `StopServer`: a writable mount of this server's own slot. `CloseMount`: writable without background
-/// renewal (tools). `FailDecommission`: `Pool::openForDecommission`, which never remounts.
+/// renewal (tools). `FailDecommission`: `Pool::openForDecommission`, which never reacquires.
 enum class MountLossReaction : uint8_t
 {
     StopServer,

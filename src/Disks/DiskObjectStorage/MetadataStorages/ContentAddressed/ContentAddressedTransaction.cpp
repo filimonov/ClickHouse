@@ -133,10 +133,10 @@ ContentAddressedTransaction::~ContentAddressedTransaction()
         {
             /// A destructor must not throw. But a failed abandon can leave a LIVE-epoch precommit
             /// binding that neither GC nor the (prior-epoch-scoped) stale-precommit sweep reclaims
-            /// until this mount remounts -- that must be diagnosable, not silently swallowed.
+            /// until the writer epoch changes -- that must be diagnosable, not silently swallowed.
             tryLogCurrentException(getLogger("ContentAddressedTransaction"),
                                    "abandoning a build during transaction destruction "
-                                   "(a live precommit binding may persist until remount)");
+                                   "(a live precommit binding may persist until the writer epoch changes)");
         }
     }
 }
@@ -467,7 +467,7 @@ void ContentAddressedTransaction::commit(const TransactionCommitOptionsVariant &
     /// Vanished [D5] refusal on a Vanished disk); a commit with nothing to publish is the DROP/rename path -- its ref mutations
     /// already applied immediately (`removeRecursive`/`dropNamespace`/`moveDirectory`), so it is a `Remove`
     /// that no-op-succeeds on a Vanished disk, which is what lets a vanished-disk table's DROP finish.
-    /// Both throw 668 while the backing is uncertain (transient / stopping).
+    /// Both throw the retry-later error while the backing is uncertain (transient / stopping).
     const CasOpClass commit_class = parts.empty() ? CasOpClass::Remove : CasOpClass::Write;
     if (metadata_storage.checkOpAdmitted(commit_class) == CasOpAdmission::TruthAbsent)
     {
@@ -1007,7 +1007,7 @@ std::unique_ptr<WriteBufferFromFileBase> ContentAddressedTransaction::writeFile(
 void ContentAddressedTransaction::createDirectory(const std::string &)
 {
     /// Object storage has no real directories (mirrors the plain-rewritable transaction) -- but this is a
-    /// Write: the gate makes it throw typed on a Vanished disk / 668 while uncertain, so a mutation is
+    /// Write: the gate makes it throw typed on a Vanished disk / retry-later while uncertain, so a mutation is
     /// never silently accepted against an erased or unreachable backing (rev.7 §1 previously-no-op site).
     metadata_storage.checkOpAdmitted(CasOpClass::Write);
 }
@@ -1028,7 +1028,7 @@ void ContentAddressedTransaction::removeDirectory(const std::string & path)
     /// duplicate that compensation machinery for no correctness gain.
     ///
     /// Remove gate (rev.7 §1): a Vanished disk answers no-op success (nothing to remove -- truth), so the
-    /// enclosing DROP completes; a transient / stopping disk throws 668 (the DROP re-queues).
+    /// enclosing DROP completes; a transient / stopping disk throws retry-later (the DROP re-queues).
     if (metadata_storage.checkOpAdmitted(CasOpClass::Remove) == CasOpAdmission::TruthAbsent)
         return;
 
@@ -1066,7 +1066,7 @@ void ContentAddressedTransaction::removeRecursive(const std::string & path, cons
 
     /// Remove gate (rev.7 §1): a Vanished disk answers no-op success (nothing to remove), so a
     /// vanished-disk table's DROP -- which reaches here via `removeSharedRecursive` -- completes; a
-    /// transient / stopping disk throws 668 (the DROP re-queues, drains after recovery/FORGET).
+    /// transient / stopping disk throws retry-later (the DROP re-queues, drains after recovery/FORGET).
     if (metadata_storage.checkOpAdmitted(CasOpClass::Remove) == CasOpAdmission::TruthAbsent)
         return;
 
@@ -1605,7 +1605,7 @@ void ContentAddressedTransaction::unlinkFile(const std::string & path, bool if_e
     /// deleted on its own; this behavior now closes that earlier fail-open.
     ///
     /// Remove gate (rev.7 §1): a Vanished disk answers no-op success; a transient / stopping disk
-    /// throws 668.
+    /// throws retry-later.
     if (metadata_storage.checkOpAdmitted(CasOpClass::Remove) == CasOpAdmission::TruthAbsent)
         return;
     if (auto r = routeOf(path); r && !r->file.empty())

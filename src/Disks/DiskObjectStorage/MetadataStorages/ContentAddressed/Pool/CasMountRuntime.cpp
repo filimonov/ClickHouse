@@ -53,7 +53,7 @@ int64_t wallClockNowSeconds()
         std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
-/// The end a terminal renewal latches. A GC fence of our own body is not an end: the self-remount
+/// The end a terminal renewal latches. A GC fence of our own body is not an end: the reacquire
 /// recovers from it.
 MountEnd mountEndOf(const MountRenewResult & result, MountLossReaction reaction)
 {
@@ -69,7 +69,7 @@ MountEnd mountEndOf(const MountRenewResult & result, MountLossReaction reaction)
         case MountSlotVerdict::SlotAbsent: return MountEnd::SlotAbsent;
         case MountSlotVerdict::SlotCorrupt: return MountEnd::SlotCorrupt;
         case MountSlotVerdict::FencedByGc:
-            /// The decommission pool impersonates a dead member; a remount would take its slot again.
+            /// The decommission pool impersonates a dead member; a reacquire would take its slot again.
             return reaction == MountLossReaction::FailDecommission ? MountEnd::FencedByGc : MountEnd::None;
         case MountSlotVerdict::Ours:
         case MountSlotVerdict::NotObserved:
@@ -729,13 +729,13 @@ bool CasMountRuntime::openAfterReacquire(uint64_t deadline_boot_ms)
     /// One step with the decision: a latch or an expiry between them must keep the fence closed.
     std::lock_guard lock(driver_mutex);
     if (workers_stop_requested || vanishedIntentPublished() || mountEnd() != MountEnd::None
-        || lifecycle() != PoolLifecycle::TransientNotLive)
+        || lifecycle() != PoolLifecycle::Reacquiring)
         return false;
     const uint64_t now = bootMsNow();
     if (deadline_boot_ms <= now || deadline_boot_ms - now <= conditionalReserveMs())
         return false;
     armMountFence(deadline_boot_ms);
-    noteRemounted();
+    noteReacquired();
     driver_cv.notify_all();
     return true;
 }
@@ -832,7 +832,7 @@ void CasMountRuntime::renewalLoop()
     {
         std::unique_lock lock(driver_mutex);
         driver_cv.wait(lock, [this] { return worker_loops_released; });
-        if (workers_stop_requested || remountTerminal())
+        if (workers_stop_requested || workersMustExit())
             return;
     }
 
@@ -844,7 +844,7 @@ void CasMountRuntime::renewalLoop()
         std::optional<ReacquireCertificate> owed;
         {
             std::unique_lock lock(driver_mutex);
-            if (workers_stop_requested || remountTerminal())
+            if (workers_stop_requested || workersMustExit())
                 return;
             owed = std::exchange(owed_reacquire, std::nullopt);
             if (!owed)
@@ -947,7 +947,7 @@ void CasMountRuntime::waitBeforeNextReacquireStep(uint64_t ms)
         return;
     }
     std::unique_lock lock(driver_mutex);
-    driver_cv.wait_for(lock, std::chrono::milliseconds(ms), [this] { return workers_stop_requested || remountTerminal(); });
+    driver_cv.wait_for(lock, std::chrono::milliseconds(ms), [this] { return workers_stop_requested || workersMustExit(); });
 }
 
 void CasMountRuntime::stopBackgroundWorkers()
@@ -1000,17 +1000,17 @@ void CasMountRuntime::setLifecycleForTest(PoolLifecycle lc)
 
 bool CasMountRuntime::noteLeaseLost()
 {
-    /// `Live -> TransientNotLive`, and nothing else. A compare-exchange FROM `Live` leaves every other
+    /// `Live -> Reacquiring`, and nothing else. A compare-exchange FROM `Live` leaves every other
     /// state untouched, so a terminal state is never downgraded and a repeated call is a no-op. This is
     /// the only transition the runtime renewal consumer performs, and it needs no lock because of that discipline.
     PoolLifecycle expected = PoolLifecycle::Live;
     if (pool_lifecycle.compare_exchange_strong(
-            expected, PoolLifecycle::TransientNotLive, std::memory_order_acq_rel, std::memory_order_acquire))
+            expected, PoolLifecycle::Reacquiring, std::memory_order_acq_rel, std::memory_order_acquire))
     {
         /// The `since` the lifecycle snapshot reports for `paused(fenced_by_gc)` — the wall-clock instant this
         /// became non-`Live`. Only the winning transition writes it (the guard above), so it is not re-stamped.
         lifecycle_since_wall_s.store(wallClockNowSeconds(), std::memory_order_release);
-        /// This transition can be reached while the renewal driver or remount serializer lock is
+        /// This transition can be reached while `driver_mutex` or the reacquire serializer lock is
         /// held. Trace-profile collection may allocate and enqueue a stack trace, so the lock-safe
         /// observability path must remain the direct atomic increment.
         ProfileEvents::incrementNoTrace(ProfileEvents::CASMountLeaseLost);
@@ -1019,11 +1019,11 @@ bool CasMountRuntime::noteLeaseLost()
     return false;
 }
 
-void CasMountRuntime::noteRemounted()
+void CasMountRuntime::noteReacquired()
 {
-    /// `TransientNotLive -> Live` on a successful reclaim. A compare-exchange FROM `TransientNotLive`
+    /// `Reacquiring -> Live` on a successful reclaim. A compare-exchange FROM `Reacquiring`
     /// never revives a terminal state ([D3]) and is a no-op if already `Live`.
-    PoolLifecycle expected = PoolLifecycle::TransientNotLive;
+    PoolLifecycle expected = PoolLifecycle::Reacquiring;
     if (pool_lifecycle.compare_exchange_strong(
             expected, PoolLifecycle::Live, std::memory_order_acq_rel, std::memory_order_acquire))
     {
@@ -1072,7 +1072,7 @@ void CasMountRuntime::enterVanished(const String & reason)
             lifecycle_since_wall_s.store(prepared_since_wall_s, std::memory_order_release);
 
             /// The driver mutex serializes terminal transitions, and no non-terminal transition can move
-            /// a `Vanished` state (their compare-exchanges are keyed on `Live`/`TransientNotLive`), so this
+            /// a `Vanished` state (their compare-exchanges are keyed on `Live`/`Reacquiring`), so this
             /// value is absorbing.
             pool_lifecycle.store(PoolLifecycle::VanishedForgotten, std::memory_order_release);
             terminal_state_published.store(true, std::memory_order_release);
@@ -1092,11 +1092,10 @@ void CasMountRuntime::enterVanished(const String & reason)
 
 void CasMountRuntime::publishVanishedIntent()
 {
-    /// spec §5 step 1: publish the terminal-intent latch WITHOUT settling the state. The terminal consumer
-    /// and the remount loop both consult `vanished_intent` at their step boundaries, so
-    /// this stops new remount scheduling and makes an in-flight remount loop bail at its next step —
-    /// bounding FORGET's subsequent joins to one step + one backend timeout. The state store + WARN follow
-    /// in `enterVanished` (step 6). Idempotent.
+    /// FORGET's first step: publish the terminal-intent latch WITHOUT settling the state. The renewal thread and
+    /// the reacquire consult `vanished_intent` at their step boundaries, so an in-flight reacquire abandons
+    /// at its next stage — bounding FORGET's subsequent join to one stage + one backend timeout. The state
+    /// store + WARN follow in `enterVanished` (step 6). Idempotent.
     {
         std::lock_guard lock(driver_mutex);
         vanished_intent.store(true, std::memory_order_release);

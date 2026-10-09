@@ -47,10 +47,9 @@ every `CAS*` name, is on [Antalya profile events and metrics](/antalya/metrics-a
 | `CASGCMetaWriteAnomaly` | Zero | The bounded GC metadata pool failed an operation; backend or pool pressure may delay metadata convergence |
 | `CASRefRollbackBestEffortDropFailed` | Zero | A rollback cleanup drop hit a backend failure; refs may remain live and GC may be delayed on that namespace |
 
-### Mount renewal and remount counters {#mount-renewal-remount-counters}
+### Mount renewal counters {#mount-renewal-remount-counters}
 
-These counters separate physical renewal work, logical renewal outcomes, and whole-chain remount
-attempts. They are process-global counters, not tagged metrics; compare deltas over the incident
+These counters separate physical renewal work and logical renewal outcomes. They are process-global counters, not tagged metrics; compare deltas over the incident
 window and correlate them with the `server_root_id` in `system.cas_log`.
 
 | Metric | Counting dimension | Interpretation |
@@ -59,15 +58,11 @@ window and correlate them with the `server_root_id` in `system.cas_log`.
 | `CASMountRenewalRetries` | One per physical renewal `PUT` after the first in the same logical renewal | Positive growth shows in-period retry, not a later cadence beat |
 | `CASMountRenewalResolved` | One per logical renewal proved committed by an exact resolving `GET` | A response was ambiguous, but exact bytes and `write_attempt_id` proved the write |
 | `CASMountRenewalRecovered` | One per logical renewal committed after a retry or exact resolving `GET` | Recovered object-store blips that retained the existing mount incarnation |
-| `CASMountRenewalDeadlineExceeded` | One per bounded logical renewal (startup or remount re-anchor) stopped by the external lease-safety deadline | Growth means a startup or remount renewal found too little confirmed lease left; the background renewal never counts here |
-| `CASRemountAttempts` | One per invocation of the existing whole-chain remount attempt | Includes both successful and failed attempts |
-| `CASRemountSucceeded` | One per whole-chain attempt that restored `Live` under a fresh writer epoch | Must be a subset of `CASRemountAttempts` |
-| `CASRemountFailed` | One per whole-chain attempt that returned without restoring `Live` | Includes a named step exception or a step that returned transiently |
+| `CASMountRenewalDeadlineExceeded` | One per bounded logical renewal (the startup re-anchor) stopped by the external lease-safety deadline | Growth means a startup renewal found too little confirmed lease left; the background renewal never counts here |
 
-`CASMountLeaseLost` complements those eight counters. It increments exactly once per operational
-`Live -> TransientNotLive` recovery generation: either the initiating external loss or the first
-ordinary terminal renewal consumer owns it. A parked terminal result and shutdown do not duplicate
-the count.
+`CASMountLeaseLost` complements those five counters. It increments when a terminal renewal moves the
+mount out of `Live`, and when a loss end is latched, so one loss can count twice. Shutdown and
+`SYSTEM CAS FORGET` do not count.
 
 To inspect the current cumulative values, including counters that have never incremented:
 
@@ -76,8 +71,7 @@ SELECT event, value
 FROM system.events
 WHERE event IN (
     'CASMountRenewalAttempts', 'CASMountRenewalRetries', 'CASMountRenewalResolved',
-    'CASMountRenewalRecovered', 'CASMountRenewalDeadlineExceeded', 'CASMountLeaseLost',
-    'CASRemountAttempts', 'CASRemountSucceeded', 'CASRemountFailed')
+    'CASMountRenewalRecovered', 'CASMountRenewalDeadlineExceeded', 'CASMountLeaseLost')
 SETTINGS system_events_show_zero_values = 1;
 ```
 
@@ -88,14 +82,13 @@ story — with detail keys `server_root_id`, `writer_epoch`, `seq`, a shortened 
 `unresolved_reason`, `deadline_source`, and `stop_cause` keys no longer exist; `classification`
 carries what they used to say between them (see [debugging](/antalya/cas/operations/debugging#trace-renewal-remount)
 for the full value list). Ordinary first-attempt
-success produces no row. Every `mount_remount` attempt produces one final row with outcome `ok` or
-`failed` and details `attempt_no`, `step`, `server_root_id`, optional `writer_epoch`, and optional
-`error`.
+success produces no row. A reacquire that takes the slot produces one `mount_claim` row with outcome
+`reacquire`.
 
 Default-level text logging is bounded per logical operation: the first ambiguous transition may
 emit one retry `WARNING`, followed by one recovery `INFO` or final fence `WARNING`; individual
-physical retries remain `DEBUG`. Each whole-chain remount attempt emits one final default-level line
-with its attempt number and last/current step. Use the structured rows for correlation instead of
+physical retries remain `DEBUG`. A reacquire logs one `INFO` line when it starts and one when it
+opens, and one `WARNING` the first time a stage cannot finish. Use the structured rows for correlation instead of
 counting backend-attempt log lines.
 
 Two counter-reading caveats that apply to `system.events`-backed metrics generally, not only `CAS`

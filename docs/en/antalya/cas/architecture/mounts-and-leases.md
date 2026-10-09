@@ -88,10 +88,10 @@ watermark — there is no separate watermark object. `MountLease` fields: `serve
   its own start plus the lease; a retry, `GET`, response timestamp, or wall-clock step never moves
   it. The background renewal has no deadline of its own: it retries one body every 0.8–1.2 s (measured from
   the start of the previous attempt) until the store answers about the slot, or until a stop, a
-  remount park request, a lost fence or a pool leaving `Live` ends it. A
+  lost fence or a pool leaving `Live` ends it. A
   refusal (`AccessDenied`, `MalformedXML`, …) sends the same body again, one renewal period later for
-  a credential refusal. The startup re-anchor and the remount re-anchor stay bounded by the last
-  confirmed lease minus the safety margin.
+  a credential refusal. The startup re-anchor stays bounded by the last confirmed lease minus the
+  safety margin.
 - **Cadence.** The runtime normally starts a logical renewal every `cas_mount_renew_period_ms` (default
   10 s), with TTL `cas_mount_lease_ttl_ms` (default 30 s, TTL/3 renewal ratio). The next beat is anchored
   at the committed body's pre-I/O BOOTTIME start. A slow recovery therefore causes an immediate
@@ -116,15 +116,16 @@ terminal because that request may still land.
 remaining lease cannot cover them, and the lease expires at its deadline. `system.cas_mounts` then
 shows `lifecycle = 'paused'` and `lifecycle_reason = 'lease_expired'`, and the server logs one
 `WARNING`: `CAS mount lease of '<server_root_id>' expired <N> ms ago under writer_epoch <E>`. Nothing
-is remounted. The first confirmed renewal whose start plus the lease is still ahead resumes writes
+is reacquired. The first confirmed renewal whose start plus the lease is still ahead resumes writes
 under the same `writer_epoch`; a renewal confirmed later than that leaves writes paused, and the next
 one starts at once.
 
 After the renewer call returns, `CasMountRuntime` consumes the result. A terminal result trips the
 local fence (latches `lost`, bumps the fence generation, moves the in-process runtime to
-`TransientNotLive`). A GC fence of our own body is then reacquired by the renewal thread (see
-[below](#gc-fence-reacquire)); any other terminal result that is not a loss latches one self-remount
-generation. A confirmed foreign/successor or
+`Reacquiring`). A GC fence of our own body is then reacquired by the renewal thread (see
+[below](#gc-fence-reacquire)). A stop or `SYSTEM CAS FORGET` ends the renewal thread; a
+`MEMORY_LIMIT_EXCEEDED`, which the thread's memory guard should prevent, ends the thread with the fence
+closed; any other terminal result that is not a loss ends the mount as `local_defect`. A confirmed foreign/successor or
 same-pair conflict remains a typed fail-closed error; it is never adopted. A real fence still costs
 only an epoch: the reacquire takes the slot under a fresh one, retrying about once a second with no
 attempt bound. This is the
@@ -223,52 +224,44 @@ The in-process `PoolLifecycle` runtime, by contrast, is a literal enum (`CasMoun
 stateDiagram-v2
     [*] --> Live: Pool constructed, fence unarmed
     Live --> Live: mountWritable arms the fence
-    Live --> TransientNotLive: renewal failure, tripMountLost, lost=true
-    TransientNotLive --> Live: the reacquire or a self-remount opens a fresh epoch
-    TransientNotLive --> TransientNotLive: a step fails transiently and is retried
-    TransientNotLive --> IdentityLost: a self-remount finds pool meta and owner both authoritatively absent
-    TransientNotLive --> VanishedReplaced: a self-remount observes a foreign pool_id
+    Live --> Reacquiring: renewal failure, tripMountLost, lost=true
+    Reacquiring --> Live: the reacquire opens a fresh epoch
+    Reacquiring --> Reacquiring: a step fails transiently and is retried
     Live --> VanishedForgotten: SYSTEM CAS FORGET
+    Reacquiring --> VanishedForgotten: SYSTEM CAS FORGET
     Live --> Stopping: the slot is lost, see below
-    TransientNotLive --> Stopping: another incarnation, or the reacquire finds pool_identity_lost or ledger_fault
-    IdentityLost --> [*]
-    VanishedReplaced --> [*]
+    Reacquiring --> Stopping: another incarnation, or the reacquire finds pool_identity_lost or ledger_fault
     VanishedForgotten --> [*]
     Stopping --> [*]
 ```
 
-`IdentityLost`, `VanishedReplaced`, `VanishedForgotten` and `Stopping` are terminal and absorbing, with
-deliberately no auto-revive — an identity disappearing under a live mount is an operator-level event.
-The remount thread self-exits in all four. The GC scheduler self-exits in the first three; on
-`Stopping` it keeps running until the server shuts down or the disk is torn down.
+`VanishedForgotten` and `Stopping` are terminal and absorbing. The renewal thread exits in both. The
+GC scheduler exits on `VanishedForgotten`; on `Stopping` it keeps running until the server shuts down
+or the disk is torn down.
 
 ## Mount, unmount, crash {#mount-lifecycle}
 
 **Writable open** runs in a strict order: bootstrap-residual proof, capability probe under a
 random per-mount prefix, pool-meta create-or-validate, `validateServerRootId`, owner claim,
 `allocateWriterEpoch`, mount claim (one conditional write; the renewer starts from its confirmed
-body), arm the fence, then create and release the runtime-owned renewal and remount workers before
-the writable pool becomes externally visible. The lease runs from the claim's start; if too little
+body), arm the fence, then create and release the runtime-owned renewal thread before the writable
+pool becomes externally visible. The lease runs from the claim's start; if too little
 is left to arm the fence, one synchronous renewal re-anchors it. That renewal needs two attempt
 envelopes before the lease-safe deadline, or the start fails. Without the background renewal worker
 the fence asks for the same two envelopes, so a start whose claim needs that renewal fails unless
 exactly two envelopes remain.
-Failure to construct either worker joins the partial pair, closes the fence, and fails the writable
-open. No incident path constructs a thread.
+Failure to construct the renewal thread closes the fence and fails the writable open. No incident path
+constructs a thread.
 
-The renewal and remount workers are separate and long-lived under one stable `CasMountRuntime`.
-`scheduleRemount` increments a requested-generation latch and wakes the persistent remount worker,
-including while an older generation is active. Before renewer replacement, remount requests
-`ParkRequested` and waits for the renewal driver to report `Parked`, which proves that no renewer call
-is in flight. A successful remount handles only its snapshotted generation; a newer request is
-processed before renewal resumes.
+One long-lived renewal thread renews the lease and runs the reacquire. One renewal holds the renewer
+at a time, and the renewer is never replaced while a renewal is in flight.
 
 The renewal worker does not fail on the server memory limit. Its allocations still count toward
 `max_server_memory_usage`, but a server above that limit keeps renewing its mount lease. A
-`std::bad_alloc` still ends the renewal. Conditional writes upload on the thread that issues them. Their
+`std::bad_alloc` still ends the mount, as `local_defect`. Conditional writes upload on the thread that issues them. Their
 write buffer opens at the object's size, capped at 1 MiB, and grows for a larger object.
 
-**Clean unmount:** stop and join both persistent workers, drain the ref lanes and wait for snapshot
+**Clean unmount:** stop and join the renewal thread, drain the ref lanes and wait for snapshot
 publishes, then `release` on an `Active` renewer writes the farewell (`expires_at_ms` expired,
 `min_active_build_sequence = UINT64_MAX`), so a successor reclaims at once. The write is conditional on
 this mount's token, so it is written after the lease expired too; a moved slot refuses it. No farewell is
@@ -364,7 +357,7 @@ row with `listing_error` set.
 | `writer_epoch`, `renewal_sequence`, `started_at`, `expires_at`, `min_active_build_sequence`, `gc_fenced` | lease state (`DateTime64(3)` columns; the millisecond-integer field names live only in the internal `MountLease` struct and the on-disk body) |
 | `state` | one of `live`, `expired`, `terminated`, `fenced`, `corrupt` |
 | `is_leader`, `pending_reclaim`, `last_success_age_seconds`, `wedged_namespace_count` | GC health, process-local; **`NULL` on every peer row** — a process-local fact must never be stamped onto another server's row |
-| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `fenced_by_gc`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `stopping` (`lifecycle_reason` as in [the table above](#slot-lost)), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began, for a pause from the lease clock when the current reason's threshold was crossed (for `lease_expired`, the lease deadline); `NULL` while live |
+| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `fenced_by_gc`), `closed` (`forgotten`), `stopping` (`lifecycle_reason` as in [the table above](#slot-lost)), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began, for a pause from the lease clock when the current reason's threshold was crossed (for `lease_expired`, the lease deadline); `NULL` while live |
 | `renewal_in_progress`, `renewal_attempts`, `last_renewal_error` | the running (or last) lease renewal: conditional `PUT`s sent so far and the last failed request, updated per attempt; **`NULL` on every peer row** |
 
 The lifecycle snapshot is I/O-free and ungated, so a not-live, never-started, or vanished disk

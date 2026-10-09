@@ -99,10 +99,10 @@ than `live` (`expired`, `terminated`, `fenced`, `corrupt`) on a member that shou
 thing to check before assuming a lease problem is this node's own. `is_leader` and the other
 process-local columns are `NULL` on every peer's row; run the query on that peer to see its own view.
 
-### Trace a renewal through remount {#trace-renewal-remount}
+### Trace a renewal through a reacquire {#trace-renewal-remount}
 
-Nontrivial mount recovery is represented by aggregate `watermark_renew` and `mount_remount` rows,
-not by one warning per physical request. Query both event types in one timeline:
+Nontrivial mount recovery is represented by aggregate `watermark_renew` rows and the reacquire's
+`mount_claim` row, not by one warning per physical request. Query both event types in one timeline:
 
 ```sql
 SELECT event_time_microseconds, event_type, outcome, reason,
@@ -112,12 +112,10 @@ SELECT event_time_microseconds, event_type, outcome, reason,
        detail['write_attempt_id'] AS write_attempt_id,
        detail['attempts_sent'] AS attempts_sent,
        detail['classification'] AS classification,
-       detail['attempt_no'] AS remount_attempt,
-       detail['step'] AS remount_step,
-       detail['error'] AS error
+       detail['holder_epoch'] AS fenced_epoch
 FROM system.cas_log
 WHERE disk_name = 'cas'
-  AND event_type IN ('watermark_renew', 'mount_remount')
+  AND event_type IN ('watermark_renew', 'mount_claim')
 ORDER BY event_time_microseconds;
 ```
 
@@ -133,15 +131,14 @@ row followed by a `recovered` one — and the older `unresolved_reason`, `deadli
   says how: `committed_by_read` means an exact `GET` proved a landed request; `committed_after_retry`
   means a later identical physical `PUT` completed and the response itself proved it.
 - `outcome = 'failed'` carries the decisive `classification`: `external_lease_deadline` (a
-  startup or remount re-anchor only: the confirmed lease's own safety margin, not the request policy, ran out first — check object-store
-  latency or `BOOTTIME` advancement before anything else), `request_deadline` (a startup or
-  remount re-anchor only: the ninety-second request policy exhausted first), `unresolved` (every attempt was ambiguous and never settled by
+  startup re-anchor only: the confirmed lease's own safety margin, not the request policy, ran out first — check object-store
+  latency or `BOOTTIME` advancement before anything else), `request_deadline` (a startup
+  re-anchor only: the ninety-second request policy exhausted first), `unresolved` (every attempt was ambiguous and never settled by
   the time the operation gave up), `conflict` (an exact resolve read found another body — a
   same-pair twin, a GC-fenced body, a successor epoch, or a foreign holder), `cancelled` (a
-  renewal in flight was cancelled by shutdown or a remount park request; expected during graceful
-  shutdown), `fence_or_lifecycle_lost` (another local fence loss or a terminal lifecycle transition
+  renewal in flight was cancelled by shutdown; expected during graceful shutdown), `fence_or_lifecycle_lost` (another local fence loss or a terminal lifecycle transition
   closed admission while the operation was active), `deterministic_failure` (a local
-  failure, or, for a startup or remount re-anchor, a store answer proving the write never applied;
+  failure, or, for a startup re-anchor, a store answer proving the write never applied;
   the background renewal sends a refused write again), and `vanished` (an exact resolve read proved the mount
   slot absent — the pool directory was removed or renamed out of band, or a decommission raced the
   renewal). `terminal_unclassified` means the renewal terminated through a path that assigned no
@@ -149,15 +146,16 @@ row followed by a `recovered` one — and the older `unresolved_reason`, `deadli
   condition. Do not collapse these into a generic timeout — the action
   differs by classification, and only `external_lease_deadline` and `request_deadline` are about a
   deadline at all.
-- A following `mount_remount` row names the whole-chain `attempt_no` and final `step`. An `ok` row
-  restored `Live` under the reported fresh `writer_epoch`; a `failed` row's `step` and optional
-  `error` identify where that whole-chain attempt stopped.
+- A `conflict` that found our own body fenced by GC is followed by a `mount_claim` row with
+  `outcome = 'reacquire'` once the reacquire takes the slot under a fresh `writer_epoch`. The server log
+  says `writer_epoch <E> was fenced by a GC leader (possibly this server's); reacquiring the mount slot`,
+  then `reacquired under writer_epoch <E'> (was <E>)`, or `the reacquire after a GC fence stopped at
+  stage '<stage>' (<why>); retrying` while a stage cannot finish.
 
 Use deltas of the mount counters from
 [monitoring](/antalya/cas/operations/monitoring#mount-renewal-remount-counters) to check completeness:
-a recovered blip increments renewal work/recovery but not `CASMountLeaseLost` or remount counters;
-a terminal operational loss increments `CASMountLeaseLost` once, then each whole-chain attempt
-increments exactly one of `CASRemountSucceeded` or `CASRemountFailed`.
+a recovered blip increments renewal work/recovery but not `CASMountLeaseLost`; a terminal operational
+loss increments `CASMountLeaseLost`.
 
 ## SQL commands for live diagnosis {#sql-commands}
 
@@ -218,7 +216,7 @@ table for the full command list.
 ### SYSTEM CAS FORGET {#sql-forget}
 
 Node-local operator assertion that a disk is permanently gone — the "fire marshal" verb for a stuck
-disk (a transient/`IdentityLost` pool, an operator-asserted decommission):
+disk (a paused pool, an operator-asserted decommission):
 
 ```sql
 SYSTEM CAS FORGET cas;

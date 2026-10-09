@@ -37,7 +37,6 @@ MountLease lease(UInt128 uuid, uint64_t epoch, uint64_t seq, bool fenced, uint64
             .expires_at_ms = 1, .min_active_build_sequence = min_active, .gc_fenced = fenced,
             .write_attempt_id = UInt128(100 + seq)};
 }
-/// What a GC fence-out does: keep the body, set `gc_fenced`, bump `seq`.
 /// Counts writes of the mount slot; `stall_ms` moves the boot clock once, before the next one lands;
 /// `hook` replaces the next one. While `refuse_mount_reads` is positive, a read of the slot is denied.
 class MountWriteClock : public InMemoryBackend

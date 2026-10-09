@@ -28,45 +28,37 @@ tools.
 | Stale-looking part metadata after an out-of-band change to the pool | The part-folder view cache may be serving a retained (not re-validated) view | Set the disk-level `cas_part_folder_cache_bytes = 0` to disable view retention and `cas_manifest_decode_cache_bytes = 0` to make every manifest read fetch the body, then run `fsck`; both are diagnostic kill switches, not steady-state settings |
 | A wide merge (many thousands of columns) fails with a port-exhaustion error from the network layer | Each column in a wide part can cost a separate object-store operation in one merge, and a very wide part can issue on the order of the column count in requests, exhausting local ephemeral TCP ports under load | Reduce concurrent merge parallelism on that table, or increase the host's ephemeral port range; this is a general high-fan-out-merge limit, not specific to content addressing |
 
-## Mount renewal and remount decision flow {#mount-renewal-remount-flow}
+## Mount renewal decision flow {#mount-renewal-remount-flow}
 
 Start with the `watermark_renew` timeline described in
 [debugging](/antalya/cas/operations/debugging#trace-renewal-remount), then follow the matching case:
 
 1. **Recovered blip.** A single `outcome = 'recovered'` row (there is no separate `retrying` row to
    look for) with `classification` of `committed_by_read` or `committed_after_retry`;
-   `CASMountRenewalRecovered` rises while `CASMountLeaseLost` and all remount counters stay flat. No
+   `CASMountRenewalRecovered` rises while `CASMountLeaseLost` stays flat. No
    intervention is needed unless the rate is sustained; investigate backend throttling/latency before
    the blips consume the lease budget.
-2. **External lease-safety exhaustion.** Only a bounded renewal ends this way: the startup re-anchor or
-   the remount re-anchor. The background renewal keeps retrying; a long outage shows as
+2. **External lease-safety exhaustion.** Only a bounded renewal ends this way: the startup re-anchor.
+   The background renewal keeps retrying; a long outage shows as
    `lifecycle_reason = 'lease_expired'` and resumes under the same `writer_epoch`. The failed row has
    `classification = 'external_lease_deadline'` and `CASMountRenewalDeadlineExceeded` rises;
    `CASMountLeaseLost` does not. The runtime refused to claim authority beyond the last confirmed
-   lease. Check object-store latency and BOOTTIME/suspend history. At startup the disk does not start;
-   during a remount the remount loop retries. `classification = 'request_deadline'` is the sibling case
-   for the same two renewals: the ninety-second request policy exhausted first rather than the lease's
-   own safety margin.
+   lease. Check object-store latency and BOOTTIME/suspend history. The disk does not start.
+   `classification = 'request_deadline'` is the sibling case for the same renewal: the ninety-second
+   request policy exhausted first rather than the lease's own safety margin.
 3. **Cancellation.** `classification = 'cancelled'` after a sent request is terminal and suppresses a
    clean farewell because the request may still land. Cancellation before any request remains
    `Active` and emits no failed aggregate row; during graceful shutdown that is the expected
    clean-release path.
 4. **Confirmed conflict.** `classification = 'conflict'` means exact resolution found another body;
    inspect `server_root_id`, `writer_epoch`, `seq`, and `write_attempt_id`. A GC fence of our own body
-   remounts; same-pair twins, successor epochs, and foreign holders stop the server (see
+   is reacquired; same-pair twins, successor epochs, and foreign holders stop the server (see
    [`server stop requested`](#server-stop-requested)). Do not delete or rewrite the mount key by hand.
-5. **Fence or lifecycle loss.** `classification = 'fence_or_lifecycle_lost'` means another local loss,
-   remount park request, or terminal lifecycle closed admission while the operation was active. A
-   parked result reuses the already-requested recovery generation and must not double-count
-   `CASMountLeaseLost`. `classification = 'unresolved'` is a related but distinct case: every attempt
+5. **Fence or lifecycle loss.** `classification = 'fence_or_lifecycle_lost'` means another local loss
+   or a terminal lifecycle closed admission while the operation was active. `classification = 'unresolved'` is a related but distinct case: every attempt
    stayed ambiguous and the operation gave up without ever settling one way or the other.
-6. **Whole-chain remount failure.** Read the following `mount_remount` row. Its `attempt_no`, `step`,
-   and optional `error` identify the failed owner/catalog/epoch/claim/install/quiescence/fence step.
-   The current protocol retries the whole chain with bounded backoff; it does not preserve per-step
-   progress. Repeated failure at the same step is the actionable signal.
-
 The default-level log policy is intentionally bounded: one warning on the first transition to retry,
-then one recovery info or terminal fence warning, plus one final line per whole-chain remount attempt.
+then one recovery info or terminal fence warning.
 Use `system.cas_log` and counter deltas to reconstruct the incident; `DEBUG` contains individual
 physical retries when that extra transport detail is necessary.
 

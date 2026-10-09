@@ -281,7 +281,7 @@ std::vector<uint8_t> Pool::refreshAdmittedAlgos()
 }
 
 /// ==== mount-runtime delegates ==== The mount lease renewer, the local write
-/// fence, the per-server build watermark, the live-incarnation epoch, and the self-remount recovery
+/// fence, the per-server build watermark, the live-incarnation epoch, and the renewal
 /// thread live in the `mount_runtime` member (Pool/CasMountRuntime.h); Pool keeps these thin public
 /// forwarders so the wiring, PartWriteTxn, Gc, the ref-ledger callbacks, and every test call site are unchanged.
 uint64_t Pool::bootMs()
@@ -326,7 +326,7 @@ String Pool::lifecycleReasonDetail(PoolLifecycle lc) const
     switch (lc)
     {
         case PoolLifecycle::Live:
-        case PoolLifecycle::TransientNotLive:
+        case PoolLifecycle::Reacquiring:
             return {};
         case PoolLifecycle::Stopping:
             return describeMountEnd(mount_runtime.mountEnd(), config.mount_loss_reaction, config.disk_name,
@@ -350,11 +350,11 @@ String Pool::lifecycleReasonDetail(PoolLifecycle lc) const
 void Pool::throwIfLifecycleTerminal() const
 {
     /// The typed error carries the sub-state in its message so a wrong diagnosis is impossible from the
-    /// first error line. `Live`/`TransientNotLive` proceed here — the transient class is
+    /// first error line. `Live`/`Reacquiring` proceed here — the transient class is
     /// still gated only by the write fence; the destructive gate additionally requires the other
     /// lifecycle proofs.
     const PoolLifecycle lc = mount_runtime.lifecycle();
-    if (lc == PoolLifecycle::Live || lc == PoolLifecycle::TransientNotLive)
+    if (lc == PoolLifecycle::Live || lc == PoolLifecycle::Reacquiring)
         return;
     /// Retry-later, not terminal: a terminal error lets the part checker detach parts while the server stops.
     if (lc == PoolLifecycle::Stopping)
@@ -606,7 +606,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     ///    non-empty subtree is CORRUPTED_DATA; a fresh empty root is claimed.
     /// Every step of this protocol runs on the OPEN plane. These are bootstrap-control writes: they
     /// establish the very right to write, and the mount fence they would otherwise be gated on is
-    /// either unarmed (a first open) or latched lost (a self-remount, which could then never reclaim).
+    /// either unarmed (a first open) or latched lost (a reacquire, which could then never reclaim).
     CasOperation owner_op = store->gc_requests.admit();
     claimOwnerOrThrow(owner_op, store->pool_layout, srid, our_uuid, observe_catalog);
 
@@ -853,10 +853,10 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     }
     store->mount_runtime.setLiveWriterEpoch(writer_epoch);
     store->armMountFence(leaseDeadline(claim_anchor_boot_ms, ttl_ms_u));
-    /// Gate the two persistent runtime workers with `background_watermark`: they run only in production
+    /// Gate the renewal thread with `background_watermark`: it runs only in production
     /// (`background_watermark` = context != nullptr && !read_only), never in unit tests — which
     /// drive `renewWatermarkOnce` explicitly and rely on the armed sub-TTL deadline, never on a loop.
-    /// The synchronous renewer is still started above; only the worker pair is conditional. The merged
+    /// The synchronous renewer is still started above; only the thread is conditional. The merged
     /// heartbeat renews at `mount_renew_period` — one beat now renews the lease and the floor.
     if (store->config.background_watermark)
         store->mount_runtime.startBackgroundWorkers(store->config.mount_renew_period);
@@ -964,7 +964,7 @@ Pool::~Pool()
         }
     };
 
-    /// 1. Stop and join both persistent mount-runtime workers before draining or releasing the renewer.
+    /// 1. Stop and join the renewal thread before draining or releasing the renewer.
     guarded([this]
     {
         if (config.teardown_phase1_throw_for_test)
@@ -1105,7 +1105,7 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
              && "SYSTEM CAS FORGET must not run on a CAS pool thread (self-join deadlock)");
 
     /// Idempotent: a pool a second FORGET finds `Vanished` is already the terminal truth — nothing to force,
-    /// and re-running the teardown would double-retire the renewer. `TransientNotLive`/`Live`/`Stopping`
+    /// and re-running the teardown would double-retire the renewer. `Reacquiring`/`Live`/`Stopping`
     /// all proceed (FORGET is their escape hatch). Reading `isVanished()` here without the lock is safe:
     /// only a terminal transition sets it, and terminal states are absorbing.
     if (mount_runtime.isVanished())
@@ -1117,17 +1117,17 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
 
     /// (2) Trip the local fence — the deliberate decommission act (allowed on a live disk). No durable-
     /// effect write admits past this point (the fence-generation gate), and a live pool moves to
-    /// `TransientNotLive`, so store-class access already fails loud during the teardown window below.
+    /// `Reacquiring`, so store-class access already fails loud during the teardown window below.
     mount_runtime.tripMountLost();
 
     /// (3+4) Stop the GC scheduler (clears its leadership and JOINS its worker + heartbeat threads) BEFORE
     /// the Pool-side teardown, so no round writes `gc/state` under a disk we are decommissioning. Injected
     /// because the scheduler is owned above the Pool (a no-op in unit / read-only / clickhouse-disks
-    /// contexts that run none). Runs OUTSIDE `remount_mutex` (spec §3 join discipline).
+    /// contexts that run none). Runs OUTSIDE `reacquire_mutex` (spec §3 join discipline).
     if (stop_and_join_gc)
         stop_and_join_gc();
 
-    /// (5a) Stop and join the renewal thread outside `remount_mutex`.
+    /// (5a) Stop and join the renewal thread outside `reacquire_mutex`.
     mount_runtime.stopBackgroundWorkers();
 
     /// (5b) Drain (bounded by one attempt's budget + safety margin) to learn whether a clean farewell is
@@ -1135,7 +1135,7 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
     ///
     /// (3+5c) Retire the merged heartbeat: a clean-release farewell ONLY if nothing in `FarewellBlockers`
     /// is set, otherwise publish NO terminal marker so the lease expires by observation (never an unearned
-    /// clean farewell). The workers were already joined above. Outside `remount_mutex`.
+    /// clean farewell). The workers were already joined above. Outside `reacquire_mutex`.
     mount_runtime.finishTeardown(drainForShutdown());
 
     /// The pool object OUTLIVES this FORGET (it stays registered, `Vanished(forgotten)`, until DROP/restart),
@@ -1144,12 +1144,11 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
     /// here must not be released again. `renewerReset` is safe now: the renewal thread is joined.
     mount_runtime.renewerReset();
 
-    /// (6) Publish the terminal state + WARN, under remount serialization — matching the natural-transition
-    /// contract. Every pool thread is already joined, so taking `remount_mutex` here cannot self-deadlock.
+    /// (6) Publish the terminal state + WARN, under reacquire serialization. Every pool thread is already joined, so taking `reacquire_mutex` here cannot self-deadlock.
     /// `reason` is the [D5] message (with the operator's decommission timestamp) that
     /// `throwIfLifecycleTerminal` surfaces to store-class callers.
     {
-        std::lock_guard g(remount_mutex);
+        std::lock_guard g(reacquire_mutex);
         mount_runtime.enterVanished(reason);
     }
 }
@@ -1293,9 +1292,9 @@ std::optional<ReacquireOutcome> Pool::reacquireCloseOldEpoch(ReacquireStep & ste
     /// fenced epoch outlives it.
     mount_runtime.tripMountLost();
     ref_ledger.cancelRecoveriesAndAwaitQuiescence();
-    ref_ledger.quiesceRefTablesForRemount();
-    if (config.remount_quiesce_hook_for_test)
-        config.remount_quiesce_hook_for_test();
+    ref_ledger.quiesceRefTablesForReacquire();
+    if (config.reacquire_quiesce_hook_for_test)
+        config.reacquire_quiesce_hook_for_test();
     step.stage = ReacquireStage::ProbeIdentity;
     return std::nullopt;
 }
@@ -1490,7 +1489,7 @@ ReacquireOutcome Pool::reacquireOnce(ReacquireStep & step)
     ReacquirePass pass{.runtime = mount_runtime};
     ReacquireOutcome outcome = ReacquireOutcome::Retry;
     {
-        std::lock_guard serialize(remount_mutex);
+        std::lock_guard serialize(reacquire_mutex);
         while (true)
         {
             if (!mount_runtime.reacquireLive())
@@ -1910,7 +1909,7 @@ void Pool::setCasRetrySleepForTest(std::function<void(uint64_t)> sleep_fn)
     ref_ledger.setCasRetrySleepForTest(sleep_fn);
     /// `CasRequests` falls back to the engine's plain sleep for an empty argument -- which is neither
     /// the mount plane's nor the open plane's default. Re-install both, so clearing the seam cannot
-    /// leave a parked renewal held for a whole capped backoff, or the open plane deaf to a teardown.
+    /// leave a stopping renewal held for a whole capped backoff, or the open plane deaf to a teardown.
     gc_requests.setSleepFnForTest(sleep_fn ? sleep_fn : openPlaneSleepFn());
     mount_requests.setSleepFnForTest(sleep_fn ? std::move(sleep_fn) : mountPlaneSleepFn());
 }

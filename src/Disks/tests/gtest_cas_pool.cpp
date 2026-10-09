@@ -1510,7 +1510,7 @@ TEST(CASPool, WriteFenceUsesInjectedBootClock)
     EXPECT_FALSE(store->mayMutate());
 }
 
-/// ==== self-remount after GC fence-out (liveness counterpart of the fence-out safety rule) ====
+/// ==== reacquire after GC fence-out (liveness counterpart of the fence-out safety rule) ====
 
 namespace
 {
@@ -1530,7 +1530,7 @@ void fenceOutMount(DB::Cas::Backend & backend, const String & mount_key)
 
 }
 
-TEST(CASPoolRemount, OldEpochBuildFailsClosedAfterRemount)
+TEST(CASMountWorker, OldEpochBuildFailsClosedAfterRemount)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = DB::Cas::tests::openPoolForTest(backend);
@@ -1556,7 +1556,7 @@ TEST(CASPoolRemount, OldEpochBuildFailsClosedAfterRemount)
 /// Cutoff-only fencing: with no renewals and no competing incarnation at all, crossing the armed
 /// deadline on the local BOOTTIME clock alone must fence a mount closed; the plain boot-clock cutoff
 /// fences unconditionally.
-TEST(CASMountRemount, CutoffFencesWithoutRenewals)
+TEST(CASMountLeaseCutoff, CutoffFencesWithoutRenewals)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     /// Held in a shared atomic, not a plain local: this test mutates the clock below, and the Pool can
@@ -1909,12 +1909,12 @@ void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behav
     EXPECT_EQ(successor_after_teardown->bytes, successor_before_teardown->bytes);
 }
 
-TEST(CASPoolRemount, SameRuntimeReentrantForeignConflictSinkCannotReplaceTerminalOutcome)
+TEST(CASMountWorker, SameRuntimeReentrantForeignConflictSinkCannotReplaceTerminalOutcome)
 {
     verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior::ReenterSameRuntime);
 }
 
-TEST(CASPoolRemount, ThrowingForeignConflictSinkCannotReplaceTerminalOutcome)
+TEST(CASMountWorker, ThrowingForeignConflictSinkCannotReplaceTerminalOutcome)
 {
     verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior::Throw);
 }
@@ -2512,7 +2512,7 @@ TEST(CASPool, StartupArmRedoesLeaseWriteWhenTheClaimConsumesTtl)
            "(the re-anchoring redo) before the write fence arms";
 }
 
-/// ==== What a self-remount may block on ====
+/// ==== What a reacquire may block on ====
 ///
 /// Nothing an operator configures. The remount used to consult `refLanesSettledForRemount` and pay the
 /// materialization grace whenever a ref lane still held an undecided `PUT`; both are retired, because
@@ -2533,7 +2533,7 @@ TEST(CASPool, StartupArmRedoesLeaseWriteWhenTheClaimConsumesTtl)
 /// dead epoch below the live one, however its predecessors died, and this test pins that plus the two
 /// things that must still be true: the seals land IN-BAND (at log keys, at the slot a straggler would
 /// have taken) and no synthetic seal SNAPSHOT is written anywhere.
-TEST(CASRemountWaits, ALateTouchedTableClosesEveryDeadEpochInBandHoweverItsPredecessorsDied)
+TEST(CASReacquireWaits, ALateTouchedTableClosesEveryDeadEpochInBandHoweverItsPredecessorsDied)
 {
     CasRequestBudget budget;
     budget.attempt_timeout_ms = 100;
@@ -2591,7 +2591,7 @@ TEST(CASRemountWaits, ALateTouchedTableClosesEveryDeadEpochInBandHoweverItsPrede
     DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
     ASSERT_EQ(store->liveWriterEpoch(), 2u);
 
-    /// Reacquire #2: CLEAN (no wedge left behind -- `quiesceRefTablesForRemount` already cleared the
+    /// Reacquire #2: CLEAN (no wedge left behind -- `quiesceRefTablesForReacquire` already cleared the
     /// cache). Epoch 2 -> 3.
     DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
     ASSERT_EQ(store->liveWriterEpoch(), 3u);
@@ -2809,7 +2809,7 @@ TEST(CASPool, CachedSourceDecodeLetsAdoptionCommitAnAbsentBlobThatFsckReports)
 #define EXPECT_RUNTIME_STATE_REJECTION(statement) EXPECT_THROW(statement, DB::Exception)
 #endif
 
-TEST(CASPoolRemount, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
+TEST(CASMountWorker, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
     const Layout layout("runtime-direct");
@@ -2841,7 +2841,7 @@ TEST(CASPoolRemount, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
     runtime.finishTeardown({});
 }
 
-TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop)
+TEST(CASMountWorker, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
     const Layout layout("runtime-direct-after-stop");
@@ -2868,7 +2868,7 @@ TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop
 
 #undef EXPECT_RUNTIME_STATE_REJECTION
 
-TEST(CASPoolRemount, TeardownJoinsTheWorkerBeforeRelease)
+TEST(CASMountWorker, TeardownJoinsTheWorkerBeforeRelease)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
     const Layout layout("runtime-join");
@@ -3111,7 +3111,7 @@ TEST(CASMountRuntime, GlobalMemoryLimitDoesNotEndTheLeaseThread)
     runtime.finishTeardown({.drain_failed = true});
 }
 
-TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRetryable)
+TEST(CASMountWorker, VanishedReasonPreparationFailureLeavesTerminalTransitionRetryable)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
     const Layout layout("runtime-vanished-reason-preparation");
@@ -3156,7 +3156,7 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
         runtime.enterVanished("must-not-publish");
     });
     EXPECT_FALSE(runtime.vanishedIntentPublished());
-    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::TransientNotLive);
+    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::Reacquiring);
     EXPECT_TRUE(runtime.vanishedReason().empty());
 
     runtime.enterVanished("retry-completed");
@@ -3173,7 +3173,7 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
     runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
-TEST(CASPoolRemount, WorkerConstructionRollbackFailsOpenClosed)
+TEST(CASMountWorker, WorkerConstructionRollbackFailsOpenClosed)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
     const Layout layout("runtime-worker-failure");
@@ -3765,7 +3765,7 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
     runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
     reacquire_entered.waitUntilArrived();
     EXPECT_FALSE(runtime.mayMutate());
-    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::TransientNotLive);
+    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::Reacquiring);
     reacquire_entered.release();
     runtime.stopBackgroundWorkers();
     runtime.finishTeardown({.ref_lane_unsettled = true});
@@ -3808,7 +3808,7 @@ TEST(CASPool, RenewWatermarkOnceRefreshesFenceAndDepositsOneFailure)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load(), leases_lost_before + 1);
 }
 
-TEST(CASPoolRemount, LiveForgetDoesNotCountOperationalLeaseLoss)
+TEST(CASMountWorker, LiveForgetDoesNotCountOperationalLeaseLoss)
 {
     auto backend = std::make_shared<InMemoryBackend>();
     auto store = Pool::open(backend, PoolConfig{

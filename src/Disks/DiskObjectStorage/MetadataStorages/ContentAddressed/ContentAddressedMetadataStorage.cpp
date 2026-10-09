@@ -106,7 +106,7 @@ std::pair<const char *, const char *> casLifecycleWords(const Cas::Pool::Lifecyc
             if (ps.pause == Cas::LeasePause::LeaseExpired)
                 return {"paused", "lease_expired"};
             return {"live", ""};
-        case Cas::PoolLifecycle::TransientNotLive:  return {"paused", "fenced_by_gc"};
+        case Cas::PoolLifecycle::Reacquiring:  return {"paused", "fenced_by_gc"};
         case Cas::PoolLifecycle::VanishedForgotten: return {"closed", "forgotten"};
         case Cas::PoolLifecycle::Stopping:          return {"stopping", Cas::mountEndWord(ps.end).data()};
     }
@@ -346,7 +346,7 @@ ContentAddressedMetadataStorage * ContentAddressedMetadataStorage::tryFromDisk(c
 void ContentAddressedMetadataStorage::runOneGcRoundForTest()
 {
     /// Admin class (rev.7 spec §1): refuse on a transient / stopping / Vanished pool (a terminal disk
-    /// throws the typed Vanished [D5] refusal; an uncertain one throws 668) before touching the scheduler.
+    /// throws the typed Vanished [D5] refusal; an uncertain one throws retry-later) before touching the scheduler.
     /// The later `!cas_store` re-check under `gc_scheduler_mutex` still guards the not-mounted race.
     checkOpAdmitted(CasOpClass::Admin);
     /// The pacing scheduler must be STABLE across calls: the lease's observation-window steal
@@ -960,8 +960,7 @@ void ContentAddressedMetadataStorage::stopAndDrainForTeardown() noexcept
         gc_scheduler.reset();
         old_part_access = std::move(part_access);
         part_access.reset();
-        /// Terminal server-shutdown semantics: a one-way trip (no server-lifecycle "remount" after
-        /// shutdown). Nulling `cas_store` puts the storage back into the null-pool (ShutDown) lifecycle,
+        /// Terminal server-shutdown semantics: a one-way trip (no restart of the pool after shutdown). Nulling `cas_store` puts the storage back into the null-pool (ShutDown) lifecycle,
         /// so `poolAccess()`/the gate report the same operational refusal post-shutdown as pre-startup.
         old_pool = std::move(cas_store);
         cas_store.reset();
@@ -1123,7 +1122,7 @@ void ContentAddressedMetadataStorage::gcStart()
     if (!gc_enabled)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Garbage collection is not enabled on this content-addressed disk");
-    /// Admin class (rev.7 spec §1): refuse on a transient / stopping / `Vanished` pool (typed 668 /
+    /// Admin class (rev.7 spec §1): refuse on a transient / stopping / `Vanished` pool (retry-later /
     /// [D5]) and on a null pool (`throwStorageNotStarted`). Only a `Live` pool proceeds -- the same uniform
     /// gate every GC entry point uses (`runGarbageCollectionRoundNow` / `runGcRebuildNow`).
     checkOpAdmitted(CasOpClass::Admin);
@@ -1253,7 +1252,7 @@ CasOpAdmission ContentAddressedMetadataStorage::checkOpAdmitted(CasOpClass op) c
     if (lc == Cas::PoolLifecycle::Live)
         return CasOpAdmission::Proceed;
 
-    if (lc == Cas::PoolLifecycle::TransientNotLive)
+    if (lc == Cas::PoolLifecycle::Reacquiring)
         /// A lease blip: uncertain but AUTO-RECOVERING. No class but Factory proceeds, and the refusal is
         /// minted TRANSIENT -- this is the READ plane, where a consumer that cannot tell unavailability
         /// from damage acts destructively: `ReplicatedMergeTreePartCheckThread` detaches a part whose read
@@ -2375,7 +2374,7 @@ CaRelinkPrepare ContentAddressedMetadataStorage::prepareAdoptFromManifest(
     std::unique_ptr<ICaPreparedRelink> & out)
 {
     checkNotReadOnly("prepareAdoptFromManifest (interserver relink receiver)");
-    /// Write class: publishing a receiver-local ref; throws typed on a Vanished disk, 668 while uncertain.
+    /// Write class: publishing a receiver-local ref; throws typed on a Vanished disk, retry-later while uncertain.
     checkOpAdmitted(CasOpClass::Write);
 
     /// Receiver side. Sender identity is non-authoritative: we ignore the decoded ManifestRef,

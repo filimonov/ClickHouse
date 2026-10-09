@@ -495,15 +495,15 @@ ConfirmAnswer CasRefLedger::confirmExactRef(const RootNamespace & ns, const Stri
         return refuse(ProfileEvents::CASRelinkConfirmRefusedStateLockBusy, "the table's state lock is held");
 
     /// Rule 2 (warm). An unrecovered or mid-recovery runtime has an EMPTY `state`, which would read as
-    /// "the ref does not exist" -- knowledge it does not have. `superseded_by_remount` is the same
-    /// class: this runtime was detached by a self-remount and its view belongs to a dead incarnation.
+    /// "the ref does not exist" -- knowledge it does not have. `superseded_by_reacquire` is the same
+    /// class: this runtime was detached by a reacquire and its view belongs to a dead incarnation.
     /// Recovery publishes atomically (`installRecoveryResult` sets `recovered` LAST under this mutex),
     /// so there is no half-recovered view to catch in between.
     if (!rt.recovered || rt.recovery_in_progress
         || rt.catalog_life_invalidated.load(std::memory_order_acquire)
-        || rt.superseded_by_remount.load(std::memory_order_acquire))
+        || rt.superseded_by_reacquire.load(std::memory_order_acquire))
         return refuse(ProfileEvents::CASRelinkConfirmRefusedMountCannotSpeak,
-                      "the table is unrecovered, recovering, retired or superseded by a remount");
+                      "the table is unrecovered, recovering, retired or superseded by a reacquire");
 
     /// Rule 3 (no admitted mutation of THIS ref). The hazard is a committed row that lags a transaction
     /// of the asked-about ref: the leader does not hold `state_mutex` across the `PUT`, so between
@@ -556,10 +556,10 @@ ConfirmAnswer CasRefLedger::confirmExactRef(const RootNamespace & ns, const Stri
     /// even under a lost fence: `No` and `Unknown` are the same outcome for the caller (both are
     /// `SourceProofFailed`, spec §failure-taxonomy), and only `Yes` is gated on the fence.
     /// Both monotone runtime-invalidations are folded in exactly as the mutation gates fold them: a
-    /// retired or remount-superseded runtime can never authorize a remote promotion.
+    /// retired or reacquire-superseded runtime can never authorize a remote promotion.
     if (!fence_ok_fn()
         || rt.catalog_life_invalidated.load(std::memory_order_acquire)
-        || rt.superseded_by_remount.load(std::memory_order_acquire))
+        || rt.superseded_by_reacquire.load(std::memory_order_acquire))
         return refuse(ProfileEvents::CASRelinkConfirmRefusedMountCannotSpeak,
                       "this mount no longer holds the namespace's write fence");
 
@@ -593,7 +593,7 @@ std::shared_ptr<CasRefLedger::RefTableRuntime> CasRefLedger::acquireRefTableRunt
                 if (current->life == life
                     && current->admitted_fence_generation == admitted_generation
                     && !current->catalog_life_invalidated.load(std::memory_order_acquire)
-                    && !current->superseded_by_remount.load(std::memory_order_acquire))
+                    && !current->superseded_by_reacquire.load(std::memory_order_acquire))
                     result = current;
                 else
                     identity_conflict = true;
@@ -636,7 +636,7 @@ std::shared_ptr<CasRefLedger::RefTableRuntime> CasRefLedger::acquireReadableRefT
                 return nullptr;
         }
         if (current->catalog_life_invalidated.load(std::memory_order_acquire)
-            || current->superseded_by_remount.load(std::memory_order_acquire))
+            || current->superseded_by_reacquire.load(std::memory_order_acquire))
             throwCasWriteRetryLater(fmt::format(
                 "CAS namespace '{}': its cached life was detached; retry against a fresh observation",
                 ns.string()));
@@ -764,13 +764,13 @@ void CasRefLedger::checkRecoveryStillAdmitted(const RootNamespace & ns, RefTable
     /// a read-only proposition.
     ///
     /// Detached teardown is terminal for this publisher attempt. It is independent of the runtime's
-    /// remount-cancellation latch and uses `ABORTED` so the retry envelope cannot mistake it for a
+    /// reacquire-cancellation latch and uses `ABORTED` so the retry envelope cannot mistake it for a
     /// transient object-store failure.
     if (token && token->stopping())
         throw Exception(ErrorCodes::ABORTED,
             "CAS ref recovery: teardown began while recovery was in progress");
 
-    /// Runtime cancellation is checked next and reported as its own outcome: a self-remount asking
+    /// Runtime cancellation is checked next and reported as its own outcome: a reacquire asking
     /// recovery to stop is an orderly hand-off, not a failure of the store, and the caller must not
     /// re-drive it through the transient-retry loop the way it would an S3 blip.
     if (rt.recovery_cancel_requested.load(std::memory_order_acquire))
@@ -778,7 +778,7 @@ void CasRefLedger::checkRecoveryStillAdmitted(const RootNamespace & ns, RefTable
         cancelled = true;
         ProfileEvents::increment(ProfileEvents::CASRefRecoveryCancelled);
         throwCasWriteRetryLater(fmt::format(
-            "CAS ref-table recovery for namespace '{}' was cancelled by a self-remount before the mount "
+            "CAS ref-table recovery for namespace '{}' was cancelled by a reacquire before the mount "
             "fence was re-armed; the last attempt's fate is unresolved and nothing is installed — the next "
             "touch recovers under the fresh incarnation", ns.string()));
     }
@@ -789,12 +789,12 @@ void CasRefLedger::checkRecoveryStillAdmitted(const RootNamespace & ns, RefTable
             "while recovery I/O was in flight — nothing further is written and nothing is installed",
             ns.string(), renderIncarnation(rt.life.incarnation)));
 
-    /// The remount's OTHER publication, ordered before the fence re-arm: this runtime is detached, so
+    /// The reacquire's OTHER publication, ordered before the fence re-arm: this runtime is detached, so
     /// whatever it recovers belongs to a dead incarnation's cache. Checked separately from the
     /// cancellation because the two are independent facts, exactly as `resolveWedgeOnce` checks them.
-    if (rt.superseded_by_remount.load(std::memory_order_acquire))
+    if (rt.superseded_by_reacquire.load(std::memory_order_acquire))
         throwCasWriteRetryLater(fmt::format(
-            "CAS ref-table recovery for namespace '{}': this cached table was superseded by a self-remount "
+            "CAS ref-table recovery for namespace '{}': this cached table was superseded by a reacquire "
             "mid-recovery — retry against the fresh mount incarnation", ns.string()));
 
     /// The FENCE is deliberately NOT checked here: the walk's own `CasOperation` carries the admitted
@@ -831,7 +831,7 @@ std::optional<RecoveryResult> CasRefLedger::runRecoveryWalkOnce(
         return !(token && token->stopping())
             && !rt.recovery_cancel_requested.load(std::memory_order_acquire)
             && !rt.catalog_life_invalidated.load(std::memory_order_acquire)
-            && !rt.superseded_by_remount.load(std::memory_order_acquire);
+            && !rt.superseded_by_reacquire.load(std::memory_order_acquire);
     });
 
     /// ---- Step 2: immutable runtime authority and checkpoint ----
@@ -1470,7 +1470,7 @@ void CasRefLedger::ensureRefTableRecovered(
 
     rt.recovery_in_progress = true;
     /// Cleared + broadcast on every exit from here, success or exception -- so a parked waiter is never
-    /// left hanging, and so the self-remount barrier's JOIN completes on a failed attempt as surely as
+    /// left hanging, and so the reacquire barrier's JOIN completes on a failed attempt as surely as
     /// on a successful one.
     SCOPE_EXIT({
         rt.recovery_in_progress = false;
@@ -1541,7 +1541,7 @@ void CasRefLedger::ensureRefTableRecovered(
                 /// The whole walk runs UNLOCKED. Nothing it touches is shared: the candidate is private
                 /// and `rt` is read only through atomics the poll consults. Unlocking is what keeps a
                 /// recovery's full I/O envelope from stalling every reader of this table -- and what lets
-                /// the self-remount barrier take the lock promptly to JOIN us.
+                /// the reacquire barrier take the lock promptly to JOIN us.
                 lock.unlock();
                 std::optional<RecoveryResult> walked;
                 try
@@ -1577,10 +1577,10 @@ void CasRefLedger::ensureRefTableRecovered(
                         "CAS ref-table recovery for namespace '{}': catalog retirement invalidated life {} "
                         "before recovery install — nothing is installed",
                         ns.string(), renderIncarnation(rt.life.incarnation)));
-                if (rt.superseded_by_remount.load(std::memory_order_acquire))
+                if (rt.superseded_by_reacquire.load(std::memory_order_acquire))
                     throwCasWriteRetryLater(fmt::format(
                         "CAS ref-table recovery for namespace '{}': this cached table was superseded by a "
-                        "self-remount while the walk was in flight — nothing is installed",
+                        "reacquire while the walk was in flight — nothing is installed",
                         ns.string()));
                 if (token && token->stopping())
                     throw Exception(ErrorCodes::ABORTED,
@@ -1603,9 +1603,9 @@ void CasRefLedger::ensureRefTableRecovered(
             /// a `catch (const Exception &)` would not even see. `getCurrentExceptionCode()` normalises
             /// every exception (DB, Poco, std) to a code so the transient classifier can decide.
             const int code = getCurrentExceptionCode();
-            /// `cancelled` is latched by the poll itself: a self-remount's cancellation uses the
+            /// `cancelled` is latched by the poll itself: a reacquire's cancellation uses the
             /// retry-later class (the caller should retry, against the FRESH incarnation), so without the
-            /// latch this loop would read it as a transient blip and re-drive the very work the remount
+            /// latch this loop would read it as a transient blip and re-drive the very work the reacquire
             /// just stopped. Detached teardown is independently terminal even when the in-flight
             /// exception happened to carry a transient transport code.
             if (vanish_brake_tripped || cancelled || (token && token->stopping())
@@ -1615,19 +1615,19 @@ void CasRefLedger::ensureRefTableRecovered(
             /// A cancellation now ends the walk through the operation's liveness, which refuses
             /// silently -- so the exception that arrives here carries a transport code and `cancelled`
             /// is not yet latched. Take the latch before the backoff rather than one whole attempt
-            /// later: the self-remount barrier is waiting for this recovery to stop.
+            /// later: the reacquire barrier is waiting for this recovery to stop.
             if (rt.recovery_cancel_requested.load(std::memory_order_acquire))
                 checkRecoveryStillAdmitted(ns, rt, cancelled, token);
 
             const uint64_t elapsed_ms = boot_ms_now_fn() - recovery_start_ms;
             /// Fail closed BEFORE sleeping: budget spent, mount fence lost, this runtime superseded by a
-            /// self-remount, or the incarnation that admitted this recovery has moved (retrying under a
+            /// reacquire, or the incarnation that admitted this recovery has moved (retrying under a
             /// generation that is already stale can only ever be refused at the install).
             if (elapsed_ms >= cas_request_budget.recovery_retry_budget_ms
                 || (token && token->stopping())
                 || !fence_ok_fn()
                 || rt.catalog_life_invalidated.load(std::memory_order_acquire)
-                || rt.superseded_by_remount.load(std::memory_order_acquire)
+                || rt.superseded_by_reacquire.load(std::memory_order_acquire)
                 || fence_generation_fn() != admitted_generation)
                 throw;
 
@@ -1669,7 +1669,7 @@ void CasRefLedger::ensureRefTableRecovered(
                 || (token && token->stopping())
                 || !fence_ok_fn()
                 || rt.catalog_life_invalidated.load(std::memory_order_acquire)
-                || rt.superseded_by_remount.load(std::memory_order_acquire)
+                || rt.superseded_by_reacquire.load(std::memory_order_acquire)
                 || fence_generation_fn() != admitted_generation)
                 throw;
             /// loop: re-run recovery from a fresh checkpoint read, exact replay and walk
@@ -1694,7 +1694,7 @@ void CasRefLedger::installRecoveryResult(RefTableRuntime & rt, RecoveryResult &&
     rt.newest_snapshot_id = result.newest_snapshot_id;
     /// The chain link the CAS-walk ended on -- the `prev_epoch_seal` this table's next sequence-1 append
     /// must name. This is the only production producer of `last_epoch_seal`: a real epoch change arrives
-    /// with a self-remount, which discards every cached runtime, so the fresh one gets its link from
+    /// with a reacquire, which discards every cached runtime, so the fresh one gets its link from
     /// exactly here.
     rt.last_epoch_seal = result.last_epoch_seal;
     rt.tail_count_since_snapshot.store(result.tail_count, std::memory_order_relaxed);
@@ -1711,7 +1711,7 @@ void CasRefLedger::installRecoveryResult(RefTableRuntime & rt, RecoveryResult &&
 void CasRefLedger::cancelRecoveriesAndAwaitQuiescence()
 {
     /// Snapshot the runtimes (the copies keep them alive across the wait, exactly as
-    /// `quiesceRefTablesForRemount` does).
+    /// `quiesceRefTablesForReacquire` does).
     std::vector<std::shared_ptr<RefTableRuntime>> tables;
     {
         std::lock_guard<std::mutex> qlock(ref_queue_mutex);
@@ -1736,7 +1736,7 @@ void CasRefLedger::cancelRecoveriesAndAwaitQuiescence()
     /// Released once nothing is in flight. Clearing here rather than after the fence re-arm keeps this a
     /// self-contained barrier with no obligation on the caller to unwind: the window it opens (a recovery
     /// starting between here and the re-arm) is closed twice over by the re-arm's own generation bump and
-    /// by `quiesceRefTablesForRemount`'s `superseded_by_remount`, both of which the walk polls.
+    /// by `quiesceRefTablesForReacquire`'s `superseded_by_reacquire`, both of which the walk polls.
     for (auto & rt : tables)
         rt->recovery_cancel_requested.store(false, std::memory_order_release);
 }
@@ -1823,7 +1823,7 @@ void CasRefLedger::enforceRefTableCacheBudget(const RootNamespace & keep_ns)
 }
 
 
-void CasRefLedger::quiesceRefTablesForRemount()
+void CasRefLedger::quiesceRefTablesForReacquire()
 {
     /// Snapshot the current runtimes (copies keep them alive across the drain). New dispatches are
     /// already suppressed while the fence is lost (`maybeScheduleSnapshotPublish`'s fence guard), so the
@@ -1867,7 +1867,7 @@ void CasRefLedger::quiesceRefTablesForRemount()
             auto & rt = slot.current;
             if (!rt)
                 continue;
-            rt->superseded_by_remount.store(true, std::memory_order_release);
+            rt->superseded_by_reacquire.store(true, std::memory_order_release);
             rt->cv.notify_all();   /// wake any waiter so it re-leads and fails closed against the flag
             detached.push_back(rt);
         }
@@ -2289,7 +2289,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
         None,
         FenceMoved,             /// the mount incarnation moved since this attempt was admitted
         CatalogLifeRetired,     /// exact catalog retirement detached this immutable life
-        Superseded,             /// a self-remount detached this runtime
+        Superseded,             /// a reacquire detached this runtime
         WedgeReplaced,          /// the result belongs to a wedge that is no longer installed
         RefusedPreAttempt,      /// the bounded attempt sent nothing
         ResolveFoundNothing,    /// it sent an attempt and the follow-up read came up empty
@@ -2347,7 +2347,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
     /// thing. It propagates to `appendRefOps`' catch, which completes every survivor.
     ///
     /// The candidate is deliberately NOT cached in the wedge across attempts: a wedge can live until a
-    /// remount, and retaining a full state copy for that long is a real memory cost on a path that is
+    /// reacquire, and retaining a full state copy for that long is a real memory cost on a path that is
     /// rare by construction. Recomputing it per attempt is the cheaper trade.
     const RefLogTxn wedged_txn = decodeRefLogTxn(
         openObject(FormatId::RefLog, wedge.bytes), ns.string(), wedge.txn_id);
@@ -2361,7 +2361,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
     CasOperation op = mount_requests.resume(wedge.admitted_fence_generation, [&rt]
     {
         return !rt->catalog_life_invalidated.load(std::memory_order_acquire)
-            && !rt->superseded_by_remount.load(std::memory_order_acquire);
+            && !rt->superseded_by_reacquire.load(std::memory_order_acquire);
     });
 
     std::optional<WriteResult> attempted;
@@ -2483,12 +2483,12 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
         /// installed and nothing is unwedged either way, which is the whole meaning of INERT here.
         const bool fence_moved = !op.admitted();
 
-        /// The remount half of the same question, checked separately because the two are independent
-        /// facts even though today's ordering makes one imply the other: `quiesceRefTablesForRemount`
+        /// The reacquire half of the same question, checked separately because the two are independent
+        /// facts even though today's ordering makes one imply the other: `quiesceRefTablesForReacquire`
         /// detaches this runtime BEFORE the fence is re-armed, so a detached runtime always has a moved
         /// generation and the check above would already have caught it. Relying on that ordering
-        /// silently is how a future edit to the remount sequence turns into a stale install.
-        const bool superseded = rt->superseded_by_remount.load(std::memory_order_acquire);
+        /// silently is how a future edit to the reacquire sequence turns into a stale install.
+        const bool superseded = rt->superseded_by_reacquire.load(std::memory_order_acquire);
         const bool catalog_life_retired = rt->catalog_life_invalidated.load(std::memory_order_acquire);
 
         /// All three components of the identity, because none of them alone identifies the attempt: two
@@ -2515,7 +2515,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
         {
             /// Still uncertain. Do NOT clear the wedge: it describes an object that may well be durable,
             /// and clearing it on a failed read is the one thing this path must never do. There is no
-            /// deadline reset and no background loop -- the next caller of this namespace, or a remount,
+            /// deadline reset and no background loop -- the next caller of this namespace, or a reacquire,
             /// retries. That is register R6's ACCEPTED behaviour: a permanently quiet wedged namespace
             /// waits, which costs nothing, because the wedged operation was never acknowledged.
             reason = gave_up && !gave_up->sent_any
@@ -2667,7 +2667,7 @@ CasRefLedger::resolveWedgeOnce(const RootNamespace & ns, const std::shared_ptr<R
                 case Reason::Superseded:
                     why = fmt::format(
                         "CAS ref-log append for namespace '{}': the resolution of txn {} returned for a "
-                        "table that a self-remount had already detached — the result is inert; the fresh "
+                        "table that a reacquire had already detached — the result is inert; the fresh "
                         "incarnation re-derives this table from the durable log",
                         ns.string(), txn);
                     break;
@@ -2799,16 +2799,16 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
         return;
     }
 
-    /// Self-remount re-incarnation: this runtime was detached by a
-    /// `quiesceRefTablesForRemount` swap, so its cache is a stale (pre-remount) view. Fail the whole
+    /// Reacquire re-incarnation: this runtime was detached by a
+    /// `quiesceRefTablesForReacquire` swap, so its cache is a stale (pre-reacquire) view. Fail the whole
     /// carved batch closed -- allocating an id / applying against this orphaned runtime under the
     /// re-armed fence would split-brain against the fresh runtime the next touch re-recovers. The
     /// superseded flag is ordered before the fence re-arm (release/acquire through `mayMutate`), so
     /// reaching this AFTER passing `mayMutate` above proves the swap happened.
-    if (rt->superseded_by_remount.load(std::memory_order_acquire))
+    if (rt->superseded_by_reacquire.load(std::memory_order_acquire))
     {
         complete_error(carve_all_pending(), makeCasWriteRetryLaterExceptionPtr(fmt::format(
-            "CAS ref-log append for server_root '{}': this cached table was superseded by a self-remount — "
+            "CAS ref-log append for server_root '{}': this cached table was superseded by a reacquire — "
             "retry against the fresh mount incarnation",
             config.server_root_id)));
         return;
@@ -2861,19 +2861,19 @@ void CasRefLedger::flushRefBatch(const RootNamespace & ns, const std::shared_ptr
     }
 
     /// The supersession gate again, and this is NOT the same check as the one at the top of the flush.
-    /// A self-remount does not wait for leaders, so it can land in the window between them -- and after
+    /// A reacquire does not wait for leaders, so it can land in the window between them -- and after
     /// it does, this runtime's cached view belongs to a dead incarnation while `live_epoch_fn` already
     /// reports the NEW epoch. Everything derived below is then a transaction of an epoch this state has
     /// no chain link for, which INV-2's read side (correctly) calls corruption.
     ///
-    /// Checking here is what keeps that from being how an ORDINARY remount is reported. The condition is
+    /// Checking here is what keeps that from being how an ORDINARY reacquire is reported. The condition is
     /// a routine, retryable fact about the world -- the fresh runtime the next touch recovers has both
     /// the epoch and the link -- so it must surface as the retry-safe supersession error, not as a
     /// `CORRUPTED_DATA` about a stale premise this lane was never entitled to use.
-    if (rt->superseded_by_remount.load(std::memory_order_acquire))
+    if (rt->superseded_by_reacquire.load(std::memory_order_acquire))
     {
         complete_error(carve_all_pending(), makeCasWriteRetryLaterExceptionPtr(fmt::format(
-            "CAS ref-log append for server_root '{}': this cached table was superseded by a self-remount "
+            "CAS ref-log append for server_root '{}': this cached table was superseded by a reacquire "
             "before its batch was carved — retry against the fresh mount incarnation",
             config.server_root_id)));
         return;
@@ -3335,8 +3335,8 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
 
     /// Reconstructed locally so this arm has the SAME completion + fence semantics as when it lived
     /// inline in `flushRefBatch`: `complete_error` wakes a chunk's waiters under `ref_queue_mutex`, and
-    /// `runtime_live` folds `superseded_by_remount` into the append operation's liveness so a
-    /// self-remount landing between a leader's pre-allocate re-check and its write ends the operation
+    /// `runtime_live` folds `superseded_by_reacquire` into the append operation's liveness so a
+    /// reacquire landing between a leader's pre-allocate re-check and its write ends the operation
     /// rather than committing against a stale cache.
     auto complete_error = [&](const std::vector<std::shared_ptr<RefMutationItem>> & items, std::exception_ptr e)
     {
@@ -3353,7 +3353,7 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
     const auto runtime_live = [&rt]
     {
         return !rt->catalog_life_invalidated.load(std::memory_order_acquire)
-            && !rt->superseded_by_remount.load(std::memory_order_acquire);
+            && !rt->superseded_by_reacquire.load(std::memory_order_acquire);
     };
 
     const bool positive_append = std::any_of(chunk_ops.begin(), chunk_ops.end(), [](const RefOp & op)
@@ -3444,18 +3444,18 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
         }
     }
 
-    /// Self-remount re-check BEFORE allocating an id: the top-of-flush gate
+    /// Reacquire re-check BEFORE allocating an id: the top-of-flush gate
     /// is passed once, but a leader can stall between it and here -- in `build_ops`' caller I/O -- across
-    /// the whole fence-loss + remount window, then resume after `armMountFence`. Allocating {new_epoch,
+    /// the whole fence-loss + reacquire window, then resume after `armMountFence`. Allocating {new_epoch,
     /// seq} now and PUTting it (its live `fence_ok` would pass) would persist a transaction validated
-    /// against this orphaned runtime's STALE cache -- the C1 data-loss class. `superseded_by_remount` is
+    /// against this orphaned runtime's STALE cache -- the C1 data-loss class. `superseded_by_reacquire` is
     /// published before the fence re-arm, so failing closed here (no id, no PUT, no wedge, cache
     /// unchanged) keeps the durable log free of any stale-view transaction. The append `fence_ok`
     /// (which also checks the flag) is the airtight backstop for the narrow window past this point.
-    if (rt->superseded_by_remount.load(std::memory_order_acquire))
+    if (rt->superseded_by_reacquire.load(std::memory_order_acquire))
     {
         complete_error(chunk_survivors, makeCasWriteRetryLaterExceptionPtr(fmt::format(
-            "CAS ref-log append for server_root '{}': this cached table was superseded by a self-remount "
+            "CAS ref-log append for server_root '{}': this cached table was superseded by a reacquire "
             "before id allocation — retry against the fresh mount incarnation",
             config.server_root_id)));
         return false;
@@ -3675,7 +3675,7 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
     /// argument's premise ("reachable only while the namespace's ref-log has never durably held
     /// anything"). A namespace's ref-log with a live occupant at the derived key is not empty by the
     /// very fact that triggered the call. Concretely: a successor that legitimately owns the same live
-    /// incarnation (a remount, INV-2's ordinary epoch-seal handoff) may have already read `_ckpt` for
+    /// incarnation (a reacquire, INV-2's ordinary epoch-seal handoff) may have already read `_ckpt` for
     /// its own recovery before this cleanup ran, and the delete could destroy a genesis record
     /// (`life_epoch`, recorded nowhere else, no repair path) that successor's own future recovery still
     /// needs -- with no way to tell that case apart from ordinary debris at cleanup time. A captured
@@ -3763,7 +3763,7 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
             /// neither is terminal -- `resolveWedgeOnce` meets the identical observation and keeps the
             /// lane WEDGED, and this site owes the same answer. The wedge is what makes the next flush
             /// re-create at this exact key and adjudicate whatever it then finds; faulting instead would
-            /// spend the table's write availability until a remount on a read that may well succeed on
+            /// spend the table's write availability until a reacquire on a read that may well succeed on
             /// the next attempt.
             ///
             /// It must be COUNTED, because this arm is quiet by construction: the loud interference
@@ -3981,7 +3981,7 @@ bool CasRefLedger::commitRefChunk(const RootNamespace & ns, const std::shared_pt
                 /// retry-later class, and the asymmetry is deliberate: THIS one is reachable only by
                 /// a second writer inside one process -- a bug in this build, which a debug build
                 /// should abort on and shout about. The wedge site's is reachable by an ordinary
-                /// remount racing a slow resolution, which is a retryable fact about the world, not a
+                /// reacquire racing a slow resolution, which is a retryable fact about the world, not a
                 /// bug. Same refusal, different provenance, so different loudness.
                 requireRecovery(*rt, ns, "commitRefChunk install");
                 install_refused = true;
@@ -4077,7 +4077,7 @@ bool CasRefLedger::admitSnapshotPublishUnderStateLock(RefTableRuntime & rt)
     /// reaching zero.
     const uint64_t now = boot_ms_now_fn();
     if (!rt.catalog_life_invalidated.load(std::memory_order_acquire)
-        && !rt.superseded_by_remount.load(std::memory_order_acquire)
+        && !rt.superseded_by_reacquire.load(std::memory_order_acquire)
         /// Use the execution predicate at admission too, so settlement cannot redispatch a recovered seal.
         && hasStateBearingSnapshotCandidateUnderStateLock(rt)
         /// Single-in-flight gate: at most one background publish per table.
@@ -4205,8 +4205,8 @@ void CasRefLedger::maybeScheduleSnapshotPublish(const RootNamespace & ns, const 
 {
     /// Never dispatch a publisher while the fence is lost: a publish is a
     /// conditional PUT that would fail `fence_ok` and return non-Committed anyway, and dispatching one
-    /// during the self-remount window is exactly the stale-cache-publish race the remount quiesce closes
-    /// -- with no dispatch here, `quiesceRefTablesForRemount` only has to drain publishers already in
+    /// during the reacquire window is exactly the stale-cache-publish race the reacquire quiesce closes
+    /// -- with no dispatch here, `quiesceRefTablesForReacquire` only has to drain publishers already in
     /// flight before the fence dropped, never a moving target.
     if (!may_mutate())
         return;
@@ -4382,7 +4382,7 @@ bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl(
     CasOperation op = mount_requests.resume(admitted_generation, [&rt]
     {
         return !rt->catalog_life_invalidated.load(std::memory_order_acquire)
-            && !rt->superseded_by_remount.load(std::memory_order_acquire);
+            && !rt->superseded_by_reacquire.load(std::memory_order_acquire);
     });
     const auto runtime_still_admitted = [&op] { return op.admitted(); };
 
@@ -4429,7 +4429,7 @@ bool CasRefLedger::tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl(
 
     /// The candidate holds shared COW bases, so even this stale-runtime exit must release it under the
     /// same mutex that protects materialization. More importantly, this is the last test-only pause
-    /// before the first durable effect: retirement/remount can invalidate the captured runtime while it
+    /// before the first durable effect: retirement/reacquire can invalidate the captured runtime while it
     /// is paused, and the old holder then becomes inert instead of resolving the name to a successor.
     if (!runtime_still_admitted())
     {
@@ -4692,8 +4692,8 @@ void CasRefLedger::sweepStalePrecommitsNow(const RootNamespace & ns, const std::
     /// re-reads the LIVE state, so a partial sweep just leaves fewer stale bindings for the next chunk
     /// (a later retry on this mount, or the next mount's recovery) to find; nothing here can loop
     /// forever since only OLDER-epoch bindings ever qualify, and this writer's own new work always uses
-    /// `live_epoch_fn()` -- which a self-remount bumps in lockstep with the threshold below, so a
-    /// remount's fresh precommits survive.
+    /// `live_epoch_fn()` -- which a reacquire bumps in lockstep with the threshold below, so a
+    /// reacquire's fresh precommits survive.
     ///
     /// A GC-side backstop stays deliberately OUT: the responsibility boundary assigns
     /// precommit-binding cleanup to the WRITER -- GC never mutates another writer's ref-table state, so
@@ -4933,7 +4933,7 @@ bool CasRefLedger::namespaceStillLogicallyPresent(const RootNamespace & ns)
         }
         if (!closed
             && !current->catalog_life_invalidated.load(std::memory_order_acquire)
-            && !current->superseded_by_remount.load(std::memory_order_acquire))
+            && !current->superseded_by_reacquire.load(std::memory_order_acquire))
         {
             std::lock_guard<std::mutex> state_lock(current->state_mutex);
             if (current->recovered && current->state.getLifecycle() == RefLifecycle::Live)

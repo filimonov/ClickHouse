@@ -85,7 +85,7 @@ struct RefLaneDrain
 
 /// Coordinates the writer-side ref-log and ref-table protocol for all namespaces in one mounted pool.
 /// It owns the recovered whole-table cache, the flat-combining append lane and its unresolved-`PUT`
-/// wedge, snapshot publication, stale-precommit cleanup, cache-budget eviction, and remount/shutdown
+/// wedge, snapshot publication, stale-precommit cleanup, cache-budget eviction, and reacquire/shutdown
 /// draining. `ref_queue_mutex` protects cache membership and queue leadership; each table's
 /// `state_mutex` protects its decoded state and per-table lifecycle. Network I/O is deliberately performed
 /// without holding `state_mutex`, so readers and other maintenance operations are not blocked by retries.
@@ -273,12 +273,12 @@ public:
     /// waits for the network operation that caused a wedge.
     size_t wedgedRefLaneCount();
 
-    /// Marks cached runtimes obsolete before a self-remount reopens the append fence. Leaders holding an
+    /// Marks cached runtimes obsolete before a reacquire reopens the append fence. Leaders holding an
     /// orphaned runtime therefore fail closed instead of mutating state from the previous epoch.
-    void quiesceRefTablesForRemount();
+    void quiesceRefTablesForReacquire();
 
-    /// The self-remount's CANCEL-OR-JOIN barrier over in-flight recoveries (spec §3: "self-remount
-    /// cancels or waits out recovery before rearming"). Requests cancellation on every cached table,
+    /// The reacquire's CANCEL-OR-JOIN barrier over in-flight recoveries (spec §3), run before the fence
+    /// is re-armed. Requests cancellation on every cached table,
     /// then WAITS until no recovery attempt is in flight anywhere, then clears the request. Returns only
     /// once that is true, so the caller may re-arm the mount fence knowing no recovery straddles it.
     ///
@@ -291,8 +291,8 @@ public:
     /// The narrow window it does NOT close -- a recovery that starts after this returns and before the
     /// fence is re-armed -- is closed by the other two members of the same guard: the re-arm bumps the
     /// generation, so that recovery's `_ckpt` CAS and its install both refuse; and
-    /// `quiesceRefTablesForRemount` (which the caller runs next, BEFORE the re-arm) publishes
-    /// `superseded_by_remount`, which the walk polls at every I/O boundary.
+    /// `quiesceRefTablesForReacquire` (which the caller runs next, BEFORE the re-arm) publishes
+    /// `superseded_by_reacquire`, which the walk polls at every I/O boundary.
     void cancelRecoveriesAndAwaitQuiescence();
 
     /// Closes admission, snapshots the current table set, and waits up to `wait_budget_ms` for queued
@@ -359,7 +359,7 @@ public:
     /// whole point: the fail-closed tests assert that a refused recovery
     /// installed nothing, and a seam that recovered on demand would answer its own question.
     bool refTableRecoveredForTest(const RootNamespace & ns);
-    /// Whether the self-remount barrier has PUBLISHED its cancellation request for `ns` (also without
+    /// Whether the reacquire barrier has PUBLISHED its cancellation request for `ns` (also without
     /// forcing a recovery). The barrier-blocks test needs this as a handshake: it must not release the
     /// parked recovery until the request is actually visible to it, or the recovery races past a flag
     /// that was set a moment too late and the test observes a completion instead of a cancellation.
@@ -557,7 +557,7 @@ public:
         return rt->recovered;
     }
     /// Stable identity of the cached runtime object, or zero when no slot exists. This distinguishes
-    /// explicit life invalidation from an eviction/remount that would make a rebirth test pass by
+    /// explicit life invalidation from an eviction/reacquire that would make a rebirth test pass by
     /// constructing a different cache object.
     uint64_t refTableRuntimeIdentityForTest(const RootNamespace & ns)
     {
@@ -791,8 +791,7 @@ private:
         /// Both this flag and the condition variable are guarded by `state_mutex`.
         bool recovery_in_progress = false;
         std::condition_variable recovery_cv;
-        /// The self-remount cancellation request (spec §3: "self-remount cancels or waits out recovery
-        /// before rearming"). Set by `cancelRecoveriesAndAwaitQuiescence` from the remount thread and
+        /// The reacquire cancellation request (spec §3), made before the fence is re-armed. Set by `cancelRecoveriesAndAwaitQuiescence` from the renewal thread and
         /// polled by the recovery walk at EVERY I/O boundary; a recovery that observes it abandons its
         /// attempt having written nothing and installed nothing.
         ///
@@ -826,7 +825,7 @@ private:
         /// (5 -> 6) seals `{5, T+1}`, and the `{6, 1}` that follows carries that seal.
         ///
         /// Recovery's CAS-walk installs the last seal of the chain it walked: a real epoch change arrives
-        /// with a self-remount, which DISCARDS every cached runtime (`quiesceRefTablesForRemount`) and
+        /// with a reacquire, which DISCARDS every cached runtime (`quiesceRefTablesForReacquire`) and
         /// hands the fresh one its chain link through recovery. Nothing else writes it: a seal is durable
         /// evidence, never a local guess.
         std::optional<RefTxnId> last_epoch_seal;
@@ -907,14 +906,14 @@ private:
         /// old holders observe the flag and remain a predecessor, never a rebindable name handle.
         std::atomic<bool> catalog_life_invalidated{false};
 
-        /// Set true when a self-remount detaches this runtime from the cache (`quiesceRefTablesForRemount`):
+        /// Set true when a reacquire detaches this runtime from the cache (`quiesceRefTablesForReacquire`):
         /// the fresh incarnation re-recovers each table under the new epoch on next touch, so any leader
         /// still holding THIS (now-orphaned) runtime must fail closed instead of allocating an id / applying
         /// against its stale cache once the re-armed fence re-opens the gate. Stored with release BEFORE the
-        /// remount re-arms the fence, so a lane that observes `mayMutate` true also observes this flag
+        /// reacquire re-arms the fence, so a lane that observes `mayMutate` true also observes this flag
         /// (release/acquire through the fence) -- there is no interleaving where a stale runtime both passes
         /// the fence and reads this flag false.
-        std::atomic<bool> superseded_by_remount{false};
+        std::atomic<bool> superseded_by_reacquire{false};
     };
 
     /// Appends against an exact runtime already captured by a lifecycle operation. This is the sole
@@ -944,7 +943,7 @@ private:
         const std::optional<DetachedStopToken> & token);
 
     /// The logical-name cache owns no lifecycle identity. It merely points at the runtime currently
-    /// admitted for that name; exact retirement/remount clears this pointer while external holders may
+    /// admitted for that name; exact retirement/reacquire clears this pointer while external holders may
     /// continue using the detached predecessor and fail closed against its immutable identity.
     struct RefNameSlot
     {
@@ -997,8 +996,8 @@ private:
     /// again until replay has installed that durable transaction and advanced `greatest_applied`.
     ///
     /// The epoch component is the live mount incarnation's writer epoch, not the open-time
-    /// `process_epoch`: a self-remount allocates a strictly-greater durable writer_epoch, so every ref
-    /// transaction stamped after the remount sorts strictly ABOVE any (dead-incarnation or twin) log
+    /// `process_epoch`: a reacquire allocates a strictly-greater durable writer_epoch, so every ref
+    /// transaction stamped after the reacquire sorts strictly ABOVE any (dead-incarnation or twin) log
     /// still durable under an older epoch. `RefTxnId` compares epoch first, so the epoch bump alone
     /// guarantees that a new log is never inserted at or below an already durable table log id.
     ///
@@ -1116,7 +1115,7 @@ private:
     /// is compared byte-for-byte.
     /// `cancelled` is the CALLER's latch, threaded in rather than kept locally: a cancellation is
     /// reported through the retry-later class (the caller should retry, against the FRESH incarnation),
-    /// so without it the transient loop reads the stop as a blip and re-drives the very work the remount
+    /// so without it the transient loop reads the stop as a blip and re-drives the very work the reacquire
     /// just stopped -- while the barrier blocks waiting for that recovery to finish.
     std::optional<RecoveryResult> runRecoveryWalkOnce(
         const RootNamespace & ns, RefTableRuntime & rt, uint64_t admitted_generation, uint64_t live_epoch,
@@ -1124,8 +1123,8 @@ private:
         bool & cancelled, const std::optional<DetachedStopToken> & token = std::nullopt);
 
     /// The I/O-boundary poll of the walk: is this recovery still entitled to continue? Detached
-    /// teardown, self-remount cancellation, and a runtime already detached by self-remount each
-    /// independently disqualify it. Throws; remount cancellation raises the retry-later class and
+    /// teardown, reacquire cancellation, and a runtime already detached by reacquire each
+    /// independently disqualify it. Throws; reacquire cancellation raises the retry-later class and
     /// LATCHES through `cancelled` so the caller's transient loop does not re-drive it.
     ///
     /// The FENCE is deliberately absent: the walk's own operation carries it. See the definition.
@@ -1181,7 +1180,7 @@ private:
     /// at most one conditional create of the wedge's exact key and bytes per calling flush, admitted by
     /// resuming under the wedge's ORIGINAL `admitted_fence_generation` rather than the current one. There is deliberately NO
     /// background retry thread and no deadline-resetting loop: a permanently quiet wedged namespace
-    /// waits for its next caller or for a remount, which is acceptable precisely because the wedged
+    /// waits for its next caller or for a reacquire, which is acceptable precisely because the wedged
     /// operation was never acknowledged.
     ///
     /// The conditional CREATE is what makes the rule "every attempt has its own conclusive rejection"
@@ -1227,7 +1226,7 @@ private:
 
     /// Reports a fault the caller has already latched, with the key and detail `describe(key, detail)`
     /// fills in. The report runs even when `describe` throws, because only the report requests the
-    /// remount. Returns the detail.
+    /// reacquire. Returns the detail.
     template <typename Describe>
     String reportLatchedFault(const RootNamespace & ns, Describe && describe);
 

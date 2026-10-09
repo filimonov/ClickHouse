@@ -220,7 +220,7 @@ flowchart TD
     W -->|yes| WR["resolve the wedge by its exact key first"]
     WR -->|resolved durable| INST0["install candidate, clear wedge"]
     WR -->|still unresolved| FAIL1["fail the queue, stay wedged, never allocate a new id"]
-    WR -->|"other bytes at the slot"| FAULT["fault: lane Faulted, fence closed, remount requested"]
+    WR -->|"other bytes at the slot"| FAULT["fault: lane Faulted, fence closed, process ends"]
     W -->|no| CARVE["two-phase carve: plan may throw, publish never throws"]
     CARVE --> VAL["per-item validation: caps, shape, byte budget<br/>a failing item fails alone"]
     VAL --> PREP["build candidate state and the complete wedge before the PUT"]
@@ -244,8 +244,8 @@ exact bytes let the lane continue: an earlier attempt of the same transaction la
 else is a fault: a foreign transaction, a successor's `EpochSeal` (a successor exists, so this
 mount was already deposed), or an object that does not decode. The append and wedge sites leave the
 lane `Faulted`; recovery leaves it in `NeedsRecovery`. In every case the mount's write fence closes,
-a remount is requested, and the server logs an error and a `foreign_interference` event naming the
-key and what was read.
+the server logs a `foreign_interference` event naming the key and what was read, and the process
+ends without a shutdown (`ledger_fault`).
 
 Crash points: between the `PUT` and the install, the object is durable and unapplied — the next
 mount's recovery replays it. Between a precommit and its promote, a dangling precommit is reclaimed
