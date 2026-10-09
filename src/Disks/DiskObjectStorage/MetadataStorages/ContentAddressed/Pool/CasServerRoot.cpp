@@ -1148,6 +1148,36 @@ MountClaimResult claimMount(
     return {.kind = MountClaimResult::LiveDoubleStart, .seen = std::move(*got)};
 }
 
+MountReacquireClaim makeReacquireClaim(UInt128 uuid, uint64_t writer_epoch, const ReacquireCertificate & certificate,
+                                       uint64_t now_ms, uint64_t ttl_ms, uint64_t start_boot_ms)
+{
+    MountLease body = makeMountBody(uuid, writer_epoch, certificate.body.seq + 1, now_ms, ttl_ms);
+    String bytes = encodeMountLease(body);
+    return MountReacquireClaim{.body = std::move(body), .bytes = std::move(bytes), .start_boot_ms = start_boot_ms};
+}
+
+ReacquireClaimResult claimMount(CasOperation & op, const Layout & l, const String & srid,
+                                const ReacquireCertificate & certificate, const MountReacquireClaim & claim,
+                                const CasEventSink & sink)
+{
+    const auto claimed = [&](Etag etag)
+    {
+        emitMountEvent(sink, CasEventType::MountClaim, srid, "reacquire", &certificate.body,
+            "own (uuid, epoch) mount slot fenced by GC — reacquired by the ETag of the fenced body under a new writer_epoch");
+        return ReacquireClaimResult{.claimed = MountClaimed{claim.body, claim.bytes, std::move(etag), claim.start_boot_ms}};
+    };
+    WriteResult result = op.replace(l.mountKey(srid), claim.bytes, certificate.fenced.etag, Retry::untilDefinitive());
+    if (Committed * committed = std::get_if<Committed>(&result))
+        return claimed(std::move(committed->etag));
+    Conflict * conflict = std::get_if<Conflict>(&result);
+    if (!conflict || std::holds_alternative<NotObserved>(conflict->seen) || std::holds_alternative<Meta>(conflict->seen))
+        return ReacquireClaimResult{.transient = true};
+    /// A retry finds the claim an earlier call of ours landed without confirming.
+    if (Object * object = std::get_if<Object>(&conflict->seen); object && object->bytes == claim.bytes)
+        return claimed(std::move(object->etag));
+    return ReacquireClaimResult{.seen = std::move(conflict->seen)};
+}
+
 String mountDoubleStartMessage(const String & srid, const std::optional<MountLease> & existing)
 {
     const String identity = existing

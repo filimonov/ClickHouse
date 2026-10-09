@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasServerRootFormats.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCatalogFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountReacquire.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasOwnershipOutcome.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/Exception.h>
@@ -363,6 +364,21 @@ MountClaimResult claimMount(
     uint64_t now_ms, uint64_t ttl_ms, const std::optional<Etag> & proven_dead_incarnation = {},
     const CasEventSink & sink = {}, const std::optional<Etag> & unsafe_reclaim_authorization = {},
     const std::function<uint64_t()> & boot_ms_fn = {});
+
+/// The claim body a reacquire fixes once: our uuid, the allocated epoch, `seq` one above the fenced body's.
+MountReacquireClaim makeReacquireClaim(UInt128 uuid, uint64_t writer_epoch, const ReacquireCertificate & certificate,
+                                       uint64_t now_ms, uint64_t ttl_ms, uint64_t start_boot_ms);
+struct ReacquireClaimResult
+{
+    std::optional<MountClaimed> claimed = std::nullopt;   /// our claim bytes are in the slot
+    Observation seen = NotObserved{};                     /// otherwise what the write's resolve read saw
+    bool transient = false;                               /// refused or unobserved: repeat the same claim
+};
+/// The `Reacquire` mode: replaces only the body `certificate` names, by its ETag. No clean-marker, observed
+/// death, unsafe authorization or absent-slot create applies; the caller classifies `seen`.
+ReacquireClaimResult claimMount(CasOperation & op, const Layout & l, const String & srid,
+                                const ReacquireCertificate & certificate, const MountReacquireClaim & claim,
+                                const CasEventSink & sink = {});
 
 /// Format the operator-actionable startup error shown when the mount lease is held by a genuinely
 /// live second server (the same `server_root_id` is mounted twice). Produced only AFTER this server

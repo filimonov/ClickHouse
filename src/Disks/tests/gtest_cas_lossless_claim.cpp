@@ -269,3 +269,126 @@ TEST(CASLosslessClaim, AFencedBodyOfOurEpochRecoversWithAFreshEpoch)
     EXPECT_FALSE(slot(*b).gc_fenced);
     EXPECT_TRUE(store->mayMutate());
 }
+
+namespace
+{
+
+/// Epoch 7 fenced by GC in the slot, and the certificate a reacquire read for it.
+ReacquireCertificate certifyFencedSeven(Backend & b)
+{
+    put(b, kLayout.mountKey(kSrid), encodeMountLease(lease(kUuid, 7, 7, true)));
+    Object fenced = *get(b);
+    MountLease body = decodeMountLease(fenced.bytes);
+    return ReacquireCertificate{.fenced = std::move(fenced), .body = std::move(body)};
+}
+
+/// An open-fence operation admitted under a liveness the test turns off and on.
+struct LiveOperation
+{
+    explicit LiveOperation(Backend & b)
+        : requests(DB::Cas::tests::openRequestsForTest(b)), op(requests.admit([this] { return live; }))
+    {
+        requests.setSleepFnForTest([](uint64_t) {});
+    }
+    bool live = true;
+    CasRequests requests;
+    CasOperation op;
+};
+
+ReacquireClaimResult reacquire(Backend & b, const ReacquireCertificate & certificate, const MountReacquireClaim & claim)
+{
+    OperationForTest op(b);
+    return claimMount(*op, kLayout, kSrid, certificate, claim);
+}
+
+void expectRefusedAndSlotHolds(const ReacquireClaimResult & result, Backend & b, const String & bytes)
+{
+    EXPECT_FALSE(result.claimed.has_value());
+    EXPECT_FALSE(result.transient);
+    ASSERT_TRUE(std::holds_alternative<Object>(result.seen));
+    EXPECT_EQ(std::get<Object>(result.seen).bytes, bytes);
+    EXPECT_EQ(get(b)->bytes, bytes) << "the slot is unchanged";
+}
+
+}
+
+TEST(CASLosslessClaim, ReacquireReplacesTheCertifiedBody)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    const ReacquireCertificate certificate = certifyFencedSeven(*b);
+    const MountReacquireClaim claim = makeReacquireClaim(kUuid, 8, certificate, 1000, 30'000, 5);
+    EXPECT_EQ(claim.body.seq, 8u);
+    EXPECT_EQ(claim.body.writer_epoch, 8u);
+    EXPECT_EQ(claim.start_boot_ms, 5u);
+
+    const ReacquireClaimResult result = reacquire(*b, certificate, claim);
+
+    ASSERT_TRUE(result.claimed.has_value());
+    EXPECT_EQ(result.claimed->bytes, claim.bytes);
+    EXPECT_EQ(result.claimed->start_boot_ms, 5u);
+    EXPECT_EQ(get(*b)->bytes, claim.bytes);
+    EXPECT_EQ(get(*b)->etag, result.claimed->etag);
+}
+
+TEST(CASLosslessClaim, ReacquireNeverCreatesAnAbsentSlot)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    const ReacquireCertificate certificate = certifyFencedSeven(*b);
+    {
+        OperationForTest op(*b);
+        ASSERT_EQ((*op).removeCurrent(kLayout.mountKey(kSrid), Retry::standard()), Removal::Removed);
+    }
+
+    const ReacquireClaimResult result = reacquire(*b, certificate, makeReacquireClaim(kUuid, 8, certificate, 1000, 30'000, 5));
+
+    EXPECT_FALSE(result.claimed.has_value());
+    EXPECT_FALSE(result.transient);
+    EXPECT_TRUE(std::holds_alternative<ProvenAbsent>(result.seen));
+    EXPECT_FALSE(get(*b).has_value()) << "a reacquire never creates the slot";
+}
+
+TEST(CASLosslessClaim, ReacquireNeverTakesACleanMarker)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    const ReacquireCertificate certificate = certifyFencedSeven(*b);
+    const String clean = encodeMountLease(lease(kUuid, 7, 8, false, std::numeric_limits<uint64_t>::max()));
+    put(*b, kLayout.mountKey(kSrid), clean);
+
+    expectRefusedAndSlotHolds(reacquire(*b, certificate, makeReacquireClaim(kUuid, 8, certificate, 1000, 30'000, 5)), *b, clean);
+}
+
+TEST(CASLosslessClaim, ReacquireNeverTakesAFencedBodyOfAnotherEpoch)
+{
+    auto b = std::make_shared<InMemoryBackend>();
+    const ReacquireCertificate certificate = certifyFencedSeven(*b);
+    const String other = encodeMountLease(lease(kUuid, 6, 9, true));
+    put(*b, kLayout.mountKey(kSrid), other);
+
+    expectRefusedAndSlotHolds(reacquire(*b, certificate, makeReacquireClaim(kUuid, 8, certificate, 1000, 30'000, 5)), *b, other);
+}
+
+TEST(CASLosslessClaim, ARetriedClaimFindsItsOwnLandedBytes)
+{
+    auto b = std::make_shared<MountWriteClock>();
+    const ReacquireCertificate certificate = certifyFencedSeven(*b);
+    const MountReacquireClaim claim = makeReacquireClaim(kUuid, 8, certificate, 1000, 30'000, 5);
+    LiveOperation operation(*b);
+    b->hook = [&operation](InMemoryBackend & backend, const String & bytes, const std::optional<String> & expected, TransportAccess & access) -> WriteAnswer
+    {
+        if (auto landed = backend.InMemoryBackend::write(kLayout.mountKey(kSrid), bytes, expected, access); !landed)
+            return landed;
+        operation.live = false;
+        throw Poco::TimeoutException("injected: answer lost");
+    };
+
+    const ReacquireClaimResult first = claimMount(operation.op, kLayout, kSrid, certificate, claim);
+    EXPECT_TRUE(first.transient);
+    EXPECT_FALSE(first.claimed.has_value());
+
+    operation.live = true;
+    const ReacquireClaimResult second = claimMount(operation.op, kLayout, kSrid, certificate, claim);
+    ASSERT_TRUE(second.claimed.has_value());
+    EXPECT_EQ(second.claimed->bytes, claim.bytes);
+    EXPECT_EQ(get(*b)->bytes, claim.bytes);
+    EXPECT_EQ(get(*b)->etag, second.claimed->etag);
+}
