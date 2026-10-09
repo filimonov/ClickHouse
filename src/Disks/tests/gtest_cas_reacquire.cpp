@@ -18,9 +18,12 @@
 #endif
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 using namespace DB::Cas;
@@ -92,7 +95,7 @@ Boot newBoot()
     return std::make_shared<std::atomic<uint64_t>>(1'000'000);
 }
 
-/// The GC fences our own body (R8) and the next renewal finds it.
+/// The GC fences our own body and the next renewal finds it.
 void fenceAndRenew(Pool & store, Backend & backend)
 {
     rewriteSlot(backend, [](MountLease & m) { m.gc_fenced = true; ++m.seq; });
@@ -367,7 +370,7 @@ private:
 
 }
 
-TEST(CASReacquire, AnUnclearIncrementWhoseCallEndedIsStillOurs)
+TEST(CASReacquire, AnIncrementLandedBeforeAnOutageAllocatesOneNumber)
 {
     const Boot boot = newBoot();
     auto backend = std::make_shared<LandedThenOutageBackend>(boot);
@@ -408,6 +411,32 @@ TEST(CASReacquire, ACounterAdvancedByAnotherProcessStops)
     for (const auto & event : log.events())
         named |= event.starts_with("error-line:") && event.contains("advanced by another process");
     EXPECT_TRUE(named);
+}
+
+/// A counter rewritten with the value we read refreshes the expected ETag and fails the pass; the next
+/// pass repeats the tuple it fixed, so an advance in between stops the server instead of being taken.
+TEST(CASReacquire, ACounterWriteRepeatedAcrossPassesNeverReDecides)
+{
+    const Boot boot = newBoot();
+    auto backend = std::make_shared<CounterBackend>(boot);
+    auto store = openPool(backend, boot);
+    DB::Cas::tests::processStopLog().reset();
+    fenceAndRenew(*store, *backend);
+    backend->recording = true;
+    backend->before_counter_write = [&]
+    {
+        backend->recording = false;
+        put(*backend, kLayout.epochKey(kSrid), read(*backend, kLayout.epochKey(kSrid))->bytes);
+        backend->recording = true;
+    };
+
+    ASSERT_EQ(store->runReacquireForTest(), ReacquireOutcome::Retry);
+    backend->recording = false;
+    put(*backend, kLayout.epochKey(kSrid), encodeServerEpoch(ServerEpoch{.next_writer_epoch = counterNext(*backend) + 1}));
+    backend->recording = true;
+
+    EXPECT_EQ(store->runReacquireForTest(), ReacquireOutcome::Ended);
+    EXPECT_EQ(store->mountEnd(), MountEnd::SlotTaken);
 }
 
 #if USE_AWS_S3
@@ -599,6 +628,12 @@ TEST(CASReacquire, InterferenceDuringReacquireNeverOpens)
     expectNeverOpens([](Pool & store) { ASSERT_TRUE(store.latchMountEndForTest(MountEnd::LedgerFault)); });
 }
 
+/// An end that is not a loss leaves the pool paused: only the end itself keeps the fence closed.
+TEST(CASReacquire, AnEndWithoutALossLatchedDuringReacquireNeverOpens)
+{
+    expectNeverOpens([](Pool & store) { ASSERT_TRUE(store.latchMountEndForTest(MountEnd::Replaced)); });
+}
+
 TEST(CASReacquire, ForgetDuringReacquireNeverOpens)
 {
     expectNeverOpens([](Pool & store) { store.publishVanishedIntentForTest(); });
@@ -646,4 +681,168 @@ TEST(CASReacquire, AFencedFloorProtectsItsPrefixUntilTheNewClaim)
     EXPECT_FALSE(prefixEligible(*f.store, ns, prefix));
     ASSERT_EQ(f.store->runReacquireForTest(), ReacquireOutcome::Open);
     EXPECT_TRUE(prefixEligible(*f.store, ns, prefix));
+}
+
+namespace
+{
+
+/// A writable pool whose renewal thread runs: every renewal the thread finishes wakes `changed`.
+struct Running
+{
+    template <typename B>
+    explicit Running(const std::shared_ptr<B> & backend_, const std::function<void(const MountRenewResult &)> & on_renewal = {})
+        : backend(backend_)
+    {
+        PoolConfig config{.pool_prefix = "p", .server_root_id = kSrid, .background_watermark = true};
+        config.mount_renew_period = std::chrono::milliseconds(20);
+        config.renewal_finished_hook_for_test = [this, on_renewal](const MountRenewResult & result)
+        {
+            if (on_renewal)
+                on_renewal(result);
+            notify();
+        };
+        DB::Cas::tests::processStopLog().reset([this] { notify(); return String{}; });
+        store = Pool::open(backend_, std::move(config));
+    }
+
+    ~Running()
+    {
+        store.reset();
+    }
+
+    void notify()
+    {
+        std::lock_guard lock(mutex);
+        ++changes;
+        changed.notify_all();
+    }
+
+    /// Hang protection only: every renewal and every stop request re-checks `done`.
+    bool waitFor(const std::function<bool()> & done)
+    {
+        std::unique_lock lock(mutex);
+        return changed.wait_for(lock, std::chrono::seconds(60), [&] { return done(); });
+    }
+
+    std::shared_ptr<Backend> backend;
+    PoolPtr store;
+    std::mutex mutex;
+    std::condition_variable changed;
+    uint64_t changes = 0;
+};
+
+/// The GC's fence transform, retried when a renewal moves the slot between our read and our write.
+void fenceWhileRenewing(Backend & backend)
+{
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        OperationForTest op(backend);
+        const auto got = (*op).read(kLayout.mountKey(kSrid), Retry::once());
+        ASSERT_TRUE(got.has_value());
+        MountLease m = decodeMountLease(got->bytes);
+        m.gc_fenced = true;
+        ++m.seq;
+        if (std::holds_alternative<Committed>((*op).replace(kLayout.mountKey(kSrid), encodeMountLease(m), got->etag, Retry::once())))
+            return;
+    }
+    FAIL() << "the renewal kept moving the slot";
+}
+
+/// Records, in order, the writer epoch of every mount slot write and every counter write.
+class OrderRecorder : public InMemoryBackend
+{
+public:
+    struct Entry { bool counter; uint64_t writer_epoch; };
+
+    WriteAnswer write(const String & key, const String & bytes, const std::optional<String> & expected, TransportAccess & access) override
+    {
+        if (key == kLayout.mountKey(kSrid) || key == kLayout.epochKey(kSrid))
+        {
+            const bool counter = key == kLayout.epochKey(kSrid);
+            std::lock_guard lock(mutex);
+            entries.push_back({counter, counter ? 0 : decodeMountLease(bytes).writer_epoch});
+        }
+        return InMemoryBackend::write(key, bytes, expected, access);
+    }
+
+    std::vector<Entry> snapshot()
+    {
+        std::lock_guard lock(mutex);
+        return entries;
+    }
+
+    void clear()
+    {
+        std::lock_guard lock(mutex);
+        entries.clear();
+    }
+
+private:
+    std::mutex mutex;
+    std::vector<Entry> entries;
+};
+
+}
+
+TEST(CASReacquire, TheRenewalThreadReacquiresWithoutTheRemountWorker)
+{
+    Running running(std::make_shared<InMemoryBackend>());
+    Pool & store = *running.store;
+    const uint64_t epoch = store.writerEpoch();
+    const uint64_t remount_calls = store.scheduleRemountCallCountForTest();
+
+    fenceWhileRenewing(*running.backend);
+
+    ASSERT_TRUE(running.waitFor([&] { return store.lifecycle() == PoolLifecycle::Live && store.writerEpoch() == epoch + 1; }));
+    EXPECT_EQ(store.remountRequestedGenerationForTest(), 0u);
+    EXPECT_EQ(store.scheduleRemountCallCountForTest(), remount_calls);
+    EXPECT_EQ(store.mountEnd(), MountEnd::None);
+    EXPECT_EQ(slotBody(*running.backend).writer_epoch, epoch + 1);
+}
+
+TEST(CASReacquire, NoRenewalWriteOfTheOldEpochAfterTheCounterMoves)
+{
+    auto backend = std::make_shared<OrderRecorder>();
+    Running running(backend);
+    Pool & store = *running.store;
+    const uint64_t epoch = store.writerEpoch();
+    backend->clear();
+
+    fenceWhileRenewing(*backend);
+    ASSERT_TRUE(running.waitFor([&] { return store.lifecycle() == PoolLifecycle::Live && store.writerEpoch() == epoch + 1; }));
+    /// One renewal of the new epoch after the open, so the window covers the thread's return to renewing.
+    const uint64_t changes = running.changes;
+    ASSERT_TRUE(running.waitFor([&] { return running.changes > changes + 1; }));
+
+    bool counter_moved = false;
+    for (const auto & entry : backend->snapshot())
+    {
+        counter_moved |= entry.counter;
+        if (counter_moved && !entry.counter)
+            EXPECT_NE(entry.writer_epoch, epoch) << "a mount write of the fenced epoch after the counter moved";
+    }
+    EXPECT_TRUE(counter_moved);
+}
+
+TEST(CASReacquire, ALossFoundByTheReacquireStopsTheServer)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    std::atomic<bool> taken{false};
+    Running running(backend, [&](const MountRenewResult & result)
+    {
+        if (result.slot && result.slot->verdict == MountSlotVerdict::FencedByGc && !taken.exchange(true))
+            rewriteSlot(*backend, [](MountLease & m)
+            {
+                m.server_uuid = DB::UInt128{0xF0F0};
+                m.gc_fenced = false;
+            });
+    });
+    Pool & store = *running.store;
+
+    fenceWhileRenewing(*backend);
+
+    ASSERT_TRUE(running.waitFor([&] { return DB::Cas::tests::processStopLog().graceful() == 1; }));
+    EXPECT_TRUE(taken.load());
+    EXPECT_EQ(store.mountEnd(), MountEnd::SlotTaken);
+    EXPECT_EQ(store.remountRequestedGenerationForTest(), 0u);
 }

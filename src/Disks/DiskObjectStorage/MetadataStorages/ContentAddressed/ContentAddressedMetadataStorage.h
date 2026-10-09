@@ -94,7 +94,7 @@ enum class CasOpAdmission : uint8_t
 /// operator instead of silently missing from the table.
 ///   - `lifecycle`      — one of `live` / `paused` / `identity_lost` / `vanished` / `closed` (a published
 ///                        pool), or `constructing` / `shutdown` (no pool published).
-///   - `reason`         — one word: `renewal_overdue` / `lease_expired` / `remounting` for `paused`,
+///   - `reason`         — one word: `renewal_overdue` / `lease_expired` / `fenced_by_gc` for `paused`,
 ///                        `replaced` for `vanished`, `forgotten` for `closed`, empty otherwise. Kept a small
 ///                        closed vocabulary so a downstream `lifecycle || '(' || reason || ')'` yields e.g.
 ///                        exactly `closed(forgotten)` — the free text lives in `detail`, never here.

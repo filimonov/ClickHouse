@@ -532,6 +532,11 @@ private:
     /// `MountConfig::wait_sleep_fn` replaces it in tests.
     void waitBeforeNextRenewalCall(uint64_t ms);
     void renewalLoop();
+    /// Runs the reacquire of `certificate` on the renewal thread until it opens, ends or is abandoned,
+    /// about one second between passes.
+    ReacquireOutcome reacquireUntilSettled(ReacquireCertificate certificate);
+    /// Wakes on stop and on a terminal pool; `MountConfig::wait_sleep_fn` replaces it in tests.
+    void waitBeforeNextReacquireStep(uint64_t ms);
     void remountLoop();
     ThreadFromGlobalPool makeWorker(std::function<void()> body);
     /// The renewal's liveness: facts the mount fence cannot see -- a shutdown request, a parked or

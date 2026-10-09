@@ -472,11 +472,14 @@ RenewalDriverState CasMountRuntime::DriverLease::finish(
     {
         const MountSlotReading * slot = result->slot ? &*result->slot : nullptr;
         if (slot && slot->verdict == MountSlotVerdict::FencedByGc && slot->fenced && slot->holder
-            && active == RenewalDriverState::DirectCall)
+            && (active == RenewalDriverState::DirectCall || runtime.renewal_driver_state == RenewalDriverState::WorkerIdle))
         {
-            /// The fence is our own body: the reacquire replaces exactly it, by the ETag read here.
+            /// The fence is our own body: the reacquire replaces exactly it, by the ETag read here. The
+            /// renewal thread runs it; no remount is requested.
             runtime.tripMountLost();
             runtime.owed_reacquire = ReacquireCertificate{.fenced = *slot->fenced, .body = *slot->holder};
+            if (active == RenewalDriverState::WorkerCall)
+                runtime.renewal_driver_state = RenewalDriverState::Parked;
         }
         else if (runtime.renewal_driver_state == RenewalDriverState::WorkerIdle
             || active == RenewalDriverState::DirectCall)
@@ -977,6 +980,14 @@ void CasMountRuntime::renewalLoop()
             config.renewal_before_driver_lock_hook_for_test();
 
         AdmittedRenewerCall call;
+        std::optional<ReacquireCertificate> owed;
+        {
+            std::unique_lock lock(driver_mutex);
+            if (workers_stop_requested || remountTerminal())
+                return;
+            owed = std::exchange(owed_reacquire, std::nullopt);
+        }
+        if (!owed)
         {
             std::unique_lock lock(driver_mutex);
             if (workers_stop_requested || remountTerminal())
@@ -1025,15 +1036,18 @@ void CasMountRuntime::renewalLoop()
             call = AdmittedRenewerCall{std::move(lease), renewer};
         }
 
-        if (config.renewal_admitted_hook_for_test)
+        if (!owed && config.renewal_admitted_hook_for_test)
             config.renewal_admitted_hook_for_test();
         try
         {
-            (void)renewRenewerOnce(
-                std::move(call),
-                RenewalDriverState::WorkerCall,
-                /*propagate_failure=*/false,
-                /*worker_call=*/true);
+            if (owed)
+                (void)reacquireUntilSettled(std::move(*owed));
+            else
+                (void)renewRenewerOnce(
+                    std::move(call),
+                    RenewalDriverState::WorkerCall,
+                    /*propagate_failure=*/false,
+                    /*worker_call=*/true);
         }
         catch (...)
         {
@@ -1061,6 +1075,31 @@ void CasMountRuntime::renewalLoop()
             return;
         }
     }
+}
+
+ReacquireOutcome CasMountRuntime::reacquireUntilSettled(ReacquireCertificate certificate)
+{
+    ReacquireStep step{.certificate = std::move(certificate)};
+    while (true)
+    {
+        const uint64_t started_boot_ms = bootMsNow();
+        const ReacquireOutcome outcome = reacquire_attempt(step);
+        if (outcome != ReacquireOutcome::Retry)
+            return outcome;
+        waitBeforeNextReacquireStep(Retry::spacedPause(
+            Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs), started_boot_ms, bootMsNow()));
+    }
+}
+
+void CasMountRuntime::waitBeforeNextReacquireStep(uint64_t ms)
+{
+    if (config.wait_sleep_fn)
+    {
+        config.wait_sleep_fn(ms);
+        return;
+    }
+    std::unique_lock lock(driver_mutex);
+    driver_cv.wait_for(lock, std::chrono::milliseconds(ms), [this] { return workers_stop_requested || remountTerminal(); });
 }
 
 void CasMountRuntime::remountLoop()
@@ -1216,7 +1255,7 @@ bool CasMountRuntime::noteLeaseLost()
     if (pool_lifecycle.compare_exchange_strong(
             expected, PoolLifecycle::TransientNotLive, std::memory_order_acq_rel, std::memory_order_acquire))
     {
-        /// The `since` the lifecycle snapshot reports for `paused(remounting)` — the wall-clock instant this
+        /// The `since` the lifecycle snapshot reports for `paused(fenced_by_gc)` — the wall-clock instant this
         /// became non-`Live`. Only the winning transition writes it (the guard above), so it is not re-stamped.
         lifecycle_since_wall_s.store(wallClockNowSeconds(), std::memory_order_release);
         /// This transition can be reached while the renewal driver or remount serializer lock is

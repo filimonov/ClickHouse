@@ -300,7 +300,7 @@ TEST(CASLifecycleSnapshot, OldLifecycleValuesMapToTheNewVocabulary)
         const CasLifecycleSnapshot snap = storage->lifecycleSnapshot();
         return snap.lifecycle + "(" + snap.reason + ")";
     };
-    EXPECT_EQ(read(PoolLifecycle::TransientNotLive), "paused(remounting)");
+    EXPECT_EQ(read(PoolLifecycle::TransientNotLive), "paused(fenced_by_gc)");
     EXPECT_EQ(read(PoolLifecycle::IdentityLost), "identity_lost()");
     EXPECT_EQ(read(PoolLifecycle::VanishedReplaced), "vanished(replaced)");
 }

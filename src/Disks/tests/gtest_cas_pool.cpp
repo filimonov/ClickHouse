@@ -1975,7 +1975,7 @@ public:
               [this](uint64_t g, uint64_t needed) { return runtime.admit(g, needed); },
               [this](uint64_t g) { runtime.checkFenceOrThrow(g); }})
         , lease(backend, DB::Cas::Fence::open())
-        , runtime(backend, mount, lease, std::forward<Args>(args)..., [](ReacquireStep &) { return ReacquireOutcome::Abandoned; })
+        , runtime(backend, mount, lease, std::forward<Args>(args)..., [this](ReacquireStep & step) { return reacquire(step); })
     {
         /// What the request engine reserves per attempt is the BACKEND's attempt timeout, not the
         /// budget field alone; every construction of this holder pairs the two via `runtimeRenewBudget`,
@@ -2012,6 +2012,9 @@ public:
     }
 
     CasMountRuntime & operator*() { return runtime; }
+
+    /// What the renewal thread runs after a GC fence of our own body. Set before the workers start.
+    std::function<ReacquireOutcome(ReacquireStep &)> reacquire = [](ReacquireStep &) { return ReacquireOutcome::Abandoned; };
 
 private:
     DB::Cas::CasRequests mount;
@@ -3899,7 +3902,7 @@ TEST(CASPoolRemount, TerminalDepositionDoesNotTouchRenewerAfterReplacement)
     const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
     ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
     DB::Cas::tests::ManualBarrier terminal_deposited;
-    DB::Cas::tests::ManualBarrier remount;
+    DB::Cas::tests::ManualBarrier reacquire;
     std::atomic<bool> replaced{false};
     CasMountRuntime * runtime_ptr = nullptr;
     CasEventSink sink;
@@ -3917,11 +3920,12 @@ TEST(CASPoolRemount, TerminalDepositionDoesNotTouchRenewerAfterReplacement)
                 replaced.store(true, std::memory_order_release);
                 terminal_deposited.arriveAndWait();
             }},
-        "test", sink, runtimeRenewBudget(), [&]
-        {
-            remount.arriveAndWait();
-            return false;
-        });
+        "test", sink, runtimeRenewBudget(), [] { return false; });
+    runtime_holder.reacquire = [&](ReacquireStep &)
+    {
+        reacquire.arriveAndWait();
+        return ReacquireOutcome::Abandoned;
+    };
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
@@ -3933,8 +3937,8 @@ TEST(CASPoolRemount, TerminalDepositionDoesNotTouchRenewerAfterReplacement)
     terminal_deposited.waitUntilArrived();
     EXPECT_TRUE(replaced.load(std::memory_order_acquire));
     terminal_deposited.release();
-    remount.waitUntilArrived();
-    remount.release();
+    reacquire.waitUntilArrived();
+    reacquire.release();
     runtime.stopBackgroundWorkers();
     runtime.finishTeardown({.ref_lane_unsettled = true});
 }
@@ -3992,6 +3996,7 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
     DB::Cas::tests::ManualBarrier first;
     DB::Cas::tests::ManualBarrier second;
     std::atomic<uint64_t> calls{0};
+    std::atomic<uint64_t> reacquires{0};
     CasEventSink sink;
     /// The remount callback reaches the runtime it is installed on, so it goes through a pointer the
     /// line after construction fills in -- the callback runs only once the workers are started.
@@ -4020,9 +4025,15 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
                 first.arriveAndWait();
                 return true;
             }
-            second.arriveAndWait();
             return false;
         });
+    /// The fence of the remounted epoch is our own body: the renewal thread reacquires it.
+    runtime_holder.reacquire = [&](ReacquireStep &)
+    {
+        ++reacquires;
+        second.arriveAndWait();
+        return ReacquireOutcome::Abandoned;
+    };
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
@@ -4034,8 +4045,9 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
     first.waitUntilArrived();
     first.release();
     second.waitUntilArrived();
-    EXPECT_EQ(calls.load(), 2u);
-    EXPECT_EQ(runtime.remountRequestedGenerationForTest(), 2u);
+    EXPECT_EQ(calls.load(), 1u);
+    EXPECT_EQ(reacquires.load(), 1u);
+    EXPECT_EQ(runtime.remountRequestedGenerationForTest(), 1u);
     second.release();
     runtime.stopBackgroundWorkers();
     runtime.finishTeardown({.ref_lane_unsettled = true});
@@ -4937,17 +4949,18 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
     const UInt128 uuid{1};
     const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
     ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
-    DB::Cas::tests::ManualBarrier remount_entered;
+    DB::Cas::tests::ManualBarrier reacquire_entered;
     CasEventSink sink;
     RuntimeUnderTest runtime_holder(
         backend, layout,
         MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
                     .boot_ms_fn = [&] { return boot_ms; }},
-        "test", sink, runtimeRenewBudget(), [&]
-        {
-            remount_entered.arriveAndWait();
-            return false;
-        });
+        "test", sink, runtimeRenewBudget(), [] { return false; });
+    runtime_holder.reacquire = [&](ReacquireStep &)
+    {
+        reacquire_entered.arriveAndWait();
+        return ReacquireOutcome::Abandoned;
+    };
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -4955,10 +4968,10 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
     /// A definitive answer ends the worker's renewal; a transient fault would only be retried.
     fenceOutMount(*backend, layout.mountKey("test"));
     runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
-    remount_entered.waitUntilArrived();
+    reacquire_entered.waitUntilArrived();
     EXPECT_FALSE(runtime.mayMutate());
     EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::TransientNotLive);
-    remount_entered.release();
+    reacquire_entered.release();
     runtime.stopBackgroundWorkers();
     runtime.finishTeardown({.ref_lane_unsettled = true});
 }

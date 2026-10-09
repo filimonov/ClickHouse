@@ -1233,6 +1233,80 @@ uint64_t Pool::peekNextBuildSeq()
     return mount_runtime.peekNextBuildSeq();
 }
 
+namespace
+{
+
+std::string_view reacquireStageName(ReacquireStage stage)
+{
+    switch (stage)
+    {
+        case ReacquireStage::CloseOldEpoch: return "close_old_epoch";
+        case ReacquireStage::ProbeIdentity: return "probe_identity";
+        case ReacquireStage::ObserveCatalog: return "observe_catalog";
+        case ReacquireStage::ClaimOwner: return "claim_owner";
+        case ReacquireStage::AllocateEpoch: return "allocate_epoch";
+        case ReacquireStage::ClaimSlot: return "claim_slot";
+        case ReacquireStage::StartRenewer: return "start_renewer";
+        case ReacquireStage::Open: return "open";
+    }
+    return "unknown";
+}
+
+String messageOf(const std::exception_ptr & error)
+{
+    try
+    {
+        if (error)
+            std::rethrow_exception(error);
+    }
+    catch (const Exception & e)
+    {
+        return e.message();
+    }
+    catch (const std::exception & e)
+    {
+        return e.what();
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+    return {};
+}
+
+bool absenceListed(CasOperation & op, const String & key)
+{
+    return std::holds_alternative<ProvenAbsent>(corroborateAbsence(op, key, ProvenAbsent{}));
+}
+
+MountEnd slotEnd(MountSlotVerdict verdict)
+{
+    switch (verdict)
+    {
+        case MountSlotVerdict::SlotTaken: return MountEnd::SlotTaken;
+        case MountSlotVerdict::SlotAbsent: return MountEnd::SlotAbsent;
+        case MountSlotVerdict::SlotCorrupt:
+        case MountSlotVerdict::FencedByGc:
+        case MountSlotVerdict::Ours:
+        case MountSlotVerdict::NotObserved:
+            return MountEnd::SlotCorrupt;
+    }
+    return MountEnd::SlotCorrupt;
+}
+
+uint64_t leaseDeadline(uint64_t start_boot_ms, uint64_t ttl_ms)
+{
+    return start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms ? std::numeric_limits<uint64_t>::max()
+                                                                          : start_boot_ms + ttl_ms;
+}
+
+uint64_t wallNowMs()
+{
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+}
+
 bool Pool::tryRemountOnce()
 {
     const uint64_t attempt_no = remount_attempt_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -1558,24 +1632,7 @@ bool Pool::tryRemountOnce()
         /// Quiescence may consume most of the new lease. The same renewal-window gate used at startup
         /// admits one synchronous parked redo while at least one physical attempt still fits the old
         /// authority window and before the fence is armed.
-        const uint64_t safety_ms = config.cas_request_budget.lease_safety_margin_ms;
-        const uint64_t safe_deadline = remount_anchor_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
-            ? std::numeric_limits<uint64_t>::max() - safety_ms
-            : remount_anchor_boot_ms + ttl_ms - safety_ms;
-        const uint64_t now_boot_ms = mount_runtime.bootMsNow();
-        const uint64_t period_ms = static_cast<uint64_t>(config.mount_renew_period.count());
-        const uint64_t envelope_ms = config.cas_request_budget.attemptEnvelopeMs();
-        const uint64_t two_envelopes_ms = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
-            ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
-        const uint64_t renewal_window_ms = config.background_watermark
-            ? (two_envelopes_ms > std::numeric_limits<uint64_t>::max() - period_ms
-                  ? std::numeric_limits<uint64_t>::max() : period_ms + two_envelopes_ms)
-            : two_envelopes_ms;
-        /// STRICT, like the open path and `CasMountRuntime::admit`: a horizon that fits exactly still
-        /// starts a renewal the fence would then refuse.
-        const bool renewal_window_fits = now_boot_ms <= safe_deadline
-            && renewal_window_ms < safe_deadline - now_boot_ms;
-        if (!renewal_window_fits)
+        if (!renewalWindowFits(leaseDeadline(remount_anchor_boot_ms, ttl_ms)))
         {
             step = "renewer_redo";
             remount_anchor_boot_ms = mount_runtime.renewRenewerForRemountOnce();
@@ -1611,355 +1668,301 @@ bool Pool::tryRemountOnce()
     }
 }
 
-namespace
+bool Pool::renewalWindowFits(uint64_t deadline_boot_ms) const
 {
-
-std::string_view reacquireStageName(ReacquireStage stage)
-{
-    switch (stage)
-    {
-        case ReacquireStage::CloseOldEpoch: return "close_old_epoch";
-        case ReacquireStage::ProbeIdentity: return "probe_identity";
-        case ReacquireStage::ObserveCatalog: return "observe_catalog";
-        case ReacquireStage::ClaimOwner: return "claim_owner";
-        case ReacquireStage::AllocateEpoch: return "allocate_epoch";
-        case ReacquireStage::ClaimSlot: return "claim_slot";
-        case ReacquireStage::StartRenewer: return "start_renewer";
-        case ReacquireStage::Open: return "open";
-    }
-    return "unknown";
+    const uint64_t safety_ms = config.cas_request_budget.lease_safety_margin_ms;
+    const uint64_t safe_deadline = deadline_boot_ms > safety_ms ? deadline_boot_ms - safety_ms : 0;
+    const uint64_t now_boot_ms = mount_runtime.bootMsNow();
+    const uint64_t period_ms = static_cast<uint64_t>(config.mount_renew_period.count());
+    const uint64_t envelope_ms = config.cas_request_budget.attemptEnvelopeMs();
+    const uint64_t two_envelopes_ms = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
+        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
+    const uint64_t renewal_window_ms = config.background_watermark
+        ? (two_envelopes_ms > std::numeric_limits<uint64_t>::max() - period_ms
+              ? std::numeric_limits<uint64_t>::max() : period_ms + two_envelopes_ms)
+        : two_envelopes_ms;
+    /// STRICT, like the open path and `CasMountRuntime::admit`: a horizon that fits exactly still
+    /// starts a renewal the fence would then refuse.
+    return now_boot_ms <= safe_deadline && renewal_window_ms < safe_deadline - now_boot_ms;
 }
 
-String messageOf(const std::exception_ptr & error)
+/// What one pass of the reacquire carries out of its stages: the end it latched, and why it stopped.
+struct Pool::ReacquirePass
 {
+    CasMountRuntime & runtime;
+    std::optional<std::tuple<MountEnd, std::optional<MountLease>, String>> loss = std::nullopt;
+    String error = {};
+
+    ReacquireOutcome lose(MountEnd end, std::optional<MountLease> holder, String detail)
+    {
+        if (!runtime.latchMountEnd(end))
+            return ReacquireOutcome::Abandoned;
+        loss.emplace(end, std::move(holder), std::move(detail));
+        return ReacquireOutcome::Ended;
+    }
+
+    ReacquireOutcome retry(String why)
+    {
+        error = std::move(why);
+        return ReacquireOutcome::Retry;
+    }
+
+    ReacquireOutcome epochFailure(EpochAllocation & failure)
+    {
+        return std::visit(detail::Overload{
+            [&](EpochAdvancedByOther & advanced) { return lose(MountEnd::SlotTaken, std::nullopt, messageOf(advanced.error)); },
+            [&](EpochCounterLost & lost) { return lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(lost.error)); },
+            [&](OwnershipCorrupt & corrupt) { return lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(corrupt.error)); },
+            [&](OwnershipTransient & transient) { return retry(messageOf(transient.error)); },
+            [&](EpochAllocated &) -> ReacquireOutcome
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS reacquire: an allocation is not a failure");
+            }}, failure);
+    }
+};
+
+std::optional<ReacquireOutcome> Pool::reacquireCloseOldEpoch(ReacquireStep & step, ReacquirePass &)
+{
+    LOG_INFO(getLogger("CasPool"),
+        "CAS disk '{}': writer_epoch {} was fenced by a GC leader (possibly this server's); reacquiring the mount slot",
+        config.disk_name, step.certificate.body.writer_epoch);
+    /// Under the old `liveWriterEpoch`, before the counter moves: no recovery or cached table of the
+    /// fenced epoch outlives it.
+    mount_runtime.tripMountLost();
+    ref_ledger.cancelRecoveriesAndAwaitQuiescence();
+    ref_ledger.quiesceRefTablesForRemount();
+    if (config.remount_quiesce_hook_for_test)
+        config.remount_quiesce_hook_for_test();
+    step.stage = ReacquireStage::ProbeIdentity;
+    return std::nullopt;
+}
+
+std::optional<ReacquireOutcome> Pool::reacquireProbeIdentity(ReacquireStep & step, ReacquirePass & pass)
+{
+    const String & srid = config.server_root_id;
+    CasOperation op = gc_requests.admit();
+    LifecycleGate gate{LifecycleGateVerdict::StayTransient, {}};
     try
     {
-        if (error)
-            std::rethrow_exception(error);
+        gate = probePoolLifecycleGate(op, pool_layout, srid, meta.pool_id, meta.blob_header_len);
     }
     catch (const Exception & e)
     {
-        return e.message();
+        if (isDeterministicLocalFailure(e.code()))
+            throw;
+        return pass.retry(e.message());
     }
-    catch (const std::exception & e)
+    switch (gate.verdict)
     {
-        return e.what();
+        case LifecycleGateVerdict::Recover:
+            step.stage = ReacquireStage::ObserveCatalog;
+            return std::nullopt;
+        case LifecycleGateVerdict::StayTransient:
+            return pass.retry(gate.reason);
+        case LifecycleGateVerdict::Replaced:
+            return pass.lose(MountEnd::PoolIdentityLost, std::nullopt, gate.reason);
+        case LifecycleGateVerdict::IdentityLost:
+            if (absenceListed(op, pool_layout.poolMetaKey()) && absenceListed(op, pool_layout.ownerKey(srid)))
+                return pass.lose(MountEnd::PoolIdentityLost, std::nullopt,
+                                 "the pool metadata and the owner anchor are absent and a LIST agrees");
+            return pass.retry(gate.reason);
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    return pass.retry(gate.reason);
+}
+
+std::optional<ReacquireOutcome> Pool::reacquireObserveCatalog(ReacquireStep & step, ReacquirePass & pass)
+{
+    CasOperation op = gc_requests.admit();
+    CatalogObservation observed = CasRefCatalog::observe(op, pool_layout, "CAS reacquire");
+    if (std::holds_alternative<RefCatalog>(observed))
     {
+        step.stage = ReacquireStage::ClaimOwner;
+        return std::nullopt;
     }
-    return {};
+    if (auto * transient = std::get_if<OwnershipTransient>(&observed))
+        return pass.retry(messageOf(transient->error));
+    auto & corrupt = std::get<OwnershipCorrupt>(observed);
+    if (corrupt.cause != OwnershipCorrupt::Cause::Absent)
+        return pass.lose(MountEnd::LedgerFault, std::nullopt, messageOf(corrupt.error));
+    if (absenceListed(op, pool_layout.refCatalogKey()))
+        return pass.lose(MountEnd::PoolIdentityLost, std::nullopt, "the ref catalog is absent and a LIST agrees");
+    return pass.retry(messageOf(corrupt.error));
 }
 
-bool absenceListed(CasOperation & op, const String & key)
+std::optional<ReacquireOutcome> Pool::reacquireClaimOwner(ReacquireStep & step, ReacquirePass & pass)
 {
-    return std::holds_alternative<ProvenAbsent>(corroborateAbsence(op, key, ProvenAbsent{}));
-}
-
-MountEnd slotEnd(MountSlotVerdict verdict)
-{
-    switch (verdict)
+    const String & srid = config.server_root_id;
+    CasOperation op = gc_requests.admit();
+    const ObserveRefCatalog observe_catalog = [this]
     {
-        case MountSlotVerdict::SlotTaken: return MountEnd::SlotTaken;
-        case MountSlotVerdict::SlotAbsent: return MountEnd::SlotAbsent;
-        case MountSlotVerdict::SlotCorrupt:
-        case MountSlotVerdict::FencedByGc:
-        case MountSlotVerdict::Ours:
-        case MountSlotVerdict::NotObserved:
-            return MountEnd::SlotCorrupt;
+        CasOperation catalog_op = gc_requests.admit();
+        return CasRefCatalog::observe(catalog_op, pool_layout, "CAS reacquire");
+    };
+    OwnerClaim claim = claimOwner(op, pool_layout, srid, config.server_id, OwnershipAuthority::Reacquire, observe_catalog);
+    if (std::holds_alternative<OwnerHeld>(claim))
+    {
+        step.stage = ReacquireStage::AllocateEpoch;
+        return std::nullopt;
     }
-    return MountEnd::SlotCorrupt;
+    if (auto * transient = std::get_if<OwnershipTransient>(&claim))
+        return pass.retry(messageOf(transient->error));
+    if (auto * corrupt = std::get_if<OwnershipCorrupt>(&claim))
+        return pass.lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(corrupt->error));
+    auto & lost = std::get<OwnerLost>(claim);
+    if (lost.why != OwnerLost::Why::Absent)
+        return pass.lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(lost.error));
+    if (absenceListed(op, pool_layout.ownerKey(srid)))
+        return pass.lose(MountEnd::PoolIdentityLost, std::nullopt, "the owner anchor is absent and a LIST agrees");
+    return pass.retry("the owner anchor read found nothing, but a LIST still lists it");
 }
 
-uint64_t leaseDeadline(uint64_t start_boot_ms, uint64_t ttl_ms)
+std::optional<ReacquireOutcome> Pool::reacquireAllocateEpoch(ReacquireStep & step, ReacquirePass & pass)
 {
-    return start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms ? std::numeric_limits<uint64_t>::max()
-                                                                          : start_boot_ms + ttl_ms;
+    const String & srid = config.server_root_id;
+    CasOperation op = lease_requests.admit([this] { return mount_runtime.reacquireLive(); });
+    if (!step.allocation)
+    {
+        auto begun = beginEpochWrite(op, pool_layout, srid);
+        if (auto * failure = std::get_if<EpochAllocation>(&begun))
+            return pass.epochFailure(*failure);
+        step.allocation = std::get<EpochWrite>(begun);
+    }
+    EpochAllocation allocated = writeEpochOnce(op, pool_layout, srid, *step.allocation);
+    if (!std::holds_alternative<EpochAllocated>(allocated))
+        return pass.epochFailure(allocated);
+    step.writer_epoch = std::get<EpochAllocated>(allocated).writer_epoch;
+    step.stage = ReacquireStage::ClaimSlot;
+    return std::nullopt;
 }
 
-uint64_t wallNowMs()
+std::optional<ReacquireOutcome> Pool::reacquireClaimSlot(ReacquireStep & step, ReacquirePass & pass)
 {
-    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
+    const String & srid = config.server_root_id;
+    if (!step.claim)
+        step.claim = makeReacquireClaim(config.server_id, *step.writer_epoch, step.certificate, wallNowMs(),
+                                        static_cast<uint64_t>(config.mount_lease_ttl_ms.count()), mount_runtime.bootMsNow());
+    CasOperation op = lease_requests.admit([this] { return mount_runtime.reacquireLive(); });
+    ReacquireClaimResult claimed = claimMount(
+        op, pool_layout, srid, step.certificate, *step.claim, [this](CasEvent e) { emitEvent(std::move(e)); });
+    if (claimed.claimed)
+    {
+        step.claimed = std::move(claimed.claimed);
+        step.stage = ReacquireStage::StartRenewer;
+        return std::nullopt;
+    }
+    if (claimed.transient)
+        return pass.retry("the claim write ended without a verdict on the slot");
+    const Observation seen = corroborateAbsence(op, pool_layout.mountKey(srid), std::move(claimed.seen));
+    ReacquireSlotReading reading = classifyReacquireSlot(seen, step.certificate, step.claim);
+    switch (reading.verdict)
+    {
+        case ReacquireSlotVerdict::Applied:
+            step.claimed = MountClaimed{step.claim->body, step.claim->bytes, std::get<Object>(seen).etag, step.claim->start_boot_ms};
+            step.stage = ReacquireStage::StartRenewer;
+            return std::nullopt;
+        case ReacquireSlotVerdict::NewFence:
+            step = ReacquireStep{.certificate = std::move(*reading.new_fence)};
+            return pass.retry("the GC fenced the claim of this reacquire");
+        case ReacquireSlotVerdict::Loss:
+            return pass.lose(slotEnd(reading.loss.verdict), std::move(reading.loss.holder), "");
+        case ReacquireSlotVerdict::Certified:
+        case ReacquireSlotVerdict::NotObserved:
+            break;
+    }
+    return pass.retry("the claim was refused and the read after it settled nothing");
 }
 
+std::optional<ReacquireOutcome> Pool::reacquireStartRenewer(ReacquireStep & step, ReacquirePass & pass)
+{
+    const uint64_t ttl_ms = static_cast<uint64_t>(config.mount_lease_ttl_ms.count());
+    if (step.deadline_boot_ms == 0)
+    {
+        /// The new incarnation must outrank the fenced one: recovery seals only epochs below the live one.
+        chassert(*step.writer_epoch > step.certificate.body.writer_epoch);
+        mount_runtime.installRenewer(config.server_id, *step.writer_epoch, wallNowMs);
+        const uint64_t start_boot_ms = mount_runtime.startRenewer(*step.claimed);
+        mount_runtime.setLiveWriterEpoch(*step.writer_epoch);
+        mount_runtime.setProcessEpoch(*step.writer_epoch, std::memory_order_release);
+        step.deadline_boot_ms = leaseDeadline(start_boot_ms, ttl_ms);
+    }
+    if (!renewalWindowFits(step.deadline_boot_ms))
+    {
+        const MountRenewResult renewed = mount_runtime.renewForReacquireOnce();
+        if (renewed.outcome == MountRenewOutcome::Committed)
+            step.deadline_boot_ms = leaseDeadline(renewed.attempt_start_boot_ms, ttl_ms);
+        else if (mount_runtime.mountEnd() != MountEnd::None)
+            return ReacquireOutcome::Ended;
+        else if (renewed.slot && renewed.slot->verdict == MountSlotVerdict::FencedByGc
+                 && renewed.slot->fenced && renewed.slot->holder)
+        {
+            step = ReacquireStep{.certificate = ReacquireCertificate{*renewed.slot->fenced, *renewed.slot->holder}};
+            return pass.retry("the GC fenced the reacquired epoch before it opened");
+        }
+        else if (!mount_runtime.reacquireLive())
+            return ReacquireOutcome::Abandoned;
+        else
+            /// Repeated until definitive, the renewal ends otherwise only on the memory limit, which ends
+            /// the renewal thread.
+            std::rethrow_exception(renewed.failure);
+    }
+    step.stage = ReacquireStage::Open;
+    return std::nullopt;
+}
+
+std::optional<ReacquireOutcome> Pool::reacquireOpen(ReacquireStep & step, ReacquirePass & pass)
+{
+    if (config.reacquire_before_open_hook_for_test)
+        config.reacquire_before_open_hook_for_test();
+    if (mount_runtime.openAfterReacquire(config.server_id, *step.writer_epoch, step.deadline_boot_ms))
+        return ReacquireOutcome::Open;
+    if (!mount_runtime.reacquireLive())
+        return ReacquireOutcome::Abandoned;
+    step.stage = ReacquireStage::StartRenewer;
+    return pass.retry("the lease left cannot cover a conditional change");
 }
 
 ReacquireOutcome Pool::reacquireOnce(ReacquireStep & step)
 {
-    const String & srid = config.server_root_id;
-    const UInt128 our_uuid = config.server_id;
-    const uint64_t ttl_ms = static_cast<uint64_t>(config.mount_lease_ttl_ms.count());
     const uint64_t fenced_epoch = step.certificate.body.writer_epoch;
-    const auto live = [this] { return mount_runtime.reacquireLive(); };
-    struct Loss
-    {
-        MountEnd end;
-        std::optional<MountLease> holder;
-        String detail;
-    };
-    std::optional<Loss> loss;
-    String error;
-
+    ReacquirePass pass{.runtime = mount_runtime};
     ReacquireOutcome outcome = ReacquireOutcome::Retry;
     {
         std::lock_guard serialize(remount_mutex);
-        const auto lose = [&](MountEnd end, std::optional<MountLease> holder, String detail)
+        while (true)
         {
-            if (!mount_runtime.latchMountEnd(end))
-                return ReacquireOutcome::Abandoned;
-            loss = Loss{end, std::move(holder), std::move(detail)};
-            return ReacquireOutcome::Ended;
-        };
-        const auto retry = [&](String why)
-        {
-            error = std::move(why);
-            return ReacquireOutcome::Retry;
-        };
-        const auto epoch_failure = [&](EpochAllocation & failure)
-        {
-            return std::visit(detail::Overload{
-                [&](EpochAdvancedByOther & advanced) { return lose(MountEnd::SlotTaken, std::nullopt, messageOf(advanced.error)); },
-                [&](EpochCounterLost & lost) { return lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(lost.error)); },
-                [&](OwnershipCorrupt & corrupt) { return lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(corrupt.error)); },
-                [&](OwnershipTransient & transient) { return retry(messageOf(transient.error)); },
-                [&](EpochAllocated &) -> ReacquireOutcome
-                {
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS reacquire: an allocation is not a failure");
-                }}, failure);
-        };
-
-        outcome = [&]() -> ReacquireOutcome
-        {
-            while (true)
+            if (!mount_runtime.reacquireLive())
             {
-                if (!mount_runtime.reacquireLive())
-                    return ReacquireOutcome::Abandoned;
-                switch (step.stage)
-                {
-                    case ReacquireStage::CloseOldEpoch:
-                    {
-                        LOG_INFO(getLogger("CasPool"),
-                            "CAS disk '{}': the GC of another server fenced writer_epoch {}; reacquiring the mount slot",
-                            config.disk_name, fenced_epoch);
-                        /// Under the old `liveWriterEpoch`, before the counter moves: no recovery or cached
-                        /// table of the fenced epoch outlives it.
-                        mount_runtime.tripMountLost();
-                        ref_ledger.cancelRecoveriesAndAwaitQuiescence();
-                        ref_ledger.quiesceRefTablesForRemount();
-                        if (config.remount_quiesce_hook_for_test)
-                            config.remount_quiesce_hook_for_test();
-                        step.stage = ReacquireStage::ProbeIdentity;
-                        break;
-                    }
-                    case ReacquireStage::ProbeIdentity:
-                    {
-                        CasOperation op = gc_requests.admit();
-                        LifecycleGate gate{LifecycleGateVerdict::StayTransient, {}};
-                        try
-                        {
-                            gate = probePoolLifecycleGate(op, pool_layout, srid, meta.pool_id, meta.blob_header_len);
-                        }
-                        catch (const Exception & e)
-                        {
-                            if (isDeterministicLocalFailure(e.code()))
-                                throw;
-                            return retry(e.message());
-                        }
-                        switch (gate.verdict)
-                        {
-                            case LifecycleGateVerdict::Recover:
-                                step.stage = ReacquireStage::ObserveCatalog;
-                                break;
-                            case LifecycleGateVerdict::StayTransient:
-                                return retry(gate.reason);
-                            case LifecycleGateVerdict::Replaced:
-                                return lose(MountEnd::PoolIdentityLost, std::nullopt, gate.reason);
-                            case LifecycleGateVerdict::IdentityLost:
-                                if (absenceListed(op, pool_layout.poolMetaKey()) && absenceListed(op, pool_layout.ownerKey(srid)))
-                                    return lose(MountEnd::PoolIdentityLost, std::nullopt,
-                                                "the pool metadata and the owner anchor are absent and a LIST agrees");
-                                return retry(gate.reason);
-                        }
-                        break;
-                    }
-                    case ReacquireStage::ObserveCatalog:
-                    {
-                        CasOperation op = gc_requests.admit();
-                        CatalogObservation observed = CasRefCatalog::observe(op, pool_layout, "CAS reacquire");
-                        if (std::holds_alternative<RefCatalog>(observed))
-                        {
-                            step.stage = ReacquireStage::ClaimOwner;
-                            break;
-                        }
-                        if (auto * transient = std::get_if<OwnershipTransient>(&observed))
-                            return retry(messageOf(transient->error));
-                        auto & corrupt = std::get<OwnershipCorrupt>(observed);
-                        if (corrupt.cause != OwnershipCorrupt::Cause::Absent)
-                            return lose(MountEnd::LedgerFault, std::nullopt, messageOf(corrupt.error));
-                        if (absenceListed(op, pool_layout.refCatalogKey()))
-                            return lose(MountEnd::PoolIdentityLost, std::nullopt, "the ref catalog is absent and a LIST agrees");
-                        return retry(messageOf(corrupt.error));
-                    }
-                    case ReacquireStage::ClaimOwner:
-                    {
-                        CasOperation op = gc_requests.admit();
-                        const ObserveRefCatalog observe_catalog = [this]
-                        {
-                            CasOperation catalog_op = gc_requests.admit();
-                            return CasRefCatalog::observe(catalog_op, pool_layout, "CAS reacquire");
-                        };
-                        OwnerClaim claim = claimOwner(op, pool_layout, srid, our_uuid, OwnershipAuthority::Reacquire, observe_catalog);
-                        if (std::holds_alternative<OwnerHeld>(claim))
-                        {
-                            step.stage = ReacquireStage::AllocateEpoch;
-                            break;
-                        }
-                        if (auto * transient = std::get_if<OwnershipTransient>(&claim))
-                            return retry(messageOf(transient->error));
-                        if (auto * corrupt = std::get_if<OwnershipCorrupt>(&claim))
-                            return lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(corrupt->error));
-                        auto & lost = std::get<OwnerLost>(claim);
-                        if (lost.why != OwnerLost::Why::Absent)
-                            return lose(MountEnd::PoolIdentityLost, std::nullopt, messageOf(lost.error));
-                        if (absenceListed(op, pool_layout.ownerKey(srid)))
-                            return lose(MountEnd::PoolIdentityLost, std::nullopt, "the owner anchor is absent and a LIST agrees");
-                        return retry("the owner anchor read found nothing, but a LIST still lists it");
-                    }
-                    case ReacquireStage::AllocateEpoch:
-                    {
-                        CasOperation op = lease_requests.admit(live);
-                        if (!step.allocation)
-                        {
-                            auto begun = beginEpochWrite(op, pool_layout, srid);
-                            if (auto * failure = std::get_if<EpochAllocation>(&begun))
-                                return epoch_failure(*failure);
-                            step.allocation = std::get<EpochWrite>(begun);
-                        }
-                        EpochAllocation allocated = writeEpochOnce(op, pool_layout, srid, *step.allocation);
-                        if (!std::holds_alternative<EpochAllocated>(allocated))
-                            return epoch_failure(allocated);
-                        step.writer_epoch = std::get<EpochAllocated>(allocated).writer_epoch;
-                        step.stage = ReacquireStage::ClaimSlot;
-                        break;
-                    }
-                    case ReacquireStage::ClaimSlot:
-                    {
-                        if (!step.claim)
-                            step.claim = makeReacquireClaim(
-                                our_uuid, *step.writer_epoch, step.certificate, wallNowMs(), ttl_ms, mount_runtime.bootMsNow());
-                        CasOperation op = lease_requests.admit(live);
-                        ReacquireClaimResult claimed = claimMount(
-                            op, pool_layout, srid, step.certificate, *step.claim, [this](CasEvent e) { emitEvent(std::move(e)); });
-                        if (claimed.claimed)
-                        {
-                            step.claimed = std::move(claimed.claimed);
-                            step.stage = ReacquireStage::StartRenewer;
-                            break;
-                        }
-                        if (claimed.transient)
-                            return retry("the claim write ended without a verdict on the slot");
-                        const Observation seen = corroborateAbsence(op, pool_layout.mountKey(srid), std::move(claimed.seen));
-                        ReacquireSlotReading reading = classifyReacquireSlot(seen, step.certificate, step.claim);
-                        switch (reading.verdict)
-                        {
-                            case ReacquireSlotVerdict::Applied:
-                                step.claimed = MountClaimed{
-                                    step.claim->body, step.claim->bytes, std::get<Object>(seen).etag, step.claim->start_boot_ms};
-                                step.stage = ReacquireStage::StartRenewer;
-                                break;
-                            case ReacquireSlotVerdict::NewFence:
-                                step = ReacquireStep{.certificate = std::move(*reading.new_fence)};
-                                return retry("the GC fenced the claim of this reacquire");
-                            case ReacquireSlotVerdict::Loss:
-                                return lose(slotEnd(reading.loss.verdict), std::move(reading.loss.holder), "");
-                            case ReacquireSlotVerdict::Certified:
-                            case ReacquireSlotVerdict::NotObserved:
-                                return retry("the claim was refused and the read after it settled nothing");
-                        }
-                        break;
-                    }
-                    case ReacquireStage::StartRenewer:
-                    {
-                        if (step.deadline_boot_ms == 0)
-                        {
-                            /// The new incarnation must outrank the fenced one: recovery seals only epochs
-                            /// below the live one.
-                            chassert(*step.writer_epoch > fenced_epoch);
-                            mount_runtime.installRenewer(our_uuid, *step.writer_epoch, wallNowMs);
-                            const uint64_t start_boot_ms = mount_runtime.startRenewer(*step.claimed);
-                            mount_runtime.setLiveWriterEpoch(*step.writer_epoch);
-                            mount_runtime.setProcessEpoch(*step.writer_epoch, std::memory_order_release);
-                            step.deadline_boot_ms = leaseDeadline(start_boot_ms, ttl_ms);
-                        }
-                        /// The window `tryRemountOnce` requires before it arms: one renewal period and two
-                        /// attempt envelopes must still fit the lease.
-                        const uint64_t safety_ms = config.cas_request_budget.lease_safety_margin_ms;
-                        const uint64_t safe_deadline = step.deadline_boot_ms > safety_ms ? step.deadline_boot_ms - safety_ms : 0;
-                        const uint64_t now_boot_ms = mount_runtime.bootMsNow();
-                        const uint64_t period_ms = static_cast<uint64_t>(config.mount_renew_period.count());
-                        const uint64_t envelope_ms = config.cas_request_budget.attemptEnvelopeMs();
-                        const uint64_t two_envelopes_ms = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
-                            ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
-                        const uint64_t renewal_window_ms = config.background_watermark
-                            ? (two_envelopes_ms > std::numeric_limits<uint64_t>::max() - period_ms
-                                  ? std::numeric_limits<uint64_t>::max() : period_ms + two_envelopes_ms)
-                            : two_envelopes_ms;
-                        if (now_boot_ms > safe_deadline || renewal_window_ms >= safe_deadline - now_boot_ms)
-                        {
-                            const MountRenewResult renewed = mount_runtime.renewForReacquireOnce();
-                            if (renewed.outcome == MountRenewOutcome::Committed)
-                            {
-                                step.deadline_boot_ms = leaseDeadline(renewed.attempt_start_boot_ms, ttl_ms);
-                            }
-                            else if (mount_runtime.mountEnd() != MountEnd::None)
-                            {
-                                return ReacquireOutcome::Ended;
-                            }
-                            else if (renewed.slot && renewed.slot->verdict == MountSlotVerdict::FencedByGc
-                                     && renewed.slot->fenced && renewed.slot->holder)
-                            {
-                                step = ReacquireStep{.certificate = ReacquireCertificate{*renewed.slot->fenced, *renewed.slot->holder}};
-                                return retry("the GC fenced the reacquired epoch before it opened");
-                            }
-                            else if (!mount_runtime.reacquireLive())
-                            {
-                                return ReacquireOutcome::Abandoned;
-                            }
-                            else
-                            {
-                                /// Repeated until definitive, the renewal ends otherwise only on the
-                                /// memory limit, which ends the renewal thread.
-                                std::rethrow_exception(renewed.failure);
-                            }
-                        }
-                        step.stage = ReacquireStage::Open;
-                        break;
-                    }
-                    case ReacquireStage::Open:
-                    {
-                        if (config.reacquire_before_open_hook_for_test)
-                            config.reacquire_before_open_hook_for_test();
-                        if (mount_runtime.openAfterReacquire(our_uuid, *step.writer_epoch, step.deadline_boot_ms))
-                            return ReacquireOutcome::Open;
-                        if (!mount_runtime.reacquireLive())
-                            return ReacquireOutcome::Abandoned;
-                        step.stage = ReacquireStage::StartRenewer;
-                        return retry("the lease left cannot cover a conditional change");
-                    }
-                }
+                outcome = ReacquireOutcome::Abandoned;
+                break;
             }
-        }();
+            std::optional<ReacquireOutcome> settled;
+            switch (step.stage)
+            {
+                case ReacquireStage::CloseOldEpoch: settled = reacquireCloseOldEpoch(step, pass); break;
+                case ReacquireStage::ProbeIdentity: settled = reacquireProbeIdentity(step, pass); break;
+                case ReacquireStage::ObserveCatalog: settled = reacquireObserveCatalog(step, pass); break;
+                case ReacquireStage::ClaimOwner: settled = reacquireClaimOwner(step, pass); break;
+                case ReacquireStage::AllocateEpoch: settled = reacquireAllocateEpoch(step, pass); break;
+                case ReacquireStage::ClaimSlot: settled = reacquireClaimSlot(step, pass); break;
+                case ReacquireStage::StartRenewer: settled = reacquireStartRenewer(step, pass); break;
+                case ReacquireStage::Open: settled = reacquireOpen(step, pass); break;
+            }
+            if (settled)
+            {
+                outcome = *settled;
+                break;
+            }
+        }
     }
 
-    if (loss)
-        mount_runtime.reactToMountEnd(loss->end, loss->holder, loss->detail);
+    if (pass.loss)
+        mount_runtime.reactToMountEnd(std::get<0>(*pass.loss), std::get<1>(*pass.loss), std::get<2>(*pass.loss));
     if (outcome == ReacquireOutcome::Open)
         LOG_INFO(getLogger("CasPool"), "CAS disk '{}': reacquired under writer_epoch {} (was {})",
                  config.disk_name, *step.writer_epoch, fenced_epoch);
     if (outcome == ReacquireOutcome::Retry && !std::exchange(step.retry_warned, true))
         LOG_WARNING(getLogger("CasPool"), "CAS disk '{}': the reacquire after a GC fence stopped at stage '{}' ({}); retrying",
-                    config.disk_name, reacquireStageName(step.stage), error);
+                    config.disk_name, reacquireStageName(step.stage), pass.error);
     return outcome;
 }
 

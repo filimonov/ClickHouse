@@ -44,7 +44,7 @@ struct ReacquireSlotReading
     std::optional<ReacquireCertificate> new_fence = std::nullopt;
 };
 
-/// R20's order on one observation: our claim bytes, the certificate's ETag, then the loss table. A body of
+/// One observation, in this order: our claim bytes, the certificate's ETag, then the loss table. A body of
 /// the fenced pair under another ETag is corrupt even when it looks like a GC fence: a fence never repeats.
 ReacquireSlotReading classifyReacquireSlot(const Observation & seen, const ReacquireCertificate & certificate,
                                            const std::optional<MountReacquireClaim> & claim);

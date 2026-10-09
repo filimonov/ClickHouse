@@ -289,6 +289,8 @@ struct PoolConfig
     std::function<void()> remount_quiesce_hook_for_test = {};
     /// Runs in the reacquire's last stage, right before it decides to open the fence.
     std::function<void()> reacquire_before_open_hook_for_test = {};
+    /// See `MountConfig::renewal_finished_hook_for_test`.
+    std::function<void(const MountRenewResult &)> renewal_finished_hook_for_test = {};
 
     /// a table becomes a publish candidate once its retained
     /// tail -- every applied txn strictly above the newest published snapshot, no age filter -- exceeds
@@ -369,6 +371,7 @@ struct PoolConfig
             .boot_ms_fn = boot_ms_fn,
             .wait_sleep_fn = wait_sleep_fn,
             .worker_factory = worker_factory,
+            .renewal_finished_hook_for_test = renewal_finished_hook_for_test,
             .loss_reaction = mount_loss_reaction,
             .disk_name = disk_name,
         };
@@ -860,6 +863,7 @@ public:
     /// Test seam without workers: one pass of the reacquire a renewal found owed, or of the step a
     /// previous call left at `Retry`.
     ReacquireOutcome runReacquireForTest() { return mount_runtime.runReacquireForTest(); }
+    uint64_t remountRequestedGenerationForTest() const { return mount_runtime.remountRequestedGenerationForTest(); }
     /// Test seam: publish the same worker-stop request as `~Pool` without tearing the pool down, so a
     /// test can assert `scheduleRemount` refuses to latch work once teardown has begun.
     void beginShutdownForTest();
@@ -964,6 +968,19 @@ private:
     /// One pass of the reacquire after a GC fence of our own body: runs `step` from its stage until it
     /// opens, ends or fails a stage. Serialized with `tryRemountOnce` by `remount_mutex`.
     ReacquireOutcome reacquireOnce(ReacquireStep & step);
+    /// One stage each: `nullopt` moved `step` to its next stage, anything else ends the pass.
+    struct ReacquirePass;
+    std::optional<ReacquireOutcome> reacquireCloseOldEpoch(ReacquireStep & step, ReacquirePass & pass);
+    std::optional<ReacquireOutcome> reacquireProbeIdentity(ReacquireStep & step, ReacquirePass & pass);
+    std::optional<ReacquireOutcome> reacquireObserveCatalog(ReacquireStep & step, ReacquirePass & pass);
+    std::optional<ReacquireOutcome> reacquireClaimOwner(ReacquireStep & step, ReacquirePass & pass);
+    std::optional<ReacquireOutcome> reacquireAllocateEpoch(ReacquireStep & step, ReacquirePass & pass);
+    std::optional<ReacquireOutcome> reacquireClaimSlot(ReacquireStep & step, ReacquirePass & pass);
+    std::optional<ReacquireOutcome> reacquireStartRenewer(ReacquireStep & step, ReacquirePass & pass);
+    std::optional<ReacquireOutcome> reacquireOpen(ReacquireStep & step, ReacquirePass & pass);
+    /// Whether a lease ending at `deadline_boot_ms` still leaves room for the next renewal, so the fence
+    /// may open without one first.
+    bool renewalWindowFits(uint64_t deadline_boot_ms) const;
 
 
 public:

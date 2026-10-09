@@ -106,7 +106,7 @@ std::pair<const char *, const char *> casLifecycleWords(const Cas::Pool::Lifecyc
             if (ps.pause == Cas::LeasePause::LeaseExpired)
                 return {"paused", "lease_expired"};
             return {"live", ""};
-        case Cas::PoolLifecycle::TransientNotLive:  return {"paused", "remounting"};
+        case Cas::PoolLifecycle::TransientNotLive:  return {"paused", "fenced_by_gc"};
         case Cas::PoolLifecycle::IdentityLost:      return {"identity_lost", ""};
         case Cas::PoolLifecycle::VanishedReplaced:  return {"vanished", "replaced"};
         case Cas::PoolLifecycle::VanishedForgotten: return {"closed", "forgotten"};
