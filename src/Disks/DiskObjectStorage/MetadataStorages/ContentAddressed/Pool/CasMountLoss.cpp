@@ -65,7 +65,6 @@ std::string_view mountEndWord(MountEnd end)
         case MountEnd::FencedByGc: return "fenced_by_gc";
         case MountEnd::LedgerFault: return "ledger_fault";
         case MountEnd::LocalDefect: return "local_defect";
-        case MountEnd::Replaced: return "replaced";
         case MountEnd::Forgotten: return "forgotten";
         case MountEnd::PoolIdentityLost: return "pool_identity_lost";
     }
@@ -74,7 +73,7 @@ std::string_view mountEndWord(MountEnd end)
 
 bool isLossEnd(MountEnd end)
 {
-    return end != MountEnd::None && end != MountEnd::Replaced && end != MountEnd::Forgotten;
+    return end != MountEnd::None && end != MountEnd::Forgotten;
 }
 
 bool endsWithoutShutdown(MountEnd end)
@@ -229,7 +228,6 @@ String describeMountEnd(MountEnd end, MountLossReaction reaction, const String &
             return head + fmt::format("{}.", what) + String(reactionSuffix(end, reaction));
         }
         case MountEnd::None:
-        case MountEnd::Replaced:
         case MountEnd::Forgotten:
             return head + fmt::format("the mount ended ({}).", mountEndWord(end));
     }

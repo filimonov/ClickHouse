@@ -172,7 +172,7 @@ TEST(CASGCStopStart, StopAndDestroyCleanAfterSelfExit)
         sched.start();
         ASSERT_TRUE(sink.waitForSuccessFinish(/*from=*/0, kRoundWait).has_value());
 
-        store->setLifecycleForTest(PoolLifecycle::VanishedReplaced);
+        store->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
         ASSERT_TRUE(sched.waitForTerminalSelfExitForTest(kSelfExitWait));
 
         EXPECT_NO_THROW(sched.stop()) << "stop() must cleanly join the self-exited threads";

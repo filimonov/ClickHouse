@@ -163,10 +163,10 @@ TEST(CASLifecycleSnapshot, PerformsZeroBackendOps)
     assertNoIo("live snapshot must not touch the backend");
 
     /// Forced terminal snapshot (the very state the store()-class surface refuses): still zero I/O.
-    store->setLifecycleForTest(PoolLifecycle::VanishedReplaced);
+    store->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
     const DB::Cas::Pool::LifecycleSnapshot vanished = store->lifecycleSnapshot();
     assertNoIo("a vanished-pool snapshot must not touch the backend");
-    EXPECT_EQ(vanished.lifecycle, PoolLifecycle::VanishedReplaced);
+    EXPECT_EQ(vanished.lifecycle, PoolLifecycle::VanishedForgotten);
 }
 
 /// An expired lease while the lifecycle stays `Live`: `paused` / `lease_expired`, `since` is the
@@ -232,8 +232,7 @@ TEST(CASLifecycleSnapshot, OldLifecycleValuesMapToTheNewVocabulary)
         return snap.lifecycle + "(" + snap.reason + ")";
     };
     EXPECT_EQ(read(PoolLifecycle::TransientNotLive), "paused(fenced_by_gc)");
-    EXPECT_EQ(read(PoolLifecycle::IdentityLost), "identity_lost()");
-    EXPECT_EQ(read(PoolLifecycle::VanishedReplaced), "vanished(replaced)");
+    EXPECT_EQ(read(PoolLifecycle::VanishedForgotten), "closed(forgotten)");
 }
 
 /// The local row's body is the last confirmed one; reading it sends nothing while a renewal is stuck.

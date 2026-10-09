@@ -3153,17 +3153,17 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
 
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&]
     {
-        runtime.enterVanished(PoolLifecycle::VanishedReplaced, "must-not-publish");
+        runtime.enterVanished("must-not-publish");
     });
     EXPECT_FALSE(runtime.vanishedIntentPublished());
     EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::TransientNotLive);
     EXPECT_TRUE(runtime.vanishedReason().empty());
 
-    runtime.enterVanished(PoolLifecycle::VanishedReplaced, "retry-completed");
-    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::VanishedReplaced);
+    runtime.enterVanished("retry-completed");
+    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::VanishedForgotten);
     EXPECT_EQ(runtime.vanishedReason(), "retry-completed");
-    runtime.enterVanished(PoolLifecycle::VanishedForgotten, "must-remain-ignored");
-    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::VanishedReplaced);
+    runtime.enterVanished("must-remain-ignored");
+    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::VanishedForgotten);
     EXPECT_EQ(runtime.vanishedReason(), "retry-completed");
     const bool exited_without_stop = exits.waitForAtLeast(1);
     runtime.stopBackgroundWorkers();

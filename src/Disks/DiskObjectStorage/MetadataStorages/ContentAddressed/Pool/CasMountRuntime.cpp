@@ -27,7 +27,6 @@ namespace ErrorCodes
 
 namespace ProfileEvents
 {
-    extern const Event CASIdentityLost;
     extern const Event CASDataRootVanished;
     extern const Event CASMountLeaseLost;
     extern const Event CASMountRenewalAttempts;
@@ -987,15 +986,13 @@ void CasMountRuntime::stopBackgroundWorkers()
 }
 bool CasMountRuntime::isVanished() const
 {
-    const PoolLifecycle s = lifecycle();
-    return s == PoolLifecycle::VanishedReplaced
-        || s == PoolLifecycle::VanishedForgotten;
+    return lifecycle() == PoolLifecycle::VanishedForgotten;
 }
 
 void CasMountRuntime::setLifecycleForTest(PoolLifecycle lc)
 {
     /// Direct store, no precondition — the test harness pins an exact cell of the class × state table.
-    /// A `Vanished*` value also latches `vanished_intent` so the forced terminal state matches what a
+    /// `VanishedForgotten` also latches `vanished_intent` so the forced terminal state matches what a
     /// natural `enterVanished` would leave behind (its truth semantics never depend on how it was reached).
     /// Stamp `since` to match a naturally-reached state (release-store before the state store below, so a
     /// snapshot reader that acquire-observes the forced state also observes the timestamp): 0 for `Live`,
@@ -1003,8 +1000,7 @@ void CasMountRuntime::setLifecycleForTest(PoolLifecycle lc)
     /// from a real transition for the introspection snapshot.
     lifecycle_since_wall_s.store(lc == PoolLifecycle::Live ? 0 : wallClockNowSeconds(), std::memory_order_release);
     pool_lifecycle.store(lc, std::memory_order_release);
-    if (lc == PoolLifecycle::VanishedReplaced
-        || lc == PoolLifecycle::VanishedForgotten)
+    if (lc == PoolLifecycle::VanishedForgotten)
     {
         vanished_intent.store(true, std::memory_order_release);
         /// Keep the terminal-state guard consistent with the forced state, so a later `enterVanished`
@@ -1037,7 +1033,7 @@ bool CasMountRuntime::noteLeaseLost()
 void CasMountRuntime::noteRemounted()
 {
     /// `TransientNotLive -> Live` on a successful reclaim. A compare-exchange FROM `TransientNotLive`
-    /// never revives `IdentityLost` or a `Vanished` state ([D3]) and is a no-op if already `Live`.
+    /// never revives a terminal state ([D3]) and is a no-op if already `Live`.
     PoolLifecycle expected = PoolLifecycle::TransientNotLive;
     if (pool_lifecycle.compare_exchange_strong(
             expected, PoolLifecycle::Live, std::memory_order_acq_rel, std::memory_order_acquire))
@@ -1047,70 +1043,10 @@ void CasMountRuntime::noteRemounted()
     }
 }
 
-void CasMountRuntime::enterIdentityLost()
+void CasMountRuntime::enterVanished(const String & reason)
 {
-    /// `TransientNotLive -> IdentityLost`, one way. The compare-exchange FROM `TransientNotLive` gives
-    /// the brief's "from TransientNotLive only" precondition, idempotency (a second call finds the state
-    /// already `IdentityLost` and its exchange fails), and safety against a concurrent renewer
-    /// `noteLeaseLost` (which only ever moves `Live -> TransientNotLive`, never away from it). It does NOT
-    /// set `vanished_intent` (that latch is reserved for the `Vanished*` idempotency/FORGET protocol);
-    /// rev.8 makes `IdentityLost` a fail-loud TERMINAL state through `remountTerminal`, which folds it
-    /// into the worker-exit boundary alongside `vanished_intent`, so the remount/GC workers
-    /// self-exit rather than demote.
-    /// `since` for the `identity_lost` snapshot row — the wall-clock instant the observer proved the
-    /// sentinels gone. Stamped (release) BEFORE the CAS that publishes `IdentityLost`, so a reader that
-    /// acquire-observes `IdentityLost` is guaranteed to observe this timestamp too (the winning CAS's
-    /// release carries this prior store) — the same before-publish ordering `enterVanished` uses. Safe to
-    /// stamp before the CAS here, unlike the lock-free `noteLeaseLost`: this runs only from
-    /// `TransientNotLive` under `Pool::remount_mutex` (a `Vanished` pool bailed at the caller's
-    /// `isVanished` gate and the caller guards `!= IdentityLost`), so the CAS wins deterministically and
-    /// the stamp can never land on a state we did not transition.
-    bool transitioned = false;
-    {
-        std::lock_guard lock(driver_mutex);
-        lifecycle_since_wall_s.store(wallClockNowSeconds(), std::memory_order_release);
-
-        PoolLifecycle expected = PoolLifecycle::TransientNotLive;
-        transitioned = pool_lifecycle.compare_exchange_strong(
-            expected, PoolLifecycle::IdentityLost, std::memory_order_acq_rel, std::memory_order_acquire);
-    }
-
-    if (!transitioned)
-        return;
-
-    driver_cv.notify_all();
-
-    ProfileEvents::increment(ProfileEvents::CASIdentityLost);
-    LOG_WARNING(getLogger("CasPool"),
-        "Content-addressed pool '{}' entered IdentityLost: the pool sentinels (_pool_meta and the owner "
-        "anchor) are authoritatively absent (both KeyAbsent). This is a fail-loud TERMINAL state: "
-        "store-class access now fails loud and this pool's remount + GC threads self-exit. "
-        "Recover by restart or SYSTEM CAS FORGET — a matching-sentinel restore does NOT "
-        "auto-revive this disk.",
-        server_root_id);
-}
-
-void CasMountRuntime::enterVanished(PoolLifecycle which, const String & reason)
-{
-    /// Validate the target BEFORE mutating any state — `enterVanished` takes only the two `Vanished*`
-    /// values (`VanishedReplaced`/`VanishedForgotten`); fail loud on a call-site bug rather than store a
-    /// non-terminal value or mislabel it.
-    const char * label = nullptr;
-    switch (which)
-    {
-        case PoolLifecycle::VanishedReplaced:  label = "replaced"; break;
-        case PoolLifecycle::VanishedForgotten: label = "forgotten"; break;
-        case PoolLifecycle::Live:
-        case PoolLifecycle::TransientNotLive:
-        case PoolLifecycle::IdentityLost:
-        case PoolLifecycle::Stopping:
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "CasMountRuntime::enterVanished called with a non-terminal lifecycle value");
-    }
-
     /// First end wins: a loss latched earlier keeps the pool `Stopping`.
-    const MountEnd end = which == PoolLifecycle::VanishedReplaced ? MountEnd::Replaced : MountEnd::Forgotten;
-    if (!latchMountEnd(end) && mountEnd() != end)
+    if (!latchMountEnd(MountEnd::Forgotten) && mountEnd() != MountEnd::Forgotten)
         return;
 
     if (terminal_state_published.load(std::memory_order_acquire))
@@ -1132,10 +1068,8 @@ void CasMountRuntime::enterVanished(PoolLifecycle which, const String & reason)
         {
             transitioned = true;
 
-            /// Publish the terminal-intent latch (spec §3). For a natural transition this is the FIRST
-            /// publish; for FORGET, `publishVanishedIntent` already set it at step 1. Either way it is
-            /// published before the state store below and while holding the mutex used by every
-            /// `driver_cv` terminal predicate.
+            /// Publish the terminal-intent latch (spec §3) before the state store below and while holding
+            /// the mutex used by every `driver_cv` terminal predicate.
             vanished_intent.store(true, std::memory_order_release);
 
             /// Record the reason BEFORE the state's release-store, so a reader that acquire-observes the
@@ -1143,7 +1077,7 @@ void CasMountRuntime::enterVanished(PoolLifecycle which, const String & reason)
             /// exactly once.
             vanished_reason = std::move(prepared_reason);
 
-            /// The `since` the lifecycle snapshot reports for the `vanished` row — the wall-clock instant
+            /// The `since` the lifecycle snapshot reports for the `closed` row — the wall-clock instant
             /// of the terminal transition. Written before the `pool_lifecycle` release-store below, same
             /// as the reason, so an acquire-observer of the terminal state also observes it.
             lifecycle_since_wall_s.store(prepared_since_wall_s, std::memory_order_release);
@@ -1151,7 +1085,7 @@ void CasMountRuntime::enterVanished(PoolLifecycle which, const String & reason)
             /// The driver mutex serializes terminal transitions, and no non-terminal transition can move
             /// a `Vanished` state (their compare-exchanges are keyed on `Live`/`TransientNotLive`), so this
             /// value is absorbing.
-            pool_lifecycle.store(which, std::memory_order_release);
+            pool_lifecycle.store(PoolLifecycle::VanishedForgotten, std::memory_order_release);
             terminal_state_published.store(true, std::memory_order_release);
         }
     }
@@ -1162,9 +1096,9 @@ void CasMountRuntime::enterVanished(PoolLifecycle which, const String & reason)
 
     ProfileEvents::increment(ProfileEvents::CASDataRootVanished);
     LOG_WARNING(getLogger("CasPool"),
-        "Content-addressed pool '{}' entered Vanished({}): {}. The disk stays registered but store-class "
+        "Content-addressed pool '{}' entered Vanished(forgotten): {}. The disk stays registered but store-class "
         "access now fails loud with a typed error (truth); restart re-registers the name.",
-        server_root_id, label, reason);
+        server_root_id, reason);
 }
 
 void CasMountRuntime::publishVanishedIntent()

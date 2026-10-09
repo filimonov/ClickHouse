@@ -20,12 +20,11 @@ enum class MountEnd : uint8_t
     FencedByGc,    /// the decommission pool only: it impersonates a dead member and never remounts
     LedgerFault,
     LocalDefect,
-    Replaced,      /// the data root holds another pool
     Forgotten,     /// `SYSTEM CAS FORGET`
     PoolIdentityLost,   /// a reacquire found the pool's identity, owner or counter gone
 };
 std::string_view mountEndWord(MountEnd end);   /// "slot_taken", …, "ledger_fault", "local_defect", "forgotten"
-bool isLossEnd(MountEnd end);                  /// every end but `None`, `Replaced`, `Forgotten`
+bool isLossEnd(MountEnd end);                  /// every end but `None` and `Forgotten`
 /// A broken process invariant: a shutdown would write under an identity another process may hold.
 bool endsWithoutShutdown(MountEnd end);        /// `LedgerFault`, `LocalDefect`
 

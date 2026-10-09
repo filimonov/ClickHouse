@@ -467,7 +467,7 @@ void ContentAddressedTransaction::commit(const TransactionCommitOptionsVariant &
     /// Vanished [D5] refusal on a Vanished disk); a commit with nothing to publish is the DROP/rename path -- its ref mutations
     /// already applied immediately (`removeRecursive`/`dropNamespace`/`moveDirectory`), so it is a `Remove`
     /// that no-op-succeeds on a Vanished disk, which is what lets a vanished-disk table's DROP finish.
-    /// Both throw 668 while the backing is uncertain (transient / IdentityLost).
+    /// Both throw 668 while the backing is uncertain (transient / stopping).
     const CasOpClass commit_class = parts.empty() ? CasOpClass::Remove : CasOpClass::Write;
     if (metadata_storage.checkOpAdmitted(commit_class) == CasOpAdmission::TruthAbsent)
     {
@@ -820,7 +820,7 @@ std::unique_ptr<WriteBufferFromFileBase> ContentAddressedTransaction::writeFile(
 {
     /// Write gate (rev.7 §1): the single chokepoint every write buffer (both direct and via
     /// `tryCreateWriteBuffer`) is created through -- refuse on a Vanished (typed [D5]) or transient/
-    /// IdentityLost (668) disk before staging any content or opening a verbatim buffer.
+    /// stopping disk before staging any content or opening a verbatim buffer.
     metadata_storage.checkOpAdmitted(CasOpClass::Write);
     /// Non-part files are VERBATIM namespace files, durable on finalize (no commit involvement -
     /// the disk layer's autocommit contract for them rides exactly this). Append is serviced by
@@ -1028,7 +1028,7 @@ void ContentAddressedTransaction::removeDirectory(const std::string & path)
     /// duplicate that compensation machinery for no correctness gain.
     ///
     /// Remove gate (rev.7 §1): a Vanished disk answers no-op success (nothing to remove -- truth), so the
-    /// enclosing DROP completes; a transient / IdentityLost disk throws 668 (the DROP re-queues).
+    /// enclosing DROP completes; a transient / stopping disk throws 668 (the DROP re-queues).
     if (metadata_storage.checkOpAdmitted(CasOpClass::Remove) == CasOpAdmission::TruthAbsent)
         return;
 
@@ -1066,7 +1066,7 @@ void ContentAddressedTransaction::removeRecursive(const std::string & path, cons
 
     /// Remove gate (rev.7 §1): a Vanished disk answers no-op success (nothing to remove), so a
     /// vanished-disk table's DROP -- which reaches here via `removeSharedRecursive` -- completes; a
-    /// transient / IdentityLost disk throws 668 (the DROP re-queues, drains after recovery/FORGET).
+    /// transient / stopping disk throws 668 (the DROP re-queues, drains after recovery/FORGET).
     if (metadata_storage.checkOpAdmitted(CasOpClass::Remove) == CasOpAdmission::TruthAbsent)
         return;
 
@@ -1604,7 +1604,7 @@ void ContentAddressedTransaction::unlinkFile(const std::string & path, bool if_e
     /// this closes the file's former fail-open (a committed content file could never actually be
     /// deleted on its own; this behavior now closes that earlier fail-open.
     ///
-    /// Remove gate (rev.7 §1): a Vanished disk answers no-op success; a transient / IdentityLost disk
+    /// Remove gate (rev.7 §1): a Vanished disk answers no-op success; a transient / stopping disk
     /// throws 668.
     if (metadata_storage.checkOpAdmitted(CasOpClass::Remove) == CasOpAdmission::TruthAbsent)
         return;

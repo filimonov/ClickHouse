@@ -146,7 +146,7 @@ LifecycleGate probePoolLifecycleGate(
             /// `_pool_meta` is authoritatively gone. Require the OTHER sentinel (the owner anchor) to be
             /// conclusively absent too before declaring identity lost — any surviving sentinel, or an
             /// undecidable owner probe, keeps us transient (throw-when-uncertain). rev.8: BOTH sentinels
-            /// authoritatively absent ⇒ `IdentityLost` (a fail-loud terminal state), regardless of whatever
+            /// authoritatively absent ⇒ `IdentityLost`, regardless of whatever
             /// else remains under the prefix. Erasure is never PROVEN by the system — only asserted by the
             /// operator's `FORGET` — so there is no prefix-emptiness leg here.
             const SentinelProbeResult owner_probe = probeSentinel(op, layout.ownerKey(srid), Retry::once());
@@ -328,12 +328,6 @@ String Pool::lifecycleReasonDetail(PoolLifecycle lc) const
         case PoolLifecycle::Live:
         case PoolLifecycle::TransientNotLive:
             return {};
-        case PoolLifecycle::IdentityLost:
-            return "identity lost — the pool sentinels are absent; access fails loud. Recover by restart or "
-                   "SYSTEM CAS FORGET (a matching-sentinel restore does not auto-revive it).";
-        case PoolLifecycle::VanishedReplaced:
-            return "data root replaced by a foreign pool (pool_id mismatch) — our generation is gone; "
-                   "restart re-registers the name.";
         case PoolLifecycle::Stopping:
             return describeMountEnd(mount_runtime.mountEnd(), config.mount_loss_reaction, config.disk_name,
                                     config.server_root_id, std::nullopt, "");
@@ -1110,12 +1104,10 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
              && tn != ThreadName::CAS_GC_HEARTBEAT
              && "SYSTEM CAS FORGET must not run on a CAS pool thread (self-join deadlock)");
 
-    /// Idempotent: an already-terminal `Vanished` pool (a second FORGET, or a pool that naturally vanished
-    /// as replaced) is already the terminal truth — nothing to force, and re-running the teardown
-    /// would double-retire the renewer. `IdentityLost`/`TransientNotLive`/`Live` all proceed (FORGET is
-    /// their escape hatch). Reading `isVanished()` here without the lock is safe: only a terminal transition
-    /// sets it, terminal states are absorbing, and a natural transition that wins concurrently below merely
-    /// makes our own `enterVanished` a no-op (first terminal transition wins).
+    /// Idempotent: a pool a second FORGET finds `Vanished` is already the terminal truth — nothing to force,
+    /// and re-running the teardown would double-retire the renewer. `TransientNotLive`/`Live`/`Stopping`
+    /// all proceed (FORGET is their escape hatch). Reading `isVanished()` here without the lock is safe:
+    /// only a terminal transition sets it, and terminal states are absorbing.
     if (mount_runtime.isVanished())
         return;
 
@@ -1158,7 +1150,7 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
     /// `throwIfLifecycleTerminal` surfaces to store-class callers.
     {
         std::lock_guard g(remount_mutex);
-        mount_runtime.enterVanished(PoolLifecycle::VanishedForgotten, reason);
+        mount_runtime.enterVanished(reason);
     }
 }
 

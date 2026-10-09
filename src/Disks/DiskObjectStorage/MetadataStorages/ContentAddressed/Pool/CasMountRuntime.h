@@ -31,22 +31,16 @@ using PartWriteTxnPtr = std::shared_ptr<PartWriteTxn>;
 /// published pool -- before `startup`/after `shutdown`) the metadata storage tracks. Ordering of the
 /// enumerators is not significant; membership tests do the work.
 ///   - `Live`             — the steady state; the mount lease is (or was last) held.
-///   - `TransientNotLive` — the lease was lost; access is uncertain and a self-remount retries. The §2
-///                          `Present`+identity-match recovery rule fires only from here (or `Live`).
-///   - `IdentityLost`     — the pool sentinels are authoritatively absent (both KeyAbsent):
-///                          fail-loud and TERMINAL (rev.8). The remount/GC workers self-exit;
-///                          matching-sentinel reappearance does NOT auto-revive it ([D3]); recovery is a
-///                          restart or `SYSTEM CAS FORGET`.
-///   - `Vanished*`        — fully terminal truth: the data root was replaced by a foreign pool, or the
-///                          disk was decommissioned by `FORGET`. Store-class access fails loud from here.
+///   - `TransientNotLive` — a GC fence of our own body was found; access is uncertain and the reacquire
+///                          retries.
+///   - `VanishedForgotten` — fully terminal: the disk was decommissioned by `FORGET`. Store-class access
+///                          fails loud from here.
 ///   - `Stopping`         — a latched loss end (`CasMountRuntime::mountEnd`): the slot is no longer ours, so
 ///                          the mount never opens again; the server stops or the disk stays closed.
 enum class PoolLifecycle : uint8_t
 {
     Live,
     TransientNotLive,
-    IdentityLost,
-    VanishedReplaced,
     VanishedForgotten,
     Stopping,
 };
@@ -235,12 +229,10 @@ public:
     /// ---- pool lifecycle condition (rev.7 §1, spec §§1-3); enum at namespace scope below ----
     /// Atomic read of the current lifecycle (acquire).
     PoolLifecycle lifecycle() const { return pool_lifecycle.load(std::memory_order_acquire); }
-    /// Whether the pool has reached one of the two fully-terminal `Vanished` values
-    /// (`VanishedReplaced` / `VanishedForgotten`).
+    /// Whether the pool reached `VanishedForgotten`.
     bool isVanished() const;
-    /// Whether the terminal-intent latch (`vanished_intent`) is published — set by a natural
-    /// `enterVanished`, OR EARLY (spec §5 step 1) by FORGET's `publishVanishedIntent`, and NEVER by the
-    /// non-absorbing `IdentityLost` ([C1]). This is the EARLIEST terminal signal: it can already be true
+    /// Whether the terminal-intent latch (`vanished_intent`) is published — set by `enterVanished`, OR
+    /// EARLY (spec §5 step 1) by FORGET's `publishVanishedIntent`. This is the EARLIEST terminal signal: it can already be true
     /// while the state is still pre-terminal (mid-FORGET). Consulted alongside `isVanished()` by every
     /// background worker that must self-exit the moment the pool is (being driven) terminal — the renewal
     /// thread and the GC scheduler.
@@ -248,52 +240,35 @@ public:
 
     /// Non-terminal lease-loss transition: `Live -> TransientNotLive`. Idempotent and lock-free; a
     /// compare-exchange FROM `Live` only, so it never downgrades a terminal state. `tripMountLost`
-    /// calls this (the lease-loss primitive), and the remount loop's identity gate calls it as its
-    /// first step so a direct/forced remount attempt has a valid non-terminal predecessor state.
-    /// Returns true only to the compare-exchange winner, which owns the one-per-loss metric.
+    /// calls this (the lease-loss primitive). Returns true only to the compare-exchange winner, which owns
+    /// the one-per-loss metric.
     bool noteLeaseLost();
     /// Non-terminal recovery transition: `TransientNotLive -> Live`. Called after a self-remount
     /// reclaimed a fresh incarnation. A compare-exchange FROM `TransientNotLive` only, so it NEVER
-    /// revives `IdentityLost`/`Vanished` ([D3]).
+    /// revives a terminal state ([D3]).
     void noteRemounted();
 
-    /// One-way terminal transition to `IdentityLost`, from `TransientNotLive` only (a compare-exchange
-    /// FROM `TransientNotLive`, so it is idempotent and cannot fire from `Live`/`Vanished`). On the
-    /// transition it emits ONE WARN and one `CASIdentityLost` ProfileEvent. rev.8: `IdentityLost` is a
-    /// fail-loud TERMINAL state — `remountTerminal` reports it, so the remount worker self-exits
-    /// (and the GC scheduler self-exits, through `Pool`) at its next boundary; there is no demoted observer.
-    /// It deliberately does NOT publish the `vanished_intent` latch (which is reserved for the `Vanished*`
-    /// idempotency/FORGET protocol); `remountTerminal` widens the worker-exit boundary to include it.
-    /// Must be called under the caller's remount serialization (Pool::remount_mutex).
-    void enterIdentityLost();
     /// Test seam: force the lifecycle condition directly to `lc`, bypassing the natural transition
     /// preconditions (used by the operation-gate tests to pin each class × state cell without driving a
-    /// full remount/erase sequence). For a `Vanished*` value it also latches `vanished_intent`, so the
+    /// full FORGET). For `VanishedForgotten` it also latches `vanished_intent`, so the
     /// forced state is indistinguishable from a naturally-reached one. Never used in production.
     void setLifecycleForTest(PoolLifecycle lc);
 
     /// Publish the terminal-intent latch (`vanished_intent`) WITHOUT settling the lifecycle state. This is
-    /// spec §5 step 1 of `SYSTEM CAS FORGET`: publishing the latch FIRST makes the runtime terminal
-    /// consumer stop latching remount generations and the remount loop bail at its next step boundary, so
-    /// FORGET's subsequent worker joins are bounded to one step + one backend timeout. The state store + WARN happen
-    /// later, in `enterVanished` at step 6. Idempotent. Publication is serialized by `driver_mutex` and
-    /// followed by a condition-variable notification, so a worker cannot miss the terminal edge between
-    /// its predicate sample and wait. A natural
-    /// terminal transition does NOT call this — its `enterVanished` publishes the latch itself.
+    /// spec §5 step 1 of `SYSTEM CAS FORGET`: publishing the latch FIRST makes a reacquire in flight
+    /// abandon at its next stage and the renewal thread exit, so FORGET's subsequent join is bounded to one
+    /// stage + one backend timeout. The state store + WARN happen later, in `enterVanished` at step 6.
+    /// Idempotent. Publication is serialized by `driver_mutex` and followed by a condition-variable
+    /// notification, so a worker cannot miss the terminal edge between its predicate sample and wait.
     void publishVanishedIntent();
 
-    /// One-way transition to a fully-terminal `Vanished` value (spec §3). Publishes the terminal-intent
-    /// latch (so the runtime stops scheduling remount work and the remount loop exits at its next step
-    /// boundary) if it is not already published, records `reason`, stores the state, then emits ONE WARN +
-    /// one `CASDataRootVanished` ProfileEvent. Idempotent: the first terminal STATE transition wins (a
+    /// One-way transition to `VanishedForgotten` (spec §3). Publishes the terminal-intent latch if it is not
+    /// already published, records `reason`, stores the state, then emits ONE WARN + one
+    /// `CASDataRootVanished` ProfileEvent. Idempotent: the first terminal STATE transition wins (a
     /// dedicated latch keyed separately from `vanished_intent`, because FORGET publishes that intent latch
-    /// early at step 1). `which` MUST be one of the two `Vanished*` values (`VanishedReplaced` or
-    /// `VanishedForgotten`). `reason` is retained and
-    /// surfaced verbatim in the `VanishedForgotten` [D5] error message (see `vanishedReason`). Threads exit
-    /// their own loops; the joins happen in `~Pool` for a natural transition, or synchronously in
-    /// `Pool::forgetDisk` for FORGET. Must be called under the caller's remount serialization
-    /// (Pool::remount_mutex).
-    void enterVanished(PoolLifecycle which, const String & reason);
+    /// early at step 1). `reason` is surfaced verbatim in the [D5] error message (see `vanishedReason`).
+    /// Must be called under the caller's remount serialization (Pool::remount_mutex).
+    void enterVanished(const String & reason);
 
     /// The reason string recorded by the winning `enterVanished`, or empty when none has run (a
     /// forced-for-test terminal state, or a non-terminal pool). `Pool::throwIfLifecycleTerminal` reads it
@@ -306,12 +281,12 @@ public:
     /// Wall-clock second (`system_clock`, seconds since epoch) at which the pool ENTERED its current
     /// non-`Live` lifecycle state, or 0 while `Live`. This is the `since` the non-gated
     /// `system.cas_mounts` lifecycle snapshot (spec §7) reports. Written (release) at each
-    /// lifecycle edge — `noteLeaseLost`/`enterIdentityLost`/`enterVanished` set it to now, `noteRemounted`
+    /// lifecycle edge — `noteLeaseLost`/`enterVanished` set it to now, `noteRemounted`
     /// clears it to 0 — and by `setLifecycleForTest`, so a forced state carries a `since` indistinguishable
     /// from a naturally-reached one.
     ///
-    /// Ordering vs the `pool_lifecycle` transition it accompanies: the TERMINAL edges (`enterVanished`,
-    /// `enterIdentityLost`) publish this store BEFORE the state store, so a reader that acquire-observes a
+    /// Ordering vs the `pool_lifecycle` transition it accompanies: the TERMINAL edge (`enterVanished`)
+    /// publishes this store BEFORE the state store, so a reader that acquire-observes a
     /// terminal state is guaranteed (release/acquire handoff) to observe this timestamp. The lock-free
     /// lease-loss/remount edges (`noteLeaseLost`, `noteRemounted`) stamp it in the compare-exchange's
     /// SUCCESS branch — after the CAS — because they may run on an already-terminal pool (`noteLeaseLost` is
@@ -338,16 +313,13 @@ public:
 
     /// TRUE once the pool has reached — or is being driven toward — a state on which the renewal thread
     /// must stop: a published terminal `Vanished` intent (`vanished_intent` — set early by
-    /// FORGET, or by a natural `enterVanished`, and already subsuming every settled `Vanished*` state since
-    /// it is published before the state store) OR `IdentityLost` (a fail-loud TERMINAL state — no
-    /// demoted observer; recovery is restart or FORGET) OR a latched mount end (`mountEnd`). Consulted by
-    /// the renewal thread at every wait. The GC scheduler, through `Pool`, applies the first two only: it
-    /// keeps running on a mount end.
+    /// FORGET, or by `enterVanished`, and already subsuming the settled `Vanished` state since it is
+    /// published before the state store) OR a latched mount end (`mountEnd`). Consulted by the renewal
+    /// thread at every wait. The GC scheduler, through `Pool`, applies the first only: it keeps running on
+    /// a mount end.
     bool remountTerminal() const
     {
-        return vanished_intent.load(std::memory_order_acquire)
-            || lifecycle() == PoolLifecycle::IdentityLost
-            || mountEnd() != MountEnd::None;
+        return vanished_intent.load(std::memory_order_acquire) || mountEnd() != MountEnd::None;
     }
 
     /// The inter-attempt sleep the mount plane runs on. A plain sleep would hold a parked or stopping
@@ -557,12 +529,9 @@ private:
     /// predecessor state; terminal predicate publication is serialized with worker waits by
     /// `driver_mutex`, while the caller's `Pool::remount_mutex` serializes the higher-level remount flow.
     std::atomic<PoolLifecycle> pool_lifecycle{PoolLifecycle::Live};
-    /// Terminal-intent latch (spec §3), published before the state store — by `enterVanished` for a
-    /// natural transition, or EARLY (step 1) by `publishVanishedIntent` for FORGET. Only the fully-terminal
-    /// `Vanished*` transition sets it — `IdentityLost` deliberately does NOT (rev.8 folds IdentityLost into
-    /// the worker-exit boundary via `remountTerminal` instead). Consulted (with `IdentityLost`) by
-    /// `remountTerminal`, so a terminal pool's runtime consumer never schedules a remount and the remount
-    /// loop bails at its next step boundary — no claim/allocate/write after the pool is (being driven) terminal.
+    /// Terminal-intent latch (spec §3), published before the state store by `enterVanished`, or EARLY
+    /// (step 1) by `publishVanishedIntent` for FORGET. Consulted by `remountTerminal` and `reacquireLive`, so
+    /// no claim/allocate/write happens after the pool is (being driven) terminal.
     std::atomic<bool> vanished_intent{false};
     /// Idempotency guard for the terminal STATE transition (`enterVanished`'s body). Distinct from
     /// `vanished_intent`: FORGET publishes that intent latch at step 1, so it can no longer serve as the

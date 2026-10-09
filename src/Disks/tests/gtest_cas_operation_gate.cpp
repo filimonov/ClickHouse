@@ -121,7 +121,7 @@ TEST(CASOperationGate, ProbesOnVanishedAnswerAbsentEmpty)
     ASSERT_FALSE(storage->listDirectory(kTableDir).empty());
     ASSERT_TRUE(storage->getStorageObjectsIfExist(kPartFile).has_value());
 
-    pool->setLifecycleForTest(PoolLifecycle::VanishedReplaced);
+    pool->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
 
     EXPECT_FALSE(storage->existsFile(kPartFile));
     EXPECT_FALSE(storage->existsDirectory(kPartDir));
@@ -143,7 +143,7 @@ TEST(CASOperationGate, RemovesOnVanishedAreNoOpSuccessBackendUntouched)
     auto pool = storage->store();   /// captured while Live
     ASSERT_TRUE(storage->existsDirectory(kPartDir));
 
-    pool->setLifecycleForTest(PoolLifecycle::VanishedReplaced);
+    pool->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
 
     /// A whole-table removeRecursive + commit (the DROP shape): both no-op-succeed.
     {
@@ -165,25 +165,23 @@ TEST(CASOperationGate, RemovesOnVanishedAreNoOpSuccessBackendUntouched)
 }
 
 /// (c) A content read on a Vanished disk throws the typed per-reason [D5] message -- the exact substring
-/// names the ACTUAL sub-state (replaced / forgotten), never a wrong diagnosis.
+/// names the ACTUAL sub-state, never a wrong diagnosis.
 TEST(CASOperationGate, ContentReadOnVanishedThrowsTypedPerReasonMessage)
 {
     auto storage = openGateStorage();
     commitOnePart(*storage);
     auto pool = storage->store();   /// captured while Live
 
-    pool->setLifecycleForTest(PoolLifecycle::VanishedReplaced);
-    EXPECT_NE(messageOf([&] { storage->getFileSize(kPartFile); }).find("foreign pool"), std::string::npos);
-    EXPECT_NE(messageOf([&] { storage->getStorageObjects(kPartFile); }).find("foreign pool"), std::string::npos);
-
     pool->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
     EXPECT_NE(messageOf([&] { storage->getFileSize(kPartFile); }).find("erasure was NOT verified"),
+              std::string::npos);
+    EXPECT_NE(messageOf([&] { storage->getStorageObjects(kPartFile); }).find("erasure was NOT verified"),
               std::string::npos);
 }
 
 /// (d1) Every class but Factory refuses on `TransientNotLive` — and the refusal carries the TRANSIENT
-/// class (`NETWORK_ERROR`), not the terminal 668. The split from `IdentityLost` (test d2) is the whole
-/// point: a lease blip is unavailability, an identity loss is damage, and consumers outside CAS act on
+/// class (`NETWORK_ERROR`), not the terminal 668. The split from a terminal state (test d2) is the whole
+/// point: a lease blip is unavailability, a terminal state is not, and consumers outside CAS act on
 /// the difference. `ReplicatedMergeTreePartCheckThread` declares a part broken and detaches it for any
 /// refusal its `isRetryableException` hatch does not recognise, so coding a blip 668 made healthy parts
 /// look corrupt (BACKLOG {#lease-blip-part-check-collapse}).
@@ -240,14 +238,14 @@ TEST(CASOperationGate, TransientRefusalIsUpstreamRetryableTerminalIsNot)
     {
         auto storage = openGateStorage();
         commitOnePart(*storage);
-        storage->store()->setLifecycleForTest(PoolLifecycle::IdentityLost);
+        storage->store()->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
         /// Pin WHICH error is being classified before classifying it: `EXPECT_FALSE` alone passes for any
         /// non-retryable error, so a future regression that threw something else entirely here -- or threw
         /// from the wrong site -- would slip through as a pass.
         Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->getFileSize(kPartFile); });
-        EXPECT_NE(messageOf([&] { storage->getFileSize(kPartFile); }).find("identity lost"), std::string::npos);
+        EXPECT_NE(messageOf([&] { storage->getFileSize(kPartFile); }).find("erasure was NOT verified"), std::string::npos);
         EXPECT_FALSE(isRetryableException(exceptionOf([&] { storage->getFileSize(kPartFile); })))
-            << "a terminal identity loss must NOT be retried forever as if it were transient";
+            << "a terminal state must NOT be retried forever as if it were transient";
     }
 }
 
@@ -273,7 +271,7 @@ TEST(CASOperationGate, TryGetInManifestBytesPropagatesTypedError)
     commitOnePart(*storage);
     auto pool = storage->store();   /// captured while Live
 
-    pool->setLifecycleForTest(PoolLifecycle::VanishedReplaced);
+    pool->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
     /// Never FILE_DOESNT_EXIST, never a swallowed nullopt -- the typed INVALID_STATE escapes.
     Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] {
         storage->tryGetInManifestBytes(kTableDir + "/format_version.txt");
@@ -313,8 +311,8 @@ TEST(CASOperationGate, GcEntryPointsRefuseOnNotLive)
     auto storage = openGateStorage();
     auto pool = storage->store();   /// captured while Live
 
-    pool->setLifecycleForTest(PoolLifecycle::VanishedReplaced);
-    EXPECT_NE(messageOf([&] { storage->runOneGcRoundForTest(); }).find("foreign pool"), std::string::npos);
+    pool->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
+    EXPECT_NE(messageOf([&] { storage->runOneGcRoundForTest(); }).find("erasure was NOT verified"), std::string::npos);
 
     pool->setLifecycleForTest(PoolLifecycle::TransientNotLive);
     Cas::tests::expectThrowsCode(ErrorCodes::NETWORK_ERROR, [&] { storage->runOneGcRoundForTest(); });

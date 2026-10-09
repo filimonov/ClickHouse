@@ -1554,15 +1554,14 @@ TEST(CASFsckRunning, FsckOnMountedDiskSucceeds)
     EXPECT_EQ(rep.dangling, 0u);
 }
 
-/// (rev.8) FSCK is Admin-class: on a not-live pool (a lease blip / IdentityLost) it refuses before
-/// scanning, exactly like the GC entry points -- an FSCK of a disk whose data root may be gone or replaced
-/// is meaningless (the operator has the snapshot / FORGET path). The two states refuse in DIFFERENT
-/// classes, and the pairing is the point: a lease blip is transient unavailability (upstream-retryable),
-/// an identity loss is terminal (668).
-TEST(CASFsckRunning, FsckOnNotLiveDiskRefusesTransientRetryableAndIdentityLostTerminal)
+/// (rev.8) FSCK is Admin-class: on a not-live pool (a lease blip / a forgotten disk) it refuses before
+/// scanning, exactly like the GC entry points. The two states refuse in DIFFERENT classes, and the pairing
+/// is the point: a lease blip is transient unavailability (upstream-retryable), a forgotten disk is
+/// terminal (668).
+TEST(CASFsckRunning, FsckOnNotLiveDiskRefusesTransientRetryableAndForgottenTerminal)
 {
     for (const auto & [lc, code] : {std::pair{PoolLifecycle::TransientNotLive, DB::ErrorCodes::NETWORK_ERROR},
-                                    std::pair{PoolLifecycle::IdentityLost, DB::ErrorCodes::INVALID_STATE}})
+                                    std::pair{PoolLifecycle::VanishedForgotten, DB::ErrorCodes::INVALID_STATE}})
     {
         auto storage = openRunningStorageForTest();
         storage->store()->setLifecycleForTest(lc);   /// one force from Live; no later store() call

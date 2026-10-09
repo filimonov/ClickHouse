@@ -538,16 +538,15 @@ public:
     MountEnd mountEnd() const { return mount_runtime.mountEnd(); }
     /// Test seam: latch `end` as a renewal that found it would, without the reaction.
     bool latchMountEndForTest(MountEnd end) { return mount_runtime.latchMountEnd(end); }
-    /// Whether the pool has reached one of the two fully-terminal `Vanished` values
-    /// (`VanishedReplaced` / `VanishedForgotten`).
+    /// Whether the pool reached `VanishedForgotten`.
     bool isVanished() const { return mount_runtime.isVanished(); }
-    /// Whether the terminal-intent latch is published — a natural `enterVanished`, OR FORGET's early
-    /// (spec §5 step 1) `publishVanishedIntent`, and NEVER `IdentityLost` ([C1]). See
+    /// Whether the terminal-intent latch is published — `enterVanished`, OR FORGET's early
+    /// (spec §5 step 1) `publishVanishedIntent`. See
     /// `CasMountRuntime::vanishedIntentPublished`. The GC scheduler consults this ALONGSIDE `isVanished()`
     /// to self-exit its loops the instant the pool is (being driven) terminal, at the earliest signal.
     bool vanishedIntentPublished() const { return mount_runtime.vanishedIntentPublished(); }
     /// The store()-class lifecycle gate: throws the typed `INVALID_STATE` error, whose message names the
-    /// terminal sub-state, when the pool has entered `IdentityLost` or any `Vanished` state; returns
+    /// terminal sub-state, when the pool has entered `VanishedForgotten` or `Stopping`; returns
     /// silently while `Live`/`TransientNotLive`. This is the minimal "nothing silently proceeds" hook the
     /// metadata storage's `poolAccess()` calls after its null-pool (`throwStorageNotStarted`) check. The
     /// FULL six-class operation gate — which additionally throws in the transient state and answers
@@ -576,7 +575,7 @@ public:
 
     /// `SYSTEM CAS FORGET` — the operator force-Vanish (spec §5). Drives THIS pool to
     /// `Vanished(forgotten)` with the fence-first protocol, node-locally, regardless of the current
-    /// lifecycle (it works precisely on a NOT-live disk — a stuck transient/`IdentityLost` pool). In order:
+    /// lifecycle (it works precisely on a NOT-live disk — a stuck transient pool). In order:
     /// (1) publish the terminal-intent latch FIRST (so both runtime worker loops bail at their
     /// next step boundary, bounding the joins below); (2) trip the local fence (the deliberate
     /// decommission act, allowed on a live disk); (3+4) stop the GC scheduler via `stop_and_join_gc` —

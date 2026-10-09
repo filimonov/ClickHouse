@@ -633,7 +633,7 @@ TEST(CASReacquire, InterferenceDuringReacquireNeverOpens)
 /// An end that is not a loss leaves the pool paused: only the end itself keeps the fence closed.
 TEST(CASReacquire, AnEndWithoutALossLatchedDuringReacquireNeverOpens)
 {
-    expectNeverOpens([](Pool & store) { ASSERT_TRUE(store.latchMountEndForTest(MountEnd::Replaced)); });
+    expectNeverOpens([](Pool & store) { ASSERT_TRUE(store.latchMountEndForTest(MountEnd::Forgotten)); });
 }
 
 TEST(CASReacquire, ForgetDuringReacquireNeverOpens)

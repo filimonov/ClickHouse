@@ -107,8 +107,6 @@ std::pair<const char *, const char *> casLifecycleWords(const Cas::Pool::Lifecyc
                 return {"paused", "lease_expired"};
             return {"live", ""};
         case Cas::PoolLifecycle::TransientNotLive:  return {"paused", "fenced_by_gc"};
-        case Cas::PoolLifecycle::IdentityLost:      return {"identity_lost", ""};
-        case Cas::PoolLifecycle::VanishedReplaced:  return {"vanished", "replaced"};
         case Cas::PoolLifecycle::VanishedForgotten: return {"closed", "forgotten"};
         case Cas::PoolLifecycle::Stopping:          return {"stopping", Cas::mountEndWord(ps.end).data()};
     }
@@ -347,7 +345,7 @@ ContentAddressedMetadataStorage * ContentAddressedMetadataStorage::tryFromDisk(c
 
 void ContentAddressedMetadataStorage::runOneGcRoundForTest()
 {
-    /// Admin class (rev.7 spec §1): refuse on a transient / IdentityLost / Vanished pool (a terminal disk
+    /// Admin class (rev.7 spec §1): refuse on a transient / stopping / Vanished pool (a terminal disk
     /// throws the typed Vanished [D5] refusal; an uncertain one throws 668) before touching the scheduler.
     /// The later `!cas_store` re-check under `gc_scheduler_mutex` still guards the not-mounted race.
     checkOpAdmitted(CasOpClass::Admin);
@@ -604,7 +602,7 @@ Cas::RoundReport ContentAddressedMetadataStorage::runGarbageCollectionRoundNow()
     if (!gc_enabled)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Garbage collection is not enabled on this content-addressed disk");
-    /// Admin class (rev.7 spec §1): refuse on a transient / IdentityLost / Vanished pool before touching
+    /// Admin class (rev.7 spec §1): refuse on a transient / stopping / Vanished pool before touching
     /// the scheduler -- `SYSTEM CAS GC RUN` reaches here directly.
     checkOpAdmitted(CasOpClass::Admin);
     /// Mirror runOneGcRoundForTest: a STABLE scheduler instance across calls (the lease's
@@ -652,7 +650,7 @@ Cas::RebuildReport ContentAddressedMetadataStorage::runGcRebuildNow(bool force) 
     if (!gc_enabled)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Garbage collection is not enabled on this content-addressed disk");
-    /// Admin class (rev.7 spec §1): refuse on a transient / IdentityLost / Vanished pool. (`store()` below
+    /// Admin class (rev.7 spec §1): refuse on a transient / stopping / Vanished pool. (`store()` below
     /// already throws on a terminal pool, but not on the merely-transient one -- this closes that gap and
     /// keeps the refusal uniform with the other GC entry points.) Pre-lock: only a fast-fail.
     checkOpAdmitted(CasOpClass::Admin);
@@ -1035,7 +1033,7 @@ String utcStampNow()
 void ContentAddressedMetadataStorage::forgetDisk()
 {
     /// SYSTEM CAS FORGET (spec §5): the operator force-Vanish. A lifecycle verb, NOT a
-    /// store()-class op — it must work on a NOT-live disk (a stuck transient / IdentityLost pool), so it
+    /// store()-class op — it must work on a NOT-live disk (a stuck transient pool), so it
     /// reaches the pool DIRECTLY, never through `poolAccess()`/`checkOpAdmitted` (which refuse a not-live
     /// disk). Serialized against FSCK / GC STOP / GC START by `lifecycle_mutex`, and against a concurrent
     /// synchronous GC round by `gc_scheduler_mutex` (a round holds the latter, so this waits it out).
@@ -1125,7 +1123,7 @@ void ContentAddressedMetadataStorage::gcStart()
     if (!gc_enabled)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Garbage collection is not enabled on this content-addressed disk");
-    /// Admin class (rev.7 spec §1): refuse on a transient / `IdentityLost` / `Vanished` pool (typed 668 /
+    /// Admin class (rev.7 spec §1): refuse on a transient / stopping / `Vanished` pool (typed 668 /
     /// [D5]) and on a null pool (`throwStorageNotStarted`). Only a `Live` pool proceeds -- the same uniform
     /// gate every GC entry point uses (`runGarbageCollectionRoundNow` / `runGcRebuildNow`).
     checkOpAdmitted(CasOpClass::Admin);
@@ -1165,7 +1163,7 @@ Cas::FsckReport ContentAddressedMetadataStorage::runFsckNow(bool detail) const
     std::lock_guard lifecycle(lifecycle_mutex);
 
     /// FSCK scans the LIVE running pool directly (rev.8). Admin class -- refuse on a transient /
-    /// IdentityLost / Vanished / null pool before touching it, exactly like the GC entry points
+    /// stopping / Vanished / null pool before touching it, exactly like the GC entry points
     /// (`runGarbageCollectionRoundNow`/`runGcRebuildNow`). The scan is read-only and its findings are
     /// revalidated against a fresh authoritative read (`CasFsck`'s Dangling / missing-manifest rechecks),
     /// so concurrent writers never yield a phantom finding.
@@ -1186,9 +1184,9 @@ ContentAddressedMetadataStorage::PoolAccessSnapshot ContentAddressedMetadataStor
     /// answer for a storage that has not published a pool.
     if (!snap.pool)
         throwStorageNotStarted();
-    /// rev.7 §1: a published pool that has entered a terminal lifecycle condition (`IdentityLost` or any
-    /// `Vanished`) must ALSO refuse store()-class access, so nothing silently proceeds against an erased
-    /// or replaced data root. This is the store()-class terminal check; the full six-class operation gate
+    /// rev.7 §1: a published pool that has entered a terminal lifecycle condition (`VanishedForgotten` or
+    /// `Stopping`) must ALSO refuse store()-class access, so nothing silently proceeds against a
+    /// decommissioned data root. This is the store()-class terminal check; the full six-class operation gate
     /// (which also gates the transient state and answers truth-absent on removes/enumeration) is
     /// `checkOpAdmitted`.
     snap.pool->throwIfLifecycleTerminal();
@@ -1259,9 +1257,7 @@ CasOpAdmission ContentAddressedMetadataStorage::checkOpAdmitted(CasOpClass op) c
         /// A lease blip: uncertain but AUTO-RECOVERING. No class but Factory proceeds, and the refusal is
         /// minted TRANSIENT -- this is the READ plane, where a consumer that cannot tell unavailability
         /// from damage acts destructively: `ReplicatedMergeTreePartCheckThread` detaches a part whose read
-        /// throws an error its retryable-classifier does not list. `IdentityLost` gets its own richer,
-        /// TERMINAL 668 below -- it does not auto-recover, so both "temporarily unreachable" and the
-        /// retryable class would misdiagnose it. The wait-and-retry guidance is actionable for every caller
+        /// throws an error its retryable-classifier does not list. The wait-and-retry guidance is actionable for every caller
         /// here, and specifically for `SYSTEM CAS GC START` run mid-recovery by an operator
         /// who STOPped GC pre-maintenance: this is a wait, not a dead end.
         Cas::throwCasTransientUnavailable(
@@ -1276,14 +1272,9 @@ CasOpAdmission ContentAddressedMetadataStorage::checkOpAdmitted(CasOpClass op) c
             fmt::format("this disk is stopping ({}); the server is shutting down or the disk stays closed until restart",
                         Cas::mountEndWord(pool->mountEnd())));
 
-    /// `IdentityLost` and the terminal `Vanished*` states carry the typed per-reason [D5] message the pool
-    /// owns (single source). A SETTLED `Vanished` pool answers `Probe`/`Remove` truthfully without touching
-    /// it; `IdentityLost` (sentinels absent, no auto-recovery) has NO benign answer -- every class
-    /// fails loud with the "recover by restart or FORGET; a matching-sentinel restore does not auto-revive"
-    /// diagnosis. So the truth-absent short-circuit is gated on the Vanished states specifically.
-    const bool settled_vanished = lc == Cas::PoolLifecycle::VanishedReplaced
-        || lc == Cas::PoolLifecycle::VanishedForgotten;
-    if (settled_vanished && (op == CasOpClass::Probe || op == CasOpClass::Remove))
+    /// The terminal `VanishedForgotten` state carries the typed per-reason [D5] message the pool owns
+    /// (single source), and answers `Probe`/`Remove` truthfully without touching the pool.
+    if (lc == Cas::PoolLifecycle::VanishedForgotten && (op == CasOpClass::Probe || op == CasOpClass::Remove))
         return CasOpAdmission::TruthAbsent;
     pool->throwIfLifecycleTerminal();
     throw Exception(ErrorCodes::LOGICAL_ERROR,

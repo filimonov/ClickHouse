@@ -92,10 +92,10 @@ enum class CasOpAdmission : uint8_t
 /// truthful in EVERY state — including a not-live / vanished pool the store()-class surface refuses, and a
 /// null pool (before `startup` / after `shutdown`). This is what keeps a disappearing disk VISIBLE to the
 /// operator instead of silently missing from the table.
-///   - `lifecycle`      — one of `live` / `paused` / `identity_lost` / `vanished` / `closed` (a published
+///   - `lifecycle`      — one of `live` / `paused` / `stopping` / `closed` (a published
 ///                        pool), or `constructing` / `shutdown` (no pool published).
 ///   - `reason`         — one word: `renewal_overdue` / `lease_expired` / `fenced_by_gc` for `paused`,
-///                        `replaced` for `vanished`, `forgotten` for `closed`, empty otherwise. Kept a small
+///                        the end word for `stopping`, `forgotten` for `closed`, empty otherwise. Kept a small
 ///                        closed vocabulary so a downstream `lifecycle || '(' || reason || ')'` yields e.g.
 ///                        exactly `closed(forgotten)` — the free text lives in `detail`, never here.
 ///   - `detail`         — the full [D5] reason text naming the actual failure (the replaced
@@ -214,7 +214,7 @@ public:
     /// The `SYSTEM CAS FSCK` handler: a read-only, independent reachability audit.
     ///
     /// FSCK scans the LIVE running pool directly: Admin class -- it routes through
-    /// `checkOpAdmitted(CasOpClass::Admin)` (refuses on a transient / `IdentityLost` / `Vanished` pool,
+    /// `checkOpAdmitted(CasOpClass::Admin)` (refuses on a transient / stopping / `Vanished` pool,
     /// consistent with `SYSTEM CAS GC RUN`), because an FSCK of a not-live disk is
     /// meaningless -- the operator has the snapshot / FORGET path. The scan tolerates concurrent writers:
     /// its ref-walk findings (missing manifest, dangling blob) are revalidated against a FRESH
@@ -256,10 +256,10 @@ public:
     ///   - null pool (the storage-level Constructing/ShutDown lifecycle -- before `startup`/after
     ///     `shutdown`) -> throws "not started" for EVERY class, `Probe` included: a storage that has
     ///     never published a pool (or torn one down) has no benign "absent" answer to give.
-    ///   - `TransientNotLive` / `IdentityLost` -> throws 668 for every class but `Factory` (uncertain
-    ///     backing; the sub-state distinction is surfaced in `system.cas_mounts`, not the
+    ///   - `TransientNotLive` / `Stopping` -> throws the retry-later class for every class but `Factory`
+    ///     (uncertain backing; the sub-state distinction is surfaced in `system.cas_mounts`, not the
     ///     op error).
-    ///   - `Vanished*` -> `Probe`/`Remove` answer `TruthAbsent` (absent-empty / no-op success);
+    ///   - `VanishedForgotten` -> `Probe`/`Remove` answer `TruthAbsent` (absent-empty / no-op success);
     ///     `ContentRead`/`Write`/`Admin` throw the typed per-reason [D5] message (via
     ///     `Pool::throwIfLifecycleTerminal`, the single home of those strings).
     /// `Factory` is never passed here. Public because `ContentAddressedTransaction` funnels its own
@@ -292,7 +292,7 @@ public:
     /// `SYSTEM CAS FORGET` handler (Task 10, spec §5): the operator force-Vanish. Drives the
     /// live pool to `Vanished(forgotten)` node-locally via `Pool::forgetDisk`'s fence-first protocol, and
     /// stops + joins the GC scheduler as part of it. Unlike the store()-class verbs, this must work on a
-    /// NOT-live disk (a stuck transient / `IdentityLost` pool) — that is its purpose — so it reaches the
+    /// NOT-live disk (a stuck transient pool) — that is its purpose — so it reaches the
     /// pool DIRECTLY, never through `poolAccess()`/`checkOpAdmitted` (which refuse a not-live disk); it is a
     /// lifecycle verb, like the Factory class. FORGET is an operator ASSERTION, not an erasure proof: the
     /// resulting [D5] error message (which carries the decommission timestamp) says so. The disk stays
@@ -317,7 +317,7 @@ public:
     /// stopped by `gcStop`, re-entering the SAME instance (its `start()` is re-enterable after a join).
     /// Leadership is NOT auto-restored -- the scheduler re-acquires the durable `gc/state` lease through the
     /// next round's normal acquisition. Idempotent (a no-op on a running scheduler). Unlike `gcStop`, it goes
-    /// through the uniform GC gate (`checkOpAdmitted(Admin)`): it refuses on a transient / `IdentityLost` /
+    /// through the uniform GC gate (`checkOpAdmitted(Admin)`): it refuses on a transient / stopping /
     /// `Vanished` pool with the typed error (668 / [D5]) and on a not-mounted disk -- restarting GC on a
     /// decommissioned/uncertain pool is meaningless and would only spin failing rounds. Serialized by
     /// `lifecycle_mutex` and `gc_scheduler_mutex`.
