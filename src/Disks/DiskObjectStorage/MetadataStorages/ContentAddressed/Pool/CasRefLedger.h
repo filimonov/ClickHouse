@@ -297,7 +297,8 @@ public:
 
     /// Closes admission, snapshots the current table set, and waits up to `wait_budget_ms` for queued
     /// mutations and leaders to finish. The check and enqueue paths share `ref_queue_mutex`, so no new
-    /// mutation can appear after shutdown has taken its snapshot.
+    /// mutation can appear after shutdown has taken its snapshot. Then waits, on the same deadline, for
+    /// every snapshot publish in flight.
     RefLaneDrain drainRefLanesForShutdown(uint64_t wait_budget_ms);
 
     /// A staged conditional create on the mount plane. Callers reach the store only through these, so
@@ -479,6 +480,12 @@ public:
     void setSnapshotBeforeCkptCasHookForTest(std::function<void()> hook)
     {
         snapshot_before_ckpt_cas_hook_for_test = std::move(hook);
+    }
+
+    /// Runs in `drainRefLanesForShutdown` when it is about to wait for a snapshot publish in flight.
+    void setShutdownPublishWaitHookForTest(std::function<void()> hook)
+    {
+        shutdown_publish_wait_hook_for_test = std::move(hook);
     }
 
     /// Returns the number of queued mutations for `ns` under the queue mutex.
@@ -1036,6 +1043,7 @@ private:
     std::function<void()> wedge_before_slot_occupy_hook_for_test;
     std::function<void()> snapshot_after_capture_hook_for_test;
     std::function<void()> snapshot_before_ckpt_cas_hook_for_test;
+    std::function<void()> shutdown_publish_wait_hook_for_test;
 
     /// Non-materializing diagnostic/cache lookup. It never observes the catalog and never creates a
     /// name slot or runtime.

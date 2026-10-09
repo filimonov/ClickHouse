@@ -7,12 +7,14 @@
 #include <Disks/tests/cas_test_helpers.h>
 
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
 #include <Poco/StreamChannel.h>
 
 #include <atomic>
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <vector>
 
 using namespace DB::Cas;
 
@@ -75,6 +77,21 @@ PoolPtr openPool(const std::shared_ptr<tests::CountingBackend> & backend, uint64
         config.snapshot_log_bytes_threshold = 1ULL << 40;
     }
     return Pool::open(backend, config);
+}
+
+RefTxnId publishRef(const PoolPtr & store, const RootNamespace & ns, const String & ref, uint64_t ordinal)
+{
+    return store->appendRefOps(ns, MutationScope::ref(ref),
+        [&ref, ordinal](const RefTableState & state)
+        {
+            std::vector<RefOp> ops;
+            if (state.getLifecycle() != RefLifecycle::Live)
+                ops.push_back(tests::namespaceBirthOp());
+            for (const RefOp & op : tests::publishCommittedOps(ref, ManifestRef{1, ordinal, 1}))
+                ops.push_back(op);
+            return ops;
+        },
+        RootMutationOrigin::Writer, RootMutationKind::Publish);
 }
 
 PartWriteTxnPtr stageEmptyManifest(const PoolPtr & store, const RootNamespace & ns, const String & ref_name, ManifestId & id)
@@ -178,4 +195,45 @@ TEST(CASFarewellRules, TheUncleanLineNamesAWedgedLane)
     const String text = log.captured();
     EXPECT_NE(text.find("marker: a ref-log lane still writing or wedged;"), String::npos) << text;
     EXPECT_EQ(text.find("cleanup duty"), String::npos) << text;
+}
+
+/// A publish of this incarnation can land after the farewell, so FORGET waits for it.
+TEST(CASFarewellRules, ForgetWaitsForAPublishInFlightThenWritesTheFarewell)
+{
+    auto backend = std::make_shared<tests::CountingBackend>();
+    auto store = openPool(backend, /*attempt_ms=*/5000, /*publish_every_mutation=*/true);
+    const RootNamespace ns{"srv1/publish_settles"};
+    auto parked = std::make_shared<tests::ManualBarrier>();
+    SCOPE_EXIT({ parked->release(); });
+    store->setSnapshotBeforeCkptCasHookForTest([parked] { parked->arriveAndWait(); });
+    auto waits = std::make_shared<std::atomic<int>>(0);
+    store->setShutdownPublishWaitHookForTest([parked, waits] { waits->fetch_add(1); parked->release(); });
+    publishRef(store, ns, "ref_1", 1);
+    parked->waitUntilArrived();
+    store->forgetDisk({}, "r");
+    EXPECT_EQ(waits->load(), 1) << "FORGET did not wait for the publish in flight";
+    EXPECT_EQ(store->pendingSnapshotPublishesForTest(ns), 0);
+    EXPECT_EQ(farewellSentinel(*backend, store->layout().mountKey("test")), kTerminated);
+}
+
+/// A publish that outlives the drain budget must withhold the farewell and say so.
+TEST(CASFarewellRules, ForgetWritesNoFarewellWhileAPublishOutlivesTheDrain)
+{
+    auto backend = std::make_shared<tests::CountingBackend>();
+    auto store = openPool(backend, /*attempt_ms=*/100, /*publish_every_mutation=*/true);
+    const RootNamespace ns{"srv1/publish_outlives"};
+    auto parked = std::make_shared<tests::ManualBarrier>();
+    SCOPE_EXIT({ parked->release(); });
+    store->setSnapshotBeforeCkptCasHookForTest([parked] { parked->arriveAndWait(); });
+    publishRef(store, ns, "ref_1", 1);
+    parked->waitUntilArrived();
+
+    ScopedPoolLogCapture log;
+    store->forgetDisk({}, "r");
+
+    EXPECT_NE(farewellSentinel(*backend, store->layout().mountKey("test")), kTerminated);
+    const String text = log.captured();
+    EXPECT_NE(text.find("marker: a snapshot publish in flight;"), String::npos) << text;
+    parked->release();
+    store->waitForSnapshotPublishSettleForTest(ns);
 }
