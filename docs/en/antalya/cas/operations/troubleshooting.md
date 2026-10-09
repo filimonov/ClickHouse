@@ -38,11 +38,12 @@ Start with the `watermark_renew` timeline described in
    `CASMountRenewalRecovered` rises while `CASMountLeaseLost` stays flat. No
    intervention is needed unless the rate is sustained; investigate backend throttling/latency before
    the blips consume the lease budget.
-2. **External lease-safety exhaustion.** Only a bounded renewal ends this way: the startup re-anchor.
+2. **Startup renewal deadline.** Only a bounded renewal ends this way: the startup re-anchor.
    The background renewal keeps retrying; a long outage shows as
    `lifecycle_reason = 'lease_expired'` and resumes under the same `writer_epoch`. The failed row has
-   `classification = 'deadline'`; `CASMountLeaseLost` does not rise. The runtime refused to claim
-   authority beyond the last confirmed lease. Check object-store latency and BOOTTIME/suspend
+   `classification = 'deadline'`: the lease-safety margin or the 90-second request window ran out
+   first; `CASMountLeaseLost` does not rise. The runtime refused to claim authority beyond the last
+   confirmed lease. Check object-store latency and BOOTTIME/suspend
    history. The disk does not start.
 3. **Cancellation.** `classification = 'cancelled'` after a sent request is terminal and suppresses a
    clean farewell because the request may still land. Cancellation before any request remains
