@@ -48,10 +48,7 @@ struct Retry
     static Retry standard() { return within(90'000); }
     /// A policy bound by the mount lease: `lease_deadline_ms` minus `margin`, clamped at 0 -- never
     /// risk a write landing after this node's fence may already be gone. `window_ms` defaults to the
-    /// standard 90 s write budget; a caller whose own budget is deliberately much smaller (the
-    /// graceful-shutdown farewell, whose window is derived from what ONE write costs, not from the
-    /// standard policy) passes its own window explicitly, and `bind` still takes whichever of the two
-    /// bounds is smaller.
+    /// standard 90 s write budget; `bind` takes whichever of the two bounds is smaller.
     static Retry untilLeaseSafe(uint64_t lease_deadline_ms, uint64_t margin, uint64_t window_ms = 90'000)
     {
         return {.window_ms = window_ms,
