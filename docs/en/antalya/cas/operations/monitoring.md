@@ -35,7 +35,7 @@ every `CAS*` name, is on [Antalya profile events and metrics](/antalya/metrics-a
 
 | Metric | Healthy range | A spike or nonzero means |
 |---|---|---|
-| `CASBlobCompareSwapConflict` | Near zero relative to `CASBlobCompareSwap` | Concurrent-update contention on blob metadata |
+| `CASBlobCompareSwapConflict` | Near zero relative to `CASBlobOverwrite` | Concurrent-update contention on blob metadata |
 | `CASBlobHead` / `CASBlobHeadMiss` | Aggregate present/missing outcomes for every successful backend `HEAD` under `/blobs/`, across writer, `GC`, validation, and other callers | Global totals do not by themselves measure the one-`HEAD` writer budget or diagnose retries; attribute by query and path before drawing either conclusion |
 | `CASBlobBodyPutAvoided` | Safe writer observations increment it when a physical body publication is avoided | Compare with query-attributed writer materialization tasks; the aggregate HEAD counters include unrelated callers |
 | `CASRefAppendWedged` | Zero | A ref-log append lane exhausted its retries after an uncertain `PUT`; ref-log progress on that namespace may be stalled |

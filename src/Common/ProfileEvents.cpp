@@ -791,7 +791,6 @@ The server successfully detected this situation and will download merged part fr
     M(CASBlobPut,        "Number of CAS blob PUT requests. Grows with blob uploads and indicates storage write traffic.", ValueType::Number) \
     M(CASBlobPutDeduplicated,   "Number of CAS blob deduplicating PUT requests. Grows when uploads reuse existing content.", ValueType::Number) \
     M(CASBlobOverwrite,  "Number of CAS blob overwrite requests. Growing values indicate repeated replacement writes.", ValueType::Number) \
-    M(CASBlobCompareSwap,        "Number of CAS blob compare-and-swap requests. Grows with concurrent metadata updates.", ValueType::Number) \
     M(CASBlobCompareSwapConflict,"Number of CAS blob compare-and-swap conflicts. A non-zero value indicates concurrent update contention.", ValueType::Number) \
     M(CASBlobHead,       "Number of successful backend HEAD requests under CAS blob paths that found an object, aggregated across all callers.", ValueType::Number) \
     M(CASBlobHeadMiss,   "Number of successful backend HEAD requests under CAS blob paths that found no object, aggregated across all callers.", ValueType::Number) \
@@ -849,7 +848,6 @@ The server successfully detected this situation and will download merged part fr
     M(CASManifestPut,        "Number of CAS manifest PUT requests. Grows with manifest creation and indicates metadata write traffic.", ValueType::Number) \
     M(CASManifestPutDeduplicated,   "Number of CAS deduplicating manifest PUT requests. Grows when existing manifests are reused.", ValueType::Number) \
     M(CASManifestOverwrite,  "Number of CAS manifest overwrite requests. Growing values indicate repeated manifest replacement.", ValueType::Number) \
-    M(CASManifestCompareSwap,        "Number of CAS manifest compare-and-swap requests. Grows with concurrent manifest updates.", ValueType::Number) \
     M(CASManifestCompareSwapConflict,"Number of CAS manifest compare-and-swap conflicts. A non-zero value indicates concurrent update contention.", ValueType::Number) \
     M(CASManifestHead,       "Number of CAS manifest HEAD requests. Grows with manifest existence checks and validation.", ValueType::Number) \
     M(CASManifestHeadMiss,   "Number of CAS manifest HEAD requests that found no object. A non-zero value indicates missing or stale manifests.", ValueType::Number) \
@@ -860,7 +858,6 @@ The server successfully detected this situation and will download merged part fr
     M(CASRootPut,        "Number of CAS root PUT requests. Grows with root creation and indicates metadata write traffic.", ValueType::Number) \
     M(CASRootPutDeduplicated,   "Number of CAS deduplicating root PUT requests. Grows when existing roots are reused.", ValueType::Number) \
     M(CASRootOverwrite,  "Number of CAS root overwrite requests. Growing values indicate repeated root replacement.", ValueType::Number) \
-    M(CASRootCompareSwap,        "Number of CAS root compare-and-swap requests. Grows with concurrent root updates.", ValueType::Number) \
     M(CASRootCompareSwapConflict,"Number of CAS root compare-and-swap conflicts. A non-zero value indicates concurrent update contention.", ValueType::Number) \
     M(CASRootHead,       "Number of CAS root HEAD requests. Grows with root existence checks and validation.", ValueType::Number) \
     M(CASRootHeadMiss,   "Number of CAS root HEAD requests that found no object. A non-zero value indicates missing or stale roots.", ValueType::Number) \
@@ -871,7 +868,6 @@ The server successfully detected this situation and will download merged part fr
     M(CASGCPut,          "Number of CAS GC PUT requests. Grows with GC metadata and object-management writes.", ValueType::Number) \
     M(CASGCPutDeduplicated,     "Number of deduplicating CAS GC PUT requests. Growth indicates GC reused existing objects.", ValueType::Number) \
     M(CASGCOverwrite,    "Number of CAS GC overwrite requests. Growing values indicate repeated GC metadata replacement.", ValueType::Number) \
-    M(CASGCCompareSwap,          "Number of CAS GC compare-and-swap requests. Grows with GC state updates.", ValueType::Number) \
     M(CASGCRetireReplaced, "Number of CAS GC re-condemnations after a resurrected object replaced a retired incarnation. Growth indicates object-generation churn.", ValueType::Number) \
     M(CASGCCompareSwapConflict,  "Number of CAS GC compare-and-swap conflicts. A non-zero value indicates concurrent GC or metadata updates.", ValueType::Number) \
     M(CASGCHead,         "Number of CAS GC HEAD requests. Grows with object existence checks during collection.", ValueType::Number) \
@@ -883,21 +879,9 @@ The server successfully detected this situation and will download merged part fr
     M(CASGCReadAheadHit,    "Number of CAS GC fold reads and HEADs answered by the fold's read-ahead. Growth means the round's small-object round trips overlapped instead of serializing.", ValueType::Number) \
     M(CASGCReadAheadMiss,   "Number of CAS GC fold reads and HEADs performed inline because nothing was hinted for the key. A large value against hits means a hint set is narrower than the walk.", ValueType::Number) \
     M(CASGCReadAheadWasted, "Number of CAS GC read-ahead results fetched and never taken: a namespace held below its lookahead, or a HEAD candidate that kept an edge. Bounded by the read-ahead window per namespace.", ValueType::Number) \
-    M(CASServerPut,      "Number of CAS server-object PUT requests. Grows with server metadata writes.", ValueType::Number) \
-    M(CASServerPutDeduplicated, "Number of deduplicating CAS server-object PUT requests. Growth indicates reused server objects.", ValueType::Number) \
-    M(CASServerOverwrite,"Number of CAS server-object overwrite requests. Growing values indicate repeated replacement writes.", ValueType::Number) \
-    M(CASServerCompareSwap,      "Number of CAS server-object compare-and-swap requests. Grows with server metadata updates.", ValueType::Number) \
-    M(CASServerCompareSwapConflict,"Number of CAS server-object compare-and-swap conflicts. A non-zero value indicates concurrent updates.", ValueType::Number) \
-    M(CASServerHead,     "Number of CAS server-object HEAD requests. Grows with existence checks and validation.", ValueType::Number) \
-    M(CASServerHeadMiss, "Number of CAS server-object HEAD requests that found no object. A non-zero value indicates missing server state.", ValueType::Number) \
-    M(CASServerGet,      "Number of CAS server-object GET requests. Grows with server metadata reads.", ValueType::Number) \
-    M(CASServerGetStream,"Number of streaming CAS server-object GET requests. Grows with large metadata reads.", ValueType::Number) \
-    M(CASServerDelete,   "Number of CAS server-object DELETE requests. Grows with server-state cleanup.", ValueType::Number) \
-    M(CASServerList,     "Number of CAS server-object LIST requests. Growing values indicate more server-state enumeration.", ValueType::Number) \
     M(CASOtherPut,       "Number of CAS other-object PUT requests. Grows with writes to uncategorized CAS objects.", ValueType::Number) \
     M(CASOtherPutDeduplicated,  "Number of deduplicating CAS other-object PUT requests. Growth indicates reused uncategorized objects.", ValueType::Number) \
     M(CASOtherOverwrite, "Number of CAS other-object overwrite requests. Growing values indicate repeated replacement writes.", ValueType::Number) \
-    M(CASOtherCompareSwap,       "Number of CAS other-object compare-and-swap requests. Grows with metadata updates.", ValueType::Number) \
     M(CASOtherCompareSwapConflict,"Number of CAS other-object compare-and-swap conflicts. A non-zero value indicates concurrent updates.", ValueType::Number) \
     M(CASOtherHead,      "Number of CAS other-object HEAD requests. Grows with existence checks and validation.", ValueType::Number) \
     M(CASOtherHeadMiss,  "Number of CAS other-object HEAD requests that found no object. A non-zero value indicates missing state.", ValueType::Number) \
@@ -942,7 +926,6 @@ The server successfully detected this situation and will download merged part fr
     M(CASConditionalWriteCommitted, "Number of CAS conditional writes completed successfully. Growth indicates successful conditional-update activity.", ValueType::Number) \
     M(CASConditionalWriteDefiniteFailure, "Number of CAS conditional writes rejected with certainty before applying. A non-zero value indicates invalid requests, oversized entities, or access denial.", ValueType::Number) \
     M(CASConditionalWriteUnresolved, "Number of CAS conditional writes with an unknown outcome after conflict, timeout, connection loss, or server error. A non-zero value indicates backend instability or state requiring resolution.", ValueType::Number) \
-    M(CASConditionalWriteFenceLostPostWrite, "Number of CAS writes that succeeded but lost the final mount-fence check. A non-zero value indicates late responses after the mount lifecycle changed.", ValueType::Number) \
     M(CASRequestAttempt, "Number of physical requests the CAS request contract started. Each one was admitted by the mount fence and reserved against the call's deadline before it was sent.", ValueType::Number) \
     M(CASRequestReissue, "Number of CAS requests re-sent: after a jittered backoff for an ordinary failure, after a flat pause for a connect-failure hint, or at once with no pause at all for a first-attempt fuse. Growth means the object store is throttling, failing, or contended.", ValueType::Number) \
     M(CASRequestConflictPause, "Number of clean lost races the CAS request contract repaid after a flat jitter instead of a growing backoff: the resolve read had settled the conflict and no transport fault preceded it.", ValueType::Number) \

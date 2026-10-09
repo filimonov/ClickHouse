@@ -73,7 +73,6 @@ validation, and other callers.
 | --- | --- | --- |
 | `CASBlobAdoptTrusted` | `Number` | Number of CAS blob adoptions trusted through a durable manifest edge without per-file probes. Growth indicates manifest-based relinking. |
 | `CASBlobBodyPutAvoided` | `Number` | Number of physical CAS blob body publications avoided after a safe presence observation found the object present. Growing values indicate saved upload traffic. |
-| `CASBlobCompareSwap` | `Number` | Number of CAS blob compare-and-swap requests. Grows with concurrent metadata updates. |
 | `CASBlobCompareSwapConflict` | `Number` | Number of CAS blob compare-and-swap conflicts. A non-zero value indicates concurrent update contention. |
 | `CASBlobDelete` | `Number` | Number of CAS blob DELETE requests. Grows with cleanup and GC deletion activity. |
 | `CASBlobGet` | `Number` | Number of CAS blob GET requests. Grows with blob reads and indicates read traffic. |
@@ -108,7 +107,6 @@ These counters total object-store requests for manifest keys.
 
 | Event | Type | Description |
 | --- | --- | --- |
-| `CASManifestCompareSwap` | `Number` | Number of CAS manifest compare-and-swap requests. Grows with concurrent manifest updates. |
 | `CASManifestCompareSwapConflict` | `Number` | Number of CAS manifest compare-and-swap conflicts. A non-zero value indicates concurrent update contention. |
 | `CASManifestDelete` | `Number` | Number of CAS manifest DELETE requests. Grows with cleanup and GC deletion activity. |
 | `CASManifestGet` | `Number` | Number of CAS manifest GET requests. Grows with manifest reads and indicates metadata read traffic. |
@@ -126,7 +124,6 @@ These counters total object-store requests for root keys.
 
 | Event | Type | Description |
 | --- | --- | --- |
-| `CASRootCompareSwap` | `Number` | Number of CAS root compare-and-swap requests. Grows with concurrent root updates. |
 | `CASRootCompareSwapConflict` | `Number` | Number of CAS root compare-and-swap conflicts. A non-zero value indicates concurrent update contention. |
 | `CASRootDelete` | `Number` | Number of CAS root DELETE requests. Grows with cleanup activity. |
 | `CASRootGet` | `Number` | Number of CAS root GET requests. Grows with root reads and indicates metadata read traffic. |
@@ -138,31 +135,12 @@ These counters total object-store requests for root keys.
 | `CASRootPut` | `Number` | Number of CAS root PUT requests. Grows with root creation and indicates metadata write traffic. |
 | `CASRootPutDeduplicated` | `Number` | Number of CAS deduplicating root PUT requests. Grows when existing roots are reused. |
 
-#### Server-object requests {#cas-server-requests}
-
-These counters total object-store requests for server-object keys.
-
-| Event | Type | Description |
-| --- | --- | --- |
-| `CASServerCompareSwap` | `Number` | Number of CAS server-object compare-and-swap requests. Grows with server metadata updates. |
-| `CASServerCompareSwapConflict` | `Number` | Number of CAS server-object compare-and-swap conflicts. A non-zero value indicates concurrent updates. |
-| `CASServerDelete` | `Number` | Number of CAS server-object DELETE requests. Grows with server-state cleanup. |
-| `CASServerGet` | `Number` | Number of CAS server-object GET requests. Grows with server metadata reads. |
-| `CASServerGetStream` | `Number` | Number of streaming CAS server-object GET requests. Grows with large metadata reads. |
-| `CASServerHead` | `Number` | Number of CAS server-object HEAD requests. Grows with existence checks and validation. |
-| `CASServerHeadMiss` | `Number` | Number of CAS server-object HEAD requests that found no object. A non-zero value indicates missing server state. |
-| `CASServerList` | `Number` | Number of CAS server-object LIST requests. Growing values indicate more server-state enumeration. |
-| `CASServerOverwrite` | `Number` | Number of CAS server-object overwrite requests. Growing values indicate repeated replacement writes. |
-| `CASServerPut` | `Number` | Number of CAS server-object PUT requests. Grows with server metadata writes. |
-| `CASServerPutDeduplicated` | `Number` | Number of deduplicating CAS server-object PUT requests. Growth indicates reused server objects. |
-
 #### Other-object requests {#cas-other-requests}
 
-These counters total object-store requests for CAS keys outside the blob, manifest, root, and server-object prefixes.
+These counters total object-store requests for CAS keys outside the blob, manifest, root, and GC prefixes.
 
 | Event | Type | Description |
 | --- | --- | --- |
-| `CASOtherCompareSwap` | `Number` | Number of CAS other-object compare-and-swap requests. Grows with metadata updates. |
 | `CASOtherCompareSwapConflict` | `Number` | Number of CAS other-object compare-and-swap conflicts. A non-zero value indicates concurrent updates. |
 | `CASOtherDelete` | `Number` | Number of CAS other-object DELETE requests. Grows with cleanup activity. |
 | `CASOtherGet` | `Number` | Number of CAS other-object GET requests. Grows with reads of uncategorized CAS objects. |
@@ -182,7 +160,6 @@ Day-to-day interpretation is on the [monitoring](/antalya/cas/operations/monitor
 | Event | Type | Description |
 | --- | --- | --- |
 | `CASGCClampSuppressedPasses` | `Number` | Number of CAS GC passes that deferred shard graduation and deletion because reachability was uncertain. In the current stage this is EVERY folding round by construction, not an anomaly: the namespace universe is not yet knowable, so the round's destructive gate is shut unconditionally and this counter tracks folding rounds rather than trouble. What does discriminate is the fold seal's hold set and the tables_held column of the fold_ref_intake phase row -- read those, not this, to tell a healthy suppressed round from a namespace that stopped. |
-| `CASGCCompareSwap` | `Number` | Number of CAS GC compare-and-swap requests. Grows with GC state updates. |
 | `CASGCCompareSwapConflict` | `Number` | Number of CAS GC compare-and-swap conflicts. A non-zero value indicates concurrent GC or metadata updates. |
 | `CASGCCondemnMarkerUnconfirmedCarry` | `Number` | Number of CAS GC retirements delayed because a durable condemn marker could not be confirmed. A non-zero value indicates marker write or read failures and safely postpone deletion. |
 | `CASGCDeadPrecommitSkipped` | `Number` | Number of CAS GC edges skipped for precommits proven dead below the durable watermark. Growing values indicate stale or incomplete ref history. |
@@ -314,7 +291,6 @@ These counters cover conditional writes made without transparent SDK retries.
 | `CASConditionalWriteAttempts` | `Number` | Number of CAS conditional-write HTTP attempts made without transparent SDK retries. Growth indicates CAS metadata or reference updates. |
 | `CASConditionalWriteCommitted` | `Number` | Number of CAS conditional writes completed successfully. Growth indicates successful conditional-update activity. |
 | `CASConditionalWriteDefiniteFailure` | `Number` | Number of CAS conditional writes rejected with certainty before applying. A non-zero value indicates invalid requests, oversized entities, or access denial. |
-| `CASConditionalWriteFenceLostPostWrite` | `Number` | Number of CAS writes that succeeded but lost the final mount-fence check. A non-zero value indicates late responses after the mount lifecycle changed. |
 | `CASConditionalWriteUnresolved` | `Number` | Number of CAS conditional writes with an unknown outcome after conflict, timeout, connection loss, or server error. A non-zero value indicates backend instability or state requiring resolution. |
 
 #### Hot-key lane {#cas-hot-key}

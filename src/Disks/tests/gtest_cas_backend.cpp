@@ -525,6 +525,10 @@ extern const Event CASGCPut;
 
 TEST(CASInstrumentedBackend, ClassifierAndPerNamespaceOpEvents)
 {
+    /// One table row per class a key can land in, one column per outcome a primitive reports.
+    static_assert(CAS_NS_COUNT == 5);
+    static_assert(CAS_OP_COUNT == 10);
+
     /// Namespace classification by substring.
     EXPECT_EQ(classifyCasNs("pool/blobs/ab/abcdef"), CasNs::Blob);
     EXPECT_EQ(classifyCasNs("pool/gc/registry"), CasNs::Gc);   /// gc/ prefix covers GC state (state, retired sets, etc.)
@@ -582,6 +586,34 @@ TEST(CASInstrumentedBackend, ClassifierAndPerNamespaceOpEvents)
 #else
     (void)blob_put_before; (void)blob_dedup_before; (void)blob_head_before;
     (void)blob_miss_before; (void)gc_put_before;
+#endif
+}
+
+namespace ProfileEvents
+{
+extern const Event CASRootOverwrite;
+extern const Event CASRootCompareSwapConflict;
+extern const Event CASOtherPut;
+extern const Event CASOtherCompareSwapConflict;
+extern const Event CASOtherList;
+}
+
+/// The event table is positional: a cell after a dropped column or row would silently count under its
+/// neighbour's name.
+TEST(CASInstrumentedBackend, CellsPastAnyDroppedRowOrColumnKeepTheirEvents)
+{
+#if !WITH_COVERAGE
+    const auto expect_one = [](CasNs ns, CasOp op, ProfileEvents::Event event)
+    {
+        const auto before = ProfileEvents::global_counters[event].load();
+        incrementCasEvent(ns, op);
+        EXPECT_EQ(ProfileEvents::global_counters[event].load() - before, 1u);
+    };
+    expect_one(CasNs::Root, CasOp::Overwrite, ProfileEvents::CASRootOverwrite);
+    expect_one(CasNs::Root, CasOp::CasConflict, ProfileEvents::CASRootCompareSwapConflict);
+    expect_one(CasNs::Other, CasOp::Put, ProfileEvents::CASOtherPut);
+    expect_one(CasNs::Other, CasOp::CasConflict, ProfileEvents::CASOtherCompareSwapConflict);
+    expect_one(CasNs::Other, CasOp::List, ProfileEvents::CASOtherList);
 #endif
 }
 

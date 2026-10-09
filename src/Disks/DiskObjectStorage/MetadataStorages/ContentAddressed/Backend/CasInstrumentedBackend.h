@@ -15,9 +15,8 @@ namespace DB::Cas
 /// backends. This backend-level chokepoint is needed because background PUTs are not attributable
 /// through the foreground request that scheduled them.
 
-/// Namespace of a CA key, classified by substring of the key path (6 classes; `Server` is currently
-/// unreachable through this classifier — the per-server control subtree lives under
-/// `/gc/server-roots/<server_root_id>/...` and classifies as Gc).
+/// Namespace of a CA key, classified by substring of the key path (5 classes; the per-server control
+/// subtree `<prefix>/gc/server-roots/<server_root_id>/...` is Gc).
 ///   <prefix>/blobs/..        → Blob
 ///   <prefix>/cas/ns/..        → Root  (immutable streams and point/path-addressed namespace state)
 ///   <prefix>/cas/manifests/.. → Manifest
@@ -30,10 +29,9 @@ enum class CasNs : uint8_t
     Manifest,
     Root,
     Gc,
-    Server,
     Other,
 };
-static constexpr size_t CAS_NS_COUNT = 6;
+static constexpr size_t CAS_NS_COUNT = 5;
 
 /// Operation + outcome class, mapped from the `Backend` primitive and its result.
 ///   write, no expected value   → a value ⇒ Put       ; RawConflict ⇒ PutDeduplicated
@@ -44,16 +42,11 @@ static constexpr size_t CAS_NS_COUNT = 6;
 ///   remove                     → Delete (all outcomes)
 ///   list                       → List
 ///   publish                    → Put
-///
-/// `Cas` has no current producer: the primitive `write` cannot tell a compare-and-set from any other
-/// conditional replacement, so every conditional replace counts as `Overwrite`/`CasConflict`. Kept
-/// for the `CAS*CompareSwap` events it still backs.
 enum class CasOp : uint8_t
 {
     Put = 0,
     PutDeduplicated,
     Overwrite,
-    Cas,
     CasConflict,
     Head,
     HeadMiss,
@@ -62,7 +55,7 @@ enum class CasOp : uint8_t
     Delete,
     List,
 };
-static constexpr size_t CAS_OP_COUNT = 11;
+static constexpr size_t CAS_OP_COUNT = 10;
 
 /// Classify a key into its namespace by substring. The order is significant where a more specific
 /// layout such as `cas/ns/` must be recognized before a generic fallback; unknown key families
