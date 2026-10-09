@@ -1,0 +1,25 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- A second server of the same pool, straight to RustFS, whose GC fences a slot that stops
+                 renewing. The same lease timing as `disk_cas_reacq`: a pool's members share it. -->
+            <disk_cas_reacq_peer>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>cas</metadata_type>
+                <http_keep_alive_timeout>30</http_keep_alive_timeout>
+                <http_keep_alive_max_requests>10000</http_keep_alive_max_requests>
+                <cas_server_root_id>itest-cas-reacq-peer</cas_server_root_id>
+                <endpoint>http://rustfs1:11121/test/cas_mount_reacq/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <cas_gc_enabled>1</cas_gc_enabled>
+                <cas_gc_interval_sec>1</cas_gc_interval_sec>
+                <cas_mount_lease_ttl_ms>10000</cas_mount_lease_ttl_ms>
+                <cas_mount_renew_period_ms>2000</cas_mount_renew_period_ms>
+                <cas_attempt_timeout_ms>500</cas_attempt_timeout_ms>
+                <cas_lease_safety_margin_ms>500</cas_lease_safety_margin_ms>
+            </disk_cas_reacq_peer>
+        </disks>
+    </storage_configuration>
+</clickhouse>

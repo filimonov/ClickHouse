@@ -122,9 +122,12 @@ one starts at once.
 
 After the renewer call returns, `CasMountRuntime` consumes the result. A terminal result trips the
 local fence (latches `lost`, bumps the fence generation, moves the in-process runtime to
-`TransientNotLive`) and latches one self-remount generation. A confirmed foreign/successor or
+`TransientNotLive`). A GC fence of our own body is then reacquired by the renewal thread (see
+[below](#gc-fence-reacquire)); any other terminal result that is not a loss latches one self-remount
+generation. A confirmed foreign/successor or
 same-pair conflict remains a typed fail-closed error; it is never adopted. A real fence still costs
-only an epoch: recovery reclaims with a fresh one, bounded at three whole-chain attempts. This is the
+only an epoch: the reacquire takes the slot under a fresh one, retrying about once a second with no
+attempt bound. This is the
 general CAS posture: doubt about the source fails closed, while transport ambiguity is retried until a
 definitive answer and writes are admitted only inside the last confirmed lease.
 
@@ -221,13 +224,13 @@ stateDiagram-v2
     [*] --> Live: Pool constructed, fence unarmed
     Live --> Live: mountWritable arms the fence
     Live --> TransientNotLive: renewal failure, tripMountLost, lost=true
-    TransientNotLive --> Live: self-remount succeeds with a fresh epoch
-    TransientNotLive --> TransientNotLive: probe inconclusive, retry with backoff
-    TransientNotLive --> IdentityLost: pool meta and owner both authoritatively absent
-    TransientNotLive --> VanishedReplaced: foreign pool_id observed
+    TransientNotLive --> Live: the reacquire or a self-remount opens a fresh epoch
+    TransientNotLive --> TransientNotLive: a step fails transiently and is retried
+    TransientNotLive --> IdentityLost: a self-remount finds pool meta and owner both authoritatively absent
+    TransientNotLive --> VanishedReplaced: a self-remount observes a foreign pool_id
     Live --> VanishedForgotten: SYSTEM CAS FORGET
     Live --> Stopping: the slot is lost, see below
-    TransientNotLive --> Stopping: the self-remount finds another incarnation
+    TransientNotLive --> Stopping: another incarnation, or the reacquire finds pool_identity_lost or ledger_fault
     IdentityLost --> [*]
     VanishedReplaced --> [*]
     VanishedForgotten --> [*]
@@ -300,10 +303,8 @@ stop, then one `ERROR` line on the `CasPool` logger says what was in the slot. T
   request, so a shutdown over a dead store does not wait on it.
 - **The end without a shutdown** is for a broken process invariant: a shutdown writes the farewell and
   the checkpoints under an identity another process may hold.
-- **Our own GC fence** (`gc_fenced` on the body this server wrote) is not a loss: the self-remount takes a
-  fresh epoch as before. A self-remount that finds another server, a newer epoch of this server, or a
-  body of the fenced pair that keeps changing stops the server too. A body of the fenced pair that does
-  not change is reclaimed after the token-stability observation, as after a crash.
+- **Our own GC fence** (`gc_fenced` on the body this server wrote) is not a loss: the server takes its
+  slot again, see [When the GC fences this server](#gc-fence-reacquire).
 - **A `GET` 404 alone proves nothing**: a proxy or a misrouted request answers it as well. Absence counts
   only when a `LIST` of the key agrees; otherwise the background renewal reads again.
 - **`SYSTEM CAS FORGET`** closes the disk and the server keeps running. A loss latched before FORGET
@@ -316,6 +317,33 @@ stop, then one `ERROR` line on the `CasPool` logger says what was in the slot. T
 - **`clickhouse-local`** installs no `SIGTERM` handler, so the stop ends it at once.
 - **Not detected:** a byte-identical clone, a second process that writes exactly this server's bytes:
   the store cannot tell its write from ours.
+
+## When the GC fences this server {#gc-fence-reacquire}
+
+A renewal that finds the body this server wrote fenced by the GC (`gc_fenced`) hands the fenced body to
+the renewal thread, which takes the slot again under a new `writer_epoch`. Meanwhile
+`system.cas_mounts` shows `lifecycle = 'paused'` and `lifecycle_reason = 'fenced_by_gc'`.
+
+1. The old epoch closes: in-flight ref-table recoveries end and the cached ref tables are dropped.
+2. The pool identity, the ref catalog and the owner anchor are checked; nothing is created.
+3. The `writer_epoch` counter advances by one conditional write, fixed before it is first sent.
+4. The slot is replaced only if it still holds the fenced body: the write names that body's ETag.
+5. If the lease left is short, one renewal runs first; then writes open under the new epoch. The log
+   says `CAS disk '<disk>': reacquired under writer_epoch <new> (was <old>)`.
+
+A transient failure repeats the step about once a second, with the same writes. Anything else ends the
+mount:
+
+| `lifecycle_reason` | What the reacquire found |
+|---|---|
+| `slot_taken`, `slot_absent`, `slot_corrupt` | a slot that holds neither the fenced body, nor our claim, nor a GC fence of our claim (which starts the reacquire over); an absence counts when a `LIST` agrees, and the clean marker of the fenced pair is `slot_corrupt` |
+| `slot_taken` | the `writer_epoch` counter advanced by another process |
+| `pool_identity_lost` | an absent owner anchor, counter, ref catalog or pool metadata that a `LIST` confirms; a foreign or retired owner; a data root that holds another pool |
+| `ledger_fault` | a ref catalog that does not decode or is ambiguous |
+
+`pool_identity_lost` and the slot rows stop the server gracefully; `ledger_fault` ends the process
+without a shutdown. No clean marker, token-stability observation or `cas_unsafe_remount_no_delay` applies
+on this path.
 
 ## `system.cas_mounts` {#mounts-table}
 
@@ -331,7 +359,7 @@ row with `listing_error` set.
 | `writer_epoch`, `renewal_sequence`, `started_at`, `expires_at`, `min_active_build_sequence`, `gc_fenced` | lease state (`DateTime64(3)` columns; the millisecond-integer field names live only in the internal `MountLease` struct and the on-disk body) |
 | `state` | one of `live`, `expired`, `terminated`, `fenced`, `corrupt` |
 | `is_leader`, `pending_reclaim`, `last_success_age_seconds`, `wedged_namespace_count` | GC health, process-local; **`NULL` on every peer row** — a process-local fact must never be stamped onto another server's row |
-| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `remounting`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `stopping` (`lifecycle_reason` as in [the table above](#slot-lost)), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began, for a pause from the lease clock when the current reason's threshold was crossed (for `lease_expired`, the lease deadline); `NULL` while live |
+| `lifecycle`, `lifecycle_reason`, `lifecycle_detail`, `lifecycle_since` | the SQL surface for the in-process `PoolLifecycle` runtime above: `lifecycle` is `live`, `paused` (`lifecycle_reason` `renewal_overdue`, `lease_expired` or `fenced_by_gc`), `identity_lost`, `vanished` (`replaced`), `closed` (`forgotten`), `stopping` (`lifecycle_reason` as in [the table above](#slot-lost)), `constructing` or `shutdown`, from the confirmed lease and the clock; `Nullable(String)`, `NULL` on other servers' rows. Releases before this one wrote `not_live` for `paused` and `vanished(forgotten)` for `closed(forgotten)`; `lifecycle_detail` carries the full diagnosis text; `lifecycle_since` is when the current non-live state began, for a pause from the lease clock when the current reason's threshold was crossed (for `lease_expired`, the lease deadline); `NULL` while live |
 | `renewal_in_progress`, `renewal_attempts`, `last_renewal_error` | the running (or last) lease renewal: conditional `PUT`s sent so far and the last failed request, updated per attempt; **`NULL` on every peer row** |
 
 The lifecycle snapshot is I/O-free and ungated, so a not-live, never-started, or vanished disk

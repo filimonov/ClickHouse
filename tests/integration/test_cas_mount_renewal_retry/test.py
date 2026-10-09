@@ -268,6 +268,18 @@ def start_cluster():
         env_variables={"CLICKHOUSE_WATCHDOG_ENABLE": "1"},
         instance_env_variables=True,
     )
+    # One writable CAS disk behind the proxy, and a peer of the same pool whose GC fences a dead slot.
+    cluster.add_instance(
+        "reacq_node",
+        main_configs=["configs/reacquire_disks.xml"],
+        with_rustfs=True,
+        stay_alive=True,
+    )
+    cluster.add_instance(
+        "reacq_peer",
+        main_configs=["configs/reacquire_peer.xml"],
+        with_rustfs=True,
+    )
     cluster.base_cmd.extend(
         ["--file", os.path.join(os.path.dirname(__file__), "docker_compose_proxy.yml")]
     )
@@ -295,6 +307,7 @@ def start_cluster():
             "budget_probe": cluster.instances["budget_probe"],
             "stop_node": cluster.instances["stop_node"],
             "stop_node_watchdog": cluster.instances["stop_node_watchdog"],
+            "reacq_node": cluster.instances["reacq_node"],
             "control_url": control_url,
         }
     finally:
@@ -913,3 +926,146 @@ def test_a_foreign_body_stops_the_server_under_the_watchdog(start_cluster):
     finally:
         _restart_after_stop(node, control_url, WATCHDOG_STOP_MOUNT_KEY)
 
+
+REACQ_DISK = "disk_cas_reacq"
+REACQ_MOUNT_KEY = "cas_mount_reacq/gc/server-roots/itest-cas-reacq/mount"
+REACQ_DEADLINE_S = 60
+
+
+def _reacq_slot(deadline=None):
+    deadline = deadline or _Deadline(20)
+    response = _rustfs_client(max(1.0, deadline.remaining())).get_object(cluster.rustfs_bucket, REACQ_MOUNT_KEY)
+    try:
+        body = response.read()
+    finally:
+        response.close()
+        response.release_conn()
+    return body
+
+
+def _put_reacq_slot(body):
+    _rustfs_client(10).put_object(cluster.rustfs_bucket, REACQ_MOUNT_KEY, io.BytesIO(body), len(body))
+
+
+def _edit_reacq_slot(edit):
+    header, body = _reacq_slot().decode().splitlines()
+    fields = json.loads(body)
+    edit(fields)
+    _put_reacq_slot("{}\n{}\n".format(header, json.dumps(fields, separators=(",", ":"))).encode())
+
+
+def _gc_fence(fields):
+    # The transform the GC writes when it fences a slot out: the whole body, fenced, one `seq` above.
+    fields["gc_fenced"] = True
+    fields["seq"] = str(int(fields["seq"]) + 1)
+
+
+def _block_reacq_slot_puts(control_url, seed):
+    _control(
+        control_url,
+        "/config",
+        {"rate": 1.0, "modes": ["503"], "methods": ["PUT"], "path_substring": "/test/" + REACQ_MOUNT_KEY, "seed": seed},
+    )
+
+
+def _reacq_ready(node):
+    node.query(
+        "CREATE TABLE IF NOT EXISTS reacq_probe (id UInt64, payload String) "
+        "ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'cas_mount_reacq'"
+    )
+    _wait_until(lambda deadline: _local_lease(node, REACQ_DISK, timeout=deadline.remaining())[0] == "live", timeout=60)
+
+
+def _expect_reacquired(node, control_url, pid_before, epoch_before, counters_before, ids):
+    # The row reads `live` under the old epoch until a renewal finds the fence, so wait for the new epoch.
+    _wait_until(
+        lambda deadline: _local_lease(node, REACQ_DISK, timeout=deadline.remaining()) == ("live", "", epoch_before + 1),
+        timeout=REACQ_DEADLINE_S,
+    )
+    slot = json.loads(_reacq_slot().decode().splitlines()[1])
+    delta = _event_delta(counters_before, _profile_events(node))
+    assert node.get_process_pid("clickhouse") == pid_before
+    assert _local_lease(node, REACQ_DISK)[2] == epoch_before + 1
+    assert slot["gc_fenced"] is False, slot
+    assert int(slot["writer_epoch"]) == epoch_before + 1, slot
+    assert delta["CASRemountAttempts"] == 0, delta
+    assert delta["CASRemountSucceeded"] == 0, delta
+    assert _log_count_since_last_restart(node, "whole-chain remount") == 0
+    assert _log_count_since_last_restart(node, "reacquired under writer_epoch {} (was {})".format(epoch_before + 1, epoch_before)) == 1
+    node.query("INSERT INTO reacq_probe VALUES ({}, 'after')".format(ids[1]))
+    assert node.query("SELECT count() FROM reacq_probe WHERE id IN ({}, {})".format(*ids)).strip() == "2"
+
+
+def test_gc_fences_during_an_outage_and_the_same_server_continues_under_a_new_epoch(start_cluster):
+    node = start_cluster["reacq_node"]
+    control_url = start_cluster["control_url"]
+    _control(control_url, "/config", {"reset": True})
+    _reacq_ready(node)
+    node.query("INSERT INTO reacq_probe VALUES (101, 'before')")
+    pid_before = node.get_process_pid("clickhouse")
+    epoch_before = _local_lease(node, REACQ_DISK)[2]
+    counters_before = _profile_events(node)
+
+    _block_reacq_slot_puts(control_url, seed=1401)
+    try:
+        # The renewals stop landing; the peer's GC watches the token hold and fences the slot.
+        _wait_until(
+            lambda deadline: json.loads(_reacq_slot(deadline).decode().splitlines()[1])["gc_fenced"] is True,
+            timeout=90,
+        )
+    finally:
+        _control(control_url, "/config", {"reset": True})
+
+    _expect_reacquired(node, control_url, pid_before, epoch_before, counters_before, (101, 102))
+
+
+def test_a_fence_written_during_the_outage_without_a_gc_peer_is_reacquired(start_cluster):
+    node = start_cluster["reacq_node"]
+    control_url = start_cluster["control_url"]
+    _control(control_url, "/config", {"reset": True})
+    _reacq_ready(node)
+    node.query("INSERT INTO reacq_probe VALUES (201, 'before')")
+    pid_before = node.get_process_pid("clickhouse")
+    epoch_before = _local_lease(node, REACQ_DISK)[2]
+    counters_before = _profile_events(node)
+
+    _block_reacq_slot_puts(control_url, seed=1402)
+    try:
+        _edit_reacq_slot(_gc_fence)
+    finally:
+        _control(control_url, "/config", {"reset": True})
+
+    _expect_reacquired(node, control_url, pid_before, epoch_before, counters_before, (201, 202))
+
+
+def test_a_twin_body_found_by_the_reacquire_stops_the_server(start_cluster):
+    # The renewal's resolve read finds the fence and the reacquire starts; its claim then waits behind the
+    # blocked PUTs, so the twin written meanwhile is what the claim's refused precondition reads.
+    node = start_cluster["reacq_node"]
+    control_url = start_cluster["control_url"]
+    _control(control_url, "/config", {"reset": True})
+    _reacq_ready(node)
+
+    def twin(fields):
+        fields["writer_epoch"] = str(int(fields["writer_epoch"]) + 5)
+        fields["gc_fenced"] = False
+        fields["min_active_build_sequence"] = str(2**64 - 1)
+
+    reacquiring_before = _log_count_since_last_restart(node, "reacquiring the mount slot")
+    reacquired_before = _log_count_since_last_restart(node, "reacquired under writer_epoch")
+    _block_reacq_slot_puts(control_url, seed=1403)
+    try:
+        _edit_reacq_slot(_gc_fence)
+        _wait_until(
+            lambda deadline: _local_lease(node, REACQ_DISK, timeout=deadline.remaining())[:2] == ("paused", "fenced_by_gc"),
+            timeout=REACQ_DEADLINE_S,
+        )
+        _edit_reacq_slot(twin)
+        _control(control_url, "/config", {"reset": True})
+        _wait_until(lambda deadline: node.get_process_pid("clickhouse") is None, timeout=REACQ_DEADLINE_S)
+        assert _log_count_since_last_restart(node, "reacquiring the mount slot") - reacquiring_before == 1
+        assert _log_count_since_last_restart(node, "reacquired under writer_epoch") == reacquired_before
+        assert node.contains_in_log("holds a body of another incarnation")
+    finally:
+        _restart_after_stop(node, control_url, REACQ_MOUNT_KEY)
+    _wait_until(lambda deadline: _local_lease(node, REACQ_DISK, timeout=deadline.remaining())[0] == "live", timeout=60)

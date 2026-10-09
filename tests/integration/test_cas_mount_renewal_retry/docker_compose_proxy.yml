@@ -38,3 +38,8 @@ services:
     depends_on:
       s3proxy:
         condition: service_healthy
+
+  reacq_node:
+    depends_on:
+      s3proxy:
+        condition: service_healthy
