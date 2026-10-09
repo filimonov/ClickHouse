@@ -3572,8 +3572,8 @@ TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
               std::numeric_limits<uint64_t>::max());
 }
 
-/// The memory guard on the lease thread does not absorb `std::bad_alloc`: the renewal ends terminally
-/// and the mount lease is lost.
+/// The memory guard on the lease thread does not absorb `std::bad_alloc`: the renewal ends as a local
+/// defect.
 TEST(CASMountRuntime, BadAllocInsideTheRenewalStaysTerminal)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
@@ -3581,8 +3581,10 @@ TEST(CASMountRuntime, BadAllocInsideTheRenewalStaysTerminal)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
 
+    DB::Cas::tests::processStopLog().reset();
     String outcome;
     String classification;
     DB::Cas::tests::ManualBarrier reported;
@@ -3604,7 +3606,7 @@ TEST(CASMountRuntime, BadAllocInsideTheRenewalStaysTerminal)
     SCOPE_EXIT({ reported.release(); });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     const uint64_t leases_lost_before = ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load();
 
@@ -3615,12 +3617,14 @@ TEST(CASMountRuntime, BadAllocInsideTheRenewalStaysTerminal)
     EXPECT_EQ(outcome, "failed");
     EXPECT_EQ(classification, "deterministic_failure");
     EXPECT_FALSE(runtime.mayMutate());
-    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::TransientNotLive);
+    EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::Stopping);
+    EXPECT_EQ(runtime.mountEnd(), MountEnd::LocalDefect);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load(), leases_lost_before + 1);
 
     reported.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.drain_failed = true});
 }
 
 namespace
@@ -3681,7 +3685,8 @@ TEST(CASMountRuntime, GlobalMemoryLimitDoesNotEndTheLeaseThread)
     uint64_t wall_ms = 1000;
     uint64_t boot_ms = 100;
     const UInt128 uuid{1};
-    ASSERT_EQ(claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000).kind, MountClaimResult::Claimed);
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
 
     std::atomic<uint32_t> admissions{0};
     std::optional<OverLimitAllocation> loop_head;
@@ -3732,7 +3737,7 @@ TEST(CASMountRuntime, GlobalMemoryLimitDoesNotEndTheLeaseThread)
     });
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-    const uint64_t anchor = runtime.startRenewer();
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     const uint64_t leases_lost_before = ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load();
 
@@ -3771,7 +3776,7 @@ TEST(CASMountRuntime, GlobalMemoryLimitDoesNotEndTheLeaseThread)
 
     second_admission.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.drain_failed = true});
 }
 
 TEST(CASPoolRemount, NaturalTerminalTransitionMakesBothPersistentWorkersSelfExit)
