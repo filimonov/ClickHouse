@@ -41,6 +41,7 @@ class RenewalEventBackend final : public InMemoryBackend
 public:
     bool throw_before_next_write = false;
     bool throw_nonretryable_next_write = false;
+    bool land_then_throw_next_write = false;
     bool vanish_on_next_write = false;
     /// A LIST fails as a defect of this machine would.
     bool throw_on_list = false;
@@ -109,6 +110,11 @@ public:
         }
         if (std::exchange(throw_nonretryable_next_write, false))
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "injected deterministic renewal rejection");
+        if (std::exchange(land_then_throw_next_write, false))
+        {
+            (void)InMemoryBackend::write(key, bytes, expected_value, access);
+            throw Poco::TimeoutException("injected renewal timeout after commit");
+        }
         if (std::exchange(throw_before_next_write, false))
         {
             if (before_throw)
@@ -293,6 +299,23 @@ TEST(CASEvent, WatermarkRenewEventsAreBoundedAndComplete)
              "remaining_confirmed_budget_ms",
              "classification"})
         EXPECT_TRUE(renewals[0].detail.contains(key)) << "missing detail key " << key;
+}
+
+TEST(CASEvent, ARenewalProvedByItsResolvingReadIsCommittedByRead)
+{
+    auto backend = std::make_shared<RenewalEventBackend>();
+    auto boot_ms = std::make_shared<std::atomic<uint64_t>>(100);
+    auto events = std::make_shared<DB::Cas::tests::SharedEventLog>();
+    auto store = openRenewalEventPool(backend, boot_ms, renewalEventBudget(), "renewal-committed-by-read");
+    store->setEventSink([events](CasEvent event) { events->push(std::move(event)); });
+    backend->land_then_throw_next_write = true;
+    EXPECT_NO_THROW(store->renewWatermarkOnce());
+    const std::vector<CasEvent> renewals = watermarkRenewEvents(events->snapshot());
+    ASSERT_EQ(renewals.size(), 1u);
+    EXPECT_EQ(renewals[0].outcome, "recovered");
+    EXPECT_EQ(renewals[0].detail.at("classification"), "committed_by_read");
+    EXPECT_EQ(renewals[0].detail.at("attempts_sent"), "1");
+    EXPECT_EQ(renewals[0].detail.at("seq"), "2");
 }
 
 /// An attempt that spends the lease it was admitted under must not START the resolving read. That read

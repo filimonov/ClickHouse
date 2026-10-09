@@ -530,6 +530,9 @@ TEST(CASInstrumentedBackend, ClassifierAndPerNamespaceOpEvents)
     EXPECT_EQ(classifyCasNs("pool/gc/registry"), CasNs::Gc);   /// gc/ prefix covers GC state (state, retired sets, etc.)
     EXPECT_EQ(classifyCasNs("pool/roots/default/_files/x"), CasNs::Root);
     EXPECT_EQ(classifyCasNs("pool/gc/state"), CasNs::Gc);
+    /// The per-server control subtree is GC-owned state and is counted with it.
+    EXPECT_EQ(classifyCasNs(Layout("pool").mountKey("srv")), CasNs::Gc);
+    EXPECT_EQ(classifyCasNs(Layout("pool").epochKey("srv")), CasNs::Gc);
     /// D3: the old per-server-control key shapes (`_watermark`, `_precommits/<n>`) have no producer
     /// anymore -- control state now lives under `/gc/server-roots/...` (classifies as Gc). A key of
     /// this legacy shape, if it ever showed up, would fall through to the generic /roots/ rule.
