@@ -436,6 +436,8 @@ private:
     /// Runs the reacquire of `certificate` on the renewal thread until it opens, ends or is abandoned,
     /// about one second between passes.
     ReacquireOutcome reacquireUntilSettled(ReacquireCertificate certificate);
+    /// One reacquire step through `reacquire_attempt`, counted by how it ended.
+    ReacquireOutcome runReacquireStep(ReacquireStep & step);
     /// Wakes on stop and on a terminal pool; `MountConfig::wait_sleep_fn` replaces it in tests.
     void waitBeforeNextReacquireStep(uint64_t ms);
     /// Whether a renewal found a GC fence of our own body that no reacquire has taken yet.

@@ -58,8 +58,12 @@ window and correlate them with the `server_root_id` in `system.cas_log`.
 | `CASMountRenewalRetries` | One per physical renewal `PUT` after the first in the same logical renewal | Positive growth shows in-period retry, not a later cadence beat |
 | `CASMountRenewalResolved` | One per logical renewal proved committed by an exact resolving `GET` | A response was ambiguous, but exact bytes and `write_attempt_id` proved the write |
 | `CASMountRenewalRecovered` | One per logical renewal committed after a retry or exact resolving `GET` | Recovered object-store blips that retained the existing mount incarnation |
+| `CASMountLeaseExpired` | One per lease expiry, at the first renewal attempt after it | The renewal kept retrying past the lease; writes resume after a confirmed renewal that leaves enough lease |
+| `CASMountReacquireAttempts` | One per reacquire step after a GC fence of the active writer epoch | A step that cannot finish is retried and counted again |
+| `CASMountReacquireSucceeded` | One per reacquire that opened writes under a new writer epoch | Recovered GC fences |
+| `CASMountReacquireFailed` | One per reacquire that ended the mount | The server stops |
 
-`CASMountLeaseLost` complements those four counters. It increments when a terminal renewal moves the
+`CASMountLeaseLost` complements these counters. It increments when a terminal renewal moves the
 mount out of `Live`, and when a loss end is latched, so one loss can count twice. Shutdown and
 `SYSTEM CAS FORGET` do not count.
 
@@ -70,7 +74,8 @@ SELECT event, value
 FROM system.events
 WHERE event IN (
     'CASMountRenewalAttempts', 'CASMountRenewalRetries', 'CASMountRenewalResolved',
-    'CASMountRenewalRecovered', 'CASMountLeaseLost')
+    'CASMountRenewalRecovered', 'CASMountLeaseExpired', 'CASMountReacquireAttempts',
+    'CASMountReacquireSucceeded', 'CASMountReacquireFailed', 'CASMountLeaseLost')
 SETTINGS system_events_show_zero_values = 1;
 ```
 

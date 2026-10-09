@@ -28,7 +28,11 @@ namespace ErrorCodes
 namespace ProfileEvents
 {
     extern const Event CASDataRootVanished;
+    extern const Event CASMountLeaseExpired;
     extern const Event CASMountLeaseLost;
+    extern const Event CASMountReacquireAttempts;
+    extern const Event CASMountReacquireSucceeded;
+    extern const Event CASMountReacquireFailed;
     extern const Event CASMountRenewalAttempts;
     extern const Event CASMountRenewalRetries;
     extern const Event CASMountRenewalResolved;
@@ -235,6 +239,7 @@ void CasMountRuntime::warnOnceIfLeaseExpired() noexcept
         const std::optional<uint64_t> expired_at = leaseExpiredAtBootMs();
         if (!expired_at || lease_expiry_warned.exchange(true, std::memory_order_relaxed))
             return;
+        ProfileEvents::incrementNoTrace(ProfileEvents::CASMountLeaseExpired);
         /// Written at the first attempt after the expiry, so a renewal stuck in a request reports late; the
         /// age says by how much.
         LOG_WARNING(getLogger("CasPool"),
@@ -805,7 +810,7 @@ ReacquireOutcome CasMountRuntime::runReacquireForTest()
         if (!reacquire_step_for_test)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount runtime: no reacquire is owed");
     }
-    const ReacquireOutcome outcome = reacquire_attempt(*reacquire_step_for_test);
+    const ReacquireOutcome outcome = runReacquireStep(*reacquire_step_for_test);
     if (outcome != ReacquireOutcome::Retry)
         reacquire_step_for_test.reset();
     return outcome;
@@ -976,12 +981,23 @@ ReacquireOutcome CasMountRuntime::reacquireUntilSettled(ReacquireCertificate cer
     while (true)
     {
         const uint64_t started_boot_ms = bootMsNow();
-        const ReacquireOutcome outcome = reacquire_attempt(step);
+        const ReacquireOutcome outcome = runReacquireStep(step);
         if (outcome != ReacquireOutcome::Retry)
             return outcome;
         waitBeforeNextReacquireStep(Retry::spacedPause(
             Retry::drawSpacing(Retry::kDefinitiveAttemptSpacingMs), started_boot_ms, bootMsNow()));
     }
+}
+
+ReacquireOutcome CasMountRuntime::runReacquireStep(ReacquireStep & step)
+{
+    ProfileEvents::incrementNoTrace(ProfileEvents::CASMountReacquireAttempts);
+    const ReacquireOutcome outcome = reacquire_attempt(step);
+    if (outcome == ReacquireOutcome::Open)
+        ProfileEvents::incrementNoTrace(ProfileEvents::CASMountReacquireSucceeded);
+    else if (outcome == ReacquireOutcome::Ended)
+        ProfileEvents::incrementNoTrace(ProfileEvents::CASMountReacquireFailed);
+    return outcome;
 }
 
 bool CasMountRuntime::reacquireOwed() const

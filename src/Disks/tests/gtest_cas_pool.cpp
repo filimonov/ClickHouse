@@ -53,6 +53,7 @@ namespace ProfileEvents
 {
 extern const Event CASRefRecoveryEpochSealed;
 extern const Event CASMountExclusivityViolation;
+extern const Event CASMountLeaseExpired;
 extern const Event CASMountLeaseLost;
 extern const Event CASMountReleaseSkippedForeignOccupant;
 }
@@ -3469,6 +3470,7 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     outage_until = anchor + 3'500;
     backend->on_outage_write = [&] { expired_at_write.push_back(runtime_ptr->leaseExpiredAtBootMs()); };
     backend->outage = [&] { return boot_ms.load() < outage_until.load(); };
+    const uint64_t expiries_before = ProfileEvents::global_counters[ProfileEvents::CASMountLeaseExpired].load();
     runtime.startBackgroundWorkers(std::chrono::milliseconds(500));
 
     second_commit.waitUntilArrived();
@@ -3477,6 +3479,7 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     for (size_t at = log_at_second_commit.find(prefix); at != String::npos; at = log_at_second_commit.find(prefix, at + 1))
         ++warnings;
     EXPECT_EQ(warnings, 1u) << log_at_second_commit;
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseExpired].load() - expiries_before, 1u);
     ASSERT_GE(expired_at_write.size(), 3u);
     EXPECT_FALSE(expired_at_write.front().has_value()) << "the first attempt runs inside the lease";
     EXPECT_EQ(expired_at_write.back(), std::optional<uint64_t>(anchor + 1000));

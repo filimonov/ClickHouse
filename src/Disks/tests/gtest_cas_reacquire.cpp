@@ -28,6 +28,13 @@
 #include <mutex>
 #include <vector>
 
+namespace ProfileEvents
+{
+extern const Event CASMountReacquireAttempts;
+extern const Event CASMountReacquireSucceeded;
+extern const Event CASMountReacquireFailed;
+}
+
 using namespace DB::Cas;
 using DB::Cas::tests::OperationForTest;
 
@@ -208,6 +215,26 @@ TEST(CASReacquire, AnAbsentSlotStops)
 
     expectStoppedOn(f, f.store->runReacquireForTest(), MountEnd::SlotAbsent);
     EXPECT_FALSE(read(*f.backend, kLayout.mountKey(kSrid)).has_value()) << "a reacquire never creates the slot";
+}
+
+TEST(CASReacquire, CountersSayHowEachReacquireEnded)
+{
+    const auto at = [](ProfileEvents::Event e) { return ProfileEvents::global_counters[e].load(); };
+    {
+        Fenced f;
+        const uint64_t attempts = at(ProfileEvents::CASMountReacquireAttempts);
+        const uint64_t succeeded = at(ProfileEvents::CASMountReacquireSucceeded);
+        ASSERT_EQ(f.store->runReacquireForTest(), ReacquireOutcome::Open);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireAttempts) - attempts, 1u);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireSucceeded) - succeeded, 1u);
+    }
+    {
+        Fenced f;
+        erase(*f.backend, kLayout.mountKey(kSrid));
+        const uint64_t failed = at(ProfileEvents::CASMountReacquireFailed);
+        expectStoppedOn(f, f.store->runReacquireForTest(), MountEnd::SlotAbsent);
+        EXPECT_EQ(at(ProfileEvents::CASMountReacquireFailed) - failed, 1u);
+    }
 }
 
 TEST(CASReacquire, AForeignBodyStops)

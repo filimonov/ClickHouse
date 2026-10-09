@@ -259,7 +259,11 @@ window.
 | Event | Type | Description |
 | --- | --- | --- |
 | `CASMountExclusivityViolation` | `Number` | Counts CAS mount releases where a runtime that still BELIEVED IT OWNED the mount (no deposition ever observed) found a FOREIGN occupant in the slot. This is the single-writer guarantee being broken, not a failover: the release refuses, the slot is left untouched, and the write fence is latched so the runtime stops trusting itself. This must always be zero. |
+| `CASMountLeaseExpired` | `Number` | Number of CAS mount-lease expiries while the renewal kept retrying, counted once per expiry at the first renewal attempt after it. Writes resume after a confirmed renewal that leaves enough lease. |
 | `CASMountLeaseLost` | `Number` | Counts CAS mount-lease losses: a terminal renewal that moves the mount out of Live, and every loss end latched. One loss can count twice: a reacquire that ends in a loss end, or a background renewal that ends as local_defect. Shutdown and SYSTEM CAS FORGET do not count. |
+| `CASMountReacquireAttempts` | `Number` | Number of steps of the CAS mount reacquire after a GC fence of the active writer epoch. A step that cannot finish is retried and counted again. |
+| `CASMountReacquireFailed` | `Number` | Number of CAS mount reacquires that ended the mount. The server stops. |
+| `CASMountReacquireSucceeded` | `Number` | Number of CAS mount reacquires that opened writes under a new writer epoch. |
 | `CASMountReleaseSkippedForeignOccupant` | `Number` | Counts conclusive CAS mount-renewal observations that found a FOREIGN successor in the slot. This is the EXPECTED end state of a failover: renewal fences the deposed runtime, terminal teardown skips the farewell without backend I/O, and the successor's slot is left byte-for-byte untouched. Steady non-zero values on a cluster that is not failing over are worth investigating; a value that tracks failovers is normal. |
 | `CASMountRenewalAttempts` | `Number` | Number of physical conditional renewal PUTs sent for CAS mount leases. This counts transport attempts, not logical renewals. |
 | `CASMountRenewalRecovered` | `Number` | Number of logical CAS mount-lease renewals that committed after a physical retry or exact resolving GET. |
