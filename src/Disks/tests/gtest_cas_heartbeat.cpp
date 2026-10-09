@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h>
 #include <Disks/tests/cas_test_helpers.h>
 #include <Common/Exception.h>
+#include <base/getFQDNOrHostName.h>
 #include <base/scope_guard.h>
 #include <fmt/format.h>
 
@@ -17,6 +18,8 @@
 #include <mutex>
 #include <thread>
 #include <utility>
+
+#include <unistd.h>
 
 namespace DB::ErrorCodes
 {
@@ -349,6 +352,41 @@ TEST(CASHeartbeat, StopStampsExpiredAndFarewellSentinel)
     /// AND folds the watermark farewell into it (min_active_build_sequence = UINT64_MAX).
     EXPECT_LE(m.expires_at_ms, now_ms);
     EXPECT_EQ(m.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
+}
+
+/// Every field of the clean farewell, so a change to its rules cannot change its bytes.
+TEST(CASHeartbeat, FarewellBodyGolden)
+{
+    auto backend = std::make_shared<InMemoryBackend>();
+    Layout layout("pool");
+    const String srid = "test";
+    const UInt128 uuid(0x1234);
+    uint64_t now_ms = 1000;
+    uint64_t boot_ms = 100;
+    Ops ops(backend, &boot_ms);
+    const MountClaimed claimed = seedOwnClaim(ops.op, layout, srid, uuid, /*epoch=*/9, now_ms, /*ttl_ms=*/100, [&] { return boot_ms; });
+
+    MountLeaseRenewer renewer(ops.mount, ops.farewell, layout, srid, uuid, /*writer_epoch=*/9,
+                            std::chrono::milliseconds(100), [&] { return now_ms; },
+                            [] { return uint64_t{5}; }, {}, std::chrono::milliseconds(0),
+                            [&] { return boot_ms; });
+    renewer.start(claimed);
+
+    const auto before = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
+    now_ms = 2000;
+    renewer.release();
+    const auto after = decodeMountLease(ops.op.read(layout.mountKey(srid), Retry::standard())->bytes);
+
+    EXPECT_EQ(after.server_uuid, uuid);
+    EXPECT_EQ(after.writer_epoch, 9u);
+    EXPECT_EQ(after.seq, before.seq + 1);
+    EXPECT_EQ(after.started_at_ms, 2000u);
+    EXPECT_EQ(after.expires_at_ms, 2000u);
+    EXPECT_EQ(after.min_active_build_sequence, std::numeric_limits<uint64_t>::max());
+    EXPECT_FALSE(after.gc_fenced);
+    EXPECT_EQ(after.hostname, getFQDNOrHostName());
+    EXPECT_EQ(after.pid, static_cast<uint64_t>(::getpid()));
+    EXPECT_NE(after.write_attempt_id, before.write_attempt_id);
 }
 
 namespace
