@@ -163,10 +163,9 @@ DecommissionReport decommissionPoolMember(BackendPtr backend, PoolConfig config,
     /// `config.retry_sleep_fn` -- the seams `Pool::openForDecommission` itself constructs its
     /// mount/farewell/GC planes with -- are distinct. Left unset, those planes retry on the real boot
     /// clock and a real sleep, and a caller that fakes only the standalone engine's clock ends up
-    /// comparing it against an unrelated one at the mount lease's farewell bound (or, worse, against a
-    /// clock that only the standalone engine's sleep advances: a retry loop on `mount_requests`/
-    /// `gc_requests` bound to that frozen clock while actually sleeping for real would never see its
-    /// own deadline elapse). Fold BOTH into `config` here, together, unless the caller already asked
+    /// with planes on an unrelated one (or, worse, on a clock that only the standalone engine's sleep
+    /// advances: a retry loop on `mount_requests`/`gc_requests` bound to that frozen clock while
+    /// actually sleeping for real would never see its own deadline elapse). Fold BOTH into `config` here, together, unless the caller already asked
     /// for a specific clock or sleep of its own -- installing only one of the two is exactly the
     /// half-fix that leaves the other seam retrying forever.
     if (drain_now_fn && drain_sleep_fn)

@@ -264,8 +264,8 @@ processed before renewal resumes.
 publishes, then `release` on an `Active` renewer writes the farewell (`expires_at_ms` expired,
 `min_active_build_sequence = UINT64_MAX`), so a successor reclaims at once. The write is conditional on
 this mount's token, so it is written after the lease expired too; a moved slot refuses it. No farewell is
-written while a ref lane is writing or wedged, a publish is in flight, a cleanup duty is undrained, or the
-last renewal ended without a confirmed lease. The line
+written while a ref lane is writing or wedged, a publish is in flight, a cleanup duty is undrained, the
+last renewal ended without a confirmed lease, or the shutdown drain itself failed. The line
 `CAS store shutdown without the clean-release marker: <causes>` says which. A `stopping` disk writes none;
 `SYSTEM CAS FORGET` writes it under these rules before `closed`.
 
