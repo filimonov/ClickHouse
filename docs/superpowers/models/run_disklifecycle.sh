@@ -35,6 +35,16 @@
 #   sab_lossremounts            -> I9LossTerminates        a loss observation requests a remount
 #   sab_farewellonstopping      -> NoFarewellOnStopping    the teardown writes the farewell on a Stopping
 #                                                          pool
+#   sab_reacqallocperattempt    -> OneAllocationPerFence   every claim attempt allocates an epoch, not one
+#                                                          per fence (ReacquireInThread)
+#   sab_oldopunchecked          -> OldEpochOpRefused       an operation admitted under the old epoch lands
+#                                                          under the new one
+#   sab_lossreacquires          -> I9LossTerminates        a loss found by the claim reacquires again
+#   sab_armafterintent_step2, sab_liveunready_step2, sab_interferearmrace_step2, sab_forgetlosesarm_step2
+#                               -> the property of the row without `_step2`, on the reacquire in the lease
+#                                  thread
+#   main_step2                  -> GREEN   every invariant, action property and liveness property of `main`
+#                                          plus the reacquire's, under FairSpec2
 #   main                        -> GREEN   every invariant, the action properties and the liveness
 #                                          properties under FairSpec
 #   step1_norequestrace         -> GREEN   with LossStops no request appears off Top and no reclaim
@@ -50,6 +60,7 @@
 #   witness_requestduringreclaim  -> WNoRequestDuringReclaim  a remount request is raised during a reclaim
 #   witness_forgetfarewell        -> WNoForgetFarewell        FORGET still writes the farewell
 #   witness_pauseresume           -> WNoPauseResume           expiry, renewal, writes under the same epoch
+#   witness_reacquire             -> WNoReacquire             a reacquire opens writes under the next epoch
 #   witness_interferencestop      -> WNoInterferenceStop      interference stops the disk; both disks
 #                                                             raise; one request
 #
@@ -98,7 +109,15 @@ CONFIGS=(
   "sab_secondstop               violation  OneProcessStop"
   "sab_lossremounts             violation  I9LossTerminates"
   "sab_farewellonstopping       violation  NoFarewellOnStopping"
+  "sab_reacqallocperattempt     violation  OneAllocationPerFence"
+  "sab_oldopunchecked           violation  OldEpochOpRefused"
+  "sab_lossreacquires           violation  I9LossTerminates"
+  "sab_armafterintent_step2     violation  NoJoinWindowReclaim"
+  "sab_liveunready_step2        violation  LiveOnlyWhenAdmissible"
+  "sab_interferearmrace_step2   violation  TerminalAbsorbing"
+  "sab_forgetlosesarm_step2     violation  ForgetWinsArm"
   "main                         green      -"
+  "main_step2                   green      -"
   "step1_norequestrace          green      -"
   "witness_forgetdone           violation  WForgetNeverDone"
   "witness_racedreplaced        violation  WNoRacedStopping"
@@ -107,6 +126,7 @@ CONFIGS=(
   "witness_forgetfarewell       violation  WNoForgetFarewell"
   "witness_pauseresume          violation  WNoPauseResume"
   "witness_interferencestop     violation  WNoInterferenceStop"
+  "witness_reacquire            violation  WNoReacquire"
 )
 check_tlc_temporal_expectations "$JAR" "${CONFIGS[@]}" || exit 4
 

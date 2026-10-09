@@ -209,3 +209,66 @@ farewell no longer being written on `Stopping`. Counterexample of the sabotage (
 join, `FJoinSignal`, `FJoinWait`, `FTrip2`, `FDrain`, `FTeardown` writes the farewell. This is the probe
 trace recorded under "A farewell is still written on a `Stopping` pool" in the step 1 section; the row is
 now kept.
+
+## 2026-10-09 step 2: `Reacquiring` in the lease thread {#2026-10-09-step-2}
+
+`ReacquireInThread = TRUE` changes R8 (our own body carries `gc_fenced`). `LRenewFenced` no longer raises a
+remount request. The lease thread latches the fence, sets the pool to `Reacquiring` and runs the reacquire
+itself: `LClose` (the old epoch ends; no stop check), `LAlloc` (one allocation per fence), `LClaimed`
+(the claim lands under the next epoch, the arming decision is taken), then `LArmOpen` reads the arming rule
+and the deadline again. `LClaimLoss` is a loss found by the claim and enters `Stopping`; `LReacqAbandon`
+ends the reacquire on a stop or the latch; `LStepFail` is a failed step. `LRenewOk` arms a `Reacquiring`
+pool as it arms a `Transient` one. `OpAdmit` and `OpDurable` model an operation admitted under one epoch
+and made durable later. New properties: `I4cReacquiringImpliesLost`, `OneAllocationPerFence`,
+`OldEpochOpRefused`, `LiveLeavesOnlyByFenceOrEnd`, `OneEpochPerFence`, `NoOpenOverEnd` and the
+liveness property `ReacquireSettles`. Every pre-existing cfg sets the four new constants to `FALSE`: the
+new actions are disabled and the new variables stay at their `Init` values.
+
+Changes against the plan text:
+- `FairSpec2` also has `WF_vars(LRenewBegin)`. With the plan's fairness `main_step2` was red on
+  `ReacquireSettles`. Trace: `LRenewBegin`, `VGcStop`, `OtherObserve`, `XExpire`, `LRenewFenced`,
+  `LClose`, `LAlloc`, `OtherRaise`, `LClaimed` with the lease too short to open, `LArmOpen` (does not
+  open), then the thread stays at `Top` forever and never starts the renewal that would arm the pool. The
+  thread renews every period, so a claim that leaves too little lease waits for that renewal.
+- `LRenewFenced` under the flag requires `epoch < MaxGen` where it required `reqGen < MaxGen`, and
+  `LClaimed` requires it too. The bound limits the reacquires per behavior.
+- `reacqLive` is set by `LArmOpen` only. A reacquire that opens through `LRenewOk` does not set it.
+
+| cfg | expected | result | trace states | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `sab_reacqallocperattempt` (new) | violation | `OneAllocationPerFence` | 6 | 1,999 | 719 |
+| `sab_oldopunchecked` (new) | violation | `OldEpochOpRefused` | 9 | 16,099 | 4,327 |
+| `sab_lossreacquires` (new) | violation | `I9LossTerminates` | 5 | 609 | 279 |
+| `sab_armafterintent_step2` (new) | violation | `NoJoinWindowReclaim` | 16 | 293,408 | 63,166 |
+| `sab_liveunready_step2` (new) | violation | `LiveOnlyWhenAdmissible` | 7 | 5,171 | 1,614 |
+| `sab_interferearmrace_step2` (new) | violation | `TerminalAbsorbing` | 8 | 11,685 | 3,270 |
+| `sab_forgetlosesarm_step2` (new) | violation | `ForgetWinsArm` | 10 | 34,240 | 8,490 |
+| `witness_reacquire` (new) | violation | `WNoReacquire` | 7 | 5,813 | 1,770 |
+| `main_step2` (new) | green | green, exhaustive, depth 40 | - | 1,916,701 | 345,546 |
+| `main` (control) | green | green, exhaustive, depth 35 | - | 366,263 | 77,064 |
+
+All other pre-existing rows were re-run with their verdicts. `main` and `step1_norequestrace` keep the
+counts of the previous section (366,263 generated, 77,064 distinct).
+
+Counterexamples:
+- `sab_reacqallocperattempt`: `LRenewBegin`, `LRenewFenced`, `LClose`, `LAlloc`, `LAlloc`. A second
+  allocation for one fence, without a failed step in between.
+- `sab_oldopunchecked`: `OpAdmit` (epoch 0), `LRenewBegin`, `LRenewFenced`, `LClose`, `LAlloc`,
+  `LClaimed`, `LArmOpen`, `OpDurable`. The old operation lands after the fence is armed under epoch 1.
+- `sab_lossreacquires`: `LRenewBegin`, `LRenewFenced`, `LClose`, `LClaimLoss` goes back to `Closing`.
+- `sab_armafterintent_step2`: `LClaimed`, then FORGET reaches `FTrip1`, `LArmOpen` opens writes, `LExit`,
+  `FJoinWait`, and the pool is `Live` with the fence open in `Trip2`.
+- `sab_liveunready_step2`: `LClaimed` with the lease too short, `LArmOpen` reports `Live` at once.
+- `sab_interferearmrace_step2`: `LClaimed`, `XInterfere` enters `Stopping`, `LArmOpen` opens writes over it.
+- `sab_forgetlosesarm_step2`: `LClaimed`, `FIntent`, `LArmOpen` opens writes after the intent.
+- `witness_reacquire`: `LRenewBegin`, `LRenewFenced`, `LClose`, `LAlloc`, `LClaimed`, `LArmOpen`.
+
+Limits:
+- `OldEpochOpRefused` is green in `main_step2` by construction: the honest `landed` predicate contains the
+  epoch comparison the property restates. Its evidence is `sab_oldopunchecked`.
+- `sab_reacqallocperattempt` reaches its second allocation through `LAlloc` directly. The failed-step
+  path (`LStepFail` clears `allocated` under the sabotage) is a longer route to the same red and is not
+  what the counterexample uses. In the honest model `LStepFail` is a stutter.
+- No slot body, ETag or counter is modelled: "the claim replaces only the fenced body it read" is
+  checked in `CaCasMountCore`, not here. `Closing` is one step, so the quiescence of in-flight ref work
+  is not modelled.
