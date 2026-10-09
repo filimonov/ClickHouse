@@ -43,6 +43,11 @@
 #   sab_armafterintent_step2, sab_liveunready_step2, sab_interferearmrace_step2, sab_forgetlosesarm_step2
 #                               -> the property of the row without `_step2`, on the reacquire in the lease
 #                                  thread
+#   sab_drainignorespublish     -> NoLandingAfterFarewell  the drain ignores a snapshot publish in flight
+#   sab_farewellfromterminal    -> NoFarewellAfterUnclearRenewal  a renewal that ended without a
+#                                                          confirmed lease still lets the farewell out
+#   old_farewellleasebound      -> GREEN   the farewell needs an unexpired lease: the old bound, under which
+#                                          WNoFarewellAfterExpiry holds
 #   main_step2                  -> GREEN   every invariant, action property and liveness property of `main`
 #                                          plus the reacquire's, under FairSpec2
 #   main                        -> GREEN   every invariant, the action properties and the liveness
@@ -60,6 +65,7 @@
 #   witness_requestduringreclaim  -> WNoRequestDuringReclaim  a remount request is raised during a reclaim
 #   witness_forgetfarewell        -> WNoForgetFarewell        FORGET still writes the farewell
 #   witness_pauseresume           -> WNoPauseResume           expiry, renewal, writes under the same epoch
+#   witness_farewellafterexpiry   -> WNoFarewellAfterExpiry   the farewell is written after the lease expired
 #   witness_reacquire             -> WNoReacquire             a reacquire opens writes under the next epoch
 #   witness_interferencestop      -> WNoInterferenceStop      interference stops the disk; both disks
 #                                                             raise; one request
@@ -112,6 +118,8 @@ CONFIGS=(
   "sab_reacqallocperattempt     violation  OneAllocationPerFence"
   "sab_oldopunchecked           violation  OldEpochOpRefused"
   "sab_lossreacquires           violation  I9LossTerminates"
+  "sab_drainignorespublish      violation  NoLandingAfterFarewell"
+  "sab_farewellfromterminal     violation  NoFarewellAfterUnclearRenewal"
   "sab_armafterintent_step2     violation  NoJoinWindowReclaim"
   "sab_liveunready_step2        violation  LiveOnlyWhenAdmissible"
   "sab_interferearmrace_step2   violation  TerminalAbsorbing"
@@ -127,6 +135,8 @@ CONFIGS=(
   "witness_pauseresume          violation  WNoPauseResume"
   "witness_interferencestop     violation  WNoInterferenceStop"
   "witness_reacquire            violation  WNoReacquire"
+  "witness_farewellafterexpiry  violation  WNoFarewellAfterExpiry"
+  "old_farewellleasebound       green      -"
 )
 check_tlc_temporal_expectations "$JAR" "${CONFIGS[@]}" || exit 4
 

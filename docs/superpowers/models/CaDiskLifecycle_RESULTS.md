@@ -272,3 +272,62 @@ Limits:
 - No slot body, ETag or counter is modelled: "the claim replaces only the fenced body it read" is
   checked in `CaCasMountCore`, not here. `Closing` is one step, so the quiescence of in-flight ref work
   is not modelled.
+
+## 2026-10-09 farewell rules: publishes, expired leases, unconfirmed renewals {#2026-10-09-farewell-rules}
+
+The farewell is written after the lease expired too (the write is conditional on our own token), and is
+withheld on a renewal that ended without a confirmed lease, on an unfinished lane, on a snapshot publish in
+flight, and on a `Stopping` pool.
+
+**New variables.** `publishing` (a snapshot publish of this incarnation is in flight) and the history
+variables `lateLanding`, `farewellExpired`, `renewUnclear`, grouped as `farewellVars`.
+
+**New actions.** `PubBegin` (on a `Live`, unfenced pool) and `PubSettle` (at any time; `lateLanding` is set
+if the farewell is already written). Both are in `Next` and neither is fair.
+
+**Changed actions.**
+- `FDrain` reports `Yes` only with no publish in flight (`DrainWaitsPublish`).
+- `FTeardown` takes the farewell from an `Active` renewer (`SabFarewellFromTerminal` adds `Terminal`) and
+  needs an unexpired lease only under `FarewellLeaseBound`. It records `farewellExpired`.
+- `renewUnclear` is set where the renewer becomes `Terminal` without a loss (`LRenewEndEarly`,
+  `LRenewFenced`) and cleared where a new renewer is installed (`LReclaim`, `LClaimed`).
+
+**New constants** (`DrainWaitsPublish = TRUE`, `FarewellLeaseBound = FALSE`, `SabFarewellFromTerminal = FALSE`
+in every pre-existing cfg). New invariants `NoLandingAfterFarewell`, `NoFarewellAfterUnclearRenewal`, in
+`main` and `main_step2`. New witness `WNoFarewellAfterExpiry`.
+
+Changes against the plan text:
+- Red first is the sabotage row `sab_drainignorespublish`: the plan's "`ROWS=main` red" assumed the
+  constants were added after the invariant, and here `DrainWaitsPublish = TRUE` was in from the start.
+- `renewUnclear` is also set by `LRenewFenced` and cleared by `LClaimed`: since step 2 the keeper becomes
+  `Terminal` on R8 and `Active` on a reacquire's claim as well as on a reclaim. The counterexample of
+  `sab_farewellfromterminal` goes through `LRenewFenced`.
+
+| cfg | expected | result | trace states | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `sab_drainignorespublish` (new) | violation | `NoLandingAfterFarewell` | 15 | 227,441 | 49,580 |
+| `sab_farewellfromterminal` (new) | violation | `NoFarewellAfterUnclearRenewal` | 15 | 218,112 | 47,606 |
+| `witness_farewellafterexpiry` (new) | violation | `WNoFarewellAfterExpiry` | 15 | 168,900 | 37,307 |
+| `old_farewellleasebound` (new) | green | green, exhaustive, depth 37 | - | 903,197 | 172,248 |
+| `main` | green | green, exhaustive, depth 37 | - | 903,197 | 172,248 |
+| `main_step2` | green | green, exhaustive, depth 42 | - | 4,674,283 | 776,160 |
+
+`main` and `old_farewellleasebound` have the same counts: the lease bound only gates the farewell write
+and adds no state. The earlier counts of `main` (366,263 generated) and `main_step2` (1,916,701) grew
+because `publishing` doubles the reachable states. All 39 rows, `ALL EXPECTATIONS MET`; the two long rows
+are `main` (14 s) and `main_step2` (160 s) with 4 workers. Disk: `/` stayed at 117 GiB free, the largest
+metadir was 42 MiB.
+
+Counterexamples:
+- `sab_drainignorespublish`: `PubBegin`, FORGET runs through `FStart` to `FDrain` (which reports `Yes` over
+  the publish), `FTeardown` writes the farewell, `PubSettle` lands behind it.
+- `sab_farewellfromterminal`: `LRenewBegin`, `LRenewFenced` (the renewer is `Terminal`), FORGET to
+  `FDrain`, `FTeardown` writes the farewell.
+- `witness_farewellafterexpiry`: `LRenewBegin`, `LRenewOk`, FORGET to `FDrain`, `FTeardown` writes the
+  farewell with `deadlineOk` false.
+
+Not checked here:
+- Slot bodies: that a late farewell cannot overwrite a successor's slot (the write is conditional on the
+  last ETag) is a unit-test matter, not modelled.
+- The `~Pool` teardown: only FORGET's teardown is modelled.
+- "No farewell after `Closed`": one teardown precedes `Closed`, so the property is structural.
