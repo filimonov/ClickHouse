@@ -314,9 +314,9 @@ void Pool::setMountDeadline(uint64_t deadline_boot_ms)
     mount_runtime.setMountDeadline(deadline_boot_ms);
 }
 
-void Pool::armMountFence(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms)
+void Pool::armMountFence(uint64_t deadline_boot_ms)
 {
-    mount_runtime.armMountFence(server_uuid, writer_epoch, deadline_boot_ms);
+    mount_runtime.armMountFence(deadline_boot_ms);
 }
 
 String Pool::lifecycleReasonDetail(PoolLifecycle lc) const
@@ -834,7 +834,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
                 : "");
     }
 
-    /// Arm the local write fence: cache (uuid, epoch) and set the boottime deadline at the claim
+    /// Arm the local write fence: set the boottime deadline at the claim
     /// attempt's anchor + ttl (NOT `bootMsNow()` here -- arming from a post-I/O instant would authorize
     /// mutations under a deadline the durable lease never actually backs). From here ordinary ref
     /// mutations (appendRefOps) are fence-gated via mayMutate.
@@ -852,7 +852,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         claim_anchor_boot_ms = store->mount_runtime.renewRenewerForStartupOnce();
     }
     store->mount_runtime.setLiveWriterEpoch(writer_epoch);
-    store->armMountFence(our_uuid, writer_epoch, leaseDeadline(claim_anchor_boot_ms, ttl_ms_u));
+    store->armMountFence(leaseDeadline(claim_anchor_boot_ms, ttl_ms_u));
     /// Gate the two persistent runtime workers with `background_watermark`: they run only in production
     /// (`background_watermark` = context != nullptr && !read_only), never in unit tests — which
     /// drive `renewWatermarkOnce` explicitly and rely on the armed sub-TTL deadline, never on a loop.
@@ -1476,7 +1476,7 @@ std::optional<ReacquireOutcome> Pool::reacquireOpen(ReacquireStep & step, Reacqu
 {
     if (config.reacquire_before_open_hook_for_test)
         config.reacquire_before_open_hook_for_test();
-    if (mount_runtime.openAfterReacquire(config.server_id, *step.writer_epoch, step.deadline_boot_ms))
+    if (mount_runtime.openAfterReacquire(step.deadline_boot_ms))
         return ReacquireOutcome::Open;
     if (!mount_runtime.reacquireLive())
         return ReacquireOutcome::Abandoned;

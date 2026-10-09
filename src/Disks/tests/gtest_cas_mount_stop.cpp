@@ -135,7 +135,7 @@ TEST(CASMountStop, ALatchedMountNeverOpensAgain)
     DB::Cas::tests::processStopLog().reset();
 
     ASSERT_TRUE(store->latchMountEndForTest(MountEnd::SlotTaken));
-    store->armMountFence(DB::UInt128{}, store->liveWriterEpoch(), std::numeric_limits<uint64_t>::max());
+    store->armMountFence(std::numeric_limits<uint64_t>::max());
 
     EXPECT_FALSE(store->mayMutate());
     EXPECT_FALSE(store->latchMountEndForTest(MountEnd::SlotAbsent));

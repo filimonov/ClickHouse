@@ -1833,7 +1833,7 @@ void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behav
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
 
     DB::Cas::tests::OperationForTest successor_op(*backend);
     auto ours = (*successor_op).read(key, Retry::standard());
@@ -2826,7 +2826,7 @@ TEST(CASPoolRemount, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
 
     DB::Cas::tests::ManualBarrier barrier;
     backend->barrier = &barrier;
@@ -2859,7 +2859,7 @@ TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.stopBackgroundWorkers();
     EXPECT_RUNTIME_STATE_REJECTION(runtime.renewWatermarkOnce());
@@ -2895,7 +2895,7 @@ TEST(CASPoolRemount, TeardownJoinsTheWorkerBeforeRelease)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.stopBackgroundWorkers();
     EXPECT_EQ(worker_exits.load(), 1u);
@@ -2939,7 +2939,7 @@ TEST(CASMountRuntime, BadAllocInsideTheRenewalStaysTerminal)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     const uint64_t leases_lost_before = ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load();
 
     backend->fault = RuntimeRenewBackend::Fault::ThrowBadAlloc;
@@ -3070,7 +3070,7 @@ TEST(CASMountRuntime, GlobalMemoryLimitDoesNotEndTheLeaseThread)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     const uint64_t leases_lost_before = ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load();
 
     /// Armed only now: `startRenewer` renews on this thread, and these must run on the lease thread.
@@ -3147,7 +3147,7 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.tripMountLost();
 
@@ -3195,7 +3195,7 @@ TEST(CASPoolRemount, WorkerConstructionRollbackFailsOpenClosed)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     EXPECT_THROW(runtime.startBackgroundWorkers(std::chrono::milliseconds(10)), DB::Exception);
     EXPECT_FALSE(runtime.mayMutate());
     EXPECT_FALSE(runtime.workersRunningForTest());
@@ -3242,7 +3242,7 @@ TEST(CASMountRuntime, ALongOutageIsAPauseUnderTheSameEpoch)
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     const uint64_t generation = runtime.fenceGeneration();
     runtime_holder.setRetrySleepForTest([&](uint64_t ms) { boot_ms += ms; });
     /// The first renewal is due at once and meets three lease lengths of outage.
@@ -3307,7 +3307,7 @@ TEST(CASMountRuntime, ALateCommitReportsARecoveredRenewalWithATruthfulReason)
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     runtime_holder.setRetrySleepForTest([&](uint64_t ms) { boot_ms += ms; });
     boot_ms = anchor + 500;
     outage_until = anchor + 3'500;
@@ -3360,7 +3360,7 @@ TEST(CASMountRuntime, AStopEndsTheCredentialRefusalWaitAtOnce)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 2 * period_ms);
+    runtime.armMountFence(anchor + 2 * period_ms);
     backend->deny_writes = std::numeric_limits<uint32_t>::max();
     backend->on_guarded_write = [&]
     {
@@ -3410,7 +3410,7 @@ TEST(CASMountRuntime, ACredentialRefusalWaitsOneRenewalPeriod)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 10'000);
+    runtime.armMountFence(anchor + 10'000);
     backend->deny_writes = 2;
     backend->on_guarded_write = [&] { write_at.push_back(boot_ms.load()); };
     boot_ms = anchor + period_ms;
@@ -3463,7 +3463,7 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     runtime_holder.setRetrySleepForTest([&](uint64_t ms) { boot_ms += ms; });
     boot_ms = anchor + 500;
     outage_until = anchor + 3'500;
@@ -3522,7 +3522,7 @@ TEST(CASMountRuntime, AWorkerRenewalEndedWithoutACauseIsALocalDefect)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + ttl_ms);
+    runtime.armMountFence(anchor + ttl_ms);
     boot_ms = anchor + 1'000;
     runtime.startBackgroundWorkers(std::chrono::milliseconds(1'000));
 
@@ -3560,7 +3560,7 @@ TEST(CASPoolShutdown, PreSendCancellationAllowsFarewellButAmbiguityDoesNot)
         CasMountRuntime & runtime = *runtime_holder;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
         const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-        runtime.armMountFence(uuid, 1, anchor + 1000);
+        runtime.armMountFence(anchor + 1000);
         if (ambiguous)
         {
             backend->barrier = &barrier;
@@ -3603,7 +3603,7 @@ TEST(CASPoolShutdown, AnAmbiguousRenewalAtStopIsNamedInTheUncleanLine)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     backend->barrier = &barrier;
     backend->fault = RuntimeRenewBackend::Fault::BlockThenThrow;
     runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
@@ -3647,7 +3647,7 @@ TEST(CASPool, DirectAndStartupTerminalFailuresRethrowTypedExceptions)
         CasMountRuntime & runtime = *runtime_holder;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
         const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-        runtime.armMountFence(uuid, 1, anchor + 1000);
+        runtime.armMountFence(anchor + 1000);
         if (refusal == Refusal::PreAttemptDeadline)
             /// Past the point where the lease has more room left than the safety margin (deadline
             /// `anchor + 1000` == 1100, margin 20), so admission refuses before anything is sent.
@@ -3759,7 +3759,7 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-    runtime.armMountFence(uuid, 1, anchor + 1000);
+    runtime.armMountFence(anchor + 1000);
     /// A definitive answer ends the worker's renewal; a transient fault would only be retried.
     fenceOutMount(*backend, layout.mountKey("test"));
     runtime.startBackgroundWorkers(std::chrono::milliseconds(0));

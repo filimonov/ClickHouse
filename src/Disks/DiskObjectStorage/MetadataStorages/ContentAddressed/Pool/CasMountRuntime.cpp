@@ -257,10 +257,8 @@ void CasMountRuntime::setMountDeadline(uint64_t deadline_boot_ms)
     mount_fence.deadline_boot_ms.store(deadline_boot_ms, std::memory_order_release);
 }
 
-void CasMountRuntime::armMountFence(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms)
+void CasMountRuntime::armMountFence(uint64_t deadline_boot_ms)
 {
-    mount_fence.server_uuid = server_uuid;
-    mount_fence.writer_epoch = writer_epoch;
     mount_fence.deadline_boot_ms.store(deadline_boot_ms, std::memory_order_release);
     lease_expiry_warned.store(false, std::memory_order_relaxed);
     /// A fresh lease incarnation is a fresh generation too: a durable-effect caller admitted under the
@@ -514,15 +512,6 @@ std::optional<MountLease> CasMountRuntime::confirmedMountBody() const
     return confirmed_body;
 }
 
-OwnMountBodies CasMountRuntime::fencedIdentity() const
-{
-    return OwnMountBodies{
-        .server_uuid = mount_fence.server_uuid,
-        .writer_epoch = liveWriterEpoch(),
-        .confirmed = confirmedMountBody(),
-    };
-}
-
 void CasMountRuntime::publishConfirmedBody(const std::optional<MountLease> & body)
 {
     std::lock_guard lock(renewal_progress_mutex);
@@ -735,7 +724,7 @@ bool CasMountRuntime::reacquireLive() const
     return !workers_stop_requested && !vanishedIntentPublished() && mountEnd() == MountEnd::None;
 }
 
-bool CasMountRuntime::openAfterReacquire(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms)
+bool CasMountRuntime::openAfterReacquire(uint64_t deadline_boot_ms)
 {
     /// One step with the decision: a latch or an expiry between them must keep the fence closed.
     std::lock_guard lock(driver_mutex);
@@ -745,7 +734,7 @@ bool CasMountRuntime::openAfterReacquire(UInt128 server_uuid, uint64_t writer_ep
     const uint64_t now = bootMsNow();
     if (deadline_boot_ms <= now || deadline_boot_ms - now <= conditionalReserveMs())
         return false;
-    armMountFence(server_uuid, writer_epoch, deadline_boot_ms);
+    armMountFence(deadline_boot_ms);
     noteRemounted();
     driver_cv.notify_all();
     return true;

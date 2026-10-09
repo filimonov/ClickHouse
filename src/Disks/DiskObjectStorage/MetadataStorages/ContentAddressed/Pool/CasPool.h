@@ -502,8 +502,8 @@ public:
     /// Refresh the write-fence deadline (a CLOCK_BOOTTIME-milliseconds instant; release).
     /// renewer renew calls this on success.
     void setMountDeadline(uint64_t deadline_boot_ms);
-    /// Arm the fence at startup: set (uuid, epoch, deadline), clear `lost`.
-    void armMountFence(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms);
+    /// Arm the fence at startup: set the deadline, clear `lost`.
+    void armMountFence(uint64_t deadline_boot_ms);
     void setArmMountFenceInterpositionHookForTest(std::function<void()> hook)
     {
         mount_runtime.setArmMountFenceInterpositionHookForTest(std::move(hook));

@@ -2279,16 +2279,14 @@ private:
 /// The plain form, over a bare `InMemoryBackend`.
 using HintHoleBackend = HintHoleBackendOn<DB::Cas::InMemoryBackend>;
 
-/// Stand in for the self-remount that `Pool::reportImpossibleInterference` schedules. That reaction
-/// trips the local write fence closed AND schedules a remount; a unit-test Pool runs no background
-/// remount (`background_watermark` is off by design there), so without this the fence stays closed and
-/// every later mutation is refused at the gate -- which is a test-harness artifact, not the production
-/// behaviour. Re-arming directly is the smallest faithful stand-in: it restores writability without the
-/// claim machinery and without discarding the cached ref runtimes, so a test can observe what happens
-/// AFTER the reaction. It bumps the fence GENERATION, exactly as a real re-arm does.
+/// Stand in for the restart that follows `Pool::reportImpossibleInterference`: the reaction closes the local
+/// write fence and ends the process, so without this every later mutation is refused at the gate.
+/// Re-arming directly restores writability without the claim machinery and without discarding the cached
+/// ref runtimes, so a test can observe what happens AFTER the reaction. It bumps the fence GENERATION,
+/// exactly as a real re-arm does.
 inline void rearmMountFenceAfterAnomalyForTest(const DB::Cas::PoolPtr & store)
 {
-    store->armMountFence(DB::UInt128{0, 1}, store->liveWriterEpoch(), store->bootMsNow() + 600000);
+    store->armMountFence(store->bootMsNow() + 600000);
 }
 
 /// The GC fences our own body and the next renewal reads it: the pool is paused and owes a reacquire. Needs a

@@ -94,8 +94,6 @@ struct MountConfig
 /// Container pause is already safe under either clock (the process is frozen, so no local check runs).
 struct MountFence
 {
-    UInt128 server_uuid{};
-    uint64_t writer_epoch = 0;
     /// Until something arms a real lease deadline, the permissive default allows mutations. UINT64_MAX =
     /// unarmed (never expires); otherwise a CLOCK_BOOTTIME-milliseconds instant.
     std::atomic<uint64_t> deadline_boot_ms{std::numeric_limits<uint64_t>::max()};
@@ -172,8 +170,6 @@ public:
     /// The body this server last confirmed in its slot; empty before the first claim. Takes only
     /// `renewal_progress_mutex`, so a renewal stuck in a request never holds up the reader.
     std::optional<MountLease> confirmedMountBody() const;
-    /// The live incarnation's pair and its last confirmed body, before a self-remount replaces them.
-    OwnMountBodies fencedIdentity() const;
 
     /// ---- local write fence ----
     /// Return whether a mutable operation may start under the locally observed lease state.
@@ -194,7 +190,7 @@ public:
     /// Publish the BOOTTIME deadline from a successful lease renewal.
     void setMountDeadline(uint64_t deadline_boot_ms);
     /// Arm a new lease incarnation and clear any loss latched for the prior incarnation.
-    void armMountFence(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms);
+    void armMountFence(uint64_t deadline_boot_ms);
     /// Test-only interposition at the publication boundary between the re-armed generation and the
     /// live fence. A caller admitted from this hook must be refused: the old generation is already
     /// dead, while the new generation is not live until `lost` is cleared.
@@ -372,7 +368,7 @@ public:
     bool reacquireLive() const;
     /// Opens the fence for the reacquired epoch, unless an end, a stop or FORGET intent is set, the pool
     /// is not paused, or the lease left at `deadline_boot_ms` cannot cover a conditional change.
-    bool openAfterReacquire(UInt128 server_uuid, uint64_t writer_epoch, uint64_t deadline_boot_ms);
+    bool openAfterReacquire(uint64_t deadline_boot_ms);
     /// Without workers: one pass of the owed reacquire, or of the step a previous pass left unsettled.
     ReacquireOutcome runReacquireForTest();
     void renewerReset();
