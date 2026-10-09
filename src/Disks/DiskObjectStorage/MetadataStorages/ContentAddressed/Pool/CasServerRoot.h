@@ -49,10 +49,34 @@ enum class MountRenewOutcome : uint8_t
     Terminal,
 };
 
+/// Why a renewal ended without a commit, as its `watermark_renew` event names it. Set from exactly one
+/// arm of the write's verdict, so the event never re-derives a reason the engine did not report.
+enum class MountRenewClassification : uint8_t
+{
+    Unclassified,
+    DeterministicFailure,
+    Conflict,
+    Vanished,
+    Cancelled,
+    FenceOrLifecycleLost,
+    ExternalLeaseDeadline,
+    RequestDeadline,
+    Unresolved,
+};
+
+std::string_view toString(MountRenewClassification classification);
+
 struct MountRenewResult
 {
     MountRenewOutcome outcome = MountRenewOutcome::Terminal;
+    MountRenewClassification classification = MountRenewClassification::Unclassified;
     uint64_t attempt_start_boot_ms = 0;
+    /// The attempted body, which the `watermark_renew` event names.
+    uint64_t writer_epoch = 0;
+    uint64_t seq = 0;
+    UInt128 write_attempt_id{};
+    /// The confirmed lease deadline this renewal started under.
+    uint64_t confirmed_deadline_boot_ms = 0;
     /// Physical attempts this renewal sent, for every terminal ending the engine can count: a commit,
     /// a give-up, a conflict, or a store refusal.
     uint32_t attempts_sent = 0;

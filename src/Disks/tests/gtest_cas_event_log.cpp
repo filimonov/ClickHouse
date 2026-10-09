@@ -27,12 +27,6 @@ extern const int NETWORK_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
-namespace DB::Cas
-{
-void configureMountRenewObservability(const String * server_root_id, const CasEventSink * event_sink) noexcept;
-void reportMountRenewCompletion(const MountRenewResult & result) noexcept;
-}
-
 namespace
 {
 
@@ -64,18 +58,12 @@ public:
         return resolve_started;
     }
 
-    /// A plain read/replace through the primitive surface, for fixtures that need to observe or seed
-    /// state without going through the pool under test.
+    /// A plain read through the primitive surface, for fixtures that need to observe state without
+    /// going through the pool under test.
     std::optional<DB::Cas::Object> readForTest(const String & key)
     {
         DB::Cas::tests::OperationForTest op(*this);
         return (*op).read(key, Retry::standard());
-    }
-
-    bool replaceForTest(const String & key, const String & bytes, const Etag & expected)
-    {
-        DB::Cas::tests::OperationForTest op(*this);
-        return std::holds_alternative<Committed>((*op).replace(key, bytes, expected, Retry::standard()));
     }
 
     /// The engine settles an ambiguous write by reading the key back, so the observation belongs on the
@@ -301,6 +289,19 @@ TEST(CASEvent, WatermarkRenewEventsAreBoundedAndComplete)
         EXPECT_TRUE(renewals[0].detail.contains(key)) << "missing detail key " << key;
 }
 
+TEST(CASEvent, EveryRenewalClassificationHasItsEventName)
+{
+    EXPECT_EQ(toString(MountRenewClassification::DeterministicFailure), "deterministic_failure");
+    EXPECT_EQ(toString(MountRenewClassification::Conflict), "conflict");
+    EXPECT_EQ(toString(MountRenewClassification::Vanished), "vanished");
+    EXPECT_EQ(toString(MountRenewClassification::Cancelled), "cancelled");
+    EXPECT_EQ(toString(MountRenewClassification::FenceOrLifecycleLost), "fence_or_lifecycle_lost");
+    EXPECT_EQ(toString(MountRenewClassification::ExternalLeaseDeadline), "external_lease_deadline");
+    EXPECT_EQ(toString(MountRenewClassification::RequestDeadline), "request_deadline");
+    EXPECT_EQ(toString(MountRenewClassification::Unresolved), "unresolved");
+    EXPECT_EQ(toString(MountRenewClassification::Unclassified), "terminal_unclassified");
+}
+
 TEST(CASEvent, ARenewalProvedByItsResolvingReadIsCommittedByRead)
 {
     auto backend = std::make_shared<RenewalEventBackend>();
@@ -353,100 +354,6 @@ TEST(CASEvent, AnAmbiguityPastTheLeaseBoundNeverStartsTheResolvingRead)
     EXPECT_EQ(renewals[0].outcome, "failed");
     EXPECT_EQ(renewals[0].detail.at("attempts_sent"), "1");
     EXPECT_EQ(renewals[0].detail.at("classification"), "external_lease_deadline");
-}
-
-/// Ten renewals nested through each other's conflict sinks, against an eight-slot observation stack.
-/// The two calls beyond the stack get no rich event -- and must still report their own physical attempt
-/// count, which rides the write result rather than the suppressed observation.
-TEST(CASEvent, DeepReentrancyPreservesDeterministicPhysicalAttemptTruth)
-{
-    constexpr size_t depth = 10;
-    constexpr size_t observation_stack_capacity = 8;
-    std::array<std::shared_ptr<RenewalEventBackend>, depth> backends;
-    std::array<std::unique_ptr<Layout>, depth> layouts;
-    std::array<std::unique_ptr<CasRequests>, depth> planes;
-    std::array<std::unique_ptr<MountLeaseRenewer>, depth> renewers;
-    std::array<String, depth> server_root_ids;
-    std::array<CasEventSink, depth> sinks;
-    std::array<uint32_t, depth> renew_events{};
-    uint64_t wall_ms = 100;
-    uint64_t boot_ms = 100;
-    std::optional<MountRenewResult> deepest_result;
-    std::function<MountRenewResult(size_t)> renew_at;
-
-    renew_at = [&](size_t index)
-    {
-        configureMountRenewObservability(&server_root_ids[index], &sinks[index]);
-        MountRenewResult result = renewers[index]->renew(MountRenewOperationEnvironment{});
-        reportMountRenewCompletion(result);
-        return result;
-    };
-
-    for (size_t index = 0; index < depth; ++index)
-    {
-        backends[index] = std::make_shared<RenewalEventBackend>();
-        layouts[index] = std::make_unique<Layout>(fmt::format("deep-renewal-{}", index));
-        server_root_ids[index] = fmt::format("deep-{}", index);
-        sinks[index] = [&, index](CasEvent event)
-        {
-            if (event.type == CasEventType::WatermarkRenew)
-                ++renew_events[index];
-            if (event.type == CasEventType::MountConflict && index + 1 < depth)
-            {
-                MountRenewResult child_result = renew_at(index + 1);
-                if (index + 2 == depth)
-                    deepest_result = std::move(child_result);
-            }
-        };
-        /// One open-fence plane per renewer, on the same injected clock the renewer anchors its lease
-        /// against, and with a sleep that advances it: the deepest renewal reissues, and no unit test
-        /// may serve the engine's jittered backoff for real.
-        planes[index] = std::make_unique<CasRequests>(
-            backends[index], Fence::open(), [&] { return boot_ms; }, [&](uint64_t ms) { boot_ms += ms; });
-        renewers[index] = std::make_unique<MountLeaseRenewer>(
-            *planes[index],
-            *planes[index],
-            *layouts[index],
-            server_root_ids[index],
-            UInt128(index + 1),
-            7,
-            std::chrono::milliseconds(1000),
-            [&] { return wall_ms; },
-            [] { return uint64_t{0}; },
-            sinks[index],
-            std::chrono::milliseconds(0),
-            [&] { return boot_ms; });
-        CasOperation claim_op = planes[index]->admit();
-        const MountClaimResult claim = claimMount(claim_op, *layouts[index], server_root_ids[index], UInt128(index + 1), 7,
-                                                  wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
-        ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
-        renewers[index]->start(*claim.claimed);
-
-        if (index + 1 < depth)
-        {
-            const String key = layouts[index]->mountKey(server_root_ids[index]);
-            auto observed = backends[index]->readForTest(key);
-            ASSERT_TRUE(observed.has_value());
-            MountLease foreign = decodeMountLease(observed->bytes);
-            foreign.server_uuid = UInt128(100 + index);
-            ASSERT_TRUE(backends[index]->replaceForTest(key, encodeMountLease(foreign), observed->etag));
-        }
-    }
-    /// The deepest slot is the only one nobody took, so its renewal can recover: the attempt is lost
-    /// before its answer, the resolve read finds the precondition intact, and the reissue commits.
-    backends.back()->throw_before_next_write = true;
-
-    const MountRenewResult outer_result = renew_at(0);
-    EXPECT_EQ(outer_result.outcome, MountRenewOutcome::Terminal);
-    ASSERT_TRUE(deepest_result.has_value());
-    EXPECT_EQ(deepest_result->outcome, MountRenewOutcome::Committed);
-    EXPECT_EQ(deepest_result->attempts_sent, 2u)
-        << "nesting beyond the rich-event stack must not erase physical attempt truth";
-
-    for (size_t index = 0; index < depth; ++index)
-        EXPECT_EQ(renew_events[index], index < observation_stack_capacity ? 1u : 0u)
-            << "renewal " << index << " is " << (index < observation_stack_capacity ? "on" : "beyond")
-            << " the observation stack";
 }
 
 TEST(CASEvent, WatermarkRenewSinkFailureCannotChangeOutcome)

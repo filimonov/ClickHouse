@@ -39,9 +39,6 @@ namespace ProfileEvents
 namespace DB::Cas
 {
 
-void reportMountRenewCompletion(const MountRenewResult & result) noexcept;
-void configureMountRenewObservability(const String * server_root_id, const CasEventSink * event_sink) noexcept;
-
 namespace
 {
 /// Wall-clock seconds since epoch — the `since` timestamp the lifecycle snapshot reports (spec §7). A
@@ -610,7 +607,7 @@ void CasMountRuntime::consumeRenewResult(const MountRenewResult & result, bool p
 
     if (result.outcome != MountRenewOutcome::Terminal)
     {
-        reportMountRenewCompletion(result);
+        reportRenewal(result);
         return;
     }
 
@@ -629,10 +626,69 @@ void CasMountRuntime::consumeRenewResult(const MountRenewResult & result, bool p
     {
     }
 
-    reportMountRenewCompletion(result);
+    reportRenewal(result);
 
     if (propagate_failure)
         std::rethrow_exception(result.failure);
+}
+
+void CasMountRuntime::reportRenewal(const MountRenewResult & result) const noexcept
+{
+    const bool recovered = result.outcome == MountRenewOutcome::Committed
+        && (result.attempts_sent > 1 || result.resolved_by_read);
+    if (!recovered && result.outcome != MountRenewOutcome::Terminal)
+        return;
+    try
+    {
+        const uint64_t now = bootMsNow();
+        const uint64_t elapsed_ms = now > result.attempt_start_boot_ms ? now - result.attempt_start_boot_ms : 0;
+        const uint64_t remaining_ms = result.confirmed_deadline_boot_ms > now ? result.confirmed_deadline_boot_ms - now : 0;
+        const std::string_view classification = !recovered ? toString(result.classification)
+            : result.resolved_by_read ? "committed_by_read" : "committed_after_retry";
+        if (event_sink)
+        {
+            CasEvent event;
+            event.type = CasEventType::WatermarkRenew;
+            event.outcome = recovered ? "recovered" : "failed";
+            event.reason = recovered
+                ? "CAS mount renewal committed after a retry or a settling read"
+                : "CAS mount renewal ended without retained authority and fenced the mount";
+            event.detail = {
+                {"server_root_id", server_root_id},
+                {"writer_epoch", std::to_string(result.writer_epoch)},
+                {"seq", std::to_string(result.seq)},
+                {"write_attempt_id", u128ToHex(result.write_attempt_id).substr(0, 12)},
+                {"attempts_sent", std::to_string(result.attempts_sent)},
+                {"elapsed_ms", std::to_string(elapsed_ms)},
+                {"remaining_confirmed_budget_ms", std::to_string(remaining_ms)},
+                {"classification", String{classification}},
+            };
+            try
+            {
+                event_sink(std::move(event));
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                /// A failing sink must not suppress the log lines below.
+            }
+        }
+        auto log = getLogger("CasMountLeaseRenewer");
+        for (uint32_t attempt_no = 2; attempt_no <= result.attempts_sent; ++attempt_no)
+            LOG_DEBUG(log, "CAS mount renewal '{}' physical retry attempt {} (writer_epoch={}, seq={})",
+                server_root_id, attempt_no, result.writer_epoch, result.seq);
+        if (recovered)
+            LOG_INFO(log, "CAS mount renewal '{}' recovered after {} physical attempts in {} ms "
+                "(classification={}, confirmed_deadline_boot_ms={})",
+                server_root_id, result.attempts_sent, elapsed_ms, classification, result.confirmed_deadline_boot_ms);
+        else
+            LOG_WARNING(log, "CAS mount renewal '{}' fenced after {} physical attempts in {} ms "
+                "(classification={}, confirmed_deadline_boot_ms={})",
+                server_root_id, result.attempts_sent, elapsed_ms, classification, result.confirmed_deadline_boot_ms);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// A lost diagnostic must not change how the renewal ends.
+    }
 }
 
 void CasMountRuntime::publishRenewedDeadline(uint64_t attempt_start_boot_ms)
@@ -660,7 +716,6 @@ MountRenewResult CasMountRuntime::renewRenewerOnce(RenewalKind kind)
     });
     if (kind == RenewalKind::Worker && config.renewal_admitted_hook_for_test)
         config.renewal_admitted_hook_for_test();
-    configureMountRenewObservability(&server_root_id, &event_sink);
     {
         std::lock_guard lock(renewal_progress_mutex);
         renewal_progress = RenewalProgress{.in_progress = true, .attempts_sent = 0, .last_error = std::nullopt};

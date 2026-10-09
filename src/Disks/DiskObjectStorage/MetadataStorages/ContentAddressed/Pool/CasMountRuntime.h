@@ -421,6 +421,9 @@ private:
     MountRenewResult renewRenewerOnce(RenewalKind kind);
     MountRenewOperationEnvironment renewalEnvironment(bool worker_call);
     void consumeRenewResult(const MountRenewResult & result, bool propagate_failure);
+    /// One `watermark_renew` event and its log lines for a renewal that recovered or ended; a
+    /// first-attempt commit is silent.
+    void reportRenewal(const MountRenewResult & result) const noexcept;
     /// Publish a committed renewal's deadline, its start plus the lease. Requires `driver_mutex`.
     void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
     void publishConfirmedBody(const std::optional<MountLease> & body);
