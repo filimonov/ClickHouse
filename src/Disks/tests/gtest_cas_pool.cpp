@@ -2147,7 +2147,7 @@ void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behav
     const uint64_t writes_before_teardown = backend->putOverwriteCount(key);
     const uint64_t skipped_before_teardown
         = ProfileEvents::global_counters[ProfileEvents::CASMountReleaseSkippedForeignOccupant].load();
-    runtime.finishTeardown(true);
+    runtime.finishTeardown({});
     EXPECT_EQ(backend->headCount(key), heads_before_teardown);
     EXPECT_EQ(backend->getCount(key), gets_before_teardown);
     EXPECT_EQ(backend->putOverwriteCount(key), writes_before_teardown);
@@ -2227,8 +2227,8 @@ private:
 class ScopedParkedRenewalLogCapture
 {
 public:
-    ScopedParkedRenewalLogCapture()
-        : logger(getLogger("CasMountLeaseRenewer"))
+    explicit ScopedParkedRenewalLogCapture(const String & logger_name = "CasMountLeaseRenewer")
+        : logger(getLogger(logger_name))
         , channel(new Poco::StreamChannel(stream))
         , old_channel(logger->getChannel(), /*shared=*/true)
         , old_level(logger->getLevel())
@@ -3312,7 +3312,7 @@ TEST(CASPoolRemount, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
     EXPECT_RUNTIME_STATE_REJECTION(runtime.renewerReset());
     barrier.release();
     EXPECT_NO_THROW(direct.get());
-    runtime.finishTeardown(true);
+    runtime.finishTeardown({});
 }
 
 TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeParkRequest)
@@ -3353,7 +3353,7 @@ TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeParkRequest)
     EXPECT_EQ(runtime.renewalDriverStateForTest(), RenewalDriverState::Parked);
     remount.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeStop)
@@ -3386,7 +3386,7 @@ TEST(CASPoolRemount, DueWorkerAdmissionIsReservedBeforeStop)
     admitted.release();
     EXPECT_NO_THROW(stop.get());
     EXPECT_EQ(runtime.renewalDriverStateForTest(), RenewalDriverState::Dormant);
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop)
@@ -3411,7 +3411,7 @@ TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.stopBackgroundWorkers();
     EXPECT_RUNTIME_STATE_REJECTION(runtime.renewWatermarkOnce());
-    runtime.finishTeardown(true);
+    runtime.finishTeardown({});
 }
 
 #undef EXPECT_RUNTIME_STATE_REJECTION
@@ -3456,7 +3456,7 @@ TEST(CASPoolRemount, RemountWaitsForRenewalParkedBeforeReplacement)
     EXPECT_EQ(runtime.renewalDriverStateForTest(), RenewalDriverState::Parked);
     remount_barrier.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// The remount attempt, which allocates the writer epoch, runs with the renewal driver parked: a renewal
@@ -3518,7 +3518,7 @@ TEST(CASPoolRemount, DueRenewalIsNotSentWhileTheRemountAttemptRuns)
     EXPECT_EQ(state_during_attempt, RenewalDriverState::Parked);
     EXPECT_EQ(writes_during_attempt, 0u);
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
@@ -3552,7 +3552,7 @@ TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.stopBackgroundWorkers();
     EXPECT_EQ(worker_exits.load(), 2u);
-    runtime.finishTeardown(true);
+    runtime.finishTeardown({});
     EXPECT_EQ(decodeMountLease(readObj(*backend, layout.mountKey("test"))->bytes).min_active_build_sequence,
               std::numeric_limits<uint64_t>::max());
 }
@@ -3612,7 +3612,7 @@ TEST(CASPoolRemount, NaturalTerminalTransitionMakesBothPersistentWorkersSelfExit
         runtime.stopBackgroundWorkers();
         EXPECT_TRUE(both_exited_without_stop);
         EXPECT_EQ(exits.count(), 2u);
-        runtime.finishTeardown(false);
+        runtime.finishTeardown({.ref_lane_unsettled = true});
     }
 }
 
@@ -3726,7 +3726,7 @@ TEST(CASPoolRemount, ParkedRenewalCannotMissNaturalTerminalPublication)
         EXPECT_FALSE(violated_serialization);
         EXPECT_TRUE(both_exited_without_stop);
         EXPECT_EQ(exits.count(), 2u);
-        runtime.finishTeardown(false);
+        runtime.finishTeardown({.ref_lane_unsettled = true});
     }
 }
 
@@ -3789,7 +3789,7 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
     EXPECT_TRUE(both_exited_without_stop);
     EXPECT_EQ(exits.count(), 2u);
     EXPECT_EQ(preparation_calls.load(), 2u);
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, WorkerConstructionRollbackFailsOpenClosed)
@@ -3823,7 +3823,7 @@ TEST(CASPoolRemount, WorkerConstructionRollbackFailsOpenClosed)
         EXPECT_THROW(runtime.startBackgroundWorkers(std::chrono::milliseconds(10)), DB::Exception);
         EXPECT_FALSE(runtime.mayMutate());
         EXPECT_FALSE(runtime.workersRunningForTest());
-        runtime.finishTeardown(false);
+        runtime.finishTeardown({.ref_lane_unsettled = true});
     }
 }
 
@@ -3886,7 +3886,7 @@ TEST(CASPoolRemount, ExternalLossDuringRenewalUsesOneRecoveryGeneration)
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASMountLeaseLost].load(), lost_before + 1);
     remount_barrier.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, TerminalDepositionDoesNotTouchRenewerAfterReplacement)
@@ -3936,7 +3936,7 @@ TEST(CASPoolRemount, TerminalDepositionDoesNotTouchRenewerAfterReplacement)
     remount.waitUntilArrived();
     remount.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, ConcurrentRemountRequestIsProcessedAfterActiveGeneration)
@@ -3977,7 +3977,7 @@ TEST(CASPoolRemount, ConcurrentRemountRequestIsProcessedAfterActiveGeneration)
     EXPECT_EQ(runtime.remountRequestedGenerationForTest(), 2u);
     second.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
@@ -4038,7 +4038,7 @@ TEST(CASPoolRemount, ImmediatePostRemountRenewalFailureIsNotDropped)
     EXPECT_EQ(runtime.remountRequestedGenerationForTest(), 2u);
     second.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// A renewal of the old epoch whose result is consumed after a remount armed the new epoch does not
@@ -4113,7 +4113,7 @@ TEST(CASMountRuntime, AnOldEpochRenewalDoesNotMoveTheNewEpochDeadline)
     EXPECT_TRUE(runtime.mayMutate()) << "the old epoch's renewal moved the new epoch's deadline";
     back_in_loop.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// A mount PUT outage three leases long is a pause: the renewal keeps its tuple, its late success leaves
@@ -4182,7 +4182,7 @@ TEST(CASMountRuntime, ALongOutageIsAPauseUnderTheSameEpoch)
     EXPECT_EQ(remount_calls.load(), 0u);
     second_commit.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// A renewal that commits after its lease expired reports a reason that is true for a late commit too.
@@ -4254,7 +4254,7 @@ TEST(CASMountRuntime, ALateCommitReportsARecoveredRenewalWithATruthfulReason)
         EXPECT_EQ(recovered.front().reason, "CAS mount renewal committed after a retry or a settling read");
     }
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// A remount request ends a renewal that is retrying past its lease, at its next admission.
@@ -4307,7 +4307,7 @@ TEST(CASMountRuntime, ARemountRequestEndsARenewalRetryingPastTheLease)
     EXPECT_EQ(writes_at_remount.load(), writes_at_park) << "no request starts after the remount request";
     remount_entered.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 #if USE_AWS_S3
@@ -4349,7 +4349,7 @@ TEST(CASMountRuntime, AStopEndsTheCredentialRefusalWaitAtOnce)
     runtime.stopBackgroundWorkers();
     const auto stop_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - stop_started);
     EXPECT_LT(stop_ms.count(), 10'000) << "the stop waited out the renewal period";
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// A remount request during the wait that follows a credential refusal ends it at once.
@@ -4398,7 +4398,7 @@ TEST(CASMountRuntime, AParkRequestEndsTheCredentialRefusalWaitAtOnce)
     EXPECT_LT(park_ms.count(), 10'000) << "the park request waited out the renewal period";
     remount_entered.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// After each credential refusal the worker waits one renewal period before its next engine call.
@@ -4444,7 +4444,7 @@ TEST(CASMountRuntime, ACredentialRefusalWaitsOneRenewalPeriod)
     EXPECT_EQ(write_at[2] - write_at[1], period_ms);
     committed.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 #endif
 
@@ -4505,7 +4505,7 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     EXPECT_FALSE(runtime.leaseExpiredAtBootMs().has_value()) << "a renewal with lease left ends the expiry";
     second_commit.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, StaleRemountAnchorPerformsParkedRedo)
@@ -4769,12 +4769,51 @@ TEST(CASPoolShutdown, PreSendCancellationAllowsFarewellButAmbiguityDoesNot)
             runtime.startBackgroundWorkers(std::chrono::hours(1));
             runtime.stopBackgroundWorkers();
         }
-        runtime.finishTeardown(true);
+        runtime.finishTeardown({});
         return decodeMountLease(readObj(*backend, layout.mountKey("test"))->bytes).min_active_build_sequence;
     };
 
     EXPECT_EQ(run(false), std::numeric_limits<uint64_t>::max());
     EXPECT_NE(run(true), std::numeric_limits<uint64_t>::max());
+}
+
+TEST(CASPoolShutdown, AnAmbiguousRenewalAtStopIsNamedInTheUncleanLine)
+{
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    const Layout layout("shutdown-ambiguous-line");
+    uint64_t wall_ms = 1000;
+    uint64_t boot_ms = 100;
+    const UInt128 uuid{1};
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
+    DB::Cas::tests::ManualBarrier barrier;
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
+                    .boot_ms_fn = [&] { return boot_ms; }},
+        "test", sink, runtimeRenewBudget(), [] { return false; });
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
+    runtime.armMountFence(uuid, 1, anchor + 1000);
+    backend->barrier = &barrier;
+    backend->fault = RuntimeRenewBackend::Fault::BlockThenThrow;
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(0));
+    barrier.waitUntilArrived();
+    auto stop = std::async(std::launch::async, [&] { runtime.stopBackgroundWorkers(); });
+    barrier.release();
+    stop.get();
+
+    ScopedParkedRenewalLogCapture capture("CasPool");
+    runtime.finishTeardown({});
+
+    EXPECT_NE(
+        decodeMountLease(readObj(*backend, layout.mountKey("test"))->bytes).min_active_build_sequence,
+        std::numeric_limits<uint64_t>::max());
+    EXPECT_NE(
+        capture.captured().find("marker: the last renewal ended without a confirmed lease;"), String::npos)
+        << capture.captured();
 }
 
 TEST(CASPool, DirectAndStartupTerminalFailuresRethrowTypedExceptions)
@@ -4820,7 +4859,7 @@ TEST(CASPool, DirectAndStartupTerminalFailuresRethrowTypedExceptions)
         {
             EXPECT_EQ(e.code(), DB::ErrorCodes::NETWORK_ERROR) << e.message();
         }
-        runtime.finishTeardown(false);
+        runtime.finishTeardown({.ref_lane_unsettled = true});
     };
     for (bool startup : {true, false})
         for (Refusal refusal : {Refusal::PreAttemptDeadline, Refusal::RefusedAfterSend})
@@ -4921,7 +4960,7 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
     EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::TransientNotLive);
     remount_entered.release();
     runtime.stopBackgroundWorkers();
-    runtime.finishTeardown(false);
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPool, RenewWatermarkOnceRefreshesFenceAndDepositsOneFailure)

@@ -1985,7 +1985,7 @@ size_t CasRefLedger::wedgedRefLaneCount()
 }
 
 
-bool CasRefLedger::drainRefLanesForShutdown(uint64_t wait_budget_ms)
+RefLaneDrain CasRefLedger::drainRefLanesForShutdown(uint64_t wait_budget_ms)
 {
     /// Latch FIRST, then snapshot under `ref_queue_mutex` (see the `shutting_down` member comment): this
     /// ordering is what makes the check in `appendRefOps` -- performed inside the SAME critical section
@@ -2042,7 +2042,7 @@ bool CasRefLedger::drainRefLanesForShutdown(uint64_t wait_budget_ms)
             any_wedge = true;
     }
 
-    return !timed_out && !any_wedge;
+    return {.lane_unsettled = timed_out || any_wedge};
 }
 
 

@@ -6,9 +6,11 @@
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
 #include <base/scope_guard.h>
+#include <fmt/ranges.h>
 #include <algorithm>
 #include <chrono>
 #include <ctime>
+#include <string_view>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -1370,7 +1372,7 @@ uint64_t CasMountRuntime::remountRequestedGenerationForTest() const
     return remount_requested_generation;
 }
 
-void CasMountRuntime::finishTeardown(bool drained)
+void CasMountRuntime::finishTeardown(const FarewellBlockers & blockers)
 {
     stopBackgroundWorkers();
 
@@ -1380,23 +1382,34 @@ void CasMountRuntime::finishTeardown(bool drained)
 
     if (!mount_renewer)
         return;
-    if (drained && mount_renewer->state() == MountLeaseRenewerState::Active)
+
+    std::vector<std::string_view> causes;
+    if (blockers.drain_failed)
+        causes.emplace_back("the shutdown drain failed");
+    if (blockers.ref_lane_unsettled)
+        causes.emplace_back("a ref-log lane still writing or wedged");
+    if (blockers.snapshot_publish_in_flight)
+        causes.emplace_back("a snapshot publish in flight");
+    if (blockers.cleanup_duty_pending)
+        causes.emplace_back("an undrained writer cleanup duty");
+    if (mount_renewer->state() == MountLeaseRenewerState::RenewalTerminal)
+        causes.emplace_back("the last renewal ended without a confirmed lease");
+    if (!causes.empty())
     {
-        try
-        {
-            mount_renewer->release();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("CasPool"), "CAS mount-lease: release during Pool teardown failed");
-        }
+        LOG_WARNING(getLogger("CasPool"),
+            "CAS store shutdown without the clean-release marker: {}; the next mount will treat this end as unclean",
+            fmt::join(causes, ", "));
+        return;
     }
-    else if (!drained)
+    if (mount_renewer->state() != MountLeaseRenewerState::Active)
+        return;
+    try
     {
-        LOG_WARNING(
-            getLogger("CasPool"),
-            "CAS store shutdown with an unresolved ref-log PUT: skipping the clean-release marker; "
-            "the next mount will treat this end as unclean");
+        mount_renewer->release();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("CasPool"), "CAS mount-lease: release during Pool teardown failed");
     }
 }
 }
