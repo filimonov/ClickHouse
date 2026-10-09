@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountReacquire.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Primitives/CasTypes.h>
 #include <Common/Exception.h>
 #include <fmt/format.h>
@@ -66,6 +67,7 @@ std::string_view mountEndWord(MountEnd end)
         case MountEnd::LocalDefect: return "local_defect";
         case MountEnd::Replaced: return "replaced";
         case MountEnd::Forgotten: return "forgotten";
+        case MountEnd::PoolIdentityLost: return "pool_identity_lost";
     }
     return "none";
 }
@@ -109,7 +111,7 @@ MountSlotReading classifyMountSlot(const Observation & seen, const OwnMountBodie
         if (!*mine)
             continue;
         if (isGcFenceOf(body, **mine))
-            return {MountSlotVerdict::FencedByGc, std::move(body)};
+            return {MountSlotVerdict::FencedByGc, std::move(body), *object};
         /// Our bytes under an incarnation we did not write: another process sent them.
         if (body == **mine)
             return {MountSlotVerdict::SlotTaken, std::move(body)};
@@ -145,6 +147,53 @@ Observation corroborateAbsence(CasOperation & op, const String & key, Observatio
     }
 }
 
+ReacquireSlotReading classifyReacquireSlot(const Observation & seen, const ReacquireCertificate & certificate,
+                                           const std::optional<MountReacquireClaim> & claim)
+{
+    const auto loss = [](MountSlotVerdict verdict, std::optional<MountLease> holder)
+    {
+        return ReacquireSlotReading{.verdict = ReacquireSlotVerdict::Loss, .loss = {verdict, std::move(holder)}};
+    };
+    if (std::holds_alternative<ProvenAbsent>(seen))
+        return loss(MountSlotVerdict::SlotAbsent, std::nullopt);
+    const Object * object = std::get_if<Object>(&seen);
+    if (!object)
+        return {};
+    if (claim && object->bytes == claim->bytes)
+        return {.verdict = ReacquireSlotVerdict::Applied};
+    if (object->etag == certificate.fenced.etag)
+        return {.verdict = ReacquireSlotVerdict::Certified};
+
+    MountLease body;
+    try
+    {
+        body = decodeMountLease(object->bytes);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::CORRUPTED_DATA)
+            throw;
+        return loss(MountSlotVerdict::SlotCorrupt, std::nullopt);
+    }
+
+    if (claim && isGcFenceOf(body, claim->body))
+        return {.verdict = ReacquireSlotVerdict::NewFence, .new_fence = ReacquireCertificate{*object, std::move(body)}};
+    if (body.server_uuid != certificate.body.server_uuid || body.writer_epoch != certificate.body.writer_epoch)
+        return loss(MountSlotVerdict::SlotTaken, std::move(body));
+
+    MountLease unfenced = certificate.body;
+    unfenced.gc_fenced = false;
+    --unfenced.seq;
+    MountSlotReading pair = classifyMountSlot(seen, OwnMountBodies{
+        .server_uuid = certificate.body.server_uuid,
+        .writer_epoch = certificate.body.writer_epoch,
+        .confirmed = std::move(unfenced),
+    });
+    if (pair.verdict == MountSlotVerdict::FencedByGc)
+        pair = {MountSlotVerdict::SlotCorrupt, std::move(pair.holder)};
+    return {.verdict = ReacquireSlotVerdict::Loss, .loss = std::move(pair)};
+}
+
 String describeMountEnd(MountEnd end, MountLossReaction reaction, const String & disk_name,
                         const String & server_root_id, const std::optional<MountLease> & holder, std::string_view detail)
 {
@@ -152,6 +201,8 @@ String describeMountEnd(MountEnd end, MountLossReaction reaction, const String &
     switch (end)
     {
         case MountEnd::SlotTaken:
+            if (!holder && !detail.empty())
+                return head + fmt::format("{}.", detail) + String(reactionSuffix(end, reaction));
             return head + fmt::format("the mount slot holds a body of another incarnation ({}).", describeHolder(holder))
                 + String(reactionSuffix(end, reaction));
         case MountEnd::SlotAbsent:
@@ -166,6 +217,8 @@ String describeMountEnd(MountEnd end, MountLossReaction reaction, const String &
         case MountEnd::FencedByGc:
             return head + fmt::format("the GC of another server fenced the decommission claim ({}).", describeHolder(holder))
                 + String(reactionSuffix(end, reaction));
+        case MountEnd::PoolIdentityLost:
+            return head + fmt::format("the pool identity is lost ({}).", detail) + String(reactionSuffix(end, reaction));
         case MountEnd::LedgerFault:
         case MountEnd::LocalDefect:
         {
