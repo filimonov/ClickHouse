@@ -73,6 +73,7 @@ namespace DB::ContentAddressedSetting
 /// non-S3 build of the `Definite` mode).
 namespace DB::ErrorCodes
 {
+    extern const int ABORTED;
     extern const int CORRUPTED_DATA;
     extern const int NOT_IMPLEMENTED;
 }
@@ -2304,7 +2305,7 @@ inline void fenceOwnSlotAndRenew(DB::Cas::Pool & store, DB::Cas::Backend & backe
         ++body.seq;
         ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(key, encodeMountLease(body), got->etag, Retry::once())));
     }
-    EXPECT_THROW(store.renewWatermarkOnce(), DB::Exception);
+    expectThrowsCode(DB::ErrorCodes::ABORTED, [&] { store.renewWatermarkOnce(); });
     ASSERT_EQ(store.mountEnd(), MountEnd::None);
 }
 

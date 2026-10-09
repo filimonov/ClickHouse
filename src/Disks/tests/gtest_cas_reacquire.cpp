@@ -697,6 +697,18 @@ struct Running
     {
         PoolConfig config{.pool_prefix = "p", .server_root_id = kSrid, .background_watermark = true};
         config.mount_renew_period = std::chrono::milliseconds(20);
+        config.worker_factory = [this](std::function<void()> body)
+        {
+            return ThreadFromGlobalPool([this, loop = std::move(body)]
+            {
+                loop();
+                {
+                    std::lock_guard lock(mutex);
+                    worker_exited = true;
+                }
+                changed.notify_all();
+            });
+        };
         config.renewal_finished_hook_for_test = [this, on_renewal](const MountRenewResult & result)
         {
             if (on_renewal)
@@ -731,6 +743,8 @@ struct Running
     std::mutex mutex;
     std::condition_variable changed;
     uint64_t changes = 0;
+    /// Set when the renewal thread's loop returns, after its end-of-renewal check.
+    bool worker_exited = false;
 };
 
 /// The GC's fence transform, retried when a renewal moves the slot between our read and our write.
@@ -872,8 +886,13 @@ TEST(CASReacquire, ForgetDuringAWorkerRenewalClosesWithoutAStop)
     backend->armed = true;
     backend->gate.waitUntilArrived();
 
-    /// FORGET publishes its intent and trips the fence before it stops the GC; the held renewal resumes only then.
-    store.forgetDisk([&] { backend->gate.release(); }, "decommissioned by the test");
+    /// FORGET publishes its intent and trips the fence before it stops the GC; the held renewal resumes only
+    /// then, and the thread exits before FORGET asks it to stop, so only the intent can have ended it.
+    store.forgetDisk([&]
+    {
+        backend->gate.release();
+        ASSERT_TRUE(running.waitFor([&] { return running.worker_exited; }));
+    }, "decommissioned by the test");
 
     EXPECT_EQ(store.lifecycle(), PoolLifecycle::VanishedForgotten);
     EXPECT_EQ(store.mountEnd(), MountEnd::Forgotten);
@@ -889,12 +908,11 @@ TEST(CASReacquire, AStopDuringAWorkerRenewalEndsWithoutAnEnd)
     const uint64_t epoch = store.writerEpoch();
     backend->armed = true;
     backend->gate.waitUntilArrived();
-    const uint64_t changes = running.changes;
 
     store.beginShutdownForTest();
     backend->gate.release();
 
-    ASSERT_TRUE(running.waitFor([&] { return running.changes > changes; }));
+    ASSERT_TRUE(running.waitFor([&] { return running.worker_exited; }));
     EXPECT_EQ(store.mountEnd(), MountEnd::None);
     EXPECT_EQ(store.writerEpoch(), epoch);
     EXPECT_EQ(counterNext(*backend), epoch + 1);
