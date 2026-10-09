@@ -392,8 +392,8 @@ All 25 rows, `ALL EXPECTATIONS MET`.
 
 The other 17 rows kept their verdicts. `main` equals `old_farewellleasebound` because the lease bound adds no
 state. The state space of the plain-name rows changed because they now run the reacquire route; `main`'s
-counts differ from the previous `main_step2` (4,674,283 generated, 776,160 distinct) by the removed
-`Transient` state and the merged fairness. Wall time: `main` 207 s; the other rows 0 to 4 s each. Disk: `/`
+counts differ from the previous `main_step2` (4,674,283 generated, 776,160 distinct) by trip #2 alone:
+they equal the prediction row (`EnableTrip2 = FALSE`, 4,616,709 / 763,932) exactly. Wall time: `main` 207 s; the other rows 0 to 4 s each. Disk: `/`
 stayed at 104 to 105 GiB free, the largest metadir was 38 MiB.
 
 Not checked here:
