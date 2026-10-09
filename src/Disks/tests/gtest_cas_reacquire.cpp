@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasInMemoryBackend.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasPoolMetaFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasRefCatalogFormat.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasOrphanManifestSweep.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountLoss.h>
@@ -17,6 +18,7 @@
 #include <IO/S3Common.h>
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -782,6 +784,25 @@ private:
     std::vector<Entry> entries;
 };
 
+/// Holds the first mount-slot write after `armed` until `gate` is released, then fails it before it reaches
+/// the store, as a `503` does: the renewal's next attempt re-checks its liveness.
+class HeldRenewalBackend : public InMemoryBackend
+{
+public:
+    WriteAnswer write(const String & key, const String & bytes, const std::optional<String> & expected, TransportAccess & access) override
+    {
+        if (key == kLayout.mountKey(kSrid) && armed.exchange(false))
+        {
+            gate.arriveAndWait();
+            throw Poco::TimeoutException("injected: renewal held");
+        }
+        return InMemoryBackend::write(key, bytes, expected, access);
+    }
+
+    std::atomic<bool> armed{false};
+    DB::Cas::tests::ManualBarrier gate;
+};
+
 }
 
 TEST(CASReacquire, TheRenewalThreadReacquiresWithoutTheRemountWorker)
@@ -845,4 +866,78 @@ TEST(CASReacquire, ALossFoundByTheReacquireStopsTheServer)
     EXPECT_TRUE(taken.load());
     EXPECT_EQ(store.mountEnd(), MountEnd::SlotTaken);
     EXPECT_EQ(store.remountRequestedGenerationForTest(), 0u);
+}
+
+TEST(CASReacquire, ForgetDuringAWorkerRenewalClosesWithoutAStop)
+{
+    auto backend = std::make_shared<HeldRenewalBackend>();
+    Running running(backend);
+    Pool & store = *running.store;
+    backend->armed = true;
+    backend->gate.waitUntilArrived();
+
+    /// FORGET publishes its intent and trips the fence before it stops the GC; the held renewal resumes only then.
+    store.forgetDisk([&] { backend->gate.release(); }, "decommissioned by the test");
+
+    EXPECT_EQ(store.lifecycle(), PoolLifecycle::VanishedForgotten);
+    EXPECT_EQ(store.mountEnd(), MountEnd::Forgotten);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().graceful(), 0u);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 0u);
+}
+
+TEST(CASReacquire, AStopDuringAWorkerRenewalEndsWithoutAnEnd)
+{
+    auto backend = std::make_shared<HeldRenewalBackend>();
+    Running running(backend);
+    Pool & store = *running.store;
+    const uint64_t epoch = store.writerEpoch();
+    backend->armed = true;
+    backend->gate.waitUntilArrived();
+    const uint64_t changes = running.changes;
+
+    store.beginShutdownForTest();
+    backend->gate.release();
+
+    ASSERT_TRUE(running.waitFor([&] { return running.changes > changes; }));
+    EXPECT_EQ(store.mountEnd(), MountEnd::None);
+    EXPECT_EQ(store.writerEpoch(), epoch);
+    EXPECT_EQ(counterNext(*backend), epoch + 1);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().graceful(), 0u);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 0u);
+}
+
+TEST(CASReacquire, AForeignPoolMetaStopsTheReacquire)
+{
+    Fenced f;
+    PoolMeta meta = decodePoolMeta(read(*f.backend, kLayout.poolMetaKey())->bytes);
+    meta.pool_id = meta.pool_id + DB::UInt128(1);
+    put(*f.backend, kLayout.poolMetaKey(), encodePoolMeta(meta));
+
+    expectStoppedOn(f, reacquireUntilSettled(*f.store), MountEnd::PoolIdentityLost);
+    EXPECT_EQ(counterNext(*f.backend), f.epoch + 1) << "no epoch is allocated after the identity probe fails";
+}
+
+TEST(CASReacquire, AnUnreadablePoolMetaRetriesTheReacquire)
+{
+    Fenced f;
+    put(*f.backend, kLayout.poolMetaKey(), "not a pool meta");
+
+    EXPECT_EQ(f.store->runReacquireForTest(), ReacquireOutcome::Retry);
+    EXPECT_EQ(f.store->mountEnd(), MountEnd::None);
+    EXPECT_FALSE(f.store->mayMutate());
+    EXPECT_EQ(counterNext(*f.backend), f.epoch + 1);
+}
+
+TEST(CASReacquire, ChangedAlgosStillReacquire)
+{
+    Fenced f;
+    PoolMeta meta = decodePoolMeta(read(*f.backend, kLayout.poolMetaKey())->bytes);
+    const auto extra = static_cast<uint8_t>(BlobHashAlgo::XXH3_128);
+    ASSERT_FALSE(std::binary_search(meta.algos_used.begin(), meta.algos_used.end(), extra));
+    meta.algos_used.push_back(extra);
+    std::sort(meta.algos_used.begin(), meta.algos_used.end());
+    put(*f.backend, kLayout.poolMetaKey(), encodePoolMeta(meta));
+
+    EXPECT_EQ(reacquireUntilSettled(*f.store), ReacquireOutcome::Open);
+    EXPECT_EQ(f.store->writerEpoch(), f.epoch + 1);
 }
