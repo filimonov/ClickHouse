@@ -41,8 +41,7 @@ namespace DB::Cas
 {
 
 void reportMountRenewCompletion(const MountRenewResult & result) noexcept;
-void configureMountRenewObservability(
-    const String * server_root_id, const CasEventSink * event_sink, bool deferred) noexcept;
+void configureMountRenewObservability(const String * server_root_id, const CasEventSink * event_sink) noexcept;
 
 namespace
 {
@@ -103,7 +102,6 @@ CasMountRuntime::CasMountRuntime(
     String server_root_id_,
     const CasEventSink & event_sink_,
     CasRequestBudget cas_request_budget_,
-    std::function<bool()> remount_attempt_,
     std::function<ReacquireOutcome(ReacquireStep &)> reacquire_attempt_)
     : backend_ptr(std::move(backend_ptr_))
     , mount_requests(mount_requests_)
@@ -113,7 +111,6 @@ CasMountRuntime::CasMountRuntime(
     , server_root_id(std::move(server_root_id_))
     , event_sink(event_sink_)
     , cas_request_budget(cas_request_budget_)
-    , remount_attempt(std::move(remount_attempt_))
     , reacquire_attempt(std::move(reacquire_attempt_))
 {
 }
@@ -476,7 +473,7 @@ RenewalDriverState CasMountRuntime::DriverLease::finish(
             && (active == RenewalDriverState::DirectCall || runtime.renewal_driver_state == RenewalDriverState::WorkerIdle))
         {
             /// The fence is our own body: the reacquire replaces exactly it, by the ETag read here. The
-            /// renewal thread runs it; no remount is requested.
+            /// renewal thread runs it.
             runtime.tripMountLost();
             runtime.owed_reacquire = ReacquireCertificate{.fenced = *slot->fenced, .body = *slot->holder};
             if (active == RenewalDriverState::WorkerCall)
@@ -486,15 +483,6 @@ RenewalDriverState CasMountRuntime::DriverLease::finish(
             || active == RenewalDriverState::DirectCall)
         {
             runtime.tripMountLost();
-            runtime.schedule_remount_calls_for_test.fetch_add(1, std::memory_order_relaxed);
-            if (runtime.config.background_watermark
-                && !runtime.workers_stop_requested
-                && !runtime.remountTerminal())
-            {
-                ++runtime.remount_requested_generation;
-                if (active == RenewalDriverState::WorkerCall)
-                    runtime.renewal_driver_state = RenewalDriverState::Parked;
-            }
         }
         else if (runtime.renewal_driver_state == RenewalDriverState::Stopping
                  || active == RenewalDriverState::StartupCall)
@@ -765,14 +753,7 @@ MountRenewResult CasMountRuntime::renewRenewerOnce(
     bool worker_call,
     bool reacquire_call)
 {
-    /// Configuration is pointer/POD-only. A parked redo retains its completed observation for the
-    /// whole-chain finalizer to deliver after `remount_mutex` is released; a reacquire has no finalizer.
-    configureMountRenewObservability(
-        &server_root_id, &event_sink, active == RenewalDriverState::RemountCall && !reacquire_call);
-    /// The remount redo re-anchors the lease BEFORE `armMountFence`, with the fence still latched lost,
-    /// so it renews on the renewer's open plane: admitted under the mount fence it could only ever give
-    /// up, and every remount would fail at this step. `RemountCall` is reached from
-    /// `renewRenewerForRemountOnce` alone.
+    configureMountRenewObservability(&server_root_id, &event_sink);
     {
         std::lock_guard lock(renewal_progress_mutex);
         renewal_progress = RenewalProgress{.in_progress = true, .attempts_sent = 0, .last_error = std::nullopt};
@@ -786,8 +767,6 @@ MountRenewResult CasMountRuntime::renewRenewerOnce(
             environment.live = [this] { return reacquireLive(); };
             result = call.renewer->renewUntilDefinitive(environment);
         }
-        else if (active == RenewalDriverState::RemountCall)
-            result = call.renewer->renewForRemount(renewalEnvironment(worker_call));
         else if (worker_call)
             result = call.renewer->renewUntilDefinitive(renewalEnvironment(worker_call));
         else
@@ -816,16 +795,6 @@ uint64_t CasMountRuntime::renewRenewerForStartupOnce()
     return renewRenewerOnce(
         std::move(call),
         RenewalDriverState::StartupCall,
-        /*propagate_failure=*/true,
-        /*worker_call=*/false).attempt_start_boot_ms;
-}
-
-uint64_t CasMountRuntime::renewRenewerForRemountOnce()
-{
-    auto call = admitRenewerCall(RenewalDriverState::Parked, RenewalDriverState::RemountCall);
-    return renewRenewerOnce(
-        std::move(call),
-        RenewalDriverState::RemountCall,
         /*propagate_failure=*/true,
         /*worker_call=*/false).attempt_start_boot_ms;
 }
@@ -912,8 +881,7 @@ void CasMountRuntime::startBackgroundWorkers(std::chrono::milliseconds period)
     {
         std::lock_guard lock(driver_mutex);
         if (renewal_driver_state != RenewalDriverState::Dormant
-            || workers_starting || workers_started
-            || renewal_worker.joinable() || remount_worker.joinable())
+            || workers_starting || workers_started || renewal_worker.joinable())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount runtime: background workers cannot start in the current state");
         if (!mount_renewer || mount_renewer->state() != MountLeaseRenewerState::Active)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "CAS mount runtime: background workers require an Active renewer");
@@ -924,12 +892,10 @@ void CasMountRuntime::startBackgroundWorkers(std::chrono::milliseconds period)
         renewal_driver_state = RenewalDriverState::WorkerIdle;
     }
 
-    ThreadFromGlobalPool first;
-    ThreadFromGlobalPool second;
+    ThreadFromGlobalPool worker;
     try
     {
-        first = makeWorker([this] { renewalLoop(); });
-        second = makeWorker([this] { remountLoop(); });
+        worker = makeWorker([this] { renewalLoop(); });
     }
     catch (...)
     {
@@ -940,10 +906,8 @@ void CasMountRuntime::startBackgroundWorkers(std::chrono::milliseconds period)
             renewal_driver_state = RenewalDriverState::Stopping;
             driver_cv.notify_all();
         }
-        if (first.joinable())
-            first.join();
-        if (second.joinable())
-            second.join();
+        if (worker.joinable())
+            worker.join();
         {
             std::lock_guard lock(driver_mutex);
             workers_starting = false;
@@ -956,8 +920,7 @@ void CasMountRuntime::startBackgroundWorkers(std::chrono::milliseconds period)
 
     {
         std::lock_guard lock(driver_mutex);
-        renewal_worker = std::move(first);
-        remount_worker = std::move(second);
+        renewal_worker = std::move(worker);
         workers_starting = false;
         workers_started = true;
         worker_loops_released = true;
@@ -1045,13 +1008,27 @@ void CasMountRuntime::renewalLoop()
         try
         {
             if (owed)
+            {
                 (void)reacquireUntilSettled(std::move(*owed));
-            else
-                (void)renewRenewerOnce(
-                    std::move(call),
-                    RenewalDriverState::WorkerCall,
-                    /*propagate_failure=*/false,
-                    /*worker_call=*/true);
+                continue;
+            }
+            const MountRenewResult result = renewRenewerOnce(
+                std::move(call),
+                RenewalDriverState::WorkerCall,
+                /*propagate_failure=*/false,
+                /*worker_call=*/true);
+            if (result.outcome == MountRenewOutcome::Terminal && mountEnd() == MountEnd::None && !reacquireOwed())
+            {
+                if (renewalCancelled() || vanishedIntentPublished())
+                    return;
+                /// Under the global memory lock this cannot be thrown; if it is, the handler below closes the disk.
+                if (result.failure && getExceptionErrorCode(result.failure) == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+                    std::rethrow_exception(result.failure);
+                if (latchMountEnd(MountEnd::LocalDefect))
+                    reactToMountEnd(MountEnd::LocalDefect, std::nullopt,
+                        "a background renewal ended without a loss, a fence of our own body or a stop");
+                return;
+            }
         }
         catch (...)
         {
@@ -1095,6 +1072,12 @@ ReacquireOutcome CasMountRuntime::reacquireUntilSettled(ReacquireCertificate cer
     }
 }
 
+bool CasMountRuntime::reacquireOwed() const
+{
+    std::lock_guard lock(driver_mutex);
+    return owed_reacquire.has_value();
+}
+
 void CasMountRuntime::waitBeforeNextReacquireStep(uint64_t ms)
 {
     if (config.wait_sleep_fn)
@@ -1106,113 +1089,22 @@ void CasMountRuntime::waitBeforeNextReacquireStep(uint64_t ms)
     driver_cv.wait_for(lock, std::chrono::milliseconds(ms), [this] { return workers_stop_requested || remountTerminal(); });
 }
 
-void CasMountRuntime::remountLoop()
-{
-    setThreadName(ThreadName::CAS_REMOUNT);
-    {
-        std::unique_lock lock(driver_mutex);
-        driver_cv.wait(lock, [this] { return worker_loops_released; });
-        if (workers_stop_requested || remountTerminal())
-            return;
-    }
-
-    uint64_t backoff_ms = 1000;
-    while (true)
-    {
-        uint64_t snapshot;
-        {
-            std::unique_lock lock(driver_mutex);
-            driver_cv.wait(lock, [this]
-            {
-                return workers_stop_requested
-                    || remountTerminal()
-                    || remount_requested_generation > remount_handled_generation;
-            });
-            if (workers_stop_requested || remountTerminal())
-                return;
-            snapshot = remount_requested_generation;
-
-            if (renewal_driver_state == RenewalDriverState::WorkerCall)
-                renewal_driver_state = RenewalDriverState::ParkRequested;
-            else if (renewal_driver_state == RenewalDriverState::WorkerIdle)
-                renewal_driver_state = RenewalDriverState::Parked;
-            driver_cv.notify_all();
-            driver_cv.wait(lock, [this]
-            {
-                return workers_stop_requested || remountTerminal()
-                    || renewal_driver_state == RenewalDriverState::Parked;
-            });
-            if (workers_stop_requested || remountTerminal())
-                return;
-            if (config.remount_parked_hook_for_test)
-                config.remount_parked_hook_for_test();
-        }
-
-        bool recovered = false;
-        try
-        {
-            recovered = remount_attempt();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger("CasPool"), "CAS self-remount attempt failed");
-        }
-
-        if (!recovered)
-        {
-            std::unique_lock lock(driver_mutex);
-            if (remountTerminal())
-                return;
-            driver_cv.wait_for(lock, std::chrono::milliseconds(backoff_ms), [this]
-            {
-                return workers_stop_requested || remountTerminal();
-            });
-            if (workers_stop_requested || remountTerminal())
-                return;
-            backoff_ms = std::min<uint64_t>(backoff_ms * 2, 30000);
-            continue;
-        }
-
-        backoff_ms = 1000;
-        {
-            std::lock_guard lock(driver_mutex);
-            if (workers_stop_requested || remountTerminal())
-                return;
-            remount_handled_generation = std::max(remount_handled_generation, snapshot);
-            if (remount_requested_generation > remount_handled_generation)
-                continue;
-            if (lifecycle() == PoolLifecycle::Live
-                && mount_renewer
-                && mount_renewer->state() == MountLeaseRenewerState::Active)
-            {
-                renewal_driver_state = RenewalDriverState::WorkerIdle;
-                driver_cv.notify_all();
-            }
-        }
-    }
-}
-
 void CasMountRuntime::stopBackgroundWorkers()
 {
     ThreadFromGlobalPool * renewal_to_join = nullptr;
-    ThreadFromGlobalPool * remount_to_join = nullptr;
     {
         std::lock_guard lock(driver_mutex);
-        if (!workers_started && !workers_starting
-            && !renewal_worker.joinable() && !remount_worker.joinable())
+        if (!workers_started && !workers_starting && !renewal_worker.joinable())
             return;
         workers_stop_requested = true;
         worker_loops_released = true;
         renewal_driver_state = RenewalDriverState::Stopping;
         driver_cv.notify_all();
         renewal_to_join = &renewal_worker;
-        remount_to_join = &remount_worker;
     }
 
     if (renewal_to_join->joinable())
         renewal_to_join->join();
-    if (remount_to_join->joinable())
-        remount_to_join->join();
 
     {
         std::lock_guard lock(driver_mutex);
@@ -1436,27 +1328,6 @@ void CasMountRuntime::publishVanishedIntent()
     driver_cv.notify_all();
 }
 
-void CasMountRuntime::scheduleRemount()
-{
-    schedule_remount_calls_for_test.fetch_add(1, std::memory_order_relaxed);
-    std::lock_guard lock(driver_mutex);
-    if (workers_stop_requested || remountTerminal())
-        return;
-    ++remount_requested_generation;
-    if (renewal_driver_state == RenewalDriverState::WorkerCall)
-        renewal_driver_state = RenewalDriverState::ParkRequested;
-    else if (renewal_driver_state == RenewalDriverState::WorkerIdle)
-        renewal_driver_state = RenewalDriverState::Parked;
-    driver_cv.notify_all();
-}
-
-bool CasMountRuntime::scheduleRemountForTest()
-{
-    scheduleRemount();
-    std::lock_guard lock(driver_mutex);
-    return workers_started && remount_requested_generation > remount_handled_generation;
-}
-
 void CasMountRuntime::beginShutdownForTest()
 {
     std::lock_guard lock(driver_mutex);
@@ -1484,13 +1355,7 @@ void CasMountRuntime::waitForRenewalDriverStateForTest(RenewalDriverState expect
 bool CasMountRuntime::workersRunningForTest() const
 {
     std::lock_guard lock(driver_mutex);
-    return workers_started && renewal_worker.joinable() && remount_worker.joinable();
-}
-
-uint64_t CasMountRuntime::remountRequestedGenerationForTest() const
-{
-    std::lock_guard lock(driver_mutex);
-    return remount_requested_generation;
+    return workers_started && renewal_worker.joinable();
 }
 
 void CasMountRuntime::finishTeardown(const FarewellBlockers & blockers)

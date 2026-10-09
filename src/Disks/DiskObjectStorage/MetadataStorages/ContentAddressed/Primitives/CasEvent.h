@@ -29,7 +29,7 @@ enum class CasEventType
     GcAnomaly,
     GcLeaseAcquire, GcLeaseSteal, GcLeaseHeartbeat,
     BuildStart, BuildPublish, BuildAbort, Precommit, PrecommitRemoved, PrecommitReclaim,
-    GateRevalidate, GateResurrect, WatermarkRenew, MountRemount,
+    GateRevalidate, GateResurrect, WatermarkRenew,
     MountClaim, MountRelease, MountConflict,
     /// Operator-driven erasure of a dead pool member's namespace. `decommissionPoolMember` runs as
     /// a writer, never as GC: it claims the member's mount, drains its namespaces and debris, and

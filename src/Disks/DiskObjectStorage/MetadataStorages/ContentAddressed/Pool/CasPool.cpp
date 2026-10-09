@@ -44,10 +44,6 @@ namespace ErrorCodes
 namespace ProfileEvents
 {
     extern const Event CASPartFolderManifestGets;
-    extern const Event CASRemountAttempts;
-    extern const Event CASRemountSucceeded;
-    extern const Event CASRemountFailed;
-    extern const Event CASRemountHeldTransient;
     extern const Event CASRefBatchFlushes;
     extern const Event CASRefBatchedMutations;
     extern const Event CASRefBatchScopeCuts;
@@ -70,12 +66,8 @@ namespace ProfileEvents
 namespace DB::Cas
 {
 
-void deliverDeferredMountRenewObservability(uint64_t remount_attempt_no) noexcept;
-
 namespace
 {
-
-std::atomic<uint64_t> remount_attempt_sequence{0};
 
 /// Validate every writable factory's lease/request/cadence relationship before it can publish
 /// owner, epoch, mount, or probe authority. Decommission forces background renewal before calling
@@ -91,15 +83,13 @@ void validateWritableMountTiming(const PoolConfig & config)
     validateCasRequestBudget(config.cas_request_budget, ttl_ms, period_ms, config.background_watermark);
 }
 
-/// The verdict of the pool-lifecycle identity gate (step 0 of `tryRemountOnce`, spec §2). Exactly one
-/// `Recover` path falls through to the existing fresh-incarnation recovery; every other verdict is
-/// resolved by the gate itself (a terminal transition, or staying transient to retry).
+/// The verdict of the pool-lifecycle identity gate the reacquire's `ProbeIdentity` stage runs (spec §2).
 enum class LifecycleGateVerdict : uint8_t
 {
-    Recover,        /// `_pool_meta` present + identity matches: proceed with the existing recovery.
-    Replaced,       /// `_pool_meta` present + a FOREIGN pool_id: `Vanished(replaced)` immediately.
-    IdentityLost,   /// both sentinels (`_pool_meta` + owner) authoritatively absent: fail-loud terminal.
-    StayTransient,  /// a probe error, an undecodable meta, or any ambiguous observation: retry as today.
+    Recover,        /// `_pool_meta` present + identity matches.
+    Replaced,       /// `_pool_meta` present + a FOREIGN pool_id.
+    IdentityLost,   /// both sentinels (`_pool_meta` + owner) authoritatively absent.
+    StayTransient,  /// a probe error, an undecodable meta, or any ambiguous observation.
 };
 
 struct LifecycleGate
@@ -118,7 +108,7 @@ LifecycleGate probePoolLifecycleGate(
     UInt128 expected_pool_id, uint64_t expected_blob_header_len)
 {
     /// `once` on both probes: an inconclusive answer IS this gate's verdict (`StayTransient`), and the
-    /// recovery loop that called it is what retries. Reissuing here would spend the loop's whole
+    /// reacquire that called it is what retries. Reissuing here would spend the loop's whole
     /// interval inside a single probe and make a terminal transition wait for it.
     const SentinelProbeResult meta_probe = probeSentinel(op, layout.poolMetaKey(), Retry::once());
     switch (meta_probe.outcome)
@@ -242,17 +232,15 @@ Pool::Pool(BackendPtr backend_, PoolConfig config_, PoolMeta meta_)
           config.publish_error_hook_for_test,
           [this] (const RootNamespace & ns) { cancelInflightBuildsForNamespace(ns); },
           config.recovery_pre_first_request_hook_for_test)
-    /// Mount / write-fence / build-watermark / self-remount runtime. Injected with
-    /// backend/layout + the mount and lease planes + the `MountConfig` slice + `server_root_id` + the event-sink reference + the pool
-    /// `cas_request_budget` + the `remount_attempt` callback (== `Pool::tryRemountOnce`, whose claim/
-    /// recovery ORCHESTRATION stays on Pool). The callback captures `this`; it is invoked only at runtime
-    /// (post-construction). Declared/constructed AFTER `ref_ledger`, preserving the original member order
-    /// verbatim (mount destroyed first, ledger last; both orders proven safe -- see the header note).
+    /// Mount / write-fence / build-watermark runtime. Injected with backend/layout + the mount and lease
+    /// planes + the `MountConfig` slice + `server_root_id` + the event-sink reference + the pool
+    /// `cas_request_budget` + the reacquire pass, whose claim/recovery ORCHESTRATION stays on Pool. The
+    /// callback captures `this`; it is invoked only at runtime (post-construction). Declared/constructed
+    /// AFTER `ref_ledger` (mount destroyed first, ledger last; both orders proven safe -- see the header note).
     , mount_runtime(
           pool_backend, mount_requests, lease_requests,
           pool_layout, config.mountConfig(), config.server_root_id, event_sink_,
           config.cas_request_budget,
-          [this] { return tryRemountOnce(); },
           [this](ReacquireStep & step) { return reacquireOnce(step); })
 {
 }
@@ -1130,12 +1118,12 @@ void Pool::setDetachedDrainDeadlineBudgetForTest(const CasRequestBudget & budget
 
 void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const String & reason)
 {
-    /// Hazard C6: FORGET joins both mount-runtime workers (and, via `stop_and_join_gc`, the GC threads), so it
+    /// Hazard C6: FORGET joins the renewal thread (and, via `stop_and_join_gc`, the GC threads), so it
     /// MUST run on the admin/query thread — never a pool thread, whose join of itself would deadlock. The
     /// guard is a programming-error assertion (a self-join hangs; it never corrupts), so a chassert is the
     /// right severity, not a release fail-close.
     const ThreadName tn = getThreadName();
-    chassert(tn != ThreadName::CAS_REMOUNT && tn != ThreadName::CAS_GC_SCHEDULER
+    chassert(tn != ThreadName::CAS_LEASE_RENEWER && tn != ThreadName::CAS_GC_SCHEDULER
              && tn != ThreadName::CAS_GC_HEARTBEAT
              && "SYSTEM CAS FORGET must not run on a CAS pool thread (self-join deadlock)");
 
@@ -1148,15 +1136,8 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
     if (mount_runtime.isVanished())
         return;
 
-    /// This protocol deliberately does NOT arm the open plane. The GC join at (3+4) would be bounded
-    /// by it, but an already-latched self-remount completes its current step before the loop bails at
-    /// (5a), and that step's pool-identity probe is admitted on the open plane -- an arm here refuses
-    /// it, so the reclaim `finishTeardown` is written to override could never happen. Server shutdown
-    /// arms instead: it joins the same scheduler with no remount step to preserve.
-    ///
-    /// (1) Publish the terminal-intent latch FIRST (spec §5). The runtime stops latching remounts and
-    /// the remount loop bails at its next step boundary, so every join below is bounded to one step + one
-    /// backend timeout.
+    /// (1) Publish the terminal-intent latch FIRST (spec §5). A reacquire in flight abandons at its next
+    /// stage and never opens the fence, so every join below is bounded to one stage + one backend timeout.
     mount_runtime.publishVanishedIntent();
 
     /// (2) Trip the local fence — the deliberate decommission act (allowed on a live disk). No durable-
@@ -1171,16 +1152,8 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
     if (stop_and_join_gc)
         stop_and_join_gc();
 
-    /// (5a) Stop and join both persistent mount-runtime workers outside `remount_mutex`.
+    /// (5a) Stop and join the renewal thread outside `remount_mutex`.
     mount_runtime.stopBackgroundWorkers();
-
-    /// A remount attempt already IN FLIGHT when step 1 published the intent completes its current step
-    /// before the loop bails (the "one step + one backend timeout" bound of §5), and a successful reclaim in
-    /// that window re-arms the local fence (`lost = false`). Now that the remount worker is JOINED and can
-    /// never run again, re-latch the fence so the terminal `mayMutate() == false` holds regardless of any
-    /// such raced reclaim. Idempotent; the durable mount lease the reclaim wrote is retired by the
-    /// `finishTeardown` below (it operates on whatever renewer is current — the reclaimed one).
-    mount_runtime.tripMountLost();
 
     /// (5b) Drain (bounded by one attempt's budget + safety margin) to learn whether a clean farewell is
     /// EARNED — exactly the `~Pool` rule.
@@ -1193,7 +1166,7 @@ void Pool::forgetDisk(const std::function<void()> & stop_and_join_gc, const Stri
     /// The pool object OUTLIVES this FORGET (it stays registered, `Vanished(forgotten)`, until DROP/restart),
     /// so `~Pool` will re-run the same teardown. Drop the renewer now so that later teardown finds none and
     /// skips it: `MountLeaseRenewer::release` is admitted only from `Active`, so a renewer already released
-    /// here must not be released again. `renewerReset` is safe now: both renewer-driving workers are joined.
+    /// here must not be released again. `renewerReset` is safe now: the renewal thread is joined.
     mount_runtime.renewerReset();
 
     /// (6) Publish the terminal state + WARN, under remount serialization — matching the natural-transition
@@ -1305,367 +1278,6 @@ uint64_t wallNowMs()
         std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
-}
-
-bool Pool::tryRemountOnce()
-{
-    const uint64_t attempt_no = remount_attempt_sequence.fetch_add(1, std::memory_order_relaxed) + 1;
-    ProfileEvents::increment(ProfileEvents::CASRemountAttempts);
-    const String & srid = config.server_root_id;
-    std::string_view step = "entry";
-    bool succeeded = false;
-    uint64_t result_writer_epoch = 0;
-    String error;
-    std::optional<MountSlotReading> stop;
-    SCOPE_EXIT(
-    {
-        if (stop)
-            mount_runtime.reactToMountEnd(
-                stop->verdict == MountSlotVerdict::SlotTaken ? MountEnd::SlotTaken : MountEnd::SlotCorrupt, stop->holder, "");
-
-        /// A parked redo completed while the whole-chain serializer was held. Drain its POD snapshot
-        /// first, after lock destruction, so renewal recovery/failure precedes and correlates with the
-        /// containing remount result without any callback or allocation under `remount_mutex`.
-        deliverDeferredMountRenewObservability(attempt_no);
-
-        if (succeeded)
-            ProfileEvents::increment(ProfileEvents::CASRemountSucceeded);
-        else
-            ProfileEvents::increment(ProfileEvents::CASRemountFailed);
-
-        try
-        {
-            if (hasEventSink())
-            {
-                CasEvent event;
-                event.type = CasEventType::MountRemount;
-                event.outcome = succeeded ? "ok" : "failed";
-                event.reason = succeeded
-                    ? "whole-chain remount restored Live under a fresh mount incarnation"
-                    : "whole-chain remount returned without restoring Live";
-                event.detail = {
-                    {"attempt_no", std::to_string(attempt_no)},
-                    {"step", String{step}},
-                    {"server_root_id", srid},
-                };
-                if (result_writer_epoch != 0)
-                    event.detail["writer_epoch"] = std::to_string(result_writer_epoch);
-                if (!error.empty())
-                    event.detail["error"] = error;
-                emitEvent(std::move(event));
-            }
-        }
-        catch (...)
-        {
-            /// The audit sink cannot alter the already-decided remount result.
-        }
-
-        try
-        {
-            if (succeeded)
-                LOG_INFO(
-                    getLogger("CasPool"),
-                    "CAS whole-chain remount attempt {} succeeded at step '{}' for server_root_id='{}' "
-                    "(writer_epoch={})",
-                    attempt_no,
-                    step,
-                    srid,
-                    result_writer_epoch);
-            else
-                LOG_WARNING(
-                    getLogger("CasPool"),
-                    "CAS whole-chain remount attempt {} failed at step '{}' for server_root_id='{}' ({})",
-                    attempt_no,
-                    step,
-                    srid,
-                    error.empty() ? "step returned without restoring Live" : error);
-        }
-        catch (...)
-        {
-            /// Logging allocation cannot alter the already-decided remount result.
-        }
-    });
-
-    /// The result finalizer above was declared before the lock, so it emits only after serialization
-    /// has been released. No event/log allocation happens while `remount_mutex` is held.
-    std::lock_guard serialize(remount_mutex);
-
-    const UInt128 our_uuid = config.server_id;
-    const auto now_ms = []() -> uint64_t
-    {
-        return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-    };
-    const uint64_t ttl_ms = static_cast<uint64_t>(config.mount_lease_ttl_ms.count());
-    const uint64_t poll_interval_ms = std::max<uint64_t>(
-        1, static_cast<uint64_t>(config.mount_renew_period.count()) / 2);
-
-    /// ==== Step 0 (rev.7 §2): pool lifecycle identity gate — BEFORE any claim/allocate/mount write ====
-    /// A remount attempt means the lease is presumed lost, so first ensure we are at least transient
-    /// (production reaches here already transient via `tripMountLost`; a direct/forced call may still be
-    /// `Live`). Then authoritatively probe the pool sentinels and dispatch per the §2 verdict table. Only
-    /// `Recover` (a present `_pool_meta` whose identity matches, in a non-`IdentityLost` state) falls
-    /// through to the existing recovery below; every other verdict resolves here and returns false.
-    step = "lease_loss_transition";
-    mount_runtime.noteLeaseLost();
-    /// A fully-terminal `Vanished` pool never probes/claims/writes again.
-    step = "terminal_gate";
-    if (mount_runtime.isVanished())
-        return false;
-    {
-        step = "pool_identity_probe";
-        /// The open plane: this runs with the mount fence latched lost -- that is what a remount is
-        /// recovering from -- so an operation admitted under the fence could never issue the probe.
-        ///
-        /// Admitted with NO liveness predicate. Refusing the probe once the pool is already terminal
-        /// would be circular -- this probe is what establishes terminality -- and it would make the
-        /// verdicts below unreachable in exactly the states they exist for, the mid-FORGET `Replaced`
-        /// bail among them. A predicate is also the wrong instrument for ending it: the engine samples
-        /// one before the first request and reports a refusal as a THROWN fence loss, which is not how
-        /// a remount step reports anything. Both sentinel reads are `once`, so the probe is at most two
-        /// physical requests and cannot outlast a shutdown.
-        CasOperation probe_op = gc_requests.admit();
-        LifecycleGate gate{LifecycleGateVerdict::StayTransient, {}};
-        try
-        {
-            gate = probePoolLifecycleGate(
-                probe_op, pool_layout, config.server_root_id, meta.pool_id, meta.blob_header_len);
-        }
-        catch (...)
-        {
-            /// The same contract as the startup-protocol steps below: a remount attempt reports failure
-            /// by returning false, never by throwing at whoever called it. A probe that could not reach
-            /// the store proved nothing, so the pool stays where it was and the loop retries.
-            try
-            {
-                error = getCurrentExceptionMessage(/*with_stacktrace*/ false);
-            }
-            catch (...)   // NOLINT(bugprone-empty-catch)
-            {
-            }
-            return false;
-        }
-        switch (gate.verdict)
-        {
-            case LifecycleGateVerdict::Recover:
-                /// [D3] no auto-revival: a matching-sentinel observation while `IdentityLost` does NOT
-                /// bring the disk back — the state is terminal; only a restart recovers.
-                if (mount_runtime.lifecycle() == PoolLifecycle::IdentityLost)
-                    return false;
-                break;   /// fall through to the existing fresh-incarnation recovery.
-            case LifecycleGateVerdict::Replaced:
-                /// NOT while a FORGET is in progress (spec §9 rev.8 item 7). `forgetDisk` publishes the
-                /// terminal-intent latch at step 1 (`publishVanishedIntent`), then joins the remount worker;
-                /// a `tryRemountOnce` already IN FLIGHT — one that passed the step-0 `isVanished()` gate
-                /// BEFORE the intent was published, which that gate therefore cannot catch — could otherwise
-                /// settle `Vanished(replaced)` mid-FORGET, stranding FORGET's own
-                /// `enterVanished(VanishedForgotten)` (first terminal STATE transition wins) and mislabeling
-                /// the operator-visible reason. The bail lives HERE, at the terminal settle, so the
-                /// Recover/`armMountFence` reclaim path is untouched — its mid-FORGET fence re-arm is the
-                /// SEPARATE hazard `forgetDisk`'s post-join re-trip (trip#2) guards. Post-excision this is the
-                /// ONLY surviving mid-FORGET natural-terminal race (the old erasure-proof promotion is gone).
-                if (mount_runtime.vanishedIntentPublished())
-                    return false;
-                mount_runtime.enterVanished(PoolLifecycle::VanishedReplaced, gate.reason);
-                return false;
-            case LifecycleGateVerdict::IdentityLost:
-                /// Both sentinels authoritatively absent. Enter `IdentityLost` once (from `TransientNotLive`);
-                /// a repeat probe while already `IdentityLost` is a no-op. rev.8: `IdentityLost` is a
-                /// fail-loud TERMINAL state — the remount worker self-exits at its next boundary (see
-                /// `CasMountRuntime::remountTerminal`), so there is no demoted observer.
-                if (mount_runtime.lifecycle() != PoolLifecycle::IdentityLost)
-                    mount_runtime.enterIdentityLost();
-                return false;
-            case LifecycleGateVerdict::StayTransient:
-                /// Uncertain — remain transient and let the recovery loop retry. The probe's own reason is
-                /// the only account of WHY, and it is the difference between a transient store hiccup and
-                /// a pool this build can never open again: an undecodable `_pool_meta` is what a pool
-                /// predating the contiguous-ref-stream format floor looks like from here (`decodePoolMeta`
-                /// throws, the gate catches it), and silently retrying forever would leave that pool's
-                /// operator with a fenced mount and nothing to read. Say it, and count it.
-                ProfileEvents::increment(ProfileEvents::CASRemountHeldTransient);
-                LOG_WARNING(getLogger("CasPool"),
-                    "content-addressed pool '{}' (prefix '{}'): remount held TRANSIENT — {}. The mount "
-                    "stays fenced closed and the remount loop will retry. If this repeats, the pool "
-                    "metadata is unreadable to this build (a pool below its format floor must be "
-                    "recreated) rather than merely unavailable.",
-                    config.server_root_id, config.pool_prefix, gate.reason);
-                return false;
-        }
-    }
-
-    /// The same startup protocol as Pool::open steps 2-4, as a FRESH incarnation (the old one is
-    /// dead by the fence-out contract and its renewer never re-mints). Open THROWS on any failure
-    /// (startup is fail-closed); the remount RETURNS false instead — the recovery loop retries.
-    try
-    {
-        const ObserveRefCatalog observe_catalog = [this]()
-        {
-            CasOperation op = gc_requests.admit();
-            return CasRefCatalog::observe(op, pool_layout, "CAS server-root remount safety");
-        };
-        /// The present-owner/present-epoch fast path would otherwise skip the observer entirely.
-        /// Require the catalog before allocating a new epoch or replacing the mount slot.
-        step = "ref_catalog_observe";
-        (void)catalogOrThrow(observe_catalog());
-        step = "owner_claim";
-        /// The open plane throughout: the mount fence is latched lost here (starting the renewer does
-        /// not clear it), so an operation admitted under the fence could never make the claim that
-        /// re-establishes it.
-        /// A remount creates neither the owner anchor nor the counter, and another process advancing
-        /// the counter fails the attempt.
-        CasOperation owner_op = gc_requests.admit();
-        throwUnlessHeld(claimOwner(owner_op, pool_layout, srid, our_uuid, OwnershipAuthority::Reacquire, observe_catalog));
-        step = "writer_epoch_allocate";
-        CasOperation epoch_op = gc_requests.admit();
-        const uint64_t writer_epoch = epochOrThrow(allocateEpoch(
-            epoch_op, pool_layout, srid, OwnershipAuthority::Reacquire, EpochMintPolicy::NormalMount, 0, observe_catalog));
-        result_writer_epoch = writer_epoch;
-
-        /// Mount-slot writer audit: `this` is already fully open (setEventSink ran long ago), so
-        /// unlike the initial `open`, every event fired below reaches the real sink immediately.
-        const auto emit_mount_event = [this](CasEvent e) { emitEvent(std::move(e)); };
-
-        /// Routes through `mount_runtime.waitSleep` (which itself routes through `config.wait_sleep_fn`
-        /// when a test injected one) rather than a bare `sleep_for` directly, so a test intercepting
-        /// `wait_sleep_fn` observes every wait a self-remount can block on, exactly like `Pool::open`'s
-        /// own observation poll above.
-        const auto sleep_ms = [this](uint64_t ms) { mount_runtime.waitSleep(ms); };
-        step = "mount_claim";
-        const OwnMountBodies fenced = mount_runtime.fencedIdentity();
-        CasOperation claim_op = gc_requests.admit();
-        MountClaimResult claim;
-        try
-        {
-            claim = claimMountAwaitingExpiry(
-                claim_op, pool_layout, srid, our_uuid, writer_epoch,
-                now_ms, [this] { return bootMsNow(); }, ttl_ms, poll_interval_ms, sleep_ms,
-                [&srid](const MountLease & held, uint64_t threshold_ms)
-                {
-                    LOG_INFO(getLogger("CasPool"),
-                        "CAS self-remount '{}': observing a stale-looking mount's write-token (uuid={} "
-                        "epoch={} expires_at_ms={}) for up to ~{} ms before reclaiming",
-                        srid, u128ToHex(held.server_uuid), held.writer_epoch, held.expires_at_ms, threshold_ms);
-                },
-                emit_mount_event);
-        }
-        catch (const Exception & e)
-        {
-            /// A newer epoch of ours and undecodable bytes are refusals, not observations; only a read names the loss.
-            if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CORRUPTED_DATA)
-                throw;
-            Observation seen = NotObserved{};
-            try
-            {
-                CasOperation read_op = gc_requests.admit();
-                const std::optional<Object> got = read_op.read(pool_layout.mountKey(srid), Retry::once());
-                seen = corroborateAbsence(read_op, pool_layout.mountKey(srid), got ? Observation{*got} : Observation{ProvenAbsent{}});
-            }
-            catch (...) // NOLINT(bugprone-empty-catch)
-            {
-            }
-            if (stopOnRemountObservation(seen, fenced, stop))
-                return false;
-            throw;
-        }
-        if (claim.kind != MountClaimResult::Claimed)
-        {
-            const Observation seen = std::visit([](const auto & observed) -> Observation { return observed; }, claim.seen);
-            if (stopOnRemountObservation(seen, fenced, stop))
-                return false;
-            LOG_WARNING(getLogger("CasPool"),
-                "CAS self-remount '{}': mount not claimable ({}); will retry", srid,
-                claim.kind == MountClaimResult::ForeignOwner ? "foreign owner — never taking over"
-                                                             : "a live twin holds the lease");
-            return false;
-        }
-
-        /// NO WAIT HERE, AND THE ASSERT IS WHAT REPLACES IT. This used to pay `materialization_grace_ms`
-        /// whenever this incarnation's own ref lanes had not provably settled before the fence tripped:
-        /// an unresolved (still-wedged) ref-log conditional `PUT` from the dying epoch could otherwise
-        /// land after recovery began trusting its listings. Recovery no longer trusts listings — it walks
-        /// arithmetically and closes every epoch below the live one with an in-band `EpochSeal` at
-        /// `{E, T+1}`, so the wedged `PUT` loses its own conditional create to that seal and the wait
-        /// bought nothing but latency on every fence recovery.
-        ///
-        /// That replacement has ONE precondition, and it is this one: the incarnation we are about to
-        /// install must outrank the dying one. If the epoch did not strictly advance, the straggler's
-        /// slot is not "below the live epoch", nothing seals it, and the hole the wait used to paper over
-        /// reopens silently. `allocateWriterEpoch` mints from a durable monotone counter, so this holds by
-        /// construction — which is exactly why it is worth asserting rather than assuming: it fails the
-        /// build's own tests the moment someone reuses an epoch across a remount.
-        chassert(writer_epoch > mount_runtime.liveWriterEpoch());
-
-        /// The persistent renewal worker is parked before this callback is entered, so renewer
-        /// replacement cannot race any synchronous lease operation.
-        step = "renewer_install";
-        mount_runtime.installRenewer(our_uuid, writer_epoch, now_ms);
-        step = "renewer_start";
-        uint64_t remount_anchor_boot_ms = mount_runtime.startRenewer(*claim.claimed);
-
-        /// Re-establish the ref-protocol incarnation BEFORE re-arming the fence. Order is load-bearing:
-        /// Starting the renewer does NOT clear `lost`, so the fence stays closed here and no append/publish can race the
-        /// swap.
-        /// 1. Bump the live epoch so every subsequent `allocateRefTxnId` sorts strictly above any older
-        ///    (dead-incarnation or twin) durable log. Do this BEFORE `armMountFence` so there is no window
-        ///    where the gate is open while the epoch is still stale. Keep `process_epoch` (the identity
-        ///    accessors) equal to it.
-        step = "publish_writer_epoch";
-        mount_runtime.setLiveWriterEpoch(writer_epoch);
-        mount_runtime.setProcessEpoch(writer_epoch, std::memory_order_release);
-        /// 2. CANCEL OR JOIN every in-flight ref-table recovery, and BLOCK here until none is left (spec
-        ///    §3: "self-remount cancels or waits out recovery before rearming"). A recovery admitted under
-        ///    the outgoing incarnation WRITES -- its seal CAS-walk mints epoch seals and advances the
-        ///    `_ckpt` -- so it must be stopped at this boundary rather than caught one site at a time
-        ///    after the incarnation has already changed underneath it. Strictly before the quiesce below
-        ///    so a cancelled walk unwinds while its runtime is still attached, and strictly before the
-        ///    re-arm so no old-generation write can straddle it.
-        step = "cancel_ref_recovery";
-        ref_ledger.cancelRecoveriesAndAwaitQuiescence();
-        /// 3. Drain publishers and drop the cached tables so each re-recovers under the new epoch on next
-        ///    touch (and any leader still holding an orphaned runtime fails closed). While the fence is lost.
-        step = "quiesce_ref_tables";
-        ref_ledger.quiesceRefTablesForRemount();
-        if (config.remount_quiesce_hook_for_test)
-            config.remount_quiesce_hook_for_test();
-
-        /// Quiescence may consume most of the new lease. The same renewal-window gate used at startup
-        /// admits one synchronous parked redo while at least one physical attempt still fits the old
-        /// authority window and before the fence is armed.
-        if (!renewalWindowFits(leaseDeadline(remount_anchor_boot_ms, ttl_ms)))
-        {
-            step = "renewer_redo";
-            remount_anchor_boot_ms = mount_runtime.renewRenewerForRemountOnce();
-        }
-
-        /// No-throw commit section: publish the fence and lifecycle only after epoch, renewer, recovery
-        /// cancellation, and ref-runtime quiescence are complete.
-        step = "arm_fence";
-        if (mount_runtime.mountEnd() != MountEnd::None)
-            return false;
-        mount_runtime.armMountFence(
-            our_uuid,
-            writer_epoch,
-            remount_anchor_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms
-                ? std::numeric_limits<uint64_t>::max()
-                : remount_anchor_boot_ms + ttl_ms);
-        step = "publish_live";
-        mount_runtime.noteRemounted();
-        succeeded = true;
-        return true;
-    }
-    catch (...)
-    {
-        try
-        {
-            error = getCurrentExceptionMessage(/*with_stacktrace*/ false);
-        }
-        catch (...)
-        {
-            /// The final result still names the failed step if formatting the original exception fails.
-        }
-        return false;
-    }
 }
 
 bool Pool::renewalWindowFits(uint64_t deadline_boot_ms) const
@@ -1966,14 +1578,7 @@ ReacquireOutcome Pool::reacquireOnce(ReacquireStep & step)
     return outcome;
 }
 
-/// The persistent self-remount and merged-heartbeat renewal workers live in `mount_runtime`
-/// (`Pool/CasMountRuntime.h`); these are thin delegates. `mount_runtime`'s `remount_attempt` callback is
-/// bound to `Pool::tryRemountOnce` (the claim/recovery orchestration that stays on Pool).
-bool Pool::scheduleRemountForTest()
-{
-    return mount_runtime.scheduleRemountForTest();
-}
-
+/// The renewal thread lives in `mount_runtime` (`Pool/CasMountRuntime.h`); these are thin delegates.
 void Pool::beginShutdownForTest()
 {
     mount_runtime.beginShutdownForTest();
@@ -2145,22 +1750,6 @@ PartManifest Pool::readManifest(const ManifestId & id)
 BlobLocation Pool::locate(const ManifestEntry & entry) const
 {
     return manifest_reader.locate(entry);
-}
-
-bool Pool::stopOnRemountObservation(const Observation & seen, const OwnMountBodies & fenced,
-                                    std::optional<MountSlotReading> & stop)
-{
-    MountSlotReading reading = classifyMountSlot(seen, fenced);
-    MountEnd end = MountEnd::None;
-    if (reading.verdict == MountSlotVerdict::SlotTaken)
-        end = MountEnd::SlotTaken;
-    else if (reading.verdict == MountSlotVerdict::SlotCorrupt)
-        end = MountEnd::SlotCorrupt;
-    else
-        return false;
-    if (mount_runtime.latchMountEnd(end))
-        stop = std::move(reading);
-    return true;
 }
 
 void Pool::reportImpossibleInterference(const String & key, const String & reason,

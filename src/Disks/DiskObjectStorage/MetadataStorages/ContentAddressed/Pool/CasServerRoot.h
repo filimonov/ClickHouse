@@ -641,12 +641,6 @@ public:
     void start(const MountClaimed & claimed);
     /// The bounded renewal, admitted under the mount fence: the startup re-anchor and direct calls.
     MountRenewResult renew(const MountRenewOperationEnvironment & environment);
-    /// The remount's re-anchor, which is bootstrap control rather than steady state: a remount renews
-    /// BEFORE it arms the fence for the new incarnation, so the fence is still latched lost and an
-    /// operation admitted under it would be refused before its first attempt. It admits on this
-    /// renewer's own open plane, the one the background renewal and the farewell use, so there is no
-    /// plane for a caller to get wrong. Same policy and same verdicts as `renew`.
-    MountRenewResult renewForRemount(const MountRenewOperationEnvironment & environment = {});
     /// The background renewal, on the lease plane, retried until a definitive answer: a commit, a
     /// conflict the read observed, a local failure, or `environment.live` refusing. A refusal sends the
     /// same body again, and a refused precondition whose read failed repeats only the read.
@@ -664,8 +658,8 @@ private:
     /// The incarnation every guarded write of this slot names. Engaged for exactly the states that
     /// admit such a write: `start` establishes it and each committed renewal replaces it.
     const Etag & precondition() const;
-    /// One renewal admitted on `plane`. `renew` and `renewForRemount` pass `until_definitive = false` (bounded by
-    /// the lease); `renewUntilDefinitive` passes `true` (the background renewal's unbounded retry).
+    /// One renewal admitted on `plane`. `renew` passes `until_definitive = false` (bounded by the lease);
+    /// `renewUntilDefinitive` passes `true` (the background renewal's unbounded retry).
     MountRenewResult renewOn(CasRequests & plane, const MountRenewOperationEnvironment & environment, bool until_definitive);
     /// Repeats the read of a slot whose precondition was refused, one spacing apart, or after
     /// `credential_refusal_pause` when the read was refused for credentials, until it observes the

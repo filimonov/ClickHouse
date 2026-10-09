@@ -825,47 +825,21 @@ public:
     /// on every admission-check miss, not just once at open.
     std::vector<uint8_t> refreshAdmittedAlgos();
 
-    /// The writer_epoch of the LIVE mount incarnation. Bumped by `tryRemountOnce` (self-remount
-    /// after a GC fence-out) — a `PartWriteTxn` minted under an older epoch fails closed on its next step.
+    /// The writer_epoch of the LIVE mount incarnation. Bumped by the reacquire after a GC fence-out — a
+    /// `PartWriteTxn` minted under an older epoch fails closed on its next step.
     uint64_t liveWriterEpoch() const { return mount_runtime.liveWriterEpoch(); }
 
-    /// Test seam: publish a new live-incarnation writer epoch WITHOUT running a self-remount -- the
-    /// epoch half of what `tryRemountOnce` does alongside its fence re-arm. Lets a test drive an epoch
+    /// Test seam: publish a new live-incarnation writer epoch WITHOUT running a reacquire -- the epoch
+    /// half of what the reacquire does alongside its fence re-arm. Lets a test drive an epoch
     /// transition's WRITER-side effects (INV-2's `prev_epoch_seal` on the first append of the new epoch)
     /// without the claim machinery and, deliberately, without `quiesceRefTablesForRemount`, so the
     /// cached ref runtimes survive the transition and the effect under test is isolated from recovery.
     void setLiveWriterEpochForTest(uint64_t writer_epoch) { mount_runtime.setLiveWriterEpoch(writer_epoch); }
 
-    /// Self-remount after a GC fence-out (liveness counterpart of the fence-out safety rule): the
-    /// OLD incarnation may never write again (the renewer never re-mints), but a FRESH incarnation —
-    /// durable writer_epoch bump + mount reclaim + re-armed write fence — is exactly what a server
-    /// restart would create, so a live server may create it in place. Runs the same claim machinery as
-    /// `Pool::open`. Orchestration stays here; the owned mount primitives it drives (renewer swap,
-    /// epoch bump, fence re-arm) live on `mount_runtime`. Returns false (and changes nothing durable
-    /// beyond the epoch bump) when the
-    /// mount cannot be claimed (foreign owner / a genuinely live twin) — the caller retries. Safe to
-    /// call concurrently (serialized internally); also the synchronous test seam.
-    bool tryRemountOnce();
-
-    /// Test seam: latch the private self-remount path directly. In production the runtime terminal
-    /// consumer calls `scheduleRemount`, while external loss paths may latch the same persistent worker.
-    /// Returns true iff an unhandled recovery generation exists after the call.
-    bool scheduleRemountForTest();
-    /// Test seam: how many times `scheduleRemount` has been ENTERED, counted
-    /// unconditionally as its very first statement. This increments even under the default
-    /// `background_watermark = false` (no worker exists; a
-    /// test never pays for a real self-remount attempt racing this Pool's own still-live renewer, which
-    /// -- confirmed while building this seam -- reliably takes 30+ seconds per call and is not something
-    /// a fast unit test should be driving). Positively pins that a production call site (e.g.
-    /// `reportImpossibleInterference`) actually invoked `scheduleRemount`, as opposed to merely observing
-    /// `mayMutate() == false` (which `tripMountLost` alone already accounts for).
-    uint64_t scheduleRemountCallCountForTest() const { return mount_runtime.scheduleRemountCallCountForTest(); }
     /// Test seam without workers: one pass of the reacquire a renewal found owed, or of the step a
     /// previous call left at `Retry`.
     ReacquireOutcome runReacquireForTest() { return mount_runtime.runReacquireForTest(); }
-    uint64_t remountRequestedGenerationForTest() const { return mount_runtime.remountRequestedGenerationForTest(); }
-    /// Test seam: publish the same worker-stop request as `~Pool` without tearing the pool down, so a
-    /// test can assert `scheduleRemount` refuses to latch work once teardown has begun.
+    /// Test seam: publish the same worker-stop request as `~Pool` without tearing the pool down.
     void beginShutdownForTest();
 
 
@@ -899,8 +873,7 @@ public:
     bool hasEventSink() const noexcept { return static_cast<bool>(event_sink_); }
 
     /// Read the current GC round from `gc/state`. Returns 0 when `gc/state` is absent (pool
-    /// never GC'd). Best-effort: its one remaining caller is `tryRemountOnce`'s MountRemount audit
-    /// event, which reports round 0 on any read failure rather than let the error escalate.
+    /// never GC'd).
     uint64_t currentGcRound() const;
 
 private:
@@ -958,15 +931,8 @@ private:
     void reportImpossibleInterference(const String & key, const String & reason,
                                        const std::optional<String> & offending_ns = {});
 
-    /// A self-remount that finds another incarnation in the slot (`SlotTaken`) or a body of the fenced pair
-    /// this server did not write (`SlotCorrupt`) latches that end and must stop; `stop` gets the reading to
-    /// react to once `remount_mutex` is released, when this call won the latch. A missing slot is not an
-    /// end here: the remount re-creates it.
-    bool stopOnRemountObservation(const Observation & seen, const OwnMountBodies & fenced,
-                                  std::optional<MountSlotReading> & stop);
-
     /// One pass of the reacquire after a GC fence of our own body: runs `step` from its stage until it
-    /// opens, ends or fails a stage. Serialized with `tryRemountOnce` by `remount_mutex`.
+    /// opens, ends or fails a stage. Serialized by `remount_mutex`.
     ReacquireOutcome reacquireOnce(ReacquireStep & step);
     /// One stage each: `nullopt` moved `step` to its next stage, anything else ends the pass.
     struct ReacquirePass;
@@ -1037,9 +1003,9 @@ public:
     /// test seam: whether the self-remount barrier's cancellation request is visible for `ns`.
     bool refRecoveryCancelRequestedForTest(const RootNamespace & ns);
 
-    /// The self-remount's cancel-or-join barrier over in-flight ref-table recoveries (spec §3).
-    /// `tryRemountOnce` runs it immediately before quiescing the tables and re-arming the mount fence;
-    /// exposed so the barrier itself can be driven directly by a test.
+    /// The reacquire's cancel-or-join barrier over in-flight ref-table recoveries (spec §3). The reacquire
+    /// runs it immediately before quiescing the tables; exposed so the barrier itself can be driven
+    /// directly by a test.
     void cancelRefRecoveriesAndAwaitQuiescence();
 
     /// test seam: count of applied txns retained above `newestPublishedSnapshotIdForTest` (the
@@ -1298,14 +1264,13 @@ private:
     /// explicitly, sequenced between `mount_runtime.stopBackgroundWorkers` and
     /// `mount_runtime.finishTeardown` exactly as before.
     CasRefLedger ref_ledger;
-    /// The mount / write-fence / build-watermark / self-remount runtime, extracted
-    /// from Pool. Owns the `MountLeaseRenewer`, the local `MountFence`, the per-server
-    /// build watermark (`process_epoch` + the `builds_mutex`-guarded seq/registry) and its in-flight-build
-    /// map, the live-incarnation `live_writer_epoch`, the unclean-epoch high-water-mark, and the
-    /// persistent renewal and remount workers (with one driver mutex/condition pair). Injected with backend/layout
-    /// the `MountConfig` slice + `server_root_id` + the event-sink reference + the pool `cas_request_budget`
-    /// + a `remount_attempt` callback (== `Pool::tryRemountOnce`, which STAYS on Pool: the claim/recovery
-    /// ORCHESTRATION drives these owned primitives).
+    /// The mount / write-fence / build-watermark runtime, extracted from Pool. Owns the
+    /// `MountLeaseRenewer`, the local `MountFence`, the per-server build watermark (`process_epoch` + the
+    /// `builds_mutex`-guarded seq/registry) and its in-flight-build map, the live-incarnation
+    /// `live_writer_epoch`, the unclean-epoch high-water-mark, and the renewal thread (with one driver
+    /// mutex/condition pair). Injected with backend/layout, the `MountConfig` slice + `server_root_id` +
+    /// the event-sink reference + the pool `cas_request_budget` + the reacquire pass (which STAYS on Pool:
+    /// the claim/recovery ORCHESTRATION drives these owned primitives).
     ///
     /// Declared AFTER `ref_ledger` -- preserving the pre-3.5 relative order VERBATIM (the mount raw-members
     /// this component replaces all sat after `ref_ledger`), so `mount_runtime` is destroyed FIRST and
@@ -1318,10 +1283,8 @@ private:
     /// pool_layout so it is constructed after every dependency it is injected with.
     CasMountRuntime mount_runtime;
 
-    /// Serializes `tryRemountOnce` (whose claim/recovery ORCHESTRATION stays on Pool). STAYS here with
-    /// its guarded critical section: persistent worker ownership, fence atomics, and the build registry
-    /// moved to `mount_runtime`, but the top-level remount serialization guards
-    /// the Pool-side orchestration, so it stays on Pool.
+    /// Serializes the reacquire, whose claim/recovery ORCHESTRATION stays on Pool, with FORGET's terminal
+    /// transition.
     std::mutex remount_mutex;
 
     /// The single home of the [D5] per-lifecycle reason detail (spec §1) — the human-readable text that

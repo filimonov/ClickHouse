@@ -55,9 +55,6 @@ extern const Event CASRefRecoveryEpochSealed;
 extern const Event CASMountExclusivityViolation;
 extern const Event CASMountLeaseLost;
 extern const Event CASMountReleaseSkippedForeignOccupant;
-extern const Event CASRemountAttempts;
-extern const Event CASRemountSucceeded;
-extern const Event CASRemountFailed;
 }
 
 using namespace DB::Cas;
@@ -1831,8 +1828,7 @@ void verifyForeignConflictSinkIsNonInterfering(ForeignConflictSinkBehavior behav
         },
         server_root_id,
         sink,
-        runtimeRenewBudget(),
-        [] { return false; });
+        runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
@@ -2826,7 +2822,7 @@ TEST(CASPoolRemount, DirectRenewCannotRaceWorkerStartOrRenewerReplacement)
     RuntimeUnderTest runtime_holder(
         backend, layout, MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000),
                                      .boot_ms_fn = [&] { return boot_ms; }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -2859,7 +2855,7 @@ TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop
         backend, layout,
         MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
                     .boot_ms_fn = [&] { return boot_ms; }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -2872,7 +2868,7 @@ TEST(CASPoolRemount, DirectRenewIsRefusedForBackgroundConfiguredRuntimeAfterStop
 
 #undef EXPECT_RUNTIME_STATE_REJECTION
 
-TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
+TEST(CASPoolRemount, TeardownJoinsTheWorkerBeforeRelease)
 {
     auto backend = std::make_shared<RuntimeRenewBackend>();
     const Layout layout("runtime-join");
@@ -2895,14 +2891,14 @@ TEST(CASPoolRemount, TeardownJoinsBothWorkersBeforeRelease)
         backend, layout,
         MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
                     .boot_ms_fn = [&] { return boot_ms; }, .worker_factory = factory},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
     runtime.armMountFence(uuid, 1, anchor + 1000);
     runtime.startBackgroundWorkers(std::chrono::hours(1));
     runtime.stopBackgroundWorkers();
-    EXPECT_EQ(worker_exits.load(), 2u);
+    EXPECT_EQ(worker_exits.load(), 1u);
     runtime.finishTeardown({});
     EXPECT_EQ(decodeMountLease(readObj(*backend, layout.mountKey("test"))->bytes).min_active_build_sequence,
               std::numeric_limits<uint64_t>::max());
@@ -2936,7 +2932,7 @@ TEST(CASMountRuntime, BadAllocInsideTheRenewalStaysTerminal)
         backend, layout,
         MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
                     .boot_ms_fn = [&] { return boot_ms; }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     /// Declared after the runtime so it runs first: a failed expectation must not leave the lease thread
     /// parked on the barrier while the runtime's destructor joins it.
     SCOPE_EXIT({ reported.release(); });
@@ -3064,7 +3060,7 @@ TEST(CASMountRuntime, GlobalMemoryLimitDoesNotEndTheLeaseThread)
                 else if (admission == 2)
                     second_admission.arriveAndWait();
             }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     /// Declared after the runtime so it runs first: a failed expectation must not leave the lease thread
     /// parked on a barrier while the runtime's destructor joins it.
     SCOPE_EXIT({
@@ -3147,7 +3143,7 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
                 if (preparation_calls.fetch_add(1) == 0)
                     throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected vanished-reason preparation failure");
             }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -3169,47 +3165,41 @@ TEST(CASPoolRemount, VanishedReasonPreparationFailureLeavesTerminalTransitionRet
     runtime.enterVanished(PoolLifecycle::VanishedForgotten, "must-remain-ignored");
     EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::VanishedReplaced);
     EXPECT_EQ(runtime.vanishedReason(), "retry-completed");
-    const bool both_exited_without_stop = exits.waitForAtLeast(2);
+    const bool exited_without_stop = exits.waitForAtLeast(1);
     runtime.stopBackgroundWorkers();
-    EXPECT_TRUE(both_exited_without_stop);
-    EXPECT_EQ(exits.count(), 2u);
+    EXPECT_TRUE(exited_without_stop);
+    EXPECT_EQ(exits.count(), 1u);
     EXPECT_EQ(preparation_calls.load(), 2u);
     runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 TEST(CASPoolRemount, WorkerConstructionRollbackFailsOpenClosed)
 {
-    for (uint64_t throw_on : {1u, 2u})
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    const Layout layout("runtime-worker-failure");
+    uint64_t wall_ms = 1000;
+    uint64_t boot_ms = 100;
+    RuntimeWorkerFactory factory = [](std::function<void()>) -> ThreadFromGlobalPool
     {
-        auto backend = std::make_shared<RuntimeRenewBackend>();
-        const Layout layout("runtime-worker-failure-" + std::to_string(throw_on));
-        uint64_t wall_ms = 1000;
-        uint64_t boot_ms = 100;
-        uint64_t factory_calls = 0;
-        RuntimeWorkerFactory factory = [&](std::function<void()> fn)
-        {
-            if (++factory_calls == throw_on)
-                throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected runtime worker construction failure");
-            return ThreadFromGlobalPool(std::move(fn));
-        };
-        const UInt128 uuid{1};
-        const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
-        ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
-        CasEventSink sink;
-        RuntimeUnderTest runtime_holder(
-            backend, layout,
-            MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
-                        .boot_ms_fn = [&] { return boot_ms; }, .worker_factory = factory},
-            "test", sink, runtimeRenewBudget(), [] { return false; });
-        CasMountRuntime & runtime = *runtime_holder;
-        runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
-        const uint64_t anchor = runtime.startRenewer(*claim.claimed);
-        runtime.armMountFence(uuid, 1, anchor + 1000);
-        EXPECT_THROW(runtime.startBackgroundWorkers(std::chrono::milliseconds(10)), DB::Exception);
-        EXPECT_FALSE(runtime.mayMutate());
-        EXPECT_FALSE(runtime.workersRunningForTest());
-        runtime.finishTeardown({.ref_lane_unsettled = true});
-    }
+        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "injected runtime worker construction failure");
+    };
+    const UInt128 uuid{1};
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms, 1000, {}, {}, {}, [&] { return boot_ms; });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(
+        backend, layout,
+        MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
+                    .boot_ms_fn = [&] { return boot_ms; }, .worker_factory = factory},
+        "test", sink, runtimeRenewBudget());
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
+    runtime.armMountFence(uuid, 1, anchor + 1000);
+    EXPECT_THROW(runtime.startBackgroundWorkers(std::chrono::milliseconds(10)), DB::Exception);
+    EXPECT_FALSE(runtime.mayMutate());
+    EXPECT_FALSE(runtime.workersRunningForTest());
+    runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
 /// A mount PUT outage three leases long is a pause: the renewal keeps its tuple, its late success leaves
@@ -3222,7 +3212,6 @@ TEST(CASMountRuntime, ALongOutageIsAPauseUnderTheSameEpoch)
     uint64_t wall_ms = 1000;
     std::atomic<uint64_t> boot_ms{100};
     std::atomic<uint64_t> outage_until{0};
-    std::atomic<uint32_t> remount_calls{0};
     std::vector<MountRenewResult> commits;
     std::vector<uint64_t> boot_at_commit;
     std::vector<bool> may_mutate_after_commit;
@@ -3248,11 +3237,7 @@ TEST(CASMountRuntime, ALongOutageIsAPauseUnderTheSameEpoch)
                 if (commits.size() == 2)
                     second_commit.arriveAndWait();
             }},
-        "test", sink, runtimeRenewBudget(), [&]
-        {
-            ++remount_calls;
-            return false;
-        });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
@@ -3275,7 +3260,6 @@ TEST(CASMountRuntime, ALongOutageIsAPauseUnderTheSameEpoch)
     EXPECT_TRUE(may_mutate_after_commit[1]);
     EXPECT_EQ(runtime.fenceGeneration(), generation) << "a pause neither trips nor re-arms the fence";
     EXPECT_EQ(runtime.lifecycle(), PoolLifecycle::Live);
-    EXPECT_EQ(remount_calls.load(), 0u);
     second_commit.release();
     runtime.stopBackgroundWorkers();
     runtime.finishTeardown({.ref_lane_unsettled = true});
@@ -3318,7 +3302,7 @@ TEST(CASMountRuntime, ALateCommitReportsARecoveredRenewalWithATruthfulReason)
                 may_mutate_at_commit = runtime_ptr->mayMutate();
                 first_commit.arriveAndWait();
             }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
@@ -3372,7 +3356,7 @@ TEST(CASMountRuntime, AStopEndsTheCredentialRefusalWaitAtOnce)
         backend, layout,
         MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(2 * period_ms), .background_watermark = true,
                     .boot_ms_fn = [&] { return boot_ms.load(); }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -3422,7 +3406,7 @@ TEST(CASMountRuntime, ACredentialRefusalWaitsOneRenewalPeriod)
                 if (result.outcome == MountRenewOutcome::Committed && !committed_once.exchange(true))
                     committed.arriveAndWait();
             }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -3474,7 +3458,7 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
                     second_commit.arriveAndWait();
                 }
             }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime_ptr = &runtime;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
@@ -3502,6 +3486,57 @@ TEST(CASMountRuntime, ALeaseExpiryIsLoggedOnceAndReported)
     runtime.finishTeardown({.ref_lane_unsettled = true});
 }
 
+/// A background renewal that ends with no loss, no fence of our own body and no stop has no recovery left:
+/// the mount ends as a local defect instead of staying closed with nothing to reopen it.
+TEST(CASMountRuntime, AWorkerRenewalEndedWithoutACauseIsALocalDefect)
+{
+    auto backend = std::make_shared<RuntimeRenewBackend>();
+    const Layout layout("runtime-residual-end");
+    uint64_t wall_ms = 1000;
+    std::atomic<uint64_t> boot_ms{100};
+    const UInt128 uuid{1};
+    constexpr uint64_t ttl_ms = 10'000;
+    const MountClaimResult claim = claimMount(*DB::Cas::tests::OperationForTest(backend), layout, "test", uuid, 1, wall_ms,
+        ttl_ms, {}, {}, {}, [&] { return boot_ms.load(); });
+    ASSERT_EQ(claim.kind, MountClaimResult::Claimed);
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool stop_requested = false;
+    DB::Cas::tests::processStopLog().reset([&]
+    {
+        {
+            std::lock_guard lock(mutex);
+            stop_requested = true;
+        }
+        cv.notify_all();
+        return String{};
+    });
+    CasEventSink sink;
+    RuntimeUnderTest runtime_holder(backend, layout,
+        MountConfig{
+            .mount_lease_ttl_ms = std::chrono::milliseconds(ttl_ms),
+            .background_watermark = true,
+            .boot_ms_fn = [&] { return boot_ms.load(); },
+            .renewal_live_for_test = [] { return false; }},
+        "test", sink, runtimeRenewBudget());
+    CasMountRuntime & runtime = *runtime_holder;
+    runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
+    const uint64_t anchor = runtime.startRenewer(*claim.claimed);
+    runtime.armMountFence(uuid, 1, anchor + ttl_ms);
+    boot_ms = anchor + 1'000;
+    runtime.startBackgroundWorkers(std::chrono::milliseconds(1'000));
+
+    {
+        std::unique_lock lock(mutex);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(60), [&] { return stop_requested; }))
+            << "the renewal end waited for a recovery";
+    }
+    EXPECT_EQ(runtime.mountEnd(), MountEnd::LocalDefect);
+    EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
+    runtime.stopBackgroundWorkers();
+    runtime.finishTeardown({.ref_lane_unsettled = true});
+}
+
 TEST(CASPoolShutdown, PreSendCancellationAllowsFarewellButAmbiguityDoesNot)
 {
     const auto run = [](bool ambiguous)
@@ -3521,7 +3556,7 @@ TEST(CASPoolShutdown, PreSendCancellationAllowsFarewellButAmbiguityDoesNot)
             backend, layout,
             MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
                         .boot_ms_fn = [&] { return boot_ms; }},
-            "test", sink, runtimeRenewBudget(), [] { return false; });
+            "test", sink, runtimeRenewBudget());
         CasMountRuntime & runtime = *runtime_holder;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
         const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -3564,7 +3599,7 @@ TEST(CASPoolShutdown, AnAmbiguousRenewalAtStopIsNamedInTheUncleanLine)
         backend, layout,
         MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
                     .boot_ms_fn = [&] { return boot_ms; }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     CasMountRuntime & runtime = *runtime_holder;
     runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
     const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -3608,7 +3643,7 @@ TEST(CASPool, DirectAndStartupTerminalFailuresRethrowTypedExceptions)
                 .mount_lease_ttl_ms = std::chrono::milliseconds(1000),
                 .boot_ms_fn = [&] { return boot_ms; },
                 .renewal_live_for_test = [&] { return renewal_live.load(std::memory_order_acquire); }},
-            "test", sink, runtimeRenewBudget(), [] { return false; });
+            "test", sink, runtimeRenewBudget());
         CasMountRuntime & runtime = *runtime_holder;
         runtime.installRenewer(uuid, 1, [&] { return wall_ms; });
         const uint64_t anchor = runtime.startRenewer(*claim.claimed);
@@ -3715,7 +3750,7 @@ TEST(CASPool, DeterministicWorkerFailureFencesWithoutWaitingForCadence)
         backend, layout,
         MountConfig{.mount_lease_ttl_ms = std::chrono::milliseconds(1000), .background_watermark = true,
                     .boot_ms_fn = [&] { return boot_ms; }},
-        "test", sink, runtimeRenewBudget(), [] { return false; });
+        "test", sink, runtimeRenewBudget());
     runtime_holder.reacquire = [&](ReacquireStep &)
     {
         reacquire_entered.arriveAndWait();

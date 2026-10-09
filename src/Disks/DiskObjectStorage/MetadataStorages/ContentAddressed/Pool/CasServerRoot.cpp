@@ -49,9 +49,7 @@ namespace DB::Cas
 {
 
 void reportMountRenewCompletion(const MountRenewResult & result) noexcept;
-void configureMountRenewObservability(
-    const String * server_root_id, const CasEventSink * event_sink, bool deferred) noexcept;
-void deliverDeferredMountRenewObservability(uint64_t remount_attempt_no) noexcept;
+void configureMountRenewObservability(const String * server_root_id, const CasEventSink * event_sink) noexcept;
 
 /// The owner, epoch, and mount-lease wire codecs are implemented in
 /// `Formats/CasServerRootFormats`; this file contains the mount-safety protocol logic that uses
@@ -123,7 +121,6 @@ struct MountRenewObservabilityContext
 {
     bool active = false;
     bool completed = false;
-    bool deferred = false;
     const String * server_root_id = nullptr;
     const CasEventSink * event_sink = nullptr;
     uint64_t writer_epoch = 0;
@@ -143,14 +140,12 @@ static_assert(std::is_trivially_copyable_v<MountRenewObservabilityContext>);
 struct MountRenewObservabilityConfiguration
 {
     bool configured = false;
-    bool deferred = false;
     const String * server_root_id = nullptr;
     const CasEventSink * event_sink = nullptr;
 };
 
 /// Event sinks may synchronously renew another Pool on the same thread. A fixed stack keeps every
-/// registered outer per-call snapshot stable without allocation, including while a parked redo holds
-/// `remount_mutex`. Overflow suppresses rich event/log delivery for the nested call rather than
+/// registered outer per-call snapshot stable without allocation. Overflow suppresses rich event/log delivery for the nested call rather than
 /// aliasing an outer call or changing protocol behavior; physical attempt truth is independently
 /// retained by the stack-local observer in `MountLeaseRenewer::renew`.
 struct MountRenewObservabilityStack
@@ -197,7 +192,6 @@ MountRenewObservabilityRegistration beginMountRenewObservabilityCall() noexcept
     }
 
     mount_renew_observability.contexts[mount_renew_observability.depth++] = MountRenewObservabilityContext{
-        .deferred = configured.deferred,
         .server_root_id = configured.server_root_id,
         .event_sink = configured.event_sink,
     };
@@ -249,13 +243,11 @@ void initializeMountRenewObservability(
     MountRenewObservabilityContext * context = currentMountRenewObservability();
     if (!context)
         return;
-    const bool deferred = context->deferred;
     const String * configured_server_root_id = context->server_root_id;
     const CasEventSink * configured_event_sink = context->event_sink;
     *context = MountRenewObservabilityContext{
         .active = true,
         .completed = false,
-        .deferred = deferred,
         .server_root_id = configured_server_root_id ? configured_server_root_id : &server_root_id,
         .event_sink = configured_event_sink ? configured_event_sink : &event_sink,
         .writer_epoch = writer_epoch,
@@ -288,8 +280,7 @@ void emitMountRenewEvent(
     std::string_view outcome,
     uint32_t attempts_sent,
     uint64_t now_boot_ms,
-    std::string_view classification,
-    uint64_t remount_attempt_no) noexcept
+    std::string_view classification) noexcept
 {
     if (!context.event_sink || !*context.event_sink || !context.server_root_id)
         return;
@@ -311,8 +302,6 @@ void emitMountRenewEvent(
             {"remaining_confirmed_budget_ms", std::to_string(remainingConfirmedBudget(context, now_boot_ms))},
             {"classification", String{classification}},
         };
-        if (remount_attempt_no != 0)
-            event.detail["remount_attempt_no"] = std::to_string(remount_attempt_no);
         (*context.event_sink)(std::move(event));
     }
     catch (...)
@@ -338,8 +327,7 @@ constexpr std::string_view terminalClassificationName(MountRenewTerminalClassifi
     return "terminal_unclassified";
 }
 
-void deliverMountRenewObservability(
-    const MountRenewObservabilityContext & context, uint64_t remount_attempt_no) noexcept
+void deliverMountRenewObservability(const MountRenewObservabilityContext & context) noexcept
 {
     if (!context.active || !context.completed || !context.server_root_id)
         return;
@@ -379,8 +367,7 @@ void deliverMountRenewObservability(
                 "recovered",
                 context.attempts_sent,
                 now_boot_ms,
-                classification,
-                remount_attempt_no);
+                classification);
             try
             {
                 LOG_INFO(
@@ -406,8 +393,7 @@ void deliverMountRenewObservability(
                 "failed",
                 context.attempts_sent,
                 now_boot_ms,
-                classification,
-                remount_attempt_no);
+                classification);
             try
             {
                 LOG_WARNING(
@@ -492,12 +478,10 @@ std::optional<OwnerLost> retiredOwner(const OwnerObject & owner, const String & 
 }
 }
 
-void configureMountRenewObservability(
-    const String * server_root_id, const CasEventSink * event_sink, bool deferred) noexcept
+void configureMountRenewObservability(const String * server_root_id, const CasEventSink * event_sink) noexcept
 {
     mount_renew_observability.pending = MountRenewObservabilityConfiguration{
         .configured = true,
-        .deferred = deferred,
         .server_root_id = server_root_id,
         .event_sink = event_sink,
     };
@@ -517,24 +501,12 @@ void reportMountRenewCompletion(const MountRenewResult & result) noexcept
     context->outcome = result.outcome;
     context->attempts_sent = std::max(context->attempts_sent, result.attempts_sent);
     context->resolved_by_read = result.resolved_by_read;
-    if (context->deferred)
-        return;
 
     /// Pop before invoking any callback. A reentrant sink gets a distinct stack slot and cannot alter
     /// the completed outer snapshot.
     const MountRenewObservabilityContext completed = *context;
     --mount_renew_observability.depth;
-    deliverMountRenewObservability(completed, /*remount_attempt_no=*/0);
-}
-
-void deliverDeferredMountRenewObservability(uint64_t remount_attempt_no) noexcept
-{
-    MountRenewObservabilityContext * context = currentMountRenewObservability();
-    if (!context || !context->deferred)
-        return;
-    const MountRenewObservabilityContext completed = *context;
-    --mount_renew_observability.depth;
-    deliverMountRenewObservability(completed, remount_attempt_no);
+    deliverMountRenewObservability(completed);
 }
 
 bool serverRootSubtreeEmpty(
@@ -1801,11 +1773,6 @@ MountRenewResult MountLeaseRenewer::terminalResult(MountRenewResult result)
 MountRenewResult MountLeaseRenewer::renew(const MountRenewOperationEnvironment & environment)
 {
     return renewOn(mount_requests, environment, /*until_definitive=*/false);
-}
-
-MountRenewResult MountLeaseRenewer::renewForRemount(const MountRenewOperationEnvironment & environment)
-{
-    return renewOn(open_requests, environment, /*until_definitive=*/false);
 }
 
 MountRenewResult MountLeaseRenewer::renewUntilDefinitive(const MountRenewOperationEnvironment & environment)

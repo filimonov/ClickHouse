@@ -29,8 +29,7 @@ extern const int NOT_IMPLEMENTED;
 
 namespace DB::Cas
 {
-void configureMountRenewObservability(
-    const String * server_root_id, const CasEventSink * event_sink, bool deferred) noexcept;
+void configureMountRenewObservability(const String * server_root_id, const CasEventSink * event_sink) noexcept;
 void reportMountRenewCompletion(const MountRenewResult & result) noexcept;
 }
 
@@ -354,7 +353,7 @@ TEST(CASEvent, DeepReentrancyPreservesDeterministicPhysicalAttemptTruth)
 
     renew_at = [&](size_t index)
     {
-        configureMountRenewObservability(&server_root_ids[index], &sinks[index], /*deferred=*/false);
+        configureMountRenewObservability(&server_root_ids[index], &sinks[index]);
         MountRenewResult result = renewers[index]->renew(MountRenewOperationEnvironment{});
         reportMountRenewCompletion(result);
         return result;
