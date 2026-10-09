@@ -1900,7 +1900,6 @@ TEST(CASRefWriterAppendLane, I1AppendCorruptionSurfacesAndFencesTheMountForRemou
     EXPECT_FALSE(store->refLaneWedgedForTest(ns)) << "a proven different-object conflict must not wedge the lane";
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
     EXPECT_FALSE(store->mayMutate()) << "the impossible-interference reaction must fence this mount closed";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     /// Mount-wide while fenced -- and, crucially, PROMPT: a real cv hang would time out this wait, which
@@ -1923,7 +1922,6 @@ TEST(CASRefWriterAppendLane, I1AppendCorruptionSurfacesAndFencesTheMountForRemou
         CasOperation op = requests.admit();
         ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(mount_key, encodeMountLease(fenced_mount), mount->etag, Retry::standard())));
     }
-    EXPECT_FALSE(store->tryRemountOnce()) << "an ended mount never remounts";
     store.reset();
     store = openPool(backend);
 
@@ -2039,7 +2037,6 @@ TEST(CASAnomalyPolicy, ForeignBytesAtWedgeKeyTripFenceAndRemount)
     driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
     ASSERT_TRUE(store->mayMutate()) << "the fence must not be tripped yet -- only an ordinary Unresolved wedge so far";
-    ASSERT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "no remount must have been scheduled yet by the ordinary wedge alone";
 
     /// Out-of-band, a foreign writer lands DIFFERENT bytes at the exact wedged key.
     const String wedged_key = store->wedgedKeyForTest(ns);
@@ -2054,7 +2051,6 @@ TEST(CASAnomalyPolicy, ForeignBytesAtWedgeKeyTripFenceAndRemount)
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted)
         << "foreign interference must fault the lane";
     EXPECT_FALSE(store->mayMutate()) << "the local write fence must trip closed on the anomaly";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     const std::vector<CasEvent> observed = seen->snapshot();
@@ -2113,7 +2109,6 @@ TEST(CASAnomalyPolicy, NonReadyAtNewIdAllocationFaultsAndFailsClosed)
     const size_t log_objects_before = countLogObjects();
 
     ASSERT_TRUE(store->mayMutate()) << "the fence must be armed BEFORE the wedge-contract violation, or the guard would trivially pass for the wrong reason";
-    ASSERT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "no remount must have been scheduled yet";
 
     /// BACKLOG `{#lane-terminal-reported-as-retryable}`: `Faulted` is a TERMINAL lane state, the same
     /// one every OTHER `Faulted` arm in `commitRefChunk` reports as `CORRUPTED_DATA` -- reporting it as
@@ -2125,7 +2120,6 @@ TEST(CASAnomalyPolicy, NonReadyAtNewIdAllocationFaultsAndFailsClosed)
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted)
         << "the invariant violation must have one explicit terminal state";
     EXPECT_FALSE(store->mayMutate()) << "the local write fence must trip closed on the wedge-contract violation";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     const std::vector<CasEvent> observed = seen->snapshot();
@@ -3678,8 +3672,8 @@ TEST(CASRefWriterStalePrecommitSweep, VerifiedCleanSweepClearsFlagWithoutEvents)
 namespace
 {
 
-/// Fence out the mount lease so `tryRemountOnce` reclaims a fresh incarnation (mirrors
-/// gtest_cas_pool.cpp's fenceOutMount, without its ASSERT_ macros so it can run outside a fixture).
+/// GC-fences the mount slot (mirrors gtest_cas_pool.cpp's fenceOutMount, without its ASSERT_ macros so it
+/// can run outside a fixture).
 void fenceOutRefMount(Backend & backend, const String & mount_key)
 {
     DB::Cas::tests::OperationForTest op(backend);
@@ -3756,9 +3750,9 @@ uint64_t seedTwinDrop(const BackendPtr & backend, const Layout & layout, const R
 
 }
 
-/// A fence-loss generation is a rejection marker, not a runtime admission token. If remount then loses
-/// to a foreign owner, neither a warm name nor a never-seen name may select/materialize a runtime under
-/// that intermediate generation; the predecessor remains only as a detached diagnostic object.
+/// A fence-loss generation is a rejection marker, not a runtime admission token. While the reacquire has
+/// not opened a new epoch, neither a warm name nor a never-seen name may select/materialize a runtime under
+/// that intermediate generation.
 TEST(CASRefWriterRemount, FailedRemountPublishesNoRuntimeUnderFenceLossGeneration)
 {
     auto backend = std::make_shared<RefWriterTestBackend>();
@@ -3771,38 +3765,26 @@ TEST(CASRefWriterRemount, FailedRemountPublishesNoRuntimeUnderFenceLossGeneratio
     const uint64_t predecessor_runtime = store->refTableRuntimeIdentityForTest(existing);
     const uint64_t predecessor_generation
         = store->refTableRuntimeAdmittedFenceGenerationForTest(existing);
-    const size_t cached_before = store->refTablesCachedCountForTest();
     ASSERT_NE(predecessor_runtime, 0u);
     ASSERT_EQ(predecessor_generation, store->fenceGeneration());
 
-    const String mount_key = layout.mountKey("test");
-    const auto got = readOf(backend, mount_key);
-    ASSERT_TRUE(got);
-    MountLease foreign = decodeMountLease(got->bytes);
-    foreign.server_uuid = foreign.server_uuid + UInt128{1};
-    foreign.seq += 1;
+    DB::Cas::tests::fenceOwnSlotAndRenew(*store, *backend);
+    ASSERT_NE(store->fenceGeneration(), predecessor_generation);
+    /// An unreadable pool meta holds the reacquire before it allocates an epoch.
     {
-        CasRequests requests(backend, Fence::open());
-        CasOperation op = requests.admit();
-        ASSERT_TRUE(std::holds_alternative<Committed>(op.replace(mount_key, encodeMountLease(foreign), got->etag, Retry::standard())));
+        DB::Cas::tests::OperationForTest op(*backend);
+        const auto meta = (*op).read(layout.poolMetaKey(), Retry::once());
+        ASSERT_TRUE(meta);
+        ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(layout.poolMetaKey(), "not a pool meta", meta->etag, Retry::once())));
     }
-
-    store->tripMountLost();
-    const uint64_t rejected_generation = store->fenceGeneration();
-    ASSERT_NE(rejected_generation, predecessor_generation);
-    EXPECT_FALSE(store->tryRemountOnce());
+    EXPECT_EQ(store->runReacquireForTest(), ReacquireOutcome::Retry);
     EXPECT_FALSE(store->mayMutate());
 
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { (void)store->resolveRef(existing, "a"); });
     expectThrowsCode(DB::ErrorCodes::NETWORK_ERROR, [&] { (void)store->resolveRef(never_seen, "a"); });
-    EXPECT_EQ(store->refTablesCachedCountForTest(), cached_before);
-    EXPECT_EQ(store->refTableRuntimeIdentityForTest(existing), predecessor_runtime);
-    EXPECT_EQ(store->refTableRuntimeAdmittedFenceGenerationForTest(existing), predecessor_generation);
+    EXPECT_EQ(store->refTablesCachedCountForTest(), 0u) << "the reacquire closed the fenced epoch's tables";
+    EXPECT_EQ(store->refTableRuntimeIdentityForTest(existing), 0u);
     EXPECT_EQ(store->refTableRuntimeIdentityForTest(never_seen), 0u);
-    EXPECT_NE(store->refTableRuntimeAdmittedFenceGenerationForTest(existing), rejected_generation);
-
-    /// Make the foreign occupant terminal before teardown; it remains foreign and is never taken over.
-    fenceOutRefMount(*backend, mount_key);
 }
 
 /// C1/N1 (stale cache): a warm table whose committed ref a twin durably dropped must re-recover to the
@@ -3827,8 +3809,7 @@ TEST(CASRefWriterRemount, ReRecoversStaleCacheToTwinDrop)
     ASSERT_GT(twin_epoch, e1);
     ASSERT_TRUE(store->resolveRef(ns, "a").has_value()) << "precondition: the warm cache is stale";
 
-    fenceOutRefMount(*backend, layout.mountKey("test"));
-    ASSERT_TRUE(store->tryRemountOnce());
+    DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
     EXPECT_GT(store->liveWriterEpoch(), twin_epoch);
 
     /// The remount dropped the stale runtime: the next read re-recovers from the durable objects and
@@ -3857,8 +3838,7 @@ TEST(CASRefWriterRemount, PostRemountAppendCarriesLiveEpochSortingAboveTwinLogs)
     const uint64_t twin_epoch = seedTwinDrop(backend, layout, ns, "a", a_id.ref);
     ASSERT_GT(twin_epoch, e1);
 
-    fenceOutRefMount(*backend, layout.mountKey("test"));
-    ASSERT_TRUE(store->tryRemountOnce());
+    DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
     const uint64_t e2 = store->liveWriterEpoch();
     ASSERT_GT(e2, twin_epoch);
 
@@ -3881,9 +3861,7 @@ TEST(CASRefWriterRemount, DiscardsWedgeAndLaneRemainsUsable)
     const CasRequestBudget budget = wedgeTestBudget();
 
     auto backend = std::make_shared<RefWriterTestBackend>();
-    /// The self-remount below blocks on nothing (see
-    /// `CASRemountWaits.UnresolvedWedgeRemountPaysNoWaitEither`, `gtest_cas_pool.cpp`); the injected
-    /// `boot_ms_fn`/`wait_sleep_fn` keep this test off the real clock anyway. Held in a shared atomic,
+    /// The injected `boot_ms_fn`/`wait_sleep_fn` keep this test off the real clock. Held in a shared atomic,
     /// not a plain local: the Pool can outlive this stack frame (a background publish holds
     /// `shared_from_this()`), so a by-reference capture of a local would dangle.
     auto fake_boot = std::make_shared<std::atomic<uint64_t>>(0);
@@ -3903,8 +3881,9 @@ TEST(CASRefWriterRemount, DiscardsWedgeAndLaneRemainsUsable)
     driveToTheWedge(*clock, *backend, [&] { store->dropRef(ns, "x"); });
     ASSERT_TRUE(store->refLaneWedgedForTest(ns));
 
-    fenceOutRefMount(*backend, layout.mountKey("test"));
-    ASSERT_TRUE(store->tryRemountOnce());
+    /// The wedge drive ran the request clock past the lease; the renewal must measure on the boot clock.
+    store->setCasRequestNowFnForTest([fake_boot] { return fake_boot->load(); });
+    DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
 
     EXPECT_FALSE(store->refLaneWedgedForTest(ns))
         << "a self-remount discards the in-memory wedge with the detached runtime";
@@ -3925,8 +3904,8 @@ TEST(CASRefWriterRemount, DiscardsWedgeAndLaneRemainsUsable)
 TEST(CASRefWriterRemount, SupersededLeaderMidFlushFailsClosedCreatesNoObject)
 {
     auto backend = std::make_shared<RefWriterTestBackend>();
-    /// This test parks a flush leader (`leader_active` stays true) across the ENTIRE `tryRemountOnce`
-    /// call below by construction (`release` is only set AFTER `tryRemountOnce` returns). Keep the
+    /// This test parks a flush leader (`leader_active` stays true) across the ENTIRE reacquire below by
+    /// construction (`release` is only set AFTER it returns). Keep the
     /// request budget at the file's usual tiny-wedge-test values so every bounded wait on that path
     /// stays well under a second.
     CasRequestBudget budget;
@@ -3971,8 +3950,7 @@ TEST(CASRefWriterRemount, SupersededLeaderMidFlushFailsClosedCreatesNoObject)
 
     /// The remount completes while the leader is parked (the quiesce does not wait for leaders); it marks
     /// the table superseded and re-arms the fence.
-    fenceOutRefMount(*backend, layout.mountKey("test"));
-    ASSERT_TRUE(store->tryRemountOnce());
+    DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
 
     /// Unpark: the leader resumes, re-checks the flag before allocating, and fails closed.
     { std::lock_guard<std::mutex> lk(m); release = true; }

@@ -64,17 +64,6 @@ void commitOnePart(ContentAddressedMetadataStorage & storage)
     tx->commit(NoCommitOptions{});
 }
 
-/// Delete an existing key exactly (its current token comes from the same GET) — used to drive a live pool
-/// into a NATURAL `IdentityLost`. Mirrors gtest_cas_forget.cpp / gtest_cas_lifecycle_condition.cpp.
-void deleteKeyExact(DB::Cas::Backend & backend, const String & key)
-{
-    DB::Cas::tests::OperationForTest op(backend);
-    const auto got = (*op).read(key, DB::Cas::Retry::standard());
-    ASSERT_TRUE(got.has_value()) << "expected '" << key << "' to exist before deletion";
-    if (got)
-        (*op).remove(key, got->etag, DB::Cas::Retry::standard());
-}
-
 }
 
 /// (a) Live: the snapshot reads `live` with no reason and no `since`, and always carries the disk's
@@ -91,27 +80,6 @@ TEST(CASLifecycleSnapshot, LiveIsTruthfulWithIdentity)
     EXPECT_EQ(snap.since, 0) << "a live pool has no lifecycle `since`";
     EXPECT_EQ(snap.server_root_id, storage->serverRootId());
     EXPECT_FALSE(snap.pool_id.empty()) << "a started disk knows its pool identity";
-    EXPECT_EQ(snap.pool_id, storage->getPoolUUID());
-}
-
-/// (b) IdentityLost (forced from Live on the captured handle, the gate-test idiom): the snapshot names the
-/// non-auto-recovering `identity_lost` state with the [D5] detail present and `since` set. The enum-clean
-/// `reason` word is empty here — it carries only the `vanished` sub-state, and `identity_lost` is already
-/// fully named by the `lifecycle` column.
-TEST(CASLifecycleSnapshot, IdentityLostHasDetailAndSince)
-{
-    auto storage = openSnapshotStorage();
-    commitOnePart(*storage);
-    auto pool = storage->store();   /// captured while Live (store() is fail-closed on a terminal pool)
-
-    pool->setLifecycleForTest(PoolLifecycle::IdentityLost);
-
-    const CasLifecycleSnapshot snap = storage->lifecycleSnapshot();
-    EXPECT_EQ(snap.lifecycle, "identity_lost");
-    EXPECT_TRUE(snap.reason.empty()) << "reason is the vanish sub-state word only: " << snap.reason;
-    EXPECT_NE(snap.detail.find("identity lost"), std::string::npos) << snap.detail;
-    EXPECT_NE(snap.since, 0) << "a not-live state carries the wall-clock instant it was entered";
-    /// Identity survives a terminal state — the disk stays introspectable under it.
     EXPECT_EQ(snap.pool_id, storage->getPoolUUID());
 }
 
@@ -199,43 +167,6 @@ TEST(CASLifecycleSnapshot, PerformsZeroBackendOps)
     const DB::Cas::Pool::LifecycleSnapshot vanished = store->lifecycleSnapshot();
     assertNoIo("a vanished-pool snapshot must not touch the backend");
     EXPECT_EQ(vanished.lifecycle, PoolLifecycle::VanishedReplaced);
-}
-
-/// (f) A NATURAL transition (not the forced setter) captures the detail + `since`, and the snapshot's detail
-/// is EXACTLY the [D5] text `throwIfLifecycleTerminal` throws (minus the pool-name prefix) — the spec §1
-/// "same reason strings in the snapshot and the error" guarantee, so the two can never drift.
-TEST(CASLifecycleSnapshot, NaturalIdentityLostMatchesThrowDetail)
-{
-    auto backend = std::make_shared<DB::Cas::InMemoryBackend>();
-    auto store = DB::Cas::tests::openPoolForTest(backend);
-
-    /// Delete both pool sentinels while other objects remain, then drive the identity gate → IdentityLost
-    /// (never Vanished), exactly gtest_cas_lifecycle_condition.cpp scenario (a).
-    deleteKeyExact(*backend, store->layout().poolMetaKey());
-    deleteKeyExact(*backend, store->layout().ownerKey(kSrid));
-    EXPECT_FALSE(store->tryRemountOnce());
-    ASSERT_EQ(store->lifecycle(), PoolLifecycle::IdentityLost);
-
-    const DB::Cas::Pool::LifecycleSnapshot snap = store->lifecycleSnapshot();
-    EXPECT_EQ(snap.lifecycle, PoolLifecycle::IdentityLost);
-    EXPECT_NE(snap.since, 0) << "the natural enterIdentityLost transition stamps the wall-clock `since`";
-    EXPECT_FALSE(snap.detail.empty());
-
-    /// The snapshot detail is the SAME [D5] text the typed error surfaces: the throw is
-    /// "content-addressed pool '<srid>' <detail>", so the error message must contain the snapshot detail.
-    std::string thrown;
-    try
-    {
-        store->throwIfLifecycleTerminal();
-        ADD_FAILURE() << "IdentityLost must throw from throwIfLifecycleTerminal";
-    }
-    catch (const Exception & e)
-    {
-        thrown = std::string(e.message());
-    }
-    EXPECT_NE(thrown.find(snap.detail), std::string::npos)
-        << "snapshot detail and the typed error must not drift\n  detail: " << snap.detail
-        << "\n  thrown: " << thrown;
 }
 
 /// An expired lease while the lifecycle stays `Live`: `paused` / `lease_expired`, `since` is the

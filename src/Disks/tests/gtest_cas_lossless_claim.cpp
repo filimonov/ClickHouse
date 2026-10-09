@@ -38,7 +38,6 @@ MountLease lease(UInt128 uuid, uint64_t epoch, uint64_t seq, bool fenced, uint64
             .write_attempt_id = UInt128(100 + seq)};
 }
 /// What a GC fence-out does: keep the body, set `gc_fenced`, bump `seq`.
-void fenceOut(Backend & b) { MountLease m = slot(b); m.gc_fenced = true; ++m.seq; put(b, kLayout.mountKey(kSrid), encodeMountLease(m)); }
 /// Counts writes of the mount slot; `stall_ms` moves the boot clock once, before the next one lands;
 /// `hook` replaces the next one. While `refuse_mount_reads` is positive, a read of the slot is denied.
 class MountWriteClock : public InMemoryBackend
@@ -138,7 +137,7 @@ TEST(CASLosslessClaim, GoldenClaimOutcomeByOccupant)
     DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::ABORTED, "newer than the writer_epoch", [&] { claim(*b); });
 }
 
-TEST(CASLosslessClaim, GoldenOpenAndRemountPaths)
+TEST(CASLosslessClaim, GoldenOpenPaths)
 {
     auto fresh = std::make_shared<MountWriteClock>();
     ASSERT_TRUE(Pool::open(fresh, poolConfig(fresh)));
@@ -146,12 +145,9 @@ TEST(CASLosslessClaim, GoldenOpenAndRemountPaths)
     auto b = fencedPredecessor();
     auto store = Pool::open(b, poolConfig(b));
     EXPECT_TRUE(slot(*b).writer_epoch == 8 && !slot(*b).gc_fenced && store->mayMutate());
-    fenceOut(*b);
-    ASSERT_TRUE(store->tryRemountOnce());
-    EXPECT_TRUE(slot(*b).writer_epoch == 9 && store->mayMutate());
     store.reset();
     ASSERT_TRUE(Pool::open(b, poolConfig(b))) << "a clean farewell is reclaimed at once";
-    EXPECT_EQ(slot(*b).writer_epoch, 10u);
+    EXPECT_EQ(slot(*b).writer_epoch, 9u);
 }
 
 TEST(CASLosslessClaim, ClaimedCarriesTheLandedBytesTheirEtagAndTheStart)
@@ -231,16 +227,6 @@ TEST(CASLosslessClaim, ALateClaimRenewsBeforeWritesOpenAndATooLateOneFailsTheSta
     DB::Cas::tests::expectThrowsCodeWithMessage(DB::ErrorCodes::NETWORK_ERROR, "external_lease_deadline, no attempt sent",
                                                 [&] { Pool::open(too_late, poolConfig(too_late)); });
     EXPECT_EQ(too_late->mount_writes.load(), 1) << "no renewal fits inside the claim's lease";
-}
-
-TEST(CASLosslessClaim, RemountWritesTheSlotOnce)
-{
-    auto b = fencedPredecessor();
-    auto store = Pool::open(b, poolConfig(b));
-    fenceOut(*b);
-    b->mount_writes = 0;
-    ASSERT_TRUE(store->tryRemountOnce());
-    EXPECT_EQ(b->mount_writes.load(), 1);
 }
 
 #if USE_AWS_S3

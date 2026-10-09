@@ -957,7 +957,6 @@ TEST(CASRefWedgeEveryAttempt, ForeignNonSealOccupantIsCorruptedDataAndEndsThePro
 
     wedgeLaneOnUnresolvedAppend(*clock, *backend, store, ns, [&] { store->dropRef(ns, "x"); });
     const String wedged_key = store->wedgedKeyForTest(ns);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
 
     /// Something that is neither our bytes nor a seal occupies the slot.
     ASSERT_TRUE(std::holds_alternative<Committed>(backend->putAsSuccessor(wedged_key, "not a ref-log object at all")));
@@ -966,7 +965,6 @@ TEST(CASRefWedgeEveryAttempt, ForeignNonSealOccupantIsCorruptedDataAndEndsThePro
 
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before) << "a ref lane fault never remounts";
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "the impossible-interference route must end the process";
 }
 
@@ -989,12 +987,10 @@ TEST(CASRefWedgeEveryAttempt, AppendSiteProvenDifferentObjectAlsoEndsTheProcess)
     const RefTxnId next{store->liveWriterEpoch(), 3};
     createObj(*backend, layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), next),
              "a different object entirely");
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "x"); });
 
     EXPECT_FALSE(store->refLaneWedgedForTest(ns)) << "a proven different object is conclusive, never a wedge";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before) << "a ref lane fault never remounts";
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u)
         << "the append site must route through the same impossible-interference reaction as the wedge site";
 }
@@ -1363,7 +1359,6 @@ TEST(CASRefWedgeEveryAttempt, AppendSiteWedgesWhenTheSettlingReadNamesNoOccupant
     publishEmptyPart(store, ns, "x");
 
     const RefTxnId next{store->liveWriterEpoch(), 3};
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
 
     /// A precondition refusal is a VALUE, not an exception, so this call carries no ambiguity -- which
     /// is what lets the settling read's answer be the whole verdict. The key is absent, so that read
@@ -1379,7 +1374,6 @@ TEST(CASRefWedgeEveryAttempt, AppendSiteWedgesWhenTheSettlingReadNamesNoOccupant
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRefAppendWedged].load(), wedged_before + 1)
         << "and the lane it leaves behind is a wedge, so the wedge counter must say so";
     EXPECT_TRUE(store->mayMutate()) << "the table defers without guessing that the whole mount is corrupt";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before) << "nor schedules a remount";
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt)
         << "nor records a deposition that was never actually observed";
     EXPECT_TRUE(store->refLaneWedgedForTest(ns))
@@ -1412,7 +1406,6 @@ TEST(CASRefWedgeEveryAttempt, AppendSiteWedgesWhenTheSettlingReadItselfIsRefused
     publishEmptyPart(store, ns, "x");
 
     const RefTxnId next{store->liveWriterEpoch(), 3};
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
 
     backend->refuse_precondition_substr = layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), next);
     backend->refuse_read_after_precondition = true;
@@ -1422,7 +1415,6 @@ TEST(CASRefWedgeEveryAttempt, AppendSiteWedgesWhenTheSettlingReadItselfIsRefused
 
     EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::CASRefAppendOccupantUnreadable].load(), deferred_before + 1);
     EXPECT_TRUE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
     EXPECT_TRUE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Wedged);
 
@@ -1451,7 +1443,6 @@ TEST(CASRefWedgeEveryAttempt, WellFormedNonSealOccupantIsStillForeign)
     publishEmptyPart(store, ns, "x");
 
     const RefTxnId next{store->liveWriterEpoch(), 3};
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
 
     /// A perfectly decodable transaction for this exact namespace and id — just not an epoch seal.
     RefOp birth;
@@ -1463,7 +1454,6 @@ TEST(CASRefWedgeEveryAttempt, WellFormedNonSealOccupantIsStillForeign)
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "x"); });
 
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before) << "a ref lane fault never remounts";
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u)
         << "a well-formed non-seal occupant is still a breach of write-exclusivity";
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "and is emphatically not an epoch seal";
@@ -1510,7 +1500,6 @@ TEST(CASRefWedgeEveryAttempt, ALiveEpochSealIsNeverStampedAsItsOwnPrevEpochSeal)
     ///      reported to the caller and the operator;
     ///   3. NOTHING is written, so no self-pointer can have been stamped and no request was spent;
     ///   4. a SECOND flush behaves identically instead of looping or degrading.
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     const size_t puts_before = backend->putCount(layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), RefTxnId{epoch + 1, 1}));  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     try
     {
@@ -1535,7 +1524,6 @@ TEST(CASRefWedgeEveryAttempt, ALiveEpochSealIsNeverStampedAsItsOwnPrevEpochSeal)
 
     /// NO remount is scheduled: this is not a fault of the lane machine, since nothing is occupied; the
     /// deposition is reported by the error.
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
 }
 
 /// ================================================================================================
@@ -1739,7 +1727,6 @@ struct FaultEvent
 {
     String reason;
     bool fence_closed = false;
-    uint64_t remounts_requested = 0;
 };
 
 class FaultEventLog
@@ -1762,17 +1749,16 @@ std::shared_ptr<FaultEventLog> recordFaultEvents(const PoolPtr & store)
     {
         if (e.type != CasEventType::ForeignInterference)
             return;
-        log->push({e.reason, !pool->mayMutate(), pool->scheduleRemountCallCountForTest()});
+        log->push({e.reason, !pool->mayMutate()});
     });
     return log;
 }
 
-void expectOneLatchedFault(const FaultEventLog & log, const PoolPtr & store, uint64_t remounts_before, std::string_view description)
+void expectOneLatchedFault(const FaultEventLog & log, const PoolPtr & store, std::string_view description)
 {
     const auto events = log.snapshot();
     ASSERT_EQ(events.size(), 1u);
     EXPECT_TRUE(events[0].fence_closed) << "the latch must precede the report";
-    EXPECT_EQ(events[0].remounts_requested, remounts_before) << "a ref lane fault never remounts";
     EXPECT_NE(events[0].reason.find(description), String::npos) << events[0].reason;
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
     EXPECT_EQ(DB::Cas::tests::processStopLog().graceful(), 0u);
@@ -1792,7 +1778,6 @@ void expectAppendSiteFault(const String & ns_name, OccupantKind kind)
     backend->conflict_bytes = occupantBytes(kind, ns, next);
     backend->conflict_count = 1;
     const auto faults = recordFaultEvents(store);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     const size_t tail_before = store->tailSinceSnapshotCountForTest(ns);
     ASSERT_TRUE(store->mayMutate());
 
@@ -1803,8 +1788,7 @@ void expectAppendSiteFault(const String & ns_name, OccupantKind kind)
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "a fault records no epoch seal";
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
-    expectOneLatchedFault(*faults, store, remounts_before, occupantDescription(kind));
+    expectOneLatchedFault(*faults, store, occupantDescription(kind));
 }
 
 void expectWedgeFault(const String & ns_name, OccupantKind kind)
@@ -1824,7 +1808,6 @@ void expectWedgeFault(const String & ns_name, OccupantKind kind)
     ASSERT_TRUE(std::holds_alternative<Committed>(
         backend->putAsSuccessor(wedged_key, occupantBytes(kind, ns, parsed->txn_id))));
     const auto faults = recordFaultEvents(store);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     const size_t tail_before = store->tailSinceSnapshotCountForTest(ns);
     ASSERT_TRUE(store->mayMutate());
 
@@ -1835,8 +1818,7 @@ void expectWedgeFault(const String & ns_name, OccupantKind kind)
     EXPECT_FALSE(store->refLaneWedgedForTest(ns));
     EXPECT_EQ(store->lastEpochSealForTest(ns), std::nullopt) << "a fault records no epoch seal";
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
-    expectOneLatchedFault(*faults, store, remounts_before, occupantDescription(kind));
+    expectOneLatchedFault(*faults, store, occupantDescription(kind));
 }
 
 /// Recovery finds something other than the retained attempt's bytes at its id above the checkpoint.
@@ -1859,15 +1841,13 @@ void expectRecoveryFault(const String & ns_name, OccupantKind kind)
     enterNeedsRecoveryOnDrop(*backend, store, ns, ckpt_key, "x");
     replaceObj(*backend, store->layout().refLogKey(life, retained), occupantBytes(kind, ns, retained));
     const auto faults = recordFaultEvents(store);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     ASSERT_TRUE(store->mayMutate());
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { store->dropRef(ns, "y"); });
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery);
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
-    expectOneLatchedFault(*faults, store, remounts_before, occupantDescription(kind));
+    expectOneLatchedFault(*faults, store, occupantDescription(kind));
 }
 
 template <typename BackendT>
@@ -1953,7 +1933,6 @@ TEST(CASRefLaneFault, NonReadyLaneAtNewIdLatchesBeforeTheReport)
     admitProperlyBornEntry(backend, store->layout(), ns);
     publishEmptyPart(store, ns, "x");
     const auto faults = recordFaultEvents(store);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     ASSERT_TRUE(store->mayMutate());
     store->setRefPreCarveHookForTest([&]
     {
@@ -1964,7 +1943,7 @@ TEST(CASRefLaneFault, NonReadyLaneAtNewIdLatchesBeforeTheReport)
     store->setRefPreCarveHookForTest(nullptr);
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
-    expectOneLatchedFault(*faults, store, remounts_before, "instead of Ready");
+    expectOneLatchedFault(*faults, store, "instead of Ready");
 }
 
 /// A lane in `NeedsRecovery` leaves it on the next touch once its checkpoint reads again, with no
@@ -1981,7 +1960,6 @@ TEST(CASRefLaneFault, NeedsRecoveryLaneLeavesAfterADamagedCkptIsRestoredWithoutR
     publishEmptyPart(store, ns, "y");
     const String ckpt_key = store->layout().refCkptKey(*store->refTableLifeForTest(ns));
     enterNeedsRecoveryOnDrop(*backend, store, ns, ckpt_key, "x");
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     const uint64_t installs_before = store->recoveryInstallCountForTest();
 
     const String original = readObj(*backend, ckpt_key)->bytes;
@@ -1995,7 +1973,6 @@ TEST(CASRefLaneFault, NeedsRecoveryLaneLeavesAfterADamagedCkptIsRestoredWithoutR
     EXPECT_EQ(store->recoveryInstallCountForTest(), installs_before + 1);
     EXPECT_FALSE(store->resolveRef(ns, "x").has_value()) << "recovery replayed the durable drop";
     EXPECT_FALSE(store->resolveRef(ns, "y").has_value());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
     EXPECT_TRUE(store->mayMutate());
 }
 
@@ -2015,13 +1992,11 @@ TEST(CASRefLaneFault, TerminateIsRequestedWhenTheFaultReportThrows)
     backend->conflict_substr = store->layout().refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), next);
     backend->conflict_bytes = occupantBytes(OccupantKind::ForeignTxn, ns, next);
     backend->conflict_count = 1;
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
 
     expectThrowsCode(DB::ErrorCodes::NOT_IMPLEMENTED, [&] { store->dropRef(ns, "x"); });
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Faulted);
     EXPECT_FALSE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
 }
 
@@ -2199,7 +2174,6 @@ TEST(CASRefLaneFault, BadAllocInsideTheAppendPropagates)
     publishEmptyPart(store, ns, "x");
     publishEmptyPart(store, ns, "y");
     const auto faults = recordFaultEvents(store);
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     auto planned = std::make_exception_ptr(std::bad_alloc());
     auto fired = std::make_shared<std::atomic<bool>>(false);
     store->setInstallRegionProbeForTest([planned, fired]
@@ -2216,7 +2190,6 @@ TEST(CASRefLaneFault, BadAllocInsideTheAppendPropagates)
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery)
         << "the install failed after the PUT, so replay owns the transaction";
     EXPECT_TRUE(store->mayMutate());
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
     EXPECT_TRUE(faults->snapshot().empty());
     EXPECT_NO_THROW(store->dropRef(ns, "y"));
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::Ready);

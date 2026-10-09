@@ -113,20 +113,6 @@ bool replaceForTest(const BackendPtr & backend, const String & key, const String
     return std::holds_alternative<Committed>(op.replace(key, bytes, expected, Retry::standard()));
 }
 
-/// Make the durable mount immediately reclaimable so a test that deliberately moved the local fence
-/// generation can drive the production remount boundary without paying a live-lease expiry wait.
-void fenceOutMountForRemount(Backend & backend, const String & mount_key)
-{
-    OperationForTest op(backend);
-    const auto got = (*op).read(mount_key, Retry::once());
-    ASSERT_TRUE(got.has_value());
-    MountLease mount = decodeMountLease(got->bytes);
-    mount.gc_fenced = true;
-    mount.seq += 1;
-    ASSERT_TRUE(std::holds_alternative<Committed>(
-        (*op).replace(mount_key, encodeMountLease(mount), got->etag, Retry::once())));
-}
-
 /// The durable object at `key`, or `nullopt`.
 std::optional<Object> readAt(Backend & backend, const String & key)
 {
@@ -1294,11 +1280,8 @@ TEST(CASRefRecoveryCasWalk, FenceBumpedMidWalkRefusesTheInstallAndTheRetrySuccee
     EXPECT_ANY_THROW(store->listRefs(ns)) << "a recovery whose I/O window straddled a fence bump must install nothing";
 
     backend->on_key = nullptr;
-    fenceOutMountForRemount(*backend, layout.mountKey("test"));
-    ASSERT_TRUE(store->tryRemountOnce())
-        << "a generation bump cannot rebind the captured runtime; the production remount must publish "
-           "a distinct runtime at the accepted generation";
-    EXPECT_EQ(store->listRefs(ns).size(), 1u) << "the retry through the remounted runtime succeeds";
+    DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
+    EXPECT_EQ(store->listRefs(ns).size(), 1u) << "the retry through the reacquired runtime succeeds";
 }
 
 TEST(CASRefRecoveryCasWalk, RetiredLifePausedInRealRecoveryIoWritesAndInstallsNothing)
@@ -1449,11 +1432,8 @@ TEST(CASRefRecoveryCasWalk, FenceBumpedAfterCkptCasBeforeInstallPublishesNoState
         << "the checkpoint advance already landed and is harmless -- the merge is a semantic maximum";
 
     backend->on_key = nullptr;
-    fenceOutMountForRemount(*backend, layout.mountKey("test"));
-    ASSERT_TRUE(store->tryRemountOnce())
-        << "a generation bump cannot rebind the captured runtime; the production remount must publish "
-           "a distinct runtime at the accepted generation";
-    EXPECT_EQ(store->listRefs(ns).size(), 1u) << "the retry through the remounted runtime installs normally";
+    DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
+    EXPECT_EQ(store->listRefs(ns).size(), 1u) << "the retry through the reacquired runtime installs normally";
 }
 
 /// ---------------------------------------------------------------------------------------------
@@ -1951,14 +1931,12 @@ TEST(CASRefRecoveryCasWalk, RetainedWriterAttemptMeetingASuccessorSealFaultsTheM
             sealObject(FormatId::RefLog, encodeRefLogTxn(successor_seal)),
             original->etag, Retry::once())));
     }
-    const uint64_t remounts_before = store->scheduleRemountCallCountForTest();
     ASSERT_TRUE(store->mayMutate());
 
     expectThrowsCode(DB::ErrorCodes::CORRUPTED_DATA, [&] { (void)store->listRefs(ns); });
 
     EXPECT_EQ(store->laneStateForTest(ns), RefLaneState::NeedsRecovery);
     EXPECT_FALSE(store->mayMutate()) << "the fault latches the mount fence";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), remounts_before);
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u);
     EXPECT_EQ(readCkptForTest(backend, layout, life)->ckpt.committed_through, (RefTxnId{1, 1}))
         << "the seal must not be published as this writer's frontier";

@@ -160,23 +160,10 @@ public:
     }
 };
 
-/// GC's fence-out applied directly to the mount lease: preserve the body, set `gc_fenced`, bump `seq`
-/// (token-guarded). A subsequent `tryRemountOnce` then reclaims a fresh incarnation.
 bool headExists(Backend & backend, const String & key)
 {
     DB::Cas::tests::OperationForTest op(backend);
     return (*op).head(key, Retry::standard()).has_value();
-}
-
-void fenceOutMount(Backend & backend, const String & mount_key)
-{
-    DB::Cas::tests::OperationForTest op(backend);
-    const auto got = (*op).read(mount_key, Retry::standard());
-    ASSERT_TRUE(got.has_value());
-    MountLease m = decodeMountLease(got->bytes);
-    m.gc_fenced = true;
-    m.seq += 1;
-    ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(mount_key, encodeMountLease(m), got->etag, Retry::standard())));
 }
 
 /// Publish one part `ref` with a single content blob whose payload is `payload`.
@@ -425,13 +412,11 @@ TEST(CASRetirementSweep, AStragglerFromTheDyingEpochLosesItsCreateToTheRecoveryS
     ASSERT_FALSE(headExists(*backend, layout.refLogKey(DB::Cas::tests::fixture::fixtureLife(ns), straggler_slot)))
         << "the slot must be empty before recovery -- otherwise this test proves nothing about who won";
 
-    /// Fence and remount. No wait: this is the case that used to cost 30 seconds.
-    *fake_boot += 30001;
-    fenceOutMount(*backend, layout.mountKey("test"));
-    ASSERT_TRUE(store->tryRemountOnce());
+    /// Fence and reacquire. No wait: this is the case that used to cost 30 seconds.
+    DB::Cas::tests::reacquireAfterGcFence(*store, *backend);
     ASSERT_EQ(store->liveWriterEpoch(), 2u);
     EXPECT_TRUE(waits->empty())
-        << "the remount blocked on an operator-configured wait; the grace is supposed to be gone";
+        << "the reacquire blocked on an operator-configured wait; the grace is supposed to be gone";
 
     /// Touch the namespace so it re-recovers under the new epoch: the walk closes epoch 1 in band. The
     /// ref itself is still THERE -- the removal's PUT was the undecided one and (in this fixture) never

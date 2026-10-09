@@ -62,25 +62,6 @@ const std::string kTableDir = "gg0/gg0gg0g0-0808-4808-8808-080808080808";
 const std::string kPartDir = kTableDir + "/all_1_1_0";
 const std::string kPartFile = kPartDir + "/data.bin";
 
-/// The Pool-level `server_root_id` `openPoolForTest` mints (mirrors gtest_cas_lifecycle_condition.cpp).
-const std::string kSrid = "test";
-
-/// GC's fence-out applied directly to the mount lease (preserve the body, set `gc_fenced`, bump `seq`) so a
-/// subsequent `tryRemountOnce` verdicts `Recover` and reclaims a FRESH incarnation immediately (no
-/// lease-expiry wait), driving a transient-not-live pool back to `Live`. Mirrors
-/// gtest_cas_lifecycle_condition.cpp's helper — used by the operator-STOP-persistence test below.
-void fenceOutMount(DB::Cas::Backend & backend, const String & mount_key)
-{
-    DB::Cas::tests::OperationForTest op(backend);
-    const auto got = (*op).read(mount_key, DB::Cas::Retry::once());
-    ASSERT_TRUE(got.has_value());
-    DB::Cas::MountLease m = DB::Cas::decodeMountLease(got->bytes);
-    m.gc_fenced = true;
-    m.seq += 1;
-    const auto put = (*op).replace(mount_key, DB::Cas::encodeMountLease(m), got->etag, DB::Cas::Retry::once());
-    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(put));
-}
-
 /// A real `ContentAddressedMetadataStorage` over a fresh, unique local object storage. `context == nullptr`
 /// (a unit-test mount), so `startup()` creates NO GC scheduler -- the GC entry points, and `gcStart`, create
 /// one lazily. GC is enabled by default (`gc_enabled == true`, `gc_interval_sec == 60`), so no background
@@ -175,67 +156,6 @@ constexpr std::chrono::milliseconds kSelfExitWait{15000};
 /// control (an explicit START right after DOES produce a round through the same sink).
 constexpr std::chrono::milliseconds kStayStoppedWindow{3000};
 
-}
-
-/// (C1) A NATURAL terminal transition (`VanishedReplaced`, or here `VanishedForgotten` forced via the test
-/// seam) is never accompanied by a `stop()` on this scheduler — only `~Pool`/FORGET join it. The scheduler's
-/// OWN loops must observe the terminal lifecycle at their next tick and self-exit,
-/// so the pacing loop stops spamming Failed rounds (the G2 zombie) and the steal-capable loop can never
-/// fold/condemn a foreign pool's prefix. Drive it while RUNNING, then vanish it, then prove BOTH loops
-/// self-exit (bounded cv wait, no sleep) and that no further round-log rows appear.
-TEST(CASGCStopStart, SchedulerSelfExitsOnNaturalVanished)
-{
-    auto backend = std::make_shared<InMemoryBackend>();
-    auto store = openPoolForTest(backend);
-
-    RoundLogSink sink;
-    /// 1s interval: the loop ticks ~1s; the cv wait below (never a sleep) synchronizes on real records.
-    CasGcScheduler sched(store, std::chrono::seconds(1), "CasGcSelfExitTest", "ca-disk", sink.logger());
-    sched.start();
-
-    /// Prove the loop is genuinely RUNNING first: a background round must land and acquire the lease.
-    ASSERT_TRUE(sink.waitForSuccessFinish(/*from=*/0, kRoundWait).has_value())
-        << "the scheduler must be pacing rounds before we drive it terminal";
-
-    /// A natural terminal transition (forced here via the seam; in production `VanishedReplaced` and
-    /// `IdentityLost` arrive identically, WITHOUT anyone calling stop() on this scheduler).
-    store->setLifecycleForTest(PoolLifecycle::VanishedForgotten);
-
-    ASSERT_TRUE(sched.waitForTerminalSelfExitForTest(kSelfExitWait))
-        << "both the pacing and heartbeat loops must self-exit once the pool is Vanished";
-
-    /// No further round-log rows appear after the self-exit: both loops have returned, so capture the
-    /// count, reap them with stop() (a hang/double-terminate here would fail the test), and assert stable.
-    const size_t count_at_exit = sink.mark();
-    sched.stop();
-    EXPECT_EQ(sink.mark(), count_at_exit) << "a self-exited pacing loop must emit no further round records";
-    EXPECT_FALSE(sched.gcHealth().is_leader);
-}
-
-/// (C1, rev.8 §9 item 8) `IdentityLost` is now a fail-loud TERMINAL state, so the scheduler must self-exit
-/// there exactly as it does on `Vanished` — a scheduler ticking against a half-erased pool is a pure zombie
-/// (eternal `CORRUPTED_DATA` retries against the vanished `gc/state`). Prove BOTH loops self-exit and that no
-/// further round-log rows appear, and that leadership is cleared.
-TEST(CASGCStopStart, SchedulerSelfExitsOnIdentityLost)
-{
-    auto backend = std::make_shared<InMemoryBackend>();
-    auto store = openPoolForTest(backend);
-
-    RoundLogSink sink;
-    CasGcScheduler sched(store, std::chrono::seconds(1), "CasGcIdentityLostTest", "ca-disk", sink.logger());
-    sched.start();
-
-    ASSERT_TRUE(sink.waitForSuccessFinish(/*from=*/0, kRoundWait).has_value());
-
-    store->setLifecycleForTest(PoolLifecycle::IdentityLost);
-
-    ASSERT_TRUE(sched.waitForTerminalSelfExitForTest(kSelfExitWait))
-        << "IdentityLost is terminal (rev.8): both the pacing and heartbeat loops must self-exit";
-
-    const size_t count_at_exit = sink.mark();
-    sched.stop();
-    EXPECT_EQ(sink.mark(), count_at_exit) << "a self-exited pacing loop must emit no further round records";
-    EXPECT_FALSE(sched.gcHealth().is_leader) << "a self-exited scheduler must report it no longer leads";
 }
 
 /// (C1 cleanup hygiene) After BOTH loops self-exit on a terminal transition, `stop()` must cleanly reap
@@ -549,10 +469,9 @@ TEST(CASGCStopStart, OperatorStopPersistsAcrossTransientRecovery)
 
     /// The disk now suffers a transient mount-lease loss and self-remounts back to Live (a fresh
     /// incarnation), WITHOUT any operator action — exactly the recovery §4 describes.
-    store->tripMountLost();
+    DB::Cas::tests::fenceOwnSlotAndRenew(*store, *backend);
     ASSERT_EQ(store->lifecycle(), PoolLifecycle::TransientNotLive);
-    fenceOutMount(*backend, store->layout().mountKey(kSrid));
-    ASSERT_TRUE(store->tryRemountOnce()) << "the self-remount must reclaim a fresh incarnation";
+    DB::Cas::tests::reacquireUntilOpen(*store);
     ASSERT_EQ(store->lifecycle(), PoolLifecycle::Live) << "the pool must auto-recover to Live";
 
     /// The operator's STOP persists: recovery restarted NOTHING. The scheduler is still not leading and

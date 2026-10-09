@@ -104,25 +104,6 @@ std::exception_ptr exceptionOf(const std::function<void()> & fn)
     return std::make_exception_ptr(std::runtime_error("exceptionOf sentinel: nothing was thrown"));
 }
 
-/// The Pool-level `server_root_id` a test mount uses (mirrors gtest_cas_lifecycle_condition.cpp).
-const std::string kSrid = "test";
-
-/// GC's fence-out applied to the mount lease (preserve the body, set `gc_fenced`, bump `seq`) so a
-/// subsequent `tryRemountOnce` verdicts `Recover` and reclaims a FRESH incarnation immediately, driving a
-/// transient-not-live pool back to `Live` without a lease-expiry wait. Mirrors
-/// gtest_cas_lifecycle_condition.cpp's helper.
-void fenceOutMount(DB::Cas::Backend & backend, const String & mount_key)
-{
-    DB::Cas::tests::OperationForTest op(backend);
-    const auto got = (*op).read(mount_key, DB::Cas::Retry::standard());
-    ASSERT_TRUE(got.has_value());
-    DB::Cas::MountLease m = DB::Cas::decodeMountLease(got->bytes);
-    m.gc_fenced = true;
-    m.seq += 1;
-    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(
-        (*op).replace(mount_key, DB::Cas::encodeMountLease(m), got->etag, DB::Cas::Retry::standard())));
-}
-
 }
 
 /// (a) Probes on a Vanished disk answer the truth: absent/empty, WITHOUT reaching the pool.
@@ -242,41 +223,6 @@ TEST(CASOperationGate, EveryClassThrowsRetryableTransientOnTransientNotLive)
     EXPECT_NE(msg.find("recovers to Live"), std::string::npos) << msg;
 }
 
-/// (d2) `IdentityLost` is TERMINAL — the sentinels are gone, nothing auto-recovers — so it keeps the 668
-/// (`INVALID_STATE`) class and its own richer [D5] diagnosis ("identity lost … restart or FORGET").
-/// Nothing about the transient re-coding may leak here: a terminal state that read as retryable would
-/// make every consumer spin forever on a disk that will never come back.
-TEST(CASOperationGate, EveryClassThrows668OnIdentityLost)
-{
-    auto storage = openGateStorage();
-    commitOnePart(*storage);
-    storage->store()->setLifecycleForTest(PoolLifecycle::IdentityLost);   /// one force from Live
-
-    /// Probe
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->existsFile(kPartFile); });
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->existsDirectory(kPartDir); });
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->listDirectory(kTableDir); });
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->isDirectoryEmpty(kTableDir); });
-    /// ContentRead
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->getFileSize(kPartFile); });
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->getStorageObjects(kPartFile); });
-    /// Write (via a transaction)
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] {
-        auto tx = storage->createTransaction();
-        auto & ca_tx = dynamic_cast<ContentAddressedTransaction &>(*tx);
-        ca_tx.writeFile(kTableDir + "/tmp_x/data.bin", 65536, WriteMode::Rewrite, {});
-    });
-    /// Remove (via a transaction)
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] {
-        auto tx = storage->createTransaction();
-        tx->removeRecursive(kTableDir, /*should_remove_objects=*/nullptr);
-    });
-    /// Admin
-    Cas::tests::expectThrowsCode(ErrorCodes::INVALID_STATE, [&] { storage->runOneGcRoundForTest(); });
-
-    EXPECT_NE(messageOf([&] { storage->getFileSize(kPartFile); }).find("identity lost"), std::string::npos);
-}
-
 /// (d3) The contract the d1/d2 split exists to satisfy, asserted against upstream's OWN predicate instead
 /// of a code number: `isRetryableException` is what `ReplicatedMergeTreePartCheckThread::checkPartImpl`
 /// consults before declaring a part broken. A transient CA refusal must satisfy it (the part stays
@@ -391,9 +337,9 @@ TEST(CASOperationGate, GcSchedulerIsQuiescentReflectsRoundInFlight)
 
 /// (j) (acceptance matrix — transient auto-recovery / DROP-drain round-trip) The full §4 recovery arc on ONE
 /// storage: a Remove-class op (the DROP shape) throws the typed transient refusal while the mount lease is
-/// lost, then SUCCEEDS and actually drains once the disk self-remounts back to Live — no operator action,
+/// lost, then SUCCEEDS and actually drains once the disk reacquires back to Live — no operator action,
 /// no restart. Where test (d) forces `TransientNotLive` via the setter to pin the gap, this drives a REAL
-/// transient→Live recovery (`tripMountLost` → fence-out → `tryRemountOnce`) so the throw-then-drain is one
+/// transient→Live recovery (GC fence → renewal → reacquire) so the throw-then-drain is one
 /// continuous arc on the same pool. Closes the "access throws in the gap, auto-recovers, a Remove re-queues
 /// and drains" matrix row end-to-end (the per-table DROP re-queue itself is the MergeTree caller's job; the
 /// CAS contract is exactly this: refuse in the gap, admit after recovery).
@@ -406,7 +352,7 @@ TEST(CASOperationGate, RemoveThrowsDuringTransientAndDrainsAfterRecovery)
     ASSERT_TRUE(storage->existsDirectory(kPartDir));   /// Live baseline: the part is present.
 
     /// The mount lease is transiently lost — the pool goes TransientNotLive.
-    pool->tripMountLost();
+    Cas::tests::fenceOwnSlotAndRenew(*pool, *pool->poolBackendPtr());
     ASSERT_EQ(pool->lifecycle(), PoolLifecycle::TransientNotLive);
 
     /// In the gap, EVERY store-class access throws the typed transient refusal — the Remove (DROP shape)
@@ -420,9 +366,8 @@ TEST(CASOperationGate, RemoveThrowsDuringTransientAndDrainsAfterRecovery)
     EXPECT_NE(gap_msg.find("mount lease not held"), std::string::npos)
         << "the gap message must name the transient (auto-recovering) condition: " << gap_msg;
 
-    /// The lease is restored: the disk self-remounts a fresh incarnation and auto-recovers to Live.
-    fenceOutMount(*pool->poolBackendPtr(), pool->layout().mountKey(kSrid));
-    ASSERT_TRUE(pool->tryRemountOnce()) << "the self-remount must reclaim a fresh incarnation";
+    /// The lease is restored: the disk reacquires a fresh incarnation and auto-recovers to Live.
+    Cas::tests::reacquireUntilOpen(*pool);
     ASSERT_EQ(pool->lifecycle(), PoolLifecycle::Live) << "the pool must auto-recover to Live";
 
     /// After recovery the SAME Remove drains: it commits cleanly and actually removes the part.

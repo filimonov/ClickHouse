@@ -1707,7 +1707,6 @@ TEST(CASDecommission, AnAdminRenewalThatFindsATwinClosesWithoutAStop)
         auto backend = std::make_shared<InMemoryBackend>();
         auto admin = open_admin(backend);
         log.reset();
-        const uint64_t remounts_before = admin->scheduleRemountCallCountForTest();
         rewriteMountSlot(*backend, admin->layout().mountKey("victim"), [](MountLease & m)
         {
             m.gc_fenced = true;
@@ -1717,7 +1716,6 @@ TEST(CASDecommission, AnAdminRenewalThatFindsATwinClosesWithoutAStop)
         EXPECT_THROW(admin->renewWatermarkOnce(), DB::Exception);
 
         EXPECT_EQ(admin->mountEnd(), MountEnd::FencedByGc);
-        EXPECT_EQ(admin->scheduleRemountCallCountForTest(), remounts_before) << "the decommission pool never remounts";
         EXPECT_EQ(log.graceful(), 0u);
     }
 }

@@ -2291,6 +2291,41 @@ inline void rearmMountFenceAfterAnomalyForTest(const DB::Cas::PoolPtr & store)
     store->armMountFence(DB::UInt128{0, 1}, store->liveWriterEpoch(), store->bootMsNow() + 600000);
 }
 
+/// The GC fences our own body and the next renewal reads it: the pool is paused and owes a reacquire. Needs a
+/// pool without background workers whose fence is not tripped yet, or the renewal refuses before it reads.
+inline void fenceOwnSlotAndRenew(DB::Cas::Pool & store, DB::Cas::Backend & backend)
+{
+    using namespace DB::Cas;
+    const String key = store.layout().mountKey(store.poolConfig().server_root_id);
+    {
+        OperationForTest op(backend);
+        const auto got = (*op).read(key, Retry::once());
+        ASSERT_TRUE(got.has_value());
+        MountLease body = decodeMountLease(got->bytes);
+        body.gc_fenced = true;
+        ++body.seq;
+        ASSERT_TRUE(std::holds_alternative<Committed>((*op).replace(key, encodeMountLease(body), got->etag, Retry::once())));
+    }
+    EXPECT_THROW(store.renewWatermarkOnce(), DB::Exception);
+    ASSERT_EQ(store.mountEnd(), MountEnd::None);
+}
+
+inline void reacquireUntilOpen(DB::Cas::Pool & store)
+{
+    using namespace DB::Cas;
+    ReacquireOutcome outcome = ReacquireOutcome::Retry;
+    for (size_t i = 0; i < 100 && outcome == ReacquireOutcome::Retry; ++i)
+        outcome = store.runReacquireForTest();
+    ASSERT_EQ(outcome, ReacquireOutcome::Open);
+}
+
+/// Moves `store` to its next writer epoch the way production does.
+inline void reacquireAfterGcFence(DB::Cas::Pool & store, DB::Cas::Backend & backend)
+{
+    fenceOwnSlotAndRenew(store, backend);
+    reacquireUntilOpen(store);
+}
+
 /// Delegates the FIRST matching create-shaped write to `CountingBackend` -- so the write actually
 /// LANDS -- and only THEN throws an ambiguous exception, modelling "our own PUT committed but its
 /// response was lost". Every later call behaves normally, so a caller that retries the SAME (key,

@@ -805,18 +805,15 @@ public:
 
 }
 
-TEST(CASReacquire, TheRenewalThreadReacquiresWithoutTheRemountWorker)
+TEST(CASReacquire, TheRenewalThreadReacquiresAnOwnFence)
 {
     Running running(std::make_shared<InMemoryBackend>());
     Pool & store = *running.store;
     const uint64_t epoch = store.writerEpoch();
-    const uint64_t remount_calls = store.scheduleRemountCallCountForTest();
 
     fenceWhileRenewing(*running.backend);
 
     ASSERT_TRUE(running.waitFor([&] { return store.lifecycle() == PoolLifecycle::Live && store.writerEpoch() == epoch + 1; }));
-    EXPECT_EQ(store.remountRequestedGenerationForTest(), 0u);
-    EXPECT_EQ(store.scheduleRemountCallCountForTest(), remount_calls);
     EXPECT_EQ(store.mountEnd(), MountEnd::None);
     EXPECT_EQ(slotBody(*running.backend).writer_epoch, epoch + 1);
 }
@@ -865,7 +862,6 @@ TEST(CASReacquire, ALossFoundByTheReacquireStopsTheServer)
     ASSERT_TRUE(running.waitFor([&] { return DB::Cas::tests::processStopLog().graceful() == 1; }));
     EXPECT_TRUE(taken.load());
     EXPECT_EQ(store.mountEnd(), MountEnd::SlotTaken);
-    EXPECT_EQ(store.remountRequestedGenerationForTest(), 0u);
 }
 
 TEST(CASReacquire, ForgetDuringAWorkerRenewalClosesWithoutAStop)

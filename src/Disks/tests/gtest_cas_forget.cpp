@@ -29,7 +29,7 @@
 /// the renewer WITHOUT an unearned clean farewell, (6) publish `Vanished(forgotten)` with the [D5] message
 /// carrying the decommission timestamp. These tests exercise the Pool-level protocol body (`Pool::forgetDisk`)
 /// and the end-to-end verb through a real `ContentAddressedMetadataStorage` (the six-class gate wired to the
-/// new state). Harness patterns follow gtest_cas_lifecycle_condition.cpp and gtest_cas_operation_gate.cpp.
+/// new state). Harness patterns follow gtest_cas_operation_gate.cpp.
 
 namespace DB::ErrorCodes
 {
@@ -51,72 +51,6 @@ const String kSrid = "test";
 const String kForgetReason =
     "decommissioned by SYSTEM CAS FORGET at 2099-01-02 03:04:05 UTC — erasure was NOT "
     "verified; if this was a mistake the data may be intact (restart re-registers the name)";
-
-/// Delete an existing key exactly (its current token comes from the same GET). Mirrors
-/// gtest_cas_lifecycle_condition.cpp — used to drive a live pool into `IdentityLost`.
-void deleteKeyExact(DB::Cas::Backend & backend, const String & key)
-{
-    DB::Cas::tests::OperationForTest op(backend);
-    const auto got = (*op).read(key, DB::Cas::Retry::once());
-    ASSERT_TRUE(got.has_value()) << "expected '" << key << "' to exist before deletion";
-    if (got)
-        (*op).remove(key, got->etag, DB::Cas::Retry::once());
-}
-
-/// GC's fence-out applied directly to the mount lease (preserve the body, set `gc_fenced`, bump `seq`) —
-/// a subsequent `tryRemountOnce` verdicts `Recover` and reclaims a FRESH incarnation immediately (no
-/// lease-expiry wait), reaching `armMountFence`. Mirrors gtest_cas_lifecycle_condition.cpp's helper.
-void fenceOutMount(DB::Cas::Backend & backend, const String & mount_key)
-{
-    DB::Cas::tests::OperationForTest op(backend);
-    const auto got = (*op).read(mount_key, DB::Cas::Retry::once());
-    ASSERT_TRUE(got.has_value());
-    DB::Cas::MountLease m = DB::Cas::decodeMountLease(got->bytes);
-    m.gc_fenced = true;
-    m.seq += 1;
-    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(
-        (*op).replace(mount_key, DB::Cas::encodeMountLease(m), got->etag, DB::Cas::Retry::once())));
-}
-
-/// A Backend decorator whose reads, heads and lists throw an untyped transport error while `fail` is
-/// armed — so a self-remount attempt verdicts `StayTransient` (fast, no lease-expiry wait) and the remount
-/// loop keeps spinning. Starts DISARMED so `Pool::open` succeeds. Mirrors
-/// gtest_cas_lifecycle_condition.cpp's decorator.
-class ToggleableTransportFaultBackend final : public DB::Cas::InMemoryBackend
-{
-public:
-    /// Unhide the LEGACY convenience overloads that the primitive overrides below would otherwise hide.
-    using Backend::head;
-    using Backend::list;
-
-    /// The faults sit on the TRANSPORT PRIMITIVES, because that is where every caller reaches the store:
-    /// the lifecycle gate probes `_pool_meta` through `probeSentinelRaw`, which speaks only these. A
-    /// legacy caller still reaches the fault, through the forwarder, so arming it here covers both
-    /// surfaces rather than only one.
-    std::optional<RawMeta> head(const String & key, DB::Cas::TransportAccess & access) override
-    {
-        if (fail.load())
-            throw Poco::TimeoutException("injected fault: transport error");
-        return InMemoryBackend::head(key, access);
-    }
-
-    std::optional<Raw> read(const String & key, DB::Cas::TransportAccess & access) override
-    {
-        if (fail.load())
-            throw Poco::TimeoutException("injected fault: transport error");
-        return InMemoryBackend::read(key, access);
-    }
-
-    DB::Cas::Backend::RawListPage list(const String & prefix, const String & cursor, size_t limit,
-                                       DB::Cas::TransportAccess & access) override
-    {
-        if (fail.load())
-            throw Poco::TimeoutException("injected fault: transport error");
-        return InMemoryBackend::list(prefix, cursor, limit, access);
-    }
-
-    std::atomic<bool> fail{false};
-};
 
 /// The message thrown by `fn`, or a failure if it did not throw a `DB::Exception`.
 std::string messageOf(const std::function<void()> & fn)
@@ -290,29 +224,6 @@ TEST(CASForget, DoubleForgetIsIdempotent)
         << "the first FORGET's reason must win: " << msg;
 }
 
-/// (d) FORGET on an `IdentityLost` pool → `Vanished(forgotten)` — the escape hatch. `IdentityLost` is
-/// non-absorbing and has no benign answer, so FORGET is the operator's way out.
-TEST(CASForget, ForgetOnIdentityLostPoolVanishesForgotten)
-{
-    auto backend = std::make_shared<DB::Cas::InMemoryBackend>();
-    auto store = DB::Cas::tests::openPoolForTest(backend);
-
-    /// Delete both pool sentinels while other objects remain, then drive the identity gate: the pool enters
-    /// `IdentityLost` (never `Vanished`) — exactly gtest_cas_lifecycle_condition.cpp scenario (a).
-    deleteKeyExact(*backend, store->layout().poolMetaKey());
-    deleteKeyExact(*backend, store->layout().ownerKey(kSrid));
-    EXPECT_FALSE(store->tryRemountOnce());
-    ASSERT_EQ(store->lifecycle(), PoolLifecycle::IdentityLost);
-    ASSERT_FALSE(store->isVanished());
-
-    bool gc_stopped = false;
-    store->forgetDisk([&] { gc_stopped = true; }, kForgetReason);
-
-    EXPECT_TRUE(gc_stopped);
-    EXPECT_EQ(store->lifecycle(), PoolLifecycle::VanishedForgotten);
-    EXPECT_TRUE(store->isVanished());
-}
-
 /// (a'') The clean-farewell is EARNED, never unconditional: on a drained pool FORGET stamps the mount lease
 /// with the terminated sentinel (`min_active_build_sequence == UINT64_MAX`) so a same-server restart reclaims immediately,
 /// but with an UNSETTLED (wedged) ref lane it must NOT — the lease is left to expire by observation.
@@ -357,117 +268,6 @@ TEST(CASForget, ForgetCleanFarewellGatedOnDrain)
         EXPECT_NE(decodeMountLease(got->bytes).min_active_build_sequence, kTerminated)
             << "an unearned clean farewell must NOT be written when the ref lanes did not drain";
     }
-}
-
-/// (b1) BOUNDED COMPLETION: FORGET racing an ACTIVE persistent remount worker joins it without deadlock. Here the
-/// faulting backend keeps every attempt at `StayTransient` (it never reaches `armMountFence`), so this
-/// isolates the join/no-deadlock property; the fence re-arm path is covered by (b2) below. Uses a
-/// `std::future` timeout wait (never a sleep) — the timeout only fires on a genuine deadlock regression.
-TEST(CASForget, ForgetRacingActiveRemountThreadCompletesBounded)
-{
-    auto backend = std::make_shared<ToggleableTransportFaultBackend>();
-    /// `background_watermark = true` so the persistent recovery worker exists (mirrors
-    /// gtest_cas_pool.cpp's ShutdownGuardRefusesToArmRemount setup).
-    auto store = DB::Cas::Pool::open(backend,
-        DB::Cas::PoolConfig{.pool_prefix = "p", .server_root_id = "test", .background_watermark = true});
-
-    /// Arm the fault so every remount attempt verdicts `StayTransient` fast (no lease-expiry wait), then
-    /// trip the fence and latch a recovery generation — the worker now loops `tryRemountOnce` against the fault.
-    backend->fail.store(true);
-    store->tripMountLost();
-    ASSERT_TRUE(store->scheduleRemountForTest()) << "the recovery worker must accept the request and run";
-
-    /// FORGET from ANOTHER thread must join the active remount worker and finish in bounded time.
-    std::promise<void> done;
-    auto fut = done.get_future();
-    std::thread forgetter([&]
-    {
-        store->forgetDisk([] {}, kForgetReason);
-        done.set_value();
-    });
-    EXPECT_EQ(fut.wait_for(std::chrono::seconds(30)), std::future_status::ready)
-        << "FORGET must not deadlock against an in-flight self-remount";
-    forgetter.join();
-
-    /// Disarm before ~Pool so its residual teardown is not fighting the injected fault.
-    backend->fail.store(false);
-
-    EXPECT_EQ(store->lifecycle(), PoolLifecycle::VanishedForgotten);
-    EXPECT_FALSE(store->mayMutate()) << "the fence must stay latched even if a raced reclaim re-armed it";
-}
-
-/// (b2) FENCE RE-LATCH REGRESSION GUARD (the fix's raison d'être): a self-remount that reaches
-/// `armMountFence` re-arms the local fence (`lost=false`) after FORGET has already tripped it. FORGET's
-/// SECOND `tripMountLost` — placed AFTER the remount worker is joined — must override it.
-///
-/// (b1)'s fault keeps every attempt at `StayTransient`, so it can NOT catch removal of that second trip. To
-/// make EXACTLY ONE reclaim reach `armMountFence` inside FORGET's window, deterministically and without a
-/// sleep, we drive a REAL `tryRemountOnce` from FORGET's own GC-stop step (invoked at spec §5 step 3/4,
-/// strictly AFTER the fence trip): the mount is fenced-out so the reclaim succeeds fast and re-arms the
-/// fence, and `tryRemountOnce`'s step-0 gate checks `isVanished()` — still false in this window — so it does
-/// NOT bail. The re-arm therefore lands after trip#1 and before trip#2, exactly the interval trip#2 guards.
-/// Verified to go RED when trip#2 is removed (see task-10-report.md — test_task10b_reddemo.log).
-TEST(CASForget, ForgetReLatchesFenceAfterAReclaimReachesArmMountFence)
-{
-    auto backend = std::make_shared<DB::Cas::InMemoryBackend>();
-    auto store = DB::Cas::tests::openPoolForTest(backend);
-
-    /// Make the current mount claimable so a self-remount SUCCEEDS fast and reaches `armMountFence`.
-    fenceOutMount(*backend, store->layout().mountKey(kSrid));
-
-    bool reclaimed = false;
-    store->forgetDisk([&] { reclaimed = store->tryRemountOnce(); }, kForgetReason);
-
-    /// Guard against a vacuous pass: if the injected reclaim did not actually succeed (reach
-    /// `armMountFence`), there is no re-arm for trip#2 to override and the test proves nothing.
-    ASSERT_TRUE(reclaimed) << "the injected reclaim must reach armMountFence, else this guard is vacuous";
-    EXPECT_EQ(store->lifecycle(), PoolLifecycle::VanishedForgotten);
-    EXPECT_FALSE(store->mayMutate())
-        << "FORGET's post-join fence re-latch (trip#2) must override the fence the reclaim re-armed";
-}
-
-/// (b3) PROMOTION-GUARD REGRESSION (spec §9 rev.8 item 7): with the erasure-proof excised, the natural
-/// `Vanished(replaced)` verdict is the ONLY remaining mid-FORGET natural-terminal race. A `tryRemountOnce`
-/// in flight during FORGET — one that passed step 0's `isVanished()` gate before FORGET published its intent
-/// — must NOT settle `Vanished(replaced)` and mislabel the operator-visible reason; FORGET's
-/// `Vanished(forgotten)` must win. We drive a REAL `tryRemountOnce` from FORGET's own GC-stop step (spec §5
-/// step 3/4, strictly AFTER the step-1 intent publish, BEFORE the step-6 settle), against a FOREIGN
-/// `_pool_meta` (the `Replaced` verdict), and assert the guard bailed.
-TEST(CASForget, ForgetIntentBlocksNaturalReplacedPromotion)
-{
-    auto backend = std::make_shared<DB::Cas::InMemoryBackend>();
-    auto store = DB::Cas::tests::openPoolForTest(backend);
-
-    /// Make the identity gate verdict `Replaced`: overwrite `_pool_meta` with a FOREIGN pool_id (present,
-    /// mismatched identity) — exactly gtest_cas_lifecycle_condition.cpp scenario (b).
-    const String meta_key = store->layout().poolMetaKey();
-    DB::Cas::tests::OperationForTest op(*backend);
-    const auto got = (*op).read(meta_key, DB::Cas::Retry::once());
-    ASSERT_TRUE(got.has_value());
-    DB::Cas::PoolMeta foreign = DB::Cas::decodePoolMeta(got->bytes);
-    foreign.pool_id = foreign.pool_id + DB::UInt128(1);
-    ASSERT_TRUE(std::holds_alternative<DB::Cas::Committed>(
-        (*op).replace(meta_key, DB::Cas::encodePoolMeta(foreign), got->etag, DB::Cas::Retry::once())));
-
-    /// The in-flight gate (run from the GC-stop callback) reaches the `Replaced` verdict but must BAIL on the
-    /// already-published intent rather than settle `Vanished(replaced)`.
-    bool replaced_settled_midforget = false;
-    store->forgetDisk(
-        [&]
-        {
-            store->tryRemountOnce();
-            replaced_settled_midforget = (store->lifecycle() == PoolLifecycle::VanishedReplaced);
-        },
-        kForgetReason);
-
-    EXPECT_FALSE(replaced_settled_midforget)
-        << "a mid-FORGET Replaced verdict must NOT settle — the intent guard bails before enterVanished(Replaced)";
-    EXPECT_EQ(store->lifecycle(), PoolLifecycle::VanishedForgotten)
-        << "FORGET's Vanished(forgotten) must win (first terminal STATE transition)";
-    const std::string msg = messageOf([&] { store->throwIfLifecycleTerminal(); });
-    EXPECT_NE(msg.find("erasure was NOT verified"), std::string::npos) << msg;
-    EXPECT_EQ(msg.find("foreign pool"), std::string::npos)
-        << "the reason must NOT be the mislabeled Replaced text: " << msg;
 }
 
 /// (e) End-to-end through the verb entry `ContentAddressedMetadataStorage::forgetDisk` and the six-class

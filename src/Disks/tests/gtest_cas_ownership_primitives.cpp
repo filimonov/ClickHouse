@@ -323,29 +323,6 @@ TEST(CASOwnershipPrimitives, UnclearReacquireAllocationIsResolvedByOurBytes)
     EXPECT_EQ(counterNext(*b), 6u);
     EXPECT_FALSE(b->hook) << "the injected write ran";
 }
-TEST(CASOwnershipReacquire, RemountDoesNotRecreateADeletedOwnerAnchor)
-{
-    auto b = std::make_shared<InMemoryBackend>();
-    auto pool = Pool::open(b, config());
-    MountLease fenced = decodeMountLease(get(*b, kLayout.mountKey(kSrid))->bytes);
-    fenced.gc_fenced = true;
-    ++fenced.seq;
-    put(*b, kLayout.mountKey(kSrid), encodeMountLease(fenced));
-    erase(*b, kLayout.ownerKey(kSrid));
-    EXPECT_FALSE(pool->tryRemountOnce());
-    EXPECT_FALSE(get(*b, kLayout.ownerKey(kSrid)));
-    EXPECT_EQ(pool->writerEpoch(), 1u);
-}
-TEST(CASOwnershipReacquire, RemountDoesNotRecreateADeletedEpochCounter)
-{
-    auto b = std::make_shared<InMemoryBackend>();
-    auto pool = Pool::open(b, config());
-    erase(*b, kLayout.epochKey(kSrid));
-    erase(*b, kLayout.mountKey(kSrid));
-    EXPECT_FALSE(pool->tryRemountOnce());
-    EXPECT_FALSE(get(*b, kLayout.epochKey(kSrid)));
-}
-
 namespace
 {
 

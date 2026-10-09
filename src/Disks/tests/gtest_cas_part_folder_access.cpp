@@ -404,7 +404,6 @@ TEST(CASPartFolderAccess, PublishEntriesAbandonsBuildOnPromoteFailure)
         << "only precommitAdd's append and the promote's faulted one may reach the store; every cleanup "
            "append after the anomaly is refused at the fence";
     EXPECT_FALSE(store->mayMutate()) << "the proven conflict must fence this mount closed";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "a ref lane fault never remounts";
     EXPECT_EQ(DB::Cas::tests::processStopLog().fatal(), 1u) << "it ends the process";
 
     /// And nothing was written ABOVE the damage: the occupant is the GREATEST log id in the namespace
@@ -471,7 +470,6 @@ TEST(CASPartFolderAccess, PublishEntriesAbandonsBuildOnARetryablePromoteFailure)
     EXPECT_FALSE(access.existsRef({ns, "dst"}, Cas::Freshness::ForceFresh)) << "the failed promote never committed dst";
 
     EXPECT_TRUE(store->mayMutate()) << "an ordinary failed write must not fence the mount";
-    EXPECT_EQ(store->scheduleRemountCallCountForTest(), 0u) << "and must not schedule a remount";
     EXPECT_FALSE(store->refLaneWedgedForTest(ns)) << "a definite rejection is proven non-durable: no wedge";
 
     EXPECT_EQ(backend->matching_put_attempts, attempts_before + 4)
