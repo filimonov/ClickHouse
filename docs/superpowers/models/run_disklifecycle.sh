@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run every CaDiskLifecycle config and print a one-line PASS/FAIL verdict per config.
 # Model: the pool lifecycle of a writable CAS mount (absorbing Stopping and Closed), its one lease
-# thread (renewal and reclaim in sequence), the process-stop request shared by two disks, the GC
+# thread (renewal and reacquire in sequence), the process-stop request shared by two disks, the GC
 # scheduler, and the `SYSTEM CONTENT ADDRESSED FORGET` protocol.
 #
 # Expectations are asserted BY NAME. Sabotages run first: a green is only evidence once the property
@@ -10,50 +10,31 @@
 #   sab_nogcselfexit            -> GcExitsAfterTerminal (temporal)  the GC scheduler never exits on a
 #                                                                   terminal pool
 #   sab_armafterintent          -> NoJoinWindowReclaim     arming ignores a stop and a terminal
-#                                                          lifecycle: a reclaim arms inside the join window
-#   sab_notrip2                 -> I1ForgetTerminal        the same, and no re-trip after the join: FORGET
-#                                                          completes with the fence armed
+#                                                          lifecycle: a claim arms inside the join window
 #   sab_unearnedfarewell        -> I2EarnedFarewell        the farewell regardless of the drain outcome
 #   sab_renewafterintent        -> RenewNotAfterIntent     a renewal starts after the FORGET intent
-#   sab_liveunready             -> LiveOnlyWhenAdmissible  a reclaim with a too-old claim arms the
+#   sab_liveunready             -> LiveOnlyWhenAdmissible  a claim with a too-old lease arms the
 #                                                          fence and reports Live without the renewal
-#   sab_livependingrequest      -> NoArmWhileRequestPending  a renewal arms while a request is pending
-#   sab_reclaimarmpending       -> NoArmWhileRequestPending  a reclaim arms although a request was
-#                                                          raised after its snapshot
-#   sab_ackrequested            -> I7RequestNotLost        a reclaim acknowledges the current request,
-#                                                          not its snapshot
-#   sab_reclaimnotrip           -> I4aTransientImpliesLost a reclaim's step 0 leaves the fence armed
-#   sab_reclaimnotrip_vanished  -> I4bTerminalImpliesLost  the same, ending Stopping on an armed fence
-#     (the five rows above and witness_requestduringreclaim run with LossStops = FALSE: their race
-#      needs an interference report that requests a remount)
 #   sab_latesuccessrearm        -> NoArmAfterLatch         a renewal success arms a latched pool
-#   sab_interferearmrace        -> TerminalAbsorbing       interference between the reclaim's arming
+#   sab_interferearmrace        -> TerminalAbsorbing       interference between the claim's arming
 #                                                          decision and the open loses
 #   sab_forgetlosesarm          -> ForgetWinsArm           FORGET's intent in the same window loses
 #   sab_secondstop              -> OneProcessStop          no once-flag: a second disk stops the process
 #                                                          again
-#   sab_lossremounts            -> I9LossTerminates        a loss observation requests a remount
 #   sab_farewellonstopping      -> NoFarewellOnStopping    the teardown writes the farewell on a Stopping
 #                                                          pool
 #   sab_reacqallocperattempt    -> OneAllocationPerFence   every claim attempt allocates an epoch, not one
-#                                                          per fence (ReacquireInThread)
+#                                                          per fence
 #   sab_oldopunchecked          -> OldEpochOpRefused       an operation admitted under the old epoch lands
 #                                                          under the new one
 #   sab_lossreacquires          -> I9LossTerminates        a loss found by the claim reacquires again
-#   sab_armafterintent_step2, sab_liveunready_step2, sab_interferearmrace_step2, sab_forgetlosesarm_step2
-#                               -> the property of the row without `_step2`, on the reacquire in the lease
-#                                  thread
 #   sab_drainignorespublish     -> NoLandingAfterFarewell  the drain ignores a snapshot publish in flight
 #   sab_farewellfromterminal    -> NoFarewellAfterUnclearRenewal  a renewal that ended without a
 #                                                          confirmed lease still lets the farewell out
 #   old_farewellleasebound      -> GREEN   the farewell needs an unexpired lease: the old bound, under which
 #                                          WNoFarewellAfterExpiry holds
-#   main_step2                  -> GREEN   every invariant, action property and liveness property of `main`
-#                                          plus the reacquire's, under FairSpec2
-#   main                        -> GREEN   every invariant, the action properties and the liveness
-#                                          properties under FairSpec
-#   step1_norequestrace         -> GREEN   with LossStops no request appears off Top and no reclaim
-#                                          begins on an armed fence
+#   main                        -> GREEN   every invariant, action property and liveness property
+#                                          under FairSpec
 #
 # Witnesses are negated reachability -- a VIOLATION is the evidence:
 #
@@ -61,8 +42,7 @@
 #   witness_racedreplaced         -> WNoRacedStopping         FORGET completes on a pool a racing
 #                                                             loss observation left Stopping
 #   witness_livebyrenewal         -> WNoLiveByRenewal         a renewal arms and reports Live for a
-#                                                             reclaim whose claim was too old
-#   witness_requestduringreclaim  -> WNoRequestDuringReclaim  a remount request is raised during a reclaim
+#                                                             claim whose lease was too old
 #   witness_forgetfarewell        -> WNoForgetFarewell        FORGET still writes the farewell
 #   witness_pauseresume           -> WNoPauseResume           expiry, renewal, writes under the same epoch
 #   witness_farewellafterexpiry   -> WNoFarewellAfterExpiry   the farewell is written after the lease expired
@@ -99,38 +79,24 @@ MODULE=CaDiskLifecycle
 # name  expectation(green|violation|temporal)  expected-invariant/property(asserted, not just logged)
 CONFIGS=(
   "sab_nogcselfexit             temporal   GcExitsAfterTerminal"
-  "sab_armafterintent           violation  NoJoinWindowReclaim"
-  "sab_notrip2                  violation  I1ForgetTerminal"
   "sab_unearnedfarewell         violation  I2EarnedFarewell"
   "sab_renewafterintent         violation  RenewNotAfterIntent"
-  "sab_liveunready              violation  LiveOnlyWhenAdmissible"
-  "sab_livependingrequest       violation  NoArmWhileRequestPending"
-  "sab_reclaimarmpending        violation  NoArmWhileRequestPending"
-  "sab_ackrequested             violation  I7RequestNotLost"
-  "sab_reclaimnotrip            violation  I4aTransientImpliesLost"
-  "sab_reclaimnotrip_vanished   violation  I4bTerminalImpliesLost"
   "sab_latesuccessrearm         violation  NoArmAfterLatch"
-  "sab_interferearmrace         violation  TerminalAbsorbing"
-  "sab_forgetlosesarm           violation  ForgetWinsArm"
   "sab_secondstop               violation  OneProcessStop"
-  "sab_lossremounts             violation  I9LossTerminates"
   "sab_farewellonstopping       violation  NoFarewellOnStopping"
   "sab_reacqallocperattempt     violation  OneAllocationPerFence"
   "sab_oldopunchecked           violation  OldEpochOpRefused"
   "sab_lossreacquires           violation  I9LossTerminates"
   "sab_drainignorespublish      violation  NoLandingAfterFarewell"
   "sab_farewellfromterminal     violation  NoFarewellAfterUnclearRenewal"
-  "sab_armafterintent_step2     violation  NoJoinWindowReclaim"
-  "sab_liveunready_step2        violation  LiveOnlyWhenAdmissible"
-  "sab_interferearmrace_step2   violation  TerminalAbsorbing"
-  "sab_forgetlosesarm_step2     violation  ForgetWinsArm"
+  "sab_armafterintent           violation  NoJoinWindowReclaim"
+  "sab_liveunready              violation  LiveOnlyWhenAdmissible"
+  "sab_interferearmrace         violation  TerminalAbsorbing"
+  "sab_forgetlosesarm           violation  ForgetWinsArm"
   "main                         green      -"
-  "main_step2                   green      -"
-  "step1_norequestrace          green      -"
   "witness_forgetdone           violation  WForgetNeverDone"
   "witness_racedreplaced        violation  WNoRacedStopping"
   "witness_livebyrenewal        violation  WNoLiveByRenewal"
-  "witness_requestduringreclaim violation  WNoRequestDuringReclaim"
   "witness_forgetfarewell       violation  WNoForgetFarewell"
   "witness_pauseresume          violation  WNoPauseResume"
   "witness_interferencestop     violation  WNoInterferenceStop"

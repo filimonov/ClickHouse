@@ -4,41 +4,35 @@
 (* scheduler, and the `SYSTEM CONTENT ADDRESSED FORGET` protocol           *)
 (* (`Pool::forgetDisk`).                                                   *)
 (*                                                                         *)
-(* Lifecycle: Live, Transient, and two absorbing states: Stopping (a loss  *)
-(* observation, rows R9-R17 of the lease-series design) and Closed         *)
-(* (FORGET, R18). Only an own `gc_fenced` body (R8) leads to a remount.    *)
+(* Lifecycle: Live, Reacquiring, and two absorbing states: Stopping (a     *)
+(* loss observation, rows R9-R17 of the lease-series design) and Closed    *)
+(* (FORGET, R18). Only an own `gc_fenced` body (R8) is reacquired.         *)
 (*                                                                         *)
-(* The lease thread renews and reclaims in sequence (design 2026-10-01,    *)
-(* "One loop"):                                                            *)
+(* The lease thread renews and reacquires in sequence:                     *)
 (*   until stopped or `LeaseTerminal`:                                     *)
-(*     a remount is pending (reqGen > handledGen): reclaim for the         *)
-(*       generation it snapshots, or fail and retry;                       *)
-(*     otherwise renew: success sets the deadline; an own fenced body     *)
-(*       trips the fence and requests a remount; a loss observation       *)
-(*       enters Stopping.                                                  *)
+(*     renew: success sets the deadline; an own fenced body (R8) starts    *)
+(*       the reacquire; a loss observation enters Stopping.                *)
+(*   Reacquire: the thread latches the fence and closes the old epoch      *)
+(*     (`Closing`), takes one new epoch per fence (`LAlloc`), claims the   *)
+(*     slot under it (`LClaimed`) and opens writes in the arming step.     *)
+(*     The pool is `Reacquiring` meanwhile, and an operation admitted      *)
+(*     under the old epoch is refused when it completes under the new one. *)
 (* `deadlineOk` abstracts "the fence deadline admits a write". One arming  *)
-(* rule (`CanArm`): the fence is armed and Live reported only with no      *)
-(* remount request pending, no stop and no terminal lifecycle. A reclaim   *)
-(* arms when its claim admits a write; otherwise the next successful       *)
-(* renewal arms in the same step that reports Live.                        *)
+(* rule (`CanArm`): the fence is armed and Live reported only with no stop *)
+(* and no terminal lifecycle. A claim arms when it admits a write;         *)
+(* otherwise the next successful renewal arms in the same step that        *)
+(* reports Live.                                                           *)
 (*                                                                         *)
 (* Entering Stopping publishes the terminal latch in the observing step;   *)
 (* the process-stop request is a later step of the same thread. A second   *)
-(* disk of the same process is reduced to its own observe and raise steps *)
+(* disk of the same process is reduced to its own observe and raise steps  *)
 (* over the shared once-flag.                                              *)
 (*                                                                         *)
-(* FORGET steps in `Pool::forgetDisk` order: mutex -> idempotent           *)
-(* terminal short-circuit -> publish intent -> trip#1 -> GC stop           *)
-(* (signal, join) -> lease thread stop (signal, join) -> trip#2 -> drain   *)
-(* -> teardown (farewell only if drained and the renewer is Active) ->     *)
-(* renewer reset -> Closed, first terminal wins.                           *)
-(*                                                                         *)
-(* With `ReacquireInThread` the renewal that reads our own fenced body (R8)   *)
-(* does not request a remount. The same thread closes the old epoch         *)
-(* (`Closing`), takes one new epoch per fence (`LAlloc`), claims the slot   *)
-(* under it (`LClaimed`) and opens writes in the arming step. The pool is   *)
-(* `Reacquiring` meanwhile, and an operation admitted under the old epoch   *)
-(* is refused when it completes under the new one.                          *)
+(* FORGET steps in `Pool::forgetDisk` order: mutex -> idempotent terminal  *)
+(* short-circuit -> publish intent -> trip -> GC stop (signal, join) ->    *)
+(* lease thread stop (signal, join) -> drain -> teardown (farewell only if *)
+(* drained and the renewer is Active) -> renewer reset -> Closed, first    *)
+(* terminal wins.                                                          *)
 (*                                                                         *)
 (* Not modelled: time and retry spacing, the open's own readiness renewal, *)
 (* the content of a claim or a renewal, the slot certificate, the fence    *)
@@ -47,32 +41,25 @@
 EXTENDS Integers, FiniteSets
 
 CONSTANTS
-    EnableTrip2,       \* FORGET re-trips the fence after joining the lease thread
     DrainGate,         \* farewell only when the ref lanes provably drained
     EnableGcSelfExit,  \* the GC scheduler exits at a wake that sees a terminal pool
     RenewChecksIntent, \* a renewal never starts once the FORGET intent is published
-    ReadinessGate,     \* a reclaim with a too-old claim reports Live only after a renewal
-    LiveChecksPending, \* a renewal arms nothing while a remount request is pending
-    ReclaimChecksPending, \* a reclaim arms nothing while a newer request is pending
+    ReadinessGate,     \* a claim with a too-old lease reports Live only after a renewal
     ArmChecksTerminal, \* nothing arms after a stop or with a terminal lifecycle
-    AckSnapshot,       \* a reclaim acknowledges only the generation it snapshotted
-    ReclaimTrips,      \* a reclaim's step 0 trips the fence, not only the lifecycle
-    LossStops,         \* a loss observation enters Stopping; FALSE = trip and request a remount
     RenewOkChecksLatch,\* a renewal success arms nothing on a latched or Stopping pool
-    ArmRechecksAtOpen, \* a reclaim re-checks the arming rule in the step that opens writes
+    ArmRechecksAtOpen, \* the claim re-checks the arming rule in the step that opens writes
     StopOnce,          \* the process-stop request sits under one process-wide once-flag
     SabFarewellOnStopping, \* FALSE = a Stopping pool writes no farewell; TRUE = the teardown writes it
-    ReacquireInThread, \* an own fenced body (R8) is reacquired by the lease thread, with no remount request
     SabReacqAllocPerAttempt, \* TRUE = every claim attempt allocates an epoch, not one per fence
     SabOldOpUnchecked, \* TRUE = an operation admitted under the old epoch lands under the new one
     SabLossReacquires, \* TRUE = a loss found by the claim goes back to reacquiring instead of stopping
     DrainWaitsPublish, \* the drain reports Yes only with no snapshot publish in flight
     FarewellLeaseBound, \* TRUE = the farewell needs an unexpired lease (the old terminate bound)
     SabFarewellFromTerminal, \* TRUE = a renewer whose last renewal ended unconfirmed writes the farewell
-    MaxGen             \* bound on remount requests and on epochs (state-space bound only)
+    MaxGen             \* bound on epochs (state-space bound only)
 
 TerminalSet == {"Stopping", "Closed"}
-PStates == {"Live", "Transient", "Reacquiring"} \cup TerminalSet
+PStates == {"Live", "Reacquiring"} \cup TerminalSet
 
 VARIABLES
     pstate,         \* CasMountRuntime.pool_lifecycle
@@ -83,12 +70,9 @@ VARIABLES
     keeper,         \* renewer: "Active" | "Terminal" | "StoppedClean" | "StoppedNoFarewell" | "None"
     farewell,       \* the clean-release marker was written
     drained,        \* "Unset" | "Yes" | "No" (drainRefLanesForShutdown)
-    lpc,            \* lease thread: "Top" | "Renewing" | "InAttempt" | "Arming" | "Exited"
+    lpc,            \* lease thread: "Top" | "Renewing" | "Closing" | "Claiming" | "Arming" | "Exited"
     stop,           \* workers_stop_requested
-    reqGen,         \* remount_requested_generation
-    handledGen,     \* remount_handled_generation
-    snapGen,        \* the generation the latest reclaim snapshotted
-    armReady,       \* the reclaim's arming decision, carried to the step that opens writes
+    armReady,       \* the claim's arming decision, carried to the step that opens writes
     epoch,          \* writer epoch: one per installed incarnation
     gcsched,        \* "Running" | "Stopped" | "Destroyed"
     gcstopping,     \* CasGcScheduler.stopping
@@ -114,10 +98,10 @@ VARIABLES
     publishing,     \* a snapshot publish of this incarnation is in flight
     lateLanding,    \* history: a publish settled after the farewell was written
     farewellExpired, \* history: the farewell was written after the lease expired
-    renewUnclear    \* history: a renewal ended without a confirmed lease and no reclaim followed
+    renewUnclear    \* history: a renewal ended without a confirmed lease and no claim followed
 
 vars == <<pstate, intent, termPublished, lost, deadlineOk, keeper, farewell,
-          drained, lpc, stop, reqGen, handledGen, snapGen, armReady, epoch,
+          drained, lpc, stop, armReady, epoch,
           gcsched, gcstopping, round, mutex, fpc, d1stop, other, stopRequests,
           naturalWon, everStopping, everClosed, lossSeen, stopByInterference,
           pauseEpoch, liveByRenewal, allocated, allocCount, fenceEpoch, opEpoch,
@@ -127,7 +111,7 @@ vars == <<pstate, intent, termPublished, lost, deadlineOk, keeper, farewell,
 reacqVars == <<allocated, allocCount, fenceEpoch, opEpoch, staleOpLanded, reacqLive>>
 farewellVars == <<publishing, lateLanding, farewellExpired, renewUnclear>>
 
-leaseVars == <<lpc, reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal>>
+leaseVars == <<lpc, armReady, epoch, liveByRenewal>>
 gcVars == <<gcsched, gcstopping, round>>
 forgetVars == <<mutex, fpc, drained, farewell, stop>>
 stopVars == <<d1stop, other, stopRequests>>
@@ -136,7 +120,7 @@ historyVars == <<naturalWon, everStopping, everClosed, lossSeen,
 
 FpcStates == {"NotStarted", "Check", "ShortJoin", "Intent", "Trip1",
               "GcStopSignal", "GcStopJoin", "JoinSignal", "JoinWait",
-              "Trip2", "Drain", "Teardown", "KeeperReset", "Enter", "Done"}
+              "Drain", "Teardown", "KeeperReset", "Enter", "Done"}
 
 TypeOK ==
     /\ pstate \in PStates
@@ -145,9 +129,8 @@ TypeOK ==
     /\ keeper \in {"Active", "Terminal", "StoppedClean", "StoppedNoFarewell", "None"}
     /\ farewell \in BOOLEAN
     /\ drained \in {"Unset", "Yes", "No"}
-    /\ lpc \in {"Top", "Renewing", "InAttempt", "Arming", "Closing", "Claiming", "Exited"}
+    /\ lpc \in {"Top", "Renewing", "Arming", "Closing", "Claiming", "Exited"}
     /\ stop \in BOOLEAN
-    /\ reqGen \in 0..MaxGen /\ handledGen \in 0..MaxGen /\ snapGen \in 0..MaxGen
     /\ armReady \in BOOLEAN /\ epoch \in 0..MaxGen
     /\ gcsched \in {"Running", "Stopped", "Destroyed"}
     /\ gcstopping \in BOOLEAN /\ round \in BOOLEAN
@@ -170,7 +153,6 @@ Init ==
     /\ pstate = "Live" /\ intent = FALSE /\ termPublished = FALSE
     /\ lost = FALSE /\ deadlineOk = TRUE /\ keeper = "Active" /\ farewell = FALSE
     /\ drained = "Unset" /\ lpc = "Top" /\ stop = FALSE
-    /\ reqGen = 0 /\ handledGen = 0 /\ snapGen = 0
     /\ armReady = FALSE /\ epoch = 0
     /\ gcsched = "Running" /\ gcstopping = FALSE /\ round = FALSE
     /\ mutex = "None" /\ fpc = "NotStarted"
@@ -186,21 +168,8 @@ Init ==
 \* `remountTerminal`. Every terminal entry publishes the latch.
 LeaseTerminal == intent
 
-Pending == reqGen > handledGen
-
-\* `tripMountLost`: latch the fence; count a lease loss (Live -> Transient)
-\* only when no terminal latch is published.
-TripMountLost ==
-    /\ lost' = TRUE
-    /\ pstate' = IF pstate = "Live" /\ ~intent THEN "Transient" ELSE pstate
-
-Max(a, b) == IF a > b THEN a ELSE b
-
-\* The one arming rule; `pendingAfter` is whether a request stays pending
-\* once this step's acknowledgement is applied.
-CanArm(pendingAfter, checkPending) ==
-    /\ (~checkPending \/ ~pendingAfter)
-    /\ (~ArmChecksTerminal \/ (~stop /\ ~LeaseTerminal))
+\* The one arming rule.
+CanArm == ~ArmChecksTerminal \/ (~stop /\ ~LeaseTerminal)
 
 \* A loss observation: publish the latch; the first terminal transition
 \* enters Stopping and owes one process-stop request. Touches `intent`,
@@ -226,171 +195,100 @@ LExit ==
     /\ (stop \/ LeaseTerminal)
     /\ lpc' = "Exited"
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
+                   armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
-
-\* Step 0 of `Pool::tryRemountOnce` presumes the lease lost. A reclaim can
-\* begin on an armed fence only when a request was raised during the
-\* previous reclaim, whose arm then overrode that request's trip; with
-\* `LossStops` nothing raises a request off the lease thread.
-LAttemptBegin ==
-    /\ lpc = "Top"
-    /\ ~stop /\ ~LeaseTerminal /\ Pending
-    /\ lpc' = "InAttempt" /\ snapGen' = reqGen
-    /\ IF ReclaimTrips
-       THEN TripMountLost
-       ELSE /\ pstate' = IF pstate = "Live" THEN "Transient" ELSE pstate
-            /\ UNCHANGED lost
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, reqGen,
-                   handledGen, armReady, epoch, liveByRenewal, gcVars,
-                   forgetVars, stopVars, historyVars, reacqVars>>
-
-\* Verdict StayTransient, a probe that could not reach the store, an
-\* unclaimable mount, or any failed later step.
-LAttemptFail ==
-    /\ lpc = "InAttempt"
-    /\ lpc' = "Top"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
-                   gcVars, forgetVars, stopVars, historyVars, reacqVars>>
-
-\* Verdict Recover: install and start a fresh renewer under a new epoch,
-\* acknowledge the snapshot, and decide whether to arm. `ready` = the claim
-\* still admits a write. The arm itself is the next step (`LArmOpen`).
-LReclaim ==
-    /\ lpc = "InAttempt" /\ pstate = "Transient"
-    /\ \E ready \in BOOLEAN : deadlineOk' = ready
-    /\ armReady' = CanArm(reqGen > snapGen, ReclaimChecksPending)
-    /\ keeper' = "Active" /\ lpc' = "Arming" /\ epoch' = epoch + 1
-    /\ renewUnclear' = FALSE
-    /\ handledGen' = IF AckSnapshot THEN Max(handledGen, snapGen) ELSE reqGen
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, pstate, intent, termPublished, lost, reqGen, snapGen,
-                   liveByRenewal, gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
 \* Open writes under `driver_mutex`: an interference report or FORGET may
 \* have published the latch since the decision, so the rule is read again in
-\* this step, as is the deadline. Without an arm the pool stays Transient
+\* this step, as is the deadline. Without an arm the pool stays `Reacquiring`
 \* for the next renewal.
 LArmOpen ==
     /\ lpc = "Arming"
     /\ IF /\ armReady
           /\ (deadlineOk \/ ~ReadinessGate)
-          /\ (~ArmRechecksAtOpen \/ CanArm(reqGen > snapGen, ReclaimChecksPending))
+          /\ (~ArmRechecksAtOpen \/ CanArm)
        THEN /\ pstate' = "Live" /\ lost' = FALSE
             /\ reacqLive' = (reacqLive \/ (pstate = "Reacquiring" /\ epoch = fenceEpoch + 1))
        ELSE UNCHANGED <<pstate, lost, reacqLive>>
     /\ lpc' = "Top" /\ armReady' = FALSE
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, reqGen,
-                   handledGen, snapGen, epoch, liveByRenewal, gcVars,
+    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, epoch,
+                   liveByRenewal, gcVars,
                    forgetVars, stopVars, historyVars,
                    allocated, allocCount, fenceEpoch, opEpoch, staleOpLanded>>
 
-\* The attempt observes a loss row: the identity probe (`IdentityLost`,
-\* `Replaced`) or any other R9-R17 observation. The fence was tripped by
-\* step 0; an attempt past its step-0 bail can land this mid-FORGET, and
-\* the first terminal transition wins.
-LAttemptLoss ==
-    /\ lpc = "InAttempt"
-    /\ lpc' = "Top"
-    /\ EnterStopping
-    /\ UNCHANGED <<farewellVars, lost, deadlineOk, keeper, reqGen, handledGen, snapGen,
-                   armReady, epoch, liveByRenewal, gcVars, forgetVars,
-                   other, stopRequests, everClosed, stopByInterference,
-                   pauseEpoch, reacqVars>>
-
-\* The period wait is abstracted: a renewal may start whenever the loop is
-\* idle with no pending request.
+\* The period wait is abstracted: a renewal may start whenever the loop is idle.
 LRenewBegin ==
     /\ lpc = "Top"
-    /\ ~stop /\ ~Pending
+    /\ ~stop
     /\ pstate \notin TerminalSet
     /\ (~RenewChecksIntent \/ ~intent)
     /\ lpc' = "Renewing"
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
+                   armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
-\* Success. A request already under way can succeed after a stop, a trip,
-\* a remount request or the latch; `ready` = start + TTL still admits a
-\* write. On a pool a reclaim left Transient with a too-old claim, arm the
-\* fence and report Live in the same step.
+\* Success. A request already under way can succeed after a stop, a trip
+\* or the latch; `ready` = start + TTL still admits a write. On a pool a
+\* claim left `Reacquiring` with a too-old lease, arm the fence and report
+\* Live in the same step.
 LRenewOk ==
     /\ lpc = "Renewing"
     /\ lpc' = "Top"
     /\ \E ready \in BOOLEAN :
          LET arm == /\ ready
                     /\ IF RenewOkChecksLatch
-                       THEN pstate \in {"Transient", "Reacquiring"} /\ CanArm(Pending, LiveChecksPending)
-                       ELSE /\ pstate \in {"Transient", "Reacquiring", "Stopping"}
-                            /\ (~LiveChecksPending \/ ~Pending)
-             report == arm /\ pstate \in {"Transient", "Reacquiring"}
+                       THEN pstate = "Reacquiring" /\ CanArm
+                       ELSE pstate \in {"Reacquiring", "Stopping"}
+             report == arm /\ pstate = "Reacquiring"
          IN /\ deadlineOk' = ready
             /\ pstate' = IF report THEN "Live" ELSE pstate
             /\ lost' = IF arm THEN FALSE ELSE lost
             /\ liveByRenewal' = (liveByRenewal \/ report)
-    /\ UNCHANGED <<farewellVars, intent, termPublished, keeper, reqGen, handledGen,
-                   snapGen, armReady, epoch, gcVars, forgetVars, stopVars,
+    /\ UNCHANGED <<farewellVars, intent, termPublished, keeper,
+                   armReady, epoch, gcVars, forgetVars, stopVars,
                    historyVars, reacqVars>>
 
-\* An early end on a stop, a pending remount request or the latch; a
-\* definitive answer that arrives under them ends the same way. The renewer
-\* becomes RenewalTerminal, which forbids the farewell. A stop trips the
-\* fence without counting a lease loss.
+\* An early end on a stop or the latch; a definitive answer that arrives
+\* under them ends the same way. The renewer becomes RenewalTerminal, which
+\* forbids the farewell. The fence is tripped without a lifecycle change.
 LRenewEndEarly ==
     /\ lpc = "Renewing"
-    /\ (stop \/ LeaseTerminal \/ Pending)
+    /\ (stop \/ LeaseTerminal)
     /\ lpc' = "Top" /\ keeper' = "Terminal"
     /\ renewUnclear' = TRUE
-    /\ IF stop
-       THEN lost' = TRUE /\ UNCHANGED pstate
-       ELSE TripMountLost
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, intent, termPublished, deadlineOk, reqGen, handledGen,
-                   snapGen, armReady, epoch, liveByRenewal, gcVars, forgetVars,
+    /\ lost' = TRUE
+    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, pstate, intent, termPublished, deadlineOk,
+                   armReady, epoch, liveByRenewal, gcVars, forgetVars,
                    stopVars, historyVars, reacqVars>>
 
-\* R8: our own body carries `gc_fenced`. Trip and request a remount; with `ReacquireInThread` the lease
-\* thread itself starts the reacquire: it latches the fence and closes the old epoch next.
+\* R8: our own body carries `gc_fenced`. The lease thread itself starts the
+\* reacquire: it latches the fence and closes the old epoch next.
 LRenewFenced ==
     /\ lpc = "Renewing"
     /\ ~stop /\ ~LeaseTerminal
     /\ keeper' = "Terminal"
     /\ renewUnclear' = TRUE
-    /\ IF ReacquireInThread
-       THEN /\ epoch < MaxGen
-            /\ lpc' = "Closing" /\ lost' = TRUE
-            /\ pstate' = IF pstate = "Live" THEN "Reacquiring" ELSE pstate
-            /\ fenceEpoch' = epoch /\ allocated' = FALSE /\ allocCount' = 0
-            /\ UNCHANGED reqGen
-       ELSE /\ ~Pending /\ reqGen < MaxGen
-            /\ lpc' = "Top"
-            /\ TripMountLost
-            /\ reqGen' = reqGen + 1
-            /\ UNCHANGED <<fenceEpoch, allocated, allocCount>>
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, intent, termPublished, deadlineOk, handledGen, snapGen,
+    /\ epoch < MaxGen
+    /\ lpc' = "Closing" /\ lost' = TRUE
+    /\ pstate' = IF pstate = "Live" THEN "Reacquiring" ELSE pstate
+    /\ fenceEpoch' = epoch /\ allocated' = FALSE /\ allocCount' = 0
+    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, intent, termPublished, deadlineOk,
                    armReady, epoch, liveByRenewal, gcVars, forgetVars,
                    stopVars, historyVars, opEpoch, staleOpLanded, reacqLive>>
 
-\* R9-R17 observed by the renewal: latch the fence and enter Stopping. With
-\* `LossStops` off, the pre-Stopping product: trip and request a remount.
+\* R9-R17 observed by the renewal: latch the fence and enter Stopping.
 LRenewLoss ==
     /\ lpc = "Renewing"
     /\ ~stop
     /\ lpc' = "Top" /\ keeper' = "Terminal"
-    /\ IF LossStops
-       THEN /\ lost' = TRUE
-            /\ EnterStopping
-            /\ UNCHANGED reqGen
-       ELSE /\ (LeaseTerminal \/ Pending \/ reqGen < MaxGen)
-            /\ TripMountLost /\ lossSeen' = TRUE
-            /\ reqGen' = IF LeaseTerminal \/ Pending THEN reqGen ELSE reqGen + 1
-            /\ UNCHANGED <<intent, termPublished, naturalWon, everStopping,
-                           d1stop>>
-    /\ UNCHANGED <<farewellVars, deadlineOk, handledGen, snapGen, armReady, epoch,
+    /\ lost' = TRUE
+    /\ EnterStopping
+    /\ UNCHANGED <<farewellVars, deadlineOk, armReady, epoch,
                    liveByRenewal, gcVars, forgetVars, other, stopRequests,
                    everClosed, stopByInterference, pauseEpoch, reacqVars>>
 
 (***************************************************************************)
-(* THE REACQUIRE IN THE LEASE THREAD (`ReacquireInThread`)                 *)
+(* THE REACQUIRE IN THE LEASE THREAD                                       *)
 (*                                                                         *)
 (* After R8: Closing (the old epoch ends, in-flight ref work included) ->  *)
 (* Claiming (one epoch is allocated per fence; a failed step repeats the   *)
@@ -402,7 +300,7 @@ LClose ==
     /\ lpc = "Closing"
     /\ lpc' = "Claiming"
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
+                   armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
 \* The one allocation of the fence. `SabReacqAllocPerAttempt` allocates again after every failed step.
@@ -413,7 +311,7 @@ LAlloc ==
     /\ allocCount < 2
     /\ allocated' = TRUE /\ allocCount' = allocCount + 1
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   lpc, reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
+                   lpc, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars,
                    fenceEpoch, opEpoch, staleOpLanded, reacqLive>>
 
@@ -422,7 +320,7 @@ LStepFail ==
     /\ lpc = "Claiming"
     /\ allocated' = (allocated /\ ~SabReacqAllocPerAttempt)
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   lpc, reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
+                   lpc, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars,
                    allocCount, fenceEpoch, opEpoch, staleOpLanded, reacqLive>>
 
@@ -433,7 +331,7 @@ LClaimLoss ==
        THEN /\ lpc' = "Closing" /\ lossSeen' = TRUE
             /\ UNCHANGED <<intent, termPublished, pstate, naturalWon, everStopping, d1stop>>
        ELSE /\ lpc' = "Top" /\ EnterStopping
-    /\ UNCHANGED <<farewellVars, lost, deadlineOk, keeper, reqGen, handledGen, snapGen,
+    /\ UNCHANGED <<farewellVars, lost, deadlineOk, keeper,
                    armReady, epoch, liveByRenewal, gcVars, forgetVars,
                    other, stopRequests, everClosed, stopByInterference,
                    pauseEpoch, reacqVars>>
@@ -444,8 +342,8 @@ LClaimed ==
     /\ lpc' = "Arming" /\ keeper' = "Active" /\ epoch' = epoch + 1
     /\ renewUnclear' = FALSE
     /\ \E ready \in BOOLEAN : deadlineOk' = ready
-    /\ armReady' = CanArm(FALSE, FALSE)
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, pstate, intent, termPublished, lost, reqGen, handledGen, snapGen,
+    /\ armReady' = CanArm
+    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, pstate, intent, termPublished, lost,
                    liveByRenewal, gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
 \* A stop or the latch ends the reacquire before it claims.
@@ -453,14 +351,13 @@ LReacqAbandon ==
     /\ lpc = "Claiming" /\ (stop \/ LeaseTerminal)
     /\ lpc' = "Top"
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
+                   armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
 (***************************************************************************)
 (* AN OPERATION ADMITTED UNDER ONE EPOCH AND MADE DURABLE LATER            *)
 (***************************************************************************)
 OpAdmit ==
-    /\ ReacquireInThread
     /\ pstate = "Live" /\ ~lost /\ opEpoch = -1
     /\ opEpoch' = epoch
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
@@ -481,21 +378,13 @@ OpDurable ==
 (* OUTSIDE THE THREAD                                                      *)
 (***************************************************************************)
 \* `reportImpossibleInterference` (R14, R15, R17 of the ref machine) from any
-\* thread, while a renewer exists. With `LossStops` off, today's
-\* `tripMountLost` + `scheduleRemount`.
+\* thread, while a renewer exists.
 XInterfere ==
     /\ keeper \in {"Active", "Terminal"}
-    /\ IF LossStops
-       THEN /\ lost' = TRUE
-            /\ EnterStopping
-            /\ stopByInterference' = (stopByInterference \/ ~termPublished)
-            /\ UNCHANGED reqGen
-       ELSE /\ (stop \/ LeaseTerminal \/ reqGen < MaxGen)
-            /\ TripMountLost /\ lossSeen' = TRUE
-            /\ reqGen' = IF stop \/ LeaseTerminal THEN reqGen ELSE reqGen + 1
-            /\ UNCHANGED <<intent, termPublished, naturalWon, everStopping,
-                           d1stop, stopByInterference>>
-    /\ UNCHANGED <<farewellVars, deadlineOk, keeper, lpc, handledGen, snapGen, armReady,
+    /\ lost' = TRUE
+    /\ EnterStopping
+    /\ stopByInterference' = (stopByInterference \/ ~termPublished)
+    /\ UNCHANGED <<farewellVars, deadlineOk, keeper, lpc, armReady,
                    epoch, liveByRenewal, gcVars, forgetVars, other,
                    stopRequests, everClosed, pauseEpoch, reacqVars>>
 
@@ -635,9 +524,9 @@ FIntent ==
 
 FTrip1 ==
     /\ fpc = "Trip1"
-    /\ TripMountLost
+    /\ lost' = TRUE
     /\ fpc' = "GcStopSignal"
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, farewell,
+    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, deadlineOk, keeper, farewell,
                    drained, leaseVars, stop, gcVars, mutex, stopVars,
                    historyVars, reacqVars>>
 
@@ -665,20 +554,10 @@ FJoinSignal ==
 
 FJoinWait ==
     /\ fpc = "JoinWait" /\ lpc = "Exited"
-    /\ fpc' = IF EnableTrip2 THEN "Trip2" ELSE "Drain"
+    /\ fpc' = "Drain"
     /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcVars, mutex,
                    stopVars, historyVars, reacqVars>>
-
-\* Re-latch after the join. Under `CanArm` nothing arms once the intent is
-\* published; this covers an arm that ignores the intent.
-FTrip2 ==
-    /\ fpc = "Trip2"
-    /\ TripMountLost
-    /\ fpc' = "Drain"
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, farewell,
-                   drained, leaseVars, stop, gcVars, mutex, stopVars,
-                   historyVars, reacqVars>>
 
 FDrain ==
     /\ fpc = "Drain"
@@ -727,8 +606,8 @@ FEnter ==
 
 (***************************************************************************)
 Next ==
-    \/ LExit \/ LAttemptBegin \/ LAttemptFail \/ LReclaim \/ LArmOpen
-    \/ LAttemptLoss \/ LRenewBegin \/ LRenewOk \/ LRenewEndEarly
+    \/ LExit \/ LArmOpen
+    \/ LRenewBegin \/ LRenewOk \/ LRenewEndEarly
     \/ LRenewFenced \/ LRenewLoss
     \/ LClose \/ LAlloc \/ LStepFail \/ LClaimLoss \/ LClaimed \/ LReacqAbandon
     \/ OpAdmit \/ OpDurable
@@ -737,32 +616,28 @@ Next ==
     \/ GcRoundStart \/ GcRoundEnd \/ GcSelfExit \/ VGcStop \/ VGcStart
     \/ FStart \/ FCheckShort \/ FShortJoin \/ FCheckProceed \/ FIntent
     \/ FTrip1 \/ FGcStopSignal \/ FGcStopJoin \/ FJoinSignal \/ FJoinWait
-    \/ FTrip2 \/ FDrain \/ FTeardown \/ FKeeperReset \/ FEnter
+    \/ FDrain \/ FTeardown \/ FKeeperReset \/ FEnter
 
 Spec == Init /\ [][Next]_vars
 
-\* Every FORGET step, the lease thread's exit, the ends of its attempt, of
-\* its arm and of a renewal that must end early, the process-stop raise, a
-\* GC round, and the GC self-exit make progress. FStart is not fair: FORGET
-\* is operator-initiated.
+\* Every FORGET step, the lease thread's exit, its arm, the end of a renewal that must end
+\* early, the process-stop raise, a GC round, and the GC self-exit make progress. FStart is
+\* not fair: FORGET is operator-initiated. The thread also finishes a reacquire it is in the
+\* middle of. `*Ready`: the storage answers and the claim or the renewal leaves enough lease
+\* to open. An idle thread starts its next renewal: a claim that leaves too little lease
+\* waits for that renewal.
+LClaimedReady == LClaimed /\ deadlineOk'
+LRenewOkReady == LRenewOk /\ deadlineOk'
 FairSpec ==
     /\ Spec
     /\ WF_vars(FCheckShort) /\ WF_vars(FShortJoin) /\ WF_vars(FCheckProceed)
     /\ WF_vars(FIntent) /\ WF_vars(FTrip1) /\ WF_vars(FGcStopSignal)
     /\ WF_vars(FGcStopJoin) /\ WF_vars(FJoinSignal) /\ WF_vars(FJoinWait)
-    /\ WF_vars(FTrip2) /\ WF_vars(FDrain) /\ WF_vars(FTeardown)
+    /\ WF_vars(FDrain) /\ WF_vars(FTeardown)
     /\ WF_vars(FKeeperReset) /\ WF_vars(FEnter)
-    /\ WF_vars(LExit) /\ WF_vars(LAttemptFail) /\ WF_vars(LArmOpen)
+    /\ WF_vars(LExit) /\ WF_vars(LArmOpen)
     /\ WF_vars(LRenewEndEarly) /\ WF_vars(XRaise)
     /\ WF_vars(GcRoundEnd) /\ WF_vars(GcSelfExit)
-
-\* With the reacquire in the lease thread the thread also finishes a reacquire it is in the middle of.
-\* `*Ready`: the storage answers and the claim or the renewal leaves enough lease to open. An idle
-\* thread starts its next renewal: a claim that leaves too little lease waits for that renewal.
-LClaimedReady == LClaimed /\ deadlineOk'
-LRenewOkReady == LRenewOk /\ deadlineOk'
-FairSpec2 ==
-    /\ FairSpec
     /\ WF_vars(LClose) /\ WF_vars(LAlloc) /\ WF_vars(LReacqAbandon) /\ WF_vars(LRenewBegin)
     /\ SF_vars(LClaimedReady) /\ SF_vars(LRenewOkReady)
 
@@ -794,8 +669,6 @@ I3OneWay ==
     /\ everStopping => pstate = "Stopping"
     /\ everClosed => pstate = "Closed"
 
-I4aTransientImpliesLost == pstate = "Transient" => lost
-
 \* A terminal pool never coexists with an armed fence.
 I4bTerminalImpliesLost == pstate \in TerminalSet => lost
 
@@ -821,18 +694,15 @@ OneEpochPerFence ==
 NoOpenOverEnd ==
     [][(pstate = "Reacquiring" /\ pstate' = "Live") => (~intent /\ ~stop /\ deadlineOk')]_vars
 
-\* Liveness (FairSpec2): a reacquire ends, or the process is stopping.
+\* Liveness: a reacquire ends, or the process is stopping.
 ReacquireSettles == (pstate = "Reacquiring") ~> (pstate # "Reacquiring" \/ stop)
 
 I6GcStoppedAfterForget == ForgetDone => gcsched = "Destroyed"
 
-\* A reclaim acknowledges no request raised after its snapshot.
-I7RequestNotLost == handledGen <= snapGen
-
 \* The thread renews only a renewer that is not RenewalTerminal.
 I8RenewsActiveRenewer == lpc = "Renewing" => keeper = "Active"
 
-\* Every loss observation (R9-R17) ends terminal; it never remounts.
+\* Every loss observation (R9-R17) ends terminal; it never reacquires.
 I9LossTerminates == lossSeen => pstate \in TerminalSet
 
 \* One process-stop request, however many disks observe a loss.
@@ -848,13 +718,6 @@ ClosedRequestsNoStop == pstate = "Closed" => d1stop = "None"
 RenewNotAfterIntent ==
     [][(lpc # "Renewing" /\ lpc' = "Renewing") => ~intent]_vars
 
-\* No renewal starts while a remount request is pending.
-RenewNotWhilePending ==
-    [][(lpc # "Renewing" /\ lpc' = "Renewing") => ~Pending]_vars
-
-\* The fence is never armed while a remount request stays pending.
-NoArmWhileRequestPending == [][(lost /\ ~lost') => ~Pending']_vars
-
 \* Live is reported only when a write can be admitted.
 LiveOnlyWhenAdmissible ==
     [][(pstate # "Live" /\ pstate' = "Live") => (~lost' /\ deadlineOk')]_vars
@@ -869,13 +732,13 @@ NoArmAfterLatch == [][(intent => ~(lost /\ ~lost'))]_vars
 \* Nothing arms the fence once FORGET itself has published its intent.
 ForgetPastIntent ==
     fpc \in {"Trip1", "GcStopSignal", "GcStopJoin", "JoinSignal", "JoinWait",
-            "Trip2", "Drain", "Teardown", "KeeperReset", "Enter"}
+            "Drain", "Teardown", "KeeperReset", "Enter"}
 ForgetWinsArm == [][(ForgetPastIntent => ~(lost /\ ~lost'))]_vars
 
-\* An expiry changes no epoch, request generation, fence latch or lifecycle.
-PauseKeepsEpochAndGeneration ==
+\* An expiry changes no epoch, fence latch or lifecycle.
+PauseKeepsEpoch ==
     [][((deadlineOk /\ ~deadlineOk' /\ lpc' = lpc)
-          => UNCHANGED <<epoch, reqGen, handledGen, lost, pstate>>)]_vars
+          => UNCHANGED <<epoch, lost, pstate>>)]_vars
 
 \* Liveness (FairSpec): a started FORGET always completes.
 ForgetCompletes == (fpc = "Check") ~> ForgetDone
@@ -889,23 +752,14 @@ LeaseThreadExits == (stop \/ LeaseTerminal) ~> (lpc = "Exited")
 \* Liveness (FairSpec): a Stopping disk gets the process stop requested.
 StopIsRequested == (pstate = "Stopping") ~> (stopRequests > 0)
 
-\* With `LossStops`, the races the request generations guard are
-\* unreachable: no request appears while the thread is away from Top, and a
-\* reclaim never begins on an armed fence.
-NoRequestRace ==
-    /\ lpc \in {"InAttempt", "Arming"} => reqGen = snapGen
-    /\ lpc = "Renewing" => ~Pending
-    /\ (lpc = "Top" /\ Pending) => lost
-
 \* Witnesses (expected VIOLATED in their configs = reachability).
 WForgetNeverDone == ~ForgetDone
 WNoRacedStopping == ~(ForgetDone /\ pstate = "Stopping")
-\* No reclaim arms the fence inside FORGET's join window.
-NoJoinWindowReclaim == ~(fpc = "Trip2" /\ pstate = "Live" /\ ~lost)
+\* No reacquire arms the fence once FORGET has joined the lease thread.
+NoJoinWindowReclaim == ~(fpc = "Drain" /\ pstate = "Live" /\ ~lost)
 WNoLiveByRenewal == ~liveByRenewal
 \* A reacquire opens writes under the next epoch.
 WNoReacquire == ~reacqLive
-WNoRequestDuringReclaim == ~(lpc = "InAttempt" /\ reqGen > snapGen)
 WNoForgetFarewell == ~(ForgetDone /\ farewell)
 \* The farewell is written after the lease expired.
 WNoFarewellAfterExpiry == ~farewellExpired

@@ -331,3 +331,72 @@ Not checked here:
   last ETag) is a unit-test matter, not modelled.
 - The `~Pool` teardown: only FORGET's teardown is modelled.
 - "No farewell after `Closed`": one teardown precedes `Closed`, so the property is structural.
+
+## 2026-10-09 step 3: no remount {#2026-10-09-step-3}
+
+The remount machine is gone from the model: no request generations, no `Transient` state, no reclaim, no
+trip #2. R8 is the only way to leave `Live` for `Reacquiring`, and the lease thread runs the reacquire.
+Runs in this section: 4 workers, `-Xmx8g`, under `nice -n 10`.
+
+**Prediction, before any edit.** `main_step2` with `EnableTrip2 = FALSE`, run as a temporary row: **green**,
+exhaustive, depth 41, 4,616,709 generated, 763,932 distinct, 150 s. The arm re-check at the open
+(`ArmRechecksAtOpen`, `CanArm` in `LArmOpen`) does trip #2's job, so `FTrip2` could go.
+
+**Deleted.**
+- Constants `EnableTrip2`, `LiveChecksPending`, `ReclaimChecksPending`, `AckSnapshot`, `ReclaimTrips`,
+  `LossStops`, `ReacquireInThread` (always on); variables `reqGen`, `handledGen`, `snapGen`; the `Transient`
+  state and `InAttempt` lease state; actions `LAttemptBegin`, `LAttemptFail`, `LReclaim`, `LAttemptLoss`,
+  `FTrip2` and the `ELSE` arms of `LRenewFenced`, `LRenewLoss`, `XInterfere`.
+- Properties `RenewNotWhilePending`, `NoArmWhileRequestPending`, `I7RequestNotLost`,
+  `I4aTransientImpliesLost`, `WNoRequestDuringReclaim`, `NoRequestRace`.
+- `PauseKeepsEpochAndGeneration` is now `PauseKeepsEpoch`.
+
+**Adaptations to the model's head** (the plan predates PRs 12 to 14):
+- `TripMountLost` is deleted. Its last two users, `LRenewEndEarly` and `FTrip1`, run only with a stop or the
+  published intent, where it never changed the lifecycle; they set `lost` and leave `pstate` alone.
+- `FairSpec2` is merged into `FairSpec`: the model has one route, so `FairSpec` carries the reacquire's
+  fairness. `sab_nogcselfexit` and the other `FairSpec` row now run under it.
+- `NoJoinWindowReclaim` read `fpc = "Trip2"`, the first state after the join. With `Trip2` gone it reads
+  `fpc = "Drain"`, the same state.
+- `CanArm` takes no arguments.
+- The plan expected 19 kept rows. The runner has 25, counting the five that take plain names.
+
+**Rows removed, and why the states they covered are unreachable.**
+
+| row | property | why it can no longer happen |
+|---|---|---|
+| `sab_livependingrequest`, `sab_reclaimarmpending`, `sab_ackrequested` | `NoArmWhileRequestPending`, `I7RequestNotLost` | no remount request exists to pend or to acknowledge |
+| `sab_reclaimnotrip`, `sab_reclaimnotrip_vanished` | `I4aTransientImpliesLost`, `I4bTerminalImpliesLost` | no reclaim, so no step 0 to leave the fence armed; the reacquire latches the fence in `LRenewFenced` and `I4cReacquiringImpliesLost` covers it |
+| `sab_notrip2` | `I1ForgetTerminal` | no trip #2; the prediction row is green without it, and the arm re-check is fenced by `sab_forgetlosesarm`, `sab_interferearmrace`, `sab_armafterintent` |
+| `sab_lossremounts` | `I9LossTerminates` | a loss observation cannot request a remount; `sab_lossreacquires` keeps `I9LossTerminates` red-first for the reacquire |
+| `witness_requestduringreclaim`, `step1_norequestrace` | `WNoRequestDuringReclaim`, `NoRequestRace` | no request, no reclaim |
+| step-1 `main`, `sab_armafterintent`, `sab_liveunready`, `sab_interferearmrace`, `sab_forgetlosesarm` | as named | the remount route they ran on is gone; their `_step2` rows keep the property on the reacquire and take the plain names |
+
+This is the model side of "no deleted path was the only exit": `Transient` was left by `LReclaim`, which is
+gone, and entered by `TripMountLost` on a `Live` pool; every remaining entry to a non-`Live`, non-terminal
+pool is `LRenewFenced`, and `ReacquireSettles` (liveness, `FairSpec`) shows it always ends in `Live` or a
+terminal state, or the process is stopping.
+
+All 25 rows, `ALL EXPECTATIONS MET`.
+
+| cfg | expected | result | trace states | generated | distinct |
+|---|---|---|---:|---:|---:|
+| `main` (was `main_step2`) | green | green, exhaustive, depth 41 | - | 4,616,709 | 763,932 |
+| `old_farewellleasebound` | green | green, exhaustive, depth 41 | - | 4,616,709 | 763,932 |
+| `sab_armafterintent` | violation | `NoJoinWindowReclaim` | 16 | 606,765 | 122,530 |
+| `sab_liveunready` | violation | `LiveOnlyWhenAdmissible` | 7 | 7,791 | 2,418 |
+| `sab_interferearmrace` | violation | `TerminalAbsorbing` | 8 | 20,367 | 5,604 |
+| `sab_forgetlosesarm` | violation | `ForgetWinsArm` | 10 | 70,314 | 16,582 |
+| `sab_lossreacquires` | violation | `I9LossTerminates` | 5 | 986 | 428 |
+| `witness_livebyrenewal` | violation | `WNoLiveByRenewal` | 10 | 43,751 | 10,877 |
+
+The other 17 rows kept their verdicts. `main` equals `old_farewellleasebound` because the lease bound adds no
+state. The state space of the plain-name rows changed because they now run the reacquire route; `main`'s
+counts differ from the previous `main_step2` (4,674,283 generated, 776,160 distinct) by the removed
+`Transient` state and the merged fairness. Wall time: `main` 207 s; the other rows 0 to 4 s each. Disk: `/`
+stayed at 104 to 105 GiB free, the largest metadir was 38 MiB.
+
+Not checked here:
+- A terminal renewal that is not a loss, not R8 and not a stop (`local_defect`) and a memory-limit end: the
+  model has no such step.
+- Anything inside the reacquire beyond step 2's rows.
