@@ -944,9 +944,6 @@ private:
     std::optional<ReacquireOutcome> reacquireClaimSlot(ReacquireStep & step, ReacquirePass & pass);
     std::optional<ReacquireOutcome> reacquireStartRenewer(ReacquireStep & step, ReacquirePass & pass);
     std::optional<ReacquireOutcome> reacquireOpen(ReacquireStep & step, ReacquirePass & pass);
-    /// Whether a lease ending at `deadline_boot_ms` still leaves room for the next renewal, so the fence
-    /// may open without one first.
-    bool renewalWindowFits(uint64_t deadline_boot_ms) const;
 
 
 public:

@@ -69,6 +69,12 @@ namespace DB::Cas
 namespace
 {
 
+uint64_t leaseDeadline(uint64_t start_boot_ms, uint64_t ttl_ms)
+{
+    return start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms ? std::numeric_limits<uint64_t>::max()
+                                                                          : start_boot_ms + ttl_ms;
+}
+
 /// Validate every writable factory's lease/request/cadence relationship before it can publish
 /// owner, epoch, mount, or probe authority. Decommission forces background renewal before calling
 /// this helper, so it is held to the same cadence window as an ordinary production mount.
@@ -839,27 +845,9 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
     /// mutations under a deadline the durable lease never actually backs). From here ordinary ref
     /// mutations (appendRefOps) are fence-gated via mayMutate.
     const uint64_t ttl_ms_u = static_cast<uint64_t>(store->config.mount_lease_ttl_ms.count());
-    const uint64_t safety_ms = store->config.cas_request_budget.lease_safety_margin_ms;
-    const uint64_t safe_deadline = claim_anchor_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms_u
-        ? std::numeric_limits<uint64_t>::max() - safety_ms
-        : claim_anchor_boot_ms + ttl_ms_u - safety_ms;
-    const uint64_t now_boot_ms = store->bootMsNow();
-    const uint64_t period_ms = static_cast<uint64_t>(store->config.mount_renew_period.count());
-    const uint64_t envelope_ms = store->config.cas_request_budget.attemptEnvelopeMs();
-    const uint64_t two_envelopes_ms = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
-        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
-    const uint64_t renewal_window_ms = store->config.background_watermark
-        ? (two_envelopes_ms > std::numeric_limits<uint64_t>::max() - period_ms
-              ? std::numeric_limits<uint64_t>::max() : period_ms + two_envelopes_ms)
-        : two_envelopes_ms;
-    /// Preserve one ordinary cadence followed by one physical renewal attempt (a write and its
-    /// settlement read: two envelopes) inside the safe lease window. If that publication horizon was
-    /// consumed, re-anchor synchronously before opening the fence; the renewer independently retains
-    /// its per-request deadline checks. STRICT, like `CasMountRuntime::admit`: a horizon that fits
-    /// exactly still starts a renewal the fence would then refuse.
-    const bool renewal_window_fits = now_boot_ms <= safe_deadline
-        && renewal_window_ms < safe_deadline - now_boot_ms;
-    if (!renewal_window_fits)
+    /// If the claim consumed the room for the next renewal, re-anchor synchronously before opening the
+    /// fence; the renewer independently retains its per-request deadline checks.
+    if (!store->mount_runtime.renewalWindowFits(leaseDeadline(claim_anchor_boot_ms, ttl_ms_u)))
     {
         /// The lease runs from the claim's own start. A claim that confirmed late leaves too little of it
         /// to arm the fence; one conditional renewal re-anchors first. The renewal needs its own two
@@ -870,12 +858,7 @@ void Pool::mountWritable(PoolPtr & store, UInt128 our_uuid, MountClaimPolicy pol
         claim_anchor_boot_ms = store->mount_runtime.renewRenewerForStartupOnce();
     }
     store->mount_runtime.setLiveWriterEpoch(writer_epoch);
-    store->armMountFence(
-        our_uuid,
-        writer_epoch,
-        claim_anchor_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms_u
-            ? std::numeric_limits<uint64_t>::max()
-            : claim_anchor_boot_ms + ttl_ms_u);
+    store->armMountFence(our_uuid, writer_epoch, leaseDeadline(claim_anchor_boot_ms, ttl_ms_u));
     /// Gate the two persistent runtime workers with `background_watermark`: they run only in production
     /// (`background_watermark` = context != nullptr && !read_only), never in unit tests — which
     /// drive `renewWatermarkOnce` explicitly and rely on the armed sub-TTL deadline, never on a loop.
@@ -1266,36 +1249,12 @@ MountEnd slotEnd(MountSlotVerdict verdict)
     return MountEnd::SlotCorrupt;
 }
 
-uint64_t leaseDeadline(uint64_t start_boot_ms, uint64_t ttl_ms)
-{
-    return start_boot_ms > std::numeric_limits<uint64_t>::max() - ttl_ms ? std::numeric_limits<uint64_t>::max()
-                                                                          : start_boot_ms + ttl_ms;
-}
-
 uint64_t wallNowMs()
 {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
-}
-
-bool Pool::renewalWindowFits(uint64_t deadline_boot_ms) const
-{
-    const uint64_t safety_ms = config.cas_request_budget.lease_safety_margin_ms;
-    const uint64_t safe_deadline = deadline_boot_ms > safety_ms ? deadline_boot_ms - safety_ms : 0;
-    const uint64_t now_boot_ms = mount_runtime.bootMsNow();
-    const uint64_t period_ms = static_cast<uint64_t>(config.mount_renew_period.count());
-    const uint64_t envelope_ms = config.cas_request_budget.attemptEnvelopeMs();
-    const uint64_t two_envelopes_ms = envelope_ms > std::numeric_limits<uint64_t>::max() / 2
-        ? std::numeric_limits<uint64_t>::max() : 2 * envelope_ms;
-    const uint64_t renewal_window_ms = config.background_watermark
-        ? (two_envelopes_ms > std::numeric_limits<uint64_t>::max() - period_ms
-              ? std::numeric_limits<uint64_t>::max() : period_ms + two_envelopes_ms)
-        : two_envelopes_ms;
-    /// STRICT, like the open path and `CasMountRuntime::admit`: a horizon that fits exactly still
-    /// starts a renewal the fence would then refuse.
-    return now_boot_ms <= safe_deadline && renewal_window_ms < safe_deadline - now_boot_ms;
 }
 
 /// What one pass of the reacquire carries out of its stages: the end it latched, and why it stopped.
@@ -1497,7 +1456,7 @@ std::optional<ReacquireOutcome> Pool::reacquireStartRenewer(ReacquireStep & step
         mount_runtime.setProcessEpoch(*step.writer_epoch, std::memory_order_release);
         step.deadline_boot_ms = leaseDeadline(start_boot_ms, ttl_ms);
     }
-    if (!renewalWindowFits(step.deadline_boot_ms))
+    if (!mount_runtime.renewalWindowFits(step.deadline_boot_ms))
     {
         const MountRenewResult renewed = mount_runtime.renewForReacquireOnce();
         if (renewed.outcome == MountRenewOutcome::Committed)

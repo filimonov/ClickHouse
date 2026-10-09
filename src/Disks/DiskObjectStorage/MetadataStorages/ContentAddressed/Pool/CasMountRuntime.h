@@ -51,19 +51,6 @@ enum class PoolLifecycle : uint8_t
     Stopping,
 };
 
-enum class RenewalDriverState : uint8_t
-{
-    Dormant,
-    StartupCall,
-    DirectCall,
-    RemountCall,
-    WorkerIdle,
-    WorkerCall,
-    ParkRequested,
-    Parked,
-    Stopping,
-};
-
 using RuntimeWorkerFactory = std::function<ThreadFromGlobalPool(std::function<void()>)>;
 
 /// Configuration owned by `CasMountRuntime`. `PoolConfig::mountConfig` projects the flat pool settings
@@ -79,42 +66,18 @@ struct MountConfig
     std::function<uint64_t()> boot_ms_fn = {};
     std::function<void(uint64_t)> wait_sleep_fn = {};
     RuntimeWorkerFactory worker_factory = {};
-    /// Deterministic test interposition after the remount worker has confirmed renewal is parked,
-    /// immediately before it releases `driver_mutex` and begins the real remount callback.
-    /// Runs with `driver_mutex` held: it must issue no backend request and never wait on the pool's
-    /// hot-key lane, whose holders sleep under that mutex, or the test deadlocks itself.
-    std::function<void()> remount_parked_hook_for_test = {};
-    /// Deterministic test interposition at the top of the renewal loop, before it acquires
-    /// `driver_mutex` to inspect cadence or parking state.
+    /// Deterministic test interposition at the top of the renewal loop, before it acquires `driver_mutex`.
     std::function<void()> renewal_before_driver_lock_hook_for_test = {};
-    /// Deterministic test interposition after a due worker has atomically reserved renewal ownership
-    /// and captured its renewer, but before renewer/backend I/O starts.
+    /// Deterministic test interposition after a due background renewal has reserved the renewer, before
+    /// renewer/backend I/O starts.
     std::function<void()> renewal_admitted_hook_for_test = {};
-    /// Deterministic test interposition after terminal ownership has been deposited and the renewer is
-    /// no longer reachable by the completed call.
-    std::function<void()> renewal_terminal_deposited_hook_for_test = {};
-    /// Deterministic test interposition after the parked renewal predicate has sampled terminal false,
-    /// immediately before the condition-variable wait atomically releases `driver_mutex`.
-    /// Runs with `driver_mutex` held: it must issue no backend request and never wait on the pool's
-    /// hot-key lane, whose holders sleep under that mutex, or the test deadlocks itself.
-    std::function<void()> renewal_parked_predicate_false_hook_for_test = {};
-    /// Deterministic test interposition immediately before a terminal publisher attempts to acquire
-    /// `driver_mutex`.
-    std::function<void()> terminal_publication_waiting_for_driver_lock_hook_for_test = {};
-    /// Deterministic test interposition after the terminal publisher has observed `driver_mutex`
-    /// contention, but before it blocks acquiring the mutex.
-    std::function<void()> terminal_publication_driver_lock_contended_hook_for_test = {};
-    /// Deterministic test interposition immediately after a terminal publisher acquires `driver_mutex`.
-    /// Runs with `driver_mutex` held: it must issue no backend request and never wait on the pool's
-    /// hot-key lane, whose holders sleep under that mutex, or the test deadlocks itself.
-    std::function<void()> terminal_publication_driver_lock_acquired_hook_for_test = {};
     /// Deterministic failure injection at the vanished-reason preparation boundary.
     std::function<void()> vanished_reason_prepare_hook_for_test = {};
     /// Test-only override of the renewal's liveness predicate, for exact pre/post-send gate
     /// interleavings. FALSE ends the renewal exactly as a lost fence does.
     std::function<bool()> renewal_live_for_test = {};
-    /// Deterministic test interposition on the renewing thread right after `DriverLease::finish`
-    /// returned driver ownership, before the result is consumed. Runs without `driver_mutex`.
+    /// Deterministic test interposition on the renewing thread right after `finishRenewal` released the
+    /// renewer, before the result is consumed. Runs without `driver_mutex`.
     std::function<void(const MountRenewResult &)> renewal_finished_hook_for_test = {};
     /// How a loss end reaches beyond this mount; `disk_name` names the disk in the line that says so.
     MountLossReaction loss_reaction = MountLossReaction::StopServer;
@@ -444,10 +407,12 @@ public:
     void startBackgroundWorkers(std::chrono::milliseconds period);
     void stopBackgroundWorkers();
     void beginShutdownForTest();
-
-    RenewalDriverState renewalDriverStateForTest() const;
-    void waitForRenewalDriverStateForTest(RenewalDriverState expected) const;
     bool workersRunningForTest() const;
+
+    /// Whether a lease ending at `deadline_boot_ms` still leaves room for the next renewal: the safe deadline
+    /// is more than a renewal window away, where the window is two attempt envelopes plus, with background
+    /// renewal, one period. Strict, so a horizon that fits exactly is refused.
+    bool renewalWindowFits(uint64_t deadline_boot_ms) const;
 
     /// Join the renewal thread, then write the clean farewell only if `blockers` is empty, the mount
     /// did not end in a loss, and the renewer is `Active`; otherwise log every cause and write none.
@@ -469,53 +434,32 @@ public:
     void emitEvent(CasEvent && e) const { if (event_sink) event_sink(std::move(e)); }
 
 private:
-    class DriverLease
+    /// Who drives a renewal: the open before the workers start, a test without workers, the renewal
+    /// thread's cadence, or the reacquire's renewal before it opens.
+    enum class RenewalKind : uint8_t
     {
-    public:
-        DriverLease(CasMountRuntime & runtime_, RenewalDriverState active_);
-        ~DriverLease();
-        RenewalDriverState finish(RenewalDriverState ordinary_destination,
-            const MountRenewResult * result = nullptr, const MountLeaseRenewer * renewer = nullptr);
-
-    private:
-        CasMountRuntime & runtime;
-        RenewalDriverState active;
-        bool finished = false;
+        Startup,
+        Direct,
+        Worker,
+        Reacquire,
     };
 
-    struct AdmittedRenewerCall
-    {
-        std::unique_ptr<DriverLease> lease;
-        MountLeaseRenewer * renewer = nullptr;
-    };
-
-    /// The renewal worker may drive a renewal only while it exclusively owns the driver and the renewer
-    /// is Active. Requires `driver_mutex`. `admitRenewerCall` enforces the same three conditions for every
-    /// other driver; the worker loop must park rather than throw when they do not hold, so it needs the
-    /// predicate separately. Both the park test and the wake predicate use this one definition, so they
-    /// cannot drift apart.
-    bool renewalWorkerMayRenew() const;
-
-    AdmittedRenewerCall admitRenewerCall(RenewalDriverState required, RenewalDriverState active);
-    MountRenewResult renewRenewerOnce(
-        AdmittedRenewerCall call,
-        RenewalDriverState active,
-        bool propagate_failure,
-        bool worker_call,
-        bool reacquire_call = false);
+    /// Reserves the `Active` renewer for one renewal: one renewal at a time, `Direct` never with
+    /// background renewal configured, and `Startup`/`Direct` never while the renewal thread runs.
+    MountLeaseRenewer * beginRenewal(RenewalKind kind);
+    /// Releases the renewer and publishes what the renewal established: a committed deadline, or, for a
+    /// terminal renewal without a latched end, the tripped fence and the reacquire owed for our own fence.
+    void finishRenewal(RenewalKind kind, const MountRenewResult & result, const MountLeaseRenewer * renewer);
+    MountRenewResult renewRenewerOnce(RenewalKind kind);
     MountRenewOperationEnvironment renewalEnvironment(bool worker_call);
-    void consumeRenewResult(
-        const MountRenewResult & result,
-        RenewalDriverState active_state,
-        RenewalDriverState returned_state,
-        bool propagate_failure);
+    void consumeRenewResult(const MountRenewResult & result, bool propagate_failure);
     /// Publish a committed renewal's deadline, its start plus the lease. Requires `driver_mutex`.
     void publishRenewedDeadline(uint64_t attempt_start_boot_ms);
     void publishConfirmedBody(const std::optional<MountLease> & body);
     /// One `WARNING` per expiry, at the first renewal attempt after it.
     void warnOnceIfLeaseExpired() noexcept;
-    /// The background renewal's wait after a credential refusal. Wakes on stop and on a park request;
-    /// `MountConfig::wait_sleep_fn` replaces it in tests.
+    /// The background renewal's wait after a credential refusal. Wakes on stop; `MountConfig::wait_sleep_fn`
+    /// replaces it in tests.
     void waitBeforeNextRenewalCall(uint64_t ms);
     void renewalLoop();
     /// Runs the reacquire of `certificate` on the renewal thread until it opens, ends or is abandoned,
@@ -526,14 +470,13 @@ private:
     /// Whether a renewal found a GC fence of our own body that no reacquire has taken yet.
     bool reacquireOwed() const;
     ThreadFromGlobalPool makeWorker(std::function<void()> body);
-    /// The renewal's liveness: facts the mount fence cannot see -- a shutdown request, a parked or
-    /// park-requested driver, a pool that left `Live`. FALSE ends the renewal.
+    /// The renewal's liveness: facts the mount fence cannot see -- a shutdown request, a pool that left
+    /// `Live`. FALSE ends the renewal.
     bool renewalLive(bool worker_call) const;
     /// Whether this node has already been asked to stop. Sampled ONCE, before the write, so a refusal
     /// caused by the stop cannot be mistaken for one that preceded it.
     bool renewalCancelled() const;
     void tripFenceWithoutOperationalLoss();
-    std::unique_lock<std::mutex> lockTerminalPublication();
 
     /// ---- injected environment (no `Pool` back-reference); initialized first, in this order ----
     BackendPtr backend_ptr;
@@ -579,7 +522,8 @@ private:
     /// reacquire, logging, or joins.
     mutable std::mutex driver_mutex;
     mutable std::condition_variable driver_cv;
-    RenewalDriverState renewal_driver_state = RenewalDriverState::Dormant;
+    /// Set while one renewal or `startRenewer` holds the renewer; the renewer is not replaced or reset meanwhile.
+    bool renewer_in_use = false;
     bool workers_starting = false;
     bool workers_started = false;
     bool worker_loops_released = false;
