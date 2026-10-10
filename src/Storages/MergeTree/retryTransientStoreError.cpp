@@ -44,13 +44,13 @@ bool isTransientStoreError(std::exception_ptr exception)
     {
         if (isNotEnoughMemoryErrorCode(e.code()))
             return false;
-        if (isTransientWriteErrno(e.getErrno()))
-            return true;
+        return isTransientWriteErrno(e.getErrno()) || isRetryableException(exception);
     }
     catch (const Exception & e)
     {
         if (isNotEnoughMemoryErrorCode(e.code()))
             return false;
+        return isRetryableException(exception);
     }
     catch (const std::filesystem::filesystem_error & e)
     {
@@ -58,11 +58,13 @@ bool isTransientStoreError(std::exception_ptr exception)
         const auto & category = e.code().category();
         if ((category == std::generic_category() || category == std::system_category()) && isTransientWriteErrno(e.code().value()))
             return true;
+        return isRetryableException(exception);
     }
     catch (...)
     {
+        /// Ok: not swallowed, `isRetryableException` knows the other types (Azure, Poco).
+        return isRetryableException(exception);
     }
-    return isRetryableException(exception);
 }
 
 }
