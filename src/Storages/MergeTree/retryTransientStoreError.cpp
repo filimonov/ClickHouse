@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <filesystem>
+#include <system_error>
 
 namespace DB
 {
@@ -22,16 +24,17 @@ constexpr UInt64 RETRY_BACKOFF_MS = 100;
 constexpr UInt64 RETRY_MAX_BACKOFF_MS = 2000;
 
 /// The errnos a local write fails with when the disk, not the data, is the problem. The
-/// `ErrnoException` branch of `isRetryableException` lists only the read side; its
-/// `filesystem_error` branch has the same set.
+/// `ErrnoException` branch of `isRetryableException` lists only the read side, and its
+/// `filesystem_error` branch has no `EIO`.
 bool isTransientWriteErrno(int err)
 {
     return err == ENOSPC || err == EDQUOT || err == EROFS || err == EIO || err == EBUSY || err == ETIMEDOUT || err == EAGAIN;
 }
 
-/// `isRetryableException` adjusted for a write: plus the write-side errnos, minus the memory
-/// limits. A memory limit is the calling query's, not the storage's, and would be retried
-/// under the locks the query holds; the `noexcept` callers block memory exceptions anyway.
+/// `isRetryableException` adjusted for a write: plus the write-side errnos, however they are
+/// reported, minus the memory limits. A memory limit is the calling query's, not the storage's,
+/// and would be retried under the locks the query holds; the `noexcept` callers block memory
+/// exceptions anyway.
 bool isTransientStoreError(std::exception_ptr exception)
 {
     try
@@ -49,6 +52,13 @@ bool isTransientStoreError(std::exception_ptr exception)
     {
         if (isNotEnoughMemoryErrorCode(e.code()))
             return false;
+    }
+    catch (const std::filesystem::filesystem_error & e)
+    {
+        /// `DiskLocal::replaceFile` is `fs::rename`, and reports a failure this way.
+        const auto & category = e.code().category();
+        if ((category == std::generic_category() || category == std::system_category()) && isTransientWriteErrno(e.code().value()))
+            return true;
     }
     catch (...)
     {
