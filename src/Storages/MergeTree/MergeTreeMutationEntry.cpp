@@ -122,8 +122,8 @@ void MergeTreeMutationEntry::removeFile()
 
 void MergeTreeMutationEntry::writeCSN(CSN csn_, bool sync_directory)
 {
-    /// A transient storage error is retried here: the caller after the commit point of a
-    /// transaction is `noexcept` and could only terminate.
+    /// A transient storage error is retried here when the caller is the `noexcept` commit
+    /// callback of a transaction, which could only terminate otherwise.
     retryTransientStoreError(getLogger("MergeTreeMutationEntry"), fmt::format("mutation {} at {}", file_name, path_prefix), [&]
     {
     /// Fault injection for tests: a transient failure before any I/O, so the old file stays intact.

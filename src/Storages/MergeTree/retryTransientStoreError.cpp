@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 
@@ -68,9 +67,27 @@ bool isTransientStoreError(std::exception_ptr exception)
 
 }
 
+thread_local const TransientStoreRetryScope * current_retry_scope = nullptr;
+
+TransientStoreRetryScope::TransientStoreRetryScope()
+    : outer(current_retry_scope)
+{
+    current_retry_scope = this;
+}
+
+TransientStoreRetryScope::~TransientStoreRetryScope()
+{
+    current_retry_scope = outer;
+}
+
+const TransientStoreRetryScope * TransientStoreRetryScope::current()
+{
+    return current_retry_scope;
+}
+
 void retryTransientStoreError(LoggerPtr log, std::string_view what, const std::function<void()> & store)
 {
-    Stopwatch watch;
+    const TransientStoreRetryScope * scope = TransientStoreRetryScope::current();
     UInt64 backoff_ms = RETRY_BACKOFF_MS;
     size_t attempts = 0;
     while (true)
@@ -85,18 +102,18 @@ void retryTransientStoreError(LoggerPtr log, std::string_view what, const std::f
         }
         catch (...)
         {
-            if (!isTransientStoreError(std::current_exception()))
+            if (!scope || !isTransientStoreError(std::current_exception()))
                 throw;
 
             /// `instanceIfAny`: this path is taken by non-transactional writes too, and constructing
             /// the manager here would turn a disk error into a Keeper one.
             const TransactionManager * transaction_manager = TransactionManager::instanceIfAny();
-            const bool give_up = watch.elapsedSeconds() >= RETRY_TIMEOUT_SECONDS
+            const bool give_up = scope->elapsedSeconds() >= RETRY_TIMEOUT_SECONDS
                 || (transaction_manager && transaction_manager->isShuttingDown());
             if (give_up)
             {
                 LOG_ERROR(log, "Cannot store transaction metadata for {} after {} attempts in {:.1f} s, giving up: {}",
-                    what, attempts, watch.elapsedSeconds(), getCurrentExceptionMessage(false));
+                    what, attempts, scope->elapsedSeconds(), getCurrentExceptionMessage(false));
                 throw;
             }
 

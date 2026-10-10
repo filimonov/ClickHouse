@@ -392,8 +392,8 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
     static constexpr auto filename = TXN_VERSION_METADATA_FILE_NAME;
     static constexpr auto tmp_filename = TMP_TXN_VERSION_METADATA_FILE_NAME;
 
-    /// A transient storage error is retried here, in the one place that writes the file: the
-    /// callers after the commit point of a transaction are `noexcept` and could only terminate.
+    /// A transient storage error is retried here, in the one place that writes the file, when
+    /// the caller is a `noexcept` transaction callback that could only terminate otherwise.
     retryTransientStoreError(
         mt_data.log.load(),
         fmt::format("part {} of {}", data_part_storage.getPartDirectory(), mt_data.getStorageID().getNameForLogs()),
