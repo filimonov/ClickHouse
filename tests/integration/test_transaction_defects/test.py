@@ -444,7 +444,11 @@ def mutation_outcome(table, future, timeout=HANG_TIMEOUT):
 
 
 def require_cancelled(future, what):
-    """The killed request must fail because it was killed, not for some other reason."""
+    """The killed request must fail because it was killed, not for some other reason.
+
+    A success here means the statement finished between the observation that it was stuck and the
+    kill, so it was not stuck and the caller's conclusion about it does not hold.
+    """
     try:
         future.result(timeout=FUTURE_TIMEOUT)
     except Exception as e:
@@ -452,6 +456,8 @@ def require_cancelled(future, what):
             "QUERY_WAS_CANCELLED" in str(e) or "Cancelled" in str(e),
             f"{what} failed for a reason other than the kill: {e}",
         )
+        return
+    raise Precondition(f"{what} succeeded after the kill, so it had not stopped making progress")
 
 
 def kill_query(query_id):
