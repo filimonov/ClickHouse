@@ -41,8 +41,11 @@ void retryTransientStoreError(LoggerPtr log, std::string_view what, const std::f
             if (!isRetryableException(std::current_exception()))
                 throw;
 
+            /// `instanceIfAny`: this path is taken by non-transactional writes too, and constructing
+            /// the manager here would turn a disk error into a Keeper one.
+            const TransactionManager * transaction_manager = TransactionManager::instanceIfAny();
             const bool give_up = watch.elapsedSeconds() >= RETRY_TIMEOUT_SECONDS
-                || TransactionManager::instance().isShuttingDown();
+                || (transaction_manager && transaction_manager->isShuttingDown());
             if (give_up)
             {
                 LOG_ERROR(log, "Cannot store transaction metadata for {} after {} attempts in {:.1f} s, giving up: {}",
