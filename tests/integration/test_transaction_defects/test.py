@@ -4,11 +4,19 @@ Each test states the behaviour the server does not have, so each fails today and
 `xfail(strict=True, raises=AssertionError)`. Fixing a defect turns its test into a failure of the
 suite, which is the signal to drop the decorator and keep the test as a regression test.
 
-`raises` is what makes the suite mean anything. Without it, `_pytest.skipping` absorbs any
-exception in any phase into `xfail` -- a leaked session, a transport error, a broken module
-fixture -- and a module that executed no test body at all still reports twelve clean expected
-failures. With it, only the assertion each test is about counts as the expected failure, so
-preconditions and infrastructure raise something else on purpose.
+`raises` is what makes the suite mean anything, and it only works if nothing but the defect raises
+an `AssertionError`. Without `raises`, `_pytest.skipping` absorbs any exception in any phase into
+`xfail`, and a module that executed no test body at all still reports twelve clean expected
+failures. With it, an `AssertionError` is the expected failure -- so everything that is not the
+defect raises `Precondition` instead: setup, the state a failpoint was supposed to create,
+positive controls, and cleanup.
+
+Every request carries an explicit timeout. `Instance.query` defaults to `DEFAULT_QUERY_TIMEOUT`
+(600 s) and `requests` with `timeout=None` waits forever, either of which outlasts every budget
+here, and a polling loop whose own requests are unbounded has no bound. A request left running in
+a worker thread keeps pytest alive at exit whatever `shutdown(wait=False)` says, because
+`concurrent.futures` joins its non-daemon workers through an atexit hook. A hung module is worse
+than a failed reproduction: it reports nothing.
 
 The node is private to this module because these reproductions cannot share a server: the
 failpoints are global, and the removal of a part whose creation has not committed raises a
@@ -41,14 +49,23 @@ node = cluster.add_instance(
     ],
 )
 
-# Every request needs a finite bound. `requests` with `timeout=None` waits forever, and
-# `clickhouse-client` waits `DEFAULT_QUERY_TIMEOUT` (600 s). A request still running in a
-# `ThreadPoolExecutor` worker keeps pytest alive at exit whatever `pool.shutdown(wait=False)` says,
-# because `concurrent.futures` joins its non-daemon workers through an atexit hook. A hung module
-# is worse than a failed reproduction: it reports nothing.
 QUERY_TIMEOUT = 120
 # Let a request fail on its own first, so its error reaches the test instead of a `TimeoutError`.
 FUTURE_TIMEOUT = QUERY_TIMEOUT + 30
+# Long enough for every bounded request a worker can still be inside.
+JOIN_TIMEOUT = FUTURE_TIMEOUT
+RESTART_TIMEOUT = 180
+# Two defects here are hangs, and elapsed time is the only way to see a hang: there is nothing to
+# read that separates "stuck forever" from "slower than this". So this number is both the price of
+# those two reproductions and the whole claim they rest on -- a one-row mutation that needs longer
+# than this on an idle server would be a defect of its own.
+HANG_TIMEOUT = 30
+# A request gets at least this long whatever a polling loop has left of its budget.
+MIN_REQUEST_TIMEOUT = 5
+
+# `TransactionManager` reads `transaction_log.zookeeper_path`, default `/clickhouse/txn`, and
+# `configs/transactions.xml` does not override it.
+TXN_LOG_PATH = "/clickhouse/txn/log"
 
 FAILPOINTS = [
     "non_transactional_removal_store_fail_after_first_part",
@@ -60,15 +77,56 @@ FAILPOINTS = [
 ]
 
 
+class Precondition(Exception):
+    """The setup for a reproduction did not hold, or cleanup after it did not.
+
+    Deliberately not an `AssertionError`: `xfail(raises=AssertionError)` reports this as a real
+    failure instead of the expected one, so a reproduction that never reached its defect cannot
+    pass for one that did.
+    """
+
+
+def require(condition, message):
+    if not condition:
+        raise Precondition(message)
+
+
+def q(query, timeout=QUERY_TIMEOUT, **kwargs):
+    return node.query(query, timeout=timeout, **kwargs)
+
+
+def q_error(query, timeout=QUERY_TIMEOUT, **kwargs):
+    return node.query_and_get_error(query, timeout=timeout, **kwargs)
+
+
+def poll(predicate, timeout, step=0.2):
+    """True once `predicate` holds, False at `timeout`.
+
+    `predicate` takes the seconds to allow its request, so that a single stalled poll cannot
+    outlast the budget this loop is enforcing. The value is the time left, floored at
+    `MIN_REQUEST_TIMEOUT`: handing a request a few hundred milliseconds would fail it on the clock
+    rather than answer the question. So the loop returns within `timeout`, and the last request
+    inside it within `MIN_REQUEST_TIMEOUT` of that.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        if predicate(max(MIN_REQUEST_TIMEOUT, remaining)):
+            return True
+        time.sleep(step)
+
+
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
         cluster.start()
         # `SET TRANSACTION SNAPSHOT` refuses a CSN in the reserved range, and a fresh server sits
         # at the top of it. A commit that changes nothing allocates no CSN, so insert a row.
-        node.query("CREATE TABLE t_warmup (n UInt64) ENGINE = MergeTree ORDER BY n")
-        node.query("BEGIN TRANSACTION; INSERT INTO t_warmup VALUES (1); COMMIT;")
-        latest = int(node.query("SELECT transactionLatestSnapshot()").strip())
+        q("CREATE TABLE t_warmup (n UInt64) ENGINE = MergeTree ORDER BY n")
+        q("BEGIN TRANSACTION; INSERT INTO t_warmup VALUES (1); COMMIT;")
+        latest = int(q("SELECT transactionLatestSnapshot()").strip())
         if latest <= 32:
             raise RuntimeError(f"latest snapshot {latest} is still a reserved CSN")
         yield cluster
@@ -80,75 +138,223 @@ def start_cluster():
 
 @pytest.fixture(autouse=True)
 def isolated_test(start_cluster):
-    """Each test gets its own transaction sessions and leaves no failpoint armed."""
+    """Each test gets its own transaction sessions and leaves no failpoint armed.
+
+    Cleanup raises rather than logs: a failpoint still armed or a transaction still open makes
+    every later reproduction meaningless, and a teardown error is reported as an error instead of
+    being absorbed into the next test's expected failure.
+    """
     global _session_epoch
     _session_epoch += 1
-    _sessions.clear()
+    _session_names.clear()
+    _query_ids.clear()
     yield
-    if not server_is_up():
-        return
+    require(
+        server_is_up(),
+        "the server is not answering after the test, so the reproductions after it cannot run",
+    )
+    left_behind = []
     for failpoint in FAILPOINTS:
         try:
             # Disabling also releases whatever is parked at a pauseable failpoint.
-            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}", timeout=60)
+            q(f"SYSTEM DISABLE FAILPOINT {failpoint}", timeout=60)
         except Exception as e:
-            logging.warning("could not disable failpoint %s: %s", failpoint, e)
+            left_behind.append(f"failpoint {failpoint} armed: {e}")
+    for query_id in sorted(_query_ids):
+        try:
+            q(f"KILL QUERY WHERE query_id = '{query_id}' SYNC FORMAT Null", timeout=60)
+        except Exception as e:
+            left_behind.append(f"query {query_id} still running: {e}")
     # A transaction left open by a failed assertion would hold a snapshot and pin part cleanup.
-    for session in sorted(_sessions):
-        with contextlib.suppress(Exception):
-            node.http_query(
-                None, data="ROLLBACK", params={"session_id": session}, timeout=60
-            )
+    for name in sorted(_session_names):
+        try:
+            _, error = tx_in_answer_with_error(name, "ROLLBACK", timeout=60)
+        except Exception as e:
+            left_behind.append(f"session {name} unreachable: {e}")
+            continue
+        # A session that never began a transaction answers `INVALID_TRANSACTION`, which is the
+        # ordinary case; anything else means the session is still held or still in a transaction.
+        if error and "INVALID_TRANSACTION" not in error:
+            left_behind.append(f"session {name} not rolled back: {error}")
+    require(not left_behind, "cleanup left the server contaminated: " + "; ".join(left_behind))
 
 
 def server_is_up():
     try:
-        node.query("SELECT 1", timeout=30)
+        q("SELECT 1", timeout=30)
         return True
     except Exception:
         return False
 
 
+def restart_server(timeout=RESTART_TIMEOUT):
+    """Restarts the server under a deadline this module enforces.
+
+    `Instance.restart_clickhouse` does not enforce one: `wait_start` runs a batch of ten 30 s
+    readiness attempts before it looks at its budget, so a 120 s argument can take over 300 s, and
+    `stop_clickhouse` falls into an undeadlined wait on `llvm-symbolizer` if the process outlives
+    the stop budget. Start the process without waiting and poll for readiness here instead.
+    """
+    deadline = time.monotonic() + timeout
+    node.stop_clickhouse(stop_wait_sec=30, kill=True)
+    node.start_clickhouse(start_wait_sec=30, wait_start=False)
+
+    def answers(remaining):
+        try:
+            return q("SELECT 1", timeout=remaining).strip() == "1"
+        except Exception:
+            return False
+
+    if not poll(answers, max(1.0, deadline - time.monotonic())):
+        raise Precondition(f"the server did not answer within {timeout} s of a restart")
+    # `wait_start` does this, and skipping it would attribute this module's coverage elsewhere.
+    node.arm_per_test_coverage()
+
+
 def restart_if_down():
     if not server_is_up():
-        node.restart_clickhouse(stop_start_wait_sec=120, kill=True)
+        restart_server()
 
 
 _session_epoch = 0
-_sessions = set()
+_session_names = set()
+_query_ids = set()
 
 
 def session_id(session):
     name = f"session_{_session_epoch}_{session}"
-    _sessions.add(name)
+    _session_names.add(name)
     return name
 
 
-def tx(session, query, query_id=None, timeout=QUERY_TIMEOUT):
-    """Runs `query` in a session, so `BEGIN`/`COMMIT` span calls. Raises on a server error."""
-    params = {"session_id": session_id(session)}
+def tx_in(name, query, query_id=None, timeout=QUERY_TIMEOUT):
+    """Runs `query` in a named session, so `BEGIN`/`COMMIT` span calls. Raises on a server error."""
+    params = {"session_id": name}
     if query_id is not None:
         params["query_id"] = query_id
+        _query_ids.add(query_id)
     return node.http_query(None, data=query, params=params, timeout=timeout)
 
 
-def tx_answer_with_error(session, query, timeout=QUERY_TIMEOUT):
-    params = {"session_id": session_id(session)}
+def tx_in_answer_with_error(name, query, timeout=QUERY_TIMEOUT):
     return node.http_query_and_get_answer_with_error(
-        None, data=query, params=params, timeout=timeout
+        None, data=query, params={"session_id": name}, timeout=timeout
     )
+
+
+def tx(session, query, query_id=None, timeout=QUERY_TIMEOUT):
+    return tx_in(session_id(session), query, query_id=query_id, timeout=timeout)
+
+
+def tx_answer_with_error(session, query, timeout=QUERY_TIMEOUT):
+    return tx_in_answer_with_error(session_id(session), query, timeout=timeout)
+
+
+def in_session(session, *queries, query_id=None):
+    """A callable for a worker thread, with the session name resolved now.
+
+    `session_id` builds the name from the epoch current when it is called, so a worker that
+    outlives its test would send its next request into the following test's session.
+    """
+    name = session_id(session)
+
+    def run():
+        return [tx_in(name, query, query_id=query_id) for query in queries]
+
+    return run
+
+
+def in_session_answer_with_error(session, query):
+    name = session_id(session)
+    return functools.partial(tx_in_answer_with_error, name, query)
+
+
+class Workers:
+    """A thread pool that reports a request outliving its test.
+
+    Every request here is bounded, so a worker still running after `JOIN_TIMEOUT` means something
+    else is wrong -- and it would both reach into the next test and hang pytest at exit.
+    """
+
+    def __init__(self, max_workers):
+        self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        self._futures = []
+
+    def submit(self, fn, *args, **kwargs):
+        future = self._pool.submit(fn, *args, **kwargs)
+        self._futures.append(future)
+        return future
+
+    def close(self):
+        _, pending = concurrent.futures.wait(self._futures, timeout=JOIN_TIMEOUT)
+        self._pool.shutdown(wait=False)
+        return pending
+
+
+@contextlib.contextmanager
+def workers(max_workers):
+    pool = Workers(max_workers)
+    failed = False
+    try:
+        yield pool
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        pending = pool.close()
+        if pending and not failed:
+            # Raising here would replace the exception a failing test is reporting, so this only
+            # speaks up when the test body itself had nothing to say.
+            raise Precondition(f"{len(pending)} request(s) outlived the test")
+        if pending:
+            logging.warning("%d request(s) outlived a failing test", len(pending))
+
+
+def settled(query_id, future, timeout):
+    """True once the statement finished: its request returned, or it left `system.processes`
+    after having appeared there.
+
+    A request still in flight is not in `system.processes` yet, so an unsynchronised poll would
+    read "finished" from a statement that never started.
+    """
+    started = False
+
+    def check(remaining):
+        nonlocal started
+        if future.done():
+            return True
+        if running(query_id, remaining) > 0:
+            started = True
+            return False
+        return started
+
+    return poll(check, timeout)
+
+
+def running(query_id, timeout=QUERY_TIMEOUT):
+    return int(
+        q(
+            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+            timeout=timeout,
+        ).strip()
+    )
+
+
+def kill_query(query_id):
+    q(f"KILL QUERY WHERE query_id = '{query_id}' SYNC FORMAT Null")
 
 
 def wait_for_no_merges(timeout=60):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if node.query("SELECT count() FROM system.merges").strip() == "0":
-            return
-        time.sleep(0.2)
-    raise RuntimeError(
-        "merges are still running: "
-        + node.query("SELECT database, table FROM system.merges")
-    )
+    if not poll(
+        lambda remaining: q(
+            "SELECT count() FROM system.merges", timeout=remaining
+        ).strip()
+        == "0",
+        timeout,
+    ):
+        raise Precondition(
+            "merges are still running: " + q("SELECT database, table FROM system.merges")
+        )
 
 
 @contextlib.contextmanager
@@ -163,69 +369,77 @@ def merges_stopped():
     (`InterpreterSystemQuery::startStopAction`), so a table created afterwards is not covered. It
     also leaves a merge that is already running alone, hence the wait.
     """
-    node.query("SYSTEM STOP MERGES")
+    q("SYSTEM STOP MERGES")
     try:
         wait_for_no_merges()
         yield
     finally:
-        node.query("SYSTEM START MERGES")
+        q("SYSTEM START MERGES")
 
 
 def require_parts(table, expected):
-    """A precondition, not an assertion about the server: raises so the failure is distinguishable
-    from the defect each test asserts."""
     actual = int(
-        node.query(
+        q(
             "SELECT count() FROM system.parts WHERE database = currentDatabase() "
             f"AND table = '{table}' AND active"
         ).strip()
     )
-    if actual != expected:
-        raise RuntimeError(
-            f"{table} has {actual} active parts, expected {expected}: a merge got there first and "
-            "the removal batch would not hold two parts"
-        )
+    require(
+        actual == expected,
+        f"{table} has {actual} active parts, expected {expected}: a merge got there first and "
+        "the removal batch would not hold two parts",
+    )
 
 
 @contextlib.contextmanager
 def failpoints(*names):
     for name in names:
-        node.query(f"SYSTEM ENABLE FAILPOINT {name}")
+        q(f"SYSTEM ENABLE FAILPOINT {name}")
     try:
         yield
     finally:
         for name in names:
             try:
-                node.query(f"SYSTEM DISABLE FAILPOINT {name}", timeout=60)
+                q(f"SYSTEM DISABLE FAILPOINT {name}", timeout=60)
             except Exception as e:
                 logging.warning("could not disable failpoint %s: %s", name, e)
 
 
-def running(query_id):
+def require_injected_failure(error):
+    """The statement must have failed through the injected store error, not another way.
+
+    The failpoint fires once, on the first removal batch of two or more parts to reach it. A merge
+    or another statement can take it first, and then the statement under test either succeeds or
+    fails for an unrelated reason -- neither of which says anything about the defect.
+    """
+    require(
+        error and "CANNOT_WRITE_TO_FILE" in error,
+        f"the injected store error did not reach the statement: {error!r}",
+    )
+
+
+def require_rows(table, expected):
+    actual = q(f"SELECT count(), sum(n) FROM {table}").strip()
+    require(actual == expected, f"{table} holds {actual!r} before the reload, expected {expected!r}")
+
+
+def keeper_latest_csn(timeout=QUERY_TIMEOUT):
+    """The highest CSN written to the transaction log in Keeper, loaded or not.
+
+    Entry names are `csn-` plus the CSN padded to ten digits (`Tx::serializeCSN`).
+    """
     return int(
-        node.query(
-            f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'"
+        q(
+            "SELECT max(toUInt64OrZero(substring(name, 5))) FROM system.zookeeper "
+            f"WHERE path = '{TXN_LOG_PATH}'",
+            timeout=timeout,
         ).strip()
     )
 
 
-def wait_until_idle(query_id, timeout=20):
-    """True if the query finished within `timeout` seconds."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if running(query_id) == 0:
-            return True
-        time.sleep(0.25)
-    return running(query_id) == 0
-
-
-def kill_query(query_id):
-    node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC FORMAT Null")
-
-
 def covered_active_parts(table):
     """Active parts that another active part of the same partition covers."""
-    return node.query(
+    return q(
         "WITH p AS (SELECT partition_id, min_block_number mn, max_block_number mx, level, name"
         "           FROM system.parts"
         f"          WHERE database = currentDatabase() AND table = '{table}' AND active)"
@@ -239,12 +453,10 @@ def covered_active_parts(table):
 
 
 def two_parts(table, settings="old_parts_lifetime = 3600"):
-    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-    node.query(
-        f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS {settings}"
-    )
-    node.query(f"INSERT INTO {table} VALUES (1)")
-    node.query(f"INSERT INTO {table} VALUES (2)")
+    q(f"DROP TABLE IF EXISTS {table} SYNC")
+    q(f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS {settings}")
+    q(f"INSERT INTO {table} VALUES (1)")
+    q(f"INSERT INTO {table} VALUES (2)")
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124488
@@ -254,10 +466,10 @@ def two_parts(table, settings="old_parts_lifetime = 3600"):
     reason="Known bug #124488: SET TRANSACTION SNAPSHOT accepts a snapshot above the latest one",
 )
 def test_snapshot_above_latest_is_refused(start_cluster):
-    node.query("DROP TABLE IF EXISTS t_snapshot SYNC")
-    node.query("CREATE TABLE t_snapshot (n UInt64) ENGINE = MergeTree ORDER BY n")
-    node.query("INSERT INTO t_snapshot VALUES (1)")
-    latest = int(node.query("SELECT transactionLatestSnapshot()").strip())
+    q("DROP TABLE IF EXISTS t_snapshot SYNC")
+    q("CREATE TABLE t_snapshot (n UInt64) ENGINE = MergeTree ORDER BY n")
+    q("INSERT INTO t_snapshot VALUES (1)")
+    latest = int(q("SELECT transactionLatestSnapshot()").strip())
 
     tx(1, "BEGIN TRANSACTION")
     accepted, error = tx_answer_with_error(
@@ -269,10 +481,15 @@ def test_snapshot_above_latest_is_refused(start_cluster):
     for snapshot in (latest, 1, 3):
         tx(2, "BEGIN TRANSACTION")
         tx(2, f"SET TRANSACTION SNAPSHOT {snapshot}")
-        assert tx(2, "SELECT count() FROM t_snapshot").strip() == "1"
+        seen = tx(2, "SELECT count() FROM t_snapshot").strip()
         tx(2, "ROLLBACK")
+        require(seen == "1", f"snapshot {snapshot} does not see the row: {seen}")
 
-    assert error and "INVALID_TRANSACTION" in error, (
+    require(
+        not error or "INVALID_TRANSACTION" in error,
+        f"the snapshot was refused for an unrelated reason: {error}",
+    )
+    assert error, (
         f"a snapshot {latest + 1000000} above the latest {latest} was accepted: {accepted!r}"
     )
 
@@ -285,42 +502,50 @@ def test_snapshot_above_latest_is_refused(start_cluster):
     "selection tests visibility at the start CSN",
 )
 def test_mutation_at_raised_snapshot_finishes(start_cluster):
-    node.query("DROP TABLE IF EXISTS t_raised_snapshot SYNC")
-    node.query(
+    q("DROP TABLE IF EXISTS t_raised_snapshot SYNC")
+    q(
         "CREATE TABLE t_raised_snapshot (n UInt64, v UInt64) ENGINE = MergeTree "
         "PARTITION BY n ORDER BY n"
     )
-    node.query("INSERT INTO t_raised_snapshot VALUES (1, 0)")
+    q("INSERT INTO t_raised_snapshot VALUES (1, 0)")
 
     tx(1, "BEGIN TRANSACTION")
     tx(2, "BEGIN TRANSACTION")
     tx(2, "INSERT INTO t_raised_snapshot VALUES (2, 0)")
     tx(2, "COMMIT")
 
-    latest = node.query("SELECT transactionLatestSnapshot()").strip()
+    latest = q("SELECT transactionLatestSnapshot()").strip()
     tx(1, f"SET TRANSACTION SNAPSHOT {latest}")
-    assert tx(1, "SELECT count() FROM t_raised_snapshot").strip() == "2"
+    seen = tx(1, "SELECT count() FROM t_raised_snapshot").strip()
+    require(seen == "2", f"the raised snapshot does not see both rows: {seen}")
 
     tx(1, "SET mutations_sync = 1")
     query_id = "raised_snapshot_mutation"
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        mutation = pool.submit(
-            tx, 1, "ALTER TABLE t_raised_snapshot UPDATE v = 1 WHERE 1", query_id
+        with workers(1) as pool:
+            mutation = pool.submit(
+                in_session(
+                    1, "ALTER TABLE t_raised_snapshot UPDATE v = 1 WHERE 1", query_id=query_id
+                )
+            )
+            finished = settled(query_id, mutation, HANG_TIMEOUT)
+            if finished:
+                # Not suppressed: a statement that failed for another reason is not this defect.
+                mutation.result(timeout=FUTURE_TIMEOUT)
+            else:
+                kill_query(query_id)
+                with contextlib.suppress(Exception):
+                    mutation.result(timeout=FUTURE_TIMEOUT)
+
+        assert finished, (
+            f"the mutation at a raised snapshot did not finish within {HANG_TIMEOUT} s"
         )
-        finished = wait_until_idle(query_id)
-        if not finished:
-            kill_query(query_id)
-        with contextlib.suppress(Exception):
-            mutation.result(timeout=FUTURE_TIMEOUT)
-        assert finished, "the mutation at a raised snapshot does not finish"
 
         tx(1, "COMMIT")
-        assert node.query("SELECT n, v FROM t_raised_snapshot ORDER BY n") == "1\t1\n2\t1\n"
+        assert q("SELECT n, v FROM t_raised_snapshot ORDER BY n") == "1\t1\n2\t1\n"
     finally:
         with contextlib.suppress(Exception):
             tx(1, "ROLLBACK")
-        pool.shutdown(wait=False)
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124488
@@ -331,89 +556,105 @@ def test_mutation_at_raised_snapshot_finishes(start_cluster):
     "accepted, and the mutation that follows misses that commit's part",
 )
 def test_mutation_covers_part_of_unloaded_commit(start_cluster):
-    node.query("DROP TABLE IF EXISTS t_unloaded_commit SYNC")
-    node.query("DROP TABLE IF EXISTS t_unloaded_commit_poke SYNC")
-    node.query(
+    q("DROP TABLE IF EXISTS t_unloaded_commit SYNC")
+    q("DROP TABLE IF EXISTS t_unloaded_commit_poke SYNC")
+    q(
         "CREATE TABLE t_unloaded_commit (n UInt64, v UInt64) ENGINE = MergeTree "
         "PARTITION BY n ORDER BY n"
     )
-    node.query("INSERT INTO t_unloaded_commit VALUES (1, 0)")
+    q("INSERT INTO t_unloaded_commit VALUES (1, 0)")
 
     tx(1, "BEGIN TRANSACTION")
-    latest = int(node.query("SELECT transactionLatestSnapshot()").strip())
+    latest = int(q("SELECT transactionLatestSnapshot()").strip())
 
     snapshot_id = "unloaded_commit_snapshot"
     mutation_id = "unloaded_commit_mutation"
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
     held = False
     try:
-        node.query("SYSTEM ENABLE FAILPOINT transaction_log_pause_before_loading_entries")
-        node.query("SYSTEM ENABLE FAILPOINT transaction_force_unknown_state_after_commit")
+        q("SYSTEM ENABLE FAILPOINT transaction_log_pause_before_loading_entries")
+        q("SYSTEM ENABLE FAILPOINT transaction_force_unknown_state_after_commit")
         held = True
 
-        commit = pool.submit(
-            lambda: [
-                tx(2, "BEGIN TRANSACTION"),
-                tx(2, "INSERT INTO t_unloaded_commit VALUES (2, 0)"),
-                tx(2, "COMMIT"),
-            ]
-        )
-
-        # The commit is in Keeper once the updating thread it wakes is held before loading it.
-        node.query(
-            "SYSTEM WAIT FAILPOINT transaction_log_pause_before_loading_entries PAUSE",
-            timeout=60,
-        )
-        node.query("SYSTEM DISABLE FAILPOINT transaction_force_unknown_state_after_commit")
-
-        # The held commit's CSN is the next one. Accepting it at once is the defect; a correct
-        # server waits for the log to load it, or refuses it.
-        snapshot = pool.submit(
-            tx, 1, f"SET TRANSACTION SNAPSHOT {latest + 1}", snapshot_id
-        )
-        if not wait_until_idle(snapshot_id):
-            # A server that waits for the log is still waiting: release it.
-            node.query(
-                "SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries"
+        with workers(2) as pool:
+            commit = pool.submit(
+                in_session(
+                    2,
+                    "BEGIN TRANSACTION",
+                    "INSERT INTO t_unloaded_commit VALUES (2, 0)",
+                    "COMMIT",
+                )
             )
-            held = False
-        snapshot.result(timeout=FUTURE_TIMEOUT)
 
-        tx(1, "SET mutations_sync = 1")
-        mutation = pool.submit(
-            tx, 1, "ALTER TABLE t_unloaded_commit UPDATE v = 1 WHERE 1", mutation_id
-        )
-        wait_until_idle(mutation_id)
-
-        if held:
-            node.query(
-                "SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries"
+            q(
+                "SYSTEM WAIT FAILPOINT transaction_log_pause_before_loading_entries PAUSE",
+                timeout=60,
             )
-            held = False
+            q("SYSTEM DISABLE FAILPOINT transaction_force_unknown_state_after_commit")
 
-        # The updating thread finalizes an unknown-state transaction one iteration after loading
-        # its entry, and an iteration needs a new entry to start: commit something to provide one.
-        node.query(
-            "CREATE TABLE t_unloaded_commit_poke (n UInt64) ENGINE = MergeTree ORDER BY n"
-        )
-        tx(3, "BEGIN TRANSACTION")
-        tx(3, "INSERT INTO t_unloaded_commit_poke VALUES (1)")
-        tx(3, "COMMIT")
+            # The updating thread wakes on its own, so the pause above can be reached before the
+            # commit has written its entry. Without both checks the test would set a snapshot that
+            # is merely above the latest and reproduce #124488 instead of this defect.
+            require(
+                poll(lambda remaining: keeper_latest_csn(remaining) > latest, 60),
+                f"the commit never reached Keeper: the log still ends at CSN {latest}",
+            )
+            loaded = int(q("SELECT transactionLatestSnapshot()").strip())
+            require(
+                loaded == latest,
+                f"the held thread loaded the commit anyway: snapshot moved {latest} -> {loaded}",
+            )
 
-        finished = wait_until_idle(mutation_id)
-        if not finished:
-            kill_query(mutation_id)
-        with contextlib.suppress(Exception):
-            mutation.result(timeout=FUTURE_TIMEOUT)
-        commit.result(timeout=FUTURE_TIMEOUT)
-        assert finished, "the mutation does not finish"
+            # The held commit's CSN is the next one. Accepting it at once is the defect; a correct
+            # server waits for the log to load it, or refuses it.
+            snapshot = pool.submit(
+                in_session(
+                    1, f"SET TRANSACTION SNAPSHOT {latest + 1}", query_id=snapshot_id
+                )
+            )
+            if not settled(snapshot_id, snapshot, HANG_TIMEOUT):
+                # A server that waits for the log is still waiting: release it.
+                q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
+                held = False
+            snapshot.result(timeout=FUTURE_TIMEOUT)
+
+            tx(1, "SET mutations_sync = 1")
+            mutation = pool.submit(
+                in_session(
+                    1, "ALTER TABLE t_unloaded_commit UPDATE v = 1 WHERE 1", query_id=mutation_id
+                )
+            )
+            settled(mutation_id, mutation, HANG_TIMEOUT)
+
+            if held:
+                q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
+                held = False
+
+            # The updating thread finalizes an unknown-state transaction one iteration after
+            # loading its entry, and an iteration needs a new entry to start: commit something.
+            q("CREATE TABLE t_unloaded_commit_poke (n UInt64) ENGINE = MergeTree ORDER BY n")
+            tx(3, "BEGIN TRANSACTION")
+            tx(3, "INSERT INTO t_unloaded_commit_poke VALUES (1)")
+            tx(3, "COMMIT")
+
+            finished = settled(mutation_id, mutation, HANG_TIMEOUT)
+            if finished:
+                mutation.result(timeout=FUTURE_TIMEOUT)
+            else:
+                kill_query(mutation_id)
+                with contextlib.suppress(Exception):
+                    mutation.result(timeout=FUTURE_TIMEOUT)
+            commit.result(timeout=FUTURE_TIMEOUT)
+
+        assert finished, f"the mutation did not finish within {HANG_TIMEOUT} s"
 
         tx(1, "COMMIT")
-        assert node.query("SELECT n, v FROM t_unloaded_commit ORDER BY n") == "1\t1\n2\t1\n"
+        assert q("SELECT n, v FROM t_unloaded_commit ORDER BY n") == "1\t1\n2\t1\n"
     finally:
         with contextlib.suppress(Exception):
             tx(1, "ROLLBACK")
-        pool.shutdown(wait=False)
+        if held:
+            with contextlib.suppress(Exception):
+                q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124488
@@ -424,25 +665,26 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
 )
 def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
     table = "t_snapshot_keeps_part"
-    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-    node.query(
+    q(f"DROP TABLE IF EXISTS {table} SYNC")
+    q(
         f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS "
         "old_parts_lifetime = 3600, cleanup_delay_period = 1, max_cleanup_delay_period = 1, "
         "cleanup_delay_period_random_add = 0"
     )
 
-    def parts_on_disk():
+    def parts_on_disk(timeout=QUERY_TIMEOUT):
         return int(
-            node.query(
+            q(
                 "SELECT count() FROM system.parts WHERE database = currentDatabase() "
-                f"AND table = '{table}'"
+                f"AND table = '{table}'",
+                timeout=timeout,
             ).strip()
         )
 
     tx(1, "BEGIN TRANSACTION")
     tx(1, f"INSERT INTO {table} VALUES (1)")
     tx(1, "COMMIT")
-    snapshot = int(node.query("SELECT transactionLatestSnapshot()").strip())
+    snapshot = int(q("SELECT transactionLatestSnapshot()").strip())
 
     tx(2, "BEGIN TRANSACTION")
     tx(2, f"TRUNCATE TABLE {table}")
@@ -450,15 +692,13 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
 
     tx(3, "BEGIN TRANSACTION")
     tx(3, f"SET TRANSACTION SNAPSHOT {snapshot}")
-    assert tx(3, f"SELECT count() FROM {table}").strip() == "1"
+    seen = tx(3, f"SELECT count() FROM {table}").strip()
+    require(seen == "1", f"the lowered snapshot does not see the row: {seen}")
 
-    node.query(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
+    q(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
     try:
         # Stop early once the part is gone: that is the defect the assertions below report.
-        for _ in range(25):
-            if parts_on_disk() == 0:
-                break
-            time.sleep(0.2)
+        poll(lambda remaining: parts_on_disk(remaining) == 0, 5)
 
         assert tx(3, f"SELECT count() FROM {table}").strip() == "1"
         assert parts_on_disk() == 1, "the cleanup removed a part the transaction still sees"
@@ -466,11 +706,10 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
         tx(3, "ROLLBACK")
 
     # Once no transaction can see it, the part goes.
-    for _ in range(50):
-        if parts_on_disk() == 0:
-            break
-        time.sleep(0.2)
-    assert parts_on_disk() == 0
+    require(
+        poll(lambda remaining: parts_on_disk(remaining) == 0, 60),
+        "the part was never cleaned up, so this run says nothing about what cleanup skipped",
+    )
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
@@ -485,24 +724,24 @@ def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
     with merges_stopped():
         require_parts("t_drop_stamp", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
-            error = node.query_and_get_error(
-                "ALTER TABLE t_drop_stamp DROP PARTITION tuple()", timeout=QUERY_TIMEOUT
-            )
-        assert "CANNOT_WRITE_TO_FILE" in error, error
+            error = q_error("ALTER TABLE t_drop_stamp DROP PARTITION tuple()")
+        require_injected_failure(error)
 
-        stamped = node.query(
+        stamped = q(
             "SELECT count() FROM system.parts WHERE database = currentDatabase() "
             "AND table = 't_drop_stamp' AND removal_csn != 0"
         ).strip()
         assert stamped == "0", "the failed statement left a part stamped for removal"
 
         tx(1, "BEGIN TRANSACTION")
-        assert tx(1, "SELECT count(), sum(n) FROM t_drop_stamp").strip() == "2\t3"
+        visible = tx(1, "SELECT count(), sum(n) FROM t_drop_stamp").strip()
         tx(1, "ROLLBACK")
+        assert visible == "2\t3", f"a transaction cannot see the rows that survived: {visible}"
 
         # The failure left no lock behind: the same statement succeeds now.
-        node.query("ALTER TABLE t_drop_stamp DROP PARTITION tuple()")
-        assert node.query("SELECT count() FROM t_drop_stamp").strip() == "0"
+        q("ALTER TABLE t_drop_stamp DROP PARTITION tuple()")
+        remaining = q("SELECT count() FROM t_drop_stamp").strip()
+        require(remaining == "0", f"the retried drop left {remaining} rows")
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
@@ -516,15 +755,13 @@ def test_failed_drop_partition_survives_reload(start_cluster):
     with merges_stopped():
         require_parts("t_drop_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
-            error = node.query_and_get_error(
-                "ALTER TABLE t_drop_reload DROP PARTITION tuple()", timeout=QUERY_TIMEOUT
-            )
-        assert "CANNOT_WRITE_TO_FILE" in error, error
-        assert node.query("SELECT count(), sum(n) FROM t_drop_reload").strip() == "2\t3"
+            error = q_error("ALTER TABLE t_drop_reload DROP PARTITION tuple()")
+        require_injected_failure(error)
+        require_rows("t_drop_reload", "2\t3")
 
-        node.query("DETACH TABLE t_drop_reload")
-        node.query("ATTACH TABLE t_drop_reload")
-        assert node.query("SELECT count(), sum(n) FROM t_drop_reload").strip() == "2\t3"
+        q("DETACH TABLE t_drop_reload")
+        q("ATTACH TABLE t_drop_reload")
+        assert q("SELECT count(), sum(n) FROM t_drop_reload").strip() == "2\t3"
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
@@ -538,15 +775,13 @@ def test_failed_truncate_survives_reload(start_cluster):
     with merges_stopped():
         require_parts("t_truncate_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
-            error = node.query_and_get_error(
-                "TRUNCATE TABLE t_truncate_reload", timeout=QUERY_TIMEOUT
-            )
-        assert "CANNOT_WRITE_TO_FILE" in error, error
-        assert node.query("SELECT count(), sum(n) FROM t_truncate_reload").strip() == "2\t3"
+            error = q_error("TRUNCATE TABLE t_truncate_reload")
+        require_injected_failure(error)
+        require_rows("t_truncate_reload", "2\t3")
 
-        node.query("DETACH TABLE t_truncate_reload")
-        node.query("ATTACH TABLE t_truncate_reload")
-        assert node.query("SELECT count(), sum(n) FROM t_truncate_reload").strip() == "2\t3"
+        q("DETACH TABLE t_truncate_reload")
+        q("ATTACH TABLE t_truncate_reload")
+        assert q("SELECT count(), sum(n) FROM t_truncate_reload").strip() == "2\t3"
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
@@ -557,36 +792,29 @@ def test_failed_truncate_survives_reload(start_cluster):
     "did not replace",
 )
 def test_failed_replace_partition_leaves_destination_intact(start_cluster):
-    node.query("DROP TABLE IF EXISTS t_replace_src SYNC")
-    node.query("DROP TABLE IF EXISTS t_replace_dst SYNC")
-    node.query("CREATE TABLE t_replace_src (n UInt64) ENGINE = MergeTree ORDER BY n")
-    node.query("CREATE TABLE t_replace_dst (n UInt64) ENGINE = MergeTree ORDER BY n")
-    node.query("INSERT INTO t_replace_src VALUES (100)")
-    node.query("INSERT INTO t_replace_dst VALUES (1)")
-    node.query("INSERT INTO t_replace_dst VALUES (2)")
+    q("DROP TABLE IF EXISTS t_replace_src SYNC")
+    q("DROP TABLE IF EXISTS t_replace_dst SYNC")
+    q("CREATE TABLE t_replace_src (n UInt64) ENGINE = MergeTree ORDER BY n")
+    q("CREATE TABLE t_replace_dst (n UInt64) ENGINE = MergeTree ORDER BY n")
+    q("INSERT INTO t_replace_src VALUES (100)")
+    q("INSERT INTO t_replace_dst VALUES (1)")
+    q("INSERT INTO t_replace_dst VALUES (2)")
 
     with merges_stopped():
         require_parts("t_replace_dst", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
-            error = node.query_and_get_error(
-                "ALTER TABLE t_replace_dst REPLACE PARTITION tuple() FROM t_replace_src",
-                timeout=QUERY_TIMEOUT,
+            error = q_error(
+                "ALTER TABLE t_replace_dst REPLACE PARTITION tuple() FROM t_replace_src"
             )
-        assert "CANNOT_WRITE_TO_FILE" in error, error
+        require_injected_failure(error)
 
-        kept = node.query(
-            "SELECT arraySort(groupArray(n)) FROM t_replace_dst"
-        ).strip()
+        kept = q("SELECT arraySort(groupArray(n)) FROM t_replace_dst").strip()
         assert kept == "[1,2]", f"the destination changed after a failed replace: {kept}"
 
         # The failure left no lock behind: the same statement succeeds now.
-        node.query(
-            "ALTER TABLE t_replace_dst REPLACE PARTITION tuple() FROM t_replace_src"
-        )
-        assert (
-            node.query("SELECT arraySort(groupArray(n)) FROM t_replace_dst").strip()
-            == "[100]"
-        )
+        q("ALTER TABLE t_replace_dst REPLACE PARTITION tuple() FROM t_replace_src")
+        replaced = q("SELECT arraySort(groupArray(n)) FROM t_replace_dst").strip()
+        require(replaced == "[100]", f"the retried replace left {replaced}")
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124486
@@ -604,17 +832,16 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
             "non_transactional_removal_store_fail_after_first_part",
             "version_metadata_store_creation_csn_fail",
         ):
-            error = node.query_and_get_error(
+            error = q_error(
                 "ALTER TABLE t_rollback_mark DROP PARTITION tuple()",
                 settings={"send_logs_level": "none"},
-                timeout=QUERY_TIMEOUT,
             )
-        assert "CANNOT_WRITE_TO_FILE" in error, error
-        assert node.query("SELECT count(), sum(n) FROM t_rollback_mark").strip() == "2\t3"
+        require_injected_failure(error)
+        require_rows("t_rollback_mark", "2\t3")
 
-        node.query("DETACH TABLE t_rollback_mark")
-        node.query("ATTACH TABLE t_rollback_mark")
-        assert node.query("SELECT count(), sum(n) FROM t_rollback_mark").strip() == "2\t3"
+        q("DETACH TABLE t_rollback_mark")
+        q("ATTACH TABLE t_rollback_mark")
+        assert q("SELECT count(), sum(n) FROM t_rollback_mark").strip() == "2\t3"
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124489
@@ -626,46 +853,50 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
 )
 def test_drop_partition_racing_a_removal_is_refused(start_cluster):
     table = "t_drop_locked"
-    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-    node.query(
+    q(f"DROP TABLE IF EXISTS {table} SYNC")
+    q(
         f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n "
         "SETTINGS remove_empty_parts = 0"
     )
-    node.query(f"SYSTEM STOP MERGES {table}")
-    for n in (1, 2, 3):
-        node.query(f"INSERT INTO {table} VALUES ({n})")
-
-    failpoint = "non_transactional_drop_pause_before_publish"
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    q(f"SYSTEM STOP MERGES {table}")
     try:
-        with failpoints(failpoint):
-            drop = pool.submit(
-                functools.partial(
-                    node.query_and_get_answer_with_error,
-                    f"ALTER TABLE {table} DROP PARTITION tuple()",
-                    timeout=QUERY_TIMEOUT,
-                )
-            )
-            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+        for n in (1, 2, 3):
+            q(f"INSERT INTO {table} VALUES ({n})")
 
-            tx(1, "BEGIN TRANSACTION")
-            tx(1, f"ALTER TABLE {table} DROP PART 'all_2_2_0'")
+        failpoint = "non_transactional_drop_pause_before_publish"
+        try:
+            with workers(1) as pool:
+                with failpoints(failpoint):
+                    drop = pool.submit(
+                        functools.partial(
+                            node.query_and_get_answer_with_error,
+                            f"ALTER TABLE {table} DROP PARTITION tuple()",
+                            timeout=QUERY_TIMEOUT,
+                        )
+                    )
+                    q(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
-            node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
-            _, error = drop.result(timeout=FUTURE_TIMEOUT)
+                    tx(1, "BEGIN TRANSACTION")
+                    tx(1, f"ALTER TABLE {table} DROP PART 'all_2_2_0'")
 
-        tx(1, "ROLLBACK")
+                    q(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
+                    _, error = drop.result(timeout=FUTURE_TIMEOUT)
 
-        assert error and "SERIALIZATION_ERROR" in error, (
-            "the drop that raced with the removal was accepted"
-        )
-        assert covered_active_parts(table) == [], (
-            "a part is active beside a part that covers it"
-        )
-    finally:
-        with contextlib.suppress(Exception):
             tx(1, "ROLLBACK")
-        pool.shutdown(wait=False)
+
+            require(
+                not error or "SERIALIZATION_ERROR" in error,
+                f"the racing drop failed for an unrelated reason: {error}",
+            )
+            assert error, "the drop that raced with the removal was accepted"
+            assert covered_active_parts(table) == [], (
+                "a part is active beside a part that covers it"
+            )
+        finally:
+            with contextlib.suppress(Exception):
+                tx(1, "ROLLBACK")
+    finally:
+        q(f"SYSTEM START MERGES {table}")
 
 
 # https://github.com/ClickHouse/ClickHouse/issues/124487
@@ -681,42 +912,41 @@ def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
     # A part inserted outside a transaction has no `txn_version.txt`. The first metadata store for
     # it is the removal lock taken by a transaction's DROP PARTITION. The store writes
     # `txn_version.txt.tmp` and renames it; a kill between the two must not lose the rows.
-    node.query("DROP TABLE IF EXISTS mt_lost SYNC")
-    node.query(
+    q("DROP TABLE IF EXISTS mt_lost SYNC")
+    q(
         "CREATE TABLE mt_lost (n UInt64) ENGINE = MergeTree ORDER BY n PARTITION BY n % 2 "
         "SETTINGS remove_empty_parts = 0"
     )
-    node.query("INSERT INTO mt_lost VALUES (1), (3)")
-    part_path = node.query(
+    q("INSERT INTO mt_lost VALUES (1), (3)")
+    part_path = q(
         "SELECT path FROM system.parts WHERE database = currentDatabase() "
         "AND table = 'mt_lost' AND active"
     ).strip()
-    assert part_path != ""
+    require(part_path != "", "the insert produced no active part")
 
     failpoint = "version_metadata_store_pause_before_rename"
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    try:
+    with workers(1) as pool:
         with failpoints(failpoint):
             tx(7, "BEGIN TRANSACTION")
             drop = pool.submit(
-                tx_answer_with_error, 7, "ALTER TABLE mt_lost DROP PARTITION ID '1'"
+                in_session_answer_with_error(7, "ALTER TABLE mt_lost DROP PARTITION ID '1'")
             )
-            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+            q(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
             listing = node.exec_in_container(["bash", "-c", f"ls -1 {part_path}"]).split()
-            assert "txn_version.txt.tmp" in listing, listing
-            assert "txn_version.txt" not in listing, listing
+            require(
+                "txn_version.txt.tmp" in listing and "txn_version.txt" not in listing,
+                f"the pause did not leave a torn first store behind: {listing}",
+            )
 
-            node.restart_clickhouse(kill=True)
+            restart_server()
             with contextlib.suppress(Exception):
                 drop.result(timeout=FUTURE_TIMEOUT)
-    finally:
-        pool.shutdown(wait=False)
 
-    node.query("SYSTEM WAIT LOADING PARTS mt_lost")
-    assert node.query("SELECT n FROM mt_lost ORDER BY n").strip() == "1\n3"
+    q("SYSTEM WAIT LOADING PARTS mt_lost")
+    assert q("SELECT n FROM mt_lost ORDER BY n").strip() == "1\n3"
     assert (
-        node.query(
+        q(
             "SELECT count() FROM system.parts WHERE database = currentDatabase() "
             "AND table = 'mt_lost' AND active"
         ).strip()
@@ -736,36 +966,51 @@ def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
 def test_drop_partition_of_uncommitted_creation_is_refused(start_cluster):
     table = "t_uncommitted_drop"
     try:
-        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-        node.query(
-            f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n PARTITION BY n % 2"
-        )
-        node.query(f"INSERT INTO {table} VALUES (1)")
+        q(f"DROP TABLE IF EXISTS {table} SYNC")
+        q(f"CREATE TABLE {table} (n UInt64) ENGINE = MergeTree ORDER BY n PARTITION BY n % 2")
+        q(f"INSERT INTO {table} VALUES (1)")
 
         tx(1, "BEGIN TRANSACTION")
         tx(1, f"INSERT INTO {table} VALUES (2)")
 
         tx(2, "BEGIN TRANSACTION")
         tx(2, "SET TRANSACTION SNAPSHOT 3")
-        assert tx(2, f"SELECT count() FROM {table}").strip() == "2"
+        seen = tx(2, f"SELECT count() FROM {table}").strip()
+        require(seen == "2", f"the dropping transaction does not see both parts: {seen}")
         try:
             _, error = tx_answer_with_error(2, f"ALTER TABLE {table} DROP PARTITION 0")
         except Exception as e:
             # A debug or sanitizer build aborts on the `LOGICAL_ERROR`, so the request never
-            # answers. That is the same defect, reported through a dead connection.
-            error = f"the server did not answer: {e}"
-        assert error and "SERIALIZATION_ERROR" in error, error
+            # answers. That is the same defect, reported through a dead connection -- but only if
+            # the server really died; any other transport error is not this defect.
+            require(
+                not server_is_up(),
+                f"the request failed while the server stayed up: {e}",
+            )
+            error = f"the server did not answer and is down: {e}"
+        require(
+            not error
+            or "SERIALIZATION_ERROR" in error
+            or "creation_csn is not set" in error
+            or "did not answer" in error,
+            f"the drop failed for an unrelated reason: {error}",
+        )
+        assert error and "SERIALIZATION_ERROR" in error, (
+            f"the drop was not refused with SERIALIZATION_ERROR: {error!r}"
+        )
         tx(2, "ROLLBACK")
 
         # The creating transaction is unaffected.
         tx(1, "COMMIT")
-        assert node.query(f"SELECT n FROM {table} ORDER BY n").strip() == "1\n2"
+        committed = q(f"SELECT n FROM {table} ORDER BY n").strip()
+        require(committed == "1\n2", f"the creating transaction lost its row: {committed}")
 
         # A transaction may drop a part it created itself.
         tx(3, "BEGIN TRANSACTION")
         tx(3, f"INSERT INTO {table} VALUES (4)")
         tx(3, f"ALTER TABLE {table} DROP PARTITION 0")
         tx(3, "COMMIT")
-        assert node.query(f"SELECT n FROM {table} ORDER BY n").strip() == "1"
+        left = q(f"SELECT n FROM {table} ORDER BY n").strip()
+        require(left == "1", f"dropping a self-created part left {left!r}")
     finally:
         restart_if_down()
