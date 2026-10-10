@@ -67,6 +67,13 @@ MIN_REQUEST_TIMEOUT = 5
 # `configs/transactions.xml` does not override it.
 TXN_LOG_PATH = "/clickhouse/txn/log"
 
+# `TransactionManager::commitTransaction` logs this when it postpones finalization because it does
+# not know whether the commit landed. It is the only observable that separates an unknown-state
+# commit from an ordinary one, since the CSN entry is written before the fault is injected.
+UNKNOWN_STATE_LOG = "will finalize it later"
+# The exception a removal of an uncommitted creation raises today.
+CREATION_CSN_LOG = "creation_csn is not set"
+
 FAILPOINTS = [
     "non_transactional_removal_store_fail_after_first_part",
     "non_transactional_drop_pause_before_publish",
@@ -149,10 +156,11 @@ def isolated_test(start_cluster):
     _session_names.clear()
     _query_ids.clear()
     yield
-    require(
-        server_is_up(),
-        "the server is not answering after the test, so the reproductions after it cannot run",
-    )
+    # pytest runs the tests after this one whatever a teardown error says, so a server that
+    # cannot be cleaned is replaced rather than merely reported.
+    if not server_is_up():
+        restart_server()
+        raise Precondition("the server stopped answering during the test")
     left_behind = []
     for failpoint in FAILPOINTS:
         try:
@@ -176,7 +184,12 @@ def isolated_test(start_cluster):
         # ordinary case; anything else means the session is still held or still in a transaction.
         if error and "INVALID_TRANSACTION" not in error:
             left_behind.append(f"session {name} not rolled back: {error}")
-    require(not left_behind, "cleanup left the server contaminated: " + "; ".join(left_behind))
+    if left_behind:
+        try:
+            restart_server()
+        except Exception as e:
+            left_behind.append(f"and the restart failed: {e}")
+        raise Precondition("cleanup left the server contaminated: " + "; ".join(left_behind))
 
 
 def server_is_up():
@@ -190,13 +203,22 @@ def server_is_up():
 def restart_server(timeout=RESTART_TIMEOUT):
     """Restarts the server under a deadline this module enforces.
 
-    `Instance.restart_clickhouse` does not enforce one: `wait_start` runs a batch of ten 30 s
-    readiness attempts before it looks at its budget, so a 120 s argument can take over 300 s, and
-    `stop_clickhouse` falls into an undeadlined wait on `llvm-symbolizer` if the process outlives
-    the stop budget. Start the process without waiting and poll for readiness here instead.
+    `Instance.restart_clickhouse` enforces none. `stop_clickhouse` waits on `llvm-symbolizer`
+    with no deadline at all if the process outlives its stop budget, and logs a failed kill
+    instead of reporting it. `wait_start` runs ten 30 s readiness attempts before it looks at its
+    budget -- and `start_clickhouse` honours `wait_start=False` only on the branch where no
+    process is left, so a stop that did not take puts that batch straight back in the path, and a
+    surviving old server would be accepted as the restarted one. Kill it here, prove it is gone,
+    then poll readiness.
     """
     deadline = time.monotonic() + timeout
-    node.stop_clickhouse(stop_wait_sec=30, kill=True)
+    # What `stop_clickhouse(kill=True)` does before killing; a SIGKILL skips the flush at exit.
+    node.flush_per_test_coverage()
+    node.exec_in_container(["bash", "-c", "pkill -9 clickhouse"], user="root", nothrow=True)
+    require(
+        poll(lambda _: node.get_process_pid("clickhouse") is None, 30),
+        "the server survived SIGKILL, so the restart would have waited on the old process",
+    )
     node.start_clickhouse(start_wait_sec=30, wait_start=False)
 
     def answers(remaining):
@@ -205,7 +227,9 @@ def restart_server(timeout=RESTART_TIMEOUT):
         except Exception:
             return False
 
-    if not poll(answers, max(1.0, deadline - time.monotonic())):
+    remaining = deadline - time.monotonic()
+    require(remaining > 0, f"stopping and launching used the whole {timeout} s restart budget")
+    if not poll(answers, remaining):
         raise Precondition(f"the server did not answer within {timeout} s of a restart")
     # `wait_start` does this, and skipping it would attribute this module's coverage elsewhere.
     node.arm_per_test_coverage()
@@ -311,11 +335,11 @@ def workers(max_workers):
 
 
 def settled(query_id, future, timeout):
-    """True once the statement finished: its request returned, or it left `system.processes`
-    after having appeared there.
+    """`(finished, started)` -- whether the statement finished, and whether it was ever running.
 
     A request still in flight is not in `system.processes` yet, so an unsynchronised poll would
-    read "finished" from a statement that never started.
+    read "finished" from a statement that never started. `started` is handed back because a
+    statement that never started is not a hang either, whatever the clock says.
     """
     started = False
 
@@ -328,7 +352,7 @@ def settled(query_id, future, timeout):
             return False
         return started
 
-    return poll(check, timeout)
+    return poll(check, timeout), started
 
 
 def running(query_id, timeout=QUERY_TIMEOUT):
@@ -437,6 +461,21 @@ def keeper_latest_csn(timeout=QUERY_TIMEOUT):
     )
 
 
+def log_hits(text, filename="clickhouse-server.log"):
+    """How many times `text` appears in the server log so far.
+
+    Presence alone proves nothing: one log serves the whole module, so a line left by an earlier
+    test would answer for this one. Callers take a baseline and wait for it to grow.
+    """
+    return len(
+        [
+            line
+            for line in node.grep_in_log(text, from_host=True, filename=filename).splitlines()
+            if line.strip()
+        ]
+    )
+
+
 def covered_active_parts(table):
     """Active parts that another active part of the same partition covers."""
     return q(
@@ -528,11 +567,15 @@ def test_mutation_at_raised_snapshot_finishes(start_cluster):
                     1, "ALTER TABLE t_raised_snapshot UPDATE v = 1 WHERE 1", query_id=query_id
                 )
             )
-            finished = settled(query_id, mutation, HANG_TIMEOUT)
+            finished, started = settled(query_id, mutation, HANG_TIMEOUT)
             if finished:
                 # Not suppressed: a statement that failed for another reason is not this defect.
                 mutation.result(timeout=FUTURE_TIMEOUT)
             else:
+                require(
+                    started,
+                    "the mutation never reached system.processes, so it did not hang there",
+                )
                 kill_query(query_id)
                 with contextlib.suppress(Exception):
                     mutation.result(timeout=FUTURE_TIMEOUT)
@@ -575,6 +618,8 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
         q("SYSTEM ENABLE FAILPOINT transaction_force_unknown_state_after_commit")
         held = True
 
+        unknown_state_lines = log_hits(UNKNOWN_STATE_LOG)
+
         with workers(2) as pool:
             commit = pool.submit(
                 in_session(
@@ -589,11 +634,20 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
                 "SYSTEM WAIT FAILPOINT transaction_log_pause_before_loading_entries PAUSE",
                 timeout=60,
             )
+
+            # The CSN entry is written before the fault is injected, so a Keeper entry alone does
+            # not say the commit is in unknown state: a normally finalized commit that the paused
+            # thread has not loaded passes that check too, and then the mutation below hangs on
+            # the raised-snapshot defect (#124488) rather than on this one. The postponement log
+            # line is what separates them.
+            require(
+                poll(lambda _: log_hits(UNKNOWN_STATE_LOG) > unknown_state_lines, 60),
+                "the commit did not go into unknown state: the injected fault never fired",
+            )
             q("SYSTEM DISABLE FAILPOINT transaction_force_unknown_state_after_commit")
 
             # The updating thread wakes on its own, so the pause above can be reached before the
-            # commit has written its entry. Without both checks the test would set a snapshot that
-            # is merely above the latest and reproduce #124488 instead of this defect.
+            # commit has written its entry.
             require(
                 poll(lambda remaining: keeper_latest_csn(remaining) > latest, 60),
                 f"the commit never reached Keeper: the log still ends at CSN {latest}",
@@ -611,7 +665,7 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
                     1, f"SET TRANSACTION SNAPSHOT {latest + 1}", query_id=snapshot_id
                 )
             )
-            if not settled(snapshot_id, snapshot, HANG_TIMEOUT):
+            if not settled(snapshot_id, snapshot, HANG_TIMEOUT)[0]:
                 # A server that waits for the log is still waiting: release it.
                 q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
                 held = False
@@ -636,10 +690,14 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
             tx(3, "INSERT INTO t_unloaded_commit_poke VALUES (1)")
             tx(3, "COMMIT")
 
-            finished = settled(mutation_id, mutation, HANG_TIMEOUT)
+            finished, started = settled(mutation_id, mutation, HANG_TIMEOUT)
             if finished:
                 mutation.result(timeout=FUTURE_TIMEOUT)
             else:
+                require(
+                    started,
+                    "the mutation never reached system.processes, so it did not hang there",
+                )
                 kill_query(mutation_id)
                 with contextlib.suppress(Exception):
                     mutation.result(timeout=FUTURE_TIMEOUT)
@@ -977,22 +1035,31 @@ def test_drop_partition_of_uncommitted_creation_is_refused(start_cluster):
         tx(2, "SET TRANSACTION SNAPSHOT 3")
         seen = tx(2, f"SELECT count() FROM {table}").strip()
         require(seen == "2", f"the dropping transaction does not see both parts: {seen}")
+
+        creation_csn_lines = log_hits(CREATION_CSN_LOG)
+        creation_csn_stderr = log_hits(CREATION_CSN_LOG, filename="stderr.log")
         try:
             _, error = tx_answer_with_error(2, f"ALTER TABLE {table} DROP PARTITION 0")
         except Exception as e:
             # A debug or sanitizer build aborts on the `LOGICAL_ERROR`, so the request never
-            # answers. That is the same defect, reported through a dead connection -- but only if
-            # the server really died; any other transport error is not this defect.
+            # answers. That is the same defect reported through a dead connection -- but a lost
+            # connection says nothing on its own: the process has to be gone, and the log has to
+            # name this exception. A failed `SELECT 1` is not evidence of either.
             require(
-                not server_is_up(),
-                f"the request failed while the server stayed up: {e}",
+                poll(lambda _: node.get_process_pid("clickhouse") is None, 30),
+                f"the request failed while the server kept running: {e}",
             )
-            error = f"the server did not answer and is down: {e}"
+            require(
+                log_hits(CREATION_CSN_LOG) > creation_csn_lines
+                or log_hits(CREATION_CSN_LOG, filename="stderr.log") > creation_csn_stderr,
+                f"the server died without reporting the creation-CSN exception: {e}",
+            )
+            error = f"the server aborted on the creation-CSN exception: {e}"
         require(
             not error
             or "SERIALIZATION_ERROR" in error
-            or "creation_csn is not set" in error
-            or "did not answer" in error,
+            or CREATION_CSN_LOG in error
+            or "aborted on the creation-CSN exception" in error,
             f"the drop failed for an unrelated reason: {error}",
         )
         assert error and "SERIALIZATION_ERROR" in error, (
