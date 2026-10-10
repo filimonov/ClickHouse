@@ -55,10 +55,9 @@ FUTURE_TIMEOUT = QUERY_TIMEOUT + 30
 # Long enough for every bounded request a worker can still be inside.
 JOIN_TIMEOUT = FUTURE_TIMEOUT
 RESTART_TIMEOUT = 180
-# Two defects here are hangs, and elapsed time is the only way to see a hang: there is nothing to
-# read that separates "stuck forever" from "slower than this". So this number is both the price of
-# those two reproductions and the whole claim they rest on -- a one-row mutation that needs longer
-# than this on an idle server would be a defect of its own.
+# An upper bound on the two hang reproductions. They do not usually spend it: a mutation that
+# cannot select its part says so in `system.mutations`, and that reason -- not the clock -- is what
+# identifies the defect.
 HANG_TIMEOUT = 30
 # A request gets at least this long whatever a polling loop has left of its budget.
 MIN_REQUEST_TIMEOUT = 5
@@ -73,6 +72,11 @@ TXN_LOG_PATH = "/clickhouse/txn/log"
 UNKNOWN_STATE_LOG = "will finalize it later"
 # The exception a removal of an uncommitted creation raises today.
 CREATION_CSN_LOG = "creation_csn is not set"
+# `PostponeReasons::VERSION_NOT_VISIBLE` as `system.mutations.parts_postpone_reasons` carries it
+# (`MergeTreeMutationStatus.h`). Part selection tests visibility at the mutation's start CSN
+# (`StorageMergeTree::getDataPartsToMutate`), so this reason is the mutation defect itself rather
+# than a server that happens to be slow.
+VERSION_NOT_VISIBLE = "Not visible by transaction version"
 
 FAILPOINTS = [
     "non_transactional_removal_store_fail_after_first_part",
@@ -151,15 +155,21 @@ def isolated_test(start_cluster):
     every later reproduction meaningless, and a teardown error is reported as an error instead of
     being absorbed into the next test's expected failure.
     """
-    global _session_epoch
+    global _session_epoch, _pending_requests
+    require(not _contaminated, f"an earlier test left this server unusable: {_contaminated}")
     _session_epoch += 1
     _session_names.clear()
     _query_ids.clear()
+    _pending_requests = 0
     yield
     # pytest runs the tests after this one whatever a teardown error says, so a server that
     # cannot be cleaned is replaced rather than merely reported.
     if not server_is_up():
-        restart_server()
+        try:
+            restart_server()
+        except Exception as e:
+            _mark_contaminated(f"the server stopped answering and would not restart: {e}")
+            raise
         raise Precondition("the server stopped answering during the test")
     left_behind = []
     for failpoint in FAILPOINTS:
@@ -184,12 +194,22 @@ def isolated_test(start_cluster):
         # ordinary case; anything else means the session is still held or still in a transaction.
         if error and "INVALID_TRANSACTION" not in error:
             left_behind.append(f"session {name} not rolled back: {error}")
+    if _pending_requests:
+        # A restart cannot cancel the client thread, but it does take away the session and the
+        # state its next request would have reached.
+        left_behind.append(f"{_pending_requests} request(s) outlived the test")
     if left_behind:
         try:
             restart_server()
         except Exception as e:
             left_behind.append(f"and the restart failed: {e}")
+            _mark_contaminated("; ".join(left_behind))
         raise Precondition("cleanup left the server contaminated: " + "; ".join(left_behind))
+
+
+def _mark_contaminated(reason):
+    global _contaminated
+    _contaminated = reason
 
 
 def server_is_up():
@@ -211,12 +231,19 @@ def restart_server(timeout=RESTART_TIMEOUT):
     surviving old server would be accepted as the restarted one. Kill it here, prove it is gone,
     then poll readiness.
     """
-    deadline = time.monotonic() + timeout
     # What `stop_clickhouse(kill=True)` does before killing; a SIGKILL skips the flush at exit.
+    # Outside the budget on purpose: under a coverage build this single request may take 300 s.
     node.flush_per_test_coverage()
-    node.exec_in_container(["bash", "-c", "pkill -9 clickhouse"], user="root", nothrow=True)
+    deadline = time.monotonic() + timeout
+    killed = node.exec_in_container(
+        ["bash", "-c", "pkill -9 clickhouse; echo rc=$?"], user="root"
+    ).strip()
     require(
-        poll(lambda _: node.get_process_pid("clickhouse") is None, 30),
+        killed.endswith("rc=0") or killed.endswith("rc=1"),
+        f"pkill did not run: {killed!r}",
+    )
+    require(
+        poll(lambda _: server_process_count() == 0, 30),
         "the server survived SIGKILL, so the restart would have waited on the old process",
     )
     node.start_clickhouse(start_wait_sec=30, wait_start=False)
@@ -235,6 +262,19 @@ def restart_server(timeout=RESTART_TIMEOUT):
     node.arm_per_test_coverage()
 
 
+def server_process_count():
+    """How many server processes the container has.
+
+    `Instance.get_process_pid` returns `None` both for "no match" and for a probe that did not
+    run, which would read as a dead server. Here a probe that did not run raises.
+    """
+    out = node.exec_in_container(
+        ["bash", "-c", "pgrep -c clickhouse || true"], user="root"
+    ).strip()
+    require(out.isdigit(), f"the process probe did not run: {out!r}")
+    return int(out)
+
+
 def restart_if_down():
     if not server_is_up():
         restart_server()
@@ -243,6 +283,12 @@ def restart_if_down():
 _session_epoch = 0
 _session_names = set()
 _query_ids = set()
+# Set when cleanup could not establish a clean server. The next test refuses to run rather than
+# reproduce anything against it.
+_contaminated = ""
+# Requests that outlived their test. A restart cannot cancel the client thread, so teardown has to
+# know they exist.
+_pending_requests = 0
 
 
 def session_id(session):
@@ -325,10 +371,13 @@ def workers(max_workers):
         failed = True
         raise
     finally:
+        global _pending_requests
         pending = pool.close()
+        _pending_requests += len(pending)
         if pending and not failed:
             # Raising here would replace the exception a failing test is reporting, so this only
-            # speaks up when the test body itself had nothing to say.
+            # speaks up when the test body itself had nothing to say. Either way teardown sees
+            # `_pending_requests` and replaces the server.
             raise Precondition(f"{len(pending)} request(s) outlived the test")
         if pending:
             logging.warning("%d request(s) outlived a failing test", len(pending))
@@ -362,6 +411,47 @@ def running(query_id, timeout=QUERY_TIMEOUT):
             timeout=timeout,
         ).strip()
     )
+
+
+def mutation_postpone_reasons(table, timeout=QUERY_TIMEOUT):
+    return q(
+        "SELECT arrayStringConcat(mapValues(parts_postpone_reasons), '|') FROM system.mutations "
+        f"WHERE database = currentDatabase() AND table = '{table}' AND NOT is_done",
+        timeout=timeout,
+    ).strip()
+
+
+def mutation_outcome(table, future, timeout=HANG_TIMEOUT):
+    """`(finished, postponed)` for a mutation that should finish.
+
+    Returns as soon as either is settled -- the request answered, or the scheduler recorded that
+    it cannot select a part because the version is not visible to the mutation's transaction. So
+    the reproduction rests on that reason, and only an inconclusive run pays the whole budget.
+    """
+    postponed = False
+
+    def check(remaining):
+        nonlocal postponed
+        if future.done():
+            return True
+        if VERSION_NOT_VISIBLE in mutation_postpone_reasons(table, remaining):
+            postponed = True
+            return True
+        return False
+
+    poll(check, timeout)
+    return future.done(), postponed
+
+
+def require_cancelled(future, what):
+    """The killed request must fail because it was killed, not for some other reason."""
+    try:
+        future.result(timeout=FUTURE_TIMEOUT)
+    except Exception as e:
+        require(
+            "QUERY_WAS_CANCELLED" in str(e) or "Cancelled" in str(e),
+            f"{what} failed for a reason other than the kill: {e}",
+        )
 
 
 def kill_query(query_id):
@@ -567,18 +657,18 @@ def test_mutation_at_raised_snapshot_finishes(start_cluster):
                     1, "ALTER TABLE t_raised_snapshot UPDATE v = 1 WHERE 1", query_id=query_id
                 )
             )
-            finished, started = settled(query_id, mutation, HANG_TIMEOUT)
+            finished, postponed = mutation_outcome("t_raised_snapshot", mutation)
             if finished:
                 # Not suppressed: a statement that failed for another reason is not this defect.
                 mutation.result(timeout=FUTURE_TIMEOUT)
             else:
                 require(
-                    started,
-                    "the mutation never reached system.processes, so it did not hang there",
+                    postponed,
+                    "the mutation neither finished nor was postponed for part visibility, so "
+                    "this run shows nothing about the defect",
                 )
                 kill_query(query_id)
-                with contextlib.suppress(Exception):
-                    mutation.result(timeout=FUTURE_TIMEOUT)
+                require_cancelled(mutation, "the mutation")
 
         assert finished, (
             f"the mutation at a raised snapshot did not finish within {HANG_TIMEOUT} s"
@@ -621,88 +711,108 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
         unknown_state_lines = log_hits(UNKNOWN_STATE_LOG)
 
         with workers(2) as pool:
-            commit = pool.submit(
-                in_session(
-                    2,
-                    "BEGIN TRANSACTION",
-                    "INSERT INTO t_unloaded_commit VALUES (2, 0)",
-                    "COMMIT",
+            try:
+                commit = pool.submit(
+                    in_session(
+                        2,
+                        "BEGIN TRANSACTION",
+                        "INSERT INTO t_unloaded_commit VALUES (2, 0)",
+                        "COMMIT",
+                    )
                 )
-            )
 
-            q(
-                "SYSTEM WAIT FAILPOINT transaction_log_pause_before_loading_entries PAUSE",
-                timeout=60,
-            )
-
-            # The CSN entry is written before the fault is injected, so a Keeper entry alone does
-            # not say the commit is in unknown state: a normally finalized commit that the paused
-            # thread has not loaded passes that check too, and then the mutation below hangs on
-            # the raised-snapshot defect (#124488) rather than on this one. The postponement log
-            # line is what separates them.
-            require(
-                poll(lambda _: log_hits(UNKNOWN_STATE_LOG) > unknown_state_lines, 60),
-                "the commit did not go into unknown state: the injected fault never fired",
-            )
-            q("SYSTEM DISABLE FAILPOINT transaction_force_unknown_state_after_commit")
-
-            # The updating thread wakes on its own, so the pause above can be reached before the
-            # commit has written its entry.
-            require(
-                poll(lambda remaining: keeper_latest_csn(remaining) > latest, 60),
-                f"the commit never reached Keeper: the log still ends at CSN {latest}",
-            )
-            loaded = int(q("SELECT transactionLatestSnapshot()").strip())
-            require(
-                loaded == latest,
-                f"the held thread loaded the commit anyway: snapshot moved {latest} -> {loaded}",
-            )
-
-            # The held commit's CSN is the next one. Accepting it at once is the defect; a correct
-            # server waits for the log to load it, or refuses it.
-            snapshot = pool.submit(
-                in_session(
-                    1, f"SET TRANSACTION SNAPSHOT {latest + 1}", query_id=snapshot_id
+                q(
+                    "SYSTEM WAIT FAILPOINT transaction_log_pause_before_loading_entries PAUSE",
+                    timeout=60,
                 )
-            )
-            if not settled(snapshot_id, snapshot, HANG_TIMEOUT)[0]:
-                # A server that waits for the log is still waiting: release it.
-                q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
-                held = False
-            snapshot.result(timeout=FUTURE_TIMEOUT)
 
-            tx(1, "SET mutations_sync = 1")
-            mutation = pool.submit(
-                in_session(
-                    1, "ALTER TABLE t_unloaded_commit UPDATE v = 1 WHERE 1", query_id=mutation_id
-                )
-            )
-            settled(mutation_id, mutation, HANG_TIMEOUT)
-
-            if held:
-                q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
-                held = False
-
-            # The updating thread finalizes an unknown-state transaction one iteration after
-            # loading its entry, and an iteration needs a new entry to start: commit something.
-            q("CREATE TABLE t_unloaded_commit_poke (n UInt64) ENGINE = MergeTree ORDER BY n")
-            tx(3, "BEGIN TRANSACTION")
-            tx(3, "INSERT INTO t_unloaded_commit_poke VALUES (1)")
-            tx(3, "COMMIT")
-
-            finished, started = settled(mutation_id, mutation, HANG_TIMEOUT)
-            if finished:
-                mutation.result(timeout=FUTURE_TIMEOUT)
-            else:
+                # The CSN entry is written before the fault is injected, so a Keeper entry alone does
+                # not say the commit is in unknown state: a normally finalized commit that the paused
+                # thread has not loaded passes that check too, and then the mutation below hangs on
+                # the raised-snapshot defect (#124488) rather than on this one. The postponement log
+                # line is what separates them.
                 require(
-                    started,
-                    "the mutation never reached system.processes, so it did not hang there",
+                    poll(lambda _: log_hits(UNKNOWN_STATE_LOG) > unknown_state_lines, 60),
+                    "the commit did not go into unknown state: the injected fault never fired",
                 )
-                kill_query(mutation_id)
-                with contextlib.suppress(Exception):
-                    mutation.result(timeout=FUTURE_TIMEOUT)
-            commit.result(timeout=FUTURE_TIMEOUT)
+                q("SYSTEM DISABLE FAILPOINT transaction_force_unknown_state_after_commit")
 
+                # The updating thread wakes on its own, so the pause above can be reached before the
+                # commit has written its entry.
+                require(
+                    poll(lambda remaining: keeper_latest_csn(remaining) > latest, 60),
+                    f"the commit never reached Keeper: the log still ends at CSN {latest}",
+                )
+                loaded = int(q("SELECT transactionLatestSnapshot()").strip())
+                require(
+                    loaded == latest,
+                    f"the held thread loaded the commit anyway: snapshot moved {latest} -> {loaded}",
+                )
+
+                # The held commit's CSN is the next one. Accepting it at once is the defect; a correct
+                # server waits for the log to load it, or refuses it.
+                snapshot = pool.submit(
+                    in_session(
+                        1, f"SET TRANSACTION SNAPSHOT {latest + 1}", query_id=snapshot_id
+                    )
+                )
+                if not settled(snapshot_id, snapshot, HANG_TIMEOUT)[0]:
+                    # The server waited for the log instead of accepting the snapshot, which is the
+                    # repair. Release it and stop: what follows would hang on the raised-snapshot
+                    # selection defect (#124488) and report this test as its own expected failure.
+                    q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
+                    held = False
+                    snapshot.result(timeout=FUTURE_TIMEOUT)
+                    raise Precondition(
+                        "the snapshot was not accepted while unloaded: this defect is repaired, and "
+                        "the rest of this test measures a different one"
+                    )
+                snapshot.result(timeout=FUTURE_TIMEOUT)
+
+                tx(1, "SET mutations_sync = 1")
+                mutation = pool.submit(
+                    in_session(
+                        1, "ALTER TABLE t_unloaded_commit UPDATE v = 1 WHERE 1", query_id=mutation_id
+                    )
+                )
+                # Let the mutation reach the server before the pause is released. It returns as
+                # soon as the statement finished or the scheduler said why it cannot proceed.
+                mutation_outcome("t_unloaded_commit", mutation)
+
+                if held:
+                    q("SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries")
+                    held = False
+
+                # The updating thread finalizes an unknown-state transaction one iteration after
+                # loading its entry, and an iteration needs a new entry to start: commit something.
+                q("CREATE TABLE t_unloaded_commit_poke (n UInt64) ENGINE = MergeTree ORDER BY n")
+                tx(3, "BEGIN TRANSACTION")
+                tx(3, "INSERT INTO t_unloaded_commit_poke VALUES (1)")
+                tx(3, "COMMIT")
+
+                finished, postponed = mutation_outcome("t_unloaded_commit", mutation)
+                if finished:
+                    mutation.result(timeout=FUTURE_TIMEOUT)
+                else:
+                    require(
+                        postponed,
+                        "the mutation neither finished nor was postponed for part visibility, so "
+                        "this run shows nothing about the defect",
+                    )
+                    kill_query(mutation_id)
+                    require_cancelled(mutation, "the mutation")
+                commit.result(timeout=FUTURE_TIMEOUT)
+
+            finally:
+                # Release the pause before the pool is drained: its join would otherwise wait for
+                # a commit this test is itself holding.
+                if held:
+                    with contextlib.suppress(Exception):
+                        q(
+                            "SYSTEM DISABLE FAILPOINT "
+                            "transaction_log_pause_before_loading_entries"
+                        )
+                    held = False
         assert finished, f"the mutation did not finish within {HANG_TIMEOUT} s"
 
         tx(1, "COMMIT")
@@ -1045,14 +1155,16 @@ def test_drop_partition_of_uncommitted_creation_is_refused(start_cluster):
             # answers. That is the same defect reported through a dead connection -- but a lost
             # connection says nothing on its own: the process has to be gone, and the log has to
             # name this exception. A failed `SELECT 1` is not evidence of either.
+            # The exception is logged before `abort`, and fatal reporting can then run for
+            # minutes (`SignalHandlers.cpp`), so the log line arrives long before the process
+            # does. Waiting on the process first would call the real abort an unrelated failure.
             require(
-                poll(lambda _: node.get_process_pid("clickhouse") is None, 30),
-                f"the request failed while the server kept running: {e}",
-            )
-            require(
-                log_hits(CREATION_CSN_LOG) > creation_csn_lines
-                or log_hits(CREATION_CSN_LOG, filename="stderr.log") > creation_csn_stderr,
-                f"the server died without reporting the creation-CSN exception: {e}",
+                poll(
+                    lambda _: log_hits(CREATION_CSN_LOG) > creation_csn_lines
+                    or log_hits(CREATION_CSN_LOG, filename="stderr.log") > creation_csn_stderr,
+                    120,
+                ),
+                f"the request failed without the creation-CSN exception being reported: {e}",
             )
             error = f"the server aborted on the creation-CSN exception: {e}"
         require(
