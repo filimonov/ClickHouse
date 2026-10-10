@@ -408,6 +408,9 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
     try
     {
         {
+            /// A previous attempt may have failed before its cleanup could run; `createFile`
+            /// below is exclusive and would refuse the leftover.
+            data_part_storage.removeFileIfExists(tmp_filename);
             /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
             /// so we create empty file at first (expecting that createFile throws if file already exists)
             /// and then overwrite it.

@@ -1873,9 +1873,11 @@ void StorageMergeTree::loadMutations()
     {
         /// The names are taken before any file is touched: repairing a record rewrites
         /// `mutation_N.txt` through a temporary file, and a directory iterator gives no
-        /// guarantee about entries that change under it.
+        /// guarantee about entries that change under it. `iterateDirectory`, not `listFiles`:
+        /// it is empty, not an error, on a broken disk or a disk without this table's directory.
         std::vector<String> names;
-        disk->listFiles(relative_data_path, names);
+        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+            names.push_back(it->name());
         for (const auto & name : names)
         {
             const String path = fs::path(relative_data_path) / name;

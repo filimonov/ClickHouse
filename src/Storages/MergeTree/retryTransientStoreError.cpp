@@ -2,12 +2,14 @@
 
 #include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <base/sleep.h>
 
 #include <algorithm>
+#include <cerrno>
 
 namespace DB
 {
@@ -18,6 +20,41 @@ namespace
 constexpr UInt64 RETRY_TIMEOUT_SECONDS = 60;
 constexpr UInt64 RETRY_BACKOFF_MS = 100;
 constexpr UInt64 RETRY_MAX_BACKOFF_MS = 2000;
+
+/// The errnos a local write fails with when the disk, not the data, is the problem. The
+/// `ErrnoException` branch of `isRetryableException` lists only the read side; its
+/// `filesystem_error` branch has the same set.
+bool isTransientWriteErrno(int err)
+{
+    return err == ENOSPC || err == EDQUOT || err == EROFS || err == EIO || err == EBUSY || err == ETIMEDOUT || err == EAGAIN;
+}
+
+/// `isRetryableException` adjusted for a write: plus the write-side errnos, minus the memory
+/// limits. A memory limit is the calling query's, not the storage's, and would be retried
+/// under the locks the query holds; the `noexcept` callers block memory exceptions anyway.
+bool isTransientStoreError(std::exception_ptr exception)
+{
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (const ErrnoException & e)
+    {
+        if (isNotEnoughMemoryErrorCode(e.code()))
+            return false;
+        if (isTransientWriteErrno(e.getErrno()))
+            return true;
+    }
+    catch (const Exception & e)
+    {
+        if (isNotEnoughMemoryErrorCode(e.code()))
+            return false;
+    }
+    catch (...)
+    {
+    }
+    return isRetryableException(exception);
+}
 
 }
 
@@ -38,7 +75,7 @@ void retryTransientStoreError(LoggerPtr log, std::string_view what, const std::f
         }
         catch (...)
         {
-            if (!isRetryableException(std::current_exception()))
+            if (!isTransientStoreError(std::current_exception()))
                 throw;
 
             /// `instanceIfAny`: this path is taken by non-transactional writes too, and constructing
