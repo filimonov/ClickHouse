@@ -1,8 +1,14 @@
 """Reproductions of open MergeTree transaction defects.
 
 Each test states the behaviour the server does not have, so each fails today and carries
-`xfail(strict=True)`. Fixing a defect turns its test into a failure of the suite, which is the
-signal to drop the decorator and keep the test as a regression test.
+`xfail(strict=True, raises=AssertionError)`. Fixing a defect turns its test into a failure of the
+suite, which is the signal to drop the decorator and keep the test as a regression test.
+
+`raises` is what makes the suite mean anything. Without it, `_pytest.skipping` absorbs any
+exception in any phase into `xfail` -- a leaked session, a transport error, a broken module
+fixture -- and a module that executed no test body at all still reports twelve clean expected
+failures. With it, only the assertion each test is about counts as the expected failure, so
+preconditions and infrastructure raise something else on purpose.
 
 The node is private to this module because these reproductions cannot share a server: the
 failpoints are global, and the removal of a part whose creation has not committed raises a
@@ -11,6 +17,7 @@ failpoints are global, and the removal of a part whose creation has not committe
 
 import concurrent.futures
 import contextlib
+import functools
 import logging
 import time
 
@@ -34,6 +41,15 @@ node = cluster.add_instance(
     ],
 )
 
+# Every request needs a finite bound. `requests` with `timeout=None` waits forever, and
+# `clickhouse-client` waits `DEFAULT_QUERY_TIMEOUT` (600 s). A request still running in a
+# `ThreadPoolExecutor` worker keeps pytest alive at exit whatever `pool.shutdown(wait=False)` says,
+# because `concurrent.futures` joins its non-daemon workers through an atexit hook. A hung module
+# is worse than a failed reproduction: it reports nothing.
+QUERY_TIMEOUT = 120
+# Let a request fail on its own first, so its error reaches the test instead of a `TimeoutError`.
+FUTURE_TIMEOUT = QUERY_TIMEOUT + 30
+
 FAILPOINTS = [
     "non_transactional_removal_store_fail_after_first_part",
     "non_transactional_drop_pause_before_publish",
@@ -53,7 +69,8 @@ def start_cluster():
         node.query("CREATE TABLE t_warmup (n UInt64) ENGINE = MergeTree ORDER BY n")
         node.query("BEGIN TRANSACTION; INSERT INTO t_warmup VALUES (1); COMMIT;")
         latest = int(node.query("SELECT transactionLatestSnapshot()").strip())
-        assert latest > 32, f"latest snapshot {latest} is still a reserved CSN"
+        if latest <= 32:
+            raise RuntimeError(f"latest snapshot {latest} is still a reserved CSN")
         yield cluster
     finally:
         # `test_drop_partition_of_uncommitted_creation_is_refused` reproduces a `LOGICAL_ERROR`,
@@ -107,7 +124,7 @@ def session_id(session):
     return name
 
 
-def tx(session, query, query_id=None, timeout=None):
+def tx(session, query, query_id=None, timeout=QUERY_TIMEOUT):
     """Runs `query` in a session, so `BEGIN`/`COMMIT` span calls. Raises on a server error."""
     params = {"session_id": session_id(session)}
     if query_id is not None:
@@ -115,9 +132,11 @@ def tx(session, query, query_id=None, timeout=None):
     return node.http_query(None, data=query, params=params, timeout=timeout)
 
 
-def tx_answer_with_error(session, query):
+def tx_answer_with_error(session, query, timeout=QUERY_TIMEOUT):
     params = {"session_id": session_id(session)}
-    return node.http_query_and_get_answer_with_error(None, data=query, params=params)
+    return node.http_query_and_get_answer_with_error(
+        None, data=query, params=params, timeout=timeout
+    )
 
 
 def wait_for_no_merges(timeout=60):
@@ -231,6 +250,7 @@ def two_parts(table, settings="old_parts_lifetime = 3600"):
 # https://github.com/ClickHouse/ClickHouse/issues/124488
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124488: SET TRANSACTION SNAPSHOT accepts a snapshot above the latest one",
 )
 def test_snapshot_above_latest_is_refused(start_cluster):
@@ -260,6 +280,7 @@ def test_snapshot_above_latest_is_refused(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124488
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124488: a mutation never finishes at a raised snapshot, because part "
     "selection tests visibility at the start CSN",
 )
@@ -291,7 +312,7 @@ def test_mutation_at_raised_snapshot_finishes(start_cluster):
         if not finished:
             kill_query(query_id)
         with contextlib.suppress(Exception):
-            mutation.result(timeout=60)
+            mutation.result(timeout=FUTURE_TIMEOUT)
         assert finished, "the mutation at a raised snapshot does not finish"
 
         tx(1, "COMMIT")
@@ -305,6 +326,7 @@ def test_mutation_at_raised_snapshot_finishes(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124488
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124488: a snapshot set to a commit the transaction log has not loaded is "
     "accepted, and the mutation that follows misses that commit's part",
 )
@@ -355,7 +377,7 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
                 "SYSTEM DISABLE FAILPOINT transaction_log_pause_before_loading_entries"
             )
             held = False
-        snapshot.result(timeout=60)
+        snapshot.result(timeout=FUTURE_TIMEOUT)
 
         tx(1, "SET mutations_sync = 1")
         mutation = pool.submit(
@@ -382,8 +404,8 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
         if not finished:
             kill_query(mutation_id)
         with contextlib.suppress(Exception):
-            mutation.result(timeout=60)
-        commit.result(timeout=60)
+            mutation.result(timeout=FUTURE_TIMEOUT)
+        commit.result(timeout=FUTURE_TIMEOUT)
         assert finished, "the mutation does not finish"
 
         tx(1, "COMMIT")
@@ -397,6 +419,7 @@ def test_mutation_covers_part_of_unloaded_commit(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124488
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124488: the cleanup thread removes a part that a lowered snapshot still sees",
 )
 def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
@@ -453,6 +476,7 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124486
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124486: a failed non-transactional DROP PARTITION leaves a part stamped "
     "for removal, which hides it from every transaction",
 )
@@ -462,7 +486,7 @@ def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
         require_parts("t_drop_stamp", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = node.query_and_get_error(
-                "ALTER TABLE t_drop_stamp DROP PARTITION tuple()"
+                "ALTER TABLE t_drop_stamp DROP PARTITION tuple()", timeout=QUERY_TIMEOUT
             )
         assert "CANNOT_WRITE_TO_FILE" in error, error
 
@@ -484,6 +508,7 @@ def test_failed_drop_partition_leaves_no_removal_stamp(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124486
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124486: a failed DROP PARTITION empties the partition after a reload",
 )
 def test_failed_drop_partition_survives_reload(start_cluster):
@@ -492,7 +517,7 @@ def test_failed_drop_partition_survives_reload(start_cluster):
         require_parts("t_drop_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = node.query_and_get_error(
-                "ALTER TABLE t_drop_reload DROP PARTITION tuple()"
+                "ALTER TABLE t_drop_reload DROP PARTITION tuple()", timeout=QUERY_TIMEOUT
             )
         assert "CANNOT_WRITE_TO_FILE" in error, error
         assert node.query("SELECT count(), sum(n) FROM t_drop_reload").strip() == "2\t3"
@@ -505,6 +530,7 @@ def test_failed_drop_partition_survives_reload(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124486
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124486: a failed TRUNCATE empties the table after a reload",
 )
 def test_failed_truncate_survives_reload(start_cluster):
@@ -512,7 +538,9 @@ def test_failed_truncate_survives_reload(start_cluster):
     with merges_stopped():
         require_parts("t_truncate_reload", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
-            error = node.query_and_get_error("TRUNCATE TABLE t_truncate_reload")
+            error = node.query_and_get_error(
+                "TRUNCATE TABLE t_truncate_reload", timeout=QUERY_TIMEOUT
+            )
         assert "CANNOT_WRITE_TO_FILE" in error, error
         assert node.query("SELECT count(), sum(n) FROM t_truncate_reload").strip() == "2\t3"
 
@@ -524,6 +552,7 @@ def test_failed_truncate_survives_reload(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124486
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124486: a failed REPLACE PARTITION leaves the new part beside the ones it "
     "did not replace",
 )
@@ -540,7 +569,8 @@ def test_failed_replace_partition_leaves_destination_intact(start_cluster):
         require_parts("t_replace_dst", 2)
         with failpoints("non_transactional_removal_store_fail_after_first_part"):
             error = node.query_and_get_error(
-                "ALTER TABLE t_replace_dst REPLACE PARTITION tuple() FROM t_replace_src"
+                "ALTER TABLE t_replace_dst REPLACE PARTITION tuple() FROM t_replace_src",
+                timeout=QUERY_TIMEOUT,
             )
         assert "CANNOT_WRITE_TO_FILE" in error, error
 
@@ -562,6 +592,7 @@ def test_failed_replace_partition_leaves_destination_intact(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124486
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124486: when the rollback's own mark fails too, a failed DROP PARTITION "
     "still empties the table after a reload",
 )
@@ -576,6 +607,7 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
             error = node.query_and_get_error(
                 "ALTER TABLE t_rollback_mark DROP PARTITION tuple()",
                 settings={"send_logs_level": "none"},
+                timeout=QUERY_TIMEOUT,
             )
         assert "CANNOT_WRITE_TO_FILE" in error, error
         assert node.query("SELECT count(), sum(n) FROM t_rollback_mark").strip() == "2\t3"
@@ -588,6 +620,7 @@ def test_failed_drop_partition_survives_reload_when_rollback_mark_fails(start_cl
 # https://github.com/ClickHouse/ClickHouse/issues/124489
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124489: a DROP PARTITION racing a transaction that removes one of its "
     "parts is accepted, and the part is active beside the empty part covering it",
 )
@@ -607,8 +640,11 @@ def test_drop_partition_racing_a_removal_is_refused(start_cluster):
     try:
         with failpoints(failpoint):
             drop = pool.submit(
-                node.query_and_get_answer_with_error,
-                f"ALTER TABLE {table} DROP PARTITION tuple()",
+                functools.partial(
+                    node.query_and_get_answer_with_error,
+                    f"ALTER TABLE {table} DROP PARTITION tuple()",
+                    timeout=QUERY_TIMEOUT,
+                )
             )
             node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
@@ -616,7 +652,7 @@ def test_drop_partition_racing_a_removal_is_refused(start_cluster):
             tx(1, f"ALTER TABLE {table} DROP PART 'all_2_2_0'")
 
             node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
-            _, error = drop.result(timeout=120)
+            _, error = drop.result(timeout=FUTURE_TIMEOUT)
 
         tx(1, "ROLLBACK")
 
@@ -635,6 +671,7 @@ def test_drop_partition_racing_a_removal_is_refused(start_cluster):
 # https://github.com/ClickHouse/ClickHouse/issues/124487
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124487: an acknowledged INSERT is lost when the server stops between the "
     "sync and the rename of the first version metadata store",
 )
@@ -672,7 +709,7 @@ def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
 
             node.restart_clickhouse(kill=True)
             with contextlib.suppress(Exception):
-                drop.result(timeout=60)
+                drop.result(timeout=FUTURE_TIMEOUT)
     finally:
         pool.shutdown(wait=False)
 
@@ -692,6 +729,7 @@ def test_acknowledged_insert_survives_kill_during_first_version_metadata_store(
 # https://github.com/ClickHouse/ClickHouse/issues/124489
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="Known bug #124489: removing a part whose creating transaction is still running raises "
     "LOGICAL_ERROR instead of SERIALIZATION_ERROR, which aborts a debug or sanitizer build",
 )
@@ -710,8 +748,13 @@ def test_drop_partition_of_uncommitted_creation_is_refused(start_cluster):
         tx(2, "BEGIN TRANSACTION")
         tx(2, "SET TRANSACTION SNAPSHOT 3")
         assert tx(2, f"SELECT count() FROM {table}").strip() == "2"
-        _, error = tx_answer_with_error(2, f"ALTER TABLE {table} DROP PARTITION 0")
-        assert "SERIALIZATION_ERROR" in error, error
+        try:
+            _, error = tx_answer_with_error(2, f"ALTER TABLE {table} DROP PARTITION 0")
+        except Exception as e:
+            # A debug or sanitizer build aborts on the `LOGICAL_ERROR`, so the request never
+            # answers. That is the same defect, reported through a dead connection.
+            error = f"the server did not answer: {e}"
+        assert error and "SERIALIZATION_ERROR" in error, error
         tx(2, "ROLLBACK")
 
         # The creating transaction is unaffected.
