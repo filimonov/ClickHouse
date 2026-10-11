@@ -394,6 +394,10 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
 
     /// A transient storage error is retried here, in the one place that writes the file, when
     /// the caller is a `noexcept` transaction callback that could only terminate otherwise.
+    /// A failed attempt removes its temporary file below; when that removal fails too, the file
+    /// is this call's own leftover, not the stale one `createFile` guards against, and the next
+    /// attempt removes it first.
+    bool own_tmp_left = false;
     retryTransientStoreError(
         mt_data.log.load(),
         fmt::format("part {} of {}", data_part_storage.getPartDirectory(), mt_data.getStorageID().getNameForLogs()),
@@ -408,10 +412,16 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
     try
     {
         {
+            if (own_tmp_left)
+            {
+                data_part_storage.removeFileIfExists(tmp_filename);
+                own_tmp_left = false;
+            }
             /// TODO IDisk interface does not allow to open file with O_EXCL flag (for DiskLocal),
             /// so we create empty file at first (expecting that createFile throws if file already exists)
             /// and then overwrite it.
             data_part_storage.createFile(tmp_filename);
+            own_tmp_left = true;
             auto write_settings = mt_data.getContext()->getWriteSettings();
             auto buf = data_part_storage.writeFile(tmp_filename, 256, write_settings);
             new_info.writeToBuffer(*buf, /*one_line=*/false);
@@ -429,6 +439,7 @@ void VersionMetadataOnDisk::storeInfoToDataPartStorage(
         try
         {
             data_part_storage.removeFileIfExists(tmp_filename);
+            own_tmp_left = false;
         }
         catch (...)
         {
