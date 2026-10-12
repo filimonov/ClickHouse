@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 14:28'
+updated_date: '2026-10-12 18:09'
 labels:
   - 'area:gc'
   - 'area:write-path'
@@ -74,4 +74,6 @@ Separate leak found (`cur_orphan_retry`): the gate's retry in `confirm_condemned
 Cost measured on otel.demo (one node, 26.6.4, uptime 16.8 days): `CASMetaAdoptBackfill` = 8 vs `CASMetaCreateClean` = 2,820,124 and `CASBlobBodyPutAvoided` = 7,105, i.e. 8 extra uploads in 17 days. `CASGCRetiredSparedByReref` = 117 confirms writers do hit blobs GC already graduated.
 
 Leak fix in the same change: `applyRedeleteOutcome` passes the deleting round - 1 as the bound, so `deleteConfirmedMeta` also removes a `Condemned` marker the graduation gate re-stamped at a later round (`cur_orphan_retry`); under C a marker delete is safety-neutral. Old writers stay exposed until upgraded.
+
+2026-10-12 model of the chosen fix (`b483e4ea41c`, RESULTS `#cas-360-fix-c`; 61-row battery green): `fix_C_bound` (C + round-1 bound + all faults + deposed delete behind its own cut) green (MaxRounds 5); `fix_C_recur` green — C does not depend on CAS-361; `fix_B_recur` red — B does; `fix_C_orphan_retry` green and `sab_C_orphan_retry` red — the bound closes the leak; `mixed_old`/`mixed_new` red as expected (old writer's own adoption; new writer adopting on an old writer's backfilled `Clean`). A coarser model where a deposed attempt deletes at any time without its own in-degree is red for C and for today's bound alike (`fix_C_*_coarse`); checked against the code: the only source of redeletes is `settleEntry` → `rmr.redelete` (`CasBlobInDegree.cpp`) in the same attempt's fold, whose ref intake follows its `gc/state` read, so every deposed-attempt delete is behind its own cut — the coarse model is not reachable.
 <!-- SECTION:NOTES:END -->
