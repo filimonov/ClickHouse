@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-10-12 20:37'
 labels:
   - 'area:mounts'
   - 'touches:on-s3-format'
@@ -48,3 +49,9 @@ Fix: add a random allocation nonce to the `epoch` body (~15 lines). Old readers 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12: the unmerged lease series (PR 11a, `f95950cbd54` 'Allocate the CAS writer epoch as one immutable conditional write' on branch fix/antalya-26.6/cas-ownership-primitives-5) rewrites `allocateWriterEpoch` but still resolves an unclear outcome by comparing exact bytes, so it carries the same defect. If the series resumes, 11a must be rebased onto this fix (conflict in `allocateWriterEpoch`).
+<!-- SECTION:NOTES:END -->
