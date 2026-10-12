@@ -263,3 +263,146 @@ are asserted to hit exactly that error, not silently skipped. This means
 guard are **not exercised by TLC** — a standing model debt carried forward,
 not fixed by this task.
 
+## CAS-36: rowless-namespace nomination in the orphan sweep {#cas-36-rowless-namespace-nomination}
+
+The orphan sweep deletes a manifest body that a committed ref names. The sweep nominates a listed body
+with no floor and no owner check when its namespace has no catalog row. A writer stages the body before
+the row exists, then births the row, precommits and promotes. The GC deletes the body after its
+`gc/state` CAS. Result: a committed ref over a missing manifest (`INV_NO_DANGLE`).
+
+Code at `d76b59f9295`:
+
+- `Gc/CasOrphanManifestSweep.cpp` `planManifestCursorPage`: LIST, then one catalog cut, then per
+  namespace the floor (`floorForNamespace`, only `if (catalog_entry)`) and the owner view. A rowless
+  key goes straight to `candidates`.
+- `Gc/CasGc.cpp` PHASE 18 `orphan_sweep`: HEAD + exact-etag `remove` after the CAS. No re-check.
+- The row is born only in `PartWriteTxn::precommitAdd` (`appendRefOps` →
+  `CasRefLedger::acquireMutableRefTableRuntime` → `CasRefLedger::namespaceLife`), after
+  `PartWriteTxn::stageManifest`.
+
+### Can `to_ns` be unborn when `stageManifest` runs? {#can-to-ns-be-unborn}
+
+Yes, on both paths.
+
+- **Table move**: `ContentAddressedTransaction::moveDirectory` (table→table branch) calls
+  `CachedPartFolderAccess::republishRef` for every ref first. It goes `publishEntries` →
+  `prepareEntries` → `stageManifest` → `precommitAdd`. `namespaceLife(to_ns)` runs afterwards, and only
+  if the source has namespace files. The first republished ref stages into an unborn `to_ns`.
+- **Ordinary INSERT**: `ContentAddressedTransaction::publishStaging` calls `stageManifest` then
+  `precommitAdd`, with no `namespaceLife` before. The namespace is usually born at `CREATE TABLE`:
+  `MergeTreeData`'s constructor writes `format_version.txt`, and `ContentAddressedTransaction::writeFile`
+  resolves `namespaceLife` for it. But the constructor writes that file only to the first writable disk
+  of the storage policy. A CAS disk that is not first (for example local hot volume, CAS cold volume)
+  has no row until its first part lands. That first write stages into an unborn namespace.
+- **Rebirth**: `CasRefLedger::namespaceLife` rebirths a namespace whose row was removed. Nothing pins the
+  life a body was staged under, so a body staged under life 1 can be precommitted under life 2.
+  Table-level locks in the engine normally keep `DROP TABLE` away from an in-flight INSERT; the CAS
+  layer itself does not.
+
+### What was split {#cas-36-what-was-split}
+
+`GOrphanSweep` observed the owner and deleted in one step. Under `EnableCatalogRows = TRUE` it is
+replaced by one action per observation, in code order:
+
+| Action | Code |
+| --- | --- |
+| `GSwList` | `op.list(casManifestsPrefix)` |
+| `GSwCatalog` | `CasRefCatalog::read` (rowless namespaces) |
+| `GSwFloor` | `floorForNamespace` → `prefixEligibleUnder` |
+| `GSwView` | `activeManifestKeys` (owner view of catalog-named namespaces) |
+| `GSwNominate` | body GETs (`PersistedEtag::capture`) + the `gc/state` CAS |
+| `GSwDelete(m)` | post-CAS HEAD + `remove`, no re-check |
+
+Writer side under the same flag:
+
+- `WCreateNamespace(n)`: `CasRefLedger::namespaceLife` births the row.
+- `WRemoveNamespace(n)` (`EnableNsRemoval`): `dropNamespace` + terminal catalog removal, one step.
+- `WEndBuild(p)`: the build leaves the active set and the lease renewal publishes
+  `min_active_build_sequence` past it. After it, no request of that build runs (`BuildActive`).
+- Precommit/promote/repoint need the row (`RowGate`). `WPublishCommitted` is disabled: the code always
+  commits through `precommitAdd` + `promote`.
+
+Every legacy config sets `EnableCatalogRows = FALSE`, so its reachable space is unchanged.
+
+### Candidates {#cas-36-candidates}
+
+| Constant | Candidate |
+| --- | --- |
+| `FixStageAfterBirth` (A) | `WStageManifest` needs the row (call `namespaceLife` before `stageManifest`) |
+| `FixPinLife` | owner transitions refuse a life other than the one the body was staged under |
+| `FixFloorAll` (A') | the floor applies to every listed key, row or not (CAS-36's wording) |
+| `FixFloorBeforeCatalog` (A'') | the floor is read before the catalog cut |
+| `FixIfMatch` (C) | the delete is conditional on the token recorded at the body GET |
+
+### Results {#cas-36-results}
+
+TLC `-workers 4`, `-Xmx8g`, `nice 10`. One namespace, one manifest, one blob, one build.
+
+| Config | Fixes | Outcome | Generated / distinct | Depth or trace | Wall |
+| --- | --- | --- | ---: | ---: | ---: |
+| `cur_rowless` | none | `INV_NO_DANGLE` violated | 80,247 / 25,583 | 11 states | 2 s |
+| `fix_stageafterbirth` | A + pin, removal on | green | 75,266,756 / 13,934,178 | 50 | 152 s |
+| `fix_stageafterbirth_norebirth` | A, removal off | green | 12,410,102 / 2,486,379 | 47 | 30 s |
+| `sab_stageafterbirth_nopin` | A, no pin, removal on | `INV_NO_DANGLE` violated | 412,897 / 122,962 | 14 states | 3 s |
+| `fix_floorall` | A' | `INV_NO_DANGLE` violated | 202,104 / 61,753 | 12 states | 1 s |
+| `fix_floorfirst` | A' + A'' | green | 129,056,456 / 23,766,088 | 50 | 264 s |
+| `sab_floorfirst` | A'' without A' | `INV_NO_DANGLE` violated | 104,244 / 32,834 | 11 states | 1 s |
+| `fix_ifmatch` | C | `INV_NO_DANGLE` violated | 98,707 / 30,982 | 12 states | 2 s |
+| `fix_combined` | A + pin + A' + A'' | green | 66,909,605 / 12,374,824 | 50 | 132 s |
+| `witness_rowlessswept_floorfirst` | A' + A'' | `W_RowlessDebrisSwept` reached | 21,001 / 6,981 | 9 states | 1 s |
+| `witness_rowlessswept_stageafterbirth` | A + pin | `W_RowlessDebrisSwept` reached | 46,792 / 15,293 | 11 states | 1 s |
+
+The two witnesses show the green fixes still delete debris of a rowless namespace, so they are not
+green by deleting nothing.
+
+### Legacy battery after the change {#cas-36-legacy-battery}
+
+The fast battery (39 legacy rows, `SLOW=1` rows not run) keeps every recorded outcome at `-workers 4`.
+Distinct-state counts of the green rows are unchanged: `empty_namespaces` 696, `stage0` 19,846,
+`stage1` 402,034, `stage5_retiretoken` 3,529,248, `stage6_attemptscoping` 11,658,986. Longest rows:
+`sab_deletebodybeforedecrements` 629 s, `sab_lazyfenceunsafe` 515 s, `stage6_attemptscoping` 203 s.
+Legacy rows still use the fused `GOrphanSweep`; the split applies only under `EnableCatalogRows`.
+
+### Counterexamples {#cas-36-counterexamples}
+
+**Current protocol (`cur_rowless`)**:
+
+1. `WStageManifest(m1)`: the writer PUTs the body; `n1` has no row.
+2. `GSwList`: GC lists the body.
+3. `GSwCatalog`: GC reads the catalog; `n1` is rowless.
+4. `WCreateNamespace(n1)`, `WPrecommitAdd(m1)`, `WPromote(m1)`: the promote re-reads the body (present)
+   and commits `r1 → m1`.
+5. `GSwFloor`, `GSwView`, `GSwNominate`: rowless, so no floor and no owner check; `m1` is nominated.
+6. `GSwDelete(m1)`: the body is deleted under the committed ref.
+
+**A' alone (`fix_floorall`)**: same, but the build ends (`WEndBuild`) after the promote and before
+`GSwFloor`. The floor read now says "eligible", and the rowless cut taken earlier skips the owner view.
+The floor proves the build ended; it proves nothing about owners unless the catalog cut is younger
+than the floor read.
+
+**A without the life pin (`sab_stageafterbirth_nopin`)**: row born, body staged, row removed (no owners
+yet), GC lists and cuts (rowless), the writer's `precommitAdd` rebirths `n1` and promotes, GC deletes.
+
+**C (`fix_ifmatch`)**: same as the current trace. The manifest key is write-once and the writer never
+re-PUTs it, so the token GC records is the token of the body the ref commits. The base code already
+deletes orphan nominations by HEAD + exact etag (`CasGc.cpp` PHASE 18); the owner-removed path
+(PHASE 15, `removeCohortWriteOnce`) has no token, but its bodies cannot be re-owned.
+
+### Verdict {#cas-36-verdict}
+
+- **A' + A'' (floor on every key, read before the catalog cut)**: sufficient alone. If the floor read
+  says a build ended, every owner transition of that build happened before the read. Those need a row,
+  so a later catalog cut shows the row, or the row was removed after all owners left. Recommended.
+- **A (stage after birth)**: sufficient only with the life pin. Without the pin, removal + rebirth
+  reopens the race. The code has no pin today: `precommitAdd` resolves the life again.
+- **A' alone**: not sufficient (the floor is read after the catalog cut).
+- **C**: not sufficient; no effect on this race.
+
+Code cost of A' + A'': in `planManifestCursorPage`, read `floorForNamespace` for every namespace of the
+page before `CasRefCatalog::read`, and drop the `if (catalog_entry)` around `prefixEligibleUnder`. One
+mount-lease GET per distinct namespace per page; rowless namespaces add one GET each (the CAS-36 cost).
+No writer change.
+
+Not modeled: the nomination also retires the manifest's blob source edges in the same CAS
+(`orphan_source_retirements`), so the race can drop blob protection too. CAS-310 (owner-removal
+invariant for the sweep) is still open and was not added here.

@@ -53,6 +53,19 @@ CONFIGS=(
     "witness_orphandeleted           violation               W_OrphanDeleted"
     "witness_precommitmissingbody    violation               W_PrecommitMissingBodyReached"
     "witness_twoleadersoneadopt      violation               W_TwoLeadersOneAdopt"
+    # CAS-36: rowless-namespace nomination in the split orphan sweep. `fix_floorall` and `fix_ifmatch`
+    # are candidate fixes that do NOT close the race, so their expected outcome is the violation.
+    "cur_rowless                     violation               INV_NO_DANGLE"
+    "fix_stageafterbirth             green                   -"
+    "fix_stageafterbirth_norebirth   green                   -"
+    "sab_stageafterbirth_nopin       violation               INV_NO_DANGLE"
+    "fix_floorall                    violation               INV_NO_DANGLE"
+    "fix_floorfirst                  green                   -"
+    "sab_floorfirst                  violation               INV_NO_DANGLE"
+    "fix_ifmatch                     violation               INV_NO_DANGLE"
+    "fix_combined                    green                   -"
+    "witness_rowlessswept_floorfirst violation               W_RowlessDebrisSwept"
+    "witness_rowlessswept_stageafterbirth violation          W_RowlessDebrisSwept"
 )
 
 SLOW_CONFIGS=(
@@ -99,6 +112,9 @@ known_name()
     printf '%s\n' "${CONFIGS[@]}" "${SLOW_CONFIGS[@]}" | awk '{print $1}' | grep -qx -- "$requested"
 }
 
+# `TLC_OUT_DIR` holds logs and the per-run metadir; the metadir (TLC `states/`) is removed after each row.
+out_dir="${TLC_OUT_DIR:-../../../tmp}"
+mkdir -p "$out_dir"
 overall=0
 run_id="${MODULE}-$$-$(date +%s%N)"
 printf '%-34s %-17s %-38s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
@@ -108,14 +124,15 @@ do
     selected "$name" "$@" || continue
 
     cfg="${MODULE}_${name}.cfg"
-    log="../../../tmp/tlc-${run_id}-${name}.log"
-    meta="../../../tmp/tlc-meta-${run_id}-${name}"
+    log="${out_dir}/tlc-${run_id}-${name}.log"
+    meta="${out_dir}/tlc-meta-${run_id}-${name}"
     timeout_seconds="${TLC_TIMEOUT:-3600}"
     [[ "$expect" == incomplete ]] && timeout_seconds="${TLC_SLOW_TIMEOUT:-60}"
     start=$SECONDS
     timeout "$timeout_seconds" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
-        -metadir "$meta" -workers "${TLC_WORKERS:-1}" -config "$cfg" "$MODULE.tla" >"$log" 2>&1
+        -metadir "$meta" -workers "${TLC_WORKERS:-1}" -noGenerateSpecTE -config "$cfg" "$MODULE.tla" >"$log" 2>&1
     rc=$?
+    rm -rf -- "$meta"
     elapsed=$((SECONDS - start))
 
     result=error
