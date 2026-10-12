@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:52'
+updated_date: '2026-10-12 22:55'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -46,3 +47,9 @@ A cold reader observes the catalog row `Live`; removal and drain retire that lif
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13 recheck on the release line 2a034cdb374 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/wave2-recheck-release-line.md): EXISTS and worse. Cold `acquireReadableRefTableRuntime` sees the row Live at its second catalog GET (no lock); before `acquireRefTableRuntime` takes `ref_queue_mutex`, drop appends the terminal record, GC drains the row, `invalidateRemovedCatalogLife` erases the slot; insertion finds an empty slot with an unchanged fence generation and publishes a runtime for the dead life (same gap on the cold mutable path of `namespaceLife`). Warm `namespaceLife` then returns the dead life with no lifecycle/catalog check: `putNamespaceFile` acknowledges bytes the janitor deletes; inferred: a ref append prepends `NamespaceBirth` (allowed after `Removed`) and a part could be promoted into a swept life. Fix: keep a per-name retirement record in `RefNameSlot` instead of erasing it; cold paths capture it before the first GET and insertion refuses if it moved; warm `namespaceLife` refuses a terminal runtime. Gtest: backend subclass whose `read` callback runs drop + GC drain after the base read (like `MountSlotRaceBackend`).
+<!-- SECTION:NOTES:END -->

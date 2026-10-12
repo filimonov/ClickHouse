@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:52'
+updated_date: '2026-10-12 22:55'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -46,3 +47,9 @@ ordinal: 473000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13 recheck on 2a034cdb374 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/wave2-recheck-release-line.md): EXISTS in two forms, leak only (no loss found). Cancel form: `precommitAdd` passes `requireAlive`, drop completes (sets `cancelled`, drains row, erases slot), `namespaceLife` births L2, the closure never re-reads `cancelled` → orphan Live row + stray precommit (promote fails on sticky `cancelled`). Remount form: `promote` checks the epoch at entry, a self-remount finishes during its manifest GET; `maybeSweepStalePrecommits` clears its flag before the sweep finishes, so concurrent callers skip it. Fix: re-check cancelled/epoch/life inside the closure; clear the sweep flag on completion.
+<!-- SECTION:NOTES:END -->

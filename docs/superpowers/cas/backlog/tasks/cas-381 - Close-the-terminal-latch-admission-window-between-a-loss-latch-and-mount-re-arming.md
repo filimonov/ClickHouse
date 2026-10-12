@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:52'
+updated_date: '2026-10-12 22:55'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -42,3 +43,9 @@ Opening passes its check; another thread latches loss and trips the fence; armin
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13 recheck on 2a034cdb374 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/wave2-recheck-release-line.md): DIFFERENT SHAPE on the release line — a fence re-arm during FORGET: a `tryRemountOnce` already past its `isVanished()` gate calls `armMountFence` (sets `lost=false` without checking `vanished_intent`), `noteRemounted` publishes Live, and writes are admitted until FORGET's second trip. No loss shown, but FORGET's 'no durable writes after start' promise breaks. Fix: `armMountFence` refuses to clear `lost` once the intent is published (under `lockTerminalPublication`), or fold `vanished_intent` into `mayMutate`/`admit`. Gtest: extend `CASForget.ForgetReLatchesFenceAfterAReclaimReachesArmMountFence`.
+<!-- SECTION:NOTES:END -->

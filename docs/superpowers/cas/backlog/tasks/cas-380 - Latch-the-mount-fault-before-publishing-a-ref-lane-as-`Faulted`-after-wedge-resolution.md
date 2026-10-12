@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:52'
+updated_date: '2026-10-12 22:55'
 labels:
   - 'area:ref-ledger'
   - 'area:mounts'
@@ -43,3 +44,9 @@ On the lease-series tip `3b4037ae265` wedge resolution publishes `Faulted`, rele
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13 recheck on 2a034cdb374 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/wave2-recheck-release-line.md): same order at three sites (resolveWedgeOnce, two in commitRefChunk); no harm found (a concurrent Yes is unordered against the observation anyway). Fix is cheap: call nothrow `tripMountLost` before each `Faulted` store. Priority can drop to Low.
+<!-- SECTION:NOTES:END -->
