@@ -66,6 +66,14 @@ CONFIGS=(
     "fix_combined                    green                   -"
     "witness_rowlessswept_floorfirst violation               W_RowlessDebrisSwept"
     "witness_rowlessswept_stageafterbirth violation          W_RowlessDebrisSwept"
+    # CAS-36 residual: an operation admitted before a fence-out or a superseding remount lands its requests
+    # after GC read the floor. Green only under `AdmissionBound`; the unbounded rows are the documented residual.
+    "cur_rowless_blobloss            violation               INV_COMMITTED_BLOBS_PRESENT"
+    "fenced_late_bound               green                   -"
+    "fenced_late_unbounded           violation               INV_NO_DANGLE"
+    "superseded_late_bound           green                   -"
+    "superseded_late_unbounded       violation               INV_NO_DANGLE"
+    "witness_fencedswept             violation               W_FencedDebrisSwept"
 )
 
 SLOW_CONFIGS=(

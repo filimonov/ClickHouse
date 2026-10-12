@@ -403,6 +403,122 @@ page before `CasRefCatalog::read`, and drop the `if (catalog_entry)` around `pre
 mount-lease GET per distinct namespace per page; rowless namespaces add one GET each (the CAS-36 cost).
 No writer change.
 
-Not modeled: the nomination also retires the manifest's blob source edges in the same CAS
-(`orphan_source_retirements`), so the race can drop blob protection too. CAS-310 (owner-removal
-invariant for the sweep) is still open and was not added here.
+The nomination's blob source retirement (`orphan_source_retirements`) is modeled in the residual
+section below. CAS-310 (owner-removal invariant for the sweep) is still open and was not added here.
+
+### Residual: late requests of a fenced or superseded epoch {#cas-36-residual-late-requests}
+
+A'' + A' stays green only while every request of an epoch lands before GC reads a floor that retires
+that epoch. The model now drops that assumption and shows what holds it.
+
+**What changed in the model** (all inert unless `EnableFenceEpochs`):
+
+| Action / constant | Code at `d76b59f9295` |
+| --- | --- |
+| `WAdmitOp` | `CasRequests::admit` → `Fence::admit`: an operation is admitted under the live lease of `mountEpoch` |
+| `WResolveOp` | the operation's last request returned or failed |
+| `GFence` | `computeHeartbeatFloor` fence-out `readModifyWrite`: `gc_fenced = true`, body kept |
+| `WRemount` | `claimMountAwaitingExpiry`: `writer_epoch + 1`; old-epoch builds keep their ended state (resetting it revived an ended build: a modeling error caught by `superseded_late_bound`) |
+| `OpIssue(m)` | stage, `namespaceLife`, `precommitAdd`, promote, repoint need an operation admitted under m's epoch; they are not re-checked against the fence |
+| `GcFencedEligible` | FALSE = base `prefixEligibleUnder` (ignores `gc_fenced`); TRUE = proposed AC #6 (a fenced epoch's builds count as retired) |
+| `AdmissionBound` | TRUE = `GSwFloor` cannot report an epoch retired while an operation admitted under it is unresolved; FALSE = no bound |
+| `mEpoch[m]` | `writer_epoch` baked into the manifest key at staging |
+
+`BuildActive` stays for the `WEndBuild` path: within one epoch a build never retires with an unresolved
+`precommitAdd`/promote (the retire sites wait for the append or the cleanup-duty drain), so `WEndBuild`
+now also requires no in-flight operation and a live lease.
+
+**Blob protection** (`GSwNominate`, all `EnableCatalogRows` configs): the nomination's `gc/state` CAS now
+folds `orphan_source_retirements` (`CasGc.cpp` PHASE 18 → `foldDeltasIntoGeneration`): every blob source
+edge `(m, path)` of a nominated body is retired. A later activation of m re-adds the edge; a promote
+(owner move) does not. New invariant `INV_COMMITTED_BLOBS_PRESENT`: every blob a committed manifest names
+is present, whether or not its body is.
+
+### Residual results {#cas-36-residual-results}
+
+TLC `-workers 4`, `-Xmx8g`, `nice 10`. The epoch configs use `fix_floorfirst`'s fixes (A' + A''), with
+`EnableNsRemoval = FALSE` and `MaxToken = 1` so a run ends inside the 20-minute limit.
+
+| Config | Setting | Outcome | Generated / distinct | Depth or trace | Wall |
+| --- | --- | --- | ---: | ---: | ---: |
+| `cur_rowless_blobloss` | current protocol, only `INV_COMMITTED_BLOBS_PRESENT` | violated | 3,071,584 / 788,099 | 19 states | 8 s |
+| `fenced_late_bound` | `GFence`, `GcFencedEligible`, `AdmissionBound` | green | 39,686,813 / 7,047,428 | 43 | 86 s |
+| `fenced_late_unbounded` | same, no `AdmissionBound` | `INV_NO_DANGLE` violated | 488,919 / 136,870 | 13 states | 3 s |
+| `superseded_late_bound` | `WRemount`, `GcFencedEligible = FALSE`, `AdmissionBound` | green | 404,543,956 / 69,594,492 | 45 | 899 s |
+| `superseded_late_unbounded` | same, no `AdmissionBound` | `INV_NO_DANGLE` violated | 1,803,061 / 506,911 | 14 states | 7 s |
+| `witness_fencedswept` | as `fenced_late_bound` | `W_FencedDebrisSwept` reached | 62,765 / 19,678 | 11 states | 1 s |
+
+The CAS-36 rows were rerun with the source retirement in `GSwNominate` and `INV_COMMITTED_BLOBS_PRESENT`
+added to every green fix. Every outcome holds:
+
+| Config | Outcome | Generated / distinct | Wall |
+| --- | --- | ---: | ---: |
+| `cur_rowless` | `INV_NO_DANGLE` violated (12 states) | 66,152 / 21,085 | 2 s |
+| `fix_stageafterbirth` | green | 75,278,812 / 13,936,236 | 387 s |
+| `fix_stageafterbirth_norebirth` | green | 12,416,130 / 2,487,408 | 98 s |
+| `sab_stageafterbirth_nopin` | `INV_NO_DANGLE` violated | 389,612 / 115,996 | 8 s |
+| `fix_floorall` | `INV_NO_DANGLE` violated | 232,281 / 70,869 | 6 s |
+| `fix_floorfirst` | green | 129,086,596 / 23,771,233 | 441 s |
+| `sab_floorfirst` | `INV_NO_DANGLE` violated | 95,029 / 30,042 | 1 s |
+| `fix_ifmatch` | `INV_NO_DANGLE` violated | 98,790 / 31,012 | 1 s |
+| `fix_combined` | green | 66,921,661 / 12,376,882 | 135 s |
+| `witness_rowlessswept_floorfirst` | reached | 21,038 / 7,002 | 0 s |
+| `witness_rowlessswept_stageafterbirth` | reached | 46,788 / 15,486 | 2 s |
+
+Green counts grew slightly (for example `fix_floorfirst` 23,766,088 → 23,771,233): the retirement adds
+states where a nominated edge is gone before the body delete. Wall times differ from the first table
+because other TLC runs shared the host. `superseded_late_bound` uses 899 s of the 1200 s limit; do not
+widen its constants.
+
+The 39 legacy fast rows keep every recorded outcome, and the green rows keep their distinct counts
+(`empty_namespaces` 696, `stage0` 19,846, `stage1` 402,034, `stage5_retiretoken` 3,529,248,
+`stage6_attemptscoping` 11,658,986): the new actions and variables are inert without `EnableCatalogRows`
+and `EnableFenceEpochs`.
+
+### Residual counterexamples {#cas-36-residual-counterexamples}
+
+**`fenced_late_unbounded`** (13 states):
+
+1. `WAdmitOp`: an INSERT is admitted under epoch 1.
+2. `WStageManifest(m1)`, `WCreateNamespace(n1)`: body staged, row born.
+3. `GSwList` lists `m1`. `GFence`: GC fences out epoch 1. The operation keeps running.
+4. `GSwFloor` (epoch 1 fenced → retired), `GSwCatalog` (`n1` has a row), `GSwView` (`m1` has no owner).
+5. `WPrecommitAdd(m1)`, `WPromote(m1)` land late: the promote reads the body (present) and commits `r1 → m1`.
+6. `GSwNominate`: the floor says ended and the view says unowned → `m1` nominated.
+7. `GSwDelete(m1)`: committed ref over a missing body.
+
+**`superseded_late_unbounded`** (14 states): same shape, plus an idle `GStartRound`. `WRemount` replaces `GFence`; the floor reports
+epoch 1 retired because `writer_epoch` 1 < 2 (`prefixEligibleUnder`). `GcFencedEligible = FALSE`.
+
+**`cur_rowless_blobloss`** (19 states, current protocol, only the blob invariant checked): `m1` staged
+rowless, `b1` uploaded and retired in round 1 at in-degree 0; GC lists and cuts (rowless); the writer
+births the row, precommits and promotes (its view predates the round-1 retire). The fold adds the
+precommit's edge (`b1` in-degree 1). `GSwNominate` retires that edge (in-degree 0); the recheck no longer
+spares `b1`, the delete lands. A committed ref names a deleted blob, independently of the body delete.
+
+### Residual verdict {#cas-36-residual-verdict}
+
+- **The residual is not limited to rowless namespaces.** The shortest trace above has a catalog row. The
+  owner view (`activeManifestKeys`) is one read; an owner transition that lands after it is invisible to
+  the nomination. The A'' argument ("every owner transition of an ended build happened before the floor
+  read") is exactly the admission bound.
+- **Excluding `gc_fenced` does not remove the time dependency.** `superseded_late_unbounded` violates with
+  `GcFencedEligible = FALSE`. At the base this is not only a zombie case: a self-remount or restart
+  publishes a higher `writer_epoch`, `prefixEligibleUnder` then makes every build of the old epoch
+  eligible, and the old epoch's in-flight `precommitAdd`/promote is fenced only by an `EpochSeal` that
+  recovery writes lazily per namespace on next touch, with no grace wait (`CasPool.cpp` "NO WAIT HERE").
+  A namespace the successor never touches (for example a rowless one) never gets that seal. `EpochSeal`
+  is not modeled.
+- **With `AdmissionBound` both arms are green** (`fenced_late_bound`, `superseded_late_bound`). The
+  witness `witness_fencedswept` shows the fenced arm still deletes debris whose build never ended through
+  `WEndBuild`.
+- **Blob loss**: the current protocol also loses a committed manifest's blob through
+  `orphan_source_retirements` (`cur_rowless_blobloss`). `fix_floorfirst` keeps `INV_COMMITTED_BLOBS_PRESENT`
+  green, so A'' closes both losses under the same assumption.
+- A timed-out blob or staged-manifest PUT does not pin the build. It is harmless debris unless it can be
+  committed, which needs a later `precommitAdd`/promote of the same operation. The model keeps staging
+  atomic for that reason.
+
+What the code must document or enforce: the floor may retire an epoch only after every operation admitted
+under it has ended. At the base nothing enforces this for a superseded epoch; for a fence-out it holds
+only if the request deadline is shorter than the wait before the fence-out is acted on.

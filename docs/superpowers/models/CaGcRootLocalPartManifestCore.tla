@@ -50,7 +50,16 @@ CONSTANTS
     FixPinLife,                 \* (A)   precommit/promote/publish require the life the body was staged under (no silent rebirth)
     FixFloorAll,                \* (A')  the mount-lease floor is applied to every listed key, catalog row or not
     FixFloorBeforeCatalog,      \* (A'') the floor is read BEFORE the catalog cut, not after it
-    FixIfMatch                  \* (C)   the post-CAS delete is conditional on the token recorded at the body GET
+    FixIfMatch,                 \* (C)   the post-CAS delete is conditional on the token recorded at the body GET
+    \* ---- mount epochs, fence-out and late admitted requests (CAS-36 residual); inert unless EnableFenceEpochs ----
+    EnableFenceEpochs,          \* TRUE = writer requests run inside an admitted operation of a mount epoch;
+                                \*        GC may fence the epoch and the operation may keep issuing requests
+    GcFencedEligible,           \* TRUE = the floor reports every build of a `gc_fenced` epoch as retired (proposed,
+                                \*        AC #6). FALSE = base `prefixEligibleUnder`, which ignores the flag
+    EnableRemount,              \* TRUE = a superseding remount (`claimMountAwaitingExpiry`, writer_epoch + 1)
+    AdmissionBound,             \* TRUE = an operation admitted before the fence ends before GC acts on the fence;
+                                \* FALSE = its requests may land at any later time
+    MaxEpoch                    \* bound on mount epochs (TLC finiteness)
 
 \* A ManifestId is (namespace, manifest_instance_id). manifest_instance_id is drawn from
 \* ManifestInstances and is NEVER reused once visible (NoManifestIdReuse). Two namespaces may
@@ -116,7 +125,14 @@ VARIABLES
     swOwned,       \* the owner view (`activeManifestKeys`) read for catalog-named namespaces
     swNom,         \* nominated manifests awaiting the post-`gc/state`-CAS delete
     swTok,         \* [ManifestIds -> 0..1] token recorded at the nomination's body GET
-    swRowlessGone  \* manifests the sweep deleted while their namespace was rowless in the cut (witness only)
+    swRowlessGone, \* manifests the sweep deleted while their namespace was rowless in the cut (witness only)
+    \* ---- mount epochs + admitted operations (inert unless EnableFenceEpochs) ----
+    mountEpoch,    \* 1..MaxEpoch the writer_epoch of the current mount lease
+    fencedEp,      \* SUBSET 1..MaxEpoch epochs GC fenced out (`gc_fenced = true`)
+    opEp,          \* 0..MaxEpoch the epoch the writer's in-flight operation was admitted under (0 = none)
+    mEpoch,        \* [ManifestIds -> 0..MaxEpoch] writer_epoch baked into the manifest key at staging
+    swFloorEp,     \* the writer_epoch the page's floor read returned
+    swFenced       \* the fenced epochs the page's floor read returned
 
 \* SrcEdges(m): the active source edges currently emitted by m's activation map. Derived operator,
 \* NOT a constant, so it follows mActiveEdges as the fold mutates it.
@@ -140,8 +156,10 @@ origVars == << present, tokOf, nextTok, deadTok, mBody, mEntries, mRef, mNs, own
            mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok,
            foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
 attemptVars == << attemptSeq, adopted, sealAt, retiredAt, attViewable >>
+epVars == << mountEpoch, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
+\* A flat tuple literal: TLC cannot evaluate `UNCHANGED` over a `\o`-composed tuple.
 catVars == << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
-               swRowlessGone >>
+               swRowlessGone, mountEpoch, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
 vars == origVars \o attemptVars \o catVars
 
 \* ---- helpers (filled across tasks) ----
@@ -195,6 +213,19 @@ BuildActive(m) == ~EnableCatalogRows \/ ~sweepEligible[mPrefix[m]]
 RowGate(m) == ~EnableCatalogRows
               \/ ( nsRow[m[1]] /\ (FixPinLife => nsLife[m[1]] = stagedLife[m]) )
 
+\* ---- mount epochs + admitted operations (inert unless EnableFenceEpochs) ----
+\* The mount lease of epoch e admits new work: it is the current epoch and GC has not fenced it out.
+\* Code: `CasRequests::admit` -> `Fence::admit` against the mount incarnation.
+LeaseLive(e) == e = mountEpoch /\ e \notin fencedEp
+\* A writer request belongs to the in-flight operation that was admitted under m's epoch. The request
+\* itself is not re-admitted against the store's fence: once admitted, the operation's requests may keep
+\* landing after GC fenced or superseded its epoch. This replaces the `BuildActive` promise for that case.
+OpIssue(m) == ~EnableFenceEpochs \/ (opEp # 0 /\ mEpoch[m] = opEp)
+OpIssueAny == ~EnableFenceEpochs \/ opEp # 0
+\* What the floor (`prefixEligibleUnder` over the mount lease) reports for an epoch other than the lease's
+\* own: an older writer_epoch is retired; a `gc_fenced` epoch is retired only under GcFencedEligible.
+FloorRetiresEpoch(e, leaseEp, fenced) == e < leaseEp \/ (GcFencedEligible /\ e \in fenced)
+
 \* WStageManifest: write a part-manifest body BEFORE any owner transition (the pre-precommit object).
 \* Code: `PartWriteTxn::stageManifest` (one `stagingPutIfAbsent`). It does not resolve the namespace life:
 \* on `CachedPartFolderAccess::prepareEntries` and `ContentAddressedTransaction::publishStaging` the row is
@@ -206,7 +237,7 @@ RowGate(m) == ~EnableCatalogRows
 \* guard. SabotageAcceptRefMismatch / SabotageAcceptNamespaceMismatch write a mismatched body.
 WStageManifest(m, f) ==
     /\ owner[m] = None /\ ~mBody[m]
-    /\ BuildActive(m)
+    /\ BuildActive(m) /\ OpIssueAny
     /\ (EnableCatalogRows /\ FixStageAfterBirth) => nsRow[m[1]]
     /\ (m \notin everEdged \/ SabotageReuseManifestId)   \* fresh ManifestId (never-reused) unless sabotaged
     /\ mBody' = [mBody EXCEPT ![m] = TRUE]
@@ -222,7 +253,9 @@ WStageManifest(m, f) ==
     /\ stagedLife' = IF EnableCatalogRows /\ nsRow[m[1]] THEN [stagedLife EXCEPT ![m] = nsLife[m[1]]]
                      ELSE IF EnableCatalogRows THEN [stagedLife EXCEPT ![m] = 0] ELSE stagedLife
     /\ mTok' = IF EnableCatalogRows THEN [mTok EXCEPT ![m] = 1] ELSE mTok
+    /\ mEpoch' = IF EnableFenceEpochs THEN [mEpoch EXCEPT ![m] = opEp] ELSE mEpoch
     /\ UNCHANGED << nsRow, nsLife, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok, swRowlessGone >>
+    /\ UNCHANGED << mountEpoch, fencedEp, opEp, swFloorEp, swFenced >>
 
 \* ---- owner transitions (spec §Build And Precommit Protocol; §Fold Owner Transitions) ----
 PresentBlobs == { b \in Blobs : present[b] }
@@ -304,7 +337,7 @@ WRefreshView(w) ==
 WPrecommitAdd(m, bld, f) ==
     /\ EnablePrecommit
     /\ owner[m] = None
-    /\ BuildActive(m) /\ RowGate(m)
+    /\ BuildActive(m) /\ RowGate(m) /\ OpIssue(m)
     /\ (m \notin mfDeleted \/ SabotageReuseManifestId)   \* a swept/deleted id is retired forever
     /\ (mBody[m] \/ EnableMissingBody)                  \* missing body only when allowed
     /\ Len(journal[m[1]]) < MaxLog
@@ -332,7 +365,7 @@ WPrecommitAdd(m, bld, f) ==
 WPromote(m, bld, ref, w) ==
     /\ EnablePrecommit
     /\ owner[m] = bld
-    /\ BuildActive(m) /\ RowGate(m)
+    /\ BuildActive(m) /\ RowGate(m) /\ OpIssue(m)
     /\ RefFreeFor(ref, m)
     \* split-promote and promote-after-missing-body both drop the atomic fail-closed activation gate:
     /\ (SabotageSplitPromote \/ SabotagePromoteAfterMissingBody \/ CommitGate(m, w))
@@ -437,7 +470,7 @@ WManifestBodyArrives(m, f) ==
 WRepoint(mOld, mNew, ref, w) ==
     /\ mOld # mNew /\ mOld[1] = mNew[1]
     /\ owner[mOld] = ref /\ ref \in Refs /\ owner[mNew] = None
-    /\ BuildActive(mNew) /\ RowGate(mNew)
+    /\ BuildActive(mNew) /\ RowGate(mNew) /\ OpIssue(mNew)
     /\ (mNew \notin mfDeleted \/ SabotageReuseManifestId)
     /\ RefFreeFor(ref, mOld)
     /\ CommitGate(mNew, w)
@@ -920,11 +953,13 @@ GOrphanSweep(n) ==
 WCreateNamespace(n) ==
     /\ EnableCatalogRows
     /\ ~nsRow[n] /\ nsLife[n] < MaxLife
+    /\ OpIssueAny
     /\ nsRow' = [nsRow EXCEPT ![n] = TRUE]
     /\ nsLife' = [nsLife EXCEPT ![n] = @ + 1]
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ UNCHANGED << stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok, swRowlessGone >>
+    /\ UNCHANGED epVars
 
 \* An emptied namespace's row goes away. Code: `CasRefLedger::dropNamespace` (row -> `Removing`) and the GC's
 \* terminal catalog removal, abstracted to one step: the sweep consumes only "row absent in the cut".
@@ -937,6 +972,7 @@ WRemoveNamespace(n) ==
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ UNCHANGED << nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok, swRowlessGone >>
+    /\ UNCHANGED epVars
 
 \* The build ends and the lease floor passes it. Code: the `PartWriteTxn` leaves the active-build set (its
 \* precommits abandoned first), and the next mount-lease renewal publishes `min_active_build_sequence` above
@@ -946,6 +982,8 @@ WEndBuild(p) ==
     /\ EnableCatalogRows
     /\ ~sweepEligible[p]
     /\ \A m \in ManifestIds : mPrefix[m] = p => owner[m] \notin Builds
+    \* the build's own requests have returned, and the live lease's renewal publishes the floor
+    /\ EnableFenceEpochs => (opEp = 0 /\ LeaseLive(mountEpoch))
     /\ sweepEligible' = [sweepEligible EXCEPT ![p] = TRUE]
     /\ UNCHANGED << present, tokOf, nextTok, deadTok, mBody, mEntries, mRef, mNs, owner, mActiveEdges,
                     journal, blobIndeg, blobEdges, everEdged, foldSeal, completionSeal, gcRound,
@@ -961,7 +999,7 @@ WEndBuild(p) ==
 SweepOrder == IF FixFloorBeforeCatalog THEN << "list", "floor", "cut", "view" >>
                                        ELSE << "list", "cut", "floor", "view" >>
 SwNext == IF swStep < 4 THEN SweepOrder[swStep + 1] ELSE "none"
-SwUnchangedExcept == << nsRow, nsLife, stagedLife, mTok, swRowlessGone >>
+SwUnchangedExcept == << nsRow, nsLife, stagedLife, mTok, swRowlessGone, mountEpoch, fencedEp, opEp, mEpoch >>
 
 \* `op.list(casManifestsPrefix)`: the keys present now.
 GSwList ==
@@ -972,7 +1010,7 @@ GSwList ==
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ UNCHANGED SwUnchangedExcept
-    /\ UNCHANGED << swRowless, swFloor, swOwned, swNom, swTok >>
+    /\ UNCHANGED << swRowless, swFloor, swOwned, swNom, swTok, swFloorEp, swFenced >>
 
 \* `CasRefCatalog::read`: which namespaces have no row.
 GSwCatalog ==
@@ -983,13 +1021,21 @@ GSwCatalog ==
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ UNCHANGED SwUnchangedExcept
-    /\ UNCHANGED << swListed, swFloor, swOwned, swNom, swTok >>
+    /\ UNCHANGED << swListed, swFloor, swOwned, swNom, swTok, swFloorEp, swFenced >>
 
 \* `floorForNamespace` (the mount-lease GET) feeding `prefixEligibleUnder`: which builds have ended.
+\* Under EnableFenceEpochs the read also returns the lease's writer_epoch and `gc_fenced` flag.
+\* AdmissionBound: GC acts on a fence or a supersede only after every operation admitted under the
+\* retired epoch has ended. This is the lease-admission assumption (request deadline shorter than the
+\* wait before GC acts); FALSE drops it.
 GSwFloor ==
     /\ EnableCatalogRows /\ EnableOrphanSweep
     /\ SwNext = "floor"
+    /\ (EnableFenceEpochs /\ AdmissionBound) =>
+           ~(opEp # 0 /\ FloorRetiresEpoch(opEp, mountEpoch, fencedEp))
     /\ swFloor' = { p \in BuildPrefixes : sweepEligible[p] }
+    /\ swFloorEp' = IF EnableFenceEpochs THEN mountEpoch ELSE swFloorEp
+    /\ swFenced' = IF EnableFenceEpochs THEN fencedEp ELSE swFenced
     /\ swStep' = swStep + 1
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
@@ -1005,27 +1051,45 @@ GSwView ==
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ UNCHANGED SwUnchangedExcept
-    /\ UNCHANGED << swListed, swRowless, swFloor, swNom, swTok >>
+    /\ UNCHANGED << swListed, swRowless, swFloor, swNom, swTok, swFloorEp, swFenced >>
 
 \* The nomination rule of `planManifestCursorPage`. A rowless namespace skips the floor (the `if (catalog_entry)`
 \* around `prefixEligibleUnder`), the owner view and the section-6 premise; FixFloorAll applies the floor to it.
+\* The page's floor read says m's build ended: its build passed min_active in m's own epoch, or the
+\* floor retires m's whole epoch (superseded, or `gc_fenced` under GcFencedEligible).
+SwFloorEnded(m) ==
+    IF ~EnableFenceEpochs THEN mPrefix[m] \in swFloor
+    ELSE \/ (mEpoch[m] = swFloorEp /\ mPrefix[m] \in swFloor)
+         \/ FloorRetiresEpoch(mEpoch[m], swFloorEp, swFenced)
 SwNominable(m) ==
     IF m[1] \in swRowless
-    THEN FixFloorAll => mPrefix[m] \in swFloor
-    ELSE mPrefix[m] \in swFloor /\ m \notin swOwned
+    THEN FixFloorAll => SwFloorEnded(m)
+    ELSE SwFloorEnded(m) /\ m \notin swOwned
 
 \* The candidates' body GETs plus the `gc/state` CAS that records the nominations. The GET records the
-\* token (`PersistedEtag::capture`); an absent body is skipped.
+\* token (`PersistedEtag::capture`); an absent body is skipped. The same CAS folds the nominations'
+\* `orphan_source_retirements` (`CasGc.cpp` PHASE 18 -> `foldDeltasIntoGeneration`): every blob source edge
+\* (m, path) the body names is retired, after the round's deltas. A later activation of m re-adds it;
+\* a promote (owner move, no deltas) does not.
 GSwNominate ==
     /\ EnableCatalogRows /\ EnableOrphanSweep
     /\ swStep = 4
-    /\ swNom' = { m \in swListed : SwNominable(m) /\ mBody[m] }
+    /\ LET nom == { m \in swListed : SwNominable(m) /\ mBody[m] }
+           be1 == { ed \in blobEdges : ed[1] \notin nom }
+           ae1 == [m \in ManifestIds |-> IF m \in nom THEN [p \in Paths |-> NoBlob] ELSE mActiveEdges[m]]
+       IN /\ swNom' = nom
+          /\ blobEdges' = be1
+          /\ mActiveEdges' = ae1
+          /\ blobIndeg' = IndegFrom(be1, ae1)
     /\ swTok' = [m \in ManifestIds |-> IF m \in swListed /\ mBody[m] THEN mTok[m] ELSE swTok[m]]
     /\ swStep' = 5
-    /\ UNCHANGED origVars
+    /\ UNCHANGED << present, tokOf, nextTok, deadTok, mBody, mEntries, mRef, mNs, owner,
+                    journal, everEdged, foldSeal, completionSeal, gcRound,
+                    gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
+                    wView, mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
     /\ UNCHANGED SwUnchangedExcept
-    /\ UNCHANGED << swListed, swRowless, swFloor, swOwned >>
+    /\ UNCHANGED << swListed, swRowless, swFloor, swOwned, swFloorEp, swFenced >>
 
 \* The post-CAS delete of one nomination, with no re-check of the row, floor or owner view. FixIfMatch makes
 \* it conditional on the recorded token; the manifest key is write-once, so the token cannot have changed.
@@ -1044,6 +1108,7 @@ GSwDelete(m) ==
                     wView, mfCleanup, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swTok >>
+    /\ UNCHANGED epVars
 
 \* The page ends; the next page starts from fresh observations.
 GSwFinish ==
@@ -1052,9 +1117,58 @@ GSwFinish ==
     /\ swStep' = 0
     /\ swListed' = {} /\ swRowless' = {} /\ swFloor' = {} /\ swOwned' = {}
     /\ swTok' = [m \in ManifestIds |-> 0]
+    /\ swFloorEp' = 0 /\ swFenced' = {}
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swNom, swRowlessGone >>
+    /\ UNCHANGED << mountEpoch, fencedEp, opEp, mEpoch >>
+
+\* ---- mount epochs, fence-out, remount, admitted operations (inert unless EnableFenceEpochs) ----
+\* The writer admits an operation (an INSERT's `PartWriteTxn`) under the live lease of its epoch.
+\* Code: `CasRequests::admit` -> `Fence::admit(generation, needed_ms)`. One operation at a time.
+WAdmitOp ==
+    /\ EnableFenceEpochs
+    /\ opEp = 0 /\ LeaseLive(mountEpoch)
+    /\ opEp' = mountEpoch
+    /\ UNCHANGED origVars
+    /\ UNCHANGED attemptVars
+    /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
+                    swRowlessGone, mountEpoch, fencedEp, mEpoch, swFloorEp, swFenced >>
+
+\* The operation ends: its last request returned or failed. No further request of it is issued.
+WResolveOp ==
+    /\ EnableFenceEpochs
+    /\ opEp # 0
+    /\ opEp' = 0
+    /\ UNCHANGED origVars
+    /\ UNCHANGED attemptVars
+    /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
+                    swRowlessGone, mountEpoch, fencedEp, mEpoch, swFloorEp, swFenced >>
+
+\* GC fences out the current mount epoch: `computeHeartbeatFloor`'s fence-out `readModifyWrite`
+\* (`gc_fenced = true`, body otherwise kept). New operations of the epoch are refused; one already
+\* admitted is not stopped by the store.
+GFence ==
+    /\ EnableFenceEpochs
+    /\ mountEpoch \notin fencedEp
+    /\ fencedEp' = fencedEp \cup {mountEpoch}
+    /\ UNCHANGED origVars
+    /\ UNCHANGED attemptVars
+    /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
+                    swRowlessGone, mountEpoch, opEp, mEpoch, swFloorEp, swFenced >>
+
+\* A superseding remount: `claimMountAwaitingExpiry` takes the lease with writer_epoch + 1. The old
+\* process may still hold an operation admitted under the old epoch. `sweepEligible` keeps the old
+\* epoch's ended builds: the new epoch's builds use fresh prefixes, which the single manifest instance
+\* of the epoch configs never stages (resetting it would wrongly revive an ended old-epoch build).
+WRemount ==
+    /\ EnableFenceEpochs /\ EnableRemount
+    /\ mountEpoch < MaxEpoch
+    /\ mountEpoch' = mountEpoch + 1
+    /\ UNCHANGED origVars
+    /\ UNCHANGED attemptVars
+    /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
+                    swRowlessGone, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
 
 \* Mutable per-ref payload update: changes only mutable payload — NO owner transition, NO blob delta,
 \* NO id change (MutablePayloadNotReachability). Modeled as a no-op stutter on every reachability var,
@@ -1395,6 +1509,12 @@ Init ==
     /\ swListed = {} /\ swRowless = {} /\ swFloor = {} /\ swOwned = {} /\ swNom = {}
     /\ swTok = [m \in ManifestIds |-> 0]
     /\ swRowlessGone = {}
+    /\ mountEpoch = 1
+    /\ fencedEp = {}
+    /\ opEp = 0
+    /\ mEpoch = [m \in ManifestIds |-> 0]
+    /\ swFloorEp = 0
+    /\ swFenced = {}
 
 TypeOK ==
     /\ extraShared \in SUBSET ManifestIds
@@ -1433,6 +1553,12 @@ TypeOK ==
     /\ swRowless \in SUBSET Namespaces /\ swFloor \in SUBSET BuildPrefixes
     /\ swTok \in [ManifestIds -> 0..1]
     /\ swRowlessGone \in SUBSET ManifestIds
+    /\ mountEpoch \in 1..MaxEpoch
+    /\ fencedEp \in SUBSET (1..MaxEpoch)
+    /\ opEp \in 0..MaxEpoch
+    /\ mEpoch \in [ManifestIds -> 0..MaxEpoch]
+    /\ swFloorEp \in 0..MaxEpoch
+    /\ swFenced \in SUBSET (1..MaxEpoch)
 
 INV_JOURNAL_COVERAGE == \A n \in Namespaces : trimBase[n] <= cursor[n]
 
@@ -1475,6 +1601,10 @@ PrecommitMayReferenceMissingManifest == TRUE   \* witnessed reachable, not an in
 CommittedNoMissingBlob ==
     \A m \in ManifestIds : (owner[m] \in Refs) =>
         (\A b \in BlobsOf(mActiveEdges[m]) : present[b] /\ ~CondemnedTok(b, tokOf[b]))
+\* Every blob a committed manifest names stays present, whether or not its body does. Isolates blob
+\* loss (a retired source edge) from body loss (`NoCommittedDangle` checks both, body first).
+INV_COMMITTED_BLOBS_PRESENT ==
+    \A m \in ManifestIds : (owner[m] \in Refs) => (\A b \in BlobsOf(mEntries[m]) : present[b])
 NoCommittedDangle ==
     \A m \in ManifestIds : (owner[m] \in Refs) => (mBody[m] /\ \A b \in BlobsOf(mEntries[m]) : present[b])
 INV_NO_DANGLE == NoCommittedDangle
@@ -1538,6 +1668,10 @@ W_OrphanDeleted == ~(\E m \in ManifestIds : ~mBody[m] /\ owner[m] = None /\ m \i
 \* Non-vacuity witness for the CAS-36 fixes: the split sweep still deletes debris of a namespace that had
 \* no row in its catalog cut (a fix that never deletes rowless debris would be vacuously safe).
 W_RowlessDebrisSwept == swRowlessGone = {}
+\* Non-vacuity witness for the fence-out arm: the sweep deletes debris whose build never ended through
+\* `WEndBuild`, on the floor's fenced-epoch report alone.
+W_FencedDebrisSwept ==
+    ~(\E m \in mfDeleted : mEpoch[m] \in fencedEp /\ ~sweepEligible[mPrefix[m]])
 
 \* ---- attempt-scoping safety + witness ----
 \* The governing property: a non-adopted attempt's artifact is NEVER reader-visible. Unguarded so the
@@ -1615,6 +1749,8 @@ Next ==
     \/ \E p \in BuildPrefixes : WEndBuild(p)
     \/ GSwList \/ GSwCatalog \/ GSwFloor \/ GSwView \/ GSwNominate \/ GSwFinish
     \/ \E m \in ManifestIds : GSwDelete(m)
+    \* mount epochs, fence-out, remount, admitted operations (inert unless EnableFenceEpochs):
+    \/ WAdmitOp \/ WResolveOp \/ GFence \/ WRemount
     \* Phase 2: token-diff discovery (the rev.15 token split):
     \/ \E n \in Namespaces : GDiscoverSkip(n)
     \/ \E n \in Namespaces : GDiscoverRead(n)
