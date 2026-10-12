@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-10-12 13:19'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -45,7 +45,8 @@ Provenance: BACKLOG/gc.md#orphan-sweep-absent-catalog-row-window (2031-triage CA
 - [ ] #3 gtest: the same body under a lease with the farewell marker, or with a lower writer epoch, is deleted
 - [ ] #4 `CursorPageDeletesObservedBodyWhenCatalogOmitsNamespace` is flipped: no lease at all retains the body, and the test comment states why (decommission drains under its claim)
 - [ ] #5 The two sweep paths apply the same floor rule and the §6 comment no longer claims the row precedes the body
-- [ ] #6 DECISION PENDING: whether `prefixEligibleUnder` treats `gc_fenced` like the farewell marker. The mount-lease series design (docs/superpowers/specs/2026-10-07-cas-mount-lease-series-design.md, "Получение заново после фенса GC") decided the opposite: a fenced body `(E, m)` keeps protecting prefixes `(E, seq >= m)` until a new claim, to cover a ref-append of the old epoch that lands late. Resolve before implementing; the unconditional-floor fix does not depend on it
+- [ ] #6 `prefixEligibleUnder` treats `gc_fenced` like the farewell marker: every build sequence of a fenced lease's epoch is eligible (gtest: rowless body under a `gc_fenced` lease with `min_active_build_sequence` at or below the key's sequence is deleted; gtest: a `+1` precommit edge with an absent body under a `gc_fenced` lease is skipped as `dead_precommit_skipped`, not clamped)
+- [ ] #7 The sentence in docs/superpowers/specs/2026-10-07-cas-mount-lease-series-design.md ("Получение заново после фенса GC") that says the fenced body keeps protecting `(E, seq >= m)` is amended to the new rule, with the argument from the CAS-36 spec §6
 <!-- AC:END -->
 
 ## Definition of Done
@@ -70,4 +71,16 @@ First recorded: 2026-08-21 (e811b3d68f4, by 'CAS-022')
 2026-10-12 noclock audit: reachability now verified in code by codex (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w1-reflog.md finding 1; docs/superpowers/cas/2026-10-12-late-request-audit/objects/manifest.md S15). Path: `moveDirectory` → `republishRef` → `publishEntries` → `prepareEntries` → `stageManifest` runs before `namespaceLife(to_ns)`; GC samples no catalog row and nominates without a floor check (`planManifestCursorPage`); the writer then precommits and promotes; GC deletes the committed manifest body. Second fix option: create the namespace before staging (call `namespaceLife` before `stageManifest`, ~5–10 lines).
 
 Same family as CAS-360 (writer and GC each act on a stale read); model work in CAS-375.
+
+2026-10-12 (owner, final): `gc_fenced` counts as retired. The series r8 sentence guarded a late-landing `precommitAdd` append of the fenced epoch; the fold already resolves that case with the same predicate: a `+1` precommit edge whose body is absent and whose build is eligible is skipped as non-activating (`CASGCDeadPrecommitSkipped`, `Gc/CasGc.cpp` fold_ref_intake), and its binding is removed by the successor's stale-precommit sweep (`-1` of a never-activated precommit emits nothing). A `promote` append in flight is covered by the owner view (live precommits are protected) regardless of the floor. So sweep and fold agree under the new rule, no barrier and no data loss; what changes is that the dead node's in-flight debris is reclaimed before a remount or decommission. AC #6 is firm, AC #7 places the series amendment.
+
+2026-10-12 model result (`a385db56107`, `docs/superpowers/models/CaGcRootLocalPartManifestCore_RESULTS.md` section CAS-36): the fused `GOrphanSweep` is split into `GSwList`/`GSwCatalog`/`GSwFloor`/`GSwView`/`GSwNominate`/`GSwDelete` under `EnableCatalogRows`. Current protocol violates `INV_NO_DANGLE` in 11 states (`cur_rowless`): stage body with no row → GC LIST → catalog cut (no row) → writer creates the namespace, precommits, promotes → sweep skips the floor for a rowless namespace → nominates → deletes the committed body.
+
+Reachable in code at the base on two paths: table move (`moveDirectory` → `republishRef` → … → `stageManifest` before `precommitAdd` births the row; `namespaceLife(to_ns)` runs after the loop and only with namespace files) and the first INSERT into a CAS disk that is not the policy's first writable disk (`format_version.txt` went elsewhere, so no row yet). `namespaceLife` rebirth also applies.
+
+Candidates: (A') this task's wording — floor on every listed key — is NOT enough: the floor is read after the catalog cut, so a build can be born, precommit, promote and end in between (`fix_floorall` violates, 12 states). (A'') floor read for every distinct namespace on the page BEFORE `CasRefCatalog::read`, no lease = not eligible: green (`fix_floorfirst`), load-bearing (`sab_floorfirst`). (A) `namespaceLife` before `stageManifest` works only with a life pin in `precommitAdd`/`promote` (row removal + rebirth reopens it; `sab_stageafterbirth_nopin`). (C) `If-Match` delete has no effect: the key is write-once, the recorded token is the committed body's token.
+
+Recommended: A'' (GC only, in `planManifestCursorPage`): one mount-lease GET per distinct namespace per page, no writer change. A + pin optional defense in depth.
+
+Open: AC #6 counts `gc_fenced` as eligible, which assumes no late `precommitAdd`/`promote` of a fenced epoch can land (lease-admission assumption). A nomination also retires the manifest's blob source edges in the same CAS (`orphan_source_retirements`), so the same race can unprotect its blobs (not modelled). Correction: at the base the orphan delete (PHASE 18) is HEAD + exact-etag `remove`; `removeManyWriteOnce` is the owner-removed path (PHASE 15).
 <!-- SECTION:NOTES:END -->
