@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-12 14:26'
+updated_date: '2026-10-12 16:53'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -89,4 +89,6 @@ Open: AC #6 counts `gc_fenced` as eligible, which assumes no late `precommitAdd`
 AC #6 (`gc_fenced` counts as retired) stays as decided by the owner. Opus objected that a rowless namespace has no owner view, so a late `namespaceLife` + `precommitAdd` + `promote` of a fenced epoch can land between nomination and delete (the store does not fence it: the namespace is new, no seals). Excluding `gc_fenced` does not remove that dependency: after an ordinary remount the epoch is superseded (`prefix.writer_epoch < w.writer_epoch`) and the same late request lands the same way; excluding it only defers reclamation until an epoch change that a dead node may never get. Residual, documented: for rowless namespaces a late request of a fenced or superseded epoch is excluded only by lease admission — the same class as the holder-death certificate and CAS-343. Model work: add `GFence(e)` and a late request of epoch e landing after `GSwFloor`; expect a violation only when the request lands after its admission deadline. Also add blob source edges and `orphan_source_retirements` at nomination with a committed-manifest blob-reachability invariant.
 
 CAS-358 reshapes the same function and depends on this task: its owner view (fold set `as_of` the cursor + committed tail above it) must be read AFTER the floor sample, and rowless namespaces must be decided by the floor alone.
+
+2026-10-12 model follow-up (`eae836fd008`, RESULTS 'Residual' headings): with explicit admitted-but-unresolved requests (`WAdmitOp`/`WResolveOp`), `GFence`, `WRemount`: `fenced_late_bound` and `superseded_late_bound` green, `fenced_late_unbounded` (13 states) and `superseded_late_unbounded` (14) violate `INV_NO_DANGLE`. Correction to the residual wording above: it is NOT limited to rowless namespaces — the shortest fenced trace has a catalog row; the owner view (`activeManifestKeys`) is one read and a late `precommitAdd`/`promote` of the fenced/superseded epoch lands after it and before nomination. A'' is safe only under the admission bound, for any namespace. Excluding `gc_fenced` does not help (remount fails the same way; `EpochSeal` is lazy and untouched namespaces never get one). New invariant `INV_COMMITTED_BLOBS_PRESENT`: the current protocol also loses a committed blob through `orphan_source_retirements` (`cur_rowless_blobloss`, 19 states); A'' keeps it green. Witness `witness_fencedswept`: the fenced arm still reclaims debris.
 <!-- SECTION:NOTES:END -->
