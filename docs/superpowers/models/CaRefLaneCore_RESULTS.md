@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS reference lane TLA+ results {#cas-reference-lane-tla-results}
 
-**Date:** 2026-08-01, updated 2026-10-08 (v2). **Verdict:** pass.
+**Date:** 2026-08-01, updated 2026-10-08. **Verdict:** pass.
 
 ## Lane model {#lane-model}
 
@@ -28,16 +28,16 @@ The battery ran with:
 docs/superpowers/models/run_reflane.sh
 ```
 
-All 32 expectations passed:
+All 36 expectations passed:
 
 - one honest exhaustive configuration was green;
 - sixteen single-rule sabotages violated their named invariant or property;
-- fifteen reachability witnesses violated their negated witness invariant.
+- nineteen reachability witnesses violated their negated witness invariant.
 
-The honest run (re-run 2026-10-08 with the two-outcome occupied slot and the fault latch) generated
-1,126,499 states, found 355,127 distinct states, reached depth 26, and exhausted the queue. The run
-summary is `tmp/lease-series/pr10v2-reflane.log`; detailed TLC output is under
-`build/tlc-runs/reflane/20261008T153526-2825511`.
+The honest run (re-run 2026-10-08 with occupant outcomes and the fault latch) generated 4,086,679
+states, found 1,226,710 distinct states, reached depth 28, and exhausted the queue. The run summary
+is `tmp/lease-series/pr10-reflane.log`; detailed TLC output is under
+`build/tlc-runs/reflane/20261008T125949-1309896`.
 
 The sabotage controls cover arming before send, retaining uncertain attempts, blocking later
 appends, complete recovery, exact attempt identity, and mount fencing. Two independent controls
@@ -57,15 +57,18 @@ coexistence with a real predecessor-scoped `WriteLands`, same-life self-remount 
 allocation-free missing-name confirmation. The old-handle sabotage drives that same real transition
 to `r2`, while the honest trace updates only `r1`. Missing-confirm sabotage only reattaches already
 valid live `r1` to an armed empty slot, so published identity remains valid. The earlier witnesses continue to reach ordinary commit,
-unresolved write, recovery, inert unrelated result, and `Faulted`.
+unresolved write, recovery, inert unrelated result, `Closed`, and `Faulted`.
 
 Resolver provenance is checked independently of application targeting. In the focused sabotage,
-`resolver_runtime = r1` survives successor publication, but `ObserveOccupiedScoped` records
-`observation_runtime = r2` from the current slot and violates only `NoOldHandleRetarget` after 3,817
-generated / 1,377 distinct states at depth 8. The paired honest witness follows the same unresolved,
-removal, rebirth, lookup, and occupied-slot sequence, records the observation against `r1`, applies
-it to `r1`, reaches `Faulted`, and violates `W_RebirthResolverScope` after 13,063 generated / 5,424
+`resolver_runtime = r1` survives successor publication, but `ObserveSuccessorSealScoped` records
+`observation_runtime = r2` from the current slot and violates only `NoOldHandleRetarget` after 2,689
+generated / 1,003 distinct states at depth 8. The paired honest witness follows the same unresolved,
+removal, rebirth, lookup, and successor-seal sequence, records the observation against `r1`, applies
+it to `r1`, reaches `Closed`, and violates `W_RebirthResolverScope` after 9,071 generated / 3,941
 distinct states at depth 9.
+
+With only `NoOldHandleRetarget` omitted, the observation-retarget sabotage exhaustively preserves
+every non-target invariant: 223,716 generated / 62,061 distinct states, empty queue, depth 21.
 
 `witness_certifyoutstanding` reaches a certification in `Writing` with a same-binding attempt
 outstanding and already durable, so the honest run's green `CertifiedViewIsCurrent` covers the
@@ -74,17 +77,18 @@ relaxed guard in the post-`PUT`, pre-install window and not only `Ready`. It vio
 
 ## Occupant outcomes and the fault latch {#occupant-outcomes-fault-latch}
 
-An occupied slot has two outcomes. Our exact bytes adopt the attempt (`Durable`). Anything else —
-the resolver's `Occupied` observation, the append's conflict (`WriteConflict`), or recovery
-meeting another object at its retained attempt (`RecoveryFindsOccupied`) — faults and latches the
-fence in the same step (`FaultHasExit`). A terminal observation never returns the lane to `Ready`
-(`TerminalObservationIsTerminal`), and a `Faulted` lane never leaves `Faulted`
-(`FaultedAbsorbing`). `Closed` is no longer reachable: a successor's seal at our slot is a fault.
-`sab_unlatchedfault`, `sab_recoverafterfault` and `sab_leavefaulted` are red on their target.
-`witness_faulted` reaches a latched `Faulted` lane; `witness_recoveryoccupied` reaches a latched
-`NeedsRecovery` lane; `witness_faultremount` shows a remount is reachable after a latch. Not
-modelled: a non-`Ready` lane at new-id allocation (`StartWrite` requires `Ready`) and remount
-liveness.
+The resolver and the append site's conflict both classify an occupant that is not the attempt's
+bytes as `Foreign`, `Unreadable`, `ClassifyMemory` or `ClassifyDefect`; recovery can meet a foreign
+object at its retained attempt. Every terminal observation latches the fence in the same step
+(`FaultHasExit`). A terminal observation never returns the lane to `Ready`
+(`TerminalObservationIsTerminal`), and a `Faulted` lane never leaves `Faulted` (`FaultedAbsorbing`).
+A memory-limit classification returns the append to `Ready` and leaves a wedge wedged.
+`sab_unlatchedfault` (fault without latch), `sab_recoverafterfault` (recovery ignoring the latch)
+and `sab_leavefaulted` (`Faulted -> NeedsRecovery`, which no invariant forbids) are red on their
+target. The latch is never reset, so after a latch the model explores no further writes, the
+remounted runtime included. Not modelled: a non-`Ready` lane at new-id allocation (`StartWrite`
+requires `Ready`) and remount liveness; `W_FaultThenRemount` only shows the remount is reachable
+after a latch.
 
 ## Relink composition {#relink-composition}
 
