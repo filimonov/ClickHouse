@@ -4,7 +4,7 @@ title: Audit and split TLA+ actions that fuse steps the code performs separately
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-10-12 20:30'
 labels:
   - 'area:testing'
   - 'complexity:large'
@@ -47,4 +47,6 @@ Wave 1 fixes to the models, failing-first: split `WAdopt`/`ObserveMeta`/`Adopt` 
 
 <!-- SECTION:NOTES:BEGIN -->
 Wave 2 done: docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/SUMMARY-w2.md. Model-fidelity items to add: `CaGcDestructiveGateCore` gates condemnation while code gates only graduation/deletion (and default/empty-proof differ); gc models erase abort/timeout intermediate states (a pre-CAS delete or artifact landed, round lost); `CaDiskLifecycle` fuses log durability with acknowledgment; `CaRelinkLaneComposition` restricts the deletion actor more than code; heartbeat create landing after timeout defeats the historical `GcLiveGate` proof; `CaGcRoundDeferCore` uses an atomic guard the code lacks. Code findings filed as separate tasks.
+
+2026-10-12 progress: split and re-checked during the CAS-360/361/36 work — CaGcCondemnMarkerGate (WAdopt → WHead/WMetaRead/WBackfill; deferred and bounded marker delete; token recurrence; OldWriter; DeposedCut) 06e331ada7c, b483e4ea41c; CaBlobPublishCore (SdkResend, ObserveMeta split) 0acdf9c7939; CaGcRootLocalPartManifestCore (sweep split into 6 steps, admitted/unresolved requests, GFence, WRemount, blob edges, PR #2528 recheck shape) a385db56107, eae836fd008, d864fe01b7c. New models carry an 'Atomicity' table (action → code → one request) starting with CaEpochAllocCore (CAS-362/363). Not yet touched: CaMountObserveCore, CaMountRenewRetryCore, CaRefLaneCore, CaRefTableSnapshotLogCore, CaRefCatalogCore, CaRefDeltaIntakeCore, CaRelinkConfirmCore, CaDiskLifecycle and the wave-2 GC models; mount-plane models describe the unmerged lease series and must be checked against the release line separately.
 <!-- SECTION:NOTES:END -->
