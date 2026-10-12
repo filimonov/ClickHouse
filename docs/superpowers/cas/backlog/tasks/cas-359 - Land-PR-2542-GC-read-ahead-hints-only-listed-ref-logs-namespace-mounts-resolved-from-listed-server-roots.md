@@ -6,6 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-12 09:50'
+updated_date: '2026-10-12 09:58'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -44,9 +45,11 @@ Review 2026-10-12 (verified against the PR head be3da0cd71f): decisions are unch
 - [ ] #1 CI green on antalya-26.6 for the PR head: CAS* gtest gate, ASan lane, test_cas_gc_s3 (the branch was never compiled on this base; no checks had run as of 2026-10-12)
 - [ ] #2 Decision on the removed seal-crossing discards: keep them (no-op when nothing is hinted) or add a test for a stream with listed ids past a seal (CAS-351 shape) showing the page does not degrade to serial reads
 - [ ] #3 test_gc_read_ahead_wastes_nothing_across_epoch_changes passes 20 consecutive local runs (a hold from a background merge after the last restart counts as wasted)
-- [ ] #4 CAS-357 is resolved or explicitly deferred with the reason
-- [ ] #5 docs/en/antalya/cas/architecture/garbage-collection.md: the read-ahead paragraph states the listed-only hint rule and the `floor_reads` row says one read per listed root
-- [ ] #6 CAS-358 is filed and linked from the PR as the follow-up
+- [ ] #4 docs/en/antalya/cas/architecture/garbage-collection.md: the read-ahead paragraph states the listed-only hint rule and the `floor_reads` row says one read per listed root
+- [ ] #5 CAS-358 is filed and linked from the PR as the follow-up
+- [ ] #6 CAS-357 fixed in the PR before merge: at minimum option (c), the fold's dead-precommit check keeps the probe-every-prefix lookup; the comments on `floorForNamespace`, `prefixEligible` and `floor_reads` claiming an unlisted root always retains are corrected
+- [ ] #7 A gtest pins the listed-but-404 arm of `floorForNamespace` with a counted read (`AbsentFloorRetainsEverythingWithOneLookup` now covers only the absent-from-LIST arm)
+- [ ] #8 Integration test: `SYSTEM STOP MERGES` before the restarts or assert on the orphan-sweep page counters, and prove an epoch-crossing walk ran under read-ahead (`epoch_crossings > 0` on the `fold_ref_intake` row of `cas_gc_log` after the last restart), since first-walk hints alone satisfy `hits > 0`
 <!-- AC:END -->
 
 ## Definition of Done
@@ -60,5 +63,5 @@ Review 2026-10-12 (verified against the PR head be3da0cd71f): decisions are unch
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Review findings 2026-10-12 live in the description; the independent ca-review report is at tmp/pr2542/review-ca.md (local, not committed).
+Review 2026-10-12: own trace + independent ca-review (report tmp/pr2542/review-ca.md, local). Read-ahead half sound: caches results never decisions; listing sorted; lifetimes OK; no stale take possible (write-once keys, trimming only in phase 17). Blocking: CAS-357 (nested srids, fold dead-precommit skip). Prose to fix in the PR: CasGcReadAhead.h:28 dropped the bounded-exception clause and :33 says untaken hints are discarded (fold-intake hold and recovery-walk throw leave them to the destructor); CasKeyReader.h:47 misses the LIST-omits-a-durable-id case the PR's own test models.
 <!-- SECTION:NOTES:END -->
