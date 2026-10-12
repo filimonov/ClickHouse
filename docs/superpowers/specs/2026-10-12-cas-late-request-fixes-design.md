@@ -8,6 +8,15 @@ Three data-loss defects found by the 2026-10-12 late-request audit (`docs/superp
 | 2 | CAS-361: SDK resend of an identical envelope restores a condemned content-ETag; a late exact-token `DELETE` removes a live body | object-creating requests of blob publication go out once | `CaBlobPublishCore` `#sdk-resend-cas-361` (`0acdf9c7939`) |
 | 3 | CAS-36: orphan sweep deletes a manifest staged before its namespace's catalog row exists | read the mount floor of every namespace on the page before the catalog cut; no lease = not eligible | `CaGcRootLocalPartManifestCore` CAS-36 (`a385db56107`) |
 
+## Supersedes {#supersedes}
+
+Two statements of the unconditional blob-publication design (`2026-08-21-cas-unconditional-blob-publication-design.md`, deleted in `e71aa78b8fe`; read it with `git show e71aa78b8fe^:docs/superpowers/specs/2026-08-21-cas-unconditional-blob-publication-design.md`) are withdrawn:
+
+- **§One state machine:** "A present body with absent metadata is semantically non-condemned … absence already means `Clean`." False: GC deletes the marker right after the body, so absence also follows a deletion between the writer's `HEAD` and its marker `GET` (CAS-360). PR 1 republishes instead. Tests that pin the old rule (`CASPartWrite.AmbiguousLandedWriteAdoptsOccupantWithoutReupload`, `CASPartWrite.AmbiguousCopyLandedAdoptsDestinationWithoutRecopy`, `CASUploadDetached.*WithoutMetadataBackfill*`) change to "one republication, then `Clean`": a landed attempt whose response was lost now costs one extra upload.
+- **§Retry and ambiguity:** "An object-storage client may internally retry an unconditional PUT or copy inside one publication decision. Repeating those bytes is safe while the decision remains protected by the same durable precommit …" False: the SDK call outlives the writer's fence; after the writer abandons its precommit, a resend lands unprotected and restores a condemned content-ETag (CAS-361, `CaBlobPublishCore` `cur_resend`). PR 2 removes those resends for object-creating requests.
+
+The token-contract design (`2026-09-02-cas-backend-token-contract-design.md`, the `PartWriteTxn::ensureBlobPresent` row) still describes the backfill; it is corrected with PR 1.
+
 ## Global constraints {#constraints}
 
 - On-store format frozen since 26.6.4: no new fields, no new object kinds.
