@@ -86,6 +86,16 @@ Retries move up to `ensureBlobPresent` (≤ 8 iterations, one standard window): 
 - Flip `CursorPageDeletesObservedBodyWhenCatalogOmitsNamespace` to `CursorPageRetainsRowlessBodyWithoutLease`.
 - `CASOrphanManifestSweep.IneligibleRowlessKeyRetiresNoSourceEdges`: no `orphan_source_retirements` for a retained key.
 
+## PR 4: CAS-362 + CAS-363 — unique writer epochs {#pr4}
+
+Base `2a034cdb374` (antalya-26.6-20261008 with #2512). Model `CaEpochAllocCore` (`008991cc06f`): `cur_twin` and `cur_decom` violate `EpochNeverReused`; `fix_both` green (66 M states); sabotages red.
+
+**CAS-362, nonce.** `allocateWriterEpoch` writes the counter `{epoch: N+1, nonce: <random 128 bit>}`. An unclear outcome resolves by reading the counter: our nonce means the step applied; anything else means another process advanced it, and the caller re-decides. A twin with the same `uuid` can no longer produce our exact bytes. `decodeServerEpoch` in 26.6.4 skips unknown plain keys, so old readers parse the new body.
+
+**CAS-363, retire instead of delete.** `Tools/CasDecommission.cpp:decommissionPoolMember`: after the `captures_match` check, replace the `epoch` counter by ONE `If-Match` write of a retired body carrying the critical key `!retired_at_ms`, then tombstone the owner. Keep the farewell `mount` (do not delete it): deleting `mount` lets a claimer paused between reading the slot absent and its `If-None-Match` mint land at a lower epoch, and the sweep holding the farewell floor then deletes its in-flight manifest (`cur_decom_slot`, `cur_decom_dangle`). `allocateWriterEpoch` refuses a retired counter. 26.6.4 binaries throw `UNKNOWN_FORMAT_VERSION` on a `!` key, so an old allocator or an old decommission tool fails closed on a retired root.
+
+**Tests** (failing first): two allocators of one uuid, the first write applied with its response lost, the second writes the same epoch → distinct outcomes, never the same epoch; decommission then victim restart → allocation refused, no epoch 1; a claimer paused before its mint across a decommission → the mint does not land below the farewell; a 26.6.4-format reader (golden body) parses the nonce body and refuses the retired one. Check every consumer of `mount` absence after decommission (`serverRootSubtreeEmpty`, `listMounts`, fsck, re-registration of the same `srid`) for the kept farewell slot.
+
 ## Out of scope {#out-of-scope}
 
 Mixed-version protection (needs GC-side marker semantics, rejected: CAS-360 A); fix E for non-SDK duplicates (store support unverified); `gc_fenced` eligibility; CAS-358 (depends on PR 3); the cancelled `abandon` branch retiring without checking `precommit_state` (`CasPartWriteTxn.cpp:1080-1083`, to verify separately).
