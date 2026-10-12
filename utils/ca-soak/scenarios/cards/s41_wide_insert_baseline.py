@@ -180,6 +180,7 @@ CA_EVENT_KEYS = [
     "CASMetaCompareSwap",
     "CASMetaCreateClean",
     "CASMetaAdoptBackfill",
+    "CASMetaAbsentRepublish",
     "CASMetaResurrectClean",
     "CASRootGet",
     "CASRootHead",
@@ -388,7 +389,9 @@ def _write_path_metrics(leg: dict) -> dict:
     metadata_gets = event("CASBlobGet")
     metadata_compare_swaps = event("CASMetaCompareSwap")
     metadata_clean_creates = event("CASMetaCreateClean")
-    metadata_adopt_backfills = event("CASMetaAdoptBackfill")
+    # A present body with an absent marker: 26.6.4 adopts it with a backfill, later builds republish it.
+    # The key keeps its old name for report consumers.
+    metadata_adopt_backfills = event("CASMetaAdoptBackfill") + event("CASMetaAbsentRepublish")
     metadata_resurrect_cleans = event("CASMetaResurrectClean")
 
     logical_counts = {
@@ -477,7 +480,7 @@ def _protocol_errors(metrics: dict, path_kind: str) -> list[str]:
         if metadata["compare_swap_attempts"] != 0:
             errors.append(f"fresh path unexpectedly issued {metadata['compare_swap_attempts']} metadata compare-and-swap attempt(s)")
         if metadata["adopt_backfills"] != 0:
-            errors.append(f"fresh path unexpectedly recorded {metadata['adopt_backfills']} metadata adopt-backfill reason(s)")
+            errors.append(f"fresh path unexpectedly recorded {metadata['adopt_backfills']} absent-marker adopt or republish reason(s)")
         if metadata["resurrect_cleans"] != 0:
             errors.append(f"fresh path unexpectedly recorded {metadata['resurrect_cleans']} metadata resurrect-clean reason(s)")
     elif path_kind == "cold_mixed":
