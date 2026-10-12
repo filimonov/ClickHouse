@@ -13,13 +13,13 @@
 (*   until stopped or `LeaseTerminal`:                                     *)
 (*     a remount is pending (reqGen > handledGen): reclaim for the         *)
 (*       generation it snapshots, or fail and retry;                       *)
-(*     otherwise renew: success sets the deadline; any other end trips    *)
-(*       the fence and requests a remount unless one is pending.           *)
+(*     otherwise renew: success sets the deadline and reports Live if a    *)
+(*       reclaim left the pool waiting for it; any other end trips the     *)
+(*       fence and requests a remount unless one is pending.               *)
 (* `deadlineOk` abstracts "the fence deadline admits a write". A reclaim   *)
-(* whose claim admits a write arms the fence and reports Live. Otherwise   *)
-(* the fence stays latched and the pool Transient; the next successful     *)
-(* renewal arms the fence and reports Live in one step, unless a request   *)
-(* is pending, the lifecycle is terminal or a stop was requested.          *)
+(* arms the fence from the claim; if that claim is too old, the pool stays *)
+(* Transient (`liveWaiting`) until the loop's renewal makes writes         *)
+(* admissible.                                                             *)
 (*                                                                         *)
 (* FORGET steps in `Pool::forgetDisk` order: mutex -> idempotent           *)
 (* `isVanished` short-circuit -> publish intent -> trip#1 -> GC stop       *)
@@ -38,7 +38,7 @@ CONSTANTS
     EnableGcSelfExit,  \* the GC scheduler exits at a wake that sees a Vanished pool
     RenewChecksIntent, \* a renewal never starts once the FORGET intent is published
     ReadinessGate,     \* a reclaim with a too-old claim reports Live only after a renewal
-    LiveChecksPending, \* that renewal arms nothing while a remount request is pending
+    LiveChecksFence,   \* that renewal reports Live only if the fence is still armed
     AckSnapshot,       \* a reclaim acknowledges only the generation it snapshotted
     ReclaimTrips,      \* a reclaim's step 0 trips the fence, not only the lifecycle
     MaxGen             \* bound on remount requests (state-space bound only)
@@ -60,6 +60,7 @@ VARIABLES
     reqGen,         \* remount_requested_generation
     handledGen,     \* remount_handled_generation
     snapGen,        \* the generation the latest reclaim snapshotted
+    liveWaiting,    \* a reclaim armed a too-old claim; Live waits for a renewal
     gcsched,        \* "Running" | "Stopped" | "Destroyed"
     gcstopping,     \* CasGcScheduler.stopping
     round,          \* a GC round is in flight
@@ -68,14 +69,14 @@ VARIABLES
     naturalWon,     \* history: a natural Replaced transition published the state
     everIL,         \* history: IdentityLost was entered
     everVanished,   \* history: a Vanished state was entered
-    liveByRenewal   \* history: a renewal armed the fence and reported Live
+    liveByRenewal   \* history: a renewal reported Live for a waiting reclaim
 
 vars == <<pstate, intent, termPublished, lost, deadlineOk, keeper, farewell,
-          drained, lpc, stop, reqGen, handledGen, snapGen,
+          drained, lpc, stop, reqGen, handledGen, snapGen, liveWaiting,
           gcsched, gcstopping, round, mutex, fpc, naturalWon, everIL,
           everVanished, liveByRenewal>>
 
-leaseVars == <<lpc, reqGen, handledGen, snapGen, liveByRenewal>>
+leaseVars == <<lpc, reqGen, handledGen, snapGen, liveWaiting, liveByRenewal>>
 gcVars == <<gcsched, gcstopping, round>>
 forgetVars == <<mutex, fpc, drained, farewell, stop>>
 historyVars == <<naturalWon, everIL, everVanished>>
@@ -94,6 +95,7 @@ TypeOK ==
     /\ lpc \in {"Top", "Renewing", "InAttempt", "Exited"}
     /\ stop \in BOOLEAN
     /\ reqGen \in 0..MaxGen /\ handledGen \in 0..MaxGen /\ snapGen \in 0..MaxGen
+    /\ liveWaiting \in BOOLEAN
     /\ gcsched \in {"Running", "Stopped", "Destroyed"}
     /\ gcstopping \in BOOLEAN /\ round \in BOOLEAN
     /\ mutex \in {"None", "Forget"}
@@ -105,7 +107,7 @@ Init ==
     /\ pstate = "Live" /\ intent = FALSE /\ termPublished = FALSE
     /\ lost = FALSE /\ deadlineOk = TRUE /\ keeper = "Active" /\ farewell = FALSE
     /\ drained = "Unset" /\ lpc = "Top" /\ stop = FALSE
-    /\ reqGen = 0 /\ handledGen = 0 /\ snapGen = 0
+    /\ reqGen = 0 /\ handledGen = 0 /\ snapGen = 0 /\ liveWaiting = FALSE
     /\ gcsched = "Running" /\ gcstopping = FALSE /\ round = FALSE
     /\ mutex = "None" /\ fpc = "NotStarted"
     /\ naturalWon = FALSE /\ everIL = FALSE /\ everVanished = FALSE
@@ -133,7 +135,7 @@ LExit ==
     /\ (stop \/ LeaseTerminal)
     /\ lpc' = "Exited"
     /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, liveByRenewal,
+                   reqGen, handledGen, snapGen, liveWaiting, liveByRenewal,
                    gcVars, forgetVars, historyVars>>
 
 \* Step 0 of `Pool::tryRemountOnce` presumes the lease lost. A reclaim can
@@ -148,7 +150,7 @@ LAttemptBegin ==
        ELSE /\ pstate' = IF pstate = "Live" THEN "Transient" ELSE pstate
             /\ UNCHANGED lost
     /\ UNCHANGED <<intent, termPublished, deadlineOk, keeper, reqGen,
-                   handledGen, liveByRenewal, gcVars, forgetVars,
+                   handledGen, liveWaiting, liveByRenewal, gcVars, forgetVars,
                    historyVars>>
 
 \* Verdict StayTransient, a probe that could not reach the store, an
@@ -157,21 +159,20 @@ LAttemptFail ==
     /\ lpc = "InAttempt"
     /\ lpc' = "Top"
     /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, liveByRenewal,
+                   reqGen, handledGen, snapGen, liveWaiting, liveByRenewal,
                    gcVars, forgetVars, historyVars>>
 
-\* Verdict Recover: install and start a fresh renewer, acknowledge the
-\* snapshot. `ready` = the claim still admits a write: arm the fence and
-\* report Live; otherwise leave both to the loop's next renewal. No intent
-\* check: the attempt is past its step-0 bail.
+\* Verdict Recover: install and start a fresh renewer, arm the fence from
+\* the claim, acknowledge the snapshot. No intent check: the attempt is
+\* past its step-0 bail. `ready` = the claim still admits a write.
 LReclaim ==
     /\ lpc = "InAttempt" /\ pstate = "Transient"
     /\ \E ready \in BOOLEAN :
          /\ deadlineOk' = ready
          /\ IF ready \/ ~ReadinessGate
-            THEN pstate' = "Live" /\ lost' = FALSE
-            ELSE UNCHANGED <<pstate, lost>>
-    /\ keeper' = "Active" /\ lpc' = "Top"
+            THEN pstate' = "Live" /\ liveWaiting' = FALSE
+            ELSE UNCHANGED pstate /\ liveWaiting' = TRUE
+    /\ lost' = FALSE /\ keeper' = "Active" /\ lpc' = "Top"
     /\ handledGen' = IF AckSnapshot THEN Max(handledGen, snapGen) ELSE reqGen
     /\ UNCHANGED <<intent, termPublished, reqGen, snapGen, liveByRenewal,
                    gcVars, forgetVars, historyVars>>
@@ -180,6 +181,7 @@ LReclaim ==
 LEnterIL ==
     /\ lpc = "InAttempt" /\ pstate = "Transient"
     /\ pstate' = "IdentityLost" /\ everIL' = TRUE /\ lpc' = "Top"
+    /\ liveWaiting' = FALSE
     /\ UNCHANGED <<intent, termPublished, lost, deadlineOk, keeper, reqGen,
                    handledGen, snapGen, liveByRenewal, gcVars, forgetVars,
                    naturalWon, everVanished>>
@@ -190,7 +192,7 @@ LEnterIL ==
 LPromoteReplaced ==
     /\ lpc = "InAttempt"
     /\ pstate \in {"Transient", "IdentityLost"}
-    /\ lpc' = "Top" /\ intent' = TRUE
+    /\ lpc' = "Top" /\ intent' = TRUE /\ liveWaiting' = FALSE
     /\ IF termPublished
        THEN UNCHANGED <<pstate, termPublished, naturalWon, everVanished>>
        ELSE /\ pstate' = "VanishedReplaced" /\ termPublished' = TRUE
@@ -207,36 +209,33 @@ LRenewBegin ==
     /\ (~RenewChecksIntent \/ ~intent)
     /\ lpc' = "Renewing"
     /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
-                   reqGen, handledGen, snapGen, liveByRenewal,
+                   reqGen, handledGen, snapGen, liveWaiting, liveByRenewal,
                    gcVars, forgetVars, historyVars>>
 
 \* Success. A request already under way can succeed after a stop, a trip
-\* or a remount request; `ready` = start + TTL still admits a write. On a
-\* pool a reclaim left Transient with a too-old claim, arm the fence and
-\* report Live in the same step.
+\* or a remount request; `ready` = start + TTL still admits a write.
 LRenewOk ==
     /\ lpc = "Renewing"
     /\ lpc' = "Top"
     /\ \E ready \in BOOLEAN :
-         LET report == ready /\ pstate = "Transient" /\ ~stop /\ ~LeaseTerminal
-                       /\ (~LiveChecksPending \/ ~Pending)
+         LET report == liveWaiting /\ ready /\ pstate = "Transient"
+                       /\ (~LiveChecksFence \/ ~lost)
          IN /\ deadlineOk' = ready
             /\ pstate' = IF report THEN "Live" ELSE pstate
-            /\ lost' = IF report THEN FALSE ELSE lost
+            /\ liveWaiting' = (liveWaiting /\ ~report)
             /\ liveByRenewal' = (liveByRenewal \/ report)
-    /\ UNCHANGED <<intent, termPublished, keeper, reqGen, handledGen,
+    /\ UNCHANGED <<intent, termPublished, lost, keeper, reqGen, handledGen,
                    snapGen, gcVars, forgetVars, historyVars>>
 
-\* Any other end: a definitive answer, or an early end on a stop, a pending
-\* remount request or a terminal lifecycle. A lost fence alone does not end
-\* a renewal: the renewal that arms a too-old reclaim runs under it. The renewer becomes
+\* Any other end: a definitive answer, or an early end on a stop, a remount
+\* request, a lost fence or a terminal lifecycle. The renewer becomes
 \* RenewalTerminal, which forbids the farewell. A stop trips the fence
 \* without counting a lease loss; otherwise trip and request a remount
 \* unless one is pending.
 LRenewEnd ==
     /\ lpc = "Renewing"
     /\ (stop \/ LeaseTerminal \/ Pending \/ reqGen < MaxGen)
-    /\ lpc' = "Top" /\ keeper' = "Terminal"
+    /\ lpc' = "Top" /\ keeper' = "Terminal" /\ liveWaiting' = FALSE
     /\ IF stop
        THEN lost' = TRUE /\ UNCHANGED pstate
        ELSE TripMountLost
@@ -244,7 +243,7 @@ LRenewEnd ==
     /\ UNCHANGED <<intent, termPublished, deadlineOk, handledGen, snapGen,
                    liveByRenewal, gcVars, forgetVars, historyVars>>
 
-LRenewEndEarly == (stop \/ LeaseTerminal \/ Pending) /\ LRenewEnd
+LRenewEndEarly == (stop \/ LeaseTerminal) /\ LRenewEnd
 
 (***************************************************************************)
 (* OUTSIDE THE THREAD                                                      *)
@@ -257,7 +256,7 @@ XInterfere ==
     /\ TripMountLost
     /\ reqGen' = IF stop \/ LeaseTerminal THEN reqGen ELSE reqGen + 1
     /\ UNCHANGED <<intent, termPublished, deadlineOk, keeper, lpc, handledGen,
-                   snapGen, liveByRenewal, gcVars, forgetVars,
+                   snapGen, liveWaiting, liveByRenewal, gcVars, forgetVars,
                    historyVars>>
 
 \* The lease expires while no renewal succeeds. Neither the fence latch nor
@@ -470,7 +469,10 @@ I3OneWay ==
     /\ everIL => pstate \in ({"IdentityLost"} \cup VanishedSet)
     /\ everVanished => pstate \in VanishedSet
 
-I4aTransientImpliesLost == pstate \in {"Transient", "IdentityLost"} => lost
+\* A non-Live pool has no write authority: the fence is latched or its
+\* deadline admits no write (a reclaim waiting for its renewal).
+I4aNotLiveNoAuthority ==
+    pstate \in {"Transient", "IdentityLost"} => (lost \/ ~deadlineOk)
 
 \* The benign-answer gate (Vanished) never coexists with an armed fence.
 I4bVanishedImpliesLost == pstate \in VanishedSet => lost
@@ -490,14 +492,6 @@ RenewNotAfterIntent ==
 \* No renewal starts while a remount request is pending.
 RenewNotWhilePending ==
     [][(lpc # "Renewing" /\ lpc' = "Renewing") => ~Pending]_vars
-
-\* A renewal arms the fence only while no remount request is pending.
-RenewalArmNotWhilePending ==
-    [][(lpc = "Renewing" /\ lost /\ ~lost') => ~Pending]_vars
-
-\* A reclaim arms the fence only while no newer remount request is pending.
-ReclaimArmNotWhilePending ==
-    [][(lpc = "InAttempt" /\ lost /\ ~lost') => reqGen = snapGen]_vars
 
 \* Live is reported only when a write can be admitted.
 LiveOnlyWhenAdmissible ==
