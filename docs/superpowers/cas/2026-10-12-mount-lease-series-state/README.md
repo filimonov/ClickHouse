@@ -6,7 +6,7 @@ Spec: `docs/superpowers/specs/2026-10-07-cas-mount-lease-series-design.md` (r8, 
 
 ## PRs and branches {#prs-and-branches}
 
-Repo `Altinity/ClickHouse`, target `antalya-26.6-20261008`. Branches are `fix/antalya-26.6/<name>` in the worktrees `cas-95-1` and `cas-janitor-budget` (same object store). Rows without a remote exist **only locally**.
+Repo `Altinity/ClickHouse`, target `antalya-26.6-20261008`. Branches are `fix/antalya-26.6/<name>` in the worktrees `cas-95-1` and `cas-janitor-budget` (same object store). "yes" = `altinity`; "fork" = backup push to `filimonov` on 2026-10-12, no PR.
 
 | PR | Branch | Head | Remote | State |
 |---|---|---|---|---|
@@ -17,18 +17,18 @@ Repo `Altinity/ClickHouse`, target `antalya-26.6-20261008`. Branches are `fix/an
 | 4 renewal progress | `cas-mount-renewal-progress` | `0a8317178b0` | yes | open #2513 (CI rerun pending) |
 | 2 v2 observers wait declared lease | `cas-observers-wait-declared-lease` | `732155f15e7` | yes | open #2516 (stacked on PR 1, now merged) |
 | 8 renew until definitive | `cas-mount-renewal-until-definitive` | `2f650d9efe9` | yes | open #2517 |
-| 10 v2 one ref-lane fault | `cas-ref-lane-fault-latch-squash` | `b9a51702188` | **no** | ready, independent |
-| CAS-349 unit-test temp roots | `cas-unit-test-temp-roots` | `458b49619ee` | **no** | ready, independent |
-| CAS-351 recovery seal fault | `cas-ref-lane-recovery-seal-fault` | `1556359b7ac` | **no** | on 10 v2, needs review round B |
-| 9a `system.cas_mounts`, `is_local` | `cas-mounts-table-local-path` | `07458806831` | **no** | ready after 8 |
-| 9b operator budget contract | `cas-operator-budget-contract-7` | `674c618ae18` | **no** | ready after 9a; docs fix before opening |
-| 11a ownership primitives | `cas-ownership-primitives-5` | `ef8a1c57bad` | **no** | ready after 9a |
-| 11b lossless claim | `cas-lossless-claim-4` | `dabbfabfb28` | **no** | ready |
-| 12 terminal losses + stop | `cas-terminal-losses-stop-10` | `a470f914557` | **no** | ready |
-| 13 farewell rules | `cas-farewell-rules-5` | `470e1eb1f6d` | **no** | ready |
-| 14 reacquire in lease thread | `cas-reacquire-in-lease-thread-6` | `903e03ae516` | **no** | ready |
-| 15 remove remount machine | `cas-remove-remount-machine-9` | `b81092d3e85` | **no** | ready (on merge of 14 + PR 3) |
-| 16 remove observability stack | `cas-remove-observability-stack-7` | `3b4037ae265` | **no** | ready after 15 |
+| 10 v2 one ref-lane fault | `cas-ref-lane-fault-latch-squash` | `b9a51702188` | fork | ready, independent |
+| CAS-349 unit-test temp roots | `cas-unit-test-temp-roots` | `458b49619ee` | fork | ready, independent |
+| CAS-351 recovery seal fault | `cas-ref-lane-recovery-seal-fault` | `1556359b7ac` | fork | on 10 v2, needs review round B |
+| 9a `system.cas_mounts`, `is_local` | `cas-mounts-table-local-path` | `07458806831` | fork | ready after 8 |
+| 9b operator budget contract | `cas-operator-budget-contract-7` | `674c618ae18` | fork | ready after 9a; docs fix before opening |
+| 11a ownership primitives | `cas-ownership-primitives-5` | `ef8a1c57bad` | fork | ready after 9a |
+| 11b lossless claim | `cas-lossless-claim-4` | `dabbfabfb28` | fork | ready |
+| 12 terminal losses + stop | `cas-terminal-losses-stop-10` | `a470f914557` | fork | ready |
+| 13 farewell rules | `cas-farewell-rules-5` | `470e1eb1f6d` | fork | ready |
+| 14 reacquire in lease thread | `cas-reacquire-in-lease-thread-6` | `903e03ae516` | fork | ready |
+| 15 remove remount machine | `cas-remove-remount-machine-9` | `b81092d3e85` | fork | ready (on merge of 14 + PR 3) |
+| 16 remove observability stack | `cas-remove-observability-stack-7` | `3b4037ae265` | fork | ready after 15 |
 
 PR bodies written so far: [pr-bodies/](pr-bodies/) (PR 1–5, 7, 8). The PR 16 soak/Grafana retarget for the master branch is held as [pr16-master-retarget.diff](pr16-master-retarget.diff) (CAS-356). Per-PR SDD ledgers live in the git-ignored `.superpowers/sdd/2026-10-0*-cas-lease-pr*/` of the master worktree.
 
@@ -50,7 +50,7 @@ The owner judged the series too complex for its goal (exclusive writable mount o
 4. Rerun failed CI on #2513/#2510.
 5. Defaults 60/15 (lease 60 s, period 15 s) — proposed, not decided.
 6. SIGTERM/`std::terminate` on losses — marked provisional.
-7. Back up local-only branches to the fork (needs an explicit push request).
+7. ~~Back up local-only branches~~ — pushed to `filimonov` on 2026-10-12.
 8. Owner's local skill `analyzing-cas-health` reads counter names PR 16 removes.
 
 ## Deferred items {#deferred}
