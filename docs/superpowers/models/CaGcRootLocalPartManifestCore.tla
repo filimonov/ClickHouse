@@ -59,7 +59,16 @@ CONSTANTS
     EnableRemount,              \* TRUE = a superseding remount (`claimMountAwaitingExpiry`, writer_epoch + 1)
     AdmissionBound,             \* TRUE = an operation admitted before the fence ends before GC acts on the fence;
                                 \* FALSE = its requests may land at any later time
-    MaxEpoch                    \* bound on mount epochs (TLC finiteness)
+    MaxEpoch,                   \* bound on mount epochs (TLC finiteness)
+    \* ---- PR #2528 sweep shape (https://github.com/Altinity/ClickHouse/pull/2528) ----
+    FixRecheckAfterFloor,       \* order LIST, cut C, floor, owner view, then re-read the catalog (C') for
+                                \* candidates rowless at C; retain one whose row appeared in C'
+    ViewByCutLife,              \* the owner view reads the namespace life named by cut C
+                                \* (`NamespaceLifeId::fromCatalogEntry`), not every live owner
+    PromoteSkipsOwnBodyReread,  \* `PartWriteTxn::promote` trusts its own `staged_manifests` record and does
+                                \* not re-read the body (PR #2528); blob dependencies are still checked
+    RecheckLifeChange           \* candidate fix on top of FixRecheckAfterFloor: C' is applied to every candidate,
+                                \* and one whose namespace life differs between C and C' is retained
 
 \* A ManifestId is (namespace, manifest_instance_id). manifest_instance_id is drawn from
 \* ManifestInstances and is NEVER reused once visible (NoManifestIdReuse). Two namespaces may
@@ -118,7 +127,7 @@ VARIABLES
     nsLife,        \* [Namespaces -> 0..MaxLife] the current life (incarnation) counter; bumped by each birth
     stagedLife,    \* [ManifestIds -> 0..MaxLife] nsLife at the moment the body was staged (0 = rowless)
     mTok,          \* [ManifestIds -> 0..1] incarnation of the manifest body object (write-once key: at most one)
-    swStep,        \* 0..5 how many steps of the current sweep page are done (order: SweepOrder)
+    swStep,        \* 0..6 how many steps of the current sweep page are done (order: SweepOrder)
     swListed,      \* manifest bodies the page's LIST returned
     swRowless,     \* namespaces with no row in the page's catalog cut
     swFloor,       \* build prefixes the page's mount-lease floor read says are ended
@@ -132,7 +141,11 @@ VARIABLES
     opEp,          \* 0..MaxEpoch the epoch the writer's in-flight operation was admitted under (0 = none)
     mEpoch,        \* [ManifestIds -> 0..MaxEpoch] writer_epoch baked into the manifest key at staging
     swFloorEp,     \* the writer_epoch the page's floor read returned
-    swFenced       \* the fenced epochs the page's floor read returned
+    swFenced,      \* the fenced epochs the page's floor read returned
+    \* ---- PR #2528 sweep shape ----
+    ownLife,       \* [ManifestIds -> 0..MaxLife] the namespace life whose journal holds m's owner transition
+    swCutLife,     \* [Namespaces -> 0..MaxLife] the life each namespace had in cut C (0 = rowless)
+    swRecheck      \* [Namespaces -> 0..MaxLife] the life each namespace had in the post-floor re-read C' (0 = rowless)
 
 \* SrcEdges(m): the active source edges currently emitted by m's activation map. Derived operator,
 \* NOT a constant, so it follows mActiveEdges as the fold mutates it.
@@ -160,7 +173,8 @@ epVars == << mountEpoch, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
 \* A flat tuple literal: TLC cannot evaluate `UNCHANGED` over a `\o`-composed tuple.
 catVars == << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
                swRowlessGone, mountEpoch, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
-vars == origVars \o attemptVars \o catVars
+prVars == << ownLife, swCutLife, swRecheck >>
+vars == origVars \o attemptVars \o catVars \o prVars
 
 \* ---- helpers (filled across tasks) ----
 NoOp == UNCHANGED vars
@@ -250,6 +264,7 @@ WStageManifest(m, f) ==
                     cursor, trimBase, fenceVersion, retired, inflight, wView, mfCleanup,
                     mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ stagedLife' = IF EnableCatalogRows /\ nsRow[m[1]] THEN [stagedLife EXCEPT ![m] = nsLife[m[1]]]
                      ELSE IF EnableCatalogRows THEN [stagedLife EXCEPT ![m] = 0] ELSE stagedLife
     /\ mTok' = IF EnableCatalogRows THEN [mTok EXCEPT ![m] = 1] ELSE mTok
@@ -282,11 +297,12 @@ BlobCondemnedInView(b, w) ==
 \* deleted it before PrecommitAdd, so the committed publish dangles. (Distinct from #5: #5 skips body+blob
 \* entirely; #6 keeps the present check but drops the condemned/retired-view recheck, modeling the
 \* "assume protection" error.)
-CommitGate(m, w) ==
+CommitGateBody(m, w, skipBody) ==
     \/ SabotageCommitSkipBlobReval
-    \/ ( mBody[m] /\ BodyAccepted(m)
+    \/ ( (skipBody \/ (mBody[m] /\ BodyAccepted(m)))
          /\ wView[w] >= PubFloor(m[1])            \* must have observed the namespace's fence round
          /\ \A b \in BlobsOf(mEntries[m]) : present[b] /\ (SabotagePrecommitlessProtect \/ ~BlobCondemnedInView(b, w)) )
+CommitGate(m, w) == CommitGateBody(m, w, FALSE)
 \* Append one OwnerTransition [ver, ref, old, new] to journal[ns]; version = new length (monotone).
 AppendEvt(j, ns, rf, o, nw) ==
     [j EXCEPT ![ns] = Append(@, [ver |-> Len(@) + 1, ref |-> rf, old |-> o, new |-> nw])]
@@ -308,6 +324,7 @@ WUploadBlob(b) ==
                     fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView, mfCleanup,
                     mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* The round a retire-view refresh may CLAIM COVERAGE of. The retired-token view is writer-visible only
@@ -326,6 +343,7 @@ WRefreshView(w) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* PrecommitAdd: owner[m] := build bld. A precommit MAY have a missing body only when EnableMissingBody
@@ -350,6 +368,8 @@ WPrecommitAdd(m, bld, f) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ ownLife' = IF EnableCatalogRows THEN [ownLife EXCEPT ![m] = nsLife[m[1]]] ELSE ownLife
+    /\ UNCHANGED << swCutLife, swRecheck >>
     /\ UNCHANGED catVars
 
 \* Promote precommit -> committed: the atomic PURE owner move. Same ManifestId, blob Δ=0, NO new
@@ -368,7 +388,9 @@ WPromote(m, bld, ref, w) ==
     /\ BuildActive(m) /\ RowGate(m) /\ OpIssue(m)
     /\ RefFreeFor(ref, m)
     \* split-promote and promote-after-missing-body both drop the atomic fail-closed activation gate:
-    /\ (SabotageSplitPromote \/ SabotagePromoteAfterMissingBody \/ CommitGate(m, w))
+    \* PromoteSkipsOwnBodyReread: the writer staged the body itself (`staged_manifests`), so promote skips the
+    \* body GET and checks only the blob dependencies.
+    /\ (SabotageSplitPromote \/ SabotagePromoteAfterMissingBody \/ CommitGateBody(m, w, PromoteSkipsOwnBodyReread))
     /\ Len(journal[m[1]]) < MaxLog
     /\ owner' = [owner EXCEPT ![m] = ref]
     /\ journal' = AppendEvt(journal, m[1], ref, Bind(m), Bind(m))
@@ -378,6 +400,7 @@ WPromote(m, bld, ref, w) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* #2 (SabotageTwoOwners): a SECOND committed owner is attached to an already-committed ManifestId
@@ -396,6 +419,7 @@ WShareOwner(m) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mfCleanup, mfDeleted, mPrefix, sweepEligible, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Direct committed publish (no precommit). Same fail-closed body+blob gate as promote. Sets the
@@ -417,6 +441,7 @@ WPublishCommitted(m, ref, w) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Drop a committed ref: owner[m]: ref -> None; a true removal (-1 + mfCleanup queued at fold).
@@ -431,6 +456,7 @@ WDropRef(m) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Abandon a precommit owner: owner[m]: bld -> None; a true removal.
@@ -445,6 +471,7 @@ WAbandonPrecommit(m) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* A missing-body precommit's manifest body ARRIVES asynchronously (the upload completes after
@@ -463,6 +490,7 @@ WManifestBodyArrives(m, f) ==
                     cursor, trimBase, fenceVersion, retired, inflight, wView, mfCleanup, mfDeleted,
                     mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Repoint a committed ref from mOld to mNew (last-op-wins at the root source): removes mOld and
@@ -484,6 +512,8 @@ WRepoint(mOld, mNew, ref, w) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ ownLife' = IF EnableCatalogRows THEN [ownLife EXCEPT ![mNew] = nsLife[mNew[1]]] ELSE ownLife
+    /\ UNCHANGED << swCutLife, swRecheck >>
     /\ UNCHANGED catVars
 
 \* ============================ GC pipeline (spec §Round Protocol) ============================
@@ -527,6 +557,7 @@ GStartRound(l) ==
                     cursor, trimBase, fenceVersion, retired, inflight, wView, mfCleanup, mfDeleted,
                     mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Fold one RootOwnerEvent at cursor[n], dispatching by old-vs-new manifest comparison (rev.15).
@@ -610,6 +641,7 @@ GFoldTransition(n) ==
                     completionSeal, gcRound, gcPhase, roundOf, fencePos, trimBase, fenceVersion,
                     retired, inflight, wView, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* ============================ Phase 4: target-sharded reducers (R2) ============================
@@ -703,6 +735,7 @@ GRetireBlob(l, b) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Global fence: fence every namespace this round. SabotageNoFence skips the fence write (a racing
@@ -726,6 +759,7 @@ GFenceRegistry(l) ==
                     cursor, trimBase, fenceVersion, retired, inflight, wView, mfCleanup, mfDeleted,
                     mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Phase 3 (lazy trim): the per-shard fence. The ONLY non-sabotage behavior is the FRESH all-shard
@@ -773,6 +807,7 @@ GFenceShard(l, n) ==
                     trimBase, retired, inflight, wView, mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok,
                     shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Recheck + issue exact-token delete. Requires the fold to have provably reached every fence
@@ -810,6 +845,7 @@ GRecheckDelete(l, e) ==
                     fencePos, cursor, trimBase, fenceVersion, wView, mfCleanup, mfDeleted, mPrefix,
                     sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 GEndRound(l) ==
@@ -821,6 +857,7 @@ GEndRound(l) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* A delete message lands: exact-token (412 = no-op). SabotageUncondDelete ignores the token match.
@@ -845,6 +882,7 @@ Land(d) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, wView, mfCleanup, mfDeleted,
                     mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Journal trim: INV_JOURNAL_COVERAGE — only below the durable folded cursor. SabotageTrimUnincorporated
@@ -857,6 +895,7 @@ Trim(n) ==
                     gcPhase, roundOf, fencePos, cursor, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* ---- part-manifest cleanup ordering + orphan sweep + mutable update (Task 5) ----
@@ -877,6 +916,7 @@ GDeleteManifest(m) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Stale part-manifest cleanup replay (control #1). When a ManifestId is REUSED (SabotageReuseManifestId),
@@ -897,6 +937,7 @@ GStaleReuseCleanup(m) ==
                     everEdged, foldSeal, completionSeal, gcRound, gcPhase, roundOf, fencePos, cursor,
                     trimBase, fenceVersion, retired, inflight, wView, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* A durable watermark fact makes a build prefix conservatively sweep-eligible (the writer incarnation
@@ -914,6 +955,7 @@ GMarkSweepEligible(p) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mfCleanup, mfDeleted, mPrefix, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* Orphan pre-precommit sweep: deletes a staged-but-unowned manifest body whose build prefix is
@@ -944,6 +986,7 @@ GOrphanSweep(n) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mfCleanup, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* ============== catalog rows + split orphan sweep (CAS-36; inert unless EnableCatalogRows) ==============
@@ -958,6 +1001,7 @@ WCreateNamespace(n) ==
     /\ nsLife' = [nsLife EXCEPT ![n] = @ + 1]
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED << stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok, swRowlessGone >>
     /\ UNCHANGED epVars
 
@@ -971,6 +1015,7 @@ WRemoveNamespace(n) ==
     /\ nsRow' = [nsRow EXCEPT ![n] = FALSE]
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED << nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok, swRowlessGone >>
     /\ UNCHANGED epVars
 
@@ -990,15 +1035,20 @@ WEndBuild(p) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mfCleanup, mfDeleted, mPrefix, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* The split sweep page, `planManifestCursorPage` then the post-`gc/state`-CAS delete in `CasGc.cpp`
 \* (PHASE 18 `orphan_sweep`). Each step is one observation. Code order: LIST, then the catalog cut
 \* (`CasRefCatalog::read`), then per namespace the floor (`floorForNamespace`) and the owner view
 \* (`activeManifestKeys`). FixFloorBeforeCatalog reads the floor before the catalog cut.
+\* FixRecheckAfterFloor (PR #2528): the cut C stays before the floor; the catalog is read again (C') after
+\* every floor read, only for candidates whose namespace was rowless at C.
 SweepOrder == IF FixFloorBeforeCatalog THEN << "list", "floor", "cut", "view" >>
-                                       ELSE << "list", "cut", "floor", "view" >>
-SwNext == IF swStep < 4 THEN SweepOrder[swStep + 1] ELSE "none"
+              ELSE IF FixRecheckAfterFloor THEN << "list", "cut", "floor", "view", "recheck" >>
+              ELSE << "list", "cut", "floor", "view" >>
+SwSteps == Len(SweepOrder)
+SwNext == IF swStep < SwSteps THEN SweepOrder[swStep + 1] ELSE "none"
 SwUnchangedExcept == << nsRow, nsLife, stagedLife, mTok, swRowlessGone, mountEpoch, fencedEp, opEp, mEpoch >>
 
 \* `op.list(casManifestsPrefix)`: the keys present now.
@@ -1009,6 +1059,7 @@ GSwList ==
     /\ swStep' = swStep + 1
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED SwUnchangedExcept
     /\ UNCHANGED << swRowless, swFloor, swOwned, swNom, swTok, swFloorEp, swFenced >>
 
@@ -1020,6 +1071,8 @@ GSwCatalog ==
     /\ swStep' = swStep + 1
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ swCutLife' = [n \in Namespaces |-> IF nsRow[n] THEN nsLife[n] ELSE 0]
+    /\ UNCHANGED << ownLife, swRecheck >>
     /\ UNCHANGED SwUnchangedExcept
     /\ UNCHANGED << swListed, swFloor, swOwned, swNom, swTok, swFloorEp, swFenced >>
 
@@ -1039,6 +1092,7 @@ GSwFloor ==
     /\ swStep' = swStep + 1
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED SwUnchangedExcept
     /\ UNCHANGED << swListed, swRowless, swOwned, swNom, swTok >>
 
@@ -1046,12 +1100,28 @@ GSwFloor ==
 GSwView ==
     /\ EnableCatalogRows /\ EnableOrphanSweep
     /\ SwNext = "view"
-    /\ swOwned' = { m \in ManifestIds : owner[m] # None }
+    \* ViewByCutLife: the view replays the life cut C named; an owner transition journaled under a later life
+    \* of the same namespace is not in it.
+    /\ swOwned' = { m \in ManifestIds : owner[m] # None /\ (ViewByCutLife => ownLife[m] = swCutLife[m[1]]) }
+    /\ swStep' = swStep + 1
+    /\ UNCHANGED origVars
+    /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
+    /\ UNCHANGED SwUnchangedExcept
+    /\ UNCHANGED << swListed, swRowless, swFloor, swNom, swTok, swFloorEp, swFenced >>
+
+\* PR #2528: the post-floor `CasRefCatalog::read` (C'), taken once per page when some candidate's namespace
+\* was rowless at C. A candidate whose namespace has a row in C' is retained.
+GSwRecheck ==
+    /\ EnableCatalogRows /\ EnableOrphanSweep
+    /\ SwNext = "recheck"
+    /\ swRecheck' = [n \in Namespaces |-> IF nsRow[n] THEN nsLife[n] ELSE 0]
     /\ swStep' = swStep + 1
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ UNCHANGED SwUnchangedExcept
-    /\ UNCHANGED << swListed, swRowless, swFloor, swNom, swTok, swFloorEp, swFenced >>
+    /\ UNCHANGED << swListed, swRowless, swFloor, swOwned, swNom, swTok, swFloorEp, swFenced >>
+    /\ UNCHANGED << ownLife, swCutLife >>
 
 \* The nomination rule of `planManifestCursorPage`. A rowless namespace skips the floor (the `if (catalog_entry)`
 \* around `prefixEligibleUnder`), the owner view and the section-6 premise; FixFloorAll applies the floor to it.
@@ -1063,8 +1133,10 @@ SwFloorEnded(m) ==
          \/ FloorRetiresEpoch(mEpoch[m], swFloorEp, swFenced)
 SwNominable(m) ==
     IF m[1] \in swRowless
-    THEN FixFloorAll => SwFloorEnded(m)
-    ELSE SwFloorEnded(m) /\ m \notin swOwned
+    THEN /\ FixFloorAll => SwFloorEnded(m)
+         /\ FixRecheckAfterFloor => swRecheck[m[1]] = 0
+    ELSE /\ SwFloorEnded(m) /\ m \notin swOwned
+         /\ (FixRecheckAfterFloor /\ RecheckLifeChange) => swRecheck[m[1]] = swCutLife[m[1]]
 
 \* The candidates' body GETs plus the `gc/state` CAS that records the nominations. The GET records the
 \* token (`PersistedEtag::capture`); an absent body is skipped. The same CAS folds the nominations'
@@ -1073,7 +1145,7 @@ SwNominable(m) ==
 \* a promote (owner move, no deltas) does not.
 GSwNominate ==
     /\ EnableCatalogRows /\ EnableOrphanSweep
-    /\ swStep = 4
+    /\ swStep = SwSteps
     /\ LET nom == { m \in swListed : SwNominable(m) /\ mBody[m] }
            be1 == { ed \in blobEdges : ed[1] \notin nom }
            ae1 == [m \in ManifestIds |-> IF m \in nom THEN [p \in Paths |-> NoBlob] ELSE mActiveEdges[m]]
@@ -1082,12 +1154,13 @@ GSwNominate ==
           /\ mActiveEdges' = ae1
           /\ blobIndeg' = IndegFrom(be1, ae1)
     /\ swTok' = [m \in ManifestIds |-> IF m \in swListed /\ mBody[m] THEN mTok[m] ELSE swTok[m]]
-    /\ swStep' = 5
+    /\ swStep' = SwSteps + 1
     /\ UNCHANGED << present, tokOf, nextTok, deadTok, mBody, mEntries, mRef, mNs, owner,
                     journal, everEdged, foldSeal, completionSeal, gcRound,
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED SwUnchangedExcept
     /\ UNCHANGED << swListed, swRowless, swFloor, swOwned, swFloorEp, swFenced >>
 
@@ -1095,7 +1168,7 @@ GSwNominate ==
 \* it conditional on the recorded token; the manifest key is write-once, so the token cannot have changed.
 GSwDelete(m) ==
     /\ EnableCatalogRows /\ EnableOrphanSweep
-    /\ swStep = 5 /\ m \in swNom
+    /\ swStep = SwSteps + 1 /\ m \in swNom
     /\ swNom' = swNom \ {m}
     /\ IF mBody[m] /\ (FixIfMatch => mTok[m] = swTok[m])
        THEN /\ mBody' = [mBody EXCEPT ![m] = FALSE]
@@ -1107,19 +1180,22 @@ GSwDelete(m) ==
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mfCleanup, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swTok >>
     /\ UNCHANGED epVars
 
 \* The page ends; the next page starts from fresh observations.
 GSwFinish ==
     /\ EnableCatalogRows /\ EnableOrphanSweep
-    /\ swStep = 5 /\ swNom = {}
+    /\ swStep = SwSteps + 1 /\ swNom = {}
     /\ swStep' = 0
     /\ swListed' = {} /\ swRowless' = {} /\ swFloor' = {} /\ swOwned' = {}
     /\ swTok' = [m \in ManifestIds |-> 0]
     /\ swFloorEp' = 0 /\ swFenced' = {}
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ swCutLife' = [n \in Namespaces |-> 0] /\ swRecheck' = [n \in Namespaces |-> 0]
+    /\ UNCHANGED ownLife
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swNom, swRowlessGone >>
     /\ UNCHANGED << mountEpoch, fencedEp, opEp, mEpoch >>
 
@@ -1132,6 +1208,7 @@ WAdmitOp ==
     /\ opEp' = mountEpoch
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
                     swRowlessGone, mountEpoch, fencedEp, mEpoch, swFloorEp, swFenced >>
 
@@ -1142,6 +1219,7 @@ WResolveOp ==
     /\ opEp' = 0
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
                     swRowlessGone, mountEpoch, fencedEp, mEpoch, swFloorEp, swFenced >>
 
@@ -1154,6 +1232,7 @@ GFence ==
     /\ fencedEp' = fencedEp \cup {mountEpoch}
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
                     swRowlessGone, mountEpoch, opEp, mEpoch, swFloorEp, swFenced >>
 
@@ -1167,6 +1246,7 @@ WRemount ==
     /\ mountEpoch' = mountEpoch + 1
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
                     swRowlessGone, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
 
@@ -1190,6 +1270,7 @@ WMutableUpdate(m) ==
                     cursor, trimBase, fenceVersion, retired, inflight, wView, mfCleanup, mfDeleted,
                     mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* ---- Phase 2: token-diff discovery (spec §Discovery; the rev.15 token split) — RETIRED ----
@@ -1262,6 +1343,7 @@ GDiscoverSkip(n) ==
                     roundOf, fencePos, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* The body read + fold-seal write. Always legal (fail-closed to a read). The FOLD-SEAL WRITE is the
@@ -1281,6 +1363,7 @@ GDiscoverRead(n) ==
                     roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight, wView,
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* The fold-visit reclaim of a dead abandoned precommit (reclaimAbandonedPrecommit). It runs ONLY on a
@@ -1338,6 +1421,7 @@ GScatterDelta(n, s) ==
                     retired, inflight, wView, mfDeleted, mPrefix, sweepEligible, extraShared,
                     listedTok, foldedTok, foldTok, prevFencePos, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* GReduceShard(l, s): the REDUCER. Leader l owning shard s (ReducerOwns) folds its shard's deltas —
@@ -1374,6 +1458,7 @@ GCoordFence(l) ==
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok,
                     foldTok, prevFencePos, shardIndeg, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* GCoordSeal(l): the SINGLE input seal gates internal products + adoption — every shard's product
@@ -1396,6 +1481,7 @@ GCoordSeal(l) ==
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, listedTok, foldedTok,
                     foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
+    /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
 \* ============================ attempt-scoping (self-contained) ============================
@@ -1414,6 +1500,7 @@ GMintAttempt(r) ==
     /\ UNCHANGED << adopted, attViewable >>
     /\ UNCHANGED origVars
     /\ UNCHANGED catVars
+    /\ UNCHANGED prVars
 
 \* Adopt a minted candidate a for round r (the lease-guarded CAS #1). Exactly one attempt is adopted per
 \* round; ONLY the adopted attempt becomes viewable. Fires in BOTH the fix and the sabotage worlds.
@@ -1426,6 +1513,7 @@ GAdopt(r, a) ==
     /\ UNCHANGED << attemptSeq, sealAt, retiredAt >>
     /\ UNCHANGED origVars
     /\ UNCHANGED catVars
+    /\ UNCHANGED prVars
 
 \* A deposed leader holding a STALE (non-adopted) minted attempt a writes its artifacts for round r.
 \* FIX (EnableAttemptScoping): it stays attempt-scoped — NEVER added to attViewable (invisible).
@@ -1445,6 +1533,7 @@ GDeposedFinalWrite(r, a) ==
     /\ UNCHANGED << attemptSeq, adopted >>
     /\ UNCHANGED origVars
     /\ UNCHANGED catVars
+    /\ UNCHANGED prVars
 
 Init ==
     /\ present = [b \in Blobs |-> FALSE]
@@ -1515,6 +1604,9 @@ Init ==
     /\ mEpoch = [m \in ManifestIds |-> 0]
     /\ swFloorEp = 0
     /\ swFenced = {}
+    /\ ownLife = [m \in ManifestIds |-> 0]
+    /\ swCutLife = [n \in Namespaces |-> 0]
+    /\ swRecheck = [n \in Namespaces |-> 0]
 
 TypeOK ==
     /\ extraShared \in SUBSET ManifestIds
@@ -1548,7 +1640,7 @@ TypeOK ==
     /\ nsLife \in [Namespaces -> 0..MaxLife]
     /\ stagedLife \in [ManifestIds -> 0..MaxLife]
     /\ mTok \in [ManifestIds -> 0..1]
-    /\ swStep \in 0..5
+    /\ swStep \in 0..6
     /\ swListed \in SUBSET ManifestIds /\ swNom \in SUBSET ManifestIds /\ swOwned \in SUBSET ManifestIds
     /\ swRowless \in SUBSET Namespaces /\ swFloor \in SUBSET BuildPrefixes
     /\ swTok \in [ManifestIds -> 0..1]
@@ -1559,6 +1651,9 @@ TypeOK ==
     /\ mEpoch \in [ManifestIds -> 0..MaxEpoch]
     /\ swFloorEp \in 0..MaxEpoch
     /\ swFenced \in SUBSET (1..MaxEpoch)
+    /\ ownLife \in [ManifestIds -> 0..MaxLife]
+    /\ swCutLife \in [Namespaces -> 0..MaxLife]
+    /\ swRecheck \in [Namespaces -> 0..MaxLife]
 
 INV_JOURNAL_COVERAGE == \A n \in Namespaces : trimBase[n] <= cursor[n]
 
@@ -1747,7 +1842,7 @@ Next ==
     \* catalog rows + split orphan sweep (inert unless EnableCatalogRows):
     \/ \E n \in Namespaces : WCreateNamespace(n) \/ WRemoveNamespace(n)
     \/ \E p \in BuildPrefixes : WEndBuild(p)
-    \/ GSwList \/ GSwCatalog \/ GSwFloor \/ GSwView \/ GSwNominate \/ GSwFinish
+    \/ GSwList \/ GSwCatalog \/ GSwFloor \/ GSwView \/ GSwRecheck \/ GSwNominate \/ GSwFinish
     \/ \E m \in ManifestIds : GSwDelete(m)
     \* mount epochs, fence-out, remount, admitted operations (inert unless EnableFenceEpochs):
     \/ WAdmitOp \/ WResolveOp \/ GFence \/ WRemount

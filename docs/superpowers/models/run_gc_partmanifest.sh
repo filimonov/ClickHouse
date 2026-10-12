@@ -74,6 +74,17 @@ CONFIGS=(
     "superseded_late_bound           green                   -"
     "superseded_late_unbounded       violation               INV_NO_DANGLE"
     "witness_fencedswept             violation               W_FencedDebrisSwept"
+    # PR #2528 sweep shape: cut C, floor on every key, owner view, catalog re-read C' for rowless candidates.
+    # `fix_recheck` is red by design: a namespace removed and reborn between C and C' keeps the owner view of
+    # the life C named. `fix_recheck_life` adds the life comparison that closes it.
+    "fix_recheck                     violation               INV_NO_DANGLE"
+    "fix_recheck_norebirth           green                   -"
+    "fix_recheck_noreread_norebirth  green                   -"
+    "fix_recheck_life                green                   -"
+    "fix_floorfirst_cutlife          green                   -"
+    "sab_recheck                     violation               INV_NO_DANGLE"
+    "fenced_late_bound_recheck       green                   -"
+    "fenced_late_unbounded_recheck   violation               INV_NO_DANGLE"
 )
 
 SLOW_CONFIGS=(

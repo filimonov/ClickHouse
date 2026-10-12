@@ -522,3 +522,73 @@ spares `b1`, the delete lands. A committed ref names a deleted blob, independent
 What the code must document or enforce: the floor may retire an epoch only after every operation admitted
 under it has ended. At the base nothing enforces this for a superseded epoch; for a fence-out it holds
 only if the request deadline is shorter than the wait before the fence-out is acted on.
+
+## PR 2528 recheck shape {#pr-2528-recheck-shape}
+
+https://github.com/Altinity/ClickHouse/pull/2528 fixes CAS-36 instead of A''. It closes the rowless race
+but opens one for a namespace removed and reborn during the page. The life comparison below closes that.
+
+### Shape modeled {#pr-2528-shape-modeled}
+
+`planManifestCursorPage` per page: LIST → catalog cut C → floor F for every key (`floorForNamespace` +
+`prefixEligibleUnder`, no `catalog_entry` guard) → owner view for namespaces with a row at C → one
+re-read C' of `CasRefCatalog` after all floor reads, for candidates rowless at C; such a candidate is
+retained if its row appears in C'.
+
+| Constant | Meaning |
+| --- | --- |
+| `FixRecheckAfterFloor` | the sweep order above, with `GSwRecheck` (C') as its last step; set together with `FixFloorAll` |
+| `ViewByCutLife` | the owner view replays the life C named (`NamespaceLifeId::fromCatalogEntry(catalog_entry)` → `readCkpt` → `activeManifestKeys`); an owner transition journaled under a later life is not in it. New variable `ownLife[m]`: the life `precommitAdd` journaled m under |
+| `PromoteSkipsOwnBodyReread` | `PartWriteTxn::promote` takes blob dependencies from `staged_manifests` and skips the body GET; blob checks stay |
+| `RecheckLifeChange` | candidate fix: C' applies to every candidate, and one whose life differs between C and C' is retained |
+
+### Results {#pr-2528-results}
+
+TLC `-workers 4`, `-Xmx8g`, `nice 10`. Base constants of `fix_floorfirst` (removal on, `MaxLife = 2`)
+unless the name says `norebirth`.
+
+| Config | Setting | Outcome | Generated / distinct | Depth or trace | Wall |
+| --- | --- | --- | ---: | ---: | ---: |
+| `fix_recheck` | PR shape, life-scoped view | `INV_NO_DANGLE` violated | 1,406,392 / 402,748 | 16 states | 6 s |
+| `fix_recheck_norebirth` | PR shape, no removal | green | 34,576,075 / 6,916,256 | 49 | 84 s |
+| `fix_recheck_noreread_norebirth` | + promote skips its body GET | green | 34,613,894 / 6,916,256 | 49 | 104 s |
+| `fix_recheck_life` | + promote skip + `RecheckLifeChange`, removal on | green | 349,572,301 / 64,960,073 | 52 | 923 s |
+| `sab_recheck` | PR shape without C' | `INV_NO_DANGLE` violated | 209,813 / 63,439 | 13 states | 2 s |
+| `fenced_late_bound_recheck` | PR shape + `GFence`, `AdmissionBound` | green | 54,044,050 / 9,622,776 | 45 | 118 s |
+| `fenced_late_unbounded_recheck` | same, no `AdmissionBound` | `INV_NO_DANGLE` violated | 973,529 / 256,492 | 15 states | 3 s |
+| `fix_floorfirst_cutlife` | A'' with the life-scoped view | green | 175,217,318 / 32,507,589 | 50 | 407 s |
+| `fix_floorfirst` | A'' (rerun) | green | 199,361,194 / 36,834,717 | 50 | 473 s |
+
+Every green row also checks `INV_COMMITTED_BLOBS_PRESENT`. `fix_floorfirst`'s distinct count grew
+(23,771,233 → 36,834,717) because `ownLife` and `swCutLife` are now tracked under `EnableCatalogRows`. Legacy
+rows are unchanged (`empty_namespaces` 696, `stage0` 19,846, `stage1` 402,034). `fix_recheck_life` uses
+923 s of the 1200 s limit.
+
+### Findings {#pr-2528-findings}
+
+- **The rowless race is closed** (`fix_recheck_norebirth`). If F says a build ended, its `precommitAdd`
+  happened before F and needed a row, so C' (after F) shows it. Removing C' reopens the race (`sab_recheck`).
+- **Skipping the body GET in promote changes nothing** (`fix_recheck_noreread_norebirth`, same distinct
+  count). Under the PR shape the sweep never deletes a body before its promote.
+- **Late requests (CAS-36 residual) behave the same as under A''.** `fenced_late_unbounded_recheck`
+  hits a namespace with a row at C, as before: the late `precommitAdd`/promote lands after the owner
+  view. `fenced_late_bound_recheck` is green.
+- **Ordering subtlety: a removal and rebirth between C and F loses the precommit** (`fix_recheck`):
+  1. `WStageManifest(m1)` (`n1` rowless), `WCreateNamespace(n1)` (life 1), `GSwList`, `GSwCatalog`:
+     C names life 1.
+  2. `WRemoveNamespace(n1)` (no owners yet), `WCreateNamespace(n1)` (life 2).
+  3. `WPrecommitAdd(m1)` journals under life 2; `WPromote`; `WEndBuild`.
+  4. `GSwFloor` (ended), `GSwView` (replays life 1: no owner), `GSwRecheck` (not applied: `n1` had a row at C).
+  5. `GSwNominate`, `GSwDelete(m1)`: committed ref over a missing body.
+
+  A'' does not have this gap (`fix_floorfirst_cutlife` green). The cut comes after F, so it names the
+  life that holds every transition of an ended build. `RecheckLifeChange` closes it for the PR shape
+  (`fix_recheck_life`): retain any candidate whose namespace life changed between C and C'. Code cost:
+  the C' read is taken whenever the page has a candidate, not only a rowless one, and the comparison
+  uses `catalog_entry->incarnation`.
+- **Open for the code check.** The gap is real only if `activeManifestKeys` for a removed life returns an
+  empty owner set instead of failing. It fails closed only if `readCkpt` finds life 1's `_ckpt` absent,
+  or `manifestDeletionPremise` refuses. Whether terminal namespace removal
+  (`CasRefCatalog::deleteCompletedRemovingAtSnapshot`) deletes the old life's `_ckpt` before the row is
+  gone is not modeled. The life pin (`FixPinLife`) would also close this, by refusing a precommit under
+  a life other than the staging life.
