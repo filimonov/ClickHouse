@@ -32,6 +32,10 @@ Repo `Altinity/ClickHouse`, target `antalya-26.6-20261008`. Branches are `fix/an
 
 PR bodies written so far: [pr-bodies/](pr-bodies/) (PR 1–5, 7, 8). The PR 16 soak/Grafana retarget for the master branch is held as [pr16-master-retarget.diff](pr16-master-retarget.diff) (CAS-356). Per-PR SDD ledgers live in the git-ignored `.superpowers/sdd/2026-10-0*-cas-lease-pr*/` of the master worktree.
 
+## Models track the series, not the release line {#models}
+
+These TLA+ models were changed for the unmerged series between 2026-10-07 and 2026-10-09 and describe `3b4037ae265`, not `antalya-26.6-20261008`: `CaCasMountCore` (9 commits), `CaDiskLifecycle` (5), `CaRefLaneCore` (3), `CaMountObserveCore` (declared-lease wait, #2516), `CaMountRenewRetryCore`. A green run of these models says nothing about the release line where mount-plane behaviour differs (same-pair refresh, reclaim to a lower epoch, observers waiting their own lease, renewal deadline, self-remount). Fixes on the release line that touch the mount plane must model the base behaviour as a switch or work from the pre-series model revision (`git log --before=2026-10-07 -- docs/superpowers/models/<Model>.tla`). GC- and write-path models (`CaGcCondemnMarkerGate`, `CaBlobPublishCore`, `CaGcRootLocalPartManifestCore`) were not changed by the series.
+
 ## Direction after the audit {#direction}
 
 The owner judged the series too complex for its goal (exclusive writable mount of one server root). Findings that shape the next step:
