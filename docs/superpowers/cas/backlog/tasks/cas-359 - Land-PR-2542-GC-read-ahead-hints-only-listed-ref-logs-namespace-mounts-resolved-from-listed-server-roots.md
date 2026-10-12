@@ -3,10 +3,10 @@ id: CAS-359
 title: >-
   Land PR #2542: GC read-ahead hints only listed ref logs; namespace mounts
   resolved from listed server roots
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 12:55'
+updated_date: '2026-10-12 13:01'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -65,4 +65,6 @@ Review 2026-10-12: own trace + independent ca-review (report tmp/pr2542/review-c
 2026-10-12, owner: the listed-ids filter is not needed. Ids are dense from the cursor to `_ckpt.committed_through` within the frontier's epoch, so the only ids arithmetic over-hints are those past a sealed older epoch's seal (one window, the 404s the PR counts as wasted). That bound is available by exact key: `{E,1}` of every epoch carries `prev_epoch_seal` (`crossEpochFromSeal`), so walking back from `committed_through.writer_epoch` to the cursor's epoch costs one GET per epoch crossed, on bodies the walk reads anyway, and gives every epoch's last id. Replace the `listed` parameter of `hintRefLogsWithinEpoch`, `logs_by_life` and the intake's `binary_search` lookahead with per-epoch seal bounds from the back-chain; then the hinter has no LIST input at all and B1 (CAS-29.1) has nothing extra to feed.
 
 2026-10-12, owner decision: accepted as a temporary fix; the durable fix is CAS-358 (the sweep stops replaying namespaces). AC #9 stays a recommendation to the author, not a merge gate; CAS-357 and CI remain gates.
+
+2026-10-12, owner decision, final: the PR is not merged. The read-ahead and mount-floor changes patch symptoms of the sweep's per-page replay; the direction is CAS-358 (the sweep does not replay a namespace, the owner set comes from fold state). Closed as Done = decided; nothing from this PR lands. The review findings that outlive it: CAS-357 (nested root ids, now a hazard note on CAS-157), the hint bound from `{E,1}.prev_epoch_seal` (CAS-29.1 notes), and the 404 cost model missing from docs/en/antalya/cas/architecture/garbage-collection.md 'What a round costs'.
 <!-- SECTION:NOTES:END -->

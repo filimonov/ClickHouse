@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 10:22'
+updated_date: '2026-10-12 13:01'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -24,7 +24,7 @@ references:
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasOrphanManifestSweep.cpp
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h
-priority: critical
+priority: medium
 type: bug
 ordinal: 451000
 ---
@@ -66,3 +66,9 @@ The ban on nested ids was already proposed, not decided, in CAS-157 (2031-triage
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12: PR 2542 is not merged (CAS-359), so the listed-roots fall-through this task describes is not in the tree. Without the PR the fold's dead-precommit path reads `a/b`'s own mount, and the fall-through is reachable only after `DROP POOL MEMBER` (CAS-157). Priority lowered from Critical to Medium; the durable fix stays CAS-157's nesting ban. Keep this task as the record of the fold-path trace in case a listed-roots floor lookup is attempted again.
+<!-- SECTION:NOTES:END -->
