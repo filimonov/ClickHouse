@@ -32,9 +32,71 @@ Repo `Altinity/ClickHouse`, target `antalya-26.6-20261008`. Branches are `fix/an
 
 PR bodies written so far: [pr-bodies/](pr-bodies/) (PR 1–5, 7, 8). The PR 16 soak/Grafana retarget for the master branch is held as [pr16-master-retarget.diff](pr16-master-retarget.diff) (CAS-356). Per-PR SDD ledgers live in the git-ignored `.superpowers/sdd/2026-10-0*-cas-lease-pr*/` of the master worktree.
 
-## Models track the series, not the release line {#models}
+## Models follow the release line {#models}
 
-These TLA+ models were changed for the unmerged series between 2026-10-07 and 2026-10-09 and describe `3b4037ae265`, not `antalya-26.6-20261008`: `CaCasMountCore` (9 commits), `CaDiskLifecycle` (5), `CaRefLaneCore` (3), `CaMountObserveCore` (declared-lease wait, #2516), `CaMountRenewRetryCore`. A green run of these models says nothing about the release line where mount-plane behaviour differs (same-pair refresh, reclaim to a lower epoch, observers waiting their own lease, renewal deadline, self-remount). Fixes on the release line that touch the mount plane must model the base behaviour as a switch or work from the pre-series model revision (`git log --before=2026-10-07 -- docs/superpowers/models/<Model>.tla`). GC- and write-path models (`CaGcCondemnMarkerGate`, `CaBlobPublishCore`, `CaGcRootLocalPartManifestCore`) were not changed by the series.
+On `cas-gc-rebuild` the mount-plane TLA+ models describe the release line `antalya-26.6-20261008` at `2a034cdb374` (PRs 1, 3, 5, 7 merged as #2509, #2511, #2510, #2512). Every model commit of an unmerged series PR is reverted by its own commit, newest first. The series state of the models stays on the local branch `models/mount-lease-series` (`29ae2193a2d`).
+
+Restored models and the revision their files now equal:
+
+| Model (files incl. cfgs, `_RESULTS.md`, run script) | Equals | Why |
+|---|---|---|
+| `CaCasMountCore`, `CaCasMountCoreLateRenew`, `run_mount.sh` | `3dbf425edd5` | last PR 7 commit |
+| `CaMountObserveCore`, `run_mountobserve.sh` | `11a0675f8d3` | PR 1 (CAS-342) model |
+| `CaDiskLifecycle`, `run_disklifecycle.sh` | `44520adb5c2` | before the 2026-10-01 one-thread design |
+| `CaMountRenewRetryCore`, `run_mountrenewretry.sh` | `5451b2513ac^` (`fc3a4c378c9` for the runner) | before the 2026-10-01 no-deadline design |
+| `CaRefLaneCore`, `run_reflane.sh` | `89a60b1b7f8` | before PR 10 |
+
+`CaCasMountCoreStraggler.tla` exists only in the series. `CaGcLeaseCore` was not touched. PRs 3 and 5 changed no model.
+
+### Classification {#models-classification}
+
+Model commits since 2026-09-20 on the models above. "Revert" is the commit on `cas-gc-rebuild` that undoes the series commit.
+
+| Commit | Models | Change modelled | PR | Merged | Release line | Revert |
+|---|---|---|---|---|---|---|
+| `44520adb5c2` | `run_disklifecycle.sh` | runner reads the singular temporal-violation message | — | — | kept | — |
+| `9a5bbedbc41` | `CaDiskLifecycle` | one lease thread renews and reclaims (2026-10-01 design) | 14/15 | no | series-only | `2417b567344` |
+| `265f827fe82` | `CaDiskLifecycle` | readiness arms the fence on the renewal (same design) | 14/15 | no | series-only | `81a088b17c9` |
+| `5451b2513ac` | `CaMountRenewRetryCore` | renewal without a lease deadline (2026-10-01 design) | 8 | no | series-only | `2894594c906` |
+| `137d9faf2fa` | `CaDiskLifecycle` | one arming rule for reclaim and renewal (same design) | 14/15 | no | series-only | `d53c6d476fe` |
+| `11a0675f8d3` | `CaMountObserveCore` (new), `CaCasMountCore` late-renew witness | observer dates a sighting after the read (CAS-342); same-epoch renewal after expiry | 1 | #2509 | kept | — |
+| `eb2e40e5eab` | `CaMountRenewRetryCore` | `Refused` and `Conflict{NotObserved}` continue the same tuple | 8 | no | series-only | `fda253256f2` |
+| `5f15430aeed` | `CaMountRenewRetryCore` | RESULTS names PR 8 | 8 | no | series-only | `b223af813c5` |
+| `a67369873eb` | `CaDiskLifecycle` | absorbing `Stopping` and `Closed` (step 1) | 12 | no | series-only | `a069508cbea` |
+| `49d9c01242f` | `CaCasMountCore`, `CaCasMountCoreLateRenew` | incarnations, claim monotonicity (CAS-178) | 7 | #2512 | kept | — |
+| `3dbf425edd5` | `CaCasMountCore` | strict claim monotonicity, equal-epoch refresh sabotage | 7 | #2512 | kept | — |
+| `62d81168e23` | `CaRefLaneCore` | occupant outcomes latch before any exit | 10 | no | series-only | `5b5d143560a` |
+| `f5bdfa89cea` | `CaRefLaneCore` | leave-faulted sabotage | 10 | no | series-only | `53c906b64be` |
+| `0b912ab2da8` | `CaRefLaneCore` | occupied slot is our bytes or one fault | 10 v2 | no | series-only | `5679369dcbc` |
+| `0c0203ed0f7` | `CaMountObserveCore` | observer waits the longer of its own and the declared lease | 2 v2 (#2516) | no | series-only | `85d64c8dc7e` |
+| `781506a4af9` | `CaCasMountCore` | epoch allocation as one immutable write (step 2a) | 11a | no | series-only | `b978f29b4f0` |
+| `3357e54496f` | `CaCasMountCore` | straggler adopt during allocation, fence latched | 11a | no | series-only | `fcf85489e79` |
+| `021829a925d` | `CaCasMountCore` | fence latch replaces the adopt block | 11a | no | series-only | `e6f04080f97` |
+| `3032a4ed15b` | `CaCasMountCore`, `CaCasMountCoreStraggler` (new) | straggler-landed witness | 11a | no | series-only | `63efada1424` |
+| `1d5b639d000` | `CaCasMountCore` | mount claim as one immutable operation (step 2b) | 11b | no | series-only | `d6b753dde37` |
+| `f41f88acf62` | `run_mount.sh` | drop duplicated step-2b rows | 11b | no | series-only | `cf3b7820bdd` |
+| `d05be03d197` | `CaCasMountCore`, `CaDiskLifecycle` | two-step slot absence; no farewell on `Stopping` | 12 | no | series-only | `74699c4129c` |
+| `1250c34a796` | `CaCasMountCore` | fence latched for good on an absence stop | 12 | no | series-only | `ce5cf0fc9b5` |
+| `0fd85e5a2e8` | `CaDiskLifecycle` | reacquire in the lease thread | 14 | no | series-only | `e171de1af4a` |
+| `ab20c78bc06` | `CaCasMountCore`, `CaCasMountCoreStraggler` | reacquire by certificate, resumable claim | 14 | no | series-only | `ebbcdd671dc` |
+| `9cd8ace02ce` | `CaCasMountCore` | RESULTS: soundness of `ViewNoHistory` | 14 | no | series-only | `9c97f61e4cb` |
+| `4973c7e722a` | `CaDiskLifecycle` | farewell waits for publishes | 13 | no | series-only | `b9f8923f100` |
+| `13efdc37e8d` | `CaDiskLifecycle` | one lease thread, no remount | 15 | no | series-only | `1e5bf352105` |
+| `1ed1864e8e9` | `CaDiskLifecycle` | RESULTS: step-3 state counts | 15 | no | series-only | `1978f33901a` |
+
+Not series, left as they are: `CaGcCondemnMarkerGate` (`c9c4fa54bf0` … `b483e4ea41c`), `CaBlobPublishCore` (`0acdf9c7939`), `CaGcRootLocalPartManifestCore` (`a385db56107`, `eae836fd008`, `d864fe01b7c`), `CaEpochAllocCore`.
+
+### Re-applying a series PR's models when it merges {#models-reapply}
+
+Revert that PR's revert commits from the table, oldest series commit first (bottom of the revert order up):
+
+```bash
+git revert --no-edit 2894594c906 fda253256f2 b223af813c5   # PR 8: CaMountRenewRetryCore
+```
+
+- Later commits of one model build on earlier ones. `CaCasMountCore`: 11a, then 11b, 12, 14. `CaDiskLifecycle`: the 2026-10-01 rows (14/15) come before PR 12's `a67369873eb`. A PR that merges out of this order needs its model commits ported by hand from `models/mount-lease-series`.
+- The `models/README.md` hunk of `9a5bbedbc41` sits next to the `CaMountObserveCore` paragraph from `11a0675f8d3`; its revert `2417b567344` resolved that conflict by hand.
+- Run the model's `run_*.sh` after re-applying; the expectations in its `_RESULTS.md` come back with the files.
 
 ## Direction after the audit {#direction}
 
