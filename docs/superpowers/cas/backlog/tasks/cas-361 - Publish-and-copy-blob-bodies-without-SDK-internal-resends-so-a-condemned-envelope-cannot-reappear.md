@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 13:02'
+updated_date: '2026-10-12 14:28'
 labels:
   - 'area:write-path'
   - 'area:backend'
@@ -63,4 +63,6 @@ Fix A (single-attempt transport for object-creating requests) is green and suffi
 Fix B (fresh incarnation per wire attempt) cannot be built: the SDK resends the buffered body and a copy resend copies the same staging bytes (`sab_B_copy_same_bytes`). Fix E (delete also matches last-modified time) is green with resends on and also covers non-SDK duplicates (proxy, store double-apply); an alternative to A, not an addition, and store support on AWS general-purpose buckets and RustFS is unverified.
 
 Open for the code fix: does the single-attempt write path also disable `WriteBufferFromS3`'s `max_unexpected_write_error_retries` (if it re-runs a whole multipart with the same buffers it is the same defect class); can `UploadPartCopy`'s `Complete` re-land an object. `NoSuchUpload`-as-success (S7) is not modelled: the model's `ReconcileMetaClean` still refuses `Condemned`, an older stand-in for graduation. Re-HEAD (CAS-360 option B) closes the HEAD/marker race only together with A.
+
+2026-10-12 decision after the two-model consult: single attempt for object-creating requests only — `PutObject`, `CopyObject`, `CompleteMultipartUpload`; `CreateMultipartUpload`, `UploadPart`, `UploadPartCopy` keep SDK retries (one throttled part must not fail a 512-part body). New `WriteSettings` flag (e.g. `object_storage_single_attempt_object_creation`); `S3ObjectStorage::writeObject` passes a single-attempt creation client to `WriteBufferFromS3` (`makeSinglepartUpload`, `completeMultipartUpload`); `S3ObjectStorage::copyObject` honours `write_settings` (today it uses `client.get()`) and the unexpected-write retry override; `Client::CompleteMultipartUpload` skips `NoSuchUpload` → HEAD → success for single-attempt clients; `ObjectStorageBackend::publish` sets the flag plus `s3_max_unexpected_write_error_retries_override = 1` (the `NO_SUCH_KEY` loops reissue the identical envelope) and refuses an empty result ETag as ambiguous. About 30 lines in upstream files the fork already patches. Credential/region/redirect reissue in `Client::doRequest` follows a definitive rejection, so it cannot duplicate an applied request; left as is (codex wanted it disabled too). Open: `PocoHTTPClient` reconnect resend on a stale keep-alive connection; store behaviour on a duplicate `Complete` (RustFS, MinIO, AWS).
 <!-- SECTION:NOTES:END -->

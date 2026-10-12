@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 13:42'
+updated_date: '2026-10-12 14:28'
 labels:
   - 'area:gc'
   - 'area:write-path'
@@ -68,4 +68,10 @@ Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/meta.md (S9)
 A needs more than one round of delay: the marker delete must run in a round strictly after a pass that saw the body `Removed`/`Gone` and committed; deleting in the round that first sees `Gone` reopens the race because a deposed attempt can delete the body after that round's cut (`sab_deferA_gonenow`). So A needs a persisted 'body gone' mark on the entry (frozen run format; candidate: the unused `(delete_pending=1, marker_confirmed=0)` combination) and the redelete outcome must reach the run being written (`rmr.redelete` entries leave the ledger before the I/O; the seal is written in phase 10, deletes run in phase 11). B is ~10 lines in the `!loaded` branch (second HEAD before the backfill) but relies on tokens not recurring, i.e. on CAS-361. C costs a full upload per absent marker.
 
 Separate leak found (`cur_orphan_retry`): the gate's retry in `confirm_condemned_marker` stamps the current round, later than `entry.condemn_round`, so `deleteConfirmedMeta(ref, entry.condemn_round)` skips it forever. Fix: pass the marker round the gate observed, or under A delete any `Condemned` marker below the current round.
+
+2026-10-12 decision after the two-model consult: fix = C. Only a `Clean` marker read after the body `HEAD` permits adoption; a present body with an absent marker is republished exactly like an absent body (`reason = Absent`, marker created by the reconcile). `ensureBlobPresent`: adopt condition `loaded && state == Clean`, the `putMetaIfAbsent` backfill block removed (about -12 lines), event text and `CASMetaAdoptBackfill` repurposed or replaced. The mandatory `HEAD` stays (HEAD-before-PUT; a `Clean` marker does not prove the body exists, e.g. an old writer's backfill during a rolling upgrade; size check). C does not depend on CAS-361; B (re-HEAD) does. A rejected by both consultants: `(delete_pending=1, marker_confirmed=0)` parses in 26.6.4 but an old leader re-deletes and deletes the marker in the same pass, and `GcOutcomes` is capped (5000) and lossy, so it cannot carry the mark.
+
+Cost measured on otel.demo (one node, 26.6.4, uptime 16.8 days): `CASMetaAdoptBackfill` = 8 vs `CASMetaCreateClean` = 2,820,124 and `CASBlobBodyPutAvoided` = 7,105, i.e. 8 extra uploads in 17 days. `CASGCRetiredSparedByReref` = 117 confirms writers do hit blobs GC already graduated.
+
+Leak fix in the same change: `applyRedeleteOutcome` passes the deleting round - 1 as the bound, so `deleteConfirmedMeta` also removes a `Condemned` marker the graduation gate re-stamped at a later round (`cur_orphan_retry`); under C a marker delete is safety-neutral. Old writers stay exposed until upgraded.
 <!-- SECTION:NOTES:END -->
