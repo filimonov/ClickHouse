@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 11:52'
+updated_date: '2026-10-12 21:30'
 labels:
   - 'area:mounts'
   - 'area:tooling'
@@ -56,4 +56,6 @@ Fix (no migration): retire the slot by one `If-Match` write that replaces `epoch
 
 <!-- SECTION:NOTES:BEGIN -->
 Wave 2 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-misc.md finding 2, verified): with the counter missing and the mount probe seeing absence, an older prepared starter creates the mount while counter recreation lands independently; the model's atomic absence-and-mint hides it. Keeping `epoch` (this task) removes the missing-counter state.
+
+2026-10-12 model (`008991cc06f`): `cur_decom` re-mints epoch 1, `cur_decom_reusedangle` dangles via the farewell floor, `cur_decom_retired` violates `RetiredStaysRetired`. NEW: deleting `mount` is a hazard by itself (`cur_decom_dangle`/`cur_decom_slot`): a claimer reads the slot absent and pauses before its `If-None-Match` mint; decommission writes its farewell and deletes `mount`; the paused mint lands at a lower epoch and the sweep holding the farewell floor deletes its in-flight manifest — no epoch reuse needed. Fix (green in `fix_retire`, `fix_both` with nonce, 66 M states): keep the farewell `mount`, replace `epoch` by ONE `If-Match` write of a retired body (after the `captures_match` check), then the owner tombstone; `allocateWriterEpoch` refuses a retired body. `sab_retire_delmount` red. Spell the marker as a critical key (`!retired_at_ms`): 26.6.4 `decodeServerEpoch` throws `UNKNOWN_FORMAT_VERSION` on `!` keys, so old allocators and the old decommission tool fail closed on a retired root; a plain field would be ignored (`sab_retire`). Ship together with CAS-362.
 <!-- SECTION:NOTES:END -->
