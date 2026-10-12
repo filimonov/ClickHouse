@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:54'
-updated_date: '2026-10-12 12:27'
+updated_date: '2026-10-12 12:37'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -61,4 +61,6 @@ Provenance: docs/superpowers/cas/2031-triage.md#cas-114 (2031-triage CAS-114; th
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-12, direction (b) made precise. The epoch mint is one CAS per mount and is not the cost; the per-table seal is. A seal at `{E, T+1}` is needed only when a writer of epoch E may still have an in-flight conditional create for that table (INV-1: at most one per table and writer). A predecessor whose death is certified clean (farewell after every ref lane resolved its last attempt, which is what CAS-179 makes the farewell mean) has no such PUT in any table, so the successor may skip the seal walk for E in every table. The GC side already follows seal chains across epoch gaps (`crossEpochFromSeal` walks `prev_epoch_seal` back from the witness epoch); the writer loop in `runRecoveryWalkOnce` stops only at `epoch >= live_epoch` and seals every numeric epoch, so it needs a durable 'epochs ended clean' record on the server root (the farewell body is overwritten by the next claim) and the skip must be checked in the TLA model. A dirty death still needs one seal per table in that epoch, idle or not: the ghost's one in-flight PUT may be that table's `{E, 1}`. Removing the epoch from `RefTxnId` does not help: a single per-lane counter still needs the positional fence at T+1 on every first touch after an uncertified death, and loses the per-record incarnation tag the stale-precommit sweep (`mref.writer_epoch < live_epoch`) and GC's `(writer_epoch, build_seq)` order use.
+
+2026-10-12, direction (d), never evaluated: one sequence per namespace with the same start seal. The July spec (git show 6fff5748abe:docs/superpowers/specs/2026-07-27-cas-ref-chain-complete-cut-design.md, INV-1/INV-2) makes ids dense within `(namespace, epoch)` and restarts at 1 per epoch, so a successor must close every elapsed epoch, empty ones included (sequence-1 seal grammar). With one counter per namespace the first touch seals the first absent slot T+1 once, and that fences every earlier incarnation: by INV-1 each had at most one in-flight create, always at its own first absent slot, which is either filled since or equals T+1. Cost: a `RefTxnId` format bump (keys, `_ckpt`, `_snap`, fold-seal coverage; frozen since 26.6.4, so a new version with a compatibility path), the seal carries the closed `writer_epoch` for the sweep rule 'manifest of epoch E deletable once a seal above E is consumed', `crossEpochFromSeal` and the hinter's epoch bound disappear, TLA re-check. Gain is O(1) seals per first touch instead of O(elapsed epochs), and no epoch crossings in GC; it does not cut seals for tables loaded at every restart (one touch per restart either way), so it does not replace CAS-358. The spec's alternatives table has no row for this variant; it was not rejected, only not considered.
 <!-- SECTION:NOTES:END -->
