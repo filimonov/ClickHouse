@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 12:06'
+updated_date: '2026-10-12 12:55'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -63,4 +63,6 @@ Review 2026-10-12: own trace + independent ca-review (report tmp/pr2542/review-c
 2026-10-12: the PR adds two consumers of the global ref-prefix LIST that the 2026-09-25 spec and gc-cost-map.md say do not exist: the hinter filters on `RefScanSummary::logs_by_life` and the intake lookahead stops at the first id absent from `RefTableListing::logs`. CAS-29.1 (spec B1) replaces that LIST with one exact GET per live life plus a per-life LIST from the covered floor; the floor-to-`committed_through` range the hinter needs is exactly that per-life tail, so B1 must feed the same listed set per life and keep the intake's exact-key walk independent of it. The ceiling `committed_through` already comes from the per-namespace `_ckpt` read (`readCheckpointWitnesses`), not from the LIST.
 
 2026-10-12, owner: the listed-ids filter is not needed. Ids are dense from the cursor to `_ckpt.committed_through` within the frontier's epoch, so the only ids arithmetic over-hints are those past a sealed older epoch's seal (one window, the 404s the PR counts as wasted). That bound is available by exact key: `{E,1}` of every epoch carries `prev_epoch_seal` (`crossEpochFromSeal`), so walking back from `committed_through.writer_epoch` to the cursor's epoch costs one GET per epoch crossed, on bodies the walk reads anyway, and gives every epoch's last id. Replace the `listed` parameter of `hintRefLogsWithinEpoch`, `logs_by_life` and the intake's `binary_search` lookahead with per-epoch seal bounds from the back-chain; then the hinter has no LIST input at all and B1 (CAS-29.1) has nothing extra to feed.
+
+2026-10-12, owner decision: accepted as a temporary fix; the durable fix is CAS-358 (the sweep stops replaying namespaces). AC #9 stays a recommendation to the author, not a merge gate; CAS-357 and CI remain gates.
 <!-- SECTION:NOTES:END -->

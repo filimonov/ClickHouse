@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 12:46'
+updated_date: '2026-10-12 12:55'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -54,4 +54,6 @@ Research first: attribute the 956 k reads per day by key kind and by namespace a
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-12, owner question 'can blob in-degree answer this?': almost. The source-edge runs hold `(blob_hash, source_id)` with `source_id` the manifest's 16-byte id, so the set of source ids present after the merge is 'manifests owned as of the cursor'; with premise rule (1) (grants do not cross epochs, the build epoch's seal is consumed) that set is as safe as today's writer-authority `active`. Two gaps: the runs are keyed and sharded by blob hash, so a per-namespace answer is a scan of every shard (cheap only as a by-product of the merge the round already streams, O(live manifests) memory at 16 B each); and a manifest whose every file is `EntryPlacement::Inline` has no edge rows, is owned, and would be deleted as an orphan. Preferred direction: the fold already extracts `RefManifestEdge{manifest_id, +-1}` per transaction; keep a durable owned-manifest set per life keyed by `ManifestId` (manifest-level in-degree, sharded by namespace), O(live parts), no inline hole. The sweep's `active` then comes from the adopted seal's set and only the committed tail above the cursor is read for removal targets; the replay from `_snap` or genesis goes away. Research step 1 (attribution of the 956k reads) still comes first; this is the structure to cost against the `_snap`-threshold option.
+
+2026-10-12, owner decision: PR 2542 is accepted as a temporary fix. The goal of this task is that the orphan sweep does not replay a namespace at all: the fold has already processed every record below the cursor, so the sweep's owner set must come from fold state (the owned-manifest set above), and the sweep reads at most the committed tail above the cursor. The `_snap`-threshold option only shortens the replay and is not the fix.
 <!-- SECTION:NOTES:END -->
