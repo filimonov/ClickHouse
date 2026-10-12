@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:54'
+updated_date: '2026-10-12 12:27'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -55,3 +56,9 @@ Provenance: docs/superpowers/cas/2031-triage.md#cas-114 (2031-triage CAS-114; th
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12, direction (b) made precise. The epoch mint is one CAS per mount and is not the cost; the per-table seal is. A seal at `{E, T+1}` is needed only when a writer of epoch E may still have an in-flight conditional create for that table (INV-1: at most one per table and writer). A predecessor whose death is certified clean (farewell after every ref lane resolved its last attempt, which is what CAS-179 makes the farewell mean) has no such PUT in any table, so the successor may skip the seal walk for E in every table. The GC side already follows seal chains across epoch gaps (`crossEpochFromSeal` walks `prev_epoch_seal` back from the witness epoch); the writer loop in `runRecoveryWalkOnce` stops only at `epoch >= live_epoch` and seals every numeric epoch, so it needs a durable 'epochs ended clean' record on the server root (the farewell body is overwritten by the next claim) and the skip must be checked in the TLA model. A dirty death still needs one seal per table in that epoch, idle or not: the ghost's one in-flight PUT may be that table's `{E, 1}`. Removing the epoch from `RefTxnId` does not help: a single per-lane counter still needs the positional fence at T+1 on every first touch after an uncertified death, and loses the per-record incarnation tag the stale-precommit sweep (`mref.writer_epoch < live_epoch`) and GC's `(writer_epoch, build_seq)` order use.
+<!-- SECTION:NOTES:END -->
