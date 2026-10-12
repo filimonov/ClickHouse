@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-10-12 13:42'
 labels:
   - 'area:gc'
   - 'area:write-path'
@@ -58,3 +59,13 @@ Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/meta.md (S9)
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 model result (`06e331ada7c`, `docs/superpowers/models/CaGcCondemnMarkerGate_RESULTS.md#cas-360`): `WAdopt` split into `WHead`/`WMetaRead`/`WReHead`/`WBackfill` under `SplitAdopt`. Current protocol violates `NoDangle` (`cur_headget`, 15 states; also `cur_headget_all`, `cur_deposed`). All three candidates are green with load-bearing sabotages: A deferred marker delete (`fix_deferA*`, up to 38.4 M states), B re-HEAD on absent marker (`fix_reheadB*`, up to 50.9 M), C republish on absent marker (`fix_republishC*`).
+
+A needs more than one round of delay: the marker delete must run in a round strictly after a pass that saw the body `Removed`/`Gone` and committed; deleting in the round that first sees `Gone` reopens the race because a deposed attempt can delete the body after that round's cut (`sab_deferA_gonenow`). So A needs a persisted 'body gone' mark on the entry (frozen run format; candidate: the unused `(delete_pending=1, marker_confirmed=0)` combination) and the redelete outcome must reach the run being written (`rmr.redelete` entries leave the ledger before the I/O; the seal is written in phase 10, deletes run in phase 11). B is ~10 lines in the `!loaded` branch (second HEAD before the backfill) but relies on tokens not recurring, i.e. on CAS-361. C costs a full upload per absent marker.
+
+Separate leak found (`cur_orphan_retry`): the gate's retry in `confirm_condemned_marker` stamps the current round, later than `entry.condemn_round`, so `deleteConfirmedMeta(ref, entry.condemn_round)` skips it forever. Fix: pass the marker round the gate observed, or under A delete any `Condemned` marker below the current round.
+<!-- SECTION:NOTES:END -->
