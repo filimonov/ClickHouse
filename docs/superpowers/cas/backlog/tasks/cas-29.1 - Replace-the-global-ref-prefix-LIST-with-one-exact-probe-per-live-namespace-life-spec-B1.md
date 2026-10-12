@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-10-12 11:57'
+updated_date: '2026-10-12 12:06'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -71,4 +71,6 @@ First recorded: 2026-07-29 (539584ac324, by 'GC-DEFER-DECISION-LIST-COST')
 2031-triage CAS-035: the audit's 'a GC round fully lists `cas/ns/stream/` and retains every key in memory, also on rounds that then defer' is this LIST; the edge-run memory half is CAS-88.
 
 2026-10-12: after https://github.com/Altinity/ClickHouse/pull/2542 (CAS-359) the listing has two more consumers: `hintRefLogsWithinEpoch` hints only ids in `RefScanSummary::logs_by_life`, and the intake lookahead stops at the first id absent from `RefTableListing::logs`. Step 3's per-life LIST from the covered floor returns exactly the range the hinter needs (floor to `_ckpt.committed_through`), so build `logs_by_life` from it; the cost map's 'fold_ref_intake does not use the listing' no longer holds for the hints, the exact-key walk stays independent.
+
+2026-10-12, owner: step 3's per-life LIST is not needed for the fold either. Ids are dense from the cursor to `_ckpt.committed_through` within an epoch, and `{E,1}.prev_epoch_seal` gives each older epoch's last id by exact GET (one per epoch crossed). The hint bound of PR 2542 moves to that back-chain (CAS-359 AC #9), so the fold consumes no listing; what still reads `listing.snapshots` is the baseline guard (no cursor, no `_ckpt`) and the rebuild health check, which need their own exact-key source or B2's cleanup listing.
 <!-- SECTION:NOTES:END -->

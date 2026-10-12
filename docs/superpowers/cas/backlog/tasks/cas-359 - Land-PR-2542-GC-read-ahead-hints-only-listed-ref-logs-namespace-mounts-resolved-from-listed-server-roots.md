@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 11:57'
+updated_date: '2026-10-12 12:06'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -44,6 +44,7 @@ Review 2026-10-12 (verified against the PR head be3da0cd71f): decisions are unch
 - [ ] #6 CAS-357 fixed in the PR before merge: at minimum option (c), the fold's dead-precommit check keeps the probe-every-prefix lookup; the comments on `floorForNamespace`, `prefixEligible` and `floor_reads` claiming an unlisted root always retains are corrected
 - [ ] #7 A gtest pins the listed-but-404 arm of `floorForNamespace` with a counted read (`AbsentFloorRetainsEverythingWithOneLookup` now covers only the absent-from-LIST arm)
 - [ ] #8 Integration test: `SYSTEM STOP MERGES` before the restarts or assert on the orphan-sweep page counters, and prove an epoch-crossing walk ran under read-ahead (`epoch_crossings > 0` on the `fold_ref_intake` row of `cas_gc_log` after the last restart), since first-walk hints alone satisfy `hits > 0`
+- [ ] #9 The ref-log hint bound comes from `_ckpt.committed_through` and each epoch's `{E,1}.prev_epoch_seal`, not from the round's LIST (`listed` parameter, `logs_by_life` and the intake `binary_search` lookahead removed)
 <!-- AC:END -->
 
 ## Definition of Done
@@ -60,4 +61,6 @@ Review 2026-10-12 (verified against the PR head be3da0cd71f): decisions are unch
 Review 2026-10-12: own trace + independent ca-review (report tmp/pr2542/review-ca.md, local). Read-ahead half sound: caches results never decisions; listing sorted; lifetimes OK; no stale take possible (write-once keys, trimming only in phase 17). Blocking: CAS-357 (nested srids, fold dead-precommit skip). Prose to fix in the PR: CasGcReadAhead.h:28 dropped the bounded-exception clause and :33 says untaken hints are discarded (fold-intake hold and recovery-walk throw leave them to the destructor); CasKeyReader.h:47 misses the LIST-omits-a-durable-id case the PR's own test models.
 
 2026-10-12: the PR adds two consumers of the global ref-prefix LIST that the 2026-09-25 spec and gc-cost-map.md say do not exist: the hinter filters on `RefScanSummary::logs_by_life` and the intake lookahead stops at the first id absent from `RefTableListing::logs`. CAS-29.1 (spec B1) replaces that LIST with one exact GET per live life plus a per-life LIST from the covered floor; the floor-to-`committed_through` range the hinter needs is exactly that per-life tail, so B1 must feed the same listed set per life and keep the intake's exact-key walk independent of it. The ceiling `committed_through` already comes from the per-namespace `_ckpt` read (`readCheckpointWitnesses`), not from the LIST.
+
+2026-10-12, owner: the listed-ids filter is not needed. Ids are dense from the cursor to `_ckpt.committed_through` within the frontier's epoch, so the only ids arithmetic over-hints are those past a sealed older epoch's seal (one window, the 404s the PR counts as wasted). That bound is available by exact key: `{E,1}` of every epoch carries `prev_epoch_seal` (`crossEpochFromSeal`), so walking back from `committed_through.writer_epoch` to the cursor's epoch costs one GET per epoch crossed, on bodies the walk reads anyway, and gives every epoch's last id. Replace the `listed` parameter of `hintRefLogsWithinEpoch`, `logs_by_life` and the intake's `binary_search` lookahead with per-epoch seal bounds from the back-chain; then the hinter has no LIST input at all and B1 (CAS-29.1) has nothing extra to feed.
 <!-- SECTION:NOTES:END -->
