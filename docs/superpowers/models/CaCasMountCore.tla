@@ -298,8 +298,12 @@ CONSTANTS
                           \* `N + 1`: a foreign advance is told apart from our own write, and a
                           \* reacquire that sees one stops. FALSE in every pre-existing cfg: the new
                           \* actions are disabled, the new variables stay at their `Init` values.
-    SabReacquireRedecides \* FALSE = honest: a reacquire that saw a foreign advance stops. TRUE = it
+    SabReacquireRedecides,\* FALSE = honest: a reacquire that saw a foreign advance stops. TRUE = it
                           \* re-decides like a start and allocates again.
+    StragglerAdopt        \* FALSE = an incarnation's adopt is disabled while its allocation is in flight.
+                          \* TRUE = a renewal write already sent can land after the allocation, and the
+                          \* process's fence is latched lost from `AllocBegin` until its next claim:
+                          \* `Write` is disabled meanwhile.
 
 VARIABLES
     owner,        \* Actors \cup {None}; sticky once non-None
@@ -424,9 +428,8 @@ VARIABLES
     allocAmbig,       \* [Incs -> BOOLEAN]; the in-flight write's outcome is unclear to the caller
     allocStopped,     \* [Incs -> BOOLEAN]; a reacquire gave up: it saw a foreign advance
     reacqSawForeign,  \* [Incs -> BOOLEAN]; a reacquire saw the counter moved by another process
-    fenceLatched,     \* [Incs -> BOOLEAN]; set at `AllocBegin`, cleared only by the incarnation's next
-                      \* claim. A write needs an armed fence and only a claim of the local epoch arms
-                      \* it, so an allocation alone never grants writes: `Write` is disabled meanwhile.
+    fenceLatched,     \* [Incs -> BOOLEAN]; only with `StragglerAdopt`: set at `AllocBegin`, cleared by the
+                      \* next claim of the incarnation. `Write` is disabled while it is set.
     claimedAfterForeign \* history: TRUE once an incarnation claimed the mount after it saw a foreign
                         \* advance in reacquire mode (`ReacquireStopsOnForeignAdvance`)
 
@@ -809,6 +812,10 @@ GcFence ==
 \* observing a token to adopt with -- no `heldToken` needed.
 AdoptRead(a) ==
     /\ ~rejected[a] /\ ~wedged[a]
+    \* The allocation runs on the mount driver with the background renewal parked, so no adopt
+    \* write of the same process lands while an allocation is in flight. `StragglerAdopt` lifts
+    \* this: a renewal already sent when the park starts can still land.
+    /\ (StragglerAdopt \/ allocPend[a] = NoPend)
     /\ adoptObs[a] = None
     /\ mount # None
     /\ mount.uuid = Uuid(a)
@@ -870,6 +877,10 @@ AdoptWrite(a) ==
     LET selfCaused == mount # None /\ mount.uuid = Uuid(a) /\ mount.epoch = localEpoch[a] /\ ~mount.fenced
     IN
     /\ ~rejected[a] /\ ~wedged[a]
+    \* The allocation runs on the mount driver with the background renewal parked, so no adopt
+    \* write of the same process lands while an allocation is in flight. `StragglerAdopt` lifts
+    \* this: a renewal already sent when the park starts can still land.
+    /\ (StragglerAdopt \/ allocPend[a] = NoPend)
     /\ adoptObs[a] # None
     /\ IF mtoken = adoptObs[a]
        THEN /\ mtoken < MaxToken
@@ -969,7 +980,7 @@ Write(a) ==
     LET trulySuperseded == epoch > localEpoch[a]
     IN
     /\ CanWrite(a)
-    /\ ~fenceLatched[a]   \* an allocation alone does not arm the fence; only a claim does
+    /\ ~(StragglerAdopt /\ fenceLatched[a])   \* the mount fence is latched lost across a reallocation
     /\ wrote' = wrote \union {<< a, localEpoch[a] >>}
     /\ rootEmpty' = FALSE
     /\ lostThenWrote' = (lostThenWrote \/ localLost[a])
@@ -1555,7 +1566,7 @@ AllocBegin(a) ==
     /\ owner = Uuid(a) /\ epoch < MaxEpoch /\ (epoch > 0 \/ epochCeiling = 0)
     /\ ~(mount # None /\ mount.uuid = Uuid(a) /\ ~mount.fenced /\ OwnBody(a))
     /\ allocPend' = [allocPend EXCEPT ![a] = epoch]
-    /\ fenceLatched' = [fenceLatched EXCEPT ![a] = TRUE]
+    /\ fenceLatched' = [fenceLatched EXCEPT ![a] = StragglerAdopt \/ fenceLatched[a]]
     /\ UNCHANGED << epoch, epochCeiling, localEpoch, allocAmbig, allocStopped, reacqSawForeign,
                     claimedAfterForeign, allocFrame >>
 \* Our bytes after an unclear attempt are ours, even when another process that read the same value
