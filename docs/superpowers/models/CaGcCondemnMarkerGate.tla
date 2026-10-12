@@ -90,6 +90,20 @@
 (*                      (and today schedules its marker delete job).                  *)
 (*   AGoneDropsNow      A, sabotage of the two-pass rule: a body already Gone at the   *)
 (*                      first redelete pass deletes the marker in that same round.     *)
+(*   DeleteBoundRound   the marker delete a body delete schedules removes a Condemned   *)
+(*                      marker of any round below the deleting round, not only <= the  *)
+(*                      entry's round (`applyRedeleteOutcome` passes round - 1).       *)
+(*   TokenRecur         once per behaviour, the token of the last deleted incarnation  *)
+(*                      lands at the body again: an SDK resend of the same envelope    *)
+(*                      (CaBlobPublishCore SdkResend, CAS-361), onto an absent body.   *)
+(*   RecurOverwrite     the resend may also land over a present body (an unconditional *)
+(*                      PUT over a newer incarnation): CAS-361's own loss path.        *)
+(*   DeposedCut         the deposed attempt deletes only if its own cut, taken after it  *)
+(*                      read the published delete_pending entry, folded no edge        *)
+(*                      (GDeposedCut); FALSE: the delete may land at any time.         *)
+(*   OldWriter          writer 1 runs today's rule (absent marker: backfill Clean and  *)
+(*                      adopt) whatever FixMode the other writer runs: a rolling       *)
+(*                      upgrade.                                                       *)
 EXTENDS Naturals
 
 CONSTANTS
@@ -101,7 +115,8 @@ CONSTANTS
   RetryStampsCurrent, OutstandingReconcile, EtagIsContent, TrackRetry,
   MarkerPrefetch,
   SplitAdopt, FixMode, FixGuard, AKeepOnSpare, MetaDeleteFault, GoneDeleteAnyRound,
-  DeposedDelete, AGoneDropsNow
+  DeposedDelete, AGoneDropsNow,
+  DeleteBoundRound, TokenRecur, RecurOverwrite, OldWriter, DeposedCut
 
 NoTok == 0
 Writers == IF TwoWriters THEN {1, 2} ELSE {1}
@@ -129,13 +144,18 @@ VARIABLES
   mobs,        \* the graduation read-ahead's marker GET: taken this round, and the meta it returned
   wst,         \* per writer, SplitAdopt: "idle" | "headed" | "rehead" | "backfill" | "pub"
   hd,          \* per writer, SplitAdopt: the token its `HEAD` returned
-  dd_done      \* the one deposed redelete a behaviour may contain has happened
+  dd_done,     \* the one deposed redelete a behaviour may contain has happened
+  lastdel,     \* the token of the incarnation GC deleted last (NoTok: none yet)
+  rc_done,     \* the one token recurrence a behaviour may contain has happened
+  pgr,         \* DeleteBoundRound: the round that graduated the entry to pending (0 otherwise)
+  dcut         \* DeposedCut: the deposed attempt's own cut ("none" | "clear" | "folded") and the entry it saw
 
 vars == <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret,
           observed, observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, late, late_moved,
-          mobs, wst, hd, dd_done>>
+          mobs, wst, hd, dd_done, lastdel, rc_done, pgr, dcut>>
 
 WKeep == UNCHANGED <<wst, hd, dd_done>>
+RKeep == UNCHANGED <<lastdel, rc_done, pgr, dcut>>
 
 TypeOK ==
   /\ round \in 1..MaxRounds
@@ -153,6 +173,8 @@ TypeOK ==
   /\ wst \in [Writers -> {"idle", "headed", "rehead", "backfill", "pub"}]
   /\ hd \in [Writers -> 0..MaxGen]
   /\ dd_done \in BOOLEAN
+  /\ lastdel \in 0..MaxGen /\ rc_done \in BOOLEAN /\ pgr \in 0..MaxRounds
+  /\ dcut \in [st : {"none", "clear", "folded"}, tok : 0..MaxGen, cr : 0..MaxRounds]
 
 Init ==
   /\ round = 1 /\ cut_taken = FALSE /\ folded = FALSE
@@ -178,6 +200,7 @@ Init ==
   /\ wst = [w \in Writers |-> "idle"]
   /\ hd = [w \in Writers |-> NoTok]
   /\ dd_done = FALSE
+  /\ lastdel = NoTok /\ rc_done = FALSE /\ pgr = 0 /\ dcut = [st |-> "none", tok |-> NoTok, cr |-> 0]
 
 Fresh == next_gen <= MaxGen
 Cond == meta.st = "condemned"
@@ -226,9 +249,10 @@ WHead(w) ==
 
 (* `loadMeta`: Clean adopts the HEAD's token; Condemned publishes (resurrect); absent goes to
    the backfill today, to a second HEAD under B, to a publication under C. *)
-AbsentNext == IF FixMode = "B" THEN "rehead"
-              ELSE IF FixMode = "C" /\ FixGuard THEN "pub"
-              ELSE "backfill"
+AbsentNext(w) == IF OldWriter /\ w = 1 THEN "backfill"
+                 ELSE IF FixMode = "B" THEN "rehead"
+                 ELSE IF FixMode = "C" /\ FixGuard THEN "pub"
+                 ELSE "backfill"
 
 WMetaRead(w) ==
   /\ SplitAdopt
@@ -237,12 +261,12 @@ WMetaRead(w) ==
        THEN /\ adopted' = [adopted EXCEPT ![w] = hd[w]]
             /\ wst' = [wst EXCEPT ![w] = "idle"]
        ELSE /\ adopted' = adopted
-            /\ wst' = [wst EXCEPT ![w] = IF meta.st = "condemned" THEN "pub" ELSE AbsentNext]
+            /\ wst' = [wst EXCEPT ![w] = IF meta.st = "condemned" THEN "pub" ELSE AbsentNext(w)]
   /\ UNCHANGED <<dd_done, round, cut_taken, folded, body, meta, next_gen, seeded, edge, committed, ret, observed,
                  observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, hd>>
 
 (* B: the second `op.head(key)`. The same token goes on to the backfill; anything else starts
-   the next loop iteration. Without FixGuard the result is ignored. *)
+   the next loop iteration. Without FixGuard the result is ignored. An OldWriter never reaches it. *)
 WReHead(w) ==
   /\ SplitAdopt /\ FixMode = "B"
   /\ edge[w] = "landed" /\ wst[w] = "rehead"
@@ -481,6 +505,8 @@ GSettleGraduate ==
   /\ cut_taken /\ ret.st = "condemned" /\ ~folded /\ ret.cr < round /\ ~SupersedeDue
   /\ GateOK
   /\ ret' = [ret EXCEPT !.st = "pending", !.conf = TRUE, !.pconf = PersistConf]
+  /\ pgr' = IF DeleteBoundRound THEN round ELSE pgr
+  /\ UNCHANGED <<lastdel, rc_done, dcut>>
   /\ reg' = IF ~(~GateAlwaysReads /\ EffConfirmed) /\ GateMetaGuards THEN RegAdd(ret.tok, SeenMeta.cr) ELSE reg
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed, mdq, recon, dirty, touched, premeta,
@@ -541,6 +567,10 @@ GSettleSpareLoud ==
    that would carry it is already written, so a refusal leaks the body rather than risk it. *)
 DeleteRefused == DeleteReads /\ ~MetaGuards
 
+(* The bound `deleteConfirmedMeta` gets: `entry.condemn_round` today, the deleting round - 1
+   with DeleteBoundRound. *)
+DeleteBound == IF DeleteBoundRound THEN round - 1 ELSE ret.cr
+
 GSettleRedelete ==
   /\ cut_taken /\ ret.st = "pending" /\ ~folded /\ ~SupersedeDue
   /\ IF ~DeleteRefused /\ body.present /\ body.tok = ret.tok
@@ -554,7 +584,7 @@ GSettleRedelete ==
        THEN /\ meta' = meta /\ mdq' = mdq
        ELSE IF SplitMetaDelete
          THEN /\ meta' = meta
-              /\ mdq' = IF body.present /\ body.tok /= ret.tok THEN mdq ELSE mdq \cup {ret.cr}
+              /\ mdq' = IF body.present /\ body.tok /= ret.tok THEN mdq ELSE mdq \cup {DeleteBound}
          ELSE /\ meta' = IF body.present /\ body.tok = ret.tok THEN Absent ELSE meta
               /\ mdq' = mdq
   \* A: Removed or Gone keeps the entry as "gone" (still `delete_pending`, marker owed); Mismatch drops it.
@@ -563,6 +593,9 @@ GSettleRedelete ==
              THEN [ret EXCEPT !.st = "gone"]
              ELSE NoRet
   /\ reg' = RegForget(ret.tok)
+  /\ pgr' = pgr /\ dcut' = dcut
+  /\ lastdel' = IF TokenRecur /\ ~DeleteRefused /\ body.present /\ body.tok = ret.tok THEN ret.tok ELSE lastdel
+  /\ rc_done' = rc_done
   /\ EndRound
   /\ UNCHANGED <<folded, next_gen, seeded, edge, adopted, committed, recon, dirty, touched, premeta, mjob, sa_done>>
 
@@ -608,15 +641,47 @@ GMetaDeleteJob(c) ==
 
 (* A deposed attempt of an earlier round, before its losing gc/state CAS, runs the redelete of an
    entry the last committed pass published (`Gc::performRedeleteIo`): exact-token, so only the
-   entry's token. Today it then schedules the marker delete; under A it does not. *)
-GDeposedRedelete ==
+   entry's token. Today it then schedules the marker delete; under A it does not. Its bound c is
+   the entry's round, or with DeleteBoundRound its own round - 1. It saw the entry pending, so its
+   round is after the graduating round and not after the live one: c in pgr..round - 1. *)
+DeposedBounds == IF DeleteBoundRound THEN pgr..(round - 1) ELSE {ret.cr}
+
+GDeposedRedelete(c) ==
   /\ DeposedDelete /\ ~dd_done
+  /\ (~DeposedCut \/ dcut = [st |-> "clear", tok |-> ret.tok, cr |-> ret.cr])
   /\ ret.st = "pending" /\ body.present /\ body.tok = ret.tok
   /\ dd_done' = TRUE
   /\ body' = [present |-> FALSE, tok |-> NoTok]
-  /\ mdq' = IF FixMode = "A" THEN mdq ELSE mdq \cup {ret.cr}
+  /\ lastdel' = IF TokenRecur THEN ret.tok ELSE lastdel
+  /\ rc_done' = rc_done /\ pgr' = pgr /\ dcut' = dcut
+  /\ mdq' = IF FixMode = "A" THEN mdq ELSE mdq \cup {c}
   /\ UNCHANGED <<round, cut_taken, folded, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
                  observed_tok, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, wst, hd>>
+
+(* DeposedCut: the deposed attempt's `settleEntry` in-degree, from its own cut. The attempt read the
+   committed state that published the entry, so the cut postdates that commit. One cut per
+   delete_pending entry (token, condemn round). *)
+GDeposedCut ==
+  /\ DeposedDelete /\ DeposedCut /\ ~dd_done
+  /\ ret.st = "pending" /\ (dcut.st = "none" \/ dcut.tok /= ret.tok \/ dcut.cr /= ret.cr)
+  /\ dcut' = [st |-> IF \E w \in Writers : edge[w] = "landed" THEN "folded" ELSE "clear",
+               tok |-> ret.tok, cr |-> ret.cr]
+  /\ UNCHANGED <<lastdel, rc_done, pgr>>
+  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, wst, hd, dd_done>>
+
+(* TokenRecur: a publication request the SDK resends lands the identical envelope again after GC
+   deleted that incarnation (`S3::Client::doRequestWithRetryNetworkErrors` re-sending the PUT built
+   by `ObjectStorageBackend::publish`). The PUT is unconditional; without RecurOverwrite only a
+   landing on an absent body is modelled. *)
+WResend ==
+  /\ TokenRecur /\ ~rc_done /\ lastdel /= NoTok
+  /\ IF RecurOverwrite THEN body /= [present |-> TRUE, tok |-> lastdel] ELSE ~body.present
+  /\ body' = [present |-> TRUE, tok |-> lastdel]
+  /\ rc_done' = TRUE
+  /\ lastdel' = lastdel /\ pgr' = pgr /\ dcut' = dcut
+  /\ UNCHANGED <<round, cut_taken, folded, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, wst, hd, dd_done>>
 
 (* A deposed leader's condemn-marker write at its own (possibly old) round, or a marker an
    aborted attempt of the current round left behind. Confirms nothing the live leader reads. *)
@@ -658,45 +723,50 @@ LateMovedTrack ==
 LateStill == late' = late /\ LateMovedTrack
 
 Next ==
-  \/ Seed /\ LateStill /\ WKeep
-  \/ \E w \in Writers : WPrecommit(w) /\ LateStill /\ WKeep
-  \/ \E w \in Writers : WAdopt(w) /\ LateStill /\ WKeep
-  \/ \E w \in Writers : WHead(w) /\ LateStill
-  \/ \E w \in Writers : WMetaRead(w) /\ LateStill
-  \/ \E w \in Writers : WReHead(w) /\ LateStill
-  \/ \E w \in Writers : WBackfill(w) /\ LateStill
-  \/ \E w \in Writers : WPublish(w) /\ LateStill
-  \/ \E w \in Writers : WCommit(w) /\ LateStill /\ WKeep
-  \/ \E w \in Writers : WDrop(w) /\ LateStill /\ WKeep
-  \/ \E w \in Writers : WRespawn(w) /\ LateStill
-  \/ GCut /\ LateStill /\ WKeep
-  \/ GObserve /\ LateStill /\ WKeep
-  \/ GObserveMeta /\ LateStill /\ WKeep
-  \/ GMarkerJob /\ LateStill /\ WKeep
-  \/ GSettleCondemn /\ LateStill /\ WKeep
-  \/ GSettleIdle /\ LateStill /\ WKeep
-  \/ GSettleSpare /\ LateStill /\ WKeep
+  \/ Seed /\ LateStill /\ WKeep /\ RKeep
+  \/ \E w \in Writers : WPrecommit(w) /\ LateStill /\ WKeep /\ RKeep
+  \/ \E w \in Writers : WAdopt(w) /\ LateStill /\ WKeep /\ RKeep
+  \/ \E w \in Writers : WHead(w) /\ LateStill /\ RKeep
+  \/ \E w \in Writers : WMetaRead(w) /\ LateStill /\ RKeep
+  \/ \E w \in Writers : WReHead(w) /\ LateStill /\ RKeep
+  \/ \E w \in Writers : WBackfill(w) /\ LateStill /\ RKeep
+  \/ \E w \in Writers : WPublish(w) /\ LateStill /\ RKeep
+  \/ \E w \in Writers : WCommit(w) /\ LateStill /\ WKeep /\ RKeep
+  \/ \E w \in Writers : WDrop(w) /\ LateStill /\ WKeep /\ RKeep
+  \/ \E w \in Writers : WRespawn(w) /\ LateStill /\ RKeep
+  \/ GCut /\ LateStill /\ WKeep /\ RKeep
+  \/ GObserve /\ LateStill /\ WKeep /\ RKeep
+  \/ GObserveMeta /\ LateStill /\ WKeep /\ RKeep
+  \/ GMarkerJob /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleCondemn /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleIdle /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleSpare /\ LateStill /\ WKeep /\ RKeep
   \/ GSettleGraduate /\ LateStill /\ WKeep
-  \/ GSettleGraduateDeferred /\ LateStill /\ WKeep
-  \/ GSettleSupersede /\ LateStill /\ WKeep
-  \/ GSettleCarryRetry /\ LateStill /\ WKeep
-  \/ GSettleSpareLoud /\ LateStill /\ WKeep
+  \/ GSettleGraduateDeferred /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleSupersede /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleCarryRetry /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleSpareLoud /\ LateStill /\ WKeep /\ RKeep
   \/ GSettleRedelete /\ LateStill /\ WKeep
-  \/ GSettleGoneSpare /\ LateStill /\ WKeep
-  \/ GSettleGoneDelete /\ LateStill /\ WKeep
-  \/ GSettleSuppressed /\ LateStill /\ WKeep
-  \/ \E c \in mdq : GMetaDeleteJob(c) /\ LateStill /\ WKeep
-  \/ \E r \in 1..round : GStaleMarkerWrite(r) /\ LateStill /\ WKeep
-  \/ GRestart /\ LateStill /\ WKeep
-  \/ GDeposedRedelete /\ LateStill
-  \/ \E r \in 1..round : GStaleAttempt(r) /\ LateStill /\ WKeep
-  \/ \E w \in Writers : WReconcile(w) /\ LateMovedTrack /\ WKeep
-  \/ WLateLand /\ LateMovedTrack /\ WKeep
-  \/ WLateDie /\ LateMovedTrack /\ WKeep
+  \/ GSettleGoneSpare /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleGoneDelete /\ LateStill /\ WKeep /\ RKeep
+  \/ GSettleSuppressed /\ LateStill /\ WKeep /\ RKeep
+  \/ \E c \in mdq : GMetaDeleteJob(c) /\ LateStill /\ WKeep /\ RKeep
+  \/ \E r \in 1..round : GStaleMarkerWrite(r) /\ LateStill /\ WKeep /\ RKeep
+  \/ GRestart /\ LateStill /\ WKeep /\ RKeep
+  \/ \E c \in DeposedBounds : GDeposedRedelete(c) /\ LateStill
+  \/ \E r \in 1..round : GStaleAttempt(r) /\ LateStill /\ WKeep /\ RKeep
+  \/ \E w \in Writers : WReconcile(w) /\ LateMovedTrack /\ WKeep /\ RKeep
+  \/ WLateLand /\ LateMovedTrack /\ WKeep /\ RKeep
+  \/ WLateDie /\ LateMovedTrack /\ WKeep /\ RKeep
+  \/ WResend /\ LateStill
+  \/ GDeposedCut /\ LateStill
 
 Spec == Init /\ [][Next]_vars
 
 NoDangle == \A w \in Writers : committed[w] => body.present
+
+(* With OldWriter: the loss restricted to the new writer (writer 2). *)
+NoDangleNewWriter == TwoWriters => (committed[2] => body.present)
 
 (* Marker preservation: while a delete_pending entry's token is still the body, the key is
    Condemned; likewise for a condemned entry the gate would accept on its in-process record. *)

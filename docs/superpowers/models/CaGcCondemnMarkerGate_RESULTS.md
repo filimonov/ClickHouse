@@ -15,7 +15,7 @@ The PR1 configuration (gate always reads, no registry, retry stamps the current 
 
 Three violation rows are accepted residuals, not sabotage: `pm_g1_late_resolved_stale` and `pm_g1_late_gaveup` (a late Clean request that still matches the marker, spec sections 10.1 and 10.2 of `docs/superpowers/specs/2026-09-30-cas-gc-meta-delete-names-its-condemnation-design.md`) and `pm_g1_extdrop_noregistry` (an externally dropped edge, same spec, section 10.1). They show only that the model can find the loss PR1 does not close. `pm_g1_late_resolved_version` is green: it is the same schedule family with `EtagIsContent` FALSE (GCS), where the late request does not match recreated bytes.
 
-CAS-360: with the adopter's `HEAD` and marker `GET` split (`SplitAdopt`), today's protocol loses data (`cur_headget`, `violation:NoDangle`). Candidates A (deferred marker delete), B (second `HEAD`) and C (republish on absent marker) are green; each sabotage row violates `NoDangle`. See [CAS-360](#cas-360).
+CAS-360: with the adopter's `HEAD` and marker `GET` split (`SplitAdopt`), today's protocol loses data (`cur_headget`, `violation:NoDangle`). Candidates A (deferred marker delete), B (second `HEAD`) and C (republish on absent marker) are green; each sabotage row violates `NoDangle`. See [CAS-360](#cas-360). Chosen fix C with the `round - 1` marker-delete bound is green with every fault switch (`fix_C_bound`) and with token recurrence (`fix_C_recur`); B goes red under recurrence (`fix_B_recur`); a rolling upgrade with an old writer loses data (`mixed_old`, `mixed_new`). See [Fix C](#cas-360-fix-c).
 
 ## Checker and finite scope {#checker-and-finite-scope}
 
@@ -267,8 +267,72 @@ Pre-existing rows in the same battery run (`run_condemnmarker.sh`, all 51 rows, 
 - Cost for C: same branch; an absent marker costs a full body upload instead of a `PUT` of the marker. Absent markers occur on blobs whose marker create failed and in this race, so the volume is small, but each one is a body upload.
 - `AKeepOnSpare` is optional: without it a spared writer that aborts before republishing leaves a `Condemned` marker over no body. The next writer of the hash republishes and reconciles it to `Clean`, so it is a leak only for hashes never written again.
 
+### Fix C with the round − 1 marker-delete bound {#cas-360-fix-c}
+
+Decision on CAS-360: C (only a `Clean` marker read after the `HEAD` permits adoption; an absent marker republishes), plus a marker-delete bound change: `Gc::applyRedeleteOutcome` passes the deleting round − 1, so `deleteConfirmedMeta` removes any `Condemned` marker with round below the deleting round.
+
+New switches, all inert in every older cfg:
+
+| Constant | Meaning |
+|---|---|
+| `DeleteBoundRound` | the body delete queues the marker delete with bound `round - 1`, not `entry.condemn_round`; a deposed attempt's bound is any round from the graduating round (`pgr`) to `round - 1` |
+| `DeposedCut` | the deposed attempt deletes only if its own cut (`GDeposedCut`, taken after it read the published `delete_pending` entry) folded no edge; `FALSE` keeps the older "delete at any time" |
+| `TokenRecur` | once per behaviour, the last deleted token lands at an absent body again (`WResend`: SDK resend of the same envelope, `CaBlobPublishCore:SdkResend`) |
+| `RecurOverwrite` | the resend may also land over a present body (an unconditional `PUT` over a newer incarnation) |
+| `OldWriter` | writer 1 keeps today's rule (absent marker: backfill `Clean`, adopt) whatever `FixMode` writer 2 runs |
+
+New invariant `NoDangleNewWriter`: `NoDangle` restricted to writer 2 (the upgraded writer).
+
+Runs, same checker and settings as [Runs](#cas-360-runs). `_all` faults = `pm_g1_all_noregistry` (`PersistConf`, `Prefetch`, `StaleMarkers`, `StaleAttempts`) plus `MetaDeleteFault` and `DeposedDelete`. `TrackRetry` is `FALSE` with `StaleMarkers` on, as in `fix_republishC_all`: a stale `Condemned(1)` over a retried `Condemned(3)` entry trips `NoWedgedCarry` with no loss. Recurrence rows check `TypeOK`, `NoDangle`, `NoWedgedCarry` only: `MarkerPreservedPending` and `JobSparesPendingGuard` assume a deleted token never returns.
+
+| Cfg | Expected | Observed | Distinct | Seconds | Note |
+|---|---|---|---:|---:|---|
+| `fix_C_bound` | green | `green` | 38,143,455 | 437 | C + bound, `_all` faults, `DeposedCut`; `MaxRounds 5` |
+| `fix_C_bound_coarse` | violation | `violation:NoDangle` | 1,744,912 | 11 | same with `DeposedCut = FALSE`; see below |
+| `fix_C_nobound_coarse` | violation | `violation:NoDangle` | 1,220,605 | 8 | same loss with today's bound: not caused by the bound |
+| `sab_C_orphan_retry` | violation | `violation:OrphanTracked` | 20,982 | 1 | C, `cur_orphan_retry` faults, today's bound: the leak stays |
+| `fix_C_orphan_retry` | green | `green` | 5,446,479 | 32 | C + bound, `cur_orphan_retry` faults, with `OrphanTracked` |
+| `fix_C_bound_orphan` | green | `green` | 12,422,602 | 75 | C + bound + `DeposedDelete` (coarse), with `OrphanTracked` |
+| `fix_B_bound_deposed` | green | `green` | 27,876,625 | 431 | B + bound + `DeposedDelete` + `DeposedCut`, control for `fix_B_recur` |
+| `fix_B_recur` | violation | `violation:NoDangle` | 452,971 | 2 | B + bound + `DeposedCut` + recurrence onto an absent body |
+| `fix_C_recur` | green | `green` | 63,681,175 | 777 | C + bound + `_all` faults + `DeposedCut` + recurrence onto an absent body; `MaxRounds 5` |
+| `fix_C_recur_any` | violation | `violation:NoDangle` | 1,113,017 | 7 | recurrence over a present body: CAS-361's own loss, no adoption involved |
+| `mixed_old` | violation | `violation:NoDangle` | 50,157 | 1 | writer 1 old, writer 2 C: the old writer's own adoption |
+| `mixed_new` | violation | `violation:NoDangleNewWriter` | 193,244 | 2 | the upgraded writer adopts on the old writer's `Clean` |
+
+Regression: every older row of `run_condemnmarker.sh` (61 rows with the new ones, run under `flock tmp/tlc.lock`, `ALL EXPECTATIONS MET`) keeps its result, and every older green row keeps its distinct-state count; the new switches and variables are constant when off. Distinct counts of violation rows vary between runs with the worker interleaving; trace lengths do not.
+
+All rows: TLC `2026.07.18.145032`, 4 workers, two writers, `MaxGen 3`, `MaxRounds 7`, except `fix_C_bound` and `fix_C_recur` at `MaxRounds 5`. At `MaxRounds 7` and `6` `fix_C_bound` hit the 1200 s limit; the `MaxRounds 6` run explored 96,482,377 distinct states with no violation before the cutoff. `MaxRounds 5` still holds the full CAS-360 schedule (condemn, graduate, delete, a writer in the gap) plus one more round.
+
+**The bound closes the `cur_orphan_retry` leak.** Under C with today's bound, `sab_C_orphan_retry` keeps the leak: the gate's retry stamps `Condemned(2)`, the queued delete carries `entry.condemn_round = 1` and skips it. With `round - 1` the delete covers every round the gate could have stamped before the deleting round, and `OrphanTracked` holds (`fix_C_orphan_retry`). It also holds with a deposed delete, whose bound is its own round − 1, at least the graduating round (`fix_C_bound_orphan`). With `MetaDeleteFault` the leak of a failed job (`cur_orphan`) remains; the bound does not retry.
+
+**The bound is safe.** Every later condemnation stamps a round `>= round`, above any queued bound, so a queued delete cannot remove a newer guard. `fix_C_bound` and `fix_C_recur` check that with every fault switch on.
+
+**`fix_C_bound_coarse`: a loss outside CAS-360 that needs a deposed delete with no cut.** 19 states:
+
+1. W1 publishes T2 and reconciles it `Clean`; W1 drops.
+2. Round 1 condemns T2; the async marker write is lost. The marker stays `Clean`.
+3. Round 2 cut. W2 precommits after it, `HEAD` returns T2, `GET` returns `Clean`, W2 adopts T2 and commits (C permits this: `Clean` after the `HEAD`).
+4. A stale marker write (`GStaleMarkerWrite`: a deposed leader's late condemn `PUT`) writes `Condemned(1)`.
+5. Round 2's gate reads `Condemned(1)` and graduates T2 to `delete_pending`.
+6. A deposed attempt deletes T2 with no cut of its own: W2's committed edge dangles.
+
+The same trace is red with today's bound (`fix_C_nobound_coarse`) and does not depend on the candidate: W2 adopts on `Clean`, which A, B and C all permit. It needs `DeposedDelete` to delete without consulting in-degree. A real deposed attempt reads the committed state that published the entry, then takes its cut, then runs `settleEntry`, so W2's edge (landed before that commit) is folded and the entry spared. `DeposedCut` models that order (one cut per `delete_pending` entry, keyed by token and condemn round) and `fix_C_bound` is green. A first version that kept one cut per behaviour let a cut taken for an earlier entry license the delete of a later one; that false red is why the cut carries the entry's key. Open for the code: confirm that a deposed attempt's redelete is always behind its own `settleEntry` in-degree on a cut taken after it loaded `gc/state`. If any path deletes a `delete_pending` body without that cut, this trace is a real loss independent of CAS-360.
+
+**C does not depend on CAS-361; B does.**
+
+- `fix_C_recur` is green with a deleted token re-landing on an absent body. C never adopts on an absent marker, and a `Clean` marker is written only by a reconcile after a fresh publication, which the resend cannot fake.
+- `fix_B_recur`, 19 states. Round 2 graduates T1 (`Condemned(1)`). Round 3: a deposed attempt takes its cut (no edges), then W precommits and its `HEAD` returns T1. The deposed attempt deletes T1 and queues the marker delete, which runs. W's `GET` finds no marker. The SDK resend re-lands T1 on the empty key. W's second `HEAD` returns T1, the same token, so W backfills `Clean` and adopts T1. The live redelete of round 3 (cut before W's precommit) deletes T1 again. B's argument "same token at the second `HEAD` means not deleted in between" fails once a token can recur.
+- `fix_C_recur_any` is red for every candidate. The resend overwrites W's fresh T2 with T1, and the pending entry's exact-token redelete removes it. This is the CAS-361 loss itself; C neither causes nor closes it.
+
+**Rolling upgrade: one old writer, one C writer.** Both rows use the `pm_g1_live` faults with the new bound and no deposed delete.
+
+- `mixed_old`, 15 states: the old writer's own adoption, the `cur_headget` trace. W1 (old) `HEAD`s T1; the redelete removes T1, the queued job removes `Condemned(1)`; W1's `GET` finds no marker, backfills `Clean`, adopts T1, commits.
+- `mixed_new`, 18 states: the residual. W1 (old) and W2 (C) both precommit after round 3's cut and `HEAD` T1. The redelete removes T1; the job removes the marker. W1 backfills `Clean` over the empty key and adopts. W2's `GET` reads that `Clean` and adopts T1 (C trusts any `Clean` read after its `HEAD`). W2 commits a dangling edge.
+- Exposure bound: the mixed-version loss needs an old writer in the same `HEAD`→`GET` window on the same hash, and the upgraded writer loses only through a `Clean` that an old writer backfilled. With no old writer left, nothing writes `Clean` over an empty key (`fix_C_bound`).
+
 ### Not shown {#cas-360-not-shown}
 
-- Token recurrence (CAS-361, a resent publication restoring an old token): not modelled here; see `CaBlobPublishCore`. B's argument uses token uniqueness.
+- Token recurrence onto a present body (`fix_C_recur_any`) is CAS-361's loss, closed by CAS-361 (single-attempt object creation), not by any CAS-360 candidate. A's two-pass rule was not checked with recurrence.
 - The `HEAD (expect gone)` of A's second pass is not a separate step; with unique tokens a body-gone entry's token does not come back.
 - A redelete `Mismatch` on the second pass (a republished body) is folded into `deleteConfirmedMeta`'s conditional delete, which leaves the republisher's `Clean` alone.

@@ -66,6 +66,18 @@ CONFIGS=(
     "fix_reheadB_deposed          green      -"
     "fix_republishC_deposed       green      -"
     "fix_deferA_keepany_deposed_safe green   -"
+    "sab_C_orphan_retry           violation  OrphanTracked"
+    "fix_C_orphan_retry           green      -"
+    "fix_C_bound_orphan           green      -"
+    "fix_C_bound                  green      -"
+    "fix_C_bound_coarse           violation  NoDangle"
+    "fix_C_nobound_coarse         violation  NoDangle"
+    "fix_B_bound_deposed          green      -"
+    "fix_B_recur                  violation  NoDangle"
+    "fix_C_recur                  green      -"
+    "fix_C_recur_any              violation  NoDangle"
+    "mixed_old                    violation  NoDangle"
+    "mixed_new                    violation  NoDangleNewWriter"
 )
 
 selected()
