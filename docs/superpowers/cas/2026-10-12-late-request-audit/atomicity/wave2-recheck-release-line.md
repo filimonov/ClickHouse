@@ -9,7 +9,7 @@ Paths relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed
 | CAS-380 | EXISTS, same order, 3 sites | None demonstrated | No |
 | CAS-381 | DIFFERENT SHAPE: the mid-FORGET re-arm | Writes admitted after FORGET began. No loss shown | No |
 
-## CAS-378: a delayed insertion republishes a retired life
+## CAS-378: a delayed insertion republishes a retired life {#cas-378}
 
 **Interleaving** (`Pool/CasRefLedger.cpp`):
 1. Reader R runs `acquireReadableRefTableRuntime` (614). It finds no resident runtime and takes the cold path. The first and second catalog GETs both see the row `Live` for life L. No lock is held across the GETs.
@@ -38,7 +38,7 @@ The cold mutable path has the same gap. `namespaceLife` (4919) does one catalog 
 - The cold paths capture that sequence before the first GET. `acquireRefTableRuntime` refuses with retry-later if it moved or if `life` is retired.
 - Also: warm `namespaceLife` refuses a runtime whose recovered state is terminal.
 
-## CAS-379: build liveness is checked only at entry
+## CAS-379: build liveness is checked only at entry {#cas-379}
 
 **Cancel form** (`Pool/CasPartWriteTxn.cpp:702`, `Pool/CasRefLedger.cpp:2040`):
 1. `precommitAdd` calls `requireAlive` (704), records its intent, then `appendRefOps` → `acquireMutableRefTableRuntime` → `namespaceLife`.
@@ -74,7 +74,7 @@ No committed loss: a promote in L2 needs a precommit in L2, and the sticky `canc
 - Also require `rt->life` to equal the life `requireAlive` admitted, captured at build start.
 - Make the stale sweep's flag clear on completion, not on start, and serialize concurrent callers behind it.
 
-## CAS-380: `Faulted` is published before the fence trips
+## CAS-380: `Faulted` is published before the fence trips {#cas-380}
 
 The same order exists at three sites on the release line. Each publishes `lane_state = Faulted` under `state_mutex`, releases it, and only then calls `on_impossible_interference`:
 - `resolveWedgeOnce` foreign occupant: 2530, then 2639.
@@ -96,7 +96,7 @@ The reaction is `Pool::reportImpossibleInterference` (`Pool/CasPool.cpp:1758`). 
 - In `commitRefChunk`, call it before taking the lock.
 - Log, event and remount scheduling follow.
 
-## CAS-381: terminal-latch admission window
+## CAS-381: terminal-latch admission window {#cas-381}
 
 `openAfterReacquire` and `latchMountEnd` do not exist on the release line, so the series' interleaving cannot occur. The analogous window is the mid-FORGET re-arm, which the code documents (`Pool/CasPool.cpp:1167-1177`, 1376-1383):
 1. `forgetDisk` (1125) calls `publishVanishedIntent` and then `tripMountLost` (trip 1, at 1159).
