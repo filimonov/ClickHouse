@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:35'
+updated_date: '2026-10-12 11:52'
 labels:
   - 'area:fsck'
   - 'area:observability'
@@ -15,6 +15,7 @@ labels:
   - 'confidence:solid'
   - 'needs:decision'
   - 'origin:2031-triage'
+  - 'origin:noclock-audit'
 milestone: m-7
 dependencies: []
 references:
@@ -59,4 +60,8 @@ Provenance: BACKLOG/operability-and-introspection.md#fsck-meta-body-counters-unr
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (4268978c8f7, by 'fsck-meta-body-counters-unrendered')
+
+2026-10-12 noclock audit (tmp/noclock/audit/SUMMARY.md#orphan-meta): `meta_without_body` is reachable without a bug — a failed advisory marker delete after a body delete is swallowed (`GcMetaWriter::submit`) and the entry is dropped; nothing sweeps it. The fsck comment claiming the lifecycle never leaves an orphan marker is wrong; report it as a warning. Closed for good by the deferred-marker-delete task.
+
+Closed for good by CAS-360.
 <!-- SECTION:NOTES:END -->

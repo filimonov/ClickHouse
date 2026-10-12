@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-30 13:23'
+updated_date: '2026-10-12 11:51'
 labels:
   - 'area:gc'
   - 'complexity:trivial'
@@ -14,6 +14,7 @@ labels:
   - 'confidence:solid'
   - 'origin:otel-demo-audit'
   - 'origin:canary'
+  - 'origin:noclock-audit'
 milestone: m-1
 dependencies:
   - CAS-30
@@ -72,4 +73,6 @@ Identifier trace: the earliest docs mention of `CasBlobInDegree` is 2026-07-01 (
 - The safety argument of spec `2026-09-29-cas-gc-request-cuts-design.md` §2 needs 'a marker leaves Condemned only after its condemned token is deleted or displaced'. CAS-30 breaks that premise (`docs/superpowers/reports/2026-09-30-cas-30-stale-meta-delete-adjudication.md`), so a confirmation must not outlive the process that made it until CAS-30 is fixed. Hence the dependency.
 - No stand run reached the change: it needs a restart or a leader change while rows are carried (`docs/superpowers/reports/2026-09-30-cas-gc-request-cuts/01-before-after-10s-rounds.md`, T3). Its value is unmeasured; do not re-add it without a scenario that shows one.
 - The model `docs/superpowers/models/CaGcCondemnMarkerGate.tla` was extended for it (c9c4fa54bf0, e44bbef587e) but deletes body and meta atomically, so it cannot see the CAS-30 schedule.
+
+2026-10-12 noclock audit: `marker_confirmed` is never read by released builds and `delete_pending` is always written with it (26.6.4 included), so `(delete_pending=1, marker_confirmed=0)` is an unused combination; keep this in mind before giving the bit a new meaning.
 <!-- SECTION:NOTES:END -->

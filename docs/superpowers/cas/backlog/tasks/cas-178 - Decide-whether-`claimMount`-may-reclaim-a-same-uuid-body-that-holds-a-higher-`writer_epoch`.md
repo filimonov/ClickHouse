@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-10-12 11:52'
 labels:
   - 'area:mounts'
   - 'area:ref-ledger'
@@ -16,6 +16,7 @@ labels:
   - 'confidence:speculative'
   - 'needs:decision'
   - 'origin:review'
+  - 'origin:noclock-audit'
 milestone: m-8
 dependencies: []
 references:
@@ -61,4 +62,8 @@ Provenance: BACKLOG/ref-protocol.md#ref-protocol-rev6 [MOUNT-CLAIM-EPOCH-REGRESS
 First recorded: 2026-07-29 (a4fcc6b3e56, by 'MOUNT-CLAIM-EPOCH-REGRESSION')
 
 2026-10-08: decided. A same-uuid body with a higher `writer_epoch` is never replaced (ABORTED); implemented in https://github.com/Altinity/ClickHouse/pull/2512.
+
+2026-10-12 noclock audit (tmp/noclock/audit/mount.md, tmp/noclock/audit/reflog.md R11/R12): reclaiming for a different-but-lower epoch is reachable and harmful (false `SupersededEpoch` certificates; a lower-epoch mount wedges a table its epoch was already sealed in). Answer: never reclaim a higher epoch. Implementation tracked in the epoch-monotone task.
+
+Implementation tracked in CAS-364.
 <!-- SECTION:NOTES:END -->

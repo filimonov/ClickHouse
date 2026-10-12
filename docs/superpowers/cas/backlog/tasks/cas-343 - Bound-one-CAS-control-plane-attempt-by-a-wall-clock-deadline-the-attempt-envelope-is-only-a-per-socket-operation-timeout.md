@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-02 05:58'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-10-12 11:51'
 labels:
   - 'area:mounts'
   - 'area:requests'
@@ -15,6 +15,7 @@ labels:
   - 'confidence:solid'
   - 'needs:repro'
   - 'origin:review'
+  - 'origin:noclock-audit'
 milestone: m-8
 dependencies: []
 priority: high
@@ -65,4 +66,6 @@ Study: `tmp/issue-2431/ux/q2-request-deadline.md` (phase table with file, functi
 2026-10-02: the study behind this task is in `docs/superpowers/cas/2026-10-02-mount-lease-settings-studies.md` (section Q2, phase table with file, function and line per claim); the consequence for the write reserve and the settings is in `docs/superpowers/specs/2026-10-02-cas-mount-lease-settings-ux-notes.md` (Answers). A companion audit there (Q1) found that the second envelope of the write reserve is not needed for safety by itself but is today's only slack against an attempt that overruns its envelope: do not reduce the reserve before this task lands.
 
 2026-10-08: deferred by the owner. The transport wall-clock deadline (series item 17b) is not being done now; `cas_request_deadline_ms` does not exist.
+
+2026-10-12 noclock audit (tmp/noclock/audit/transport.md): unbounded within one attempt today — trickling response, `100-continue` + slow body, conditional multipart writes (`FoldSeal`/`GcOutcomes` up to 256 MiB, ≤18 requests under one 16 s reserve), two redirect loops of up to 11 resends (`Client::doRequest`, Poco 307), reconnect-and-rewrite in `HTTPClientSession::write`; no `SO_LINGER{1,0}` or `TCP_USER_TIMEOUT` anywhere, so the kernel sends buffered bytes after abort. Design: `mount_fence.deadline_boot_ms` already exists; hook via `IHTTPSessionDataHooks::atStart` (check before every send, clamp timeout, linger+user-timeout at the boundary), combined hook because `PooledConnection::sendRequest` overwrites hooks; ~170 lines in `src/`, nothing in `base/poco`. Counter `CASTransportSendAfterDeadline` first, then abort. Would let us drop `E` as the reserve unit and both `validateCasRequestBudget` inequalities (keep `P + M < L`); writes until ~27 s instead of 14 s. Open: thread-local scope misses parallel `publish`/`stream`; clamped timeout vs `SSL_write`; Linux-only `TCP_USER_TIMEOUT`.
 <!-- SECTION:NOTES:END -->

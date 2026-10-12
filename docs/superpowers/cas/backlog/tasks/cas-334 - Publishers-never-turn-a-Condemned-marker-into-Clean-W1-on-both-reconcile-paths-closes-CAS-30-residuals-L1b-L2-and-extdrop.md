@@ -6,10 +6,11 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-30 21:59'
-updated_date: '2026-10-07 20:29'
+updated_date: '2026-10-12 11:52'
 labels:
   - cas
   - gc
+  - 'origin:noclock-audit'
 dependencies:
   - CAS-30
 priority: high
@@ -43,4 +44,8 @@ Fix: the publisher never turns `Condemned` into `Clean`, on both paths of `recon
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-07: issue https://github.com/Altinity/ClickHouse/issues/2486 (graduation read-ahead accepts the marker copy, not a GET at the gate) is the same residual seen from the gate side: model flag `MarkerPrefetch` (363b4193634) shows the read-ahead adds no loss class, the only violation is extdrop (10.1). This task closes it for good — after it a publisher never writes Clean over Condemned, so the age of the gate's read stops mattering. Comment-only follow-up: CAS-345.
+
+2026-10-12 noclock audit (tmp/noclock/audit/meta.md): CAS-334 closes S4–S7 (incl. extdrop and a late-applied `Clean`) but needs a GC companion: on the base GC never clears `Condemned` from a live hash (it removes the marker only after the body is gone), so after a resurrection every later writer re-uploads for the content's lifetime; "until GC settles the entry" in this task is wrong for the base. Companion: GC deletes the marker on spare/`Replaced`. The separate HEAD/GET race (S9) is its own task.
+
+Wave 2 (tmp/noclock/atomicity/w2-gc.md finding 1, inferred): the conflict-retry RMW in `reconcileMetaClean` clears a newly observed `Condemned` without republishing; after namespace removal cancels the task, GC condemns the body, the resumed task clears the marker, another writer adopts, exact deletion removes its body. Guard: never clear a newly observed `Condemned` without republishing afterwards; propagate cancellation into task admission. Deferred marker delete is CAS-360.
 <!-- SECTION:NOTES:END -->

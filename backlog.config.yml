@@ -47,6 +47,7 @@ labels:
   - "origin:soak"
   - "origin:review"
   - "origin:issue"
+  - "origin:noclock-audit"
 definition_of_done:
   - "CAS* gtest gate green (utils/cas-gate); LOGICAL_ERROR expectations are death tests"
   - "ASan lane green for touched suites"

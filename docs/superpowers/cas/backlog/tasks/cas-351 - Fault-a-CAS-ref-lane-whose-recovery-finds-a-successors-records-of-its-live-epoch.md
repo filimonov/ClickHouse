@@ -6,12 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 16:49'
+updated_date: '2026-10-12 11:51'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
   - 'risk:medium'
   - 'confidence:solid'
   - 'origin:review'
+  - 'origin:noclock-audit'
 milestone: m-8
 dependencies: []
 priority: medium
@@ -39,3 +41,9 @@ ordinal: 445000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12 noclock audit (tmp/noclock/audit/reflog.md R10–R12): recovery reading a successor's history is harmless by itself (R10; codex agrees, U12 dropped). The harmful branch is R11: a mount whose own epoch is already sealed by a higher mount derives `(E,k+1)` above its seal; `checkRefCkptInvariants` refuses, the table wedges with a false `CORRUPTED_DATA`. Writer gate: reject when `last_epoch_seal.writer_epoch >= live_epoch` (~15 lines). Trigger (a) is the lower-epoch reclaim (CAS-178).
+<!-- SECTION:NOTES:END -->
