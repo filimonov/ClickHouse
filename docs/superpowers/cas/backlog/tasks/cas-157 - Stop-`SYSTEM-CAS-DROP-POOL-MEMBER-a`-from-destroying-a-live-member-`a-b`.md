@@ -4,7 +4,7 @@ title: Stop `SYSTEM CAS DROP POOL MEMBER 'a'` from destroying a live member `a/b
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-10-12 10:22'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -16,12 +16,8 @@ labels:
 milestone: m-8
 dependencies: []
 references:
-  - >-
-    src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Tools/CasDecommission.cpp
-  - >-
-    src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.h
-  - src/Disks/tests/gtest_cas_decommission.cpp
-priority: medium
+  - 'https://github.com/Altinity/ClickHouse/pull/2542'
+priority: high
 type: bug
 ordinal: 203000
 ---
@@ -39,6 +35,8 @@ Options: exact-srid selection plus a refusal when another member's srid is prefi
 validation (cheaper, removes the multi-segment layouts).
 
 Provenance: BACKLOG/mounts-and-lifecycle.md#nested-srid-decommission (2031-triage CAS-007). Found by code reading, not observed, so priority is capped at Medium. Verified 2026-09-26 against b1c34d03479 (cas-gc-rebuild) and 0dbbd797792 (altinity/antalya-26.6).
+
+2026-10-12: the same nesting reaches normal background GC after https://github.com/Altinity/ClickHouse/pull/2542 (CAS-359): the fold's dead-precommit check can skip a live precommit's only `+1` edge of a freshly mounted `a/b` (CAS-357, blob loss when the part shares blobs with `a`). Forbidding nesting at the owner claim in both directions closes CAS-157, CAS-357 and the `ownsNamespace` prefix rule at once; it is now the preferred option. Priority raised from Medium.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

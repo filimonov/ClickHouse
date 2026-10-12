@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 09:58'
+updated_date: '2026-10-12 10:22'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -16,7 +16,8 @@ labels:
   - 'origin:review'
   - 'risk:high'
 milestone: m-8
-dependencies: []
+dependencies:
+  - CAS-157
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2542'
   - >-
@@ -46,6 +47,8 @@ Pre-existing nesting hazards outside GC: `ownsNamespace` and decommission's `vic
 Fix options: (a) reject nested ids at the owner claim, both directions, in the emptiness check, and document it next to `cas_server_root_id`; closes the GC, decommission and `ownsNamespace` hazards. (b) never fall through past an unlisted longer prefix: restores the old GETs for every namespace, defeats the PR. (c) keep the listed-only lookup for the sweep page (backstopped by `NoCoverage`) and leave the fold's dead-precommit check on the probe-every-prefix lookup; it fires only on absent-body precommits, so its cost is negligible. Recommended: (c) in PR #2542 now, (a) as the durable fix.
 
 Found in the review of PR #2542 on 2026-10-12 (head be3da0cd71f, base antalya-26.6 @ 0f732b6b697); independent ca-review confirmed the fold path and traced the blob-loss consequence.
+
+The ban on nested ids was already proposed, not decided, in CAS-157 (2031-triage CAS-007, decommission side, filed 2026-08-21, still To Do with `needs:decision`). Option (a) above is CAS-157's second option; this task depends on it for the durable fix and keeps only the GC-side change (option (c)) for PR #2542.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
