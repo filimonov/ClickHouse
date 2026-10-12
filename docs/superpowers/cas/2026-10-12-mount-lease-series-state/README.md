@@ -86,6 +86,10 @@ Model commits since 2026-09-20 on the models above. "Revert" is the commit on `c
 
 Not series, left as they are: `CaGcCondemnMarkerGate` (`c9c4fa54bf0` … `b483e4ea41c`), `CaBlobPublishCore` (`0acdf9c7939`), `CaGcRootLocalPartManifestCore` (`a385db56107`, `eae836fd008`, `d864fe01b7c`), `CaEpochAllocCore`.
 
+### Batteries after the reverts {#models-batteries}
+
+All five restored models pass their full batteries on `cas-gc-rebuild` after the reverts (4 workers, `-Xmx8g`, `nice 10`, 1200 s per row): `run_disklifecycle.sh` 7/7, `run_reflane.sh` 28/28, `run_mountrenewretry.sh` 17/17, `run_mountobserve.sh` 20/20, `run_mount.sh` all rows (1342 s in total) — every row meets its recorded expectation.
+
 ### Re-applying a series PR's models when it merges {#models-reapply}
 
 Revert that PR's revert commits from the table, oldest series commit first (bottom of the revert order up):
