@@ -25,7 +25,7 @@ ordinal: 468000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Lease length is per server. On the base and on the lease-series tip `3b4037ae265`, `mountObservationThresholdMs` uses the observer's own TTL: holder TTL 180 s, observer TTL 60 s with 10 s cadence fences an unchanged token after 73 s while the holder may still write until 180 s. `CaMountObserveCore` already waits the longer lease, so the model hid the code gap (verified by codex, tmp/noclock/atomicity/w1-mount.md). PR #2516 (lease series PR 2 v2) fixes it and is not in the base nor in the 9a–16 chain.
+Lease length is per server. On the base and on the lease-series tip `3b4037ae265`, `mountObservationThresholdMs` uses the observer's own TTL: holder TTL 180 s, observer TTL 60 s with 10 s cadence fences an unchanged token after 73 s while the holder may still write until 180 s. `CaMountObserveCore` already waits the longer lease, so the model hid the code gap (verified by codex, docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w1-mount.md). PR #2516 (lease series PR 2 v2) fixes it and is not in the base nor in the 9a–16 chain.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

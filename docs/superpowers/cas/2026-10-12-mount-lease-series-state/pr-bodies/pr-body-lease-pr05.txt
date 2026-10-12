@@ -1,0 +1,62 @@
+`probeSentinel` threw "gave up at the policy deadline" when the jittered pause before a reissue ended exactly on the policy deadline, although a probe had already run and its outcome was known. The loop now keeps the last probe outcome and returns it when the deadline is reached after a probe.
+
+**Why it matters**
+
+The sentinel probe is the typed, cache-bypassing read of the keys whose presence is an authoritative fact about the pool (`_pool_meta`, the owner anchor, the mount slot). It never conflates a transport failure with absence: `Indeterminate` means "nothing is known", and every consumer treats it fail-closed. Turning a known `Indeterminate` into a give-up exception on the boundary loses that information: the caller cannot tell "no probe ran" from "a probe ran and was inconclusive". The pre-sleep check accepts a pause that ends exactly on the deadline (one millisecond out of the 0–5000 ms jitter draw), so about one reissue in five thousand hit the loop-head give-up instead — the cause of the rare failures of `CASSentinelProbe.NativeClassifiesUnmodeledErrorAsIndeterminate`.
+
+**Changes**
+- `CasOperation::probeSentinel` keeps `last_probe`; at the loop head, a reached deadline returns it when a probe has run and throws `giveUpReadDeadline` as before when none has.
+- The admission gate (a lost fence, no lease budget) still throws at any attempt; no request is sent after the deadline.
+- The header comment states the admission rule as the code applies it.
+
+**Testing**
+- Regression test with an injected clock and a zero reservation: the pause lands exactly on the deadline; the outcome is `Indeterminate`, no request is sent after the deadline. Red on the base: `gave up at the policy deadline after 1 attempt(s)`.
+- Two behaviour-preservation tests: a refusal after a pause on the deadline still throws; a deadline with no probe still throws.
+- `CASSentinelProbe.NativeClassifiesUnmodeledErrorAsIndeterminate`: 100,000 repeats, 0 failures.
+- `CAS*` gate: 2611 (release), 2615 (ASan, no error).
+
+Closes backlog task CAS-325.
+
+### Changelog category (leave one):
+- Bug Fix (user-visible misbehavior in an official stable release)
+
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+The CAS sentinel probe returns its last inconclusive outcome instead of throwing when a retry pause ends exactly on the policy deadline.
+
+### Documentation entry for user-facing changes
+- [ ] Documentation is written (mandatory for new features)
+
+### CI/CD Options
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [x] <!---ci_exclude_tsan--> All with TSAN
+- [x] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [x] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache
+
+#### Regression jobs to run:
+- [ ] <!---ci_regression_common--> Fast suites (mostly <1h)
+- [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
+- [ ] <!---ci_regression_alter--> Alter (1.5h)
+- [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [x] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
+- [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
+- [x] <!---ci_regression_iceberg--> Iceberg (2h)
+- [ ] <!---ci_regression_ldap--> LDAP (1h)
+- [x] <!---ci_regression_oauth--> OAuth (5m)
+- [x] <!---ci_regression_parquet--> Parquet (1.5h)
+- [ ] <!---ci_regression_rbac--> RBAC (1.5h)
+- [ ] <!---ci_regression_ssl_server--> SSL Server (1h)
+- [ ] <!---ci_regression_s3--> S3 (2h)
+- [x] <!---ci_regression_s3_export--> S3 Export (2h)
+- [x] <!---ci_regression_swarms--> Swarms (30m)
+- [ ] <!---ci_regression_tiered_storage--> Tiered Storage (2h)

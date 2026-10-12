@@ -1,0 +1,68 @@
+While a CAS mount lease renewal retries, `system.cas_mounts` showed nothing: an aging `last_renewed_at`, `lifecycle` still `Live`, and the attempt counters moved only after the call ended. An operator could not tell a renewal retrying through an object-store outage from a renewal thread that had died. Three columns now report the renewal as it runs.
+
+**Why it matters for the lease**
+
+The next change of the series (https://github.com/Altinity/ClickHouse/issues/2431) makes the renewal retry until the store gives a definitive answer, so a live holder will spend tens of seconds — or longer — inside one renewal call. Without these columns that pause has no visible sign of life; with them, `SELECT lifecycle, renewal_in_progress, renewal_attempts, last_renewal_error FROM system.cas_mounts` during an outage reads `Live / 1 / 7 / "put gc/server-roots/…/mount: Timeout …"`. The same fields were the missing evidence in the incident analysis of #2431.
+
+**Changes**
+- `system.cas_mounts`: `renewal_in_progress` (a renewal call is running), `renewal_attempts` (physical `PUT`s sent by the current call), `last_renewal_error` (verb, key and error class of the last refused request; no credentials, no bodies). Appended at the end; existing queries are unaffected. Documented in `docs/en/operations/system-tables/cas_mounts.md`.
+- Request engine: a `RequestObserver` with `on_write_attempt` and `on_failure` callbacks, called per sent attempt and per refused request.
+- Renewal thread: a `RenewalProgress` record under a leaf mutex (`renewal_progress_mutex`, never held across I/O or allocation beyond one string move); `in_progress` is reset by `SCOPE_EXIT` on every exit, exceptions included. `CASMountRenewalAttempts`/`CASMountRenewalRetries` are counted per attempt instead of from the result.
+- A local failure of the resolve read (not a request to the store) is not published.
+
+**Risks / notes**
+- Nothing changes on the store or in the protocol. Cost: one leaf-mutex lock per attempt, at one renewal per `cas_mount_renew_period_ms`.
+- The system-table read copies the record under the lock and releases it before its own `LIST` of the slots.
+
+**Testing**
+- Unit: the engine observer receives attempts and failures; `renewalProgress` follows the call and resets on an exception; the local-failure filter (red on the base: `gtest_cas_request_observer.cpp`, `gtest_cas_mount_renewal_progress.cpp`).
+- Integration: `test_cas_mount_renewal_retry` gains a scenario that reads the columns while RustFS is stopped.
+- `CAS*` gate: 2614 (release), 2618 (ASan, no error).
+
+Related: https://github.com/Altinity/ClickHouse/issues/2431
+
+### Changelog category (leave one):
+- Improvement
+
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+`system.cas_mounts` gains `renewal_in_progress`, `renewal_attempts` and `last_renewal_error`, updated while a CAS mount lease renewal runs.
+
+### Documentation entry for user-facing changes
+- [x] Documentation is written (mandatory for new features)
+
+Updated `docs/en/operations/system-tables/cas_mounts.md` and `docs/en/antalya/cas/architecture/mounts-and-leases.md`.
+
+### CI/CD Options
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [x] <!---ci_exclude_tsan--> All with TSAN
+- [x] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [x] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache
+
+#### Regression jobs to run:
+- [ ] <!---ci_regression_common--> Fast suites (mostly <1h)
+- [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
+- [ ] <!---ci_regression_alter--> Alter (1.5h)
+- [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [x] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
+- [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
+- [x] <!---ci_regression_iceberg--> Iceberg (2h)
+- [ ] <!---ci_regression_ldap--> LDAP (1h)
+- [x] <!---ci_regression_oauth--> OAuth (5m)
+- [x] <!---ci_regression_parquet--> Parquet (1.5h)
+- [ ] <!---ci_regression_rbac--> RBAC (1.5h)
+- [ ] <!---ci_regression_ssl_server--> SSL Server (1h)
+- [ ] <!---ci_regression_s3--> S3 (2h)
+- [x] <!---ci_regression_s3_export--> S3 Export (2h)
+- [x] <!---ci_regression_swarms--> Swarms (30m)
+- [ ] <!---ci_regression_tiered_storage--> Tiered Storage (2h)

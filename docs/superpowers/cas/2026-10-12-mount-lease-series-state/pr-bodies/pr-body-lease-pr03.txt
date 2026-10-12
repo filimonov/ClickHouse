@@ -1,0 +1,69 @@
+The renewal thread allocated under the global memory tracker, so a server near `max_server_memory_usage` could throw `MEMORY_LIMIT_EXCEEDED` inside a lease renewal. The loop's catch-all then fenced the mount and ended the renewal thread for good, and the mount went through a remount under a fresh epoch because of memory pressure that had nothing to do with the object store. The renewal now survives the server memory limit.
+
+**Why it matters for the lease**
+
+The lease thread is the one thread that must not die first: without a renewal the holder loses its slot after the observation window, its unfinished work loses GC protection and every writer waits for the remount. The next change of the series (https://github.com/Altinity/ClickHouse/issues/2431) makes the renewal retry through an object-store outage instead of giving up; that promise needs a renewal thread that cannot be killed by the state of the server itself.
+
+**Changes**
+- `LockMemoryExceptionInThread(VariableContext::Global)` for the whole renewal iteration, result handling included: the tracker still counts this thread's allocations but never throws on them. `Global`, because a `User`-level lock leaves the server limit enforced. Precedents: `KeeperServer`, `TransactionLog`. `std::bad_alloc` stays terminal.
+- Conditional writes set `s3_allow_parallel_part_upload = false`, so the `PUT` runs on the calling thread and the guard covers it. This applies to every Native conditional write (lease, manifests, `gc/state`, ref ledger); a body above `max_single_part_upload_size` on an ETag store now uploads its parts one after another, on a call that already waits for the whole write.
+- The conditional `PUT` buffer opens at `min(body size, 1 MiB)` instead of 1 MiB: a 200-byte control-plane write no longer costs a megabyte per attempt.
+
+**Risks / notes**
+- Until the renewal rework lands, a memory-limit exception inside the remount worker still costs one remount attempt, not the thread.
+- Rejected: `MemoryTrackerBlockerInThread` (hides accounting), a deterministic classification of the error, a longer budget.
+
+**Testing**
+- Regression test: the global limit is exceeded on the lease thread before the request, inside it and while the result is handled; the thread stays alive, the mount stays `Live`, `CASMountLeaseLost` does not move. Red on the base; red again with the guard at `User` level or below the admission block.
+- Behaviour-preservation tests: `std::bad_alloc` inside a renewal stays terminal; a 3 MiB conditional object is one `PUT` with every byte.
+- Tests for the calling thread and the buffer size (red on the base).
+- `CAS*` gate: 2613 (release), 2617 (ASan, no error); `S3SingleAttemptClient.*` under ASan; `test_cas_mount_renewal_retry`: 4 passed.
+
+Closes: https://github.com/Altinity/ClickHouse/issues/2403
+Closes backlog task CAS-292.
+
+### Changelog category (leave one):
+- Bug Fix (user-visible misbehavior in an official stable release)
+
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+A server memory limit no longer ends the CAS mount lease renewal thread; the conditional `PUT` of a CAS control-plane write runs on the calling thread with a buffer of the body size.
+
+### Documentation entry for user-facing changes
+- [x] Documentation is written (mandatory for new features)
+
+Updated `docs/en/antalya/cas/architecture/mounts-and-leases.md`.
+
+### CI/CD Options
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [x] <!---ci_exclude_tsan--> All with TSAN
+- [x] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [x] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache
+
+#### Regression jobs to run:
+- [ ] <!---ci_regression_common--> Fast suites (mostly <1h)
+- [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
+- [ ] <!---ci_regression_alter--> Alter (1.5h)
+- [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [x] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
+- [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
+- [x] <!---ci_regression_iceberg--> Iceberg (2h)
+- [ ] <!---ci_regression_ldap--> LDAP (1h)
+- [x] <!---ci_regression_oauth--> OAuth (5m)
+- [x] <!---ci_regression_parquet--> Parquet (1.5h)
+- [ ] <!---ci_regression_rbac--> RBAC (1.5h)
+- [ ] <!---ci_regression_ssl_server--> SSL Server (1h)
+- [ ] <!---ci_regression_s3--> S3 (2h)
+- [x] <!---ci_regression_s3_export--> S3 Export (2h)
+- [x] <!---ci_regression_swarms--> Swarms (30m)
+- [ ] <!---ci_regression_tiered_storage--> Tiered Storage (2h)

@@ -59,7 +59,7 @@ First recorded: 2026-08-24 (45efac389eb, by 'shutdown-drain-misses-snapshot-publ
 
 PR 15 (fix/antalya-26.6/cas-remove-remount-machine) keeps `quiesceRefTablesForReacquire` (renamed): the reacquire's `CloseOldEpoch` calls it and quiescence stays unbounded. The bound remains open.
 
-2026-10-12 noclock audit (tmp/noclock/audit/mount.md M7): the clean farewell is a death certificate for instant reclaim, but drain completeness is not proven for plain-object, catalog and blob requests that timed out locally and may still land. Withhold the farewell while any request is unresolved (~60 lines); that turns M7 into the observed-reclaim case with ~22 s slack.
+2026-10-12 noclock audit (docs/superpowers/cas/2026-10-12-late-request-audit/objects/mount.md M7): the clean farewell is a death certificate for instant reclaim, but drain completeness is not proven for plain-object, catalog and blob requests that timed out locally and may still land. Withhold the farewell while any request is unresolved (~60 lines); that turns M7 into the observed-reclaim case with ~22 s slack.
 
-Wave 2 (tmp/noclock/atomicity/w2-misc.md finding 3, verified): a timed-out snapshot/checkpoint publish returns unresolved, the task count reaches zero, drain permits the farewell, the request lands afterwards; `NoLandingAfterFarewell` is unsupported. Conditional checkpoint rules limit the damage.
+Wave 2 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-misc.md finding 3, verified): a timed-out snapshot/checkpoint publish returns unresolved, the task count reaches zero, drain permits the farewell, the request lands afterwards; `NoLandingAfterFarewell` is unsupported. Conditional checkpoint rules limit the damage.
 <!-- SECTION:NOTES:END -->

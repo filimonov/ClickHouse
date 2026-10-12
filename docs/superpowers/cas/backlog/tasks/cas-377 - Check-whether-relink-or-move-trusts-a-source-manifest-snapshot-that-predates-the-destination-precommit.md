@@ -17,7 +17,7 @@ labels:
 milestone: m-8
 dependencies: []
 references:
-  - tmp/noclock/atomicity/w1-blob.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w1-blob.md
 priority: medium
 type: research
 ordinal: 471000
@@ -26,7 +26,7 @@ ordinal: 471000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Codex (inferred): the source resolve/manifest snapshot precedes the destination precommit; another actor drops the source and GC deletes its blobs; promotion trusts the retained decoded entries, which are memory, not durable ownership. Caller-level exclusion would need proving. tmp/noclock/atomicity/w1-blob.md (finding 3).
+Codex (inferred): the source resolve/manifest snapshot precedes the destination precommit; another actor drops the source and GC deletes its blobs; promotion trusts the retained decoded entries, which are memory, not durable ownership. Caller-level exclusion would need proving. docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w1-blob.md (finding 3).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

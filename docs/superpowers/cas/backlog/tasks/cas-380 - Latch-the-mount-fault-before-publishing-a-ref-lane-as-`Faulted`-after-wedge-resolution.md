@@ -18,7 +18,7 @@ dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp
-  - tmp/noclock/atomicity/w2-ref.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-ref.md
 priority: medium
 type: bug
 ordinal: 474000
@@ -27,7 +27,7 @@ ordinal: 474000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-On the lease-series tip `3b4037ae265` wedge resolution publishes `Faulted`, releases `state_mutex`, then latches the mount fault. Another table can certify or admit in that interval. `CaRefLaneCore:FaultHasExit` is atomic and masks it. Reorder: latch first, then publish. tmp/noclock/atomicity/w2-ref.md (finding 3). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
+On the lease-series tip `3b4037ae265` wedge resolution publishes `Faulted`, releases `state_mutex`, then latches the mount fault. Another table can certify or admit in that interval. `CaRefLaneCore:FaultHasExit` is atomic and masks it. Reorder: latch first, then publish. docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-ref.md (finding 3). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

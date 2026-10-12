@@ -57,7 +57,7 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#decommission-toctou-stamps-successor
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'decommission-successor-mount-race')
 
-2026-10-12 noclock audit (tmp/noclock/audit/epoch-owner.md S11): confirmed; harm is a fail-closed wedge on that server's next restart. The epoch-reuse part of the decommission tail is a separate task (never delete `epoch`).
+2026-10-12 noclock audit (docs/superpowers/cas/2026-10-12-late-request-audit/objects/epoch-owner.md S11): confirmed; harm is a fail-closed wedge on that server's next restart. The epoch-reuse part of the decommission tail is a separate task (never delete `epoch`).
 
 Epoch-reuse part: CAS-363.
 <!-- SECTION:NOTES:END -->

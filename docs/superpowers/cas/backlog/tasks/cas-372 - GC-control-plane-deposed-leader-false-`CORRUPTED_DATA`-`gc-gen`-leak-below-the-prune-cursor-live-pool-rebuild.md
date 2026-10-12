@@ -16,7 +16,7 @@ milestone: m-8
 dependencies: []
 references:
   - src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp
-  - tmp/noclock/audit/gcctl.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/gcctl.md
 priority: medium
 type: bug
 ordinal: 466000
@@ -27,7 +27,7 @@ ordinal: 466000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 The GC control plane is store-safe; three leftovers. S8: a deposed leader whose parent seal the successor pruned throws `CORRUPTED_DATA` ("GC bookkeeping is corrupt … SYSTEM CAS GC REBUILD"), and `REBUILD` (one-off `gc_id`, `allow_steal=false`) refuses while `gc/state` exists, so the operator cannot act. S9: a deposed leader's late artifacts land in a generation already pruned and leak forever (prune cursor only moves forward; fsck does not check `gc/gen`). S2: a round commit the engine gave up on that lands later skips handoff reclaim and manifest deletes (leak until fsck). S17: janitor cursor body has no counter (ETag can repeat; leaks only).
 
-Fix (~60 lines): re-read the lease before S8's throw and report deposed; sweep `gc/gen/<g>/` below `snap_pruned_through` skipping generations the adopted seal references, or an fsck check. Details: tmp/noclock/audit/gcctl.md. Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+Fix (~60 lines): re-read the lease before S8's throw and report deposed; sweep `gc/gen/<g>/` below `snap_pruned_through` skipping generations the adopted seal references, or an fsck check. Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/gcctl.md. Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -1,0 +1,18 @@
+Read-only audit: does the ATOMICITY of each TLA+ action match the code it models? Do not edit any file. Your final message is the report (it is saved to a file for you).
+
+Background. Two defects were missed by models because one TLA+ action fused steps the code performs separately:
+- `CaGcCondemnMarkerGate:WAdopt` checks `body.present /\ ~Cond` in one step; the code (`Pool/CasPartWriteTxn.cpp:PartWriteTxn::ensureBlobPresent`) does `HEAD` of the body, then a separate `GET` of the `.meta` marker, then decides. GC (`Gc/CasGc.cpp:performRedeleteIo` / `applyRedeleteOutcome` → `GcMetaWriter::scheduleConfirmedMetaDelete`) can delete the body AND the marker between those two reads; the writer then adopts a deleted body (dangling ref).
+- `CaMountObserveCore:Write` makes lease admission and the store landing one step; the code admits in `Backend/CasRequests.cpp:writeLoop` (`gate`) and sends later (`backend->write`), with SDK retries and transport time in between.
+
+Your job, for each model assigned below:
+1. Identify the code each action represents (the model header/comments usually name functions; confirm in code). Code: commit `d76b59f9295` in `/home/mfilimonov/workspace/ClickHouse/cas-janitor-budget` — read with `git -C /home/mfilimonov/workspace/ClickHouse/cas-janitor-budget show d76b59f9295:<path>`, search with `git -C ... grep -n <pat> d76b59f9295 -- <path>`. CAS code is under `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`. Mount-plane models (`CaCasMountCore*`, `CaMountObserveCore`, `CaMountRenewRetryCore`, `CaDiskLifecycle`) were updated for the lease series at `3b4037ae265` (same repo); check those against `3b4037ae265` and note base differences only if they matter.
+2. For every action that reads or writes shared/store state, list the code steps it fuses: separate store requests (each `HEAD`/`GET`/`LIST`/`PUT`/`DELETE`/conditional write is its own step), a check followed by a later request (admission, `admitted()`, deadline, in-memory flag), read-then-decide-then-write without a condition binding the read, async work scheduled on a pool, retries (engine loop, SDK `doRequest` resend of identical bytes), and a request whose effect lands after the client gave up.
+3. For each fused pair decide: is the fusion SOUND (show why no other actor's step can interleave and matter: e.g. the later step is conditional on a token the interleaving actor must change; or interleaving actors are excluded by a lock held across both steps) or UNSOUND (give the concrete interleaving: which other actor's action runs between the two code steps, and what invariant could then break). Treat every interleaving actor in the same model and in sibling models (GC, a successor mount, a second same-srid instance, a deposed GC leader).
+4. For UNSOUND fusions: the minimal model split (new actions/variables) and the invariant expected to fail; and whether the code has a cheap guard (re-read, condition on token, ordering) that would make it sound.
+
+Also flag the reverse: an action split finer than the code (harmless, just note) and any model variable that represents durable store state but is updated in a step where the code updates it through an ambiguous request (timeout → unknown outcome) that the model treats as definite.
+
+Output format (English, terse, under 1800 words):
+- Per model: table `action | code steps fused (file:function) | verdict SOUND/UNSOUND/SPLIT-FINER/AMBIGUOUS-AS-DEFINITE | interleaving or argument | consequence | minimal fix (model + code)`.
+- Then "Top findings" ranked by data-loss risk, each with the interleaving in 2–4 lines and marked VERIFIED-IN-CODE or INFERRED.
+Skip actions that touch only model-local bookkeeping.

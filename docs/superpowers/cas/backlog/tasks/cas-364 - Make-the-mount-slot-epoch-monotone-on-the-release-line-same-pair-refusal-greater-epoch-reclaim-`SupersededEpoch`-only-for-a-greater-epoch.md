@@ -19,7 +19,7 @@ references:
   - 'https://github.com/Altinity/ClickHouse/pull/2512'
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.cpp
-  - tmp/noclock/audit/mount.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/mount.md
 priority: high
 type: bug
 ordinal: 458000
@@ -30,7 +30,7 @@ ordinal: 458000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 On the base `claimMount` refreshes a slot holding the same `(uuid, epoch)` (T7/MT2) and reclaims for any different epoch, not only a greater one (T8); `classifyFenceCertificate` treats any epoch inequality as `SupersededEpoch`, so a regressed slot hands out false death certificates to `isCreatorFenceTerminal` and `reconcileStaleCreator`. Ref-log R11/R12: a lower-epoch mount recovers a table its own epoch was already sealed in and wedges with a false `CORRUPTED_DATA`.
 
-`3b4037ae265` (lease series, PR #2512) already refuses the same pair and a newer epoch in the slot; `SupersededEpoch` is unchanged there. Fix: land the claim monotonicity (#2512) and require a greater epoch in `classifyFenceCertificate` (~100 lines total). Details: tmp/noclock/audit/mount.md (M-T7, M-T8), tmp/noclock/audit/reflog.md (R11, R12). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+`3b4037ae265` (lease series, PR #2512) already refuses the same pair and a newer epoch in the slot; `SupersededEpoch` is unchanged there. Fix: land the claim monotonicity (#2512) and require a greater epoch in `classifyFenceCertificate` (~100 lines total). Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/mount.md (M-T7, M-T8), docs/superpowers/cas/2026-10-12-late-request-audit/objects/reflog.md (R11, R12). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

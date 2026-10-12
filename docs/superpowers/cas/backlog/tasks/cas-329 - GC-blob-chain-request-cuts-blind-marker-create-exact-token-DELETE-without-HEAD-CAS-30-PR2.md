@@ -58,7 +58,7 @@ Variants studied (docs/superpowers/reports/2026-09-30-cas-331-condemn-marker-var
 
 Request-chain reference (base e2dd0f5d343): 1 HEAD blob at condemn; 2 GET .meta; 3 conditional PUT .meta; 4 GET .meta at graduation (unconditional after PR1); 5 HEAD blob before delete; 6 DELETE blob If-Match; 7 GET .meta; 8 DELETE .meta If-Match. Safety core: 1, 3, 4, 6; form-only: 2 (blind create - see side finding), 5 (persisted token reconstructable into `Etag{backend_id,key,dialect,value}`); hygiene: 7-8.
 
-2026-10-12 noclock audit: an exact-token DELETE without HEAD is only safe while the token cannot recur; SDK resends of blob publish restore old content ETags on S3/RustFS (tmp/noclock/audit/blob.md B9). Land the single-attempt publish fix first.
+2026-10-12 noclock audit: an exact-token DELETE without HEAD is only safe while the token cannot recur; SDK resends of blob publish restore old content ETags on S3/RustFS (docs/superpowers/cas/2026-10-12-late-request-audit/objects/blob.md B9). Land the single-attempt publish fix first.
 
 Depends on CAS-361.
 <!-- SECTION:NOTES:END -->

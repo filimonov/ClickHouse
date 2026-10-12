@@ -17,7 +17,7 @@ dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPlainObjects.cpp
-  - tmp/noclock/audit/roots.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/roots.md
 priority: low
 type: bug
 ordinal: 465000
@@ -26,7 +26,7 @@ ordinal: 465000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Only disk-root paths land in `roots/<srid>/`; the real writer is upstream `IDisk::checkAccess` (`clickhouse_access_check_<ServerUUID>`, always `test`). On S3 the body never changes, so `If-Match` is blind (ETag ABA): a zombie's late delete removes the successor's fresh probe and its `IDisk::startup` throws (RS4; next restart works). Late creates leave debris that makes `serverRootSubtreeEmpty` false (RS1, RS14, RS16). No data loss. Fix: detector (~50 lines: leftover/foreign probes after claim, distinct error when the probe vanishes, re-LIST after decommission drain, `roots/` in fsck); epoch-scoped probe key if RS4 is ever seen (~25 lines). Details: tmp/noclock/audit/roots.md. Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+Only disk-root paths land in `roots/<srid>/`; the real writer is upstream `IDisk::checkAccess` (`clickhouse_access_check_<ServerUUID>`, always `test`). On S3 the body never changes, so `If-Match` is blind (ETag ABA): a zombie's late delete removes the successor's fresh probe and its `IDisk::startup` throws (RS4; next restart works). Late creates leave debris that makes `serverRootSubtreeEmpty` false (RS1, RS14, RS16). No data loss. Fix: detector (~50 lines: leftover/foreign probes after claim, distinct error when the probe vanishes, re-LIST after decommission drain, `roots/` in fsck); epoch-scoped probe key if RS4 is ever seen (~25 lines). Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/roots.md. Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

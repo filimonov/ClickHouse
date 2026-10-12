@@ -1,0 +1,69 @@
+Every observer of a CAS mount slot — the GC floor, the same-server restart and the self-remount reclaim — waited its own `cas_mount_lease_ttl_ms` before treating an unchanged slot token as a dead holder. A holder configured with a longer lease was fenced inside its own right to write as soon as any observer ran with a shorter value, and nothing in the protocol could tell. Observers now wait for the lease the holder declares.
+
+Stacked on https://github.com/Altinity/ClickHouse/pull/2509: the diff shows that commit until it merges.
+
+**Why it matters for the lease**
+
+The observer never compares clocks across servers; the only thing that makes a fence safe is waiting at least the holder's lease on its own clock. With the renewal rework that follows (https://github.com/Altinity/ClickHouse/issues/2431) a live holder will routinely keep one token for tens of seconds, so a mismatched lease on one server becomes the most likely path to fencing a live writer. The declared lease is already in the slot body (`expires_at_ms − started_at_ms`); using it removes the "one value on every server, change it with the pool stopped" rule.
+
+**Changes**
+- `mountObservationThresholdMs(own, declared, cadence)` = `max(own, declared) + 5 % + cadence`, saturating on overflow (a wrapped sum would fence early; waiting forever is the safe side). The declared lease is 0 when the stamps are missing, equal (farewell) or reversed, so no observer waits less than before.
+- The GC floor computes the threshold per observation from the body it observed (and anew from the re-read body after a refused fence-out); `claimMountAwaitingExpiry` uses the body it compares the token against. 27 call sites pass the observer's own lease and step instead of a ready-made threshold. The fast paths (`gc_fenced`, clean farewell) are untouched.
+- One WARNING per slot per GC leader when the declared lease differs from the observer's own, naming `cas_mount_lease_ttl_ms`, hostname, pid and the declared value; not for fenced or departed slots; no counter, observation or write changes.
+- Docs: `cas_mount_lease_ttl_ms` is a per-server setting — how long this server may write after its last confirmed renewal; every other server waits at least that long. Mixed values are safe in any order.
+
+**Risks / notes**
+- Nothing changes on the store or on the wire. Every body writer, including the released 26.6.4 build, stamps `started_at_ms` and `expires_at_ms` from one wall-clock reading, so the declared lease equals the holder's TTL.
+- Rollout: a server built without this rule still waits only its own lease; keep the values equal until every observer of the pool runs this build.
+
+**Testing**
+- Unit (`gtest_cas_mount.cpp`, `gtest_cas_gc_ack_floor.cpp`, `gtest_cas_pool.cpp`): red on the base — GC floor with a holder declaring 60 s against the observer's 30 s: no fence at 41.5 s or 72.999 s, fence at 73 s (round and rebuild); restart reclaim 64 s against 33 s; declaring 10 s, zero stamps or a farewell keeps the own rule; the WARNING once per slot and silent for terminal slots. Expected values are literals; six formula mutations each turn their test red. Behaviour-preservation: `gc_fenced` and farewell slots are reclaimed without waiting.
+- `CAS*` gate: 2633 (release), 2637 (ASan, no error); `test_cas_mount_renewal_retry`: 4 passed.
+
+Related: https://github.com/Altinity/ClickHouse/issues/2431
+
+### Changelog category (leave one):
+- Bug Fix (user-visible misbehavior in an official stable release)
+
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+CAS observers (GC fencing, restart and remount reclaim) wait for the lease a mount holder declares in its slot, so a longer `cas_mount_lease_ttl_ms` on one server is never fenced early by a server with a shorter one; the setting is per server and mixed values are safe.
+
+### Documentation entry for user-facing changes
+- [x] Documentation is written (mandatory for new features)
+
+Updated `docs/en/antalya/cas/architecture/mounts-and-leases.md`, `docs/en/antalya/cas/configuration.md`, `docs/en/antalya/cas/architecture/garbage-collection.md`.
+
+### CI/CD Options
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [x] <!---ci_exclude_tsan--> All with TSAN
+- [x] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [x] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache
+
+#### Regression jobs to run:
+- [ ] <!---ci_regression_common--> Fast suites (mostly <1h)
+- [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
+- [ ] <!---ci_regression_alter--> Alter (1.5h)
+- [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [x] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
+- [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
+- [x] <!---ci_regression_iceberg--> Iceberg (2h)
+- [ ] <!---ci_regression_ldap--> LDAP (1h)
+- [x] <!---ci_regression_oauth--> OAuth (5m)
+- [x] <!---ci_regression_parquet--> Parquet (1.5h)
+- [ ] <!---ci_regression_rbac--> RBAC (1.5h)
+- [ ] <!---ci_regression_ssl_server--> SSL Server (1h)
+- [ ] <!---ci_regression_s3--> S3 (2h)
+- [x] <!---ci_regression_s3_export--> S3 Export (2h)
+- [x] <!---ci_regression_swarms--> Swarms (30m)
+- [ ] <!---ci_regression_tiered_storage--> Tiered Storage (2h)

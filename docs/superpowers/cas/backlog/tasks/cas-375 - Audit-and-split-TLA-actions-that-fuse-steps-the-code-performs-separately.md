@@ -14,7 +14,7 @@ labels:
 milestone: m-8
 dependencies: []
 references:
-  - tmp/noclock/atomicity/SUMMARY-w1.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/SUMMARY-w1.md
   - docs/superpowers/models
 priority: high
 type: task
@@ -24,7 +24,7 @@ ordinal: 469000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Two data-loss defects survived model checking because one action fused separate code steps (`CaGcCondemnMarkerGate:WAdopt` fuses `HEAD` and marker `GET`; `CaMountObserveCore:Write` fuses admission and store landing). A codex audit of model atomicity vs code found 11 such issues in 14 models (wave 1: tmp/noclock/atomicity/SUMMARY-w1.md; wave 2 pending for the remaining 21 models).
+Two data-loss defects survived model checking because one action fused separate code steps (`CaGcCondemnMarkerGate:WAdopt` fuses `HEAD` and marker `GET`; `CaMountObserveCore:Write` fuses admission and store landing). A codex audit of model atomicity vs code found 11 such issues in 14 models (wave 1: docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/SUMMARY-w1.md; wave 2 pending for the remaining 21 models).
 
 Wave 1 fixes to the models, failing-first: split `WAdopt`/`ObserveMeta`/`Adopt` into body read and marker read; orphan sweep deciding from an earlier snapshot and a writer staging before namespace creation (`CaGcRootLocalPartManifestCore`); `SdkResend` in blob models; split `Write` into `WriteAdmit`/`WriteLand` with `MaxFlight`; response vs landing states in `CaMountRenewRetryCore`; let `CaRefDeltaIntakeCore` allow a losing round's delete to land; deletable seals and epochs in `CaRefTableSnapshotLogCore`; catalog value and late apply in `CaRefCatalogCore`; slot holder separate from fence in `CaRelinkConfirmCore`. Review rule to add: every action that reads or writes store state must list the code requests it stands for.
 <!-- SECTION:DESCRIPTION:END -->
@@ -46,5 +46,5 @@ Wave 1 fixes to the models, failing-first: split `WAdopt`/`ObserveMeta`/`Adopt` 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Wave 2 done: tmp/noclock/atomicity/SUMMARY-w2.md. Model-fidelity items to add: `CaGcDestructiveGateCore` gates condemnation while code gates only graduation/deletion (and default/empty-proof differ); gc models erase abort/timeout intermediate states (a pre-CAS delete or artifact landed, round lost); `CaDiskLifecycle` fuses log durability with acknowledgment; `CaRelinkLaneComposition` restricts the deletion actor more than code; heartbeat create landing after timeout defeats the historical `GcLiveGate` proof; `CaGcRoundDeferCore` uses an atomic guard the code lacks. Code findings filed as separate tasks.
+Wave 2 done: docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/SUMMARY-w2.md. Model-fidelity items to add: `CaGcDestructiveGateCore` gates condemnation while code gates only graduation/deletion (and default/empty-proof differ); gc models erase abort/timeout intermediate states (a pre-CAS delete or artifact landed, round lost); `CaDiskLifecycle` fuses log durability with acknowledgment; `CaRelinkLaneComposition` restricts the deletion actor more than code; heartbeat create landing after timeout defeats the historical `GcLiveGate` proof; `CaGcRoundDeferCore` uses an atomic guard the code lacks. Code findings filed as separate tasks.
 <!-- SECTION:NOTES:END -->

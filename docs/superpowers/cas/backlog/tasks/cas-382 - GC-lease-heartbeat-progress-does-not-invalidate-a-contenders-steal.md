@@ -14,7 +14,7 @@ milestone: m-8
 dependencies: []
 references:
   - src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp
-  - tmp/noclock/atomicity/w2-gclease.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-gclease.md
 priority: low
 type: bug
 ordinal: 476000
@@ -23,7 +23,7 @@ ordinal: 476000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A contender reads a frozen heartbeat, the incumbent pulses, the contender's `gc/state` CAS still succeeds: `NoFalseSteal` fails. Liveness only: the state-token fence still protects the displaced leader's publication. `CaGcLeaseCore`'s `hbAdvanced` rule is stricter than the code. tmp/noclock/atomicity/w2-gclease.md (finding 3). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
+A contender reads a frozen heartbeat, the incumbent pulses, the contender's `gc/state` CAS still succeeds: `NoFalseSteal` fails. Liveness only: the state-token fence still protects the displaced leader's publication. `CaGcLeaseCore`'s `hbAdvanced` rule is stricter than the code. docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-gclease.md (finding 3). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

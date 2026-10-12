@@ -1,0 +1,69 @@
+A claim of the CAS mount slot now writes only above the slot's `writer_epoch`. Three paths of `claimMount` could leave two live incarnations under one epoch or put an older incarnation over a newer one; both break the rule recovery relies on — it seals only the epochs below the live one — so a write made under such an incarnation would never be sealed out.
+
+**Why it matters for the lease**
+
+Each claim of the slot by the same `server_uuid` takes a fresh `writer_epoch` from the `epoch` counter; GC fencing, farewell and recovery all speak in terms of "incarnation N is closed". The lease rework that follows (https://github.com/Altinity/ClickHouse/issues/2431) lets a server continue after its own `gc_fenced` pause by closing the old epoch and claiming a strictly greater one; that is only sound when no path can hand two processes the same epoch or let a stale allocation win.
+
+**Changes**
+- Own `server_uuid` with a **newer** epoch in the slot: throw `ABORTED` without a write (`cas_log` event `newer_epoch`). An older allocation that reaches the slot late never replaces the newer incarnation, whatever certifies its end.
+- Own `(uuid, epoch)` in the slot: never rewritten. The "refresh" branch is gone — our pair in the slot before we wrote anything means another process was allocated our epoch. `gc_fenced` → `FencedSelf`; otherwise `LiveDoubleStart` with the holder's body, and the caller takes a fresh epoch.
+- A raced write that observes a newer own epoch fails at once instead of waiting for a death certificate that cannot come.
+- `next_writer_epoch = 0` (the encoding's absence value) is rejected when the counter is decoded.
+- Own uuid with an **older** epoch: unchanged — reclaim only on a certificate of death.
+
+**Risks / notes**
+- Nothing changes on the store or in the wire protocol. The refresh branch fired only on a double start or a race with a decommission; those now get an explicit error instead of silent shared ownership.
+- Model: `CaCasMountCore` is green; `sab_equal_epoch_refresh` (refresh restored) yields two live incarnations under one epoch, `sab_stale_claim_replaces_newer` yields an unsealed write.
+
+**Testing**
+- Five regression tests red on the base (`gtest_cas_mount.cpp`, `gtest_cas_mount_claim_conflicts.cpp`, `gtest_cas_server_root_format.cpp`): own pair → `LiveDoubleStart` with no write; newer own epoch → `ABORTED`; zero counter rejected; raced newer epoch fails at once; fenced own pair → `FencedSelf`. Three behaviour-preservation tests.
+- `CAS*` gate: 2615 (release), 2619 (ASan, no error).
+
+Closes backlog task CAS-298 (the claim part).
+Related: https://github.com/Altinity/ClickHouse/issues/2431
+
+### Changelog category (leave one):
+- Bug Fix (user-visible misbehavior in an official stable release)
+
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+A CAS mount claim accepts only a strictly greater `writer_epoch`: it no longer refreshes its own pair in the slot or replaces a newer incarnation of the same server, and a zero epoch counter is rejected.
+
+### Documentation entry for user-facing changes
+- [x] Documentation is written (mandatory for new features)
+
+Updated `docs/en/antalya/cas/architecture/mounts-and-leases.md`.
+
+### CI/CD Options
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [x] <!---ci_exclude_tsan--> All with TSAN
+- [x] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [x] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache
+
+#### Regression jobs to run:
+- [ ] <!---ci_regression_common--> Fast suites (mostly <1h)
+- [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
+- [ ] <!---ci_regression_alter--> Alter (1.5h)
+- [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [x] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
+- [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
+- [x] <!---ci_regression_iceberg--> Iceberg (2h)
+- [ ] <!---ci_regression_ldap--> LDAP (1h)
+- [x] <!---ci_regression_oauth--> OAuth (5m)
+- [x] <!---ci_regression_parquet--> Parquet (1.5h)
+- [ ] <!---ci_regression_rbac--> RBAC (1.5h)
+- [ ] <!---ci_regression_ssl_server--> SSL Server (1h)
+- [ ] <!---ci_regression_s3--> S3 (2h)
+- [x] <!---ci_regression_s3_export--> S3 Export (2h)
+- [x] <!---ci_regression_swarms--> Swarms (30m)
+- [ ] <!---ci_regression_tiered_storage--> Tiered Storage (2h)

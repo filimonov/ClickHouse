@@ -20,8 +20,8 @@ references:
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCkpt.cpp
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.cpp
-  - tmp/noclock/audit/snapckpt.md
-  - tmp/noclock/audit/poolprobe.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/snapckpt.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/poolprobe.md
 priority: low
 type: bug
 ordinal: 467000
@@ -30,8 +30,8 @@ ordinal: 467000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-- SK17 (`Pool/CasRefCkpt.cpp`): `mergeCkpt` throws `CORRUPTED_DATA` for a non-adjacent-epoch contribution without checking `op.admitted()`; return `Fenced` when the writer is not admitted (~10 lines). tmp/noclock/audit/snapckpt.md.
-- PM-7: `admitOrValidate` throws `LOGICAL_ERROR` when `_pool_meta` vanishes mid-admission (operator erase); use `INVALID_STATE` (~3 lines). tmp/noclock/audit/poolprobe.md.
+- SK17 (`Pool/CasRefCkpt.cpp`): `mergeCkpt` throws `CORRUPTED_DATA` for a non-adjacent-epoch contribution without checking `op.admitted()`; return `Fenced` when the writer is not admitted (~10 lines). docs/superpowers/cas/2026-10-12-late-request-audit/objects/snapckpt.md.
+- PM-7: `admitOrValidate` throws `LOGICAL_ERROR` when `_pool_meta` vanishes mid-admission (operator erase); use `INVALID_STATE` (~3 lines). docs/superpowers/cas/2026-10-12-late-request-audit/objects/poolprobe.md.
 - `GetBucketVersioning` in `checkPoolPreconditions` uses the default client (30 s per attempt, up to 500 retries) and can block mount; use single-attempt or a time window (~10 lines; GCS only).
 - Comment in `CasGc.cpp` says an absent checkpoint "WIDENS" cleanup bounds, but `cleanupRefObjects` skips that namespace (prose).
 Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.

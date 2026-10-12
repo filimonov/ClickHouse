@@ -1,0 +1,67 @@
+The GC credited the first sighting of a mount token with a clock sample taken before the `LIST` of `gc/server-roots/` and the slot read. A slow walk to the slot counted as time the token had been watched, and a later round could write `gc_fenced` over a holder whose last renewal still gave it authority. The sighting is now dated after the read that returned the token.
+
+**Why it matters for the lease**
+
+The GC on another server is the observer that decides a writer is dead: it waits until the slot token has stayed unchanged for `cas_mount_lease_ttl_ms + 5 % + its own poll step` on its own clock (about 41.5 s with the defaults), then sets `gc_fenced` and drops the protection of that writer's unfinished work. It never compares clocks across servers; the only thing that makes the decision safe is that the wait starts when the observer actually saw the token. Starting it earlier shortens the window below the lease, so a holder that still has authority can be fenced: a ref-log append that lands after such a fence leaves a reference to blobs the GC may delete.
+
+This becomes reachable with the next change of the series (https://github.com/Altinity/ClickHouse/issues/2431): the background renewal will keep retrying through a storage outage instead of fencing itself after 4 s, so a live holder will routinely spend tens of seconds without changing its token. Roll this change out on GC nodes before that one reaches the holders.
+
+**Changes**
+- `computeHeartbeatFloor` takes the observer clock as a function; both callers (the regular round and the rebuild) pass it. The first sighting is sampled after the read; the re-decision after a refused fence-out dates its observation anew.
+- The stability test keeps its entry sample, and a sample older than the sighting never counts as time held (`MountIncarnationObservation::heldFor`), so the elapsed time cannot wrap.
+- A transient read error leaves the accumulated observation untouched (behaviour kept, now pinned by a test).
+
+**Risks / notes**
+- GC-side only, in-memory state; no format or protocol change. Mixed versions are safe in either order for correctness, but the deployment order above is needed before the renewal change.
+- The rebuild path cannot fence in production (it runs a one-shot `Gc` with an empty observation map); the fix there keeps both callers consistent.
+
+**Testing**
+- `CaMountObserveCore` rows `sab_sighting_before_read` and `sab_redecision_stale_sample` show the fence inside authority without the fix; `main` is green with it.
+- Unit: five regression tests red on the base (`gtest_cas_mount.cpp`, `gtest_cas_gc_ack_floor.cpp`: round and rebuild), two behaviour-preservation tests; `CAS*` gate 2615 (release), 2619 (ASan, no error).
+
+Closes backlog task CAS-342.
+Related: https://github.com/Altinity/ClickHouse/issues/2431
+
+### Changelog category (leave one):
+- Bug Fix (user-visible misbehavior in an official stable release)
+
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+CAS GC no longer fences a mount whose token it watched for less than the observation threshold after a slow walk to the slot: the first sighting is dated after the read that returned the token.
+
+### Documentation entry for user-facing changes
+- [ ] Documentation is written (mandatory for new features)
+
+### CI/CD Options
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [x] <!---ci_exclude_tsan--> All with TSAN
+- [x] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [x] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache
+
+#### Regression jobs to run:
+- [ ] <!---ci_regression_common--> Fast suites (mostly <1h)
+- [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
+- [ ] <!---ci_regression_alter--> Alter (1.5h)
+- [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [x] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
+- [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
+- [x] <!---ci_regression_iceberg--> Iceberg (2h)
+- [ ] <!---ci_regression_ldap--> LDAP (1h)
+- [x] <!---ci_regression_oauth--> OAuth (5m)
+- [x] <!---ci_regression_parquet--> Parquet (1.5h)
+- [ ] <!---ci_regression_rbac--> RBAC (1.5h)
+- [ ] <!---ci_regression_ssl_server--> SSL Server (1h)
+- [ ] <!---ci_regression_s3--> S3 (2h)
+- [x] <!---ci_regression_s3_export--> S3 Export (2h)
+- [x] <!---ci_regression_swarms--> Swarms (30m)
+- [ ] <!---ci_regression_tiered_storage--> Tiered Storage (2h)

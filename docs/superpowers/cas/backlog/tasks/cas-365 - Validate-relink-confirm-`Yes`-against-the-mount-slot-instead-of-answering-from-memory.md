@@ -19,7 +19,7 @@ dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp
-  - tmp/noclock/audit/protocol.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/protocol.md
 priority: medium
 type: bug
 ordinal: 459000
@@ -30,7 +30,7 @@ ordinal: 459000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 `CasRefLedger::confirmExactRef` answers `Yes` from in-memory state under `mayMutate`. A late `Yes` alone is harmless (the receiver's `+1` is durable first; `settleEntry` spares `indeg > 0`), but a sender that falsely believes it is the legitimate writer — frozen VM clock (C5), a same-pair twin (C6, see the epoch-monotone task), an epoch reuse (C9) — lets the receiver commit a dangling ref. The next-slot `404` probe is refuted (seals get reclaimed).
 
-Fix (no format change): before `Yes`, `GET` the mount slot and require an ETag this renewer wrote with our `(uuid, epoch)` (~100 lines; single-flight, only on the path to `Yes`). Every foreign actor changes the slot first, so this is clock-free. Alternative: answer after the next successful renew (≤ P latency). `CaRelinkConfirmCore` needs `slotHolder`/`slotEtag` separate from `sFence`, a `ForeignClaim`, and a `SlotRead` in `Gate1Answer`. Details: tmp/noclock/audit/protocol.md (C1–C10). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+Fix (no format change): before `Yes`, `GET` the mount slot and require an ETag this renewer wrote with our `(uuid, epoch)` (~100 lines; single-flight, only on the path to `Yes`). Every foreign actor changes the slot first, so this is clock-free. Alternative: answer after the next successful renew (≤ P latency). `CaRelinkConfirmCore` needs `slotHolder`/`slotEtag` separate from `sFence`, a `ForeignClaim`, and a `SlotRead` in `Gate1Answer`. Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/protocol.md (C1–C10). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -21,7 +21,7 @@ references:
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.cpp
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasNamespaceJanitor.cpp
-  - tmp/noclock/atomicity/w2-ref.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-ref.md
 priority: high
 type: bug
 ordinal: 472000
@@ -30,7 +30,7 @@ ordinal: 472000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-A cold reader observes the catalog row `Live`; removal and drain retire that life before the runtime is inserted; the delayed insertion republishes it. A warm `namespaceLife` then returns the retired life, and `putNamespaceFile` can acknowledge bytes that the dead-life janitor (`Gc/CasNamespaceJanitor.cpp`) later deletes. Acknowledged table-file loss. The ref models make the cold read and the runtime insertion one step. tmp/noclock/atomicity/w2-ref.md (finding 1). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
+A cold reader observes the catalog row `Live`; removal and drain retire that life before the runtime is inserted; the delayed insertion republishes it. A warm `namespaceLife` then returns the retired life, and `putNamespaceFile` can acknowledge bytes that the dead-life janitor (`Gc/CasNamespaceJanitor.cpp`) later deletes. Acknowledged table-file loss. The ref models make the cold read and the runtime insertion one step. docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-ref.md (finding 1). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

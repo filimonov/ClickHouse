@@ -1,0 +1,397 @@
+diff --git a/utils/ca-soak/scenarios/README.md b/utils/ca-soak/scenarios/README.md
+index ef9a83d233e..7fbe0b30181 100644
+--- a/utils/ca-soak/scenarios/README.md
++++ b/utils/ca-soak/scenarios/README.md
+@@ -85,8 +85,8 @@ Collect these for every run:
+   off-CPU waits, Memory = allocation hot paths) and must not be conflated into one combined ranking.
+ - CA operation counters from `ProfileEvents`: `CASBlobPut`, `CASBlobPutDeduplicated`, `CASBlobHead`,
+   `CASBlobHeadMiss`, `CASBlobBodyPutAvoided`, `CASBlobDelete`,
+-  `CASBlobList`, `CASRootGet`, `CASRootHead`, `CASRootCompareSwap`, `CASRootCompareSwapConflict`, `CASRootList`, `CASGCGet`,
+-  `CASGCHead`, `CASGCCompareSwap`, `CASGCDelete`, `CASGCList`, and corresponding `DiskS3*`/`S3*` counters.
++  `CASBlobList`, `CASRootGet`, `CASRootHead`, `CASRootOverwrite`, `CASRootCompareSwapConflict`, `CASRootList`, `CASGCGet`,
++  `CASGCHead`, `CASGCOverwrite`, `CASGCDelete`, `CASGCList`, and corresponding `DiskS3*`/`S3*` counters.
+ - Container samples: cgroup memory, CPU throttling, IO bytes, network bytes, and scratch-dir bytes.
+ 
+ Each report should include a short "budget verdict" table:
+@@ -341,7 +341,7 @@ Workload:
+ 
+ Observations:
+ 
+-- Insert latency distribution, `CASRootCompareSwapConflict`, `CASRootCompareSwap`, `CASRootGet`, root-shard manifest sizes,
++- Insert latency distribution, `CASRootCompareSwapConflict`, `CASRootOverwrite`, `CASRootGet`, root-shard manifest sizes,
+   `system.parts` active/inactive counts, and memory.
+ - `system.part_log` part create/remove rates.
+ - Startup or table attach time if the scenario includes a restart.
+@@ -642,7 +642,7 @@ Workload:
+ 
+ Observations:
+ 
+-- Replication fetch logs, `CASBlobPut`, `CASBlobPutDeduplicated`, `CASRootCompareSwap`, network bytes, and pool bytes.
++- Replication fetch logs, `CASBlobPut`, `CASBlobPutDeduplicated`, `CASRootOverwrite`, network bytes, and pool bytes.
+ 
+ Expected:
+ 
+diff --git a/utils/ca-soak/scenarios/cards/s06_s08_manifest_parts.py b/utils/ca-soak/scenarios/cards/s06_s08_manifest_parts.py
+index 27c893326c8..58c217fc488 100644
+--- a/utils/ca-soak/scenarios/cards/s06_s08_manifest_parts.py
++++ b/utils/ca-soak/scenarios/cards/s06_s08_manifest_parts.py
+@@ -166,7 +166,7 @@ class S06(Scenario):
+         delta = counters().get("_total", {})
+         result.observations["s06_counters"] = delta
+         result.observations["s06_CasBlobPut"] = delta.get("CASBlobPut", 0)
+-        result.observations["s06_CasRootCas"] = delta.get("CASRootCompareSwap", 0)
++        result.observations["s06_CasRootCas"] = delta.get("CASRootOverwrite", 0)
+         result.observations["s06_CasRootCasConflict"] = delta.get("CASRootCompareSwapConflict", 0)
+ 
+         # Encoded manifest size + inline-entry total, observed from the physical pool (_manifests).
+@@ -522,7 +522,7 @@ class S08(Scenario):
+         delta = counters().get("_total", {})
+         result.observations["s08_create_counters"] = delta
+         cas_conflict = delta.get("CASRootCompareSwapConflict", 0)
+-        cas_total = delta.get("CASRootCompareSwap", 0)
++        cas_total = delta.get("CASRootOverwrite", 0)
+         result.observations["s08_CasRootCas"] = cas_total
+         result.observations["s08_CasRootCasConflict"] = cas_conflict
+         result.observations["s08_CasRootGet"] = delta.get("CASRootGet", 0)
+@@ -599,7 +599,7 @@ class S08(Scenario):
+         else:
+             result.add(Verdict.inconclusive(
+                 "CAS contention bounded", "conflict ratio bounded",
+-                "no CASRootCompareSwap ops observed in the creation window"))
++                "no CASRootOverwrite ops observed in the creation window"))
+ 
+         # --- Convergence phase: re-enable merges and force convergence -------------------
+         ctx.log("S08: re-enabling merges and forcing convergence")
+diff --git a/utils/ca-soak/scenarios/cards/s15_s18_shards_lifecycle.py b/utils/ca-soak/scenarios/cards/s15_s18_shards_lifecycle.py
+index 1fa787cd0c9..39e071ee86d 100644
+--- a/utils/ca-soak/scenarios/cards/s15_s18_shards_lifecycle.py
++++ b/utils/ca-soak/scenarios/cards/s15_s18_shards_lifecycle.py
+@@ -533,7 +533,7 @@ class S17(Scenario):
+ 
+         delta = counters().get("_total", {})
+         result.observations["lifecycle_counters"] = {k: int(delta.get(k, 0)) for k in (
+-            "CASBlobPut", "CASBlobDelete", "CASBlobHead", "CASGCDelete", "CASRootCompareSwap")}
++            "CASBlobPut", "CASBlobDelete", "CASBlobHead", "CASGCDelete", "CASRootOverwrite")}
+         ca_events = _ca_events_since(ctx)
+         result.observations["ref_events"] = {
+             et: _event_total(ca_events, et) for et in ("ref_publish", "ref_drop")}
+diff --git a/utils/ca-soak/scenarios/cards/s19_s22_clone_fetch.py b/utils/ca-soak/scenarios/cards/s19_s22_clone_fetch.py
+index 67ed5b8ae90..68c5b31ab35 100644
+--- a/utils/ca-soak/scenarios/cards/s19_s22_clone_fetch.py
++++ b/utils/ca-soak/scenarios/cards/s19_s22_clone_fetch.py
+@@ -117,7 +117,7 @@ class S19(Scenario):
+         move_delta = counters().get("_total", {})
+         result.observations["move_counters"] = {
+             k: int(move_delta.get(k, 0)) for k in (
+-                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootCompareSwap")}
++                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootOverwrite")}
+ 
+         # --- REPLACE PARTITION p FROM src (clone a partition into dst, src still holds it) --------
+         replace_key = 1 if nparts > 1 else 0
+@@ -128,7 +128,7 @@ class S19(Scenario):
+         replace_delta = counters2().get("_total", {})
+         result.observations["replace_counters"] = {
+             k: int(replace_delta.get(k, 0)) for k in (
+-                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootCompareSwap")}
++                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootOverwrite")}
+ 
+         pool_after = observe.pool_shape(timeout_s=120)
+         result.observations["pool_after_clone"] = pool_after.get("_total")
+@@ -173,23 +173,23 @@ class S19(Scenario):
+             gate_err = str(e)
+         gate_delta = counters3().get("_total", {})
+         result.observations["gated_move_counters"] = {
+-            k: int(gate_delta.get(k, 0)) for k in ("CASBlobPut", "CASRootCompareSwap")}
++            k: int(gate_delta.get(k, 0)) for k in ("CASBlobPut", "CASRootOverwrite")}
+         if gate_err is not None:
+             result.observations["gated_move_error"] = gate_err[:600]
+             # Fail-closed proof must be MOVE-ATTRIBUTABLE. `CASBlobPut` during the attempt is: the move
+             # is the only thing writing blobs here, so CASBlobPut==0 proves no partial body was
+-            # published. Do NOT gate on `CASRootCompareSwap`: it is a global per-node counter and the lease-gated
++            # published. Do NOT gate on `CASRootOverwrite`: it is a global per-node counter and the lease-gated
+             # BACKGROUND GC (gc_interval_sec=10) CASes root refs on its own schedule, so a GC round
+             # landing inside the move's wall-clock window inflates it with ref-CASes that have nothing
+             # to do with the move (observed: UNKNOWN_DISK is rejected at PLANNING with CASBlobPut=0, yet
+-            # CASRootCompareSwap=2 from a concurrent GC round). The real "no partial ref" invariant is
++            # root ref-CASes from a concurrent GC round still counted). The real "no partial ref" invariant is
+             # dangling==0, asserted by the standard end checkpoint below.
+             blob_put = int(gate_delta.get("CASBlobPut", 0))
+             result.add(Verdict.check(
+                 "gated cross-disk move fails closed",
+                 "ALTER ... MOVE PARTITION TO non-CA DISK raises and writes no partial body",
+                 f"raised ({gate_err.split('DB::Exception:')[-1].strip()[:60]}); "
+-                f"CASBlobPut={blob_put} (CASRootCompareSwap={int(gate_delta.get('CASRootCompareSwap', 0))}, "
++                f"CASBlobPut={blob_put} (CASRootOverwrite={int(gate_delta.get('CASRootOverwrite', 0))}, "
+                 f"background-GC-confounded, not gated)",
+                 blob_put == 0,
+                 "" if blob_put == 0 else
+@@ -316,7 +316,7 @@ class S20(Scenario):
+             # Open the counters window BEFORE the follower starts: its replication
+             # thread begins FETCHing as soon as /ping answers, so the whole fetch can
+             # (and at full scale did) complete inside wait_healthy below — an empty
+-            # window then read as CASRootCompareSwap=0 on a fetch that demonstrably
++            # window then read as zero root writes on a fetch that demonstrably
+             # relinked (queue drained, checksums converged, pool grew 9 objects),
+             # the same window defect S06 and S21 carried.
+             counters = _common.counters_window(ctx)
+@@ -354,27 +354,25 @@ class S20(Scenario):
+         follower_delta = delta.get(self.FOLLOWER, {})
+         total_delta = delta.get("_total", {})
+         # Record the FULL per-node delta, not a hand-picked five. The `follower publishes its own
+-        # refs` verdict below gates on `CASRootCompareSwap`, and a fetch that demonstrably succeeded
+-        # (queue drained, checksums converged, pool +9 objects) still reported zero for it — so the
+-        # counter is very likely not the one this path moves, the same defect S06 and S21 carried.
++        # refs` verdict below gates on `CASRootOverwrite`.
+         # Keeping every CAS counter that moved lets the next run name the right one instead of
+         # guessing, without changing any verdict on a hypothesis.
+         result.observations["follower_fetch_counters_full"] = {
+             k: int(v) for k, v in sorted(follower_delta.items()) if str(k).startswith("CAS") and v}
+         result.observations["follower_fetch_counters"] = {
+             k: int(follower_delta.get(k, 0)) for k in (
+-                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootCompareSwap",
++                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootOverwrite",
+                 "CASBlobHead")}
+         result.observations["total_fetch_counters"] = {
+             k: int(total_delta.get(k, 0)) for k in (
+-                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootCompareSwap")}
++                "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASRootOverwrite")}
+ 
+         # --- VERDICT: follower does NOT re-upload existing large blob bodies ----------------------
+         follower_body_puts = _blob_body_puts(follower_delta)
+         follower_dedup = (int(follower_delta.get("CASBlobPutDeduplicated", 0)) +
+                           int(follower_delta.get("CASBlobBodyPutAvoided", 0)))
+         # A re-upload of the whole table would be ~nparts full payloads worth of CASBlobPut. The
+-        # follower publishes its own refs/sidecars (small CASRootCompareSwap + maybe tiny metadata puts) but
++        # follower publishes its own refs/sidecars (small CASRootOverwrite + maybe tiny metadata puts) but
+         # the big bodies must be recognized as already present (dedup / body-put-avoided).
+         big_body_count = nparts  # one merged part => fewer, but bounded well below this after OPTIMIZE
+         ok = follower_body_puts <= big_body_count and (follower_dedup > 0 or follower_body_puts == 0)
+@@ -386,20 +384,20 @@ class S20(Scenario):
+             "" if ok else
+             "the follower re-uploaded large blob bodies on fetch — fetch should relink shared content "
+             "(dedup), not duplicate payload per replica; investigate the fetch/relink path"))
+-        follower_root_cas = int(follower_delta.get("CASRootCompareSwap", 0))
++        follower_root_cas = int(follower_delta.get("CASRootOverwrite", 0))
+         if follower_root_cas > 0:
+             result.add(Verdict("follower publishes its own refs",
+-                               "follower CASRootCompareSwap > 0 (own refs/sidecars) without body duplication",
++                               "follower CASRootOverwrite > 0 (own refs/sidecars) without body duplication",
+                                follower_root_cas, "pass"))
+         else:
+-            # CASRootCompareSwap=0 on the follower node may mean the counter is not scoped per-node
++            # CASRootOverwrite=0 on the follower node may mean the counter is not scoped per-node
+             # (the CAS is attributed to the leader node that initiated the write). This is not
+             # a correctness issue; the "follower relinks without re-uploading big blobs" verdict
+             # above already proves no body re-upload. Record as inconclusive (not a FAIL).
+             result.add(Verdict.inconclusive(
+                 "follower publishes its own refs",
+-                "follower CASRootCompareSwap > 0 (own refs/sidecars)",
+-                "follower CASRootCompareSwap=0 — counter may not be scoped per-node; "
++                "follower CASRootOverwrite > 0 (own refs/sidecars)",
++                "follower CASRootOverwrite=0 — counter may not be scoped per-node; "
+                 "cannot distinguish 'no ref published' from 'ref attributed to leader node'; "
+                 "correctness covered by the no-body-re-upload verdict above"))
+ 
+diff --git a/utils/ca-soak/scenarios/cards/s23_s27_misc.py b/utils/ca-soak/scenarios/cards/s23_s27_misc.py
+index d4839647c03..c8b9ece7d7b 100644
+--- a/utils/ca-soak/scenarios/cards/s23_s27_misc.py
++++ b/utils/ca-soak/scenarios/cards/s23_s27_misc.py
+@@ -486,7 +486,7 @@ class S26(Scenario):
+         # CasRoot* (ref/metadata) vs CasBlob* (content body) — verbatim file churn should drive Root
+         # and _files activity, while identical inserts must NOT keep uploading new blob bodies.
+         cas_root = {k: int(delta.get(k, 0)) for k in (
+-            "CASRootCompareSwap", "CASRootGet", "CASRootList", "CASRootCompareSwapConflict")}
++            "CASRootOverwrite", "CASRootGet", "CASRootList", "CASRootCompareSwapConflict")}
+         cas_blob = {k: int(delta.get(k, 0)) for k in (
+             "CASBlobPut", "CASBlobPutDeduplicated", "CASBlobBodyPutAvoided", "CASBlobDelete")}
+         result.observations["s26_cas_root_counters"] = cas_root
+diff --git a/utils/ca-soak/scenarios/cards/s34_s35_d1_churn.py b/utils/ca-soak/scenarios/cards/s34_s35_d1_churn.py
+index d67149dac6a..040c2f9b0bd 100644
+--- a/utils/ca-soak/scenarios/cards/s34_s35_d1_churn.py
++++ b/utils/ca-soak/scenarios/cards/s34_s35_d1_churn.py
+@@ -323,7 +323,7 @@ class S35(Scenario):
+ 
+         delta = counters().get("_total", {})
+         result.observations["rotation_counters"] = {k: int(delta.get(k, 0)) for k in (
+-            "CASBlobPut", "CASBlobDelete", "CASRootCompareSwap", "CASRootCompareSwapConflict",
++            "CASBlobPut", "CASBlobDelete", "CASRootOverwrite", "CASRootCompareSwapConflict",
+             "CASGCDelete", "CASGCGet")}
+ 
+         # --- incarnation-monotonicity proxy: no bad CA-log events during the churn loop --------
+diff --git a/utils/ca-soak/scenarios/cards/s36_s37_disk_move.py b/utils/ca-soak/scenarios/cards/s36_s37_disk_move.py
+index f6aba0f6672..4052f498843 100644
+--- a/utils/ca-soak/scenarios/cards/s36_s37_disk_move.py
++++ b/utils/ca-soak/scenarios/cards/s36_s37_disk_move.py
+@@ -247,7 +247,7 @@ class S36(Scenario):
+         blob_puts = int(to_ca_delta.get("CASBlobPut", 0)) + int(to_ca_delta.get("CASBlobPutDeduplicated", 0))
+         result.observations["to_ca_counters"] = {
+             k: int(to_ca_delta.get(k, 0)) for k in (
+-                "CASBlobPut", "CASBlobPutDeduplicated", "CASManifestPut", "CASRootCompareSwap")}
++                "CASBlobPut", "CASBlobPutDeduplicated", "CASManifestPut", "CASRootOverwrite")}
+         result.add(Verdict.check(
+             "TO-CA move publishes via the normal build path",
+             "blobs/manifest/refs written (CASBlobPut/CASBlobPutDeduplicated > 0)",
+diff --git a/utils/ca-soak/scenarios/cards/s39_lease_fault_tolerance.py b/utils/ca-soak/scenarios/cards/s39_lease_fault_tolerance.py
+index 9b92d424d08..b28db4dcb3b 100644
+--- a/utils/ca-soak/scenarios/cards/s39_lease_fault_tolerance.py
++++ b/utils/ca-soak/scenarios/cards/s39_lease_fault_tolerance.py
+@@ -47,11 +47,10 @@ _EVENTS = (
+     "CASMountRenewalRetries",
+     "CASMountRenewalResolved",
+     "CASMountRenewalRecovered",
+-    "CASMountRenewalDeadlineExceeded",
+     "CASMountLeaseLost",
+-    "CASRemountAttempts",
+-    "CASRemountSucceeded",
+-    "CASRemountFailed",
++    "CASMountReacquireAttempts",
++    "CASMountReacquireSucceeded",
++    "CASMountReacquireFailed",
+ )
+ 
+ 
+@@ -421,10 +420,9 @@ class S39(Scenario):
+         )
+         stayed_live_ok = (
+             short_delta["CASMountLeaseLost"] == 0
+-            and short_delta["CASMountRenewalDeadlineExceeded"] == 0
+-            and short_delta["CASRemountAttempts"] == 0
+-            and short_delta["CASRemountSucceeded"] == 0
+-            and short_delta["CASRemountFailed"] == 0
++            and short_delta["CASMountReacquireAttempts"] == 0
++            and short_delta["CASMountReacquireSucceeded"] == 0
++            and short_delta["CASMountReacquireFailed"] == 0
+             and not observed_non_live
+             and short_lifecycle[0] == "live"
+             and short_lifecycle[1] == "live"
+@@ -432,7 +430,7 @@ class S39(Scenario):
+         result.add(
+             Verdict.check(
+                 "leg A: no TransientNotLive generation or remount occurred",
+-                "deadline/loss/remount counters=0 and mount stayed live",
++                "loss/reacquire counters=0 and mount stayed live",
+                 f"delta={short_delta} observed_non_live={observed_non_live} mount={short_lifecycle}",
+                 stayed_live_ok,
+                 _failure_note(
+@@ -501,7 +499,7 @@ class S39(Scenario):
+             events = _profile_events(node)
+             lifecycle = _mount_lifecycle(node)
+             if (
+-                events["CASRemountSucceeded"] > long_before["CASRemountSucceeded"]
++                events["CASMountReacquireSucceeded"] > long_before["CASMountReacquireSucceeded"]
+                 and lifecycle[0] == "live"
+             ):
+                 return events, lifecycle
+@@ -609,8 +607,8 @@ class S39(Scenario):
+         )
+         remount_ok = (
+             recovered_state is not None
+-            and long_delta["CASRemountAttempts"] >= 1
+-            and long_delta["CASRemountSucceeded"] >= 1
++            and long_delta["CASMountReacquireAttempts"] >= 1
++            and long_delta["CASMountReacquireSucceeded"] >= 1
+             and final_lifecycle[0] == "live"
+             and final_lifecycle[1] == "live"
+         )
+diff --git a/utils/ca-soak/scenarios/cards/s41_wide_insert_baseline.py b/utils/ca-soak/scenarios/cards/s41_wide_insert_baseline.py
+index afd3829c074..37c7cbdddd8 100644
+--- a/utils/ca-soak/scenarios/cards/s41_wide_insert_baseline.py
++++ b/utils/ca-soak/scenarios/cards/s41_wide_insert_baseline.py
+@@ -183,7 +183,7 @@ CA_EVENT_KEYS = [
+     "CASMetaResurrectClean",
+     "CASRootGet",
+     "CASRootHead",
+-    "CASRootCompareSwap",
++    "CASRootOverwrite",
+     "CASRootCompareSwapConflict",
+     "CASRootList",
+     "CASRefBatchFlushes",
+diff --git a/utils/cas-grafana/casgrafana/drilldown.py b/utils/cas-grafana/casgrafana/drilldown.py
+index 2c47604460a..88261cb6e08 100644
+--- a/utils/cas-grafana/casgrafana/drilldown.py
++++ b/utils/cas-grafana/casgrafana/drilldown.py
+@@ -351,12 +351,12 @@ WHERE disk IN ($disk)
+ ORDER BY "Host", "Disk", "Slot owner"
+ {SETTINGS}""", table="cas_mounts", interval="5m")
+     renewals = P.metric_ts("Lease renewals per second",
+-                           "`CASMountRenewal*`: physical attempts, retries after the first PUT, resolved by an exact GET, recovered after retry, stopped by the external deadline.",
++                           "`CASMountRenewal*`: physical attempts, retries after the first PUT, resolved by an exact GET, recovered after retry.",
+                            {"Attempts": r("CASMountRenewalAttempts"), "Retries": r("CASMountRenewalRetries"), "Resolved": r("CASMountRenewalResolved"),
+-                            "Recovered": r("CASMountRenewalRecovered"), "Deadline exceeded": r("CASMountRenewalDeadlineExceeded")}, unit="ops")
+-    remounts = P.metric_ts("Lease lost and remounts per 5 minutes",
+-                           "`CASMountLeaseLost` (once per Live → TransientNotLive generation) and whole-chain remount attempts / successes / failures.",
+-                           {"Lease lost": c("CASMountLeaseLost"), "Remount attempts": c("CASRemountAttempts"), "Remount succeeded": c("CASRemountSucceeded"), "Remount failed": c("CASRemountFailed")})
++                            "Recovered": r("CASMountRenewalRecovered")}, unit="ops")
++    remounts = P.metric_ts("Lease lost and reacquires per 5 minutes",
++                           "`CASMountLeaseLost` and `CASMountReacquire*`: reacquire steps, successes and failures after a GC fence.",
++                           {"Lease lost": c("CASMountLeaseLost"), "Reacquire attempts": c("CASMountReacquireAttempts"), "Reacquire succeeded": c("CASMountReacquireSucceeded"), "Reacquire failed": c("CASMountReacquireFailed")})
+     lease_events = P.table("Renewal and remount events",
+                            "`watermark_renew` (only nontrivial renewals: outcome recovered/failed) and `mount_remount` rows from `cas_log`, with `classification`, `attempts_sent`, `elapsed_ms` from the detail map.",
+                            f"""SELECT toUInt64(event_time) * 1000 AS "Time", hostName() AS "Host", toString(event_type) AS "Event", toString(outcome) AS "Outcome",
+@@ -369,7 +369,7 @@ ORDER BY event_time DESC LIMIT 200
+     cond = P.metric_ts("Conditional writes per second",
+                        "`CASConditionalWrite*`. Unresolved = response lost, resolved by a read; DefiniteFailure = the backend said no; FenceLostPostWrite = the write landed after the lease was gone.",
+                        {"Attempts": r("CASConditionalWriteAttempts"), "Committed": r("CASConditionalWriteCommitted"), "Unresolved": r("CASConditionalWriteUnresolved"),
+-                        "Definite failure": r("CASConditionalWriteDefiniteFailure"), "Fence lost post-write": r("CASConditionalWriteFenceLostPostWrite")}, unit="ops")
++                        "Definite failure": r("CASConditionalWriteDefiniteFailure"), "Fence lost post-write": r("CASRequestFenceLostPostWrite")}, unit="ops")
+     requests = P.metric_ts("Request outcomes per second",
+                            "`CASRequest*`: reissues (retries), conflict pauses (409 on one key), resolve reads, gave up, refused, first-attempt fuse.",
+                            {"Reissue": r("CASRequestReissue"), "Conflict pause": r("CASRequestConflictPause"), "Resolve read": r("CASRequestResolveRead"),
+diff --git a/utils/cas-grafana/dashboards/cas-drilldown.json b/utils/cas-grafana/dashboards/cas-drilldown.json
+index 8889a7196d8..5adf0fc34e8 100644
+--- a/utils/cas-grafana/dashboards/cas-drilldown.json
++++ b/utils/cas-grafana/dashboards/cas-drilldown.json
+@@ -3920,7 +3920,7 @@
+             "type": "vertamedia-clickhouse-datasource",
+             "uid": "${datasource}"
+           },
+-          "description": "`CASMountRenewal*`: physical attempts, retries after the first PUT, resolved by an exact GET, recovered after retry, stopped by the external deadline.",
++          "description": "`CASMountRenewal*`: physical attempts, retries after the first PUT, resolved by an exact GET, recovered after retry.",
+           "fieldConfig": {
+             "defaults": {
+               "color": {
+@@ -3975,7 +3975,7 @@
+               "extrapolate": false,
+               "format": "time_series",
+               "intervalFactor": 1,
+-              "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASMountRenewalAttempts) / $interval AS \"Attempts\", sum(ProfileEvent_CASMountRenewalRetries) / $interval AS \"Retries\", sum(ProfileEvent_CASMountRenewalResolved) / $interval AS \"Resolved\", sum(ProfileEvent_CASMountRenewalRecovered) / $interval AS \"Recovered\", sum(ProfileEvent_CASMountRenewalDeadlineExceeded) / $interval AS \"Deadline exceeded\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
++              "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASMountRenewalAttempts) / $interval AS \"Attempts\", sum(ProfileEvent_CASMountRenewalRetries) / $interval AS \"Retries\", sum(ProfileEvent_CASMountRenewalResolved) / $interval AS \"Resolved\", sum(ProfileEvent_CASMountRenewalRecovered) / $interval AS \"Recovered\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+               "rawQuery": "",
+               "refId": "A",
+               "round": "0s",
+@@ -3991,7 +3991,7 @@
+             "type": "vertamedia-clickhouse-datasource",
+             "uid": "${datasource}"
+           },
+-          "description": "`CASMountLeaseLost` (once per Live \u2192 TransientNotLive generation) and whole-chain remount attempts / successes / failures.",
++          "description": "`CASMountLeaseLost` and `CASMountReacquire*`: reacquire steps, successes and failures after a GC fence.",
+           "fieldConfig": {
+             "defaults": {
+               "color": {
+@@ -4046,7 +4046,7 @@
+               "extrapolate": false,
+               "format": "time_series",
+               "intervalFactor": 1,
+-              "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASMountLeaseLost) AS \"Lease lost\", sum(ProfileEvent_CASRemountAttempts) AS \"Remount attempts\", sum(ProfileEvent_CASRemountSucceeded) AS \"Remount succeeded\", sum(ProfileEvent_CASRemountFailed) AS \"Remount failed\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
++              "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASMountLeaseLost) AS \"Lease lost\", sum(ProfileEvent_CASMountReacquireAttempts) AS \"Reacquire attempts\", sum(ProfileEvent_CASMountReacquireSucceeded) AS \"Reacquire succeeded\", sum(ProfileEvent_CASMountReacquireFailed) AS \"Reacquire failed\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+               "rawQuery": "",
+               "refId": "A",
+               "round": "0s",
+@@ -4054,7 +4054,7 @@
+               "table": "metric_log"
+             }
+           ],
+-          "title": "Lease lost and remounts per 5 minutes",
++          "title": "Lease lost and reacquires per 5 minutes",
+           "type": "timeseries"
+         },
+         {
+@@ -4210,7 +4210,7 @@
+               "extrapolate": false,
+               "format": "time_series",
+               "intervalFactor": 1,
+-              "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASConditionalWriteAttempts) / $interval AS \"Attempts\", sum(ProfileEvent_CASConditionalWriteCommitted) / $interval AS \"Committed\", sum(ProfileEvent_CASConditionalWriteUnresolved) / $interval AS \"Unresolved\", sum(ProfileEvent_CASConditionalWriteDefiniteFailure) / $interval AS \"Definite failure\", sum(ProfileEvent_CASConditionalWriteFenceLostPostWrite) / $interval AS \"Fence lost post-write\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
++              "query": "SELECT $timeSeries AS t, sum(ProfileEvent_CASConditionalWriteAttempts) / $interval AS \"Attempts\", sum(ProfileEvent_CASConditionalWriteCommitted) / $interval AS \"Committed\", sum(ProfileEvent_CASConditionalWriteUnresolved) / $interval AS \"Unresolved\", sum(ProfileEvent_CASConditionalWriteDefiniteFailure) / $interval AS \"Definite failure\", sum(ProfileEvent_CASRequestFenceLostPostWrite) / $interval AS \"Fence lost post-write\"\nFROM clusterAllReplicas('$cluster', system.metric_log)\nWHERE hostName() IN ($host) AND $timeFilter\nGROUP BY t ORDER BY t\nSETTINGS skip_unavailable_shards = 1",
+               "rawQuery": "",
+               "refId": "A",
+               "round": "0s",

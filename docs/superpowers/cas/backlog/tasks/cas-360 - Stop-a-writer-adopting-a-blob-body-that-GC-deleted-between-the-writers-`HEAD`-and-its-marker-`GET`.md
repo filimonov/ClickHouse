@@ -21,8 +21,8 @@ references:
   - src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGcMetaWriter.cpp
-  - tmp/noclock/audit/meta.md
-  - tmp/noclock/audit/blob.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/meta.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/blob.md
 priority: critical
 type: bug
 ordinal: 454000
@@ -33,7 +33,7 @@ ordinal: 454000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 `PartWriteTxn::ensureBlobPresent` (`Pool/CasPartWriteTxn.cpp`) reads the body with `HEAD`, then the `.meta` marker with a separate `GET`. When the marker is absent it backfills `Clean` and returns `Observed`, with no second `HEAD`. GC (`Gc/CasGc.cpp:performRedeleteIo`, `applyRedeleteOutcome`) deletes the body by exact token and immediately schedules `scheduleConfirmedMetaDelete` in the same pass.
 
-Schedule: blob is `delete_pending`; writer W precommits after the delete pass's cut (so `settleEntry` does not see its edge), W's `HEAD` lands before the body `DELETE`, GC deletes the body and then the marker, W's `GET` finds no marker, adopts the deleted body. Dangling ref; no pause needed, only a `GET` a few RTT late (first-attempt timeout resend, load, thread preemption). Verified in code by three independent codex runs (tmp/noclock/atomicity/w1-blob.md, w1-reflog.md, w1-catalog.md); through relink it also breaks `ConfirmedRelinkNeverDangles`.
+Schedule: blob is `delete_pending`; writer W precommits after the delete pass's cut (so `settleEntry` does not see its edge), W's `HEAD` lands before the body `DELETE`, GC deletes the body and then the marker, W's `GET` finds no marker, adopts the deleted body. Dangling ref; no pause needed, only a `GET` a few RTT late (first-attempt timeout resend, load, thread preemption). Verified in code by three independent codex runs (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w1-blob.md, w1-reflog.md, w1-catalog.md); through relink it also breaks `ConfirmedRelinkNeverDangles`.
 
 Models missed it because `CaGcCondemnMarkerGate:WAdopt` and `CaBlobPublishCore:ObserveMeta` read body presence and the marker in one step.
 
@@ -41,7 +41,7 @@ Fix (no format change): delete the marker one round after the body. Round R dele
 
 Alternative considered: re-`HEAD` before adopting when the marker is absent (5–10 lines); relies on ETag uniqueness, which SDK resends break.
 
-Details: tmp/noclock/audit/meta.md (S9), tmp/noclock/audit/blob.md (S13), tmp/noclock/audit/SUMMARY.md#orphan-meta. Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/meta.md (S9), docs/superpowers/cas/2026-10-12-late-request-audit/objects/blob.md (S13), docs/superpowers/cas/2026-10-12-late-request-audit/objects/SUMMARY.md#orphan-meta. Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

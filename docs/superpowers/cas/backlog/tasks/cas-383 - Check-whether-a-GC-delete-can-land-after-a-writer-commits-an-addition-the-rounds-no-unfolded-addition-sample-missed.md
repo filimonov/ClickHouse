@@ -18,7 +18,7 @@ dependencies: []
 references:
   - src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp
   - docs/superpowers/models/CaGcRoundDeferCore.tla
-  - tmp/noclock/atomicity/w2-gclease.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-gclease.md
 priority: medium
 type: research
 ordinal: 477000
@@ -27,7 +27,7 @@ ordinal: 477000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-`CaGcRoundDeferCore` forbids the schedule "sample no unfolded addition → writer commits an addition → DELETE lands" through an atomic guard the code does not have, so its green result does not validate the real protocol. Find the code protection (round floor, in-degree re-read, exact token) or the interleaving. tmp/noclock/atomicity/w2-gclease.md (finding 1). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
+`CaGcRoundDeferCore` forbids the schedule "sample no unfolded addition → writer commits an addition → DELETE lands" through an atomic guard the code does not have, so its green result does not validate the real protocol. Find the code protection (round floor, in-degree re-read, exact token) or the interleaving. docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-gclease.md (finding 1). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

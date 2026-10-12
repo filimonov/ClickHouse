@@ -45,5 +45,5 @@ ordinal: 445000
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-2026-10-12 noclock audit (tmp/noclock/audit/reflog.md R10–R12): recovery reading a successor's history is harmless by itself (R10; codex agrees, U12 dropped). The harmful branch is R11: a mount whose own epoch is already sealed by a higher mount derives `(E,k+1)` above its seal; `checkRefCkptInvariants` refuses, the table wedges with a false `CORRUPTED_DATA`. Writer gate: reject when `last_epoch_seal.writer_epoch >= live_epoch` (~15 lines). Trigger (a) is the lower-epoch reclaim (CAS-178).
+2026-10-12 noclock audit (docs/superpowers/cas/2026-10-12-late-request-audit/objects/reflog.md R10–R12): recovery reading a successor's history is harmless by itself (R10; codex agrees, U12 dropped). The harmful branch is R11: a mount whose own epoch is already sealed by a higher mount derives `(E,k+1)` above its seal; `checkRefCkptInvariants` refuses, the table wedges with a false `CORRUPTED_DATA`. Writer gate: reject when `last_epoch_seal.writer_epoch >= live_epoch` (~15 lines). Trigger (a) is the lower-epoch reclaim (CAS-178).
 <!-- SECTION:NOTES:END -->

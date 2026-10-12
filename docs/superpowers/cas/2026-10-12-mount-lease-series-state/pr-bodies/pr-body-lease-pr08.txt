@@ -1,0 +1,71 @@
+A CAS mount lease renewal that got no definitive answer from the object store inside its budget gave up, tripped the fence and started a remount under a fresh epoch. A short object-store outage (tens of seconds) cost about 40 s without writes, restarted merges and a `CASMountLeaseLost`, although nothing had touched the slot and the holder still had its lease on its own clock. The renewal now retries until the store gives a definitive answer, and an expired lease is a pause, not a loss.
+
+Stacked on https://github.com/Altinity/ClickHouse/pull/2509 and https://github.com/Altinity/ClickHouse/pull/2513: the diff shows their commits until they merge. Roll out https://github.com/Altinity/ClickHouse/pull/2509 and https://github.com/Altinity/ClickHouse/pull/2516 on the GC servers before this change reaches the holders: a live holder will now keep one slot token for tens of seconds during an outage.
+
+**How it works**
+- Every `cas_mount_renew_period_ms` the renewal thread builds one tuple — key, body bytes, the expected ETag of the last confirmed body, `write_attempt_id`, `start` (taken before the first request) — and keeps it for the whole series of attempts.
+- The conditional `PUT` runs under `Retry::untilDefinitive`: no deadline; after an unclear attempt the next one waits a uniform draw in [0.8, 1.2] of 1000 ms minus what the attempt took (no growing backoff, so the first good second after an outage ends the series). A store refusal starts a new engine call with the same tuple; a clean `412` whose read failed repeats only the read; a refusal after an unclear attempt is settled inside the call.
+- Only three things end the series: a committed write (the deadline `start + lease` is published under `driver_mutex`, and only when later than the current one, so an older epoch's renewal never moves a newer one's deadline); an observed foreign body (another owner, our own `gc_fenced`, a changed slot) — which goes to the existing loss handling; a stop or a remount request (every wait is stop-aware, including the one-period pause after a credential refusal).
+- When the deadline passes without a commit: admission has already closed writes (`2 × envelope + margin` before the deadline, unchanged), one WARNING `lease_expired` names the last confirmed renewal and the writer epoch, `system.cas_mounts` reports the pause, and the series continues. A confirmed `PUT` returns the same epoch to live; a fence found in the slot ends the series as a loss.
+
+**Settings** (no new ones): `cas_mount_lease_ttl_ms` — length of the right to write from each confirmed renewal; `cas_mount_renew_period_ms` — interval between renewal starts and the pause after a credential refusal; `cas_attempt_timeout_ms` — budget of one attempt, hence the step of the series and the admission envelope; `cas_lease_safety_margin_ms` — unchanged. The 1000 ms spacing is a constant.
+
+**Risks / notes**
+- Nothing changes on the store or in the observer protocol. The remount machinery stays as the reaction to a definitive loss; its removal follows in a later change. `CASMountRenewalDeadlineExceeded` now counts only a startup or remount re-anchor that ran out of confirmed lease.
+- During a pause background merges restart about once a second and fail at commit (the pool stays live while admission is closed); the base fenced earlier and refused the merge at entry. Tracked as backlog task CAS-256.
+- Reads of the docs: `mounts-and-leases.md`, `debugging.md`, `monitoring.md`, `troubleshooting.md`, `cas_mounts.md`.
+
+**Testing**
+- Unit: 15 regression tests red on the base (`gtest_cas_retry_spacing`, `gtest_cas_requests_spacing`, `gtest_cas_heartbeat.cpp`, `gtest_cas_mount_runtime.cpp`, `gtest_cas_lifecycle_snapshot`): no deadline and spaced attempts; the same tuple after a refusal; only the read after a clean `412`; a long outage is a pause under the same epoch; a remount request ends a series; the expiry is logged once; an old epoch's renewal does not move the new deadline; a late commit reports a true reason. One behaviour-preservation test pins the engine guard by mutation.
+- Integration: `test_long_mount_put_outage_pauses_under_the_same_epoch` — red on the base binary, green here; `test_cas_mount_renewal_retry`: 6 passed.
+- Incident replay on the fault-proxy stand (`503` on every mount `PUT` for 35 s, lease 30 s, inserts every 0.3 s): `CASMountLeaseLost` 0, remounts 0, 37 attempts / 29 retries, same epoch after the outage.
+- `CAS*` gate: 2642 (release), 2646 (ASan, no error).
+
+Closes: https://github.com/Altinity/ClickHouse/issues/2431
+Related: https://github.com/Altinity/ClickHouse/pull/2509
+Related: https://github.com/Altinity/ClickHouse/pull/2513
+Related: https://github.com/Altinity/ClickHouse/pull/2516
+
+### Changelog category (leave one):
+- Bug Fix (user-visible misbehavior in an official stable release)
+
+### Changelog entry (a user-readable short description of the changes that goes to CHANGELOG.md):
+A CAS mount lease renewal retries until the object store gives a definitive answer instead of giving up at a deadline; an expired lease pauses writes and continues under the same epoch once a renewal is confirmed, instead of losing the mount and remounting.
+
+### Documentation entry for user-facing changes
+- [x] Documentation is written (mandatory for new features)
+
+### CI/CD Options
+#### Exclude tests:
+- [ ] <!---ci_exclude_fast--> Fast test
+- [ ] <!---ci_exclude_integration--> Integration Tests
+- [ ] <!---ci_exclude_stateless--> Stateless tests
+- [ ] <!---ci_exclude_stateful--> Stateful tests
+- [ ] <!---ci_exclude_unit--> Unit tests
+- [ ] <!---ci_exclude_performance--> Performance tests
+- [x] <!---ci_exclude_aarch64|arm-->  Aarch64 tests
+- [ ] <!---ci_exclude_asan--> All with ASAN
+- [x] <!---ci_exclude_tsan--> All with TSAN
+- [x] <!---ci_exclude_msan--> All with MSAN
+- [ ] <!---ci_exclude_ubsan--> All with UBSAN
+- [x] <!---ci_exclude_coverage--> All with Coverage
+- [ ] <!---ci_exclude_regression--> All Regression
+- [ ] <!---no_ci_cache--> Disable CI Cache
+
+#### Regression jobs to run:
+- [ ] <!---ci_regression_common--> Fast suites (mostly <1h)
+- [ ] <!---ci_regression_aggregate_functions--> Aggregate Functions (2h)
+- [ ] <!---ci_regression_alter--> Alter (1.5h)
+- [ ] <!---ci_regression_benchmark--> Benchmark (30m)
+- [x] <!---ci_regression_cas--> CAS (content-addressed storage; Antalya only)
+- [ ] <!---ci_regression_clickhouse_keeper--> ClickHouse Keeper (1h)
+- [x] <!---ci_regression_iceberg--> Iceberg (2h)
+- [ ] <!---ci_regression_ldap--> LDAP (1h)
+- [x] <!---ci_regression_oauth--> OAuth (5m)
+- [x] <!---ci_regression_parquet--> Parquet (1.5h)
+- [ ] <!---ci_regression_rbac--> RBAC (1.5h)
+- [ ] <!---ci_regression_ssl_server--> SSL Server (1h)
+- [ ] <!---ci_regression_s3--> S3 (2h)
+- [x] <!---ci_regression_s3_export--> S3 Export (2h)
+- [x] <!---ci_regression_swarms--> Swarms (30m)
+- [ ] <!---ci_regression_tiered_storage--> Tiered Storage (2h)

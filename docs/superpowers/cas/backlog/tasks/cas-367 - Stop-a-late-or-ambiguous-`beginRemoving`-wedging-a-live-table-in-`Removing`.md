@@ -16,7 +16,7 @@ dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefCatalog.cpp
-  - tmp/noclock/audit/catalog.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/catalog.md
 priority: medium
 type: bug
 ordinal: 461000
@@ -27,7 +27,7 @@ ordinal: 461000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 `beginRemoving` (`Pool/CasRefCatalog.cpp`) decides `Live → Removing` by comparing the row by value; a takeover does not change the row, so a zombie's late `DROP` lands on the successor's live table (Z7). `dropNamespaceImpl` also reopens the write lane after an ambiguous `beginRemoving` when one read still shows `Live`, so the same late landing happens without a zombie (A13, verified branch). Result: writes stop at the next append and the table refuses to open after restart; there is no `Removing → Live`. No silent loss: GC clears the row only after the terminal record is folded.
 
-Now: keep the lane closed after an ambiguous `beginRemoving` (~10 lines); detector for rows in `Removing` with no terminal record for N rounds. Next format: catalog revision plus `removal_by` on `Removing` rows (old readers reject loudly). Details: tmp/noclock/audit/catalog.md (A-Z7, A13). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+Now: keep the lane closed after an ambiguous `beginRemoving` (~10 lines); detector for rows in `Removing` with no terminal record for N rounds. Next format: catalog revision plus `removal_by` on `Removing` rows (old readers reject loudly). Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/catalog.md (A-Z7, A13). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

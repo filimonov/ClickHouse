@@ -21,7 +21,7 @@ references:
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Backend/CasObjectStorageBackend.cpp
   - src/IO/S3/Client.cpp
   - src/IO/S3/copyS3File.cpp
-  - tmp/noclock/audit/blob.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/objects/blob.md
 priority: high
 type: bug
 ordinal: 455000
@@ -32,9 +32,9 @@ ordinal: 455000
 <!-- SECTION:DESCRIPTION:BEGIN -->
 Blob `publish` and `copyObject` run with `WriteSettings{}` (`Backend/CasObjectStorageBackend.cpp:ObjectStorageBackend::publish`), so `S3::Client::doRequest` may resend the identical envelope (500 retries, 30 s per socket op); the engine's `asSingleAttempt` bounds only the engine loop. On content-ETag stores (AWS S3, RustFS) a resend that lands after GC deleted that incarnation restores its old ETag; a late exact-token `DELETE If-Match(t_A)` (GC retry within 90 s, a carried `delete_pending`, a deposed leader paused between `HEAD` and `DELETE`) then removes a body another writer just republished. GCS generations are immune.
 
-Related: `Client::doRequest` also resends on credential/redirect answers even in `SingleAttempt` (tmp/noclock/atomicity/w1-mount.md); `CompleteMultipartUpload` treats `NoSuchUpload` plus any object at the key as success (`src/IO/S3/Client.cpp`), which does not prove this upload's incarnation.
+Related: `Client::doRequest` also resends on credential/redirect answers even in `SingleAttempt` (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w1-mount.md); `CompleteMultipartUpload` treats `NoSuchUpload` plus any object at the key as success (`src/IO/S3/Client.cpp`), which does not prove this upload's incarnation.
 
-Fix (no format change): publish/copy under the single-attempt profile (~40 lines, 3 files); treat `NoSuchUpload` as ambiguous for CAS blob publish (~20 lines). Details: tmp/noclock/audit/blob.md (B9, S3a–S3d, S7). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
+Fix (no format change): publish/copy under the single-attempt profile (~40 lines, 3 files); treat `NoSuchUpload` as ambiguous for CAS blob publish (~20 lines). Details: docs/superpowers/cas/2026-10-12-late-request-audit/objects/blob.md (B9, S3a–S3d, S7). Found by the late-request audit of base `d76b59f9295` (`altinity/antalya-26.6-20261008`) on 2026-10-12; harm is inferred from code unless marked verified.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

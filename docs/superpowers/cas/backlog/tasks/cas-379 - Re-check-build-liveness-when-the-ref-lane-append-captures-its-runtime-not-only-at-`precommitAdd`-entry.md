@@ -21,7 +21,7 @@ references:
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasPartWriteTxn.cpp
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefLedger.cpp
-  - tmp/noclock/atomicity/w2-ref.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-ref.md
 priority: high
 type: bug
 ordinal: 473000
@@ -30,7 +30,7 @@ ordinal: 473000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-`precommitAdd` passes `requireAlive`; cancellation or namespace rebirth happens before the generic append captures its runtime; the old closure can then grant ownership in the successor life. Promotion has a matching epoch-check gap. Code steps verified; committed-data loss inferred. tmp/noclock/atomicity/w2-ref.md (finding 2). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
+`precommitAdd` passes `requireAlive`; cancellation or namespace rebirth happens before the generic append captures its runtime; the old closure can then grant ownership in the successor life. Promotion has a matching epoch-check gap. Code steps verified; committed-data loss inferred. docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-ref.md (finding 2). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

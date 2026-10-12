@@ -17,7 +17,7 @@ dependencies: []
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasMountRuntime.cpp
-  - tmp/noclock/atomicity/w2-misc.md
+  - docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-misc.md
 priority: high
 type: bug
 ordinal: 475000
@@ -26,7 +26,7 @@ ordinal: 475000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Opening passes its check; another thread latches loss and trips the fence; arming clears `lost`; admission can succeed before arming rechecks the end. Highest direct ownership risk in wave 2; data loss not demonstrated. `CaDiskLifecycle` fuses the check and the arming. tmp/noclock/atomicity/w2-misc.md (finding 1). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
+Opening passes its check; another thread latches loss and trips the fence; arming clears `lost`; admission can succeed before arming rechecks the end. Highest direct ownership risk in wave 2; data loss not demonstrated. `CaDiskLifecycle` fuses the check and the arming. docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/w2-misc.md (finding 1). Found by the codex model-atomicity audit (wave 2) on 2026-10-12; code steps verified by codex, harm as marked.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
