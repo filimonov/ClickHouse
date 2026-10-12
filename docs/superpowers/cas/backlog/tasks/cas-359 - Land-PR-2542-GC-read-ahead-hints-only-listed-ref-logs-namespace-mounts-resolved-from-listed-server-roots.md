@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 09:58'
+updated_date: '2026-10-12 11:57'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -18,13 +18,7 @@ milestone: m-1
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2542'
-  - >-
-    src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasOrphanManifestSweep.cpp
-  - >-
-    src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasKeyReader.cpp
-  - >-
-    src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasRefProtocol.cpp
-  - src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Gc/CasGc.cpp
+  - docs/superpowers/specs/2026-09-25-cas-gc-rounds-in-minutes-design.md
 priority: high
 type: enhancement
 ordinal: 453000
@@ -64,4 +58,6 @@ Review 2026-10-12 (verified against the PR head be3da0cd71f): decisions are unch
 
 <!-- SECTION:NOTES:BEGIN -->
 Review 2026-10-12: own trace + independent ca-review (report tmp/pr2542/review-ca.md, local). Read-ahead half sound: caches results never decisions; listing sorted; lifetimes OK; no stale take possible (write-once keys, trimming only in phase 17). Blocking: CAS-357 (nested srids, fold dead-precommit skip). Prose to fix in the PR: CasGcReadAhead.h:28 dropped the bounded-exception clause and :33 says untaken hints are discarded (fold-intake hold and recovery-walk throw leave them to the destructor); CasKeyReader.h:47 misses the LIST-omits-a-durable-id case the PR's own test models.
+
+2026-10-12: the PR adds two consumers of the global ref-prefix LIST that the 2026-09-25 spec and gc-cost-map.md say do not exist: the hinter filters on `RefScanSummary::logs_by_life` and the intake lookahead stops at the first id absent from `RefTableListing::logs`. CAS-29.1 (spec B1) replaces that LIST with one exact GET per live life plus a per-life LIST from the covered floor; the floor-to-`committed_through` range the hinter needs is exactly that per-life tail, so B1 must feed the same listed set per life and keep the intake's exact-key walk independent of it. The ceiling `committed_through` already comes from the per-namespace `_ckpt` read (`readCheckpointWitnesses`), not from the LIST.
 <!-- SECTION:NOTES:END -->

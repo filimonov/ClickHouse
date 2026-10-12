@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-29'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-10-12 11:57'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -69,4 +69,6 @@ Rejected alternative (from gc.md, deferred rounds pay the full LIST): a cross-ro
 First recorded: 2026-07-29 (539584ac324, by 'GC-DEFER-DECISION-LIST-COST')
 
 2031-triage CAS-035: the audit's 'a GC round fully lists `cas/ns/stream/` and retains every key in memory, also on rounds that then defer' is this LIST; the edge-run memory half is CAS-88.
+
+2026-10-12: after https://github.com/Altinity/ClickHouse/pull/2542 (CAS-359) the listing has two more consumers: `hintRefLogsWithinEpoch` hints only ids in `RefScanSummary::logs_by_life`, and the intake lookahead stops at the first id absent from `RefTableListing::logs`. Step 3's per-life LIST from the covered floor returns exactly the range the hinter needs (floor to `_ckpt.committed_through`), so build `logs_by_life` from it; the cost map's 'fold_ref_intake does not use the listing' no longer holds for the hints, the exact-key walk stays independent.
 <!-- SECTION:NOTES:END -->
