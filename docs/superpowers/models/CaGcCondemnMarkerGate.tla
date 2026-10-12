@@ -25,6 +25,10 @@
 (* marker from standing in for the guard, and the current-round retry keeps a carried       *)
 (* entry's marker from lagging behind it.                                                   *)
 (*                                                                                          *)
+(* CAS-360. The adopter's body HEAD and marker GET are two requests (SplitAdopt). A body      *)
+(* deleted between them, and its marker deleted before the GET, reads as "absent marker":   *)
+(* the writer backfills Clean and adopts a deleted body. FixMode A/B/C are the candidates.  *)
+(*                                                                                          *)
 (* The cfgs switch each rule off one at a time and expect the invariant named in the        *)
 (* runner. Losses the fix leaves open (a late Clean request that matches recreated bytes,   *)
 (* an externally dropped edge) are the cfgs late_resolved_stale, late_gaveup and            *)
@@ -67,6 +71,25 @@
 (*   TrackRetry         records a completed retry write for NoWedgedCarry.             *)
 (*   MarkerPrefetch     the gate decides on a marker GET issued earlier in the round   *)
 (*                      (the graduation read-ahead), not on the marker at the gate.    *)
+(*   SplitAdopt         the adopter's body `HEAD` and marker `GET` are separate steps  *)
+(*                      (WHead, WMetaRead, WReHead, WBackfill) instead of WAdopt.      *)
+(*   FixMode            "none" | "A" | "B" | "C": CAS-360 candidates for the gap       *)
+(*                      between those two reads. A: the marker is deleted one round    *)
+(*                      after the body, against that round's in-degree. B: an absent   *)
+(*                      marker is followed by a second `HEAD` and adoption only of an  *)
+(*                      unchanged token. C: an absent marker always republishes.       *)
+(*   FixGuard           FALSE removes the candidate's decisive check (sabotage).       *)
+(*   AKeepOnSpare       A: a spared body-gone entry is carried, not dropped, until a   *)
+(*                      round at in-degree 0 deletes its marker.                       *)
+(*   MetaDeleteFault    a marker delete may fail; a scheduled job is then lost.        *)
+(*   GoneDeleteAnyRound A: the synchronous marker delete removes a Condemned marker of   *)
+(*                      any round below the current one, not only <= the entry's round *)
+(*                      (a gate retry stamps a later round than the entry's).          *)
+(*   DeposedDelete      once per behaviour, a deposed attempt's pre-commit redelete of  *)
+(*                      a published delete_pending entry removes the body at any time  *)
+(*                      (and today schedules its marker delete job).                  *)
+(*   AGoneDropsNow      A, sabotage of the two-pass rule: a body already Gone at the   *)
+(*                      first redelete pass deletes the marker in that same round.     *)
 EXTENDS Naturals
 
 CONSTANTS
@@ -76,7 +99,9 @@ CONSTANTS
   Witness, GateTouched, ForgetOnTouch, SuppressRounds,
   Registry, RegRound, StaleAttempts, ExactAbsentPath,
   RetryStampsCurrent, OutstandingReconcile, EtagIsContent, TrackRetry,
-  MarkerPrefetch
+  MarkerPrefetch,
+  SplitAdopt, FixMode, FixGuard, AKeepOnSpare, MetaDeleteFault, GoneDeleteAnyRound,
+  DeposedDelete, AGoneDropsNow
 
 NoTok == 0
 Writers == IF TwoWriters THEN {1, 2} ELSE {1}
@@ -101,11 +126,16 @@ VARIABLES
   sa_done,     \* the one stale attempt a behaviour may contain has happened
   late,        \* a publisher's Clean If-Match request still in flight: [pending, expect]
   late_moved,  \* the marker changed since that request read it
-  mobs         \* the graduation read-ahead's marker GET: taken this round, and the meta it returned
+  mobs,        \* the graduation read-ahead's marker GET: taken this round, and the meta it returned
+  wst,         \* per writer, SplitAdopt: "idle" | "headed" | "rehead" | "backfill" | "pub"
+  hd,          \* per writer, SplitAdopt: the token its `HEAD` returned
+  dd_done      \* the one deposed redelete a behaviour may contain has happened
 
 vars == <<round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret,
           observed, observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, late, late_moved,
-          mobs>>
+          mobs, wst, hd, dd_done>>
+
+WKeep == UNCHANGED <<wst, hd, dd_done>>
 
 TypeOK ==
   /\ round \in 1..MaxRounds
@@ -120,6 +150,9 @@ TypeOK ==
   /\ late \in [pending : BOOLEAN, expect : MetaVals]
   /\ late_moved \in BOOLEAN
   /\ mobs \in [on : BOOLEAN, m : MetaVals]
+  /\ wst \in [Writers -> {"idle", "headed", "rehead", "backfill", "pub"}]
+  /\ hd \in [Writers -> 0..MaxGen]
+  /\ dd_done \in BOOLEAN
 
 Init ==
   /\ round = 1 /\ cut_taken = FALSE /\ folded = FALSE
@@ -142,6 +175,9 @@ Init ==
   /\ sa_done = FALSE
   /\ late = NoLate /\ late_moved = FALSE
   /\ mobs = [on |-> FALSE, m |-> Absent]
+  /\ wst = [w \in Writers |-> "idle"]
+  /\ hd = [w \in Writers |-> NoTok]
+  /\ dd_done = FALSE
 
 Fresh == next_gen <= MaxGen
 Cond == meta.st = "condemned"
@@ -170,12 +206,59 @@ WPrecommit(w) ==
 
 (* Absent meta is backfilled Clean (putMetaIfAbsent); either reads as not condemned. *)
 WAdopt(w) ==
+  /\ ~SplitAdopt
   /\ edge[w] = "landed" /\ adopted[w] = NoTok /\ ~recon[w]
   /\ body.present /\ ~Cond
   /\ adopted' = [adopted EXCEPT ![w] = body.tok]
   /\ meta' = IF meta.st = "absent" THEN CleanMeta ELSE meta
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, committed, ret, observed, observed_tok, mdq,
                  recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
+
+(* SplitAdopt: `PartWriteTxn::ensureBlobPresent`, one loop iteration, one request per step.
+   WHead is `op.head(key)`: present -> remember the token; absent -> publish. *)
+WHead(w) ==
+  /\ SplitAdopt
+  /\ edge[w] = "landed" /\ adopted[w] = NoTok /\ ~recon[w] /\ wst[w] = "idle"
+  /\ wst' = [wst EXCEPT ![w] = IF body.present THEN "headed" ELSE "pub"]
+  /\ hd' = [hd EXCEPT ![w] = IF body.present THEN body.tok ELSE NoTok]
+  /\ UNCHANGED <<dd_done, round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs>>
+
+(* `loadMeta`: Clean adopts the HEAD's token; Condemned publishes (resurrect); absent goes to
+   the backfill today, to a second HEAD under B, to a publication under C. *)
+AbsentNext == IF FixMode = "B" THEN "rehead"
+              ELSE IF FixMode = "C" /\ FixGuard THEN "pub"
+              ELSE "backfill"
+
+WMetaRead(w) ==
+  /\ SplitAdopt
+  /\ edge[w] = "landed" /\ wst[w] = "headed"
+  /\ IF meta.st = "clean"
+       THEN /\ adopted' = [adopted EXCEPT ![w] = hd[w]]
+            /\ wst' = [wst EXCEPT ![w] = "idle"]
+       ELSE /\ adopted' = adopted
+            /\ wst' = [wst EXCEPT ![w] = IF meta.st = "condemned" THEN "pub" ELSE AbsentNext]
+  /\ UNCHANGED <<dd_done, round, cut_taken, folded, body, meta, next_gen, seeded, edge, committed, ret, observed,
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, hd>>
+
+(* B: the second `op.head(key)`. The same token goes on to the backfill; anything else starts
+   the next loop iteration. Without FixGuard the result is ignored. *)
+WReHead(w) ==
+  /\ SplitAdopt /\ FixMode = "B"
+  /\ edge[w] = "landed" /\ wst[w] = "rehead"
+  /\ wst' = [wst EXCEPT ![w] = IF ~FixGuard \/ (body.present /\ body.tok = hd[w]) THEN "backfill" ELSE "idle"]
+  /\ UNCHANGED <<dd_done, round, cut_taken, folded, body, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, hd>>
+
+(* `putMetaIfAbsent(Clean)`, its outcome not read, then the `Observed` adoption of the HEAD's token. *)
+WBackfill(w) ==
+  /\ SplitAdopt
+  /\ edge[w] = "landed" /\ wst[w] = "backfill"
+  /\ meta' = IF meta.st = "absent" THEN CleanMeta ELSE meta
+  /\ adopted' = [adopted EXCEPT ![w] = hd[w]]
+  /\ wst' = [wst EXCEPT ![w] = "idle"]
+  /\ UNCHANGED <<dd_done, round, cut_taken, folded, body, next_gen, seeded, edge, committed, ret, observed,
+                 observed_tok, mdq, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, hd>>
 
 (* Publication of a fresh incarnation (resurrect over Condemned, or create over an absent
    body), followed by the reconcile to Clean. Atomic unless SplitPublish; the reconcile may
@@ -184,7 +267,10 @@ WAdopt(w) ==
    the absent-body path (`create`), the read meta's bytes on the resurrect path (`replace`). *)
 WPublish(w) ==
   /\ edge[w] = "landed" /\ adopted[w] = NoTok /\ ~recon[w] /\ Fresh
-  /\ IF ExactAbsentPath THEN ~body.present /\ meta.st = "absent" ELSE (~body.present \/ Cond)
+  /\ IF SplitAdopt THEN wst[w] = "pub"
+     ELSE IF ExactAbsentPath THEN ~body.present /\ meta.st = "absent" ELSE (~body.present \/ Cond)
+  /\ wst' = IF SplitAdopt THEN [wst EXCEPT ![w] = "idle"] ELSE wst
+  /\ hd' = hd
   /\ body' = [present |-> TRUE, tok |-> next_gen]
   /\ next_gen' = next_gen + 1
   /\ premeta' = IF WriterLeavesMarker
@@ -202,7 +288,7 @@ WPublish(w) ==
         /\ adopted' = adopted
         /\ meta' = meta
         /\ recon' = recon
-  /\ UNCHANGED <<round, cut_taken, folded, seeded, edge, committed, ret, observed, observed_tok, mdq, dirty, touched,
+  /\ UNCHANGED <<dd_done, round, cut_taken, folded, seeded, edge, committed, ret, observed, observed_tok, mdq, dirty, touched,
                  mjob, wit, reg, sa_done, mobs, mobs>>
 
 (* `reconcileMetaClean`: the first conditional write wins only if the meta is still what
@@ -272,7 +358,9 @@ WRespawn(w) ==
   /\ Respawn /\ edge[w] = "dropped" /\ ~recon[w]
   /\ edge' = [edge EXCEPT ![w] = "none"]
   /\ adopted' = [adopted EXCEPT ![w] = NoTok]
-  /\ UNCHANGED <<round, cut_taken, folded, body, meta, next_gen, seeded, committed, ret, observed, observed_tok, mdq,
+  /\ wst' = [wst EXCEPT ![w] = "idle"]
+  /\ hd' = [hd EXCEPT ![w] = NoTok]
+  /\ UNCHANGED <<dd_done, round, cut_taken, folded, body, meta, next_gen, seeded, committed, ret, observed, observed_tok, mdq,
                  recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
 
 GCut ==
@@ -337,7 +425,7 @@ GateOK == ~GateOnMarker \/ (IF GateAlwaysReads THEN GateMetaGuards ELSE EffConfi
    differs. It pre-empts every other settlement of the row. *)
 SupersedeDue ==
   /\ RealCandidate
-  /\ ret.st \in {"condemned", "pending"} /\ touched /\ ~folded
+  /\ ret.st \in {"condemned", "pending", "gone"} /\ touched /\ ~folded
   /\ body.present /\ body.tok /= ret.tok
 
 (* A condemnation or supersede of token t at round r: the marker write either lands in the
@@ -435,7 +523,7 @@ GSettleCarryRetry ==
 
 GSettleSuppressed ==
   /\ SuppressRounds
-  /\ cut_taken /\ ret.st \in {"condemned", "pending"} /\ ~folded /\ ~SupersedeDue
+  /\ cut_taken /\ ret.st \in {"condemned", "pending", "gone"} /\ ~folded /\ ~SupersedeDue
   /\ EndRound
   /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed, ret, mdq, recon, dirty, touched, premeta,
                  mjob, wit, reg, sa_done>>
@@ -459,17 +547,51 @@ GSettleRedelete ==
        THEN body' = [present |-> FALSE, tok |-> NoTok]
        ELSE body' = body
   /\ wit' = IF Witness /\ wit = 1 /\ ~DeleteRefused /\ body.present /\ body.tok = ret.tok THEN 2 ELSE wit
-  /\ IF DeleteRefused
+  /\ IF FixMode = "A" /\ AGoneDropsNow /\ ~body.present
+       THEN /\ meta' = IF Cond /\ meta.cr <= (IF GoneDeleteAnyRound THEN round - 1 ELSE ret.cr) THEN Absent ELSE meta
+            /\ mdq' = mdq
+     ELSE IF DeleteRefused \/ FixMode = "A"
        THEN /\ meta' = meta /\ mdq' = mdq
        ELSE IF SplitMetaDelete
          THEN /\ meta' = meta
               /\ mdq' = IF body.present /\ body.tok /= ret.tok THEN mdq ELSE mdq \cup {ret.cr}
          ELSE /\ meta' = IF body.present /\ body.tok = ret.tok THEN Absent ELSE meta
               /\ mdq' = mdq
-  /\ ret' = NoRet
+  \* A: Removed or Gone keeps the entry as "gone" (still `delete_pending`, marker owed); Mismatch drops it.
+  /\ ret' = IF FixMode = "A" /\ ~DeleteRefused /\ ~(body.present /\ body.tok /= ret.tok)
+                /\ ~(AGoneDropsNow /\ ~body.present)
+             THEN [ret EXCEPT !.st = "gone"]
+             ELSE NoRet
   /\ reg' = RegForget(ret.tok)
   /\ EndRound
   /\ UNCHANGED <<folded, next_gen, seeded, edge, adopted, committed, recon, dirty, touched, premeta, mjob, sa_done>>
+
+(* A, the round after the body delete: `settleEntry` on a body-gone entry. In-degree > 0 spares
+   it and leaves the marker Condemned (dropped, or carried under AKeepOnSpare). *)
+GSettleGoneSpare ==
+  /\ FixMode = "A" /\ FixGuard
+  /\ cut_taken /\ ret.st = "gone" /\ folded
+  /\ ret' = IF AKeepOnSpare THEN ret ELSE NoRet
+  /\ EndRound
+  /\ UNCHANGED <<folded, body, meta, next_gen, seeded, edge, adopted, committed, mdq, recon, dirty, touched, premeta,
+                 mjob, wit, reg, sa_done>>
+
+(* A, in-degree 0: the synchronous `deleteConfirmedMeta` (GET + DELETE If-Match of a Condemned
+   marker at round <= the entry's, one step as in GMetaDeleteJob), then the entry is dropped. A
+   failed delete keeps the entry for the next round. The preceding `HEAD` (expect gone) is not a
+   separate step: with unique tokens a body-gone entry's token never reappears. Without FixGuard
+   the in-degree is ignored. *)
+GSettleGoneDelete ==
+  /\ FixMode = "A"
+  /\ cut_taken /\ ret.st = "gone" /\ (~folded \/ ~FixGuard) /\ ~SupersedeDue
+  /\ \/ /\ meta' = IF Cond /\ meta.cr <= (IF GoneDeleteAnyRound THEN round - 1 ELSE ret.cr) THEN Absent ELSE meta
+        /\ ret' = NoRet
+     \/ /\ MetaDeleteFault
+        /\ meta' = meta
+        /\ ret' = ret
+  /\ EndRound
+  /\ UNCHANGED <<folded, body, next_gen, seeded, edge, adopted, committed, mdq, recon, dirty, touched, premeta,
+                 mjob, wit, reg, sa_done>>
 
 (* The delayed meta delete. Unfenced: enabled in any state, so it also stands for a
    deposed leader's job. The read and the conditional delete act on the token the HEAD
@@ -478,10 +600,23 @@ GSettleRedelete ==
 GMetaDeleteJob(c) ==
   /\ c \in mdq
   /\ mdq' = mdq \ {c}
-  /\ meta' = IF ~JobRoundCheck THEN Absent
-             ELSE IF Cond /\ meta.cr <= c THEN Absent ELSE meta
+  /\ \/ meta' = IF ~JobRoundCheck THEN Absent
+                ELSE IF Cond /\ meta.cr <= c THEN Absent ELSE meta
+     \/ MetaDeleteFault /\ meta' = meta   \* the job fails; `GcMetaWriter` only logs it
   /\ UNCHANGED <<round, cut_taken, folded, body, next_gen, seeded, edge, adopted, committed, ret, observed, observed_tok,
                  recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, mobs>>
+
+(* A deposed attempt of an earlier round, before its losing gc/state CAS, runs the redelete of an
+   entry the last committed pass published (`Gc::performRedeleteIo`): exact-token, so only the
+   entry's token. Today it then schedules the marker delete; under A it does not. *)
+GDeposedRedelete ==
+  /\ DeposedDelete /\ ~dd_done
+  /\ ret.st = "pending" /\ body.present /\ body.tok = ret.tok
+  /\ dd_done' = TRUE
+  /\ body' = [present |-> FALSE, tok |-> NoTok]
+  /\ mdq' = IF FixMode = "A" THEN mdq ELSE mdq \cup {ret.cr}
+  /\ UNCHANGED <<round, cut_taken, folded, meta, next_gen, seeded, edge, adopted, committed, ret, observed,
+                 observed_tok, recon, dirty, touched, premeta, mjob, wit, reg, sa_done, mobs, wst, hd>>
 
 (* A deposed leader's condemn-marker write at its own (possibly old) round, or a marker an
    aborted attempt of the current round left behind. Confirms nothing the live leader reads. *)
@@ -523,34 +658,41 @@ LateMovedTrack ==
 LateStill == late' = late /\ LateMovedTrack
 
 Next ==
-  \/ Seed /\ LateStill
-  \/ \E w \in Writers : WPrecommit(w) /\ LateStill
-  \/ \E w \in Writers : WAdopt(w) /\ LateStill
+  \/ Seed /\ LateStill /\ WKeep
+  \/ \E w \in Writers : WPrecommit(w) /\ LateStill /\ WKeep
+  \/ \E w \in Writers : WAdopt(w) /\ LateStill /\ WKeep
+  \/ \E w \in Writers : WHead(w) /\ LateStill
+  \/ \E w \in Writers : WMetaRead(w) /\ LateStill
+  \/ \E w \in Writers : WReHead(w) /\ LateStill
+  \/ \E w \in Writers : WBackfill(w) /\ LateStill
   \/ \E w \in Writers : WPublish(w) /\ LateStill
-  \/ \E w \in Writers : WCommit(w) /\ LateStill
-  \/ \E w \in Writers : WDrop(w) /\ LateStill
+  \/ \E w \in Writers : WCommit(w) /\ LateStill /\ WKeep
+  \/ \E w \in Writers : WDrop(w) /\ LateStill /\ WKeep
   \/ \E w \in Writers : WRespawn(w) /\ LateStill
-  \/ GCut /\ LateStill
-  \/ GObserve /\ LateStill
-  \/ GObserveMeta /\ LateStill
-  \/ GMarkerJob /\ LateStill
-  \/ GSettleCondemn /\ LateStill
-  \/ GSettleIdle /\ LateStill
-  \/ GSettleSpare /\ LateStill
-  \/ GSettleGraduate /\ LateStill
-  \/ GSettleGraduateDeferred /\ LateStill
-  \/ GSettleSupersede /\ LateStill
-  \/ GSettleCarryRetry /\ LateStill
-  \/ GSettleSpareLoud /\ LateStill
-  \/ GSettleRedelete /\ LateStill
-  \/ GSettleSuppressed /\ LateStill
-  \/ \E c \in mdq : GMetaDeleteJob(c) /\ LateStill
-  \/ \E r \in 1..round : GStaleMarkerWrite(r) /\ LateStill
-  \/ GRestart /\ LateStill
-  \/ \E r \in 1..round : GStaleAttempt(r) /\ LateStill
-  \/ \E w \in Writers : WReconcile(w) /\ LateMovedTrack
-  \/ WLateLand /\ LateMovedTrack
-  \/ WLateDie /\ LateMovedTrack
+  \/ GCut /\ LateStill /\ WKeep
+  \/ GObserve /\ LateStill /\ WKeep
+  \/ GObserveMeta /\ LateStill /\ WKeep
+  \/ GMarkerJob /\ LateStill /\ WKeep
+  \/ GSettleCondemn /\ LateStill /\ WKeep
+  \/ GSettleIdle /\ LateStill /\ WKeep
+  \/ GSettleSpare /\ LateStill /\ WKeep
+  \/ GSettleGraduate /\ LateStill /\ WKeep
+  \/ GSettleGraduateDeferred /\ LateStill /\ WKeep
+  \/ GSettleSupersede /\ LateStill /\ WKeep
+  \/ GSettleCarryRetry /\ LateStill /\ WKeep
+  \/ GSettleSpareLoud /\ LateStill /\ WKeep
+  \/ GSettleRedelete /\ LateStill /\ WKeep
+  \/ GSettleGoneSpare /\ LateStill /\ WKeep
+  \/ GSettleGoneDelete /\ LateStill /\ WKeep
+  \/ GSettleSuppressed /\ LateStill /\ WKeep
+  \/ \E c \in mdq : GMetaDeleteJob(c) /\ LateStill /\ WKeep
+  \/ \E r \in 1..round : GStaleMarkerWrite(r) /\ LateStill /\ WKeep
+  \/ GRestart /\ LateStill /\ WKeep
+  \/ GDeposedRedelete /\ LateStill
+  \/ \E r \in 1..round : GStaleAttempt(r) /\ LateStill /\ WKeep
+  \/ \E w \in Writers : WReconcile(w) /\ LateMovedTrack /\ WKeep
+  \/ WLateLand /\ LateMovedTrack /\ WKeep
+  \/ WLateDie /\ LateMovedTrack /\ WKeep
 
 Spec == Init /\ [][Next]_vars
 
@@ -573,5 +715,10 @@ NoWedgedCarry == ~(ret.st = "condemned" /\ ret.retried /\ Cond /\ meta.cr < ret.
 (* Reachability witness, checked as an invariant that is expected to FAIL: a garbage blob
    whose marker a writer cleared is refused at the gate and still deleted later. *)
 WitNoDeleteAfterRefusal == wit /= 2
+
+(* Orphan-marker leak proxy: a Condemned marker over an absent body, with no writer holding a
+   landed edge and no delete job queued, is still owed by a retired entry. *)
+OrphanTracked ==
+  (Cond /\ ~body.present /\ mdq = {} /\ \A w \in Writers : edge[w] /= "landed") => ret.st /= "none"
 
 =====================================================================================

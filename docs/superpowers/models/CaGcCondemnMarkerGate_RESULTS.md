@@ -15,6 +15,8 @@ The PR1 configuration (gate always reads, no registry, retry stamps the current 
 
 Three violation rows are accepted residuals, not sabotage: `pm_g1_late_resolved_stale` and `pm_g1_late_gaveup` (a late Clean request that still matches the marker, spec sections 10.1 and 10.2 of `docs/superpowers/specs/2026-09-30-cas-gc-meta-delete-names-its-condemnation-design.md`) and `pm_g1_extdrop_noregistry` (an externally dropped edge, same spec, section 10.1). They show only that the model can find the loss PR1 does not close. `pm_g1_late_resolved_version` is green: it is the same schedule family with `EtagIsContent` FALSE (GCS), where the late request does not match recreated bytes.
 
+CAS-360: with the adopter's `HEAD` and marker `GET` split (`SplitAdopt`), today's protocol loses data (`cur_headget`, `violation:NoDangle`). Candidates A (deferred marker delete), B (second `HEAD`) and C (republish on absent marker) are green; each sabotage row violates `NoDangle`. See [CAS-360](#cas-360).
+
 ## Checker and finite scope {#checker-and-finite-scope}
 
 - TLC `2026.07.18.145032`, revision `30cc360`; `tla2tools.jar` SHA-256 `cc4803dce2a8ffaf0f5920a9dc39df4b5ee34ab4cb53fb58ac557277a7e516b3`.
@@ -159,3 +161,114 @@ Earlier battery rerun with the four constants at their inert values. Its cfgs ar
 
 `CaGcCondemnMarkerGate_pm_g1_big_noregistry.cfg`: `green`, 25,807,236 distinct states, 90 s (cap 7200 s). It is not part of `run_condemnmarker.sh`; run it with TLC directly. The count was observed before `Next` was split per action and was not rerun after it.
 
+
+## CAS-360: the adopter's `HEAD` and marker `GET` are two reads {#cas-360}
+
+`PartWriteTxn::ensureBlobPresent` (`Pool/CasPartWriteTxn.cpp`) issues `op.head(key)`, then a separate `loadMeta` `GET`. On an absent marker it backfills `Clean` (`putMetaIfAbsent`, outcome not read) and returns `Observed` with no second `HEAD`. `WAdopt` checked `body.present /\ ~Cond` in one step, so the model could not see a body deleted between the two reads. Audit rows: `docs/superpowers/cas/2026-10-12-late-request-audit/objects/meta.md` S9, `objects/blob.md` S13.
+
+### What was split {#cas-360-split}
+
+`SplitAdopt = TRUE` replaces `WAdopt` with one step per request:
+
+| Action | Code | Effect |
+|---|---|---|
+| `WHead` | `op.head(key)` | present: remember the token (`hd`); absent: publish |
+| `WMetaRead` | `loadMeta` | `Clean`: adopt `hd`; `Condemned`: publish; absent: backfill (today), second `HEAD` (B), publish (C) |
+| `WReHead` | B only: a second `op.head(key)` | same token: backfill; anything else: next loop iteration |
+| `WBackfill` | `putMetaIfAbsent(Clean)`, then the `Observed` return | writes `Clean` only over an absent key; adopts `hd` regardless |
+
+`WPublish` under `SplitAdopt` fires only on the writer's own decision (`wst = "pub"`), not on a fresh atomic look at the store. GC already had the marker delete as a later step than the body delete (`SplitMetaDelete`: `GSettleRedelete` queues `mdq`, `GMetaDeleteJob` runs `deleteConfirmedMeta`).
+
+New switches, all inert (`FALSE`/`"none"`) in every pre-existing cfg:
+
+| Constant | Meaning |
+|---|---|
+| `SplitAdopt` | the split above |
+| `FixMode` | `"none"`, `"A"`, `"B"`, `"C"` |
+| `FixGuard` | `FALSE` removes the candidate's decisive check (sabotage) |
+| `AKeepOnSpare` | A: a spared body-gone entry is carried until a round at in-degree 0 deletes its marker |
+| `GoneDeleteAnyRound` | A: the marker delete removes a `Condemned` marker of any round `< round`, not only `<= entry.condemn_round` |
+| `MetaDeleteFault` | a marker delete may fail; today's queued job is then lost |
+| `DeposedDelete` | once per behaviour, a deposed attempt's redelete removes a published `delete_pending` body at any time (today it also queues the marker delete) |
+| `AGoneDropsNow` | A sabotage: a body already `Gone` at the first redelete pass deletes the marker in that round |
+
+New invariant `OrphanTracked`: a `Condemned` marker over an absent body, with no landed writer edge and no queued delete job, is still owned by a retired entry. It is a leak proxy, not a safety property.
+
+### Counterexample, current protocol {#cas-360-trace}
+
+`cur_headget` (`pm_g1_live` with `SplitAdopt`), 15 states:
+
+1. Seed body T1; round 1 cut sees it at zero, condemns T1; the async marker job writes `Condemned(1)`.
+2. Round 2 cut; the gate reads `Condemned(1)` and graduates the entry to `pending`.
+3. Round 3 cut, no edges folded.
+4. Writer W precommits (after the cut), `HEAD` returns T1.
+5. `GSettleRedelete` removes T1 (`Removed`) and queues the marker delete; round 3 commits.
+6. `GMetaDeleteJob` deletes `Condemned(1)`.
+7. W's `GET` finds no marker; `putMetaIfAbsent(Clean)` lands on the empty key; W adopts T1.
+8. W commits: a committed edge to a deleted body (`NoDangle`).
+
+The gate is not violated: the marker was `Condemned` until after the body delete. W's decision combines two reads taken at different times. `cur_deposed` reaches the same loss when a deposed attempt does the body delete.
+
+### Candidates {#cas-360-candidates}
+
+- **A, deferred marker delete.** The pass that deletes the body (`Removed`) or finds it `Gone` keeps the entry (`"gone"`, still `delete_pending`) and does not touch the marker. The next round settles it against that round's in-degree: `> 0` spares it with the marker left `Condemned`; `= 0` runs `deleteConfirmedMeta` synchronously and drops the entry only if the delete succeeded. Why it holds: W's precommit < W's `HEAD` < body delete < the next round's cut, so W's edge is in the in-degree of the round that would delete the marker. The marker is `Condemned` at every W `GET` before that round, and W republishes.
+- **B, second `HEAD`.** On an absent marker, `HEAD` again and adopt only an unchanged token. Why it holds: the marker was absent at `t_g` and the same token was present at `t_h2 > t_g`. GC deletes the marker only after deleting the body, so the body was not deleted before `t_h2`, and any later delete needs a graduation read after `t_g`, whose round's cut folds W.
+- **C, republish on absent marker.** An absent marker never adopts.
+
+### Runs {#cas-360-runs}
+
+TLC `2026.07.18.145032`, 4 workers, `nice -n 10`, `-Xmx8g`. Two writers, `MaxGen 3`, `MaxRounds 7`. Rows without `_all` use the `pm_g1_live` faults; `_all` rows use `pm_g1_all_noregistry` (adds `PersistConf`, `Prefetch`, `StaleMarkers`, `StaleAttempts`).
+
+Pre-existing rows in the same battery run (`run_condemnmarker.sh`, all 51 rows, `ALL EXPECTATIONS MET`): every row keeps its result, and every green row keeps its distinct-state count (`fix` 845, `pm_g1_noregistry` 199,936, `pm_g1_all_noregistry` 6,089,253, `pm_g1_late_resolved_version` 13,862,134). The new variables are constant when `SplitAdopt` is off. No old green depended on the fused `WAdopt`, because no old cfg splits it.
+
+| Cfg | Expected | Observed | Distinct | Seconds | Note |
+|---|---|---|---:|---:|---|
+| `cur_headget` | violation | `violation:NoDangle` | 27,530 | 1 | today's protocol: backfill over the deleted marker, adopt a deleted body (trace above) |
+| `cur_headget_all` | violation | `violation:NoDangle` | 273,931 | 2 | same loss with every fault switch of `pm_g1_all_noregistry` |
+| `cur_deposed` | violation | `violation:NoDangle` | 19,853 | 1 | same loss; a deposed attempt deletes the body and queues the marker delete |
+| `sab_deferA` | violation | `violation:NoDangle` | 49,122 | 1 | A without the in-degree check: the marker is deleted in the next round although W is folded |
+| `sab_deferA_gonenow` | violation | `violation:NoDangle` | 33,009 | 1 | A deleting the marker in the round whose first pass finds the body already `Gone` (deposed delete after the cut) |
+| `sab_reheadB` | violation | `violation:NoDangle` | 50,532 | 1 | B with the second `HEAD` result ignored |
+| `sab_republishC` | violation | `violation:NoDangle` | 30,000 | 1 | C adopting on an absent marker (today's rule) |
+| `fix_deferA` | green | `green` | 2,694,270 | 15 | - |
+| `fix_deferA_keep` | green | `green` | 2,774,035 | 16 | A + `AKeepOnSpare` |
+| `fix_deferA_keepany` | green | `green` | 2,767,736 | 16 | A + `AKeepOnSpare` + `GoneDeleteAnyRound` |
+| `fix_deferA_all` | green | `green` | 38,361,398 | 381 | - |
+| `fix_deferA_keepany_all` | green | `green` | 39,623,012 | 381 | + `MetaDeleteFault`, with `OrphanTracked` not checked |
+| `fix_deferA_deposed` | green | `green` | 4,199,367 | 22 | - |
+| `fix_deferA_keepany_deposed_safe` | green | `green` | 4,369,916 | 23 | A + keep + any-round + `MetaDeleteFault` + `DeposedDelete`, safety only |
+| `fix_reheadB` | green | `green` | 3,475,290 | 20 | - |
+| `fix_reheadB_all` | green | `green` | 50,855,227 | 500 | - |
+| `fix_reheadB_deposed` | green | `green` | 7,622,045 | 41 | - |
+| `fix_republishC` | green | `green` | 3,504,272 | 20 | - |
+| `fix_republishC_all` | green | `green` | 41,171,364 | 404 | - |
+| `fix_republishC_deposed` | green | `green` | 6,934,001 | 37 | - |
+| `cur_orphan` | violation | `violation:OrphanTracked` | 2,485 | 1 | today: a failed marker delete job leaves `Condemned` over no body, no entry |
+| `cur_orphan_retry` | violation | `violation:OrphanTracked` | 11,738 | 0 | today, no delete fault: the retry stamps round 2, `deleteConfirmedMeta(cr 1)` skips it |
+| `fix_deferA_orphan` | violation | `violation:OrphanTracked` | 11,353 | 1 | A drops a spared body-gone entry; the spared writer drops before republishing |
+| `fix_deferA_keep_orphan` | violation | `violation:OrphanTracked` | 18,233 | 1 | A + keep: the `<= entry.condemn_round` bound skips the retry-stamped marker |
+| `fix_deferA_keepany_orphan` | green | `green` | 2,767,736 | 16 | A + keep + any-round, with `MetaDeleteFault`: a failed delete keeps the entry, retried next round |
+| `fix_deferA_keepany_deposed` | violation | `violation:OrphanTracked` | 6,515 | 1 | residual leak: a `pending` entry spared at in-degree > 0 after a deposed attempt removed its body |
+
+### Findings beyond CAS-360 {#cas-360-findings}
+
+- **Orphan marker in today's code, no fault needed besides a lost marker write** (`cur_orphan_retry`). The condemn marker write is lost; the gate refuses, its retry stamps the current round 2 (`confirm_condemned_marker` passes `condemn_round`, not `entry.condemn_round`); the entry graduates on `Condemned(2)`; after the body delete `deleteConfirmedMeta(ref, entry.condemn_round = 1)` skips a marker with `condemn_round 2 > 1`. The `Condemned` marker outlives its body. Safe (a writer republishes on `Condemned`), but nothing ever removes it. Under A, `GoneDeleteAnyRound` closes it (`fix_deferA_keepany_orphan` green).
+- **A must be two-pass even when the first pass finds the body `Gone`** (`sab_deferA_gonenow`). A deposed attempt's pre-commit redelete can remove the body after this round's cut; deleting the marker in the round that first sees `Gone` reopens the race. The marker delete belongs to a round strictly after the pass that saw the body removed or gone.
+- **A without `AKeepOnSpare` leaks a marker** when the spared writer aborts before republishing (`fix_deferA_orphan`). `AKeepOnSpare` keeps the body-gone entry until in-degree 0. A spared `pending` entry whose body a deposed attempt removed still leaks (`fix_deferA_keepany_deposed`); safety holds there (`fix_deferA_keepany_deposed_safe`).
+
+### Recommendation {#cas-360-recommendation}
+
+**A + `GoneDeleteAnyRound`**, two-pass, with B as the fallback if A cannot get its persisted bit.
+
+- A is GC-side. It closes the race for every writer binary, including writers not yet upgraded in a rolling upgrade; B and C need every writer upgraded. A also gives the marker delete a retry (the entry is kept on failure), and with the any-round bound it closes the orphan in `cur_orphan_retry`.
+- Code change for A: `Gc::applyRedeleteOutcome` on `Removed` or `Gone` keeps the entry `delete_pending` with a "body gone" mark and schedules nothing. `settleEntry` (`Gc/CasBlobInDegree.cpp`) already spares on `indeg > 0`. A marked entry at `indeg == 0` runs `deleteConfirmedMeta` before the round commits, and only a successful delete (or a marker that is not `Condemned`) drops it. `deleteConfirmedMeta` takes a bound `< current round` instead of `entry.condemn_round`.
+- Cost for A: per deleted blob, +1 `HEAD` (second redelete pass) and +1 round of carry for the ledger row; the `GET` + `DELETE` of the marker moves from the async pool into the next round. No extra request on the write path.
+- Cost for B: ~10 lines in `PartWriteTxn::ensureBlobPresent`, the `!loaded` branch; +1 `HEAD` only on the absent-marker path. Relies on token uniqueness for its argument.
+- Cost for C: same branch; an absent marker costs a full body upload instead of a `PUT` of the marker. Absent markers occur on blobs whose marker create failed and in this race, so the volume is small, but each one is a body upload.
+- `AKeepOnSpare` is optional: without it a spared writer that aborts before republishing leaves a `Condemned` marker over no body. The next writer of the hash republishes and reconciles it to `Clean`, so it is a leak only for hashes never written again.
+
+### Not shown {#cas-360-not-shown}
+
+- Token recurrence (CAS-361, a resent publication restoring an old token): not modelled here; see `CaBlobPublishCore`. B's argument uses token uniqueness.
+- The `HEAD (expect gone)` of A's second pass is not a separate step; with unique tokens a body-gone entry's token does not come back.
+- A redelete `Mismatch` on the second pass (a republished body) is folded into `deleteConfirmedMeta`'s conditional delete, which leaves the republisher's `Clean` alone.

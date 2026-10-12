@@ -40,6 +40,32 @@ CONFIGS=(
     "pm_g1_mpf_noregistry         green      -"
     "rv_g1_mpf_noregistry         green      -"
     "pm_g1_mpf_late_resolved      green      -"
+    "cur_headget                  violation  NoDangle"
+    "sab_deferA                   violation  NoDangle"
+    "sab_reheadB                  violation  NoDangle"
+    "sab_republishC               violation  NoDangle"
+    "fix_deferA                   green      -"
+    "fix_deferA_keep              green      -"
+    "fix_reheadB                  green      -"
+    "fix_republishC               green      -"
+    "cur_orphan                   violation  OrphanTracked"
+    "fix_deferA_orphan            violation  OrphanTracked"
+    "cur_orphan_retry             violation  OrphanTracked"
+    "fix_deferA_keep_orphan       violation  OrphanTracked"
+    "fix_deferA_keepany           green      -"
+    "fix_deferA_keepany_orphan    green      -"
+    "cur_headget_all              violation  NoDangle"
+    "fix_deferA_all               green      -"
+    "fix_deferA_keepany_all       green      -"
+    "fix_reheadB_all              green      -"
+    "fix_republishC_all           green      -"
+    "cur_deposed                  violation  NoDangle"
+    "sab_deferA_gonenow           violation  NoDangle"
+    "fix_deferA_deposed           green      -"
+    "fix_deferA_keepany_deposed   violation  OrphanTracked"
+    "fix_reheadB_deposed          green      -"
+    "fix_republishC_deposed       green      -"
+    "fix_deferA_keepany_deposed_safe green   -"
 )
 
 selected()
@@ -61,6 +87,8 @@ selected()
 
 overall=0
 run_id="${MODULE}-$$-$(date +%s%N)"
+OUT=${TLC_OUT:-../../../tmp/noclock/fix/cas360}
+mkdir -p "$OUT"
 printf '%-30s %-11s %-32s %12s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "DISTINCT" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"
 do
@@ -68,12 +96,13 @@ do
     selected "$name" "$@" || continue
 
     cfg="${MODULE}_${name}.cfg"
-    log="../../../tmp/tlc-${run_id}-${name}.log"
-    meta="../../../tmp/tlc-meta-${run_id}-${name}"
+    log="$OUT/tlc-${run_id}-${name}.log"
+    meta="$OUT/tlc-meta-${run_id}-${name}"
     start=$SECONDS
-    timeout "${TLC_TIMEOUT:-3600}" nice -n 10 /usr/bin/java -XX:+UseParallelGC -Xmx8g ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
-        -metadir "$meta" -workers "${TLC_WORKERS:-8}" -deadlock -config "$cfg" "$MODULE.tla" >"$log" 2>&1
+    timeout "${TLC_TIMEOUT:-1200}" nice -n 10 /usr/bin/java -XX:+UseParallelGC -Xmx8g ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC -noGenerateSpecTE \
+        -metadir "$meta" -workers "${TLC_WORKERS:-4}" -deadlock -config "$cfg" "$MODULE.tla" >"$log" 2>&1
     rc=$?
+    rm -rf "$meta"
     elapsed=$((SECONDS - start))
     distinct="$(grep -oE '[0-9,]+ distinct states found' "$log" | tail -1 | awk '{gsub(",", "", $1); print $1}')"
 
