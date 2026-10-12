@@ -4,8 +4,8 @@ Model: `CaRelinkConfirmCore.tla`. Gates the **publish-then-confirm relink** prot
 `2026-07-23-cas-fetch-handoff-publish-confirm-design.md` (rev.5), Part B — Task 9 of the plan
 `2026-07-24-cas-publish-confirm-and-ref-lane-safety.md`. This is the gate that blocks all of Part B.
 
-Runner: `./run_relinkconfirm.sh <cfg-basename>`. TLC 2 (tla2tools, Java 21),
-`java -XX:+UseParallelGC -workers auto`, `CHECK_DEADLOCK FALSE` in every cfg. All fifteen
+Runner: `./run_relinkconfirm.sh <cfg-basename>`. TLC 2 (tla2tools, Java 21). Since CAS-365 the
+runner uses 4 workers, `-Xmx8g`, `nice 10`, timeout 1200 s; `CHECK_DEADLOCK FALSE` in every cfg. All fifteen
 configurations were re-run on 2026-09-02 against the ref-scoped rule 3 revision (`SabotageTouchBlind`,
 `sShape`; `_empty_receivers` runs too but, as before this revision, is not carried in the table below);
 the numbers are the real TLC output, not estimates.
@@ -34,7 +34,182 @@ Constants unless the row says otherwise: `Receivers = {r1}`, `MaxId = 5`, `MaxRo
    rewritten and `_sab_holeylist` stays red as the historical witness — see
    [What v9 does to this finding](#v9-holeylist-status).)*
 
-## Summary table
+## CAS-365: the mount slot is not the fence (2026-10-13) {#cas-365}
+
+**Verdict.** The release line (`2a034cdb374`) answers relink-confirm `Yes` from local belief. A
+successor that claimed the slot while this mount still believes it is live (frozen VM clock, C5)
+lets the receiver promote over a deleted blob: `_cur_staleyes` violates
+`ConfirmedRelinkNeverDangles` in 13 states. Fix A (one slot `GET` after the snapshot, ETag match)
+and fix B (wait for a renewal started after the snapshot) are both green; each key guard is
+load-bearing. **Recommend fix A.**
+
+### What was split {#cas-365-split}
+
+- **Slot vs fence.** `sFence` stays the local belief (`mayMutate`). New `slotHolder`/`slotEtag` are
+  the durable `gc/server-roots/<srid>/mount` object. `ForeignClaim` writes the slot;
+  `ForeignRemove` now requires `slotHolder \in {"succ","twin"}` instead of `~sFence`.
+- **`ZombieBelief`.** `FALSE`: `ForeignClaim` needs `~sFence` (the clock assumption; every pre-365
+  cfg). `TRUE`: the claim lands while `sFence` is still `TRUE` (C5).
+- **`AllowTwin`.** `TwinClaim`: a same-`(uuid, epoch)` process replaces the slot, as `claimMount`'s
+  same-epoch refresh did before PR #2512.
+- **The confirm.** The atomic `RConfirm` is now `SCheck` (rules 2-6 in memory, instant `t_rows`) →
+  optional `SSlotRead` (fix A) or `SAnswerB` (fix B) → `RDeliver` (the receiver gets the answer).
+  Late delivery (C1-C3) is any interleaving before `RDeliver`.
+- **Renewal.** `RenewStart` → `RenewLand` (conditional `replace` lands or conflicts) → `RenewAck`
+  (`last_etag` installed, or `throwRenewConflict` trips the fence). Bounded by `MaxRenew`.
+- `CaRelinkLaneComposition` is unchanged: last commit `b51b72cf7ea` (2026-09-02), before the lease
+  series, and it models no fence or slot.
+
+### Atomicity {#cas-365-atomicity}
+
+| action | code | the one request / step |
+|---|---|---|
+| `SCheck(r)` | `Pool/CasRefLedger.cpp:CasRefLedger::confirmExactRef` | rules 2-6 under `ref_queue_mutex` + `state_mutex`; no I/O |
+| `SSlotRead(r)` (fix A) | new, `CasMountRuntime` / `MountLeaseRenewer` | one `GET gc/server-roots/<srid>/mount`, issued after `SCheck` |
+| `SAnswerB(r)` (fix B) | new wait in `Pool::confirmExactRef` | in-memory: read the renew generation |
+| `RDeliver(r)` | `ContentAddressedMetadataStorage::confirmExactRef` response → receiver | HTTP response; no store request |
+| `RenewStart` | `Pool/CasServerRoot.cpp:MountLeaseRenewer::renewOn` (body, admit) | in-memory: build body, take attempt id |
+| `RenewLand` | same, `op.replace(key, body, precondition())` | one conditional `PUT` landing at the store |
+| `RenewAck` | same, `Committed` → `last_etag`; `Conflict` → `throwRenewConflict` | in-memory response handling |
+| `ForeignClaim` | `Pool/CasServerRoot.cpp:claimMount` (successor) | one conditional write of the slot |
+| `TwinClaim` | `claimMount` same-epoch refresh, pre-#2512 only | one conditional `replace` of the slot |
+| `ForeignRemove` | successor's ref-log append | one conditional `PUT` |
+| `SlotPoll` (sabotage only) | an older slot `GET` whose result a cache keeps | one `GET` |
+
+Remaining fusions and why they are sound:
+
+- `SSlotRead` fuses the `GET`'s linearisation with recording its result. Nothing the sender reads
+  changes between the two; the delay to the receiver is `RDeliver`.
+- `RenewLand` has no `Unresolved` arm (CAS-375). An ambiguous renewal only delays `RenewAck` or
+  ends in a conflict; neither makes a `Yes` reachable sooner, and fix A accepts the in-flight
+  attempt's ETag (by its write-attempt id) whether or not the response arrived.
+- `ForeignClaim` omits the successor's preceding `GET`/observation wait: it only gates the
+  successor's own decision, and the model lets the claim happen at any time.
+- A GC fence-out (`gc_fenced`) and a decommission (slot deleted) are not separate actions. Both
+  change the slot before any foreign ref-log write, so `ForeignClaim` covers them for fix A.
+
+### Results (4 workers, `Receivers = {r1}`, `MaxId = 5`, `MaxRound = 5`, `MaxHoles = 0`) {#cas-365-results}
+
+| cfg | constants | expected | result | distinct states | s |
+|---|---|---|---|---|---|
+| `_cur_staleyes` | `ZombieBelief`, fix none | violation | `ConfirmedRelinkNeverDangles` violated, 13 states | 114,156 | 1 |
+| `_cur_twin` | `AllowTwin`, clock holds, fix none | violation | `ConfirmedRelinkNeverDangles` violated, 13 states | 155,135 | 1 |
+| `_fix_a` | `ZombieBelief`, `AllowTwin`, A, `MaxRenew = 1` | green | green | 15,884,787 | 79 |
+| `_sab_a_cache` | `_fix_a` + `SabotageSlotCache` | violation | `ConfirmedRelinkNeverDangles` violated, 14 states | 3,753,561 (stopped at first error) | 16 |
+| `_sab_a_holderonly` | `_fix_a` + `SabotageHolderOnly` | violation | `ConfirmedRelinkNeverDangles` violated, 14 states | 1,587,193 (stopped) | 7 |
+| `_fix_b` | `ZombieBelief`, `AllowTwin`, B, `MaxRenew = 2` | green | green | 26,667,907 | 131 |
+| `_sab_b_early` | `_fix_b` + `SabotageRenewBeforeCheck` | violation | `ConfirmedRelinkNeverDangles` violated, 17 states | 5,881,084 (stopped) | 25 |
+| `_witness_fixa_yes` | as `_fix_a` | reachable | `W_ConfirmYesPromoted` violated | 6,418 | 0 |
+| `_witness_fixb_yes` | as `_fix_b` | reachable | `W_ConfirmYesPromoted` violated | 101,927 | 1 |
+
+The pre-365 battery, rerun on the split model: every row keeps its outcome.
+
+| cfg | result | distinct states | s |
+|---|---|---|---|
+| `_main` | green | 278,915 | 2 |
+| `_main2r` | green | 87,737,671 | 570 |
+| `_empty_receivers` | green | 2,518 | 1 |
+| `_sab_holeylist` | `ConfirmedRelinkNeverDangles` violated | 251,454 | 1 |
+| `_sab_nofence` | `ConfirmedRelinkNeverDangles` violated | 65,923 | 1 |
+| `_sab_nogate1` | `ConfirmedRelinkNeverDangles` violated | 58,649 | 1 |
+| `_sab_nopoison` | `ConfirmedRelinkNeverDangles` violated | 58,792 | 1 |
+| `_sab_stalecache` | `ConfirmedRelinkNeverDangles` violated | 36,918 | 1 |
+| `_sab_touchblind` | `ConfirmedRelinkNeverDangles` violated | 40,020 | 1 |
+| `_sab_publishafterconfirm` | `PromotedNeverDangles` violated | 71,048 | 1 |
+| `_witness_confirmno` / `_confirmunknown` / `_confirmyes` / `_delete` / `_yespendingnoop` | witness reachable | 355 / 86 / 591 / 5,599 / 266 | ≤ 1 |
+
+State counts grew against the [summary table](#summary-table) below (recorded 2026-09-02) because
+the confirm is now three steps and `FenceLoss` → `ForeignRemove` passes through `ForeignClaim`.
+Splitting `RConfirm` added late delivery to every row; no row flipped, so the old greens did not
+depend on the fused confirm.
+
+### `_cur_staleyes` counterexample {#cas-365-trace}
+
+1. `ForeignClaim`: a successor claims the slot. This mount's VM clock is frozen, so `sFence` stays `TRUE`.
+2. `ForeignRemove`: the successor removes the sender's binding of `m1` (durable `-1` on `s_m1`).
+3. `GFold`, `GSettle` ×2, `GFold`: in-degree 0 → condemned → `delete_pending`.
+4. `RPublish`: the receiver's `+1` is durable, over a blob already scheduled for deletion.
+5. `SCheck`: rows still say `m1`, lane quiescent, no poison, `sFence = TRUE` → local `Yes`.
+6. `RDeliver`, `RPromote`: the receiver promotes on that `Yes`.
+7. `GSettle`: round 3 deletes `b1` (its fold ran before the `+1`). The promoted manifest dangles.
+
+`_cur_twin` is the same trace with `TwinClaim` in step 1 and the clock assumption intact.
+
+Sabotage traces:
+
+- `_sab_a_cache`: `SlotPoll` reads "ours" first, then the step-1..4 sequence, then `SCheck`
+  reuses the cached observation → `Yes`. A slot read that linearised before `t_rows` proves nothing.
+- `_sab_a_holderonly`: `TwinClaim` → ... → `SSlotRead` sees our `(uuid, epoch)` in the twin's body
+  → `Yes`. Only the ETag (or write-attempt id) tells a same-pair body apart.
+- `_sab_b_early`: `RenewStart`, `RenewLand` (ours), then `ForeignClaim` ... `SCheck`, `RenewAck`
+  → accepted → `Yes`. A renewal that landed before `t_rows` proves nothing about `t_rows`.
+
+### Why the fixes hold {#cas-365-why}
+
+Every actor that can remove this namespace's binding writes the slot first, and every slot write
+mints a fresh ETag (`seq` + write-attempt id in the body). If a read that linearises after
+`t_rows` (fix A's `GET`, or fix B's landed `replace`) still sees an ETag our renewer wrote, no
+foreign claim happened before `t_rows`. So the binding was durable at `t_rows` (own mutations of the
+ref are excluded by rule 3), and the receiver's `+1` was already durable. GC then spares the blob.
+No clock is involved.
+
+### C6 after PR #2512 {#cas-365-c6}
+
+Not reachable for the confirm on the release line. `claimMount` (`Pool/CasServerRoot.cpp`,
+`2a034cdb374`) now returns `LiveDoubleStart` without writing when the slot holds our own
+`(uuid, epoch)`, and throws `ABORTED` when it holds a newer epoch of our uuid. `mountWritable`
+throws on anything but `Claimed`, so the second process never arms its fence and never appends to
+the ref log. In model terms `TwinClaim` is disabled (`AllowTwin = FALSE`), and with the clock
+assumption that is `_main`, green. `_cur_twin` reproduces the pre-#2512 hazard only. Fix A still
+compares ETags, not just `(uuid, epoch)`, so it does not depend on #2512 staying correct
+(`_sab_a_holderonly`). Epoch reuse after decommission (C9) is not modelled here; it belongs to
+CAS-362/CAS-363 (`CaEpochAllocCore`).
+
+### Code-fix sketch {#cas-365-code}
+
+**Fix A (recommended): one slot `GET` on the path to `Yes`.** ~100 lines, no format change.
+
+- `Pool::confirmExactRef` (`Pool/CasPool.h:598`): call `ref_ledger.confirmExactRef` as today. On
+  `Yes` only, after both ledger mutexes are released, call
+  `mount_runtime.slotStillOurs()`; anything but `true` → `Unknown`.
+- `CasMountRuntime::slotStillOurs` + `MountLeaseRenewer::slotStillOurs(CasOperation &)` (~50 lines):
+  one `GET` of the mount key on the mount plane. Require body `server_uuid` and `writer_epoch` equal
+  to ours, and the ETag equal to `last_etag` or the body's `write_attempt_id` equal to the in-flight
+  attempt's id. 404, decode error, or request error → `false`. `last_etag` and the in-flight attempt
+  id need a small mutex (the renewer thread writes them).
+- New `ProfileEvents::CASRelinkConfirmRefusedSlotMoved`, counted through the existing `refuse`
+  pattern (~10 lines).
+- No sharing of `GET` results across confirms. If single-flight is added, a caller may join only a
+  `GET` started after its own snapshot (`_sab_a_cache`). Simpler: a concurrency cap with `Unknown`
+  on overflow, since this runs on interserver requests.
+- Cost: +1 `GET` per confirm that would answer `Yes`; 0 for `No`/`Unknown`. +1 S3 RTT per relink.
+- Failing-first gtests (`src/Disks/tests/gtest_cas_confirm_exact_ref.cpp`):
+  1. `ForeignClaimWhileFenceLiveAnswersUnknown`: fence armed, overwrite the slot with a successor
+     body (other uuid) directly in the store, confirm → `Unknown`. Red today (`Yes`).
+  2. `SamePairNewAttemptAnswersUnknown`: slot body with our `(uuid, epoch)` but another
+     `write_attempt_id` → `Unknown` (`_sab_a_holderonly`).
+  3. `SlotDeletedAnswersUnknown`: slot removed (decommission) → `Unknown`.
+  4. `SlotMovedBetweenSnapshotAndGetAnswersUnknown`: a test hook between the snapshot and the `GET`
+     rewrites the slot → `Unknown` (`_sab_a_cache`).
+  5. `OwnRenewInFlightAnswersYes`: renewal landed, response held by a hook → `Yes`.
+  6. `OwnSlotAnswersYes`: unchanged slot → `Yes`, exactly one `GET` issued.
+
+**Fix B: answer after the next renewal.** ~60-100 lines, 0 extra requests.
+
+- `CasMountRuntime::awaitRenewStartedAfter(start_index, deadline)`: condvar signalled by the
+  renewal loop on `Committed` or on a trip. `Pool::confirmExactRef` records the attempt counter
+  under the ledger snapshot and waits for a renewal with a larger start index to commit.
+- Cost: up to `P` = 10 s added per relink, an interserver handler thread held for that time, and
+  `Unknown` on any renew conflict or timeout. Forcing an early renew to cut the wait adds a `PUT`,
+  which costs more than fix A's `GET`.
+- Failing-first gtests: the same as fix A's 1 and 3, plus `RenewStartedBeforeSnapshotDoesNotCount`
+  (`_sab_b_early`).
+
+**Recommendation: fix A.** Same store-level argument as B, one `GET` instead of a ≤ 10 s wait, and
+no thread held on the interserver path. It does break the "zero object-store I/O" contract stated
+in `CasRefLedger::confirmExactRef`; the comment and `ContentAddressedExchange.h:25` need updating.
+
+## Summary table {#summary-table}
 
 | cfg | check | expected | TLC verdict | states (gen / distinct) | depth |
 |---|---|---|---|---|---|

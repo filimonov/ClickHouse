@@ -79,7 +79,21 @@
    concurrent traffic the old table-wide rule refused for no reason).  Rule 3 refuses while a
    touching mutation is admitted and not yet applied, and ONLY then.  The
    model's `sPending` spans admission to apply, which is `pending` plus `carved` in the code; a
-   wedged tenure is `sPoison`, refused by lane state. *)
+   wedged tenure is `sPoison`, refused by lane state.
+
+   CAS-365: THE SLOT IS NOT THE FENCE.  `sFence` is the sender's LOCAL belief (`mayMutate`: a latch
+   plus a BOOTTIME deadline).  The durable mount slot is `slotHolder`/`slotEtag`.  A successor writes
+   the slot first (`ForeignClaim`) and only then removes the binding (`ForeignRemove`).  With
+   `ZombieBelief = FALSE` a claim needs `~sFence` -- the clock assumption, and the only shape the
+   model had before CAS-365.  With `ZombieBelief = TRUE` (frozen VM clock, C5) the claim lands while
+   `sFence` is still TRUE.  `AllowTwin` adds C6 as it was before PR #2512.  The confirm is split:
+   `SCheck` (`confirmExactRef`, in memory, instant `t_rows`), then `SSlotRead` (fix A) or a renewal
+   started after `t_rows` (fix B), then `RDeliver` (the receiver acts on the answer).
+     ConfirmFix = "A"   -> `GET` the slot after `t_rows`; `Yes` only on an ETag our renewer wrote.
+     ConfirmFix = "B"   -> `Yes` only after a renewal STARTED after `t_rows` committed.
+     SabotageSlotCache        -> fix A reuses a slot observation that completed before `t_rows`.
+     SabotageHolderOnly       -> fix A compares the body's (uuid, epoch), not the ETag.
+     SabotageRenewBeforeCheck -> fix B accepts a renewal started before `t_rows`. *)
 EXTENDS Integers, FiniteSets
 
 CONSTANTS
@@ -93,7 +107,17 @@ CONSTANTS
     SabotageTouchBlind,           \* gate 1 rule 3: blind to whether the admitted mutation touches the ref
     SabotageNoPoison,             \* gate 1 rule 4: ignore the apply-pending poison state
     SabotageNoFence,              \* gate 1 rule 6: ignore the mount fence / current-writer check
-    SabotagePublishAfterConfirm   \* invert the design order: confirm+promote BEFORE the durable +1
+    SabotagePublishAfterConfirm,  \* invert the design order: confirm+promote BEFORE the durable +1
+    (* CAS-365: the mount slot as a durable object, separate from the local fence belief. *)
+    ZombieBelief,                 \* a successor may claim the slot while `sFence` still says live
+                                  \* (frozen VM clock, C5); FALSE = the clock assumption holds
+    AllowTwin,                    \* a second process of the same (uuid, epoch) may replace the slot
+                                  \* (C6, `claimMount` same-epoch refresh before PR #2512)
+    ConfirmFix,                   \* "none" (release line), "A" (GET the slot), "B" (next renew)
+    MaxRenew,                     \* bound on renewal attempts of this mount's renewer
+    SabotageSlotCache,            \* fix A: accept a slot observation read BEFORE the snapshot
+    SabotageHolderOnly,           \* fix A: compare the slot body's (uuid, epoch), not its ETag
+    SabotageRenewBeforeCheck      \* fix B: accept a renewal that started BEFORE the snapshot
 
 (* ---- the universe ------------------------------------------------------------------------ *)
 
@@ -140,14 +164,29 @@ VARIABLES
     rDurableBefore, \* [Receivers -> BOOLEAN] -- the +1 was durable BEFORE the confirm (T1 < T2)
     sawConfirmNo,   \* witness history: a confirm answered *no*
     sawConfirmUnk,  \* witness history: a confirm answered *unknown*
-    sawYesWhilePendingNoop  \* witness history: *yes* answered while a "noop" mutation was admitted
+    sawYesWhilePendingNoop, \* witness history: *yes* answered while a "noop" mutation was admitted
+    (* CAS-365 *)
+    slotHolder,     \* who wrote the durable mount slot: "self", "succ" (successor), "twin" (same pair)
+    slotEtag,       \* the slot's current ETag; every write mints a fresh one (`nextEtag`)
+    nextEtag,       \* fresh-ETag counter: bodies carry `seq` and a write-attempt id, so no ETag ABA
+    sKnownEtag,     \* `MountLeaseRenewer::last_etag`: the ETag our last committed write created
+    rnPhase,        \* renewal attempt: "idle" | "sent" | "landed" | "conflict"
+    rnEtag,         \* the ETag the in-flight renewal creates if it lands
+    rnFor,          \* fix B: receivers whose snapshot preceded the in-flight renewal's start
+    renews,         \* renewal attempts so far (bounded by MaxRenew)
+    slotCache,      \* result of the last completed slot GET: "none" | "ours" | "foreign"
+    cPhase,         \* [Receivers -> {"idle","needslot","needrenew","ready","done"}] sender side
+    cAns,           \* [Receivers -> answer] the sender's answer, not yet delivered
+    renewOk         \* [Receivers -> BOOLEAN] fix B: a qualifying renewal committed
 
 gcVars     == << round, present, condemned, pendingDelete, folded, cursor, gcPhase, holes >>
 senderVars == << sDurableRef, sCacheRef, sTarget, sPending, sLeader, sPoison, sFence, sShape >>
 recvVars   == << rState, rAnswer, rDurableBefore >>
 logVars    == << journal, nextId >>
 histVars   == << sawConfirmNo, sawConfirmUnk, sawYesWhilePendingNoop >>
-vars       == << gcVars, senderVars, recvVars, logVars, histVars >>
+slotVars   == << slotHolder, slotEtag, nextEtag, sKnownEtag, rnPhase, rnEtag, rnFor, renews, slotCache >>
+confVars   == << cPhase, cAns, renewOk >>
+vars       == << gcVars, senderVars, recvVars, logVars, histVars, slotVars, confVars >>
 
 Max(S)  == CHOOSE x \in S : \A y \in S : y <= x
 Indeg(b) == Cardinality({ e \in folded : e.b = b })
@@ -187,6 +226,18 @@ Init ==
     /\ sawConfirmNo = FALSE
     /\ sawConfirmUnk = FALSE
     /\ sawYesWhilePendingNoop = FALSE
+    /\ slotHolder = "self"
+    /\ slotEtag = 0
+    /\ nextEtag = 1
+    /\ sKnownEtag = 0
+    /\ rnPhase = "idle"
+    /\ rnEtag = 0
+    /\ rnFor = {}
+    /\ renews = 0
+    /\ slotCache = "none"
+    /\ cPhase = [r \in Receivers |-> "idle"]
+    /\ cAns = [r \in Receivers |-> "none"]
+    /\ renewOk = [r \in Receivers |-> FALSE]
 
 (* ---- the sender's ref lane ---------------------------------------------------------------- *)
 
@@ -203,7 +254,7 @@ SenderAdmit(nb) ==
     /\ sTarget' = nb
     /\ sShape' = "touching"
     /\ UNCHANGED << sDurableRef, sCacheRef, sPoison, sFence >>
-    /\ UNCHANGED << gcVars, recvVars, logVars, histVars >>
+    /\ UNCHANGED << gcVars, recvVars, logVars, histVars, slotVars, confVars >>
 
 (* Admission of a mutation of ANOTHER ref: its record is edge-neutral and it leaves the queried
    binding alone.  It needs no `sDurableRef = Token` guard -- the other ref's life is independent
@@ -218,7 +269,7 @@ SenderAdmitNoop ==
     /\ sLeader' = TRUE
     /\ sShape' = "noop"
     /\ UNCHANGED << sDurableRef, sCacheRef, sTarget, sPoison, sFence >>
-    /\ UNCHANGED << gcVars, recvVars, logVars, histVars >>
+    /\ UNCHANGED << gcVars, recvVars, logVars, histVars, slotVars, confVars >>
 
 (* The conditional PUT is acked: the transaction is DURABLE and GC can fold it.  The in-memory
    committed row is NOT yet updated -- this is the post-durable-PUT window (§Problem 2).  A noop
@@ -237,7 +288,7 @@ SenderDurable ==
                    { [id |-> nextId, ns |-> NsS, blob |-> "b1", src |-> NoiseSrc, op |-> "noop"] }
               /\ UNCHANGED sDurableRef
     /\ UNCHANGED << sCacheRef, sTarget, sPending, sLeader, sPoison, sFence, sShape >>
-    /\ UNCHANGED << gcVars, recvVars, histVars >>
+    /\ UNCHANGED << gcVars, recvVars, histVars, slotVars, confVars >>
 
 (* A tenure closes only once its transaction is durable, whatever its shape. *)
 TenureDurable == (sShape = "touching" /\ sDurableRef # Token) \/ (sShape = "noop" /\ NoopDurable)
@@ -251,7 +302,7 @@ SenderApply ==
     /\ sLeader' = FALSE
     /\ sShape' = "none"
     /\ UNCHANGED << sDurableRef, sTarget, sPoison, sFence >>
-    /\ UNCHANGED << gcVars, recvVars, logVars, histVars >>
+    /\ UNCHANGED << gcVars, recvVars, logVars, histVars, slotVars, confVars >>
 
 (* The in-memory apply THREW although the object is durable (allocation failure on the COW apply, or
    in the code any chunk's frontier or install failure).  The tenure closes -- the lane looks
@@ -265,7 +316,7 @@ SenderPoison ==
     /\ sLeader' = FALSE
     /\ sShape' = "none"
     /\ UNCHANGED << sDurableRef, sCacheRef, sTarget, sFence >>
-    /\ UNCHANGED << gcVars, recvVars, logVars, histVars >>
+    /\ UNCHANGED << gcVars, recvVars, logVars, histVars, slotVars, confVars >>
 
 (* The mount fence is lost: this instance is no longer the namespace's single writer. *)
 FenceLoss ==
@@ -273,12 +324,42 @@ FenceLoss ==
     /\ ~sPending
     /\ sFence' = FALSE
     /\ UNCHANGED << sDurableRef, sCacheRef, sTarget, sPending, sLeader, sPoison, sShape >>
-    /\ UNCHANGED << gcVars, recvVars, logVars, histVars >>
+    /\ UNCHANGED << gcVars, recvVars, logVars, histVars, slotVars, confVars >>
+
+(* CAS-365.  A successor claims the mount slot (`claimMount`: one conditional write of
+   `gc/server-roots/<srid>/mount`).  Every foreign actor that can remove this namespace's binding
+   changes the slot FIRST.  Under the clock assumption (`ZombieBelief = FALSE`) the local fence is
+   already lost when that happens; under a frozen VM clock (C5) it is not -- `sFence` stays TRUE,
+   which is the zombie belief the release line answers `Yes` from.  A GC fence-out (`gc_fenced`
+   read-modify-write) is subsumed: it also mints a new ETag and also precedes any successor write. *)
+ForeignClaim ==
+    /\ slotHolder # "succ"
+    /\ ZombieBelief \/ ~sFence
+    /\ slotHolder' = "succ"
+    /\ slotEtag' = nextEtag
+    /\ nextEtag' = nextEtag + 1
+    /\ UNCHANGED << sKnownEtag, rnPhase, rnEtag, rnFor, renews, slotCache >>
+    /\ UNCHANGED << gcVars, senderVars, recvVars, logVars, histVars, confVars >>
+
+(* C6 before PR #2512: a second process allocated the same (uuid, epoch) and `claimMount`'s
+   same-epoch refresh replaced our body with its own (same pair in the body, new `seq`/attempt id,
+   new ETag).  On the release line `claimMount` returns `LiveDoubleStart` for an occupied same pair
+   and writes nothing, so `AllowTwin = TRUE` models only the pre-#2512 code. *)
+TwinClaim ==
+    /\ AllowTwin
+    /\ slotHolder = "self"
+    /\ slotHolder' = "twin"
+    /\ slotEtag' = nextEtag
+    /\ nextEtag' = nextEtag + 1
+    /\ UNCHANGED << sKnownEtag, rnPhase, rnEtag, rnFor, renews, slotCache >>
+    /\ UNCHANGED << gcVars, senderVars, recvVars, logVars, histVars, confVars >>
 
 (* The namespace's NEW writer removes the binding.  Durable, folded by GC -- and completely
-   invisible to the deposed instance's committed rows. *)
+   invisible to the deposed instance's committed rows.  It writes only after it holds the slot
+   (successor or twin); with `ZombieBelief = FALSE` that implies `~sFence`, the guard this action
+   carried before CAS-365. *)
 ForeignRemove ==
-    /\ ~sFence
+    /\ slotHolder \in {"succ", "twin"}
     /\ sDurableRef = Token
     /\ nextId <= MaxId
     /\ journal' = journal \cup
@@ -286,7 +367,7 @@ ForeignRemove ==
     /\ nextId' = nextId + 1
     /\ sDurableRef' = "none"
     /\ UNCHANGED << sCacheRef, sTarget, sPending, sLeader, sPoison, sFence, sShape >>
-    /\ UNCHANGED << gcVars, recvVars, histVars >>
+    /\ UNCHANGED << gcVars, recvVars, histVars, slotVars, confVars >>
 
 (* ---- the receiver ------------------------------------------------------------------------- *)
 
@@ -303,7 +384,7 @@ RPublish(r) ==
     /\ nextId' = nextId + 1
     /\ rState' = [rState EXCEPT ![r] = IF rState[r] = "init" THEN "published" ELSE "promoted"]
     /\ UNCHANGED << rAnswer, rDurableBefore >>
-    /\ UNCHANGED << gcVars, senderVars, histVars >>
+    /\ UNCHANGED << gcVars, senderVars, histVars, slotVars, confVars >>
 
 (* A later, edge-neutral transaction in the same namespace (an owner transition on another ref).
    Edge-neutral, so it changes NOTHING about reachability -- its only effect is to give the fold
@@ -317,7 +398,7 @@ NsNoise(r) ==
     /\ journal' = journal \cup
          { [id |-> nextId, ns |-> r, blob |-> "b1", src |-> NoiseSrc, op |-> "noop"] }
     /\ nextId' = nextId + 1
-    /\ UNCHANGED << gcVars, senderVars, recvVars, histVars >>
+    /\ UNCHANGED << gcVars, senderVars, recvVars, histVars, slotVars, confVars >>
 
 (* T2: the confirm -- ONE atomic predicate over the sender's lane state (spec §confirm-primitive
    gate 1).  Zero object-store I/O by contract, so it reads the in-memory committed row
@@ -332,24 +413,132 @@ Gate1Answer ==
     IN IF ~quiescent \/ ~clean \/ ~fenced THEN "unknown"
        ELSE IF bound THEN "yes" ELSE "no"
 
-RConfirm(r) ==
+(* T2, sender side, split per CAS-365.  `SCheck` is `CasRefLedger::confirmExactRef`: rules 2-6
+   evaluated in memory under `ref_queue_mutex` + `state_mutex` (one step, no I/O).  Its instant is
+   `t_rows`.  On the release line the answer is final here; under fix A a `Yes` additionally needs
+   `SSlotRead`, under fix B `SAnswerB`.  The answer travels back in `RDeliver`, a separate step, so
+   anything may interleave between the last local check and the receiver acting on the answer. *)
+SCheck(r) ==
     /\ \/ rState[r] = "published"
        \/ (SabotagePublishAfterConfirm /\ rState[r] = "init")
+    /\ cPhase[r] = "idle"
     /\ LET ans == Gate1Answer IN
-         /\ rAnswer' = [rAnswer EXCEPT ![r] = ans]
          /\ sawConfirmNo'  = (sawConfirmNo  \/ ans = "no")
          /\ sawConfirmUnk' = (sawConfirmUnk \/ ans = "unknown")
          /\ sawYesWhilePendingNoop' = (sawYesWhilePendingNoop \/ (ans = "yes" /\ sPending /\ sShape = "noop" /\ NoopDurable))
+         /\ IF ans = "yes" /\ ConfirmFix = "A" /\ ~SabotageSlotCache
+              THEN /\ cPhase' = [cPhase EXCEPT ![r] = "needslot"]
+                   /\ UNCHANGED cAns
+            ELSE IF ans = "yes" /\ ConfirmFix = "A"
+              \* sabotage: reuse a slot observation completed before `t_rows`
+              THEN /\ cPhase' = [cPhase EXCEPT ![r] = "ready"]
+                   /\ cAns' = [cAns EXCEPT ![r] = IF slotCache = "ours" THEN "yes" ELSE "unknown"]
+            ELSE IF ans = "yes" /\ ConfirmFix = "B"
+              THEN /\ cPhase' = [cPhase EXCEPT ![r] = "needrenew"]
+                   /\ UNCHANGED cAns
+            ELSE /\ cPhase' = [cPhase EXCEPT ![r] = "ready"]
+                 /\ cAns' = [cAns EXCEPT ![r] = ans]
     /\ rDurableBefore' = [rDurableBefore EXCEPT ![r] = (rState[r] = "published")]
+    /\ rState' = [rState EXCEPT ![r] = "asking"]
+    /\ UNCHANGED << rAnswer, renewOk >>
+    /\ UNCHANGED << gcVars, senderVars, logVars, slotVars >>
+
+(* The ETags this mount's renewer wrote and can still be current: `last_etag`, plus the in-flight
+   attempt's (its body carries our write-attempt id, so a GET can recognise it before the response). *)
+OurEtags == {sKnownEtag} \cup (IF rnPhase \in {"sent", "landed"} THEN {rnEtag} ELSE {})
+
+SlotIsOurs ==
+    IF SabotageHolderOnly
+      THEN slotHolder \in {"self", "twin"}          \* body names our (uuid, epoch) -- so does a twin's
+      ELSE slotHolder = "self" /\ slotEtag \in OurEtags
+
+(* Fix A: one `GET gc/server-roots/<srid>/mount`, issued after `t_rows` (it linearises after
+   `SCheck`).  `Yes` only if the slot still carries an ETag this renewer wrote. *)
+SSlotRead(r) ==
+    /\ cPhase[r] = "needslot"
+    /\ cAns' = [cAns EXCEPT ![r] = IF SlotIsOurs THEN "yes" ELSE "unknown"]
+    /\ cPhase' = [cPhase EXCEPT ![r] = "ready"]
+    /\ slotCache' = IF SlotIsOurs THEN "ours" ELSE "foreign"
+    /\ UNCHANGED << slotHolder, slotEtag, nextEtag, sKnownEtag, rnPhase, rnEtag, rnFor, renews >>
+    /\ UNCHANGED << renewOk, gcVars, senderVars, recvVars, logVars, histVars >>
+
+(* Sabotage A only: some earlier slot GET (another confirm's) whose result a cache keeps. *)
+SlotPoll ==
+    /\ SabotageSlotCache
+    /\ slotCache' = IF SlotIsOurs THEN "ours" ELSE "foreign"
+    /\ UNCHANGED << slotHolder, slotEtag, nextEtag, sKnownEtag, rnPhase, rnEtag, rnFor, renews >>
+    /\ UNCHANGED << gcVars, senderVars, recvVars, logVars, histVars, confVars >>
+
+(* `MountLeaseRenewer::renew`, three steps: the attempt starts (admitted under the fence, body
+   built; fix B records which snapshots precede it), the conditional `replace` lands or conflicts at
+   the store, and the response is processed.  The ambiguous outcome (`Unresolved`, CAS-375) is not
+   split further: it only delays `RenewAck`, which cannot make a `Yes` easier. *)
+RenewStart ==
+    /\ rnPhase = "idle"
+    /\ renews < MaxRenew
+    /\ sFence
+    /\ rnPhase' = "sent"
+    /\ rnEtag' = nextEtag
+    /\ nextEtag' = nextEtag + 1
+    /\ rnFor' = { r \in Receivers : cPhase[r] = "needrenew" }
+    /\ renews' = renews + 1
+    /\ UNCHANGED << slotHolder, slotEtag, sKnownEtag, slotCache >>
+    /\ UNCHANGED << gcVars, senderVars, recvVars, logVars, histVars, confVars >>
+
+RenewLand ==
+    /\ rnPhase = "sent"
+    /\ IF slotHolder = "self" /\ slotEtag = sKnownEtag
+         THEN /\ slotEtag' = rnEtag
+              /\ rnPhase' = "landed"
+         ELSE /\ rnPhase' = "conflict"
+              /\ UNCHANGED slotEtag
+    /\ UNCHANGED << slotHolder, nextEtag, sKnownEtag, rnEtag, rnFor, renews, slotCache >>
+    /\ UNCHANGED << gcVars, senderVars, recvVars, logVars, histVars, confVars >>
+
+(* `renewOn`: `Committed` installs `last_etag`; `Conflict` -> `throwRenewConflict` trips the fence.
+   Fix B releases the snapshots that preceded this attempt's start (the sabotage releases all). *)
+RenewAck ==
+    /\ rnPhase \in {"landed", "conflict"}
+    /\ rnPhase' = "idle"
+    /\ rnFor' = {}
+    /\ IF rnPhase = "landed"
+         THEN /\ sKnownEtag' = rnEtag
+              /\ renewOk' = [r \in Receivers |->
+                    renewOk[r] \/ (cPhase[r] = "needrenew"
+                                   /\ (r \in rnFor \/ SabotageRenewBeforeCheck))]
+              /\ UNCHANGED sFence
+         ELSE /\ sFence' = FALSE
+              /\ UNCHANGED << sKnownEtag, renewOk >>
+    /\ UNCHANGED << slotHolder, slotEtag, nextEtag, rnEtag, renews, slotCache >>
+    /\ UNCHANGED << sDurableRef, sCacheRef, sTarget, sPending, sLeader, sPoison, sShape >>
+    /\ UNCHANGED << gcVars, recvVars, logVars, histVars, cPhase, cAns >>
+
+(* Fix B: answer once a renewal started after `t_rows` committed; a tripped fence answers
+   `Unknown`. *)
+SAnswerB(r) ==
+    /\ cPhase[r] = "needrenew"
+    /\ renewOk[r] \/ ~sFence
+    /\ cAns' = [cAns EXCEPT ![r] = IF renewOk[r] THEN "yes" ELSE "unknown"]
+    /\ cPhase' = [cPhase EXCEPT ![r] = "ready"]
+    /\ renewOk' = [renewOk EXCEPT ![r] = FALSE]
+    /\ UNCHANGED << gcVars, senderVars, recvVars, logVars, histVars, slotVars >>
+
+(* The receiver reads the HTTP answer (`ContentAddressedMetadataStorage::confirmExactRef`'s caller
+   on the fetch side).  Late delivery (C1-C3) is any interleaving before this step. *)
+RDeliver(r) ==
+    /\ cPhase[r] = "ready"
+    /\ rAnswer' = [rAnswer EXCEPT ![r] = cAns[r]]
     /\ rState' = [rState EXCEPT ![r] = "confirmed"]
-    /\ UNCHANGED << gcVars, senderVars, logVars >>
+    /\ cPhase' = [cPhase EXCEPT ![r] = "done"]
+    /\ UNCHANGED << rDurableBefore, cAns, renewOk >>
+    /\ UNCHANGED << gcVars, senderVars, logVars, histVars, slotVars >>
 
 RPromote(r) ==
     /\ rState[r] = "confirmed"
     /\ rAnswer[r] = "yes"
     /\ rState' = [rState EXCEPT ![r] = "promoted"]
     /\ UNCHANGED << rAnswer, rDurableBefore >>
-    /\ UNCHANGED << gcVars, senderVars, logVars, histVars >>
+    /\ UNCHANGED << gcVars, senderVars, logVars, histVars, slotVars, confVars >>
 
 (* Anything but *yes* aborts, and the abort RELEASES the receiver's protection (a durable -1). *)
 RAbort(r) ==
@@ -363,7 +552,7 @@ RAbort(r) ==
               /\ nextId' = nextId + 1
          ELSE UNCHANGED logVars
     /\ UNCHANGED << rAnswer, rDurableBefore >>
-    /\ UNCHANGED << gcVars, senderVars, histVars >>
+    /\ UNCHANGED << gcVars, senderVars, histVars, slotVars, confVars >>
 
 (* ---- GC: discovery, fold cursor, three-phase graduation ------------------------------------ *)
 
@@ -400,7 +589,7 @@ GFold ==
                           IN IF seen = {} THEN cursor[ns] ELSE Max(seen) ]
     /\ gcPhase' = "folded"
     /\ UNCHANGED << round, present, condemned, pendingDelete >>
-    /\ UNCHANGED << senderVars, recvVars, logVars, histVars >>
+    /\ UNCHANGED << senderVars, recvVars, logVars, histVars, slotVars, confVars >>
 
 (* One-pass round commit over the folded cut: SPARE on positive in-degree, otherwise advance one
    phase -- condemn, then delete_pending, then the physical exact-token delete. *)
@@ -416,7 +605,7 @@ GSettle ==
     /\ round' = round + 1
     /\ gcPhase' = "idle"
     /\ UNCHANGED << folded, cursor, holes >>
-    /\ UNCHANGED << senderVars, recvVars, logVars, histVars >>
+    /\ UNCHANGED << senderVars, recvVars, logVars, histVars, slotVars, confVars >>
 
 (* Self-loop so exhausting the bounded counters is not reported as a TLC deadlock (house pattern;
    every cfg also sets CHECK_DEADLOCK FALSE). *)
@@ -426,8 +615,10 @@ Next ==
     \/ \E nb \in {Other, "none"} : SenderAdmit(nb)
     \/ SenderAdmitNoop
     \/ SenderDurable \/ SenderApply \/ SenderPoison
-    \/ FenceLoss \/ ForeignRemove
-    \/ \E r \in Receivers : RPublish(r) \/ NsNoise(r) \/ RConfirm(r) \/ RPromote(r) \/ RAbort(r)
+    \/ FenceLoss \/ ForeignClaim \/ TwinClaim \/ ForeignRemove
+    \/ SlotPoll \/ RenewStart \/ RenewLand \/ RenewAck
+    \/ \E r \in Receivers : RPublish(r) \/ NsNoise(r) \/ RPromote(r) \/ RAbort(r)
+    \/ \E r \in Receivers : SCheck(r) \/ SSlotRead(r) \/ SAnswerB(r) \/ RDeliver(r)
     \/ GFold \/ GSettle
     \/ NoOp
 
@@ -449,11 +640,22 @@ TypeOK ==
     /\ sDurableRef \in Bindings /\ sCacheRef \in Bindings /\ sTarget \in Bindings
     /\ sPending \in BOOLEAN /\ sLeader \in BOOLEAN /\ sPoison \in BOOLEAN /\ sFence \in BOOLEAN
     /\ sShape \in Shapes
-    /\ rState \in [Receivers -> {"init", "published", "confirmed", "promoted", "aborted"}]
+    /\ rState \in [Receivers -> {"init", "published", "asking", "confirmed", "promoted", "aborted"}]
     /\ rAnswer \in [Receivers -> {"none", "yes", "no", "unknown"}]
     /\ rDurableBefore \in [Receivers -> BOOLEAN]
     /\ sawConfirmNo \in BOOLEAN /\ sawConfirmUnk \in BOOLEAN
     /\ sawYesWhilePendingNoop \in BOOLEAN
+    /\ slotHolder \in {"self", "succ", "twin"}
+    /\ slotEtag \in Nat /\ nextEtag \in Nat /\ sKnownEtag \in Nat /\ rnEtag \in Nat
+    /\ slotEtag < nextEtag /\ sKnownEtag < nextEtag
+    /\ rnPhase \in {"idle", "sent", "landed", "conflict"}
+    /\ rnFor \subseteq Receivers
+    /\ renews \in 0..MaxRenew
+    /\ slotCache \in {"none", "ours", "foreign"}
+    /\ cPhase \in [Receivers -> {"idle", "needslot", "needrenew", "ready", "done"}]
+    /\ cAns \in [Receivers -> {"none", "yes", "no", "unknown"}]
+    /\ renewOk \in [Receivers -> BOOLEAN]
+    /\ ConfirmFix \in {"none", "A", "B"}
 
 LiveBlobs == { b \in Blobs : present[b] }
 Promoted(r) == rState[r] = "promoted"

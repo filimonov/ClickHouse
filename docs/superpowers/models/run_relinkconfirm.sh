@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run the complete `CaRelinkConfirmCore` battery and assert every result by exact invariant name.
 # With one or more cfg names as arguments, run only those rows while retaining the same assertions.
+# TLC limits: timeout 1200 s, 4 workers, 8 GiB heap, nice 10; logs under TLC_OUT_DIR.
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -27,6 +28,16 @@ CONFIGS=(
     "witness_confirmyes      violation  W_ConfirmYesPromoted"
     "witness_delete          violation  W_BlobDeleted"
     "witness_yespendingnoop  violation  W_YesWhilePendingNoop"
+    # CAS-365: the mount slot separate from the local fence belief.
+    "cur_staleyes            violation  ConfirmedRelinkNeverDangles"
+    "cur_twin                violation  ConfirmedRelinkNeverDangles"
+    "sab_a_cache             violation  ConfirmedRelinkNeverDangles"
+    "sab_a_holderonly        violation  ConfirmedRelinkNeverDangles"
+    "sab_b_early             violation  ConfirmedRelinkNeverDangles"
+    "fix_a                   green      -"
+    "fix_b                   green      -"
+    "witness_fixa_yes        violation  W_ConfirmYesPromoted"
+    "witness_fixb_yes        violation  W_ConfirmYesPromoted"
 )
 
 selected()
@@ -46,21 +57,25 @@ selected()
     return 1
 }
 
+out_dir="${TLC_OUT_DIR:-../../../tmp/noclock/fix/cas365}"
+mkdir -p "$out_dir"
 overall=0
 run_id="${MODULE}-$$-$(date +%s%N)"
-printf '%-24s %-11s %-36s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
+printf '%-24s %-11s %-36s %-12s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "STATES" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"
 do
     read -r name expect want <<<"$row"
     selected "$name" "$@" || continue
 
     cfg="${MODULE}_${name}.cfg"
-    log="../../../tmp/tlc-${run_id}-${name}.log"
-    meta="../../../tmp/tlc-meta-${run_id}-${name}"
+    log="${out_dir}/tlc-${run_id}-${name}.log"
+    meta="${out_dir}/tlc-meta-${run_id}-${name}"
     start=$SECONDS
-    timeout "${TLC_TIMEOUT:-3600}" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
-        -metadir "$meta" -workers "${TLC_WORKERS:-1}" -config "$cfg" "$MODULE.tla" >"$log" 2>&1
+    timeout "${TLC_TIMEOUT:-1200}" nice -n 10 /usr/bin/java -Xmx8g -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} \
+        -cp "$JAR" tlc2.TLC -metadir "$meta" -workers "${TLC_WORKERS:-4}" -noGenerateSpecTE \
+        -config "$cfg" "$MODULE.tla" >"$log" 2>&1
     rc=$?
+    rm -rf -- "$meta"
     elapsed=$((SECONDS - start))
 
     result=error
@@ -77,13 +92,15 @@ do
         result=timeout
     fi
 
+    states="$(grep -oE '[0-9,]+ distinct states found' "$log" | tail -1 | cut -d' ' -f1)"
+
     verdict=FAIL
     case "$expect" in
         green) [[ "$result" == green ]] && verdict=PASS ;;
         violation) [[ "$result" == "violation:${want}" ]] && verdict=PASS ;;
     esac
     [[ "$verdict" == FAIL ]] && overall=1
-    printf '%-24s %-11s %-36s %-8s %s\n' "$name" "$expect" "$result" "$elapsed" "$verdict"
+    printf '%-24s %-11s %-36s %-12s %-8s %s\n' "$name" "$expect" "$result" "${states:--}" "$elapsed" "$verdict"
     printf '  log: %s\n' "$log"
 done
 
