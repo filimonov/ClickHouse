@@ -167,6 +167,100 @@ Both `grep` commands exited `0`. The complete runner output for each run ended w
 `ALL EXPECTATIONS MET`. A successful focused invocation instead prints
 `SELECTED EXPECTATIONS MET`; it cannot satisfy the full-battery grep gate.
 
+## SDK resend and split observation (CAS-361) {#sdk-resend-cas-361}
+
+Verdict: the current protocol loses data on an ETag store. One SDK resend of an already landed blob
+`PUT` or `CopyObject`, followed by a reissued exact-token `DELETE`, deletes a body that a committed
+reference depends on. Fix A (no SDK resend for blob publication) closes it in the model with the
+exact delete unchanged.
+
+### What changed in the model {#cas-361-model-changes}
+
+New switches; every original config sets them off and keeps its recorded state counts (`safe`:
+13,270,635 generated, 2,051,149 distinct; one-worker reruns of `sab_adopt_condemned`,
+`sab_recopy_after_condemned` and `witness_late_landing` match the tables above exactly).
+
+| Constant / action | Code | Meaning |
+|---|---|---|
+| `SdkResend(w, s)`, `MaxResends`, `ResendTransports` | `S3::Client::doRequestWithRetryNetworkErrors` behind `ObjectStorageBackend::publish` (`WriteSettings{}`) and `S3ObjectStorage::copyObject` (`client.get()`) | An envelope that landed once lands again, same bytes, in any writer phase, during or after the call. `LateBackendLand` alone lands each attempt at most once. |
+| `ResendFreshTransports` | none (fix B) | A resend on these transports carries a fresh envelope. |
+| `DeleteMatchesSerial` | none (fix E) | The exact delete also matches the landing serial (`If-Match` + `x-amz-if-match-last-modified-time`). |
+| `GraduationGate`, `GCGraduate` | `confirm_condemned_marker` | `GCDelete` needs graduation; graduation refuses while any non-aborted writer holds a durable precommit. A writer that precommits after graduation is not seen. |
+| `SplitObserve`, `Backfill(w)` | `ensureBlobPresent`: `op.head`, then `loadMeta`, then `putMetaIfAbsent` | The marker `GET` no longer rechecks the body (CAS-360, S13). An absent marker is backfilled and adopted without a body check. |
+| `RecheckHeadOnBackfill`, `RecheckHead(w)` | none (audit option B) | A second `HEAD` after an absent marker; adopt only on the same token. |
+
+`GraduationGate` is needed for realistic traces. Without it any queued delete may land at any
+time, so the writer that resends can also be the one that commits, and the re-`HEAD` fix fails on
+a schedule graduation would forbid (a delete between the writer's re-`HEAD` and its backfill while
+its precommit is live).
+
+### Results {#cas-361-results}
+
+Bounds for all rows: `ETag` unless noted, `MaxWrites = 3`, `MaxToken = 3`, `MaxEnvelope = 6` (7
+for fix B), `MaxResends = 1`, `MaxMetaVersion = 4`, `GraduationGate = TRUE`. Green rows check all
+eleven safety invariants; violation rows check `CommittedRefHasContent`. Four workers; the two
+`cur_*` traces were re-run with one worker for the shortest trace.
+
+| Configuration | Expected | Result | Generated | Distinct | Seconds |
+|---|---|---|---:|---:|---:|
+| `cur_resend` (1 worker) | violation | `CommittedRefHasContent`, 20 states | 603,566 | 175,505 | 6 |
+| `cur_resend_generation` | green | green | 10,653,538 | 3,116,814 | 31 |
+| `fix_A` | green | green | 4,820,529 | 1,275,294 | 14 |
+| `sab_A_copy_resends` | violation | `CommittedRefHasContent` | 342,149 | 117,133 | 2 |
+| `sab_A_put_resends` | violation | `CommittedRefHasContent` | 1,686,483 | 508,118 | 6 |
+| `fix_B` (`MaxEnvelope = 7`) | green | green | 16,402,018 | 4,337,335 | 46 |
+| `sab_B_copy_same_bytes` | violation | `CommittedRefHasContent` | 447,815 | 157,927 | 2 |
+| `fix_E` | green | green | 12,265,979 | 3,189,844 | 35 |
+| `cur_split` (1 worker, no resend) | violation | `CommittedRefHasContent`, 10 states | 1,020 | 490 | 1 |
+| `fix_split_rehead` (split, re-`HEAD`, no resend) | green | green | 6,265,133 | 1,618,837 | 19 |
+| `sab_split_rehead_resend` | violation | `CommittedRefHasContent` | 893,533 | 263,196 | 3 |
+
+The full battery (original fifteen rows plus these eleven) printed `ALL EXPECTATIONS MET`.
+
+### `cur_resend` counterexample {#cas-361-cur-resend-trace}
+
+1. `w1` precommits, sees the key absent, starts the staged `CopyObject` of envelope 1; the response is lost.
+2. `w1` recovers, sees the key still absent; the first copy then lands late (`ETag(1)`, serial 1).
+3. `w1` loses its fence and aborts. Its precommit no longer counts.
+4. GC condemns `ETag(1)` and graduates. `w2` precommits after graduation and `HEAD`s `ETag(1)`.
+5. GC's exact delete `If-Match(ETag(1))` removes the body and the marker.
+6. The SDK resends `w1`'s copy: the same bytes land again as `ETag(1)`, serial 2.
+7. `w2` reads the marker as absent, reconciles it to `Clean`, becomes ready and commits.
+8. GC reissues the same `If-Match(ETag(1))` (`readLoop` reissue, carried `delete_pending`, or a
+   deposed leader); it matches and removes the body `w2` committed. Dangling reference.
+
+`w2` never published: it adopted the resurrected body. `sab_A_put_resends` reaches the same end
+through a streaming `PUT` (envelope 3, after an earlier copy attempt that never landed).
+
+### `cur_split` counterexample (S13, CAS-360) {#cas-361-cur-split-trace}
+
+GC condemns and graduates the seeded body. `w1` precommits after graduation and its `HEAD` sees the
+body. GC deletes body and marker. `w1`'s marker `GET` finds nothing, `putMetaIfAbsent(Clean)`
+succeeds, `w1` adopts and commits a reference to a deleted body. No resend is involved.
+
+### Fix verdicts {#cas-361-fix-verdicts}
+
+- A (single-attempt transport for blob `PUT` and `CopyObject`): green. Both halves are load-bearing:
+  fixing only the streaming publish or only the copy still violates.
+- B (fresh envelope per wire attempt): green, but not implementable. The SDK resends the buffered
+  request, and the header is inside the body. A `CopyObject` resend copies the same staging bytes
+  even if `PUT` could be re-headered (`sab_B_copy_same_bytes`).
+- E (exact delete also matches last-modified time): green with resends left on. Store support for
+  `x-amz-if-match-last-modified-time` on general-purpose buckets and RustFS is not verified.
+- Generation stores: green with resends on (`cur_resend_generation`).
+- Re-`HEAD` before backfill closes S13 only together with A: with resends on, the resurrected body
+  carries the same token and passes the recheck (`sab_split_rehead_resend`).
+
+### Not modelled {#cas-361-not-modelled}
+
+- S7 (`NoSuchUpload` on `CompleteMultipartUpload` reported as success when any object exists at the
+  key). The loss needs `reconcileMetaClean` to turn a `Condemned` marker `Clean` after the synthetic
+  success. `ReconcileMetaClean` here still refuses `Condemned`, a stand-in for graduation that
+  predates `GraduationGate`. Modelling S7 needs that guard replaced by the code's compare-swap and
+  re-checked against the whole battery.
+- Resends outside the SDK (proxy, load balancer, a store applying one request twice) behave like
+  `SdkResend` and are not removed by fix A. Only E or a generation store closes them.
+
 ## Scope note {#scope-note}
 
 This is a bounded safety proof, not a liveness proof or a provider wire-format test. The two-write

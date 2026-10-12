@@ -11,6 +11,22 @@ ETag tokens are a deterministic function of the complete envelope and logical pa
 Generation tokens consume nextToken at every backend landing. Both token families use
 the same queued exact-delete action, while post-condemnation freshness compares the
 envelope identity directly.
+
+Resend and observation switches (all off in the original battery, which keeps its state counts):
+- `MaxResends`, `ResendTransports`: `SdkResend` re-lands an envelope that already landed once. It
+  stands for `S3::Client::doRequestWithRetryNetworkErrors` resending the identical request built by
+  `ObjectStorageBackend::publish` (`WriteSettings{}`) or `S3ObjectStorage::copyObject`. The engine's
+  `asSingleAttempt` bounds only the CAS loop, not these SDK resends.
+- `GraduationGate`: `GCDelete` needs a prior `GCGraduate`, which refuses while any writer holds a
+  live durable precommit (not aborted). A writer that precommits after graduation is not seen: the
+  "precommit after the round cut" window. Without the gate any queued delete may land at any time.
+- `ResendFreshTransports`: a resend on these transports carries a fresh envelope (fix B, not
+  implementable for a buffered PUT body; a `CopyObject` resend copies the same staging bytes).
+- `DeleteMatchesSerial`: the exact delete also matches the landing serial (fix E: `If-Match` plus
+  `x-amz-if-match-last-modified-time`).
+- `SplitObserve`: the marker `GET` does not recheck the body (`ensureBlobPresent`: `op.head` then
+  `loadMeta`). An absent marker is backfilled by `putMetaIfAbsent` and adopted.
+- `RecheckHeadOnBackfill`: a second `HEAD` after an absent marker; adopt only on the same token.
 *)
 EXTENDS Naturals, FiniteSets
 
@@ -25,7 +41,14 @@ CONSTANTS
     MaxToken,
     MaxMetaVersion,
     MaxFence,
-    Defects
+    Defects,
+    MaxResends,
+    ResendTransports,
+    ResendFreshTransports,
+    DeleteMatchesSerial,
+    SplitObserve,
+    RecheckHeadOnBackfill,
+    GraduationGate
 
 KeyPayload == "Content"
 WrongPayload == "WrongContent"
@@ -44,12 +67,14 @@ TokenSet ==
 
 Phases ==
     {"Precommit", "Head", "MetaRead", "Publish", "Publishing", "ResponseLost",
-     "MetaClean", "Ready", "Committed", "Aborted"}
+     "MetaClean", "Recheck", "Backfill", "Ready", "Committed", "Aborted"}
 Precommits == {"Absent", "Durable"}
 Observations == {"None", "Absent", "Present", "Clean", "Condemned"}
 MetaStates == {"Absent", "Clean", "Condemned"}
 ObservedMetaStates == MetaStates \cup {"Unread"}
 Transports == {"None", "VerbatimCopy", "RetaggedStream"}
+WireTransports == {"VerbatimCopy", "RetaggedStream"}
+SentSet == [envelope : 1..MaxEnvelope, transport : WireTransports]
 
 AllowedDefects ==
     {"adopt_condemned",
@@ -125,7 +150,8 @@ WriterState ==
      publishedFromAbsent : BOOLEAN,
      publishedAbsentSeq : 0..MaxWrites,
      retryLandedBeforeLate : BOOLEAN,
-     sawCondemnedAttempt : BOOLEAN]
+     sawCondemnedAttempt : BOOLEAN,
+     sent : SUBSET SentSet]
 
 VARIABLES
     tokenFamily,
@@ -143,13 +169,15 @@ VARIABLES
     freshIncarnationDeleted,
     racingPublishersReached,
     stagedRetagReached,
-    lateLandingReached
+    lateLandingReached,
+    resendsUsed,
+    graduated
 
 vars ==
     <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
       metaState, metaVersion, queuedDeletes, seeded, writer,
       badFreshAfterCondemned, freshIncarnationDeleted,
-      racingPublishersReached, stagedRetagReached, lateLandingReached>>
+      racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 EmptyBody ==
     [present |-> FALSE,
@@ -202,7 +230,8 @@ InitialWriter ==
      publishedFromAbsent |-> FALSE,
      publishedAbsentSeq |-> 0,
      retryLandedBeforeLate |-> FALSE,
-     sawCondemnedAttempt |-> FALSE]
+     sawCondemnedAttempt |-> FALSE,
+     sent |-> {}]
 
 Init ==
     /\ tokenFamily \in TokenFamilies
@@ -221,6 +250,8 @@ Init ==
     /\ racingPublishersReached = FALSE
     /\ stagedRetagReached = FALSE
     /\ lateLandingReached = FALSE
+    /\ resendsUsed = 0
+    /\ graduated = FALSE
 
 MintToken(envelope, payload) ==
     IF tokenFamily = "ETag"
@@ -253,6 +284,15 @@ TypeOK ==
     /\ MaxToken >= MaxWrites
     /\ MaxMetaVersion >= 4
     /\ MaxFence >= 2
+    /\ MaxResends \in Nat
+    /\ ResendTransports \subseteq WireTransports
+    /\ ResendFreshTransports \subseteq WireTransports
+    /\ DeleteMatchesSerial \in BOOLEAN
+    /\ SplitObserve \in BOOLEAN
+    /\ RecheckHeadOnBackfill \in BOOLEAN
+    /\ GraduationGate \in BOOLEAN
+    /\ graduated \in BOOLEAN
+    /\ resendsUsed \in 0..MaxResends
     /\ tokenFamily \in TokenFamilies
     /\ fenceGeneration \in 1..MaxFence
     /\ body \in BodyState
@@ -312,7 +352,7 @@ SeedBody ==
     /\ UNCHANGED
         <<tokenFamily, fenceGeneration, nextEnvelope, queuedDeletes, writer,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 DurablePrecommit(w) ==
     /\ writer[w].phase = "Precommit"
@@ -325,7 +365,7 @@ DurablePrecommit(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 SkipPrecommit(w) ==
     /\ Defect("publish_before_precommit")
@@ -336,7 +376,7 @@ SkipPrecommit(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 ObserveBody(w) ==
     /\ writer[w].phase = "Head"
@@ -359,22 +399,26 @@ ObserveBody(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
+(*
+`loadMeta` in `PartWriteTxn::ensureBlobPresent`. Fused (`~SplitObserve`): the marker read also
+re-reads the body. Split: one `GET .meta`; the body facts stay those of the preceding `HEAD`.
+*)
 ObserveMeta(w) ==
     /\ writer[w].phase = "MetaRead"
     /\ writer[w].precommit = "Durable"
-    /\ body.present
+    /\ (SplitObserve \/ body.present)
     /\ IF metaState = "Condemned"
        THEN
            writer' =
                [writer EXCEPT
                    ![w].phase = "Publish",
                    ![w].observation = "Condemned",
-                   ![w].observedPayload = body.payload,
-                   ![w].observedEnvelope = body.envelope,
-                   ![w].observedToken = body.token,
-                   ![w].observedWriteSeq = writeSeq,
+                   ![w].observedPayload = IF SplitObserve THEN @ ELSE body.payload,
+                   ![w].observedEnvelope = IF SplitObserve THEN @ ELSE body.envelope,
+                   ![w].observedToken = IF SplitObserve THEN @ ELSE body.token,
+                   ![w].observedWriteSeq = IF SplitObserve THEN @ ELSE writeSeq,
                    ![w].observedMeta = "Condemned",
                    ![w].needsFreshPublication = TRUE]
        ELSE IF metaState = "Clean"
@@ -390,16 +434,20 @@ ObserveMeta(w) ==
        ELSE
            writer' =
                [writer EXCEPT
-                   ![w].phase = "MetaClean",
+                   ![w].phase =
+                       IF ~SplitObserve THEN "MetaClean"
+                       ELSE IF RecheckHeadOnBackfill THEN "Recheck"
+                       ELSE "Backfill",
                    ![w].observation = "Clean",
                    ![w].observedMeta = "Absent"]
     /\ UNCHANGED
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 ObservationInvalidated(w) ==
+    /\ ~SplitObserve
     /\ writer[w].phase = "MetaRead"
     /\ ~body.present
     /\ writer' = [writer EXCEPT ![w].phase = "Head"]
@@ -407,7 +455,7 @@ ObservationInvalidated(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 AdoptCondemned(w) ==
     /\ Defect("adopt_condemned")
@@ -429,7 +477,7 @@ AdoptCondemned(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 BeginPublication(w) ==
     /\ writer[w].phase = "Publish"
@@ -489,7 +537,7 @@ BeginPublication(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 BackendLand(w) ==
     /\ writer[w].phase = "Publishing"
@@ -536,7 +584,12 @@ BackendLand(w) ==
                   ![w].publishedAbsentSeq =
                       IF fromAbsent THEN writer[w].plannedObservedSeq ELSE @,
                   ![w].retryLandedBeforeLate =
-                      @ \/ writer[w].latePending]
+                      @ \/ writer[w].latePending,
+                  ![w].sent =
+                      IF MaxResends > 0
+                      THEN @ \cup {[envelope |-> envelope,
+                                    transport |-> writer[w].plannedTransport]}
+                      ELSE @]
           /\ badFreshAfterCondemned' =
               (badFreshAfterCondemned
                \/ (afterCondemned
@@ -550,7 +603,7 @@ BackendLand(w) ==
     /\ UNCHANGED
         <<tokenFamily, fenceGeneration, nextEnvelope,
           metaState, metaVersion, queuedDeletes, seeded,
-          freshIncarnationDeleted, lateLandingReached>>
+          freshIncarnationDeleted, lateLandingReached, resendsUsed, graduated>>
 
 PublicationSucceeded(w) ==
     /\ writer[w].phase = "Publishing"
@@ -567,7 +620,7 @@ PublicationSucceeded(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 PublicationResponseLost(w) ==
     /\ writer[w].phase = "Publishing"
@@ -597,7 +650,7 @@ PublicationResponseLost(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 RecoverKeepingLateLanding(w) ==
     /\ writer[w].phase = "ResponseLost"
@@ -607,7 +660,7 @@ RecoverKeepingLateLanding(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 RecoverWithoutLateLanding(w) ==
     /\ writer[w].phase = "ResponseLost"
@@ -626,7 +679,7 @@ RecoverWithoutLateLanding(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 ResolveLateAsNotLanded(w) ==
     /\ writer[w].latePending
@@ -646,7 +699,7 @@ ResolveLateAsNotLanded(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 (* An old backend request remains independently landable after retry publication and readiness. *)
 LateBackendLand(w) ==
@@ -699,7 +752,12 @@ LateBackendLand(w) ==
                   ![w].sawStagedCopy = @ \/ stagedCopy,
                   ![w].publishedFromAbsent = @ \/ fromAbsent,
                   ![w].publishedAbsentSeq =
-                      IF fromAbsent THEN writer[w].lateObservedSeq ELSE @]
+                      IF fromAbsent THEN writer[w].lateObservedSeq ELSE @,
+                  ![w].sent =
+                      IF MaxResends > 0
+                      THEN @ \cup {[envelope |-> envelope,
+                                    transport |-> writer[w].lateTransport]}
+                      ELSE @]
           /\ badFreshAfterCondemned' =
               (badFreshAfterCondemned
                \/ (afterCondemned
@@ -714,7 +772,78 @@ LateBackendLand(w) ==
     /\ UNCHANGED
         <<tokenFamily, fenceGeneration, nextEnvelope,
           metaState, metaVersion, queuedDeletes, seeded,
-          freshIncarnationDeleted>>
+          freshIncarnationDeleted, resendsUsed, graduated>>
+
+(*
+SDK resend of an already landed wire request: `S3::Client::doRequestWithRetryNetworkErrors` behind
+`ObjectStorageBackend::publish` (`RetaggedStream`) or `S3ObjectStorage::copyObject`
+(`VerbatimCopy`). Same bytes, so an ETag store reproduces the old token. It lands in any writer
+phase, during the call or after it returned. One store request.
+*)
+SdkResend(w, s) ==
+    /\ s \in writer[w].sent
+    /\ s.transport \in ResendTransports
+    /\ resendsUsed < MaxResends
+    /\ CanLand
+    /\ LET fresh == s.transport \in ResendFreshTransports
+           envelope == IF fresh THEN nextEnvelope ELSE s.envelope
+           payload == SourcePayload(w)
+       IN /\ (~fresh \/ nextEnvelope < MaxEnvelope)
+          /\ body' =
+              [present |-> TRUE,
+               payload |-> payload,
+               envelope |-> envelope,
+               token |-> MintToken(envelope, payload),
+               serial |-> writeSeq + 1]
+          /\ nextEnvelope' = IF fresh THEN nextEnvelope + 1 ELSE nextEnvelope
+    /\ nextToken' = NextTokenAfterLanding
+    /\ writeSeq' = writeSeq + 1
+    /\ resendsUsed' = resendsUsed + 1
+    /\ UNCHANGED
+        <<tokenFamily, fenceGeneration, metaState, metaVersion, queuedDeletes, seeded, writer,
+          badFreshAfterCondemned, freshIncarnationDeleted,
+          racingPublishersReached, stagedRetagReached, lateLandingReached, graduated>>
+
+(* Fix candidate for the split observation: `op.head` again after an absent marker. *)
+RecheckHead(w) ==
+    /\ writer[w].phase = "Recheck"
+    /\ writer' =
+        [writer EXCEPT
+            ![w].phase =
+                IF body.present /\ body.token = writer[w].observedToken
+                THEN "Backfill"
+                ELSE "Head"]
+    /\ UNCHANGED
+        <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
+          metaState, metaVersion, queuedDeletes, seeded,
+          badFreshAfterCondemned, freshIncarnationDeleted,
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
+
+(*
+`putMetaIfAbsent(Clean)` then adopt: one conditional create whose outcome is not read, and no body
+check. Without `GraduationGate`, a `Condemned` marker sends the writer back to `HEAD`, the same
+stand-in for graduation that `ReconcileMetaClean` uses. With the gate, the writer adopts whatever
+the create left, as the code does.
+*)
+Backfill(w) ==
+    /\ writer[w].phase = "Backfill"
+    /\ (metaState /= "Absent" \/ metaVersion < MaxMetaVersion)
+    /\ IF metaState = "Condemned" /\ ~GraduationGate
+       THEN /\ writer' = [writer EXCEPT ![w].phase = "Head"]
+            /\ UNCHANGED <<metaState, metaVersion>>
+       ELSE /\ metaState' = IF metaState = "Condemned" THEN "Condemned" ELSE "Clean"
+            /\ metaVersion' = IF metaState = "Absent" THEN metaVersion + 1 ELSE metaVersion
+            /\ writer' =
+                [writer EXCEPT
+                    ![w].phase = "Ready",
+                    ![w].ready = TRUE,
+                    ![w].materialized = TRUE,
+                    ![w].cleanProof = TRUE]
+    /\ UNCHANGED
+        <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
+          queuedDeletes, seeded,
+          badFreshAfterCondemned, freshIncarnationDeleted,
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 ReadyWithoutReobserve(w) ==
     /\ Defect("ready_without_reobserve")
@@ -728,7 +857,7 @@ ReadyWithoutReobserve(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 ReconcileMetaClean(w) ==
     /\ writer[w].phase = "MetaClean"
@@ -749,7 +878,7 @@ ReconcileMetaClean(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 MetaCleanNeedsRecovery(w) ==
     /\ writer[w].phase = "MetaClean"
@@ -763,7 +892,7 @@ MetaCleanNeedsRecovery(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 SkipMetaClean(w) ==
     /\ Defect("skip_meta_clean")
@@ -778,7 +907,7 @@ SkipMetaClean(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 GCCondemn ==
     /\ body.present
@@ -793,18 +922,42 @@ GCCondemn ==
     /\ UNCHANGED
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           seeded, writer, badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 DeleteLands(record) ==
     /\ body.present
-    /\ (Defect("unconditional_delete") \/ body.token = record.token)
+    /\ \/ Defect("unconditional_delete")
+       \/ /\ body.token = record.token
+          /\ (~DeleteMatchesSerial \/ body.serial = record.serial)
 
 DeleteRemovesFresh(record) ==
     /\ DeleteLands(record)
     /\ (body.token /= record.token \/ body.serial > record.serial)
 
+(*
+`confirm_condemned_marker` at the next round: the marker still reads `Condemned` and no live
+precommit edge points at the blob. Only modelled under `GraduationGate`.
+*)
+GCGraduate ==
+    /\ GraduationGate
+    /\ ~graduated
+    /\ queuedDeletes /= {}
+    /\ metaState = "Condemned"
+    /\ \A w \in Writers :
+        ~(writer[w].precommit = "Durable" /\ writer[w].phase /= "Aborted")
+    /\ graduated' = TRUE
+    /\ UNCHANGED
+        <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
+          metaState, metaVersion, queuedDeletes, seeded, writer,
+          badFreshAfterCondemned, freshIncarnationDeleted,
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed>>
+
+(* `performRedeleteIo`: one exact-token `DELETE`. The record stays queued: GC reissue within the
+`readLoop` window, a carried `delete_pending`, or a deposed leader paused between `HEAD` and
+`DELETE` may all send it again later. *)
 GCDelete(record) ==
     /\ record \in queuedDeletes
+    /\ (~GraduationGate \/ graduated)
     /\ (~DeleteLands(record) \/ metaVersion < MaxMetaVersion)
     /\ ( ~(Defect("recopy_after_condemned")
            \/ Defect("recopy_after_absent"))
@@ -825,7 +978,7 @@ GCDelete(record) ==
     /\ UNCHANGED
         <<tokenFamily, fenceGeneration, nextToken, nextEnvelope, writeSeq,
           seeded, writer, badFreshAfterCondemned,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 LoseFence(w) ==
     /\ ~writer[w].committed
@@ -838,7 +991,7 @@ LoseFence(w) ==
         <<tokenFamily, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 Commit(w) ==
     /\ writer[w].phase = "Ready"
@@ -856,7 +1009,7 @@ Commit(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 Abort(w) ==
     /\ writer[w].phase \notin {"Ready", "Committed", "Aborted"}
@@ -866,7 +1019,7 @@ Abort(w) ==
         <<tokenFamily, fenceGeneration, body, nextToken, nextEnvelope, writeSeq,
           metaState, metaVersion, queuedDeletes, seeded,
           badFreshAfterCondemned, freshIncarnationDeleted,
-          racingPublishersReached, stagedRetagReached, lateLandingReached>>
+          racingPublishersReached, stagedRetagReached, lateLandingReached, resendsUsed, graduated>>
 
 Next ==
     \/ SeedBody
@@ -885,6 +1038,9 @@ Next ==
         \/ RecoverWithoutLateLanding(w)
         \/ ResolveLateAsNotLanded(w)
         \/ LateBackendLand(w)
+        \/ \E s \in writer[w].sent : SdkResend(w, s)
+        \/ RecheckHead(w)
+        \/ Backfill(w)
         \/ ReadyWithoutReobserve(w)
         \/ ReconcileMetaClean(w)
         \/ MetaCleanNeedsRecovery(w)
@@ -893,6 +1049,7 @@ Next ==
         \/ Commit(w)
         \/ Abort(w)
     \/ GCCondemn
+    \/ GCGraduate
     \/ \E record \in queuedDeletes : GCDelete(record)
 
 (* Named witness actions set persistent reachability bits checked by the witness configs. *)

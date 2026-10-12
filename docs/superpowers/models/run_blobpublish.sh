@@ -8,7 +8,8 @@ JAR=${TLC_JAR:-../../../tmp/tla2tools.jar}
 MODULE=CaBlobPublishCore
 source ./tlc_temporal_gate.sh
 check_tlc_pin "$JAR" || exit 3
-mkdir -p ../../../tmp
+OUT_DIR=${TLC_OUT_DIR:-../../../tmp}
+mkdir -p "$OUT_DIR"
 
 SAFETY_INVARIANTS=(
     CommittedRefHasContent
@@ -42,6 +43,17 @@ CONFIGS=(
     "witness_racing_publishers        witness    WitnessRacingPublishers"
     "witness_staged_retag             witness    WitnessStagedRetag"
     "witness_late_landing             witness    WitnessLateLanding"
+    "cur_resend                       violation  CommittedRefHasContent"
+    "cur_resend_generation            green      -"
+    "fix_A                            green      -"
+    "sab_A_copy_resends               violation  CommittedRefHasContent"
+    "sab_A_put_resends                violation  CommittedRefHasContent"
+    "fix_B                            green      -"
+    "sab_B_copy_same_bytes            violation  CommittedRefHasContent"
+    "fix_E                            green      -"
+    "cur_split                        violation  CommittedRefHasContent"
+    "fix_split_rehead                 green      -"
+    "sab_split_rehead_resend          violation  CommittedRefHasContent"
 )
 
 selected()
@@ -83,14 +95,15 @@ do
 
     cfg="${MODULE}_${name}.cfg"
     executed=$((executed + 1))
-    log="../../../tmp/tlc-${run_id}-${name}.log"
-    meta="../../../tmp/tlc-meta-${run_id}-${name}"
+    log="${OUT_DIR}/tlc-${run_id}-${name}.log"
+    meta="${OUT_DIR}/tlc-meta-${run_id}-${name}"
     start=$SECONDS
-    timeout "${TLC_TIMEOUT:-3600}" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} \
+    timeout "${TLC_TIMEOUT:-3600}" nice -n "${TLC_NICE:-0}" /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} \
         -cp "$JAR" tlc2.TLC -metadir "$meta" -workers "${TLC_WORKERS:-1}" \
         -noGenerateSpecTE -config "$cfg" "$MODULE.tla" >"$log" 2>&1
     rc=$?
     elapsed=$((SECONDS - start))
+    rm -rf "$meta"
 
     result=error
     if [[ $rc -eq 124 ]]
