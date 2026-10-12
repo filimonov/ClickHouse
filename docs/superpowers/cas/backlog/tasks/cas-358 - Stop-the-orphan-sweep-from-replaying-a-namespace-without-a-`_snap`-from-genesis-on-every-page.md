@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 13:40'
+updated_date: '2026-10-12 14:26'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -15,7 +15,8 @@ labels:
   - 'needs:measurement'
   - 'origin:review'
 milestone: m-1
-dependencies: []
+dependencies:
+  - CAS-36
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2542'
   - >-
@@ -82,6 +83,9 @@ Forward compatibility with no operator action: an old version ignores the new st
 - [ ] #4 `recoverRefTableDetailedFromAuthority` is called by GC only on a seed, at most once per namespace per generation
 - [ ] #5 Compatibility test: a 26.6.4-shaped leader adopts a seal written next to a side object, prunes the generation, and a new leader re-seeds once
 - [ ] #6 Measurement on the PR 2542 workload shape: GC leader GETs/day before and after, in the report from #1
+- [ ] #7 The sweep samples `floorForNamespace` before the catalog cut and before reading either the fold's owned-manifest set or the committed tail above its cursor (CAS-36 A''); gtest hooks the tail read to birth, precommit, promote and end a build and the body is retained
+- [ ] #8 Namespaces without a catalog row are decided by the floor alone: rule 4 (retain while the set is not current) does not apply to them, so their debris is reclaimed once the floor makes the build eligible
+- [ ] #9 `CaGcRootLocalPartManifestCore`: `GSwView` replaced by the fold set as of the cursor plus a separate tail read; `fix_floorfirst` stays green and `sab_floorfirst` red
 <!-- AC:END -->
 
 ## Definition of Done
@@ -102,4 +106,6 @@ Decision log (times are commit times, local):
 - 2026-10-12 14:55 (e1864a2b168): owner decision, no replay at all; `_snap` threshold is not the fix. PR 2542 later decided not merged (CAS-359).
 - 2026-10-12 15:09 (4822008176b): owner constraint, forward compatibility with no operator action; rules 1-5 in Description.
 - 2026-10-12 (7909f9d2bb7, CAS-305): `as_of` is the existing `RefTxnId` pair; finality still comes from seals until CAS-305 (d).
+
+2026-10-12: overlaps CAS-36 (same function, `planManifestCursorPage`). The CAS-36 fix proves safety by observation order floor → catalog cut → owner view; here the owner view is older than the round (fold set `as_of` the cursor), so a build that ended after the cursor but before the floor read is visible only in the tail read, which must follow the floor sample. Rule 4 would retain rowless namespaces forever because the fold has no set for a namespace without a row. Three ACs added; depends on CAS-36.
 <!-- SECTION:NOTES:END -->

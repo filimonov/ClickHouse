@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-12 13:19'
+updated_date: '2026-10-12 14:26'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -83,4 +83,10 @@ Candidates: (A') this task's wording — floor on every listed key — is NOT en
 Recommended: A'' (GC only, in `planManifestCursorPage`): one mount-lease GET per distinct namespace per page, no writer change. A + pin optional defense in depth.
 
 Open: AC #6 counts `gc_fenced` as eligible, which assumes no late `precommitAdd`/`promote` of a fenced epoch can land (lease-admission assumption). A nomination also retires the manifest's blob source edges in the same CAS (`orphan_source_retirements`), so the same race can unprotect its blobs (not modelled). Correction: at the base the orphan delete (PHASE 18) is HEAD + exact-etag `remove`; `removeManyWriteOnce` is the owner-removed path (PHASE 15).
+
+2026-10-12 decision after the two-model consult (`tmp` notes summarized here): fix = A'' — in `planManifestCursorPage` read `floorForNamespace` for every distinct namespace on the page BEFORE `CasRefCatalog::read` and before any owner-view read; apply `prefixEligibleUnder` to every key, catalog row or not; no lease = not eligible; never fetch a missing floor after the cut (budget-limited unsampled namespaces are retained); rewrite the false row-before-objects comment. GC-only, protects old writers once the leader is upgraded. Rejected: A' (floor after the cut), C (`If-Match` delete; key is write-once), A + life pin (larger, writer upgrade, no proven value).
+
+AC #6 (`gc_fenced` counts as retired) stays as decided by the owner. Opus objected that a rowless namespace has no owner view, so a late `namespaceLife` + `precommitAdd` + `promote` of a fenced epoch can land between nomination and delete (the store does not fence it: the namespace is new, no seals). Excluding `gc_fenced` does not remove that dependency: after an ordinary remount the epoch is superseded (`prefix.writer_epoch < w.writer_epoch`) and the same late request lands the same way; excluding it only defers reclamation until an epoch change that a dead node may never get. Residual, documented: for rowless namespaces a late request of a fenced or superseded epoch is excluded only by lease admission — the same class as the holder-death certificate and CAS-343. Model work: add `GFence(e)` and a late request of epoch e landing after `GSwFloor`; expect a violation only when the request lands after its admission deadline. Also add blob source edges and `orphan_source_retirements` at nomination with a committed-manifest blob-reachability invariant.
+
+CAS-358 reshapes the same function and depends on this task: its owner view (fold set `as_of` the cursor + committed tail above it) must be read AFTER the floor sample, and rowless namespaces must be decided by the floor alone.
 <!-- SECTION:NOTES:END -->
