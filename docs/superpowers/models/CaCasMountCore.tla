@@ -312,15 +312,8 @@ CONSTANTS
                           \* runs from the moment the claim is confirmed.
     SabOpenWithoutReserve, \* FALSE = honest: writes open only with `Reserve` ticks left before the
                           \* stamp. TRUE = they open whatever is left.
-    SabClaimResolveByPair, \* FALSE = honest: an unclear claim is confirmed by our exact write. TRUE = by
+    SabClaimResolveByPair \* FALSE = honest: an unclear claim is confirmed by our exact write. TRUE = by
                           \* finding a body with our uuid and epoch, which a twin may have written.
-    TwoStepAbsence,       \* FALSE = no absence observation. TRUE = a renewal that GETs no slot
-                          \* stops only after a LIST agrees (a GET miss alone is retried). FALSE in
-                          \* every pre-existing cfg: the new actions are disabled, the new variables
-                          \* stay at their `Init` values.
-    ProxyMay404,          \* TRUE = a proxy may answer 404 to a GET and fail a LIST while the slot exists.
-    SabAbsenceGetOnly     \* FALSE = honest: absence needs the GET miss and a LIST that agrees. TRUE =
-                          \* a GET miss alone stops the incarnation.
 
 ASSUME ImmutableClaim => ImmutableAlloc
 
@@ -462,12 +455,7 @@ VARIABLES
     claimState,       \* [Incs -> {"idle", "pending", "ontime", "late"}]; "ontime"/"late": confirmed
                       \* with / without `Reserve` ticks left before `claimStart + TTL`
     openedShort,      \* history: TRUE once writes opened with fewer than `Reserve` ticks left
-    lateOpened,       \* history: TRUE once writes opened after a claim confirmed late
-    \* --- two-step absence (all frozen when TwoStepAbsence = FALSE) ---------------------------------
-    proxy404,         \* BOOLEAN; a proxy currently answers 404 to a GET and fails a LIST
-    absPend,          \* [Incs -> {"none", "getmiss"}]; the renewal's GET missed and awaits the LIST
-    falseAbsenceStop, \* history: TRUE once an incarnation stopped on an absence while the slot existed
-    absenceStopped    \* history: TRUE once an incarnation stopped on an absence
+    lateOpened        \* history: TRUE once writes opened after a claim confirmed late
 
 baseVars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, localLost, crashed, rejected,
            adoptObs, fencedEpochs, wedged, wrote, rootEmpty, firstOwner,
@@ -480,10 +468,7 @@ baseVars == << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, loc
 \* The immutable claim's variables. Every action that does not touch a claim leaves them unchanged.
 claimVars == << claimStart, claimExp, claimTok, claimAmbig, claimState, openedShort, lateOpened >>
 
-\* The two-step absence variables. Every action that does not touch them leaves them unchanged.
-absVars == << proxy404, absPend, falseAbsenceStop, absenceStopped >>
-
-vars == << baseVars, claimVars, absVars >>
+vars == << baseVars, claimVars >>
 
 \* The per-incarnation allocation variables. A restart is a new process, so `Die` resets them.
 allocVars == << allocPend, allocAmbig, allocStopped, reacqSawForeign, fenceLatched, claimedAfterForeign >>
@@ -573,10 +558,6 @@ Init ==
     /\ claimState = [a \in Incs |-> "idle"]
     /\ openedShort = FALSE
     /\ lateOpened = FALSE
-    /\ proxy404 = FALSE
-    /\ absPend = [a \in Incs |-> "none"]
-    /\ falseAbsenceStop = FALSE
-    /\ absenceStopped = FALSE
 
 ----------------------------------------------------------------------------
 \* Claim an empty, unowned server_root: first-writer-wins, sticky from here on.
@@ -593,7 +574,6 @@ ClaimOwnerEmpty(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* A foreign uuid hits an already-owned root: fail closed, permanently rejected.
 RejectForeignOwner(a) ==
@@ -608,7 +588,6 @@ RejectForeignOwner(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* The owner bumps the durable epoch counter and records it as its live epoch.
 \* rev.6 round 5: guarded against firing while `a`'s own mount record is still UNFENCED --
@@ -655,7 +634,6 @@ AllocEpoch(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* An allocation whose conditional increment came back ambiguous, resolved by reading the counter:
 \* the incarnation takes the counter's current value as its epoch without bumping it. Two starts
@@ -678,7 +656,6 @@ AllocResolvedByRead(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* Claim/reclaim the mount lease (the free-function `claimMount`, ONE atomic CAS in the
 \* model: its real get+putOverwrite failure mode is a clean LiveDoubleStart retry, not
@@ -784,7 +761,6 @@ ClaimMount(a) ==
     /\ fenceLatched' = [fenceLatched EXCEPT ![a] = FALSE]
     /\ UNCHANGED << allocPend, allocAmbig, allocStopped, reacqSawForeign >>
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* --- The immutable claim (`ImmutableClaim = TRUE`) ----------------------------------------
 \* The claim as one conditional write, in the steps a caller sees. `ClaimBegin` reads the slot, decides
@@ -805,7 +781,7 @@ ClaimPrecondition(a) ==
 \* Variables no claim action touches.
 ClaimFrame == << owner, epoch, epochCeiling, epochWiped, clock, localEpoch, rejected, fencedEpochs, wedged,
                  wrote, rootEmpty, firstOwner, lostThenWrote, obsToken, obsSince, observedReclaimEver,
-                 supersededThenWrote, rgVars, allocPend, allocAmbig, allocStopped, reacqSawForeign, absVars >>
+                 supersededThenWrote, rgVars, allocPend, allocAmbig, allocStopped, reacqSawForeign >>
 
 \* The claim body lands in the slot (history as `ClaimMount` books it).
 ClaimApplyBody(a) ==
@@ -949,7 +925,6 @@ Renew(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* The pool's GC fences an EXPIRED, unfenced mount (computeHeartbeatFloor's token-guarded
 \* fence-out): gc_fenced = true, uuid/epoch/deadline preserved, token bumped. The fence is
@@ -1008,7 +983,6 @@ GcFence ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* --- The keeper's NON-ATOMIC adopt (MountLeaseKeeper::claim: GET, decide, CAS) --------
 \* AdoptRead: observe our own same-epoch slot and remember the token. The FIXED protocol
@@ -1036,7 +1010,6 @@ AdoptRead(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* AdoptWrite: the CAS against the observed token. The GcFence may land between AdoptRead
 \* and AdoptWrite -- THE S13 window.
@@ -1107,7 +1080,6 @@ AdoptWrite(a) ==
     /\ UNCHANGED << rgVars, epochRegressed >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* Abstract time advances (so a deadline can pass -> fence + reclaim reachable).
 Tick ==
@@ -1120,7 +1092,6 @@ Tick ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* A server process crashes: later Ticks pass the deadline without the holder renewing.
 \* An in-flight adopt observation dies with the process. rev.6 round 3: this sets
@@ -1149,8 +1120,6 @@ Die(a) ==
     /\ claimAmbig' = [claimAmbig EXCEPT ![a] = FALSE]
     /\ claimState' = [claimState EXCEPT ![a] = "idle"]
     /\ UNCHANGED << openedShort, lateOpened >>
-    /\ absPend' = [absPend EXCEPT ![a] = "none"]
-    /\ UNCHANGED << proxy404, falseAbsenceStop, absenceStopped >>
 
 \* A mutation under the mount. rev.6 round 8 (P2, consult/review-reconciled): `Write` is now
 \* a PURE LOCAL check, matching the product's actual write path exactly --
@@ -1204,7 +1173,6 @@ Write(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* SABOTAGE action (only enabled under SabEpochReset): zero the durable epoch
 \* counter when the mount is cleared. Breaks epoch monotonicity.
@@ -1220,7 +1188,6 @@ SabResetEpoch ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* Clear an expired UNFENCED mount (lets SabResetEpoch fire; also a benign honest step).
 \* A fenced slot is never cleared: in the implementation mount objects persist, and the
@@ -1251,7 +1218,6 @@ ClearExpiredMount ==
     /\ UNCHANGED << rgVars, epochRegressed >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* --- rev.6: observation-based reclaim vs wall-clock sabotage -------------------------
 \* StartObservation: a reclaimer (GC leader, or a same-uuid successor probing an
@@ -1270,7 +1236,6 @@ StartObservation ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* ObservedReclaim: the FIXED protocol -- the SUCCESSOR reclaim (epoch-advancing), NOT the
 \* GC fence-out (`GcFence`, non-epoch-advancing, `gc_fenced=TRUE`, uuid/epoch preserved).
@@ -1324,7 +1289,6 @@ ObservedReclaim ==
     /\ UNCHANGED rgVars
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* WallClockReclaim: the SABOTAGE. Trusts the stamp directly (clock > mount.deadline)
 \* with NO observation wait at all -- exactly the old cross-node wall-clock comparison
@@ -1364,7 +1328,6 @@ WallClockReclaim ==
     /\ UNCHANGED rgVars
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* --- 2026-07-24 fence-not-rescue gate (spec rev.4): the epoch-wipe twin + re-mint guard ---
 \* WipeEpoch: environmental sabotage-adjacent action (always enabled, subject to the
@@ -1395,7 +1358,6 @@ WipeEpoch ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* RemintEpoch: the code's absent-epoch branch of `allocateWriterEpoch` -- distinct from
 \* `AllocEpoch` above, which models the CAS bump over a PRESENT epoch object. Fires only when
@@ -1425,7 +1387,6 @@ RemintEpoch(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* RemintEpochDecom: Phase C's `DecommissionRecovery` branch -- also re-mints over a lost
 \* (epoch = 0) durable counter, but ONLY when a mount record still exists (`mount # None`,
@@ -1477,7 +1438,6 @@ RemintEpochDecom(a) ==
     /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* --- 2026-07-28 v9 recovery-generation layer (spec §3 "Recovery ownership", §9 r9-5) ---------
 \* Every action below is gated on `RecoveryGenOn`, so the whole layer is inert in every
@@ -1523,7 +1483,6 @@ RecoveryStart(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* SealSlot(a): the recovery walk finds the key `Created` (absent) and the seal OCCUPIES it --
 \* INV-2's "`Created` -> the seal occupies `(E, T+1)` and the `Late Predecessor PUT` ghost can
@@ -1548,7 +1507,6 @@ SealSlot(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* Install(a): the recovery result RETURNS FROM I/O and is published. §9 r9-5 puts the generation
 \* recheck exactly here -- "post-I/O, immediately before every install/unwedge/`_ckpt`
@@ -1586,7 +1544,6 @@ Install(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* RecoveryRefused(a): the honest r9-5 outcome -- the post-I/O recheck finds the captured
 \* generation stale and the result is DISCARDED (nothing published). Also the layer's anti-dead-end
@@ -1608,7 +1565,6 @@ RecoveryRefused(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* --- the wedged lane (INV-1's every-attempt rule) --------------------------------------------
 \* WedgeAdmit(a): an operation is admitted into `a`'s lane and its send comes back AMBIGUOUS, so
@@ -1636,7 +1592,6 @@ WedgeAdmit(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* StragglerLands(a): the ambiguous attempt's IN-FLIGHT PUT actually lands. This is the model's
 \* `Late Predecessor PUT` (`CaRefTableSnapshotLogCore`'s `LatePredecessorPut`, flipped in v9 from
@@ -1667,7 +1622,6 @@ StragglerLands(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* WedgeRetryCreate(a): the lane's ONE bounded same-(key, bytes) conditional create (INV-1: "each
 \* later caller's flush performs at most one bounded same-(key, bytes) conditional create under
@@ -1709,7 +1663,6 @@ WedgeRetryCreate(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* WedgeRetryOccupied(a): the retry's `slot-occupy` returns `Occupied`. NO generation guard on this
 \* action: reading the key is not a mutation, and r9-5 puts the recheck POST-I/O -- a stale lane
@@ -1780,7 +1733,6 @@ WedgeRetryOccupied(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 \* WedgeAbandonStale(a): the post-I/O recheck refuses the lane's publication -- its captured
 \* generation is no longer current, so it can neither create nor unwedge, and the successor
@@ -1803,12 +1755,11 @@ WedgeAbandonStale(a) ==
     /\ UNCHANGED << epochRegressed, bodyWriter >>
     /\ UNCHANGED allocVars
     /\ UNCHANGED claimVars
-    /\ UNCHANGED absVars
 
 allocFrame == << owner, epochWiped, mount, mtoken, clock, localLost, crashed, rejected, adoptObs,
                  fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
                  remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver,
-                 supersededThenWrote, rgVars, epochRegressed, bodyWriter, claimVars, absVars >>
+                 supersededThenWrote, rgVars, epochRegressed, bodyWriter, claimVars >>
 \* One immutable conditional write: the expected value and the bytes `allocPend[a] + 1` are fixed here.
 AllocBegin(a) ==
     /\ ImmutableAlloc /\ ~rejected[a] /\ ~wedged[a] /\ ~allocStopped[a] /\ allocPend[a] = NoPend
@@ -1859,62 +1810,6 @@ AllocResolve(a) ==
     /\ ImmutableAlloc /\ allocAmbig[a] /\ AllocSettle(a, TRUE)
     /\ UNCHANGED << epoch, epochCeiling, claimedAfterForeign, fenceLatched, allocFrame >>
 
-\* --- two-step absence ---------------------------------------------------------------
-\* A proxy may answer 404 to a GET and fail a LIST while the slot exists.
-ProxyToggle ==
-    /\ ProxyMay404
-    /\ proxy404' = ~proxy404
-    /\ UNCHANGED << baseVars, claimVars, absPend, falseAbsenceStop, absenceStopped >>
-
-\* The renewer's incarnation is running and has claimed the mount (`fenceUntil` is set by a claim).
-LiveIncarnation(a) == localEpoch[a] > 0 /\ fenceUntil[a] > 0 /\ ~localLost[a] /\ ~crashed[a]
-
-\* The renewal stops on an absence: the same knowledge a fenced or foreign body gives `Renew`.
-AbsenceStop(a) ==
-    /\ localLost' = [localLost EXCEPT ![a] = TRUE]
-    /\ absenceStopped' = TRUE
-    /\ falseAbsenceStop' = (falseAbsenceStop \/ mount # None)
-    /\ absPend' = [absPend EXCEPT ![a] = "none"]
-    /\ adoptObs' = [adoptObs EXCEPT ![a] = None]
-
-\* The renewal's GET found no slot (a real deletion, or a proxy 404). It retries after a LIST.
-RenewGetMiss(a) ==
-    /\ TwoStepAbsence
-    /\ LiveIncarnation(a)
-    /\ absPend[a] = "none"
-    /\ (mount = None \/ proxy404)
-    /\ IF SabAbsenceGetOnly
-       THEN AbsenceStop(a)
-       ELSE /\ absPend' = [absPend EXCEPT ![a] = "getmiss"]
-            /\ UNCHANGED << localLost, adoptObs, falseAbsenceStop, absenceStopped >>
-    /\ UNCHANGED << proxy404 >>
-    /\ UNCHANGED << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, crashed, rejected,
-                    fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
-                    remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver,
-                    supersededThenWrote >>
-    /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
-    /\ UNCHANGED allocVars
-    /\ UNCHANGED claimVars
-
-\* The LIST after a GET miss. A failed LIST (proxy) or one that lists the slot sends the renewal back to
-\* its next tick; only a LIST that also finds nothing is an absence.
-RenewListStep(a) ==
-    /\ TwoStepAbsence
-    /\ LiveIncarnation(a)
-    /\ absPend[a] = "getmiss"
-    /\ IF proxy404 \/ mount # None
-       THEN /\ absPend' = [absPend EXCEPT ![a] = "none"]
-            /\ UNCHANGED << localLost, adoptObs, falseAbsenceStop, absenceStopped >>
-       ELSE AbsenceStop(a)
-    /\ UNCHANGED << proxy404 >>
-    /\ UNCHANGED << owner, epoch, epochCeiling, epochWiped, mount, mtoken, clock, localEpoch, crashed, rejected,
-                    fencedEpochs, wedged, wrote, rootEmpty, firstOwner, lostThenWrote, reclaimed,
-                    remountedAfterFence, fenceUntil, obsToken, obsSince, observedReclaimEver,
-                    supersededThenWrote >>
-    /\ UNCHANGED << rgVars, epochRegressed, bodyWriter >>
-    /\ UNCHANGED allocVars
-    /\ UNCHANGED claimVars
-
 Next ==
     \/ Tick
     \/ ClearExpiredMount
@@ -1953,10 +1848,6 @@ Next ==
     \/ \E a \in Incs : WedgeRetryCreate(a)
     \/ \E a \in Incs : WedgeRetryOccupied(a)
     \/ \E a \in Incs : WedgeAbandonStale(a)
-    \* two-step absence (all inert when TwoStepAbsence = FALSE)
-    \/ ProxyToggle
-    \/ \E a \in Incs : RenewGetMiss(a)
-    \/ \E a \in Incs : RenewListStep(a)
 
 Spec == Init /\ [][Next]_vars
 
@@ -2019,10 +1910,6 @@ TypeOK ==
     /\ claimState \in [Incs -> {"idle", "pending", "ontime", "late"}]
     /\ openedShort \in BOOLEAN
     /\ lateOpened \in BOOLEAN
-    /\ proxy404 \in BOOLEAN
-    /\ absPend \in [Incs -> {"none", "getmiss"}]
-    /\ falseAbsenceStop \in BOOLEAN
-    /\ absenceStopped \in BOOLEAN
 
 \* Owner is sticky: once set it never transitions to a different non-None value.
 NoTwoServerUuidsOwnSameServerRoot ==
@@ -2246,12 +2133,6 @@ W_ReacquireStops == ~\E a \in Incs : allocStopped[a]
 
 \* A claim confirmed with too little left is renewed and only then opens writes.
 W_LateClaimRenewsThenOpens == ~lateOpened
-
-\* A stop on an absence never happens while the slot exists (a proxy 404 must not reach the stop).
-AbsenceStopIsTrue == ~falseAbsenceStop
-
-\* Witness, negated reachability: a real deletion stops an incarnation.
-W_NoAbsenceStop == ~absenceStopped
 
 ----------------------------------------------------------------------------
 \* STATE CONSTRAINTS (referenced from cfgs via `CONSTRAINT`, never from `Next`).

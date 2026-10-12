@@ -54,7 +54,6 @@ CONSTANTS
     RenewOkChecksLatch,\* a renewal success arms nothing on a latched or Stopping pool
     ArmRechecksAtOpen, \* a reclaim re-checks the arming rule in the step that opens writes
     StopOnce,          \* the process-stop request sits under one process-wide once-flag
-    SabFarewellOnStopping, \* FALSE = a Stopping pool writes no farewell; TRUE = the teardown writes it
     MaxGen             \* bound on remount requests (state-space bound only)
 
 TerminalSet == {"Stopping", "Closed"}
@@ -530,12 +529,11 @@ FDrain ==
                    historyVars>>
 
 \* finishTeardown: `release` (the farewell) only from an Active renewer and
-\* only if drained and the pool is not Stopping: a lost mount writes nothing.
+\* only if drained.
 FTeardown ==
     /\ fpc = "Teardown"
     /\ IF keeper \in {"Active", "Terminal"}
        THEN IF keeper = "Active" /\ (drained = "Yes" \/ ~DrainGate)
-               /\ (pstate # "Stopping" \/ SabFarewellOnStopping)
             THEN keeper' = "StoppedClean" /\ farewell' = TRUE
             ELSE keeper' = "StoppedNoFarewell" /\ UNCHANGED farewell
        ELSE UNCHANGED <<keeper, farewell>>
@@ -605,9 +603,6 @@ I1bForgetWinsUnlessNatural ==
 
 \* No unearned farewell: the lanes drained and the lease thread was joined.
 I2EarnedFarewell == farewell => (drained = "Yes" /\ lpc = "Exited")
-
-\* A pool that was ever Stopping never writes the farewell.
-NoFarewellOnStopping == ~(farewell /\ everStopping)
 
 I3OneWay ==
     /\ everStopping => pstate = "Stopping"
