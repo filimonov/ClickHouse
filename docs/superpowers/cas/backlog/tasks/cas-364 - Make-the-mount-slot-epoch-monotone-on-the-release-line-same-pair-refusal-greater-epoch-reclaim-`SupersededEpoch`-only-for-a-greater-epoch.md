@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-10-12 20:24'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -46,3 +47,9 @@ On the base `claimMount` refreshes a slot holding the same `(uuid, epoch)` (T7/M
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-12: PR #2512 (claim accepts only a strictly greater epoch) is merged into antalya-26.6-20261008 (2a034cdb374). Remaining here: `classifyFenceCertificate` treats any epoch inequality as `SupersededEpoch`; require a greater epoch.
+<!-- SECTION:NOTES:END -->
