@@ -66,9 +66,6 @@ CONSTANTS
     SabReacqAllocPerAttempt, \* TRUE = every claim attempt allocates an epoch, not one per fence
     SabOldOpUnchecked, \* TRUE = an operation admitted under the old epoch lands under the new one
     SabLossReacquires, \* TRUE = a loss found by the claim goes back to reacquiring instead of stopping
-    DrainWaitsPublish, \* the drain reports Yes only with no snapshot publish in flight
-    FarewellLeaseBound, \* TRUE = the farewell needs an unexpired lease (the old terminate bound)
-    SabFarewellFromTerminal, \* TRUE = a renewer whose last renewal ended unconfirmed writes the farewell
     MaxGen             \* bound on remount requests and on epochs (state-space bound only)
 
 TerminalSet == {"Stopping", "Closed"}
@@ -110,22 +107,16 @@ VARIABLES
     fenceEpoch,     \* epoch at the last R8, -1 if none
     opEpoch,        \* epoch under which an operation was admitted, -1 if none in flight
     staleOpLanded,  \* history: an operation admitted under an older epoch landed
-    reacqLive,      \* history: a reacquire opened writes under the next epoch
-    publishing,     \* a snapshot publish of this incarnation is in flight
-    lateLanding,    \* history: a publish settled after the farewell was written
-    farewellExpired, \* history: the farewell was written after the lease expired
-    renewUnclear    \* history: a renewal ended without a confirmed lease and no reclaim followed
+    reacqLive       \* history: a reacquire opened writes under the next epoch
 
 vars == <<pstate, intent, termPublished, lost, deadlineOk, keeper, farewell,
           drained, lpc, stop, reqGen, handledGen, snapGen, armReady, epoch,
           gcsched, gcstopping, round, mutex, fpc, d1stop, other, stopRequests,
           naturalWon, everStopping, everClosed, lossSeen, stopByInterference,
           pauseEpoch, liveByRenewal, allocated, allocCount, fenceEpoch, opEpoch,
-          staleOpLanded, reacqLive, publishing, lateLanding, farewellExpired,
-          renewUnclear>>
+          staleOpLanded, reacqLive>>
 
 reacqVars == <<allocated, allocCount, fenceEpoch, opEpoch, staleOpLanded, reacqLive>>
-farewellVars == <<publishing, lateLanding, farewellExpired, renewUnclear>>
 
 leaseVars == <<lpc, reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal>>
 gcVars == <<gcsched, gcstopping, round>>
@@ -163,8 +154,6 @@ TypeOK ==
     /\ allocated \in BOOLEAN /\ allocCount \in 0..2
     /\ fenceEpoch \in -1..MaxGen /\ opEpoch \in -1..MaxGen
     /\ staleOpLanded \in BOOLEAN /\ reacqLive \in BOOLEAN
-    /\ publishing \in BOOLEAN /\ lateLanding \in BOOLEAN
-    /\ farewellExpired \in BOOLEAN /\ renewUnclear \in BOOLEAN
 
 Init ==
     /\ pstate = "Live" /\ intent = FALSE /\ termPublished = FALSE
@@ -180,8 +169,6 @@ Init ==
     /\ liveByRenewal = FALSE
     /\ allocated = FALSE /\ allocCount = 0 /\ fenceEpoch = -1 /\ opEpoch = -1
     /\ staleOpLanded = FALSE /\ reacqLive = FALSE
-    /\ publishing = FALSE /\ lateLanding = FALSE
-    /\ farewellExpired = FALSE /\ renewUnclear = FALSE
 
 \* `remountTerminal`. Every terminal entry publishes the latch.
 LeaseTerminal == intent
@@ -225,7 +212,7 @@ LExit ==
     /\ lpc = "Top"
     /\ (stop \/ LeaseTerminal)
     /\ lpc' = "Exited"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
@@ -241,7 +228,7 @@ LAttemptBegin ==
        THEN TripMountLost
        ELSE /\ pstate' = IF pstate = "Live" THEN "Transient" ELSE pstate
             /\ UNCHANGED lost
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, reqGen,
+    /\ UNCHANGED <<intent, termPublished, deadlineOk, keeper, reqGen,
                    handledGen, armReady, epoch, liveByRenewal, gcVars,
                    forgetVars, stopVars, historyVars, reacqVars>>
 
@@ -250,7 +237,7 @@ LAttemptBegin ==
 LAttemptFail ==
     /\ lpc = "InAttempt"
     /\ lpc' = "Top"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
@@ -262,9 +249,8 @@ LReclaim ==
     /\ \E ready \in BOOLEAN : deadlineOk' = ready
     /\ armReady' = CanArm(reqGen > snapGen, ReclaimChecksPending)
     /\ keeper' = "Active" /\ lpc' = "Arming" /\ epoch' = epoch + 1
-    /\ renewUnclear' = FALSE
     /\ handledGen' = IF AckSnapshot THEN Max(handledGen, snapGen) ELSE reqGen
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, pstate, intent, termPublished, lost, reqGen, snapGen,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, reqGen, snapGen,
                    liveByRenewal, gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
 \* Open writes under `driver_mutex`: an interference report or FORGET may
@@ -280,7 +266,7 @@ LArmOpen ==
             /\ reacqLive' = (reacqLive \/ (pstate = "Reacquiring" /\ epoch = fenceEpoch + 1))
        ELSE UNCHANGED <<pstate, lost, reacqLive>>
     /\ lpc' = "Top" /\ armReady' = FALSE
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, reqGen,
+    /\ UNCHANGED <<intent, termPublished, deadlineOk, keeper, reqGen,
                    handledGen, snapGen, epoch, liveByRenewal, gcVars,
                    forgetVars, stopVars, historyVars,
                    allocated, allocCount, fenceEpoch, opEpoch, staleOpLanded>>
@@ -293,7 +279,7 @@ LAttemptLoss ==
     /\ lpc = "InAttempt"
     /\ lpc' = "Top"
     /\ EnterStopping
-    /\ UNCHANGED <<farewellVars, lost, deadlineOk, keeper, reqGen, handledGen, snapGen,
+    /\ UNCHANGED <<lost, deadlineOk, keeper, reqGen, handledGen, snapGen,
                    armReady, epoch, liveByRenewal, gcVars, forgetVars,
                    other, stopRequests, everClosed, stopByInterference,
                    pauseEpoch, reacqVars>>
@@ -306,7 +292,7 @@ LRenewBegin ==
     /\ pstate \notin TerminalSet
     /\ (~RenewChecksIntent \/ ~intent)
     /\ lpc' = "Renewing"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
@@ -328,7 +314,7 @@ LRenewOk ==
             /\ pstate' = IF report THEN "Live" ELSE pstate
             /\ lost' = IF arm THEN FALSE ELSE lost
             /\ liveByRenewal' = (liveByRenewal \/ report)
-    /\ UNCHANGED <<farewellVars, intent, termPublished, keeper, reqGen, handledGen,
+    /\ UNCHANGED <<intent, termPublished, keeper, reqGen, handledGen,
                    snapGen, armReady, epoch, gcVars, forgetVars, stopVars,
                    historyVars, reacqVars>>
 
@@ -340,11 +326,10 @@ LRenewEndEarly ==
     /\ lpc = "Renewing"
     /\ (stop \/ LeaseTerminal \/ Pending)
     /\ lpc' = "Top" /\ keeper' = "Terminal"
-    /\ renewUnclear' = TRUE
     /\ IF stop
        THEN lost' = TRUE /\ UNCHANGED pstate
        ELSE TripMountLost
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, intent, termPublished, deadlineOk, reqGen, handledGen,
+    /\ UNCHANGED <<intent, termPublished, deadlineOk, reqGen, handledGen,
                    snapGen, armReady, epoch, liveByRenewal, gcVars, forgetVars,
                    stopVars, historyVars, reacqVars>>
 
@@ -354,7 +339,6 @@ LRenewFenced ==
     /\ lpc = "Renewing"
     /\ ~stop /\ ~LeaseTerminal
     /\ keeper' = "Terminal"
-    /\ renewUnclear' = TRUE
     /\ IF ReacquireInThread
        THEN /\ epoch < MaxGen
             /\ lpc' = "Closing" /\ lost' = TRUE
@@ -366,7 +350,7 @@ LRenewFenced ==
             /\ TripMountLost
             /\ reqGen' = reqGen + 1
             /\ UNCHANGED <<fenceEpoch, allocated, allocCount>>
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, intent, termPublished, deadlineOk, handledGen, snapGen,
+    /\ UNCHANGED <<intent, termPublished, deadlineOk, handledGen, snapGen,
                    armReady, epoch, liveByRenewal, gcVars, forgetVars,
                    stopVars, historyVars, opEpoch, staleOpLanded, reacqLive>>
 
@@ -385,7 +369,7 @@ LRenewLoss ==
             /\ reqGen' = IF LeaseTerminal \/ Pending THEN reqGen ELSE reqGen + 1
             /\ UNCHANGED <<intent, termPublished, naturalWon, everStopping,
                            d1stop>>
-    /\ UNCHANGED <<farewellVars, deadlineOk, handledGen, snapGen, armReady, epoch,
+    /\ UNCHANGED <<deadlineOk, handledGen, snapGen, armReady, epoch,
                    liveByRenewal, gcVars, forgetVars, other, stopRequests,
                    everClosed, stopByInterference, pauseEpoch, reacqVars>>
 
@@ -401,7 +385,7 @@ LRenewLoss ==
 LClose ==
     /\ lpc = "Closing"
     /\ lpc' = "Claiming"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
@@ -412,7 +396,7 @@ LAlloc ==
     /\ (~allocated \/ SabReacqAllocPerAttempt)
     /\ allocCount < 2
     /\ allocated' = TRUE /\ allocCount' = allocCount + 1
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    lpc, reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars,
                    fenceEpoch, opEpoch, staleOpLanded, reacqLive>>
@@ -421,7 +405,7 @@ LAlloc ==
 LStepFail ==
     /\ lpc = "Claiming"
     /\ allocated' = (allocated /\ ~SabReacqAllocPerAttempt)
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    lpc, reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars,
                    allocCount, fenceEpoch, opEpoch, staleOpLanded, reacqLive>>
@@ -433,7 +417,7 @@ LClaimLoss ==
        THEN /\ lpc' = "Closing" /\ lossSeen' = TRUE
             /\ UNCHANGED <<intent, termPublished, pstate, naturalWon, everStopping, d1stop>>
        ELSE /\ lpc' = "Top" /\ EnterStopping
-    /\ UNCHANGED <<farewellVars, lost, deadlineOk, keeper, reqGen, handledGen, snapGen,
+    /\ UNCHANGED <<lost, deadlineOk, keeper, reqGen, handledGen, snapGen,
                    armReady, epoch, liveByRenewal, gcVars, forgetVars,
                    other, stopRequests, everClosed, stopByInterference,
                    pauseEpoch, reacqVars>>
@@ -442,17 +426,16 @@ LClaimLoss ==
 LClaimed ==
     /\ lpc = "Claiming" /\ allocated /\ ~stop /\ epoch < MaxGen
     /\ lpc' = "Arming" /\ keeper' = "Active" /\ epoch' = epoch + 1
-    /\ renewUnclear' = FALSE
     /\ \E ready \in BOOLEAN : deadlineOk' = ready
     /\ armReady' = CanArm(FALSE, FALSE)
-    /\ UNCHANGED <<publishing, lateLanding, farewellExpired, pstate, intent, termPublished, lost, reqGen, handledGen, snapGen,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, reqGen, handledGen, snapGen,
                    liveByRenewal, gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
 \* A stop or the latch ends the reacquire before it claims.
 LReacqAbandon ==
     /\ lpc = "Claiming" /\ (stop \/ LeaseTerminal)
     /\ lpc' = "Top"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    reqGen, handledGen, snapGen, armReady, epoch, liveByRenewal,
                    gcVars, forgetVars, stopVars, historyVars, reacqVars>>
 
@@ -463,7 +446,7 @@ OpAdmit ==
     /\ ReacquireInThread
     /\ pstate = "Live" /\ ~lost /\ opEpoch = -1
     /\ opEpoch' = epoch
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcVars, forgetVars, stopVars, historyVars,
                    allocated, allocCount, fenceEpoch, staleOpLanded, reacqLive>>
 
@@ -473,7 +456,7 @@ OpDurable ==
     /\ LET landed == IF SabOldOpUnchecked THEN ~lost ELSE ~lost /\ opEpoch = epoch
        IN staleOpLanded' = (staleOpLanded \/ (landed /\ opEpoch # epoch))
     /\ opEpoch' = -1
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcVars, forgetVars, stopVars, historyVars,
                    allocated, allocCount, fenceEpoch, reacqLive>>
 
@@ -495,7 +478,7 @@ XInterfere ==
             /\ reqGen' = IF stop \/ LeaseTerminal THEN reqGen ELSE reqGen + 1
             /\ UNCHANGED <<intent, termPublished, naturalWon, everStopping,
                            d1stop, stopByInterference>>
-    /\ UNCHANGED <<farewellVars, deadlineOk, keeper, lpc, handledGen, snapGen, armReady,
+    /\ UNCHANGED <<deadlineOk, keeper, lpc, handledGen, snapGen, armReady,
                    epoch, liveByRenewal, gcVars, forgetVars, other,
                    stopRequests, everClosed, pauseEpoch, reacqVars>>
 
@@ -504,14 +487,14 @@ XRaise ==
     /\ d1stop = "Pending"
     /\ d1stop' = "Raised"
     /\ IssueStop
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcVars, forgetVars, other, historyVars, reacqVars>>
 
 \* The second disk observes a loss and latches, then raises.
 OtherObserve ==
     /\ other = "Live"
     /\ other' = "Latched"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcVars, forgetVars, d1stop, stopRequests,
                    historyVars, reacqVars>>
 
@@ -519,7 +502,7 @@ OtherRaise ==
     /\ other = "Latched"
     /\ other' = "Done"
     /\ IssueStop
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcVars, forgetVars, d1stop, historyVars, reacqVars>>
 
 \* The lease expires while no renewal succeeds (`paused`). Neither the fence
@@ -528,7 +511,7 @@ XExpire ==
     /\ deadlineOk
     /\ deadlineOk' = FALSE
     /\ pauseEpoch' = IF pstate = "Live" /\ ~lost THEN epoch ELSE pauseEpoch
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, keeper, leaseVars,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, keeper, leaseVars,
                    gcVars, forgetVars, stopVars, naturalWon, everStopping,
                    everClosed, lossSeen, stopByInterference, reacqVars>>
 
@@ -539,14 +522,14 @@ GcRoundStart ==
     /\ gcsched = "Running" /\ ~gcstopping /\ ~round
     /\ pstate \notin TerminalSet
     /\ round' = TRUE
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcsched, gcstopping, forgetVars, stopVars,
                    historyVars, reacqVars>>
 
 GcRoundEnd ==
     /\ round
     /\ round' = FALSE
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcsched, gcstopping, forgetVars, stopVars,
                    historyVars, reacqVars>>
 
@@ -555,7 +538,7 @@ GcSelfExit ==
     /\ EnableGcSelfExit
     /\ gcsched = "Running" /\ pstate \in TerminalSet /\ ~round
     /\ gcsched' = "Stopped"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcstopping, round, forgetVars, stopVars,
                    historyVars, reacqVars>>
 
@@ -563,7 +546,7 @@ GcSelfExit ==
 VGcStop ==
     /\ mutex = "None" /\ gcsched = "Running" /\ ~round
     /\ gcsched' = "Stopped"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcstopping, round, forgetVars, stopVars,
                    historyVars, reacqVars>>
 
@@ -571,26 +554,8 @@ VGcStop ==
 VGcStart ==
     /\ mutex = "None" /\ gcsched = "Stopped" /\ pstate = "Live"
     /\ gcsched' = "Running"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    leaseVars, gcstopping, round, forgetVars, stopVars,
-                   historyVars, reacqVars>>
-
-(***************************************************************************)
-(* A SNAPSHOT PUBLISH IN FLIGHT                                            *)
-(***************************************************************************)
-\* Begins only on a Live, unfenced pool; settles at any time. Not fair.
-PubBegin ==
-    /\ ~publishing /\ ~lost /\ pstate = "Live"
-    /\ publishing' = TRUE
-    /\ UNCHANGED <<lateLanding, farewellExpired, renewUnclear, pstate, intent, termPublished, lost, deadlineOk,
-                   keeper, farewell, drained, leaseVars, stop, gcVars, mutex, fpc, stopVars,
-                   historyVars, reacqVars>>
-
-PubSettle ==
-    /\ publishing
-    /\ publishing' = FALSE /\ lateLanding' = (lateLanding \/ farewell)
-    /\ UNCHANGED <<farewellExpired, renewUnclear, pstate, intent, termPublished, lost, deadlineOk,
-                   keeper, farewell, drained, leaseVars, stop, gcVars, mutex, fpc, stopVars,
                    historyVars, reacqVars>>
 
 (***************************************************************************)
@@ -599,7 +564,7 @@ PubSettle ==
 FStart ==
     /\ fpc = "NotStarted" /\ mutex = "None"
     /\ mutex' = "Forget" /\ fpc' = "Check"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcVars, stopVars,
                    historyVars, reacqVars>>
 
@@ -608,28 +573,28 @@ FStart ==
 FCheckShort ==
     /\ fpc = "Check" /\ pstate \in TerminalSet
     /\ gcstopping' = TRUE /\ fpc' = "ShortJoin"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcsched, round, mutex,
                    stopVars, historyVars, reacqVars>>
 
 FShortJoin ==
     /\ fpc = "ShortJoin" /\ ~round
     /\ gcsched' = "Destroyed" /\ fpc' = "Done" /\ mutex' = "None"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcstopping, round,
                    stopVars, historyVars, reacqVars>>
 
 FCheckProceed ==
     /\ fpc = "Check" /\ pstate \notin TerminalSet
     /\ fpc' = "Intent"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcVars, mutex,
                    stopVars, historyVars, reacqVars>>
 
 FIntent ==
     /\ fpc = "Intent"
     /\ intent' = TRUE /\ fpc' = "Trip1"
-    /\ UNCHANGED <<farewellVars, pstate, termPublished, lost, deadlineOk, keeper, farewell,
+    /\ UNCHANGED <<pstate, termPublished, lost, deadlineOk, keeper, farewell,
                    drained, leaseVars, stop, gcVars, mutex, stopVars,
                    historyVars, reacqVars>>
 
@@ -637,21 +602,21 @@ FTrip1 ==
     /\ fpc = "Trip1"
     /\ TripMountLost
     /\ fpc' = "GcStopSignal"
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, farewell,
+    /\ UNCHANGED <<intent, termPublished, deadlineOk, keeper, farewell,
                    drained, leaseVars, stop, gcVars, mutex, stopVars,
                    historyVars, reacqVars>>
 
 FGcStopSignal ==
     /\ fpc = "GcStopSignal"
     /\ gcstopping' = TRUE /\ fpc' = "GcStopJoin"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcsched, round, mutex,
                    stopVars, historyVars, reacqVars>>
 
 FGcStopJoin ==
     /\ fpc = "GcStopJoin" /\ ~round
     /\ gcsched' = "Destroyed" /\ fpc' = "JoinSignal"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcstopping, round,
                    mutex, stopVars, historyVars, reacqVars>>
 
@@ -659,14 +624,14 @@ FGcStopJoin ==
 FJoinSignal ==
     /\ fpc = "JoinSignal"
     /\ stop' = TRUE /\ fpc' = "JoinWait"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, gcVars, mutex, stopVars,
                    historyVars, reacqVars>>
 
 FJoinWait ==
     /\ fpc = "JoinWait" /\ lpc = "Exited"
     /\ fpc' = IF EnableTrip2 THEN "Trip2" ELSE "Drain"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, drained, leaseVars, stop, gcVars, mutex,
                    stopVars, historyVars, reacqVars>>
 
@@ -676,39 +641,36 @@ FTrip2 ==
     /\ fpc = "Trip2"
     /\ TripMountLost
     /\ fpc' = "Drain"
-    /\ UNCHANGED <<farewellVars, intent, termPublished, deadlineOk, keeper, farewell,
+    /\ UNCHANGED <<intent, termPublished, deadlineOk, keeper, farewell,
                    drained, leaseVars, stop, gcVars, mutex, stopVars,
                    historyVars, reacqVars>>
 
 FDrain ==
     /\ fpc = "Drain"
-    /\ \E d \in {"Yes", "No"} : drained' = d /\ ((d = "Yes" /\ DrainWaitsPublish) => ~publishing)
+    /\ \E d \in {"Yes", "No"} : drained' = d
     /\ fpc' = "Teardown"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, keeper,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, keeper,
                    farewell, leaseVars, stop, gcVars, mutex, stopVars,
                    historyVars, reacqVars>>
 
-\* finishTeardown: `release` (the farewell) only from an Active renewer, only if drained, and not on a
-\* Stopping pool: a lost mount writes nothing. The lease may have expired: the write is conditional on
-\* our own token, so only `FarewellLeaseBound` makes it wait for an unexpired lease.
+\* finishTeardown: `release` (the farewell) only from an Active renewer and
+\* only if drained and the pool is not Stopping: a lost mount writes nothing.
 FTeardown ==
     /\ fpc = "Teardown"
     /\ IF keeper \in {"Active", "Terminal"}
-       THEN IF /\ (keeper = "Active" \/ (SabFarewellFromTerminal /\ keeper = "Terminal"))
-               /\ (drained = "Yes" \/ ~DrainGate)
+       THEN IF keeper = "Active" /\ (drained = "Yes" \/ ~DrainGate)
                /\ (pstate # "Stopping" \/ SabFarewellOnStopping)
-               /\ (deadlineOk \/ ~FarewellLeaseBound)
-            THEN keeper' = "StoppedClean" /\ farewell' = TRUE /\ farewellExpired' = ~deadlineOk
-            ELSE keeper' = "StoppedNoFarewell" /\ UNCHANGED <<farewell, farewellExpired>>
-       ELSE UNCHANGED <<keeper, farewell, farewellExpired>>
+            THEN keeper' = "StoppedClean" /\ farewell' = TRUE
+            ELSE keeper' = "StoppedNoFarewell" /\ UNCHANGED farewell
+       ELSE UNCHANGED <<keeper, farewell>>
     /\ fpc' = "KeeperReset"
-    /\ UNCHANGED <<publishing, lateLanding, renewUnclear, pstate, intent, termPublished, lost, deadlineOk, drained,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, drained,
                    leaseVars, stop, gcVars, mutex, stopVars, historyVars, reacqVars>>
 
 FKeeperReset ==
     /\ fpc = "KeeperReset"
     /\ keeper' = "None" /\ fpc' = "Enter"
-    /\ UNCHANGED <<farewellVars, pstate, intent, termPublished, lost, deadlineOk, farewell,
+    /\ UNCHANGED <<pstate, intent, termPublished, lost, deadlineOk, farewell,
                    drained, leaseVars, stop, gcVars, mutex, stopVars,
                    historyVars, reacqVars>>
 
@@ -721,7 +683,7 @@ FEnter ==
        ELSE /\ pstate' = "Closed" /\ termPublished' = TRUE
             /\ everClosed' = TRUE
     /\ fpc' = "Done" /\ mutex' = "None"
-    /\ UNCHANGED <<farewellVars, lost, deadlineOk, keeper, farewell, drained, leaseVars,
+    /\ UNCHANGED <<lost, deadlineOk, keeper, farewell, drained, leaseVars,
                    stop, gcVars, stopVars, naturalWon, everStopping, lossSeen,
                    stopByInterference, pauseEpoch, reacqVars>>
 
@@ -732,7 +694,6 @@ Next ==
     \/ LRenewFenced \/ LRenewLoss
     \/ LClose \/ LAlloc \/ LStepFail \/ LClaimLoss \/ LClaimed \/ LReacqAbandon
     \/ OpAdmit \/ OpDurable
-    \/ PubBegin \/ PubSettle
     \/ XInterfere \/ XRaise \/ OtherObserve \/ OtherRaise \/ XExpire
     \/ GcRoundStart \/ GcRoundEnd \/ GcSelfExit \/ VGcStop \/ VGcStart
     \/ FStart \/ FCheckShort \/ FShortJoin \/ FCheckProceed \/ FIntent
@@ -783,12 +744,6 @@ I2EarnedFarewell == farewell => (drained = "Yes" /\ lpc = "Exited")
 
 \* A pool that was ever Stopping never writes the farewell.
 NoFarewellOnStopping == ~(farewell /\ everStopping)
-
-\* A publish settling after the farewell would land behind it.
-NoLandingAfterFarewell == ~lateLanding
-
-\* The farewell is withheld when the last renewal ended without a confirmed lease.
-NoFarewellAfterUnclearRenewal == ~(farewell /\ renewUnclear)
 
 I3OneWay ==
     /\ everStopping => pstate = "Stopping"
@@ -907,8 +862,6 @@ WNoLiveByRenewal == ~liveByRenewal
 WNoReacquire == ~reacqLive
 WNoRequestDuringReclaim == ~(lpc = "InAttempt" /\ reqGen > snapGen)
 WNoForgetFarewell == ~(ForgetDone /\ farewell)
-\* The farewell is written after the lease expired.
-WNoFarewellAfterExpiry == ~farewellExpired
 \* Expiry, then a renewal, then writes admitted under the same epoch.
 WNoPauseResume ==
     ~(pauseEpoch = epoch /\ pstate = "Live" /\ ~lost /\ deadlineOk)
