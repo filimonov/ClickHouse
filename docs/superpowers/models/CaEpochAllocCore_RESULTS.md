@@ -18,6 +18,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 6 (spec r4/r5, rejoin): green with a verified mark found here** (`r6_*`). Every r4 guard has a red sabotage: foreign `gc_fenced` reclaim, recheck of a foreign owner, rollback only of an introduced retirement on the control plane, the owner uuid check, the terminal-mount check of rejoin. The r3 rollback undoes a completed retirement; without the verified mark, a re-run cannot tell a dead run's late tombstone from a completed retirement (`sab_r6_noverify`).
 - **Round 7 (spec r7): green with three guards found here** (`r7_*`): a failed admin remount still runs step 3 (`sab_r7_remountstops`), a foreign reclaim needs an owner read of our uuid (`sab_r7_foreignnoowner`), and an owner rejoin generation checked on remount (`r7_remount` red without it). The kept verified mark closes codex final 3 (`sab_r7_dropmark`).
 - **Round 8 (spec r8): green with one owner-life rule in place of three round-7 rules** (`r8_*`); every r8 sabotage is red. Switches `RemountChecksLife`, `RemountRejoins` and `RejoinVerifiedOnly` are removed.
+- **Round 9 (spec r9): green** (`r9_*`). The tool now reads its victim from the owner, as the code does; Opus P1-A is reproduced through an unverified rejoin (`sab_r9_rejoinunverified`) and a rerun after a verified run (`res_r9_rerunafterverified`), both closed by r9. New mixed-version residual: two rejoins of different uuids racing let a paused 26.6.4 starter run under the other uuid (`res_r9_uuidreuse`).
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -492,6 +493,49 @@ Added: `OwnerLife` (the r8 rule) and the sabotages `RecheckIgnoresLife` and `Rol
 - **Each r8 sabotage is red.** A recheck without the life lets a remounted victim resume after a same-uuid rejoin. A rollback without its own tombstone's life lets a paused run clear a later run's completed retirement: run 1 tombstones and pauses, the re-run completes and verifies, and run 1's rollback lands.
 - **No new defect** within these bounds.
 
+## Round 9: a rerun cannot drop a rejoined member (spec r9) {#round-9}
+
+Opus final2 P1-A: the code's decommission tool does not know its victim in advance; `Pool::openForDecommission` takes the uuid from the current owner (`readOwnerUuid`). Until round 8 the model's tool had a fixed uuid `u1`, so `TombChecksUuid` and `NoForeignTombstone` held only because the model knew its victim. Base of every `r9_*` row: round 8 plus the switches below.
+
+### What changed {#round-9-design}
+
+| Step | Model | Switch (sabotage / witness) |
+|---|---|---|
+| Each tool run takes its victim uuid from the owner it reads at start (`Uuid("d")` = `dUuid`) | `OwnerCheck` | `ToolReadsVictim` |
+| Rejoin only over a verified tombstone | `OwnerCheck` | `RejoinVerifiedOnly` = FALSE (`sab_r9_rejoinunverified`) |
+| A verified run is final: a rerun only after a run that stopped before the mark | `DRestart("rerun")` | `RerunOnlyUnverified` = FALSE (`res_r9_rerunafterverified`, witness) |
+| A new decommission of a live owner (a separate verb in the code) | `DRestart("new")` | `NewDecom` |
+| The admin's recheck uses the life read at its start; confirm and rollback only between its tombstone and its farewell | already so since round 8 (`pLife` at `OwnerCheck`; no remount or confirm after `Farewell`) | — |
+
+New invariant `NoDrainOfLaterLife`: a drain never removes a reference allocated in a member life later than the life its decommission started on. A rerun inherits that life; a new decommission takes the current one. Drains of a paused earlier run (`ZombieDrain`, `LateDelete`) are not tracked by this ghost.
+
+### Results {#round-9-results}
+
+"I9": "I8" plus `NoDrainOfLaterLife`; `r9_old` checks `OldNotUnderNewOwner` in place of `LiveMatchesOwnerAtRest`.
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `r9_core_z` | `a` starts twice, paused run, admin fence, counter rule on | I9 | green | green | 11,013,188 | 76 |
+| `r9_core_g` | `a` starts twice, GC round, no paused run, no fences | I9 | green | green | 15,038,117 | 108 |
+| `r9_newuuid` | `a` and `n` (uuid 2), admin fence, no paused run | I9 | green | green | 2,937,563 | 26 |
+| `r9_old` | 26.6.4 starter `o`, new-uuid starter `n` | I9 − LiveMatchesOwnerAtRest + OldNotUnderNewOwner | green | green | 4,311,695 | 38 |
+| `r9_threeruns` | up to three decommission runs | I9 | green | green | 4,788,672 | 33 |
+| `r9_remount` | partitioned `a` remounts, `n` (uuid 1) rejoins (SLOW) | I9 | green | green | 56,304,176 | 527 |
+| `r9_newdecom` | a new decommission of a rejoined member | I9 | green | green | 1,547,411 | 11 |
+| `sab_r9_rejoinunverified` | rejoin over an unverified tombstone | NoDrainOfLaterLife | violation | violation | 744,555 | 6 |
+| `res_r9_rerunafterverified` | a rerun after a verified run (witness) | NoDrainOfLaterLife | violation | violation | 949,208 | 7 |
+| `res_r9_uuidreuse` | 26.6.4 `o` (uuid 1), `n` (uuid 2), `a` (uuid 1), a new decommission (SLOW) | OldNotUnderNewOwner | violation | violation | 51,959,649 | 520 |
+
+### Findings {#round-9-findings}
+
+- **P1-A reproduced through both doors, closed by the two r9 rules.** Unverified rejoin: run 1 tombstones and dies; `a` rejoins over the unverified tombstone, publishes and farewells; the rerun reads the rejoined owner as its victim, tombstones it and drains `a`'s reference. Rerun after a verified run: the same after a completed run. With rejoin only over a verified tombstone and reruns only before the mark, both are unreachable (`r9_*` green). A new decommission of the rejoined member is a separate, intended operation (`r9_newdecom` green).
+- **New: a stale rejoiner reopens the 26.6.4 window without any second retirement** (`res_r9_uuidreuse`, shorter than codex final2 #1). `a` (uuid 1) reads the verified-retired owner and starts its rejoin; `n` (uuid 2) completes its rejoin first (mount, then owner); `a` reads the mount after `n`'s replacement, so its own mount replacement by `If-Match` succeeds and the slot holds a terminal uuid-1 body; `a`'s owner write then fails. The paused 26.6.4 starter `o` (uuid 1, owner check passed before the decommission) reclaims that body and runs under owner uuid 2. New binaries are safe here (their recheck and the foreign reclaim's owner read refuse); a 26.6.4 starter has neither. Any moment the slot holds a terminal uuid-X body while the owner is another uuid gives a paused 26.6.4 uuid-X starter this opening, so it is a mixed-version residual unless rejoin also checks the owner between its mount and owner writes, which still leaves a window.
+- **The admin's recheck and the confirm window already matched r9** (round 8 recorded the start life; no confirm runs after the farewell).
+
+### Residuals {#round-9-residuals}
+
+Added: a paused 26.6.4 starter can run under another uuid's owner when two rejoins of different uuids race (`res_r9_uuidreuse`). Unchanged: the in-flight drain request and a tombstone left over a live successor when the tool dies before its rollback.
+
 ## Code checks {#code-checks}
 
 Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code at both unless noted).
@@ -529,6 +573,7 @@ Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code a
 | `NoForeignTombstone` | no decommission tombstone lands on an owner of another uuid. |
 | `NoResumeAfterRetire` | a self-remount never makes live again a process that started before a later rejoin. |
 | `OldNotUnderNewOwner` | a 26.6.4 starter never runs under an owner of another uuid. |
+| `NoDrainOfLaterLife` | a drain never removes a reference allocated in a member life later than the life its decommission started on (a rerun inherits it). |
 | `NoLiveAfterSelfFence` | witness, expected violated: after a claimer fenced itself on the recheck, an instance runs live again. |
 
 ## Counterexamples {#counterexamples}
