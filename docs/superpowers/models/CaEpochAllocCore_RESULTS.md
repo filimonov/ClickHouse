@@ -17,6 +17,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 5 (spec r3): green** (`r5_*`). Every run rewrites its own tombstone (`sab_r5_keeptomb` red), drains run on the admin's lease (`sab_r5_drainopen` red), re-add is one owner write and a new uuid reclaims the old life's clean farewell. Not shown load-bearing: the re-add clean-farewell check and `ForeignOwner` for a foreign `gc_fenced` body. Residual: a drain request in flight lands after a re-add, even without a fence or a re-run (`res_r5_inflight_norerun`).
 - **Round 6 (spec r4/r5, rejoin): green with a verified mark found here** (`r6_*`). Every r4 guard has a red sabotage: foreign `gc_fenced` reclaim, recheck of a foreign owner, rollback only of an introduced retirement on the control plane, the owner uuid check, the terminal-mount check of rejoin. The r3 rollback undoes a completed retirement; without the verified mark, a re-run cannot tell a dead run's late tombstone from a completed retirement (`sab_r6_noverify`).
 - **Round 7 (spec r7): green with three guards found here** (`r7_*`): a failed admin remount still runs step 3 (`sab_r7_remountstops`), a foreign reclaim needs an owner read of our uuid (`sab_r7_foreignnoowner`), and an owner rejoin generation checked on remount (`r7_remount` red without it). The kept verified mark closes codex final 3 (`sab_r7_dropmark`).
+- **Round 8 (spec r8): green with one owner-life rule in place of three round-7 rules** (`r8_*`); every r8 sabotage is red. Switches `RemountChecksLife`, `RemountRejoins` and `RejoinVerifiedOnly` are removed.
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -450,6 +451,47 @@ New invariants: `NoResumeAfterRetire` (a self-remount never makes live again a p
 
 Unchanged: the in-flight drain request (`res_r5_*`) and a tombstone left over a live successor when the tool dies before its rollback (`res_lc_tombover`). Documented compatibility case: a 26.6.4 same-uuid victim prechecked before the tombstone can run under it (no recheck).
 
+## Round 8: one monotone owner life (spec r8) {#round-8}
+
+Spec r8 replaces the owner nonce and the round-7 rejoin generation with one monotone `owner_life`. In the model it is `ownerGen`: every owner write (first claim, tombstone, rollback, verified mark, rejoin) adds one, and with `OwnerNonce` on the owner token is the life itself. Switch `OwnerLife`: a process records the life it started under (`pLife`, taken after its rejoin if any); the claim recheck (now also the admin's, which still accepts its victim's tombstone), the remount owner check and the foreign reclaim require exactly (own uuid, recorded life, not retired). Rejoin no longer needs a verified tombstone, and the remount has no rule of its own against rejoin: a rejoin, rollback or tombstone changes the life and the check refuses.
+
+Base of every `r8_*` row: round 7 with `OwnerLife` on. Kept from r7: the verified mark (kept on refresh), every exit after the tombstone runs the confirm (`AdminRemountConfirms`), rollback by `If-Match` on its own tombstone unless the replaced one was verified, mount before owner for a new-uuid rejoin, and the 26.6.4 starter.
+
+### Switches {#round-8-switches}
+
+| Removed (dead under r8) | Was | Now |
+|---|---|---|
+| `RemountChecksLife` | round-7 rejoin generation, checked on remount and in the remounting recheck | the life check |
+| `RemountRejoins` | sabotage: a remount may rejoin (green under the generation check) | the life check refuses a remount over a changed life; no rule needed |
+| `RejoinVerifiedOnly` | rejoin only over a verified tombstone (not shown load-bearing in round 7) | dropped by r8 |
+
+Added: `OwnerLife` (the r8 rule) and the sabotages `RecheckIgnoresLife` and `RollbackIgnoresLife`; the other r8 sabotages reuse `ForeignNeedsOwner`, `AdminRemountConfirms` and `KeepVerified`. The design rows set one rule switch (`OwnerLife`) where round 7 set two (`RemountChecksLife`, `RejoinVerifiedOnly`). The round-7 rows are removed (`ec635033c10`); their results stay in "Round 7" above, and round 8 covers each of their scenarios.
+
+### Results {#round-8-results}
+
+"I8": `EpochNeverReused`, `NoDangle`, `SlotNeverRegresses`, `CounterNeverRegresses`, `LiveMatchesOwnerAtRest`, `RevivalAboveEarlierLives`, `RetryAcceptsTomb`, `NoStaleTombstone`, `DoneMeansRetired`, `NoStaleDrain`, `NoWedge`, `NoForeignTombstone`, `NoResumeAfterRetire`. `r8_old` checks `OldNotUnderNewOwner` in place of `LiveMatchesOwnerAtRest` (the documented 26.6.4 same-uuid case). Larger bounds than those below hit the 600 s limit without a violation.
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `r8_core_z` | `a` starts twice, paused run, admin fence, no GC round, counter rule on | I8 | green | green | 12,597,853 | 83 |
+| `r8_core_g` | `a` starts twice, GC round, no paused run, no fences (SLOW) | I8 | green | green | 25,629,084 | 180 |
+| `r8_newuuid` | `a` and `n` (uuid 2), admin fence, no paused run, no GC round (SLOW) | I8 | green | green | 23,231,567 | 200 |
+| `r8_old` | 26.6.4 starter `o`, new-uuid starter `n` (SLOW) | I8 − LiveMatchesOwnerAtRest + OldNotUnderNewOwner | green | green | 41,652,502 | 390 |
+| `r8_threeruns` | up to three decommission runs | I8 | green | green | 8,168,773 | 55 |
+| `r8_remount` | partitioned `a` remounts, `n` (uuid 1) rejoins (SLOW) | I8 | green | green | 56,688,908 | 509 |
+| `sab_r8_rechecknolife` | recheck ignores the life | NoResumeAfterRetire | violation | violation | 2,939,908 | 22 |
+| `sab_r8_rollbacknolife` | rollback clears any retired owner of the victim uuid | DoneMeansRetired | violation | violation | 179,977 | 2 |
+| `sab_r8_foreignnoowner` | foreign reclaim without the owner read | OldNotUnderNewOwner | violation | violation | 1,032,264 | 9 |
+| `sab_r8_remountstops` | a failed admin remount skips the confirm | LiveMatchesOwnerAtRest | violation | violation | 37,650 | 2 |
+| `sab_r8_dropmark` | refresh drops the verified mark | DoneMeansRetired | violation | violation | 1,698,022 | 11 |
+| `sab_r8_ownerfirst` | owner written before the mount replacement | OldNotUnderNewOwner | violation | violation | 117,232 | 2 |
+
+### Findings {#round-8-findings}
+
+- **The life check subsumes three round-7 rules.** It replaces the rejoin generation, the remount's "never rejoin" rule and, for the foreign reclaim, the separate "not retired" condition (any tombstone changes the life). Rejoin without a verified tombstone stays green (`r8_*`).
+- **Each r8 sabotage is red.** A recheck without the life lets a remounted victim resume after a same-uuid rejoin. A rollback without its own tombstone's life lets a paused run clear a later run's completed retirement: run 1 tombstones and pauses, the re-run completes and verifies, and run 1's rollback lands.
+- **No new defect** within these bounds.
+
 ## Code checks {#code-checks}
 
 Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code at both unless noted).
@@ -583,7 +625,7 @@ One action = one store request, or one in-memory step. Code at `2a034cdb374`.
 | `JoinEpoch`, `JoinMount`, `JoinEmpty`, `JoinWrite` | proposed rejoin in `claimOwnerOrThrow` | GET epoch; GET mount; LIST; PUT `If-Match` owner | the owner token is the one `OwnerCheck` read (`jTok`); a conflict returns to the owner GET |
 | `DMarkVerified` | proposed step-6 owner rewrite marking the tombstone verified | PUT `If-Match` owner | — |
 | `GcFenceDead` | GC's fence write on an expired lease of a dead holder | PUT `If-Match` mount | death is the `ProvenDead` ghost |
-| `RemountStart`, `RemountOwner` | `Pool::tryRemountOnce`: lease lost, then `claimOwnerOrThrow` | in-memory step; GET owner | the remount then allocates and claims through the normal actions |
+| `RemountStart`, `RemountOwner` | `Pool::tryRemountOnce`: lease lost, then `claimOwnerOrThrow` | in-memory step; GET owner | the remount then allocates and claims through the normal actions; with `OwnerLife` the check compares the recorded life |
 | `JoinRepl` | proposed new-uuid mount replacement in rejoin | PUT `If-Match` mount | — |
 | `ClaimForeignOwner` | proposed GET owner before a foreign reclaim in `claimMount` | GET owner | the mount write that follows is `If-Match` on the token `ClaimRead` saw, so a mount change in between fails it |
 | `GcFenceLive` | GC's fence write on the lease of a partitioned instance | PUT `If-Match` mount | — |
