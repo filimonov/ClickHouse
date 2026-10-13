@@ -283,7 +283,7 @@ Init ==
     /\ tombOverLive = FALSE /\ dTombRefused = FALSE
     /\ oStamp = 0 /\ zDrain = [on |-> FALSE, mode |-> "none", ep |-> 0, mtok |-> 0, tok |-> <<>>, intro |-> FALSE]
     /\ dLife = 0 /\ staleDecom = FALSE /\ staleDrain = FALSE
-    /\ lateDel = [on |-> FALSE, ep |-> 0] /\ doneLives = {} /\ tombForeign = FALSE /\ vTok = <<"none">> /\ jTok = [p \in Procs |-> <<>>] /\ selfFenced = FALSE
+    /\ lateDel = [on |-> FALSE, ep |-> 0] /\ doneLives = {} /\ tombForeign = FALSE /\ vTok = <<>> /\ jTok = [p \in Procs |-> <<>>] /\ selfFenced = FALSE
     /\ pc = [p \in Procs |-> IF p = "d" THEN "open" ELSE "down"]
     /\ myEpoch = [p \in Procs |-> 0]
     /\ myBody = [p \in Procs |-> EAbsent]
