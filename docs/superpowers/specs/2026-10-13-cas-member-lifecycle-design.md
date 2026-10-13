@@ -43,7 +43,7 @@ Paths: `CA/` = `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`.
 
 In `Pool::mountWritable` (`CA/Pool/CasPool.cpp`) and on every `Claimed` in the fence-recovery path (`Pool::tryRemountOnce`, `:1233`), before `installRenewer`: `GET owner`. It must exist, carry this claimer's `server_uuid`, and not be retired; the decommission admin (`NoWait`) also accepts a retired owner of its victim's uuid. Otherwise:
 
-1. Read-modify-write the `mount` slot (`claimMount` returns no ETag on `Claimed`): if it still holds this claimer's `(uuid, writer_epoch)`, replace it with the same body marked `gc_fenced`. A clean farewell would let re-add proceed while a fenced admin still drains (`sab_lc_refusedclean`).
+1. Read-modify-write the `mount` slot (`claimMount` returns no ETag on `Claimed`): if it still holds this claimer's `(uuid, writer_epoch)`, replace it with the same body marked `gc_fenced`, so the slot is terminal at once and nobody waits out the refused claimer's lease. r3 needed `gc_fenced` rather than a clean farewell because re-add then accepted only clean bodies (`sab_lc_refusedclean`); with fenced drains (D5) either terminal body is safe, and `gc_fenced` keeps the slot visibly not a completed retirement.
 2. Throw the matching refusal (retired, foreign or absent owner).
 
 The foreign-owner case matters after a re-add: a victim that passed `claimOwnerOrThrow` before the decommission can wake after a re-add gave the `srid` to another uuid and reclaim its own clean farewell; only this recheck stops it from running under the new owner.
