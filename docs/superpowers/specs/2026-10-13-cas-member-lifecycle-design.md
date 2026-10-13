@@ -56,7 +56,7 @@ Cost: one GET per claim. Why it closes CAS-158 for new binaries: every reclaim p
 2. **Tombstone**: `GET owner`, then replace by `If-Match` with `{uuid, retired_at_ms, owner_nonce}`, also when it is already retired. A paused earlier run can then never remove this run's tombstone: its un-tombstone uses an older ETag.
 3. **Confirm the claim**: `GET mount`. The body must carry the admin's `server_uuid` and `writer_epoch` and be neither `gc_fenced` nor clean (renewals change the ETag and `write_attempt_id`, so they are not compared). Otherwise un-tombstone by `If-Match` on step 2's ETag and fail (`sab_lc_noconfirm`).
 4. **Drain data**: victim namespaces through `dropNamespace`, manifest debris, `staging/<srid>/`, `roots/<srid>/`, all on `admin->mountRequests()` (today `CasRequests(..., Fence::open())` and `gc_requests`). The lease-deadline fence stops a fenced admin locally; only requests already in flight can land late.
-5. **Farewell**: `admin.reset()` writes the clean terminal body (`MountLeaseRenewer::terminate`, `CA/Pool/CasServerRoot.cpp:1739`); it reports no outcome.
+5. **Farewell**: if every drain request resolved, `admin.reset()` writes the clean terminal body (`MountLeaseRenewer::terminate`, `CA/Pool/CasServerRoot.cpp:1739`; it reports no outcome). If any drain request ended unresolved, the run replaces its body with `gc_fenced` instead and fails: re-add accepts only a clean farewell, and a rerun resolves the outcome.
 6. **Verify**: `GET mount` (clean farewell of the admin's `writer_epoch`) and `GET owner` (retired, nonce of step 2). Report `member_retired = true` only if both hold and no catalog rows of the victim remain (warning at `CasDecommission.cpp:309-324`). Otherwise warn; the operator reruns.
 
 Deleted from the tail (`:326-506`) and the helper `deleteSlotObject` (`:99-116`): the `claimed_epoch` and `farewell_mount` captures, `captures_match`, the two slot deletes, the "ACCEPTED RESIDUAL WINDOW", the liveness recheck, and the tombstone at the end. About 195 lines go; about 50 come back for steps 2, 3 and 6.
@@ -99,7 +99,7 @@ Tracked in CAS-385 unless marked.
 
 | Residual | Effect | Handling |
 |---|---|---|
-| A drain request already in flight when the admin is fenced lands after a rerun and a re-add (`res_lc_pauseddrain`) | deletes a new member's object | D5 limits it to in-flight requests; operator rule: re-add only after every earlier decommission process exited |
+| A drain request already sent lands after a re-add, even in one uncontended run whose delete lost its response (`res_r5_inflight_norerun`) | deletes a new member's object | fencing and process exit do not bound when the store applies a sent request. Narrowed in code: the drain deletes by exact incarnation (`deleteListedPrefix`, `If-Match`), and the farewell is clean only if every drain request resolved; otherwise the run writes `gc_fenced`, re-add refuses, and a rerun resolves the outcome. What remains is a late delete of a key the new life rewrote with identical bytes and S3 ETag: the next row |
 | A late conditional DELETE under `roots/<srid>/` meets a new life's object with identical bytes and S3 ETag (codex r2 finding 3) | deletes the new member's mountpoint object or probe | same class as CAS-371; no epoch in those keys |
 | The tool dies between the tombstone and its un-tombstone (`res_lc_tombover`) | a live successor keeps running under a tombstone and refuses its next start | availability only; rerun decommission or re-add |
 | States left by 26.6.4 (no counter, no tombstone, or a deleted `mount`) | decommission and re-add refuse | documented (D9) |
@@ -184,6 +184,8 @@ Rounds 3–4 (`3b7b6606ec4`, `647c0ffac72`, `c4e0dd307f8`) prove r2. Round 5 mus
 - the admin drains on its fenced plane (drain steps gated by the admin's fence; in-flight requests modelled as late);
 - the admin refuses an absent counter.
 The model has no self-remount; D5 for remount is argued, not modelled.
+
+Round 5 result (`5b3224c52a0`, `03d506c91aa`): all 17 rows met expectations. The own-tombstone rewrite closes the paused-run un-tombstone (`sab_r5_keeptomb` red); fenced drains close the paused-run drain (`sab_r5_drainopen` red); the foreign clean reclaim is needed for a new-uuid re-add (`sab_r5_noforeign` wedges). Two guards are not shown load-bearing, because the model has no renewals, local lease deadline or self-remount: re-add's clean-farewell precondition (`sab_r5_skipclean`) and `ForeignOwner` for a foreign `gc_fenced` body (`sab_r5_foreignfenced`). Both stay as cheap checks, argued in #readd and #claim-recheck. The in-flight drain residual is in #residuals; the unresolved-request farewell rule above is not modelled.
 
 ## Implementation checks {#checks}
 
