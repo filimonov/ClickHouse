@@ -127,7 +127,8 @@ CONSTANTS
     JoinReplaceMount,   \* new-uuid rejoin replaces the terminal mount body by If-Match before the owner write
     JoinOwnerFirst,     \* sabotage: the owner write comes before the mount replacement
     OldInst,            \* 26.6.4 starters: no rejoin, no foreign reclaim, no claim recheck
-    AdminRemountConfirms \* proposed: a failed admin remount after this run's tombstone goes to step 3 (rollback)
+    AdminRemountConfirms, \* proposed: a failed admin remount after this run's tombstone goes to step 3 (rollback)
+    ForeignNeedsOwner   \* proposed: claimMount reclaims a foreign body only after GET owner shows its own uuid
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
@@ -595,7 +596,8 @@ ClaimRead(p) ==
        THEN /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED myMTok          \* newer_epoch -> ABORTED
        ELSE IF mount.e = myEpoch[p] /\ StrictClaim
        THEN /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED myMTok          \* same_epoch_occupied
-       ELSE /\ pc' = [pc EXCEPT ![p] = IF ClaimChecksOwner THEN "cownr" ELSE "crecl"] \* reclaim
+       ELSE /\ pc' = [pc EXCEPT ![p] = IF ForeignNeedsOwner /\ mount.u # Uuid(p) THEN "cfown"
+                                       ELSE IF ClaimChecksOwner THEN "cownr" ELSE "crecl"] \* reclaim
             /\ myMTok' = [myMTok EXCEPT ![p] = mGen]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, myEpoch, myBody, myExp, myAmb, starts, mf,
                    DVars, GVars>>
@@ -658,8 +660,11 @@ RemountStart(p) ==
     /\ ~(mount.holder = p /\ mount.e = myEpoch[p] /\ ~mount.fenced)
     /\ pc' = [pc EXCEPT ![p] = "rmowner"]
     /\ remnt' = [remnt EXCEPT ![p] = TRUE]
+    \* A build admitted under the lost incarnation cannot commit after the remount (admission generation).
+    /\ mf' = [mf EXCEPT ![p] = IF mf[p] = "written" THEN "failed" ELSE mf[p]]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
-                   stLife, resumedStale, dClaimEp, catRows, jRepl, mfEp, Locals, DVars, GVars, XVars>>
+                   stLife, resumedStale, dClaimEp, catRows, jRepl, mfEp,
+                   myEpoch, myBody, myExp, myAmb, myMTok, starts, DVars, GVars, XVars>>
 
 \* claimOwnerOrThrow from the remount: no NoWait, no rejoin (sabotage: rejoin).  Then a new epoch and claim.
 RemountOwner(p) ==
@@ -690,6 +695,12 @@ CatalogGc ==
     /\ catRows' = FALSE
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
                    stLife, remnt, resumedStale, dClaimEp, jRepl, mfEp, pc, Locals, DVars, GVars, XVars>>
+
+\* Proposed: before reclaiming a foreign terminal body, GET owner; it must carry our uuid.
+ClaimForeignOwner(p) ==
+    /\ pc[p] = "cfown"
+    /\ pc' = [pc EXCEPT ![p] = IF ~ownerGone /\ ownerUuid = Uuid(p) THEN "crecl" ELSE Down(p)]
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
 
 \* Proposed check before the mint: GET `epoch`; our own bytes must still be there.
 ClaimCheckCounter(p) ==
@@ -1076,6 +1087,7 @@ DRestart ==
     /\ starts' = [starts EXCEPT !["d"] = @ + 1]
     /\ remnt' = [remnt EXCEPT !["d"] = FALSE]
     /\ dClaimEp' = 0
+    /\ dTombTok' = IF RemountOn THEN <<>> ELSE dTombTok
     /\ myEpoch' = [myEpoch EXCEPT !["d"] = 0]
     /\ dCap' = [obj |-> EAbsent, tok |-> NONE] /\ dFar' = 0 /\ dOwn' = FALSE
     \* ZombieRun: the earlier run is paused, not dead; its decided tombstone and next steps land later.
@@ -1089,7 +1101,7 @@ DRestart ==
                  ELSE zDrain
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
                    stLife, resumedStale, catRows, jRepl, mfEp, myBody, myExp, myAmb, myMTok, mf, GVars>>
-    /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok,
+    /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, life, rpc, rTok,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, dLife, staleDecom,
                    staleDrain>>
 
@@ -1284,7 +1296,7 @@ Next ==
     \/ \E p \in Procs :
         \/ Start(p) \/ OpenProbe(p) \/ OwnerCheck(p) \/ OwnerEmpty(p) \/ OwnerCreate(p) \/ AllocRead(p)
         \/ JoinEpoch(p) \/ JoinMount(p) \/ JoinEmpty(p) \/ JoinRepl(p) \/ JoinWrite(p)
-        \/ RemountStart(p) \/ RemountOwner(p) \/ AllocEmpty(p) \/ AllocProbe(p)
+        \/ RemountStart(p) \/ RemountOwner(p) \/ ClaimForeignOwner(p) \/ AllocEmpty(p) \/ AllocProbe(p)
         \/ ABase(p)
         \/ AllocWrite(p) \/ AllocResolve(p)
         \/ ClaimRead(p) \/ ClaimCheckOwner(p) \/ ClaimCheckCounter(p) \/ ClaimPostOwner(p)
