@@ -189,7 +189,8 @@ VARIABLES
     resumedStale,       \* ghost: a self-remount resumed a process that started before a later rejoin
     dClaimEp,           \* the decommission run's writer_epoch recorded at its first claim
     catRows,            \* catalog rows of the victim still Removing (GC not done)
-    jRepl               \* per process: rejoin mount replacement [tok, need]
+    jRepl,              \* per process: rejoin mount replacement [tok, need]
+    mfEp                \* per process (remount rows): epoch of the manifest the current build staged
 
 vars == <<epObj, epGen, mount, mGen, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr,
           allocLog, dup, slotMax, pc, myEpoch, myBody, myExp, myAmb, myMTok, starts, mf,
@@ -198,7 +199,7 @@ vars == <<epObj, epGen, mount, mGen, ownerRetired, manifests, refs, inflight, am
           ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, myFloor, life, allocLife, rpc, rTok,
           oInfl, ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife,
           staleDecom, staleDrain, lateDel, doneLives, tombForeign, vTok, jTok, selfFenced,
-          stLife, remnt, resumedStale, dClaimEp, catRows, jRepl>>
+          stLife, remnt, resumedStale, dClaimEp, catRows, jRepl, mfEp>>
 
 EpVars == <<epObj, epGen, epBornAt, maxCounter, regress>>
 LVars == <<oStamp, zDrain, dLife, staleDecom, staleDrain>>
@@ -308,6 +309,7 @@ Init ==
     /\ lateDel = [on |-> FALSE, ep |-> 0] /\ doneLives = {} /\ tombForeign = FALSE /\ vTok = <<>> /\ jTok = [p \in Procs |-> <<>>] /\ selfFenced = FALSE
     /\ stLife = [p \in Procs |-> 0] /\ remnt = [p \in Procs |-> FALSE] /\ resumedStale = FALSE
     /\ dClaimEp = 0 /\ catRows = FALSE /\ jRepl = [p \in Procs |-> [tok |-> 0, need |-> FALSE]]
+    /\ mfEp = [p \in Procs |-> 0]
     /\ pc = [p \in Procs |-> IF p = "d" THEN "open" ELSE "down"]
     /\ myEpoch = [p \in Procs |-> 0]
     /\ myBody = [p \in Procs |-> EAbsent]
@@ -324,7 +326,7 @@ Store == <<EpVars, mount, mGen, ownerRetired, manifests, refs>>
 DVars == <<dCap, dFar, dOwn>>
 GVars == <<gpc, gfloor, gview, gRounds>>
 G5 == <<lateDel, doneLives, tombForeign, vTok, jTok, selfFenced>>
-G7 == <<stLife, remnt, resumedStale, dClaimEp, catRows, jRepl>>
+G7 == <<stLife, remnt, resumedStale, dClaimEp, catRows, jRepl, mfEp>>
 Ghost == <<allocLog, dup, slotMax, allocLife, G5, G7>>
 
 -----------------------------------------------------------------------------
@@ -340,7 +342,7 @@ Start(p) ==
     /\ myEpoch' = [myEpoch EXCEPT ![p] = 0]
     /\ remnt' = [remnt EXCEPT ![p] = FALSE]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
-                   stLife, resumedStale, dClaimEp, catRows, jRepl, myBody, myExp, myAmb, myMTok, DVars, GVars>>
+                   stLife, resumedStale, dClaimEp, catRows, jRepl, mfEp, myBody, myExp, myAmb, myMTok, DVars, GVars>>
     /\ UNCHANGED XVars
 
 \* Pool::open before the server-root steps: runCapabilityProbe writes `_probe/<uid>/...` (V1 takes
@@ -368,7 +370,7 @@ OwnerCheck(p) ==
     /\ dTombRefused' = (dTombRefused \/ (p = "d" /\ ~ownerGone /\ ownerRetired /\ ~AcceptsTomb(p)))
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife,
                    lateDel, doneLives, tombForeign, vTok, selfFenced, remnt, resumedStale, dClaimEp, catRows,
-                   jRepl, Locals, DVars, GVars>>
+                   jRepl, mfEp, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm,
                    ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, LVars>>
@@ -387,7 +389,7 @@ JoinMount(p) ==
     /\ jRepl' = IF JoinReplaceMount THEN [jRepl EXCEPT ![p] = [tok |-> mGen, need |-> mount.u # Uuid(p)]]
                 ELSE jRepl
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
-                   stLife, remnt, resumedStale, dClaimEp, catRows, Locals, DVars, GVars, XVars>>
+                   stLife, remnt, resumedStale, dClaimEp, catRows, mfEp, Locals, DVars, GVars, XVars>>
 
 JoinEmpty(p) ==
     /\ pc[p] = "jempty"
@@ -418,7 +420,7 @@ JoinWrite(p) ==
        ELSE /\ UNCHANGED <<ownerRetired, ownerUuid, ownerGen, oStamp, life, stLife>>
             /\ pc' = [pc EXCEPT ![p] = IF remnt[p] THEN "down" ELSE "owner"]
     /\ UNCHANGED <<EpVars, mount, mGen, manifests, refs, inflight, ambUsed, nonceCtr,
-                   allocLog, dup, slotMax, allocLife, G5, remnt, resumedStale, dClaimEp, catRows, jRepl,
+                   allocLog, dup, slotMax, allocLife, G5, remnt, resumedStale, dClaimEp, catRows, jRepl, mfEp,
                    Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGone, dOwnTok, dTombTok, rpc, rTok, oInfl,
                    rv, rvMTok, rvOTok, tombOverLive, dTombRefused, zDrain, dLife, staleDecom, staleDrain>>
@@ -610,7 +612,7 @@ ClaimPostOwner(p) ==
        /\ pc' = [pc EXCEPT ![p] = IF refuse THEN "cpfare" ELSE "live"]
        /\ resumedStale' = (resumedStale \/ (~refuse /\ ResumesStale(p)))
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
-                   stLife, remnt, dClaimEp, catRows, jRepl, Locals, DVars, GVars, XVars>>
+                   stLife, remnt, dClaimEp, catRows, jRepl, mfEp, Locals, DVars, GVars, XVars>>
 
 \* The refused claimer writes a terminal body (If-Match on its own claim) and throws.
 ClaimPostFarewell(p) ==
@@ -651,7 +653,7 @@ RemountStart(p) ==
     /\ pc' = [pc EXCEPT ![p] = "rmowner"]
     /\ remnt' = [remnt EXCEPT ![p] = TRUE]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
-                   stLife, resumedStale, dClaimEp, catRows, jRepl, Locals, DVars, GVars, XVars>>
+                   stLife, resumedStale, dClaimEp, catRows, jRepl, mfEp, Locals, DVars, GVars, XVars>>
 
 \* claimOwnerOrThrow from the remount: no NoWait, no rejoin (sabotage: rejoin).  Then a new epoch and claim.
 RemountOwner(p) ==
@@ -680,7 +682,7 @@ CatalogGc ==
     /\ catRows
     /\ catRows' = FALSE
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
-                   stLife, remnt, resumedStale, dClaimEp, jRepl, pc, Locals, DVars, GVars, XVars>>
+                   stLife, remnt, resumedStale, dClaimEp, jRepl, mfEp, pc, Locals, DVars, GVars, XVars>>
 
 \* Proposed check before the mint: GET `epoch`; our own bytes must still be there.
 ClaimCheckCounter(p) ==
@@ -701,7 +703,7 @@ ClaimMint(p) ==
             /\ dClaimEp' = IF RemountOn /\ p = "d" /\ dClaimEp = 0 THEN myEpoch[p] ELSE dClaimEp
        ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax, resumedStale, dClaimEp>>
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, allocLog, dup,
-                   allocLife, G5, stLife, remnt, catRows, jRepl, myEpoch, myBody, myExp, myAmb, starts, mf,
+                   allocLife, G5, stLife, remnt, catRows, jRepl, mfEp, myEpoch, myBody, myExp, myAmb, starts, mf,
                    DVars, GVars>>
     /\ UNCHANGED XVars
 
@@ -718,7 +720,7 @@ ClaimReclaim(p) ==
             /\ dClaimEp' = IF RemountOn /\ p = "d" /\ dClaimEp = 0 THEN myEpoch[p] ELSE dClaimEp
        ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax, resumedStale, dClaimEp>>
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, allocLog, dup,
-                   allocLife, G5, stLife, remnt, catRows, jRepl, myEpoch, myBody, myExp, myAmb, starts, mf,
+                   allocLife, G5, stLife, remnt, catRows, jRepl, mfEp, myEpoch, myBody, myExp, myAmb, starts, mf,
                    DVars, GVars>>
     /\ UNCHANGED XVars
 
@@ -731,14 +733,17 @@ WriteManifest(p) ==
     /\ IF myEpoch[p] \notin manifests
        THEN manifests' = manifests \cup {myEpoch[p]} /\ mf' = [mf EXCEPT ![p] = "written"]
        ELSE UNCHANGED manifests /\ mf' = [mf EXCEPT ![p] = "failed"]
-    /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, refs, inflight, ambUsed, nonceCtr, Ghost, pc,
+    \* The manifest key carries the epoch at staging; a later remount does not change it.
+    /\ mfEp' = IF RemountOn THEN [mfEp EXCEPT ![p] = myEpoch[p]] ELSE mfEp
+    /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, refs, inflight, ambUsed, nonceCtr, pc,
+                   allocLog, dup, slotMax, allocLife, G5, stLife, remnt, resumedStale, dClaimEp, catRows, jRepl,
                    myEpoch, myBody, myExp, myAmb, myMTok, starts, DVars, GVars>>
     /\ UNCHANGED XVars
 
 \* Ref commit naming the manifest; it does not re-read the manifest.
 Publish(p) ==
     /\ pc[p] = "live" /\ mf[p] = "written"
-    /\ refs' = refs \cup {myEpoch[p]}
+    /\ refs' = refs \cup {IF RemountOn THEN mfEp[p] ELSE myEpoch[p]}
     /\ mf' = [mf EXCEPT ![p] = "published"]
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr, Ghost,
                    pc, myEpoch, myBody, myExp, myAmb, myMTok, starts, DVars, GVars>>
@@ -790,7 +795,7 @@ DDrain ==
                /\ UNCHANGED <<refs, staleDrain, catRows>>
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr,
                    allocLog, dup, slotMax, allocLife, doneLives, tombForeign, vTok, jTok, selfFenced,
-                   stLife, remnt, resumedStale, dClaimEp, jRepl, Locals, DVars, GVars>>
+                   stLife, remnt, resumedStale, dClaimEp, jRepl, mfEp, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife, staleDecom>>
 
@@ -1076,7 +1081,7 @@ DRestart ==
                        ep |-> myEpoch["d"], mtok |-> myMTok["d"], tok |-> dTombTok, intro |-> ~dOwn]
                  ELSE zDrain
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
-                   stLife, resumedStale, catRows, jRepl, myBody, myExp, myAmb, myMTok, mf, GVars>>
+                   stLife, resumedStale, catRows, jRepl, mfEp, myBody, myExp, myAmb, myMTok, mf, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, dLife, staleDecom,
                    staleDrain>>
