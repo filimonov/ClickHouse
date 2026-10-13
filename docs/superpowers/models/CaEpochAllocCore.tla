@@ -126,7 +126,8 @@ CONSTANTS
     DrainLeavesRows,    \* the drain leaves catalog rows Removing until a later GC step
     JoinReplaceMount,   \* new-uuid rejoin replaces the terminal mount body by If-Match before the owner write
     JoinOwnerFirst,     \* sabotage: the owner write comes before the mount replacement
-    OldInst             \* 26.6.4 starters: no rejoin, no foreign reclaim, no claim recheck
+    OldInst,            \* 26.6.4 starters: no rejoin, no foreign reclaim, no claim recheck
+    AdminRemountConfirms \* proposed: a failed admin remount after this run's tombstone goes to step 3 (rollback)
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
@@ -279,6 +280,11 @@ HoldStates == {"live", "dlive", "dcap", "dfarewell", "cpost", "cpfare", "dchk"} 
 \* IF, not \/: TLC explores every disjunct of an action-level \/ and would apply pc to "none".
 \* An instance holds the slot with an unclean lease of its own epoch.
 LiveHolder == \E i \in Inst : pc[i] = "live" /\ mount.holder = i /\ mount.e = myEpoch[i] /\ ~mount.clean
+
+\* Remount rows: a process counts as live only while it holds its own unfenced lease; a fenced one is
+\* refused by the mount plane and remounts.
+OwnLease(p) == mount.holder = p /\ mount.e = myEpoch[p] /\ ~mount.fenced
+LiveP(i) == pc[i] = "live" /\ (RemountOn => OwnLease(i))
 
 ProvenDead(h, e) == IF h = "none" THEN TRUE ELSE ~(pc[h] \in HoldStates /\ myEpoch[h] = e)
 
@@ -658,11 +664,12 @@ RemountStart(p) ==
 \* claimOwnerOrThrow from the remount: no NoWait, no rejoin (sabotage: rejoin).  Then a new epoch and claim.
 RemountOwner(p) ==
     /\ pc[p] = "rmowner"
-    /\ pc' = [pc EXCEPT ![p] = IF ownerGone \/ ownerUuid # Uuid(p) THEN Down(p)
-                              ELSE IF RemountChecksLife /\ life # stLife[p] THEN Down(p)
+    /\ LET fail == IF p = "d" /\ AdminRemountConfirms /\ dTombTok # <<>> THEN "dchk" ELSE Down(p) IN
+       pc' = [pc EXCEPT ![p] = IF ownerGone \/ ownerUuid # Uuid(p) THEN fail
+                              ELSE IF RemountChecksLife /\ life # stLife[p] THEN fail
                               ELSE IF ownerRetired
                               THEN (IF RemountRejoins /\ (~RejoinVerifiedOnly \/ OwnerVerified) THEN "jepoch"
-                                    ELSE Down(p))
+                                    ELSE fail)
                               ELSE "aread"]
     /\ jTok' = [jTok EXCEPT ![p] = OTok]
     /\ myEpoch' = [myEpoch EXCEPT ![p] = 0]
@@ -729,7 +736,7 @@ ClaimReclaim(p) ==
 
 \* Manifest create (If-None-Match) of (ns, epoch, build_seq 1): in flight, protected only by the floor.
 WriteManifest(p) ==
-    /\ pc[p] = "live" /\ mf[p] = "none"
+    /\ pc[p] = "live" /\ mf[p] = "none" /\ (RemountOn => OwnLease(p))
     /\ IF myEpoch[p] \notin manifests
        THEN manifests' = manifests \cup {myEpoch[p]} /\ mf' = [mf EXCEPT ![p] = "written"]
        ELSE UNCHANGED manifests /\ mf' = [mf EXCEPT ![p] = "failed"]
@@ -742,7 +749,7 @@ WriteManifest(p) ==
 
 \* Ref commit naming the manifest; it does not re-read the manifest.
 Publish(p) ==
-    /\ pc[p] = "live" /\ mf[p] = "written"
+    /\ pc[p] = "live" /\ mf[p] = "written" /\ (RemountOn => OwnLease(p))
     /\ refs' = refs \cup {IF RemountOn THEN mfEp[p] ELSE myEpoch[p]}
     /\ mf' = [mf EXCEPT ![p] = "published"]
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr, Ghost,
@@ -1346,7 +1353,10 @@ RevivalAboveEarlierLives == \A x, y \in allocLife : x[2] < y[2] => x[1] < y[1]
 
 \* Keep-everything: every instance running live has the owner's uuid and an untombstoned owner.
 LiveMatchesOwner ==
-    \A i \in Inst : pc[i] = "live" => (~ownerRetired /\ ~ownerGone /\ ownerUuid = Uuid(i))
+    \A i \in Inst : LiveP(i) => (~ownerRetired /\ ~ownerGone /\ ownerUuid = Uuid(i))
+
+\* A 26.6.4 starter never runs under an owner of another uuid (a new-uuid rejoin).
+OldNotUnderNewOwner == \A i \in OldInst : LiveP(i) => ownerUuid = Uuid(i)
 
 \* LiveMatchesOwner once the tool finished and no step of a paused earlier run is pending.
 DecomQuiet == pc["d"] \in {"dstop", "ddone"} /\ ~zDrain.on /\ ~oInfl.on
