@@ -4,7 +4,7 @@ Decommission keeps a member's control objects `gc/server-roots/<srid>/{owner,epo
 
 Closes: CAS-363, CAS-158, CAS-156, CAS-156.1, CAS-157, CAS-369. Partly: CAS-156.2, CAS-156.3, CAS-357, CAS-371, CAS-264, CAS-159. Acceptance: CAS-213. Residuals go to CAS-385.
 
-Revision 5: rejoin at start replaces the re-add command (owner decision 2026-10-13: less code; a returning server, same uuid or not, comes back empty). Revision 4 notes: Reviews of r1–r3: `tmp/noclock/lifecycle/{review,rereview,rereview3}-{opus,codex}.md`. Model: `docs/superpowers/models/CaEpochAllocCore_RESULTS.md` rounds 3–5; round 6 checks the r4 changes (#model). Every closure below holds for upgraded servers and tools with intact control objects; #compat lists what old participants keep.
+Revision 5.1: #removed lists code that goes beyond the tail (owner decision 2026-10-13). Revision 5: rejoin at start replaces the re-add command (owner decision 2026-10-13: less code; a returning server, same uuid or not, comes back empty). Revision 4 notes: Reviews of r1–r3: `tmp/noclock/lifecycle/{review,rereview,rereview3}-{opus,codex}.md`. Model: `docs/superpowers/models/CaEpochAllocCore_RESULTS.md` rounds 3–5; round 6 checks the r4 changes (#model). Every closure below holds for upgraded servers and tools with intact control objects; #compat lists what old participants keep.
 
 ## Why {#why}
 
@@ -64,6 +64,21 @@ Cost: one GET per claim. Why it closes CAS-158 for new binaries: every reclaim p
 Deleted from the tail (`:326-506`) and the helper `deleteSlotObject` (`:99-116`): the stale-cut recheck (`retirement_catalog_cut` against `fresh_retirement_catalog`), the `claimed_epoch` and `farewell_mount` captures, `captures_match`, the two slot deletes, the "ACCEPTED RESIDUAL WINDOW", the liveness recheck, and the tombstone at the end. About 195 lines go; about 50 come back for steps 2, 3 and 6.
 
 `EpochMintPolicy::DecommissionRecovery` (`CA/Pool/CasServerRoot.h:158`) serves only 26.6.4 leftovers and becomes unreachable with step 1's rule; remove it in PR B. The owner-absent fallback in `openForDecommission` (`:938`) stays: an owner deleted by hand with the counter present still reaches it, and the foreign-owner refusal text tells operators to delete the owner.
+
+### Other code removed {#removed}
+
+Beyond the decommission tail. All in PR B unless marked.
+
+| Code | Why it goes |
+|---|---|
+| `EpochMintPolicy`, its `DecommissionRecovery` branch in `allocateWriterEpoch` (`CA/Pool/CasServerRoot.cpp:646-672`, `CasServerRoot.h:157-182`), the `now_ms` parameter and its four callers (`CA/Pool/CasPool.cpp:630`, `:747`, `:794`, `:1439`), the `epoch_policy` plumbing and the forward declaration of `describeMountHolder` (`:429`) | decommission never mints over an absent counter (D9) |
+| The slot-vanished branch of `claimMountAwaitingExpiry` (`CasServerRoot.cpp:~993-1006`) with its pacing and restart budget, and `CASMountAwaitExpiry.PersistentSlotVanishPacesAndBoundsRestartsInsteadOfSpinning` | only decommission deleted slots; a vanished slot now returns the last result and the next start claims the empty slot |
+| The vanished-slot prune of `computeHeartbeatFloor` (`seen_srids`, final prune loop) | slots no longer vanish; terminal slots already leave `obs` |
+| `CASMount.DecommissionRemintOverTerminalMountMintsDistinctEpoch`, `CASMount.DecommissionRemintOverLiveMountRefuses` | test the removed policy |
+| `slot_removed` everywhere (report, `InterpreterSystemQuery.cpp:1114,1131`, `CommandCaDropMember.cpp`, event detail `"slot_removed"` at `CasDecommission.cpp:529`, docs) | renamed `member_retired` |
+| Docs describing slot deletion: `docs/en/antalya/cas/architecture/mounts-and-leases.md` (owner claim, epoch-recovery precheck, the `Live --> Absent` decommission edge, the debris-ordering rationale), `configuration.md:137`, `debugging.md:145`, `backend.md:127`, `CasPool.h:420-433` | describe removed behaviour |
+
+Kept, with comments corrected: the `same_epoch_occupied` arm of `claimMount` (#2512; a 26.6.4 node can still share an epoch), `ForeignOwner` for a live foreign body (two servers configured with one `srid`), the absent-counter branch and the epoch-1 guard of `allocateWriterEpoch` (first start of a new `srid`), `serverRootSubtreeEmpty`, `floorForNamespace`'s absent-mount path, `reconcileStaleCreator` (now also resolves a stalled `Creating` of a retired `srid`, through the kept terminal slot), `isCreatorFenceTerminal`'s fail-closed absence.
 
 ### Rejoin at start {#rejoin}
 
