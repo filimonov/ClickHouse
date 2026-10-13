@@ -114,12 +114,24 @@ CONSTANTS
     TombChecksUuid,     \* the tool's owner read stops on an owner of another uuid
     VerifiedMark,       \* proposed: step 6 marks the tombstone verified; a re-run rolls back unverified ones
     Rejoin,             \* a server start over a retired owner (any uuid) rejoins inside claimOwnerOrThrow
-    RejoinAnyMount      \* sabotage: rejoin accepts a live-looking mount
+    RejoinAnyMount,     \* sabotage: rejoin accepts a live-looking mount
+    \* Round 7 (spec r7):
+    RejoinVerifiedOnly, \* rejoin only over a verified tombstone; an unverified one refuses (retryable)
+    RemountOn,          \* a process whose lease is lost self-remounts: owner check without rejoin, new claim
+    RemountRejoins,     \* sabotage: the self-remount may rejoin a verified retirement
+    RemountChecksLife,  \* proposed: the remount refuses when the owner's rejoin generation changed since start
+    GcFencesLive,       \* GC fences the lease of a live (partitioned) server instance
+    KeepVerified,       \* step 2 keeps retirement_verified when it refreshes a verified tombstone
+    DRestarts,          \* decommission re-runs allowed (1 = one re-run)
+    DrainLeavesRows,    \* the drain leaves catalog rows Removing until a later GC step
+    JoinReplaceMount,   \* new-uuid rejoin replaces the terminal mount body by If-Match before the owner write
+    JoinOwnerFirst,     \* sabotage: the owner write comes before the mount replacement
+    OldInst             \* 26.6.4 starters: no rejoin, no foreign reclaim, no claim recheck
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
 ASSUME ~(StoreTime /\ PoolHwm) /\ ~(OwnerFloor /\ (StoreTime \/ PoolHwm))
-ASSUME LateInst \subseteq Inst /\ NewUuidInst \subseteq Inst
+ASSUME LateInst \subseteq Inst /\ NewUuidInst \subseteq Inst /\ OldInst \subseteq Inst /\ DRestarts \in Nat
 ASSUME ~(KeepAll /\ (OwnerFloor \/ Retire \/ PoolHwm \/ StoreTime))
 ASSUME ~(KeepAll /\ (OwnerFloor \/ Retire \/ PoolHwm \/ StoreTime))
 
@@ -171,7 +183,13 @@ VARIABLES
     tombForeign,        \* ghost: a decommission tombstone landed on an owner of another uuid
     vTok,               \* owner token written by the verified mark (the owner is verified while OTok = vTok)
     jTok,               \* per process: owner token read by claimOwnerOrThrow (rejoin If-Match)
-    selfFenced          \* ghost (rejoin rows): a claimer refused after its claim fenced its own lease
+    selfFenced,         \* ghost (rejoin rows): a claimer refused after its claim fenced its own lease
+    stLife,             \* per process: the owner's rejoin generation (life) when the process started
+    remnt,              \* per process: the current claim attempt is a self-remount
+    resumedStale,       \* ghost: a self-remount resumed a process that started before a later rejoin
+    dClaimEp,           \* the decommission run's writer_epoch recorded at its first claim
+    catRows,            \* catalog rows of the victim still Removing (GC not done)
+    jRepl               \* per process: rejoin mount replacement [tok, need]
 
 vars == <<epObj, epGen, mount, mGen, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr,
           allocLog, dup, slotMax, pc, myEpoch, myBody, myExp, myAmb, myMTok, starts, mf,
@@ -179,7 +197,8 @@ vars == <<epObj, epGen, mount, mGen, ownerRetired, manifests, refs, inflight, am
           epBornAt, maxCounter, regress, clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm,
           ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, myFloor, life, allocLife, rpc, rTok,
           oInfl, ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife,
-          staleDecom, staleDrain, lateDel, doneLives, tombForeign, vTok, jTok, selfFenced>>
+          staleDecom, staleDrain, lateDel, doneLives, tombForeign, vTok, jTok, selfFenced,
+          stLife, remnt, resumedStale, dClaimEp, catRows, jRepl>>
 
 EpVars == <<epObj, epGen, epBornAt, maxCounter, regress>>
 LVars == <<oStamp, zDrain, dLife, staleDecom, staleDrain>>
@@ -235,6 +254,7 @@ OtherUuid(u) == IF u = "u1" THEN "u2" ELSE "u1"
 RvUuid(r) == IF RaceUuids /\ r = "r2" THEN OtherUuid(ReviveUuid) ELSE ReviveUuid
 \* claimMount over a body of another uuid.
 ForeignReclaimable == (ClaimForeignClean /\ mount.clean /\ ~mount.fenced) \/ (ClaimForeignFenced /\ mount.fenced)
+ForeignOk(p) == p \notin OldInst /\ ForeignReclaimable
 \* The decommission tool's claim is still in the slot, unfenced (its lease-deadline fence has not fired).
 OwnClaim(t) == mGen = t /\ mount.holder = "d" /\ ~mount.fenced
 MintNext == IF MintChecksCounter THEN "cchk" ELSE "cmint"
@@ -248,7 +268,9 @@ OTok == OTokOf(ownerUuid, ownerRetired, ownerFloor, oStamp, ownerGen)
 \* Any later owner write changes the token, so the mark lasts until the next owner write.
 OwnerVerified == OTok = vTok
 Hold(p) == IF p = "d" THEN "dlive" ELSE "live"
-AfterClaim(p) == IF ClaimRecheckOwner /\ p \in Inst THEN "cpost" ELSE Hold(p)
+AfterClaim(p) == IF ClaimRecheckOwner /\ p \in Inst \ OldInst THEN "cpost" ELSE Hold(p)
+\* A claim that makes p live after a self-remount, for a process that started before a later rejoin.
+ResumesStale(p) == remnt[p] /\ stLife[p] < life
 HoldStates == {"live", "dlive", "dcap", "dfarewell", "cpost", "cpfare", "dchk"} \cup (IF KeepAll THEN {"downer", "dtomb", "ddrain"} ELSE {})
 
 \* Ghost for claimMountAwaitingExpiry's token-stability wait: a holder is proven dead when the process
@@ -284,6 +306,8 @@ Init ==
     /\ oStamp = 0 /\ zDrain = [on |-> FALSE, mode |-> "none", ep |-> 0, mtok |-> 0, tok |-> <<>>, intro |-> FALSE]
     /\ dLife = 0 /\ staleDecom = FALSE /\ staleDrain = FALSE
     /\ lateDel = [on |-> FALSE, ep |-> 0] /\ doneLives = {} /\ tombForeign = FALSE /\ vTok = <<>> /\ jTok = [p \in Procs |-> <<>>] /\ selfFenced = FALSE
+    /\ stLife = [p \in Procs |-> 0] /\ remnt = [p \in Procs |-> FALSE] /\ resumedStale = FALSE
+    /\ dClaimEp = 0 /\ catRows = FALSE /\ jRepl = [p \in Procs |-> [tok |-> 0, need |-> FALSE]]
     /\ pc = [p \in Procs |-> IF p = "d" THEN "open" ELSE "down"]
     /\ myEpoch = [p \in Procs |-> 0]
     /\ myBody = [p \in Procs |-> EAbsent]
@@ -300,7 +324,8 @@ Store == <<EpVars, mount, mGen, ownerRetired, manifests, refs>>
 DVars == <<dCap, dFar, dOwn>>
 GVars == <<gpc, gfloor, gview, gRounds>>
 G5 == <<lateDel, doneLives, tombForeign, vTok, jTok, selfFenced>>
-Ghost == <<allocLog, dup, slotMax, allocLife, G5>>
+G7 == <<stLife, remnt, resumedStale, dClaimEp, catRows, jRepl>>
+Ghost == <<allocLog, dup, slotMax, allocLife, G5, G7>>
 
 -----------------------------------------------------------------------------
 (* Server start                                                            *)
@@ -313,7 +338,9 @@ Start(p) ==
     /\ starts' = [starts EXCEPT ![p] = @ + 1]
     /\ mf' = [mf EXCEPT ![p] = "none"]
     /\ myEpoch' = [myEpoch EXCEPT ![p] = 0]
-    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, myBody, myExp, myAmb, myMTok, DVars, GVars>>
+    /\ remnt' = [remnt EXCEPT ![p] = FALSE]
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
+                   stLife, resumedStale, dClaimEp, catRows, jRepl, myBody, myExp, myAmb, myMTok, DVars, GVars>>
     /\ UNCHANGED XVars
 
 \* Pool::open before the server-root steps: runCapabilityProbe writes `_probe/<uid>/...` (V1 takes
@@ -331,14 +358,17 @@ OpenProbe(p) ==
 OwnerCheck(p) ==
     /\ pc[p] = "owner"
     /\ pc' = [pc EXCEPT ![p] = IF ownerGone THEN "oempty"
-                              ELSE IF Rejoin /\ p \in Inst /\ ownerRetired THEN "jepoch"
+                              ELSE IF Rejoin /\ p \in Inst \ OldInst /\ ownerRetired
+                              THEN (IF RejoinVerifiedOnly /\ ~OwnerVerified THEN Down(p) ELSE "jepoch")
                               ELSE IF ownerUuid # Uuid(p) THEN Down(p)
                               ELSE IF ownerRetired /\ ~AcceptsTomb(p) THEN Down(p) ELSE "aread"]
     /\ jTok' = IF Rejoin THEN [jTok EXCEPT ![p] = OTok] ELSE jTok
+    /\ stLife' = IF RemountOn THEN [stLife EXCEPT ![p] = life] ELSE stLife
     /\ myFloor' = [myFloor EXCEPT ![p] = ownerFloor]
     /\ dTombRefused' = (dTombRefused \/ (p = "d" /\ ~ownerGone /\ ownerRetired /\ ~AcceptsTomb(p)))
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife,
-                   lateDel, doneLives, tombForeign, vTok, selfFenced, Locals, DVars, GVars>>
+                   lateDel, doneLives, tombForeign, vTok, selfFenced, remnt, resumedStale, dClaimEp, catRows,
+                   jRepl, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm,
                    ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, LVars>>
@@ -354,23 +384,42 @@ JoinMount(p) ==
     /\ pc[p] = "jmount"
     /\ pc' = [pc EXCEPT ![p] = IF RejoinAnyMount \/ (mount.e > 0 /\ (mount.clean \/ mount.fenced))
                               THEN "jempty" ELSE "down"]
-    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
+    /\ jRepl' = IF JoinReplaceMount THEN [jRepl EXCEPT ![p] = [tok |-> mGen, need |-> mount.u # Uuid(p)]]
+                ELSE jRepl
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
+                   stLife, remnt, resumedStale, dClaimEp, catRows, Locals, DVars, GVars, XVars>>
 
 JoinEmpty(p) ==
     /\ pc[p] = "jempty"
-    /\ pc' = [pc EXCEPT ![p] = IF manifests = {} /\ refs = {} THEN "jwrite" ELSE "down"]
+    /\ pc' = [pc EXCEPT ![p] = IF manifests = {} /\ refs = {} /\ ~catRows
+                              THEN (IF jRepl[p].need /\ ~JoinOwnerFirst THEN "jrepl" ELSE "jwrite")
+                              ELSE "down"]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
+
+\* Proposed (new uuid): replace the terminal mount body by If-Match with a clean terminal body of our uuid,
+\* same writer_epoch.  A token mismatch refuses (retryable).
+JoinRepl(p) ==
+    /\ pc[p] = "jrepl"
+    /\ IF mGen = jRepl[p].tok /\ mount.e > 0
+       THEN /\ mount' = [mount EXCEPT !.u = Uuid(p), !.holder = "none", !.clean = TRUE, !.fenced = FALSE]
+            /\ mGen' = mGen + 1
+            /\ pc' = [pc EXCEPT ![p] = IF JoinOwnerFirst THEN "aread" ELSE "jwrite"]
+       ELSE /\ UNCHANGED <<mount, mGen>> /\ pc' = [pc EXCEPT ![p] = "down"]
+    /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, Ghost, Locals,
+                   DVars, GVars, XVars>>
 
 JoinWrite(p) ==
     /\ pc[p] = "jwrite"
     /\ IF OTok = jTok[p] /\ ~ownerGone
        THEN /\ ownerRetired' = FALSE /\ ownerUuid' = Uuid(p) /\ ownerGen' = ownerGen + 1 /\ oStamp' = 0
             /\ life' = life + 1
-            /\ pc' = [pc EXCEPT ![p] = "aread"]
-       ELSE /\ UNCHANGED <<ownerRetired, ownerUuid, ownerGen, oStamp, life>>
-            /\ pc' = [pc EXCEPT ![p] = "owner"]
-    /\ UNCHANGED <<EpVars, mount, mGen, manifests, refs, inflight, ambUsed, nonceCtr, Ghost, Locals,
-                   DVars, GVars>>
+            /\ pc' = [pc EXCEPT ![p] = IF JoinOwnerFirst /\ jRepl[p].need THEN "jrepl" ELSE "aread"]
+            /\ stLife' = IF RemountOn /\ ~remnt[p] THEN [stLife EXCEPT ![p] = life + 1] ELSE stLife
+       ELSE /\ UNCHANGED <<ownerRetired, ownerUuid, ownerGen, oStamp, life, stLife>>
+            /\ pc' = [pc EXCEPT ![p] = IF remnt[p] THEN "down" ELSE "owner"]
+    /\ UNCHANGED <<EpVars, mount, mGen, manifests, refs, inflight, ambUsed, nonceCtr,
+                   allocLog, dup, slotMax, allocLife, G5, remnt, resumedStale, dClaimEp, catRows, jRepl,
+                   Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGone, dOwnTok, dTombTok, rpc, rTok, oInfl,
                    rv, rvMTok, rvOTok, tombOverLive, dTombRefused, zDrain, dLife, staleDecom, staleDrain>>
 
@@ -463,7 +512,7 @@ Allocated(p) ==
     /\ allocLog' = allocLog \cup {myEpoch[p]}
     /\ allocLife' = allocLife \cup {<<myEpoch[p], life>>}
     /\ dup' = (dup \/ myEpoch[p] \in allocLog)
-    /\ UNCHANGED <<slotMax, G5>>
+    /\ UNCHANGED <<slotMax, G5, G7>>
     /\ pc' = [pc EXCEPT ![p] = "cread"]
 
 \* writeLoop attempt: backend->write with If-Match / If-None-Match.  Three disjuncts:
@@ -532,7 +581,7 @@ ClaimRead(p) ==
     /\ IF mount.e = 0
        THEN /\ pc' = [pc EXCEPT ![p] = IF ClaimChecksOwner THEN "cownm" ELSE MintNext]
             /\ UNCHANGED myMTok
-       ELSE IF mount.u # Uuid(p) /\ ~ForeignReclaimable
+       ELSE IF mount.u # Uuid(p) /\ ~ForeignOk(p)
        THEN /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED myMTok          \* ForeignOwner
        ELSE IF mount.e > myEpoch[p]
        THEN /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED myMTok          \* newer_epoch -> ABORTED
@@ -556,10 +605,12 @@ ClaimCheckOwner(p) ==
 \* Proposed (mountWritable, tryRemountOnce): GET `owner` after the claim landed.
 ClaimPostOwner(p) ==
     /\ pc[p] = "cpost"
-    /\ pc' = [pc EXCEPT ![p] = IF (IF RecheckRetiredOnly THEN ownerRetired
-                                  ELSE ownerGone \/ ownerUuid # Uuid(p) \/ ownerRetired)
-                              THEN "cpfare" ELSE "live"]
-    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
+    /\ LET refuse == IF RecheckRetiredOnly THEN ownerRetired
+                     ELSE ownerGone \/ ownerUuid # Uuid(p) \/ ownerRetired IN
+       /\ pc' = [pc EXCEPT ![p] = IF refuse THEN "cpfare" ELSE "live"]
+       /\ resumedStale' = (resumedStale \/ (~refuse /\ ResumesStale(p)))
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
+                   stLife, remnt, dClaimEp, catRows, jRepl, Locals, DVars, GVars, XVars>>
 
 \* The refused claimer writes a terminal body (If-Match on its own claim) and throws.
 ClaimPostFarewell(p) ==
@@ -572,7 +623,7 @@ ClaimPostFarewell(p) ==
        ELSE UNCHANGED <<mount, mGen, selfFenced>>
     /\ pc' = [pc EXCEPT ![p] = "down"]
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr,
-                   allocLog, dup, slotMax, allocLife, lateDel, doneLives, tombForeign, vTok, jTok, Locals,
+                   allocLog, G7, dup, slotMax, allocLife, lateDel, doneLives, tombForeign, vTok, jTok, Locals,
                    DVars, GVars, XVars>>
 
 \* GC fences the decommission tool's lease (gc_fenced); the tool keeps running until it notices.
@@ -591,6 +642,46 @@ GcFenceDead ==
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, Ghost, pc, Locals,
                    DVars, GVars, XVars>>
 
+\* Self-remount (Pool::tryRemountOnce) of a process whose lease is lost: a live server instance, or the
+\* decommission tool before its farewell.  The in-memory state is kept.
+RemountStart(p) ==
+    /\ RemountOn /\ p \notin OldInst /\ ~remnt[p]
+    /\ IF p = "d" THEN pc[p] \in {"dlive", "dtomb", "dchk", "ddrain"} ELSE pc[p] = "live"
+    /\ ~(mount.holder = p /\ mount.e = myEpoch[p] /\ ~mount.fenced)
+    /\ pc' = [pc EXCEPT ![p] = "rmowner"]
+    /\ remnt' = [remnt EXCEPT ![p] = TRUE]
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
+                   stLife, resumedStale, dClaimEp, catRows, jRepl, Locals, DVars, GVars, XVars>>
+
+\* claimOwnerOrThrow from the remount: no NoWait, no rejoin (sabotage: rejoin).  Then a new epoch and claim.
+RemountOwner(p) ==
+    /\ pc[p] = "rmowner"
+    /\ pc' = [pc EXCEPT ![p] = IF ownerGone \/ ownerUuid # Uuid(p) THEN Down(p)
+                              ELSE IF RemountChecksLife /\ life # stLife[p] THEN Down(p)
+                              ELSE IF ownerRetired
+                              THEN (IF RemountRejoins /\ (~RejoinVerifiedOnly \/ OwnerVerified) THEN "jepoch"
+                                    ELSE Down(p))
+                              ELSE "aread"]
+    /\ jTok' = [jTok EXCEPT ![p] = OTok]
+    /\ myEpoch' = [myEpoch EXCEPT ![p] = 0]
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife,
+                   lateDel, doneLives, tombForeign, vTok, selfFenced, G7,
+                   myBody, myExp, myAmb, myMTok, starts, mf, DVars, GVars, XVars>>
+
+\* GC fences the lease of a partitioned server instance that is still running.
+GcFenceLive ==
+    /\ GcFencesLive /\ mount.e > 0 /\ ~mount.clean /\ ~mount.fenced /\ mount.holder \in Inst \ OldInst
+    /\ mount' = [mount EXCEPT !.fenced = TRUE] /\ mGen' = mGen + 1
+    /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, Ghost, pc, Locals,
+                   DVars, GVars, XVars>>
+
+\* GC deletes the victim's Removing catalog rows.
+CatalogGc ==
+    /\ catRows
+    /\ catRows' = FALSE
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
+                   stLife, remnt, resumedStale, dClaimEp, jRepl, pc, Locals, DVars, GVars, XVars>>
+
 \* Proposed check before the mint: GET `epoch`; our own bytes must still be there.
 ClaimCheckCounter(p) ==
     /\ pc[p] = "cchk"
@@ -606,9 +697,12 @@ ClaimMint(p) ==
             /\ myMTok' = [myMTok EXCEPT ![p] = mGen + 1]
             /\ pc' = [pc EXCEPT ![p] = AfterClaim(p)]
             /\ slotMax' = IF myEpoch[p] > slotMax THEN myEpoch[p] ELSE slotMax
-       ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax>>
+            /\ resumedStale' = (resumedStale \/ (AfterClaim(p) # "cpost" /\ ResumesStale(p)))
+            /\ dClaimEp' = IF RemountOn /\ p = "d" /\ dClaimEp = 0 THEN myEpoch[p] ELSE dClaimEp
+       ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax, resumedStale, dClaimEp>>
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, allocLog, dup,
-                   allocLife, G5, myEpoch, myBody, myExp, myAmb, starts, mf, DVars, GVars>>
+                   allocLife, G5, stLife, remnt, catRows, jRepl, myEpoch, myBody, myExp, myAmb, starts, mf,
+                   DVars, GVars>>
     /\ UNCHANGED XVars
 
 \* op.replace(mountKey, body, got->etag): If-Match on the token ClaimRead saw.
@@ -620,9 +714,12 @@ ClaimReclaim(p) ==
             /\ myMTok' = [myMTok EXCEPT ![p] = mGen + 1]
             /\ pc' = [pc EXCEPT ![p] = AfterClaim(p)]
             /\ slotMax' = IF myEpoch[p] > slotMax THEN myEpoch[p] ELSE slotMax
-       ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax>>
+            /\ resumedStale' = (resumedStale \/ (AfterClaim(p) # "cpost" /\ ResumesStale(p)))
+            /\ dClaimEp' = IF RemountOn /\ p = "d" /\ dClaimEp = 0 THEN myEpoch[p] ELSE dClaimEp
+       ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax, resumedStale, dClaimEp>>
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, allocLog, dup,
-                   allocLife, G5, myEpoch, myBody, myExp, myAmb, starts, mf, DVars, GVars>>
+                   allocLife, G5, stLife, remnt, catRows, jRepl, myEpoch, myBody, myExp, myAmb, starts, mf,
+                   DVars, GVars>>
     /\ UNCHANGED XVars
 
 -----------------------------------------------------------------------------
@@ -680,18 +777,20 @@ DDrain ==
        IF DrainFenced /\ ~OwnClaim(myMTok["d"])
        THEN \* The lease fence refuses the request locally; the run fails.
             /\ pc' = [pc EXCEPT !["d"] = "dstop"]
-            /\ UNCHANGED <<refs, staleDrain, lateDel>>
+            /\ UNCHANGED <<refs, staleDrain, lateDel, catRows>>
        ELSE \/ /\ refs' = {}
                /\ staleDrain' = (staleDrain \/ \E e \in refs : e > myEpoch["d"])
                /\ pc' = [pc EXCEPT !["d"] = next]
+               /\ catRows' = (catRows \/ DrainLeavesRows)
                /\ UNCHANGED lateDel
             \* Sent under the lease, response lost: the delete lands later (LateDelete).
             \/ /\ DrainInFlight /\ ~lateDel.on
                /\ lateDel' = [on |-> TRUE, ep |-> myEpoch["d"]]
                /\ pc' = [pc EXCEPT !["d"] = next]
-               /\ UNCHANGED <<refs, staleDrain>>
+               /\ UNCHANGED <<refs, staleDrain, catRows>>
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr,
-                   allocLog, dup, slotMax, allocLife, doneLives, tombForeign, vTok, jTok, selfFenced, Locals, DVars, GVars>>
+                   allocLog, dup, slotMax, allocLife, doneLives, tombForeign, vTok, jTok, selfFenced,
+                   stLife, remnt, resumedStale, dClaimEp, jRepl, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife, staleDecom>>
 
@@ -702,7 +801,7 @@ LateDelete ==
     /\ staleDrain' = (staleDrain \/ \E e \in refs : e > lateDel.ep)
     /\ lateDel' = [lateDel EXCEPT !.on = FALSE]
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr,
-                   allocLog, dup, slotMax, allocLife, doneLives, tombForeign, vTok, jTok, selfFenced, pc, Locals, DVars, GVars>>
+                   allocLog, G7, dup, slotMax, allocLife, doneLives, tombForeign, vTok, jTok, selfFenced, pc, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife, staleDecom>>
 
@@ -721,7 +820,7 @@ DVerifyOwner ==
             THEN pc' = [pc EXCEPT !["d"] = "dmark"] /\ UNCHANGED doneLives
             ELSE pc' = [pc EXCEPT !["d"] = "ddone"] /\ doneLives' = doneLives \cup {life}
        ELSE pc' = [pc EXCEPT !["d"] = "dstop"] /\ UNCHANGED doneLives
-    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, lateDel, tombForeign, vTok, jTok,
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, G7, dup, slotMax, allocLife, lateDel, tombForeign, vTok, jTok,
                    selfFenced, Locals, DVars, GVars, XVars>>
 
 \* Proposed: PUT owner If-Match on this run's tombstone, same tombstone marked verified (fresh nonce).
@@ -733,7 +832,7 @@ DMarkVerified ==
             /\ pc' = [pc EXCEPT !["d"] = "ddone"] /\ doneLives' = doneLives \cup {life}
        ELSE /\ pc' = [pc EXCEPT !["d"] = "dstop"] /\ UNCHANGED <<ownerGen, vTok, doneLives>>
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr,
-                   allocLog, dup, slotMax, allocLife, lateDel, tombForeign, jTok, selfFenced, Locals, DVars, GVars>>
+                   allocLog, G7, dup, slotMax, allocLife, lateDel, tombForeign, jTok, selfFenced, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, life, ownerFloor, ownerGone, dOwnTok, dTombTok, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife, staleDecom,
                    staleDrain>>
@@ -844,6 +943,8 @@ DTombstone ==
              THEN /\ ownerRetired' = TRUE /\ ownerFloor' = TombFloor
                   /\ ownerGen' = ownerGen + 1 /\ oStamp' = ownerGen + 1
                   /\ dTombTok' = OTokOf(ownerUuid, TRUE, TombFloor, ownerGen + 1, ownerGen + 1)
+                  /\ vTok' = IF KeepVerified /\ dOwn
+                             THEN OTokOf(ownerUuid, TRUE, TombFloor, ownerGen + 1, ownerGen + 1) ELSE vTok
                   /\ pc' = [pc EXCEPT !["d"] = IF Retire /\ RetireDeletesMount THEN "ddelm"
                                                ELSE IF Tail2 THEN (IF UntombOnMove THEN "dpost"
                                                                    ELSE AfterTombNext)
@@ -853,7 +954,7 @@ DTombstone ==
                   /\ staleDecom' = (staleDecom \/ life > dLife)
                   /\ tombForeign' = (tombForeign \/ ownerUuid # Uuid("d"))
              ELSE /\ UNCHANGED <<ownerRetired, ownerFloor, ownerGen, oStamp, dTombTok, tombOverLive, staleDecom,
-                                tombForeign>>
+                                tombForeign, vTok>>
                   /\ pc' = [pc EXCEPT !["d"] = "dstop"]
           /\ UNCHANGED oInfl
        \/ /\ TombAmbig /\ ~oInfl.on
@@ -861,9 +962,9 @@ DTombstone ==
                        ep |-> myEpoch["d"], mtok |-> myMTok["d"], intro |-> ~dOwn]
           /\ pc' = [pc EXCEPT !["d"] = "dfail"]
           /\ UNCHANGED <<ownerRetired, ownerFloor, ownerGen, oStamp, dTombTok, tombOverLive, staleDecom,
-                         tombForeign>>
+                         tombForeign, vTok>>
     /\ UNCHANGED <<EpVars, mount, mGen, manifests, refs, inflight, ambUsed, nonceCtr,
-                   allocLog, dup, slotMax, allocLife, lateDel, doneLives, vTok, jTok, selfFenced, Locals, DVars, GVars>>
+                   allocLog, dup, slotMax, allocLife, lateDel, doneLives, jTok, selfFenced, G7, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, life, ownerGone, dOwnTok, rpc, rTok,
                    ownerUuid, rv, rvMTok, rvOTok, dTombRefused, zDrain, dLife, staleDrain>>
 
@@ -877,15 +978,17 @@ OwnerLateLand ==
             /\ staleDecom' = (staleDecom \/ life > oInfl.life)
             /\ tombOverLive' = (tombOverLive \/ (KeepAll /\ LiveHolder))
             /\ tombForeign' = (tombForeign \/ ownerUuid # Uuid("d"))
+            /\ vTok' = IF KeepVerified /\ ~oInfl.intro
+                       THEN OTokOf(ownerUuid, TRUE, oInfl.floor, ownerGen + 1, ownerGen + 1) ELSE vTok
             \* Lifecycle: the paused run goes on to its confirm (or straight to its drain).
             /\ zDrain' = IF KeepAll
                          THEN [on |-> TRUE, mode |-> IF AdminConfirmsClaim THEN "confirm" ELSE "drain",
                                ep |-> oInfl.ep, mtok |-> oInfl.mtok, intro |-> oInfl.intro,
                                tok |-> OTokOf(ownerUuid, TRUE, oInfl.floor, ownerGen + 1, ownerGen + 1)]
                          ELSE zDrain
-       ELSE UNCHANGED <<ownerRetired, ownerFloor, ownerGen, oStamp, staleDecom, tombOverLive, zDrain, tombForeign>>
+       ELSE UNCHANGED <<ownerRetired, ownerFloor, ownerGen, oStamp, staleDecom, tombOverLive, zDrain, tombForeign, vTok>>
     /\ UNCHANGED <<EpVars, mount, mGen, manifests, refs, inflight, ambUsed, nonceCtr,
-                   allocLog, dup, slotMax, allocLife, lateDel, doneLives, vTok, jTok, selfFenced, pc, Locals, DVars, GVars>>
+                   allocLog, dup, slotMax, allocLife, lateDel, doneLives, jTok, selfFenced, G7, pc, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, life, ownerGone, dOwnTok, dTombTok, rpc, rTok,
                    ownerUuid, rv, rvMTok, rvOTok, dTombRefused, dLife, staleDrain>>
 
@@ -928,7 +1031,10 @@ ZombieUntomb ==
 \* Proposed: GET `mount` after the tombstone; the tool's own claim token must still be there.
 DConfirmClaim ==
     /\ pc["d"] = "dchk"
-    /\ pc' = [pc EXCEPT !["d"] = IF mGen = myMTok["d"] /\ mount.holder = "d" THEN "ddrain"
+    /\ pc' = [pc EXCEPT !["d"] = IF (IF RemountOn
+                                     THEN mount.holder = "d" /\ mount.e = dClaimEp /\ ~mount.fenced /\ ~mount.clean
+                                     ELSE mGen = myMTok["d"] /\ mount.holder = "d")
+                                 THEN "ddrain"
                                  ELSE IF RollbackOnlyIfIntroduced /\ dOwn THEN "dstop" ELSE "duntomb"]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
 
@@ -952,10 +1058,12 @@ DUntomb ==
 
 \* The tool dies anywhere after it opened and is re-run once from Pool::openForDecommission.
 DRestart ==
-    /\ DecomRetry /\ starts["d"] = 0
+    /\ DecomRetry /\ starts["d"] < DRestarts
     /\ pc["d"] # "open"
     /\ pc' = [pc EXCEPT !["d"] = "open"]
-    /\ starts' = [starts EXCEPT !["d"] = 1]
+    /\ starts' = [starts EXCEPT !["d"] = @ + 1]
+    /\ remnt' = [remnt EXCEPT !["d"] = FALSE]
+    /\ dClaimEp' = 0
     /\ myEpoch' = [myEpoch EXCEPT !["d"] = 0]
     /\ dCap' = [obj |-> EAbsent, tok |-> NONE] /\ dFar' = 0 /\ dOwn' = FALSE
     \* ZombieRun: the earlier run is paused, not dead; its decided tombstone and next steps land later.
@@ -967,7 +1075,8 @@ DRestart ==
                  THEN [on |-> TRUE, mode |-> IF pc["d"] = "dchk" THEN "confirm" ELSE "drain",
                        ep |-> myEpoch["d"], mtok |-> myMTok["d"], tok |-> dTombTok, intro |-> ~dOwn]
                  ELSE zDrain
-    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, myBody, myExp, myAmb, myMTok, mf, GVars>>
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
+                   stLife, resumedStale, catRows, jRepl, myBody, myExp, myAmb, myMTok, mf, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, dLife, staleDecom,
                    staleDrain>>
@@ -1162,7 +1271,8 @@ GcEnd ==
 Next ==
     \/ \E p \in Procs :
         \/ Start(p) \/ OpenProbe(p) \/ OwnerCheck(p) \/ OwnerEmpty(p) \/ OwnerCreate(p) \/ AllocRead(p)
-        \/ JoinEpoch(p) \/ JoinMount(p) \/ JoinEmpty(p) \/ JoinWrite(p) \/ AllocEmpty(p) \/ AllocProbe(p)
+        \/ JoinEpoch(p) \/ JoinMount(p) \/ JoinEmpty(p) \/ JoinRepl(p) \/ JoinWrite(p)
+        \/ RemountStart(p) \/ RemountOwner(p) \/ AllocEmpty(p) \/ AllocProbe(p)
         \/ ABase(p)
         \/ AllocWrite(p) \/ AllocResolve(p)
         \/ ClaimRead(p) \/ ClaimCheckOwner(p) \/ ClaimCheckCounter(p) \/ ClaimPostOwner(p)
@@ -1172,7 +1282,7 @@ Next ==
     \/ Decom /\ (DDrain \/ DCapture \/ DReadMount \/ DDelMount \/ DDelEpoch \/ DRecheckMount
                  \/ DRecheckEpoch \/ DRetire \/ DReadOwner \/ DTombstone \/ DHwmRead \/ DHwmWrite
                  \/ DPostTombCheck \/ DUntomb \/ DRestart \/ DConfirmClaim \/ DVerifyMount \/ DVerifyOwner \/ DMarkVerified)
-    \/ OwnerLateLand \/ LateDelete \/ GcFenceDead \/ ZombieDrain \/ ZombieConfirm \/ ZombieUntomb \/ GcFence \/ RRead \/ RWrite \/ RDelete
+    \/ OwnerLateLand \/ LateDelete \/ GcFenceDead \/ GcFenceLive \/ CatalogGc \/ ZombieDrain \/ ZombieConfirm \/ ZombieUntomb \/ GcFence \/ RRead \/ RWrite \/ RDelete
     \/ \E r \in Revivers : RvStart(r) \/ RvReadEpoch(r) \/ RvEmpty(r) \/ RvReadMount(r) \/ RvDelMount(r) \/ RvReadOwner(r) \/ RvWriteOwner(r)
     \/ PoolMetaAdmit \/ Tick \/ ClockStepBack
     \/ GcFloor \/ GcView \/ GcEnd \/ \E k \in manifests : GcDelete(k)
@@ -1192,7 +1302,7 @@ DProc ==
 FairSpec == Spec /\ WF_vars(DProc)
 
 \* A decommission re-run after a crash at any step finishes.
-RetryCompletes == (starts["d"] = 1) ~> (pc["d"] = "ddone")
+RetryCompletes == (starts["d"] >= 1) ~> (pc["d"] = "ddone")
 
 -----------------------------------------------------------------------------
 (* Invariants                                                              *)
@@ -1244,7 +1354,7 @@ NoTombOverLive == ~tombOverLive
 RetryAcceptsTomb == ~dTombRefused
 
 \* Witness (expected violated): a decommission re-run reaches its end.
-RetryNeverCompletes == ~(starts["d"] = 1 /\ pc["d"] = "ddone")
+RetryNeverCompletes == ~(starts["d"] >= 1 /\ pc["d"] = "ddone")
 
 \* A decommission that verified its end leaves the owner retired until a re-add (a new life), whatever
 \* a later run of the tool does.
@@ -1259,6 +1369,10 @@ SlotStuck == IF mount.clean THEN ~ClaimForeignClean
              ELSE IF mount.fenced THEN ~ClaimForeignFenced
              ELSE ~(GcFencesDead /\ ClaimForeignFenced)
 NoWedge == ~(~ownerRetired /\ ~ownerGone /\ mount.e > 0 /\ mount.u # ownerUuid /\ WedgeQuiet /\ SlotStuck)
+
+\* No process resumes in place after its srid was retired and rejoined: a self-remount never makes a
+\* process live again when it started before a later rejoin.
+NoResumeAfterRetire == ~resumedStale
 
 \* No decommission tombstone lands on an owner of another uuid.
 NoForeignTombstone == ~tombForeign
@@ -1277,7 +1391,7 @@ NoStaleDrain == ~staleDrain
 
 \* A stale drain needs a decommission re-run: without one, re-add never meets a clean farewell while the
 \* tool that lost its claim still drains.
-NoStaleDrainWithoutRerun == staleDrain => starts["d"] = 1
+NoStaleDrainWithoutRerun == staleDrain => starts["d"] >= 1
 
 TypeOK ==
     /\ epObj.v \in Nat /\ mount.e \in Nat
