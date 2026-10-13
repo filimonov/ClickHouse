@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-13 18:30'
+updated_date: '2026-10-13 19:35'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -112,4 +112,6 @@ Decision log (times are commit times, local):
 - 2026-10-13 (e6d1e390336): design spec docs/superpowers/specs/2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md, rev.1. Sweep reads no ref log; owned set per gc-shard keyed (life_id, ManifestRef); seed exactly at the cursor, deferred while _snap is above it, no as_of state; owned seal is a side object, fold seal bytes unchanged.
 
 - 2026-10-13: backlog cross-check. Closes CAS-87; absorbs CAS-86 and CAS-310 (deps set on them); notes left on CAS-315, CAS-46, CAS-29.6, CAS-29.10 (spec §9). Unchanged by this design: CAS-36, CAS-357 (floor stays step 1), CAS-37, CAS-91, CAS-139, CAS-311, CAS-29.12, CAS-338.
+
+- 2026-10-13: spec reviewed by codex gpt-6-astra high, five rounds (tmp/cas358/codex_spec_review_1..5.md): 8/6/4/5/3 findings, verdict on rev.6 APPROVE WITH MINORS, minors applied in rev.7. Main corrections along the way: ownership deltas independent of bodies; candidate-first two-pass sweep; seed exact at C with T >= C precondition, endpoint check, admission-to-completion budget, zero = unlimited, fairness cursor seed_after; delta admission whitelist; empty-run initialization; HEAD/GET-404 re-evaluation; historical foldOwned and cursor-epoch gate in the model; keep=1 adopted-generation prune split out as CAS-386.
 <!-- SECTION:NOTES:END -->
