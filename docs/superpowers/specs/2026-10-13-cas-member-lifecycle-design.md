@@ -37,7 +37,7 @@ Paths: `CA/` = `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`.
 
 ### Owner nonce {#owner-nonce}
 
-`OwnerObject` (`CA/Formats/CasServerRootFormats.cpp`) gains an optional plain field `owner_nonce`, 32 lowercase hex characters, drawn fresh for every owner write: first claim, tombstone, un-tombstone, re-add. Two writes never produce the same bytes, so a delayed `If-Match` against an old owner ETag cannot land after a later write. 26.6.4 `decodeOwner` reads with `Tolerant` + `skipUnknown`, so old binaries accept it. Same generator as `allocation_nonce` (CAS-362). Record the field in `Formats/README.md`.
+`OwnerObject` (`CA/Formats/CasServerRootFormats.cpp`) gains an optional plain field `owner_nonce`, 32 lowercase hex characters, drawn fresh for every owner write: first claim, tombstone, un-tombstone, rejoin. Two writes never produce the same bytes, so a delayed `If-Match` against an old owner ETag cannot land after a later write. 26.6.4 `decodeOwner` reads with `Tolerant` + `skipUnknown`, so old binaries accept it. Same generator as `allocation_nonce` (CAS-362). Record the field in `Formats/README.md`.
 
 ### Claim recheck {#claim-recheck}
 
@@ -137,7 +137,7 @@ Tracked in CAS-385 unless marked.
 | Upgrade: flat 26.6.4 staging keys | swept as epoch 0 | no |
 | Upgrade: existing ids with `/` | keep working; only new ids are refused | no |
 | Downgrade: a retired `srid` kept by the new tool | 26.6.4 refuses to start it (`throwIfOwnerRetired`); its GC treats the farewell as terminal; its decommission refuses the tombstone | no |
-| Downgrade: a rejoined `srid` with a new uuid | after its first start on the new version the slot holds the new uuid and 26.6.4 starts it normally; before that, 26.6.4 `claimMount` returns `ForeignOwner` on the old life's farewell | no: 26.6.4 cannot re-add at all; release note says start a re-added member once before downgrading |
+| Downgrade: a rejoined `srid` with a new uuid | after its first start on the new version the slot holds the new uuid and 26.6.4 starts it normally; before that, 26.6.4 `claimMount` returns `ForeignOwner` on the old life's farewell | no: 26.6.4 cannot rejoin at all; release note says start a rejoined member once before downgrading |
 | Downgrade: a rejoined `srid` with the same uuid | 26.6.4 starts it and continues the counter | no |
 | Downgrade: `owner_nonce`, epoch staging keys | skipped; swept recursively | no |
 | Mixed: 26.6.4 decommission tool | old behaviour and old races | same as 26.6.4 |
