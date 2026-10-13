@@ -45,8 +45,10 @@
      snapshot, and the slot-occupy seal fences the one that never landed. `_sab_noseal` is the same
      behaviour with the occupancy removed and reproduces the rev.4 counterexample, so the flip is
      proven, not assumed.
-   - Seals are never cleaned in this model (they are tiny, and a walk crossing a dead epoch must
-     find them).
+   - Seals are never cleaned by the legacy and frontier slices (they are tiny, and a walk crossing
+     a dead epoch must find them). The epoch slice (`EpochVariant # "off"`, CAS-366) is the one that
+     gives ids an epoch, lets GC delete seals below the checkpoint, and lets a zombie append land
+     late in the reclaimed slot.
 
    Ghost variables carry sabotage detection and are empty/FALSE in every honest run:
    `concludedEver` (slots a completed recovery declared final), `burnedIds` (ids the allocator
@@ -76,7 +78,11 @@ CONSTANTS
     SabotageStaleFrontier,           \* a stale writer advances without a valid same-fence proof
     SabotageSnapshotAboveFrontier,   \* checkpoint snapshot exceeds `committed_through`
     SabotageSealAboveFrontier,       \* checkpoint seal exceeds `committed_through`
-    SabotageSnapshotAtSeal           \* checkpoint snapshot names an epoch-seal record
+    SabotageSnapshotAtSeal,          \* checkpoint snapshot names an epoch-seal record
+    EpochVariant,                    \* CAS-366 epoch slice: "off" | "cur" | "fixA" | "sabA" |
+                                     \* "fixA2" | "fixB" | "sabB" | "fixB2" | "fixB3" | "sabB3"
+    EpochCount,                      \* writer epochs 1..EpochCount (2 or 3)
+    T1Holds                          \* admission tracks the lease (TRUE) or is a free choice (T1 broken)
 
 Seqs == 1..MaxSeq                    \* ids a writer may append
 Ids  == 1..(MaxSeq + 1)              \* + the slot a frontier seal may occupy
@@ -163,7 +169,28 @@ VARIABLES
     rSeenLogs,     \* SUBSET Seqs    ids the hint enumeration returned
     rRestarts,     \* restart counter
     frontier,      \* Task 5b's focused checkpoint-frontier state
-    frontierWitness \* reachability controls for every required honest crash/race window
+    frontierWitness, \* reachability controls for every required honest crash/race window
+    epObj,         \* CAS-366 slice: [EIds -> {"none","log","seal"}] the `_log/<id>` keys in the store
+    epLink,        \* [EIds -> 0..EIdMax] the `prev_epoch_seal` carried in each object's bytes
+    epHist,        \* ghost: [EIds -> kind] what logical history holds at each id (never shrinks)
+    epCkpt,        \* `_ckpt` = [ct, seal, snap]: committed_through, last_epoch_seal, checkpoint_snapshot_id
+    epSnapBody,    \* the snapshot body the live publisher PUT and has not yet checkpointed (0 = none)
+    epLive,        \* the epoch that holds the mount lease
+    zPh,           \* the zombie lane of epoch 1
+    zSeq,          \* its greatest installed sequence
+    zOut,          \* what the store did with its in-flight create
+    zAcked,        \* ids the zombie acknowledged to callers
+    zAckLate,      \* ghost: the zombie acknowledged after a takeover (straggler-ack witness)
+    mPh,           \* [2..EpochCount -> phase] honest successor mounts
+    mTgt,          \* [2..EpochCount -> id] the id the mount acts on next
+    mApp,          \* [2..EpochCount -> 0..SAppMax] appends of the mount in its own epoch
+    mSeal,         \* [2..EpochCount -> id] last seal the mount's walk saw or minted (its chain link)
+    sAcked,        \* ids the successors acknowledged
+    gPh,           \* GC round phase
+    gSnap,         \* plan sample: checkpoint_snapshot_id
+    gCur,          \* plan sample: fold cursor (= committed_through)
+    gSeal,         \* plan sample: last_epoch_seal (fixB/sabB only)
+    gProof         \* plan sample: retained_log_proof (the base's predecessor seal)
 
 storeVars  == << op, writtenEver, logs, snaps, publishedEver, snapCov >>
 laneVars   == << pendingSlot, ambiguousEver >>
@@ -175,8 +202,12 @@ legacyVars == << op, writtenEver, logs, snaps, publishedEver, snapCov, ckpt,
                  burnedIds, orphanIds, phantomEver,
                  rPhase, rBase, rWalkPos, rTail, rScanPos, rSeenLogs, rRestarts >>
 frontierVars == << frontier, frontierWitness >>
+epochVars == << epObj, epLink, epHist, epCkpt, epSnapBody, epLive,
+                zPh, zSeq, zOut, zAcked, zAckLate,
+                mPh, mTgt, mApp, mSeal, sAcked,
+                gPh, gSnap, gCur, gSeal, gProof >>
 
-vars == << legacyVars, frontierVars >>
+vars == << legacyVars, frontierVars, epochVars >>
 
 MinOf(S) == CHOOSE x \in S : \A y \in S : x <= y
 MaxOf(S) == CHOOSE x \in S : \A y \in S : x >= y
@@ -210,6 +241,51 @@ WState == FoldIds(EmptyState, writtenEver)               \* Replay(full history)
 (* INV-1: ids derive from state. `burnedIds` is the rev.4 allocator's gap and is empty when honest. *)
 MaxWritten == MaxOr0(writtenEver \cup sealedIds \cup burnedIds)
 NextSlot == MaxWritten + 1
+
+(* ---- CAS-366 epoch slice: definitions shared by `Init` and the slice's actions ----
+
+   Ids carry an epoch: id = epoch * EBase + sequence, so integer order is the `RefTxnId` order
+   (writer_epoch, then ref_sequence). Sequence 0 is never an object; `EId(e, 0)` only orders. *)
+EpochSlice == EpochVariant # "off"
+EBase == 4
+SMax == 3                            \* sequences 1..SMax per epoch (a seal may take the last one)
+ZSeqMax == 2                         \* the zombie (epoch 1) appends at most this many records
+SAppMax == 2                         \* each successor appends at most this many in its own epoch
+EId(e, q) == e * EBase + q
+Ep(id) == id \div EBase
+Sq(id) == id % EBase
+EIdMax == EId(EpochCount, SMax)
+EIds == { EId(e, q) : e \in 1..EpochCount, q \in 1..SMax }
+Succs == 2..EpochCount
+EKinds == {"none", "log", "seal"}
+NoCkpt == [ct |-> 0, seal |-> 0, snap |-> 0]
+ZPhases == {"idle", "prepared", "gated", "inflight", "settle", "wedged", "durable", "published",
+            "installed", "closed", "unresolved", "needsrec", "fenced"}
+MPhases == {"down", "ckpt", "walk", "adoptlog", "adoptseal", "sealing", "sealpub", "ready",
+            "appendpub", "stopped", "failed"}
+
+EpochInit ==
+    /\ epObj = [i \in EIds |-> "none"]
+    /\ epLink = [i \in EIds |-> 0]
+    /\ epHist = [i \in EIds |-> "none"]
+    /\ epCkpt = NoCkpt
+    /\ epSnapBody = 0
+    /\ epLive = 1
+    /\ zPh = "idle"
+    /\ zSeq = 0
+    /\ zOut = "none"
+    /\ zAcked = {}
+    /\ zAckLate = FALSE
+    /\ mPh = [m \in Succs |-> "down"]
+    /\ mTgt = [m \in Succs |-> 0]
+    /\ mApp = [m \in Succs |-> 0]
+    /\ mSeal = [m \in Succs |-> 0]
+    /\ sAcked = {}
+    /\ gPh = "idle"
+    /\ gSnap = 0
+    /\ gCur = 0
+    /\ gSeal = 0
+    /\ gProof = 0
 
 Init ==
     /\ op = [i \in Ids |-> "none"]
@@ -271,6 +347,7 @@ Init ==
          snapshotPublishedAtFrontier |-> FALSE,
          sealPublishedAtFrontier |-> FALSE,
          lostSealResponseResolved |-> FALSE]
+    /\ EpochInit
 
 ReaderInactive == rPhase = "idle"
 
@@ -963,6 +1040,390 @@ FrontierSnapshotAtSeal ==
             !.checkpointToken = @ + 1]
     /\ UNCHANGED frontierWitness
 
+(* ---- CAS-366 epoch slice: a zombie append lands in a reclaimed seal slot ----
+
+   Base `2a034cdb374`. Actors: the zombie lane of epoch 1 (`Z`), honest successor mounts of epochs
+   2..EpochCount, and GC ref cleanup. The zombie's lease is taken over at any time (`Takeover`).
+   `T1Holds` decides whether `op.admitted()` tracks the lease (TRUE) or is a free choice — the
+   failure of the boot-clock lease check after a SIGSTOP-class pause (audit R4/R5, `T1`).
+
+   The defect: Z passes `gate`, pauses; the successor seals Z's slot `(1,k)`, appends twice in its
+   own epoch and checkpoints a snapshot at `(2,2)`; GC deletes the seal (below the checkpoint, not
+   the base's predecessor seal); Z's `If-None-Match` create lands in the empty key; its contribution
+   `{committed_through = (1,k)}` merges to the durable body (`IdenticalSkip`), and only admission
+   stands between Z and acknowledging a record that logical history (`epHist`) holds as a SEAL.
+
+   Variants (`EpochVariant`):
+     "cur"   the code at `2a034cdb374`.
+     "fixA"  `publishCkpt` refuses a non-seal contribution whose `committed_through` equals the
+             durable `last_epoch_seal` (`SuccessorSeal`).
+     "sabA"  fixA compared against the writer's cached `rt->last_epoch_seal` instead of the durable one.
+     "fixA2" fixA plus: a non-seal contribution from an epoch BELOW the durable frontier's epoch is
+             acknowledged only if the durable seal closes that same epoch strictly above it;
+             otherwise the outcome is unresolved (not acknowledged, not rejected).
+     "fixB"  `planRefCleanup` keeps the log named by the plan sample's `last_epoch_seal`.
+     "sabB"  fixB with `last_epoch_seal` taken from an earlier, separate `_ckpt` read.
+     "fixB2" `planRefCleanup` keeps the newest object of every epoch below the frontier's epoch.
+     "fixB3" fixB2 limited to the epoch immediately below the frontier's epoch: two epochs below,
+             the zombie's contribution already fails `mergeCommittedThrough`.
+     "sabB3" fixB3 skipped when the frontier is itself a seal ("the older seal is obsolete"). *)
+
+storeE == << epObj, epLink, epHist, epCkpt, epSnapBody, epLive >>
+zVarsE == << zPh, zSeq, zOut, zAcked, zAckLate >>
+mVarsE == << mPh, mTgt, mApp, mSeal, sAcked >>
+gVarsE == << gPh, gSnap, gCur, gSeal, gProof >>
+
+(* `op.admitted()`: under T1 it is exactly "this epoch holds the lease"; without T1 it can say
+   either. *)
+Admits(m) == IF T1Holds THEN {epLive = m} ELSE {TRUE, FALSE}
+
+(* `mergeCommittedThrough` (Pool/CasRefCkpt.cpp). Two frontiers in different epochs merge only if
+   the higher side is the next epoch and its seal is at or above the lower frontier. *)
+MergeCt(d, c) ==
+    IF d.ct = 0 THEN [ok |-> TRUE, v |-> c.ct]
+    ELSE IF c.ct = 0 THEN [ok |-> TRUE, v |-> d.ct]
+    ELSE IF Ep(d.ct) = Ep(c.ct) THEN [ok |-> TRUE, v |-> Max2(d.ct, c.ct)]
+    ELSE LET hi == IF d.ct > c.ct THEN d ELSE c
+             lo == IF d.ct > c.ct THEN c ELSE d
+         IN IF \/ Ep(lo.ct) + 1 # Ep(hi.ct)
+               \/ hi.seal = 0
+               \/ hi.seal < lo.ct
+               \/ hi.ct < hi.seal
+            THEN [ok |-> FALSE, v |-> 0]
+            ELSE [ok |-> TRUE, v |-> hi.ct]
+
+(* `checkRefCkptInvariants` (Formats/CasRefCkptFormat.cpp), with `life_epoch` = 1. *)
+CkptValid(k) ==
+    IF k.ct = 0 THEN k.seal = 0 /\ k.snap = 0
+    ELSE /\ k.snap <= k.ct
+         /\ k.seal <= k.ct
+         /\ (k.seal # 0 => (k.seal = k.ct \/ Ep(k.seal) + 1 = Ep(k.ct)))
+         /\ (k.seal = 0 => Ep(k.ct) = 1)
+
+(* `mergeCkpt`: per-field semantic maximum, then the shape check. `ok = FALSE` is the
+   `CORRUPTED_DATA` throw. *)
+EMerge(d, c) ==
+    LET mc == MergeCt(d, c)
+        r == [ct |-> mc.v, seal |-> Max2(d.seal, c.seal), snap |-> Max2(d.snap, c.snap)]
+    IN [ok |-> mc.ok /\ CkptValid(r), r |-> r]
+
+(* Logical history grows exactly when a `_ckpt` CAS moves `committed_through` onto an object. *)
+HistAfter(d, r, kind) == IF r.ct # d.ct THEN [epHist EXCEPT ![r.ct] = kind] ELSE epHist
+
+ZTgt == EId(1, zSeq + 1)
+ZCachedSeal == 0                     \* the zombie's `rt->last_epoch_seal`: it never read a seal
+
+(* The decide-time refusal each variant adds to `publishCkpt`, before the merge. *)
+ZRefusal(d, c) ==
+    CASE EpochVariant = "fixA" ->
+            IF c.seal # c.ct /\ d.seal # 0 /\ c.ct = d.seal THEN "closed" ELSE "none"
+      [] EpochVariant = "sabA" ->
+            IF c.seal # c.ct /\ ZCachedSeal # 0 /\ c.ct = ZCachedSeal THEN "closed" ELSE "none"
+      [] EpochVariant = "fixA2" ->
+            IF c.seal # c.ct /\ d.seal # 0 /\ c.ct = d.seal THEN "closed"
+            ELSE IF /\ c.seal # c.ct
+                    /\ d.ct # 0
+                    /\ Ep(c.ct) < Ep(d.ct)
+                    /\ ~(d.seal # 0 /\ Ep(d.seal) = Ep(c.ct) /\ c.ct < d.seal)
+                 THEN "unresolved"
+                 ELSE "none"
+      [] OTHER -> "none"
+
+(* CasRefLedger::flushRefBatch / prepareRefChunk: derive the next id from state (in memory). *)
+ZPrepare ==
+    /\ zPh = "idle"
+    /\ zSeq < ZSeqMax
+    /\ zPh' = "prepared"
+    /\ UNCHANGED << storeE, zSeq, zOut, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* CasOperation::writeLoop: `gate(reservedFor(0, 2))` before each attempt. `resolveWedgeOnce`
+   re-enters the same gate for its one retry of the same key and bytes (R5). *)
+ZGate ==
+    /\ zPh \in {"prepared", "wedged"}
+    /\ \E ok \in Admits(1) : zPh' = IF ok THEN "gated" ELSE "fenced"
+    /\ UNCHANGED << storeE, zSeq, zOut, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* The store applies the `If-None-Match` create: landing step. Arbitrarily late after `ZGate`. *)
+ZLand ==
+    /\ zPh = "gated"
+    /\ IF epObj[ZTgt] = "none"
+       THEN /\ epObj' = [epObj EXCEPT ![ZTgt] = "log"]
+            /\ epLink' = [epLink EXCEPT ![ZTgt] = 0]
+            /\ zOut' = "created"
+       ELSE /\ zOut' = "occupied"
+            /\ UNCHANGED << epObj, epLink >>
+    /\ zPh' = "inflight"
+    /\ UNCHANGED << epHist, epCkpt, epSnapBody, epLive, zSeq, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* The request never reached the store. *)
+ZDrop ==
+    /\ zPh = "gated"
+    /\ zPh' = "inflight"
+    /\ zOut' = "notlanded"
+    /\ UNCHANGED << storeE, zSeq, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* Response step: delivered. A timeout without a landing is ambiguous to the writer: wedge. *)
+ZRespond ==
+    /\ zPh = "inflight"
+    /\ zPh' = CASE zOut = "created" -> "durable"
+                [] zOut = "occupied" -> "settle"
+                [] OTHER -> "wedged"
+    /\ zOut' = "none"
+    /\ UNCHANGED << storeE, zSeq, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* Response step: lost after the store applied the request. *)
+ZRespondLost ==
+    /\ zPh = "inflight"
+    /\ zOut \in {"created", "occupied"}
+    /\ zPh' = "wedged"
+    /\ zOut' = "none"
+    /\ UNCHANGED << storeE, zSeq, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* commitRefChunk / resolveWedgeOnce: the settling GET after `412`, `classifyRefLogOccupant`.
+   A seal is a conclusive rejection (`Closed`); our own bytes are durable; nothing is still wedged. *)
+ZSettle ==
+    /\ zPh = "settle"
+    /\ zPh' = CASE epObj[ZTgt] = "seal" -> "closed"
+                [] epObj[ZTgt] = "log" -> "durable"
+                [] OTHER -> "wedged"
+    /\ UNCHANGED << storeE, zSeq, zOut, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* publishCkpt (Pool/CasRefCkpt.cpp) for `commit_contribution` (commitRefChunk) or the wedge
+   frontier (resolveWedgeOnce): ONE readModifyWrite. A merge to the durable body is `IdenticalSkip`
+   if admitted; a decline or gate refusal while not admitted is `FencedOut` -> NeedsRecovery. *)
+ZPublish ==
+    /\ zPh = "durable"
+    /\ LET c == [ct |-> ZTgt, seal |-> 0, snap |-> 0]
+           d == epCkpt
+           mg == EMerge(d, c)
+           refusal == ZRefusal(d, c)
+       IN \E ok \in Admits(1) :
+            IF refusal # "none"
+            THEN /\ zPh' = refusal
+                 /\ UNCHANGED << epCkpt, epHist >>
+            ELSE IF ~mg.ok \/ ~ok
+            THEN /\ zPh' = "needsrec"
+                 /\ UNCHANGED << epCkpt, epHist >>
+            ELSE /\ zPh' = "published"
+                 /\ epCkpt' = mg.r
+                 /\ epHist' = HistAfter(d, mg.r, "log")
+    /\ UNCHANGED << epObj, epLink, epSnapBody, epLive, zSeq, zOut, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* commitRefChunk: `refuseUnlessAdmitted` inside the `state_mutex` hold, then the install. *)
+ZInstall ==
+    /\ zPh = "published"
+    /\ \E ok \in Admits(1) :
+        IF ok THEN /\ zPh' = "installed"
+                   /\ zSeq' = zSeq + 1
+              ELSE /\ zPh' = "needsrec"
+                   /\ UNCHANGED zSeq
+    /\ UNCHANGED << storeE, zOut, zAcked, zAckLate, mVarsE, gVarsE >>
+
+(* commitRefChunk: `complete_*` wakes the callers — the acknowledgment. *)
+ZAck ==
+    /\ zPh = "installed"
+    /\ zAcked' = zAcked \cup {EId(1, zSeq)}
+    /\ zAckLate' = (zAckLate \/ epLive # 1)
+    /\ zPh' = "idle"
+    /\ UNCHANGED << storeE, zSeq, zOut, mVarsE, gVarsE >>
+
+(* claimMount: the next epoch takes the lease. The superseded successor stops (honest, T1 for it). *)
+Takeover ==
+    /\ epLive < EpochCount
+    /\ epLive' = epLive + 1
+    /\ mPh' = [m \in Succs |-> IF m = epLive + 1 THEN "ckpt"
+                               ELSE IF m = epLive THEN "stopped" ELSE mPh[m]]
+    /\ UNCHANGED << epObj, epLink, epHist, epCkpt, epSnapBody, zVarsE,
+                    mTgt, mApp, mSeal, sAcked, gVarsE >>
+
+MLive(m) == epLive = m
+
+(* runRecoveryWalkOnce: readCkpt + chooseRecoveryGrounding. The walk starts after the frontier;
+   a frontier that is a seal continues at the next epoch's first sequence. *)
+MReadCkpt(m) ==
+    /\ mPh[m] = "ckpt"
+    /\ MLive(m)
+    /\ mTgt' = [mTgt EXCEPT ![m] =
+                  IF epCkpt.ct = 0 THEN EId(1, 1)
+                  ELSE IF epCkpt.ct = epCkpt.seal THEN EId(Ep(epCkpt.ct) + 1, 1)
+                  ELSE epCkpt.ct + 1]
+    /\ mSeal' = [mSeal EXCEPT ![m] = epCkpt.seal]
+    /\ mPh' = [mPh EXCEPT ![m] = "walk"]
+    /\ UNCHANGED << storeE, zVarsE, mApp, sAcked, gVarsE >>
+
+(* runRecoveryWalkOnce: exact GET of the arithmetic successor in a dead epoch. *)
+MWalkGet(m) ==
+    /\ mPh[m] = "walk"
+    /\ MLive(m)
+    /\ Ep(mTgt[m]) < m
+    /\ Sq(mTgt[m]) \in 1..SMax
+    /\ mPh' = [mPh EXCEPT ![m] = CASE epObj[mTgt[m]] = "log" -> "adoptlog"
+                                   [] epObj[mTgt[m]] = "seal" -> "adoptseal"
+                                   [] OTHER -> "sealing"]
+    /\ UNCHANGED << storeE, zVarsE, mTgt, mApp, mSeal, sAcked, gVarsE >>
+
+(* runRecoveryWalkOnce: the walk reached its own epoch; the table is installed. *)
+MWalkDone(m) ==
+    /\ mPh[m] = "walk"
+    /\ MLive(m)
+    /\ Ep(mTgt[m]) >= m
+    /\ mPh' = [mPh EXCEPT ![m] = "ready"]
+    /\ UNCHANGED << storeE, zVarsE, mTgt, mApp, mSeal, sAcked, gVarsE >>
+
+(* runRecoveryWalkOnce: `publish_recovered_frontier` for a walked record or seal. *)
+MAdoptPub(m) ==
+    /\ mPh[m] \in {"adoptlog", "adoptseal"}
+    /\ MLive(m)
+    /\ LET kind == IF mPh[m] = "adoptlog" THEN "log" ELSE "seal"
+           t == mTgt[m]
+           c == [ct |-> t, seal |-> IF kind = "seal" THEN t ELSE epLink[t], snap |-> 0]
+           mg == EMerge(epCkpt, c)
+       IN IF mg.ok
+          THEN /\ epCkpt' = mg.r
+               /\ epHist' = HistAfter(epCkpt, mg.r, kind)
+               /\ mTgt' = [mTgt EXCEPT ![m] = IF kind = "seal" THEN EId(Ep(t) + 1, 1) ELSE t + 1]
+               /\ mSeal' = IF kind = "seal" THEN [mSeal EXCEPT ![m] = t] ELSE mSeal
+               /\ mPh' = [mPh EXCEPT ![m] = "walk"]
+          ELSE /\ mPh' = [mPh EXCEPT ![m] = "failed"]
+               /\ UNCHANGED << epCkpt, epHist, mTgt, mSeal >>
+    /\ UNCHANGED << epObj, epLink, epSnapBody, epLive, zVarsE, mApp, sAcked, gVarsE >>
+
+(* runRecoveryWalkOnce: `op.create(seal, Retry::once())` into the absent slot. `412` re-reads
+   the occupant through the walk. Landing and response are fused (see RESULTS, Atomicity). *)
+MSealCreate(m) ==
+    /\ mPh[m] = "sealing"
+    /\ MLive(m)
+    /\ LET t == mTgt[m] IN
+       IF epObj[t] = "none"
+       THEN /\ epObj' = [epObj EXCEPT ![t] = "seal"]
+            /\ epLink' = [epLink EXCEPT ![t] = mSeal[m]]
+            /\ mPh' = [mPh EXCEPT ![m] = "sealpub"]
+       ELSE /\ mPh' = [mPh EXCEPT ![m] = "walk"]
+            /\ UNCHANGED << epObj, epLink >>
+    /\ UNCHANGED << epHist, epCkpt, epSnapBody, epLive, zVarsE, mTgt, mApp, mSeal, sAcked, gVarsE >>
+
+(* runRecoveryWalkOnce: `publish_recovered_frontier(seal_txn)` = {ct = seal, seal = seal}. *)
+MSealPub(m) ==
+    /\ mPh[m] = "sealpub"
+    /\ MLive(m)
+    /\ LET t == mTgt[m]
+           mg == EMerge(epCkpt, [ct |-> t, seal |-> t, snap |-> 0])
+       IN IF mg.ok
+          THEN /\ epCkpt' = mg.r
+               /\ epHist' = HistAfter(epCkpt, mg.r, "seal")
+               /\ mTgt' = [mTgt EXCEPT ![m] = EId(Ep(t) + 1, 1)]
+               /\ mSeal' = [mSeal EXCEPT ![m] = t]
+               /\ mPh' = [mPh EXCEPT ![m] = "walk"]
+          ELSE /\ mPh' = [mPh EXCEPT ![m] = "failed"]
+               /\ UNCHANGED << epCkpt, epHist, mTgt, mSeal >>
+    /\ UNCHANGED << epObj, epLink, epSnapBody, epLive, zVarsE, mApp, sAcked, gVarsE >>
+
+(* commitRefChunk: the successor's own `If-None-Match` append; `(m,1)` carries the chain link. *)
+MAppendLog(m) ==
+    /\ mPh[m] = "ready"
+    /\ MLive(m)
+    /\ mApp[m] < SAppMax
+    /\ LET t == EId(m, mApp[m] + 1) IN
+       /\ epObj[t] = "none"
+       /\ epObj' = [epObj EXCEPT ![t] = "log"]
+       /\ epLink' = [epLink EXCEPT ![t] = IF mApp[m] = 0 THEN mSeal[m] ELSE 0]
+    /\ mPh' = [mPh EXCEPT ![m] = "appendpub"]
+    /\ UNCHANGED << epHist, epCkpt, epSnapBody, epLive, zVarsE, mTgt, mApp, mSeal, sAcked, gVarsE >>
+
+(* commitRefChunk: frontier publication, install and acknowledgment of the honest successor.
+   Fused: the successor is not the subject and holds the lease (see RESULTS, Atomicity). *)
+MAppendPub(m) ==
+    /\ mPh[m] = "appendpub"
+    /\ MLive(m)
+    /\ LET t == EId(m, mApp[m] + 1)
+           mg == EMerge(epCkpt, [ct |-> t, seal |-> epLink[t], snap |-> 0])
+       IN IF mg.ok
+          THEN /\ epCkpt' = mg.r
+               /\ epHist' = HistAfter(epCkpt, mg.r, "log")
+               /\ sAcked' = sAcked \cup {t}
+               /\ mApp' = [mApp EXCEPT ![m] = @ + 1]
+               /\ mPh' = [mPh EXCEPT ![m] = "ready"]
+          ELSE /\ mPh' = [mPh EXCEPT ![m] = "failed"]
+               /\ UNCHANGED << epCkpt, epHist, sAcked, mApp >>
+    /\ UNCHANGED << epObj, epLink, epSnapBody, epLive, zVarsE, mTgt, mSeal, gVarsE >>
+
+(* tryPublishSnapshotAndAdvanceCheckpointOnce: the snapshot body PUT at the greatest applied
+   record, which is a log of the mount's own epoch (never a seal). *)
+MSnapBody(m) ==
+    /\ mPh[m] = "ready"
+    /\ MLive(m)
+    /\ mApp[m] >= 1
+    /\ epSnapBody = 0
+    /\ EId(m, mApp[m]) > epCkpt.snap
+    /\ epSnapBody' = EId(m, mApp[m])
+    /\ UNCHANGED << epObj, epLink, epHist, epCkpt, epLive, zVarsE, mVarsE, gVarsE >>
+
+(* Same function: publishCkpt with `{checkpoint_snapshot_id}`. *)
+MSnapCkpt ==
+    /\ epSnapBody # 0
+    /\ LET mg == EMerge(epCkpt, [ct |-> 0, seal |-> 0, snap |-> epSnapBody]) IN
+       /\ mg.ok
+       /\ epCkpt' = mg.r
+    /\ epSnapBody' = 0
+    /\ UNCHANGED << epObj, epLink, epHist, epLive, zVarsE, mVarsE, gVarsE >>
+
+(* sabB only: `last_epoch_seal` from an earlier, separate `_ckpt` read. *)
+GcReadSeal ==
+    /\ EpochVariant = "sabB"
+    /\ gPh = "idle"
+    /\ gSeal' = epCkpt.seal
+    /\ gPh' = "sealread"
+    /\ UNCHANGED << storeE, zVarsE, mVarsE, gSnap, gCur, gProof >>
+
+(* CasGc ref cleanup: readCkpt + readCheckpointSnapshotBase (one sample): the checkpoint, the fold
+   cursor (at most `committed_through`), and `retained_log_proof` = the base's `prev_epoch_seal`. *)
+GcPlan ==
+    /\ gPh = IF EpochVariant = "sabB" THEN "sealread" ELSE "idle"
+    /\ epCkpt.snap # 0
+    /\ gSnap' = epCkpt.snap
+    /\ gCur' = epCkpt.ct
+    /\ gSeal' = IF EpochVariant = "sabB" THEN gSeal ELSE epCkpt.seal
+    /\ gProof' = epLink[epCkpt.snap]
+    /\ gPh' = "planned"
+    /\ UNCHANGED << storeE, zVarsE, mVarsE >>
+
+NewestPresent(e) == MaxOr0({ j \in EIds : Ep(j) = e /\ epObj[j] # "none" })
+
+(* planRefCleanup (Pool/CasRefProtocol.cpp) plus each variant's extra keep rule. *)
+GcKeep(id) ==
+    \/ id >= gSnap
+    \/ id > gCur
+    \/ id = gProof
+    \/ (EpochVariant \in {"fixB", "sabB"} /\ id = gSeal)
+    \/ (EpochVariant = "fixB2" /\ Ep(id) < Ep(gCur) /\ id = NewestPresent(Ep(id)))
+    \/ (EpochVariant = "fixB3" /\ Ep(id) + 1 = Ep(gCur) /\ id = NewestPresent(Ep(id)))
+    \/ (EpochVariant = "sabB3" /\ gCur # gSeal /\ Ep(id) + 1 = Ep(gCur) /\ id = NewestPresent(Ep(id)))
+
+(* removeCohortWriteOnce: unconditional `DeleteObjects` of a planned key, one key per step. The
+   LIST is taken to be fresh at the delete (a superset of the real behaviours). *)
+GcDelete ==
+    /\ gPh = "planned"
+    /\ \E id \in EIds :
+        /\ epObj[id] # "none"
+        /\ ~GcKeep(id)
+        /\ epObj' = [epObj EXCEPT ![id] = "none"]
+    /\ UNCHANGED << epLink, epHist, epCkpt, epSnapBody, epLive, zVarsE, mVarsE, gVarsE >>
+
+GcEnd ==
+    /\ gPh = "planned"
+    /\ gPh' = "idle"
+    /\ UNCHANGED << storeE, zVarsE, mVarsE, gSnap, gCur, gSeal, gProof >>
+
+EpochStep ==
+    \/ ZPrepare \/ ZGate \/ ZLand \/ ZDrop \/ ZRespond \/ ZRespondLost \/ ZSettle
+    \/ ZPublish \/ ZInstall \/ ZAck
+    \/ Takeover
+    \/ \E m \in Succs :
+        \/ MReadCkpt(m) \/ MWalkGet(m) \/ MWalkDone(m) \/ MAdoptPub(m)
+        \/ MSealCreate(m) \/ MSealPub(m) \/ MAppendLog(m) \/ MAppendPub(m) \/ MSnapBody(m)
+    \/ MSnapCkpt
+    \/ GcReadSeal \/ GcPlan \/ GcDelete \/ GcEnd
+
 (* Self-loop so bounded counters exhausting is not a TLC deadlock (house pattern). *)
 NoOp == UNCHANGED vars
 
@@ -996,15 +1457,24 @@ FrontierStep ==
 
 LegacyNext ==
     /\ ~FrontierSlice
+    /\ ~EpochSlice
     /\ LegacyStep
     /\ UNCHANGED frontierVars
+    /\ UNCHANGED epochVars
 
 FrontierNext ==
     /\ FrontierSlice
     /\ FrontierStep
     /\ UNCHANGED legacyVars
+    /\ UNCHANGED epochVars
 
-Next == LegacyNext \/ FrontierNext \/ NoOp
+EpochNext ==
+    /\ EpochSlice
+    /\ EpochStep
+    /\ UNCHANGED legacyVars
+    /\ UNCHANGED frontierVars
+
+Next == LegacyNext \/ FrontierNext \/ EpochNext \/ NoOp
 
 Spec == Init /\ [][Next]_vars
 
@@ -1096,6 +1566,45 @@ W_ISSUED_CAS_LINEARIZED_AFTER_FENCE_MOVE ==
 W_SNAPSHOT_PUBLISHED_AT_FRONTIER == ~frontierWitness.snapshotPublishedAtFrontier
 W_SEAL_PUBLISHED_AT_FRONTIER == ~frontierWitness.sealPublishedAtFrontier
 W_LOST_SEAL_RESPONSE_RESOLVED == ~frontierWitness.lostSealResponseResolved
+
+(* ---- CAS-366 epoch slice invariants ---- *)
+
+(* No acknowledged record is unreachable by recovery or fold: every id a caller was told is
+   committed is a LOG in logical history — the chain `_ckpt.committed_through` certifies, which
+   recovery walks above the checkpoint and every snapshot and GC fold below it covers. *)
+INV_ACKED_REACHABLE == \A id \in zAcked \cup sAcked : epHist[id] = "log"
+
+(* A conclusive rejection (`SuccessorSeal` -> `Closed`) is never told about a record that history
+   holds. The fixes' refusal must not lie. *)
+INV_REJECT_TRUTHFUL == zPh = "closed" => epHist[ZTgt] # "log"
+
+(* The honest successors never hit the `_ckpt` corruption throw. *)
+INV_SUCCESSOR_NO_CORRUPTION == \A m \in Succs : mPh[m] # "failed"
+
+(* Reachability witnesses (a violation is the evidence). *)
+W_SEAL_SLOT_RELANDED == ~\E id \in EIds : epHist[id] = "seal" /\ epObj[id] = "log"
+W_STRAGGLER_ACKED_AFTER_TAKEOVER == ~zAckLate
+W_ZOMBIE_UNRESOLVED == zPh # "unresolved"
+
+EpochTypeOK ==
+    /\ epObj \in [EIds -> EKinds]
+    /\ epLink \in [EIds -> 0..EIdMax]
+    /\ epHist \in [EIds -> EKinds]
+    /\ epCkpt \in [ct : 0..EIdMax, seal : 0..EIdMax, snap : 0..EIdMax]
+    /\ epSnapBody \in 0..EIdMax
+    /\ epLive \in 1..EpochCount
+    /\ zPh \in ZPhases
+    /\ zSeq \in 0..ZSeqMax
+    /\ zOut \in {"none", "created", "occupied", "notlanded"}
+    /\ zAcked \subseteq EIds
+    /\ zAckLate \in BOOLEAN
+    /\ mPh \in [Succs -> MPhases]
+    /\ mTgt \in [Succs -> 0..(EIdMax + EBase)]
+    /\ mApp \in [Succs -> 0..SAppMax]
+    /\ mSeal \in [Succs -> 0..EIdMax]
+    /\ sAcked \subseteq EIds
+    /\ gPh \in {"idle", "sealread", "planned"}
+    /\ {gSnap, gCur, gSeal, gProof} \subseteq 0..EIdMax
 
 TypeOK ==
     /\ op \in [Ids -> Ops]

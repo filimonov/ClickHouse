@@ -73,6 +73,238 @@ the historical table below. Per the focused review gate, the expensive deep run 
 
 Constants unless the row says otherwise: `MaxSeq = 4`, `MaxRestarts = 2`.
 
+## CAS-366: a late append into a reclaimed seal slot {#cas-366-late-append-reclaimed-seal}
+
+**Verdict: the current protocol acknowledges a record that no recovery or fold reads unless
+`op.admitted()` refuses it (T1). Candidate A (`publishCkpt` refuses `committed_through ==
+last_epoch_seal`) closes the two-epoch case but NOT the three-epoch one. Recommended: A2, the
+epoch-exact refusal below. It needs no extra store request and no format change.**
+
+Base: release line `2a034cdb374`. The model is unchanged since 2026-08-02 (`a7ba6d00485`), so the
+lease series did not touch it. Audit: `docs/superpowers/cas/2026-10-12-late-request-audit/objects/reflog.md`
+R4/R5. Backlog: CAS-366.
+
+### What the slice adds {#cas-366-what-the-slice-adds}
+
+The legacy slice keeps seals in the ghost set `sealedIds`, which `GcCleanupLog` never shrinks, and
+its ids have no epoch. A third slice (`EpochVariant # "off"`) adds what R4 needs; the legacy and
+frontier slices keep their exact state spaces (the new variables stay at `EpochInit`).
+
+- Ids carry an epoch: `id = epoch * 4 + sequence`, so integer order is `RefTxnId` order.
+- `epObj`: the `_log/<id>` keys, each `log` or `seal`. GC deletes from it.
+- `epHist`: ghost of logical history. An id joins it, with its kind, exactly when a `_ckpt` CAS
+  moves `committed_through` onto it.
+- `epCkpt` = `[ct, seal, snap]`, merged by `MergeCt` (= `mergeCommittedThrough`) and checked by
+  `CkptValid` (= `checkRefCkptInvariants`, `life_epoch = 1`).
+- Zombie lane of epoch 1, with the code's step order: `ZPrepare`, `ZGate` (`writeLoop` gate),
+  `ZLand` / `ZDrop` (store applies or never sees the create), `ZRespond` / `ZRespondLost`,
+  `ZSettle` (settling GET after `412`), `ZPublish` (`publishCkpt`), `ZInstall`
+  (`refuseUnlessAdmitted` + install), `ZAck`. A wedge retry (`resolveWedgeOnce`, R5) re-enters
+  `ZGate` with the same key.
+- Honest successor mounts 2..`EpochCount`, each live after `Takeover`: recovery walk (`MReadCkpt`,
+  `MWalkGet`, `MAdoptPub`, `MSealCreate`, `MSealPub`, `MWalkDone`), appends (`MAppendLog`,
+  `MAppendPub`) and snapshots (`MSnapBody`, `MSnapCkpt`).
+- GC ref cleanup: `GcPlan` (one `_ckpt` sample: checkpoint, cursor, `retained_log_proof`) and
+  `GcDelete` (= `planRefCleanup` + `removeCohortWriteOnce`), so a seal below the checkpoint is
+  deletable unless it is the base's predecessor seal.
+- `T1Holds`: TRUE makes `op.admitted()` exactly "this epoch holds the lease"; FALSE makes every
+  admission check a free choice (the boot-clock lease check after a SIGSTOP-class pause).
+
+New invariants:
+
+| name | meaning |
+|---|---|
+| `INV_ACKED_REACHABLE` | every acknowledged id is a `log` in `epHist`: the chain `_ckpt.committed_through` certifies, which recovery walks above the checkpoint and every snapshot and GC fold covers below it |
+| `INV_REJECT_TRUTHFUL` | a `Closed` (conclusive rejection) is never reported for an id history holds as a log |
+| `INV_SUCCESSOR_NO_CORRUPTION` | honest successors never hit the `_ckpt` corruption throw |
+| `W_SEAL_SLOT_RELANDED` | witness: a log sits in a slot history holds as a seal |
+| `W_STRAGGLER_ACKED_AFTER_TAKEOVER` | witness: the zombie acknowledges an adopted straggler after a takeover |
+| `W_ZOMBIE_UNRESOLVED` | witness: A2's epoch-exact branch refuses a zombie contribution |
+
+Bounds: zombie appends ≤ 2, each successor appends ≤ 2, 3 sequences per epoch, `EpochCount` 2 or 3,
+GC rounds unbounded.
+
+### Results {#cas-366-results}
+
+Runner: `REFSNAPLOG_EPOCH=1 ./run_refsnaplog.sh`, TLC pinned jar, `-workers 4 -Xmx8g`, `nice 10`,
+2026-10-13. Violation counts are "explored before the counterexample".
+
+The full battery (`./run_refsnaplog.sh`, 51 configs) met every expectation on the same run. Every
+legacy and frontier config keeps its recorded verdict, and the legacy greens keep their recorded
+distinct-state counts: `_v9_safe` / `_v9_flip_latepred` 1,701,470, `_sab_noseal_nolate`
+26,118,591, both `_deep` configs 32,925,718 (417 s and 431 s at 4 workers). `_frontier_safe` gives
+94,367 / 32,598, not the 103,335 / 35,166 in the Task 5b table; HEAD without this slice gives the
+same 94,367 / 32,598, so that row predates the `_frontier_safe.cfg` change in `a7ba6d00485`.
+
+| cfg | variant | epochs | T1 | expected | result | states (gen / distinct) | depth | s |
+|---|---|---:|---|---|---|---:|---:|---:|
+| `_cur_lateappend` | current code | 2 | broken | violation | `INV_ACKED_REACHABLE` | 6,378 / 1,955 | 24 | 1 |
+| `_cur_lateappend_t1` | current code | 2 | holds | green | green | 13,612 / 3,578 | 35 | 1 |
+| `_cur_lateappend_3ep` | current code | 3 | broken | violation | `INV_ACKED_REACHABLE` | 31,006 / 9,717 | 24 | 2 |
+| `_fix_a` | A | 2 | broken | green | green | 22,659 / 5,491 | 35 | 1 |
+| `_fix_a_witness` | A | 2 | broken | witness | `W_SEAL_SLOT_RELANDED` | 3,920 / 1,272 | 21 | 1 |
+| `_sab_a` | A vs the writer's cached seal | 2 | broken | violation | `INV_ACKED_REACHABLE` | 6,434 / 1,953 | 24 | 1 |
+| `_fix_a_3ep` | A | 3 | broken | violation | `INV_ACKED_REACHABLE` | 102,093 / 29,066 | 28 | 1 |
+| `_fix_a2_2ep` | A2 | 2 | broken | green | green | 22,659 / 5,491 | 35 | 1 |
+| `_fix_a2` | A2 | 3 | broken | green | green | 1,738,229 / 358,385 | 49 | 6 |
+| `_fix_a2_witness` | A2 | 3 | broken | witness | `W_SEAL_SLOT_RELANDED` | 13,691 / 4,568 | 21 | 1 |
+| `_fix_a2_witness_straggler` | A2 | 3 | broken | witness | `W_STRAGGLER_ACKED_AFTER_TAKEOVER` | 655 / 267 | 10 | 1 |
+| `_fix_a2_witness_unresolved` | A2 | 3 | broken | witness | `W_ZOMBIE_UNRESOLVED` | 8,112 / 2,828 | 19 | 1 |
+| `_fix_b` | B: GC keeps `last_epoch_seal` | 2 | broken | green | green | 18,847 / 4,619 | 35 | 1 |
+| `_sab_b` | B, seal from a separate earlier read | 2 | broken | violation | `INV_ACKED_REACHABLE` | 16,583 / 4,788 | 25 | 1 |
+| `_fix_b_3ep` | B | 3 | broken | violation | `INV_ACKED_REACHABLE` | 104,568 / 29,845 | 28 | 2 |
+| `_fix_b2` | B2: GC keeps the newest object of every dead epoch | 3 | broken | green | green | 932,243 / 197,096 | 48 | 5 |
+| `_fix_b3` | B3: B2 for the epoch just below the frontier only | 3 | broken | green | green | 1,377,116 / 284,132 | 49 | 5 |
+| `_sab_b3` | B3 skipped when the frontier is a seal | 3 | broken | violation | `INV_ACKED_REACHABLE` | 104,085 / 29,719 | 28 | 2 |
+
+`_fix_a2_2ep` has exactly `_fix_a`'s state space: with two epochs A2's extra branch never fires.
+
+### Counterexample: current protocol (`_cur_lateappend`, 22 states) {#cas-366-counterexample}
+
+1. Epoch 2 takes the lease. The zombie (epoch 1) prepares `(1,1)`, passes `gate` (T1 broken) and
+   pauses.
+2. Mount 2 reads an empty `_ckpt`, GETs `(1,1)`: absent. It creates the seal `(1,1)` and
+   publishes `{ct = seal = (1,1)}`. History: `(1,1)` = seal.
+3. Mount 2 appends `(2,1)` (chain link `(1,1)`) and `(2,2)`, each with its `_ckpt` CAS.
+4. Mount 2 PUTs the snapshot body `(2,2)` and CASes `checkpoint_snapshot_id = (2,2)`.
+5. GC samples `{snap = (2,2), cursor = (2,2), retained proof = none}` (the base is not sequence 1)
+   and deletes `(1,1)`: below the checkpoint, at or below the cursor, not the retained proof.
+6. The zombie's `If-None-Match` create lands in the now-empty key and returns `Created`.
+7. `publishCkpt`: `mergeCommittedThrough((2,2), (1,1))` accepts (adjacent epoch, durable seal
+   `(1,1) >= (1,1)`), the merged body equals the durable one: `IdenticalSkip`.
+8. `refuseUnlessAdmitted` passes (T1 broken); install; the caller is acknowledged for `(1,1)`,
+   which history holds as a seal. No recovery, snapshot or fold will ever read it.
+
+`_cur_lateappend_t1` is green: with T1 the decide-time `op.admitted()` refuses at step 7. This is
+the audit's "safe only by time".
+
+### Why candidate A is not enough (`_fix_a_3ep`) {#cas-366-why-a-is-not-enough}
+
+A third epoch moves `last_epoch_seal` off the zombie's slot while `committed_through` stays in
+epoch 2:
+
+- Steps 1–5 as above: seal `(1,1)`, appends `(2,1)`, `(2,2)`, snapshot `(2,2)`, GC deletes `(1,1)`.
+- Epoch 3 takes the lease, walks from `(2,2)`, finds `(2,3)` absent, seals it and publishes
+  `{ct = seal = (2,3)}`. It has not appended yet.
+- The zombie's late `(1,1)` lands. `publishCkpt`: A compares `(1,1)` with `last_epoch_seal = (2,3)`,
+  no match. `mergeCommittedThrough((2,3), (1,1))`: epochs 1 and 2 are adjacent, `(2,3) >= (1,1)`,
+  `(2,3) >= (2,3)`, so it returns `(2,3)`: `IdenticalSkip`, acknowledged.
+
+The merge's cross-epoch check is numeric only: it accepts a lower frontier when the higher side's
+seal is at or above it, even when that seal closes the higher side's own epoch rather than the
+lower one. Once epoch 3 appends, `committed_through` is two epochs above the zombie and the merge
+throws (`CORRUPTED_DATA`, not acknowledged), so the window is exactly "frontier = a seal of epoch
+E+1". B (keep the log named by `last_epoch_seal`) fails on the same trace (`_fix_b_3ep`): the
+retained seal is `(2,3)`, not `(1,1)`.
+
+### Candidate A2: epoch-exact refusal in `publishCkpt` {#cas-366-candidate-a2}
+
+In `decide`, before the merge, for a NON-seal contribution `c` (`c.last_epoch_seal !=
+c.committed_through`) against durable `d`:
+
+1. `c.committed_through == d.last_epoch_seal` → `SuccessorSeal`: conclusive, the seal sits at our id
+   (candidate A).
+2. else if `c.committed_through.writer_epoch < d.committed_through.writer_epoch` and NOT
+   (`d.last_epoch_seal` is in `c`'s epoch and `c.committed_through < d.last_epoch_seal`) →
+   `Superseded`: not acknowledged, not rejected (NeedsRecovery, retry-later).
+3. otherwise the current merge.
+
+Branch 2's accepted case is the honest straggler: the successor's walk adopts every present id
+below the first absent one, so an id below the seal of its own epoch is in history. When the
+durable seal belongs to a later epoch, the checkpoint no longer says where `c`'s epoch was closed,
+so the publisher cannot tell an adopted straggler from a re-landed one and must not answer either
+way. `INV_REJECT_TRUTHFUL` holds in every A/A2 run, so neither branch reports a rejection for a
+record history holds. `_fix_a2_witness_straggler` shows that an adopted straggler is still
+acknowledged after a takeover.
+
+### GC-side alternatives {#cas-366-gc-side}
+
+- **B** (keep `last_epoch_seal`): two-epoch green, three-epoch red. Its sabotage (`_sab_b`: seal
+  taken from an earlier `_ckpt` read) shows the seal must come from the same sample as the
+  checkpoint.
+- **B2** (keep the newest object of every epoch below the frontier's epoch): green. Cost: one
+  object per table per remount, forever.
+- **B3** (keep the newest object of the epoch just below the frontier's epoch only): green. Two
+  epochs below, `mergeCommittedThrough` already throws for the zombie. Cost: one object per table.
+  Its sabotage (`_sab_b3`: skip the rule when the frontier is itself a seal) reproduces the
+  `_fix_a_3ep` trace.
+
+The GC fixes make the late create fail with `412` and reuse the existing `SuccessorSeal` occupant
+arm, but they rely on GC alone: any other path that empties the slot reopens R4. A2 is decided where
+the acknowledgment is decided and holds however the slot was emptied.
+
+### Recommendation {#cas-366-recommendation}
+
+A2. Zero extra store requests: `decide` uses the `_ckpt` body `readModifyWrite` already read. No
+format change. B3 is optional defence in depth: it also avoids the garbage object A2 leaves below
+the checkpoint (the next GC round deletes it), at one retained object per table.
+
+### Code-fix sketch (A2) {#cas-366-code-fix-sketch}
+
+| file | function | change | ~lines |
+|---|---|---|---:|
+| `Pool/CasRefCkpt.h` | `CkptPublishOutcome` | add `SuccessorSeal` (conclusive) and `Superseded` (unresolved), with doc | 12 |
+| `Pool/CasRefCkpt.cpp` | `publishCkpt` `decide` | the two refusals above, before `mergeCkpt`; new `Decline` values mapped to the new outcomes; independent of `op.admitted()` | 25 |
+| `Pool/CasRefLedger.cpp` | `commitRefChunk` (post-durable block) | `SuccessorSeal` → the same `Closed` + `INVALID_STATE` arm as `Occupant::SuccessorSeal` (set `rt->last_epoch_seal`); `Superseded` → the `FencedOut` path (`requireRecovery`, retry-later) | 20 |
+| `Pool/CasRefLedger.cpp` | `resolveWedgeOnce` (wedge frontier) | same two mappings | 20 |
+| `Pool/CasRefLedger.cpp` | `runRecoveryWalkOnce` (`publish_recovered_frontier`, final seal contribution) | treat both new outcomes like `FencedOut` (throw retry-later) | 4 |
+| `Pool/CasRefLedger.cpp` | `publishCkptContribution` | count `CASRefCheckpointSealSlotRefused` | 4 |
+
+Snapshot and birth contributions carry no `committed_through` and are unaffected.
+
+Tests that fail first (all on `2a034cdb374` return `IdenticalSkip`):
+
+- `CASRefCkpt.PublishRefusesNonSealAtDurableSeal`: durable `{ct (2,2), seal (1,3), snap (2,2)}`,
+  contribution `{ct (1,3)}` → `SuccessorSeal`, no write.
+- `CASRefCkpt.PublishRefusesLowerEpochPastLaterSeal`: durable `{ct (2,3), seal (2,3), snap (2,2)}`,
+  contribution `{ct (1,3)}` → `Superseded`, no write.
+- `CASRefLedger.LateAppendIntoReclaimedSealSlotIsNotAcknowledged`: epoch-1 runtime paused after
+  `gate`; epoch 2 seals, appends twice, publishes a snapshot; GC ref cleanup deletes the seal; the
+  zombie resumes with admission forced → `INVALID_STATE` "closed by a successor's epoch seal", lane
+  `Closed`, not installed. A three-epoch variant expects retry-later, not an ack.
+
+Regression guards that stay green: `CASRefCkpt.PublishStillSkipsAdoptedStraggler` (durable
+`{ct (2,2), seal (1,4)}`, contribution `{ct (1,3)}` → `IdenticalSkip`) and the same-epoch skip.
+
+Open questions for the code fix:
+
+- The ledger test needs a pause point between `gate` and send in `CasOperation::writeLoop` and a way
+  to force `op.admitted()` true after takeover. Check whether `carve_hook_for_test` or the fence
+  test hooks already give both.
+- `Superseded` asks the zombie to recover. Under T1 failure the zombie's recovery is the R10/R11
+  territory (deposed gate in `flushRefBatch`); that path is not in this model.
+
+### Atomicity {#cas-366-atomicity}
+
+| action | code (file:function) | the one request or step | fusion and soundness |
+|---|---|---|---|
+| `ZPrepare` | `Pool/CasRefLedger.cpp:prepareRefChunk` | derive `(1, seq+1)` in memory | — |
+| `ZGate` | `Backend/CasRequests.cpp:CasOperation::writeLoop` | admission gate before the attempt | — |
+| `ZLand` / `ZDrop` | store, `If-None-Match` create | landing (or none) | — |
+| `ZRespond` / `ZRespondLost` | `writeLoop` result | response | — |
+| `ZSettle` | `commitRefChunk` / `resolveWedgeOnce`, `classifyRefLogOccupant` | settling GET | — |
+| `ZPublish` | `Pool/CasRefCkpt.cpp:publishCkpt` | `readModifyWrite`: GET + decide + `If-Match` PUT | fused. The PUT is conditional on the etag read, so a concurrent write fails it and the loop re-reads; the successful iteration is atomic w.r.t. `_ckpt`. A lost PUT response re-reads and reports `Published` only if the body carries the contribution, which means the CAS already moved history. Admission is one choice per step (decide and write gate) |
+| `ZInstall` | `commitRefChunk`: `refuseUnlessAdmitted` + install under `state_mutex` | one in-memory step under one lock | — |
+| `ZAck` | `commitRefChunk`: `complete_*` | wake callers | — |
+| `Takeover` | `Pool/CasServerRoot.cpp:claimMount` | lease CAS | the superseded successor stops at once: honest successors are assumed to obey T1; only the epoch-1 zombie is adversarial |
+| `MReadCkpt` | `Pool/CasRefLedger.cpp:runRecoveryWalkOnce` (`readCkpt`, `chooseRecoveryGrounding`) | GET `_ckpt` | the walk starts at `committed_through`; ids at or below it are already history, so skipping their re-read changes no history |
+| `MWalkGet` | `runRecoveryWalkOnce` | exact GET of the successor | — |
+| `MAdoptPub`, `MSealPub` | `runRecoveryWalkOnce`: `publish_recovered_frontier` | `publishCkpt` RMW | fused as `ZPublish`. The follow-up exact `_ckpt` re-read is omitted: it only restarts a recovery whose candidate diverged and does not change history |
+| `MSealCreate` | `runRecoveryWalkOnce`: `op.create(seal, Retry::once())` | `If-None-Match` create | landing and response fused: no other actor reads the mount's phase, and the response is fixed at landing, so the two steps commute with everything in between |
+| `MWalkDone` | `runRecoveryWalkOnce` | walk reaches its own epoch, install | — |
+| `MAppendLog` | `commitRefChunk` | `If-None-Match` create | no competitor in the live epoch |
+| `MAppendPub` | `commitRefChunk` | `publishCkpt` RMW + install + ack | fused: the honest live successor is not the subject; its ack is a ghost |
+| `MSnapBody`, `MSnapCkpt` | `tryPublishSnapshotAndAdvanceCheckpointOnceOnRuntimeImpl` | snapshot PUT; `publishCkpt` | — |
+| `GcPlan` | `Gc/CasGc.cpp` ref cleanup: `readCkpt` + `readCheckpointSnapshotBase` | GET `_ckpt` (+ base GETs) | base log and snapshot are write-once and at or above the checkpoint, so never deleted; reading them later returns the same bytes |
+| `GcDelete` | `Pool/CasRefProtocol.cpp:planRefCleanup` + `removeCohortWriteOnce` | unconditional `DeleteObjects`, one key per step | the LIST is taken as fresh at each delete: a superset of real behaviours, sound for the greens |
+| `GcReadSeal` | (`sabB` only) | a separate earlier GET of `_ckpt` | — |
+
+### Scope {#cas-366-scope}
+
+- One zombie (epoch 1). Superseded successors stop without in-flight requests.
+- No zombie recovery (R10/R11/R12), no janitor or dead-life deletion (R16), no snapshot deletion.
+- `_ckpt` is never absent once written; `life_epoch` is fixed at 1.
+
 ## Headline
 
 1. **`LatePredecessorPut` is flipped from counterexample to proof.** Under rev.4 it was the
@@ -288,7 +520,8 @@ transitions still fire.
 - **Ordinary appends are frozen while a reader recovers** (`ReaderInactive`), because recovery is a
   fresh mount with the previous writer's lane drained. What the drained lane can still do — land
   its in-flight PUT — is modelled, as `LatePredecessorPut` and `RAdoptStraggler`.
-- **Seals are never cleaned** (they are tiny, and a walk crossing a dead epoch must find them).
+- **Seals are never cleaned** in the legacy and frontier slices (they are tiny, and a walk crossing a
+  dead epoch must find them). The CAS-366 epoch slice is the one that deletes them.
 - **`INV_NO_PHANTOM` is a ghost-flag property** in the house style of rev.4's `INV_RECREATE`: the
   flag is set by the orphan's *landing*, not by the sabotage action itself, so the counterexample is
   a real four-step behaviour rather than a tautology. It is still the weakest of the six, because
@@ -344,7 +577,11 @@ frontier, and the `slot-occupy` conditional create denies it the frontier slot i
 ## Reproduce
 
 ```bash
-bash docs/superpowers/models/run_refsnaplog.sh          # 15 configs, ~129 s, exits nonzero on surprise
+cd docs/superpowers/models
+flock ../../../tmp/tlc.lock ./run_refsnaplog.sh                       # 51 configs, ~20 min at 4 workers
+flock ../../../tmp/tlc.lock env REFSNAPLOG_EPOCH=1 ./run_refsnaplog.sh # the 18 CAS-366 configs, ~30 s
 ```
 
-Logs land in `tmp/tlc_CaRefTableSnapshotLogCore_<cfg>.log`.
+Logs land in `$REFSNAPLOG_OUT` (default `tmp/`) as `tlc_CaRefTableSnapshotLogCore_<cfg>.log`.
+Defaults: `timeout 1200`, `-workers 4`, `-Xmx8g`, `nice 10`; the runner refuses to start below
+40 GiB free on `/`.

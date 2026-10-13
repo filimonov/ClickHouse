@@ -28,6 +28,13 @@
 #   frontier_sab_snapshotatseal -> snapshot bases never name epoch-seal records
 #   frontier_witness_*       -> reachability controls for every crash/race recovery window
 #   frontier_safe            -> GREEN     LogDurable -> FrontierDurable -> Installed -> Acknowledged
+#   cur_lateappend*, fix_*, sab_a*, sab_b* -> CAS-366 epoch slice: a zombie append lands in a seal
+#                               slot GC reclaimed (INV_ACKED_REACHABLE); see RESULTS "CAS-366"
+#
+# Env: REFSNAPLOG_ONLY="name ..." runs only those configs; REFSNAPLOG_EPOCH=1 runs the CAS-366
+# configs; REFSNAPLOG_OUT=<dir> holds logs and metadirs (default ../../../tmp); TLC_TIMEOUT
+# (default 1200 s), TLC_WORKERS (default 4), TLC_JAVA_OPTS (default -Xmx8g). Refuses to start a
+# run with less than 40 GiB free on /.
 # Exits nonzero if any expectation is unmet.
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -75,7 +82,30 @@ CONFIGS=(
   "v9_flip_latepred        green      -"
   "v9_safe_deep            green      -"
   "v9_flip_latepred_deep   green      -"
+  "cur_lateappend          violation  INV_ACKED_REACHABLE"
+  "cur_lateappend_3ep      violation  INV_ACKED_REACHABLE"
+  "sab_a                   violation  INV_ACKED_REACHABLE"
+  "fix_a_3ep               violation  INV_ACKED_REACHABLE"
+  "sab_b                   violation  INV_ACKED_REACHABLE"
+  "fix_b_3ep               violation  INV_ACKED_REACHABLE"
+  "sab_b3                  violation  INV_ACKED_REACHABLE"
+  "fix_a_witness           violation  W_SEAL_SLOT_RELANDED"
+  "fix_a2_witness          violation  W_SEAL_SLOT_RELANDED"
+  "fix_a2_witness_straggler violation W_STRAGGLER_ACKED_AFTER_TAKEOVER"
+  "fix_a2_witness_unresolved violation W_ZOMBIE_UNRESOLVED"
+  "cur_lateappend_t1       green      -"
+  "fix_a                   green      -"
+  "fix_a2_2ep              green      -"
+  "fix_a2                  green      -"
+  "fix_b                   green      -"
+  "fix_b2                  green      -"
+  "fix_b3                  green      -"
 )
+EPOCH_CONFIGS=()
+for row in "${CONFIGS[@]}"; do
+  read -r n _ <<<"$row"
+  case "$n" in cur_lateappend*|fix_a*|fix_b*|sab_a|sab_b|sab_b3) EPOCH_CONFIGS+=("$row") ;; esac
+done
 
 # Review iterations need a bounded official gate that exercises every Task 5b obligation plus one
 # unchanged legacy control without repeating the resource-heavy deep evidence already recorded.
@@ -104,19 +134,39 @@ if [[ "${REFSNAPLOG_FOCUSED:-0}" == 1 ]]; then
   )
 fi
 
+if [[ "${REFSNAPLOG_EPOCH:-0}" == 1 ]]; then
+  CONFIGS=("${EPOCH_CONFIGS[@]}")
+fi
+if [[ -n "${REFSNAPLOG_ONLY:-}" ]]; then
+  ALL=("${CONFIGS[@]}")
+  CONFIGS=()
+  for row in "${ALL[@]}"; do
+    read -r n _ <<<"$row"
+    for want_name in $REFSNAPLOG_ONLY; do [[ "$n" == "$want_name" ]] && CONFIGS+=("$row"); done
+  done
+fi
+OUT="${REFSNAPLOG_OUT:-../../../tmp}"
+mkdir -p "$OUT"
+
 overall=0
 printf '%-26s %-10s %-30s %-8s %s\n' "CONFIG" "EXPECT" "RESULT" "SECONDS" "VERDICT"
 for row in "${CONFIGS[@]}"; do
   read -r name expect want <<<"$row"
   cfg="${MODULE}_${name}.cfg"
-  log="../../../tmp/tlc_${MODULE}_${name}.log"
-  meta="../../../tmp/tlc-meta-refsnap-${name}"
+  log="$OUT/tlc_${MODULE}_${name}.log"
+  meta="$OUT/tlc-meta-refsnap-${name}"
+  free_gib=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+  if (( free_gib < 40 )); then
+    echo "refusing $name: only ${free_gib} GiB free on /" >&2
+    exit 5
+  fi
   rm -rf "$meta"
   start=$SECONDS
-  timeout 3600 /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:-} -cp "$JAR" tlc2.TLC \
-    -metadir "$meta" -workers "${TLC_WORKERS:-auto}" -config "$cfg" "$MODULE.tla" >"$log" 2>&1
+  timeout "${TLC_TIMEOUT:-1200}" nice -n 10 /usr/bin/java -XX:+UseParallelGC ${TLC_JAVA_OPTS:--Xmx8g} \
+    -cp "$JAR" tlc2.TLC -metadir "$meta" -workers "${TLC_WORKERS:-4}" -config "$cfg" "$MODULE.tla" >"$log" 2>&1
   rc=$?
   elapsed=$((SECONDS - start))
+  rm -rf "$meta"
 
   if grep -q "No error has been found" "$log"; then
     result="green"
