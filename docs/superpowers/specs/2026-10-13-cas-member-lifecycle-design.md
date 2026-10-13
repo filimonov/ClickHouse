@@ -1,137 +1,188 @@
 # CAS pool member lifecycle: decommission deletes data only {#cas-member-lifecycle}
 
-Decommission keeps a member's three control objects, `gc/server-roots/<srid>/{owner,epoch,mount}`, forever and deletes only its data. A new `cas-readd-member` operation returns the `srid` as an empty member, with the same or a new `server_uuid`. The epoch counter is never deleted, so epochs never repeat across lives. Most of the decommission tail's race handling is deleted.
+Decommission keeps a member's control objects `gc/server-roots/<srid>/{owner,epoch,mount}` forever and deletes only its data. A new `cas-readd-member` operation returns a retired `srid` as an empty member, with the same or a new `server_uuid`. The epoch counter is never deleted, so epochs never repeat across lives, and the decommission tail loses its race handling.
 
-Closes: CAS-363, CAS-158, CAS-156, CAS-156.1, CAS-157, CAS-369. Partly: CAS-156.2, CAS-156.3, CAS-357, CAS-371, CAS-264. Test coverage: CAS-213.
+Closes: CAS-363, CAS-158, CAS-156, CAS-156.1, CAS-157, CAS-369. Partly: CAS-156.2, CAS-156.3, CAS-357, CAS-371, CAS-264, CAS-159. Acceptance: CAS-213. Residuals go to CAS-385.
+
+Revision 2. Changes from r1 (`5e4b5f24639`) follow the reviews in `tmp/noclock/lifecycle/review-{opus,codex}.md` and the model rounds 3–4 (`docs/superpowers/models/CaEpochAllocCore_RESULTS.md`, `c4e0dd307f8`).
 
 ## Why {#why}
 
-- **The owner object is already permanent.** Decommission tombstones it in place (`9707a61ba2c`, `docs/superpowers/specs/2026-07-18-t5-owner-tombstone-design.md`) because its bytes are identical across lives and a delete by token cannot be fenced. A retired `srid` already leaves one object behind.
-- **Deleting `mount` and `epoch` is the source of the open races.** A history of them is in `tmp/noclock/srid-revival-history.md`; the audit scenarios are in `docs/superpowers/cas/2026-10-12-late-request-audit/objects/epoch-owner.md`.
-  - S6 (CAS-363): a restarting victim passes the owner check before the tombstone, finds `epoch` absent, and is issued epoch 1 again. Stale GC floors then delete live manifests (S7).
-  - S11/S16 (CAS-158): the tombstone, written last, can land over a same-uuid successor that started after the liveness recheck.
-  - R4 (`CaEpochAllocCore` `cur_decom_slot`): a claimer paused before its mint lands a lower epoch into the deleted slot; GC with the farewell floor deletes its manifest.
-  - S4, S8, S9: ETag ABA and key reuse by zombies, possible only because epochs repeat.
-- **Keeping them closes all of these in the model.** `CaEpochAllocCore` `fix_retire` and `fix_retire_gcs` are green on all invariants, zombies included; `sab_retire_delmount` (retire, then delete `mount`) is red. Nothing is deleted, so there is no ABA, no reissued epoch, no regressed slot.
-- **Cost:** three small objects per retired `srid` instead of one, reused on re-add.
+- **The owner object is already permanent.** Decommission tombstones it in place (`9707a61ba2c`, `docs/superpowers/specs/2026-07-18-t5-owner-tombstone-design.md`): its bytes are identical across lives, so a delete by token cannot be fenced.
+- **Deleting `epoch` and `mount` causes the open races** (history: `tmp/noclock/srid-revival-history.md`; audit: `docs/superpowers/cas/2026-10-12-late-request-audit/objects/epoch-owner.md`):
+  - S6 (CAS-363): a restarting victim passes the owner check before the tombstone, finds no counter, and gets epoch 1 again; stale GC floors then delete its manifests (S7).
+  - S11/S16 (CAS-158): the tombstone, written last, lands over a same-uuid successor.
+  - R4: a claimer paused before its mint lands a lower epoch into the deleted slot.
+  - S4, S8, S9: ETag ABA and key reuse, possible only because epochs repeat.
+- **Keeping them closes these in the model.** Round 4 (`lc_*`) is green with zombie creates and mints, victim restarts, a GC fence of the admin, decommission reruns after a death at any step, and re-adds with the same or a new uuid. Each guard below has a red sabotage.
+- **Cost:** three small objects per retired `srid` instead of one; they are reused on re-add.
 
 ## Decisions {#decisions}
 
-| # | Decision | Reason |
+| # | Decision | Guard (sabotage that goes red without it) |
 |---|---|---|
-| D1 | Decommission never deletes `owner`, `epoch` or `mount`. | Closes S4–S11 and R4 by construction. |
-| D2 | The owner tombstone is written right after the admin claim, before any data is drained. | While the admin holds the slot, no same-uuid successor can be live, so the tombstone cannot land on one (CAS-158). A victim restarting during the drain is refused at the owner check. |
-| D3 | Decommission is idempotent and resumable over its own tombstone. | A crash at any step is repaired by running it again. Today a rerun after the tombstone is refused. |
-| D4 | `cas-readd-member` returns a retired `srid` as an empty member, same or new uuid. | CAS-156 field report; replacing the uuid is safe because the old owner is retired (CAS-156.1). |
-| D5 | Nested and reserved-segment `srid`s are refused at the first owner claim. | Decommission, staging, roots and `floorForNamespace` select by path prefix (CAS-157, CAS-357). |
-| D6 | S3 staging keys carry the writer epoch; the startup sweep deletes only older epochs. Aborted transactions delete their staging. | Closes CAS-369 without the pre-claim LIST refactor. Needs monotone epochs, which D1 and CAS-362 give. |
-| D7 | No new on-store fields. | Format frozen since 26.6.4; `retired_at_ms` already exists. |
+| D1 | Decommission never deletes `owner`, `epoch` or `mount`. | `sab_lc_delepoch`, `keep_main` |
+| D2 | The owner tombstone is written right after the admin claim, then the admin confirms it still holds the slot. | `sab_lc_tomblast`, `sab_lc_noconfirm` |
+| D3 | Every claim (start and self-remount) re-reads the owner after it succeeds; a retired owner makes the claimer fence its own body and fail. | `sab_lc_norecheck`, `sab_lc_refusedclean` |
+| D4 | Every owner write carries a fresh random `owner_nonce`. | `sab_lc_nononce` |
+| D5 | Decommission is resumable over its own tombstone; a fenced admin stops, it does not remount. | `sab_lc_retryrefuses`, `RetryCompletes` |
+| D6 | Re-add accepts only a clean farewell and replaces the `mount` body; it never deletes it. | `sab_lc_fenced`, `sab_lc_deletemount` |
+| D7 | A new `srid` may not contain `/`. | review finding (no model) |
+| D8 | S3 staging keys carry the writer epoch; aborted transactions delete their staging. | CAS-369 |
+| D9 | No repair code for states left by 26.6.4; they are documented. | owner decision 2026-10-13 |
 
 ## Design {#design}
 
-Paths: `CA/` = `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`. Line numbers are at `2a034cdb374`.
+Paths: `CA/` = `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`. Line numbers at `2a034cdb374`.
+
+### Owner nonce {#owner-nonce}
+
+`OwnerObject` (`CA/Formats/CasServerRootFormats.cpp`) gains an optional plain field `owner_nonce`, 32 lowercase hex characters, drawn fresh for every owner write: first claim, tombstone, un-tombstone, re-add. Two writes never produce the same bytes, so a delayed `If-Match` against an old owner ETag cannot land after a re-add restored the same uuid. 26.6.4 decoders skip unknown plain keys (verify against the tag in the PR). Record the field in `Formats/README.md`.
+
+### Claim recheck {#claim-recheck}
+
+`Pool::mountWritable` (`CA/Pool/CasPool.cpp`) and `Pool::tryRemountOnce` (`:1436`): after `claimMount` returns `Claimed`, `GET owner`. If it is retired (and this is not the decommission admin of that `srid`):
+
+1. Replace the just-claimed `mount` body by `If-Match` with the same body marked `gc_fenced`. A clean farewell would let re-add proceed while a fenced admin still drains (`sab_lc_refusedclean`).
+2. Throw the retired-owner refusal.
+
+Cost: one GET per claim. Why it closes CAS-158: the admin tombstones before it can farewell, and a claimer can only win the slot after a farewell or a fence, so its re-read sees the tombstone.
 
 ### Decommission {#decommission}
 
-`CA/Tools/CasDecommission.cpp:decommissionPoolMember`, new order:
+`CA/Tools/CasDecommission.cpp:decommissionPoolMember`:
 
-1. **Admin claim**, as today: `Pool::openForDecommission` (`CA/Pool/CasPool.cpp:904`) with `NoWait`. It allocates an admin epoch from the kept counter.
-2. **Tombstone the owner** by `If-Match` on the etag read in step 1. Already tombstoned: skip. The replace-and-resolve logic moves here from `:465-503`. A conflict means a concurrent re-add or decommission: stop with an error, no data touched.
-3. **Drain data**, unchanged: victim namespaces through `dropNamespace`, manifest debris (needs the mount body for `floorForNamespace`, `:271-276`), `staging/<srid>/`, `roots/<srid>/`.
-4. **Farewell**: `admin.reset()`, which writes the terminal `mount` body (`MountLeaseRenewer::terminate`, `CA/Pool/CasServerRoot.cpp:1739`).
-5. **Confirm**: one `GET mount`. The run completes (`report.member_retired = true`) only if the body is terminal (clean farewell or `gc_fenced`) for the admin epoch. Otherwise it reports a warning and the operator reruns. A farewell that did not land is the only remaining reason to rerun after the drain.
+1. **Admin claim**: `Pool::openForDecommission` (`CA/Pool/CasPool.cpp:904`), `NoWait`, with a new argument `OwnerClaim::DecommissionAdmin` that lets `claimOwnerOrThrow` (refusals at `CA/Pool/CasServerRoot.cpp:539`, `:589`) and the claim recheck accept a retired owner of the victim's uuid. It is an argument of this call, not a `PoolConfig` field, so it cannot reach a normal mount. The admin pool does not self-remount: a fence makes the run fail and the operator reruns (D5).
+2. **Tombstone**: `GET owner`; if not retired, replace by `If-Match` with `{uuid, retired_at_ms, owner_nonce}`. Already retired: keep it.
+3. **Confirm the claim**: `GET mount`. If the body is not the admin's claim (GC fenced the admin and the victim reclaimed between steps 1 and 2), un-tombstone by `If-Match` on the tombstone's ETag and stop with an error (`sab_lc_noconfirm`).
+4. **Drain data**, unchanged: victim namespaces through `dropNamespace`, manifest debris, `staging/<srid>/`, `roots/<srid>/`.
+5. **Farewell**: `admin.reset()` writes the clean terminal body (`MountLeaseRenewer::terminate`, `CA/Pool/CasServerRoot.cpp:1739`).
+6. **Report** `member_retired = true` only if the farewell landed and the catalog holds no rows the victim owns (the existing warning at `:332-340` stays). Otherwise warn; the operator reruns.
 
-Deleted from the tail (`:326-506`, about 175 of 535 lines): `deleteSlotObject`, the `claimed_epoch` and `farewell_mount` captures, `captures_match`, the mount and epoch deletes, the "ACCEPTED RESIDUAL WINDOW", the liveness recheck, and the tombstone at the end.
+Deleted from the tail (`:326-506`): `deleteSlotObject`, the `claimed_epoch` and `farewell_mount` captures, `captures_match`, the two slot deletes, the "ACCEPTED RESIDUAL WINDOW", the liveness recheck, and the tombstone at the end. About 175 of 535 lines go; about 40 come back for steps 2–3.
 
-**Claiming over a tombstone.** `claimOwnerOrThrow` (`CA/Pool/CasServerRoot.cpp:525`) refuses a retired owner at `:541` and `:573`. It gets an `OwnerClaim::{Normal, DecommissionAdmin}` argument; `DecommissionAdmin` accepts a retired owner of the same uuid. The pool stores the mode in `PoolConfig` so the admin's self-remount (`Pool::tryRemountOnce`, `CA/Pool/CasPool.cpp:1436`) also accepts it. Without that, a GC fence of the admin during a long drain makes the remount loop throw forever.
+`EpochMintPolicy::DecommissionRecovery` and the owner-absent fallback in `openForDecommission` (`:938`) only serve states left by 26.6.4 decommissions. Kept unchanged (D9); no new legacy paths.
 
 ### Re-add {#readd}
 
-New verb `clickhouse-disks cas-readd-member --srid <srid> [--server-uuid <uuid>]` and `SYSTEM CAS READD POOL MEMBER '<srid>' [UUID '<uuid>'] FROM DISK '<disk>'`, next to the drop verbs (`programs/disks/CommandCaDropMember.cpp`, `src/Interpreters/InterpreterSystemQuery.cpp:1114`). Steps, each a conditional request:
+`clickhouse-disks cas-readd-member --srid <srid> [--server-uuid <uuid>]` and `SYSTEM CAS READD POOL MEMBER '<srid>' [UUID '<uuid>'] FROM DISK '<disk>'`, next to the drop verbs (`programs/disks/CommandCaDropMember.cpp`, `src/Interpreters/InterpreterSystemQuery.cpp:1114`).
 
-1. `GET owner`. It must be tombstoned; otherwise refuse ("not retired").
-2. `serverRootSubtreeEmpty` (`CA/Pool/CasServerRoot.cpp:500`) must hold. The known access-probe key under `roots/<srid>/` (CAS-371) is deleted first by `If-Match`; anything else refuses with the listed keys.
-3. `GET mount`. It must be terminal (clean or `gc_fenced`); a live-looking body refuses ("decommission did not complete").
-4. New uuid only: `DELETE mount` by `If-Match`. `claimMount` never takes over a body of another uuid (`ForeignOwner`, `CA/Pool/CasServerRoot.cpp:807`). Same uuid: keep it; the next start reclaims over the clean or fenced body (`:871`).
-5. Counter absent (a slot retired by a 26.6.4 decommission, which deleted it): create it at `2^32` by `If-None-Match`. Epochs of the old life are restart counts, far below `2^32`. Check during implementation that no key, codec or metric narrows the epoch below 64 bits.
-6. Rewrite `owner` by `If-Match` to `{server_uuid, no tombstone}`.
+1. `GET owner`: must be retired. Otherwise refuse.
+2. `serverRootSubtreeEmpty` (`CA/Pool/CasServerRoot.cpp:500`) must hold. The access-probe key under `roots/<srid>/` (CAS-371) is deleted first by `If-Match`; anything else refuses and lists the keys.
+3. `GET mount`: must be a clean farewell. A `gc_fenced` or live-looking body refuses: rerun the decommission. No `mount` or no `epoch` (retired by 26.6.4): refuse; use a new `server_root_id` (D9).
+4. Replace `mount` by `If-Match` with a clean farewell body of the target uuid and a fresh `write_attempt_id`. The slot is never absent, so a delayed mint of any earlier life fails its `If-None-Match` (`sab_lc_deletemount`).
+5. Replace `owner` by `If-Match` with `{target uuid, owner_nonce}`, no tombstone.
 
-The next normal start continues the counter. Order matters: until step 6 lands, every start of this `srid` is refused at the owner, so no claimer can mint into the slot step 4 emptied. A zombie mint of the old life fails closed: decided while the slot existed, its `If-None-Match` fails; decided at the old life's first start, it lands the old uuid and an epoch below the counter, and the next start refuses (`ForeignOwner` for a new uuid, the epoch-regression abort at `:829` for the same uuid). Two concurrent re-adds serialize on the owner `If-Match`; the loser stops, and a deleted mount without a rewritten owner is harmless (rerun).
+The next start continues the kept counter and reclaims the clean farewell. Two re-adds serialize on the `If-Match` writes; the loser stops (`lc_race`). A crash between steps 4 and 5 leaves a retired owner over a clean farewell: rerun.
 
-### Nested srids {#nested}
+### New srids without `/` {#srid-slash}
 
-`validateServerRootId` (`CA/Pool/CasServerRoot.h:86`) checks syntax only. Added:
-- Reserved segments `owner`, `epoch`, `mount` are refused (`a/mount` collides with `a`'s key).
-- At the first owner claim (`claimOwnerOrThrow`, owner-absent branch, before the create at `:559`): `GET owner` of every ancestor (k−1 requests for k segments) and one `LIST` of `serverRootPrefix(srid)` for descendants. Either found: refuse. After the create, run the check again; on a hit, refuse to start (the create is not undone; an operator fixes the config).
-
-Cost: once per `srid` lifetime. Existing nested pools are not detected; fsck reports them (CAS-357).
+`validateServerRootId` (`CA/Pool/CasServerRoot.h:86`) keeps accepting `/` for existing members. `claimOwnerOrThrow`, owner-absent branch (create at `:564`), refuses an id with `/`. Decommission and staging select by path prefix, so nested ids made `a`'s decommission remove `a/b` (CAS-157); existing nested pools keep that hazard (documented; fsck part of CAS-357 stays open).
 
 ### Staging {#staging}
 
-- Key: `staging/<srid>/<writer_epoch>/<random32>.tmp`, built in `ContentAddressedTransaction.cpp:901` from `store()->liveWriterEpoch()`.
-- Startup sweep (`ContentAddressedMetadataStorage.cpp:892`, `sweepOwnMountStaging`): delete keys whose epoch segment is below the live epoch. Keys with no epoch segment (26.6.4 layout) count as epoch 0. An old process paused before its sweep deletes only epochs below its own, never its successor's.
-- Abort deletes staging, best-effort, as commit does (`cleanupPendingTempFiles`, `:167`). The comment claiming an aborted transaction's object is a "re-readable publication source" is false and goes.
-- Decommission keeps deleting the whole `staging/<srid>/` prefix. Check: it does not apply `physicalKey()` while the writer and sweeper do (`CasDecommission.cpp:295` vs `ContentAddressedMetadataStorage.cpp:1357`).
-
-The `fix/antalya-26.6/cas-369-staging-sweep-snapshot` draft (LIST before claim) is superseded except its abort-delete commit.
+- Key `staging/<srid>/<writer_epoch>/<random32>.tmp` (`ContentAddressedTransaction.cpp:901`). The epoch and the admission generation used at `:916` and in `finalize` come from one capture of the pool incarnation, so a self-remount between them cannot stage new-generation bytes under an old epoch.
+- The startup sweep (`ContentAddressedMetadataStorage.cpp:892`, `sweepOwnMountStaging`) fixes its cutoff to the live epoch at the start and deletes keys below it. Keys without an epoch segment count as epoch 0.
+- Abort deletes staging, best-effort, like commit (`cleanupPendingTempFiles`, `:167`). The comment calling an aborted transaction's object a "re-readable publication source" is false and goes.
+- Decommission deletes the whole `staging/<srid>/` prefix without `physicalKey()`, while the writer and sweeper apply it (`CasDecommission.cpp:295` vs `ContentAddressedMetadataStorage.cpp:1357`). Check and fix in PR A.
 
 ### Operator surface {#operator}
 
-- `system.cas_mounts`: a retired slot stays as a row with `state = 'terminated'`. Add `state = 'retired'` by reading the owner for terminated rows (one GET per terminated row per query).
-- `SYSTEM CAS DROP POOL MEMBER` result: column `slot_removed` becomes `member_retired`.
-- Refusal texts name the supported verbs (CAS-156.2): tombstoned owner → `cas-readd-member`; foreign owner → `cas-drop-member` then `cas-readd-member --server-uuid`; `NoWait` on a hard-killed member → wait for `state = 'fenced'` (CAS-156.3).
+- `system.cas_mounts`: rows in state `terminated` or `fenced` read the owner and show `retired` when it is tombstoned (one GET per such row per query).
+- `SYSTEM CAS DROP POOL MEMBER` result column `slot_removed` becomes `member_retired`.
+- Refusal texts (CAS-156.2, CAS-156.3): retired owner → `cas-readd-member`; foreign owner → decommission, then `cas-readd-member --server-uuid`; `NoWait` on a hard-killed member → wait for `state = 'fenced'`.
 
-### Kept code {#kept}
+## Residuals {#residuals}
 
-- `serverRootSubtreeEmpty`, the absent-counter path of `allocateWriterEpoch` and its epoch-1 guard (`6094c1473ea`): still needed for a brand-new `srid` and for a hand-deleted counter.
-- `EpochMintPolicy::DecommissionRecovery` (`CA/Pool/CasServerRoot.h:157`) and the owner-absent fallback in `openForDecommission` (`CA/Pool/CasPool.cpp:938`): legacy-only (states left by 26.6.4 decommissions). Kept; marked legacy in comments.
+| Residual | Effect | Handling |
+|---|---|---|
+| A paused admin's drain lands after a rerun and a re-add (`res_lc_pauseddrain`) | deletes the new member's objects; drain deletes cannot be fenced | operator rule: re-add only after every earlier decommission process exited; tracked in CAS-385 |
+| The tool dies between the tombstone and its un-tombstone (`res_lc_tombover`) | a live successor keeps running under a tombstone and refuses its next start | availability only; rerun the decommission or re-add |
+| States left by 26.6.4 (no counter, no tombstone, or a deleted `mount`) | a new admin can reissue epoch 1; re-add refuses | documented (D9) |
+| Old binaries during a rolling upgrade | keep their old races (S6, S11, recursive staging sweep, old decommission tool) | release note |
 
 ## Costs {#costs}
 
 | Where | Change |
 |---|---|
-| GC heartbeat floor | +1 GET per retired `srid` per round (`computeHeartbeatFloor` reads every mount, `CA/Pool/CasServerRoot.cpp:1049`); LIST returns 3 keys per retired `srid`. Not gated on. |
-| `system.cas_mounts` | +1 GET per retired row per query. |
-| Decommission | −3 DELETE, −2 GET (recheck); +1 GET (confirm). |
-| First start of a nested-capable `srid` | +(k−1) GET +1 LIST, once. |
-| Storage | 3 objects per retired `srid`, under 1 KiB in total. |
+| Every claim | +1 GET `owner` |
+| Every owner write | 32-byte nonce |
+| Decommission | −2 DELETE, −4 GET; +1 GET (confirm), +1 PUT (tombstone moved, not new) |
+| Re-add | 6 requests, once |
+| GC heartbeat floor | +1 GET per retired `srid` per round (`computeHeartbeatFloor`, `CA/Pool/CasServerRoot.cpp:1037`); LIST returns 3 keys per retired `srid` |
+| `system.cas_mounts` | +1 GET per terminated or fenced row per query |
+| Storage | 3 objects per retired `srid`, under 1 KiB |
+
+Retired `srid`s accumulate with no purge verb. A purge (delete all three objects of a retired, re-add-free `srid`) would reopen epoch reuse for that id; not offered.
 
 ## Compatibility {#compat}
 
-- **26.6.4 servers** honour the owner tombstone (`throwIfOwnerRetired` exists there), so a victim restarting on an old binary is refused too. After re-add, an old binary starts normally and continues the counter.
-- **26.6.4 decommission tool** deletes `mount` and `epoch` and tombstones last. Run decommission and re-add only with the new tool; the old tool refuses a slot the new one tombstoned (strict owner claim).
-- **Slots retired by 26.6.4** (owner tombstoned, counter deleted): re-add creates the counter at `2^32` (step 5).
-- **Staging keys**: 26.6.4 sweeps `staging/<srid>/` recursively, so it also removes the new nested keys; the new sweep treats flat keys as epoch 0.
+| Case | Behaviour | Worse than either version? |
+|---|---|---|
+| Upgrade: `srid`s retired by 26.6.4 | not repaired; re-add refuses, use a new id | no |
+| Upgrade: flat 26.6.4 staging keys | swept as epoch 0 | no |
+| Upgrade: existing ids with `/` | keep working; only new ids are refused | no |
+| Downgrade: a retired `srid` kept by the new tool | 26.6.4 refuses to start it (`throwIfOwnerRetired`); its GC treats the farewell as terminal; its decommission refuses the tombstone | no |
+| Downgrade: a re-added `srid` | 26.6.4 starts it and continues the counter | no |
+| Downgrade: `owner_nonce` | 26.6.4 skips it (verify) | no |
+| Downgrade: epoch staging keys | 26.6.4 sweeps them recursively | no |
+| Mixed: 26.6.4 decommission tool | old behaviour and old races | same as 26.6.4 |
+| Mixed: 26.6.4 victim restarts during a new decommission | refused if its owner check is after the tombstone; otherwise no recheck (CAS-158 stays for it) | same as 26.6.4 |
+| Mixed: paused 26.6.4 process sweeps staging | deletes a new member's staging (CAS-369 for old nodes) | same as 26.6.4 |
+
+## Delivery {#delivery}
+
+Independent PRs into `antalya-26.6`; each commit reviewable alone (model, code with its tests, docs).
+
+| PR | Content | Depends on |
+|---|---|---|
+| A | D7; abort deletes staging; `physicalKey` in the decommission staging drain; refusal texts | — |
+| B | D1–D5, D8 (epoch keys), owner nonce, `member_retired`, release note | CAS-362 merged |
+| C | D6 re-add (CLI and SQL), `retired` in `system.cas_mounts` | PR B merged |
+
+The `fix/antalya-26.6/cas-369-staging-sweep-snapshot` draft is superseded; its abort-delete commit moves to PR A.
 
 ## Tests {#tests}
 
-Failing first: each test fails on `2a034cdb374` for the stated reason.
+Failing first on `2a034cdb374` unless marked guard.
 
-**gtest (`src/Disks/tests/`)**
-1. `CASDecommission.KeepsEpochAndFarewellMount`: after a run, `epoch` and a terminal `mount` exist; the owner is tombstoned. Red: both deleted.
-2. `CASDecommission.VictimRestartDuringDrainIsRefusedAtTheOwner`: a hook restarts the victim between the claim and the drain; its start fails on the tombstone and the counter does not reach a reused value. Red: the start passes the owner check.
-3. `CASDecommission.ResumesOverItsOwnTombstone`: crash after each step (claim, tombstone, each drain, farewell); a rerun completes. Red: rerun refused.
-4. `CASDecommission.AdminRemountAcceptsItsTombstone`: GC fences the admin mid-drain; the self-remount succeeds and the drain finishes. Red: remount throws.
-5. `CASDecommission.UnconfirmedFarewellIsNotRetired`: farewell write fails; `member_retired = false`; a rerun completes.
-6. `CASReadd.SameUuidContinuesTheCounter`, `CASReadd.NewUuidStartsAboveTheOldLife`, `CASReadd.LegacySlotWithoutCounterStartsAt2Pow32`, `CASReadd.RefusesNonEmptySubtree`, `CASReadd.RefusesNonTerminalMount`, `CASReadd.RefusesNotRetired`, `CASReadd.ConcurrentReaddsOneWins`, `CASReadd.ZombieMintAfterMountDeleteFails`.
-7. `CASServerRootId.RefusesNestedBothDirections`, `CASServerRootId.RefusesReservedSegments`.
-8. `CASStagingSweeper.OldProcessSweepKeepsSuccessorStaging` (red: whole prefix deleted), `CASStagingSweeper.FlatLegacyKeysAreSwept`, `ContentAddressedTransaction.AbortDeletesS3Staging` (red: left in place).
+**PR A**
+- `CASServerRootId.NewIdWithSlashIsRefused`; guard `CASServerRootId.ExistingIdWithSlashStillMounts`.
+- `ContentAddressedTransaction.AbortDeletesS3Staging`.
+- `CASDecommission.StagingDrainUsesThePhysicalPrefix` (if the mismatch is real).
 
-Rewritten (they assert deletion or a refused rerun): in `gtest_cas_decommission.cpp`, `RemovesMutableSlotAndRefusesTombstonedRerun`, `SuccessfulDecommissionLeavesTombstonedOwnerAnchor`, `FencedSlotRetirementTailRetiresUncontendedSlot`, `RunsOnAnOpenFence`, `FailedDrainKeepsSlotThenResumes`, `ManifestDebrisFailureKeepsSlotThenResumes`, `MidRetirementCrashResumesViaMountLeaseFallback`, `ErasesAllVictimNamespaces`, `RetainsDebrisWhoseEpochSealIsUnconsumed`, `DuplicateLifeIdRefusesBeforeAnyNamespaceOrSlotMutation`, `CatalogCutIsValidatedBeforeImpersonationAndReusedForSelection`; `slot_removed` assertions in `gtest_cas_decommission_catalog_duties.cpp`. Deleted (they test the removed race handling): `SuccessorReclaimFencesSlotRetirementTail`, `SuccessorReclaimAfterEpochDeleteKeepsOwnerAnchor`, `SuccessorOwnerRewriteWinsBeforeTombstone`, `OwnerTombstoneAmbiguousSuccessResolvesToCommitted`.
+**PR B**
+- `CASDecommission.KeepsEpochAndFarewellMount`.
+- `CASDecommission.VictimClaimingAfterTheTombstoneFencesItselfAndFails`: the victim waits on the admin's lease, the admin farewells, the victim's claim recheck sees the tombstone, writes `gc_fenced`, fails with the retired-owner error.
+- `CASDecommission.FenceBeforeTombstoneUntombstonesAndStops` (confirm step).
+- `CASDecommission.ResumesOverItsOwnTombstone`: death after each step, GC fences the dead admin, rerun completes.
+- `CASDecommission.FencedAdminStopsInsteadOfRemounting`.
+- `CASDecommission.UnconfirmedFarewellIsNotRetired`.
+- `CASOwner.DelayedTombstoneAfterReaddFailsOnNonce`.
+- `CASMount.NormalMountRefusesARetiredOwnerAfterClaim`; guard `CASMount.AdminModeIsNotReachableFromPoolOpen`.
+- `CASStagingSweeper.OldEpochSweepKeepsSuccessorStaging`, `CASStagingSweeper.FlatLegacyKeysAreSwept`, `ContentAddressedTransaction.StagingEpochMatchesAdmissionGeneration`.
+- Rewritten: `gtest_cas_decommission.cpp` tests asserting slot deletion or a refused rerun (`RemovesMutableSlotAndRefusesTombstonedRerun`, `SuccessfulDecommissionLeavesTombstonedOwnerAnchor`, `FencedSlotRetirementTailRetiresUncontendedSlot`, `RunsOnAnOpenFence`, `FailedDrainKeepsSlotThenResumes`, `ManifestDebrisFailureKeepsSlotThenResumes`, `MidRetirementCrashResumesViaMountLeaseFallback`, `ErasesAllVictimNamespaces`, `RetainsDebrisWhoseEpochSealIsUnconsumed`, `DuplicateLifeIdRefusesBeforeAnyNamespaceOrSlotMutation`, `CatalogCutIsValidatedBeforeImpersonationAndReusedForSelection`, `DrainClockUnifiesWithTheFarewellBootClockRegardlessOfHostUptime`, `OpeningRetriesPaceOnTheSameFakeClockAndSleepAsTheDrain`) and the `slot_removed` assertions in `gtest_cas_decommission_catalog_duties.cpp`. `OwnerTombstoneAmbiguousSuccessResolvesToCommitted` moves to the new tombstone step. Deleted: `SuccessorReclaimFencesSlotRetirementTail`, `SuccessorReclaimAfterEpochDeleteKeepsOwnerAnchor`, `SuccessorOwnerRewriteWinsBeforeTombstone`.
+- Integration `test_cas_drop_pool_member`: case (8) scoped to one disk view expects a `terminated` row; case (10) rerun succeeds.
 
-**Integration** `tests/integration/test_cas_drop_pool_member/test.py`: (8) expects one `retired` row instead of none; (10) a rerun succeeds; new case: drop, re-add with a new uuid, the member starts and serves an empty disk. Stateless `05013_system_cas_drop_pool_member.sql`: column rename.
+**PR C**
+- `CASReadd.SameUuidContinuesTheCounter`, `CASReadd.NewUuidStartsAboveTheOldLife`, `CASReadd.RefusesFencedMount`, `CASReadd.RefusesNonEmptySubtree`, `CASReadd.RefusesNotRetired`, `CASReadd.RefusesSlotRetiredBy2664`, `CASReadd.ConcurrentReaddsOneWins`, `CASReadd.DelayedGenesisMintFailsOverTheReplacedMount`, `CASReadd.CrashBetweenMountAndOwnerReruns`.
+- Integration: drop, re-add with a new uuid, the member starts on an empty disk; `system.cas_mounts` shows `retired` before the re-add.
+- Soak (CAS-213): decommission under load through the SQL verb, kill the tool at each step and rerun, then re-add and restart.
 
-**Soak** (CAS-213): S45 extended: decommission under load through the SQL verb, kill the tool at each step and rerun, then re-add and restart the member.
+**Model**: `CaEpochAllocCore` rounds 3–4 (`3b7b6606ec4`, `647c0ffac72`, `c4e0dd307f8`). The model has no remount; the self-remount rule (D5) is argued, not modelled.
 
-**Model**: `CaEpochAllocCore` gets the full lifecycle: tombstone first, resume after a crash at each step, re-add with same and new uuid, two re-adds racing, victim restarts and zombies at every point. Invariants: `EpochNeverReused` across lives, `SlotNeverRegresses`, `RetiredStaysRetired`, no tombstone over a live successor, no dangle through the GC floor. Sabotages: tombstone last; re-add rewrites the owner before deleting the mount; decommission deletes `epoch`. Results go to `CaEpochAllocCore_RESULTS.md`.
+## Implementation checks {#checks}
 
-## Rollout {#rollout}
-
-One PR into `antalya-26.6` (new branch from the release line), after CAS-362 (nonce) lands. Commits: model; decommission keeps the slot (D1–D3); re-add (D4); nested ids (D5); staging (D6); operator surface. Release note: decommission and re-add only with this version's tool; re-add of a slot retired by 26.6.4 is supported.
+- A self-written `gc_fenced` body must behave as a GC fence everywhere: `isCreatorFenceTerminal`, `computeHeartbeatFloor`, `claimMount` reclaim, `listMounts`.
+- The confirm step needs the admin's claim ETag in the tail; `openForDecommission` must expose it.
+- `claimOwnerOrThrow` returns no owner ETag today; the tombstone step reads the owner itself.
+- `owner_nonce` and `allocation_nonce` (CAS-362) use the same generator.
 
 ## Rejected {#rejected}
 
-- **Floor in the owner tombstone, counter deleted** (`epoch_floor`): needs tombstone-first plus a fresh owner read plus a pre-mint check, and stays red for zombies. Modelled as the alternative (`fix_ownerfloor_*`).
-- **Floor in `_pool_meta`** (V2, `fix_poolhwm_fresh_*`): same residual, a pool-wide RMW, and 26.6.4 `admitOrValidate` drops the field.
-- **Document only** (option C): leaves S6 and CAS-158 open and CAS-156 unsupported.
-- **Staging LIST before claim** (CAS-369 draft): works, but adds a prefix-resolution refactor that monotone epochs make unnecessary.
+- **Floor in the owner tombstone, counter deleted** (round 3): green only without zombies; a delayed genesis mint still regresses the slot (`res_ownerfloor_zmint`).
+- **Floor in `_pool_meta`** (V2): same residual, a pool-wide RMW, and 26.6.4 `admitOrValidate` drops the field.
+- **Document only**: leaves S6 and CAS-158 open and CAS-156 unsupported.
+- **Re-add deletes `mount`** (r1): a delayed mint lands below the old epoch (`keep_main`).
+- **Staging LIST before claim** (CAS-369 draft): works, but needs a prefix-resolution refactor that epoch keys make unnecessary.
+- **Recheck nested ids on every start**: +1 LIST per start and refusals of existing pools at upgrade; forbidding `/` in new ids is simpler.
