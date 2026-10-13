@@ -16,6 +16,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 4 (decommission keeps `owner`, `epoch` and the farewell `mount`; re-add): recommended, with two additions found here.** Green with zombie creates and mints, victim restarts, twins, a re-run after a death at any step, a GC fence of the admin, same- and new-uuid re-add and racing re-adds (`lc_*`). Every guard has a red sabotage; the pre-mint check is not needed (`lc_nomc`). Additions: the admin confirms its claim after the tombstone (`sab_lc_noconfirm`), and a claimer refused after its claim leaves a `gc_fenced` body, not a clean farewell (`sab_lc_refusedclean`). Re-add replaces the farewell; deleting it is red (`keep_main`).
 - **Round 5 (spec r3): green** (`r5_*`). Every run rewrites its own tombstone (`sab_r5_keeptomb` red), drains run on the admin's lease (`sab_r5_drainopen` red), re-add is one owner write and a new uuid reclaims the old life's clean farewell. Not shown load-bearing: the re-add clean-farewell check and `ForeignOwner` for a foreign `gc_fenced` body. Residual: a drain request in flight lands after a re-add, even without a fence or a re-run (`res_r5_inflight_norerun`).
 - **Round 6 (spec r4/r5, rejoin): green with a verified mark found here** (`r6_*`). Every r4 guard has a red sabotage: foreign `gc_fenced` reclaim, recheck of a foreign owner, rollback only of an introduced retirement on the control plane, the owner uuid check, the terminal-mount check of rejoin. The r3 rollback undoes a completed retirement; without the verified mark, a re-run cannot tell a dead run's late tombstone from a completed retirement (`sab_r6_noverify`).
+- **Round 7 (spec r7): green with three guards found here** (`r7_*`): a failed admin remount still runs step 3 (`sab_r7_remountstops`), a foreign reclaim needs an owner read of our uuid (`sab_r7_foreignnoowner`), and an owner rejoin generation checked on remount (`r7_remount` red without it). The kept verified mark closes codex final 3 (`sab_r7_dropmark`).
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -394,6 +395,61 @@ Round-5 rows re-run under the round-6 `DoneMeansRetired`: `r5_core`, `r5_newuuid
 
 Unchanged from round 5: a drain request in flight lands after a later life starts (`res_r5_*`); a tombstone stays over a live successor if the tool dies between its tombstone and its rollback (`res_lc_tombover`).
 
+## Round 7: lifecycle spec r7 {#round-7}
+
+Changes of `docs/superpowers/specs/2026-10-13-cas-member-lifecycle-design.md` r7 on top of round 6, and three guards found here. Base of every `r7_*` row: round 6 plus the switches below with the proposed fixes on; rows that drop a dimension say so.
+
+### What changed {#round-7-design}
+
+| Step | Model | Switch (sabotage) |
+|---|---|---|
+| Rejoin only over a verified tombstone; an unverified one refuses (retryable) | `OwnerCheck` | `RejoinVerifiedOnly` |
+| Self-remount of a process whose lease is lost (`Pool::tryRemountOnce`): owner check without rejoin, new epoch, new claim; the in-flight build fails (admission generation) | `RemountStart`, `RemountOwner` | `RemountOn`; `RemountRejoins` |
+| GC fences the lease of a partitioned live instance | `GcFenceLive` | `GcFencesLive` |
+| Remount rows: writes need the process's own unfenced lease; a process counts as live only while it holds one | `WriteManifest`, `Publish`, `LiveP` | — |
+| Step 2 keeps `retirement_verified` when it refreshes a verified tombstone; up to three runs | `DTombstone` | `KeepVerified` = FALSE (`sab_r7_dropmark`); `DRestarts` |
+| The verified mark ignores catalog GC; rejoin waits for it | `CatalogGc`, `JoinEmpty` | `DrainLeavesRows` |
+| New-uuid rejoin replaces the terminal mount body (`If-Match`, same `writer_epoch`, clean) before the owner write | `JoinRepl` | `JoinReplaceMount`; `JoinOwnerFirst` |
+| A 26.6.4 starter: no rejoin, no foreign reclaim, no claim recheck, claims any time | `OldInst` | — |
+| Proposed here: a failed admin remount after this run's tombstone still runs the step-3 confirm and its rollback | `RemountOwner` | `AdminRemountConfirms` = FALSE (`sab_r7_remountstops`) |
+| Proposed here: `claimMount` reclaims a foreign terminal body only after `GET owner` shows its own uuid, not retired | `ClaimForeignOwner` | `ForeignNeedsOwner` = FALSE (`sab_r7_foreignnoowner`) |
+| Proposed here: the owner carries a rejoin generation; the remount owner check and the remounting claim's recheck refuse a changed one | `RemountOwner`, `ClaimPostOwner` | `RemountChecksLife` = FALSE (`r7_remount`) |
+
+New invariants: `NoResumeAfterRetire` (a self-remount never makes live again a process that started before a later rejoin) and `OldNotUnderNewOwner` (a 26.6.4 starter never runs under an owner of another uuid).
+
+### Results {#round-7-results}
+
+"I7": "I6" plus `NoResumeAfterRetire`. `r7_old` checks "I7" with `OldNotUnderNewOwner` in place of `LiveMatchesOwnerAtRest`: a 26.6.4 same-uuid victim prechecked before the tombstone still runs under it (no recheck), which the compatibility table documents. Larger bounds than those below hit the 600 s limit without a violation.
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `r7_core_z` | `a` starts twice, paused run, admin fence, no GC round, no live-instance fence (SLOW) | I7 | green | green | 63,769,819 | 416 |
+| `r7_core_g` | `a` starts twice, GC round, no paused run, no fences of live processes (SLOW) | I7 | green | green | 20,281,948 | 139 |
+| `r7_old` | 26.6.4 starter `o` (uuid 1), new-uuid starter `n` | I7 − LiveMatchesOwnerAtRest + OldNotUnderNewOwner | green | green | 8,161,475 | 73 |
+| `r7_threeruns` | up to three decommission runs, verified mark kept | I7 | green | green | 6,141,297 | 41 |
+| `r7_remount_life` | partitioned `a` remounts; `n` (uuid 1) rejoins; generation check on (SLOW) | I7 | green | green | 54,965,978 | 501 |
+| `r7_remount` | same, spec r7 as written (no generation check) | I7 | violation | violation `NoResumeAfterRetire` | 4,872,306 | 38 |
+| `sab_r7_dropmark` | step 2 drops the verified mark, three runs | DoneMeansRetired | violation | violation `DoneMeansRetired` | 1,367,184 | 9 |
+| `sab_r7_ownerfirst` | owner written before the mount replacement | OldNotUnderNewOwner | violation | violation `OldNotUnderNewOwner` | 446,436 | 4 |
+| `sab_r7_foreignnoowner` | foreign reclaim without the owner read | OldNotUnderNewOwner | violation | violation `OldNotUnderNewOwner` | 1,827,480 | 15 |
+| `sab_r7_remountstops` | a failed admin remount ends the run before step 3 | LiveMatchesOwnerAtRest | violation | violation `LiveMatchesOwnerAtRest` | 31,999 | 1 |
+| `sab_r7_remountrejoin` | the remount may rejoin (SLOW) | NoResumeAfterRetire | violation | green | 55,388,740 | 474 |
+| `sab_r7_rejoinunverified` | rejoin over an unverified tombstone (SLOW) | I7 | — | green | 55,352,312 | 499 |
+
+### Findings {#round-7-findings}
+
+- **Kept mark closes codex final finding 3** (`sab_r7_dropmark`). D0 verifies; D1 refreshes the tombstone without the mark and dies; D2 reads an unverified tombstone, is fenced before its confirm and rolls back D0's completed retirement. Keeping the mark on refresh closes it (`r7_threeruns` green).
+- **Mount replacement before the owner write protects 26.6.4 starters** (`sab_r7_ownerfirst`). Owner first: the old starter reclaims its uuid-1 farewell under owner uuid 2 and runs without a recheck.
+- **New: the foreign reclaim needs an owner read** (`sab_r7_foreignnoowner`). Between the rejoin's mount replacement and its owner write, the owner is still uuid 1, retired. A new-binary uuid-1 claimer that passed its owner check before (the re-run admin, or a prechecked victim) reclaims the uuid-2 body as a foreign terminal body. It then stops (admin uuid check, victim recheck, self-fence), leaving a uuid-1 body. The 26.6.4 starter reclaims that after the owner write and runs under uuid 2. The fix: `claimMount` reclaims a foreign body only after `GET owner` shows its own uuid and no tombstone.
+- **New: D5's failed remount must not skip the rollback** (`sab_r7_remountstops`). GC fences the admin between its claim and its tombstone; the victim reclaims and passes its recheck; the tombstone lands. The admin's self-remount then fails on the retired owner, and if that ends the run, step 3 never rolls back: the victim runs under a tombstone with the tool alive. The fix: a failed remount after this run's tombstone still runs step 3 on the control plane.
+- **New: "no rejoin on remount" does not stop a resume in place** (`r7_remount`). A partitioned victim's remount owner check passes before the decommission; its claim lands after the farewell, and its recheck runs after a same-uuid rejoin and sees a live owner of its own uuid. It resumes with its old state. The fix: the owner carries a rejoin generation (incremented by each rejoin owner write); a process remembers it at start, and the remount owner check and the remounting claim's recheck refuse a changed one (`r7_remount_life` green). With that check, letting the remount rejoin is not harmful either (`sab_r7_remountrejoin` green), so "remount never rejoins" becomes redundant.
+- **Not shown load-bearing:** rejoin only over a verified tombstone (`sab_r7_rejoinunverified` green at these bounds).
+- **Model fixes found on the way:** `DRestart` kept the previous run's tombstone token, and a remounted build published under the new epoch; both reachable only with remount and corrected for remount rows.
+
+### Residuals {#round-7-residuals}
+
+Unchanged: the in-flight drain request (`res_r5_*`) and a tombstone left over a live successor when the tool dies before its rollback (`res_lc_tombover`). Documented compatibility case: a 26.6.4 same-uuid victim prechecked before the tombstone can run under it (no recheck).
+
 ## Code checks {#code-checks}
 
 Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code at both unless noted).
@@ -429,6 +485,8 @@ Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code a
 | `SecondUuidNeverLive` | witness, expected violated: a member with the second uuid runs live after a re-add. |
 | `NoWedge` | no state where the owner is live with uuid U and the slot holds another uuid's body that no action can change (permanent `ForeignOwner` for U). |
 | `NoForeignTombstone` | no decommission tombstone lands on an owner of another uuid. |
+| `NoResumeAfterRetire` | a self-remount never makes live again a process that started before a later rejoin. |
+| `OldNotUnderNewOwner` | a 26.6.4 starter never runs under an owner of another uuid. |
 | `NoLiveAfterSelfFence` | witness, expected violated: after a claimer fenced itself on the recheck, an instance runs live again. |
 
 ## Counterexamples {#counterexamples}
@@ -525,6 +583,11 @@ One action = one store request, or one in-memory step. Code at `2a034cdb374`.
 | `JoinEpoch`, `JoinMount`, `JoinEmpty`, `JoinWrite` | proposed rejoin in `claimOwnerOrThrow` | GET epoch; GET mount; LIST; PUT `If-Match` owner | the owner token is the one `OwnerCheck` read (`jTok`); a conflict returns to the owner GET |
 | `DMarkVerified` | proposed step-6 owner rewrite marking the tombstone verified | PUT `If-Match` owner | — |
 | `GcFenceDead` | GC's fence write on an expired lease of a dead holder | PUT `If-Match` mount | death is the `ProvenDead` ghost |
+| `RemountStart`, `RemountOwner` | `Pool::tryRemountOnce`: lease lost, then `claimOwnerOrThrow` | in-memory step; GET owner | the remount then allocates and claims through the normal actions |
+| `JoinRepl` | proposed new-uuid mount replacement in rejoin | PUT `If-Match` mount | — |
+| `ClaimForeignOwner` | proposed GET owner before a foreign reclaim in `claimMount` | GET owner | the mount write that follows is `If-Match` on the token `ClaimRead` saw, so a mount change in between fails it |
+| `GcFenceLive` | GC's fence write on the lease of a partitioned instance | PUT `If-Match` mount | — |
+| `CatalogGc` | GC deletes the victim's `Removing` catalog rows | abstraction of the GC round | one step |
 
 ## Scope and limits {#scope}
 
