@@ -3,10 +3,10 @@ id: CAS-87
 title: >-
   Collect the orphan sweep's tail-removal targets during recovery replay instead
   of walking the committed tail twice
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:43'
+updated_date: '2026-10-13 18:30'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/gc.md#gc-sweep-reads-the-committed-tail-twice. Verified 2026
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (2f285dd891e, by 'gc-sweep-reads-the-committed-tail-twice')
+
+2026-10-13: superseded by CAS-358 (docs/superpowers/specs/2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md): the sweep reads no ref log at all, so there is no tail walk to deduplicate. Closed without code.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-03'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-10-13 18:30'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/gc.md#gc-mf-cleanup-durable-retry (soak-t6b-report); verifie
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-03 (d63e0d1f5b3, by 'gc-mf-cleanup-durable-retry')
+
+2026-10-13: relation to CAS-358. An owner-removed manifest whose post-CAS delete failed is outside the owned set, but the sweep's rule (1) retains it until its build epoch closes (next remount), so the sweep is the eventual reclaimer, not a timely retry. The durable retry here is still needed.
 <!-- SECTION:NOTES:END -->

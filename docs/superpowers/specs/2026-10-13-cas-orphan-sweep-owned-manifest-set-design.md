@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS GC: the orphan sweep reads the owned-manifest set, not the ref log — design {#cas-orphan-sweep-owned-manifest-set}
 
-- Date: 2026-10-13. Status: rev.1. Task: CAS-358. Depends on: CAS-36 (floor before the owner view), CAS-362/363 (unique writer epochs). Closes: CAS-87.
+- Date: 2026-10-13. Status: rev.2. Task: CAS-358. Depends on: CAS-36 (floor before the owner view), CAS-362/363 (unique writer epochs). Closes: CAS-87. Absorbs: CAS-86 (read-ahead window on a throwing recovery walk), CAS-310 (the model's unfolded-removal invariant).
 - Code facts verified against `45854cb0ee7` (`cas-gc-rebuild`). Numbers from https://github.com/Altinity/ClickHouse/pull/2542.
 
 ## 1. Decision {#decision}
@@ -140,7 +140,7 @@ Absence is a recognized state for this family only because an older version is a
 - `Gc/CasGcShardPlan.{h,cpp}`: `manifestOwnedShard`.
 - `Gc/CasManifestOwned.{h,cpp}`: `ManifestOwnedDelta`, `mergeManifestOwnedRun(prior, seed_rows, deltas, out RunRef)`, `openManifestOwnedRun`, `readAdoptedManifestOwnedSeal`.
 - `Gc/CasGc.cpp`: staging at `:2651`; seeds and per-shard merge after `:3347`; owned seal PUT before `:3500`; retention at `:971` and `:1038`; rebuild path at `:4384-4565`; `CASGCManifestOwned*` events; `fold_reduce` metrics `manifest_owned_rows`, `manifest_owned_seeds`, `manifest_owned_seeds_deferred`.
-- `Pool/CasRefProtocol.{h,cpp}`: `recoverRefTableDetailedFromAuthority` gains `std::optional<RefTxnId> stop_at`; `fsck` and the rebuild path pass none.
+- `Pool/CasRefProtocol.{h,cpp}`: `recoverRefTableDetailedFromAuthority` gains `std::optional<RefTxnId> stop_at`; `fsck` and the rebuild path pass none. The sweep's `OutstandingHintGuard` moves into this walk instead of being deleted: the seed runs on the fold's shared read-ahead reader, and a walk that throws mid-window must free its hinted range (CAS-86).
 - `Gc/CasOrphanManifestSweep.{h,cpp}`: delete `activeManifestKeys`, `NamespaceProtection`, the tail walk, `OutstandingHintGuard`; `planManifestCursorPage` and `sweepNamespace` per §4.4; `manifestDeletionPremise` rule (1) only.
 - `Gc/CasBlobInDegree.h`: `GcRoundWorkBudget` sweep recovery-op fields renamed to seed-op fields; `Pool/CasPool.h` doc string of `gc_round_sweep_recovery_op_budget` updated, name and default unchanged.
 - `Tools/CasFsck.cpp`, `Tools/CasInspect`: list and verify the new family (checksum, row order, covered lives subset of `ref_lives`).
@@ -178,8 +178,9 @@ Gate: `utils/cas-gate` (`CAS*` filter), ASan lane for the four suites.
 
 - variable `foldOwned`, set at the fold's adoption step to the owner map as folded (`owner[m]` restricted to edges the fold has applied);
 - constant `ViewFromFoldState`: `GSwView` takes `swOwned' = foldOwned ∪ {m : buildEpoch(m) = liveEpoch}` and no tail term;
-- sabotage `SabotageViewAtCutoverFrontier`: `swOwned'` from the current `owner` map while `foldOwned` lags, expected to violate the body-before-decrements property (`SabotageDeleteBodyBeforeDecrements`'s invariant);
-- configs: `fix_ownedset` (positive, all witnesses green), `sab_viewatfrontier` (counterexample required).
+- the journal event records the removed owner kind, and the invariant `HasUnfoldedCommittedRemoval(m) => mBody[m]` is added as CAS-310 states it (committed removals only: an abandoned precommit's body may legitimately be gone);
+- sabotage `SabotageSweepUnfoldedRemoval` (CAS-310's name): `swOwned'` from the current `owner` map while `foldOwned` lags, expected to violate that invariant;
+- configs: `fix_ownedset` (positive, every existing honest cfg plus the new invariant green), `sab_sweepunfoldedremoval` (counterexample required).
 
 Run via `run_gc_partmanifest.sh`; results appended to `CaGcRootLocalPartManifestCore_RESULTS.md`.
 
@@ -195,3 +196,7 @@ Run via `run_gc_partmanifest.sh`; results appended to `CaGcRootLocalPartManifest
 - One sequence per namespace (CAS-305 d) turns the cursor into one integer; this design works on the pair.
 - The fold's global `LIST cas/ns/stream/` (CAS-29.1) is untouched.
 - A `_snap` threshold for seal-only epochs, and the `prev_epoch_seal` hint bound (CAS-359), are independent.
+- Owner-removed manifests whose post-CAS body delete failed (CAS-46) are outside the set, but rule (1) retains them until their epoch closes; the sweep is their eventual reclaimer, not a timely retry. CAS-46's durable retry stays.
+- The seed relies on `planRefCleanup`'s rule, a log is deletable only below both the `_snap` base and the fold cursor; CAS-29.6 keeps that rule when it changes the listing.
+- Once CAS-29.10 adds the round deadline, the seed walk is one of the cut families, with `max_seed_ops` kept as the per-round ceiling.
+- CAS-315's sweep half (a view replay meeting an incoherent cut) disappears with the replay; its fsck and preview half stays.

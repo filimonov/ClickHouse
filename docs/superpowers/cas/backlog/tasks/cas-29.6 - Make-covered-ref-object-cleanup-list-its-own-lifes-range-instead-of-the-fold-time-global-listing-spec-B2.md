@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-10-13 18:30'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -67,4 +67,6 @@ Provenance: spec B2, motivated by BACKLOG/gc.md#covered-log-cleanup-aborts-on-ca
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `Removing` is 2026-06-07 (996d156fdfb); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-10-13: CAS-358's seed (spec §4.3) relies on planRefCleanup's rule, a log is deletable only when below both the _snap base and the fold cursor, to reconstruct the owner set at the cursor from _snap plus logs. Keep the rule unchanged when the listing changes; add a test that a log above the fold cursor is never planned.
 <!-- SECTION:NOTES:END -->

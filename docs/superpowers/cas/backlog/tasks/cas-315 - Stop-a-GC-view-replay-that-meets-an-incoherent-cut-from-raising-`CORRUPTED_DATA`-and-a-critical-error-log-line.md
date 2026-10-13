@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:47'
+updated_date: '2026-10-13 18:30'
 labels:
   - 'area:gc'
   - 'area:observability'
@@ -55,3 +56,9 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md:2978 (Investigations closed 2026-
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13: CAS-358 removes the sweep's view replay, so the sweep half of this task (CasOrphanManifestSweep.cpp:600-611 catch) disappears with it. What remains: fsck and preview replays, and the fold's seed walk (CAS-358 §4.3), which walks only immutable objects from a validated _ckpt triple to the fold cursor. AC #3 (written argument that the cut is unreachable) is the likely close for the seed path.
+<!-- SECTION:NOTES:END -->

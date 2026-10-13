@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 14:43'
+updated_date: '2026-10-13 18:30'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -13,7 +14,8 @@ labels:
   - 'confidence:solid'
   - 'origin:soak'
 milestone: m-8
-dependencies: []
+dependencies:
+  - CAS-358
 references:
   - docs/superpowers/models/CaGcRootLocalPartManifestCore.tla
   - >-
@@ -56,3 +58,9 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#GC-WEDGE-REMOVAL-FOLD-2026-07-10 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13: absorbed by CAS-358 §7: the model gains foldOwned, the owner-kind on the journal event, invariant HasUnfoldedCommittedRemoval(m) => mBody[m], and SabotageSweepUnfoldedRemoval exactly as this task's ACs state. Keep open until the run is recorded in CaGcRootLocalPartManifestCore_RESULTS.md.
+<!-- SECTION:NOTES:END -->

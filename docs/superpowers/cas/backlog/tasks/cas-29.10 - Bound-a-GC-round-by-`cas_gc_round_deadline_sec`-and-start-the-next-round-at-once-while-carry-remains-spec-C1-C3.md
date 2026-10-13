@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:41'
+updated_date: '2026-10-13 18:30'
 labels:
   - 'area:gc'
   - 'complexity:large'
@@ -73,4 +73,6 @@ Provenance: BACKLOG/gc.md#gc-round-budgets-not-backpressure (classes A, C) and #
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (9c1f6e8a741, by 'gc-budgets-need-a-deadline')
+
+2026-10-13: CAS-358 adds the fold's owned-set seed walk (spec §4.3) as a cut family: check remaining() before each life's seed, discard a cut seed whole, keep max_seed_ops as the per-round ceiling.
 <!-- SECTION:NOTES:END -->
