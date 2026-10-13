@@ -2881,8 +2881,8 @@ texts). #decommission steps 1–6 and "deleted from the tail" (4a). #removed row
 listed name has a step except `CASMount.ForeignReclaimReadsTheOwnerFirst` (R2, PR C); integration cases (8) and
 (10) (Task 8). Not covered by design: #rejoin, `system.cas_mounts` `retired`, PR A items.
 
-**Placeholder scan.** No "TBD"/"similar to"; every test step carries its body; the one "do not ship a stub" note
-in Task 4a tells the executor to build 4a with 4b's helper, which 4b's Step 3 defines in full.
+**Placeholder scan.** No "TBD"/"similar to"; every test step carries its body; Task 4a's function body calls
+`verifyAndMark`, which Task 4b's Step 3 defines in full, and the two tasks are built as one.
 
 **Type consistency.** `claimOwnerOrThrow(op, l, srid, uuid, observe, policy) -> uint64_t` (Task 2) is what
 Task 3's `mountWritable` wiring and Task 7's call-site sweep use. `OwnerExpectation{server_uuid, owner_life, retired}`
