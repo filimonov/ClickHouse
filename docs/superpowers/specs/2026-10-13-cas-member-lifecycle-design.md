@@ -188,7 +188,7 @@ Failing first on `2a034cdb374` unless marked guard.
 **PR B**
 - `CASDecommission.KeepsEpochAndFarewellMount`.
 - `CASDecommission.LongDrainOutlivesOneTtl`; keep `CASDecommission.AlwaysRenewsAdminClaimEvenWhenHostDiskIsObserveOnly`.
-- `CASDecommission.RollbackKeepsAPreviousRetirement`: a rerun over a retired owner loses its claim; the owner stays retired.
+- `CASDecommission.RollbackKeepsAPreviousRetirement`: a rerun over a verified retirement loses its claim; the owner stays retired. `CASDecommission.RefreshKeepsTheVerifiedMark` (three runs: verify, refresh and die, rerun fenced before confirm). `CASDecommission.VerifiedMarkDoesNotWaitForCatalogGc`.
 - `CASDecommission.RollbackRunsOnTheControlPlaneAfterAFence`.
 - `CASDecommission.StopsWhenTheOwnerUuidChanged` (rejoin between runs).
 - `CASDecommission.InFlightDeleteAfterRejoinHitsOnlyIdenticalRootsBytes`: a delete attempt delivered after a rerun and a rejoin removes nothing under namespace, manifest or staging keys; pins the `roots/` residual.
@@ -205,7 +205,7 @@ Failing first on `2a034cdb374` unless marked guard.
 - Integration `test_cas_drop_pool_member`: case (8) scoped to one disk view expects a `terminated` row; case (10) rerun succeeds.
 
 **PR C**
-- `CASRejoin.SameUuidStartsEmptyAndContinuesTheCounter`, `CASRejoin.NewUuidReclaimsTheOldLifesFarewell`, `CASRejoin.NewUuidReclaimsASelfFencedOldVictimBody`, `CASRejoin.RefusesWhileTheDecommissionRuns` (live-looking mount), `CASRejoin.RefusesWhileDataRemains`, `CASRejoin.RefusesSlotRetiredBy2664`, `CASRejoin.ConcurrentStartersWithDifferentUuidsOneWins`, `CASRejoin.DelayedLowerEpochClaimAfterRejoinIsRefused` (over a foreign farewell), `CASRejoin.VictimRefusedAfterFarewellRejoinsOnItsNextStart`.
+- `CASRejoin.SameUuidStartsEmptyAndContinuesTheCounter`, `CASRejoin.NewUuidReclaimsTheOldLifesFarewell`, `CASRejoin.NewUuidReclaimsASelfFencedOldVictimBody`, `CASRejoin.RefusesWhileTheDecommissionRuns` (live-looking mount), `CASRejoin.RefusesWhileDataRemains`, `CASRejoin.RefusesSlotRetiredBy2664`, `CASRejoin.ConcurrentStartersWithDifferentUuidsOneWins`, `CASRejoin.DelayedLowerEpochClaimAfterRejoinIsRefused` (over a foreign farewell), `CASRejoin.VictimRefusedAfterFarewellRejoinsOnItsNextStart`, `CASRejoin.RefusesAnUnverifiedTombstone`, `CASRejoin.SelfRemountNeverRejoins`, `CASRejoin.NewUuidReplacesTheMountBeforeTheOwner` (an old-uuid claim prechecked earlier loses its `If-Match`).
 - `CASMount.ForeignTerminalBodyIsReclaimable` (clean and `gc_fenced`); guard `CASMount.ForeignLiveBodyStaysForeignOwner`.
 - Integration: drop a member, then start it again with the same uuid and, separately, with a new uuid; both start on an empty disk; `system.cas_mounts` shows `retired` in between (case (8) updated).
 - Soak (CAS-213): decommission under load through the SQL verb, kill the tool at each step and rerun, then restart the member and check it rejoins empty.
