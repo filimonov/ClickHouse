@@ -15,6 +15,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 3 (floor in the owner tombstone, counter deleted): rejected.** Green only under `NoZombie` (`fix_ownerfloor`). A delayed mint regresses the slot even with the pre-mint check (`res_ownerfloor_zmint`). The S11 step needs an un-tombstone on any delete mismatch, which makes the step itself redundant (`sab_ownerfloor_nodelfail`, `fix_ownerfloor_nomove`).
 - **Round 4 (decommission keeps `owner`, `epoch` and the farewell `mount`; re-add): recommended, with two additions found here.** Green with zombie creates and mints, victim restarts, twins, a re-run after a death at any step, a GC fence of the admin, same- and new-uuid re-add and racing re-adds (`lc_*`). Every guard has a red sabotage; the pre-mint check is not needed (`lc_nomc`). Additions: the admin confirms its claim after the tombstone (`sab_lc_noconfirm`), and a claimer refused after its claim leaves a `gc_fenced` body, not a clean farewell (`sab_lc_refusedclean`). Re-add replaces the farewell; deleting it is red (`keep_main`).
 - **Round 5 (spec r3): green** (`r5_*`). Every run rewrites its own tombstone (`sab_r5_keeptomb` red), drains run on the admin's lease (`sab_r5_drainopen` red), re-add is one owner write and a new uuid reclaims the old life's clean farewell. Not shown load-bearing: the re-add clean-farewell check and `ForeignOwner` for a foreign `gc_fenced` body. Residual: a drain request in flight lands after a re-add, even without a fence or a re-run (`res_r5_inflight_norerun`).
+- **Round 6 (spec r4/r5, rejoin): green with a verified mark found here** (`r6_*`). Every r4 guard has a red sabotage: foreign `gc_fenced` reclaim, recheck of a foreign owner, rollback only of an introduced retirement on the control plane, the owner uuid check, the terminal-mount check of rejoin. The r3 rollback undoes a completed retirement; without the verified mark, a re-run cannot tell a dead run's late tombstone from a completed retirement (`sab_r6_noverify`).
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -328,6 +329,71 @@ New invariant `DoneMeansRetired`: once the tool verified its end, the owner stay
 1. **A drain request in flight when the run ends or loses its lease** (`res_r5_inflight`, `res_r5_inflight_norerun`, `res_r5_pauseddrain_inflight`). Lands after a re-add and deletes a new member's object. Not closed by fencing or by waiting for the process to exit.
 2. **Tombstone over a live successor until the confirm un-tombstones it** (round 4 `res_lc_tombover`), unchanged.
 
+## Round 6: lifecycle spec r4/r5 (rejoin) {#round-6}
+
+Changes of `docs/superpowers/specs/2026-10-13-cas-member-lifecycle-design.md` r4, with r5's rejoin in place of the re-add command. Base of every `r6_*` row: round 5 plus the switches below, victim `a` (uuid 1) and a second starter `n` (uuid 1, or uuid 2 in `*_newuuid*` rows) that may start at any time, a decommission re-run, `GcFences`, `GcFencesDead`, and the admin allowed to allocate first (`AdminRefusesAbsent` off: the counter of an earlier life). Rows that drop a dimension say so.
+
+### What changed {#round-6-design}
+
+| Step | Model | Switch (sabotage) |
+|---|---|---|
+| A start over a retired owner (any uuid) rejoins in `claimOwnerOrThrow`: `GET epoch` (exists), `GET mount` (terminal: clean or `gc_fenced`), emptiness, `If-Match` owner rewrite `{own uuid, no tombstone}`; a conflict re-reads | `JoinEpoch`, `JoinMount`, `JoinEmpty`, `JoinWrite` | `Rejoin`; `RejoinAnyMount` |
+| `claimMount` reclaims a foreign terminal body, clean or `gc_fenced` | `ClaimRead` | `ClaimForeignFenced` = FALSE |
+| The claim recheck refuses an absent, foreign or retired owner | `ClaimPostOwner` | `RecheckRetiredOnly` |
+| GC fences the expired lease of a holder that is gone, any uuid | `GcFenceDead` | `GcFencesDead` = FALSE (`res_r6_nogcdead`) |
+| Roll back only a retirement this run introduced (its owner read found no retirement); the rollback runs on the control plane | `DConfirmClaim`, `ZombieConfirm`, `DUntomb` | `RollbackOnlyIfIntroduced` = FALSE; `RollbackFenced` |
+| Step 2 stops on an owner of another uuid | `DReadOwner` | `TombChecksUuid` = FALSE |
+| Proposed here: step 6 marks the tombstone verified (`If-Match`, fresh nonce); a re-run counts only a verified tombstone as a previous retirement | `DMarkVerified`, `DReadOwner` | `VerifiedMark` = FALSE |
+
+`DoneMeansRetired` is now keyed on the set of lives with a verified completion (`doneLives`), not on the program counter, so a re-run cannot reset it. New invariants: `NoWedge` and `NoForeignTombstone`; witness `NoLiveAfterSelfFence`.
+
+**Why `NoWedge` is a state invariant, not a temporal property.** It flags a state in which the owner is live with uuid U and the slot holds another uuid's body that nothing will change: no process of that uuid can still write it (each is down or before its owner check), and no claim, fence or rejoin rule applies to the body. From such a state no action changes the slot or the owner: rejoin needs a retired owner, and the tool's claim and every start of U end `ForeignOwner`. So the state is permanent, which is what "every U start ends `ForeignOwner` forever" means, and a safety check finds it without fairness assumptions.
+
+### Results {#round-6-results}
+
+"I6": `EpochNeverReused`, `NoDangle`, `SlotNeverRegresses`, `CounterNeverRegresses`, `LiveMatchesOwnerAtRest`, `RevivalAboveEarlierLives`, `RetryAcceptsTomb`, `NoStaleTombstone`, `DoneMeansRetired`, `NoStaleDrain`, `NoWedge`, `NoForeignTombstone`. The full base (both starters, paused run and a GC round together) hit the 600 s limit at about 78,000,000 states without a violation; the rows split it.
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `r6_core_z` | same uuid; `a` starts twice, no `n`; no GC round | I6 | green | green | 15,431,554 | 91 |
+| `r6_core_g` | same uuid; `a` starts twice, no `n`; no paused run (SLOW) | I6 | green | green | 38,222,100 | 229 |
+| `r6_newuuid_z` | `n` with uuid 2; no GC round (SLOW) | I6 | green | green | 23,717,003 | 189 |
+| `r6_newuuid_g` | `n` with uuid 2; no paused run (SLOW) | I6 | green | green | 49,604,404 | 399 |
+| `r6_counterrule` | `n` with uuid 2, the admin refuses an absent counter | I6 | green | green | 5,500,358 | 47 |
+| `r6_newuuid_witness` | `n` with uuid 2 | `SecondUuidNeverLive` (witness) | violation | violation | 421,434 | 4 |
+| `r6_selffence` | `a` starts twice, no paused run, no GC round | I6 | green | green | 2,171,183 | 13 |
+| `r6_selffence_witness` | same | `NoLiveAfterSelfFence` (witness) | violation | violation | 245,947 | 2 |
+| `r6_twins` | twins with one ambiguous write, no rejoin | e, s, c, LiveMatchesOwner | green | green | 5,071,012 | 38 |
+| `r6_retry_live` | tool alone, fair, one death anywhere, GC quiet | RetryCompletes | green | green | 139 | 1 |
+| `sab_r6_keepforeignfenced` | `claimMount` keeps `ForeignOwner` for a foreign `gc_fenced` body | NoWedge | violation | violation | 64,277 | 1 |
+| `sab_r6_recheckretired` | recheck refuses only a retired owner | LiveMatchesOwnerAtRest | violation | violation | 1,703,245 | 13 |
+| `sab_r6_rollbackall` | unconditional rollback | DoneMeansRetired | violation | violation | 11,573,571 | 76 |
+| `sab_r6_rollbackfenced` | rollback on the tool's lease plane | LiveMatchesOwnerAtRest | violation | violation | 302,299 | 3 |
+| `sab_r6_nouuidcheck` | step 2 ignores the owner's uuid | NoForeignTombstone | violation | violation | 1,442,560 | 10 |
+| `sab_r6_rejoinany` | rejoin accepts a live-looking mount | LiveMatchesOwnerAtRest | violation | violation | 1,854,294 | 14 |
+| `sab_r6_noverify` | no verified mark (SLOW) | LiveMatchesOwnerAtRest | violation | violation | 24,078,347 | 162 |
+| `res_r6_nogcdead` | GC does not fence dead holders | NoWedge | violation | violation | 1,011,377 | 8 |
+
+Round-5 rows re-run under the round-6 `DoneMeansRetired`: `r5_core`, `r5_newuuid`, `r5_inflight`, `r5_race`, `sab_r5_foreignfenced` and `sab_r5_skipclean` now violate it (the r3 rollback rule, see below); the other round-5 rows keep their verdicts. State counts of round-5 rows moved because the history ghosts `doneLives` and `tombForeign` split states; earlier rounds keep their counts.
+
+### Findings {#round-6-findings}
+
+- **The r3 rollback undoes a completed retirement** (codex r3 finding 4; `sab_r6_rollbackall`, and every round-5 row that checks `DoneMeansRetired`). A run completes and verifies. A re-run claims, rewrites the tombstone, is fenced before its confirm, and un-tombstones by `If-Match` on its own tombstone: the owner is live again without a rejoin. Rolling back only a retirement this run introduced closes it.
+- **New: a re-run cannot tell a completed retirement from a dead run's late tombstone** (`sab_r6_noverify`). Run 1 sends its tombstone and pauses. A re-run claims, and GC fences the re-run's lease. The victim, which allocated above it, reclaims; its recheck passes because the tombstone has not landed yet. Run 1's tombstone then lands over the live victim. The re-run reads a retired owner and treats it as a previous retirement: it rewrites it, its confirm fails on the fence, and it correctly does not roll back. Run 1's own rollback then fails on the rewritten token. The victim runs under a tombstone and both tools stop. The proposed verified mark (step 6 rewrites the tombstone as verified) lets a re-run treat an unverified tombstone as not retired, so its rollback restores the owner; a verified retirement is still never undone (`r6_*` green). Cost: one owner PUT per completed run.
+  - Rounds 5 and early round 6 missed it: with the admin refusing an absent counter and one victim start, the victim always allocated first, below the admin, so it could not wait on the admin's lease.
+- **Recheck must refuse a foreign owner** (opus r3 F2 interleaving A, `sab_r6_recheckretired`). `n` (uuid 2) rejoins over the admin's fenced lease while `a` (uuid 1, owner checked before the tombstone) reclaims; `a`'s recheck sees a live owner and passes: `a` runs under uuid 2.
+- **Foreign `gc_fenced` bodies must be reclaimable** (F2 interleaving B, `sab_r6_keepforeignfenced`). The dead admin's lease is GC-fenced, `n` rejoins over it, and every start of `n` ends `ForeignOwner`; the tool, uuid 1, is refused on the foreign owner.
+- **Rejoin must refuse a live-looking mount** (`sab_r6_rejoinany`): `n` rejoins over `a`'s live lease, and `a` keeps running under uuid 2.
+- **Rollback must run on the control plane** (codex r3 finding 3, `sab_r6_rollbackfenced`). Fenced after its claim and before its tombstone, the tool cannot un-tombstone on its lease plane, and the live successor stays under the tombstone.
+- **Step 2 must check the owner's uuid** (`sab_r6_nouuidcheck`). A re-run whose owner check preceded `n`'s rejoin claims the terminal uuid-1 body and tombstones uuid 2's owner.
+- **A refused victim rejoins once the data is gone** (`r6_selffence` green, its witness red). The victim reclaims right after the farewell, its recheck sees the tombstone, it self-fences and stops. On its next start it rejoins over its own `gc_fenced` body and runs.
+- **GC fencing dead holders is load-bearing for liveness** (`res_r6_nogcdead`). A re-run that claims after `n` rejoined stops at the uuid check without a farewell in the model; its live-looking lease wedges `n` until GC fences it. In code the pool teardown writes a farewell on that exit, so the model is conservative here.
+- **Retry with a concurrent GC fence of the dead run** can lose its reclaim race (`racedDoubleStart`) and need another re-run; `r6_retry_live` therefore runs with GC quiet.
+
+### Residuals {#round-6-residuals}
+
+Unchanged from round 5: a drain request in flight lands after a later life starts (`res_r5_*`); a tombstone stays over a live successor if the tool dies between its tombstone and its rollback (`res_lc_tombover`).
+
 ## Code checks {#code-checks}
 
 Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code at both unless noted).
@@ -359,8 +425,11 @@ Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code a
 | `RetryAcceptsTomb` | a decommission re-run never refuses on the tombstone. |
 | `RetryCompletes` (temporal, `FairSpec`) | a re-run after a death at any step reaches the end. |
 | `RetryNeverCompletes` | witness, expected violated: a re-run can reach the end. |
-| `DoneMeansRetired` | once the tool verified its end, the owner stays retired until a re-add opens a new life. |
+| `DoneMeansRetired` | in every life with a verified decommission end (`doneLives`), the owner is retired; a rejoin or re-add opens a new life. |
 | `SecondUuidNeverLive` | witness, expected violated: a member with the second uuid runs live after a re-add. |
+| `NoWedge` | no state where the owner is live with uuid U and the slot holds another uuid's body that no action can change (permanent `ForeignOwner` for U). |
+| `NoForeignTombstone` | no decommission tombstone lands on an owner of another uuid. |
+| `NoLiveAfterSelfFence` | witness, expected violated: after a claimer fenced itself on the recheck, an instance runs live again. |
 
 ## Counterexamples {#counterexamples}
 
@@ -453,6 +522,9 @@ One action = one store request, or one in-memory step. Code at `2a034cdb374`.
 | `DVerifyMount`, `DVerifyOwner` | proposed verify after `admin.reset()` | GET mount; GET owner | comparisons are local |
 | `DDrain` with `DrainFenced` | drain on `admin->mountRequests()` | one drain request | the lease-deadline check is local, modelled as "own claim still in the slot, unfenced"; disjunct 2 = request sent, response lost |
 | `LateDelete` | store side of a drain request sent before the lease was lost | landing of one DELETE | refs dropped in one step, as `DDrain` |
+| `JoinEpoch`, `JoinMount`, `JoinEmpty`, `JoinWrite` | proposed rejoin in `claimOwnerOrThrow` | GET epoch; GET mount; LIST; PUT `If-Match` owner | the owner token is the one `OwnerCheck` read (`jTok`); a conflict returns to the owner GET |
+| `DMarkVerified` | proposed step-6 owner rewrite marking the tombstone verified | PUT `If-Match` owner | — |
+| `GcFenceDead` | GC's fence write on an expired lease of a dead holder | PUT `If-Match` mount | death is the `ProvenDead` ghost |
 
 ## Scope and limits {#scope}
 
