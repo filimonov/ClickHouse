@@ -2,7 +2,7 @@
 
 Decommission keeps a member's control objects `gc/server-roots/<srid>/{owner,epoch,mount}` forever and deletes only its data. A server started with a retired `srid` rejoins as an empty member, with the same or a new `server_uuid`, by one conditional write of the owner; there is no separate command. The epoch counter is never deleted, so epochs never repeat across lives, and the decommission tail loses its race handling.
 
-Closes: CAS-363, CAS-158, CAS-156, CAS-156.1, CAS-157, CAS-369. Partly: CAS-156.2, CAS-156.3, CAS-357, CAS-371, CAS-264, CAS-159. Acceptance: CAS-213. Residuals go to CAS-385.
+Closes: CAS-363, CAS-158, CAS-156, CAS-156.1, CAS-157, CAS-369 (multipart abort split to CAS-369.1), CAS-271. Partly: CAS-156.2, CAS-156.3, CAS-357, CAS-371, CAS-264, CAS-159. Acceptance: CAS-213. Residuals go to CAS-385.
 
 Revision 5.1: #removed lists code that goes beyond the tail (owner decision 2026-10-13). Revision 5: rejoin at start replaces the re-add command (owner decision 2026-10-13: less code; a returning server, same uuid or not, comes back empty). Revision 4 notes: Reviews of r1–r3: `tmp/noclock/lifecycle/{review,rereview,rereview3}-{opus,codex}.md`. Model: `docs/superpowers/models/CaEpochAllocCore_RESULTS.md` rounds 3–5; round 6 checks the r4 changes (#model). Every closure below holds for upgraded servers and tools with intact control objects; #compat lists what old participants keep.
 
@@ -111,6 +111,7 @@ Without the `gc_fenced` case a rejoin can wedge the slot: a victim that reclaime
 - Key `staging/<srid>/<writer_epoch>/<random32>.tmp` (`ContentAddressedTransaction.cpp:901`). The epoch and the admission generation used at `:916` and in `finalize` come from one capture of the pool incarnation, so a self-remount between them cannot stage new-generation bytes under an old epoch.
 - The startup sweep (`ContentAddressedMetadataStorage.cpp:892`, `sweepOwnMountStaging`) fixes its cutoff to the live epoch at the start and deletes keys below it. Flat keys `staging/<srid>/<random32>.tmp` (26.6.4 layout) count as epoch 0; deeper paths that do not parse as an epoch are left alone, so a nested `staging/a/b/...` of another member is never swept by `a`.
 - Abort deletes staging, best-effort, like commit (`cleanupPendingTempFiles`, `:167`). The comment calling an aborted transaction's object a "re-readable publication source" is false and goes.
+- Incomplete multipart uploads under `staging/<srid>/` (a process killed mid-upload) are invisible to object LIST and stay forever. The docs state the bucket lifecycle rule `AbortIncompleteMultipartUpload` for S3 staging; aborting them at mount start is CAS-369.1.
 - The decommission staging drain stays on logical keys: `ObjectStorageBackend::listUnder` applies the local prefix itself, unlike the direct `IObjectStorage` calls of the writer and sweeper. A test pins that the drain removes the objects the writer created.
 
 ### Operator surface {#operator}
@@ -165,11 +166,11 @@ Independent PRs into `antalya-26.6`; each commit reviewable alone (model, code w
 
 | PR | Content | Depends on |
 |---|---|---|
-| A | D7; abort deletes staging; drain-prefix test; refusal texts | — |
-| B | D1–D5, D8 epoch keys, D9 admin rule, `member_retired`, release note | CAS-362 merged |
+| A | D7; abort deletes staging; the `AbortIncompleteMultipartUpload` doc rule; drain-prefix test; refusal texts | — |
+| B | D1–D5, D8 epoch keys, D9 admin rule, `member_retired`, release note; CAS-271 (log that `openForDecommission` skips the capability probe, fix the probe's "no override" text in `CA/Backend/CasProbe.cpp`) | CAS-362 merged |
 | C | D6 rejoin in `claimOwnerOrThrow` and the `claimMount` change, `retired` in `system.cas_mounts` | PR B merged |
 
-The `fix/antalya-26.6/cas-369-staging-sweep-snapshot` draft is superseded; its abort-delete commit moves to PR A.
+The `fix/antalya-26.6/cas-369-staging-sweep-snapshot` draft is superseded; its abort-delete commit moves to PR A. Not in these PRs: local scratch sweep at mount (CAS-125/101, its own PR), the ownership-decidability table (CAS-187).
 
 ## Tests {#tests}
 

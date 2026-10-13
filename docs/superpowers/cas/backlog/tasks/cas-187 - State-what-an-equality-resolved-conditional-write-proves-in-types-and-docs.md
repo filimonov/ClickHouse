@@ -4,7 +4,7 @@ title: 'State what an equality-resolved conditional write proves, in types and d
 status: To Do
 assignee: []
 created_date: '2026-08-20'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-10-13 14:21'
 labels:
   - 'area:backend'
   - 'area:docs'
@@ -56,4 +56,6 @@ Provenance: BACKLOG/ref-protocol.md#cas-021-followups items (1), (2), (3). Verif
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-20 (99031303637, by 'cas-021-followups')
+
+2026-10-13: the member-lifecycle spec (docs/superpowers/specs/2026-10-13-cas-member-lifecycle-design.md, D4) adds `owner_nonce` to every owner write, so an equality-resolved owner write becomes decidable (no two writes share bytes). The ownership-decidability table this task asks for gets the owner-anchor row as "decidable since owner_nonce". Owner decision 2026-10-13: not done in the lifecycle PRs; stays here.
 <!-- SECTION:NOTES:END -->
