@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run the `CaEpochAllocCore` battery (CAS-362, CAS-363) and assert every result by exact invariant name.
-# With cfg names as arguments, run only those rows; `SLOW=1` adds the ten-minute rows. TLC limits: timeout 1200 s, 4 workers, 8 GiB heap, nice 10.
+# Run the `CaEpochAllocCore` battery (CAS-362, CAS-363, member lifecycle) and assert every result by exact
+# invariant name. With cfg names as arguments, run only those rows; `SLOW=1` adds the rows over ~2 minutes. TLC limits: timeout 1200 s, 4 workers, 8 GiB heap, nice 10.
 set -uo pipefail
 cd "$(dirname "$0")"
 
@@ -103,13 +103,58 @@ CONFIGS=(
     "sab_storetime_back                   violation  CounterNeverRegresses"
     "sab_poolhwm_afterdelete              violation  CounterNeverRegresses"
     "sab_poolhwm_oldadmit                 violation  CounterNeverRegresses"
+    # Owner floor (rejected alternative): floor in the owner tombstone, counter still deleted.
+    "cur_revive                           violation  RevivalAboveEarlierLives"
+    "fix_ownerfloor_ambig                 green      -"
+    "sab_ownerfloor_nodelfail             violation  RetiredOwnerHasNoLiveMount"
+    "sab_ownerfloor_tombafter             violation  EpochNeverReused"
+    "sab_ownerfloor_stale                 violation  EpochNeverReused"
+    "sab_ownerfloor_ignore                violation  RetiredOwnerHasNoLiveMount"
+    "sab_ownerfloor_nomc                  violation  SlotNeverRegresses"
+    "res_ownerfloor_zombie                violation  SlotNeverRegresses"
+    "res_ownerfloor_zmint                 violation  SlotNeverRegresses"
+    "res_ownerfloor_hostile               violation  EpochNeverReused"
+    "res_ownerfloor_keepslot              violation  RetiredOwnerHasNoLiveMount"
+    "res_ownerfloor_tooldeath             violation  RetiredOwnerHasNoLiveMount"
+    # Member lifecycle: decommission keeps owner, epoch and the farewell mount; re-add reopens the srid.
+    "keep_main                            violation  SlotNeverRegresses"
+    "lc_core                              green      -"
+    "lc_newuuid                           green      -"
+    "lc_race                              green      -"
+    "lc_twins                             green      -"
+    "lc_nomc                              green      -"
+    "lc_retry_live                        green      -"
+    "lc_retry_witness                     violation  RetryNeverCompletes"
+    "sab_lc_norecheck                     violation  LiveMatchesOwnerAtRest"
+    "sab_lc_noconfirm                     violation  NoStaleDrainWithoutRerun"
+    "sab_lc_refusedclean                  violation  NoStaleDrainWithoutRerun"
+    "sab_lc_fenced                        violation  NoStaleDrainWithoutRerun"
+    "sab_lc_nononce                       violation  NoStaleTombstone"
+    "sab_lc_deletemount                   violation  SlotNeverRegresses"
+    "sab_lc_tomblast                      violation  LiveMatchesOwnerAtRest"
+    "sab_lc_delepoch                      violation  EpochNeverReused"
+    "sab_lc_retryrefuses                  violation  RetryAcceptsTomb"
+    "res_lc_pauseddrain                   violation  NoStaleDrain"
+    "res_lc_tombover                      violation  LiveMatchesOwner"
 )
-# Six to ten minutes each.
+# Two to twelve minutes each.
 SLOW_CONFIGS=(
     "fix_nonce_restart   green      -"
     "fix_poolhwm_twins                    green      -"
+    "fix_ownerfloor                       green      -"
+    "fix_ownerfloor_nomove                green      -"
+    "fix_ownerfloor_retry                 green      -"
+    "lc_fence                             green      -"
+    "lc_zombie                            green      -"
+    "sab_lc_ownerfirst                    green      -"
 )
 [[ "${SLOW:-0}" == 1 ]] && CONFIGS+=("${SLOW_CONFIGS[@]}")
+# Ad-hoc rows for exploration: EXTRA="name expect invariant;name expect invariant".
+if [[ -n "${EXTRA:-}" ]]
+then
+    IFS=';' read -r -a extra_rows <<<"$EXTRA"
+    CONFIGS+=("${extra_rows[@]}")
+fi
 
 selected()
 {
