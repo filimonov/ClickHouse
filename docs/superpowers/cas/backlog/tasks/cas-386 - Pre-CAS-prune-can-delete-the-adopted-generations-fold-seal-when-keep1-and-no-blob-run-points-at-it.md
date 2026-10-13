@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-13 19:14'
+updated_date: '2026-10-13 19:15'
 labels:
   - 'area:gc'
   - 'risk:high'
@@ -35,3 +36,9 @@ pruneSupersededGenerations (Gc/CasGc.cpp:3766) runs before the round's gc/state 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-13: sibling CAS-40 (adopted seal naming a run that prune reclaimed, losing leader's pre-CAS prune vs a winner's newer seal) is the same prune-before-CAS family; this task is the sharper case where the ADOPTED generation's own prefix, fold seal included, is the victim. One fix likely closes both: include state.snap_generation in referenced_generations.
+<!-- SECTION:NOTES:END -->

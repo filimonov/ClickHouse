@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-25'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-10-13 19:15'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -52,4 +52,6 @@ Provenance: BACKLOG/gc.md#adopted-seal-pruned-run-2026-07-25; verified 2026-09-2
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-25 (30134ea3224, by 'adopted-seal-pruned-run-2026-07-25')
+
+2026-10-13: CAS-386 files the sharper case of this family: with keep=1 and an all-carry adopted generation G, the pre-CAS prune deletes gc/gen/G/ itself, fold seal included, and a lost CAS leaves the pool needing SYSTEM CAS GC REBUILD (CasGc.cpp:1791). Found by the codex review of the CAS-358 spec. Fix both with one rule: the adopted generation is always in referenced_generations.
 <!-- SECTION:NOTES:END -->
