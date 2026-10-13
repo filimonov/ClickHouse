@@ -4,7 +4,7 @@ Decommission keeps a member's control objects `gc/server-roots/<srid>/{owner,epo
 
 Closes: CAS-363, CAS-158, CAS-156, CAS-156.1, CAS-157, CAS-369 (multipart abort split to CAS-369.1), CAS-271. Partly: CAS-156.2, CAS-156.3, CAS-357, CAS-371, CAS-264, CAS-159. Acceptance: CAS-213. Residuals go to CAS-385.
 
-Revision 5.1: #removed lists code that goes beyond the tail (owner decision 2026-10-13). Revision 5: rejoin at start replaces the re-add command (owner decision 2026-10-13: less code; a returning server, same uuid or not, comes back empty). Revision 4 notes: Reviews of r1–r3: `tmp/noclock/lifecycle/{review,rereview,rereview3}-{opus,codex}.md`. Model: `docs/superpowers/models/CaEpochAllocCore_RESULTS.md` rounds 3–5; round 6 checks the r4 changes (#model). Every closure below holds for upgraded servers and tools with intact control objects; #compat lists what old participants keep.
+Revision 6: verified retirement mark from model round 6 (`c94dca50bf6`). Revision 5.1: #removed lists code that goes beyond the tail (owner decision 2026-10-13). Revision 5: rejoin at start replaces the re-add command (owner decision 2026-10-13: less code; a returning server, same uuid or not, comes back empty). Revision 4 notes: Reviews of r1–r3: `tmp/noclock/lifecycle/{review,rereview,rereview3}-{opus,codex}.md`. Model: `docs/superpowers/models/CaEpochAllocCore_RESULTS.md` rounds 3–5; round 6 checks the r4 changes (#model). Every closure below holds for upgraded servers and tools with intact control objects; #compat lists what old participants keep.
 
 ## Why {#why}
 
@@ -22,7 +22,7 @@ Revision 5.1: #removed lists code that goes beyond the tail (owner decision 2026
 | # | Decision | Evidence |
 |---|---|---|
 | D1 | Decommission never deletes `owner`, `epoch` or `mount`. | `sab_lc_delepoch` red |
-| D2 | Every decommission run writes its own tombstone (fresh nonce) right after its claim, then confirms it still holds the slot. On a lost claim it rolls back only a retirement it introduced, through the unfenced control plane. | `sab_lc_tomblast`, `sab_lc_noconfirm`, `sab_r5_keeptomb` red; rollback rule: round 6 |
+| D2 | Every decommission run writes its own tombstone (fresh nonce) right after its claim, then confirms it still holds the slot. On a lost claim it rolls back unless the tombstone it replaced was verified, through the unfenced control plane. A completed run marks its tombstone verified. | `sab_lc_tomblast`, `sab_lc_noconfirm`, `sab_r5_keeptomb`, `sab_r6_rollbackall`, `sab_r6_rollbackfenced`, `sab_r6_noverify` red |
 | D3 | Every claim (start and fence recovery) re-reads the owner before installing the renewer; an owner that is absent, of another uuid or retired makes the claimer fence its own body and fail. | `sab_lc_norecheck`, `sab_lc_refusedclean` red; foreign-owner case: round 6 |
 | D4 | Every owner write carries a fresh random `owner_nonce`. | `sab_lc_nononce` red |
 | D5 | The admin drains on its fenced mount plane and keeps renewing; once it has tombstoned, its own self-remount is refused by the owner check, so a fenced admin fails and the operator reruns. | `sab_r5_drainopen`, `sab_lc_retryrefuses` red, `RetryCompletes` |
@@ -37,7 +37,7 @@ Paths: `CA/` = `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`.
 
 ### Owner nonce {#owner-nonce}
 
-`OwnerObject` (`CA/Formats/CasServerRootFormats.cpp`) gains an optional plain field `owner_nonce`, 32 lowercase hex characters, drawn fresh for every owner write: first claim, tombstone, un-tombstone, rejoin. Two writes never produce the same bytes, so a delayed `If-Match` against an old owner ETag cannot land after a later write. 26.6.4 `decodeOwner` reads with `Tolerant` + `skipUnknown`, so old binaries accept it. Same generator as `allocation_nonce` (CAS-362). Record the field in `Formats/README.md`.
+`OwnerObject` (`CA/Formats/CasServerRootFormats.cpp`) gains two optional plain fields: `retirement_verified` (bool, set only by decommission step 6, cleared by rejoin) and `owner_nonce`, 32 lowercase hex characters, drawn fresh for every owner write: first claim, tombstone, un-tombstone, rejoin. Two writes never produce the same bytes, so a delayed `If-Match` against an old owner ETag cannot land after a later write. 26.6.4 `decodeOwner` reads with `Tolerant` + `skipUnknown`, so old binaries accept it. Same generator as `allocation_nonce` (CAS-362). Record the field in `Formats/README.md`.
 
 ### Claim recheck {#claim-recheck}
 
@@ -55,11 +55,13 @@ Cost: one GET per claim. Why it closes CAS-158 for new binaries: every reclaim p
 `CA/Tools/CasDecommission.cpp:decommissionPoolMember`:
 
 1. **Admin claim**: `Pool::openForDecommission` (`CA/Pool/CasPool.cpp:904`). The existing `MountClaimPolicy::NoWait`, used only by decommission, also lets `claimOwnerOrThrow` (refusals at `CA/Pool/CasServerRoot.cpp:539`, `:589`) and the claim recheck accept a retired owner of the victim's uuid; no new mode reaches `Pool::open`. The admin keeps its background workers (`background_watermark = true`, as today: renewal is what lets a long drain outlive one TTL, pinned by `CASDecommission.AlwaysRenewsAdminClaimEvenWhenHostDiskIsObserveOnly`). After step 2 a self-remount fails in `claimOwnerOrThrow` (it does not pass `NoWait`), so a fenced admin fails the run (D5); a remount before step 2 changes the admin's epoch and step 3 fails. Record the claim's `writer_epoch` here. The admin never creates an absent `epoch` counter: absent means a state left by 26.6.4; refuse (D9).
-2. **Tombstone**: `GET owner`. Its `server_uuid` must be the victim's; another uuid means a rejoin happened, so stop. Remember whether it was already retired. Replace it by `If-Match` with `{uuid, retired_at_ms, owner_nonce}`, also when it was already retired: a paused earlier run can then never remove this run's tombstone, because its rollback uses an older ETag.
-3. **Confirm the claim**: `GET mount`. The body must carry the victim's `server_uuid` and the `writer_epoch` recorded in step 1, and be neither `gc_fenced` nor clean (renewals change the ETag and `write_attempt_id`, so they are not compared). Otherwise roll back and fail (`sab_lc_noconfirm`). **Rollback**: only if step 2 found the owner not retired, replace the owner by `If-Match` on step 2's ETag with `{uuid, owner_nonce}` (fresh nonce, no tombstone). A previous retirement is never undone. Steps 2, 3 and the rollback use the always-admitted control-plane engine (`op` in `decommissionPoolMember`), not the fenced mount plane: a fenced admin must still be able to roll back.
+2. **Tombstone**: `GET owner`. Its `server_uuid` must be the victim's; another uuid means a rejoin happened, so stop. Remember whether it carried a verified retirement (`retirement_verified`). Replace it by `If-Match` with `{uuid, retired_at_ms, owner_nonce}`, also when it was already retired: a paused earlier run can then never remove this run's tombstone, because its rollback uses an older ETag.
+3. **Confirm the claim**: `GET mount`. The body must carry the victim's `server_uuid` and the `writer_epoch` recorded in step 1, and be neither `gc_fenced` nor clean (renewals change the ETag and `write_attempt_id`, so they are not compared). Otherwise roll back and fail (`sab_lc_noconfirm`). **Rollback**: only if step 2 found no verified retirement, replace the owner by `If-Match` on step 2's ETag with `{uuid, owner_nonce}` (fresh nonce, no tombstone). A previous retirement is never undone. Steps 2, 3 and the rollback use the always-admitted control-plane engine (`op` in `decommissionPoolMember`), not the fenced mount plane: a fenced admin must still be able to roll back.
 4. **Drain data**: victim namespaces through `dropNamespace`, manifest debris, `staging/<srid>/`, `roots/<srid>/`, all on `admin->mountRequests()` (today `CasRequests(..., Fence::open())` and `gc_requests`). The lease-deadline fence stops a fenced admin locally; only attempts already sent can land late (the engine reissues attempts, so a resolved delete can still have one in flight).
 5. **Farewell**: `admin.reset()` writes the clean terminal body (`MountLeaseRenewer::terminate`, `CA/Pool/CasServerRoot.cpp:1739`); it reports no outcome.
-6. **Verify**: `GET mount` (clean farewell of the admin's `writer_epoch`) and `GET owner` (retired, nonce of step 2). Report `member_retired = true` only if both hold and no catalog rows of the victim remain (warning at `CasDecommission.cpp:309-324`). Otherwise warn; the operator reruns.
+6. **Verify**: `GET mount` (clean farewell of the admin's `writer_epoch`) and `GET owner` (retired, nonce of step 2). If both hold and no catalog rows of the victim remain (warning at `CasDecommission.cpp:309-324`), rewrite the owner by `If-Match` with the tombstone plus `retirement_verified = true` (fresh nonce) and report `member_retired = true`. Otherwise warn; the operator reruns.
+
+   Why the verified mark: a rerun must tell a completed retirement from a dead earlier run's tombstone that landed late. Without it, run 1's delayed tombstone can land over a victim that reclaimed while the rerun was fenced; the rerun reads it as a previous retirement and does not roll back, and run 1's rollback fails on the rewritten token (`sab_r6_noverify`). Step 2 therefore treats only a **verified** tombstone as "already retired" for the rollback decision.
 
 Deleted from the tail (`:326-506`) and the helper `deleteSlotObject` (`:99-116`): the stale-cut recheck (`retirement_catalog_cut` against `fresh_retirement_catalog`), the `claimed_epoch` and `farewell_mount` captures, `captures_match`, the two slot deletes, the "ACCEPTED RESIDUAL WINDOW", the liveness recheck, and the tombstone at the end. About 195 lines go; about 50 come back for steps 2, 3 and 6.
 
@@ -138,7 +140,7 @@ Tracked in CAS-385 unless marked.
 |---|---|
 | Every claim | +1 GET `owner` |
 | Every owner write | 32-byte nonce |
-| Decommission | today's tail: 5 GET, 2 DELETE, 1 PUT; r4: 4 GET (tombstone read, confirm, verify ×2), 1 PUT, +1 PUT on rollback |
+| Decommission | today's tail: 5 GET, 2 DELETE, 1 PUT; r6: 4 GET (tombstone read, confirm, verify ×2), 2 PUT (tombstone, verified mark), +1 PUT on rollback |
 | Rejoin (rare path) | 2 GET, the emptiness check (1 catalog read, 2 LIST), ≤1 DELETE, 1 PUT |
 | GC heartbeat floor | +1 GET per retired `srid` per round (`computeHeartbeatFloor`, `CA/Pool/CasServerRoot.cpp:1037`); LIST returns 3 keys per retired `srid` |
 | `system.cas_mounts` | +1 GET per terminated or fenced row per query |
@@ -218,7 +220,7 @@ The model has no self-remount; D5 for remount is argued, not modelled.
 
 Round 5 result (`5b3224c52a0`, `03d506c91aa`): all 17 rows met expectations. The own-tombstone rewrite closes the paused-run un-tombstone (`sab_r5_keeptomb` red); fenced drains close the paused-run drain (`sab_r5_drainopen` red); the foreign clean reclaim is needed for a new-uuid re-add (`sab_r5_noforeign` wedges). Two guards are not shown load-bearing, because the model has no renewals, local lease deadline or self-remount: re-add's clean-farewell precondition (`sab_r5_skipclean`) and `ForeignOwner` for a foreign `gc_fenced` body (`sab_r5_foreignfenced`). r4 drops both (#rejected, #readd). The in-flight drain residual is in #residuals.
 
-Round 6 must check the r4 changes before code:
+Round 6 (`f702733167a`..`c94dca50bf6`, RESULTS "Round 6") checked r4 with r5's rejoin: green with the verified mark (`r6_core_z` 15.4M, `r6_core_g` 38.2M, `r6_newuuid_z` 23.7M, `r6_newuuid_g` 49.6M states; `NoWedge` and `DoneMeansRetired` hold); each guard's sabotage is red (`sab_r6_keepforeignfenced`, `sab_r6_recheckretired`, `sab_r6_rollbackall`, `sab_r6_rollbackfenced`, `sab_r6_nouuidcheck`, `sab_r6_rejoinany`, `sab_r6_noverify`). GC fencing dead leases is needed for liveness (`res_r6_nogcdead`). Its checklist was:
 - the claim recheck refuses an absent, foreign or retired owner (the model already does; the spec now matches);
 - `claimMount` reclaims a foreign `gc_fenced` body; property: a rejoined member can start (no permanent `ForeignOwner` wedge); race a prechecked victim's claim against the rejoin's reads and owner write;
 - rollback only of a retirement this run introduced, on the control plane; `DoneMeansRetired` keyed on reported completions, not on the program counter, so a rerun does not reset it;
