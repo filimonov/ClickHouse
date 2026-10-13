@@ -14,6 +14,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **The zombie class stays red under both variants.** A counter create or a mount mint decided before the tail's DELETE and landing after it reuses or regresses an epoch. Neither V1 nor V2 changes it (`fix_poolhwm_fresh_mc_*` all red); only not deleting closes it. Every round-2 green needs `NoZombie`.
 - **Round 3 (floor in the owner tombstone, counter deleted): rejected.** Green only under `NoZombie` (`fix_ownerfloor`). A delayed mint regresses the slot even with the pre-mint check (`res_ownerfloor_zmint`). The S11 step needs an un-tombstone on any delete mismatch, which makes the step itself redundant (`sab_ownerfloor_nodelfail`, `fix_ownerfloor_nomove`).
 - **Round 4 (decommission keeps `owner`, `epoch` and the farewell `mount`; re-add): recommended, with two additions found here.** Green with zombie creates and mints, victim restarts, twins, a re-run after a death at any step, a GC fence of the admin, same- and new-uuid re-add and racing re-adds (`lc_*`). Every guard has a red sabotage; the pre-mint check is not needed (`lc_nomc`). Additions: the admin confirms its claim after the tombstone (`sab_lc_noconfirm`), and a claimer refused after its claim leaves a `gc_fenced` body, not a clean farewell (`sab_lc_refusedclean`). Re-add replaces the farewell; deleting it is red (`keep_main`).
+- **Round 5 (spec r3): green** (`r5_*`). Every run rewrites its own tombstone (`sab_r5_keeptomb` red), drains run on the admin's lease (`sab_r5_drainopen` red), re-add is one owner write and a new uuid reclaims the old life's clean farewell. Not shown load-bearing: the re-add clean-farewell check and `ForeignOwner` for a foreign `gc_fenced` body. Residual: a drain request in flight lands after a re-add, even without a fence or a re-run (`res_r5_inflight_norerun`).
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -270,6 +271,63 @@ From `tmp/noclock/srid-revival-history.md` and the spec review.
 | `Formats`: `encodeOwner` | random nonce on every owner write | — |
 | `cas-readd-member` (new) | `GET owner`, subtree LIST, `GET mount` (clean only), `PUT mount` (new uuid only), `GET owner`, `PUT owner` | 6 requests once |
 
+## Round 5: lifecycle spec r3 {#round-5}
+
+Changes of `docs/superpowers/specs/2026-10-13-cas-member-lifecycle-design.md` r3 (section "Model"), on top of round 4. Base of every `r5_*` row: the round-4 lifecycle with `ZombieRun` and `GcFences` both on, victim `a` with one start, fresh member `n` after a re-add, one decommission re-run, one GC round.
+
+### What changed {#round-5-design}
+
+| Step | Model | Switch (sabotage) |
+|---|---|---|
+| Every run rewrites the tombstone by `If-Match` with a fresh nonce, also over an existing one; un-tombstone only by `If-Match` on its own tombstone | `DReadOwner` → `DTombstone` always | `TombAlways` = FALSE (`sab_r5_keeptomb`) |
+| Verify after the farewell: `GET mount` (own clean farewell), `GET owner` (its own tombstone) → done | `DVerifyMount`, `DVerifyOwner` | `VerifyRetired` |
+| Re-add: `GET owner` (retired, keeps the ETag), `GET epoch` (exists), `GET mount` (clean farewell), emptiness, one `If-Match` owner write; `mount` untouched | `RvStart`, `RvReadEpoch`, `RvReadMount`, `RvEmpty`, `RvWriteOwner` | `ReaddOneWrite`; `ReaddSkipsClean` |
+| `claimMount` reclaims a clean farewell of another uuid; live or `gc_fenced` foreign bodies stay `ForeignOwner` | `ClaimRead` | `ClaimForeignClean`; `ClaimForeignFenced` |
+| Two re-adds with different target uuids | `RvUuid` | `RaceUuids` |
+| Drains run on the admin's lease: no drain step once its claim is gone or fenced; a request sent before can land late | `DDrain`, `ZombieDrain`, `LateDelete` | `DrainFenced` = FALSE (`sab_r5_drainopen`); `DrainInFlight` |
+| The admin refuses an absent counter | `AllocRead` | `AdminRefusesAbsent` |
+
+New invariant `DoneMeansRetired`: once the tool verified its end, the owner stays retired until a re-add opens a new life. Witness `SecondUuidNeverLive`: expected violated when a new-uuid member can start.
+
+### Results {#round-5-results}
+
+"I": `EpochNeverReused`, `NoDangle`, `SlotNeverRegresses`, `CounterNeverRegresses`, `LiveMatchesOwnerAtRest`, `RevivalAboveEarlierLives`, `RetryAcceptsTomb`, `NoStaleTombstone`, `DoneMeansRetired`. `r5_core` with two victim starts hit the 600 s limit at 80,091,528 states without a violation.
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `r5_core` | round-5 base | I + NoStaleDrain | green | green | 1,540,470 | 11 |
+| `r5_newuuid` | re-add with a new uuid, `n` carries it | I + NoStaleDrain | green | green | 1,456,862 | 12 |
+| `r5_newuuid_witness` | same | SecondUuidNeverLive (witness) | violation | violation `SecondUuidNeverLive` | 157,209 | 2 |
+| `sab_r5_noforeign` | same, no foreign-clean reclaim | SecondUuidNeverLive (witness) | green | green | 1,087,953 | 8 |
+| `r5_race` | two re-adds, different uuids (SLOW) | I + NoStaleDrain | green | green | 16,949,909 | 134 |
+| `r5_twins` | twins `a`, `b`, one ambiguous write, no re-add, no fence, no paused run | e, s, c, LiveMatchesOwner | green | green | 1,160,296 | 9 |
+| `r5_inflight` | drain requests may land late | I | green | green | 4,168,309 | 32 |
+| `r5_pauseddrain` | `res_lc_pauseddrain` bounds, drains on the lease, counter rule off | NoStaleDrain | green | green | 4,514 | 1 |
+| `r5_retry_live` | tool alone, fair, one death anywhere, counter rule off | RetryCompletes | green | green | 115 | 0 |
+| `r5_retry_witness` | same | RetryNeverCompletes (witness) | violation | violation `RetryNeverCompletes` | 107 | 1 |
+| `sab_r5_keeptomb` | re-run keeps an existing tombstone | DoneMeansRetired | violation | violation `DoneMeansRetired` | 118,285 | 2 |
+| `sab_r5_drainopen` | drains not gated by the lease | NoStaleDrain | violation | violation `NoStaleDrain` | 1,090,870 | 8 |
+| `sab_r5_foreignfenced` | `claimMount` reclaims a foreign `gc_fenced` body, new uuid | I + NoStaleDrain | green | green | 1,519,458 | 12 |
+| `sab_r5_skipclean` | re-add skips the clean-farewell check | I + NoStaleDrain | green | green | 9,658,825 | 77 |
+| `res_r5_inflight` | drain requests may land late | NoStaleDrain | violation | violation `NoStaleDrain` | 524,145 | 4 |
+| `res_r5_inflight_norerun` | same | NoStaleDrainWithoutRerun | violation | violation `NoStaleDrainWithoutRerun` | 520,832 | 4 |
+| `res_r5_pauseddrain_inflight` | `r5_pauseddrain` with late drain requests | NoStaleDrain | violation | violation `NoStaleDrain` | 3,835 | 1 |
+
+### Findings {#round-5-findings}
+
+- **Own tombstone per run closes the paused un-tombstone** (`sab_r5_keeptomb`). Run 1 tombstones and pauses before its confirm. The re-run finds the owner retired and keeps that tombstone, claims, drains, writes its farewell and verifies done. Run 1 wakes, its confirm sees another claim, and its un-tombstone by `If-Match` on its own tombstone lands: the owner is live after a verified decommission. With `TombAlways` the re-run's rewrite changes the token, and the late un-tombstone fails (`r5_core`).
+- **Fenced drains close the paused-run drain.** `res_lc_pauseddrain` (round 4) is red; the same bounds with drains on the lease are green (`r5_pauseddrain`). With drains open, the round-5 base is red too (`sab_r5_drainopen`, same trace).
+- **A drain request already sent stays a residual, and needs neither a fence nor a re-run** (`res_r5_inflight_norerun`). The admin sends a drain delete, the response is lost and the tool goes on: it writes its farewell, and the response-less request is still in flight. Re-add sees a clean farewell, the fresh member starts, publishes, and the late delete removes its reference. An operator rule that waits for the tool process to exit does not bound when the store applies a request already sent.
+- **Re-add with a new uuid needs the foreign-clean reclaim.** With it, `n` (uuid 2) goes live (`r5_newuuid_witness` red). Without it, `n` never does (`sab_r5_noforeign` green): the slot keeps the old life's farewell and every claim is `ForeignOwner`.
+- **Not load-bearing in the model:** the clean-farewell precondition of re-add (`sab_r5_skipclean`) and `ForeignOwner` for a foreign `gc_fenced` body (`sab_r5_foreignfenced`) are green with all of "I" and `NoStaleDrain`. The model has no renewals, no local lease deadline and no self-remount, so it cannot show what these two guards protect.
+- **Two racing re-adds with different uuids** serialize on the owner `If-Match` (`r5_race`). The slot is never rewritten, so the wedge the spec r2 review found (owner of one uuid, mount of the other) cannot happen.
+- **Retry still completes** with the always-rewritten tombstone and the verify step (`r5_retry_live`; `AdminRefusesAbsent` off there, since the tool alone never finds a counter).
+
+### Residuals {#round-5-residuals}
+
+1. **A drain request in flight when the run ends or loses its lease** (`res_r5_inflight`, `res_r5_inflight_norerun`, `res_r5_pauseddrain_inflight`). Lands after a re-add and deletes a new member's object. Not closed by fencing or by waiting for the process to exit.
+2. **Tombstone over a live successor until the confirm un-tombstones it** (round 4 `res_lc_tombover`), unchanged.
+
 ## Code checks {#code-checks}
 
 Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code at both unless noted).
@@ -301,6 +359,8 @@ Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code a
 | `RetryAcceptsTomb` | a decommission re-run never refuses on the tombstone. |
 | `RetryCompletes` (temporal, `FairSpec`) | a re-run after a death at any step reaches the end. |
 | `RetryNeverCompletes` | witness, expected violated: a re-run can reach the end. |
+| `DoneMeansRetired` | once the tool verified its end, the owner stays retired until a re-add opens a new life. |
+| `SecondUuidNeverLive` | witness, expected violated: a member with the second uuid runs live after a re-add. |
 
 ## Counterexamples {#counterexamples}
 
@@ -389,6 +449,10 @@ One action = one store request, or one in-memory step. Code at `2a034cdb374`.
 | `GcFence` | GC's fence write on the admin's lease | PUT `If-Match` | — |
 | `RRead`, `RWrite`, `RDelete` | operator revival (round 3) | GET; PUT `If-Match`; DELETE | — |
 | `RvStart`, `RvEmpty`, `RvReadMount`, `RvDelMount`, `RvReadOwner`, `RvWriteOwner` | proposed `cas-readd-member` | GET owner; LIST; GET mount; PUT or DELETE `If-Match` mount; GET owner; PUT `If-Match` owner | — |
+| `RvReadEpoch` (round 5) | re-add `GET epoch` | GET | — |
+| `DVerifyMount`, `DVerifyOwner` | proposed verify after `admin.reset()` | GET mount; GET owner | comparisons are local |
+| `DDrain` with `DrainFenced` | drain on `admin->mountRequests()` | one drain request | the lease-deadline check is local, modelled as "own claim still in the slot, unfenced"; disjunct 2 = request sent, response lost |
+| `LateDelete` | store side of a drain request sent before the lease was lost | landing of one DELETE | refs dropped in one step, as `DDrain` |
 
 ## Scope and limits {#scope}
 

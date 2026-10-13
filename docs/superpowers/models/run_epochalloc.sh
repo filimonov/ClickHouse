@@ -136,6 +136,23 @@ CONFIGS=(
     "sab_lc_retryrefuses                  violation  RetryAcceptsTomb"
     "res_lc_pauseddrain                   violation  NoStaleDrain"
     "res_lc_tombover                      violation  LiveMatchesOwner"
+    # Round 5 (lifecycle spec r3): own tombstone per run, verify, re-add as one owner write, fenced drains.
+    "r5_core                              green      -"
+    "r5_newuuid                           green      -"
+    "r5_newuuid_witness                   violation  SecondUuidNeverLive"
+    "sab_r5_noforeign                     green      -"
+    "r5_twins                             green      -"
+    "r5_inflight                          green      -"
+    "r5_pauseddrain                       green      -"
+    "r5_retry_live                        green      -"
+    "r5_retry_witness                     violation  RetryNeverCompletes"
+    "sab_r5_keeptomb                      violation  DoneMeansRetired"
+    "sab_r5_drainopen                     violation  NoStaleDrain"
+    "sab_r5_foreignfenced                 green      -"
+    "sab_r5_skipclean                     green      -"
+    "res_r5_inflight                      violation  NoStaleDrain"
+    "res_r5_inflight_norerun              violation  NoStaleDrainWithoutRerun"
+    "res_r5_pauseddrain_inflight          violation  NoStaleDrain"
 )
 # Two to twelve minutes each.
 SLOW_CONFIGS=(
@@ -147,6 +164,7 @@ SLOW_CONFIGS=(
     "lc_fence                             green      -"
     "lc_zombie                            green      -"
     "sab_lc_ownerfirst                    green      -"
+    "r5_race                              green      -"
 )
 [[ "${SLOW:-0}" == 1 ]] && CONFIGS+=("${SLOW_CONFIGS[@]}")
 # Ad-hoc rows for exploration: EXTRA="name expect invariant;name expect invariant".
