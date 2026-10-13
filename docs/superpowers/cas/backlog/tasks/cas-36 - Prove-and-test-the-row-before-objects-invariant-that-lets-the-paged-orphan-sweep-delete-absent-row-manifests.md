@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-12 16:53'
+updated_date: '2026-10-13 12:05'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -91,4 +91,6 @@ AC #6 (`gc_fenced` counts as retired) stays as decided by the owner. Opus object
 CAS-358 reshapes the same function and depends on this task: its owner view (fold set `as_of` the cursor + committed tail above it) must be read AFTER the floor sample, and rowless namespaces must be decided by the floor alone.
 
 2026-10-12 model follow-up (`eae836fd008`, RESULTS 'Residual' headings): with explicit admitted-but-unresolved requests (`WAdmitOp`/`WResolveOp`), `GFence`, `WRemount`: `fenced_late_bound` and `superseded_late_bound` green, `fenced_late_unbounded` (13 states) and `superseded_late_unbounded` (14) violate `INV_NO_DANGLE`. Correction to the residual wording above: it is NOT limited to rowless namespaces — the shortest fenced trace has a catalog row; the owner view (`activeManifestKeys`) is one read and a late `precommitAdd`/`promote` of the fenced/superseded epoch lands after it and before nomination. A'' is safe only under the admission bound, for any namespace. Excluding `gc_fenced` does not help (remount fails the same way; `EpochSeal` is lazy and untouched namespaces never get one). New invariant `INV_COMMITTED_BLOBS_PRESENT`: the current protocol also loses a committed blob through `orphan_source_retirements` (`cur_rowless_blobloss`, 19 states); A'' keeps it green. Witness `witness_fencedswept`: the fenced arm still reclaims debris.
+
+2026-10-12, PR #2528 head f79cc0df (commits a923533e, f79cc0df): `planManifestCursorPage` now runs the floor for every listed key (the `catalog_entry` guard is gone) and, for candidates whose namespace had no row in the post-LIST cut, re-reads `CasRefCatalog` once per page after the floor reads and retains any candidate whose row appeared. This is the A'' guarantee in a different order: eligible at the floor read F implies the build ended before F, so its row birth precedes the recheck C' > F; rowless at C' and eligible at F is dead debris. Cost: one extra catalog GET per page only when a rowless candidate survives the floor. Tests: `CursorPageRetainsRowlessBodyWithoutMountLease` (flip of the old test, AC #4), `CursorPageRetainsRowlessBodyOfActiveBuild` (AC #2), `CursorPageDeletesRowlessBodyBelowFloor` (AC #3, min_active only), `CursorPageRetainsRowlessBodyWhenNamespaceAppearsAfterCatalogCut` (the fix_floorall schedule). Not in the PR: farewell/lower-epoch cases of AC #3, the why-comment of AC #4, AC #6 (gc_fenced), AC #7, the end-to-end Pool test, user-doc flow chart. The CAS-36 spec rev.2 §4 still describes the floor-after-cut shape without the recheck; it needs rev.3 (A'' or the PR's C/F/C' shape).
 <!-- SECTION:NOTES:END -->
