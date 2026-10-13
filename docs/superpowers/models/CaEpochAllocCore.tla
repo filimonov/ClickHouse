@@ -116,10 +116,7 @@ CONSTANTS
     Rejoin,             \* a server start over a retired owner (any uuid) rejoins inside claimOwnerOrThrow
     RejoinAnyMount,     \* sabotage: rejoin accepts a live-looking mount
     \* Round 7 (spec r7):
-    RejoinVerifiedOnly, \* rejoin only over a verified tombstone; an unverified one refuses (retryable)
     RemountOn,          \* a process whose lease is lost self-remounts: owner check without rejoin, new claim
-    RemountRejoins,     \* sabotage: the self-remount may rejoin a verified retirement
-    RemountChecksLife,  \* proposed: remount owner check and claim recheck refuse a changed rejoin generation
     GcFencesLive,       \* GC fences the lease of a live (partitioned) server instance
     KeepVerified,       \* step 2 keeps retirement_verified when it refreshes a verified tombstone
     DRestarts,          \* decommission re-runs allowed (1 = one re-run)
@@ -376,7 +373,7 @@ OwnerCheck(p) ==
     /\ pc[p] = "owner"
     /\ pc' = [pc EXCEPT ![p] = IF ownerGone THEN "oempty"
                               ELSE IF Rejoin /\ p \in Inst \ OldInst /\ ownerRetired
-                              THEN (IF RejoinVerifiedOnly /\ ~OwnerVerified THEN Down(p) ELSE "jepoch")
+                              THEN "jepoch"
                               ELSE IF ownerUuid # Uuid(p) THEN Down(p)
                               ELSE IF ownerRetired /\ ~AcceptsTomb(p) THEN Down(p) ELSE "aread"]
     /\ jTok' = IF Rejoin THEN [jTok EXCEPT ![p] = OTok] ELSE jTok
@@ -629,7 +626,6 @@ ClaimPostOwner(p) ==
     /\ pc[p] = "cpost"
     /\ LET refuse == IF RecheckRetiredOnly THEN ownerRetired
                      ELSE ownerGone \/ ownerUuid # Uuid(p) \/ (ownerRetired /\ ~AcceptsTomb(p))
-                          \/ (RemountChecksLife /\ remnt[p] /\ life # stLife[p])
                           \/ (~RecheckIgnoresLife /\ ~LifeOk(p)) IN
        /\ pc' = [pc EXCEPT ![p] = IF refuse THEN "cpfare" ELSE Hold(p)]
        /\ resumedStale' = (resumedStale \/ (~refuse /\ ResumesStale(p)))
@@ -685,16 +681,12 @@ RemountOwner(p) ==
     /\ pc[p] = "rmowner"
     /\ LET fail == IF p = "d" /\ AdminRemountConfirms /\ dTombTok # <<>> THEN "dchk" ELSE Down(p) IN
        pc' = [pc EXCEPT ![p] = IF ownerGone \/ ownerUuid # Uuid(p) THEN fail
-                              ELSE IF RemountChecksLife /\ life # stLife[p] THEN fail
                               ELSE IF ~LifeOk(p) THEN fail
-                              ELSE IF ownerRetired
-                              THEN (IF RemountRejoins /\ (~RejoinVerifiedOnly \/ OwnerVerified) THEN "jepoch"
-                                    ELSE fail)
+                              ELSE IF ownerRetired THEN fail
                               ELSE "aread"]
-    /\ jTok' = [jTok EXCEPT ![p] = OTok]
     /\ myEpoch' = [myEpoch EXCEPT ![p] = 0]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife,
-                   lateDel, doneLives, tombForeign, vTok, selfFenced, G7,
+                   lateDel, doneLives, tombForeign, vTok, jTok, selfFenced, G7,
                    myBody, myExp, myAmb, myMTok, starts, mf, DVars, GVars, XVars>>
 
 \* GC fences the lease of a partitioned server instance that is still running.

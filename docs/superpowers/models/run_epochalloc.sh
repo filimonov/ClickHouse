@@ -170,14 +170,15 @@ CONFIGS=(
     "sab_r6_nouuidcheck                   violation  NoForeignTombstone"
     "sab_r6_rejoinany                     violation  LiveMatchesOwnerAtRest"
     "res_r6_nogcdead                      violation  NoWedge"
-    # Round 7 (lifecycle spec r7): verified-only rejoin, self-remount, kept mark, mount replacement, 26.6.4 starter.
-    "r7_old                               green      -"
-    "r7_threeruns                         green      -"
-    "r7_remount                           violation  NoResumeAfterRetire"
-    "sab_r7_dropmark                      violation  DoneMeansRetired"
-    "sab_r7_foreignnoowner                violation  OldNotUnderNewOwner"
-    "sab_r7_ownerfirst                    violation  OldNotUnderNewOwner"
-    "sab_r7_remountstops                  violation  LiveMatchesOwnerAtRest"
+    # Round 8 (lifecycle spec r8): one monotone owner_life; round-7 rows are superseded.
+    "r8_core_z                            green      -"
+    "r8_threeruns                         green      -"
+    "sab_r8_dropmark                      violation  DoneMeansRetired"
+    "sab_r8_foreignnoowner                violation  OldNotUnderNewOwner"
+    "sab_r8_rechecknolife                 violation  NoResumeAfterRetire"
+    "sab_r8_remountstops                  violation  LiveMatchesOwnerAtRest"
+    "sab_r8_rollbacknolife                violation  DoneMeansRetired"
+    "sab_r8_ownerfirst                    violation  OldNotUnderNewOwner"
 )
 # Two to twelve minutes each.
 SLOW_CONFIGS=(
@@ -193,11 +194,10 @@ SLOW_CONFIGS=(
     "r6_newuuid_z                         green      -"
     "r6_newuuid_g                         green      -"
     "sab_r6_noverify                      violation  LiveMatchesOwnerAtRest"
-    "r7_core_z                            green      -"
-    "r7_core_g                            green      -"
-    "r7_remount_life                      green      -"
-    "sab_r7_rejoinunverified              green      -"
-    "sab_r7_remountrejoin                 green      -"
+    "r8_core_g                            green      -"
+    "r8_newuuid                           green      -"
+    "r8_old                               green      -"
+    "r8_remount                           green      -"
 )
 [[ "${SLOW:-0}" == 1 ]] && CONFIGS+=("${SLOW_CONFIGS[@]}")
 # Ad-hoc rows for exploration: EXTRA="name expect invariant;name expect invariant".
