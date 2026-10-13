@@ -19,6 +19,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 7 (spec r7): green with three guards found here** (`r7_*`): a failed admin remount still runs step 3 (`sab_r7_remountstops`), a foreign reclaim needs an owner read of our uuid (`sab_r7_foreignnoowner`), and an owner rejoin generation checked on remount (`r7_remount` red without it). The kept verified mark closes codex final 3 (`sab_r7_dropmark`).
 - **Round 8 (spec r8): green with one owner-life rule in place of three round-7 rules** (`r8_*`); every r8 sabotage is red. Switches `RemountChecksLife`, `RemountRejoins` and `RejoinVerifiedOnly` are removed.
 - **Round 9 (spec r9): green** (`r9_*`). The tool now reads its victim from the owner, as the code does; Opus P1-A is reproduced through an unverified rejoin (`sab_r9_rejoinunverified`) and a rerun after a verified run (`res_r9_rerunafterverified`), both closed by r9. New mixed-version residual: two rejoins of different uuids racing let a paused 26.6.4 starter run under the other uuid (`res_r9_uuidreuse`).
+- **Round 10 (spec r10, step 6): green with the rerun gated by the observed owner** (`r10_*`); a blind rerun after a tool killed past its verified mark drops a rejoined member (`res_r10_blindrerun`, documented residual).
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -535,6 +536,19 @@ New invariant `NoDrainOfLaterLife`: a drain never removes a reference allocated 
 ### Residuals {#round-9-residuals}
 
 Added: a paused 26.6.4 starter can run under another uuid's owner when two rejoins of different uuids race (`res_r9_uuidreuse`). Unchanged: the in-flight drain request and a tombstone left over a live successor when the tool dies before its rollback.
+
+## Round 10: a killed tool and the rerun gate (spec r10, step 6) {#round-10}
+
+The verified-mark write may land without the tool learning it (an ambiguous response, or the tool killed after the write). Switch `MarkSplit`: `DMarkVerified` lands the mark (the completion is recorded there: the mark is durable), and a separate `DMarkDone` reaches `ddone`; the tool may die in between. Switch `RerunObserved` replaces round 9's program-counter gate (`RerunOnlyUnverified`): a rerun is allowed only when the owner, read at the rerun's start, shows this run's own unverified tombstone (retired, not verified, the token this run wrote). A run that died before its tombstone has nothing to rerun; the operator starts a new decommission. Base of every `r10_*` row: round 9 with `MarkSplit` and `RerunObserved` on and `RerunOnlyUnverified` off; small bounds (no paused run, no fences, no GC round).
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `r10_core` | `a` starts twice | I9 | green | green | 291,399 | 3 |
+| `r10_newuuid` | `a` and `n` (uuid 2) | I9 | green | green | 181,922 | 2 |
+| `res_r10_blindrerun` | blind rerun: round 9's gate on the tool's own state | NoDrainOfLaterLife | violation | violation | 966,618 | 7 |
+
+- **The observed gate closes the killed-tool case** (`r10_*` green).
+- **A blind rerun drops a rejoined member** (`res_r10_blindrerun`): the mark lands, the tool is killed before it records the outcome, so its own state says "not verified"; `a` rejoins over the verified tombstone and publishes; the rerun reads the rejoined owner as its victim and drains `a`'s reference. Documented residual for an operator who reruns without reading the owner.
 
 ## Code checks {#code-checks}
 

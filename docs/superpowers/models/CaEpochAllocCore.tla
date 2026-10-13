@@ -135,7 +135,10 @@ CONSTANTS
     ToolReadsVictim,    \* each tool run takes its victim uuid from the owner it reads at start (readOwnerUuid)
     RejoinVerifiedOnly, \* rejoin only over a verified tombstone; an unverified one refuses (retryable)
     RerunOnlyUnverified,\* the operator reruns only a run that stopped before the verified mark
-    NewDecom            \* the operator may start a new decommission of a live (not retired) owner
+    NewDecom,           \* the operator may start a new decommission of a live (not retired) owner
+    \* Round 10 (spec r10, step 6):
+    MarkSplit,          \* the verified mark lands, then a separate step records it; the tool may die in between
+    RerunObserved       \* a rerun only when the owner shows this run's own unverified tombstone
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
@@ -875,13 +878,20 @@ DMarkVerified ==
     /\ IF OTok = dTombTok /\ ~ownerGone
        THEN /\ ownerGen' = ownerGen + 1
             /\ vTok' = OTokOf(ownerUuid, ownerRetired, ownerFloor, oStamp, ownerGen + 1)
-            /\ pc' = [pc EXCEPT !["d"] = "ddone"] /\ doneLives' = doneLives \cup {life}
+            /\ pc' = [pc EXCEPT !["d"] = IF MarkSplit THEN "dmarked" ELSE "ddone"]
+            /\ doneLives' = doneLives \cup {life}
        ELSE /\ pc' = [pc EXCEPT !["d"] = "dstop"] /\ UNCHANGED <<ownerGen, vTok, doneLives>>
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr,
                    allocLog, G7, G9, dup, slotMax, allocLife, lateDel, tombForeign, jTok, selfFenced, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, life, ownerFloor, ownerGone, dOwnTok, dTombTok, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife, staleDecom,
                    staleDrain>>
+
+\* The mark's response arrives (or its resolve read confirms it); the run reports done.
+DMarkDone ==
+    /\ pc["d"] = "dmarked"
+    /\ pc' = [pc EXCEPT !["d"] = "ddone"]
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
 
 \* op.read(epoch_key) under the claim: claimed_epoch.
 DCapture ==
@@ -1110,6 +1120,8 @@ DRestart(kind) ==
     /\ pc["d"] # "open"
     \* A verified run is final: the operator reruns only a run that stopped before the mark.
     /\ kind = "rerun" => (RerunOnlyUnverified => pc["d"] # "ddone")
+    \* The operator reruns only when the owner shows this run's own tombstone, not yet verified.
+    /\ kind = "rerun" => (RerunObserved => (ownerRetired /\ ~OwnerVerified /\ OTok = dTombTok))
     \* A new decommission names a live owner.
     /\ kind = "new" => (NewDecom /\ ~ownerRetired /\ ~ownerGone)
     /\ dNew' = (kind = "new")
@@ -1335,7 +1347,7 @@ Next ==
     \/ \E r \in inflight : LateLand(r)
     \/ Decom /\ (DDrain \/ DCapture \/ DReadMount \/ DDelMount \/ DDelEpoch \/ DRecheckMount
                  \/ DRecheckEpoch \/ DRetire \/ DReadOwner \/ DTombstone \/ DHwmRead \/ DHwmWrite
-                 \/ DPostTombCheck \/ DUntomb \/ (\E k \in {"rerun", "new"} : DRestart(k)) \/ DConfirmClaim \/ DVerifyMount \/ DVerifyOwner \/ DMarkVerified)
+                 \/ DPostTombCheck \/ DUntomb \/ (\E k \in {"rerun", "new"} : DRestart(k)) \/ DConfirmClaim \/ DVerifyMount \/ DVerifyOwner \/ DMarkVerified \/ DMarkDone)
     \/ OwnerLateLand \/ LateDelete \/ GcFenceDead \/ GcFenceLive \/ CatalogGc \/ ZombieDrain \/ ZombieConfirm \/ ZombieUntomb \/ GcFence \/ RRead \/ RWrite \/ RDelete
     \/ \E r \in Revivers : RvStart(r) \/ RvReadEpoch(r) \/ RvEmpty(r) \/ RvReadMount(r) \/ RvDelMount(r) \/ RvReadOwner(r) \/ RvWriteOwner(r)
     \/ PoolMetaAdmit \/ Tick \/ ClockStepBack
@@ -1351,7 +1363,7 @@ DProc ==
     \/ AllocEmpty("d") \/ AllocProbe("d") \/ ABase("d") \/ AllocWrite("d") \/ AllocResolve("d")
     \/ ClaimRead("d") \/ ClaimCheckOwner("d") \/ ClaimCheckCounter("d") \/ ClaimMint("d") \/ ClaimReclaim("d")
     \/ Farewell("d") \/ DDrain \/ DCapture \/ DReadOwner \/ DTombstone \/ DDelEpoch \/ DConfirmClaim \/ DUntomb
-    \/ DVerifyMount \/ DVerifyOwner \/ DMarkVerified
+    \/ DVerifyMount \/ DVerifyOwner \/ DMarkVerified \/ DMarkDone
 
 FairSpec == Spec /\ WF_vars(DProc)
 

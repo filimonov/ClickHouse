@@ -188,6 +188,10 @@ CONFIGS=(
     "r9_newdecom                          green      -"
     "sab_r9_rejoinunverified              violation  NoDrainOfLaterLife"
     "res_r9_rerunafterverified            violation  NoDrainOfLaterLife"
+    # Round 10 (lifecycle spec r10, step 6): split mark, rerun gated by the observed owner.
+    "r10_core                             green      -"
+    "r10_newuuid                          green      -"
+    "res_r10_blindrerun                   violation  NoDrainOfLaterLife"
 )
 # Two to twelve minutes each.
 SLOW_CONFIGS=(
