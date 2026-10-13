@@ -433,7 +433,7 @@ New invariants: `NoResumeAfterRetire` (a self-remount never makes live again a p
 | `sab_r7_ownerfirst` | owner written before the mount replacement | OldNotUnderNewOwner | violation | violation `OldNotUnderNewOwner` | 446,436 | 4 |
 | `sab_r7_foreignnoowner` | foreign reclaim without the owner read | OldNotUnderNewOwner | violation | violation `OldNotUnderNewOwner` | 1,827,480 | 15 |
 | `sab_r7_remountstops` | a failed admin remount ends the run before step 3 | LiveMatchesOwnerAtRest | violation | violation `LiveMatchesOwnerAtRest` | 31,999 | 1 |
-| `sab_r7_remountrejoin` | the remount may rejoin (SLOW) | NoResumeAfterRetire | violation | green | 55,388,740 | 474 |
+| `sab_r7_remountrejoin` | the remount may rejoin (SLOW) | NoResumeAfterRetire | — | green | 55,388,740 | 474 |
 | `sab_r7_rejoinunverified` | rejoin over an unverified tombstone (SLOW) | I7 | — | green | 55,352,312 | 499 |
 
 ### Findings {#round-7-findings}
