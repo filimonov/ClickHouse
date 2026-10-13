@@ -93,7 +93,18 @@ CONSTANTS
     GcFences,           \* GC may fence the decommission tool's lease while the tool keeps running
     ReaddAcceptsFenced, \* sabotage: re-add accepts a gc_fenced mount, not only a clean farewell
     ZombieRun,          \* a re-run leaves the paused earlier run's decided tombstone and next steps to land later
-    ReviveRewritesMount \* proposed: re-add replaces the farewell `mount` (new uuid, clean) instead of deleting it
+    ReviveRewritesMount,\* proposed: re-add replaces the farewell `mount` (new uuid, clean) instead of deleting it
+    \* Round 5 (spec r3):
+    TombAlways,         \* every run rewrites the tombstone by If-Match, also over an existing one (sabotage: FALSE)
+    VerifyRetired,      \* after the farewell: GET mount (own clean farewell), GET owner (own tombstone) -> done
+    ReaddOneWrite,      \* re-add: GET owner, GET epoch, GET mount (clean), emptiness, one If-Match owner write
+    ReaddSkipsClean,    \* sabotage: re-add accepts any mount body
+    ClaimForeignClean,  \* claimMount reclaims a clean farewell of another uuid
+    ClaimForeignFenced, \* sabotage: claimMount also reclaims a gc_fenced body of another uuid
+    RaceUuids,          \* reviver "r2" targets the other uuid
+    DrainFenced,        \* the admin drains on its own lease: no drain step once its claim is gone
+    DrainInFlight,      \* a drain request sent under the lease may land after it (a late delete)
+    AdminRefusesAbsent  \* the decommission tool never creates an absent counter
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
@@ -144,7 +155,9 @@ VARIABLES
     zDrain,             \* a paused earlier decommission run's next step: [on, mode, ep, mtok, tok]
     dLife,              \* life in which the current decommission run read the owner
     staleDecom,         \* ghost: a decommission tombstone landed in a later life than its owner read
-    staleDrain          \* ghost: a decommission drain removed a reference of an epoch newer than its run's own
+    staleDrain,         \* ghost: a decommission drain removed a reference of an epoch newer than its run's own
+    lateDel,            \* a drain request in flight: [on, ep]
+    dDoneLife           \* ghost: life at the decommission tool's verified end
 
 vars == <<epObj, epGen, mount, mGen, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr,
           allocLog, dup, slotMax, pc, myEpoch, myBody, myExp, myAmb, myMTok, starts, mf,
@@ -152,7 +165,7 @@ vars == <<epObj, epGen, mount, mGen, ownerRetired, manifests, refs, inflight, am
           epBornAt, maxCounter, regress, clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm,
           ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, myFloor, life, allocLife, rpc, rTok,
           oInfl, ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife,
-          staleDecom, staleDrain>>
+          staleDecom, staleDrain, lateDel, dDoneLife>>
 
 EpVars == <<epObj, epGen, epBornAt, maxCounter, regress>>
 LVars == <<oStamp, zDrain, dLife, staleDecom, staleDrain>>
@@ -203,6 +216,13 @@ Tail2 == OwnerFloor /\ ~TombAfterDelete
 AcceptsTomb(p) == p = "d" /\ (OwnerFloor \/ (KeepAll /\ ~RetryRefusesTomb))
 AfterTombNext == IF KeepSlot THEN "dstop" ELSE "ddelm"
 Uuid(p) == IF p \in NewUuidInst THEN "u2" ELSE "u1"
+OtherUuid(u) == IF u = "u1" THEN "u2" ELSE "u1"
+\* Target uuid of re-add run r.
+RvUuid(r) == IF RaceUuids /\ r = "r2" THEN OtherUuid(ReviveUuid) ELSE ReviveUuid
+\* claimMount over a body of another uuid.
+ForeignReclaimable == (ClaimForeignClean /\ mount.clean /\ ~mount.fenced) \/ (ClaimForeignFenced /\ mount.fenced)
+\* The decommission tool's claim is still in the slot, unfenced (its lease-deadline fence has not fired).
+OwnClaim(t) == mGen = t /\ mount.holder = "d" /\ ~mount.fenced
 MintNext == IF MintChecksCounter THEN "cchk" ELSE "cmint"
 RvAfterMount == IF ReviveOwnerFirst THEN "rdone" ELSE "roread"
 AfterKeepTomb == IF AdminConfirmsClaim THEN "dchk" ELSE "ddrain"
@@ -247,6 +267,7 @@ Init ==
     /\ tombOverLive = FALSE /\ dTombRefused = FALSE
     /\ oStamp = 0 /\ zDrain = [on |-> FALSE, mode |-> "none", ep |-> 0, mtok |-> 0, tok |-> <<>>]
     /\ dLife = 0 /\ staleDecom = FALSE /\ staleDrain = FALSE
+    /\ lateDel = [on |-> FALSE, ep |-> 0] /\ dDoneLife = 0
     /\ pc = [p \in Procs |-> IF p = "d" THEN "open" ELSE "down"]
     /\ myEpoch = [p \in Procs |-> 0]
     /\ myBody = [p \in Procs |-> EAbsent]
@@ -262,7 +283,8 @@ Locals == <<myEpoch, myBody, myExp, myAmb, myMTok, starts, mf>>
 Store == <<EpVars, mount, mGen, ownerRetired, manifests, refs>>
 DVars == <<dCap, dFar, dOwn>>
 GVars == <<gpc, gfloor, gview, gRounds>>
-Ghost == <<allocLog, dup, slotMax, allocLife>>
+G5 == <<lateDel, dDoneLife>>
+Ghost == <<allocLog, dup, slotMax, allocLife, G5>>
 
 -----------------------------------------------------------------------------
 (* Server start                                                            *)
@@ -339,7 +361,7 @@ AllocRead(p) ==
                  /\ myAmb' = [myAmb EXCEPT ![p] = FALSE]
                  /\ BumpNonce
                  /\ pc' = [pc EXCEPT ![p] = "awrite"]
-       ELSE /\ pc' = [pc EXCEPT ![p] = "aempty"]
+       ELSE /\ pc' = [pc EXCEPT ![p] = IF p = "d" /\ AdminRefusesAbsent THEN "dstop" ELSE "aempty"]
             /\ UNCHANGED <<myEpoch, myBody, myExp, myAmb, nonceCtr>>
     /\ UNCHANGED <<Store, inflight, ambUsed, Ghost, myMTok, starts, mf, DVars, GVars>>
     /\ UNCHANGED XVars
@@ -391,7 +413,7 @@ Allocated(p) ==
     /\ allocLog' = allocLog \cup {myEpoch[p]}
     /\ allocLife' = allocLife \cup {<<myEpoch[p], life>>}
     /\ dup' = (dup \/ myEpoch[p] \in allocLog)
-    /\ UNCHANGED slotMax
+    /\ UNCHANGED <<slotMax, G5>>
     /\ pc' = [pc EXCEPT ![p] = "cread"]
 
 \* writeLoop attempt: backend->write with If-Match / If-None-Match.  Three disjuncts:
@@ -460,7 +482,7 @@ ClaimRead(p) ==
     /\ IF mount.e = 0
        THEN /\ pc' = [pc EXCEPT ![p] = IF ClaimChecksOwner THEN "cownm" ELSE MintNext]
             /\ UNCHANGED myMTok
-       ELSE IF mount.u # Uuid(p)
+       ELSE IF mount.u # Uuid(p) /\ ~ForeignReclaimable
        THEN /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED myMTok          \* ForeignOwner
        ELSE IF mount.e > myEpoch[p]
        THEN /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED myMTok          \* newer_epoch -> ABORTED
@@ -524,7 +546,7 @@ ClaimMint(p) ==
             /\ slotMax' = IF myEpoch[p] > slotMax THEN myEpoch[p] ELSE slotMax
        ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax>>
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, allocLog, dup,
-                   allocLife, myEpoch, myBody, myExp, myAmb, starts, mf, DVars, GVars>>
+                   allocLife, G5, myEpoch, myBody, myExp, myAmb, starts, mf, DVars, GVars>>
     /\ UNCHANGED XVars
 
 \* op.replace(mountKey, body, got->etag): If-Match on the token ClaimRead saw.
@@ -538,7 +560,7 @@ ClaimReclaim(p) ==
             /\ slotMax' = IF myEpoch[p] > slotMax THEN myEpoch[p] ELSE slotMax
        ELSE /\ pc' = [pc EXCEPT ![p] = Down(p)] /\ UNCHANGED <<mount, mGen, myMTok, slotMax>>
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, allocLog, dup,
-                   allocLife, myEpoch, myBody, myExp, myAmb, starts, mf, DVars, GVars>>
+                   allocLife, G5, myEpoch, myBody, myExp, myAmb, starts, mf, DVars, GVars>>
     /\ UNCHANGED XVars
 
 -----------------------------------------------------------------------------
@@ -574,7 +596,7 @@ Farewell(p) ==
     /\ pc' = [pc EXCEPT ![p] = IF p # "d" THEN "down"
                               ELSE IF ~KeepAll THEN "dreadm"
                               ELSE IF DecomDeletesEpoch THEN "ddele"
-                              ELSE IF TombLast THEN "downer" ELSE "ddone"]
+                              ELSE IF TombLast THEN "downer" ELSE IF VerifyRetired THEN "dverm" ELSE "ddone"]
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, Ghost, Locals,
                    DVars, GVars>>
     /\ UNCHANGED XVars
@@ -592,13 +614,51 @@ Crash(p) ==
 \* The namespace drain under the admin claim, abstracted: the victim's namespaces are dropped.
 DDrain ==
     /\ pc["d"] = IF KeepAll /\ ~TombLast THEN "ddrain" ELSE "dlive"
-    /\ refs' = {}
-    /\ staleDrain' = (staleDrain \/ \E e \in refs : e > myEpoch["d"])
-    /\ pc' = [pc EXCEPT !["d"] = IF KeepAll /\ ~DecomDeletesEpoch THEN "dfarewell" ELSE "dcap"]
-    /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr, Ghost,
-                   Locals, DVars, GVars>>
+    /\ LET next == IF KeepAll /\ ~DecomDeletesEpoch THEN "dfarewell" ELSE "dcap" IN
+       IF DrainFenced /\ ~OwnClaim(myMTok["d"])
+       THEN \* The lease fence refuses the request locally; the run fails.
+            /\ pc' = [pc EXCEPT !["d"] = "dstop"]
+            /\ UNCHANGED <<refs, staleDrain, lateDel>>
+       ELSE \/ /\ refs' = {}
+               /\ staleDrain' = (staleDrain \/ \E e \in refs : e > myEpoch["d"])
+               /\ pc' = [pc EXCEPT !["d"] = next]
+               /\ UNCHANGED lateDel
+            \* Sent under the lease, response lost: the delete lands later (LateDelete).
+            \/ /\ DrainInFlight /\ ~lateDel.on
+               /\ lateDel' = [on |-> TRUE, ep |-> myEpoch["d"]]
+               /\ pc' = [pc EXCEPT !["d"] = next]
+               /\ UNCHANGED <<refs, staleDrain>>
+    /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr,
+                   allocLog, dup, slotMax, allocLife, dDoneLife, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife, staleDecom>>
+
+\* Store side of a drain request sent before the lease was lost.
+LateDelete ==
+    /\ lateDel.on
+    /\ refs' = {}
+    /\ staleDrain' = (staleDrain \/ \E e \in refs : e > lateDel.ep)
+    /\ lateDel' = [lateDel EXCEPT !.on = FALSE]
+    /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr,
+                   allocLog, dup, slotMax, allocLife, dDoneLife, pc, Locals, DVars, GVars>>
+    /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
+                   ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, oStamp, zDrain, dLife, staleDecom>>
+
+\* Proposed verify: GET mount; the tool's own clean farewell.
+DVerifyMount ==
+    /\ pc["d"] = "dverm"
+    /\ pc' = [pc EXCEPT !["d"] = IF mount.e = myEpoch["d"] /\ mount.u = Uuid("d") /\ mount.clean
+                                 THEN "dvero" ELSE "dstop"]
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
+
+\* Proposed verify: GET owner; still retired and, when this run wrote one, its own tombstone.
+DVerifyOwner ==
+    /\ pc["d"] = "dvero"
+    /\ IF ownerRetired /\ ~ownerGone /\ (dTombTok = <<>> \/ OTok = dTombTok)
+       THEN pc' = [pc EXCEPT !["d"] = "ddone"] /\ dDoneLife' = life
+       ELSE pc' = [pc EXCEPT !["d"] = "dstop"] /\ UNCHANGED dDoneLife
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, lateDel,
+                   Locals, DVars, GVars, XVars>>
 
 \* op.read(epoch_key) under the claim: claimed_epoch.
 DCapture ==
@@ -685,7 +745,8 @@ DReadOwner ==
     /\ dTombTok' = <<>>
     /\ dLife' = life
     /\ pc' = [pc EXCEPT !["d"] = IF ownerGone THEN "dstop"
-                                 ELSE IF KeepAll /\ ownerRetired THEN (IF TombLast THEN "ddone" ELSE AfterKeepTomb)
+                                 ELSE IF KeepAll /\ ownerRetired /\ ~TombAlways
+                                 THEN (IF TombLast THEN "ddone" ELSE AfterKeepTomb)
                                  ELSE "dtomb"]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, dCap, dFar, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, life, ownerFloor, ownerGen, ownerGone, rpc, rTok, oInfl,
@@ -749,9 +810,12 @@ OwnerLateLand ==
 \* A paused earlier decommission run's drain (dropNamespace, staging and roots prefix deletes).
 ZombieDrain ==
     /\ zDrain.on /\ zDrain.mode = "drain"
-    /\ refs' = {}
     /\ zDrain' = [zDrain EXCEPT !.on = FALSE]
-    /\ staleDrain' = (staleDrain \/ \E e \in refs : e > zDrain.ep)
+    \* DrainFenced: the paused run's lease fence refuses the request once its claim is gone.
+    /\ IF DrainFenced /\ ~OwnClaim(zDrain.mtok)
+       THEN UNCHANGED <<refs, staleDrain>>
+       ELSE /\ refs' = {}
+            /\ staleDrain' = (staleDrain \/ \E e \in refs : e > zDrain.ep)
     /\ UNCHANGED <<EpVars, mount, mGen, ownerRetired, manifests, inflight, ambUsed, nonceCtr, Ghost, pc,
                    Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, life, ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, rpc, rTok, oInfl,
@@ -902,7 +966,15 @@ ClockStepBack ==
 \* Precondition: GET `owner` is tombstoned.
 RvStart(r) ==
     /\ KeepAll /\ rv[r] = "idle" /\ ownerRetired /\ ~ownerGone
-    /\ rv' = [rv EXCEPT ![r] = "rempty"]
+    /\ rv' = [rv EXCEPT ![r] = IF ReaddOneWrite THEN "repoch" ELSE "rempty"]
+    /\ rvOTok' = IF ReaddOneWrite THEN [rvOTok EXCEPT ![r] = OTok] ELSE rvOTok
+    /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, pc, Locals, DVars, GVars>>
+    /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, NVarsNoRv, rvMTok>>
+
+\* ReaddOneWrite: GET epoch, it must exist.
+RvReadEpoch(r) ==
+    /\ rv[r] = "repoch"
+    /\ rv' = [rv EXCEPT ![r] = IF epObj.v > 0 THEN "rmread" ELSE "rstop"]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, pc, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, NVarsNoRv, rvMTok, rvOTok>>
 
@@ -910,7 +982,8 @@ RvStart(r) ==
 RvEmpty(r) ==
     /\ rv[r] = "rempty"
     /\ rv' = [rv EXCEPT ![r] = IF manifests = {} /\ refs = {}
-                              THEN (IF ReviveOwnerFirst THEN "roread" ELSE "rmread") ELSE "rstop"]
+                              THEN (IF ReaddOneWrite THEN "rowrite" ELSE IF ReviveOwnerFirst THEN "roread" ELSE "rmread")
+                              ELSE "rstop"]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, pc, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, NVarsNoRv, rvMTok, rvOTok>>
 
@@ -918,9 +991,11 @@ RvEmpty(r) ==
 RvReadMount(r) ==
     /\ rv[r] = "rmread"
     /\ rvMTok' = [rvMTok EXCEPT ![r] = mGen]
-    /\ rv' = [rv EXCEPT ![r] = IF mount.e = 0 THEN RvAfterMount
+    /\ rv' = [rv EXCEPT ![r] = IF ReaddOneWrite
+                              THEN (IF ReaddSkipsClean \/ (mount.e > 0 /\ mount.clean) THEN "rempty" ELSE "rstop")
+                              ELSE IF mount.e = 0 THEN RvAfterMount
                               ELSE IF ~(mount.clean \/ (mount.fenced /\ ReaddAcceptsFenced)) THEN "rstop"
-                              ELSE IF ReviveRewritesMount /\ mount.u = ReviveUuid THEN RvAfterMount
+                              ELSE IF ReviveRewritesMount /\ mount.u = RvUuid(r) THEN RvAfterMount
                               ELSE "rmdel"]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, pc, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, NVarsNoRv, rvOTok>>
@@ -932,7 +1007,7 @@ RvDelMount(r) ==
     /\ NoZombie => ~PendingMountClaim
     /\ IF mount.e > 0 /\ mGen = rvMTok[r]
        THEN /\ mount' = IF ReviveRewritesMount
-                             THEN [mount EXCEPT !.u = ReviveUuid, !.holder = "none", !.clean = TRUE, !.fenced = FALSE]
+                             THEN [mount EXCEPT !.u = RvUuid(r), !.holder = "none", !.clean = TRUE, !.fenced = FALSE]
                              ELSE MAbsent
             /\ mGen' = mGen + 1
             /\ rv' = [rv EXCEPT ![r] = RvAfterMount]
@@ -953,7 +1028,7 @@ RvReadOwner(r) ==
 RvWriteOwner(r) ==
     /\ rv[r] = "rowrite"
     /\ IF OTok = rvOTok[r] /\ ~ownerGone
-       THEN /\ ownerRetired' = FALSE /\ ownerUuid' = ReviveUuid /\ ownerGen' = ownerGen + 1 /\ oStamp' = 0
+       THEN /\ ownerRetired' = FALSE /\ ownerUuid' = RvUuid(r) /\ ownerGen' = ownerGen + 1 /\ oStamp' = 0
             /\ life' = life + 1
             /\ rv' = [rv EXCEPT ![r] = IF ReviveOwnerFirst THEN "rmread" ELSE "rdone"]
        ELSE /\ UNCHANGED <<ownerRetired, ownerUuid, ownerGen, oStamp, life>> /\ rv' = [rv EXCEPT ![r] = "rstop"]
@@ -1009,9 +1084,9 @@ Next ==
     \/ \E r \in inflight : LateLand(r)
     \/ Decom /\ (DDrain \/ DCapture \/ DReadMount \/ DDelMount \/ DDelEpoch \/ DRecheckMount
                  \/ DRecheckEpoch \/ DRetire \/ DReadOwner \/ DTombstone \/ DHwmRead \/ DHwmWrite
-                 \/ DPostTombCheck \/ DUntomb \/ DRestart \/ DConfirmClaim)
-    \/ OwnerLateLand \/ ZombieDrain \/ ZombieConfirm \/ ZombieUntomb \/ GcFence \/ RRead \/ RWrite \/ RDelete
-    \/ \E r \in Revivers : RvStart(r) \/ RvEmpty(r) \/ RvReadMount(r) \/ RvDelMount(r) \/ RvReadOwner(r) \/ RvWriteOwner(r)
+                 \/ DPostTombCheck \/ DUntomb \/ DRestart \/ DConfirmClaim \/ DVerifyMount \/ DVerifyOwner)
+    \/ OwnerLateLand \/ LateDelete \/ ZombieDrain \/ ZombieConfirm \/ ZombieUntomb \/ GcFence \/ RRead \/ RWrite \/ RDelete
+    \/ \E r \in Revivers : RvStart(r) \/ RvReadEpoch(r) \/ RvEmpty(r) \/ RvReadMount(r) \/ RvDelMount(r) \/ RvReadOwner(r) \/ RvWriteOwner(r)
     \/ PoolMetaAdmit \/ Tick \/ ClockStepBack
     \/ GcFloor \/ GcView \/ GcEnd \/ \E k \in manifests : GcDelete(k)
 
@@ -1025,6 +1100,7 @@ DProc ==
     \/ AllocEmpty("d") \/ AllocProbe("d") \/ ABase("d") \/ AllocWrite("d") \/ AllocResolve("d")
     \/ ClaimRead("d") \/ ClaimCheckOwner("d") \/ ClaimCheckCounter("d") \/ ClaimMint("d") \/ ClaimReclaim("d")
     \/ Farewell("d") \/ DDrain \/ DCapture \/ DReadOwner \/ DTombstone \/ DDelEpoch \/ DConfirmClaim \/ DUntomb
+    \/ DVerifyMount \/ DVerifyOwner
 
 FairSpec == Spec /\ WF_vars(DProc)
 
@@ -1082,6 +1158,12 @@ RetryAcceptsTomb == ~dTombRefused
 
 \* Witness (expected violated): a decommission re-run reaches its end.
 RetryNeverCompletes == ~(starts["d"] = 1 /\ pc["d"] = "ddone")
+
+\* A decommission that verified its end leaves the owner retired until a re-add (a new life).
+DoneMeansRetired == (VerifyRetired /\ pc["d"] = "ddone" /\ life = dDoneLife) => ownerRetired
+
+\* Witness, expected violated: a member with the second uuid runs live after a re-add.
+SecondUuidNeverLive == ~\E i \in Inst : pc[i] = "live" /\ Uuid(i) = "u2"
 
 \* No decommission tombstone lands in a later life than the owner read it was decided on.
 NoStaleTombstone == ~staleDecom
