@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-13 19:35'
+updated_date: '2026-10-13 20:55'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -114,4 +114,6 @@ Decision log (times are commit times, local):
 - 2026-10-13: backlog cross-check. Closes CAS-87; absorbs CAS-86 and CAS-310 (deps set on them); notes left on CAS-315, CAS-46, CAS-29.6, CAS-29.10 (spec §9). Unchanged by this design: CAS-36, CAS-357 (floor stays step 1), CAS-37, CAS-91, CAS-139, CAS-311, CAS-29.12, CAS-338.
 
 - 2026-10-13: spec reviewed by codex gpt-6-astra high, five rounds (tmp/cas358/codex_spec_review_1..5.md): 8/6/4/5/3 findings, verdict on rev.6 APPROVE WITH MINORS, minors applied in rev.7. Main corrections along the way: ownership deltas independent of bodies; candidate-first two-pass sweep; seed exact at C with T >= C precondition, endpoint check, admission-to-completion budget, zero = unlimited, fairness cursor seed_after; delta admission whitelist; empty-run initialization; HEAD/GET-404 re-evaluation; historical foldOwned and cursor-epoch gate in the model; keep=1 adopted-generation prune split out as CAS-386.
+
+- 2026-10-13: owner question 'can the sweep rely on the latest _snap alone?'. Yes with one guard: delete only if below floor, absent from snap(P), build epoch < P.writer_epoch, and the fold cursor C >= P (every -1 at or below P folded). No on-store state, no fold change; sweep reads _ckpt and _snap, no logs. Gap: a _snap exists only when the tail exceeds 256 logs or 1 MiB (CasPool.h:290); fix on the writer side by publishing after recovery whenever the tail is non-empty (admitSnapshotPublishUnderStateLock, CasRefLedger.cpp:4140), which also shortens table load. The owned-set design (spec rev.8) is superseded by this if the owner confirms; CAS-387 (epoch out of the log key) is orthogonal and does not remove the second read by itself.
 <!-- SECTION:NOTES:END -->

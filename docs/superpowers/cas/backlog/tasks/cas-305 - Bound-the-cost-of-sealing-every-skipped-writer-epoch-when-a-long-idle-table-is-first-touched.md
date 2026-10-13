@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26 12:54'
-updated_date: '2026-10-12 14:14'
+updated_date: '2026-10-13 20:55'
 labels:
   - 'area:ref-ledger'
   - 'complexity:medium'
@@ -65,4 +65,6 @@ Provenance: docs/superpowers/cas/2031-triage.md#cas-114 (2031-triage CAS-114; th
 2026-10-12, direction (d), never evaluated: one sequence per namespace with the same start seal. The July spec (git show 6fff5748abe:docs/superpowers/specs/2026-07-27-cas-ref-chain-complete-cut-design.md, INV-1/INV-2) makes ids dense within `(namespace, epoch)` and restarts at 1 per epoch, so a successor must close every elapsed epoch, empty ones included (sequence-1 seal grammar). With one counter per namespace the first touch seals the first absent slot T+1 once, and that fences every earlier incarnation: by INV-1 each had at most one in-flight create, always at its own first absent slot, which is either filled since or equals T+1. Cost: a `RefTxnId` format bump (keys, `_ckpt`, `_snap`, fold-seal coverage; frozen since 26.6.4, so a new version with a compatibility path), the seal carries the closed `writer_epoch` for the sweep rule 'manifest of epoch E deletable once a seal above E is consumed', `crossEpochFromSeal` and the hinter's epoch bound disappear, TLA re-check. Gain is O(1) seals per first touch instead of O(elapsed epochs), and no epoch crossings in GC; it does not cut seals for tables loaded at every restart (one touch per restart either way), so it does not replace CAS-358. The spec's alternatives table has no row for this variant; it was not rejected, only not considered.
 
 2026-10-12, cursor finality under (d). Today `RefTxnId{writer_epoch, ref_sequence}` is already a total order per namespace (`operator<=>` default, `CasTypes.h:267`; `writer_epoch` durable-monotone per server root and each life rooted at one root, `CasRefCkpt.cpp:77-85`), and the fold seal stores it as `RefCoverage.last_folded_ref_id` (`CasFoldSealFormat.h:136`). CAS-358's `as_of` cursor is that pair. What the pair lacks is finality: 'nothing below C appears later' holds only via the per-dead-epoch seals, because density is per epoch. Under (d) density is global, so `C <= committed_through` is final by construction, the cursor is one integer, and CAS-358 compares integers with no logic change. Relation: (d) is a format bump, CAS-358 is not; CAS-358 lands on the pair first.
+
+2026-10-13: direction (d) is now its own task, CAS-387 (one monotone sequence per life; epoch leaves the log key, the seal carries the closed writer epoch). This task stays as the bound on today's format; if CAS-387 lands first, this task closes with it.
 <!-- SECTION:NOTES:END -->
