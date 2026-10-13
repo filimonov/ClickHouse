@@ -79,7 +79,7 @@ Then the normal path continues: the kept counter gives an epoch above every earl
 
 Concurrent starters serialize on the owner `If-Match`; a loser with another uuid gets "owned by a different server". The `mount` body is not touched before the claim: the slot is never absent (a delayed mint of any earlier life fails its `If-None-Match`), and its `writer_epoch` stays, so `claimMount`'s `newer_epoch` refusal (`:822`) still stops a delayed lower-epoch claimer.
 
-A victim that restarts during its own decommission waits on the admin's live lease or is refused (data not empty); if it reclaims right after the farewell, its recheck sees the tombstone, it self-fences and fails, and its next start rejoins once the data is gone. A returning old host with its old local tables comes back empty: the tables' namespaces are terminal (#checks).
+A victim that restarts during its own decommission waits on the admin's live lease or is refused (data not empty); if it reclaims right after the farewell, its recheck sees the tombstone, it self-fences and fails, and its next start rejoins once the data is gone. A returning old host comes back empty: its table definitions in the local server metadata still exist, and their paths on the CAS disk now have no data. Rejoin requires the victim's catalog rows to be gone, so the next write to such a path starts a fresh namespace (#checks).
 
 Cost: on the rejoin path only, 2 GET, the emptiness check (1 catalog read, 2 LIST), at most 1 DELETE, 1 PUT. The normal start pays nothing extra here.
 
@@ -212,7 +212,7 @@ Round 6 must check the r4 changes before code:
 
 - A self-written `gc_fenced` body must behave as a GC fence everywhere: `isCreatorFenceTerminal`, `computeHeartbeatFloor`, `claimMount` reclaim, `listMounts`.
 - `claimOwnerOrThrow` returns no owner ETag; decommission step 2 reads the owner itself.
-- A server returning with its old local tables after its `srid` was retired must start: tables whose namespaces are terminal fail or attach empty per table (`refuseTerminalLife`), never the whole server.
+- A server returning with its old local table definitions after its `srid` was retired attaches those tables empty; confirm no path still resolves to a terminal namespace life (rejoin waits until GC removed the catalog rows).
 - `throwIfOwnerRetired` remains only for the cases rejoin refuses.
 - The admin keeps `background_watermark = true`; its self-remount must fail on the owner check after step 2 (no `NoWait` on that path).
 - `DecommissionRecovery` callers after step 1's rule.
