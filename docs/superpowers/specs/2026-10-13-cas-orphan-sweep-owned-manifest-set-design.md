@@ -223,17 +223,58 @@ Gate: `utils/cas-gate` (`CAS*` filter), ASan lane for the five suites.
 
 ## 7. TLA+ {#tla}
 
-`docs/superpowers/models/CaGcRootLocalPartManifestCore.tla`, `GSwView` (`:1100`): today `swOwned'` is the current owner map, the replayed frontier, and the nomination predicate has no cursor-epoch gate (`:1134-1139`). Add:
+`docs/superpowers/models/CaGcRootLocalPartManifestCore.tla`, `GSwView` (`:1100`): today `swOwned'` is the current owner map, the replayed frontier, and the nomination predicate has no cursor-epoch gate (`:1134-1139`). Seven questions, each with the sabotage that proves the model can see the answer; a green run without its counterexample is vacuous.
+
+### 7.1 The view source {#tla-view}
 
 - variable `foldOwned`, the historical binding set as of the fold cursor, maintained by applying journal owner transitions in the fold step up to the cursor; it is not a restriction of the current `owner` map, which cannot name an owner already removed above the cursor;
 - the sampled per-life cursor epoch `foldCursorEpoch[life]`, and the gate `E >= foldCursorEpoch[life]` in the nomination predicate, the implementation's rule (1) (`CasOrphanManifestSweep.cpp:489-503`);
 - constant `ViewFromFoldState`: `GSwView` takes `swOwned' = foldOwned ∪ {m : buildEpoch(m) >= foldCursorEpoch[lifeOf(m)]}` and no tail term;
-- the journal event records the removed owner kind, and the invariant `HasUnfoldedCommittedRemoval(m) => mBody[m]` is added as CAS-310 states it (committed removals only: an abandoned precommit's body may legitimately be gone);
-- sabotage `SabotageSweepUnfoldedRemoval` (CAS-310's name): `swOwned'` from the current `owner` map while `foldOwned` lags, expected to violate that invariant;
-- sabotage `SabotageLiveEpochGateOnly`: the gate `buildEpoch(m) = liveEpoch` instead of `>= foldCursorEpoch`; the three-epoch schedule (fold in epoch 1; epoch 2 creates, commits and removes `m`; writer at epoch 3) must produce a counterexample;
-- configs: `fix_ownedset` (positive: every existing honest cfg plus the new invariant green), `sab_sweepunfoldedremoval`, `sab_liveepochgate` (counterexamples required), `witness_threeepochlag` (positive, the schedule above retains `m`).
+- every existing honest cfg stays green on `INV_NO_LOSS` and `INV_NO_DANGLE` with `ViewFromFoldState`.
 
-Run via `run_gc_partmanifest.sh`; results appended to `CaGcRootLocalPartManifestCore_RESULTS.md`.
+### 7.2 The unfolded-removal invariant (CAS-310) {#tla-unfolded-removal}
+
+- the journal event records the removed owner kind; invariant `HasUnfoldedCommittedRemoval(m) => mBody[m]` (committed removals only: an abandoned precommit's body may legitimately be gone);
+- sabotage `SabotageSweepUnfoldedRemoval`: `swOwned'` from the current `owner` map while `foldOwned` lags; counterexample required;
+- sabotage `SabotageLiveEpochGateOnly`: the gate `buildEpoch(m) = liveEpoch` instead of `>= foldCursorEpoch`; the three-epoch schedule (fold in epoch 1; epoch 2 creates, commits and removes `m`; writer at epoch 3) must produce a counterexample; `witness_threeepochlag` (positive) retains `m`.
+
+### 7.3 Coverage exactness {#tla-coverage}
+
+The class of the rev.2, rev.3 and rev.5 findings (bodiless precommit, rows for an uncovered life, seed below `C` on a regressed frontier). Model the owned seal as `covered[life]` and the run as `rows[life]`, the `_ckpt` frontier as a value that may lag or regress relative to the cursor, and the seed as a step bounded by `min(T, C)` with an endpoint check.
+
+- invariant `INV_OWNED_EXACT`: `covered[life] => rows[life] = bindingsAt(cursor[life])` and `~covered[life] => rows[life] = {}`;
+- sabotage `SabotageDeltaWithoutAdmission`: an uncovered life's accepted deltas enter the run; must break `INV_OWNED_EXACT`;
+- sabotage `SabotageSeedToFrontier`: the seed walks to `T` instead of `C`; must break it;
+- sabotage `SabotageSeedBelowCursor`: with `T < C` the seed stops at `T` and publishes coverage; must break it, and under `ViewFromFoldState` must reach `INV_NO_LOSS`;
+- sabotage `SabotageOwnedNeedsBody`: a transition stages its owned delta only when the body is readable; must break it.
+
+### 7.4 Absence under leader alternation {#tla-absence}
+
+Extends attempt scoping (`EnableAttemptScoping`, `SabotageDeposedLeaderWritesFinalGen`). A legacy-leader step folds without writing the owned family and may delete any owned seal or run of a non-adopted or pruned generation; a `HEAD`-success-then-`GET`-404 interleaving is a separate step.
+
+- `INV_NO_LOSS` holds with owned seals and runs that may vanish; a vanished run uncovers its shard's lives before any delta is admitted;
+- sabotage `SabotageAbsenceIsEmptyCoverage`: an absent owned seal or run is read as an empty, covered set; counterexample required;
+- sabotage `SabotageHeadIsAPin`: a shard whose `HEAD` succeeded is merged against an empty baseline when the `GET` fails, keeping its covered lives; counterexample required.
+
+### 7.5 Seed liveness under budget and fairness {#tla-liveness}
+
+- property `EventuallyCovered`: every life whose history is reconstructible (`P <= C` at some point, logs present) is eventually covered, with weak fairness on the fold step, a finite seed budget per round and at least one life whose seed fails forever;
+- sabotage `SabotageFixedSeedOrder`: admission always starts from the smallest life id (no `seed_after`); must violate `EventuallyCovered`;
+- sabotage `SabotageDiscardOversizedSeed`: a seed over budget is discarded rather than run to completion; must violate it for a life longer than the budget.
+
+### 7.6 Debris liveness {#tla-debris}
+
+`OrphanManifestDebrisDrains` keeps holding under `ViewFromFoldState` with the new retain class: an uncovered life retains only until its seed lands, which 7.5 guarantees.
+
+### 7.7 Prune against a lost CAS (CAS-386) {#tla-prune}
+
+Separate small model or an extension of attempt scoping: generations, `keep`, `referenced_generations` built from run placement only, an all-carry round, the pre-CAS prune, a lost CAS.
+
+- invariant `AdoptedSealReadable`: the adopted generation's fold seal exists in every state;
+- the current code (`referenced_generations` from runs, prune floor `G + 1 - keep`) with `keep = 1` must produce a counterexample;
+- the candidate fix (the adopted generation is always in `referenced_generations`) must be green; this run is CAS-386's AC.
+
+Configs: `fix_ownedset` (positive, 7.1-7.6 green on every existing honest cfg), one `sab_*` per sabotage above (counterexample required), `witness_threeepochlag`, `prune_keep1` and `prune_keep1_fix` (7.7). Run via `run_gc_partmanifest.sh`; results appended to `CaGcRootLocalPartManifestCore_RESULTS.md`.
 
 ## 8. Documentation {#docs}
 

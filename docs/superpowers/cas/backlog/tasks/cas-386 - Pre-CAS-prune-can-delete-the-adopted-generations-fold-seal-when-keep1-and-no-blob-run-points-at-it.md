@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-13 19:14'
-updated_date: '2026-10-13 19:15'
+updated_date: '2026-10-13 20:10'
 labels:
   - 'area:gc'
   - 'risk:high'
@@ -27,6 +27,7 @@ pruneSupersededGenerations (Gc/CasGc.cpp:3766) runs before the round's gc/state 
 <!-- AC:BEGIN -->
 - [ ] #1 Failing-first gtest: keep=1, an all-carry round, a pre-CAS prune followed by a lost CAS; the adopted fold seal survives and the next round folds
 - [ ] #2 pruneSupersededGenerations never deletes the adopted generation's prefix regardless of RunRef placement
+- [ ] #3 TLA+: a model of generations, keep, referenced_generations from run placement, an all-carry round, the pre-CAS prune and a lost CAS; invariant AdoptedSealReadable; the current rule with keep=1 yields a counterexample, the fix is green (CAS-358 spec §7.7)
 <!-- AC:END -->
 
 ## Definition of Done
