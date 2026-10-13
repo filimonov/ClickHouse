@@ -1,7 +1,7 @@
 # `CaEpochAllocCore` results {#ca-epoch-alloc-core-results}
 
-Model of writer-epoch allocation, the mount slot and the decommission tail for one server root, at release line `2a034cdb374` (`antalya-26.6-20261008` = `d76b59f9295` + PR #2512). Backlog: CAS-362 (twin allocation), CAS-363 (decommission re-mints epoch 1).
-Runner: `run_epochalloc.sh` (`SLOW=1` adds `fix_nonce_restart` and `fix_poolhwm_twins`). Paths below are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`.
+Model of writer-epoch allocation, the mount slot and the decommission tail for one server root, at release line `2a034cdb374` (`antalya-26.6-20261008` = `d76b59f9295` + PR #2512). Backlog: CAS-362 (twin allocation), CAS-363 (decommission re-mints epoch 1), CAS-158 (tombstone over a successor).
+Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below are relative to `src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/`.
 
 ## Verdict {#verdict}
 
@@ -12,6 +12,9 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds `fix_nonce_restart` and `fix_poolhwm_
 - **Round 1 recommendation (retire + keep `mount`, `fix_both`) was rejected by the owner:** it leaves permanent per-srid objects and blocks srid reuse. Round 2 below keeps today's tail (delete `mount`, delete `epoch`, tombstone `owner`) and makes a re-created counter start above every earlier epoch.
 - **Round 2 recommendation: V2, a pool high-water mark in `_pool_meta`, read again after the absent read, plus a mint check in `claimMount` and the nonce.** Green for all five invariants without any time assumption (`fix_poolhwm_fresh_nz_mc_*`, `fix_poolhwm_twins`). V1 (store time) reaches the same result only if the store clock never steps back and a counter is never deleted in the second it was created (`fix_storetime_fresh_nz_slow_mc_*` vs `sab_storetime_back`, `fix_storetime_fresh_nz_*`).
 - **The zombie class stays red under both variants.** A counter create or a mount mint decided before the tail's DELETE and landing after it reuses or regresses an epoch. Neither V1 nor V2 changes it (`fix_poolhwm_fresh_mc_*` all red); only not deleting closes it. Every round-2 green needs `NoZombie`.
+- **Round 3 (floor in the owner tombstone, counter deleted): rejected.** Green only under `NoZombie` (`fix_ownerfloor`). A delayed mint regresses the slot even with the pre-mint check (`res_ownerfloor_zmint`). The S11 step needs an un-tombstone on any delete mismatch, which makes the step itself redundant (`sab_ownerfloor_nodelfail`, `fix_ownerfloor_nomove`).
+- **Round 4 (decommission keeps `owner`, `epoch` and the farewell `mount`; re-add): recommended, with two additions found here.** Green with zombie creates and mints, victim restarts, twins, a re-run after a death at any step, a GC fence of the admin, same- and new-uuid re-add and racing re-adds (`lc_*`). Every guard has a red sabotage; the pre-mint check is not needed (`lc_nomc`). Additions: the admin confirms its claim after the tombstone (`sab_lc_noconfirm`), and a claimer refused after its claim leaves a `gc_fenced` body, not a clean farewell (`sab_lc_refusedclean`). Re-add replaces the farewell; deleting it is red (`keep_main`).
+- **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
 
@@ -113,6 +116,160 @@ Sabotages and the combined row:
 
 **Recommendation: V2 with the fresh read and the mint check, plus the nonce.** It needs no clock. The residual is the zombie class, which both variants share.
 
+## Round 3: floor in the owner tombstone (rejected) {#round-3}
+
+The counter is still deleted. The tail tombstones `owner` first, with `epoch_floor` = the captured `next_writer_epoch`, then deletes `mount` and `epoch`. An absent counter restarts at `max(floor + 1, 1)` from a fresh `GET owner`, which also refuses a tombstone. Revival clears `retired_at_ms` and keeps the floor. Nonce on, pre-mint check on.
+
+### Switches {#round-3-switches}
+
+| Switch | Meaning |
+|---|---|
+| `OwnerFloor` | the order and the floor above |
+| `TombAfterDelete` | sabotage: the floor tombstone after the deletes (today's order) |
+| `FloorStale` | sabotage: the base uses the floor `claimOwnerOrThrow` read |
+| `FloorIgnoresTomb` | sabotage: the fresh `GET owner` does not refuse a tombstone |
+| `UntombOnMove` | S11 step: `GET epoch` after the tombstone; moved → un-tombstone by `If-Match` on our tombstone, stop |
+| `UntombOnDelFail` | also un-tombstone when a delete after the tombstone finds its token moved |
+| `Revive`, `ReviveDeletes`, `LateInst` | operator clears the tombstone (or deletes `owner`); `LateInst` start only after it, as fresh members |
+| `DecomRetry` | the tool dies at any step and is run again once; it accepts its own tombstone |
+| `TombAmbig` | the tombstone write stays unresolved; the tool stops and the PUT lands later |
+| `KeepSlot` | variant: stop after the tombstone, delete nothing |
+| `NoZombieCounter` | only the counter half of `NoZombie` |
+
+### Results {#round-3-results}
+
+"All eight": `EpochNeverReused`, `NoDangle`, `SlotNeverRegresses`, `NoDangleAfterReuse`, `CounterNeverRegresses`, `RetiredOwnerHasNoLiveMount`, `RetiredAtRest`, `RevivalAboveEarlierLives`. "Data six": the same without the two `Retired*`.
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `cur_revive` | today's tail, hand-cleared tombstone, fresh member `n` only, no GC | RevivalAboveEarlierLives | violation | violation `RevivalAboveEarlierLives` | 30 | 1 |
+| `fix_ownerfloor` | owner floor, both un-tombstone steps, revival + fresh member, `NoZombie` (SLOW) | all eight | green | green | 59,653,115 | 397 |
+| `fix_ownerfloor_nomove` | same without the post-tombstone `GET epoch` (SLOW) | all eight | green | green | 51,678,784 | 337 |
+| `fix_ownerfloor_retry` | one instance, tool re-run after a death at any step (SLOW) | data six | green | green | 69,084,519 | 362 |
+| `fix_ownerfloor_ambig` | one instance, unresolved tombstone landing late | data six | green | green | 1,930,965 | 11 |
+| `sab_ownerfloor_nodelfail` | no un-tombstone on a delete mismatch | RetiredOwnerHasNoLiveMount | violation | violation `RetiredOwnerHasNoLiveMount` | 42,452 | 2 |
+| `sab_ownerfloor_tombafter` | floor tombstone after the deletes | EpochNeverReused | violation | violation `EpochNeverReused` | 27,560 | 1 |
+| `sab_ownerfloor_stale` | base from the owner-check floor | EpochNeverReused | violation | violation `EpochNeverReused` | 58,080 | 1 |
+| `sab_ownerfloor_ignore` | fresh owner read ignores the tombstone | RetiredOwnerHasNoLiveMount | violation | violation `RetiredOwnerHasNoLiveMount` | 216,336 | 3 |
+| `sab_ownerfloor_nomc` | no pre-mint check | SlotNeverRegresses | violation | violation `SlotNeverRegresses` | 34,025 | 1 |
+| `res_ownerfloor_zombie` | zombie creates and mints allowed | SlotNeverRegresses | violation | violation `SlotNeverRegresses` | 48,592 | 1 |
+| `res_ownerfloor_zmint` | only zombie mints allowed | SlotNeverRegresses | violation | violation `SlotNeverRegresses` | 48,046 | 1 |
+| `res_ownerfloor_hostile` | revival deletes `owner` | EpochNeverReused | violation | violation `EpochNeverReused` | 227,780 | 3 |
+| `res_ownerfloor_keepslot` | `KeepSlot`: stop after the tombstone | RetiredOwnerHasNoLiveMount | violation | violation `RetiredOwnerHasNoLiveMount` | 30,210 | 1 |
+| `res_ownerfloor_tooldeath` | tool re-run, tool dies after the tombstone | RetiredOwnerHasNoLiveMount | violation | violation `RetiredOwnerHasNoLiveMount` | 441,444 | 4 |
+
+### Findings {#round-3-findings}
+
+- **Green only without zombies.** The floor closes the restart re-mint (R3) and revival (`RevivalAboveEarlierLives`, with a fresh member `n` after the revival), but a create or mint decided before a DELETE and landing after it stays red, as in round 2.
+- **The pre-mint check does not cover the mint half.** `res_ownerfloor_zmint` allows only delayed mints: a reads `mount` absent at genesis, passes its counter check, and pauses before its `If-None-Match`. The tool allocates, mints, tombstones, deletes `mount`. a's mint lands `(uuid, 1)` below the tool's epoch. The check ran before the tool allocated, so it saw a's own bytes.
+- **The S11 step as specified is not enough.** In `sab_ownerfloor_nodelfail`, a passed the owner check before the tombstone and has its counter write in flight. The tool tombstones, re-reads `epoch` (unchanged), and then a's write lands. a reclaims the farewell. The tool's `DELETE mount` fails on the token and the tool stops: owner tombstoned, a live. Un-tombstoning on any delete mismatch closes it, and makes the `GET epoch` step redundant (`fix_ownerfloor_nomove` is green).
+- **A tool death between the tombstone and its checks** leaves the same state (`res_ownerfloor_tooldeath`): a rerun refuses on a's newer epoch. This is R2 with a crash in place of a race.
+- **`KeepSlot` loses the detector.** Without deletes there is no token mismatch, so a successor allocating after the post-tombstone `GET epoch` runs under a tombstone (`res_ownerfloor_keepslot`).
+- **Hostile revival** (`DELETE owner`) loses the floor: the next start creates the owner without one and re-mints epoch 1 (`res_ownerfloor_hostile`). Documented residual.
+- **Today's protocol with a hand-cleared tombstone** re-mints below the old life (`cur_revive`).
+
+## Round 4: decommission keeps every control object (member lifecycle) {#round-4}
+
+Design of `docs/superpowers/specs/2026-10-13-cas-member-lifecycle-design.md`, with the changes its review asked for and two more found here. Decommission never deletes `owner`, `epoch` or `mount`. `cas-readd-member` reopens a retired `srid`.
+
+### What is modelled {#round-4-design}
+
+| Step | Model | Switch (sabotage) |
+|---|---|---|
+| Admin claim, then `GET owner` and tombstone by `If-Match` (skip if already tombstoned) | `DReadOwner`, `DTombstone` | `TombLast` |
+| Proposed here: `GET mount` after the tombstone; not the tool's own claim token → un-tombstone by `If-Match` on its tombstone, stop | `DConfirmClaim`, `DUntomb` | `AdminConfirmsClaim` = FALSE |
+| Drain (abstract), farewell, stop. No deletes | `DDrain`, `Farewell` | `DecomDeletesEpoch` |
+| Re-run after a death at any step accepts its own tombstone | `DRestart`, `AcceptsTomb` | `RetryRefusesTomb` |
+| A paused earlier run: its decided tombstone, confirm and drain land after the re-run | `DRestart` with `ZombieRun`, `OwnerLateLand`, `ZombieConfirm`, `ZombieUntomb`, `ZombieDrain` | — |
+| GC fences the admin's lease; the admin keeps running | `GcFence` | — |
+| `GET owner` after a landed claim (`mountWritable`, `tryRemountOnce`); tombstoned or foreign → terminal body, throw | `ClaimPostOwner`, `ClaimPostFarewell` | `ClaimRecheckOwner` = FALSE |
+| Proposed here: that terminal body is `gc_fenced`, not a clean farewell | `ClaimPostFarewell` | `RefusedFarewellFences` = FALSE |
+| Every owner write carries a nonce (S3 tokens otherwise repeat for equal bodies) | `OTok` | `OwnerNonce` = FALSE |
+| Re-add: `GET owner` tombstoned; subtree empty; `GET mount` clean only; new uuid → replace `mount` by `If-Match` with a clean farewell of the new uuid (same uuid: keep it); `PUT owner` by `If-Match` | `RvStart`, `RvEmpty`, `RvReadMount`, `RvDelMount`, `RvReadOwner`, `RvWriteOwner` | `ReaddAcceptsFenced`, `ReviveRewritesMount` = FALSE (delete), `ReviveOwnerFirst` |
+
+Base of every `lc_*` row: nonce on, pre-mint check on, `NoZombie` off (zombie creates and mints allowed), `EMax = 6`, one start of victim `a`, a fresh member `n` that starts only after a re-add (`LateInst`), one re-add run, one decommission re-run.
+
+### Results {#round-4-results}
+
+"LC": `EpochNeverReused`, `NoDangle`, `SlotNeverRegresses`, `CounterNeverRegresses`, `LiveMatchesOwnerAtRest`, `RevivalAboveEarlierLives`, `RetryAcceptsTomb`, `NoStaleTombstone`. Earlier attempts at larger bounds (`lc_core` and `lc_fence` with two victim starts, `lc_race` with the victim and the re-run) hit the 600 s limit without a violation and were shrunk.
+
+| Config | What | Invariants | Expected | Result | States | s |
+|---|---|---|---|---|---|---|
+| `keep_main` | spec v1: re-add deletes `mount`, pre-write owner check | SlotNeverRegresses | violation | violation `SlotNeverRegresses` | 218,719 | 2 |
+| `lc_core` | lifecycle, no GC fence, no paused run | LC + NoStaleDrain + strict LiveMatchesOwner, NoTombOverLive | green | green | 14,283,637 | 94 |
+| `lc_fence` | GC may fence the admin (SLOW) | LC + NoStaleDrainWithoutRerun | green | green | 33,469,377 | 221 |
+| `lc_zombie` | paused earlier run (SLOW) | LC + NoStaleDrainWithoutRerun | green | green | 23,256,349 | 154 |
+| `lc_newuuid` | re-add with a new uuid, `n` carries it | LC + NoStaleDrain | green | green | 2,339,098 | 18 |
+| `lc_race` | two re-adds, no re-run, no GC | LC + NoStaleDrain | green | green | 119,326 | 2 |
+| `lc_twins` | twins `a`, `b`, one ambiguous write, no re-add | e, s, c, LiveMatchesOwner | green | green | 3,294,847 | 23 |
+| `lc_nomc` | pre-mint check off | LC + NoStaleDrain | green | green | 14,151,699 | 93 |
+| `lc_retry_live` | tool alone, fair, one death anywhere | RetryCompletes | green | green | 99 | 0 |
+| `lc_retry_witness` | same | RetryNeverCompletes (witness) | violation | violation `RetryNeverCompletes` | 94 | 1 |
+| `sab_lc_norecheck` | no post-claim owner re-read | LiveMatchesOwnerAtRest | violation | violation `LiveMatchesOwnerAtRest` | 17,970 | 0 |
+| `sab_lc_noconfirm` | no claim confirm after the tombstone | NoStaleDrainWithoutRerun | violation | violation `NoStaleDrainWithoutRerun` | 42,366 | 1 |
+| `sab_lc_refusedclean` | refused claimer writes a clean farewell | NoStaleDrainWithoutRerun | violation | violation `NoStaleDrainWithoutRerun` | 1,657,914 | 11 |
+| `sab_lc_fenced` | re-add accepts `gc_fenced` | NoStaleDrainWithoutRerun | violation | violation `NoStaleDrainWithoutRerun` | 289,672 | 3 |
+| `sab_lc_nononce` | no owner nonce, paused run | NoStaleTombstone | violation | violation `NoStaleTombstone` | 268,143 | 3 |
+| `sab_lc_deletemount` | re-add deletes `mount` | SlotNeverRegresses | violation | violation `SlotNeverRegresses` | 56,303 | 1 |
+| `sab_lc_tomblast` | tombstone after the farewell | LiveMatchesOwnerAtRest | violation | violation `LiveMatchesOwnerAtRest` | 15,400 | 0 |
+| `sab_lc_delepoch` | tail deletes `epoch` | EpochNeverReused | violation | violation `EpochNeverReused` | 28,057 | 1 |
+| `sab_lc_ownerfirst` | re-add writes `owner` first, new uuid (SLOW) | LC + NoStaleDrain | green | green | 17,122,472 | 133 |
+| `sab_lc_retryrefuses` | re-run refuses its tombstone | RetryAcceptsTomb | violation | violation `RetryAcceptsTomb` | 2,362 | 1 |
+| `res_lc_pauseddrain` | paused run, fresh member only | NoStaleDrain | violation | violation `NoStaleDrain` | 2,215 | 0 |
+| `res_lc_tombover` | GC fence, strict invariant | LiveMatchesOwner | violation | violation `LiveMatchesOwner` | 15,224 | 1 |
+
+### Findings {#round-4-findings}
+
+- **Spec v1 re-add (delete `mount`) is red for zombies** (`keep_main`, `sab_lc_deletemount`). a reads `mount` absent at genesis and pauses before its mint. The tool claims, tombstones, drains and writes its farewell; re-add deletes the farewell; a's mint lands `(uuid, 1)` below the farewell's epoch. Replacing the farewell instead keeps the slot present, and every late `If-None-Match` fails.
+- **Post-claim owner re-read is needed** (`sab_lc_norecheck`). a passes the owner check before the tombstone, waits on the admin's lease, and reclaims the clean farewell after the tail. Without the re-read a runs live under a tombstone.
+- **New: a GC fence before the tombstone defeats D2** (`sab_lc_noconfirm`). GC fences the admin between its owner read and its tombstone. a reclaims through the `gc_fenced` arm, re-reads the owner (not yet tombstoned) and goes live. The still-running admin tombstones, then drains a's namespace. The confirm step sees the fence's token, un-tombstones and stops before the drain. The un-tombstone leaves a short window with a live a under a tombstone (`res_lc_tombover`).
+- **New: the refused claimer's clean farewell lets re-add run under a draining admin** (`sab_lc_refusedclean`). GC fences the admin after its confirm; the admin keeps draining. a reclaims, sees the tombstone, writes a clean farewell and throws. Re-add accepts that farewell, the fresh member n starts live and publishes, and the admin's drain deletes n's reference. Writing a `gc_fenced` body instead means re-add needs a decommission re-run's clean farewell.
+- **Re-add over `gc_fenced`** (review 3): same harm in fewer steps (`sab_lc_fenced`).
+- **Owner ETag ABA** (review 2, `sab_lc_nononce`): a run pauses with its tombstone `If-Match e0` decided; a re-run completes; a same-uuid re-add writes the original bytes back; the paused tombstone lands. With the nonce the re-add's bytes differ and the write fails.
+- **Legacy 26.6.4 partial state** (review 4) is not modelled: the owner accepted it as a documented risk, and the `2^32` seed is dropped.
+- **Decommission deleting `epoch`** is red (`sab_lc_delepoch`): a's genesis create, decided before the tool's, lands after the delete and is issued the tool's epoch again.
+- **Tombstone last** (`sab_lc_tomblast`): a reclaims the farewell before the tombstone, its re-read passes, then the tombstone lands over it.
+- **`ReviveOwnerFirst` is not load-bearing** under replace (`sab_lc_ownerfirst`, green). The order mattered only for the delete variant.
+- **The pre-mint check is not needed** once nothing deletes `mount` (`lc_nomc`).
+- **Retry**: `lc_retry_live` (fair tool, no other actors) proves every re-run completes; `lc_retry_witness` shows completion is reachable; `sab_lc_retryrefuses` shows today's strict owner claim refuses it.
+
+### Residuals {#round-4-residuals}
+
+1. **A paused admin's drain** (`res_lc_pauseddrain`). The first run confirms its claim and pauses before its drain. A re-run reclaims (the paused lease looks dead), completes, and re-add opens a new life; the fresh member publishes; the paused drain lands and deletes it. Drain deletes carry no fence the store checks, so no ordering of client steps closes this. Mitigations: re-add only after the earlier tool process has exited (an operator rule), or re-check the claim before each drain batch (narrows the window to one request).
+2. **Tombstone over a live successor until the confirm un-tombstones it** (`res_lc_tombover`, strict `LiveMatchesOwner`). If the tool dies inside that window, the tombstone stays: a keeps running and is refused at its next restart. Availability only: the drain does not run.
+3. **26.6.4 binaries** do not re-read the owner after a claim, and slots left half-retired by a 26.6.4 tail are accepted risk. Neither is modelled.
+
+### Race history coverage {#round-4-history}
+
+From `tmp/noclock/srid-revival-history.md` and the spec review.
+
+| Race | Rows |
+|---|---|
+| R1 (tail deletes a successor's objects) | gone: no deletes; `sab_lc_delepoch` |
+| R2 / S11 (tombstone over a successor) | `sab_lc_tomblast`, `sab_lc_norecheck`, `sab_lc_noconfirm`; residual 2 |
+| S16 (ambiguous tombstone landing late) | `lc_zombie` (a paused run's tombstone lands late; confirm un-tombstones), `sab_lc_nononce` |
+| Partial tail, retry over the tool's own tombstone | `lc_retry_live`, `lc_retry_witness`, `sab_lc_retryrefuses`, `DRestart` from every step |
+| R3, R3a (re-mint after delete, stale floor) | no delete: `lc_core` (`EpochNeverReused`, `NoDangle`); `sab_lc_delepoch` |
+| R4 (slow claimer into an emptied slot) | `keep_main`, `sab_lc_deletemount` |
+| Zombie creates and mints | allowed in every `lc_*` row |
+| R5 (twins) | `lc_twins` (nonce, one ambiguous write) |
+| Review 1, 2, 3, 5 | `sab_lc_norecheck`, `sab_lc_nononce`, `sab_lc_fenced`, `sab_lc_deletemount` |
+| Review 4 (26.6.4 partial tail) | not modelled: accepted risk |
+| Review 6 (no admin self-remount) | out of scope: the model has no remount; a fenced admin either stops at the confirm or keeps draining (`GcFence`) |
+| R3b, R3c (S8 zombie key reuse, S4/S9 ETag ABA on manifests and counter) | out of scope: one build per process; the counter carries the nonce |
+| R6 (late probe under `roots/<srid>/`) | out of scope: re-add's emptiness check is a guard here; a non-empty subtree only refuses |
+| R7 (operator deletes `owner`) | round 3 `res_ownerfloor_hostile`; not in round 4 |
+
+### Cost in the code {#round-4-cost}
+
+| Function | Change | Requests |
+|---|---|---|
+| `Tools/CasDecommission.cpp:decommissionPoolMember` | tombstone right after the claim; `GET mount` confirm; un-tombstone on mismatch; deletes, captures and recheck removed | +1 GET, +1 PUT only on a mismatch; −2 DELETE, −4 GET (two captures, two recheck reads) |
+| `Pool/CasServerRoot.cpp:claimOwnerOrThrow` | `DecommissionAdmin` mode accepts the tool's tombstone | — |
+| `Pool/CasPool.cpp`: `Pool::mountWritable`, `Pool::tryRemountOnce` | `GET owner` after a landed claim; refused → `gc_fenced` body by `If-Match`, throw. `openForDecommission` also calls `mountWritable`: the admin accepts its own tombstone (the model skips the re-read for the tool) | +1 GET per claim |
+| `Formats`: `encodeOwner` | random nonce on every owner write | — |
+| `cas-readd-member` (new) | `GET owner`, subtree LIST, `GET mount` (clean only), `PUT mount` (new uuid only), `GET owner`, `PUT owner` | 6 requests once |
+
 ## Code checks {#code-checks}
 
 Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code at both unless noted).
@@ -132,6 +289,18 @@ Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code a
 | `SlotNeverRegresses` | the mount slot never holds a `writer_epoch` below one it held before. |
 | `CounterNeverRegresses` | every counter write lands above every counter value ever written (a retire keeps its value): a re-created counter starts above every earlier epoch. |
 | `RetiredStaysRetired` | no instance holds the slot while `owner` is tombstoned or `epoch` is retired (S11 class, CAS-158). |
+| `RetiredOwnerHasNoLiveMount` | the tool has stopped and `owner` is tombstoned ⇒ the slot holds no unclean lease. |
+| `RetiredAtRest` | `RetiredStaysRetired` once the tool has stopped. |
+| `RevivalAboveEarlierLives` | every allocation after a revival or re-add is above every allocation before it (ghost `allocLife`, tagged with the life at allocation time). |
+| `LiveMatchesOwner` | every live instance has the owner's uuid and an untombstoned owner. |
+| `LiveMatchesOwnerAtRest` | `LiveMatchesOwner` once the tool has stopped and no step of a paused earlier run is pending. |
+| `NoTombOverLive` | no tombstone lands while an instance holds the slot live (CAS-158). |
+| `NoStaleTombstone` | no tombstone lands in a later life than the owner read it was decided on. |
+| `NoStaleDrain` | no drain removes a reference of an epoch newer than the draining run's own. |
+| `NoStaleDrainWithoutRerun` | `NoStaleDrain` broken only after a decommission re-run. |
+| `RetryAcceptsTomb` | a decommission re-run never refuses on the tombstone. |
+| `RetryCompletes` (temporal, `FairSpec`) | a re-run after a death at any step reaches the end. |
+| `RetryNeverCompletes` | witness, expected violated: a re-run can reach the end. |
 
 ## Counterexamples {#counterexamples}
 
@@ -206,12 +375,31 @@ One action = one store request, or one in-memory step. Code at `2a034cdb374`.
 | `GcView` | protection view in the sweep loop | reads of committed refs | one snapshot of `refs`; the view is built once per namespace before deletions |
 | `GcDelete` | sweep loop delete after `prefixEligibleUnder` | DELETE manifest | `prefixEligibleUnder` is local on the cached floor |
 | `GcEnd` | end of round | in-memory | — |
+| `OwnerEmpty`, `OwnerCreate` | `claimOwnerOrThrow` owner-absent branch: `serverRootSubtreeEmpty`, `op.create(owner)` | LIST; PUT `If-None-Match` | a create conflict fails closed in the model; the code re-checks emptiness and accepts a same-uuid owner (an under-approximation of that path) |
+| `ABase` (owner floor) | proposed `GET owner` in `allocateWriterEpoch` after the absent read | GET | — |
+| `DTombstone` (owner floor, lifecycle) | `op.replace(owner_key, tombstone, etag)` | PUT `If-Match` | disjunct 2 = response lost and resolve given up; the landing is `OwnerLateLand` |
+| `DPostTombCheck` | proposed `GET epoch` after the tombstone | GET | comparison is local |
+| `DUntomb` | proposed `op.replace(owner_key, untombstoned, our tombstone etag)` | PUT `If-Match` | — |
+| `DConfirmClaim` | proposed `GET mount` after the tombstone | GET | comparison with the tool's own claim token is local |
+| `DRestart` | the tool dies (or pauses, with `ZombieRun`) and is run again | none | the paused run keeps only its decided writes: `OwnerLateLand`, `ZombieConfirm` (GET), `ZombieUntomb` (PUT), `ZombieDrain` |
+| `ZombieDrain`, `DDrain` (lifecycle) | drain under the admin claim | abstraction of the drain | refs dropped in one step, as `DDrain` |
+| `ClaimCheckOwner` | variant: `GET owner` after the mount GET, before the write | GET | — |
+| `ClaimPostOwner` | proposed `GET owner` after a landed claim (`mountWritable`, `tryRemountOnce`) | GET | — |
+| `ClaimPostFarewell` | refused claimer's terminal write | PUT `If-Match` own token | — |
+| `GcFence` | GC's fence write on the admin's lease | PUT `If-Match` | — |
+| `RRead`, `RWrite`, `RDelete` | operator revival (round 3) | GET; PUT `If-Match`; DELETE | — |
+| `RvStart`, `RvEmpty`, `RvReadMount`, `RvDelMount`, `RvReadOwner`, `RvWriteOwner` | proposed `cas-readd-member` | GET owner; LIST; GET mount; PUT or DELETE `If-Match` mount; GET owner; PUT `If-Match` owner | — |
 
 ## Scope and limits {#scope}
 
-- One uuid; foreign-uuid owner paths (S14, S18) are out of scope.
-- Mount fencing (`gc_fenced`), renewals and lease expiry are not modelled; a live holder is never reclaimed because `ProvenDead` reads its process state. A zombie writer (S8) is therefore out of scope; the paused claimer in `cur_decom_dangle` is the one late request modelled on the mount.
+- One uuid in rounds 1–3; round 4 adds a second uuid for re-add. Foreign-uuid owner paths (S14, S18) are out of scope.
+- Renewals and lease expiry are not modelled, and mount fencing only as GC fencing the admin in round 4 (`GcFence`); a live holder is never reclaimed because `ProvenDead` reads its process state. A zombie writer (S8) is therefore out of scope; the paused claimer in `cur_decom_dangle` is the one late request modelled on the mount.
 - One build per process (`seq = 1`); the floor's `min_active_build_sequence` is 1 while live, `UINT64_MAX` after the farewell.
 - S9 (MD5 ABA on byte-identical manifests) is not modelled.
 - Bounds: `EMax` 4–6 (round 2: 8, or 16 with `Scale = 4`, `MaxClock = 2`), 1–3 starts, at most 1 ambiguous write, at most 1 sweep round, at most one concurrent `_pool_meta` admission.
 - `Scale` bounds allocations per store second; with at most four allocations per run, `Scale = 4` stands for `2^20`.
+- Owner tokens: `OTok` is the body on S3 without the owner nonce (uuid, retired, floor, `retired_at_ms`); a generation otherwise. Every earlier row runs with `OwnerNonce = TRUE`, which keeps its generation semantics.
+- The admin's self-remount is not modelled (spec review 6); a fenced admin either stops at its confirm or keeps running (`GcFence`).
+- Round 4 bounds: victim `a` with one start, fresh member `n` after a re-add, one re-add run (two in `lc_race`), one decommission re-run, `EMax = 6`. `lc_race` drops the re-run and the GC round (larger bounds exceeded 600 s); `res_lc_pauseddrain` drops `a` and the GC round to shorten its trace.
+- Drain harm is approximated by references: a drain is harmful when it removes a reference of an epoch newer than the draining run's own.
+- `tombOverLive` is tracked only when `KeepAll` holds, so earlier rows keep their recorded state counts.
