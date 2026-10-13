@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS GC: the orphan sweep reads the owned-manifest set, not the ref log — design {#cas-orphan-sweep-owned-manifest-set}
 
-- Date: 2026-10-13. Status: rev.3 (rev.2 reviewed by codex `gpt-6-astra` high, `tmp/cas358/codex_spec_review_1.md`: eight findings, all applied). Task: CAS-358. Depends on: CAS-36 (floor before the owner view), CAS-362/363 (unique, monotone writer epochs; today `allocateWriterEpoch` can restart at 1, `Pool/CasServerRoot.cpp:693-698`). Closes: CAS-87. Absorbs: CAS-86 (read-ahead window on a throwing recovery walk), CAS-310 (the model's unfolded-removal invariant).
+- Date: 2026-10-13. Status: rev.4 (codex `gpt-6-astra` high reviews: rev.2 eight findings `tmp/cas358/codex_spec_review_1.md`, rev.3 six findings `tmp/cas358/codex_spec_review_2.md`, all applied). Task: CAS-358. Depends on: CAS-36 (floor before the owner view), CAS-362/363 (unique, monotone writer epochs; today `allocateWriterEpoch` can restart at 1, `Pool/CasServerRoot.cpp:693-698`). Closes: CAS-87. Absorbs: CAS-86 (read-ahead window on a throwing recovery walk), CAS-310 (the model's unfolded-removal invariant).
 - Code facts verified against `45854cb0ee7` (`cas-gc-rebuild`). Numbers from https://github.com/Altinity/ClickHouse/pull/2542.
 
 ## 1. Decision {#decision}
@@ -18,7 +18,7 @@ doc_type: 'reference'
 - **The fold keeps a durable owned-manifest set.** One `manifest_owned` run per gc-shard under the generation prefix, rows `(life_id, ManifestRef)`, merged by the same streaming prior-run-plus-deltas pass the blob source-edge runs use. The set is exactly the ref table's binding set, committed rows plus precommits, as of the fold cursor; it depends on no manifest body. No counter: the ref protocol admits one owner per manifest (`Pool/CasRefProtocol.h:375`; `Promote` emits no net edge, `CasRefProtocol.cpp:765`).
 - **The sweep's owner view is the set as of the fold cursor `C` plus the epoch gate.** A listed key of a catalog-named life is retained if its life has no coverage row, is held, is not covered, or is in the set, or its build epoch is not strictly below `C.writer_epoch` (rule (1) of the §6 premise, unchanged). Rule (2), the tail-removal test, is subsumed by the set.
 - **A set is born at the cursor, never at the frontier.** A life whose parent cursor is `{0,0}` is covered from its first fold. A life older than the feature is seeded once from `_snap` plus the logs `(P, C]` with a stop position at `C`; while the `_snap` position `P` is above `C` the seed waits. No per-life `as_of` state exists.
-- **Forward compatible with no operator action.** The fold seal does not change (its 26.6.4 reader is `Strict`). The runs and their pointer live in new objects under `gc/gen/<G>/attempt/<A>/`, which an older leader prunes with the generation without knowing them. An absent pointer or an absent run is "no set": the sweep retains, the fold re-seeds. No existing object changes bytes; no format version bump.
+- **Forward compatible with no operator action.** The fold seal does not change (its 26.6.4 reader is `Strict`). The runs and their pointer live in new objects under `gc/gen/<G>/attempt/<A>/`, which an older leader prunes with the generation without knowing them. An absent pointer or an absent run is "no set": the sweep retains, the fold re-seeds, as long as the adopted fold seal itself survives (§4.5). No existing object changes bytes; no format version bump.
 
 ## 2. The defect {#defect}
 
@@ -90,7 +90,9 @@ A `run` record is the `RunRef` of `Formats/CasFoldSealFormat.h:25`. A shard with
 
 - **Pure carry**: no deltas and no seed for the shard this round, and the carried run answered the `HEAD`: copy the parent `RunRef` verbatim.
 - **Merge**: a streaming pass producing at most one row per key. Baseline per key: the seed row if the key's life is seeded this round, else the prior-run row; a prior-run row for a life seeded this round is `CORRUPTED_DATA` (an uncovered life has no rows). Then this round's deltas for the key in `(transaction position, op_ordinal)` order, the order `manifestEdgesOfTxn` emits (`CasRefProtocol.cpp:744-768`), applied as set operations: `remove` on an absent key is a no-op; cases: prior or seed row plus remove → absent; no baseline, add then remove → absent; remove then add → present; prior row, no delta → present. The existing reducer's stable same-key ordering (`Gc/CasBlobInDegree.cpp:376-388`, `638-664`) is reused. A no-op remove is counted in `CASGCManifestOwnedUnmatchedRemoves` with one `WARNING` per round carrying one example; expected zero.
-- A life whose seed is deferred or failed this round has its deltas **dropped**; it stays uncovered and is seeded later at a cursor that includes this round's transactions.
+- **Delta admission.** Owned deltas enter the merge only for lives that are effectively covered by the parent, have parent cursor `{0,0}`, or were seeded successfully this round. Deltas of every other life are **dropped**: deferred, failed, skipped-held and not-admitted seeds alike. Such a life stays uncovered, keeps no rows, and is seeded later at a cursor that includes this round's transactions. A covered life that clamps mid-round keeps the deltas of its accepted logs; the clamp discards only the clamped log (`CasGc.cpp:2730-2736`).
+- **Empty initialization.** A shard that gains covered lives (a `{0,0}`-cursor life whose logs carry only birth and seal operations, or a rebuild with no owners) and has no prior run writes a canonical empty run, checksum and trailer included, so that §4.1's rule "no `run` record means no covered lives" holds. The write counts toward `M`.
+- **A merge `GET` that returns 404 after a successful `HEAD`** re-evaluates effective coverage for the shard: the parent-covered lives of the shard become uncovered and their deltas are dropped; seeded and `{0,0}` lives proceed against an empty baseline. `HEAD` is not a retention pin.
 
 The seal's `covered` list = effective parent coverage, plus lives with parent cursor `{0,0}` in this round's walk plan, plus lives seeded this round, minus lives whose fold-state row carries `cleanup_evidence` (their rows went with the `remove_namespace` `-1`s).
 
@@ -106,18 +108,18 @@ A seed candidate is a life in the walk plan with parent cursor `C > {0,0}`, not 
 2. If `base > C`: defer, `CASGCManifestOwnedSeedsDeferred`. The state at `C` is not reconstructible: `planRefCleanup` deletes a log only when it is `< P` and `<= C` (`CasRefProtocol.cpp:837-845`), so logs below `C` may be gone once `P` passed it. Deferral repeats while `P > C`: a clamp that leaves `C' < P`, or a newer `_snap` above `C'`, defers again. Under normal operation the next round folds to `T >= P`.
 3. Else `recoverRefTableDetailedFromAuthority(..., stop_at = C)`: the walk loop bound becomes `id <= min(committed_through, stop_at)`. Rows = committed bindings plus precommits of the recovered state (no body check), into the shard's seed input. `CASGCManifestOwnedSeeds`.
 4. **Failure is a failed seed, not corruption.** The cleanup rule is a property of each leader's own cleanup plan, not a pin: another leader's pre-CAS ref-object cleanup, planned from a newer `_snap`, may delete a log in `(P, C]` that this walk still needs (`CasRefProtocol.cpp:1073-1077` throws on an absent log). With `stop_at` set, an absent log, a decode error or a snapshot checksum mismatch ends the seed: the life stays uncovered, `CASGCManifestOwnedSeedFailed`, one `WARNING` with the key, the round continues; the next round re-samples grounding and repeats step 2. The writer-facing walk (no `stop_at`) keeps its `CORRUPTED_DATA` throw.
-5. **Budget is an admission limit.** A seed starts only while `seed_ops_used < max_seed_ops`; a started seed runs to its end, and every `GET` it issues (snapshot body, grounding logs, walk logs) is charged. A life needing more than the budget therefore completes in one round and exhausts that round's seeds; it is never restarted from scratch. The bound is the life's log count, the price today's sweep pays per page. `max_seed_ops` is fed by the existing `gc_round_sweep_recovery_op_budget` (default 5000, `Pool/CasPool.h:115`): the setting keeps its meaning, ref-log work GC spends on recovery per round, and moves from the sweep to the fold. Rounds have no time deadline in this tree (`Pool/CasPool.h:154`); when one lands, seeds fall under it.
+5. **Budget is an admission limit.** A seed starts only while `max_seed_ops == 0 || seed_ops_used < max_seed_ops` (zero is unlimited, the contract of every `GcRoundWorkBudget` bound, `Gc/CasBlobInDegree.h:252-259`); a started seed runs to its end, and every `GET` it issues (snapshot body, grounding logs, walk logs) is charged. A life needing more than the budget therefore completes in one round and exhausts that round's seeds; it is never restarted from scratch. The bound is the life's log count, the price today's sweep pays per page. `max_seed_ops` is fed by the existing `gc_round_sweep_recovery_op_budget` (default 5000, `Pool/CasPool.h:115`): the setting keeps its meaning, ref-log work GC spends on recovery per round, and moves from the sweep to the fold. Rounds have no time deadline in this tree (`Pool/CasPool.h:154`); when one lands, seeds fall under it.
 
 A fresh pool and the GC rebuild path (`CasGc.cpp:4384-4565`) recover every life to the position they seal as cursor and emit the set from the same recovered tables: every life covered, no seed.
 
 ### 4.4 Sweep {#sweep}
 
-`planManifestCursorPage` in two passes over the page.
+`planManifestCursorPage` in two passes over the page. Before pass 1, the floor of every distinct namespace on the page is sampled (`floorForNamespace`), and only then the shared catalog cut is read: the catalog read today sits at `:704`, before the floors at `:768`, and the unsafe order (rowless cut sampled, writer creates and promotes, floor sampled late) is what CAS-36's `FixFloorBeforeCatalog` forbids. A `catalogEntryOf` lookup after a per-key floor read is not the same thing.
 
 **Pass 1, per parsed key**, in order:
 
-1. floor (`floorForNamespace`, CAS-36), `prefixEligibleUnder`;
-2. catalog entry; a rowless key passes on the floor alone, as CAS-36 decided;
+1. `prefixEligibleUnder` against the pre-sampled floor;
+2. catalog entry from the cut; a rowless key passes on the floor alone, as CAS-36 decided;
 3. coverage row of the life from the adopted fold seal (`coverageOf`): absent → `NoCoverage`, held or clamped → `Hold`;
 4. owned seal (read once per page, with the fold seal): absent, or life not in `covered`, or no `run` record for the life's shard → `OwnedSetMissing`, retain;
 5. epoch gate (`manifestDeletionPremise`, rule (1) only): `E >= C.writer_epoch` → `UnconsumedSeal`, retain;
@@ -135,7 +137,8 @@ Candidates not found are nominated as today (frozen `GET`, body decode, blob-sou
 |---|---|
 | old leader folds | writes blob runs and a fold seal, no owned seal; prunes `gc/gen/<g>/` by prefix (`CasGc.cpp:3766`), which removes owned runs and seals of pruned generations |
 | new leader adopts a generation without an owned seal | every life uncovered; sweep retains all catalog-named lives; fold seeds within the budget, round after round; `CASGCManifestOwnedSealAbsent` |
-| owned seal present, a referenced run returns 404 (an old leader pruned it pre-CAS and then lost its CAS; `keep = 1` makes the parent generation itself prunable) | the shard's lives are uncovered (effective coverage, §4.2): sweep retains them, fold re-seeds; `CASGCManifestOwnedRunAbsent`, `WARNING` |
+| owned seal present, a referenced run in an OLDER generation returns 404 (an old leader pruned that carried generation pre-CAS and then lost its CAS) | the shard's lives are uncovered (effective coverage, §4.2): sweep retains them, fold re-seeds; `CASGCManifestOwnedRunAbsent`, `WARNING` |
+| the ADOPTED generation `G` is pruned pre-CAS by a leader that then loses its CAS (`keep = 1`, `G` holds only seals and runs no blob `RunRef` points at) | the adopted fold seal is gone with it; the next fold throws at `CasGc.cpp:1791` and needs `SYSTEM CAS GC REBUILD`. Pre-existing retention defect, independent of this family, tracked as CAS-386; the automatic-recovery claim of this design holds whenever the adopted fold seal survives |
 | run present, checksum mismatch | `CORRUPTED_DATA`, as blob runs |
 | deposed new leader's attempt | not adopted, never reader-visible, reclaimed with the generation |
 | new leader, old data | fold seal encoding of an identical `CasFoldSeal` value is byte-identical to the base tree (golden test); whole-round outputs may differ where retention decisions differ |
@@ -149,9 +152,9 @@ Per folding round with `M` shards that merge (deltas or seeds) and `gc_shards - 
 | operation | count |
 |---|---|
 | `GET` parent owned seal | 1 (fold) + 1 per sweep page |
-| `HEAD` carried owned runs | `gc_shards - M` |
+| `HEAD` parent owned runs | `H <= gc_shards`, one per `run` record of the parent owned seal; a shard with no parent run needs none; a `HEAD`ed shard may still merge (seed after 404) |
 | `GET` prior owned runs | `<= M` (where a prior run exists) |
-| `PUT` owned runs | `M` |
+| `PUT` owned runs | `M`, empty initializations included |
 | `PUT` owned seal | 1 |
 | seed reads | charged to `max_seed_ops`: snapshot body, its same-position log and predecessor seal where the grounding needs them (`CasRefProtocol.cpp:971-1028`), one `GET` per log in `(P, C]` |
 | sweep run reads | `<= min(gc_shards, candidate lives)` per page; no ref-log, `_snap` or `_ckpt` reads |
@@ -185,7 +188,7 @@ No on-S3 byte change to any existing object. No fallback path: an unreadable own
 | T4 | `CursorPageRetainsWhenOwnedSealAbsent` | fold seal adopted, no owned seal | every catalog-named candidate retained; rowless candidate below floor still deleted |
 | T5 | `CursorPageRetainsWhenRunAbsent` | owned seal present, shard run deleted; shard holds two lives | both lives' candidates retained, `CASGCManifestOwnedRunAbsent == 1`, no throw |
 | T6 | `FoldSeedsLifeAtCursor` | life with `C > {0,0}`, `_snap` at `P <= C`, logs to `T > C`, one precommit whose body is absent | after the round: rows == committed plus precommit bindings of the recovered state at `C`, the bodiless precommit included, with deltas `(C, C']` applied; life covered; `CASGCManifestOwnedSeeds == 1` |
-| T7 | `FoldDefersSeedWhenSnapAboveCursor` | `_snap` at `P > C`; then a clamp leaving `C' < P`; then a no-snapshot life needing `max_seed_ops + 1` logs | deferred twice with counters, deltas dropped; the oversized life seeds in one round and exhausts the budget, a second candidate waits for the next round |
+| T7 | `FoldDefersSeedWhenSnapAboveCursor` | `_snap` at `P > C`; next round a clamp leaving `C' < P`; then a no-snapshot life needing `max_seed_ops + 1` logs beside a second candidate | round 1 deferred; the clamped round counts skipped-held, not deferred; deltas dropped in both, no rows; the oversized life seeds in one round and exhausts the budget, the second candidate leaves no rows and seeds next round |
 | T8 | `FoldOwnedSetIncremental` | covered life, add/remove/precommit/promote/remove-namespace over three rounds, a seeded bodiless precommit later removed, one mid-log clamp | rows after each round == bindings of the recovered state at `C`; the bodiless precommit's row is removed by its `-1`; a clamped log leaves no partial rows; after `remove_namespace` folded, life not covered and no rows; `UnmatchedRemoves == 0` |
 | T9 | `DecommissionSweepUsesOwnedSet` | `sweepNamespace` on a claimed slot | same decisions as the page; no ref-log `GET` |
 | T10 | `FoldSealEncodingUnchanged` | golden bytes captured on `45854cb0ee7` for a fixed `CasFoldSeal` value | `encodeFoldSeal` on the new tree is byte-identical |
@@ -193,14 +196,21 @@ No on-S3 byte change to any existing object. No fallback path: an unreadable own
 | T12 | `OwnedRunMergeContract` | each case of §4.2 (prior+remove, seed+remove, add-then-remove, remove-then-add, prior-untouched), plus a permutation of deltas across independent keys | each case gives the stated row; the permutation gives byte-identical runs; a prior row for a seeded life → `CORRUPTED_DATA` |
 | T13 | `OwnedRunKindGate` | `source_edge` header opened as owned run | fails closed |
 | T14 | `PruneReclaimsOwnedFamilyWithGeneration` | generation with owned run and seal below `prune_floor`, not referenced; another referenced only by an owned run | first deleted by `pruneSupersededGenerations`; second retained |
-| T15 | `LeaderAlternationReseeds` | new leader folds (covered); old-shaped leader folds and prunes the referenced generation pre-CAS with `keep = 1`, then loses its CAS; new leader resumes | new leader sees run 404, lives uncovered, no deletion; re-seeds; a deposed attempt's owned seal is never read |
+| T15 | `LeaderAlternationReseeds` | new leader folds with an owned run carried from an older generation `H`; old-shaped leader prunes `H` pre-CAS, then loses its CAS; new leader resumes | adopted fold seal intact; new leader sees run 404, lives uncovered, no deletion; re-seeds; a deposed attempt's owned seal is never read |
 | T16 | `PageMembershipIsBoundedByCandidates` | run with 100k rows of one life, page with 3 candidates spanning 3 shards | 3 run opens, candidate set size 3, retained set bounded; decisions correct |
-| T17 | `RebirthUnderSameNameStartsUncovered` | life A removed and folded; namespace recreated as life B with a body below floor | B's candidate retained as `OwnedSetMissing` until B is covered; A's debris reclaimed |
+| T17 | `RebirthUnderSameNameStartsUncovered` | life A removed and folded; namespace recreated as life B; A's debris and a B body below floor | while B is uncovered every key of the namespace is retained (`OwnedSetMissing`, the catalog join names B); after B is covered and the epoch gate passes, A's debris is reclaimed and B's owned body kept |
 | T18 | `BuildEndsBetweenCursorAndFloorRead` | commit of `M` in the live epoch lands after the adopted fold, before the sweep's floor read | `M` retained by the epoch gate |
 | T19 | `SeedFailsOnMissingLogWithoutAbort` | delete one log in `(P, C]` before the seed walk | life uncovered, `CASGCManifestOwnedSeedFailed == 1`, round commits, no `CORRUPTED_DATA` in `system.errors` |
-| T20 | `CarriedRunAbsentDropsCoverage` | parent owned seal names a run that is deleted; shard has no deltas | fold `HEAD`s it, drops the `RunRef` and the shard's covered lives, re-seeds next round |
+| T20 | `CarriedRunAbsentDropsCoverage` | parent owned seal names a run that is deleted; shard has no deltas; once with `max_seed_ops` already spent, once with budget | fold `HEAD`s it, drops the `RunRef` and the shard's covered lives; without budget the lives stay uncovered this round, with budget they re-seed in the same round |
+| T21 | `UncoveredLifeKeepsNoRows` | uncovered life accepts one addition then clamps; a second uncovered life is not admitted by budget | neither life has rows after the round; both seed later without `CORRUPTED_DATA` |
+| T22 | `ZeroBudgetSeedsEverything` | `gc_round_sweep_recovery_op_budget = 0`, three seed candidates | all three seeded in one round |
+| T23 | `EmptyRunInitialization` | fresh pool, one life with birth and seal only; rebuild on a pool with no owners | a canonical empty run per covered shard, checksum verifies, the life covered |
+| T24 | `PartialReseedOfMissingShard` | run of a shard with two lives deleted; budget admits one seed | the seeded life covered, the other uncovered although the replacement run exists |
+| T25 | `RowlessRaceFloorBeforeCut` | page lists a staged body; catalog sampled rowless; writer creates the row, precommits, promotes, ends the build; floor then advances | body retained: floors are sampled before the cut |
 
 T1 is the acceptance test of the decision: it pins the request classes the sweep page may issue.
+
+T15 covers only the older-generation prune; the adopted-generation prune is CAS-386's test.
 
 Gate: `utils/cas-gate` (`CAS*` filter), ASan lane for the five suites.
 
@@ -234,3 +244,4 @@ Run via `run_gc_partmanifest.sh`; results appended to `CaGcRootLocalPartManifest
 - The seed relies on `planRefCleanup`'s rule, a log is deletable only below both the `_snap` base and the fold cursor; CAS-29.6 keeps that rule when it changes the listing.
 - Once CAS-29.10 adds the round deadline, the seed walk is one of the cut families, with `max_seed_ops` kept as the admission ceiling.
 - CAS-315's sweep half (a view replay meeting an incoherent cut) disappears with the replay; its fsck and preview half stays.
+- CAS-386: the pre-CAS prune can delete the adopted generation's fold seal when `keep = 1` and no blob `RunRef` points at that generation; a likely fix is to always include the adopted generation in `referenced_generations`. Independent of this family.
