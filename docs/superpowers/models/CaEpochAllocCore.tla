@@ -119,7 +119,7 @@ CONSTANTS
     RejoinVerifiedOnly, \* rejoin only over a verified tombstone; an unverified one refuses (retryable)
     RemountOn,          \* a process whose lease is lost self-remounts: owner check without rejoin, new claim
     RemountRejoins,     \* sabotage: the self-remount may rejoin a verified retirement
-    RemountChecksLife,  \* proposed: the remount refuses when the owner's rejoin generation changed since start
+    RemountChecksLife,  \* proposed: remount owner check and claim recheck refuse a changed rejoin generation
     GcFencesLive,       \* GC fences the lease of a live (partitioned) server instance
     KeepVerified,       \* step 2 keeps retirement_verified when it refreshes a verified tombstone
     DRestarts,          \* decommission re-runs allowed (1 = one re-run)
@@ -616,7 +616,8 @@ ClaimCheckOwner(p) ==
 ClaimPostOwner(p) ==
     /\ pc[p] = "cpost"
     /\ LET refuse == IF RecheckRetiredOnly THEN ownerRetired
-                     ELSE ownerGone \/ ownerUuid # Uuid(p) \/ ownerRetired IN
+                     ELSE ownerGone \/ ownerUuid # Uuid(p) \/ ownerRetired
+                          \/ (RemountChecksLife /\ remnt[p] /\ life # stLife[p]) IN
        /\ pc' = [pc EXCEPT ![p] = IF refuse THEN "cpfare" ELSE "live"]
        /\ resumedStale' = (resumedStale \/ (~refuse /\ ResumesStale(p)))
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
@@ -696,10 +697,10 @@ CatalogGc ==
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
                    stLife, remnt, resumedStale, dClaimEp, jRepl, mfEp, pc, Locals, DVars, GVars, XVars>>
 
-\* Proposed: before reclaiming a foreign terminal body, GET owner; it must carry our uuid.
+\* Proposed: before reclaiming a foreign terminal body, GET owner; it must carry our uuid and be live.
 ClaimForeignOwner(p) ==
     /\ pc[p] = "cfown"
-    /\ pc' = [pc EXCEPT ![p] = IF ~ownerGone /\ ownerUuid = Uuid(p) THEN "crecl" ELSE Down(p)]
+    /\ pc' = [pc EXCEPT ![p] = IF ~ownerGone /\ ownerUuid = Uuid(p) /\ ~ownerRetired THEN "crecl" ELSE Down(p)]
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, Ghost, Locals, DVars, GVars, XVars>>
 
 \* Proposed check before the mint: GET `epoch`; our own bytes must still be there.
