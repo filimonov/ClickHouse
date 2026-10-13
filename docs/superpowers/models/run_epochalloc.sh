@@ -179,6 +179,15 @@ CONFIGS=(
     "sab_r8_remountstops                  violation  LiveMatchesOwnerAtRest"
     "sab_r8_rollbacknolife                violation  DoneMeansRetired"
     "sab_r8_ownerfirst                    violation  OldNotUnderNewOwner"
+    # Round 9 (lifecycle spec r9): the tool reads its victim; verified-only rejoin; a verified run is final.
+    "r9_core_z                            green      -"
+    "r9_core_g                            green      -"
+    "r9_newuuid                           green      -"
+    "r9_old                               green      -"
+    "r9_threeruns                         green      -"
+    "r9_newdecom                          green      -"
+    "sab_r9_rejoinunverified              violation  NoDrainOfLaterLife"
+    "res_r9_rerunafterverified            violation  NoDrainOfLaterLife"
 )
 # Two to twelve minutes each.
 SLOW_CONFIGS=(
@@ -198,6 +207,8 @@ SLOW_CONFIGS=(
     "r8_newuuid                           green      -"
     "r8_old                               green      -"
     "r8_remount                           green      -"
+    "r9_remount                           green      -"
+    "res_r9_uuidreuse                     violation  OldNotUnderNewOwner"
 )
 [[ "${SLOW:-0}" == 1 ]] && CONFIGS+=("${SLOW_CONFIGS[@]}")
 # Ad-hoc rows for exploration: EXTRA="name expect invariant;name expect invariant".
