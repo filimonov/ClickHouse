@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-14 17:26'
+updated_date: '2026-10-14 17:33'
 labels:
   - 'area:gc'
   - 'complexity:small'
@@ -97,4 +97,6 @@ CAS-358 reshapes the same function and depends on this task: its owner view (fol
 2026-10-14: 'a root with no lease' now means only a never-mounted root. A decommissioned srid keeps a terminal farewell.
 
 2026-10-14, PR #2528 head 7d7fcc95 (e198e5ee, 593311dc, 68cdc1d9, merge of antalya-26.6, 7d7fcc95): `prefixEligibleUnder`/`prefixEligible` renamed to `isBuildPrefixCoveredByFloor`, `floorForNamespace` to `mountLeaseForNamespace` (AC #1/#6 wording refers to the old names). The post-floor catalog recheck now covers every candidate, not only rowless ones: a candidate is retained when its catalog row appeared, disappeared or changed by full value (`CatalogEntry::operator==`) between the cut and the recheck. Closes the rebirth schedule: cut sees the predecessor life, its owner view is empty, the successor life commits the same manifest before the floor read, the old code nominated the body (gtest `CursorPageRetainsBodyWhenNamespaceIsRebornAfterCatalogCut`). Cost: one catalog GET per page that has any candidate. The explanatory comment on the recheck was dropped with the generalisation; worth restoring. Separate finding by the author: the decoder rejects entry paths with empty/'.'/'..' segments (`CasPartManifestFormat.cpp` decodePartManifest) and the encoder does not, so the dropped promote re-read also drops that check; red test `StageManifestRejectsTraversalPathBeforeBodyWrite` is in, the fix is not yet pushed (CI red on it as intended). CI for 7d7fcc95: that unit test plus an unrelated stateless crash (03278, `GroupingAggregatedTransform` bucket pushed twice, upstream issue ClickHouse/ClickHouse#115986).
+
+- 2026-10-14: CAS-358 spec rev.3 (codex round 7, finding 2): moving the floor only ahead of catalogEntryOf keeps CasRefCatalog::read at CasOrphanManifestSweep.cpp:704 before the floor, so a build that ends between the catalog read and the floor sample is still deletable through the rowless branch. Amend this spec's §4 to a page prepass: floors for every listed namespace BEFORE the catalog read; T1 hook must fire right after the catalog read returns the rowless cut, and the reversed-order mutant must fail.
 <!-- SECTION:NOTES:END -->
