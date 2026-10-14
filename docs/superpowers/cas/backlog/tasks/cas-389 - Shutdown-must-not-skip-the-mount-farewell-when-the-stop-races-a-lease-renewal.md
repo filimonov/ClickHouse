@@ -4,12 +4,13 @@ title: Shutdown must not skip the mount farewell when the stop races a lease ren
 status: To Do
 assignee: []
 created_date: '2026-10-14 17:03'
+updated_date: '2026-10-14 20:37'
 labels:
   - 'area:mounts'
 dependencies: []
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2567'
-priority: high
+priority: low
 type: bug
 ordinal: 487000
 ---
