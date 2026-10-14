@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-12 13:01'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:gc'
   - 'area:mounts'
@@ -71,4 +71,6 @@ The ban on nested ids was already proposed, not decided, in CAS-157 (2031-triage
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-12: PR 2542 is not merged (CAS-359), so the listed-roots fall-through this task describes is not in the tree. Without the PR the fold's dead-precommit path reads `a/b`'s own mount, and the fall-through is reachable only after `DROP POOL MEMBER` (CAS-157). Priority lowered from Critical to Medium; the durable fix stays CAS-157's nesting ban. Keep this task as the record of the fold-path trace in case a listed-roots floor lookup is attempted again.
+
+2026-10-14: partly addressed: new ids cannot nest (PR A https://github.com/Altinity/ClickHouse/pull/2566). Existing nested pools and the fsck part remain open.
 <!-- SECTION:NOTES:END -->

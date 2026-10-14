@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:40'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:gc'
   - 'area:write-path'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/formats-and-storage.md#s3-staging-reclaim-only-at-mount-star
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (55c650b8635, by 's3-staging-reclaim-only-at-mount-start')
+
+2026-10-14: abort now deletes staging (PR A https://github.com/Altinity/ClickHouse/pull/2566). A periodic sweep can delete keys below the live epoch (PR B https://github.com/Altinity/ClickHouse/pull/2567 key layout). The remaining leak is killed or crashed writers until restart.
 <!-- SECTION:NOTES:END -->

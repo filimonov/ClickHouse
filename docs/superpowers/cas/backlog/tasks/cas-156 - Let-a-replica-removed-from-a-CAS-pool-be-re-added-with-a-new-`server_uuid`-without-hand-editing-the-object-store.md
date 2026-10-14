@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:mounts'
   - 'complexity:large'
@@ -16,7 +16,8 @@ labels:
   - 'needs:decision'
   - 'origin:canary'
 milestone: m-8
-dependencies: []
+dependencies:
+  - CAS-388.3
 references:
   - >-
     src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Pool/CasServerRoot.cpp
@@ -66,4 +67,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#operator-replica-readd-uuid-trap; fi
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (8d6022b3070, by 'operator-replica-readd-uuid-trap')
+
+2026-10-14: the re-add path becomes PR C's rejoin at server start (CAS-388.3): any uuid, no command. PR B adds the hand-repair body to the refusal. Status stays To Do until PR C lands.
 <!-- SECTION:NOTES:END -->

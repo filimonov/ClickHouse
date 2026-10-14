@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:mounts'
   - 'complexity:trivial'
@@ -42,3 +43,9 @@ Only disk-root paths land in `roots/<srid>/`; the real writer is upstream `IDisk
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-14: PR C's rejoin (CAS-388.3) deletes the previous life's access-probe key. RS4 (a late delete of a successor's probe) remains and is listed in CAS-385.
+<!-- SECTION:NOTES:END -->

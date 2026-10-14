@@ -3,10 +3,10 @@ id: CAS-362
 title: >-
   Make writer-epoch allocation unique when two same-uuid instances race on an
   ambiguous counter write
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 21:30'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:mounts'
   - 'touches:on-s3-format'
@@ -56,4 +56,6 @@ Fix: add a random allocation nonce to the `epoch` body (~15 lines). Old readers 
 2026-10-12: the unmerged lease series (PR 11a, `f95950cbd54` 'Allocate the CAS writer epoch as one immutable conditional write' on branch fix/antalya-26.6/cas-ownership-primitives-5) rewrites `allocateWriterEpoch` but still resolves an unclear outcome by comparing exact bytes, so it carries the same defect. If the series resumes, 11a must be rebased onto this fix (conflict in `allocateWriterEpoch`).
 
 2026-10-12 model (`008991cc06f`, `CaEpochAllocCore`, base 2a034cdb374): `cur_twin`/`cur_twin_gcs` violate `EpochNeverReused` (ambiguous create, twin writes identical bytes, resolve says Committed); with #2512 the twin cannot write (`cur_twin_dangle` green) but the duplicate allocation stays. `fix_nonce` green (also GCS, restart: 167 M states); `sab_nonce` (resolve compares only the value) red. Format: `decodeServerEpoch` skips unknown keys in 26.6.4 (`JsonObjectReader::skipUnknown`, Tolerant), so a plain nonce field is compatible.
+
+2026-10-14: its two commits ship as the first commits of PR B https://github.com/Altinity/ClickHouse/pull/2567; there is no separate PR.
 <!-- SECTION:NOTES:END -->

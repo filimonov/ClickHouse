@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:mounts'
   - 'area:observability'
@@ -59,4 +59,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#owner-only-slot-invisible-in-mounts 
 First recorded: 2026-08-21 (71adf002454, by 'mounts-list-failure-indistinguishable')
 
 2026-10-08: 9a is ready locally (branch `lease/antalya-26.6/pr09a-squash`): `lifecycle` computed from the lease clock, `is_local`, `listing_error`, local row without object-store I/O. Opens after https://github.com/Altinity/ClickHouse/pull/2517 merges.
+
+2026-10-14: PR C (CAS-388.3) adds a `retired` state to system.cas_mounts. The 'owner-only slot with no row' cause no longer arises from new decommissions.
 <!-- SECTION:NOTES:END -->

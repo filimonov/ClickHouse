@@ -1,10 +1,10 @@
 ---
 id: CAS-157
 title: Stop `SYSTEM CAS DROP POOL MEMBER 'a'` from destroying a live member `a/b`
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-12 10:22'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -41,7 +41,7 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#nested-srid-decommission (2031-triag
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Decommissioning `a` while `a/b` is a member either refuses or leaves every object of `a/b` intact
+- [ ] #1 Decommissioning `a` while `a/b` is a member either refuses or leaves every object of `a/b` intact; scope: new ids cannot contain `/` (existing nested pools and a new `a` over an empty `a/b` stay documented, not fixed)
 - [ ] #2 `gtest_cas_decommission.cpp` has a nested-srid case that fails on the current code
 <!-- AC:END -->
 
@@ -57,4 +57,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#nested-srid-decommission (2031-triag
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (69e007cf41e, by 'nested-srid-decommission')
+
+2026-10-14: PR A https://github.com/Altinity/ClickHouse/pull/2566 refuses `/` in new server_root_ids. AC#1 is reworded to cover new ids only. Existing nested pools, and a new `a` over an empty `a/b`, stay documented, not fixed.
 <!-- SECTION:NOTES:END -->

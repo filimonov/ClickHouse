@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 14:28'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:observability'
   - 'area:docs'
@@ -60,4 +60,6 @@ Provenance: umbrella-roadmap.md section 3 bullet 'Simplify the system tables'; f
 First recorded: 2026-09-26 (filed during the Backlog.md migration; no earlier trace in docs/superpowers history)
 
 Identifier trace: the earliest docs mention of `ContentAddressedGarbageCollectionLog` is 2026-06-17 (27eef9df8fc); the finding itself has no record before this migration, so the creation date stays 2026-09-26.
+
+2026-10-14: the planned rename of the `state` / `gc_fenced` columns must account for the new `retired` state (PR C, CAS-388.3).
 <!-- SECTION:NOTES:END -->

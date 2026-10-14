@@ -4,6 +4,7 @@ title: Confirm a slot's absence with a LIST before a terminal stop
 status: To Do
 assignee: []
 created_date: '2026-10-08 16:49'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -37,3 +38,9 @@ PR 6 of the lease series (absence only on a named `NoSuchKey`) was withdrawn by 
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-14: add the new absence-based decisions to the site list: claim recheck with owner absent, rejoin with epoch or mount missing, admin with absent counter.
+<!-- SECTION:NOTES:END -->

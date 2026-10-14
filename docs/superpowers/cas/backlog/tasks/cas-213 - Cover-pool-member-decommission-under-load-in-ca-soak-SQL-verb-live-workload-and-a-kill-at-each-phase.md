@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:soak'
   - 'area:mounts'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/testing-and-ci.md [b200-decommission-under-load]; verified 2
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-26 (5245fbc7a76, by 'b200-decommission-under-load')
+
+2026-10-14: steps and acceptance criteria need a rewrite for the six-step decommission and rejoin: kill after each step, rerun, restart the member, check it rejoins empty. The AC#3 refusal is now 'decommission not finished; rerun'.
 <!-- SECTION:NOTES:END -->

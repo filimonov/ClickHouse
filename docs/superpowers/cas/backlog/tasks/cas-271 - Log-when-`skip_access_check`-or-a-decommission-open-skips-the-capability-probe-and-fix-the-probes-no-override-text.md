@@ -3,10 +3,10 @@ id: CAS-271
 title: >-
   Log when `skip_access_check` or a decommission open skips the capability
   probe, and fix the probe's 'no override' text
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:55'
+updated_date: '2026-10-14 17:03'
 labels:
   - 'area:backend'
   - 'area:observability'
@@ -58,4 +58,6 @@ Provenance: BACKLOG/formats-and-storage.md#skip-access-check-no-signal (2031-tri
 First recorded: 2026-08-21 (00bda042d5d, by 'skip-access-check-no-signal')
 
 2031-triage CAS-029: the `skip_access_check` half. 'Versioning queried only on the GCS dialect; ETag mounts rely on the delete-marker probe' is decided behaviour (2026-09-02), and the post-mount `LOGICAL_ERROR` half is implemented by `654ba3d0aa7` (`CAS_DELETE_MARKER`).
+
+2026-10-14: delivered in PR B https://github.com/Altinity/ClickHouse/pull/2567 (skipped-probe log and probe text).
 <!-- SECTION:NOTES:END -->
