@@ -3,10 +3,10 @@ id: CAS-378
 title: >-
   Stop `putNamespaceFile` acknowledging bytes into a namespace life that removal
   already retired
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-12 11:52'
-updated_date: '2026-10-12 22:55'
+updated_date: '2026-10-14 20:52'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -52,4 +52,6 @@ A cold reader observes the catalog row `Live`; removal and drain retire that lif
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-13 recheck on the release line 2a034cdb374 (docs/superpowers/cas/2026-10-12-late-request-audit/atomicity/wave2-recheck-release-line.md): EXISTS and worse. Cold `acquireReadableRefTableRuntime` sees the row Live at its second catalog GET (no lock); before `acquireRefTableRuntime` takes `ref_queue_mutex`, drop appends the terminal record, GC drains the row, `invalidateRemovedCatalogLife` erases the slot; insertion finds an empty slot with an unchanged fence generation and publishes a runtime for the dead life (same gap on the cold mutable path of `namespaceLife`). Warm `namespaceLife` then returns the dead life with no lifecycle/catalog check: `putNamespaceFile` acknowledges bytes the janitor deletes; inferred: a ref append prepends `NamespaceBirth` (allowed after `Removed`) and a part could be promoted into a swept life. Fix: keep a per-name retirement record in `RefNameSlot` instead of erasing it; cold paths capture it before the first GET and insertion refuses if it moved; warm `namespaceLife` refuses a terminal runtime. Gtest: backend subclass whose `read` callback runs drop + GC drain after the base read (like `MountSlotRaceBackend`).
+
+2026-10-14: PR https://github.com/Altinity/ClickHouse/pull/2570 (branch fix/antalya-26.6/cas-378-retired-life-republish @19b5df85a66): retirement count in RefNameSlot, cold paths capture it before the first catalog read and the insertion refuses if it moved; warm namespaceLife refuses a terminal life. No TLA model covers the in-memory runtime slot; evidence is the gtests (red on base) and two codex reviews.
 <!-- SECTION:NOTES:END -->
