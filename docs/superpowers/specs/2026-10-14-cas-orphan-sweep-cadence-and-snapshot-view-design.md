@@ -9,7 +9,8 @@ doc_type: 'reference'
 
 # CAS GC: the orphan sweep runs once a day and decides from the snapshot — design {#cas-orphan-sweep-cadence-and-snapshot-view}
 
-- Date: 2026-10-14. Status: rev.1. Task: CAS-358. Replaces `2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md` (withdrawn, see §5). Depends on: CAS-36 (floor before the catalog cut; unchanged here). Related: CAS-359 (`prev_epoch_seal` hint bound, independent), CAS-387 (one sequence per life, independent), CAS-386 (prune vs adopted seal, independent).
+- Date: 2026-10-14. Status: rev.2 (rev.1 reviewed by codex `gpt-6-astra` high, `tmp/cas358/codex_spec_review_6.md`: 2 critical, 4 major, 4 minor, all applied). Task: CAS-358. Replaces `2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md` (withdrawn, see §5).
+- Stage 1 depends on nothing. Stage 2 depends on: CAS-36 (floor sampled before the catalog cut), CAS-391 (a grant names a manifest of its own writer epoch, enforced at append), CAS-362 and CAS-363 (unique, monotone writer epochs across server-root retirement). The last three are prerequisites of today's rule (1) and of the floor as much as of this spec; they are listed because the proof in §4.2 uses them. Related: CAS-359 (`prev_epoch_seal` hint bound, independent), CAS-387 (one sequence per life, independent), CAS-386 (prune vs adopted seal, independent).
 - Code facts verified against the `cas-gc-rebuild` working tree at `aa5e67ed6fc`. Numbers from https://github.com/Altinity/ClickHouse/pull/2542 and from the otel.demo stand (7 days ending 2026-10-13).
 
 ## 1. Decision {#decision}
@@ -40,12 +41,11 @@ Orphan manifests come from two sources only: a crash between the staged body PUT
 ### 3.1 Behaviour {#stage-1-behaviour}
 
 - A **circuit** is the sequence of pages from `manifest_sweep_cursor == ""` until a page reports `wrapped` (`ManifestSweepResult::wrapped`, `:985`). The round CAS still publishes the cursor after each page (`CasGc.cpp:967`); a wrap publishes `""`.
-- The leader keeps one in-memory `next_circuit_not_before` (steady clock). It is zero when the leader starts, so the first destructive round starts a circuit. When a page wraps, it becomes `now + manifest_sweep_interval_sec`.
+- The leader keeps one in-memory `next_circuit_not_before` (the `mono_ms_fn` observation clock). It is zero when this process first owns the lease or regains it from another owner, never on a same-owner renewal (`acquireOrRenewLease` runs every round, `CasGc.cpp:423`). When a page wraps (`wrapped == true`), it becomes `now + manifest_sweep_interval_sec`. A page that stopped on the delete budget returns `wrapped == false` (`CasOrphanManifestSweep.cpp:973-985`) and starts no cooldown; an empty last page wraps like any other.
 - A round whose cursor is empty and whose clock is before `next_circuit_not_before` skips the sweep: no LIST, no seal or catalog read, `orphan_sweep` phase row with `idle = 1`, cursor unchanged.
-- A round whose cursor is non-empty runs its page as today, whatever the clock says. A circuit in progress is never cut.
+- A round whose cursor is non-empty runs its page as today, whatever the clock says. A new leader resumes the durable cursor it finds; it starts a fresh circuit only when that cursor is empty. A circuit is paused by `suppress_destructive` rounds (cursor frozen, as today) and reset only by REBUILD (`CasGc.cpp:4575`); nothing else cuts it.
 - `manifest_sweep_interval_sec = 0` means a new circuit starts on the round after a wrap: today's behaviour. `manifest_sweep_list_budget_keys = 0` still disables the sweep.
 - A leader change restarts the clock: the new leader starts a circuit at its first destructive round. One extra circuit per leader term is the price of keeping the stamp out of `gc/state` (format frozen since 26.6.4). A circuit after a restart is also when debris is most likely to exist.
-- `suppress_destructive` rounds and REBUILD (`CasGc.cpp:4575`, cursor reset) are unchanged.
 
 ### 3.2 Setting {#stage-1-setting}
 
@@ -59,7 +59,7 @@ Declared next to `manifest_sweep_list_budget_keys` (`ContentAddressedSettings.cp
 
 - `Gc/CasGc.cpp:3259` and `:967`: the condition gains `&& sweepCircuitDue(state)`, where `sweepCircuitDue` is `!state.manifest_sweep_cursor.empty() || now >= next_circuit_not_before`. After `planManifestCursorPage` returns `wrapped`, set `next_circuit_not_before`.
 - `:1194` phase row: add `idle` and `circuit_started` metrics.
-- `Gc` gains one member, `next_sweep_circuit_ms`, read against `mono_ms_fn` (the injected monotonic observation clock, `Gc/CasGc.h:924`); reset to zero on lease acquire.
+- `Gc` gains one member, `next_sweep_circuit_ms`, read against `mono_ms_fn` (the injected monotonic observation clock, `Gc/CasGc.h:924`); reset to zero when the lease owner recorded in `gc/state` changes to this process, not on renewal.
 - No change to `CasOrphanManifestSweep.*`.
 
 ### 3.4 Cost {#stage-1-cost}
@@ -76,7 +76,10 @@ Per circuit, as today: `N / 1000` LIST pages, one `_ckpt` + replay per namespace
 | S2 | `FreshLeaderStartsACircuitAtOnce` | new leader, interval 3600 | first destructive round LISTs |
 | S3 | `ACircuitInProgressIgnoresTheInterval` | cursor non-empty, clock before the deadline | page runs, cursor advances |
 | S4 | `IntervalZeroRunsCircuitsBackToBack` | interval 0 | the round after a wrap LISTs |
-| S5 | `SuppressedRoundFreezesTheClockToo` | `suppress_destructive` | no circuit starts, deadline unchanged |
+| S5 | `SuppressedRoundFreezesTheClockToo` | `suppress_destructive`, once with an empty and once with a non-empty cursor | no circuit starts, cursor and deadline unchanged |
+| S6 | `SameOwnerRenewalKeepsTheDeadline` | three rounds of same-owner renewal after a wrap | no LIST until the deadline |
+| S7 | `ABudgetLimitedPageStartsNoCooldown` | delete budget 1, two candidates on the last page | `wrapped == false`, next round pages again |
+| S8 | `RebuildResetsTheCursorAndTheNextRoundPages` | REBUILD mid-circuit | cursor `""`, next destructive round LISTs |
 
 ## 4. Stage 2: the snapshot is the owner view {#stage-2}
 
@@ -90,14 +93,14 @@ delete `K` iff
 2. the row is `Live` or `Removing` (a `Creating` row retains, as today);
 3. `P` exists and `K ∉ snap(P)`;
 4. `E < P.writer_epoch`;
-5. coverage is `Covered` with no hold, and `C ≥ P`.
+5. coverage classification is `Unchanged` or `Folded` (`CoverageClass`, `Formats/CasFoldSealFormat.h:74`), no hold, and `C ≥ P` (lexicographic on `(writer_epoch, ref_sequence)`, `Primitives/CasTypes.h:262-267`; a cursor on an older epoch's seal compares below and retains).
 
-Every other case retains, under a counted class: `NoSnapshot` (3 fails on `P`), `InSnapshot`, `SnapshotEpoch` (4), `CursorBelowSnapshot` (5), plus the existing `NoCoverage` and `Hold`. Two branches skip rules 2 to 5 and use the floor alone: no catalog row (CAS-36), and `E < _ckpt.life_epoch` when `life_epoch` is present (an older life of the same name, §4.3 item 3); a `_ckpt` without `life_epoch` retains the namespace, as `readCheckpointSnapshotBase` already refuses it.
+Every other case retains, under a counted class: `NoSnapshot` (3 fails on `P`), `InSnapshot`, `SnapshotEpoch` (4), `CursorBelowSnapshot` (5), plus the existing `NoCoverage` and `Hold`. Two branches skip rules 2 to 5 and use the floor alone: no catalog row (CAS-36), and `E < _ckpt.life_epoch` when `life_epoch` is present (an older life of the same name, §4.3 item 3; evaluated after `readCkpt` and before any snapshot read); a `_ckpt` without `life_epoch` retains the namespace, as `readCheckpointSnapshotBase` already refuses it.
 
 ### 4.2 Why this is complete {#stage-2-proof}
 
-- **Nothing in the writer needs `K` after `P`.** A grant (`AddPrecommit`, the only `+1`, `manifestEdgesOfTxn`) names a build of its own epoch; grants do not cross epochs (`Pool/CasRefProtocol.h:375`, INV-2). With `E < P.writer_epoch` every grant of `K` precedes `P`, and `snap(P)` is the whole binding set through `P`. `K ∉ snap(P)` therefore means `K` is not owned at `P` and can never be granted again (keys are write-once, the epoch is closed).
-- **Nothing in the fold needs `K` after `C`.** The fold reads a body on `+1` and on `-1`. Every `+1` of `K` is in epoch `E < P.writer_epoch ≤ C.writer_epoch`, hence folded. If `K` was ever owned, its `-1` is the record that ended the ownership, at a position `≤ P ≤ C`, hence folded. If it was never owned, there is no `-1`. Rule 5 needs clean coverage: a hold or clamp means some position below `C` is unaccounted.
+- **Nothing in the writer needs `K` after `P`.** A grant (`AddPrecommit`, the only `+1`, `manifestEdgesOfTxn`) names a build of its own epoch. Today nothing enforces that: `precommitAdd` checks the live epoch in `requireAlive` (`Pool/CasPartWriteTxn.cpp:186`) but the append captures the runtime later (`Pool/CasRefLedger.cpp:2050`), so a self-remount in between lets an epoch-3 build append its grant under epoch 4; `applyOwnerTransition` (`Pool/CasRefProtocol.cpp:245`) compares nothing. CAS-391 adds the one comparison at append (`new_binding.manifest_ref.epoch == runtime writer epoch`, else retry-later; `Promote` is exempt, it moves an existing binding). Today's rule (1) and the floor already assume it. With it, and with epochs unique and monotone per server root (CAS-362, CAS-363): with `E < P.writer_epoch` every grant of `K` precedes `P`, and `snap(P)` is the whole binding set through `P`. `K ∉ snap(P)` therefore means `K` is not owned at `P` and can never be granted again (keys are write-once, the epoch is closed).
+- **Nothing in the fold needs `K` after `C`.** The fold reads a body on `+1` and on `-1`. Every `+1` of `K` is in epoch `E < P.writer_epoch ≤ C.writer_epoch`, hence folded. If `K` was ever owned, its `-1` is the record that ended the ownership, at a position `≤ P ≤ C`, hence folded. If it was never owned, there is no `-1`. Rule 5 needs clean coverage: a clamp leaves the cursor below the offending transaction, so everything at or below `C` is folded, but the hold names a position the fold could not pass and the fold may never reach `P` through it; the blanket veto is kept because it costs nothing.
 - **The floor is redundant but kept.** `E < P.writer_epoch` already proves the build's mount epoch has ended. Keeping the floor first costs one cached lease GET per namespace per page and leaves CAS-36 and its TLA order untouched.
 - **A removal above `P` needs no tail walk.** A manifest removed after `P` is still in `snap(P)` and is retained by rule 3. That is the CAS-310 wedge shape, and it is the reason rule 5 compares `C` with `P` and not with the removal.
 
@@ -105,29 +108,29 @@ Every other case retains, under a counted class: `NoSnapshot` (3 fails on `P`), 
 
 1. **Cursor below the snapshot.** A `-1` at a position in `(C, P]` is unfolded and its target is absent from `snap(P)`. Rule 5 retains the whole namespace this page. It resolves itself: the fold passes `P` within a few rounds.
 2. **Builds of the snapshot's own epoch.** A build at `(P.writer_epoch, seq)` staged after `P` is live and absent from `snap(P)`. Rule 4 retains it. It resolves on the next epoch's snapshot.
-3. **Keys of an older life of the same name.** After DROP + CREATE under the same name, the old life's manifests sit under the same `cas/manifests/<ns>/` prefix and are absent from the new life's snapshot; the old life's `-1`s live in the old stream, which the new life's `_ckpt` does not name. They need no snapshot: creation over a `Removing` row is refused until the old life's terminal removal has folded and GC has deleted the row (`Pool/CasRefLedger.cpp:1349`), so by the time a new life exists, every `-1` of the old life is folded and every owned body of the old life was deleted by the fold. Rule: a key whose `E` is below the row's `_ckpt.life_epoch` is decided by the floor alone (the rowless rule). A key with `E ≥ life_epoch` goes through rules 3 to 5 like any other; the proof in §4.2 holds for it because the old life's grants precede the new life's birth.
+3. **Keys of an older life of the same name.** After DROP + CREATE under the same name, the old life's manifests sit under the same `cas/manifests/<ns>/` prefix and are absent from the new life's snapshot; the old life's `-1`s live in the old stream, which the new life's `_ckpt` does not name. They need no snapshot: creation over a `Removing` row is refused until the old life's terminal removal has folded and GC has deleted the row (`Pool/CasRefLedger.cpp:1349`), so by the time a new life exists, every ownership removal of the old life is folded (bodies may remain: evidence certifies the fold, not the physical delete, `CasGc.cpp:3057`). Rule: a key whose `E` is below the row's `_ckpt.life_epoch` is decided by the floor alone (the rowless rule). A key with `E ≥ life_epoch` (an old-life build minted in the birth epoch of the new life) goes through rules 3 to 5 like any other key; it may retain for as long as rule 4 says, and if it passes, its safety comes from the old life's terminal fold, not from the new life's cursor.
 4. **No snapshot.** Tables below the snapshot threshold never publish a `_snap`; on the PR 2542 stand that is 718 of 792 streams. Rule 3 retains them under `NoSnapshot`. Their debris is at most a few bodies per hard restart and is visible in `cas-fsck`. Two optional follow-ups, neither needed for correctness: lower `snapshot_log_count_threshold` per pool, or have the writer publish a snapshot after a recovery that found a non-empty tail (`admitSnapshotPublishUnderStateLock`, `Pool/CasRefLedger.cpp:4140`, one condition).
 
 ### 4.4 Page flow {#stage-2-flow}
 
-Keys are sorted by namespace, so a page is a few whole tables. Per page, in this order:
+Keys are sorted by namespace, so a page is a few whole tables. Per page, in this order (the CAS-36 order: floor before the cut, so a build that ends between the two is still protected by the floor sample):
 
 1. `LIST` one page (as today).
-2. Adopted fold seal, then the catalog cut (as today, `:703-704`).
-3. Per listed key: floor (cached per namespace), rowless branch (CAS-36), row state.
-4. Per namespace, once per page: `readCkpt`, then `readCheckpointSnapshotBase` (the `_log` at `P`, its predecessor seal if any, the `_snap`): at most four GETs. Build `snap(P)` as manifest keys via `layout.manifestKey`. Read `C` from the seal. Any throw retains the namespace, as today.
-5. Rules 3 to 5 per key; survivors are candidates.
-6. Candidates: exact GET, decode, nominate with blob source retirements; post-CAS exact-token delete (all as today, `:923-985`, `CasGc.cpp:1194`).
+2. Floor per listed namespace (`floorForNamespace`, cached per namespace for the page), for every key, rowless or not.
+3. Adopted fold seal, then the catalog cut (today at `:703-704`, moved after the floors). Rowless keys: floor alone (CAS-36).
+4. Per catalog-named namespace, once per page: `readCkpt`. Keys with `E < life_epoch`: floor alone. Then `readCheckpointSnapshotBase` (the `_log` at `P`, its predecessor seal if any, the `_snap`). Build `snap(P)` as manifest keys via `layout.manifestKey`. Read `C` from the seal. Any throw retains the namespace, as today.
+5. Rules 2 to 5 per key; survivors are candidates.
+6. Candidates: exact GET with the existing body read-ahead (`:923-927`), decode, nominate with blob source retirements; post-CAS exact-token delete (all as today, `CasGc.cpp:1194`).
 
-Deleted: `activeManifestKeys`, `NamespaceProtection`, `OutstandingHintGuard`, `hintRefLogsWithinEpoch` use in the sweep, `tail_removal_targets` in `NamespaceFoldView`, the `TailRemoval` class, `gc_round_sweep_recovery_op_budget` (nothing left to budget; the four GETs per namespace are bounded by `gc_round_sweep_namespace_budget`). `sweepNamespace` (used by `Tools/CasDecommission.cpp`) takes the same view. `manifestDeletionPremise` keeps rule (1) as rule 4 restated on `P` and gains rules 3 and 5.
+Deleted: `activeManifestKeys`, `NamespaceProtection`, `OutstandingHintGuard`, `hintRefLogsWithinEpoch` use in the sweep, `tail_removal_targets` in `NamespaceFoldView`, the `TailRemoval` class and the recovery-op budget's effect (nothing left to budget; the four reads per namespace are bounded by `gc_round_sweep_namespace_budget`). `sweepNamespace` (used by `Tools/CasDecommission.cpp`) takes the same view. `manifestDeletionPremise` keeps rule (1) as rule 4 restated on `P` and gains rules 3 and 5. `gc_round_sweep_recovery_op_budget` stays declared and accepted as a no-op (a config naming it must still load, `ContentAddressedSettings.cpp:162-167` refuses unknown `cas_` settings); its description says so.
 
 ### 4.5 Cost {#stage-2-cost}
 
-Per circuit: `N / 1000` LISTs, one lease GET and at most four ref-object GETs per namespace per page, bodies for nominated candidates. No ref-log walk, no read-ahead, no 404s. On the PR 2542 stand: 792 streams, ~3 200 GETs per circuit plus pages, once a day. Memory: one `snap(P)` at a time plus the page's floor and view maps, as today.
+Per circuit: `N / 1000` LISTs; per namespace per page the floor probes (`floorForNamespace` tries server-root prefixes until the mount is found, `:48-69`) and at most four logical ref-object reads (`_ckpt`, the `_log` at `P`, its predecessor seal, the `_snap`); bodies for nominated candidates, with the candidate read-ahead kept. No ref-log walk and no ref-log prefetch, so the speculative-probe 404s (`CASGCReadAheadWasted`) go to zero; ordinary retries and absent-object 404s remain. On the PR 2542 stand: 792 streams, ~3 200 ref-object reads per circuit plus pages, once a day. Memory: one `snap(P)` at a time plus the page's floor and view maps, as today.
 
 ### 4.6 Compatibility {#stage-2-compat}
 
-No object is written or changed; the sweep reads only existing objects (`_ckpt`, `_log`, `_snap`, the adopted seal, the catalog, mount leases). An older and a newer leader may alternate freely: each decides from the same objects under its own rule, and each rule is sound on its own. No setting is added by stage 2.
+No object is written or changed; the sweep reads only existing objects (`_ckpt`, `_log`, `_snap`, the adopted seal, the catalog, mount leases), so there is no format hazard between an older and a newer leader. Safety under alternation is a different question: a 26.6.4 leader skips the floor for rowless keys (CAS-36) and runs without CAS-391, so it can delete a staged body the new leader retains. That is 26.6.4's defect, not this spec's; mixed leaders are safe once both carry CAS-36 and CAS-391, and until then the old leader's sweep is disabled with `manifest_sweep_list_budget_keys = 0`. Differing conservative retentions between versions are harmless. No setting is added or removed by stage 2.
 
 ### 4.7 Tests, failing first {#stage-2-tests}
 
@@ -143,21 +146,26 @@ No object is written or changed; the sweep reads only existing objects (`_ckpt`,
 | T6 | `ARemovalAboveTheSnapshotNeedsNoTailWalk` | `K` removed at `{6,2} > P`, `C ≥ P` | retained (in `snap(P)`), zero `_log` GETs above `P` |
 | T7 | `TheViewReadsAtMostFourRefObjectsPerNamespace` | three namespaces on a page | GET count per namespace ≤ 4, no `_log` GET outside `{P, prev seal}` |
 | T8 | `OlderLifeDebrisIsDecidedByTheFloorAlone` | reborn `ns`, key at `E=2`, new life `life_epoch=4`, no snapshot for the new life | deleted when the floor admits `E=2`, with no `_snap` read for it |
-| T9 | `CreationOverARemovingRowIsRefused` | `Removing` row without `cleanup_evidence` | `createNamespace` retries later (existing ledger test if present, else new) |
+| T9 | `CreationOverARemovingRowIsRefused` | `Removing` row without `cleanup_evidence` | ledger namespace admission throws retry-later (`Pool/CasRefLedger.cpp:1349`); the catalog-level `createNamespace` alone returns `Superseded` and is not the test |
 | T10 | `AHeldOrClampedCoverageRetains` | hold at `{5,3}`, otherwise T1 | retained, class `Hold` |
 | T11 | `RowlessKeysKeepTheFloorRule` | CAS-36 T1 | unchanged |
 | T12 | `TheCursorPagePathAndSweepNamespaceAgree` | T1 through both paths | same decision and class |
 | T13 | `AnUndecodableSnapshotRetainsTheNamespace` | corrupt `_snap` | retained, warning, page continues |
+| T14 | `ABuildThatEndsBetweenTheFloorAndTheCutIsRetained` | hook after the floor sample: writer creates the row, precommits, promotes, ends the build, publishes a higher floor | retained (the floor sample predates the build's end) |
+| T15 | `AGrantUnderALaterEpochIsRefusedAtAppend` (CAS-391) | `precommitAdd` paused after `requireAlive`, self-remount to the next epoch, resume | append refused retry-later; no `AddPrecommit` naming the older epoch exists in the log |
+| T16 | `UnchangedCoverageDecides` | life with `CoverageClass::Unchanged`, otherwise T1 | deleted |
+| T17 | `AStaleCheckpointIsStillASoundView` | sweep reads `_ckpt` naming `P1`; writer then publishes `P2 > P1` and removes `K` above `P1` | retained (`K ∈ snap(P1)`) |
 
-Existing tests that assert the tail walk (`EpochSealFoldCursorCrossesTailByExactDecodedSuccessor`, `MissingImmediateEpochAfterCleanedCursorCannotBeSkippedByLaterBacklink`, `CleanedCursorCrossesOnlyThroughExactImmediateEpochHead`, `AnUnconsumedTailRemovalRetainsItsTarget`, `RecoveryWorkBudgetRetainsAndConvergesWithoutWedgingTheCursor`) are deleted with the walk; `PendingCommittedRemovalBodyIsSkipped` is rewritten as T3/T6.
+T7 counts the sweep's own requests only (the fold's reads are excluded) and counts retries separately. Existing tests that assert the tail walk (`EpochSealFoldCursorCrossesTailByExactDecodedSuccessor`, `MissingImmediateEpochAfterCleanedCursorCannotBeSkippedByLaterBacklink`, `CleanedCursorCrossesOnlyThroughExactImmediateEpochHead`, `AnUnconsumedTailRemovalRetainsItsTarget`, `RecoveryWorkBudgetRetainsAndConvergesWithoutWedgingTheCursor`) are deleted with the walk; `PendingCommittedRemovalBodyIsSkipped` is rewritten as T3/T6.
 
 ### 4.8 TLA+ {#stage-2-tla}
 
 `CaGcRootLocalPartManifestCore.tla`, the sweep steps at `GSwView`:
 
-- Add a per-life snapshot position `snapPos[n]`, advanced by a writer step to any committed position (a snapshot is a prefix of the committed log).
-- `GSwView` becomes: `swOwned' = { m : ownedAt(snapPos[life], m) \/ epoch(m) >= epochOf(snapPos[life]) \/ cursor[life] < snapPos[life] }` for catalog-named `m`.
-- Properties: the existing unfolded-removal invariant (CAS-310: no deleted body is named by an unfolded `-1`) and no-live-build deletion. Sabotage: `sab_cursorbelowsnap` drops the `cursor >= snapPos` term and must reproduce the CAS-310 trace; `sab_snapepoch` drops the epoch term and must delete a staged build of the snapshot epoch; `fix_floorfirst` / `sab_floorfirst` (CAS-36) unchanged.
+- Add a per-life snapshot position `snapPos[n]`, advanced by a writer step to any committed position (a snapshot is a prefix of the committed log), and historical ownership `ownedAt(pos, m)` for the sampled incarnation (the model today has only current `owner[m]`, `:307-308`); positions carry their epoch so `epochOf(snapPos)` is defined. An absent snapshot is `snapPos[n] = 0` and retains.
+- `GSwView` becomes: retain `m` unless `snapPos[life] # 0 /\ ~ownedAt(snapPos[life], m) /\ epoch(m) < epochOf(snapPos[life]) /\ cursor[life] >= snapPos[life]`, for catalog-named `m`; the floor step keeps the CAS-36 order.
+- Properties: `HasUnfoldedCommittedRemoval(m) => body present` (committed removals only; the fold skips bodiless precommit removals, `CasGc.cpp:2674`), plus the existing committed-body invariant.
+- Sabotage: `sab_cursorbelowsnap` drops the cursor term; its witness is an older-epoch manifest with a committed removal `R`, `C < R <= P`, absent from `snap(P)`, floor-eligible (the CAS-310 shape; a removal above `P` stays snapshot-protected and does not exercise it). `sab_snapepoch` drops the epoch term; its witness is a build granted and promoted after `P` in `P`'s epoch and ended before the floor sample: absent from `snap(P)`, owned, floor-eligible. `fix_floorfirst` / `sab_floorfirst` (CAS-36) unchanged.
 - Stage 1 needs no model change: idling is a stutter.
 
 ## 5. Rejected {#rejected}

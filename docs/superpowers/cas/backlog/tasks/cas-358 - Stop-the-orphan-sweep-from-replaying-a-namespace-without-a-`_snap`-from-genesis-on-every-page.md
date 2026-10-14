@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-14 16:44'
+updated_date: '2026-10-14 17:26'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -16,7 +16,7 @@ labels:
   - 'origin:review'
 milestone: m-1
 dependencies:
-  - CAS-36
+  - CAS-391
 references:
   - 'https://github.com/Altinity/ClickHouse/pull/2542'
   - >-
@@ -106,4 +106,6 @@ Decision log (times are commit times, local):
 - 2026-10-13: owner question 'can the sweep rely on the latest _snap alone?'. Yes with one guard: delete only if below floor, absent from snap(P), build epoch < P.writer_epoch, and the fold cursor C >= P (every -1 at or below P folded). No on-store state, no fold change; sweep reads _ckpt and _snap, no logs. Gap: a _snap exists only when the tail exceeds 256 logs or 1 MiB (CasPool.h:290); fix on the writer side by publishing after recovery whenever the tail is non-empty (admitSnapshotPublishUnderStateLock, CasRefLedger.cpp:4140), which also shortens table load. The owned-set design (spec rev.8) is superseded by this if the owner confirms; CAS-387 (epoch out of the log key) is orthogonal and does not remove the second read by itself.
 
 - 2026-10-14: owner decision after the complexity pushback on rev.8: stage 1 cadence (circuit per interval, default a day), stage 2 snapshot-only owner view with the C >= P and E < P.writer_epoch guards. Spec docs/superpowers/specs/2026-10-14-cas-orphan-sweep-cadence-and-snapshot-view-design.md rev.1; rev.8 withdrawn. Rebirth under the same name needs no extra rule: creation over a Removing row waits for the terminal fold and row removal (CasRefLedger.cpp:1349), so older-life keys are decided by the floor alone.
+
+- 2026-10-14: codex gpt-6-astra high round 6 on rev.1 (tmp/cas358/codex_spec_review_6.md): REVISE, 2 critical / 4 major / 4 minor. Critical 1: §4.4 listed the catalog cut before the floor (contradicting the CAS-36 order the spec depends on); fixed. Critical 2: nothing in the writer enforces that an AddPrecommit names a manifest of its own epoch (requireAlive checks the epoch, the runtime is captured later; a self-remount in between mints an epoch-4 grant for an epoch-3 build); the same assumption underlies today's rule (1) and the floor; split out as CAS-391 and made a stage-2 prerequisite. Majors: CAS-362/363 restored as prerequisites; §4.6 mixed-leader claim narrowed to format compatibility (26.6.4 without CAS-36 is unsafe on its own); TLA sketch given historical ownership, committed-removal property and the right sab_snapepoch witness; gc_round_sweep_recovery_op_budget stays declared as a no-op. Minors: CoverageClass names, clamp wording, rebirth wording and T9 target, lease-term vs renewal reset, cost wording. rev.2 adds S6-S8 and T14-T17.
 <!-- SECTION:NOTES:END -->
