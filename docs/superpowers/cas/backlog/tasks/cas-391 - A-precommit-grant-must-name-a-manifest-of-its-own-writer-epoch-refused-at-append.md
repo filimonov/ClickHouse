@@ -41,7 +41,7 @@ One comparison at append, in `appendRefOpsOnRuntime` or in the precommit closure
 <!-- AC:BEGIN -->
 - [ ] #1 appendRefOpsOnRuntime (or the precommit closure) refuses an AddPrecommit whose manifest_ref.epoch differs from the runtime's writer epoch with retry-later; Promote and removals unaffected
 - [ ] #2 gtest: precommitAdd paused after requireAlive (test hook), self-remount to the next epoch, resume: append refused, no AddPrecommit of the older epoch in the log, build restarts under the live epoch
-- [ ] #3 gtest: trusted replay of a log containing such a grant still loads; fsck reports it
+- [ ] #3 gtest: trusted replay of a log containing such a grant still loads. `cas-fsck` gains the check: for every catalog life it walks the authoritative tail from the snapshot base (or genesis) through `committed_through`, counts `AddPrecommit` records whose `manifest_ref.epoch` differs from the transaction epoch, reports them per life with their positions relative to the current `P`, and the count is a hard finding (part of `clean`); the report also carries `partial`, `unchecked` and `chain_broken` so an incomplete audit is distinguishable from a clean one (CAS-358 spec §4.6 (c))
 - [ ] #4 CaGcRootLocalPartManifestCore: the grant-epoch invariant (OpIssue) documented as enforced by this check; AdmissionBound left as its own assumption
 <!-- AC:END -->
 

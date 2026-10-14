@@ -40,7 +40,7 @@ Provenance: BACKLOG/gc.md#orphan-sweep-absent-catalog-row-window (2031-triage CA
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `prefixEligibleUnder` runs for every listed key in `planManifestCursorPage`; there is no `catalog_entry` condition around the floor lookup
+- [ ] #1 `planManifestCursorPage` samples the floor for every listed namespace in a prepass BEFORE `CasRefCatalog::read` (not only before `catalogEntryOf`), keeps those samples for the page, and `prefixEligibleUnder` runs for every listed key with no `catalog_entry` condition; the §4 snippet of docs/superpowers/specs/2026-10-12-cas-orphan-sweep-floor-for-rowless-manifests-design.md is superseded by CAS-358 spec §4.4. gtest: a hook right after the catalog read returns a rowless cut lets the writer create the row, precommit, promote, end the build and publish a higher floor; the body is retained, and the reversed-order mutant (catalog read before the floor) deletes it and fails the test
 - [ ] #2 gtest: a body in a namespace with no catalog row, under a live lease whose `min_active_build_sequence` is not above the key's build sequence, is retained (`deleted == 0`)
 - [ ] #3 gtest: the same body under a lease with the farewell marker, or with a lower writer epoch, is deleted
 - [ ] #4 `CursorPageDeletesObservedBodyWhenCatalogOmitsNamespace` is flipped: no lease at all retains the body, and the test comment states why (decommission drains under its claim)
