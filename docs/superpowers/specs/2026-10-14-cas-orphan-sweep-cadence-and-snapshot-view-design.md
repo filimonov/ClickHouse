@@ -92,7 +92,7 @@ delete `K` iff
 4. `E < P.writer_epoch`;
 5. coverage is `Covered` with no hold, and `C ≥ P`.
 
-Every other case retains, under a counted class: `NoSnapshot` (3 fails on `P`), `InSnapshot`, `SnapshotEpoch` (4), `CursorBelowSnapshot` (5), plus the existing `NoCoverage` and `Hold`. Two branches skip rules 2 to 5 and use the floor alone: no catalog row (CAS-36), and `E < _ckpt.life_epoch` (an older life of the same name, §4.3 item 3).
+Every other case retains, under a counted class: `NoSnapshot` (3 fails on `P`), `InSnapshot`, `SnapshotEpoch` (4), `CursorBelowSnapshot` (5), plus the existing `NoCoverage` and `Hold`. Two branches skip rules 2 to 5 and use the floor alone: no catalog row (CAS-36), and `E < _ckpt.life_epoch` when `life_epoch` is present (an older life of the same name, §4.3 item 3); a `_ckpt` without `life_epoch` retains the namespace, as `readCheckpointSnapshotBase` already refuses it.
 
 ### 4.2 Why this is complete {#stage-2-proof}
 
