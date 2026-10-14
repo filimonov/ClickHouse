@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-13 20:55'
+updated_date: '2026-10-14 16:44'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -31,61 +31,49 @@ ordinal: 452000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-**Decision (2026-10-12): the orphan sweep must not replay a namespace at all.** The fold has already consumed every ref record below its cursor, so the sweep's owner set comes from fold state, and the sweep reads at most the committed tail above the cursor. Shortening the replay (a `_snap` threshold that counts seal-only epochs) is not the fix. PR 2542 is not merged; its `prev_epoch_seal` hint bound moved to CAS-359.
+**Decision (2026-10-14): two stages, no on-store state, no fold or writer change.** Spec: `docs/superpowers/specs/2026-10-14-cas-orphan-sweep-cadence-and-snapshot-view-design.md`. The owned-manifest-set design (`2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md`, rev.8) is withdrawn: its backfill of pre-existing lives is a second reference-tracking machine for a janitor that reclaims ~1 000 bodies a month.
+
+1. **Cadence (ship first).** The sweep runs as a circuit (pages from an empty cursor until the LIST wraps) at most once per `manifest_sweep_interval_sec` (default 86 400); between circuits a round does no LIST and no reads. Clock in leader memory (`mono_ms_fn`), reset on lease acquire, so a new leader starts one circuit at once. Per-page behaviour unchanged. ~20 lines in `Gc/CasGc.cpp` plus one setting.
+2. **Snapshot view (later).** The owner view of a catalog-named life is the checkpoint-named snapshot read through `readCheckpointSnapshotBase` (at most four GETs per namespace per page). Delete iff: floor-eligible (CAS-36), row not `Creating`, `P` exists and `K ∉ snap(P)`, build epoch `E < P.writer_epoch`, coverage clean and fold cursor `C ≥ P`. Otherwise retain under a counted class (`NoSnapshot`, `InSnapshot`, `SnapshotEpoch`, `CursorBelowSnapshot`). Keys with `E < _ckpt.life_epoch` (an older life of the same name) and rowless keys use the floor alone. `activeManifestKeys`, the committed-tail walk and `gc_round_sweep_recovery_op_budget` are deleted.
 
 ### Problem
 
-`activeManifestKeys` (`CasOrphanManifestSweep.cpp:192`) calls `recoverRefTableDetailedFromAuthority`, which walks from `_snap` if one exists, else from `{life_epoch, 1}` (`CasRefCkpt.cpp:176-180`). It does this on every page that nominates a candidate in the namespace; memoization lives only within a page (`manifest_sweep_list_budget_keys=1000`). Tables below the snapshot threshold never publish a `_snap`, and every remount adds a seal-only epoch, so the walk grows with table age.
+`activeManifestKeys` (`CasOrphanManifestSweep.cpp:192`) replays the table from `_snap` or genesis (`CasRefCkpt.cpp:176-180`) on every page that nominates a candidate in the namespace, then walks the committed tail a second time. A `_snap` exists only above 256 logs or 1 MiB (`CasPool.h:290-291`); every remount adds a seal-only epoch.
 
-Production numbers from https://github.com/Altinity/ClickHouse/pull/2542 (one writer, two readers, ~800 tables, 26.6.4 Antalya):
-
-| metric | value |
-|---|---|
-| streams | 792 |
-| streams with >= 2 epochs | 568 |
-| streams with a `_snap` | 74 |
-| epochs that are a single `epoch_seal` | 3,876 |
-| GC leader successful GETs/day after the PR's 404 cut | ~956 k, mostly this replay |
-
-### Shape
-
-Durable owned-manifest set per namespace life, maintained by the fold, keyed by `ManifestId`. The fold already extracts `RefManifestEdge{manifest_id, +-1}` per transaction; the set is the manifest-level in-degree, O(live parts), sharded by namespace.
-
-Forward compatibility with no operator action: an old version ignores the new state and never writes it. Five rules:
-
-1. **New object family under the generation prefix**: `gc/gen/<G>/attempt/<A>/manifest_owned/...`. `pruneSupersededGenerations` LISTs the whole `gc/gen/<g>/` prefix and deletes everything listed, so an old leader reclaims the runs with the generation without knowing them.
-2. **Nothing added to the fold seal.** 26.6.4's seal reader is Strict (unknown key = `CORRUPTED_DATA`; CAS-328 only helps later releases). The pointer lives in a side object at a deterministic key per `(G, attempt)`, written before the seal's CAS. 404 means "no owned set for this generation".
-3. **Per-namespace `as_of` cursor** in the side object, a `RefTxnId` (same type as `RefCoverage.last_folded_ref_id`, already a total order per namespace, see CAS-305 notes). At fold time:
-   - `as_of` equals the parent coverage cursor: update incrementally from this round's +1/-1 edges;
-   - anything else (absent, older because an old leader folded in between, partial from a budgeted seed): re-seed once from writer authority via `recoverRefTableDetailedFromAuthority`. Same replay the sweep does today, but once per namespace per seed, not per page. A seed taken at `committed_through` is idempotent under later folded edges because the set has no counters.
-4. **Retain until current.** While a namespace's set is not at the cursor, the sweep retains that namespace under a new counted retain class. No fallback that deletes.
-5. **No byte changes to existing objects**, so no format version bump. A leader flip old -> new costs one seed per namespace, once.
+| metric | PR 2542 stand | otel.demo (7 days to 2026-10-13) |
+|---|---|---|
+| streams / with a `_snap` | 792 / 74 | — |
+| seal-only epochs | 3 876 | — |
+| sweep ref-log GETs per day | ~956 k | ~0.98 M (0.29 M taken, 0.69 M read-ahead wasted) |
+| bodies deleted by the sweep | — | 0 in the week, 1 077 since 2026-09-14 |
 
 ### Rejected
 
-- **Blob in-degree as the owner set.** Source-edge runs hold `(blob_hash, source_id)` and are sharded by blob hash, so a per-namespace answer is a scan of every shard. A manifest whose files are all `EntryPlacement::Inline` has no edge rows, is owned, and would be deleted as an orphan.
-- **`_snap` threshold counting seal-only epochs.** Shortens the replay, keeps it.
-- **Cheaper rebuild source from `last_folded_ref_id` plus a cached view.** In-memory state does not survive a leader change; the set must be durable.
+- Fold-maintained owned-manifest set (spec rev.8): backfill complexity, five codex rounds each found a new hole.
+- Blob in-degree as the owner set: sharded by blob hash; inline-only manifests have no edge rows.
+- `_snap` threshold counting seal-only epochs: shortens the replay, keeps it.
+- Circuit stamp in `gc/state`: format frozen since 26.6.4.
+- `LIST _snap/` as the source: a `_snap` whose `_ckpt` CAS did not land is not a base.
 
 ### Related
 
-- CAS-87: sweep walks the committed tail twice; halves the remaining tail reads.
-- CAS-305 (d): one sequence per namespace turns `as_of` into one integer; format bump, so later and independent.
-- CAS-328: Tolerant seal reader for releases after 26.6.4.
-- CAS-359: `prev_epoch_seal` hint bound, the keepable part of PR 2542.
+- CAS-36: floor before the catalog cut; unchanged, step one of the page.
+- CAS-359: `prev_epoch_seal` hint bound; still useful for writer recovery and the fold, the sweep no longer hints.
+- CAS-387: one sequence per life; orthogonal.
+- CAS-386: prune vs adopted seal; orthogonal.
+- CAS-87, CAS-86, CAS-310: superseded or absorbed by stage 2 (the tail walk is deleted; the CAS-310 invariant is a stage-2 TLA property).
+- Optional follow-up, not needed for correctness: writer publishes a `_snap` after a recovery that found a non-empty tail (`admitSnapshotPublishUnderStateLock`, `CasRefLedger.cpp:4140`).
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Baseline: the GC leader's successful GETs per day on the PR 2542 workload are attributed by key kind and namespace age, in a report under docs/superpowers/reports/
-- [ ] #2 The fold writes the owned-manifest set and the side object per rules 1-3; the seal bytes are unchanged (golden test against a 26.6.4 seal)
-- [ ] #3 The sweep's owner set comes from the adopted generation's set; a namespace without a current set is retained and counted, never replayed
-- [ ] #4 `recoverRefTableDetailedFromAuthority` is called by GC only on a seed, at most once per namespace per generation
-- [ ] #5 Compatibility test: a 26.6.4-shaped leader adopts a seal written next to a side object, prunes the generation, and a new leader re-seeds once
-- [ ] #6 Measurement on the PR 2542 workload shape: GC leader GETs/day before and after, in the report from #1
-- [ ] #7 The sweep samples `floorForNamespace` before the catalog cut and before reading either the fold's owned-manifest set or the committed tail above its cursor (CAS-36 A''); gtest hooks the tail read to birth, precommit, promote and end a build and the body is retained
-- [ ] #8 Namespaces without a catalog row are decided by the floor alone: rule 4 (retain while the set is not current) does not apply to them, so their debris is reclaimed once the floor makes the build eligible
-- [ ] #9 `CaGcRootLocalPartManifestCore`: `GSwView` replaced by the fold set as of the cursor plus a separate tail read; `fix_floorfirst` stays green and `sab_floorfirst` red
+- [ ] #1 Stage 1: setting manifest_sweep_interval_sec (default 86400, 0 = circuits back to back); a round with an empty cursor before the deadline does no LIST and no reads and reports idle=1; a circuit in progress continues regardless of the clock; new leader starts a circuit at once; tests S1-S5 of spec §3.5 green
+- [ ] #2 Stage 1 measured on otel.demo: sweep GETs per day and 404s per day before and after, in a report under docs/superpowers/reports/
+- [ ] #3 Stage 2: the owner view is readCheckpointSnapshotBase only; activeManifestKeys, the committed-tail walk, read-ahead hints in the sweep and gc_round_sweep_recovery_op_budget are deleted; no _log GET outside {P, predecessor seal} (T7)
+- [ ] #4 Stage 2: manifestDeletionPremise implements the five rules of spec §4.1 with retain classes NoSnapshot, InSnapshot, SnapshotEpoch, CursorBelowSnapshot; older-life keys (E < life_epoch) and rowless keys use the floor alone; T1-T13 of spec §4.7 green; sweepNamespace and the cursor page agree (T12)
+- [ ] #5 Stage 2: floor sampled before the catalog cut (CAS-36) unchanged
+- [ ] #6 TLA: CaGcRootLocalPartManifestCore gets snapPos and the snapshot-based GSwView; sab_cursorbelowsnap reproduces the CAS-310 trace and sab_snapepoch deletes a live staged build; the fix configs stay green
+- [ ] #7 Docs: garbage-collection.md subsection on orphan manifests (circuit, five rules, retain classes, no-snapshot case, settings) and the manifests-and-refs.md flow note; the withdrawn spec carries a status line pointing at the new one
 <!-- AC:END -->
 
 ## Definition of Done
@@ -116,4 +104,6 @@ Decision log (times are commit times, local):
 - 2026-10-13: spec reviewed by codex gpt-6-astra high, five rounds (tmp/cas358/codex_spec_review_1..5.md): 8/6/4/5/3 findings, verdict on rev.6 APPROVE WITH MINORS, minors applied in rev.7. Main corrections along the way: ownership deltas independent of bodies; candidate-first two-pass sweep; seed exact at C with T >= C precondition, endpoint check, admission-to-completion budget, zero = unlimited, fairness cursor seed_after; delta admission whitelist; empty-run initialization; HEAD/GET-404 re-evaluation; historical foldOwned and cursor-epoch gate in the model; keep=1 adopted-generation prune split out as CAS-386.
 
 - 2026-10-13: owner question 'can the sweep rely on the latest _snap alone?'. Yes with one guard: delete only if below floor, absent from snap(P), build epoch < P.writer_epoch, and the fold cursor C >= P (every -1 at or below P folded). No on-store state, no fold change; sweep reads _ckpt and _snap, no logs. Gap: a _snap exists only when the tail exceeds 256 logs or 1 MiB (CasPool.h:290); fix on the writer side by publishing after recovery whenever the tail is non-empty (admitSnapshotPublishUnderStateLock, CasRefLedger.cpp:4140), which also shortens table load. The owned-set design (spec rev.8) is superseded by this if the owner confirms; CAS-387 (epoch out of the log key) is orthogonal and does not remove the second read by itself.
+
+- 2026-10-14: owner decision after the complexity pushback on rev.8: stage 1 cadence (circuit per interval, default a day), stage 2 snapshot-only owner view with the C >= P and E < P.writer_epoch guards. Spec docs/superpowers/specs/2026-10-14-cas-orphan-sweep-cadence-and-snapshot-view-design.md rev.1; rev.8 withdrawn. Rebirth under the same name needs no extra rule: creation over a Removing row waits for the terminal fold and row removal (CasRefLedger.cpp:1349), so older-life keys are decided by the floor alone.
 <!-- SECTION:NOTES:END -->
