@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS GC: the orphan sweep runs once a day and decides from the snapshot — design {#cas-orphan-sweep-cadence-and-snapshot-view}
 
-- Date: 2026-10-14. Status: rev.4 (codex `gpt-6-astra` high: rev.1 `tmp/cas358/codex_spec_review_6.md` 2 critical / 4 major / 4 minor; rev.2 `_7.md` 2 major / 5 minor; rev.3 `_8.md` 2 major / 1 minor; all applied; rev.4 `_9.md` APPROVE, no new findings). Task: CAS-358. Replaces `2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md` (withdrawn, see §5).
+- Date: 2026-10-14. Status: rev.5 (rev.4 plus the §4.9 change inventory and the one-path sweep; codex `gpt-6-astra` high: rev.1 `tmp/cas358/codex_spec_review_6.md` 2 critical / 4 major / 4 minor; rev.2 `_7.md` 2 major / 5 minor; rev.3 `_8.md` 2 major / 1 minor; all applied; rev.4 `_9.md` APPROVE, no new findings). Task: CAS-358. Replaces `2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md` (withdrawn, see §5).
 - Stage 1 depends on nothing. Stage 2 depends on: CAS-36 (floor sampled before the catalog **read**, not only before the row lookup; CAS-36's spec §4 is amended to the page prepass of §4.4), CAS-391 (a grant names a manifest of its own writer epoch, enforced at append), CAS-362 and CAS-363 (unique, monotone writer epochs across server-root retirement). The last three are prerequisites of today's rule (1) and of the floor as much as of this spec; they are listed because the proof in §4.2 uses them. Related: CAS-359 (`prev_epoch_seal` hint bound, independent), CAS-387 (one sequence per life, independent), CAS-386 (prune vs adopted seal, independent).
 - Code facts verified against the `cas-gc-rebuild` working tree at `aa5e67ed6fc`. Numbers from https://github.com/Altinity/ClickHouse/pull/2542 and from the otel.demo stand (7 days ending 2026-10-13).
 
@@ -122,7 +122,7 @@ Keys are sorted by namespace, so a page is a few whole tables. Per page, in this
 5. Rules 2 to 5 per key; survivors are candidates.
 6. Candidates: exact GET with the existing body read-ahead (`:923-927`), decode, nominate with blob source retirements; post-CAS exact-token delete (all as today, `CasGc.cpp:1194`).
 
-Deleted: `activeManifestKeys`, `NamespaceProtection`, `OutstandingHintGuard`, `hintRefLogsWithinEpoch` use in the sweep, `tail_removal_targets` in `NamespaceFoldView`, the `TailRemoval` class and the recovery-op budget's effect (nothing left to budget; the four reads per namespace are bounded by `gc_round_sweep_namespace_budget`). `sweepNamespace` (used by `Tools/CasDecommission.cpp`) takes the same view. `manifestDeletionPremise` keeps rule (1) as rule 4 restated on `P` and gains rules 3 and 5. `gc_round_sweep_recovery_op_budget` stays declared and accepted as a no-op (a config naming it must still load, `ContentAddressedSettings.cpp:162-167` refuses unknown `cas_` settings); its description says so.
+Deleted: `activeManifestKeys`, `NamespaceProtection`, `OutstandingHintGuard`, `hintRefLogsWithinEpoch` use in the sweep, `tail_removal_targets` in `NamespaceFoldView`, the `TailRemoval` class and the recovery-op budget's effect (nothing left to budget; the four reads per namespace are bounded by `gc_round_sweep_namespace_budget`). `sweepNamespace` (used by `Tools/CasDecommission.cpp`) is deleted too: `planManifestCursorPage` takes the LIST prefix as a parameter (`casManifestsPrefix()` for the round, `namespaceManifestsPrefix(ns)` for decommission, which loops it from an empty cursor until `wrapped`), so the floor, the cut, the premise, the nomination and the post-CAS delete exist once. `manifestDeletionPremise` keeps rule (1) as rule 4 restated on `P` and gains rules 3 and 5. `gc_round_sweep_recovery_op_budget` stays declared and accepted as a no-op (a config naming it must still load, `ContentAddressedSettings.cpp:162-167` refuses unknown `cas_` settings); its description says so.
 
 ### 4.5 Cost {#stage-2-cost}
 
@@ -149,7 +149,7 @@ No object is written or changed; the sweep reads only existing objects (`_ckpt`,
 | T9 | `CreationOverARemovingRowIsRefused` | `Removing` row without `cleanup_evidence` | ledger namespace admission throws retry-later (`Pool/CasRefLedger.cpp:1349`); the catalog-level `createNamespace` alone returns `Superseded` and is not the test |
 | T10 | `AHeldOrClampedCoverageRetains` | hold at `{5,3}`, otherwise T1 | retained, class `Hold` |
 | T11 | `RowlessKeysKeepTheFloorRule` | CAS-36 T1 | unchanged |
-| T12 | `TheCursorPagePathAndSweepNamespaceAgree` | T1 through both paths | same decision and class |
+| T12 | `DecommissionSweepsOneNamespaceThroughTheSamePage` | T1 through `planManifestCursorPage` with `namespaceManifestsPrefix(ns)` looped to `wrapped` | same decision and class; `gtest_cas_decommission.cpp` keeps passing |
 | T13 | `AnUndecodableSnapshotRetainsTheNamespace` | corrupt `_snap` | retained, warning, page continues |
 | T14 | `ABuildThatEndsAfterTheRowlessCutIsRetained` | hook right after `CasRefCatalog::read` returns the rowless cut: writer creates the row, precommits, promotes, ends the build, publishes a higher floor | retained because the floor was sampled before the cut; the reversed-order mutant (catalog read before the floor) must delete, and the test asserts that mutant fails |
 | T15 | `AGrantUnderALaterEpochIsRefusedAtAppend` (CAS-391) | `precommitAdd` paused after `requireAlive`, self-remount to the next epoch, resume | append refused retry-later; no `AddPrecommit` naming the older epoch exists in the log |
@@ -168,6 +168,27 @@ T7 counts the sweep's own requests only (the fold's reads are excluded) and coun
 - Properties: `HasUnfoldedCommittedRemoval(m) => body present` (committed removals only; the fold skips bodiless precommit removals, `CasGc.cpp:2674`), plus the existing committed-body invariant.
 - Sabotage: `sab_cursorbelowsnap` drops the cursor term; its witness is an older-epoch manifest with a committed removal `R`, `C < R <= P`, absent from `snap(P)`, floor-eligible (the CAS-310 shape; a removal above `P` stays snapshot-protected and does not exercise it). `sab_snapepoch` drops the epoch term; its witness is a build granted and promoted after `P` in `P`'s epoch and ended before the floor sample: absent from `snap(P)`, owned, floor-eligible. `fix_floorfirst` / `sab_floorfirst` (CAS-36) unchanged. A liveness witness: old-life debris beneath a reborn name is deleted once the new life's snapshot passes the old epoch and the cursor passes the snapshot.
 - Stage 1 needs no model change: idling is a stutter.
+
+### 4.9 Change inventory {#stage-2-inventory}
+
+Stage 2 is mostly deletion. Line numbers are those of `aae64b441c5`.
+
+| action | what | size |
+|---|---|---|
+| delete | `NamespaceProtection`, `activeManifestKeys`, `OutstandingHintGuard`, the missing-cursor crossing (`CasOrphanManifestSweep.cpp:153-400`) | ~250 lines |
+| delete | the view-building block of `planManifestCursorPage` (`:770-890`): recovery-op budget arm, `errored_namespaces` branches around the walk | ~120 lines |
+| delete | `sweepNamespace`, `prefixEligibleOn`, `prefixEligible(Pool &, …)` (`:532-667`) if nothing but the sweep uses the `Pool` overload | ~110 lines |
+| delete | the three tail-walk tests and the tail-walk half of `PendingCommittedRemovalBodyIsSkipped` (`gtest_cas_orphan_manifest_sweep.cpp:494-690`) | ~200 lines |
+| reuse | `readCkpt` + `readCheckpointSnapshotBase` (already used by fsck, the frontier gate and the ledger) and the four-line `committed`/`precommits` → `layout.manifestKey` loop from `activeManifestKeys` | the whole view, ~20 lines |
+| reuse | `manifestDeletionPremise`: `NamespaceFoldView.tail_removal_targets` becomes `snapshot_owned` plus `P`; rule (2)'s membership test becomes rule 3; rule (1) compares against `P.writer_epoch`; one `C >= P` comparison added; hold/clamp/absent arms untouched | ~10-line diff |
+| reuse | `SweepRetainClass`, `ManifestSweepResult::retained_*`, `reportSweepRetention`, `topRetainReason`: `TailRemoval` renamed `InSnapshot`, three values added | enum + counters |
+| reuse | `floorForNamespace`, `parseListedManifestObject`, `coverageOf`, `catalogEntryOf`, the candidate loop with body read-ahead, `Nomination`, phase 18 in `CasGc.cpp`: unchanged; the floor prepass is a reorder of two existing blocks (CAS-36) | 0 new lines |
+| reuse | test fixtures: `cas_test_helpers.h:1152-1260` (cursor and `_ckpt` setup), the `_snap` publish helpers of the ref-writer tests | T1-T18 are new numbers on existing fixtures |
+| keep | `hintRefLogsWithinEpoch`, `discardRefLogHintsOfEpoch`, `crossEpochFromSeal`: other users (recovery, fold) | 0 |
+| add | CAS-391: one comparison next to the existing `throwCasWriteRetryLater` in the append path; T15 through the existing `append_after_runtime_capture_hook_for_test` (`CasRefLedger.cpp:2051`) | ~5 lines + 1 test |
+| add | stage 1: one `Gc` member, one condition, one setting, two phase metrics | ~20 lines |
+
+Net: `CasOrphanManifestSweep.cpp` from ~990 to ~550 lines; the header loses `NamespaceProtection`, `sweepNamespace` and `TailRemoval`; `gc_round_sweep_recovery_op_budget` stays declared as a no-op.
 
 ## 5. Rejected {#rejected}
 
