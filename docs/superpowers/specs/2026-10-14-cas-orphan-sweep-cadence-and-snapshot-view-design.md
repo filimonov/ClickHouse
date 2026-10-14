@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # CAS GC: the orphan sweep runs once a day and decides from the snapshot — design {#cas-orphan-sweep-cadence-and-snapshot-view}
 
-- Date: 2026-10-14. Status: rev.4 (codex `gpt-6-astra` high: rev.1 `tmp/cas358/codex_spec_review_6.md` 2 critical / 4 major / 4 minor; rev.2 `_7.md` 2 major / 5 minor; rev.3 `_8.md` 2 major / 1 minor; all applied). Task: CAS-358. Replaces `2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md` (withdrawn, see §5).
+- Date: 2026-10-14. Status: rev.4 (codex `gpt-6-astra` high: rev.1 `tmp/cas358/codex_spec_review_6.md` 2 critical / 4 major / 4 minor; rev.2 `_7.md` 2 major / 5 minor; rev.3 `_8.md` 2 major / 1 minor; all applied; rev.4 `_9.md` APPROVE, no new findings). Task: CAS-358. Replaces `2026-10-13-cas-orphan-sweep-owned-manifest-set-design.md` (withdrawn, see §5).
 - Stage 1 depends on nothing. Stage 2 depends on: CAS-36 (floor sampled before the catalog **read**, not only before the row lookup; CAS-36's spec §4 is amended to the page prepass of §4.4), CAS-391 (a grant names a manifest of its own writer epoch, enforced at append), CAS-362 and CAS-363 (unique, monotone writer epochs across server-root retirement). The last three are prerequisites of today's rule (1) and of the floor as much as of this spec; they are listed because the proof in §4.2 uses them. Related: CAS-359 (`prev_epoch_seal` hint bound, independent), CAS-387 (one sequence per life, independent), CAS-386 (prune vs adopted seal, independent).
 - Code facts verified against the `cas-gc-rebuild` working tree at `aa5e67ed6fc`. Numbers from https://github.com/Altinity/ClickHouse/pull/2542 and from the otel.demo stand (7 days ending 2026-10-13).
 

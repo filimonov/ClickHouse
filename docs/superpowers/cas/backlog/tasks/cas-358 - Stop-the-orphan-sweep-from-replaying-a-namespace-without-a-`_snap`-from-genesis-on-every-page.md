@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-14 17:39'
+updated_date: '2026-10-14 17:41'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -110,4 +110,6 @@ Decision log (times are commit times, local):
 - 2026-10-14: codex gpt-6-astra high round 6 on rev.1 (tmp/cas358/codex_spec_review_6.md): REVISE, 2 critical / 4 major / 4 minor. Critical 1: §4.4 listed the catalog cut before the floor (contradicting the CAS-36 order the spec depends on); fixed. Critical 2: nothing in the writer enforces that an AddPrecommit names a manifest of its own epoch (requireAlive checks the epoch, the runtime is captured later; a self-remount in between mints an epoch-4 grant for an epoch-3 build); the same assumption underlies today's rule (1) and the floor; split out as CAS-391 and made a stage-2 prerequisite. Majors: CAS-362/363 restored as prerequisites; §4.6 mixed-leader claim narrowed to format compatibility (26.6.4 without CAS-36 is unsafe on its own); TLA sketch given historical ownership, committed-removal property and the right sab_snapepoch witness; gc_round_sweep_recovery_op_budget stays declared as a no-op. Minors: CoverageClass names, clamp wording, rebirth wording and T9 target, lease-term vs renewal reset, cost wording. rev.2 adds S6-S8 and T14-T17.
 
 - 2026-10-14: codex rounds 7 and 8 (tmp/cas358/codex_spec_review_7.md, _8.md): 7 then 3 findings, no new design hole. rev.3: stage-2 rollout rule (CAS-391 on every writer, fsck pass), CAS-36 amended to a floor prepass before the catalog read, CAS-391 separated from AdmissionBound, task ACs synced. rev.4: the older-life floor-only shortcut is removed (it would bypass InSnapshot for a pre-CAS-391 cross-epoch grant in the new life); older-life keys go through rules 2-5 and wait under NoSnapshot without a snapshot; the fsck gate is a complete audit (partial == false, unchecked == 0, chain_broken == 0, every AddPrecommit in the authoritative tail checked); CAS-36 AC1 now requires the prepass and the reversed-order mutant.
+
+- 2026-10-14: codex round 9 on rev.4 (tmp/cas358/codex_spec_review_9.md): APPROVE, no new findings; rounds 6-9 went 10 / 7 / 3 / 0. Spec at ea3b16d1dbb is the one to plan from: stage 1 first (no prerequisites), stage 2 after CAS-36, CAS-391, CAS-362/363 and the rollout gate of §4.6.
 <!-- SECTION:NOTES:END -->
