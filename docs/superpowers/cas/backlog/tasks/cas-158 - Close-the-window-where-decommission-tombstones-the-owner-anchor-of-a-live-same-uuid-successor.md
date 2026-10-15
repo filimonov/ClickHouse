@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-10-15 11:13'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -62,4 +62,6 @@ First recorded: 2026-08-04 (f08734d17df, by 'decommission-successor-mount-race')
 Epoch-reuse part: CAS-363.
 
 2026-10-14: closed by PR B https://github.com/Altinity/ClickHouse/pull/2567: the tombstone is written right after the claim, the claim rechecks owner_life, decommission confirms or rolls back, and a verified mark records retirement. Residual: a tombstone stays over a live successor if the tool dies between its tombstone and the rollback. Availability only; documented and tracked in CAS-385.
+
+2026-10-15: closed by PR B https://github.com/Altinity/ClickHouse/pull/2567 (tombstone after claim, owner_life recheck, confirm/rollback, verified mark); residual 'tool dies before rollback' tracked in CAS-385. Done on merge.
 <!-- SECTION:NOTES:END -->

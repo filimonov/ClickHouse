@@ -3,10 +3,10 @@ id: CAS-156
 title: >-
   Let a replica removed from a CAS pool be re-added with a new `server_uuid`
   without hand-editing the object store
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-10-15 11:13'
 labels:
   - 'area:mounts'
   - 'complexity:large'
@@ -69,4 +69,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#operator-replica-readd-uuid-trap; fi
 First recorded: 2026-09-04 (8d6022b3070, by 'operator-replica-readd-uuid-trap')
 
 2026-10-14: the re-add path becomes PR C's rejoin at server start (CAS-388.3): any uuid, no command. PR B adds the hand-repair body to the refusal. Status stays To Do until PR C lands.
+
+2026-10-15: PR C https://github.com/Altinity/ClickHouse/pull/2574 delivers rejoin at Pool::open (same or new uuid), tests CASRejoin.* and integration test_retired_member_rejoins_empty (AC#2 checks write+read on the empty rejoined member; old data is gone by design). Done when A (https://github.com/Altinity/ClickHouse/pull/2566), B (https://github.com/Altinity/ClickHouse/pull/2567) and C merge.
 <!-- SECTION:NOTES:END -->

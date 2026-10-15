@@ -3,10 +3,10 @@ id: CAS-163
 title: >-
   Document that a cloned running server can keep a CAS mount lease on both
   copies with no bound
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-01'
-updated_date: '2026-09-26 12:37'
+updated_date: '2026-10-15 11:13'
 labels:
   - 'area:docs'
   - 'area:mounts'
@@ -55,4 +55,6 @@ Provenance: BACKLOG/mounts-and-lifecycle.md#resolved-by-get-clone-overlap ([reso
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-01 (19c1b74b903, by 'resolved-by-get-clone-overlap')
+
+2026-10-15: PR C https://github.com/Altinity/ClickHouse/pull/2574 adds mounts-and-leases.md#clone-unsupported (cloning a running server is unsupported; why the lease does not fence the clone).
 <!-- SECTION:NOTES:END -->
