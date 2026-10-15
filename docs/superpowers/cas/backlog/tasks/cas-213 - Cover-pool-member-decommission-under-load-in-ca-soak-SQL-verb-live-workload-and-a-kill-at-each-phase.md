@@ -3,10 +3,10 @@ id: CAS-213
 title: >-
   Cover pool-member decommission under load in ca-soak: SQL verb, live workload,
   and a kill at each phase
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-26'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-10-15 23:53'
 labels:
   - 'area:soak'
   - 'area:mounts'
@@ -57,4 +57,6 @@ Provenance: BACKLOG/testing-and-ci.md [b200-decommission-under-load]; verified 2
 First recorded: 2026-09-26 (5245fbc7a76, by 'b200-decommission-under-load')
 
 2026-10-14: steps and acceptance criteria need a rewrite for the six-step decommission and rejoin: kill after each step, rerun, restart the member, check it rejoins empty. The AC#3 refusal is now 'decommission not finished; rerun'.
+
+2026-10-16: scenario S47 (utils/ca-soak, commits b42fb74e1d7 proxy hold/trace, dd2eafbf984 card, 8a836721c45 harness fixes) run against the PR C binary (92af2241fca): full5 131/132 PASS — decommission under load, kill after each of steps 1-6 (proxy-parked request), rerun per migration.md#rejoin-rerun-rule converges, mid-retirement start refused then cleared, rejoin same uuid (7 cycles) and new uuid, oracle PHASE3 OK, fsck dangling=0. The one red: the NoWait refusal text does not name terminated/fenced — that text lives in PR A (#2566), not on the PR C branch; re-run S47 after A and C are merged together. Not covered: late tombstone over a running member, late drain write after rejoin, cas-drop-member CLI (CAS-213.1), ASan/TSan, more seeds. Results: tmp/soak213/RESULTS.md.
 <!-- SECTION:NOTES:END -->
