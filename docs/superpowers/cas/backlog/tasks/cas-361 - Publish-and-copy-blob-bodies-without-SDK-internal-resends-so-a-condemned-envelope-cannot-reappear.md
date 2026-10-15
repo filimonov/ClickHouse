@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 22:41'
+updated_date: '2026-10-15 11:41'
 labels:
   - 'area:write-path'
   - 'area:backend'
@@ -67,4 +67,6 @@ Open for the code fix: does the single-attempt write path also disable `WriteBuf
 2026-10-12 decision after the two-model consult: single attempt for object-creating requests only — `PutObject`, `CopyObject`, `CompleteMultipartUpload`; `CreateMultipartUpload`, `UploadPart`, `UploadPartCopy` keep SDK retries (one throttled part must not fail a 512-part body). New `WriteSettings` flag (e.g. `object_storage_single_attempt_object_creation`); `S3ObjectStorage::writeObject` passes a single-attempt creation client to `WriteBufferFromS3` (`makeSinglepartUpload`, `completeMultipartUpload`); `S3ObjectStorage::copyObject` honours `write_settings` (today it uses `client.get()`) and the unexpected-write retry override; `Client::CompleteMultipartUpload` skips `NoSuchUpload` → HEAD → success for single-attempt clients; `ObjectStorageBackend::publish` sets the flag plus `s3_max_unexpected_write_error_retries_override = 1` (the `NO_SUCH_KEY` loops reissue the identical envelope) and refuses an empty result ETag as ambiguous. About 30 lines in upstream files the fork already patches. Credential/region/redirect reissue in `Client::doRequest` follows a definitive rejection, so it cannot duplicate an applied request; left as is (codex wanted it disabled too). Open: `PocoHTTPClient` reconnect resend on a stale keep-alive connection; store behaviour on a duplicate `Complete` (RustFS, MinIO, AWS).
 
 2026-10-13: PR https://github.com/Altinity/ClickHouse/pull/2555 (base antalya-26.6-20261008, head b18cd09d0dc on fix/antalya-26.6/cas-361-single-attempt-blob-creation-split): 3 upstream-clean commits (copyObject honours write settings; single-attempt object creation keeping part retries, NativeOnly required, configured timeouts; no NoSuchUpload success / GCS compose for single-attempt clients) + CAS wiring. Retries move up to ensureBlobPresent (8 attempts in a 90 s window, fresh envelope each). CAS* release 2632, ASan 2655; reviews: two-model, 3 fix rounds + B-lite + test gaps + split.
+
+2026-10-15 (PR #2555 review): the 2026-10-12 decision says the publish path 'refuses an empty result ETag as ambiguous', but the #2555 diff has no such check. CAS does not read `object_etag` on this path and the review found no hole. Close explicitly: either drop the sentence from the decision or add the check. Source: tmp/pr2555/REPORT.md. Follow-ups: CAS-396..CAS-402.
 <!-- SECTION:NOTES:END -->
