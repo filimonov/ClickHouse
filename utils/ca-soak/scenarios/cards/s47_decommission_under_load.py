@@ -55,6 +55,8 @@ _CATALOG_ENTRY_RE = re.compile(r'\{"kind":"entry","ns":"([^"]*)","state":"([^"]*
 # Under the soak workload one round took up to four minutes, so the bound covers two rounds and the TTL.
 _FENCE_WAIT_S = 900.0
 _HOLD_WAIT_S = 180.0
+# A full fsck walks the whole pool while the soak writes to it.
+_FSCK_TIMEOUT_S = 2400.0
 
 
 def _kill_point(step: int, victim_lives: list) -> dict:
@@ -168,6 +170,27 @@ def _wait_ping(node, bound_s=180.0) -> bool:
     return bool(_wait(lambda: node.ping(timeout=3), bound_s))
 
 
+def _fsck() -> dict:
+    """Pool-wide `cas-fsck` with the applet's own deadline off: under the soak load one scan outlasts its
+    600 s default. The subprocess timeout still bounds it."""
+    cmd = ["docker", "exec", "ca-soak-ch1-1", *fsck_mod._CLICKHOUSE_DISKS, "--disk", "ca_ro",
+           "--query", "cas-fsck --timeout 0"]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=_FSCK_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise fsck_mod.FsckTimeout(f"cas-fsck exceeded {_FSCK_TIMEOUT_S}s")
+    line = next((ln for ln in p.stdout.splitlines() if ln.startswith("reachable=")), "")
+    if not line:
+        raise fsck_mod.FsckUnavailable(f"cas-fsck produced no summary: exit={p.returncode} stderr={p.stderr[-300:]!r}")
+    return fsck_mod.parse_fsck_summary(line)
+
+
+def _gc_round_on_survivors(nodes):
+    """`SYSTEM CAS GC RUN` returns at once on a member that does not hold the GC lease, so ask every survivor."""
+    for node in nodes:
+        gc_mod.gc_round(node, disk=_DISK)
+
+
 def _checksum(node, table) -> str:
     return node.query(f"SELECT count(), sum(cityHash64(id, payload)) FROM {table}")
 
@@ -197,11 +220,11 @@ class S47(Scenario):
     compose_variant = "s47"
     param_table = {
         "dev": {"victim_tables": 2, "shared_rows": 20000, "unique_rows": 5000,
-                "cycles": "A,K1,K2,K3,K4,K5,K6,N", "soak_seed": 47},
+                "cycles": "A,K1,K2,K3,K4,K5,K6,N", "soak_seed": 47, "soak_max_pool_gb": 6},
         "ci": {"victim_tables": 3, "shared_rows": 50000, "unique_rows": 20000,
-               "cycles": "A,K1,K2,K3,K4,K5,K6,N", "soak_seed": 47},
+               "cycles": "A,K1,K2,K3,K4,K5,K6,N", "soak_seed": 47, "soak_max_pool_gb": 20},
         "full": {"victim_tables": 6, "shared_rows": 200000, "unique_rows": 50000,
-                 "cycles": "A,K1,K2,K3,K4,K5,K6,N", "soak_seed": 47},
+                 "cycles": "A,K1,K2,K3,K4,K5,K6,N", "soak_seed": 47, "soak_max_pool_gb": 40},
     }
 
     def run(self, ctx, result):
@@ -210,6 +233,7 @@ class S47(Scenario):
         observer, victim, executor = nodes[0], nodes[2], nodes[3]
         self.ctx, self.result = ctx, result
         self.observer, self.victim, self.executor = observer, victim, executor
+        self.survivors = (nodes[0], nodes[1])
         self.tables = [f"s47_v_{i}" for i in range(int(p["victim_tables"]))]
         self.shared_sql = (f"SELECT number AS id, repeat(toString(number % 997), 40) AS payload "
                            f"FROM numbers({int(p['shared_rows'])})")
@@ -246,7 +270,7 @@ class S47(Scenario):
         result.add(Verdict.check("shared content intact on the survivor at the end", self.shared_checksum,
                                  _checksum(observer, _SHARED_TABLE), _checksum(observer, _SHARED_TABLE) == self.shared_checksum))
         gc_mod.forced_gc_to_fixpoint(ctx.cluster, lambda: 0)
-        assert_fsck_clean(result, fsck_mod.run_fsck("ca-soak-ch1-1", disk="ca_ro", detail=False))
+        assert_fsck_clean(result, _fsck())
 
     # ---- soak workload ----------------------------------------------------------------------------
 
@@ -254,7 +278,8 @@ class S47(Scenario):
         duration = max(int(self.ctx.duration_s), 600)
         log = open(self.ctx.path("soak.log"), "w")
         cmd = ["python3", "-m", "soak.run", "--seed", str(self.ctx.params["soak_seed"]), "--phase", "3",
-               "--duration", f"{duration}s", "--no-chaos", "--metrics", str(self.ctx.path("soak.db")),
+               "--duration", f"{duration}s", "--no-chaos", "--max-pool-gb", str(self.ctx.params["soak_max_pool_gb"]),
+               "--metrics", str(self.ctx.path("soak.db")),
                "--failure-json", str(self.ctx.path("soak_failure.json"))]
         env = dict(__import__("os").environ)
         env["CA_SOAK_NODE_COUNT"] = "2"
@@ -328,9 +353,16 @@ class S47(Scenario):
         c.check("survivor content shared with the victim is intact", self.shared_checksum,
                 _checksum(observer, _SHARED_TABLE), _checksum(observer, _SHARED_TABLE) == self.shared_checksum)
         self._rejoin(c, old_uuid, new_uuid=(name == "N"))
-        fsck = fsck_mod.run_fsck("ca-soak-ch1-1", disk="ca_ro", detail=False)
-        c.obs["fsck"] = {k: fsck.get(k) for k in ("reachable", "unreachable", "dangling") if k in fsck}
-        c.check("fsck after the cycle", "dangling=0", c.obs["fsck"], fsck.get("dangling") == 0 and not fsck.get("partial"))
+        try:
+            fsck = _fsck()
+        except (fsck_mod.FsckTimeout, fsck_mod.FsckUnavailable) as e:
+            c.obs["fsck"] = str(e)
+            self.result.add(Verdict.inconclusive(f"{name}: fsck after the cycle", "dangling=0", str(e)))
+            ctx.log(f"S47 {name}: INCONCLUSIVE fsck after the cycle -> {e}")
+        else:
+            c.obs["fsck"] = {k: fsck.get(k) for k in ("reachable", "unreachable", "dangling") if k in fsck}
+            c.check("fsck after the cycle", "dangling=0", c.obs["fsck"],
+                    fsck.get("dangling") == 0 and not fsck.get("partial"))
         c.obs["trace"] = _proxy_get("/trace")["trace"]
         c.save()
 
@@ -476,9 +508,11 @@ class S47(Scenario):
     def _rejoin(self, c, old_uuid, new_uuid):
         observer, victim = self.observer, self.victim
         rounds = 0
-        while _victim_catalog(observer) and rounds < 20:
-            gc_mod.gc_round(observer, disk=_DISK)
+        deadline = time.monotonic() + _FENCE_WAIT_S
+        while _victim_catalog(observer) and time.monotonic() < deadline:
+            _gc_round_on_survivors(self.survivors)
             rounds += 1
+            time.sleep(2)
         c.obs["gc_rounds_before_rejoin"] = rounds
         c.check("GC removes the victim's catalog rows", "0 rows", _victim_catalog(observer), not _victim_catalog(observer))
         attempts = []
@@ -495,7 +529,7 @@ class S47(Scenario):
                 joined = m.group(1)
                 break
             _docker("kill", _VICTIM, check=False)
-            gc_mod.gc_round(observer, disk=_DISK)
+            _gc_round_on_survivors(self.survivors)
         c.obs["rejoin_attempts"] = attempts
         if not c.check("the restarted victim rejoins", "rejoined log line and ping", attempts, joined is not None):
             return

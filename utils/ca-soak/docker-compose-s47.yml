@@ -1,8 +1,8 @@
 # S47: pool-member decommission under load. Four servers over one CAS pool on RustFS:
 #   ch1, ch2  the soak workload replicas (phase 3 oracle), never killed by the card;
 #   ch3       the victim, killed, decommissioned and rejoined;
-#   ch4       the decommission executor. Only its requests go through `s3proxy`, so the card can park
-#             one step of `SYSTEM CAS DROP POOL MEMBER` and kill ch4 between two steps.
+#   ch4       the decommission executor, without background GC. Only its requests go through `s3proxy`,
+#             so the card can park one step of `SYSTEM CAS DROP POOL MEMBER` and kill ch4 between two steps.
 # Container names stay `ca-soak-ch<i>-1` (project = directory name), so `soak.run` drives ch1/ch2 as usual.
 # `CA_SOAK_CLICKHOUSE_BINARY` points the stand at a binary built in another worktree.
 #
