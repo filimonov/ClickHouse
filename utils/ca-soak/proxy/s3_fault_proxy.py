@@ -22,7 +22,16 @@ Focused tests can additionally restrict S22 faults to a `path_substring` and an 
 `remaining_faults` budget. The `drop_after_forward` mode records the upstream result and request
 body digest, then closes the downstream connection so retry recovery can prove response-loss cases.
 
-Control plane (separate port): POST /config {json}, GET /stats, GET /healthz. Deterministic: fault
+- Hold (S47): park ONE chosen request -- the `skip`-th match of `method`, `path_substring` (or any of
+  `path_substrings`) and an optional `body_substring` -- either before it is forwarded (`when: "before"`: it never reaches the store) or after
+  the store applied it (`when: "after"`: the response is withheld). While a request is parked every later
+  match is parked too, so a client retry cannot land the write. `{"hold_release": true}` closes every
+  parked connection without forwarding. This gives a kill point between two steps of a multi-request
+  operation that is exact in terms of what the store applied.
+- Trace: every request whose path contains one of `trace_substrings` is journaled (method, path, status,
+  body prefix) and served on GET /trace.
+
+Control plane (separate port): POST /config {json}, GET /stats, GET /trace, GET /healthz. Deterministic: fault
 decisions are driven by a seeded PRNG keyed per-request-index, so a given (seed, rate) is reproducible.
 """
 
@@ -55,6 +64,10 @@ _DEFAULT_CFG = {
     # S27 list-anomaly config (independent of the S22 fault rate):
     "list_anomaly": None,              # None | "duplicate" | "drop_token"
     "list_prefix": "roots/",           # only LIST calls whose prefix contains this are perturbed
+    # S47 hold rule: None | {"method", "path_substring", "path_substrings" (any of), "body_substring",
+    # "skip", "when"}
+    "hold": None,
+    "trace_substrings": [],            # journal requests whose path contains any of these
 }
 _DEFAULT_STATS = {
     "forwarded": 0,
@@ -69,6 +82,11 @@ _stats["by_mode"] = {}
 _stats["drop_after_forward"] = []
 _req_index = [0]
 _idx_lock = threading.Lock()
+
+# Hold state, guarded by _cfg_lock. `matched` counts rule matches; `parked` lists what is parked.
+_hold = {"state": "idle", "matched": 0, "parked": [], "release": threading.Event()}
+_trace = []
+_TRACE_CAP = 4096
 
 
 def _get_cfg():
@@ -104,8 +122,26 @@ def _record_drop_after_forward(method, path, body, upstream_status, upstream_eta
         del records[:-64]
 
 
+def _hold_arm():
+    """Called with _cfg_lock held when a new hold rule is configured."""
+    _hold["release"].set()
+    _hold["state"] = "armed"
+    _hold["matched"] = 0
+    _hold["parked"] = []
+    _hold["release"] = threading.Event()
+
+
+def _hold_release():
+    """Called with _cfg_lock held."""
+    _hold["state"] = "released"
+    _hold["release"].set()
+
+
 def _reset():
     with _cfg_lock:
+        _hold_release()
+        _hold["state"] = "idle"
+        _trace.clear()
         _cfg.clear()
         _cfg.update(_DEFAULT_CFG)
         _stats.clear()
@@ -207,7 +243,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return b""
 
     # --- forward to upstream ------------------------------------------------
-    def _forward(self, drop_after_forward=False):
+    def _forward(self, drop_after_forward=False, park_response=None):
         body = getattr(self, "_cached_body", None)
         if body is None:
             body = self._read_body()
@@ -246,6 +282,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 data = perturbed
                 _bump("list_perturbed")
         _bump("forwarded")
+        self._trace_request(cfg, resp.status if park_response is None else f"{resp.status}-response-parked")
+        if park_response is not None:
+            release, entry = park_response
+            conn.close()
+            with _cfg_lock:
+                entry["upstream_status"] = resp.status
+            self._park_until_released(release)
+            return
         if os.environ.get("S3_PROXY_DEBUG") and self.command in ("HEAD", "POST"):
             print(f"[dbg-resp] {self.command} {self.path[:50]} -> {resp.status} "
                   f"upstreamCL={resp.getheader('Content-Length')} bodylen={len(data)}", flush=True)
@@ -283,6 +327,58 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
         conn.close()
 
+    def _hold_decision(self, cfg):
+        """None, or (when, release_event, parked_entry) if this request must be parked. An "after" entry
+        gains `upstream_status` once the store has answered."""
+        rule = cfg.get("hold")
+        if not rule or self.command != rule.get("method", "PUT"):
+            return None
+        if rule.get("path_substring") and rule["path_substring"] not in (self.path or ""):
+            return None
+        if rule.get("path_substrings") and not any(x in (self.path or "") for x in rule["path_substrings"]):
+            return None
+        body_substring = rule.get("body_substring")
+        if body_substring and body_substring.encode() not in (self._cached_body or b""):
+            return None
+        with _cfg_lock:
+            if _hold["state"] == "held":
+                entry = {"method": self.command, "path": self.path, "when": "before", "t": time.time(),
+                         "late_match": True}
+                _hold["parked"].append(entry)
+                return ("before", _hold["release"], entry)
+            if _hold["state"] != "armed":
+                return None
+            _hold["matched"] += 1
+            if _hold["matched"] <= int(rule.get("skip", 0)):
+                return None
+            _hold["state"] = "held"
+            when = rule.get("when", "before")
+            entry = {"method": self.command, "path": self.path, "when": when, "t": time.time(),
+                     "body_prefix": (self._cached_body or b"")[:400].decode("utf-8", "replace")}
+            _hold["parked"].append(entry)
+            return (when, _hold["release"], entry)
+
+    def _park_until_released(self, release):
+        release.wait()
+        self.close_connection = True
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            self.connection.close()
+        except OSError:
+            pass
+
+    def _trace_request(self, cfg, status):
+        subs = cfg.get("trace_substrings") or []
+        if not subs or not any(x in (self.path or "") for x in subs):
+            return
+        with _cfg_lock:
+            _trace.append({"t": time.time(), "method": self.command, "path": self.path, "status": status,
+                           "body_prefix": (getattr(self, "_cached_body", b"") or b"")[:300].decode("utf-8", "replace")})
+            del _trace[:-_TRACE_CAP]
+
     def _handle(self):
         cfg = _get_cfg()
         # Cache body once (fault paths + forward both may need it).
@@ -294,6 +390,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             print(f"[dbg] {self.command} {self.path[:60]} CL={self.headers.get('Content-Length')} "
                   f"TE={self.headers.get('Transfer-Encoding')} CE={self.headers.get('Content-Encoding')} "
                   f"Expect={self.headers.get('Expect')} read={len(self._cached_body)}", flush=True)
+        hold = self._hold_decision(cfg)
+        if hold is not None:
+            when, release, entry = hold
+            if when == "after":
+                self._forward(park_response=(release, entry))
+            else:
+                self._trace_request(cfg, "parked-before-forward")
+                self._park_until_released(release)
+            return
         mode = self._should_fault(cfg)
         if mode is None:
             self._forward()
@@ -365,7 +470,13 @@ class CtlHandler(http.server.BaseHTTPRequestHandler):
                 snapshot = dict(_stats)
                 snapshot["by_mode"] = dict(_stats["by_mode"])
                 snapshot["drop_after_forward"] = list(_stats["drop_after_forward"])
+            with _cfg_lock:
+                snapshot["hold"] = {"state": _hold["state"], "matched": _hold["matched"],
+                                    "parked": list(_hold["parked"])}
             return self._json(200, snapshot)
+        if self.path.startswith("/trace"):
+            with _cfg_lock:
+                return self._json(200, {"trace": list(_trace)})
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -377,10 +488,18 @@ class CtlHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             return self._json(400, {"error": f"bad json: {e}"})
         reset = bool(patch.pop("reset", False))
+        release = bool(patch.pop("hold_release", False))
+        clear_trace = bool(patch.pop("trace_clear", False))
         if reset:
             _reset()
         with _cfg_lock:
+            if release:
+                _hold_release()
+            if clear_trace:
+                _trace.clear()
             _cfg.update(patch)
+            if patch.get("hold"):
+                _hold_arm()
             snap = dict(_cfg)
         self._json(200, {"ok": True, "config": snap})
 

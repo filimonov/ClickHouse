@@ -254,3 +254,73 @@ def test_s39_pass_verdict_note_is_empty():
 
     assert helper(True, "failure explanation") == ""
     assert helper(False, "failure explanation") == "failure explanation"
+
+
+def _put_in_background(put, path, body):
+    result = {}
+    thread = threading.Thread(target=lambda: result.setdefault("response", put(path, body)), daemon=True)
+    thread.start()
+    return thread, result
+
+
+def _wait_for_hold_state(stats, state, landed=False, timeout_s=5.0):
+    import time
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        hold = stats()["hold"]
+        if hold["state"] == state and (not landed or "upstream_status" in hold["parked"][0]):
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"hold never reached {state}: {stats()['hold']}")
+
+
+def test_hold_before_forward_parks_the_chosen_match_and_never_lands_it_or_a_retry(servers):
+    configure, stats, put, upstream = servers
+    configure({"hold": {"method": "PUT", "path_substring": "/node-a/owner", "skip": 1, "when": "before"}})
+
+    assert put("/bucket/gc/server-roots/node-a/owner", b"first") == (201, b"landed")
+    thread, result = _put_in_background(put, "/bucket/gc/server-roots/node-a/owner", b"second")
+    _wait_for_hold_state(stats, "held")
+    retry_thread, retry = _put_in_background(put, "/bucket/gc/server-roots/node-a/owner", b"retry")
+    assert put("/bucket/other") == (201, b"landed")
+
+    configure({"hold_release": True})
+    thread.join(timeout=5)
+    retry_thread.join(timeout=5)
+
+    assert result["response"][0] is None
+    assert retry["response"][0] is None
+    assert [request[2] for request in upstream.requests] == [b"first", b"payload"]
+    assert [p["when"] for p in stats()["hold"]["parked"]] == ["before", "before"]
+
+
+def test_hold_after_forward_lands_the_write_and_withholds_the_response(servers):
+    configure, stats, put, upstream = servers
+    configure({"hold": {"method": "PUT", "path_substring": "/mount", "body_substring": "farewell",
+                        "when": "after"}, "trace_substrings": ["/mount"]})
+
+    assert put("/bucket/node-a/mount", b"renewal") == (201, b"landed")
+    thread, result = _put_in_background(put, "/bucket/node-a/mount", b"farewell body")
+    _wait_for_hold_state(stats, "held", landed=True)
+    assert upstream.requests[-1][2] == b"farewell body"
+
+    configure({"hold_release": True})
+    thread.join(timeout=5)
+
+    assert result["response"][0] is None
+    trace = [(t["path"], t["status"]) for t in proxy._trace]
+    assert trace == [("/bucket/node-a/mount", 201), ("/bucket/node-a/mount", "201-response-parked")]
+
+
+def test_hold_matches_any_of_path_substrings(servers):
+    configure, stats, put, upstream = servers
+    configure({"hold": {"method": "PUT", "path_substrings": ["/ns/aaa/", "/ns/bbb/"], "when": "before"}})
+
+    assert put("/bucket/ns/ccc/log") == (201, b"landed")
+    thread, result = _put_in_background(put, "/bucket/ns/bbb/log", b"victim")
+    _wait_for_hold_state(stats, "held")
+    configure({"hold_release": True})
+    thread.join(timeout=5)
+
+    assert result["response"][0] is None
+    assert [request[1] for request in upstream.requests] == ["/bucket/ns/ccc/log"]
