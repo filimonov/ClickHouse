@@ -20,6 +20,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 8 (spec r8): green with one owner-life rule in place of three round-7 rules** (`r8_*`); every r8 sabotage is red. Switches `RemountChecksLife`, `RemountRejoins` and `RejoinVerifiedOnly` are removed.
 - **Round 9 (spec r9): green** (`r9_*`). The tool now reads its victim from the owner, as the code does; Opus P1-A is reproduced through an unverified rejoin (`sab_r9_rejoinunverified`) and a rerun after a verified run (`res_r9_rerunafterverified`), both closed by r9. New mixed-version residual: two rejoins of different uuids racing let a paused 26.6.4 starter run under the other uuid (`res_r9_uuidreuse`).
 - **Round 10 (spec r10, step 6): green with the rerun gated by the observed owner** (`r10_*`); a blind rerun after a tool killed past its verified mark drops a rejoined member (`res_r10_blindrerun`, documented residual).
+- **Round 11: green with the rejoin rewrite keyed on the retired owner's uuid, as in the code** (every rejoin row keeps its verdict); `res_r9_uuidreuse` still violates, with a trace of 57 states instead of 41.
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -549,6 +550,67 @@ The verified-mark write may land without the tool learning it (an ambiguous resp
 
 - **The observed gate closes the killed-tool case** (`r10_*` green).
 - **A blind rerun drops a rejoined member** (`res_r10_blindrerun`): the mark lands, the tool is killed before it records the outcome, so its own state says "not verified"; `a` rejoins over the verified tombstone and publishes; the rerun reads the rejoined owner as its victim and drains `a`'s reference. Documented residual for an operator who reruns without reading the owner.
+
+## Round 11: rejoin keys on the retired owner's uuid {#round-11}
+
+The code's `rejoinRetiredOwner` rewrites the mount body when the starter's uuid differs from the uuid of the retired owner it read at its start. `JoinMount` used the uuid of the body in the slot. Now `OwnerCheck` records the owner's uuid in `jRepl.ou` and `JoinMount` sets `need` to `jRepl[p].ou # Uuid(p)`. The old predicate is removed; no row needs it.
+
+Rerun: every config with `Rejoin = TRUE` (42 files; the only ones whose reachable states depend on `JoinMount`), `SLOW=1`, 4 workers, 8 GiB heap, under the TLC lock. Configs without `Rejoin` never execute `JoinMount`; they were not rerun. Depth is the TLC search depth. For a violation it equals the length of the shortest counterexample, since TLC searches breadth-first.
+
+| Config | Expected | Result | States | Depth |
+|---|---|---|---|---|
+| `r6_core_z` | green | green | 15,431,554 | 65 |
+| `r6_core_g` | green | green | 38,222,100 | 69 |
+| `r6_counterrule` | green | green | 5,500,358 | 64 |
+| `r6_newuuid_z` | green | green | 23,717,003 | 66 |
+| `r6_newuuid_g` | green | green | 49,604,404 | 70 |
+| `r6_selffence` | green | green | 2,171,183 | 65 |
+| `r6_retry_live` | green | green | 139 | 33 |
+| `r8_core_z` | green | green | 12,597,853 | 69 |
+| `r8_core_g` | green | green | 25,629,084 | 71 |
+| `r8_newuuid` | green | green | 22,291,358 | 88 |
+| `r8_old` | green | green | 42,499,138 | 96 |
+| `r8_remount` | green | green | 56,688,908 | 71 |
+| `r8_threeruns` | green | green | 8,168,773 | 79 |
+| `r9_core_z` | green | green | 11,013,188 | 69 |
+| `r9_core_g` | green | green | 15,038,117 | 67 |
+| `r9_newuuid` | green | green | 2,936,645 | 74 |
+| `r9_old` | green | green | 4,311,695 | 83 |
+| `r9_remount` | green | green | 56,304,176 | 71 |
+| `r9_threeruns` | green | green | 4,788,672 | 79 |
+| `r9_newdecom` | green | green | 1,547,411 | 68 |
+| `r10_core` | green | green | 291,399 | 63 |
+| `r10_newuuid` | green | green | 181,598 | 64 |
+| `r6_newuuid_witness` | violation | violation SecondUuidNeverLive | 314,605 | 25 |
+| `r6_selffence_witness` | violation | violation NoLiveAfterSelfFence | 240,145 | 32 |
+| `sab_r6_keepforeignfenced` | violation | violation NoWedge | 64,083 | 21 |
+| `sab_r6_recheckretired` | violation | violation LiveMatchesOwnerAtRest | 1,696,894 | 30 |
+| `sab_r6_rollbackall` | violation | violation DoneMeansRetired | 13,394,822 | 32 |
+| `sab_r6_rollbackfenced` | violation | violation LiveMatchesOwnerAtRest | 302,956 | 23 |
+| `sab_r6_nouuidcheck` | violation | violation NoForeignTombstone | 1,442,155 | 29 |
+| `sab_r6_rejoinany` | violation | violation LiveMatchesOwnerAtRest | 1,852,238 | 30 |
+| `sab_r6_noverify` | violation | violation LiveMatchesOwnerAtRest | 24,255,615 | 33 |
+| `res_r6_nogcdead` | violation | violation NoWedge | 873,127 | 28 |
+| `sab_r8_dropmark` | violation | violation DoneMeansRetired | 1,554,335 | 43 |
+| `sab_r8_foreignnoowner` | violation | violation OldNotUnderNewOwner | 1,047,003 | 37 |
+| `sab_r8_rechecknolife` | violation | violation NoResumeAfterRetire | 2,939,434 | 39 |
+| `sab_r8_remountstops` | violation | violation LiveMatchesOwnerAtRest | 39,504 | 24 |
+| `sab_r8_rollbacknolife` | violation | violation DoneMeansRetired | 210,188 | 33 |
+| `sab_r8_ownerfirst` | violation | violation OldNotUnderNewOwner | 117,227 | 28 |
+| `sab_r9_rejoinunverified` | violation | violation NoDrainOfLaterLife | 755,926 | 42 |
+| `res_r9_rerunafterverified` | violation | violation NoDrainOfLaterLife | 928,987 | 47 |
+| `res_r10_blindrerun` | violation | violation NoDrainOfLaterLife | 967,211 | 48 |
+| `res_r9_uuidreuse` | violation | violation OldNotUnderNewOwner | 197,515,285 | 57 |
+
+All green rows stayed green and every sabotage and residual row still finds its invariant. State counts of rows with a second rejoiner shift slightly (`r9_newuuid`: 2,937,563 in round 9, 2,936,645 now); `r9_old` has none and keeps 4,311,695.
+
+`res_r9_uuidreuse` is not closed, and its trace is longer. Old predicate: 41 states, 51,654,570 distinct states. New predicate: 57 states, 197,515,285 distinct states (35 min). The short trace (rejoiner `a` of uuid 1 reads the mount after `n` replaced it, and rewrites it with a uuid-1 body) is gone: `a` reads the retired owner `u1` and writes no body. The new trace needs a second decommission:
+
+1. `n` (uuid 2) rejoins, then a new decommission retires the owner `u2`.
+2. `a` (uuid 1) reads the retired owner `u2`, so `need` is true; it replaces the mount with a terminal uuid-1 body (`JoinRepl`) and has not yet written the owner.
+3. The paused 26.6.4 starter `o` (uuid 1) reclaims that body (`ClaimReclaim`) and runs under the retired owner `u2`.
+
+This is the residual stated in round 9: while the slot holds a terminal uuid-X body and the owner is another uuid, a paused 26.6.4 uuid-X starter can reclaim it. The new predicate removes the trace that needs no second retirement and keeps the one that does. The mixed-version residual stays documented.
 
 ## Code checks {#code-checks}
 

@@ -201,7 +201,7 @@ VARIABLES
     resumedStale,       \* ghost: a self-remount resumed a process that started before a later rejoin
     dClaimEp,           \* the decommission run's writer_epoch recorded at its first claim
     catRows,            \* catalog rows of the victim still Removing (GC not done)
-    jRepl,              \* per process: rejoin mount replacement [tok, need]
+    jRepl,              \* per process: rejoin mount replacement [tok, need] and the retired owner uuid read at start [ou]
     mfEp,               \* per process (remount rows): epoch of the manifest the current build staged
     pLife,              \* per process: owner life (ownerGen) recorded at start, after any rejoin
     dUuid,              \* ToolReadsVictim: the victim uuid the current tool run read at its start
@@ -333,7 +333,7 @@ Init ==
     /\ dLife = 0 /\ staleDecom = FALSE /\ staleDrain = FALSE
     /\ lateDel = [on |-> FALSE, ep |-> 0] /\ doneLives = {} /\ tombForeign = FALSE /\ vTok = <<>> /\ jTok = [p \in Procs |-> <<>>] /\ selfFenced = FALSE
     /\ stLife = [p \in Procs |-> 0] /\ remnt = [p \in Procs |-> FALSE] /\ resumedStale = FALSE
-    /\ dClaimEp = 0 /\ catRows = FALSE /\ jRepl = [p \in Procs |-> [tok |-> 0, need |-> FALSE]]
+    /\ dClaimEp = 0 /\ catRows = FALSE /\ jRepl = [p \in Procs |-> [tok |-> 0, need |-> FALSE, ou |-> 0]]
     /\ mfEp = [p \in Procs |-> 0] /\ pLife = [p \in Procs |-> 0]
     /\ dUuid = "u1" /\ dVLife = 0 /\ dNew = FALSE /\ laterDrain = FALSE
     /\ pc = [p \in Procs |-> IF p = "d" THEN "open" ELSE "down"]
@@ -392,6 +392,7 @@ OwnerCheck(p) ==
                               ELSE IF ownerUuid # Uuid(p) /\ ~(p = "d" /\ ToolReadsVictim) THEN Down(p)
                               ELSE IF ownerRetired /\ ~AcceptsTomb(p) THEN Down(p) ELSE "aread"]
     /\ jTok' = IF Rejoin THEN [jTok EXCEPT ![p] = OTok] ELSE jTok
+    /\ jRepl' = IF Rejoin THEN [jRepl EXCEPT ![p].ou = ownerUuid] ELSE jRepl
     /\ stLife' = IF RemountOn THEN [stLife EXCEPT ![p] = life] ELSE stLife
     /\ pLife' = IF OwnerLife THEN [pLife EXCEPT ![p] = ownerGen] ELSE pLife
     /\ myFloor' = [myFloor EXCEPT ![p] = ownerFloor]
@@ -400,11 +401,12 @@ OwnerCheck(p) ==
     /\ dVLife' = IF p = "d" /\ ToolReadsVictim /\ (starts["d"] = 0 \/ dNew) THEN life ELSE dVLife
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife,
                    lateDel, doneLives, tombForeign, vTok, selfFenced, remnt, resumedStale, dClaimEp, catRows,
-                   jRepl, mfEp, dNew, laterDrain, Locals, DVars, GVars>>
+                   mfEp, dNew, laterDrain, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm,
                    ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, life, rpc, rTok, oInfl,
                    ownerUuid, rv, rvMTok, rvOTok, tombOverLive, LVars>>
 
+\* The rewrite keys on the retired owner's uuid read at the start (jRepl.ou), not on the mount body.
 \* Proposed rejoin in claimOwnerOrThrow over a retired owner: GET epoch, GET mount (terminal),
 \* serverRootSubtreeEmpty, then If-Match owner rewrite {this uuid, no tombstone}; a conflict re-reads.
 JoinEpoch(p) ==
@@ -416,7 +418,7 @@ JoinMount(p) ==
     /\ pc[p] = "jmount"
     /\ pc' = [pc EXCEPT ![p] = IF RejoinAnyMount \/ (mount.e > 0 /\ (mount.clean \/ mount.fenced))
                               THEN "jempty" ELSE "down"]
-    /\ jRepl' = IF JoinReplaceMount THEN [jRepl EXCEPT ![p] = [tok |-> mGen, need |-> mount.u # Uuid(p)]]
+    /\ jRepl' = IF JoinReplaceMount THEN [jRepl EXCEPT ![p] = [tok |-> mGen, need |-> jRepl[p].ou # Uuid(p), ou |-> jRepl[p].ou]]
                 ELSE jRepl
     /\ UNCHANGED <<Store, inflight, ambUsed, nonceCtr, allocLog, dup, slotMax, allocLife, G5,
                    stLife, remnt, resumedStale, dClaimEp, catRows, mfEp, pLife, G9, Locals, DVars, GVars, XVars>>
