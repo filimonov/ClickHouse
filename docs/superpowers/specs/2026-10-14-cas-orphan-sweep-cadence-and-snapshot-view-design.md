@@ -168,6 +168,7 @@ T7 counts the sweep's own requests only (the fold's reads are excluded) and coun
 - Properties: `HasUnfoldedCommittedRemoval(m) => body present` (committed removals only; the fold skips bodiless precommit removals, `CasGc.cpp:2674`), plus the existing committed-body invariant.
 - Sabotage: `sab_cursorbelowsnap` drops the cursor term; its witness is an older-epoch manifest with a committed removal `R`, `C < R <= P`, absent from `snap(P)`, floor-eligible (the CAS-310 shape; a removal above `P` stays snapshot-protected and does not exercise it). `sab_snapepoch` drops the epoch term; its witness is a build granted and promoted after `P` in `P`'s epoch and ended before the floor sample: absent from `snap(P)`, owned, floor-eligible. `fix_floorfirst` / `sab_floorfirst` (CAS-36) unchanged. A liveness witness: old-life debris beneath a reborn name is deleted once the new life's snapshot passes the old epoch and the cursor passes the snapshot.
 - Stage 1 needs no model change: idling is a stutter.
+- Done 2026-10-15: `SnapshotView` and the cfgs above are in the model; `fix_snapshotview` green on 772 M distinct states (depth 45), every sabotage red with the predicted witness, legacy battery unchanged. Results: `docs/superpowers/models/CaGcRootLocalPartManifestCore_RESULTS.md` §"CAS-358 stage 2".
 
 ### 4.9 Change inventory {#stage-2-inventory}
 

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 09:50'
-updated_date: '2026-10-14 17:41'
+updated_date: '2026-10-15 00:45'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -72,7 +72,7 @@ ordinal: 452000
 - [ ] #3 Stage 2: the owner view is readCheckpointSnapshotBase only; activeManifestKeys, the committed-tail walk and the sweep's ref-log read-ahead hints are deleted; candidate-body read-ahead stays; gc_round_sweep_recovery_op_budget stays declared as an accepted no-op; no _log GET outside {P, predecessor seal} (T7)
 - [ ] #4 Stage 2: manifestDeletionPremise implements the five rules of spec §4.1 with retain classes NoSnapshot, InSnapshot, SnapshotEpoch, CursorBelowSnapshot; older-life keys (E < life_epoch) and rowless keys use the floor alone; T1-T17 of spec §4.7 green; sweepNamespace and the cursor page agree (T12)
 - [ ] #5 Stage 2: floor sampled before the catalog cut (CAS-36) unchanged
-- [ ] #6 TLA: CaGcRootLocalPartManifestCore gets snapPos and the snapshot-based GSwView; sab_cursorbelowsnap reproduces the CAS-310 trace (committed removal in (C,P]) and sab_snapepoch deletes a build granted and promoted after P in P's epoch and ended before the floor sample; the fix configs stay green
+- [x] #6 TLA: CaGcRootLocalPartManifestCore gets snapPos and the snapshot-based GSwView; sab_cursorbelowsnap reproduces the CAS-310 trace (committed removal in (C,P]) and sab_snapepoch deletes a build granted and promoted after P in P's epoch and ended before the floor sample; the fix configs stay green
 - [ ] #7 Docs: garbage-collection.md subsection on orphan manifests (circuit, five rules, retain classes, no-snapshot case, settings) and the manifests-and-refs.md flow note; the withdrawn spec carries a status line pointing at the new one
 <!-- AC:END -->
 
@@ -112,4 +112,6 @@ Decision log (times are commit times, local):
 - 2026-10-14: codex rounds 7 and 8 (tmp/cas358/codex_spec_review_7.md, _8.md): 7 then 3 findings, no new design hole. rev.3: stage-2 rollout rule (CAS-391 on every writer, fsck pass), CAS-36 amended to a floor prepass before the catalog read, CAS-391 separated from AdmissionBound, task ACs synced. rev.4: the older-life floor-only shortcut is removed (it would bypass InSnapshot for a pre-CAS-391 cross-epoch grant in the new life); older-life keys go through rules 2-5 and wait under NoSnapshot without a snapshot; the fsck gate is a complete audit (partial == false, unchecked == 0, chain_broken == 0, every AddPrecommit in the authoritative tail checked); CAS-36 AC1 now requires the prepass and the reversed-order mutant.
 
 - 2026-10-14: codex round 9 on rev.4 (tmp/cas358/codex_spec_review_9.md): APPROVE, no new findings; rounds 6-9 went 10 / 7 / 3 / 0. Spec at ea3b16d1dbb is the one to plan from: stage 1 first (no prerequisites), stage 2 after CAS-36, CAS-391, CAS-362/363 and the rollout gate of §4.6.
+
+- 2026-10-15: TLA done (AC #6). CaGcRootLocalPartManifestCore gains snapPos, journal event epoch, OwnedAt, SnapRetain, SnapshotView, INV_COMMITTED_REMOVAL_BODY and six sabotage flags. fix_snapshotview green (5.27 B generated / 772 M distinct, depth 45, 56 min at 28 workers); witness_snapshotswept and witness_rebirthswept reachable; sab_snapcursor (CAS-310 shape), sab_snapepoch (finished-but-owned post-P build), sab_snapmissing, sab_grantcrossepoch(+_rowed, the CAS-391 gap), sab_floorfirst_snap, sab_sweepunfoldedremoval all red as predicted; the 64-cfg legacy battery unchanged. Exhaustive rebirth run (fix_snapshotview_rebirth) left under SLOW=1: does not fit the disk; the rebirth witness stands in. RESULTS.md §cas-358-snapshot-view.
 <!-- SECTION:NOTES:END -->

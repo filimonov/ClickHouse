@@ -67,8 +67,19 @@ CONSTANTS
                                 \* (`NamespaceLifeId::fromCatalogEntry`), not every live owner
     PromoteSkipsOwnBodyReread,  \* `PartWriteTxn::promote` trusts its own `staged_manifests` record and does
                                 \* not re-read the body (PR #2528); blob dependencies are still checked
-    RecheckLifeChange           \* candidate fix on top of FixRecheckAfterFloor: C' is applied to every candidate,
+    RecheckLifeChange,          \* candidate fix on top of FixRecheckAfterFloor: C' is applied to every candidate,
                                 \* and one whose namespace life differs between C and C' is retained
+    \* ---- CAS-358 stage 2: the owner view is the writer's checkpoint-named snapshot ----
+    SnapshotView,               \* TRUE = `GSwView` decides from the snapshot position `snapPos` (spec §4.1 rules 3-5)
+                                \* instead of the live owner set; FALSE = the owner view as today
+    SabotageSnapCursorTerm,     \* drop rule 5 (`cursor >= snapPos`): a removal in (cursor, snapPos] is unprotected
+    SabotageSnapEpochTerm,      \* drop rule 4 (`mEpoch < epochOf(snapPos)`): a build granted after the snapshot in
+                                \* the snapshot's epoch is unprotected
+    SabotageSnapMissingAsEmpty, \* a namespace with no snapshot is treated as an empty owner set instead of retained
+    SabotageGrantCrossEpoch,    \* a precommit grant may name a manifest of an older epoch than the admitted
+                                \* operation's (the writer gap CAS-391 closes)
+    SabotageSweepUnfoldedRemoval \* the live owner view drops the tail-removal protection (`tail_removal_targets`):
+                                \* a removed body whose -1 is unfolded is nominated (CAS-310)
 
 \* A ManifestId is (namespace, manifest_instance_id). manifest_instance_id is drawn from
 \* ManifestInstances and is NEVER reused once visible (NoManifestIdReuse). Two namespaces may
@@ -145,7 +156,10 @@ VARIABLES
     \* ---- PR #2528 sweep shape ----
     ownLife,       \* [ManifestIds -> 0..MaxLife] the namespace life whose journal holds m's owner transition
     swCutLife,     \* [Namespaces -> 0..MaxLife] the life each namespace had in cut C (0 = rowless)
-    swRecheck      \* [Namespaces -> 0..MaxLife] the life each namespace had in the post-floor re-read C' (0 = rowless)
+    swRecheck,     \* [Namespaces -> 0..MaxLife] the life each namespace had in the post-floor re-read C' (0 = rowless)
+    \* ---- CAS-358 stage 2 ----
+    snapPos,       \* [Namespaces -> 0..MaxLog] the writer's checkpoint-named snapshot position (0 = none)
+    swSnapGone     \* manifests the snapshot view's sweep deleted under a catalog row (witness only)
 
 \* SrcEdges(m): the active source edges currently emitted by m's activation map. Derived operator,
 \* NOT a constant, so it follows mActiveEdges as the fold mutates it.
@@ -173,7 +187,7 @@ epVars == << mountEpoch, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
 \* A flat tuple literal: TLC cannot evaluate `UNCHANGED` over a `\o`-composed tuple.
 catVars == << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok,
                swRowlessGone, mountEpoch, fencedEp, opEp, mEpoch, swFloorEp, swFenced >>
-prVars == << ownLife, swCutLife, swRecheck >>
+prVars == << ownLife, swCutLife, swRecheck, snapPos, swSnapGone >>
 vars == origVars \o attemptVars \o catVars \o prVars
 
 \* ---- helpers (filled across tasks) ----
@@ -305,7 +319,8 @@ CommitGateBody(m, w, skipBody) ==
 CommitGate(m, w) == CommitGateBody(m, w, FALSE)
 \* Append one OwnerTransition [ver, ref, old, new] to journal[ns]; version = new length (monotone).
 AppendEvt(j, ns, rf, o, nw) ==
-    [j EXCEPT ![ns] = Append(@, [ver |-> Len(@) + 1, ref |-> rf, old |-> o, new |-> nw])]
+    [j EXCEPT ![ns] = Append(@, [ver |-> Len(@) + 1, ref |-> rf, old |-> o, new |-> nw,
+                                 ep |-> IF ~EnableFenceEpochs THEN 0 ELSE IF opEp # 0 THEN opEp ELSE mountEpoch])]   \* the appending runtime's writer epoch
 \* A committed ref names exactly one manifest (SingleManifestOwner): a ref may newly own m only when it
 \* owns nothing else, except under SabotageTwoOwners (the sharing hazard #2). A repoint moves a ref off
 \* its current manifest atomically, so the ref is considered free of everything other than mFrom.
@@ -355,7 +370,7 @@ WRefreshView(w) ==
 WPrecommitAdd(m, bld, f) ==
     /\ EnablePrecommit
     /\ owner[m] = None
-    /\ BuildActive(m) /\ RowGate(m) /\ OpIssue(m)
+    /\ BuildActive(m) /\ RowGate(m) /\ (OpIssue(m) \/ (SabotageGrantCrossEpoch /\ OpIssueAny))
     /\ (m \notin mfDeleted \/ SabotageReuseManifestId)   \* a swept/deleted id is retired forever
     /\ (mBody[m] \/ EnableMissingBody)                  \* missing body only when allowed
     /\ Len(journal[m[1]]) < MaxLog
@@ -369,7 +384,7 @@ WPrecommitAdd(m, bld, f) ==
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
     /\ ownLife' = IF EnableCatalogRows THEN [ownLife EXCEPT ![m] = nsLife[m[1]]] ELSE ownLife
-    /\ UNCHANGED << swCutLife, swRecheck >>
+    /\ UNCHANGED << swCutLife, swRecheck, snapPos, swSnapGone >>
     /\ UNCHANGED catVars
 
 \* Promote precommit -> committed: the atomic PURE owner move. Same ManifestId, blob Δ=0, NO new
@@ -385,7 +400,7 @@ WPrecommitAdd(m, bld, f) ==
 WPromote(m, bld, ref, w) ==
     /\ EnablePrecommit
     /\ owner[m] = bld
-    /\ BuildActive(m) /\ RowGate(m) /\ OpIssue(m)
+    /\ BuildActive(m) /\ RowGate(m) /\ (OpIssue(m) \/ (SabotageGrantCrossEpoch /\ OpIssueAny))
     /\ RefFreeFor(ref, m)
     \* split-promote and promote-after-missing-body both drop the atomic fail-closed activation gate:
     \* PromoteSkipsOwnBodyReread: the writer staged the body itself (`staged_manifests`), so promote skips the
@@ -513,7 +528,7 @@ WRepoint(mOld, mNew, ref, w) ==
                     mfCleanup, mfDeleted, mPrefix, sweepEligible, extraShared, foldedTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
     /\ ownLife' = IF EnableCatalogRows THEN [ownLife EXCEPT ![mNew] = nsLife[mNew[1]]] ELSE ownLife
-    /\ UNCHANGED << swCutLife, swRecheck >>
+    /\ UNCHANGED << swCutLife, swRecheck, snapPos, swSnapGone >>
     /\ UNCHANGED catVars
 
 \* ============================ GC pipeline (spec §Round Protocol) ============================
@@ -531,6 +546,31 @@ EdgesFor(m) == IF SabotageKeyByRefNotId
 HasUnfoldedRemoval(m) ==
     \E i \in (cursor[m[1]] + 1)..Len(journal[m[1]]) :
         LET ev == journal[m[1]][i] IN ev.old = {m} /\ ev.new # {m}
+\* The same, for a removal of a COMMITTED owner (the fold reads the body to emit its -1; a bodiless
+\* precommit removal is skipped, `CasGc.cpp` ref intake). CAS-310.
+HasUnfoldedCommittedRemoval(m) ==
+    \E i \in (cursor[m[1]] + 1)..Len(journal[m[1]]) :
+        LET ev == journal[m[1]][i] IN ev.old = {m} /\ ev.new # {m} /\ ev.ref \in Refs
+\* ---- CAS-358 stage 2: the snapshot as the owner view ----
+\* m is bound (precommit or committed) in namespace n's state at journal position p: some grant at or
+\* before p with no later removal at or before p. The code reads this set from `_snap` (committed rows
+\* plus precommits); the model derives it from the journal prefix.
+OwnedAt(n, p, m) ==
+    \E i \in 1..p :
+        /\ journal[n][i].new = {m} /\ journal[n][i].old # {m}
+        /\ ~(\E j \in (i + 1)..p : journal[n][j].old = {m} /\ journal[n][j].new # {m})
+\* The writer epoch of the transaction at position p (`P.writer_epoch`); 0 when there is no position.
+EpochOf(n, p) == IF p = 0 THEN 0 ELSE journal[n][p].ep
+\* Spec §4.1 rules 3-5 for a key of a catalog-named namespace (rules 1-2 are the floor and the row, which
+\* `SwNominable` applies): RETAIN m unless the snapshot exists, m is absent from it, m's epoch is strictly
+\* below the snapshot's, and the fold cursor has reached the snapshot.
+SnapRetain(m) ==
+    LET n == m[1] IN
+    IF snapPos[n] = 0
+    THEN ~SabotageSnapMissingAsEmpty   \* no snapshot: retain (the sabotage treats the owner set as empty)
+    ELSE \/ OwnedAt(n, snapPos[n], m)
+         \/ (~SabotageSnapEpochTerm /\ ~(mEpoch[m] < EpochOf(n, snapPos[n])))
+         \/ (~SabotageSnapCursorTerm /\ cursor[n] < snapPos[n])
 \* A live precommit binding whose manifest body is not yet present+valid (the FIX-1 fold barrier).
 LiveMissingBodyPrecommit(e) ==
     e.new # {} /\ owner[TheM(e.new)] \in Builds /\ ~(mBody[TheM(e.new)] /\ BodyValid(TheM(e.new)))
@@ -999,9 +1039,10 @@ WCreateNamespace(n) ==
     /\ OpIssueAny
     /\ nsRow' = [nsRow EXCEPT ![n] = TRUE]
     /\ nsLife' = [nsLife EXCEPT ![n] = @ + 1]
+    /\ snapPos' = [snapPos EXCEPT ![n] = 0]   \* a new life has no checkpoint-named snapshot yet
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
-    /\ UNCHANGED prVars
+    /\ UNCHANGED << ownLife, swCutLife, swRecheck, swSnapGone >>
     /\ UNCHANGED << stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swNom, swTok, swRowlessGone >>
     /\ UNCHANGED epVars
 
@@ -1038,6 +1079,20 @@ WEndBuild(p) ==
     /\ UNCHANGED prVars
     /\ UNCHANGED catVars
 
+\* The writer publishes a checkpoint-named snapshot of its ref table at its committed frontier
+\* (`admitSnapshotPublishUnderStateLock` -> `_snap` + `_ckpt.checkpoint_snapshot_id`). Any committed position
+\* is a frontier at some moment, so the model lets the position be any later one. Only a live (rowed)
+\* namespace snapshots. CAS-358 stage 2.
+WSnapshot(n) ==
+    /\ EnableCatalogRows /\ SnapshotView
+    /\ nsRow[n]
+    /\ snapPos[n] < Len(journal[n])
+    /\ \E p \in (snapPos[n] + 1)..Len(journal[n]) : snapPos' = [snapPos EXCEPT ![n] = p]
+    /\ UNCHANGED origVars
+    /\ UNCHANGED attemptVars
+    /\ UNCHANGED << ownLife, swCutLife, swRecheck, swSnapGone >>
+    /\ UNCHANGED catVars
+
 \* The split sweep page, `planManifestCursorPage` then the post-`gc/state`-CAS delete in `CasGc.cpp`
 \* (PHASE 18 `orphan_sweep`). Each step is one observation. Code order: LIST, then the catalog cut
 \* (`CasRefCatalog::read`), then per namespace the floor (`floorForNamespace`) and the owner view
@@ -1072,7 +1127,7 @@ GSwCatalog ==
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ swCutLife' = [n \in Namespaces |-> IF nsRow[n] THEN nsLife[n] ELSE 0]
-    /\ UNCHANGED << ownLife, swRecheck >>
+    /\ UNCHANGED << ownLife, swRecheck, snapPos, swSnapGone >>
     /\ UNCHANGED SwUnchangedExcept
     /\ UNCHANGED << swListed, swFloor, swOwned, swNom, swTok, swFloorEp, swFenced >>
 
@@ -1102,7 +1157,14 @@ GSwView ==
     /\ SwNext = "view"
     \* ViewByCutLife: the view replays the life cut C named; an owner transition journaled under a later life
     \* of the same namespace is not in it.
-    /\ swOwned' = { m \in ManifestIds : owner[m] # None /\ (ViewByCutLife => ownLife[m] = swCutLife[m[1]]) }
+    \* SnapshotView (CAS-358 stage 2): the view is the checkpoint-named snapshot plus the epoch and cursor
+    \* guards (`SnapRetain`); no live owner set, no tail walk. The live view keeps the tail-removal
+    \* protection (`tail_removal_targets`): a body whose -1 is unfolded is retained (CAS-310).
+    /\ swOwned' = IF SnapshotView
+                  THEN { m \in ManifestIds : SnapRetain(m) }
+                  ELSE { m \in ManifestIds :
+                           \/ (owner[m] # None /\ (ViewByCutLife => ownLife[m] = swCutLife[m[1]]))
+                           \/ (~SabotageSweepUnfoldedRemoval /\ HasUnfoldedRemoval(m)) }
     /\ swStep' = swStep + 1
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
@@ -1121,7 +1183,7 @@ GSwRecheck ==
     /\ UNCHANGED attemptVars
     /\ UNCHANGED SwUnchangedExcept
     /\ UNCHANGED << swListed, swRowless, swFloor, swOwned, swNom, swTok, swFloorEp, swFenced >>
-    /\ UNCHANGED << ownLife, swCutLife >>
+    /\ UNCHANGED << ownLife, swCutLife, snapPos, swSnapGone >>
 
 \* The nomination rule of `planManifestCursorPage`. A rowless namespace skips the floor (the `if (catalog_entry)`
 \* around `prefixEligibleUnder`), the owner view and the section-6 premise; FixFloorAll applies the floor to it.
@@ -1174,13 +1236,14 @@ GSwDelete(m) ==
        THEN /\ mBody' = [mBody EXCEPT ![m] = FALSE]
             /\ mfDeleted' = mfDeleted \cup {m}
             /\ swRowlessGone' = IF m[1] \in swRowless THEN swRowlessGone \cup {m} ELSE swRowlessGone
-       ELSE UNCHANGED << mBody, mfDeleted, swRowlessGone >>
+            /\ swSnapGone' = IF SnapshotView /\ m[1] \notin swRowless THEN swSnapGone \cup {m} ELSE swSnapGone
+       ELSE UNCHANGED << mBody, mfDeleted, swRowlessGone, swSnapGone >>
     /\ UNCHANGED << present, tokOf, nextTok, deadTok, mEntries, mRef, mNs, owner, mActiveEdges,
                     journal, blobIndeg, blobEdges, everEdged, foldSeal, completionSeal, gcRound,
                     gcPhase, roundOf, fencePos, cursor, trimBase, fenceVersion, retired, inflight,
                     wView, mfCleanup, mPrefix, sweepEligible, extraShared, listedTok, foldedTok, foldTok, prevFencePos, shardIndeg, coordFence, reducerOwner, storedTok >>
     /\ UNCHANGED attemptVars
-    /\ UNCHANGED prVars
+    /\ UNCHANGED << ownLife, swCutLife, swRecheck, snapPos >>
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swStep, swListed, swRowless, swFloor, swOwned, swTok >>
     /\ UNCHANGED epVars
 
@@ -1195,7 +1258,7 @@ GSwFinish ==
     /\ UNCHANGED origVars
     /\ UNCHANGED attemptVars
     /\ swCutLife' = [n \in Namespaces |-> 0] /\ swRecheck' = [n \in Namespaces |-> 0]
-    /\ UNCHANGED ownLife
+    /\ UNCHANGED << ownLife, snapPos, swSnapGone >>
     /\ UNCHANGED << nsRow, nsLife, stagedLife, mTok, swNom, swRowlessGone >>
     /\ UNCHANGED << mountEpoch, fencedEp, opEp, mEpoch >>
 
@@ -1567,7 +1630,7 @@ Init ==
     /\ wView = [w \in Writers |-> 0]
     /\ mfCleanup = {}
     /\ mfDeleted = {}
-    /\ mPrefix = [m \in ManifestIds |-> CHOOSE p \in BuildPrefixes : TRUE]   \* each manifest belongs to one build-prefix
+    /\ mPrefix \in [ManifestIds -> BuildPrefixes]   \* each manifest belongs to one build-prefix (any assignment)
     /\ sweepEligible = [p \in BuildPrefixes |-> FALSE]   \* per-prefix eligibility from a durable watermark fact
     /\ extraShared = {}
     \* Phase 2: a fresh pool has a zero live listed token and no folded token (the rev.15 token split):
@@ -1607,6 +1670,8 @@ Init ==
     /\ ownLife = [m \in ManifestIds |-> 0]
     /\ swCutLife = [n \in Namespaces |-> 0]
     /\ swRecheck = [n \in Namespaces |-> 0]
+    /\ snapPos = [n \in Namespaces |-> 0]
+    /\ swSnapGone = {}
 
 TypeOK ==
     /\ extraShared \in SUBSET ManifestIds
@@ -1654,6 +1719,8 @@ TypeOK ==
     /\ ownLife \in [ManifestIds -> 0..MaxLife]
     /\ swCutLife \in [Namespaces -> 0..MaxLife]
     /\ swRecheck \in [Namespaces -> 0..MaxLife]
+    /\ snapPos \in [Namespaces -> 0..MaxLog]
+    /\ swSnapGone \in SUBSET ManifestIds
 
 INV_JOURNAL_COVERAGE == \A n \in Namespaces : trimBase[n] <= cursor[n]
 
@@ -1763,6 +1830,13 @@ W_OrphanDeleted == ~(\E m \in ManifestIds : ~mBody[m] /\ owner[m] = None /\ m \i
 \* Non-vacuity witness for the CAS-36 fixes: the split sweep still deletes debris of a namespace that had
 \* no row in its catalog cut (a fix that never deletes rowless debris would be vacuously safe).
 W_RowlessDebrisSwept == swRowlessGone = {}
+\* Non-vacuity witness for the snapshot view: the sweep deleted a catalog-named body on the snapshot rule.
+W_SnapshotDebrisSwept == swSnapGone = {}
+\* Non-vacuity witness for rebirth: the snapshot view deleted a body staged under an OLDER life of its
+\* namespace (the key sits under the reborn name; the old stream's removals were folded before the row went).
+W_RebirthDebrisSwept == ~(\E m \in swSnapGone : stagedLife[m] # 0 /\ stagedLife[m] < nsLife[m[1]])
+\* CAS-310 / CAS-358: a body the fold still needs for a committed removal's -1 is never deleted.
+INV_COMMITTED_REMOVAL_BODY == \A m \in ManifestIds : HasUnfoldedCommittedRemoval(m) => mBody[m]
 \* Non-vacuity witness for the fence-out arm: the sweep deletes debris whose build never ended through
 \* `WEndBuild`, on the floor's fenced-epoch report alone.
 W_FencedDebrisSwept ==
@@ -1843,6 +1917,7 @@ Next ==
     \/ \E n \in Namespaces : WCreateNamespace(n) \/ WRemoveNamespace(n)
     \/ \E p \in BuildPrefixes : WEndBuild(p)
     \/ GSwList \/ GSwCatalog \/ GSwFloor \/ GSwView \/ GSwRecheck \/ GSwNominate \/ GSwFinish
+    \/ \E n \in Namespaces : WSnapshot(n)
     \/ \E m \in ManifestIds : GSwDelete(m)
     \* mount epochs, fence-out, remount, admitted operations (inert unless EnableFenceEpochs):
     \/ WAdmitOp \/ WResolveOp \/ GFence \/ WRemount

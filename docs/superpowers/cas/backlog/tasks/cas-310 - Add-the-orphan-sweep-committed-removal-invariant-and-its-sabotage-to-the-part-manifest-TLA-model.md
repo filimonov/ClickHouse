@@ -3,10 +3,10 @@ id: CAS-310
 title: >-
   Add the orphan-sweep committed-removal invariant and its sabotage to the
   part-manifest TLA+ model
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-26 14:43'
-updated_date: '2026-10-13 18:30'
+updated_date: '2026-10-15 00:45'
 labels:
   - 'area:gc'
   - 'complexity:medium'
@@ -45,10 +45,10 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#GC-WEDGE-REMOVAL-FOLD-2026-07-10 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The model's journal event records the removed owner kind (committed or precommit), or a `HasUnfoldedCommittedRemoval` predicate exists
-- [ ] #2 Invariant `HasUnfoldedCommittedRemoval(m) => mBody[m]` holds on every existing honest cfg of the model
-- [ ] #3 A new `SabotageSweepUnfoldedRemoval` constant (FALSE in every existing cfg) yields a counterexample in its own negative cfg
-- [ ] #4 `CaGcRootLocalPartManifestCore_RESULTS.md` (or the model README) records the run and the counterexample
+- [x] #1 The model's journal event records the removed owner kind (committed or precommit), or a `HasUnfoldedCommittedRemoval` predicate exists
+- [x] #2 Invariant `HasUnfoldedCommittedRemoval(m) => mBody[m]` holds on every existing honest cfg of the model
+- [x] #3 A new `SabotageSweepUnfoldedRemoval` constant (FALSE in every existing cfg) yields a counterexample in its own negative cfg
+- [x] #4 `CaGcRootLocalPartManifestCore_RESULTS.md` (or the model README) records the run and the counterexample
 <!-- AC:END -->
 
 ## Definition of Done
@@ -63,4 +63,6 @@ Provenance: utils/ca-soak/scenarios/BACKLOG.md#GC-WEDGE-REMOVAL-FOLD-2026-07-10 
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-13: absorbed by CAS-358 §7: the model gains foldOwned, the owner-kind on the journal event, invariant HasUnfoldedCommittedRemoval(m) => mBody[m], and SabotageSweepUnfoldedRemoval exactly as this task's ACs state. Keep open until the run is recorded in CaGcRootLocalPartManifestCore_RESULTS.md.
+
+- 2026-10-15: done inside the CAS-358 modelling. HasUnfoldedCommittedRemoval (removal event with ref in Refs), INV_COMMITTED_REMOVAL_BODY green on fix_floorfirst, fix_combined and fix_snapshotview; SabotageSweepUnfoldedRemoval drops the live view's tail protection (added to the model, the code has it as tail_removal_targets) and sab_sweepunfoldedremoval is red in 2 s; recorded in CaGcRootLocalPartManifestCore_RESULTS.md §cas-358-snapshot-view.
 <!-- SECTION:NOTES:END -->

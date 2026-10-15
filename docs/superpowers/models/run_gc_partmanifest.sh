@@ -85,6 +85,19 @@ CONFIGS=(
     "sab_recheck                     violation               INV_NO_DANGLE"
     "fenced_late_bound_recheck       green                   -"
     "fenced_late_unbounded_recheck   violation               INV_NO_DANGLE"
+    # CAS-358 stage 2: the owner view is the writer's checkpoint-named snapshot (`SnapshotView`), with the
+    # epoch and cursor guards. Each guard has its sabotage; `witness_snapshotswept` proves the rule deletes.
+    # CAS-310: the live view keeps the tail-removal protection; `sab_sweepunfoldedremoval` drops it.
+    "fix_snapshotview                green                   -"
+    "witness_snapshotswept           violation               W_SnapshotDebrisSwept"
+    "witness_rebirthswept            violation               W_RebirthDebrisSwept"
+    "sab_snapcursor                  violation               INV_COMMITTED_REMOVAL_BODY"
+    "sab_snapepoch                   violation               INV_NO_DANGLE"
+    "sab_snapmissing                 violation               INV_NO_DANGLE"
+    "sab_grantcrossepoch             violation               INV_NO_DANGLE"
+    "sab_grantcrossepoch_rowed       violation               INV_NO_DANGLE"
+    "sab_floorfirst_snap             violation               INV_NO_DANGLE"
+    "sab_sweepunfoldedremoval        violation               INV_COMMITTED_REMOVAL_BODY"
 )
 
 SLOW_CONFIGS=(
@@ -93,6 +106,7 @@ SLOW_CONFIGS=(
     "stage4                          green                   -"
     "stage5_lazytrim                 green                   -"
     "live                            green                   -"
+    "fix_snapshotview_rebirth        green                   -"
 )
 [[ "${SLOW:-0}" == 1 ]] && CONFIGS+=("${SLOW_CONFIGS[@]}")
 check_tlc_temporal_expectations "$JAR" "${CONFIGS[@]}" || exit 3

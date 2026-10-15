@@ -592,3 +592,102 @@ rows are unchanged (`empty_namespaces` 696, `stage0` 19,846, `stage1` 402,034). 
   (`CasRefCatalog::deleteCompletedRemovingAtSnapshot`) deletes the old life's `_ckpt` before the row is
   gone is not modeled. The life pin (`FixPinLife`) would also close this, by refusing a precommit under
   a life other than the staging life.
+
+## CAS-358 stage 2: the snapshot as the owner view {#cas-358-snapshot-view}
+
+Spec: `docs/superpowers/specs/2026-10-14-cas-orphan-sweep-cadence-and-snapshot-view-design.md` §4.1 and §4.8.
+Runs of 2026-10-15 on the model at the commit that adds `SnapshotView`; 16 workers (28 for `fix_snapshotview`),
+16 to 24 GB heap, `nice 10`.
+
+### Shape modeled {#cas-358-shape-modeled}
+
+- `snapPos[n]` is the writer's checkpoint-named snapshot position (0 = none). `WSnapshot(n)` moves it to any
+  later committed position of a rowed namespace; `WCreateNamespace` resets it (a new life has no snapshot).
+- A journal event carries `ep`, the appending runtime's writer epoch (`opEp`, else `mountEpoch`), so
+  `EpochOf(n, p)` is `P.writer_epoch`. `OwnedAt(n, p, m)` is derived from the journal prefix: the snapshot's
+  `committed` plus `precommits`.
+- `SnapshotView = TRUE` makes `GSwView` retain `m` iff `SnapRetain(m)`: no snapshot, or `OwnedAt(snapPos, m)`,
+  or `~(mEpoch[m] < EpochOf(snapPos))`, or `cursor < snapPos` (spec rules 3 to 5). Rules 1 and 2 (floor, row)
+  stay in `SwNominable`. The live view (`SnapshotView = FALSE`) gains the tail-removal protection the code has
+  (`tail_removal_targets`): a body whose `-1` is unfolded is retained.
+- New invariant `INV_COMMITTED_REMOVAL_BODY == HasUnfoldedCommittedRemoval(m) => mBody[m]` (CAS-310).
+- Snapshot cfgs: two manifest instances, one build prefix, `Blobs = {}` (the sweep proof needs no blob),
+  `MaxLog = 3`, `EnableFenceEpochs`, `EnableRemount`, `MaxEpoch = 2`, `AdmissionBound`, `GcFencedEligible`,
+  `FixFloorAll`, `FixFloorBeforeCatalog`. A first attempt with two prefixes and a blob exceeded 610 M distinct
+  states and filled the disk; the trimmed shape completes.
+
+### Results {#cas-358-results}
+
+| cfg | shape | outcome | states generated / distinct | depth | time |
+|---|---|---|---|---|---|
+| `fix_snapshotview` | rules 1-5, honest | green (all invariants incl. `INV_COMMITTED_REMOVAL_BODY`) | 5,268,205,965 / 771,884,088 | 45 | 3365 s |
+| `witness_snapshotswept` | same, `W_SnapshotDebrisSwept` | violated (the rule deletes) | 83,219,303 / 19,758,654 | 17 states | 70 s |
+| `sab_snapcursor` | rule 5 dropped | `INV_COMMITTED_REMOVAL_BODY` violated | 10,342,132 distinct | 16 states | 35 s |
+| `sab_snapepoch` | rule 4 dropped | `INV_NO_DANGLE` violated | 26,547,044 distinct | 18 states | 96 s |
+| `sab_snapmissing` | no snapshot = empty set | `INV_NO_DANGLE` violated | 1,715,805 distinct | 14 states | 7 s |
+| `sab_grantcrossepoch` | grant may name an older epoch (no CAS-391) | `INV_NO_DANGLE` violated | 4,973,298 distinct | 15 states | 17 s |
+| `sab_grantcrossepoch_rowed` | same, `FixStageAfterBirth` (no rowless path) | `INV_NO_DANGLE` violated | 121,688,926 / 26,283,603 | 19 states | 99 s |
+| `sab_floorfirst_snap` | cut before the floor, snapshot view | `INV_NO_DANGLE` violated | 2,200,242 distinct | 14 states | 9 s |
+| `sab_sweepunfoldedremoval` | live view without tail protection (CAS-310) | `INV_COMMITTED_REMOVAL_BODY` violated | 116,689 distinct | 14 states | 2 s |
+| `witness_rebirthswept` | `EnableNsRemoval`, `MaxLife = 2`, `W_RebirthDebrisSwept` | violated (old-life key deleted under the reborn name) | 708,658,811 / 158,029,768 | 19 states | 698 s |
+
+`fix_floorfirst` and `fix_combined` now also check `INV_COMMITTED_REMOVAL_BODY` (CAS-310 AC2).
+`fix_snapshotview_rebirth` (the exhaustive rebirth run) is registered under `SLOW=1` and was not run: its
+space is several times `fix_snapshotview`'s and does not fit the disk; the rebirth witness stands in.
+
+### Legacy battery after the change {#cas-358-legacy-battery}
+
+The model change touches every cfg (new constants, the `ep` field on journal events, the tail-removal
+protection in the live view, `mPrefix` chosen freely, the promote guard). The default battery
+(`run_gc_partmanifest.sh`, 64 cfgs, `SnapshotView = FALSE`) was rerun with 16 workers: every row matched its
+expectation (`ALL EXPECTATIONS MET` up to the new rows; the hour-long `fix_snapshotview` was then run on its own,
+above). Longest rows: `sab_deletebodybeforedecrements` 668 s, `superseded_late_bound` 394 s,
+`fix_recheck_life` 389 s, `fix_floorfirst` 152 s (23.8 M -> unchanged outcome).
+
+### Counterexamples {#cas-358-counterexamples}
+
+- **`sab_snapcursor` (the CAS-310 shape).** Admit, stage `m1`, create row, precommit, promote (epoch 1);
+  resolve, remount (epoch 2); `WDropRef(m1)` journals the `-1` at position 3 under epoch 2; `WSnapshot` takes
+  `P = 3`; the fold cursor is 0. Page: `m1 ∉ snap(P)`, `1 < 2`, floor retires epoch 1; without `cursor >= P`
+  the sweep nominates and deletes `m1` while its committed removal is unfolded.
+- **`sab_snapepoch`.** `m1` and `m2` precommitted in epoch 1, `m2` promoted (position 3); one fold step
+  (cursor 1); `WSnapshot` takes `P = 1` (only `m1`'s grant); `GFence` retires epoch 1 at the floor. `m2` is
+  absent from `snap(1)`, owned, floor-ended, `cursor >= P`; only `mEpoch[m2] = 1 = EpochOf(1)` retains it.
+  Without rule 4 the committed body is deleted.
+- **`sab_snapmissing`.** Row, precommit, promote, build ends; `snapPos = 0` treated as an empty owner set
+  deletes the committed body.
+- **`sab_grantcrossepoch`.** `m1` staged in epoch 1 without a row; remount; the page sees `m1` rowless and
+  floor-ended (epoch 1 retired) and nominates it; the writer then creates the row and grants and promotes
+  `m1` under epoch 2 (the gap `requireAlive` then runtime capture leaves); the post-CAS delete removes a
+  committed body. The shortest trace goes through the rowless branch: the gap breaks the floor as much as
+  the snapshot rule.
+- **`sab_grantcrossepoch_rowed`.** With `FixStageAfterBirth` the rowless path is closed and the trace goes
+  through the snapshot rule: `m1`, `m2` staged in epoch 1 under the row; remount; the page samples the floor
+  (epoch 1 retired) and the cut; under epoch 2 the writer grants `m1` and `m2` and promotes `m2`; the fold
+  takes `m1`'s grant (cursor 1); `WSnapshot` takes `P = 1`. `m2 ∉ snap(1)`, `mEpoch[m2] = 1 < 2`, `cursor >= P`:
+  the view admits the deletion of a committed body. CAS-391's append check refuses the grant at step 13.
+- **`sab_floorfirst_snap`.** The CAS-36 schedule unchanged: LIST, cut (rowless), row, precommit, promote,
+  build ends, floor, view, delete.
+- **`sab_sweepunfoldedremoval`.** Live view: precommit, promote, `WDropRef`, build ends, page; without the
+  tail protection the removed body is nominated and deleted before the fold emits its `-1`.
+- **`witness_rebirthswept`.** Row (life 1), stage `m1`, remove the row, re-create (life 2), grant `m1` under
+  life 2 (no `FixPinLife`), fold; remount; abandon `m1` under epoch 2, fold; `WSnapshot`; the page deletes
+  `m1`, a key staged under life 1 and absent from life 2's snapshot. (Debris never granted at all needs an
+  epoch-2 event of another manifest to pass rule 4; TLC's shortest witness grants the key itself.)
+- **`witness_snapshotswept`.** Admit, stage `m1`, row, precommit (epoch 1); resolve, remount;
+  `WAbandonPrecommit(m1)` under epoch 2 (position 2); `WSnapshot` `P = 2`; fold to 2; page deletes `m1`:
+  its `-1` is folded, the snapshot does not name it, its epoch is below the snapshot's.
+
+### Verdict {#cas-358-verdict}
+
+- Rules 3 to 5 over the checkpoint-named snapshot, with rules 1 and 2 as today, hold `INV_NO_DANGLE`,
+  `INV_COMMITTED_REMOVAL_BODY` and the rest of the battery on the full space of the trimmed shape (772 M
+  distinct states, depth 45), and the rule is not vacuous (`witness_snapshotswept`).
+- Each of the three snapshot terms is load-bearing: dropping the cursor term reproduces CAS-310, dropping the
+  epoch term deletes a build granted after the snapshot in the snapshot's epoch, treating a missing snapshot as
+  empty deletes a committed body.
+- The floor-before-cut order (CAS-36) is still required under the snapshot view.
+- Without CAS-391 (a grant naming a manifest of an older epoch than the appending runtime's) the rule is
+  unsound, through the rowless branch and through the snapshot branch alike.
+- CAS-310: the live view needs the tail-removal protection; the model now has it, the invariant, and the
+  sabotage (AC1-3).
