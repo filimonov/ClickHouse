@@ -690,6 +690,36 @@ Expected:
 - Successful statements remain correct.
 - Failed statements fail cleanly with no committed partial ref.
 
+### S47: pool-member decommission under load
+
+Purpose: `SYSTEM CAS DROP POOL MEMBER` of a dead member while survivors run the soak workload; the
+decommission killed after each of its six steps and rerun; the member rejoined empty.
+
+```bash
+CA_SOAK_CLICKHOUSE_BINARY=<path to clickhouse> \
+  python3 -m scenarios.run --scenario S47 --seed 47 --duration 60m
+```
+
+Stand: `docker-compose-s47.yml`. ch1 and ch2 run `soak.run --phase 3 --no-chaos`; ch3 is the victim;
+ch4 runs the verb and reaches the store through `proxy/s3_fault_proxy.py`. The proxy's `hold` rule parks
+the first request after step N, before or after the store applies it; the card kills ch4 while it is parked.
+
+Cycles (`--param cycles=...`, default `A,K1,K2,K3,K4,K5,K6,N`):
+
+| Cycle | Kill point | Then |
+|---|---|---|
+| `A` | none | refusal while the victim's lease looks live; one run retires it |
+| `K1` | before the tombstone write | the id is not retired; a new run retires it |
+| `K2` | after the tombstone write lands | victim start refused `decommission is not finished`; rerun |
+| `K3` | before the first drain write | as `K2` |
+| `K4` | before the farewell | as `K2` |
+| `K5` | before the verified mark | as `K2` |
+| `K6` | after the verified mark lands | no rerun |
+| `N` | none | the victim's uuid file is removed; it rejoins under a new uuid |
+
+Every cycle ends with GC rounds, a restart of the victim that must rejoin empty and accept inserts, a check
+of content the survivor shares with the victim, and fsck. The soak oracle on ch1/ch2 is the final verdict.
+
 ## P2 scenario cards
 
 ### S23: idle shared pool baseline

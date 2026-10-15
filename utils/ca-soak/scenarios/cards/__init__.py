@@ -20,3 +20,4 @@ from . import s43_same_uuid_recreation  # noqa: F401
 from . import s44_rebirth_namespace_file_readers  # noqa: F401
 from . import s45_decommission_hidden_removing  # noqa: F401
 from . import s46_restart_under_gc  # noqa: F401
+from . import s47_decommission_under_load  # noqa: F401

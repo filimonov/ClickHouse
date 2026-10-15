@@ -1,0 +1,187 @@
+# S47: pool-member decommission under load. Four servers over one CAS pool on RustFS:
+#   ch1, ch2  the soak workload replicas (phase 3 oracle), never killed by the card;
+#   ch3       the victim, killed, decommissioned and rejoined;
+#   ch4       the decommission executor. Only its requests go through `s3proxy`, so the card can park
+#             one step of `SYSTEM CAS DROP POOL MEMBER` and kill ch4 between two steps.
+# Container names stay `ca-soak-ch<i>-1` (project = directory name), so `soak.run` drives ch1/ch2 as usual.
+# `CA_SOAK_CLICKHOUSE_BINARY` points the stand at a binary built in another worktree.
+#
+#   docker compose -f docker-compose-s47.yml up -d / down -v --remove-orphans
+
+services:
+  s3proxy:
+    image: python:3.12-slim
+    command: ["python3", "/app/s3_fault_proxy.py"]
+    environment:
+      RUSTFS_UPSTREAM: "rustfs1:11121"
+      S3_PROXY_PORT: "11121"
+      S3_PROXY_CTL_PORT: "8474"
+    depends_on:
+      - rustfs1
+    volumes:
+      - ./proxy:/app:ro
+    expose:
+      - "11121"
+    ports:
+      - "8474:8474"
+  rustfs1:
+    image: rustfs/rustfs:1.0.0-rc.3
+    command: server --address 0.0.0.0:11121
+    env_file: configs/rustfs.env
+    expose:
+      - "11121"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+  createbucket:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    depends_on:
+      - rustfs1
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set carustfs http://rustfs1:11121 clickhouse clickhouse; do
+        echo 'waiting for rustfs...'; sleep 1;
+      done;
+      /usr/bin/mc mb --ignore-existing carustfs/test;
+      until /usr/bin/mc ls carustfs/test >/dev/null 2>&1; do
+        echo 'waiting for bucket to become visible...'; sleep 1;
+      done;
+      echo 'bucket ready';
+      "
+  keeper1:
+    image: clickhouse/clickhouse-server:25.8
+    entrypoint: ["/usr/bin/clickhouse", "keeper", "--config-file", "/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/keeper.xml:/etc/clickhouse-keeper/keeper.xml:ro
+    expose:
+      - "9181"
+
+  ch1:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    depends_on:
+      keeper1:
+        condition: service_started
+      createbucket:
+        condition: service_completed_successfully
+    mem_limit: 12g
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_ch1.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+      - ./configs/macros_node1.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+      - ./configs/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ./configs/ca_gc_log.xml:/etc/clickhouse-server/config.d/ca_gc_log.xml:ro
+      - ./configs/ca_event_log.xml:/etc/clickhouse-server/config.d/ca_event_log.xml:ro
+      - ./configs/ca_server_settings.xml:/etc/clickhouse-server/config.d/ca_server_settings.xml:ro
+      - ./logs/ch1:/var/log/clickhouse-server
+    ports:
+      - "8123:8123"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
+      start_period: 5s
+
+  ch2:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    depends_on:
+      keeper1:
+        condition: service_started
+      createbucket:
+        condition: service_completed_successfully
+      ch1:
+        condition: service_healthy
+    mem_limit: 12g
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_ch2.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+      - ./configs/macros_node2.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+      - ./configs/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ./configs/ca_gc_log.xml:/etc/clickhouse-server/config.d/ca_gc_log.xml:ro
+      - ./configs/ca_event_log.xml:/etc/clickhouse-server/config.d/ca_event_log.xml:ro
+      - ./configs/ca_server_settings.xml:/etc/clickhouse-server/config.d/ca_server_settings.xml:ro
+      - ./logs/ch2:/var/log/clickhouse-server
+    ports:
+      - "8124:8123"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
+      start_period: 5s
+
+  ch3:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    depends_on:
+      keeper1:
+        condition: service_started
+      createbucket:
+        condition: service_completed_successfully
+      ch2:
+        condition: service_healthy
+    mem_limit: 12g
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_10replicas_ch3.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+      - ./configs/macros_node3.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+      - ./configs/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ./configs/ca_gc_log.xml:/etc/clickhouse-server/config.d/ca_gc_log.xml:ro
+      - ./configs/ca_event_log.xml:/etc/clickhouse-server/config.d/ca_event_log.xml:ro
+      - ./configs/ca_server_settings.xml:/etc/clickhouse-server/config.d/ca_server_settings.xml:ro
+      - ./logs/ch3:/var/log/clickhouse-server
+    ports:
+      - "8125:8123"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
+      start_period: 5s
+
+  ch4:
+    image: clickhouse/clickhouse-server:25.8
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+    depends_on:
+      keeper1:
+        condition: service_started
+      createbucket:
+        condition: service_completed_successfully
+      s3proxy:
+        condition: service_started
+      ch3:
+        condition: service_healthy
+    mem_limit: 12g
+    volumes:
+      - ${CA_SOAK_CLICKHOUSE_BINARY:-../../build/programs/clickhouse}:/usr/bin/clickhouse:ro
+      - ./configs/storage_conf_s47_ch4.xml:/etc/clickhouse-server/config.d/storage_conf.xml:ro
+      - ./configs/fsck_only_ca.xml:/etc/clickhouse-server/fsck-only.xml:ro
+      - ./configs/keeper_client.xml:/etc/clickhouse-server/config.d/keeper_client.xml:ro
+      - ./configs/macros_node4.xml:/etc/clickhouse-server/config.d/macros.xml:ro
+      - ./configs/memory.xml:/etc/clickhouse-server/config.d/memory.xml:ro
+      - ./configs/ca_gc_log.xml:/etc/clickhouse-server/config.d/ca_gc_log.xml:ro
+      - ./configs/ca_event_log.xml:/etc/clickhouse-server/config.d/ca_event_log.xml:ro
+      - ./configs/ca_server_settings.xml:/etc/clickhouse-server/config.d/ca_server_settings.xml:ro
+      - ./logs/ch4:/var/log/clickhouse-server
+    ports:
+      - "8126:8123"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
+      start_period: 5s

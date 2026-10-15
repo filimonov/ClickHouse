@@ -52,6 +52,8 @@ _VARIANT_FILE = {
     # run with `--no-reset` against a pre-brought-up stack: reset_cluster's mandatory pre-`down` is
     # scoped to the `ca-soak` project and would tear that stack down.
     "s41": "docker-compose-s41.yml",
+    # S47: four servers; ch4 reaches the store through the hold-capable S3 proxy.
+    "s47": "docker-compose-s47.yml",
 }
 
 # Replica count per compose variant — drives the N-node Cluster + health wait + log-dir prep.
@@ -88,7 +90,7 @@ def apply_variant_env(variant) -> None:
 _VARIANT_NODES = {
     None: 2, "default": 2, "gc_shards2": 2,
     "tenreplicas": 10, "gc_shards8": 2, "s3faultproxy": 2, "s3listproxy": 2, "s38": 2,
-    "tuned": 2, "multidisk": 2, "s41": 1,
+    "tuned": 2, "multidisk": 2, "s41": 1, "s47": 4,
 }
 
 
