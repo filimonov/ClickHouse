@@ -138,7 +138,10 @@ CONSTANTS
     NewDecom,           \* the operator may start a new decommission of a live (not retired) owner
     \* Round 10 (spec r10, step 6):
     MarkSplit,          \* the verified mark lands, then a separate step records it; the tool may die in between
-    RerunObserved       \* a rerun only when the owner shows this run's own unverified tombstone
+    RerunObserved,      \* a rerun only when the owner shows this run's own unverified tombstone
+    \* Round 12 (PR #2567 fix round):
+    TombFenced,         \* the tombstone PUT goes on the admin's fenced plane: sent and landed only while its claim holds
+    RollbackKeepsRetired \* a rollback keeps any earlier retirement, verified or not (FALSE: only a verified one)
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
@@ -975,7 +978,7 @@ DRetire ==
 \* op.read(owner_key).
 DReadOwner ==
     /\ pc["d"] = IF KeepAll /\ ~TombLast THEN "dlive" ELSE "downer"
-    /\ dOwn' = (ownerRetired /\ (VerifiedMark => OwnerVerified))
+    /\ dOwn' = (ownerRetired /\ ((VerifiedMark /\ ~RollbackKeepsRetired) => OwnerVerified))
     /\ dOwnTok' = OTok
     /\ dTombTok' = <<>>
     /\ dLife' = life
@@ -994,14 +997,15 @@ TombFloor == IF OwnerFloor THEN Max2(ownerFloor, dCap.obj.v) ELSE ownerFloor
 \* op.replace(owner_key, tombstone, owner->etag).  The token is a generation: retired_at_ms makes every
 \* tombstone new bytes, and a cleared tombstone keeps the floor, so no owner write repeats earlier bytes.
 \* Disjunct 2: the response is lost and the resolve budget runs out; the tool stops ("dfail") and the
-\* PUT may land later (OwnerLateLand).
+\* PUT may land later (OwnerLateLand).  `TombFenced`: the fence refuses the PUT once the claim is gone,
+\* and the tool stops without a tombstone.
 DTombstone ==
     /\ pc["d"] = "dtomb"
-    /\ \/ /\ IF OTok = dOwnTok /\ ~ownerGone
+    /\ \/ /\ IF OTok = dOwnTok /\ ~ownerGone /\ (TombFenced => OwnClaim(myMTok["d"]))
              THEN /\ ownerRetired' = TRUE /\ ownerFloor' = TombFloor
                   /\ ownerGen' = ownerGen + 1 /\ oStamp' = ownerGen + 1
                   /\ dTombTok' = OTokOf(ownerUuid, TRUE, TombFloor, ownerGen + 1, ownerGen + 1)
-                  /\ vTok' = IF KeepVerified /\ dOwn
+                  /\ vTok' = IF KeepVerified /\ dOwn /\ (RollbackKeepsRetired => OwnerVerified)
                              THEN OTokOf(ownerUuid, TRUE, TombFloor, ownerGen + 1, ownerGen + 1) ELSE vTok
                   /\ pc' = [pc EXCEPT !["d"] = IF Retire /\ RetireDeletesMount THEN "ddelm"
                                                ELSE IF Tail2 THEN (IF UntombOnMove THEN "dpost"
@@ -1015,7 +1019,7 @@ DTombstone ==
                                 tombForeign, vTok>>
                   /\ pc' = [pc EXCEPT !["d"] = "dstop"]
           /\ UNCHANGED oInfl
-       \/ /\ TombAmbig /\ ~oInfl.on
+       \/ /\ TombAmbig /\ ~oInfl.on /\ (TombFenced => OwnClaim(myMTok["d"]))
           /\ oInfl' = [on |-> TRUE, tok |-> dOwnTok, floor |-> TombFloor, life |-> dLife,
                        ep |-> myEpoch["d"], mtok |-> myMTok["d"], intro |-> ~dOwn]
           /\ pc' = [pc EXCEPT !["d"] = "dfail"]
@@ -1030,13 +1034,14 @@ DTombstone ==
 OwnerLateLand ==
     /\ oInfl.on
     /\ oInfl' = [oInfl EXCEPT !.on = FALSE]
-    /\ IF OTok = oInfl.tok /\ ~ownerGone
+    \* TombFenced: a request sent under the claim lands before its lease deadline, so not after the claim is gone.
+    /\ IF OTok = oInfl.tok /\ ~ownerGone /\ (TombFenced => OwnClaim(oInfl.mtok))
        THEN /\ ownerRetired' = TRUE /\ ownerFloor' = oInfl.floor
             /\ ownerGen' = ownerGen + 1 /\ oStamp' = ownerGen + 1
             /\ staleDecom' = (staleDecom \/ life > oInfl.life)
             /\ tombOverLive' = (tombOverLive \/ (KeepAll /\ LiveHolder))
             /\ tombForeign' = (tombForeign \/ ownerUuid # Uuid("d"))
-            /\ vTok' = IF KeepVerified /\ ~oInfl.intro
+            /\ vTok' = IF KeepVerified /\ ~oInfl.intro /\ (RollbackKeepsRetired => OwnerVerified)
                        THEN OTokOf(ownerUuid, TRUE, oInfl.floor, ownerGen + 1, ownerGen + 1) ELSE vTok
             \* Lifecycle: the paused run goes on to its confirm (or straight to its drain).
             /\ zDrain' = IF KeepAll

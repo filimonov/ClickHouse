@@ -192,6 +192,10 @@ CONFIGS=(
     "r10_core                             green      -"
     "r10_newuuid                          green      -"
     "res_r10_blindrerun                   violation  NoDrainOfLaterLife"
+    # Round 12 (PR #2567 fix round): the tombstone on the admin's fenced plane; a rollback keeps any retirement.
+    "r12_core_z                           green      -"
+    "r12_tombambig                        green      -"
+    "sab_r12_tombopen                     violation  NoTombOverLive"
 )
 # Two to twelve minutes each.
 SLOW_CONFIGS=(
@@ -213,6 +217,8 @@ SLOW_CONFIGS=(
     "r8_remount                           green      -"
     "r9_remount                           green      -"
     "res_r9_uuidreuse                     violation  OldNotUnderNewOwner"
+    "r12_noverify                         green      -"
+    "sab_r12_keepretired_open             violation  LiveMatchesOwnerAtRest"
 )
 [[ "${SLOW:-0}" == 1 ]] && CONFIGS+=("${SLOW_CONFIGS[@]}")
 # Ad-hoc rows for exploration: EXTRA="name expect invariant;name expect invariant".

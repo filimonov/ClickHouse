@@ -21,6 +21,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 9 (spec r9): green** (`r9_*`). The tool now reads its victim from the owner, as the code does; Opus P1-A is reproduced through an unverified rejoin (`sab_r9_rejoinunverified`) and a rerun after a verified run (`res_r9_rerunafterverified`), both closed by r9. New mixed-version residual: two rejoins of different uuids racing let a paused 26.6.4 starter run under the other uuid (`res_r9_uuidreuse`).
 - **Round 10 (spec r10, step 6): green with the rerun gated by the observed owner** (`r10_*`); a blind rerun after a tool killed past its verified mark drops a rejoined member (`res_r10_blindrerun`, documented residual).
 - **Round 11: green with the rejoin rewrite keyed on the retired owner's uuid, as in the code** (every rejoin row keeps its verdict); `res_r9_uuidreuse` still violates, with a trace of 57 states instead of 41.
+- **Round 12 (PR #2567 fix round): green with the tombstone on the admin's fenced plane** (`r12_*`). Without the fence an unresolved tombstone lands over a live member (`sab_r12_tombopen`); a rollback that keeps any earlier retirement is safe only with the fence (`sab_r12_keepretired_open` red, `r12_noverify` green).
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -611,6 +612,38 @@ All green rows stayed green and every sabotage and residual row still finds its 
 3. The paused 26.6.4 starter `o` (uuid 1) reclaims that body (`ClaimReclaim`) and runs under the retired owner `u2`.
 
 This is the residual stated in round 9: while the slot holds a terminal uuid-X body and the owner is another uuid, a paused 26.6.4 uuid-X starter can reclaim it. The new predicate removes the trace that needs no second retirement and keeps the one that does. The mixed-version residual stays documented.
+
+## Round 12: the tombstone on the admin's fenced plane {#round-12}
+
+The PR #2567 review found that the code sent the tombstone on the unfenced control plane with a 90 s retry budget, so a retry could land after the admin's lease ran out. The fix sends it on the admin's mount plane, and a rollback then keeps any earlier retirement, verified or not.
+
+### What changed {#round-12-design}
+
+| Switch | Model | Code |
+|---|---|---|
+| `TombFenced` | `DTombstone` writes, and sends an unresolved PUT, only while `OwnClaim(myMTok["d"])`; `OwnerLateLand` lands only while `OwnClaim(oInfl.mtok)`. The same abstraction of the lease-deadline fence as `DrainFenced` | `writeTombstone` replaces on `admin->mountRequests()` |
+| `RollbackKeepsRetired` | `DReadOwner` sets `dOwn` for any retired owner, so `DConfirmClaim` and a paused run's confirm stop without a rollback; `KeepVerified` still keeps only a verified mark | `Tombstone::previously_retired` |
+
+Two code changes of the round needed no model change: the remount life check (`RemountOwner` already sends a process on another life to `Down`, and the admin to its confirm, before `aread`), and `member_retired` only on a verified mark (with `VerifiedMark`, `ddone` is reached only through `DMarkVerified` on this run's tombstone). `TombFenced = FALSE` and `RollbackKeepsRetired = FALSE` are added to every earlier config.
+
+### Results {#round-12-results}
+
+"I9" as in round 9. `r12_noverify` ran with 24 workers and `TLC_TIMEOUT=2400`; at the default 1200 s and with a GC round it timed out after 242,380,086 states at depth 40 without a violation, so its GC round was dropped (the `sab_r6_noverify` trace needs none). The other rows ran with 8 workers.
+
+| Config | What | Invariants | Expected | Result | States | Depth |
+|---|---|---|---|---|---|---|
+| `r12_core_z` | `r9_core_z` (paused run, GC fences of the admin) with both switches | I9 + NoTombOverLive | green | green | 7,827,194 | 69 |
+| `r12_tombambig` | `r10_core` with an unresolved tombstone that may land later, both switches | I9 + NoTombOverLive | green | green | 454,523 | 63 |
+| `sab_r12_tombopen` | `r12_tombambig` without `TombFenced` | NoTombOverLive | violation | violation | 5,991 | 22 |
+| `r12_noverify` (SLOW) | the `sab_r6_noverify` scenario (two instances, paused run 1, GC-fenced rerun) with the mark and both switches, no GC round | LiveMatchesOwnerAtRest + NoTombOverLive | green | green | 301,427,388 | 69 |
+| `sab_r12_keepretired_open` (SLOW) | `r12_noverify` without `TombFenced` | LiveMatchesOwnerAtRest | violation | violation | 6,229,355 | 35 |
+
+Regression: the default battery (173 rows, including the three non-SLOW rows above) met every expectation on the edited model. The SLOW rows of earlier rounds were not rerun; the new switches are `FALSE` there and their actions reduce to the round-11 ones.
+
+### Findings {#round-12-findings}
+
+- **The fenced tombstone closes the late landing.** With `TombFenced`, no tombstone lands while a member holds the slot live, with a paused earlier run and GC fences of the admin (`r12_core_z`) and with an unresolved PUT (`r12_tombambig`). Without it, the unresolved PUT lands over a victim that reclaimed the slot (`sab_r12_tombopen`, the window `res_lc_tombover` showed for an atomic tombstone).
+- **A rollback may keep an unverified retirement only with the fence.** `sab_r12_keepretired_open` follows the `sab_r6_noverify` trace: run 1 pauses with its tombstone in flight, the rerun claims and is GC-fenced, the victim reclaims and passes its recheck, run 1's tombstone lands over it, and no rollback removes it. With the fence that tombstone cannot land, and `r12_noverify` is green.
 
 ## Code checks {#code-checks}
 
