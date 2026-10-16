@@ -4,6 +4,7 @@ title: Do not throw LOGICAL_ERROR from installRenewer when a stop races a remoun
 status: To Do
 assignee: []
 created_date: '2026-10-16 00:29'
+updated_date: '2026-10-16 23:57'
 labels:
   - 'area:mounts'
 dependencies: []
@@ -29,3 +30,9 @@ Found by the TLA run for PR #2517 (model CaRenewalDriver, config finding_install
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-17: the PR #2567 fix round hit the same stop-vs-remount race in a new test (admin self-remount during teardown after a fake-clock jump: release teardown hung watching its own body on a frozen clock; with the slot fenced, ASan hit this LOGICAL_ERROR). Latent in DrainStopsOnTheAdminLeaseFence and DrainStopsWalkingAfterTheFirstRefusedDelete. Also: the remount's observation sleep ignores a stop request, so a production teardown can wait up to the observation window.
+<!-- SECTION:NOTES:END -->
