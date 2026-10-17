@@ -117,6 +117,7 @@ New invariants:
 | `INV_ACKED_REACHABLE` | every acknowledged id is a `log` in `epHist`: the chain `_ckpt.committed_through` certifies, which recovery walks above the checkpoint and every snapshot and GC fold covers below it |
 | `INV_REJECT_TRUTHFUL` | a `Closed` (conclusive rejection) is never reported for an id history holds as a log |
 | `INV_SUCCESSOR_NO_CORRUPTION` | honest successors never hit the `_ckpt` corruption throw |
+| `INV_SUCCESSOR_NOT_REFUSED` | A2 never refuses a successor's adoption, seal, append or snapshot publish while it holds the lease |
 | `W_SEAL_SLOT_RELANDED` | witness: a log sits in a slot history holds as a seal |
 | `W_STRAGGLER_ACKED_AFTER_TAKEOVER` | witness: the zombie acknowledges an adopted straggler after a takeover |
 | `W_ZOMBIE_UNRESOLVED` | witness: A2's epoch-exact branch refuses a zombie contribution |
@@ -147,9 +148,10 @@ same 94,367 / 32,598, so that row predates the `_frontier_safe.cfg` change in `a
 | `_fix_a_3ep` | A | 3 | broken | violation | `INV_ACKED_REACHABLE` | 102,093 / 29,066 | 28 | 1 |
 | `_fix_a2_2ep` | A2 | 2 | broken | green | green | 22,659 / 5,491 | 35 | 1 |
 | `_fix_a2` | A2 | 3 | broken | green | green | 1,738,229 / 358,385 | 49 | 6 |
-| `_fix_a2_witness` | A2 | 3 | broken | witness | `W_SEAL_SLOT_RELANDED` | 13,691 / 4,568 | 21 | 1 |
-| `_fix_a2_witness_straggler` | A2 | 3 | broken | witness | `W_STRAGGLER_ACKED_AFTER_TAKEOVER` | 655 / 267 | 10 | 1 |
-| `_fix_a2_witness_unresolved` | A2 | 3 | broken | witness | `W_ZOMBIE_UNRESOLVED` | 8,112 / 2,828 | 19 | 1 |
+| `_fix_a2_witness` | A2 | 3 | broken | witness | `W_SEAL_SLOT_RELANDED` | 10,175 / 3,474 | 20 | 1 |
+| `_fix_a2_witness_straggler` | A2 | 3 | broken | witness | `W_STRAGGLER_ACKED_AFTER_TAKEOVER` | 652 / 267 | 11 | 1 |
+| `_fix_a2_witness_unresolved` | A2 | 3 | broken | witness | `W_ZOMBIE_UNRESOLVED` | 7,143 / 2,509 | 19 | 1 |
+| `_sab_a2_le` | A2 with `<=` in the epoch test | 3 | broken | violation | `INV_SUCCESSOR_NOT_REFUSED` | 992 / 386 | 11 | 0 |
 | `_fix_b` | B: GC keeps `last_epoch_seal` | 2 | broken | green | green | 18,847 / 4,619 | 35 | 1 |
 | `_sab_b` | B, seal from a separate earlier read | 2 | broken | violation | `INV_ACKED_REACHABLE` | 16,583 / 4,788 | 25 | 1 |
 | `_fix_b_3ep` | B | 3 | broken | violation | `INV_ACKED_REACHABLE` | 104,568 / 29,845 | 28 | 2 |
@@ -158,6 +160,17 @@ same 94,367 / 32,598, so that row predates the `_frontier_safe.cfg` change in `a
 | `_sab_b3` | B3 skipped when the frontier is a seal | 3 | broken | violation | `INV_ACKED_REACHABLE` | 104,085 / 29,719 | 28 | 2 |
 
 `_fix_a2_2ep` has exactly `_fix_a`'s state space: with two epochs A2's extra branch never fires.
+
+#### Honest publishers (2026-10-18) {#cas-366-honest-publishers}
+
+The code runs the A2 refusal inside `publishCkpt`, so it applies to every publisher, and the
+snapshot contribution carries `committed_through = checkpoint_snapshot_id`. The A2 variants now do
+the same: `MAdoptPub`, `MSealPub` and `MAppendPub` refuse into a `refused` phase, and `MSnapCkpt`
+publishes `{ct = snap = x}`; a refused or failed snapshot publish leaves `_ckpt` unchanged.
+`INV_SUCCESSOR_NOT_REFUSED` holds in `_fix_a2` and `_fix_a2_2ep`, and `_sab_a2_le` (an off-by-one
+in the epoch test) violates it. The green state counts did not change: a refused stale snapshot
+leaves the same state as a snapshot never published. The witness counts above are from this run;
+the epoch battery (19 configs) and the focused battery (20 configs) met every expectation.
 
 ### Counterexample: current protocol (`_cur_lateappend`, 22 states) {#cas-366-counterexample}
 
@@ -248,9 +261,10 @@ the checkpoint (the next GC round deletes it), at one retained object per table.
 | `Pool/CasRefLedger.cpp` | `commitRefChunk` (post-durable block) | `SuccessorSeal` → the same `Closed` + `INVALID_STATE` arm as `Occupant::SuccessorSeal` (set `rt->last_epoch_seal`); `Superseded` → the `FencedOut` path (`requireRecovery`, retry-later) | 20 |
 | `Pool/CasRefLedger.cpp` | `resolveWedgeOnce` (wedge frontier) | same two mappings | 20 |
 | `Pool/CasRefLedger.cpp` | `runRecoveryWalkOnce` (`publish_recovered_frontier`, final seal contribution) | treat both new outcomes like `FencedOut` (throw retry-later) | 4 |
-| `Pool/CasRefLedger.cpp` | `publishCkptContribution` | count `CASRefCheckpointSealSlotRefused` | 4 |
+| `Pool/CasRefLedger.cpp` | `publishCkptContribution` | count `CASRefCheckpointFrontierRefused` | 4 |
 
-Snapshot and birth contributions carry no `committed_through` and are unaffected.
+Birth and namespace-creation contributions carry no `committed_through` and are never refused. The
+snapshot contribution does carry one; see [Honest publishers](#cas-366-honest-publishers).
 
 Tests that fail first (all on `2a034cdb374` return `IdenticalSkip`):
 

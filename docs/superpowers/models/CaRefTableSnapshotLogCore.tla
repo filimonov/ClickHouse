@@ -80,7 +80,8 @@ CONSTANTS
     SabotageSealAboveFrontier,       \* checkpoint seal exceeds `committed_through`
     SabotageSnapshotAtSeal,          \* checkpoint snapshot names an epoch-seal record
     EpochVariant,                    \* CAS-366 epoch slice: "off" | "cur" | "fixA" | "sabA" |
-                                     \* "fixA2" | "fixB" | "sabB" | "fixB2" | "fixB3" | "sabB3"
+                                     \* "fixA2" | "sabA2le" | "fixB" | "sabB" | "fixB2" | "fixB3" |
+                                     \* "sabB3"
     EpochCount,                      \* writer epochs 1..EpochCount (2 or 3)
     T1Holds                          \* admission tracks the lease (TRUE) or is a free choice (T1 broken)
 
@@ -262,7 +263,7 @@ NoCkpt == [ct |-> 0, seal |-> 0, snap |-> 0]
 ZPhases == {"idle", "prepared", "gated", "inflight", "settle", "wedged", "durable", "published",
             "installed", "closed", "unresolved", "needsrec", "fenced"}
 MPhases == {"down", "ckpt", "walk", "adoptlog", "adoptseal", "sealing", "sealpub", "ready",
-            "appendpub", "stopped", "failed"}
+            "appendpub", "stopped", "failed", "refused"}
 
 EpochInit ==
     /\ epObj = [i \in EIds |-> "none"]
@@ -1060,7 +1061,10 @@ FrontierSnapshotAtSeal ==
      "sabA"  fixA compared against the writer's cached `rt->last_epoch_seal` instead of the durable one.
      "fixA2" fixA plus: a non-seal contribution from an epoch BELOW the durable frontier's epoch is
              acknowledged only if the durable seal closes that same epoch strictly above it;
-             otherwise the outcome is unresolved (not acknowledged, not rejected).
+             otherwise the outcome is unresolved (not acknowledged, not rejected). As in the code,
+             the refusal runs on EVERY publish: the successors' adoptions, appends and snapshots
+             (whose contribution carries `committed_through = checkpoint_snapshot_id`) too.
+     "sabA2le" fixA2 with the epoch test `<=` instead of `<`: refuses honest successors.
      "fixB"  `planRefCleanup` keeps the log named by the plan sample's `last_epoch_seal`.
      "sabB"  fixB with `last_epoch_seal` taken from an earlier, separate `_ckpt` read.
      "fixB2" `planRefCleanup` keeps the newest object of every epoch below the frontier's epoch.
@@ -1113,21 +1117,29 @@ HistAfter(d, r, kind) == IF r.ct # d.ct THEN [epHist EXCEPT ![r.ct] = kind] ELSE
 ZTgt == EId(1, zSeq + 1)
 ZCachedSeal == 0                     \* the zombie's `rt->last_epoch_seal`: it never read a seal
 
+A2Variants == {"fixA2", "sabA2le"}
+
+(* `classifyFrontierAgainstDurable` (Pool/CasRefCkpt.cpp). *)
+A2Refusal(d, c) ==
+    IF c.seal # c.ct /\ d.seal # 0 /\ c.ct = d.seal THEN "closed"
+    ELSE IF /\ c.seal # c.ct
+            /\ d.ct # 0
+            /\ IF EpochVariant = "sabA2le" THEN Ep(c.ct) <= Ep(d.ct) ELSE Ep(c.ct) < Ep(d.ct)
+            /\ ~(d.seal # 0 /\ Ep(d.seal) = Ep(c.ct) /\ c.ct < d.seal)
+         THEN "unresolved"
+         ELSE "none"
+
 (* The decide-time refusal each variant adds to `publishCkpt`, before the merge. *)
 ZRefusal(d, c) ==
     CASE EpochVariant = "fixA" ->
             IF c.seal # c.ct /\ d.seal # 0 /\ c.ct = d.seal THEN "closed" ELSE "none"
       [] EpochVariant = "sabA" ->
             IF c.seal # c.ct /\ ZCachedSeal # 0 /\ c.ct = ZCachedSeal THEN "closed" ELSE "none"
-      [] EpochVariant = "fixA2" ->
-            IF c.seal # c.ct /\ d.seal # 0 /\ c.ct = d.seal THEN "closed"
-            ELSE IF /\ c.seal # c.ct
-                    /\ d.ct # 0
-                    /\ Ep(c.ct) < Ep(d.ct)
-                    /\ ~(d.seal # 0 /\ Ep(d.seal) = Ep(c.ct) /\ c.ct < d.seal)
-                 THEN "unresolved"
-                 ELSE "none"
+      [] EpochVariant \in A2Variants -> A2Refusal(d, c)
       [] OTHER -> "none"
+
+(* The refusal the code applies to every publish, the successors' included. *)
+PubRefusal(d, c) == IF EpochVariant \in A2Variants THEN A2Refusal(d, c) ELSE "none"
 
 (* CasRefLedger::flushRefBatch / prepareRefChunk: derive the next id from state (in memory). *)
 ZPrepare ==
@@ -1278,7 +1290,10 @@ MAdoptPub(m) ==
            t == mTgt[m]
            c == [ct |-> t, seal |-> IF kind = "seal" THEN t ELSE epLink[t], snap |-> 0]
            mg == EMerge(epCkpt, c)
-       IN IF mg.ok
+       IN IF PubRefusal(epCkpt, c) # "none"
+          THEN /\ mPh' = [mPh EXCEPT ![m] = "refused"]
+               /\ UNCHANGED << epCkpt, epHist, mTgt, mSeal >>
+          ELSE IF mg.ok
           THEN /\ epCkpt' = mg.r
                /\ epHist' = HistAfter(epCkpt, mg.r, kind)
                /\ mTgt' = [mTgt EXCEPT ![m] = IF kind = "seal" THEN EId(Ep(t) + 1, 1) ELSE t + 1]
@@ -1307,8 +1322,12 @@ MSealPub(m) ==
     /\ mPh[m] = "sealpub"
     /\ MLive(m)
     /\ LET t == mTgt[m]
-           mg == EMerge(epCkpt, [ct |-> t, seal |-> t, snap |-> 0])
-       IN IF mg.ok
+           c == [ct |-> t, seal |-> t, snap |-> 0]
+           mg == EMerge(epCkpt, c)
+       IN IF PubRefusal(epCkpt, c) # "none"
+          THEN /\ mPh' = [mPh EXCEPT ![m] = "refused"]
+               /\ UNCHANGED << epCkpt, epHist, mTgt, mSeal >>
+          ELSE IF mg.ok
           THEN /\ epCkpt' = mg.r
                /\ epHist' = HistAfter(epCkpt, mg.r, "seal")
                /\ mTgt' = [mTgt EXCEPT ![m] = EId(Ep(t) + 1, 1)]
@@ -1336,8 +1355,12 @@ MAppendPub(m) ==
     /\ mPh[m] = "appendpub"
     /\ MLive(m)
     /\ LET t == EId(m, mApp[m] + 1)
-           mg == EMerge(epCkpt, [ct |-> t, seal |-> epLink[t], snap |-> 0])
-       IN IF mg.ok
+           c == [ct |-> t, seal |-> epLink[t], snap |-> 0]
+           mg == EMerge(epCkpt, c)
+       IN IF PubRefusal(epCkpt, c) # "none"
+          THEN /\ mPh' = [mPh EXCEPT ![m] = "refused"]
+               /\ UNCHANGED << epCkpt, epHist, sAcked, mApp >>
+          ELSE IF mg.ok
           THEN /\ epCkpt' = mg.r
                /\ epHist' = HistAfter(epCkpt, mg.r, "log")
                /\ sAcked' = sAcked \cup {t}
@@ -1358,14 +1381,27 @@ MSnapBody(m) ==
     /\ epSnapBody' = EId(m, mApp[m])
     /\ UNCHANGED << epObj, epLink, epHist, epCkpt, epLive, zVarsE, mVarsE, gVarsE >>
 
-(* Same function: publishCkpt with `{checkpoint_snapshot_id}`. *)
+(* Same function: publishCkpt with `{checkpoint_snapshot_id}`. Unfused from the lease: the
+   publisher may have been superseded since `MSnapBody`. Under A2 the contribution carries
+   `committed_through = checkpoint_snapshot_id` as in the code; a refused or failed publish leaves
+   the checkpoint where it was (`ckpt_advanced = false`), and a refusal while the publisher still
+   holds the lease marks it `refused`. *)
 MSnapCkpt ==
     /\ epSnapBody # 0
-    /\ LET mg == EMerge(epCkpt, [ct |-> 0, seal |-> 0, snap |-> epSnapBody]) IN
-       /\ mg.ok
-       /\ epCkpt' = mg.r
+    /\ IF EpochVariant \in A2Variants
+       THEN LET c == [ct |-> epSnapBody, seal |-> 0, snap |-> epSnapBody]
+                mg == EMerge(epCkpt, c)
+                refused == PubRefusal(epCkpt, c) # "none"
+                pub == Ep(epSnapBody)
+            IN /\ epCkpt' = IF ~refused /\ mg.ok THEN mg.r ELSE epCkpt
+               /\ mPh' = IF refused /\ epLive = pub THEN [mPh EXCEPT ![pub] = "refused"] ELSE mPh
+               /\ UNCHANGED << mTgt, mApp, mSeal, sAcked >>
+       ELSE LET mg == EMerge(epCkpt, [ct |-> 0, seal |-> 0, snap |-> epSnapBody]) IN
+            /\ mg.ok
+            /\ epCkpt' = mg.r
+            /\ UNCHANGED mVarsE
     /\ epSnapBody' = 0
-    /\ UNCHANGED << epObj, epLink, epHist, epLive, zVarsE, mVarsE, gVarsE >>
+    /\ UNCHANGED << epObj, epLink, epHist, epLive, zVarsE, gVarsE >>
 
 (* sabB only: `last_epoch_seal` from an earlier, separate `_ckpt` read. *)
 GcReadSeal ==
@@ -1580,6 +1616,9 @@ INV_REJECT_TRUTHFUL == zPh = "closed" => epHist[ZTgt] # "log"
 
 (* The honest successors never hit the `_ckpt` corruption throw. *)
 INV_SUCCESSOR_NO_CORRUPTION == \A m \in Succs : mPh[m] # "failed"
+
+(* The A2 refusal never refuses a successor's own publish while it holds the lease. *)
+INV_SUCCESSOR_NOT_REFUSED == \A m \in Succs : mPh[m] # "refused"
 
 (* Reachability witnesses (a violation is the evidence). *)
 W_SEAL_SLOT_RELANDED == ~\E id \in EIds : epHist[id] = "seal" /\ epObj[id] = "log"

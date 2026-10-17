@@ -89,6 +89,7 @@ CONFIGS=(
   "sab_b                   violation  INV_ACKED_REACHABLE"
   "fix_b_3ep               violation  INV_ACKED_REACHABLE"
   "sab_b3                  violation  INV_ACKED_REACHABLE"
+  "sab_a2_le               violation  INV_SUCCESSOR_NOT_REFUSED"
   "fix_a_witness           violation  W_SEAL_SLOT_RELANDED"
   "fix_a2_witness          violation  W_SEAL_SLOT_RELANDED"
   "fix_a2_witness_straggler violation W_STRAGGLER_ACKED_AFTER_TAKEOVER"
@@ -104,7 +105,7 @@ CONFIGS=(
 EPOCH_CONFIGS=()
 for row in "${CONFIGS[@]}"; do
   read -r n _ <<<"$row"
-  case "$n" in cur_lateappend*|fix_a*|fix_b*|sab_a|sab_b|sab_b3) EPOCH_CONFIGS+=("$row") ;; esac
+  case "$n" in cur_lateappend*|fix_a*|fix_b*|sab_a|sab_a2_le|sab_b|sab_b3) EPOCH_CONFIGS+=("$row") ;; esac
 done
 
 # Review iterations need a bounded official gate that exercises every Task 5b obligation plus one
