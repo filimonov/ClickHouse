@@ -141,14 +141,16 @@ def _victim_catalog(node) -> list:
 
 
 def _victim_mount_rows(node) -> list:
-    out = node.query(f"SELECT state, server_uuid, writer_epoch FROM system.cas_mounts "
+    out = node.query(f"SELECT state, retirement_verified, server_uuid, writer_epoch FROM system.cas_mounts "
                      f"WHERE disk = '{_DISK}' AND server_root_id = '{_VICTIM_SRID}' FORMAT JSONEachRow")
     return [json.loads(line) for line in out.splitlines() if line.strip()]
 
 
 def _victim_state(node) -> str:
+    """The row's state; a `retired` row also names `retirement_verified`, as `retired/0` or `retired/1`."""
     rows = _victim_mount_rows(node)
-    return ",".join(r["state"] for r in rows) if rows else "absent"
+    return ",".join(r["state"] + (f"/{r['retirement_verified']}" if r["state"] == "retired" else "")
+                    for r in rows) if rows else "absent"
 
 
 def _drop_member(node, timeout=600) -> dict:
@@ -348,8 +350,8 @@ class S47(Scenario):
             self._recover_after_kill(c, step)
 
         rows = _victim_mount_rows(observer)
-        c.check("no victim row in system.cas_mounts other than retired", "retired",
-                rows, bool(rows) and all(r["state"] == "retired" for r in rows))
+        c.check("no victim row in system.cas_mounts other than retired and verified", "retired/1",
+                rows, bool(rows) and all(r["state"] == "retired" and r["retirement_verified"] == 1 for r in rows))
         c.check("survivor content shared with the victim is intact", self.shared_checksum,
                 _checksum(observer, _SHARED_TABLE), _checksum(observer, _SHARED_TABLE) == self.shared_checksum)
         self._rejoin(c, old_uuid, new_uuid=(name == "N"))
@@ -456,14 +458,14 @@ class S47(Scenario):
         if tombstoned and not verified:
             self._check_start_refused(c)
 
-        # The rerun rule: no run in progress (the executor was killed) and the row shows `retiring`. A killed
-        # run's lease reads `live`, then `expired`, then `fenced` once GC fences it; over an unverified tombstone
-        # the row reads `retiring`, over a verified one `retired`.
-        settled = ("retired" if verified else "retiring") if tombstoned else "fenced"
+        # The rerun rule: no run in progress (the executor was killed) and the row shows `retired` with
+        # `retirement_verified = 0`. A killed run's lease reads `live`, then `expired`, then `fenced` once GC
+        # fences it; over a tombstone the row reads `retired`, with the owner's verified mark.
+        settled = ("retired/1" if verified else "retired/0") if tombstoned else "fenced"
         _wait(lambda: _victim_state(observer) == settled, _FENCE_WAIT_S, 3)
         c.obs["victim_state_before_rerun"] = _victim_state(observer)
-        retired = c.obs["victim_state_before_rerun"] == "retired"
-        rule_holds = c.obs["victim_state_before_rerun"] == "retiring"
+        retired = c.obs["victim_state_before_rerun"] == "retired/1"
+        rule_holds = c.obs["victim_state_before_rerun"] == "retired/0"
         c.obs["rerun_rule_holds"] = rule_holds
         if step == 1:
             # No tombstone: the id is not retired and the rule does not apply. The member is known dead, so a
@@ -478,7 +480,7 @@ class S47(Scenario):
             c.check("after a kill past the verified mark the rule says no rerun", "retired, verified",
                     f"state={c.obs['victim_state_before_rerun']} verified={verified}", retired and not rule_holds)
         else:
-            c.check("the rerun rule holds after the kill", "retiring",
+            c.check("the rerun rule holds after the kill", "retired/0",
                     f"state={c.obs['victim_state_before_rerun']} owner={owner}", rule_holds)
             report = self._decommission(executor)
             c.obs["rerun_report"] = report
