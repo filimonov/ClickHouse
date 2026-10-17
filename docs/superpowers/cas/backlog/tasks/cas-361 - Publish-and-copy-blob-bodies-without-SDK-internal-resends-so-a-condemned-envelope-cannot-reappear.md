@@ -3,10 +3,10 @@ id: CAS-361
 title: >-
   Publish and copy blob bodies without SDK-internal resends so a condemned
   envelope cannot reappear
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-15 11:41'
+updated_date: '2026-10-17 10:04'
 labels:
   - 'area:write-path'
   - 'area:backend'
@@ -69,4 +69,6 @@ Open for the code fix: does the single-attempt write path also disable `WriteBuf
 2026-10-13: PR https://github.com/Altinity/ClickHouse/pull/2555 (base antalya-26.6-20261008, head b18cd09d0dc on fix/antalya-26.6/cas-361-single-attempt-blob-creation-split): 3 upstream-clean commits (copyObject honours write settings; single-attempt object creation keeping part retries, NativeOnly required, configured timeouts; no NoSuchUpload success / GCS compose for single-attempt clients) + CAS wiring. Retries move up to ensureBlobPresent (8 attempts in a 90 s window, fresh envelope each). CAS* release 2632, ASan 2655; reviews: two-model, 3 fix rounds + B-lite + test gaps + split.
 
 2026-10-15 (PR #2555 review): the 2026-10-12 decision says the publish path 'refuses an empty result ETag as ambiguous', but the #2555 diff has no such check. CAS does not read `object_etag` on this path and the review found no hole. Close explicitly: either drop the sentence from the decision or add the check. Source: tmp/pr2555/REPORT.md. Follow-ups: CAS-396..CAS-402.
+
+2026-10-17: PR https://github.com/Altinity/ClickHouse/pull/2555 merged (8fefc27bd62). Follow-up: the first failed publication attempt's WARNING reaches clients with send_logs_level=warning (flaky stateless reds) — demoted in a separate PR.
 <!-- SECTION:NOTES:END -->
