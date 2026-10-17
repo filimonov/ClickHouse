@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-13 10:25'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-10-17 00:53'
 labels:
   - 'origin:noclock-audit'
 dependencies: []
@@ -40,4 +40,6 @@ Inputs for the paused mount-lease series (docs/superpowers/cas/2026-10-12-mount-
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-14: removed the zombie create/mint bullet (counter or slot): obsolete, because the slot is never absent after PR B https://github.com/Altinity/ClickHouse/pull/2567. Added the five entries from the member-lifecycle spec (late drain after rejoin, tombstone over a live successor, blind rerun, old-binary rolling-upgrade races, 26.6.4 starter across decommission and rejoins).
+
+2026-10-17: three residuals from the PR C review (https://github.com/Altinity/ClickHouse/pull/2574), not coded, listed in its PR body. (1) A rerun over a verified retirement racing a same-uuid rejoin can land its tombstone on the rejoined owner and downgrade the retirement to unverified; the rerun rule forbids a rerun outside system.cas_mounts state retiring, and the tombstone on the admin's fenced plane (PR #2567) narrows the window. (2) A new-uuid rejoin's mount write races another starter's full rejoin, claim and farewell between our owner read and our mount write: our clean body then sits under their owner until their next start reclaims it, and a DROP POOL MEMBER of them in that window is refused. (3) A 26.6.4 admin running DROP POOL MEMBER concurrently with a same-uuid rejoin: 26.6.4 tombstones last, so the rejoin may proceed over deleted epoch and mount; rolling-upgrade rule: decommission only from upgraded servers.
 <!-- SECTION:NOTES:END -->
