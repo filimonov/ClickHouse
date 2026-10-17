@@ -145,7 +145,11 @@ CONSTANTS
     \* Round 13 (PR #2574 fix round):
     RerunRetiring,      \* a rerun only while system.cas_mounts shows `retiring`: retired, not verified, slot terminal
     RerunAnyRetired,    \* sabotage: also over a verified retirement (the `retired` row)
-    RerunAnySlot        \* sabotage: without the terminal slot
+    RerunAnySlot,       \* sabotage: without the terminal slot
+    \* Round 14 (PR #2574 second fix round):
+    LateTomb,           \* an unresolved tombstone may land until GC fences the admin's slot; a server instance
+                        \* reclaims an admin body only once it is clean or fenced (it waits at least as long as GC)
+    FarewellAfterAmbig  \* sabotage: the admin writes its clean farewell after an unresolved tombstone
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
@@ -187,7 +191,7 @@ VARIABLES
     life,               \* ghost: revivals so far
     allocLife,          \* ghost: <<epoch, life at the allocation>> for every allocation
     rpc, rTok,          \* operator revival: state, owner token read
-    oInfl,              \* a tombstone PUT decided, not yet landed: [on, tok, floor, life, ep, mtok]
+    oInfl,              \* a tombstone PUT decided, not yet landed: [on, tok, floor, life, ep, mtok, intro, lapsed]
     ownerUuid,          \* owner server_uuid
     rv, rvMTok, rvOTok, \* keep-everything revival runs: state, mount token, owner token
     tombOverLive,       \* ghost (lifecycle rows only): a tombstone landed while an instance held the slot live
@@ -234,6 +238,8 @@ KVars == <<ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, LVars>>
 NVars == <<ownerFloor, ownerGen, ownerGone, dOwnTok, dTombTok, myFloor, life, rpc, rTok, oInfl,
            ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, LVars>>
 XVars == <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, NVars>>
+XVarsNoInfl == <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, ownerFloor, ownerGen, ownerGone, dOwnTok,
+                 dTombTok, myFloor, life, rpc, rTok, ownerUuid, rv, rvMTok, rvOTok, tombOverLive, dTombRefused, LVars>>
 
 \* Token of the counter: S3 = the bytes (single-PUT MD5), GCS = generation.
 Tok == IF S3 THEN <<"b", epObj.v, epObj.n, epObj.r>> ELSE <<"g", epGen, 0, FALSE>>
@@ -332,7 +338,7 @@ Init ==
     /\ ownerFloor = 0 /\ ownerGen = 0 /\ ownerGone = FALSE /\ dOwnTok = <<>> /\ dTombTok = <<>>
     /\ myFloor = [p \in Procs |-> 0] /\ life = 0 /\ allocLife = {}
     /\ rpc = "ridle" /\ rTok = <<>>
-    /\ oInfl = [on |-> FALSE, tok |-> <<>>, floor |-> 0, life |-> 0, ep |-> 0, mtok |-> 0, intro |-> FALSE]
+    /\ oInfl = [on |-> FALSE, tok |-> <<>>, floor |-> 0, life |-> 0, ep |-> 0, mtok |-> 0, intro |-> FALSE, lapsed |-> FALSE]
     /\ ownerUuid = "u1" /\ rv = [r \in Revivers |-> "idle"]
     /\ rvMTok = [r \in Revivers |-> 0] /\ rvOTok = [r \in Revivers |-> <<>>]
     /\ tombOverLive = FALSE /\ dTombRefused = FALSE
@@ -620,7 +626,8 @@ ClaimRead(p) ==
     /\ pc[p] = "cread"
     /\ \/ mount.e = 0
        \/ mount.e >= myEpoch[p]
-       \/ mount.clean \/ mount.fenced \/ ProvenDead(mount.holder, mount.e)
+       \/ mount.clean \/ mount.fenced
+       \/ ProvenDead(mount.holder, mount.e) /\ ~(LateTomb /\ p \in Inst /\ mount.holder = "d")
        \/ mount.u # Uuid(p)
     /\ IF mount.e = 0
        THEN /\ pc' = [pc EXCEPT ![p] = IF ClaimChecksOwner THEN "cownm" ELSE MintNext]
@@ -672,21 +679,26 @@ ClaimPostFarewell(p) ==
                    allocLog, G7, G9, dup, slotMax, allocLife, lateDel, doneLives, tombForeign, vTok, jTok, Locals,
                    DVars, GVars, XVars>>
 
+\* LateTomb: a GC fence of the body that sent the unresolved tombstone ends the window in which it may land.
+FenceLapses == IF LateTomb /\ oInfl.on /\ mount.holder = "d" /\ mount.e = oInfl.ep THEN [oInfl EXCEPT !.lapsed = TRUE] ELSE oInfl
+
 \* GC fences the decommission tool's lease (gc_fenced); the tool keeps running until it notices.
 GcFence ==
     /\ GcFences /\ mount.holder = "d" /\ mount.e > 0 /\ ~mount.clean /\ ~mount.fenced
     /\ pc["d"] \in HoldStates
     /\ mount' = [mount EXCEPT !.fenced = TRUE] /\ mGen' = mGen + 1
+    /\ oInfl' = FenceLapses
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, Ghost, pc, Locals,
-                   DVars, GVars, XVars>>
+                   DVars, GVars, XVarsNoInfl>>
 
 \* GC fences the expired lease of a holder that is gone (any uuid).
 GcFenceDead ==
     /\ GcFencesDead /\ mount.e > 0 /\ ~mount.clean /\ ~mount.fenced /\ mount.holder # "none"
     /\ ProvenDead(mount.holder, mount.e)
     /\ mount' = [mount EXCEPT !.fenced = TRUE] /\ mGen' = mGen + 1
+    /\ oInfl' = FenceLapses
     /\ UNCHANGED <<EpVars, ownerRetired, manifests, refs, inflight, ambUsed, nonceCtr, Ghost, pc, Locals,
-                   DVars, GVars, XVars>>
+                   DVars, GVars, XVarsNoInfl>>
 
 \* Self-remount (Pool::tryRemountOnce) of a process whose lease is lost: a live server instance, or the
 \* decommission tool before its farewell.  The in-memory state is kept.
@@ -1022,14 +1034,18 @@ DTombstone ==
              ELSE /\ UNCHANGED <<ownerRetired, ownerFloor, ownerGen, oStamp, dTombTok, tombOverLive, staleDecom,
                                 tombForeign, vTok>>
                   /\ pc' = [pc EXCEPT !["d"] = "dstop"]
-          /\ UNCHANGED oInfl
+          /\ UNCHANGED <<oInfl, mount, mGen>>
        \/ /\ TombAmbig /\ ~oInfl.on /\ (TombFenced => OwnClaim(myMTok["d"]))
           /\ oInfl' = [on |-> TRUE, tok |-> dOwnTok, floor |-> TombFloor, life |-> dLife,
-                       ep |-> myEpoch["d"], mtok |-> myMTok["d"], intro |-> ~dOwn]
+                       ep |-> myEpoch["d"], mtok |-> myMTok["d"], intro |-> ~dOwn, lapsed |-> FALSE]
           /\ pc' = [pc EXCEPT !["d"] = "dfail"]
+          \* The code withholds the farewell here; the sabotage writes it.
+          /\ IF FarewellAfterAmbig /\ mGen = myMTok["d"] /\ mount.e > 0
+             THEN mount' = [mount EXCEPT !.clean = TRUE] /\ mGen' = mGen + 1
+             ELSE UNCHANGED <<mount, mGen>>
           /\ UNCHANGED <<ownerRetired, ownerFloor, ownerGen, oStamp, dTombTok, tombOverLive, staleDecom,
                          tombForeign, vTok>>
-    /\ UNCHANGED <<EpVars, mount, mGen, manifests, refs, inflight, ambUsed, nonceCtr,
+    /\ UNCHANGED <<EpVars, manifests, refs, inflight, ambUsed, nonceCtr,
                    allocLog, dup, slotMax, allocLife, lateDel, doneLives, jTok, selfFenced, G7, G9, Locals, DVars, GVars>>
     /\ UNCHANGED <<clock, backUsed, hwm, hwmGen, admitUsed, myTime, myHwm, dHwm, myFloor, life, ownerGone, dOwnTok, rpc, rTok,
                    ownerUuid, rv, rvMTok, rvOTok, dTombRefused, zDrain, dLife, staleDrain>>
@@ -1039,7 +1055,8 @@ OwnerLateLand ==
     /\ oInfl.on
     /\ oInfl' = [oInfl EXCEPT !.on = FALSE]
     \* TombFenced: a request sent under the claim lands before its lease deadline, so not after the claim is gone.
-    /\ IF OTok = oInfl.tok /\ ~ownerGone /\ (TombFenced => OwnClaim(oInfl.mtok))
+    \* LateTomb: it lands at any time until GC fences the sending body; landing later is a timing assumption.
+    /\ IF OTok = oInfl.tok /\ ~ownerGone /\ (TombFenced => IF LateTomb THEN ~oInfl.lapsed ELSE OwnClaim(oInfl.mtok))
        THEN /\ ownerRetired' = TRUE /\ ownerFloor' = oInfl.floor
             /\ ownerGen' = ownerGen + 1 /\ oStamp' = ownerGen + 1
             /\ staleDecom' = (staleDecom \/ life > oInfl.life)
@@ -1150,7 +1167,7 @@ DRestart(kind) ==
     \* ZombieRun: the earlier run is paused, not dead; its decided tombstone and next steps land later.
     /\ oInfl' = IF ZombieRun /\ pc["d"] = "dtomb" /\ ~oInfl.on
                 THEN [on |-> TRUE, tok |-> dOwnTok, floor |-> TombFloor, life |-> dLife,
-                      ep |-> myEpoch["d"], mtok |-> myMTok["d"], intro |-> ~dOwn]
+                      ep |-> myEpoch["d"], mtok |-> myMTok["d"], intro |-> ~dOwn, lapsed |-> FALSE]
                 ELSE oInfl
     /\ zDrain' = IF ZombieRun /\ pc["d"] \in {"dchk", "ddrain"}
                  THEN [on |-> TRUE, mode |-> IF pc["d"] = "dchk" THEN "confirm" ELSE "drain",
@@ -1461,6 +1478,8 @@ NoResumeAfterRetire == ~resumedStale
 \* Reachability witnesses, not properties: violated once a rerun starts, and once a rerun verifies its end.
 NoRerunWitness == starts["d"] = 0
 NoRerunDoneWitness == ~(starts["d"] > 0 /\ pc["d"] = "ddone")
+\* Witness: an unresolved tombstone lands after its run stopped (the landing starts the paused run's confirm).
+NoLateTombWitness == ~(zDrain.on /\ pc["d"] = "dfail")
 
 \* A drain never removes a reference allocated in a member life later than the life its decommission
 \* started on (a rerun inherits that life; a new decommission takes the current one).

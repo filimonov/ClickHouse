@@ -205,6 +205,13 @@ CONFIGS=(
     "res_r13_rerundone                    violation  NoRerunDoneWitness"
     "res_r13z_rerundone                   violation  NoRerunDoneWitness"
     "sab_r13_rerunanyslot                 green      -"
+    # Round 14: an unresolved tombstone lands until GC fences the admin's slot; the admin withholds its farewell.
+    "r14_tombambig                        green      -"
+    "r14_core_z                           green      -"
+    "r14_old                              green      -"
+    "sab_r14_farewellambig                violation  NoTombOverLive"
+    "res_r14_farewellambig_r12bound       green      -"
+    "res_r14_lateland                     violation  NoLateTombWitness"
 )
 # Two to twelve minutes each.
 SLOW_CONFIGS=(

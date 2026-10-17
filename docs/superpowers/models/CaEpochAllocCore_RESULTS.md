@@ -683,6 +683,43 @@ Regression: the default battery (180 rows, including the round-13 rows except `r
 - **The verification part is load-bearing.** A rerun also on `retired` reads a rejoined owner as its victim and drains its reference (`sab_r13_rerunretired`, the `res_r10_blindrerun` trace through a state the operator can see).
 - **The terminal-slot part is not.** Without it the run is still safe (`sab_r13_rerunanyslot` green): a rerun over a live slot is refused at its claim. It keeps the operator from rerunning while a run is in progress.
 
+## Round 14: a late tombstone and the withheld farewell {#round-14}
+
+The second PR #2574 review found that the fence bounds when the tombstone is sent, not when the store applies it. Round 12's `OwnerLateLand` landed only while the admin's claim token was in the slot, so the admin's own clean farewell closed the window. In the code that farewell let the victim reclaim at once (`MountPriorState::Clean`), pass its recheck and run, and the tombstone could still land after it. The fix withholds the farewell after an unknown outcome the read-back did not find (`writeTombstone`, `Pool::withholdFarewell`), and `system.cas_mounts` shows `retired` with a `retirement_verified` column instead of a `retiring` state.
+
+### What changed {#round-14-design}
+
+| Switch | Model | Code |
+|---|---|---|
+| `LateTomb` | `OwnerLateLand` (with `TombFenced`) lands until GC fences the body that sent it (`oInfl.lapsed`, set by `GcFence` and `GcFenceDead` through `FenceLapses`), not only while its claim token is in the slot. A server instance reclaims a body of `d` only when it is clean or fenced: `ClaimRead` drops the `ProvenDead` path for it | `writeTombstone` withholds the farewell; the victim's observation wait (1.05 × TTL + cadence) is taken as no shorter than a GC fence |
+| `FarewellAfterAmbig` (sabotage) | the ambiguous branch of `DTombstone` also writes the admin's clean farewell | the code before the fix |
+
+`RerunRetiring` encodes the rule on `retired` with `retirement_verified = 0` unchanged: the model state is the owner and the slot, not the column. New witness `NoLateTombWitness`: violated once an unresolved tombstone lands after its run stopped. The two switches are `FALSE` in every earlier config.
+
+**Timing assumption.** A tombstone applied after GC fenced the admin's slot is outside the model, as a drain request applied after a rejoin is (`res_r5_inflight_norerun`). The docs give its repair: the owner-life exception of the rerun rule.
+
+### Results {#round-14-results}
+
+"I9" as in round 9. 8 workers. `r14_old` ran first alone, then the default battery.
+
+| Config | What | Invariants | Expected | Result | States | Depth |
+|---|---|---|---|---|---|---|
+| `r14_tombambig` | `r12_tombambig` with `RerunRetiring` in place of `RerunObserved`, and `LateTomb` | I9 + NoTombOverLive | green | green | 1,172,863 | 66 |
+| `r14_core_z` | `r13_core_z` (paused run, GC fences of the admin) with `LateTomb` | I9 + NoTombOverLive | green | green | 1,528,193 | 69 |
+| `r14_old` | `r9_old` (26.6.4 starter `o`, new-uuid `n`) with `TombAmbig`, `TombFenced`, `RollbackKeepsRetired`, `RerunRetiring` and `LateTomb` | I9 + OldNotUnderNewOwner + NoTombOverLive | green | green | 3,796,053 | 84 |
+| `sab_r14_farewellambig` | `r14_tombambig` + `FarewellAfterAmbig` | I9 + NoTombOverLive | violation | violation `NoTombOverLive` | 6,306 | 22 (trace) |
+| `res_r14_farewellambig_r12bound` | the sabotage with round 12's landing bound (`LateTomb = FALSE`) | I9 + NoTombOverLive | green | green | 169,943 | 65 |
+| `res_r14_lateland` | `r14_tombambig`, witness | NoLateTombWitness | violation | violation `NoLateTombWitness` | 849 | 14 (trace) |
+
+Regression: the default battery (187 rows, round-14 rows included) met every expectation on the edited model (`tmp/tla2574/battery_r14.txt`). SLOW rows were not rerun; the new switches are `FALSE` there.
+
+### Findings {#round-14-findings}
+
+- **A clean farewell after an unresolved tombstone puts the tombstone on a running member.** `sab_r14_farewellambig`: the admin claims, sends the tombstone, loses the response and writes its farewell; the victim reclaims the clean body, passes its recheck, and the tombstone lands (22 states).
+- **Round 12's bound hid it.** With the landing tied to the claim token, the same sabotage is green (`res_r14_farewellambig_r12bound`): the farewell itself closed the window.
+- **The withheld farewell closes it under the timing assumption.** `r14_tombambig`, `r14_core_z` and `r14_old` are green with the late landing allowed until the GC fence; the landing is reachable after the run stopped (`res_r14_lateland`).
+- **Not shown:** that the victim's observation wait is no shorter than a GC fence. The model takes it as an assumption.
+
 ## Code checks {#code-checks}
 
 Read-only, at `2a034cdb374` and tag `v26.6.4.20001.altinityantalya` (same code at both unless noted).
