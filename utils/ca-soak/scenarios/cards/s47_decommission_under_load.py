@@ -456,15 +456,14 @@ class S47(Scenario):
         if tombstoned and not verified:
             self._check_start_refused(c)
 
-        # The rerun rule: no run in progress (the executor was killed), the row shows `retired`, the tombstone
-        # is unverified, and no server of the id ran when the tombstone appeared (the victim was dead).
-        # A killed run's lease reads `live`, then `expired`, then `fenced` once GC fences it, or `retired` over
-        # a tombstone.
-        settled = "retired" if tombstoned else "fenced"
+        # The rerun rule: no run in progress (the executor was killed) and the row shows `retiring`. A killed
+        # run's lease reads `live`, then `expired`, then `fenced` once GC fences it; over an unverified tombstone
+        # the row reads `retiring`, over a verified one `retired`.
+        settled = ("retired" if verified else "retiring") if tombstoned else "fenced"
         _wait(lambda: _victim_state(observer) == settled, _FENCE_WAIT_S, 3)
         c.obs["victim_state_before_rerun"] = _victim_state(observer)
         retired = c.obs["victim_state_before_rerun"] == "retired"
-        rule_holds = retired and tombstoned and not verified
+        rule_holds = c.obs["victim_state_before_rerun"] == "retiring"
         c.obs["rerun_rule_holds"] = rule_holds
         if step == 1:
             # No tombstone: the id is not retired and the rule does not apply. The member is known dead, so a
@@ -479,7 +478,7 @@ class S47(Scenario):
             c.check("after a kill past the verified mark the rule says no rerun", "retired, verified",
                     f"state={c.obs['victim_state_before_rerun']} verified={verified}", retired and not rule_holds)
         else:
-            c.check("the rerun rule holds after the kill", "retired, unverified tombstone",
+            c.check("the rerun rule holds after the kill", "retiring",
                     f"state={c.obs['victim_state_before_rerun']} owner={owner}", rule_holds)
             report = self._decommission(executor)
             c.obs["rerun_report"] = report
@@ -545,5 +544,10 @@ class S47(Scenario):
         c.check("the victim's old tables attach empty", "0 rows each", counts, all(v == "0" for v in counts.values()))
         victim.command(f"INSERT INTO {self.tables[0]} SELECT number, 'rejoined' FROM numbers(100)")
         c.check("inserts on the rejoined victim work", "100", victim.scalar(f"SELECT count() FROM {self.tables[0]}"),
+                victim.scalar(f"SELECT count() FROM {self.tables[0]}") == "100")
+        for _ in range(3):
+            _gc_round_on_survivors(self.survivors)
+        c.check("the rejoined victim's rows survive GC rounds", "100",
+                victim.scalar(f"SELECT count() FROM {self.tables[0]}"),
                 victim.scalar(f"SELECT count() FROM {self.tables[0]}") == "100")
         victim.command(f"TRUNCATE TABLE {self.tables[0]}")
