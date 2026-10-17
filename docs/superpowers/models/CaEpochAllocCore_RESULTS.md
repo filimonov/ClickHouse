@@ -22,6 +22,7 @@ Runner: `run_epochalloc.sh` (`SLOW=1` adds the rows marked SLOW). Paths below ar
 - **Round 10 (spec r10, step 6): green with the rerun gated by the observed owner** (`r10_*`); a blind rerun after a tool killed past its verified mark drops a rejoined member (`res_r10_blindrerun`, documented residual).
 - **Round 11: green with the rejoin rewrite keyed on the retired owner's uuid, as in the code** (every rejoin row keeps its verdict); `res_r9_uuidreuse` still violates, with a trace of 57 states instead of 41.
 - **Round 12 (PR #2567 fix round): green with the tombstone on the admin's fenced plane** (`r12_*`). Without the fence an unresolved tombstone lands over a live member (`sab_r12_tombopen`); a rollback that keeps any earlier retirement is safe only with the fence (`sab_r12_keepretired_open` red, `r12_noverify` green).
+- **Round 13 (PR #2574 fix round): green with the operator rerun gated on a `retiring` row** (`r13_*`): retired, not verified, slot terminal. A rerun on a `retired` (verified) row too drains a rejoined member (`sab_r13_rerunretired`); the terminal-slot part of the gate is not load-bearing for safety (`sab_r13_rerunanyslot` green).
 - **Round 4 residuals:** a paused admin's drain landing after a re-run and a re-add (`res_lc_pauseddrain`), and a tombstone left over a live successor when the tool dies between the tombstone and its un-tombstone (`res_lc_tombover`, availability only).
 
 ## Configs {#configs}
@@ -644,6 +645,43 @@ Regression: the default battery (173 rows, including the three non-SLOW rows abo
 
 - **The fenced tombstone closes the late landing.** With `TombFenced`, no tombstone lands while a member holds the slot live, with a paused earlier run and GC fences of the admin (`r12_core_z`) and with an unresolved PUT (`r12_tombambig`). Without it, the unresolved PUT lands over a victim that reclaimed the slot (`sab_r12_tombopen`, the window `res_lc_tombover` showed for an atomic tombstone).
 - **A rollback may keep an unverified retirement only with the fence.** `sab_r12_keepretired_open` follows the `sab_r6_noverify` trace: run 1 pauses with its tombstone in flight, the rerun claims and is GC-fenced, the victim reclaims and passes its recheck, run 1's tombstone lands over it, and no rollback removes it. With the fence that tombstone cannot land, and `r12_noverify` is green.
+
+## Round 13: the operator rerun reads `system.cas_mounts` {#round-13}
+
+The PR #2574 review found that `system.cas_mounts` showed `retired` for a verified and an unverified tombstone alike, so an operator could not apply the rerun rule from any table. The fix splits the state: `retiring` (terminated or fenced slot, owner retired, not verified) and `retired` (verified); the operator reruns only on `retiring`. The same round moved the rejoin's `epoch` and `mount` presence check before its verification check.
+
+### What changed {#round-13-design}
+
+| Switch | Model | Code |
+|---|---|---|
+| `RerunRetiring` | `DRestart("rerun")` only when `ownerRetired /\ ~ownerGone /\ ~OwnerVerified` and the slot is terminal (`mount.e > 0 /\ (mount.clean \/ mount.fenced)`). Replaces round 10's `RerunObserved` (this run's own token, which an operator cannot see) | `listMounts`: `retiring`/`retired`; docs rerun rule `{#rejoin-rerun-rule}` |
+| `RerunAnyRetired` (sabotage) | drops `~OwnerVerified`: a rerun on a `retired` row too | — |
+| `RerunAnySlot` (sabotage) | drops the terminal-slot condition | — |
+
+Not modelled: the reordered rejoin refusals. `OwnerCheck` decides the verification from the owner read, `JoinEpoch`/`JoinMount` the presence of `epoch` and `mount`; every refusal is `Down` with no write, so their order changes only the message, which the model does not carry. New witnesses (not properties): `NoRerunWitness` and `NoRerunDoneWitness`, violated once a rerun starts and once a rerun reaches `ddone`. The three switches are `FALSE` in every earlier config.
+
+### Results {#round-13-results}
+
+"I9" as in round 9. 8 workers.
+
+| Config | What | Invariants | Expected | Result | States | Depth |
+|---|---|---|---|---|---|---|
+| `r13_core` | `r10_core` with `TombFenced`, `RollbackKeepsRetired` and `RerunRetiring` in place of `RerunObserved` | I9 + NoTombOverLive | green | green | 151,549 | 65 |
+| `r13_newuuid` | `r10_newuuid`, the same switches | I9 + NoTombOverLive | green | green | 92,542 | 66 |
+| `r13_core_z` | `r12_core_z` (paused run, GC fences of the admin) with `RerunRetiring` in place of `RerunOnlyUnverified` | I9 + NoTombOverLive | green | green | 1,539,991 | 69 |
+| `sab_r13_rerunretired` | `r13_core` + `RerunAnyRetired` | NoDrainOfLaterLife | violation | violation | 240,715 | 49 |
+| `sab_r13_rerunanyslot` | `r13_core` + `RerunAnySlot` | I9 + NoTombOverLive | green | green | 291,399 | 63 |
+| `res_r13_rerunreach` | `r13_core`, witness | NoRerunWitness | violation | violation | 1,633 | 20 |
+| `res_r13_rerundone` | `r13_core`, witness | NoRerunDoneWitness | violation | violation | 52,293 | 37 |
+| `res_r13z_rerundone` | `r13_core_z`, witness: the rerun finishes over a GC-fenced slot of the killed run | NoRerunDoneWitness | violation | violation | 74,239 | 35 |
+
+Regression: the default battery (180 rows, including the round-13 rows except `res_r13z_rerundone`, run alone after it) met every expectation on the edited model. SLOW rows were not rerun; the new switches are `FALSE` there.
+
+### Findings {#round-13-findings}
+
+- **The `retiring` gate replaces the token gate.** A rerun only on `retiring` is green where round 10 needed the run's own token (`r13_core`, `r13_newuuid`) and with a paused run and GC fences (`r13_core_z`); reruns start and finish under it (`res_r13_*`, `res_r13z_rerundone`).
+- **The verification part is load-bearing.** A rerun also on `retired` reads a rejoined owner as its victim and drains its reference (`sab_r13_rerunretired`, the `res_r10_blindrerun` trace through a state the operator can see).
+- **The terminal-slot part is not.** Without it the run is still safe (`sab_r13_rerunanyslot` green): a rerun over a live slot is refused at its claim. It keeps the operator from rerunning while a run is in progress.
 
 ## Code checks {#code-checks}
 

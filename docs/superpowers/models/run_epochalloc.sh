@@ -196,6 +196,15 @@ CONFIGS=(
     "r12_core_z                           green      -"
     "r12_tombambig                        green      -"
     "sab_r12_tombopen                     violation  NoTombOverLive"
+    # Round 13: the operator reruns only on a `retiring` row.
+    "r13_core                             green      -"
+    "r13_newuuid                          green      -"
+    "r13_core_z                           green      -"
+    "sab_r13_rerunretired                 violation  NoDrainOfLaterLife"
+    "res_r13_rerunreach                   violation  NoRerunWitness"
+    "res_r13_rerundone                    violation  NoRerunDoneWitness"
+    "res_r13z_rerundone                   violation  NoRerunDoneWitness"
+    "sab_r13_rerunanyslot                 green      -"
 )
 # Two to twelve minutes each.
 SLOW_CONFIGS=(

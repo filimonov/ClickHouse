@@ -141,7 +141,11 @@ CONSTANTS
     RerunObserved,      \* a rerun only when the owner shows this run's own unverified tombstone
     \* Round 12 (PR #2567 fix round):
     TombFenced,         \* the tombstone PUT goes on the admin's fenced plane: sent and landed only while its claim holds
-    RollbackKeepsRetired \* a rollback keeps any earlier retirement, verified or not (FALSE: only a verified one)
+    RollbackKeepsRetired, \* a rollback keeps any earlier retirement, verified or not (FALSE: only a verified one)
+    \* Round 13 (PR #2574 fix round):
+    RerunRetiring,      \* a rerun only while system.cas_mounts shows `retiring`: retired, not verified, slot terminal
+    RerunAnyRetired,    \* sabotage: also over a verified retirement (the `retired` row)
+    RerunAnySlot        \* sabotage: without the terminal slot
 
 ASSUME MaxStarts \in Nat /\ MaxAmbig \in Nat /\ MaxGcRounds \in Nat /\ EMax \in Nat
 ASSUME Scale \in Nat \ {0} /\ MaxClock \in Nat
@@ -1129,6 +1133,10 @@ DRestart(kind) ==
     /\ kind = "rerun" => (RerunOnlyUnverified => pc["d"] # "ddone")
     \* The operator reruns only when the owner shows this run's own tombstone, not yet verified.
     /\ kind = "rerun" => (RerunObserved => (ownerRetired /\ ~OwnerVerified /\ OTok = dTombTok))
+    \* The operator reruns only on a `retiring` row of system.cas_mounts (listMounts).
+    /\ kind = "rerun" => (RerunRetiring => (/\ ownerRetired /\ ~ownerGone
+                                            /\ (RerunAnyRetired \/ ~OwnerVerified)
+                                            /\ (RerunAnySlot \/ (mount.e > 0 /\ (mount.clean \/ mount.fenced)))))
     \* A new decommission names a live owner.
     /\ kind = "new" => (NewDecom /\ ~ownerRetired /\ ~ownerGone)
     /\ dNew' = (kind = "new")
@@ -1449,6 +1457,10 @@ NoWedge == ~(~ownerRetired /\ ~ownerGone /\ mount.e > 0 /\ mount.u # ownerUuid /
 \* No process resumes in place after its srid was retired and rejoined: a self-remount never makes a
 \* process live again when it started before a later rejoin.
 NoResumeAfterRetire == ~resumedStale
+
+\* Reachability witnesses, not properties: violated once a rerun starts, and once a rerun verifies its end.
+NoRerunWitness == starts["d"] = 0
+NoRerunDoneWitness == ~(starts["d"] > 0 /\ pc["d"] = "ddone")
 
 \* A drain never removes a reference allocated in a member life later than the life its decommission
 \* started on (a rerun inherits that life; a new decommission takes the current one).
