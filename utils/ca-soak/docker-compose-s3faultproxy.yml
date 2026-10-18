@@ -24,6 +24,9 @@ services:
       - rustfs1
     volumes:
       - ./proxy:/app:ro
+    # The proxy holds one socket per held request; a `hang` outage over ~120 s exhausts the default 1024.
+    ulimits:
+      nofile: {soft: 262144, hard: 262144}
     expose:
       - "11121"
     ports:
