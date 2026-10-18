@@ -3,23 +3,52 @@
 State on 2026-10-18 after the member-lifecycle (PR A/B/C), lease (#2517), blob-publication (#2555) and draft-prep work.
 Base: `antalya-26.6-20261008` @ `8fefc27bd62`.
 
-## Branch chain toward an outage-tolerant disk {#branch-chain}
+## Branch chain {#branch-chain}
 
-Branches are prepared locally as increments; each opens as a PR only when the owner says so and its predecessor
-has merged (no stacked PRs). Base `antalya-26.6-20261008`.
+Every change, open or local, in merge order. A local branch opens as a PR only when the owner says so and its
+predecessor has merged (no stacked PRs); after each merge, merge the base into the branches that overlap it.
+Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya-26.6/` prefix.
 
-| # | Branch (`fix/antalya-26.6/…`) | Increment | Depends on | State |
+**Wave 0: open PRs, waiting for review or merge**
+
+| PR | Branch | Change | Depends on | State |
 |---|---|---|---|---|
-| 1 | `cas-mount-renewal-until-definitive` (#2517) | expired lease = pause, renewal until a definitive answer | base | approved; build fix `54d125835906` gating |
-| 2 | `cas-ref-lane-fault-latch` | ref-lane fault latch (10 v2) + recovery seal fault (CAS-351) | base | porting |
-| 3 | `cas-unit-test-temp-roots-2` | unit tests remove their temp roots (CAS-349) | base | porting |
-| 4 | `cas-405-1-fetch-cleanup-busy-loop` | fetch backs off while its old part is `Outdated` | base | ready; upstream code, owner decision |
-| 5 | `cas-405-2-pause-is-a-wait` | a write pause is a wait (`cas_operation_timeout_ms`) | 1 | implementing |
-| 6 | CAS-405.3 | defaults lease 120 s / renew 40 s | 1, 5 | not started |
-| 7 | shrunk 9a | `system.cas_mounts` without store I/O for the local row | 5 | not started |
-| 8 | CAS-406 | renewal mode table, review renames | 1 | not started |
-| 9 | CAS-179 from 13 | no farewell while a snapshot publish may land | PR B, PR C | not started |
-| 10 | counter sweep from 16 | remove dead counters + `analyzing-cas-health` update | 1 | not started |
+| #2517 | `cas-mount-renewal-until-definitive` | expired lease = pause; renewal until a definitive answer | — | approved; build fix `54d125835906` gating, then push |
+| #2594 | `cas-blob-attempt-log-level` | first failed blob attempt below Warning | — | review |
+| #2577 | `cas-commit-outcome-texts` | honest commit-outcome texts | — | review |
+| #2573 | `cas-392-parallel-stale-mount-wait` | custom disks outside `storage_policies_mutex` | — | review |
+| #2570 | `cas-378-retired-life-republish` | no republish of a life retired during cold admission | — | review |
+| #2566 | `cas-member-lifecycle-pr-a` | PR A: no `/` in server root id; staging cleanup | — | review |
+| #2567 | `cas-363-member-lifecycle` | PR B: owner life, epoch nonce, fenced decommission | A | review |
+| #2574 | `cas-member-lifecycle-pr-c` | PR C: rejoin, `retirement_verified` | B | review; S47 rerun after A and C |
+
+**Wave 1: local, independent of wave 0 (open in any order)**
+
+| Branch | Head | Change | Overlaps |
+|---|---|---|---|
+| `cas-404-cas-mounts-server-uuid` | `9e8b3dc54d8` | `system.cas_mounts.server_uuid` halves swapped | — |
+| `cas-354-ifmatch-404-not-error` | `0a51702489a` | `If-Match` 404 not logged as Error | — |
+| `cas-unit-test-temp-roots-2` | porting | CAS-349 test temp roots | — |
+| `cas-ref-lane-fault-latch` | porting | 10 v2 ref-lane fault latch + CAS-351 | — |
+| `cas-373-late-request-robustness` | `0f285d4e01d` | audit small fixes (SK17, PM-7, versioning bound) | — |
+| `cas-366-superseded-ckpt-contribution` | `2d2182b3b19` | refuse an append into a reclaimed seal slot | ref-lane latch (same files) |
+| `cas-367-keep-lane-closed-on-ambiguous-removing` | `c7a242d05bf` | ambiguous `beginRemoving` keeps the lane closed | ref-lane latch |
+| `cas-368-fresh-incarnation-per-step1-retry` | `d42febbcc9b` | fresh incarnation per namespace-create retry | CAS-405.2 (`CasRetry.h`) |
+| `cas-405-1-fetch-cleanup-busy-loop` | `2b031d5490f` | fetch backs off while its old part is `Outdated` | upstream code: owner decision |
+
+**Wave 2: after #2517 (and PR B/C where noted)**
+
+| Branch | Change | Depends on |
+|---|---|---|
+| `cas-403-install-renewer-during-stop` (`84c1b5f4398`) | no `LOGICAL_ERROR` when a stop races a remount | #2517, PR B |
+| `cas-365-confirm-reads-mount-slot` (`cfc79da94a9`) | relink-confirm `Yes` checks the mount slot | #2517 |
+| `cas-364-fence-greater-epoch` (`0c57ca5a337`) | fence certificate only for a greater epoch | PR B, PR C |
+| `cas-405-2-pause-is-a-wait` (implementing) | a write pause is a wait | #2517 |
+| CAS-405.3 | defaults lease 120 s / renew 40 s | CAS-405.2 |
+| shrunk 9a | `system.cas_mounts` local row without store I/O | CAS-405.2 |
+| CAS-406 | renewal mode table, review renames | #2517 |
+| counter sweep from 16 | remove dead counters + `analyzing-cas-health` | #2517 |
+| CAS-179 from 13 | no farewell while a snapshot publish may land | PR B, PR C |
 
 ## Decisions pending {#decisions-pending}
 
