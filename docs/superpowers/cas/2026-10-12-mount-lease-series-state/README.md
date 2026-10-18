@@ -112,6 +112,18 @@ The owner judged the series too complex for its goal (exclusive writable mount o
 - **Likely dropped or shrunk:** 14 (reacquire → terminate), most of 9b (budget contract), 12 (loss table R8–R18 → Suspended/Lost).
 - Nothing removes the time residue for `_files/` and `beginRemoving` without a format change (CAS-370, CAS-367).
 
+## Owner decisions on 2026-10-18 {#decisions-2026-10-18}
+
+Triage: `tmp/lease-series/triage/TRIAGE.md` (verdicts per branch against base `8fefc27bd625`, #2517 and PR C).
+
+- Keep: 10 v2 with CAS-351 in one PR; CAS-349. Port now, umbrella review, restore their models.
+- Shrink: 9a (local row without store I/O, foreign rows one attempt, `listing_error` row; keep `not_live`/`String`
+  columns); 13 to CAS-179 only; 16 to the counter sweep `52ad11859649` (the thread-local removal goes to CAS-406).
+- Park on `filimonov`: 9b, 11a, 11b, 12, 14, 15. `models/mount-lease-series` stays their model archive.
+- Keep the in-process remount after our own GC fence; revisit after CAS-405.2/405.3 with a single-node `hang 300` run.
+- No process-level stop (SIGTERM, `std::terminate`) on slot loss or ref-lane faults: remount, else the disk goes terminal.
+- No farewell after lease expiry; a short restart under a long lease comes from CAS-405.4.
+
 ## Open owner decisions {#open-decisions}
 
 1. Simplification direction (above) — to be decided after the data-loss fixes.
