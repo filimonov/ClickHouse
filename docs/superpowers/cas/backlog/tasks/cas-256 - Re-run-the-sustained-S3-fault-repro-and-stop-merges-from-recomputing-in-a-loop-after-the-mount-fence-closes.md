@@ -59,5 +59,13 @@ Provenance: BACKLOG/replication.md [merge-progress-reset-mount-fence]; the ABORT
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
+First recorded: 2026-08-04 (b4420fe512a, by 'merge-progress-reset-mount-fence')
+
+2026-10-08: repro on the lease-series PR 8 branch (renewal until a definitive answer): no lease loss, no remount, same `writer_epoch` during a long `PUT` outage; a merge still restarted 14 times (~1/s) while writes were paused, with one error row in `part_log`. The pause refuses with a retryable error and MergeTree retries at once. The fix is merge pacing on a paused mount, not the renewal; count `MergePartsStart` in the repro.
+
+Reviewer note (PR 8 review): the claim that the loop also runs on the base is unverified. On the base the pool leaves Live at about 14 s and refuses merges at entry; under PR 8 the pool stays Live through the pause, so a merge does its work and fails at commit — each retry is likely more expensive. Settle it by running the same repro on the base binary and counting MergePartsStart.
+
+2026-10-08: the PR 8 replay (503 on mount PUTs for 35 s) showed merges restarting about once a second during the pause (admission closed, pool live). The comparison against base is still owed.
+
 Reproduced 2026-10-18 (tmp/cas405/REPORT.md): the node cut off from the store for 120 s re-ran merges 127-397 times with NETWORK_ERROR (210); 264-397 with GC every 10 s, 22 with a 180 s lease. Part of the CAS-405 goal (disk that tolerates a temporary loss of connectivity).
 <!-- SECTION:NOTES:END -->
