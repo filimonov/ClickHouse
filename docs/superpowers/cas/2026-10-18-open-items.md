@@ -3,6 +3,24 @@
 State on 2026-10-18 after the member-lifecycle (PR A/B/C), lease (#2517), blob-publication (#2555) and draft-prep work.
 Base: `antalya-26.6-20261008` @ `8fefc27bd62`.
 
+## Branch chain toward an outage-tolerant disk {#branch-chain}
+
+Branches are prepared locally as increments; each opens as a PR only when the owner says so and its predecessor
+has merged (no stacked PRs). Base `antalya-26.6-20261008`.
+
+| # | Branch (`fix/antalya-26.6/…`) | Increment | Depends on | State |
+|---|---|---|---|---|
+| 1 | `cas-mount-renewal-until-definitive` (#2517) | expired lease = pause, renewal until a definitive answer | base | approved; build fix `54d125835906` gating |
+| 2 | `cas-ref-lane-fault-latch` | ref-lane fault latch (10 v2) + recovery seal fault (CAS-351) | base | porting |
+| 3 | `cas-unit-test-temp-roots-2` | unit tests remove their temp roots (CAS-349) | base | porting |
+| 4 | `cas-405-1-fetch-cleanup-busy-loop` | fetch backs off while its old part is `Outdated` | base | ready; upstream code, owner decision |
+| 5 | `cas-405-2-pause-is-a-wait` | a write pause is a wait (`cas_operation_timeout_ms`) | 1 | implementing |
+| 6 | CAS-405.3 | defaults lease 120 s / renew 40 s | 1, 5 | not started |
+| 7 | shrunk 9a | `system.cas_mounts` without store I/O for the local row | 5 | not started |
+| 8 | CAS-406 | renewal mode table, review renames | 1 | not started |
+| 9 | CAS-179 from 13 | no farewell while a snapshot publish may land | PR B, PR C | not started |
+| 10 | counter sweep from 16 | remove dead counters + `analyzing-cas-health` update | 1 | not started |
+
 ## Decisions pending {#decisions-pending}
 
 - Open PRs for the six prepared drafts: CAS-364, 373, 366, 365, 367, 368 (branches `fix/antalya-26.6/cas-36x-…`,
