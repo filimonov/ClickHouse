@@ -3,9 +3,10 @@ id: CAS-405
 title: >-
   Choose CAS defaults that survive a two-minute object-store outage without a
   lost mount
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-18 13:52'
+updated_date: '2026-10-18 20:25'
 labels:
   - 'area:mounts'
 dependencies: []
@@ -31,3 +32,9 @@ Goal: losing connectivity to the object store for about 2 minutes passes without
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Experiments done 2026-10-18: tmp/cas405/REPORT.md (20 runs, base vs #2517). #2517 removes lease loss and remount for full outages of 60-180 s; oracle and fsck clean in every run. Remaining work split into CAS-405.1 (fetch/cleanup busy loop), .2 (pause = wait, not error), .3 (defaults 120/40 s), .4 (fast reclaim after crash), .5 (_ckpt give-up text). Stand fd limit fixed in 0343193ee3c.
+<!-- SECTION:NOTES:END -->
