@@ -42,6 +42,10 @@ remount and without client-visible write errors beyond a pause.
 - To decide: lease TTL and renew period, the write policy deadline (90 s), attempt timeouts; cost: slower detection
   of a dead member and a longer GC floor hold. Verify on the fault-proxy stand with the store unreachable for 120 s
   (inserts, merges, selects; no `CASMountLeaseLost`, no remount, no client error).
+- Measured (20 stand runs): #2517 alone removes lease loss and remount for full outages of 60–180 s; clients
+  still get immediate `NETWORK_ERROR` (210). Work split into CAS-405.1 (fetch/cleanup busy loop), CAS-405.2
+  (pause = wait), CAS-405.3 (lease 120 s / renew 40 s), CAS-405.4 (fast reclaim after a crash), CAS-405.5
+  (`_ckpt` give-up text); CAS-256 reproduced.
 
 ## Data correctness {#data-correctness}
 
