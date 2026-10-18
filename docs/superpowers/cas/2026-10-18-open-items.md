@@ -67,6 +67,19 @@ remount and without client-visible write errors beyond a pause.
   duplicate). No task yet.
 - CAS-396…402: follow-ups from the #2555 review.
 
+## Paused mount-lease series (PR 9a–16) {#paused-lease-series}
+
+State: `docs/superpowers/cas/2026-10-12-mount-lease-series-state/README.md`. Paused on 2026-10-12 because the
+late-request audit found data-loss defects outside the lease.
+
+- Merged: PR 1, 3, 5, 7, 4, 2 v2 (#2509–#2513, #2516). Open: PR 8 (#2517).
+- Local only, backed up to the `filimonov` fork: 10 v2, CAS-349, CAS-351, 9a, 9b, 11a, 11b, 12, 13, 14, 15, 16.
+- Their models were reverted on `cas-gc-rebuild` (25 revert commits) so the models match the release line;
+  the series models live on `models/mount-lease-series` (#2517's on `models/mount-lease-series-v2`).
+- To decide: the direction (ZooKeeper-like session: Live → Suspended → Live, Lost → terminate), then the fate of
+  each branch. CAS-405 (pause = wait, longer lease, transport deadline CAS-343) is that direction in practice.
+- Independent and ready: 10 v2 (one ref-lane fault latch), CAS-349 (unit-test temp roots).
+
 ## Lease (#2517) follow-ups {#lease-follow-ups}
 
 - CAS-406: #2517 review refactorings (one `MountRenewMode` table for plane and retry policy, renames,
