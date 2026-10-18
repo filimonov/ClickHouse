@@ -69,7 +69,10 @@ remount and without client-visible write errors beyond a pause.
 
 ## Lease (#2517) follow-ups {#lease-follow-ups}
 
-- Move the renewal loop into the request engine (review simplification 6), after #2517.
+- CAS-406: #2517 review refactorings (one `MountRenewMode` table for plane and retry policy, renames,
+  exhaustive `std::visit`).
+- CAS-407: move the renewal loop into the request engine (review simplification 6); check on the models
+  whether the startup renewal can leave the fenced plane.
 - CAS-256: merges restart once a second during a write pause.
 - CAS-298 AC#3/#4 (S39 on all replicas, CAS-344).
 - CAS-389 (Low): stop-vs-renewal race, cause 2.
