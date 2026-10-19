@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-26 12:37'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-10-19 14:08'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -73,4 +73,6 @@ Provenance: GitHub issue #2431 (open, no assignee), reconciled by u17-github-cas
 2026-10-08: claim part is in https://github.com/Altinity/ClickHouse/pull/2512 (strictly greater epoch); renewal part is in https://github.com/Altinity/ClickHouse/pull/2517 (retries until a definitive answer; an expired lease is a pause).
 
 2026-10-19: #2517 head d410298e2c47 did not compile unit_tests_dbms (CI debug/ASan builds red, test jobs skipped). Fix fix/antalya-26.6/cas-mount-renewal-until-definitive @54d125835906 (local); release CAS* 2646, ASan 2650 on the exact tree (tmp/pr2517ci/GATE.md). Push needs the owner.
+
+2026-10-19: #2517 merged at 54d125835906 (merge 9e540342644). CI triage https://github.com/Altinity/ClickHouse/pull/2517#issuecomment-6269177830: no red from the PR; cas_selects lost-lease form gone, one 210 from port exhaustion; cas_lightweight_delete_4 is upstream lost-DELETE fixed by ClickHouse#124167.
 <!-- SECTION:NOTES:END -->

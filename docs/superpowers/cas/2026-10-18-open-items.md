@@ -13,7 +13,7 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 
 | PR | Branch | Change | Depends on | State |
 |---|---|---|---|---|
-| #2517 | `cas-mount-renewal-until-definitive` | expired lease = pause; renewal until a definitive answer | — | approved; PR head `d410298e2c4` does not compile `unit_tests_dbms`; local fix `54d125835906` gated (release 2646, ASan 2650), push needs the owner |
+| #2517 | `cas-mount-renewal-until-definitive` | expired lease = pause; renewal until a definitive answer | — | merged 2026-10-19 at `54d125835906` (merge `9e540342644`); CI triage: https://github.com/Altinity/ClickHouse/pull/2517#issuecomment-6269177830 |
 | #2528 | external author | CAS-36: no manifest GET on promote | — | review by its author; TLA+ check and C′ defense-in-depth note sent |
 | #2594 | `cas-blob-attempt-log-level` | first failed blob attempt below Warning | — | review |
 | #2577 | `cas-commit-outcome-texts` | honest commit-outcome texts | — | review |
@@ -55,8 +55,10 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 
 - Open PRs for the six prepared drafts: CAS-364, 373, 366, 365, 367, 368 (branches `fix/antalya-26.6/cas-36x-…`,
   reports in `tmp/noclock/drafts/prep/<task>/`).
-- #2517: push the test fix `54d125835906`, then read the full CI run: `cas_selects` and whether the server logs show
-  write pauses; one green run is not proof.
+- Backport https://github.com/ClickHouse/ClickHouse/pull/124167 to `antalya-26.6`: a concurrent lightweight `DELETE`
+  is lost when mutation N+1 registers before N (`cas_lightweight_delete_4` on #2517, 50000 rows left). Upstream code;
+  the patch conflicts with the base.
+- `cas_selects` on #2517: one client `Code: 210` from errno 99 port exhaustion on `clickhouse1`; no lease loss.
 - CAS-405.2: a query can wait up to 180 s holding `DataPartsLock` (the `preparePartForCommit` rename reaches the entry
   gate). Proposed: wait only at query entry, before MergeTree locks; then an umbrella review of the branch.
 - CAS-405.2: a query inherits a background leader's fail-fast in a batched ref append (the one `503` error on the
