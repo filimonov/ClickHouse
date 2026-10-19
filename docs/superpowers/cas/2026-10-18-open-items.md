@@ -19,7 +19,7 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 | #2577 | `cas-commit-outcome-texts` | honest commit-outcome texts | — | review |
 | #2573 | `cas-392-parallel-stale-mount-wait` | custom disks outside `storage_policies_mutex` | — | review |
 | #2570 | `cas-378-retired-life-republish` | no republish of a life retired during cold admission | — | review |
-| #2566 | `cas-member-lifecycle-pr-a` | PR A: no `/` in server root id; staging cleanup | — | review |
+| #2566 | `cas-member-lifecycle-pr-a` | PR A: no `/` in server root id; staging cleanup | — | merged 2026-10-19 (merge `af662dc591c`); CI triage: https://github.com/Altinity/ClickHouse/pull/2566#issuecomment-6269521695 |
 | #2567 | `cas-363-member-lifecycle` | PR B: owner life, epoch nonce, fenced decommission | A | review |
 | #2574 | `cas-member-lifecycle-pr-c` | PR C: rejoin, `retirement_verified` | B | review; S47 rerun after A and C |
 
@@ -91,7 +91,7 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 
 ## Merge order {#merge-order}
 
-- PR A #2566 → PR B #2567 → PR C #2574. PR A is not in B/C: after A lands, merge the base into B and C.
+- PR A #2566 (merged) → PR B #2567 → PR C #2574. Next: merge the base into B and C, then gates and CI.
 - Rerun soak S47 after A and C: its only red is PR A's `NoWait` refusal text.
 - #2570 (CAS-378), #2573 (CAS-392), #2577 (commit outcome texts), #2594 (blob attempt log level) are open.
 

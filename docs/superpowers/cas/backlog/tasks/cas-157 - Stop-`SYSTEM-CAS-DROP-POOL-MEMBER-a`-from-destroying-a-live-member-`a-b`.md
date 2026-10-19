@@ -4,7 +4,7 @@ title: Stop `SYSTEM CAS DROP POOL MEMBER 'a'` from destroying a live member `a/b
 status: In Progress
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-10-15 11:13'
+updated_date: '2026-10-19 14:23'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -61,4 +61,6 @@ First recorded: 2026-08-21 (69e007cf41e, by 'nested-srid-decommission')
 2026-10-14: PR A https://github.com/Altinity/ClickHouse/pull/2566 refuses `/` in new server_root_ids. AC#1 is reworded to cover new ids only. Existing nested pools, and a new `a` over an empty `a/b`, stay documented, not fixed.
 
 2026-10-15: closed for new ids by PR A https://github.com/Altinity/ClickHouse/pull/2566; existing nested pools documented. Done on merge.
+
+2026-10-19: PR A #2566 merged (merge af662dc591c). Merge with the base incl. #2517 gated locally: release CAS* 2705, ASan 2709.
 <!-- SECTION:NOTES:END -->
