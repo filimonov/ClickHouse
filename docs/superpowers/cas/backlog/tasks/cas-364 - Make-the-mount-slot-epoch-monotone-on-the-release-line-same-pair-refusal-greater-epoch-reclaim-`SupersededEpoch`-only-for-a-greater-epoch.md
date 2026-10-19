@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-12 20:24'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:mounts'
   - 'complexity:small'
@@ -52,4 +52,6 @@ On the base `claimMount` refreshes a slot holding the same `(uuid, epoch)` (T7/M
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-12: PR #2512 (claim accepts only a strictly greater epoch) is merged into antalya-26.6-20261008 (2a034cdb374). Remaining here: `classifyFenceCertificate` treats any epoch inequality as `SupersededEpoch`; require a greater epoch.
+
+2026-10-18: draft prepared on fix/antalya-26.6/cas-364-fence-greater-epoch @0c57ca5a337e (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/364/.
 <!-- SECTION:NOTES:END -->

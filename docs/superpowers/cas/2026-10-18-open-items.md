@@ -1,7 +1,7 @@
 # CAS open items, 2026-10-18 {#cas-open-items-2026-10-18}
 
 State on 2026-10-18 after the member-lifecycle (PR A/B/C), lease (#2517), blob-publication (#2555) and draft-prep work.
-Base: `antalya-26.6-20261008` @ `8fefc27bd62`.
+Base: `antalya-26.6-20261008` @ `8fefc27bd62`. Session history (Russian): [2026-10-19-session-history-ru.md](2026-10-19-session-history-ru.md).
 
 ## Branch chain {#branch-chain}
 
@@ -13,7 +13,8 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 
 | PR | Branch | Change | Depends on | State |
 |---|---|---|---|---|
-| #2517 | `cas-mount-renewal-until-definitive` | expired lease = pause; renewal until a definitive answer | — | approved; build fix `54d125835906` gating, then push |
+| #2517 | `cas-mount-renewal-until-definitive` | expired lease = pause; renewal until a definitive answer | — | approved; PR head `d410298e2c4` does not compile `unit_tests_dbms`; local fix `54d125835906` gated (release 2646, ASan 2650), push needs the owner |
+| #2528 | external author | CAS-36: no manifest GET on promote | — | review by its author; TLA+ check and C′ defense-in-depth note sent |
 | #2594 | `cas-blob-attempt-log-level` | first failed blob attempt below Warning | — | review |
 | #2577 | `cas-commit-outcome-texts` | honest commit-outcome texts | — | review |
 | #2573 | `cas-392-parallel-stale-mount-wait` | custom disks outside `storage_policies_mutex` | — | review |
@@ -43,7 +44,7 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 | `cas-403-install-renewer-during-stop` (`84c1b5f4398`) | no `LOGICAL_ERROR` when a stop races a remount | #2517, PR B |
 | `cas-365-confirm-reads-mount-slot` (`cfc79da94a9`) | relink-confirm `Yes` checks the mount slot | #2517 |
 | `cas-364-fence-greater-epoch` (`0c57ca5a337`) | fence certificate only for a greater epoch | PR B, PR C |
-| `cas-405-2-pause-is-a-wait` (implementing) | a write pause is a wait | #2517 |
+| `cas-405-2-pause-is-a-wait` (`c84405e77cb`) | a write pause is a wait; open: waits under `DataPartsLock` | #2517 |
 | CAS-405.3 | defaults lease 120 s / renew 40 s | CAS-405.2 |
 | shrunk 9a | `system.cas_mounts` local row without store I/O | CAS-405.2 |
 | CAS-406 | renewal mode table, review renames | #2517 |
@@ -54,8 +55,23 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 
 - Open PRs for the six prepared drafts: CAS-364, 373, 366, 365, 367, 368 (branches `fix/antalya-26.6/cas-36x-…`,
   reports in `tmp/noclock/drafts/prep/<task>/`).
-- #2517: after the base merge (`d410298e2c4`), check `cas_selects` on the new run and whether the server logs show
+- #2517: push the test fix `54d125835906`, then read the full CI run: `cas_selects` and whether the server logs show
   write pauses; one green run is not proof.
+- CAS-405.2: a query can wait up to 180 s holding `DataPartsLock` (the `preparePartForCommit` rename reaches the entry
+  gate). Proposed: wait only at query entry, before MergeTree locks; then an umbrella review of the branch.
+- CAS-405.2: a query inherits a background leader's fail-fast in a batched ref append (the one `503` error on the
+  stand). Proposed: a separate task.
+- CAS-405.1: upstream change in `StorageReplicatedMergeTree::fetchPart`; accept it, and send it upstream too?
+- Land the ref-lane model: `git merge --ff-only models/reflane-fault-latch-port` on `cas-gc-rebuild` (re-applies
+  three reverted series model commits plus the CAS-351 model).
+- CAS-393: six design questions with proposed answers (`tmp/cas393/RESEARCH.md`); spec after the answers.
+- CAS-36: the own spec `docs/superpowers/specs/2026-10-12-cas-orphan-sweep-floor-for-rowless-manifests-design.md` is
+  untracked since #2528 took the fix; keep it as a record or delete.
+- Delete local branches after a look: `wip/pr10-port`, the pre-squash `fix/antalya-26.6/cas-ref-lane-fault-latch`
+  (`1556359b7ac`), `fix/antalya-26.6/cas-mount-renewal-until-definitive-stale-local`.
+- Delete external test prefixes: `s3://test-altinity-support-team/ca_lat_20261002_aws1/`,
+  `gs://content-adressable-test-mfilimonov/ca_lat_20261002_gcs1/`, AWS `ca_lease_pr06_20261008_aws`, GCS
+  `ca_lease_pr06_20261008_gcs/` and `ca_lease_pr06_20261008_gcsbase/`.
 - #2343: add a link to #2577 (the honest `_ckpt` error text promised there).
 - Delete the local branch `fix/antalya-26.6/cas-ckpt-giveup-reason` (superseded by #2577).
 - Disk: docker build cache and dangling images (~70 GB), `tmp/cas358` (5.7 GB).

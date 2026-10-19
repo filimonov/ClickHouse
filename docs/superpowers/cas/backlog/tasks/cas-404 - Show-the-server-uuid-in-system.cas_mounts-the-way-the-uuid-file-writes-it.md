@@ -4,6 +4,7 @@ title: Show the server uuid in system.cas_mounts the way the uuid file writes it
 status: To Do
 assignee: []
 created_date: '2026-10-17 03:43'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:mounts'
 dependencies: []
@@ -29,3 +30,9 @@ Found by soak S47 on PR #2574: system.cas_mounts.server_uuid shows the uuid with
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-18: fix on fix/antalya-26.6/cas-404-cas-mounts-server-uuid @9e8b3dc54d83 (Cas::u128ToUUID); release 2666, ASan 2670. Local, not pushed. Review and body tmp/small-fixes/cas-404/.
+<!-- SECTION:NOTES:END -->

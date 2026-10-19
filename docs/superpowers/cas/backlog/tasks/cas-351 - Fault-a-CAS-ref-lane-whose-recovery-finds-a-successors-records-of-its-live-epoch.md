@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 16:49'
-updated_date: '2026-10-12 11:51'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -46,4 +46,6 @@ ordinal: 445000
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-12 noclock audit (docs/superpowers/cas/2026-10-12-late-request-audit/objects/reflog.md R10–R12): recovery reading a successor's history is harmless by itself (R10; codex agrees, U12 dropped). The harmful branch is R11: a mount whose own epoch is already sealed by a higher mount derives `(E,k+1)` above its seal; `checkRefCkptInvariants` refuses, the table wedges with a false `CORRUPTED_DATA`. Writer gate: reject when `last_epoch_seal.writer_epoch >= live_epoch` (~15 lines). Trigger (a) is the lower-epoch reclaim (CAS-178).
+
+2026-10-19: ported together with PR 10 v2 to fix/antalya-26.6/cas-ref-lane-fault-latch-2 @d0480a861845 (base 8fefc27bd625, 4 commits); release CAS* per commit, ASan 2686. Model on local branch models/reflane-fault-latch-port (NoRecoveryOverSuccessor, run_reflane.sh 34/34), not yet on cas-gc-rebuild. Body tmp/lease-series/port/pr10/pr-body.md.
 <!-- SECTION:NOTES:END -->

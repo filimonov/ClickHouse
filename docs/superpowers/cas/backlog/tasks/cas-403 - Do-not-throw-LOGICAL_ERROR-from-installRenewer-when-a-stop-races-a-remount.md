@@ -4,7 +4,7 @@ title: Do not throw LOGICAL_ERROR from installRenewer when a stop races a remoun
 status: To Do
 assignee: []
 created_date: '2026-10-16 00:29'
-updated_date: '2026-10-17 00:09'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:mounts'
 dependencies: []
@@ -37,4 +37,6 @@ Found by the TLA run for PR #2517 (model CaRenewalDriver, config finding_install
 2026-10-17: the PR #2567 fix round hit the same stop-vs-remount race in a new test (admin self-remount during teardown after a fake-clock jump: release teardown hung watching its own body on a frozen clock; with the slot fenced, ASan hit this LOGICAL_ERROR). Latent in DrainStopsOnTheAdminLeaseFence and DrainStopsWalkingAfterTheFirstRefusedDelete. Also: the remount's observation sleep ignores a stop request, so a production teardown can wait up to the observation window.
 
 2026-10-17 correction: the two DrainStops* tests do NOT reach the race (their tombstone lands before the clock jump, so the admin's remount stops at claimOwnerOrThrow on the retired owner). Production trigger after PR #2567's fenced tombstone: the admin's lease lapses before the tombstone, the refused tombstone leaves the owner unretired, and the admin's self-remount passes claimOwnerOrThrow while the run tears down → installRenewer during Stopping. Availability only (remount-worker exception, possible teardown delay, reruns refused until GC fences the slot); no data loss.
+
+2026-10-18: fix on fix/antalya-26.6/cas-403-install-renewer-during-stop @84c1b5f43982 (ABORTED instead of LOGICAL_ERROR); release 2669, ASan 2673. Needs #2517 and PR B. Local, not pushed. Review and body tmp/small-fixes/cas-403/.
 <!-- SECTION:NOTES:END -->

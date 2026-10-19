@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
-updated_date: '2026-10-14 17:03'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:replication'
   - 'area:mounts'
@@ -55,4 +55,6 @@ Same-pair twin fix: CAS-364.
 2026-10-13 model (`7096317fc6c`, CaRelinkConfirmCore RESULTS `#cas-365`): slot holder separated from `sFence`, confirm and renewal split into steps. `cur_staleyes` (frozen clock, C5) violates `ConfirmedRelinkNeverDangles` in 13 states; `cur_twin` (C6) too but only before #2512 — on the release line claimMount refuses the same pair, so C6 is unreachable; C9 belongs to CAS-362/363. Fix A (one `GET` of the mount slot on the path to `Yes`, require our (uuid, epoch) and ETag = `last_etag` or the in-flight renewal's `write_attempt_id`, else `Unknown`) green 15.9 M; fix B (answer after the next renewal) green 26.7 M; sabotages red (reused pre-snapshot GET; compare only (uuid, epoch); renewal started before the snapshot). Recommendation A: ~100 lines in `Pool::confirmExactRef` + `slotStillOurs` on runtime/renewer, one GET per Yes, no format change, no clock; breaks the 'zero object-store I/O' contract (update comments in `CasRefLedger::confirmExactRef`, `ContentAddressedExchange.h`). Open: concurrency cap vs single-flight; exposing the in-flight attempt id; which plane admits the GET.
 
 2026-10-14: drop the 'epoch reuse (C9)' vector: epochs no longer repeat across lives for upgraded servers (decommission keeps the counter, PR B).
+
+2026-10-18: draft prepared on fix/antalya-26.6/cas-365-confirm-reads-mount-slot @cfc79da94a9a (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/365/.
 <!-- SECTION:NOTES:END -->

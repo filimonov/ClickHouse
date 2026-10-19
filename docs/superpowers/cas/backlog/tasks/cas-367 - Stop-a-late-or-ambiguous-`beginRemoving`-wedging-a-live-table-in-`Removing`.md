@@ -4,6 +4,7 @@ title: Stop a late or ambiguous `beginRemoving` wedging a live table in `Removin
 status: To Do
 assignee: []
 created_date: '2026-10-12 11:51'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:ref-ledger'
   - 'complexity:small'
@@ -44,3 +45,9 @@ Now: keep the lane closed after an ambiguous `beginRemoving` (~10 lines); detect
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-18: draft prepared on fix/antalya-26.6/cas-367-keep-lane-closed-on-ambiguous-removing @c7a242d05bf8 (base 8fefc27bd625, umbrella-reviewed, gated). Local, not pushed; waits for the owner's read. Report, review and body tmp/noclock/drafts/prep/367/.
+<!-- SECTION:NOTES:END -->

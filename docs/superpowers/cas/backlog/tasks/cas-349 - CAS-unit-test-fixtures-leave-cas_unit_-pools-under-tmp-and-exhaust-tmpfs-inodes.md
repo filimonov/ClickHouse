@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-08 15:53'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:tests'
   - 'complexity:small'
@@ -38,3 +39,9 @@ ordinal: 443000
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-19: ported to fix/antalya-26.6/cas-unit-test-temp-roots-2 @c3e92a4c3b4a (base 8fefc27bd625, 2 commits); release CAS* 2665, ASan 2669, TMPDIR empty after both. Local, not pushed. Body tmp/lease-series/port/cas349/pr-body.md.
+<!-- SECTION:NOTES:END -->

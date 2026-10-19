@@ -602,3 +602,7 @@ Every attempted scenario run is appended here (newest at the bottom). `run_dir` 
 | 2026-08-31T13:25:57 | S21 | 20260831 | full | 2400s | fail | 3257a1407ebb | 20260831T131942_S21_seed20260831 | Node(localhost:8123) HTTP 408: Code: 159. DB::Exception: SYNC REPLICA default.s21_wide (8266336c-22d7-4d97-b32e-596929445d6b): command timed out. See the 'receive_timeout' setting. (TIMEOUT_EXCEEDED) (version 26.6.2.20000.altinityantalya) / sql=SYSTEM SYNC REPLICA s21_wide |
 | 2026-08-31T14:20:23 | S21 | 20260831 | full | 2400s | pass | 3257a1407ebb | 20260831T141151_S21_seed20260831 |  |
 | 2026-08-31T15:10:36 | S20 | 20260831 | full | 900s | inconclusive | 385e230faeff | 20260831T150942_S20_seed20260831 |  |
+| 2026-10-15T18:32:21 | S47 | 47 | dev | 900s | fail | 4b3321bcf4fb | 20261015T181536_S47_seed47 |  |
+| 2026-10-15T23:50:35 | S47 | 47 | dev | 9000s | fail | dd2eafbf9841 | 20261015T205358_S47_seed47 |  |
+| 2026-10-17T03:41:11 | S47 | 47 | dev | 9000s | fail | e62f4adcaf9f | 20261017T005711_S47_seed47 |  |
+| 2026-10-17T07:00:29 | S47 | 47 | dev | 3600s | fail | d32aee880531 | 20261017T054759_S47_seed47 |  |

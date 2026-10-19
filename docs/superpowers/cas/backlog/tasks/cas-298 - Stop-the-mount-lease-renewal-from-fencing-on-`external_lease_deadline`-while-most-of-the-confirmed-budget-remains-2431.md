@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-26 12:37'
-updated_date: '2026-10-08 16:49'
+updated_date: '2026-10-19 07:02'
 labels:
   - 'area:mounts'
   - 'complexity:medium'
@@ -71,4 +71,6 @@ Provenance: GitHub issue #2431 (open, no assignee), reconciled by u17-github-cas
 2026-10-02 (evening): both branches pushed to `altinity`. Draft pull requests: https://github.com/Altinity/ClickHouse/pull/2474 (the fix, into `antalya-26.6`) and https://github.com/Altinity/ClickHouse/pull/2475 (the simplification, stacked on the fix branch to keep its diff readable; retarget to `antalya-26.6` after 2474 merges).
 
 2026-10-08: claim part is in https://github.com/Altinity/ClickHouse/pull/2512 (strictly greater epoch); renewal part is in https://github.com/Altinity/ClickHouse/pull/2517 (retries until a definitive answer; an expired lease is a pause).
+
+2026-10-19: #2517 head d410298e2c47 did not compile unit_tests_dbms (CI debug/ASan builds red, test jobs skipped). Fix fix/antalya-26.6/cas-mount-renewal-until-definitive @54d125835906 (local); release CAS* 2646, ASan 2650 on the exact tree (tmp/pr2517ci/GATE.md). Push needs the owner.
 <!-- SECTION:NOTES:END -->
