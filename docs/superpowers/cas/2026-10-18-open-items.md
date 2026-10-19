@@ -27,7 +27,7 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 
 | Branch | Head | Change | Overlaps |
 |---|---|---|---|
-| `cas-404-cas-mounts-server-uuid` | `9e8b3dc54d8` | `system.cas_mounts.server_uuid` halves swapped | — |
+| `cas-404-cas-mounts-server-uuid` | `42985cb11ac` | `system.cas_mounts.server_uuid` halves swapped | — |
 | `cas-354-ifmatch-404-not-error` | `0a51702489a` | `If-Match` 404 not logged as Error | — |
 | `cas-unit-test-temp-roots-2` | `c3e92a4c3b4` | CAS-349 test temp roots (gated) | — |
 | `cas-ref-lane-fault-latch-2` | `d0480a86184` | 10 v2 ref-lane fault latch + CAS-351 (gated; model `models/reflane-fault-latch-port`) | — |

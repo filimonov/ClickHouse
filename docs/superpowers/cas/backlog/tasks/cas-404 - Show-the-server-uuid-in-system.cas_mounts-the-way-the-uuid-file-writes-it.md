@@ -4,7 +4,7 @@ title: Show the server uuid in system.cas_mounts the way the uuid file writes it
 status: To Do
 assignee: []
 created_date: '2026-10-17 03:43'
-updated_date: '2026-10-19 07:02'
+updated_date: '2026-10-19 09:50'
 labels:
   - 'area:mounts'
 dependencies: []
@@ -35,4 +35,6 @@ Found by soak S47 on PR #2574: system.cas_mounts.server_uuid shows the uuid with
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-18: fix on fix/antalya-26.6/cas-404-cas-mounts-server-uuid @9e8b3dc54d83 (Cas::u128ToUUID); release 2666, ASan 2670. Local, not pushed. Review and body tmp/small-fixes/cas-404/.
+
+2026-10-19: rebuilt as one commit 42985cb11ac2 on 8fefc27bd625. Dropped Cas::u128ToUUID; the column parses u128ToHex with parseFromString<UUID>, the same text codec as toString(ServerUUID::get()). Release CAS* 2666 green, ASan CASListMounts* green, 05295 x2 OK. Local, not pushed. Body tmp/small-fixes/cas-404/pr-body.md.
 <!-- SECTION:NOTES:END -->
