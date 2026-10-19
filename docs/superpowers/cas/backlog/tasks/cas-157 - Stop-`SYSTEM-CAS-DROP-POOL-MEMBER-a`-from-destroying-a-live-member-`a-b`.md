@@ -1,7 +1,7 @@
 ---
 id: CAS-157
 title: Stop `SYSTEM CAS DROP POOL MEMBER 'a'` from destroying a live member `a/b`
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-21'
 updated_date: '2026-10-19 14:23'
