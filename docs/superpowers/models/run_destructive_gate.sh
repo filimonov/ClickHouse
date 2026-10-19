@@ -54,7 +54,7 @@ for row in "${CONFIGS[@]}"; do
         result=timeout
     elif [[ $rc -eq 0 ]] && grep -q "No error has been found" "$log"; then
         result=green
-    elif grep -q "Temporal properties were violated" "$log"; then
+    elif grep -qE "Temporal propert(ies were|y [A-Za-z0-9_]+ was) violated" "$log"; then
         result=temporal-error
     elif grep -qE '(Invariant|Property) [A-Za-z0-9_]+ is violated' "$log"; then
         violated="$(grep -oE '(Invariant|Property) [A-Za-z0-9_]+ is violated' "$log" | sed -n '1{s/^[^ ]* \([^ ]*\).*/\1/p;}')"
