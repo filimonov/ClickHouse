@@ -28,8 +28,8 @@ Base `antalya-26.6-20261008` @ `8fefc27bd62`. Branch names drop the `fix/antalya
 |---|---|---|---|
 | `cas-404-cas-mounts-server-uuid` | `9e8b3dc54d8` | `system.cas_mounts.server_uuid` halves swapped | — |
 | `cas-354-ifmatch-404-not-error` | `0a51702489a` | `If-Match` 404 not logged as Error | — |
-| `cas-unit-test-temp-roots-2` | porting | CAS-349 test temp roots | — |
-| `cas-ref-lane-fault-latch` | porting | 10 v2 ref-lane fault latch + CAS-351 | — |
+| `cas-unit-test-temp-roots-2` | `c3e92a4c3b4` | CAS-349 test temp roots (gated) | — |
+| `cas-ref-lane-fault-latch-2` | `d0480a86184` | 10 v2 ref-lane fault latch + CAS-351 (gated; model `models/reflane-fault-latch-port`) | — |
 | `cas-373-late-request-robustness` | `0f285d4e01d` | audit small fixes (SK17, PM-7, versioning bound) | — |
 | `cas-366-superseded-ckpt-contribution` | `2d2182b3b19` | refuse an append into a reclaimed seal slot | ref-lane latch (same files) |
 | `cas-367-keep-lane-closed-on-ambiguous-removing` | `c7a242d05bf` | ambiguous `beginRemoving` keeps the lane closed | ref-lane latch |
