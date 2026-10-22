@@ -4,6 +4,7 @@ title: Make `repointRef`'s expected manifest a required parameter
 status: To Do
 assignee: []
 created_date: '2026-10-22 06:09'
+updated_date: '2026-10-22 20:51'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -34,6 +35,8 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22, Ockham perspec
 - [ ] #1 `repointRef` takes a required expected manifest, publishes only with `PublishPolicy::replaceIfCurrent`, and has no unresolved-key branch
 - [ ] #2 The byte-equal no-op path still refuses with `CAS_OWNERSHIP_CONFLICT` when the committed manifest differs from the expected one (gtest)
 - [ ] #3 Existing proofs stay green: `CASPublishPolicy.*`, `CASPartFolderAccess.Repoint*`, stateless 05054
+- [ ] #4 repointRef takes a `PublishPolicy` (or the bare `ManifestRef` it needs), never an `std::optional<ManifestRef>` converted internally
+- [ ] #5 `moveRefIfMatches` is renamed `moveRefExact`: the `*Exact` suffix is the one that predicts "foreground, mismatch reported distinctly" (`deleteMetaExact`, `confirmExactRef`, `resolveExactRow`, `dropRefExact`); `dropRefIfMatches` keeps the noexcept rollback meaning
 <!-- AC:END -->
 
 ## Definition of Done
@@ -43,3 +46,9 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22, Ockham perspec
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-22 consistency review (finding 3): the `IfMatches` suffix now carries two opposite contracts (`dropRefIfMatches` noexcept/swallowing vs `moveRefIfMatches` throwing `CAS_OWNERSHIP_CONFLICT`); the backend vocabulary is `create`/`replace(key, bytes, seen)` and `expected_value`, nothing uses `IfCurrent`. Rename in this task together with the signature change.
+<!-- SECTION:NOTES:END -->

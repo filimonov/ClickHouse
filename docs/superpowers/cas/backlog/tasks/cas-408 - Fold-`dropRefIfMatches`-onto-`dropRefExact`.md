@@ -4,6 +4,7 @@ title: Fold `dropRefIfMatches` onto `dropRefExact`
 status: To Do
 assignee: []
 created_date: '2026-10-22 06:09'
+updated_date: '2026-10-22 20:51'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -33,6 +34,7 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22, Ockham perspec
 <!-- AC:BEGIN -->
 - [ ] #1 `dropRefIfMatches` contains no `appendRefOps` closure of its own; it delegates to `dropRefExact` and keeps its noexcept contract (swallow, log, counter, return false)
 - [ ] #2 Existing proofs stay green: `CASPartFolderAccess.*DropRef*`, `gtest_ca_wiring`, `gtest_cas_parallel_commit`, stateless 05054 and 05386-05392
+- [ ] #3 dropRefExact returns `Cas::Removal` (`Backend/CasWriteResult.h`), not a private `DropRefExactOutcome {Removed, Absent, Mismatch}` duplicate
 <!-- AC:END -->
 
 ## Definition of Done
@@ -42,3 +44,9 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22, Ockham perspec
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-22 consistency review (finding 2): `DropRefExactOutcome` near-duplicates `Cas::Removal {Removed, Gone, Mismatch}` returned by `deleteMetaExact` for the same "exact removal, tell absence from a raced replacement" purpose. Fold onto `Cas::Removal` while folding the two drop helpers.
+<!-- SECTION:NOTES:END -->
