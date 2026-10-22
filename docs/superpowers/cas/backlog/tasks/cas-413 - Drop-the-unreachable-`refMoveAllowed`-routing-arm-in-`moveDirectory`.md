@@ -1,9 +1,10 @@
 ---
 id: CAS-413
 title: Drop the unreachable `refMoveAllowed()` routing arm in `moveDirectory`
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-22 07:59'
+updated_date: '2026-10-22 23:53'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
@@ -31,7 +32,7 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (Ockham #3, arc
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `moveDirectory` has one path for a same-namespace rename of a committed part (owner Move); `CASWiringOps.*OwnerMove*` and 05386-05392 stay green
+- [x] #1 `moveDirectory` has one path for a same-namespace rename of a committed part (owner Move); `CASWiringOps.*OwnerMove*` and 05386-05392 stay green
 <!-- AC:END -->
 
 ## Definition of Done
@@ -41,3 +42,9 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (Ockham #3, arc
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Done on `feature/cas-disk-transactions` (2026-10-23): the move-vs-republish decision now lives in `CachedPartFolderAccess::renameCommittedRef`; inside one namespace a free destination is one `Move`, a committed destination (crashed re-drive) republishes; the `refMoveAllowed()` arm is gone — a writable 26.8 mount always has floor ≥ 2 and a read-only mount never renames. Proven by the failed attempt to test it: a floor-1 pool can only be opened read-only by this build (writer_epoch 0), so no writable floor-1 rename exists. `moveRefExact` keeps `chassert(store->refMoveAllowed())`. `poolAccess()` is private again.
+<!-- SECTION:FINAL_SUMMARY:END -->
