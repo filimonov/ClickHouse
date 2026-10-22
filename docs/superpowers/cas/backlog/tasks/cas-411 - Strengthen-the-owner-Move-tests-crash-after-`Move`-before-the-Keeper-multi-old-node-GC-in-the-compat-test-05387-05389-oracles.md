@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 07:59'
-updated_date: '2026-10-22 20:18'
+updated_date: '2026-10-22 23:27'
 labels:
   - 'area:testing'
   - 'area:replication'
@@ -40,6 +40,8 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (tests perspect
 - [ ] #3 05389 asserts DETACH publish counts and zero publishes on ATTACH; 05387 asserts the `r2` row count
 - [ ] #4 gtest: `moveRefIfMatches` onto a destination with a precommit leaked by an interrupted publish in the same epoch (`CAS_OWNERSHIP_CONFLICT` until the stale-precommit sweep); the test states the sweep horizon it relies on
 - [ ] #5 05387: replicated `OPTIMIZE` oracle stays `published_under_final_name 1, moves 0` (a replicated merge renames inside the open storage transaction and commits once under the final name)
+- [ ] #6 One stateless oracle per partition-command family newly admitted on CAS without a whitelist: REPLACE PARTITION FROM, MOVE PARTITION TO DISK/VOLUME, FETCH PARTITION, FREEZE/UNFREEZE, DROP DETACHED, ATTACH PART — each with the `SYSTEM CAS FSCK` epilogue of 05388
+- [ ] #7 05386 stops merges on `t_src` before its INSERT and asserts the part count before `ATTACH PARTITION FROM`
 <!-- AC:END -->
 
 ## Definition of Done
@@ -54,4 +56,6 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (tests perspect
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-22: 05390 no longer masks an ALTER failure (`grep -o | head -1` removed), 05386–05392 carry `no-random-settings, no-random-merge-tree-settings`, and 05387 gained the replicated-merge oracle (branch commit after 721d7dea775). AC #2 (old-node GC in the compat test) is deprioritized by the owner: 26.6/26.8 coexistence is not a supported mode, upgrade = stop all 26.6.x first.
+
+2026-10-23 (third umbrella review): no test can reach the new `LOGICAL_ERROR` in `MergeTreeData::Transaction::commit` (it needs a producer that skips the early commit; a gtest would need a `MergeTreeData`); accepted as untested. The compat-test extensions (readonly mount keeps floor 1; old node GC over a Move) stay deprioritized by the owner.
 <!-- SECTION:NOTES:END -->

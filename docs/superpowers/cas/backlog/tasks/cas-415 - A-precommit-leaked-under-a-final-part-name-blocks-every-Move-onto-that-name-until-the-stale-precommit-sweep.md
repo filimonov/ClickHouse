@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 20:18'
+updated_date: '2026-10-22 23:27'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -43,3 +44,9 @@ Pin the facts: what the sweep horizon is (epoch change? time? GC round?), whethe
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-23 (third umbrella review, needs-verification): a committed stale `tmp_merge_<part>` / `tmp_mut_<part>` ref left by a crash can become the `base_manifest_ref` of a new build of the same temporary name before the temp-dir cleaner runs (plain MergeTree clears at startup, `StorageMergeTree.cpp:312`; the replicated startup path is untraced). Same family as the leaked precommit: a stale durable binding under a name a new build reuses.
+<!-- SECTION:NOTES:END -->

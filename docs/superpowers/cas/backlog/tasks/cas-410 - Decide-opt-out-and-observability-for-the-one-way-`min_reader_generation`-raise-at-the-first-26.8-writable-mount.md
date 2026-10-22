@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 07:59'
-updated_date: '2026-10-22 20:18'
+updated_date: '2026-10-22 23:27'
 labels:
   - 'area:mounts'
   - 'area:formats'
@@ -57,4 +57,6 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (majors 2, pers
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-22, second umbrella review of `feature/cas-disk-transactions`: the raise is invisible beyond one log line — `system.cas_mounts` (`StorageSystemContentAddressedMounts.cpp:40-59`) has no floor column and the mount lease carries no reader generation. Two concrete ACs added. Owner deprioritized the mixed 26.6/26.8 coexistence scenarios (lease-loss re-mount, old-node GC behaviour): do not spend time on them.
+
+2026-10-23: decision history in one place. ADR-001 on the draft branch (`docs/antalya-26.8/cas-disk-transactions-26.8/design/ADR-001-atomic-owner-move.md`, accepted 2026-10-20) promised a rolling upgrade behind `ref_move_enabled = 0`; the clean-branch spec §4.3 (2026-10-21) dropped the switch: the first writable 26.8 mount raises the floor, upgrade = stop every 26.6.x first, a pool minted by 26.8 is generation 2 from birth. The code implements §4.3; the third umbrella review (2026-10-23) re-raised the ADR text as an "owner directive". ADR-001 gets a superseded-by note. Also still open from that review: `system.cas_mounts` has no floor column, the WARNING is the only trace.
 <!-- SECTION:NOTES:END -->
