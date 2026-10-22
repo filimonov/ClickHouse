@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-16'
-updated_date: '2026-10-22 07:59'
+updated_date: '2026-10-22 14:14'
 labels:
   - 'area:ci'
   - 'area:upstream'
@@ -61,4 +61,6 @@ First recorded: 2026-09-16 (cbf3fe14e36, by 'asan-memory-tracker-snap')
 PR #2384 (merged into antalya-26.6 as `2f4f092bb58`, CI only) caps RustFS's blocking pool on the CAS-S3 lanes; RustFS shares the server's cgroup, so its RSS counted as ClickHouse memory. Also not on cas-gc-rebuild yet.
 
 2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): the fork's 26.8 draft (PR Altinity/ClickHouse#2540) carried the `MemoryWorker` fix inside the CAS branch; the clean branch does not. It needs its own PR to antalya-26.8 (listed in the branch's PR body as a carry-over).
+
+2026-10-22 correction: the note above is wrong for antalya-26.8. #2349 is already cherry-picked there (`61da1843e13` + `a10547bddcd`, 2026-10-08; `src/Common/MemoryWorker.cpp:583`, `:1008-1019`), so PR 2579's base and `feature/cas-disk-transactions` carry the fix without a separate PR. Only cas-gc-rebuild still lacks it (0 matches for `__sanitizer_get_current_allocated_bytes`; last touch `7f4da0e22ae`).
 <!-- SECTION:NOTES:END -->
