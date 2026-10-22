@@ -4,7 +4,7 @@ title: Move `eraseView` inside the `try` of the `noexcept` ref-drop helpers
 status: To Do
 assignee: []
 created_date: '2026-08-24'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-10-22 06:09'
 labels:
   - 'area:read-path'
   - 'complexity:trivial'
@@ -47,4 +47,6 @@ Provenance: BACKLOG/ref-protocol.md#noexcept-ref-drop-allocates (opus review NV-
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-24 (45efac389eb, by 'noexcept-ref-drop-allocates')
+
+2026-10-22: CAS-408 folds `dropRefIfMatches` onto `dropRefExact`, which runs `eraseView` from `SCOPE_EXIT_MEMORY_SAFE`; `dropRefBestEffort` is untouched by it. Verified on `feature/cas-disk-transactions` @ 7a16106160c (`PartFolderAccess.cpp:836-840`).
 <!-- SECTION:NOTES:END -->

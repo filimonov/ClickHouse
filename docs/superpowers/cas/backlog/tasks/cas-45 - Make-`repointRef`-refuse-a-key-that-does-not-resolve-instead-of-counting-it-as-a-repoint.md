@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-15'
-updated_date: '2026-09-26 12:42'
+updated_date: '2026-10-22 06:09'
 labels:
   - 'area:write-path'
   - 'complexity:trivial'
@@ -49,4 +49,6 @@ Provenance: BACKLOG/gc.md [repointRef non-resolving-key audit gap]; verified 202
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-07-15 (6e02e1f77e3, by 'repointRef non-resolving-key audit gap')
+
+2026-10-22: subsumed by CAS-409 (required expected manifest removes the unresolved branch). On `feature/cas-disk-transactions` @ 7a16106160c the branch is still present (`PartFolderAccess.cpp:709-717`, warning level) and still unreachable from production.
 <!-- SECTION:NOTES:END -->

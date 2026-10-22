@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-07 21:05'
+updated_date: '2026-10-22 06:09'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -42,3 +43,9 @@ Oracles: system.cas_log per isolated disk after SYSTEM FLUSH LOGS: one INSERT ->
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-22: implemented on branch `feature/cas-disk-transactions` (worktree antalya-26.8-pr-2159, 19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, not yet pushed): committed-part rename = one ref-log `Move` (+`SetPublishedAt`), MergeTree writers back to upstream text, format generation 2 with a one-way pool `min_reader_generation` floor raised at the first 26.8 writable mount (no setting), `EXPORT PART` allowed on CAS, atomic export-partition descriptor. Measured on local object storage: INSERT = 1 manifest_put / 1 precommit / 1 build_publish / 1 ref_move, 21 `CASRequestAttempt`; INSERT `PartsLockHoldMicroseconds` 2557 -> 317. Follow-ups filed: CAS-408, CAS-409.
+<!-- SECTION:NOTES:END -->
