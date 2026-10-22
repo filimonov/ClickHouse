@@ -1,10 +1,10 @@
 ---
 id: CAS-408
 title: Fold `dropRefIfMatches` onto `dropRefExact`
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-22 06:09'
-updated_date: '2026-10-22 20:51'
+updated_date: '2026-10-22 21:23'
 labels:
   - 'area:write-path'
   - 'complexity:small'
@@ -32,9 +32,9 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22, Ockham perspec
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `dropRefIfMatches` contains no `appendRefOps` closure of its own; it delegates to `dropRefExact` and keeps its noexcept contract (swallow, log, counter, return false)
-- [ ] #2 Existing proofs stay green: `CASPartFolderAccess.*DropRef*`, `gtest_ca_wiring`, `gtest_cas_parallel_commit`, stateless 05054 and 05386-05392
-- [ ] #3 dropRefExact returns `Cas::Removal` (`Backend/CasWriteResult.h`), not a private `DropRefExactOutcome {Removed, Absent, Mismatch}` duplicate
+- [x] #1 `dropRefIfMatches` contains no `appendRefOps` closure of its own; it delegates to `dropRefExact` and keeps its noexcept contract (swallow, log, counter, return false)
+- [x] #2 Existing proofs stay green: `CASPartFolderAccess.*DropRef*`, `gtest_ca_wiring`, `gtest_cas_parallel_commit`, stateless 05054 and 05386-05392
+- [x] #3 dropRefExact returns `Cas::Removal` (`Backend/CasWriteResult.h`), not a private `DropRefExactOutcome {Removed, Absent, Mismatch}` duplicate
 <!-- AC:END -->
 
 ## Definition of Done
@@ -50,3 +50,9 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22, Ockham perspec
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-22 consistency review (finding 2): `DropRefExactOutcome` near-duplicates `Cas::Removal {Removed, Gone, Mismatch}` returned by `deleteMetaExact` for the same "exact removal, tell absence from a raced replacement" purpose. Fold onto `Cas::Removal` while folding the two drop helpers.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Done on `feature/cas-disk-transactions` (commit after 8f778ccfe8a, 2026-10-22): `dropRefIfMatches` = `try { dropRefExact(k, e) == Removal::Removed } catch { log + CASRefRollbackBestEffortDropFailed; false }`; `dropRefExact` returns `Cas::Removal` (`Gone` for an absent ref); audit reason neutral. Proofs: `CAS*` gate 2699/2699, stateless 05054, 05386–05392, 05004, 04292 green on the stand.
+<!-- SECTION:FINAL_SUMMARY:END -->
