@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 07:59'
+updated_date: '2026-10-22 20:18'
 labels:
   - 'area:mounts'
   - 'area:formats'
@@ -40,6 +41,8 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (majors 2, pers
 - [ ] #1 Owner decision recorded here: mount-time vs first-Move raise, and whether a switch exists
 - [ ] #2 The raise is visible without reading logs (`system.cas_mounts` or a counter), with a test
 - [ ] #3 `docs/en/antalya/cas/configuration.md` upgrade section matches the decision
+- [ ] #4 A `min_reader_generation` column in `system.cas_mounts` (the value is already in `PoolMeta`)
+- [ ] #5 A `cas_log` event on the raise, so the point of no return is queryable, not only a WARNING line
 <!-- AC:END -->
 
 ## Definition of Done
@@ -49,3 +52,9 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (majors 2, pers
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-22, second umbrella review of `feature/cas-disk-transactions`: the raise is invisible beyond one log line — `system.cas_mounts` (`StorageSystemContentAddressedMounts.cpp:40-59`) has no floor column and the mount lease carries no reader generation. Two concrete ACs added. Owner deprioritized the mixed 26.6/26.8 coexistence scenarios (lease-loss re-mount, old-node GC behaviour): do not spend time on them.
+<!-- SECTION:NOTES:END -->

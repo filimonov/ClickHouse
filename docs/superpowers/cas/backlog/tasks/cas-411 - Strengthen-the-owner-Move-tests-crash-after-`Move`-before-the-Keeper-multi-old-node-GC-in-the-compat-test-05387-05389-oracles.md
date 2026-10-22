@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 07:59'
+updated_date: '2026-10-22 20:18'
 labels:
   - 'area:testing'
   - 'area:replication'
@@ -37,6 +38,8 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (tests perspect
 - [ ] #1 Integration test: kill after the Move, before the Keeper multi; after restart count() is 0, the final-name ref is gone, FSCK is clean, the retried INSERT lands
 - [ ] #2 `test_cas_ref_move_compat` asserts the 26.6.4 node's GC over a Move-bearing log and its reads of a foreign namespace after the raise
 - [ ] #3 05389 asserts DETACH publish counts and zero publishes on ATTACH; 05387 asserts the `r2` row count
+- [ ] #4 gtest: `moveRefIfMatches` onto a destination with a precommit leaked by an interrupted publish in the same epoch (`CAS_OWNERSHIP_CONFLICT` until the stale-precommit sweep); the test states the sweep horizon it relies on
+- [ ] #5 05387: replicated `OPTIMIZE` oracle stays `published_under_final_name 1, moves 0` (a replicated merge renames inside the open storage transaction and commits once under the final name)
 <!-- AC:END -->
 
 ## Definition of Done
@@ -46,3 +49,9 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (tests perspect
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-22: 05390 no longer masks an ALTER failure (`grep -o | head -1` removed), 05386–05392 carry `no-random-settings, no-random-merge-tree-settings`, and 05387 gained the replicated-merge oracle (branch commit after 721d7dea775). AC #2 (old-node GC in the compat test) is deprioritized by the owner: 26.6/26.8 coexistence is not a supported mode, upgrade = stop all 26.6.x first.
+<!-- SECTION:NOTES:END -->
