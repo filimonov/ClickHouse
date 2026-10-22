@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-10-22 07:59'
 labels:
   - 'area:testing'
   - 'area:ci'
@@ -54,4 +54,6 @@ Provenance: BACKLOG/testing-and-ci.md [ca-s3-stateless-lane]; tag count re-measu
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (5d9bb3ec707, by 'ca-s3-stateless-lane')
+
+2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): `EXPORT PART`/`EXPORT PARTITION` are allowed on CAS disks (`MergeTreeData::checkAlterPartitionIsPossible`) and the export-partition descriptor write is atomic there (`MergeTreePartitionExportScheduler::persist`); the six export tests (03572 x3, 03608 and two more) lost `no-cas-storage` and pass on the CAS-S3 lane. Recount the tag after the branch lands.
 <!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-21'
-updated_date: '2026-09-26 12:36'
+updated_date: '2026-10-22 07:59'
 labels:
   - 'area:write-path'
   - 'complexity:medium'
@@ -53,4 +53,6 @@ Provenance: BACKLOG/performance.md#covering-part-publish-under-datapartslock (20
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-21 (b2a38f0b611, by 'covering-part-publish-under-datapartslock')
+
+2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): unchanged for the Replicated site: `removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, DataPartsLock & lock, create_empty_part)` (`MergeTreeData.cpp:7076`) still calls `commitTransaction` on the empty part under the caller's lock (`:7161`), and `renameParts` then adds a `Move` under the same lock. The plain-`MergeTree` sibling `StorageMergeTree::createEmptyParts` was fixed on the branch (commit right after `createEmptyPart`, `StorageMergeTree.cpp:2751`) because the series had moved its publish under `Transaction::commit(lock)`.
 <!-- SECTION:NOTES:END -->

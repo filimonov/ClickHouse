@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-07 21:05'
-updated_date: '2026-10-22 06:09'
+updated_date: '2026-10-22 07:59'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -48,4 +48,6 @@ Oracles: system.cas_log per isolated disk after SYSTEM FLUSH LOGS: one INSERT ->
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-10-22: implemented on branch `feature/cas-disk-transactions` (worktree antalya-26.8-pr-2159, 19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, not yet pushed): committed-part rename = one ref-log `Move` (+`SetPublishedAt`), MergeTree writers back to upstream text, format generation 2 with a one-way pool `min_reader_generation` floor raised at the first 26.8 writable mount (no setting), `EXPORT PART` allowed on CAS, atomic export-partition descriptor. Measured on local object storage: INSERT = 1 manifest_put / 1 precommit / 1 build_publish / 1 ref_move, 21 `CASRequestAttempt`; INSERT `PartsLockHoldMicroseconds` 2557 -> 317. Follow-ups filed: CAS-408, CAS-409.
+
+Follow-ups filed 2026-10-22: CAS-410 (floor-raise decision/observability), CAS-411 (tests), CAS-412 (relink capability cookie), CAS-413 (dead routing arm); notes added to CAS-13, CAS-14, CAS-83, CAS-176.3, CAS-201, CAS-210, CAS-222, CAS-230, CAS-232.2, CAS-321.9, CAS-347.
 <!-- SECTION:NOTES:END -->

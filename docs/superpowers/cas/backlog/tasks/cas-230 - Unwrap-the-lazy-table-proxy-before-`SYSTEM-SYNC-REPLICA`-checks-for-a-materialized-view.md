@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-22'
-updated_date: '2026-09-26 12:39'
+updated_date: '2026-10-22 07:59'
 labels:
   - 'area:upstream'
   - 'area:replication'
@@ -53,4 +53,6 @@ Provenance: BACKLOG/testing-and-ci.md#sync-replica-lazy-mv-proxy (opus-review tr
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-22 (512e55b5bc7, by 'sync-replica-lazy-mv-proxy')
+
+2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): 26.8 replaced `unwrapTableProxy` by `castStorage<T>(table, DeferredTable::Load)` (the fork's SYSTEM-command uses were reverted to it). `trySyncReplica` (`InterpreterSystemQuery.cpp:2317`) still does a raw `dynamic_cast<StorageMaterializedView *>` before the `castStorage<StorageReplicatedMergeTree>` call, so the defect stands; the fix is `castStorage<StorageMaterializedView>(table, DeferredTable::Load)`.
 <!-- SECTION:NOTES:END -->

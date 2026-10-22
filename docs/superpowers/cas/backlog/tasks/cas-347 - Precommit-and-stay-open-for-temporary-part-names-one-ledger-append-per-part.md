@@ -4,6 +4,7 @@ title: 'Precommit-and-stay-open for temporary part names: one ledger append per 
 status: To Do
 assignee: []
 created_date: '2026-10-07 21:05'
+updated_date: '2026-10-22 07:59'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -45,3 +46,9 @@ Depends on the GC nomination fix from CAS-346. Source: codex review of docs/supe
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): measured one INSERT on local object storage = 3 ref-log flushes (`precommit`, `publish`, `Move`; `CASRootPut` 3, `CASRequestAttempt` 21, 1 manifest PUT). The rename is now one `Move` append (CAS-346 done on the branch); this task's remaining target is the publish+Move pair -> one append.
+<!-- SECTION:NOTES:END -->

@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-04'
-updated_date: '2026-09-26 12:38'
+updated_date: '2026-10-22 07:59'
 labels:
   - 'area:testing'
   - 'area:upstream'
@@ -54,4 +54,6 @@ Provenance: BACKLOG/testing-and-ci.md [imetadatastorage-override-coverage-gap], 
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-08-04 (f08734d17df, by 'imetadatastorage-override-coverage-gap')
+
+2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): `transactionIsStagingOverlay` is removed from `IMetadataStorage`; the series adds `appliesOperationsEagerly` (CAS answers true; MergeTree relies on it to commit after `finalize`). Update the virtual list in this task when it starts.
 <!-- SECTION:NOTES:END -->

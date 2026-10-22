@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-04'
-updated_date: '2026-09-28 16:46'
+updated_date: '2026-10-22 07:59'
 labels:
   - 'area:write-path'
   - 'complexity:large'
@@ -63,4 +63,6 @@ Provenance: BACKLOG/performance.md#cas-part-commit-runs-under-parts-lock; roadma
 
 <!-- SECTION:NOTES:BEGIN -->
 First recorded: 2026-09-04 (15b16cb7eb6, by 'cas-part-commit-runs-under-parts-lock')
+
+2026-10-22, on `feature/cas-disk-transactions` @ 7a16106160c (19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, antalya-26.8): upstream 26.8 (ClickHouse/ClickHouse#89658) commits the part's storage transaction right after `finalize`, before `DataPartsLock`, and the branch keeps that (no CAS workaround). Measured INSERT `PartsLockHoldMicroseconds` 2557 -> 317 on local object storage. What stays under the lock on a CAS disk: plain `MergeTree` INSERT renames inline (`rename_in_transaction = false`), so one durable `Move` append runs under the lock; Replicated INSERT renames inside the transaction. AC #2 is met for blob/manifest PUTs; whether the Move append under the lock is acceptable needs an S3 measurement (umbrella review concurrency perspective #10).
 <!-- SECTION:NOTES:END -->
