@@ -117,4 +117,6 @@ class CostCard:
         return []
 
     def teardown(self, ctx) -> None:
-        ctx.cluster.clients[0].query(f'DROP DATABASE IF EXISTS {DATABASE} SYNC')
+        # Atomic databases keep tables and ZooKeeper replica entries per replica, so every replica drops its own.
+        for client in reversed(ctx.cluster.clients):
+            client.query(f'DROP DATABASE IF EXISTS {DATABASE} SYNC')

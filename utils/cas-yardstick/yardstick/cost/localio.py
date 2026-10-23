@@ -125,15 +125,30 @@ def diskstats(device: str, path: str = '/proc/diskstats') -> dict:
     raise KeyError(f'{device} not in {path}')
 
 
-def traced_child_pid(pid: int) -> int:
-    """The single direct child of `pid`: the server under strace, whose own pid is the tracer's."""
+def _read_children(pid: int) -> list:
     children = []
     for task in os.listdir(f'/proc/{pid}/task'):
         with open(f'/proc/{pid}/task/{task}/children') as f:
             children += [int(c) for c in f.read().split()]
-    if len(children) != 1:
-        raise RuntimeError(f'expected one traced child of {pid}, found {children}')
-    return children[0]
+    return children
+
+
+def traced_child_pid(pid: int, pass_dir: str = '', timeout_s: float = 5, step_s: float = 0.05,
+                     read_children=_read_children, sleep=time.sleep) -> int:
+    """The single direct child of `pid`: the server under strace, whose own pid is the tracer's.
+
+    The child appears a moment after launch, so an empty list is retried until `timeout_s`.
+    """
+    deadline = time.monotonic() + timeout_s
+    while True:
+        children = read_children(pid)
+        if len(children) == 1:
+            return children[0]
+        if len(children) > 1:
+            raise RuntimeError(f'expected one traced child of tracer {pid}, found {children}')
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'tracer {pid} (pass dir {pass_dir}) has no child after {timeout_s} s')
+        sleep(step_s)
 
 
 def preflight_trace(scope_path: str = PTRACE_SCOPE, which=shutil.which) -> list:
@@ -177,9 +192,9 @@ def path_filter(prefixes: list):
 
 
 _CALL = re.compile(r'^(?:\d+\s+)?\d+\.\d+\s+(\w+)\((\d+)<(/[^>]*)>')
-_DONE = re.compile(r'\)\s+=\s+(-?\d+)')
+_DONE = re.compile(r'^.*\)\s+=\s+(-?\d+)(?:\s.*)?$')
 _UNFINISHED = re.compile(r'^(?:(\d+)\s+)?\d+\.\d+\s+(\w+)\((\d+)<(/[^>]*)>.*<unfinished \.\.\.>\s*$')
-_RESUMED = re.compile(r'^(?:(\d+)\s+)?\d+\.\d+\s+<\.\.\. (\w+) resumed>.*\)\s+=\s+(-?\d+)')
+_RESUMED = re.compile(r'^(?:(\d+)\s+)?\d+\.\d+\s+<\.\.\. (\w+) resumed>.*\)\s+=\s+(-?\d+)(?:\s.*)?$')
 
 
 def parse_strace(path: str, path_filter=None) -> dict:
@@ -208,13 +223,13 @@ def parse_strace(path: str, path_filter=None) -> dict:
             if m:
                 pending[m.group(1)] = (m.group(2), re.sub(r' \(deleted\)$', '', m.group(4)))
                 continue
-            m = _RESUMED.match(line)
+            m = _RESUMED.match(line.rstrip('\n'))
             if m:
                 call = pending.pop(m.group(1), None)
                 if call and call[0] == m.group(2):
                     record(call[0], call[1], int(m.group(3)))
                 continue
-            m, done = _CALL.match(line), _DONE.search(line)
+            m, done = _CALL.match(line), _DONE.match(line.rstrip('\n'))
             if m and done:
                 record(m.group(1), re.sub(r' \(deleted\)$', '', m.group(3)), int(done.group(1)))
     return {'tool': 'strace', 'syscalls': syscalls}

@@ -24,6 +24,12 @@ STRACE_FIXTURE = """\
 103 1700000000.000009 write(3</data/r1/a.bin>, "ab"..., 4096 <unfinished ...>
 104 1700000000.000010 read(7</data/r1/b.bin>, "", 65536) = 0
 103 1700000000.000011 <... write resumed>) = 4096
+105 1700000000.000012 write(3</data/r1/a.bin>, "f(x) = 7 y"..., 100) = 100
+105 1700000000.000013 write(3</data/r1/a.bin>, "g(z) = 9"..., 300 <unfinished ...>
+105 1700000000.000014 <... write resumed>) = 300
+106 1700000000.000015 write(3</data/r1/a.bin>, "h) = 5 q"..., 64) = 64 <0.000021>
+106 1700000000.000016 write(3</data/r1/a.bin>, "k"..., 1 <unfinished ...>
+106 1700000000.000017 <... write resumed>, "x) = 8 ", 1) = 1
 +++ exited with 0 +++
 """
 
@@ -135,16 +141,17 @@ class StraceTest(unittest.TestCase):
         r = self.parse(path_filter=localio.path_filter(['/data/r1/']))
         self.assertEqual(r['tool'], 'strace')
         s = r['syscalls']
-        self.assertEqual(s['write']['count'], 3)  # 4096 + 5000 + resumed 4096; ENOSPC failure and non-file fds excluded
-        self.assertEqual(s['write']['bytes'], 4096 + 5000 + 4096)
-        self.assertEqual(s['write']['size_histogram'], {'4096': 2, '8192': 1})
+        # ENOSPC failure and non-file fds excluded; the `) = N` inside quoted buffers is not the return value
+        self.assertEqual(s['write']['count'], 7)
+        self.assertEqual(s['write']['bytes'], 4096 + 5000 + 4096 + 100 + 300 + 64 + 1)
+        self.assertEqual(s['write']['size_histogram'], {'4096': 2, '8192': 1, '128': 1, '512': 1, '64': 1, '1': 1})
         self.assertEqual(s['pread64'], {'count': 1, 'bytes': 8192, 'size_histogram': {'8192': 1}})
         self.assertEqual(s['read'], {'count': 1, 'bytes': 0, 'size_histogram': {}})
         self.assertEqual(s['fsync'], {'count': 1, 'bytes': 0, 'size_histogram': {}})
 
     def test_parse_strace_without_filter_counts_all_absolute_fd_paths(self):
         s = self.parse()['syscalls']
-        self.assertEqual(s['write']['bytes'], 4096 + 5000 + 4096 + 512 + 10)
+        self.assertEqual(s['write']['bytes'], 4096 + 5000 + 4096 + 512 + 10 + 100 + 300 + 64 + 1)
 
     def test_size_bucket(self):
         self.assertEqual([localio.size_bucket(n) for n in (1, 4096, 4097, 65536)], ['1', '4096', '8192', '65536'])
@@ -173,6 +180,22 @@ class TracerTest(unittest.TestCase):
 
     def test_tracer_preflight_method(self):
         self.assertIsInstance(localio.Tracer('/p', 1).preflight_trace(), list)
+
+    def test_traced_child_pid_retries_until_child_appears(self):
+        answers = [[], [], [77]]
+        sleeps = []
+        pid = localio.traced_child_pid(5, '/pd', read_children=lambda p: answers.pop(0), sleep=sleeps.append)
+        self.assertEqual((pid, sleeps), (77, [0.05, 0.05]))
+
+    def test_traced_child_pid_gives_up_naming_tracer_and_pass_dir(self):
+        with self.assertRaises(RuntimeError) as cm:
+            localio.traced_child_pid(5, '/pd', timeout_s=0, read_children=lambda p: [], sleep=lambda s: None)
+        self.assertIn('tracer 5', str(cm.exception))
+        self.assertIn('/pd', str(cm.exception))
+
+    def test_traced_child_pid_rejects_several_children(self):
+        with self.assertRaises(RuntimeError):
+            localio.traced_child_pid(5, '/pd', read_children=lambda p: [1, 2])
 
     def test_traced_child_pid(self):
         parent = subprocess.Popen(['bash', '-c', 'sleep 30 & wait'])
@@ -244,7 +267,7 @@ class TracedPidTest(unittest.TestCase):
                               trace_prefix='strace')
             with mock.patch.object(cluster_module, 'traced_child_pid', return_value=222) as child:
                 cluster.start(2)
-            child.assert_called_once_with(111)
+            child.assert_called_once_with(111, tmp)
             self.assertEqual(cluster.generations[2][0]['pid'], 222)
 
 

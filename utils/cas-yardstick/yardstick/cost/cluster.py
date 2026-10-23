@@ -144,7 +144,7 @@ class Cluster:
         with open(os.path.join(self.run_dir(i), 'server.pid')) as f:
             pid = int(f.read())
         if self.trace_prefix:
-            pid = traced_child_pid(pid)  # server.pid holds the tracer; the counters belong to its child
+            pid = traced_child_pid(pid, self.pass_dir)  # server.pid holds the tracer; the counters belong to its child
         self.generations.setdefault(i, []).append({'pid': pid, 't_start_us': t_start_us, 't_end_us': None,
                                                    'closed': None, 'crashed': False, 'crash_error': None})
         self._running.add(i)

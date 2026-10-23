@@ -66,10 +66,11 @@ class DefaultsTest(unittest.TestCase):
         card.controls = lambda ctx: {'merges': 'measure', 'gc': 'off', 'ttl': 'none'}
         self.assertEqual(card.settings(ctx), {'table': {}, 'query': {}, 'server': {}})
 
-    def test_default_teardown_drops_database_on_replica_1(self):
+    def test_default_teardown_drops_database_on_every_replica_last_first(self):
         cluster = FakeCluster()
         TwoTables().teardown(make_ctx(cluster))
-        self.assertEqual(cluster.log, [(1, 'DROP DATABASE IF EXISTS yardstick SYNC')])
+        sql = 'DROP DATABASE IF EXISTS yardstick SYNC'
+        self.assertEqual(cluster.log, [(2, sql), (1, sql)])
 
 
 class CompleteTest(unittest.TestCase):
