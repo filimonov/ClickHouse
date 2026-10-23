@@ -92,8 +92,13 @@ class MeasurementTests(ArtifactTestCase):
 
     def test_measurement_example_valid_and_each_required_field_detected(self):
         ok = load("measurement-ok.json")
-        self.assert_each_detected(artifacts.validate_measurement, ok, top_level(ok))
+        self.assert_each_detected(artifacts.validate_measurement, ok, [k for k in top_level(ok) if k != ("cleanup",)])
+        self.assert_valid(artifacts.validate_measurement, without(ok, ("cleanup",)))
+        self.assert_rejects(artifacts.validate_measurement,
+                            with_value(ok, ("cleanup", "errors"), "x"), "errors")
         nested = [
+            ("cleanup", "aborted_uploads"), ("cleanup", "deleted_keys"), ("cleanup", "verified_empty"),
+            ("cleanup", "errors"),
             ("effective_settings", "table"), ("effective_settings", "query"), ("effective_settings", "server"),
             ("window", "start_seq"), ("window", "end_seq"), ("window", "t_start_us"), ("window", "t_end_us"),
             ("window", "crossing"),

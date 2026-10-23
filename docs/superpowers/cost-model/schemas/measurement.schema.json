@@ -523,6 +523,9 @@
         },
         "unit_count": {
           "type": "number"
+        },
+        "cleanup": {
+          "$ref": "#/$defs/Cleanup"
         }
       },
       "required": [
@@ -1123,6 +1126,9 @@
           },
           "required": [],
           "additionalProperties": false
+        },
+        "cleanup": {
+          "$ref": "#/$defs/Cleanup"
         }
       },
       "required": [
@@ -1145,6 +1151,33 @@
         "status",
         "reason",
         "diagnostics"
+      ],
+      "additionalProperties": false
+    },
+    "Cleanup": {
+      "type": "object",
+      "properties": {
+        "aborted_uploads": {
+          "type": "integer"
+        },
+        "deleted_keys": {
+          "type": "integer"
+        },
+        "verified_empty": {
+          "type": "boolean"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "aborted_uploads",
+        "deleted_keys",
+        "verified_empty",
+        "errors"
       ],
       "additionalProperties": false
     }

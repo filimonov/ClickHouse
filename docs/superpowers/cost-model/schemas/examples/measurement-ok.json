@@ -51,5 +51,6 @@
   "observations": {"part_type": "compact"},
   "assertions": {"a1": {"expected": 3, "actual": 3, "ok": true}},
   "wall_s": 4.2,
-  "unit_count": 1
+  "unit_count": 1,
+  "cleanup": {"aborted_uploads": 0, "deleted_keys": 5, "verified_empty": true, "errors": []}
 }

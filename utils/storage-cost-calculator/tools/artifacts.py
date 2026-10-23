@@ -224,6 +224,8 @@ _OK_SECTIONS = {
     "wall_s": number,
     "unit_count": number,
 }
+_CLEANUP = obj({"aborted_uploads": integer, "deleted_keys": integer, "verified_empty": boolean,
+                "errors": list_of(string)})
 _FAILED_EXTRA = {
     "reason": nonempty_string,
     "diagnostics": obj({"server_logs": list_of(string), "error_text": string}),
@@ -237,14 +239,16 @@ def validate_measurement(d):
     spec = dict(_COMMON)
     if status == "ok":
         spec.update(_OK_SECTIONS)
+        spec["cleanup"] = _CLEANUP
     elif status == "UNSUPPORTED":
         spec["reason"] = nonempty_string
     elif status == "FAILED":
         spec.update(_FAILED_EXTRA)
         spec["partial"] = lambda v, path: _validate_partial(v, path)
+        spec["cleanup"] = _CLEANUP
     else:
         return [f"$.status: expected ok, UNSUPPORTED or FAILED, got {_short(status)}"]
-    problems = _run(obj_optional(spec, optional=("partial",) if status == "FAILED" else ()), d)
+    problems = _run(obj_optional(spec, optional=("partial", "cleanup") if status == "FAILED" else ("cleanup",) if status == "ok" else ()), d)
     problems += _check_identity(d)
     return problems
 
