@@ -17,7 +17,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | Step | State | Notes |
 |---|---|---|
 | 1. Ledger | done | this file |
-| 2. Spec review rounds (Codex) until no MAJOR | in progress | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 started |
+| 2. Spec review rounds (Codex) until no MAJOR | in progress | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4 started |
 | 3. Implementation plan (`writing-plans`) | pending | |
 | 4. Execute plan (`subagent-driven-development`) | pending | |
 | 5. Umbrella review of the branch | pending | |
@@ -33,6 +33,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | D3 | 2026-10-23 | Two-replica mode and completion barriers added to the yardstick | the replica multiplier is the central comparison and must be measured |
 | D4 | 2026-10-23 | GCS/Azure presets ship as structure only in Tier 1 ("values not provided"); values are Tier 2 | AWS is the validated use case; owner asked for other presets to exist; Codex r2-5 asked to bound the deliverable |
 | D5 | 2026-10-23 | "Next release (forecast)" CAS toggle moved to Tier 2; Tier 1 shows the measured 26.8 only | owner preferred the forecast as headline; two reviews showed an unmeasured combination cannot be the default and the 26.6 measurements double the matrix |
+| D7 | 2026-10-23 | Revision 4 reformulates the design per the gpt-6.1-sol consult (`tmp/codex_consult_convergence.md`): the design makes no claim about the code; implementation facts become versioned research artifacts (measurement contract, registry, coverage, graph reports, billing contract, model contract) with five closure checks and an executable acceptance slice at the phase-0 gate. Weakened: universal source-verification claim → evidence policy; accuracy promise scoped to validity domains; Tier 2 "no formula changes" → versioned extensibility; fixed review count → review as budget | three Codex rounds (25 → 18 → 15 findings) each found errors in the code-level detail the previous revision added; the loop had no stopping condition |
 | D6 | 2026-10-23 | Scope frozen to Tier 1 (one binary, AWS Standard + gp3, coverage table §5.4 with P1/P2) with a phase-0 exit gate and a 3 workstation-day budget | Codex r2-5: the programme had no bounded deliverable |
 
 ## Defects, risks and items needing attention {#attention}
@@ -40,9 +41,11 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | # | Date | Item | State |
 |---|---|---|---|
 | A1 | 2026-10-23 | My gp3 I/O accounting claim in revision 2 (16 KiB units) was wrong; SSD volumes count I/O up to 256 KiB. Caught by Codex r2-12. | fixed in revision 3 |
+| A3 | 2026-10-23 | Revision 3 code-facing claims found wrong by Codex r3 and verified by me against `tmp/src-26.8`: part type is compact if ANY of bytes/rows/level below threshold (`MergeTreeData.cpp` `satisfies`), `min_rows_for_wide_part` default 0; multipart part count follows `BufferAllocationPolicy` (32 MiB first buffer, 16 MiB then growth), not `ceil(size/min_upload_part_size)`; CAS replicas also re-merge locally (relink is the fetch transport); `always_fetch_mutated_part` exists; CAS namespaces are per server root × table (`liveNamespace`), so "namespaces pinned to 1" excluded the default deployment; `NetworkSendBytes` cannot isolate interserver traffic; gp3 couples throughput to IOPS (0.25 MiB/s per IOPS); versioned buckets break the lifecycle equations. Settings: `gc_interval_sec=60`, `mount_renew_period_ms=10000`, `staging_backend=local`. | revision 4: design-level items fixed in §4.3–§4.6/§5.2/§5.5; code-facing items are obligations of the research artifacts (§5.1) |
 | A2 | 2026-10-23 | My AWS error-billing claim (403/404 free) in revision 2 was wrong and would have discounted CAS probes. Caught by Codex r2-13. | fixed in revision 3: dated outcome mapping, unknown outcomes billed |
 
 ## Watchdog log {#watchdog}
 
 | Time | Observation | Action |
 |---|---|---|
+| 2026-10-23 23:26 | Codex r3 running (pid 3911839, log growing, reading `MergeFromLogEntryTask`); 26.8 binary downloaded, 26.6 at 289 MB; a foreign `clickhouse server` from worktree `antalya-26.8-pr-2159` listens on 19000–19003 and 19181 (not ours; yardstick uses 19700+) | none |
