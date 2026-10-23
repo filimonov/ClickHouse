@@ -157,6 +157,7 @@ _ATTEMPT = {
     }),
     "injected_rule": nullable(string),
     "phase": enum(*PHASES),
+    "error": nullable(string),  # optional: proxy-side failure description
 }
 _MARK = {"kind": literal("mark"), "seq": integer, "label": nonempty_string, "t_us": integer}
 
@@ -166,7 +167,7 @@ def validate_ledger_row(d):
         return ["$: expected object"]
     kind = d.get("kind")
     if kind == "attempt":
-        return _run(obj(_ATTEMPT), d)
+        return _run(obj_optional(_ATTEMPT, {"error"}), d)
     if kind == "mark":
         return _run(obj(_MARK), d)
     return [f"$.kind: expected attempt or mark, got {_short(kind)}"]

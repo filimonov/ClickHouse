@@ -67,7 +67,12 @@ class LedgerRowTests(ArtifactTestCase):
             ("response_body", "completed_parts"), ("response_body", "delete_results"), ("response_body", "list"),
         ]
         attempt_with_copy = with_value(attempt, ("copy_source",), {"bucket": "b", "key": "k", "range": None})
-        self.assert_each_detected(artifacts.validate_ledger_row, attempt, top_level(attempt))
+        self.assert_each_detected(artifacts.validate_ledger_row, attempt,
+                                  [p for p in top_level(attempt) if p != ("error",)])
+        without_error = {k: v for k, v in attempt.items() if k != "error"}
+        self.assertEqual(artifacts.validate_ledger_row(without_error), [])
+        self.assert_rejects(artifacts.validate_ledger_row, with_value(attempt, ("error",), 5), "error")
+        self.assertEqual(artifacts.validate_ledger_row(with_value(attempt, ("error",), "boom")), [])
         self.assert_each_detected(artifacts.validate_ledger_row, mark, top_level(mark))
         paths = [p for p in nested if p[0] != "copy_source"]
         self.assert_each_detected(artifacts.validate_ledger_row, attempt, paths)

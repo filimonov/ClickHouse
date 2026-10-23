@@ -386,6 +386,17 @@
             "teardown",
             "outside"
           ]
+        },
+        "error": {
+          "description": "Optional. Proxy-side failure description (upstream unreachable, closed mid-response, malformed response); null or absent when none.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

@@ -95,8 +95,9 @@ def _text(node: ET.Element, name: str):
 
 
 def _xml(body: bytes):
+    # S3 pads some replies (CompleteMultipartUpload) with whitespace before the XML declaration.
     try:
-        return ET.fromstring(body)
+        return ET.fromstring(body.lstrip())
     except ET.ParseError:
         return None
 
@@ -272,12 +273,13 @@ class Attempt:
             'upstream': {'outcome': 'unknown', 'http_status': None, 's3_code': None},
             'response_body': {'upload_id': None, 'etag': None, 'complete_error': None, 'completed_parts': None,
                               'delete_results': None, 'list': None},
-            'injected_rule': None, 'phase': 'outside',
+            'injected_rule': None, 'phase': 'outside', 'error': None,
         }
         self.request_body = None
         self.response_body = None
         self.relayed = False  # response head already sent to the client
         self.finishing = False  # the last response byte is about to reach the client
+        self.resp_headers: dict = {}
 
 
 class _Server(socketserver.ThreadingTCPServer):
@@ -378,8 +380,9 @@ class LedgerProxy:
         self._file.write((json.dumps(row, separators=(',', ':')) + '\n').encode())
 
     def flush(self):
-        """Write rows to disk. Attempts still in flight are not waited for, except those whose response has
-        already been completed towards the client."""
+        """Write rows to disk. Waits only for attempts whose final response write has begun, so a caller that
+        has seen a complete response finds its row. Attempts still in flight (no final write begun) are NOT
+        waited for and have no row yet: the runner must treat them as crossing the window boundary."""
         with self._lock:
             if not self._finished.wait_for(lambda: self._finishing == 0, timeout=10):
                 raise TimeoutError('attempts with a delivered response did not finish')
@@ -548,12 +551,15 @@ class _Handler(socketserver.BaseRequestHandler):
             keep = self.process(attempt, line, lines, len(line) + head_bytes, parts)
         except ClientGone:
             self.up_close()
-        except UpstreamGone:
+        except UpstreamGone as e:
             self.up_close()
+            attempt.row['error'] = f'upstream: {e}'
             self.answer_upstream_failure(attempt)
-        except Exception:  # noqa: BLE001 - the row must still be written
+        except Exception as e:  # noqa: BLE001 - the row must still be written
             traceback.print_exc()
             self.up_close()
+            attempt.row['error'] = f'internal: {type(e).__name__}: {e}'
+            self.answer_upstream_failure(attempt)
         finally:
             self.proxy.finish(attempt)
         return keep
@@ -563,6 +569,7 @@ class _Handler(socketserver.BaseRequestHandler):
         if attempt.relayed:
             return
         body = _error_xml('BadGateway', 'upstream failure')
+        self.proxy.finishing(attempt)
         try:
             self.c_send(b'HTTP/1.1 502 Bad Gateway\r\nContent-Type: application/xml\r\nContent-Length: %d\r\n'
                         b'Connection: close\r\n\r\n%s' % (len(body), body))
@@ -624,7 +631,7 @@ class _Handler(socketserver.BaseRequestHandler):
             self.up_connect()
         except UpstreamGone:
             self.pump_request(a, length, send=False)
-            row['upstream'] = {'outcome': 'not_sent', 'http_status': None, 's3_code': None}
+            row['upstream'] = {'outcome': 'error', 'http_status': None, 's3_code': None}
             raise
         self.u_send(head)
         self.pump_request(a, length, send=True)
@@ -748,7 +755,13 @@ class _Handler(socketserver.BaseRequestHandler):
         head_raw = status_line + b''.join(lines) + b'\r\n'
         no_body = method == 'HEAD' or status in (204, 304) or 100 <= status < 200
         chunked = 'chunked' in headers.get('transfer-encoding', '').lower()
-        empty = no_body or (not chunked and headers.get('content-length') == '0')
+        clen = None
+        if not chunked and 'content-length' in headers:
+            # Validated before the head is relayed so the client can still get a clean 502.
+            if not headers['content-length'].isdigit():
+                raise UpstreamGone(f"bad Content-Length {headers['content-length']!r}")
+            clen = int(headers['content-length'])
+        empty = no_body or clen == 0
         if relay:
             if empty:
                 self.proxy.finishing(a)
@@ -767,8 +780,8 @@ class _Handler(socketserver.BaseRequestHandler):
                                           (lambda: self.proxy.finishing(a)) if relay else None)
             row['resp_payload_bytes'] = payload
             row['resp_wire_bytes'] += wire
-        elif 'content-length' in headers:
-            remaining = int(headers['content-length'])
+        elif clen is not None:
+            remaining = clen
             while remaining:
                 data = _read1(uf, min(remaining, CHUNK), UpstreamGone)
                 remaining -= len(data)
@@ -786,6 +799,8 @@ class _Handler(socketserver.BaseRequestHandler):
                 except (OSError, ValueError) as e:
                     raise UpstreamGone(str(e)) from None
                 if not data:
+                    if relay:
+                        self.proxy.finishing(a)
                     break
                 row['resp_payload_bytes'] += len(data)
                 row['resp_wire_bytes'] += len(data)
@@ -808,6 +823,10 @@ class _Handler(socketserver.BaseRequestHandler):
                 if code is not None:
                     outcome = 'error'
                     row['response_body']['complete_error'] = code
+                elif _xml(body) is None:
+                    outcome = 'unknown'
+                    row['response_body']['complete_error'] = 'unparseable'
+                    row['error'] = 'CompleteMultipartUpload 200 body is not XML'
             elif op == 'CreateMultipartUpload':
                 upload = parse_upload_id(body)
                 row['response_body']['upload_id'] = upload
@@ -817,6 +836,10 @@ class _Handler(socketserver.BaseRequestHandler):
                 row['response_body']['delete_results'] = parse_delete_results(bytes(a.request_body or b''), body)
             elif op == 'ListObjectsV2':
                 row['response_body']['list'] = parse_listing(body)
+        if op == 'CompleteMultipartUpload' and status < 300 and body is None:
+            outcome = 'unknown'
+            row['response_body']['complete_error'] = 'unparseable'
+            row['error'] = 'CompleteMultipartUpload 200 body was not captured as XML'
         row['upstream'] = {'outcome': outcome, 'http_status': status, 's3_code': code}
 
 

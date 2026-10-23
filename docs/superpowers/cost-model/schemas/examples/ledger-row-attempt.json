@@ -33,5 +33,6 @@
     "list": null
   },
   "injected_rule": null,
-  "phase": "window"
+  "phase": "window",
+  "error": null
 }

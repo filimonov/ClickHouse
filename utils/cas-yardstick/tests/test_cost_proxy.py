@@ -1,5 +1,7 @@
+import contextlib
 import hashlib
 import http.client
+import io
 import json
 import pathlib
 import socket
@@ -574,6 +576,151 @@ class ParsingTest(ProxyBase):
         row = self.wait_attempts(1)[0]
         self.assertEqual(row['op'], 'ListParts')
         self.assertEqual(row['upstream'], {'outcome': 'error', 'http_status': 404, 's3_code': 'NoSuchUpload'})
+
+
+class RawUpstream:
+    """Answers every connection with fixed bytes after reading the request head, then closes."""
+
+    def __init__(self, reply_bytes: bytes):
+        self.reply_bytes = reply_bytes
+        self.listener = socket.create_server(('127.0.0.1', 0))
+        self.port = self.listener.getsockname()[1]
+        threading.Thread(target=self.accept, daemon=True).start()
+
+    def accept(self):
+        while True:
+            try:
+                conn, _ = self.listener.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.serve, args=(conn,), daemon=True).start()
+
+    def serve(self, conn):
+        with conn:
+            read_until(conn, b'\r\n\r\n')
+            conn.sendall(self.reply_bytes)
+
+    def close(self):
+        self.listener.close()
+
+
+class BrokenUpstreamTest(ProxyBase):
+    def point_at(self, reply_bytes):
+        raw = RawUpstream(reply_bytes)
+        self.addCleanup(raw.close)
+        self.proxy.upstream = ('127.0.0.1', raw.port)
+
+    def get_through_proxy(self):
+        """Return (status, body or None on truncation, stderr text) of one GET."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            c = self.conn()
+            c.request('GET', '/b/k')
+            try:
+                r = c.getresponse()
+                result = (r.status, r.read())
+            except (http.client.IncompleteRead, http.client.RemoteDisconnected, ConnectionError):
+                result = (None, None)
+            rows = self.rows()
+        return result, err.getvalue(), rows[-1]
+
+    def test_connect_refused_answers_502_and_row_present_right_after_flush(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            dead = probe.getsockname()[1]
+        self.proxy.upstream = ('127.0.0.1', dead)
+        (status, _), stderr, row = self.get_through_proxy()
+        self.assertEqual(status, 502)
+        self.assertEqual(stderr, '')
+        self.assertEqual(row['upstream'], {'outcome': 'error', 'http_status': None, 's3_code': None})
+        self.assertEqual(row['downstream'], {'outcome': 'delivered', 'status': 502})
+        self.assertTrue(row['error'].startswith('upstream: connect'), row['error'])
+        self.assertEqual(validate_ledger_row(row), [])
+
+    def test_flush_right_after_502_always_sees_the_row(self):
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            self.proxy.upstream = ('127.0.0.1', probe.getsockname()[1])
+        c = self.conn()
+        for i in range(300):
+            c.request('GET', '/b/k')
+            r = c.getresponse()
+            r.read()
+            self.assertEqual(r.status, 502)
+            self.assertEqual(len(self.attempts()), i + 1)
+            c.close()
+
+    def test_upstream_closes_mid_body(self):
+        self.point_at(b'HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n0123456789')
+        (status, body), stderr, _ = self.get_through_proxy()
+        self.assertIsNone(body)
+        self.assertEqual(stderr, '')
+        row = self.wait_attempts(1)[0]
+        self.assertEqual(row['upstream'], {'outcome': 'unknown', 'http_status': 200, 's3_code': None})
+        self.assertEqual(row['downstream'], {'outcome': 'dropped', 'status': None})
+        self.assertIn('closed', row['error'])
+        self.assertEqual(row['resp_payload_bytes'], 10)
+        self.assertEqual(validate_ledger_row(row), [])
+
+    def test_bad_status_line(self):
+        self.point_at(b'garbage\r\n\r\n')
+        (status, _), stderr, row = self.get_through_proxy()
+        self.assertEqual(status, 502)
+        self.assertEqual(stderr, '')
+        self.assertEqual(row['upstream']['outcome'], 'unknown')
+        self.assertEqual(row['error'], 'upstream: bad status line')
+        self.assertEqual(row['downstream'], {'outcome': 'delivered', 'status': 502})
+        self.assertEqual(validate_ledger_row(row), [])
+
+    def test_bad_upstream_content_length(self):
+        self.point_at(b'HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\nxyz')
+        (status, _), stderr, row = self.get_through_proxy()
+        self.assertEqual(status, 502)
+        self.assertEqual(stderr, '')
+        self.assertEqual(row['upstream']['outcome'], 'unknown')
+        self.assertIn('bad Content-Length', row['error'])
+        self.assertEqual(validate_ledger_row(row), [])
+
+    def test_read_until_close_response_row_present_after_eof(self):
+        self.point_at(b'HTTP/1.1 200 OK\r\nConnection: close\r\n\r\nwithout length')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            s = self.raw()
+            s.sendall(b'GET /b/k HTTP/1.1\r\nHost: h\r\n\r\n')
+            data = b''
+            while True:
+                piece = s.recv(65536)
+                if not piece:
+                    break
+                data += piece
+            row = self.rows()[-1]
+        self.assertTrue(data.endswith(b'without length'))
+        self.assertEqual(err.getvalue(), '')
+        self.assertEqual(row['upstream'], {'outcome': 'ok', 'http_status': 200, 's3_code': None})
+        self.assertEqual(row['resp_payload_bytes'], len(b'without length'))
+        self.assertIsNone(row['error'])
+
+    def test_complete_200_with_leading_whitespace_and_declaration_is_an_error(self):
+        body = (b'\n\n<?xml version="1.0" encoding="UTF-8"?>\n'
+                b'<Error><Code>InternalError</Code><Message>m</Message></Error>')
+        self.up.respond = lambda h, req: reply(h, 200, body, XML)
+        c = self.conn()
+        c.request('POST', '/b/k?uploadId=U', b'<CompleteMultipartUpload/>')
+        self.assertEqual(c.getresponse().read(), body)
+        row = self.wait_attempts(1)[0]
+        self.assertEqual(row['response_body']['complete_error'], 'InternalError')
+        self.assertEqual(row['upstream'], {'outcome': 'error', 'http_status': 200, 's3_code': 'InternalError'})
+
+    def test_complete_200_unparseable_is_not_ok(self):
+        self.up.respond = lambda h, req: reply(h, 200, b'<<not xml', XML)
+        c = self.conn()
+        c.request('POST', '/b/k?uploadId=U', b'<CompleteMultipartUpload/>')
+        c.getresponse().read()
+        row = self.wait_attempts(1)[0]
+        self.assertEqual(row['upstream']['outcome'], 'unknown')
+        self.assertEqual(row['response_body']['complete_error'], 'unparseable')
+        self.assertIn('not XML', row['error'])
+        self.assertEqual(validate_ledger_row(row), [])
 
 
 class MarkAndLoadTest(ProxyBase):
