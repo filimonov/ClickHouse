@@ -236,3 +236,22 @@ Against the RCA numbers:
 - **`s3` 6 GET instead of 12:** the RCA plain-S3 process also had a CAS disk registered, which is a likely but unverified cause. PUT (31) matches. The RCA lists 2 DeleteObjects calls, the reference 2.04 cold and 1.86 hot (rounded above).
 - **CAS/`s3` wall 1.32x (1.17..1.35 over the 3 repeats) instead of 3.1x:** the window here is 200 cycles and about 4 s, with no GC round overlapping it (`gc_rounds` 0 in every repeat), while the RCA figure comes from 8 x 1000 cycles with GC on. This run does not test the long-window behavior.
 - **`s3plain` needs 44 PUT, 36 HEAD, 67 DELETE and 31 COPY per cycle:** the RCA has no figure for this disk. Its wall time is the highest of the three.
+
+## Cost rig
+
+The cost rig (`yardstick/cost/`) measures per-request storage cost against a RustFS binary instead of the container, with a counting proxy between the servers and the store. `rustfs-bin.sh` starts the binary from `<repo>/ci/tmp/rustfs` with data in `<repo>/tmp/cas-yardstick/rustfs-bin-data/` (it refuses a non-empty directory without the `.cas-yardstick-rustfs` marker) and creates the bucket `yardstick-cost`. `cost probe` and `cost run` are built by later tasks and do not exist yet.
+
+| Port | Use |
+|---|---|
+| 19121 | RustFS (store) |
+| 19131, 19132, 19133 | proxy, callers `r1`, `r2`, `r3` |
+| 19134 | proxy, caller `rig` |
+| `port_base + 10 * (i - 1)` | server `i`: tcp, `+1` http, `+2` interserver |
+| `port_base + 8`, `+ 9` | Keeper client and Raft, on replica 1 |
+| `127.0.1.<i>` | relay address of replica `i` |
+
+```bash
+utils/cas-yardstick/rustfs-bin.sh ensure   # start the store unless it is up; `stop` stops it only if `ensure` started it
+python3 utils/cas-yardstick/yardstick.py cost probe
+python3 utils/cas-yardstick/yardstick.py cost run
+```
