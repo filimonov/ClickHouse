@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-23 01:50'
+updated_date: '2026-10-23 01:50'
 labels:
   - cas
 dependencies: []
@@ -32,3 +33,9 @@ From the packed-parts review (antalya-26.8 worktree tmp/review3/REPORT.md, items
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Also from the review (quality, needs measurement): DataPartStorageOnDiskPacked::finalizeWriter reopens the whole archive once per old member, which on CAS-over-S3 may cost one GET per member; measure before changing.
+<!-- SECTION:NOTES:END -->
