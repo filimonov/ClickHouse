@@ -18,7 +18,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 |---|---|---|
 | 1. Ledger | done | this file |
 | 2. Spec review rounds (Codex) until no MAJOR | done | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4: 3 MAJOR, 3 MINOR (applied, rev 4.1); r5: 0 MAJOR, 2 MINOR, READY (applied, rev 4.2). Findings per round 25 → 18 → 15 → 6 → 2 |
-| 3. Implementation plan (`writing-plans`) | in progress | |
+| 3. Implementation plan (`writing-plans`) | in progress | three plans: `docs/superpowers/plans/2026-10-24-storage-cost-{phase0-rig,research,calculator}.md`; Codex plan review r1 started |
 | 4. Execute plan (`subagent-driven-development`) | pending | |
 | 5. Umbrella review of the branch | pending | |
 | 6. Look & feel in a browser at several resolutions | pending | |
