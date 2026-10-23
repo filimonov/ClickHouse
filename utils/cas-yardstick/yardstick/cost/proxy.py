@@ -303,6 +303,7 @@ class LedgerProxy:
         self.ports: dict = {}
         self._lock = threading.Lock()
         self._finishing = 0
+        self._open: dict = {}
         self._finished = threading.Condition(self._lock)
         self._seq = 0
         self._last_us = 0
@@ -349,7 +350,15 @@ class LedgerProxy:
     def begin(self, caller: str) -> Attempt:
         with self._lock:
             seq, t = self._stamp()
-        return Attempt(caller, self.store_id, seq, t)
+            attempt = Attempt(caller, self.store_id, seq, t)
+            self._open[seq] = attempt
+        return attempt
+
+    def open_attempts(self) -> list:
+        """Attempts begun and not yet finished; they have no ledger row, so a window reader must count them as crossing."""
+        with self._lock:
+            return [{'seq': a.row['seq'], 'caller': a.row['caller'], 't_start_us': a.row['t_start_us'],
+                     'op': a.row['op'], 'key': a.row['key']} for a in self._open.values()]
 
     def finishing(self, attempt: Attempt):
         """Call just before the last response byte goes out: once the client has seen a complete response,
@@ -364,6 +373,7 @@ class LedgerProxy:
             self._last_us = max(self._last_us, time.time_ns() // 1000)
             attempt.row['t_end_us'] = self._last_us
             self._write(attempt.row)
+            self._open.pop(attempt.row['seq'], None)
             if attempt.finishing:
                 self._finishing -= 1
                 self._finished.notify_all()

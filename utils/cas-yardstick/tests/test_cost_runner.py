@@ -44,6 +44,11 @@ class FakeProxy:
     def flush(self):
         self.calls.append('flush')
 
+    open = ()
+
+    def open_attempts(self):
+        return [{'seq': s, 'caller': c, 't_start_us': 0, 'op': 'PutObject', 'key': 'k'} for s, c in self.open]
+
     def clear_faults(self):
         self.calls.append('clear_faults')
 
@@ -273,6 +278,36 @@ class RunnerTest(RunnerFixture):
         self.assertEqual(len(record['partial']['window']['crossing']), 1)
         self.assertEqual(measurements_problems(record), [])
 
+    def test_open_attempt_at_flush_fails_deterministic_card(self):
+        def measured(ctx):
+            ctx.proxy.emit(key='run1/s3/fake/small/k0/data/x')
+            ctx.proxy.open = [(ctx.proxy.seq, 'r1'), (1, 'rig')]  # begun in the window, no row yet
+        self.card.on_measured = measured
+        record = self.go()
+        self.assertEqual((record['status'], record['reason']), ('FAILED', 'window_crossing'))
+        self.assertEqual(len(record['partial']['window']['crossing']), 1)
+
+    def test_open_attempt_after_the_window_does_not_cross(self):
+        self.card.on_teardown = lambda ctx: setattr(ctx.proxy, 'open', [(ctx.proxy.seq + 1, 'r1')])
+        self.card.on_measured = self.writes(2)
+        self.assertEqual(self.go()['status'], 'ok')
+
+    def test_open_attempt_is_recorded_for_stochastic_card(self):
+        self.card.mode = 'stochastic'
+        self.card.on_measured = lambda ctx: (self.writes(2)(ctx), setattr(ctx.proxy, 'open', [(ctx.proxy.seq, 'r1')]))
+        record = self.go()
+        self.assertEqual((record['status'], len(record['window']['crossing'])), ('ok', 1))
+
+    def test_invalid_record_becomes_failed_invalid_record(self):
+        self.card.on_measured = lambda ctx: ctx.proxy.emit(key='run1/s3/fake/small/k0/data/x')
+        original = self.card.measured
+        self.card.measured = lambda ctx: {**original(ctx), 'observations': {'bad': object()}}
+        record = self.go()
+        self.assertEqual((record['status'], record['reason'], record['partial']), ('FAILED', 'invalid_record', {}))
+        self.assertIn('not JSON-serialisable', record['diagnostics']['error_text'])
+        self.assertEqual(measurements_problems(record), [])
+        self.assertIn('cleanup', record)
+
     def test_stochastic_crossing_is_recorded_not_failed(self):
         self.card.mode = 'stochastic'
         self.card.on_measured = lambda ctx: ctx.proxy.emit(key='run1/s3/fake/small/k0/data/x', end=False)
@@ -392,7 +427,7 @@ def cleanup_order(calls):
 
 
 def measurements_problems(record):
-    return measurements._validator()(record)
+    return measurements.problems(record)
 
 
 class MeasurementsTest(unittest.TestCase):

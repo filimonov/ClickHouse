@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from ..config import write_cost_config
 from . import ledger as ledger_mod
+from . import measurements
 from .cards.base import CardContext, check_replicas, run_measured
 from .cluster import Cluster, GenerationCrashed
 from .ledger import Inventory
@@ -67,7 +68,17 @@ def open_uploads(rows: list, after_seq: int, key_prefix: str) -> list:
 
 def run_case(card, manifest: dict, policy: str, k: int, deps: Deps, *, cluster_factory=Cluster,
              config_writer=write_cost_config, sampler_factory=DirSampler) -> dict:
-    return _Pass(card, manifest, policy, k, deps, cluster_factory, config_writer, sampler_factory).run()
+    one = _Pass(card, manifest, policy, k, deps, cluster_factory, config_writer, sampler_factory)
+    record = one.run()
+    found = measurements.problems(record)
+    if not found:
+        return record
+    # A record that cannot be written would hide the pass; keep the identity, the cleanup and the reasons.
+    fallback = one.failed('invalid_record', '\n'.join(found))
+    fallback['partial'] = {}
+    if 'cleanup' in record:
+        fallback['cleanup'] = record['cleanup']
+    return fallback
 
 
 class _Pass:
@@ -249,12 +260,16 @@ class _Pass:
         return {'marks': {role: marks[label] for role, label in self.labels.items()}, 'sliced': sliced}
 
     def collect_ledger(self) -> None:
+        open_now = self.deps.proxy.open_attempts()  # before the read: a finished attempt then only over-counts
         found = self.pass_attempts(ledger_mod.read_rows(self.deps.proxy.ledger_path))
         marks, by_phase = found['marks'], found['sliced'].attempts_by_phase
         pass_rows = by_phase['setup'] + by_phase['window'] + by_phase['teardown']
         workload = {p: [a for a in by_phase[p] if a['caller'] != 'rig'] for p in ('setup', 'window', 'teardown')}
         by_seq = {a['seq']: a for a in pass_rows}
         crossing = [s for s in found['sliced'].crossing if s in by_seq and by_seq[s]['caller'] != 'rig']
+        # An attempt still running has no row. One that began before the window ended spans its boundary.
+        crossing = sorted(set(crossing) | {o['seq'] for o in open_now if o['caller'] != 'rig'
+                                           and o['seq'] < marks['window_end']['seq']})
         t_w0, t_w1 = marks['window_start']['t_us'], marks['window_end']['t_us']
         self.sections['window'] = {'start_seq': marks['window_start']['seq'], 'end_seq': marks['window_end']['seq'],
                                    't_start_us': t_w0, 't_end_us': t_w1, 'crossing': crossing}

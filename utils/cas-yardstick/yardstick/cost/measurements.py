@@ -15,8 +15,18 @@ def _validator():
     return validate_measurement
 
 
+def problems(record: dict) -> list:
+    """Schema problems of `record`, plus a problem if it cannot be serialised as JSON."""
+    found = list(_validator()(record))
+    try:
+        json.dumps(record, allow_nan=False)
+    except (TypeError, ValueError) as e:
+        found.append(f'not JSON-serialisable: {e}')
+    return found
+
+
 def write(path: str, record: dict) -> None:
-    problems = _validator()(record)
+    problems = globals()['problems'](record)
     if problems:
         raise ValueError('invalid measurement record: ' + '; '.join(problems))
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)

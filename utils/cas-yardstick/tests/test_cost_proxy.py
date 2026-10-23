@@ -624,6 +624,19 @@ class BrokenUpstreamTest(ProxyBase):
             rows = self.rows()
         return result, err.getvalue(), rows[-1]
 
+    def test_open_attempts_tracks_begun_not_finished(self):
+        self.assertEqual(self.proxy.open_attempts(), [])
+        a = self.proxy.begin('r1')
+        b = self.proxy.begin('rig')
+        open_now = self.proxy.open_attempts()
+        self.assertEqual(sorted((o['seq'], o['caller']) for o in open_now),
+                         [(a.row['seq'], 'r1'), (b.row['seq'], 'rig')])
+        self.assertEqual(set(open_now[0]), {'seq', 'caller', 't_start_us', 'op', 'key'})
+        self.proxy.finish(a)
+        self.assertEqual([o['seq'] for o in self.proxy.open_attempts()], [b.row['seq']])
+        self.proxy.finish(b)
+        self.assertEqual(self.proxy.open_attempts(), [])
+
     def test_connect_refused_answers_502_and_row_present_right_after_flush(self):
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
