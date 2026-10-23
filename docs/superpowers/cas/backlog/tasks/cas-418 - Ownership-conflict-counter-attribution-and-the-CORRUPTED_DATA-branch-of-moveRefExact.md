@@ -3,9 +3,10 @@ id: CAS-418
 title: >-
   Ownership-conflict counter attribution and the CORRUPTED_DATA branch of
   moveRefExact
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-23 00:28'
+updated_date: '2026-10-23 02:30'
 labels:
   - cas
 dependencies: []
@@ -20,8 +21,8 @@ Review of 82ff7d63570..328a1148480 (tmp/review2/REPORT.md in the antalya-26.8 wo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Where appendRefOps builders run is documented at throwCasOwnershipConflict; counter attribution matches
-- [ ] #2 CORRUPTED_DATA branch either justified in a comment or changed to LOGICAL_ERROR, with the MergeTree rename callers traced
+- [x] #1 Where appendRefOps builders run is documented at throwCasOwnershipConflict; counter attribution matches
+- [x] #2 CORRUPTED_DATA branch either justified in a comment or changed to LOGICAL_ERROR, with the MergeTree rename callers traced
 <!-- AC:END -->
 
 ## Definition of Done
@@ -31,3 +32,9 @@ Review of 82ff7d63570..328a1148480 (tmp/review2/REPORT.md in the antalya-26.8 wo
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Resolved by comments on feature/cas-disk-transactions-draft: appendRefOps builders run once per append on the leader thread (CasRefLedger.cpp ~3048), so CASOwnershipConflict is exact globally and best-effort per query; the two-rows-one-manifest branch stays CORRUPTED_DATA (ledger replayed from the ref log; no MergeTree rename caller keys on the code).
+<!-- SECTION:NOTES:END -->

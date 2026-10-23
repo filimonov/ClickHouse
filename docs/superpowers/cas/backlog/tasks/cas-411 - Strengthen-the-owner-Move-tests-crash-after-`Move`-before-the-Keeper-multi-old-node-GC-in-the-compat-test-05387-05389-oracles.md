@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 07:59'
-updated_date: '2026-10-23 00:28'
+updated_date: '2026-10-23 02:30'
 labels:
   - 'area:testing'
   - 'area:replication'
@@ -60,4 +60,6 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (tests perspect
 2026-10-23 (third umbrella review): no test can reach the new `LOGICAL_ERROR` in `MergeTreeData::Transaction::commit` (it needs a producer that skips the early commit; a gtest would need a `MergeTreeData`); accepted as untested. The compat-test extensions (readonly mount keeps floor 1; old node GC over a Move) stay deprioritized by the owner.
 
 Review 2026-10-23 (tmp/review2/REPORT.md): add a test with a throwing event sink for the moveRefExact and dropRefExact audit sites (emitAuditBestEffort must not fail the durable mutation); the LockMemoryExceptionInThread in dropRefIfMatches/dropRefBestEffort has no test. Staged-source conflict paths now have RenameOfStagedEditConflictsWhenBaseWasDropped/Republished and RenameCommittedRefConflictsWhenSourceNamesAnotherManifest.
+
+Audit-sink test done on the draft branch: CASPartFolderAccess.AuditSinkFailureDoesNotFailTheDurableMoveOrDrop (a throwing sink; Move and drop still land; both events reach the sink). Note: Pool::emitEvent already swallows sink exceptions ('Content-addressed audit event sink threw; the event was dropped'); emitAuditBestEffort is the second layer that also covers event construction.
 <!-- SECTION:NOTES:END -->
