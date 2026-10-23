@@ -3,10 +3,10 @@ id: CAS-346
 title: >-
   Ledger-only rename of a committed temporary ref: one manifest per part on
   antalya-26.8
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-07 21:05'
-updated_date: '2026-10-22 07:59'
+updated_date: '2026-10-23 01:35'
 labels:
   - 'area:ref-ledger'
   - 'area:write-path'
@@ -50,4 +50,6 @@ Oracles: system.cas_log per isolated disk after SYSTEM FLUSH LOGS: one INSERT ->
 2026-10-22: implemented on branch `feature/cas-disk-transactions` (worktree antalya-26.8-pr-2159, 19 commits on PR Altinity/ClickHouse#2579 head e612f2f6c94, not yet pushed): committed-part rename = one ref-log `Move` (+`SetPublishedAt`), MergeTree writers back to upstream text, format generation 2 with a one-way pool `min_reader_generation` floor raised at the first 26.8 writable mount (no setting), `EXPORT PART` allowed on CAS, atomic export-partition descriptor. Measured on local object storage: INSERT = 1 manifest_put / 1 precommit / 1 build_publish / 1 ref_move, 21 `CASRequestAttempt`; INSERT `PartsLockHoldMicroseconds` 2557 -> 317. Follow-ups filed: CAS-408, CAS-409.
 
 Follow-ups filed 2026-10-22: CAS-410 (floor-raise decision/observability), CAS-411 (tests), CAS-412 (relink capability cookie), CAS-413 (dead routing arm); notes added to CAS-13, CAS-14, CAS-83, CAS-176.3, CAS-201, CAS-210, CAS-222, CAS-230, CAS-232.2, CAS-321.9, CAS-347.
+
+Done by Altinity/ClickHouse PR 2647 (feature/antalya-26.8/cas-disk-transactions @ 7d992d82434): a committed ref is renamed by one ref-log Move (G_REF_MOVE, generation 2); one manifest per part; oracles in 05386-05392.
 <!-- SECTION:NOTES:END -->
