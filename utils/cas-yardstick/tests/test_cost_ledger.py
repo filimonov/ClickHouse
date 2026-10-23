@@ -87,8 +87,18 @@ class Slicing(unittest.TestCase):
         self.assertEqual(rows[3]['phase'], 'setup')
 
     def test_missing_mark_raises(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "'w0'.*window_start"):
             ledger.slice([mark(1, 's0', 0)], self.MARKS)
+
+    def test_duplicate_mark_raises(self):
+        rows = [mark(1, 's0', 0), mark(2, 'w0', 1), mark(3, 'w0', 2), mark(4, 'w1', 3), mark(5, 'e1', 4)]
+        with self.assertRaisesRegex(ValueError, "'w0'.*2 times"):
+            ledger.slice(rows, self.MARKS)
+
+    def test_misordered_marks_raise(self):
+        rows = [mark(1, 's0', 0), mark(2, 'w1', 1), mark(3, 'w0', 2), mark(4, 'e1', 3)]
+        with self.assertRaisesRegex(ValueError, 'out of order.*window_start=.w0.@3'):
+            ledger.slice(rows, self.MARKS)
 
 
 class Classify(unittest.TestCase):
@@ -98,6 +108,15 @@ class Classify(unittest.TestCase):
         self.assertEqual([x['key'] for x in out['maintenance']], ['gc/x'])
         self.assertEqual([x['key'] for x in out['foreground']], ['meta/x', 'data/x'])
         self.assertEqual([x['key'] for x in out['rig']], ['gc/y'])
+
+    def test_classify_keyless_attempts(self):
+        def dels(*keys):
+            return att('DeleteObjects', None, body={'delete_results': [
+                {'key': k, 'deleted': True, 'code': None} for k in keys]})
+        a = [dels('gc/1', 'gc/2'), dels('gc/1', 'data/2'), dels(), att('ListObjectsV2', None)]
+        out = ledger.classify(a, FAMILIES)
+        self.assertEqual(out['maintenance'], [a[0]])
+        self.assertEqual(out['foreground'], a[1:])
 
 
 class Summarize(unittest.TestCase):
@@ -201,17 +220,53 @@ class Replay(unittest.TestCase):
         a = [put('x', 1), att('DeleteObject', 'x', (20, 30), up='unknown'), put('y', 2, up='unknown'),
              put('z', 3, up='error'), put('w', 3, up='not_sent'), put('v', 3, down='rejected', up='not_sent')]
         r = rep(a)
-        self.assertEqual(set(r.lower.objects), {('b', 'x')})
-        self.assertEqual(set(r.upper.objects), {('b', 'y')})
+        self.assertEqual(set(r.lower.objects), set())          # unknown delete applies, unknown put does not
+        self.assertEqual(set(r.upper.objects), {('b', 'x'), ('b', 'y')})   # the reverse
+        self.assertTrue(r.upper.objects[('b', 'y')]['outcome_unknown'])
+        self.assertFalse(r.upper.objects[('b', 'x')].get('outcome_unknown', False))
 
-    def test_time_bounds_lower_at_end_upper_at_start(self):
+    def test_time_bounds_creation_late_in_lower_retirement_early_in_lower(self):
         r = rep([put('x', 1, (100, 200))])
         self.assertEqual(r.lower.objects[('b', 'x')]['created_us'], 200)
         self.assertEqual(r.upper.objects[('b', 'x')]['created_us'], 100)
-        # Delete overlapping a put: ordering is decided per bound.
-        r = rep([put('x', 1, (0, 10)), att('DeleteObject', 'x', (50, 60)), put('x', 2, (55, 70))])
-        self.assertEqual(r.lower.objects[('b', 'x')]['size'], 2)   # delete at 60, put at 70
-        self.assertEqual(r.upper.objects[('b', 'x')]['size'], 2)   # delete at 50, put at 55
+        # Delete at t_start in lower, t_end in upper: the object is gone earlier in lower.
+        r = rep([put('x', H, (0, 0)), att('DeleteObject', 'x', (H, 2 * H))])
+        out = ledger.byte_hours(r, 0, 3 * H)
+        self.assertAlmostEqual(out['active']['lower'], H)
+        self.assertAlmostEqual(out['active']['upper'], 2 * H)
+
+    def test_complete_creates_late_and_retires_early_in_lower(self):
+        a = [part('k', 'u', 1, H, (0, 0)), complete('k', 'u', [1], t=(H, 2 * H))]
+        r = rep(a)
+        out = ledger.byte_hours(r, 0, 3 * H)
+        # lower: part 0..H, object 2H..3H; upper: part 0..2H, object H..3H
+        self.assertAlmostEqual(out['incomplete']['lower'], H)
+        self.assertAlmostEqual(out['incomplete']['upper'], 2 * H)
+        self.assertAlmostEqual(out['active']['lower'], H)
+        self.assertAlmostEqual(out['active']['upper'], 2 * H)
+        self.assertEqual(r.lower.objects[('b', 'k')]['size'], H)   # size survives retire-before-create
+
+    def test_overlapping_put_and_delete_may_invert_replays(self):
+        a = [put('x', 1, (0, 10)), att('DeleteObject', 'x', (50, 60)), put('x', 2, (55, 70))]
+        r = rep(a)
+        self.assertEqual(r.lower.objects[('b', 'x')]['size'], 2)   # delete at 50, put at 70
+        self.assertNotIn(('b', 'x'), r.upper.objects)              # put at 55, delete at 60
+        out = ledger.byte_hours(r, 0, 10 * H)
+        self.assertLessEqual(out['active']['lower'], out['active']['upper'])
+
+    def test_lower_never_exceeds_upper(self):
+        a = [put('data/a', 5, (0, 10)), put('meta/b', 7, (5, 6)), put('data/u', 9, (8, 12), up='unknown'),
+             put('data/d', 4, (1, 2)), att('DeleteObject', 'data/d', (H, H + 5)),
+             put('data/e', 6, (3, 4)), att('DeleteObject', 'data/e', (H, H + 5), up='unknown'),
+             put('data/o', 1, (0, 10)), att('DeleteObject', 'data/o', (50, 60)), put('data/o', 2, (55, 70)),
+             part('data/m', 'u', 1, 3, (0, 1)), part('data/m', 'u', 2, 5, (0, 1)), part('data/gone', 'v', 1, 8, (0, 1)),
+             att('AbortMultipartUpload', 'data/gone', (2 * H, 2 * H + 3), upload_id='v'),
+             complete('data/m', 'u', [1, 2], t=(H, H + 20)),
+             part('data/p', 'w', 1, 2, (0, 1), up='unknown')]
+        out = ledger.byte_hours(rep(a), 0, 4 * H)
+        self.assertGreater(out['active']['upper'], 0)
+        for cat, v in out.items():
+            self.assertLessEqual(v['lower'], v['upper'], cat)
 
     def test_copy_size_from_source_identity_else_uncertain(self):
         src = {'bucket': 'b', 'key': 'src', 'range': None}
@@ -233,22 +288,21 @@ class Replay(unittest.TestCase):
 class ByteHours(unittest.TestCase):
     def test_byte_hours_lower_upper_clipped(self):
         # Object size is H bytes, so byte-hours equal the lifetime in microseconds.
-        a = [put('data/x', H, (0, 100)), att('DeleteObject', 'data/x', (3 * H, 3 * H + 10)),
-             att('DeleteObject', 'data/x', (9 * H, 9 * H), up='unknown')]
+        a = [put('data/x', H, (0, 100)), att('DeleteObject', 'data/x', (3 * H, 3 * H + 10))]
         r = rep(a)
-        out = ledger.byte_hours(r, H, 2 * H)           # window fully inside the lifetime of the object
-        self.assertAlmostEqual(out['active']['lower'], H * 1.0)
-        self.assertAlmostEqual(out['active']['upper'], H * 1.0)
-        out = ledger.byte_hours(r, 0, 10 * H)           # object lives 0..3h (lower: 100us..3h+10us)
-        self.assertAlmostEqual(out['active']['lower'], H * (3 * H + 10 - 100) / H, places=3)
-        self.assertAlmostEqual(out['active']['upper'], H * (3 * H - 0) / H, places=3)
+        out = ledger.byte_hours(r, H, 2 * H)            # window fully inside the lifetime
+        self.assertAlmostEqual(out['active']['lower'], H)
+        self.assertAlmostEqual(out['active']['upper'], H)
+        out = ledger.byte_hours(r, 0, 10 * H)           # lower: 100..3H, upper: 0..3H+10
+        self.assertAlmostEqual(out['active']['lower'], 3 * H - 100, places=3)
+        self.assertAlmostEqual(out['active']['upper'], 3 * H + 10, places=3)
         self.assertEqual(out['incomplete'], {'lower': 0.0, 'upper': 0.0})
 
-    def test_unknown_delete_shortens_upper_only(self):
+    def test_unknown_delete_shortens_lower_only(self):
         r = rep([put('x', H, (0, 0)), att('DeleteObject', 'x', (H, H), up='unknown')])
         out = ledger.byte_hours(r, 0, 4 * H)
-        self.assertAlmostEqual(out['active']['lower'], 4 * H)
-        self.assertAlmostEqual(out['active']['upper'], H)
+        self.assertAlmostEqual(out['active']['lower'], H)
+        self.assertAlmostEqual(out['active']['upper'], 4 * H)
 
     def test_incomplete_and_uncertain_categories(self):
         a = [part('k', 'u', 1, H, (0, 0)), att('CopyObject', 'd', (0, 0),

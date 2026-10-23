@@ -38,17 +38,24 @@ class Sliced:
 
 
 def slice(rows: list, marks: dict) -> Sliced:  # noqa: A001 (name fixed by the interface)
-    by_label = {}
+    by_label: dict = defaultdict(list)
     for r in rows:
         if r.get('kind') == 'mark':
-            by_label.setdefault(r['label'], r)
+            by_label[r['label']].append(r)
     found = {}
     for role in MARK_ROLES:
         label = marks[role]
-        if label not in by_label:
-            raise ValueError(f'mark {label!r} for role {role} not found in ledger')
-        found[role] = by_label[label]
-    s0, w0, w1, e1 = (found[r]['seq'] for r in MARK_ROLES)
+        hits = by_label.get(label, [])
+        if not hits:
+            raise ValueError(f'mark {label!r} for role {role} is missing from the ledger')
+        if len(hits) > 1:
+            raise ValueError(f'mark {label!r} for role {role} appears {len(hits)} times (seq {[h["seq"] for h in hits]})')
+        found[role] = hits[0]
+    seqs = [found[r]['seq'] for r in MARK_ROLES]
+    if any(x >= y for x, y in zip(seqs, seqs[1:])):
+        raise ValueError('marks out of order, need setup_start < window_start < window_end < teardown_end by seq: '
+                         + ', '.join(f'{r}={found[r]["label"]!r}@{found[r]["seq"]}' for r in MARK_ROLES))
+    s0, w0, w1, e1 = seqs
     t_w0, t_w1 = found['window_start']['t_us'], found['window_end']['t_us']
 
     by_phase = {p: [] for p in PHASES}
@@ -85,13 +92,26 @@ def family_of(families: list, key):
 
 
 def classify(attempts: list, families: list) -> dict:
+    """Split attempts into `foreground`, `maintenance` (workload callers) and `rig`.
+
+    A family's `maintenance` flag marks its keys as maintenance traffic. A `DeleteObjects` attempt has no key:
+    it is maintenance iff it lists at least one key and every listed key matches a maintenance family.
+    Other keyless attempts (bucket-level LIST) are foreground.
+    """
+    def maintenance(f):
+        return f is not None and bool(f.get('maintenance'))
+
     out = {'foreground': [], 'maintenance': [], 'rig': []}
     for a in attempts:
         if a['caller'] == 'rig':
             out['rig'].append(a)
             continue
-        f = family_of(families, a.get('key'))
-        out['maintenance' if f is not None and f.get('maintenance') else 'foreground'].append(a)
+        if a.get('key') is None and a['op'] == 'DeleteObjects':
+            keys = [r['key'] for r in (a.get('response_body') or {}).get('delete_results') or []]
+            is_m = bool(keys) and all(maintenance(family_of(families, k)) for k in keys)
+        else:
+            is_m = maintenance(family_of(families, a.get('key')))
+        out['maintenance' if is_m else 'foreground'].append(a)
     return out
 
 
@@ -219,9 +239,27 @@ def _source(inv: Inventory, a):
     return inv.objects.get((src.get('bucket'), src.get('key'))), src
 
 
-def _apply(inv: Inventory, a, t, families):
+CREATE_OPS = {'PutObject', 'CopyObject', 'UploadPart', 'UploadPartCopy', 'CompleteMultipartUpload'}
+RETIRE_OPS = {'DeleteObject', 'DeleteObjects', 'AbortMultipartUpload', 'CompleteMultipartUpload'}
+
+
+def _complete_size(inv: Inventory, a, cache: dict):
+    """Object size and uncertainty from the listed parts; cached because the retire side may run first."""
+    if a['seq'] not in cache:
+        listed = (a.get('response_body') or {}).get('completed_parts')
+        total, uncertain = 0, listed is None
+        for p in listed or []:
+            part = inv.incomplete.get((a.get('bucket'), a.get('key'), a.get('upload_id'), p['part_number']))
+            if part is None or part['uncertain']:
+                uncertain = True
+            else:
+                total += part['size']
+        cache[a['seq']] = (total, uncertain)
+    return cache[a['seq']]
+
+
+def _create(inv: Inventory, a, t, families, cache, unknown):
     op, b, k = a['op'], a.get('bucket'), a.get('key')
-    body = a.get('response_body') or {}
     if op == 'PutObject':
         inv.put_object((b, k), a.get('req_payload_bytes') or 0, t, family_of(families, k))
     elif op == 'CopyObject':
@@ -236,43 +274,70 @@ def _apply(inv: Inventory, a, t, families):
         inv.put_part((b, k, a.get('upload_id'), a.get('part_number')), size, t,
                      uncertain=src is None or src['uncertain'])
     elif op == 'CompleteMultipartUpload':
-        if body.get('complete_error'):
+        if (a.get('response_body') or {}).get('complete_error'):
             return
-        total, uncertain = 0, False
-        listed = body.get('completed_parts')
-        if listed is None:
-            uncertain = True
-        for p in listed or []:
-            part = inv.incomplete.get((b, k, a.get('upload_id'), p['part_number']))
-            if part is None or part['uncertain']:
-                uncertain = True
-            else:
-                total += part['size']
+        size, uncertain = _complete_size(inv, a, cache)
+        inv.put_object((b, k), size, t, family_of(families, k), uncertain)
+    if unknown and (b, k) in inv.objects and op in ('PutObject', 'CopyObject', 'CompleteMultipartUpload'):
+        inv.objects[(b, k)]['outcome_unknown'] = True
+
+
+def _retire(inv: Inventory, a, t, cache):
+    op, b, k = a['op'], a.get('bucket'), a.get('key')
+    if op == 'AbortMultipartUpload':
         inv.retire_parts(b, k, a.get('upload_id'), t)
-        inv.put_object((b, k), total, t, family_of(families, k), uncertain)
-    elif op == 'AbortMultipartUpload':
-        inv.retire_parts(b, k, a.get('upload_id'), t)
+    elif op == 'CompleteMultipartUpload':
+        if not (a.get('response_body') or {}).get('complete_error'):
+            _complete_size(inv, a, cache)
+            inv.retire_parts(b, k, a.get('upload_id'), t)
     elif op == 'DeleteObject':
         inv.delete_object((b, k), t)
     elif op == 'DeleteObjects':
         # Quiet mode lists only failures in the response; the proxy merges both sides into `deleted`/`code`.
-        for r in body.get('delete_results') or []:
+        for r in (a.get('response_body') or {}).get('delete_results') or []:
             if r.get('deleted') or not r.get('code'):
                 inv.delete_object((b, r['key']), t)
 
 
+def _end(a):
+    return a['t_end_us'] if a.get('t_end_us') is not None else a['t_start_us']
+
+
 def replay(attempts: list, initial: Inventory, families: list) -> Bounds:
-    """`lower` applies only known-ok mutations, at their end time; `upper` adds unknown ones, at their start time."""
+    """Replay the ledger twice into `Bounds(lower, upper)`, the byte-hours-minimising and -maximising readings.
+
+    Every mutation has a creation side (put, copy, part upload, the object a Complete makes) and a
+    retirement side (delete, abort, the parts a Complete retires). A Complete has both.
+    - `lower`: creations at `t_end_us`, only when the outcome is ok; retirements at `t_start_us`,
+      also when the outcome is `unknown`.
+    - `upper`: creations at `t_start_us`, also when `unknown`; retirements at `t_end_us`, only when ok.
+    `error`, `not_sent` and `rejected` outcomes change nothing. Objects made by an `unknown` attempt carry
+    `outcome_unknown`. `completed_parts` is parsed by the proxy from the Complete request body, so it is
+    available even when the response was not read.
+    """
+    plans = (
+        (('ok',), ('ok', 'unknown'), _end, lambda a: a['t_start_us'], False),
+        (('ok', 'unknown'), ('ok',), lambda a: a['t_start_us'], _end, True),
+    )
     bounds = []
-    for include, time_of in ((('ok',), lambda a: a['t_end_us'] if a.get('t_end_us') is not None else a['t_start_us']),
-                             (('ok', 'unknown'), lambda a: a['t_start_us'])):
+    for create_on, retire_on, create_t, retire_t, mark_unknown in plans:
         inv = copy.deepcopy(initial)
         if not inv.transitions:
             inv.seed_transitions()
-        events = sorted(((time_of(a), a['seq'], a) for a in attempts if a['upstream']['outcome'] in include),
-                        key=lambda e: e[:2])
-        for t, _, a in events:
-            _apply(inv, a, t, families)
+        cache: dict = {}
+        events = []
+        for a in attempts:
+            out = a['upstream']['outcome']
+            if a['op'] in CREATE_OPS and out in create_on:
+                events.append((create_t(a), a['seq'], 0, a))
+            if a['op'] in RETIRE_OPS and out in retire_on:
+                events.append((retire_t(a), a['seq'], 1, a))
+        events.sort(key=lambda e: e[:3])
+        for t, _, kind, a in events:
+            if kind == 0:
+                _create(inv, a, t, families, cache, mark_unknown and a['upstream']['outcome'] == 'unknown')
+            else:
+                _retire(inv, a, t, cache)
         bounds.append(inv)
     return Bounds(*bounds)
 
@@ -301,10 +366,16 @@ def _integrate(inv: Inventory, t0: int, t1: int) -> dict:
 
 
 def byte_hours(bounds: Bounds, t0_us: int, t1_us: int) -> dict:
-    """Byte-hours per category inside [t0_us, t1_us]. Objects of unknown size land in `uncertain` with size 0."""
-    lo, hi = _integrate(bounds.lower, t0_us, t1_us), _integrate(bounds.upper, t0_us, t1_us)
-    cats = set(lo) | set(hi) | {'incomplete', 'uncertain'}
-    return {c: {'lower': lo.get(c, 0.0), 'upper': hi.get(c, 0.0)} for c in sorted(cats)}
+    """Byte-hours per category inside [t0_us, t1_us], clipped to the window.
+
+    `lower` and `upper` are the per-category minimum and maximum of the two replays, so `lower <= upper` holds
+    even when overlapping operations on one identity reorder differently in the two readings.
+    Objects of unknown size land in `uncertain` with size 0.
+    """
+    a, b = _integrate(bounds.lower, t0_us, t1_us), _integrate(bounds.upper, t0_us, t1_us)
+    cats = set(a) | set(b) | {'incomplete', 'uncertain'}
+    return {c: {'lower': min(a.get(c, 0.0), b.get(c, 0.0)), 'upper': max(a.get(c, 0.0), b.get(c, 0.0))}
+            for c in sorted(cats)}
 
 
 # --- row sanity --------------------------------------------------------------------------------
