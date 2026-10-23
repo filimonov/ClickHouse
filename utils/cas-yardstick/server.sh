@@ -23,7 +23,9 @@ case "$cmd" in
         # Cache disk paths resolve against custom_cached_disks_base_directory.
         # setsid: SYSTEM SHUTDOWN signals the server's whole process group, which must not contain the caller.
         # No watchdog: server.pid is then the server itself, and SYSTEM SHUTDOWN delivers one SIGTERM, not two.
-        CLICKHOUSE_WATCHDOG_ENABLE=0 setsid nohup "$binary" server --config-file="$dir/etc/config.xml" -- \
+        # TRACE_PREFIX (e.g. "strace -f -o file") is a command prefix; it is word-split on purpose.
+        # shellcheck disable=SC2086
+        CLICKHOUSE_WATCHDOG_ENABLE=0 setsid nohup ${TRACE_PREFIX:-} "$binary" server --config-file="$dir/etc/config.xml" -- \
             --path="$dir/data/" --tmp_path="$dir/tmp/" --user_files_path="$dir/uf/" \
             --logger.log="$dir/server.log" --logger.errorlog="$dir/server.err.log" \
             --tcp_port="$port" --http_port=$((port + 1)) --interserver_http_port=$((port + 2)) \

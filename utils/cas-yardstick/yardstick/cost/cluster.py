@@ -8,6 +8,7 @@ import time
 from ..client import Client
 from ..config import write_cost_config
 from .interserver_proxy import ByteRelay
+from .localio import proc_io, traced_child_pid
 
 TOOL_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 START_TIMEOUT_SEC = 300
@@ -15,7 +16,6 @@ STOP_TIMEOUT_SEC = 120
 KEEPER_READY_TIMEOUT_SEC = 60
 KEEPER_POLL_SEC = 1
 ZK_PROBE = "SELECT count() FROM system.zookeeper WHERE path = '/'"
-PROC_IO_FIELDS = ('rchar', 'wchar', 'syscr', 'syscw', 'read_bytes', 'write_bytes')
 
 
 class GenerationCrashed(RuntimeError):
@@ -29,12 +29,6 @@ def _now_us() -> int:
     return time.time_ns() // 1000
 
 
-def _proc_io(pid: int) -> dict:
-    with open(f'/proc/{pid}/io') as f:
-        values = {name: int(value) for name, value in (line.split(': ') for line in f.read().splitlines())}
-    return {name: values[name] for name in PROC_IO_FIELDS}
-
-
 def _add(total: dict, part: dict, sign: int = 1) -> None:
     for key, value in part.items():
         total[key] = total.get(key, 0) + sign * value
@@ -44,7 +38,7 @@ class Cluster:
     def __init__(self, binary: str, pass_dir: str, topology, policy: str, key_prefix: str, local_dirs,
                  gc_enabled: bool, server_settings: dict, server_sh: str = os.path.join(TOOL_DIR, 'server.sh'),
                  sh_runner=None, config_writer=write_cost_config, client_factory=Client,
-                 relay_factory=ByteRelay, proc_io_reader=_proc_io):
+                 relay_factory=ByteRelay, proc_io_reader=proc_io, trace_prefix=None):
         self.binary = os.path.abspath(binary)
         self.pass_dir = os.path.abspath(pass_dir)
         self.topology = topology
@@ -59,6 +53,8 @@ class Cluster:
         self._client_factory = client_factory
         self._relay_factory = relay_factory
         self._proc_io = proc_io_reader
+        # str, or a callable replica -> str when each replica traces into its own file.
+        self.trace_prefix = trace_prefix
         self.clients: list = []
         self.relays: list = []
         self.startup_seconds: list[float] = []
@@ -71,10 +67,15 @@ class Cluster:
     def _run_server_sh(self, args: list) -> None:
         run_dir = args[2] if args[0] == 'start' else args[1]
         timeout = START_TIMEOUT_SEC if args[0] == 'start' else STOP_TIMEOUT_SEC
+        env = None
+        if args[0] == 'start' and self.trace_prefix:
+            replica = int(os.path.basename(run_dir)[1:])
+            prefix = self.trace_prefix(replica) if callable(self.trace_prefix) else self.trace_prefix
+            env = {**os.environ, 'TRACE_PREFIX': prefix}
         with open(os.path.join(run_dir, 'server_control.log'), 'a') as log:
             # SYSTEM SHUTDOWN signals the server's process group; keep the caller out of it.
             subprocess.run(['bash', self.server_sh] + [str(a) for a in args], stdout=log, stderr=subprocess.STDOUT,
-                           check=True, timeout=timeout, start_new_session=args[0] == 'start')
+                           check=True, timeout=timeout, start_new_session=args[0] == 'start', env=env)
 
     def start_all(self) -> None:
         problems = self.topology.preflight_new_endpoints()
@@ -142,6 +143,8 @@ class Cluster:
         self._sh(['start', self.binary, self.run_dir(i), str(self.topology.tcp(i))])
         with open(os.path.join(self.run_dir(i), 'server.pid')) as f:
             pid = int(f.read())
+        if self.trace_prefix:
+            pid = traced_child_pid(pid)  # server.pid holds the tracer; the counters belong to its child
         self.generations.setdefault(i, []).append({'pid': pid, 't_start_us': t_start_us, 't_end_us': None,
                                                    'closed': None, 'crashed': False, 'crash_error': None})
         self._running.add(i)
