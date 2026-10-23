@@ -17,7 +17,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | Step | State | Notes |
 |---|---|---|
 | 1. Ledger | done | this file |
-| 2. Spec review rounds (Codex) until no MAJOR | in progress | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4 started |
+| 2. Spec review rounds (Codex) until no MAJOR | in progress | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4: 3 MAJOR, 3 MINOR (all applied, revision 4.1); r5 started |
 | 3. Implementation plan (`writing-plans`) | pending | |
 | 4. Execute plan (`subagent-driven-development`) | pending | |
 | 5. Umbrella review of the branch | pending | |
@@ -49,3 +49,4 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | Time | Observation | Action |
 |---|---|---|
 | 2026-10-23 23:26 | Codex r3 running (pid 3911839, log growing, reading `MergeFromLogEntryTask`); 26.8 binary downloaded, 26.6 at 289 MB; a foreign `clickhouse server` from worktree `antalya-26.8-pr-2159` listens on 19000–19003 and 19181 (not ours; yardstick uses 19700+) | none |
+| A4 | 2026-10-23 | `utils/cas-yardstick/rustfs.sh` runs RustFS via docker image `rustfs/rustfs:1.0.0-rc.3`; docker availability on this host checked at plan time (see watchdog log); the CI lane runs the bare binary (`ci/tmp/rustfs`, copied into the worktree). The plan must pick one and the ledger proxy must sit in front of it. | open, for the plan |

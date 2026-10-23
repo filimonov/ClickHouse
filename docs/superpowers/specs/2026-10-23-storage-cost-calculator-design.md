@@ -10,8 +10,8 @@ doc_type: 'reference'
 # Storage cost calculator — design {#design}
 
 Decision: build a storage cost calculator for ClickHouse that compares four ways to keep MergeTree data on AWS-class
-infrastructure — local EBS volumes, the `s3` disk (metadata local), the `s3_plain_rewritable` disk (metadata on S3) and the
-CAS disk (one copy of the data shared by all replicas). The design fixes **observable behaviour and evidence obligations**;
+infrastructure — local EBS volumes, the `s3` disk, the `s3_plain_rewritable` disk and the CAS disk. Their physical layout,
+sharing and replication mechanisms are established by the versioned graph artifacts, not asserted here. The design fixes **observable behaviour and evidence obligations**;
 **versioned research artifacts** establish every implementation fact (what the code does, which settings matter, how many
 requests an operation issues) with source references and measurements, and mechanical closure checks tie the artifacts to
 the calculator. The calculator is a single page (HTML + JavaScript, no build step) that recomputes on every change and opens
@@ -134,17 +134,19 @@ evaluation and explanation.
   lifecycle (§5.1 measurement contract), with bounded timing uncertainty, not from snapshots. Block-storage capacity is
   provisioned, not integrated: peak physical bytes (all categories present on the volume, detached and system metadata
   included) × (1 + headroom), allocated to feasible volumes.
-- **Steady-state garbage** is stated only when reclamation keeps up with retirement over the measurement; otherwise the
-  page says "backlog grows".
+- **Steady-state garbage** is stated only when reclamation keeps up with retirement over the measurement. When the
+  backlog grows, the column displays "backlog grows; steady-state monthly cost unavailable", has no total, and is excluded
+  from savings deltas and the "cheapest" mark.
 - **Requests are attempts with outcomes.** The ledger records every attempt by parsed operation, outcome and bytes;
   billing decides what is charged. Retries are correlated only on evidence.
 - **Foreground, background and observer traffic are distinguished.** Exact-integer claims are made only for cards whose
   unrelated background workers are stopped and joined; where background work stays active, requests need evidenced
   attribution or the interval is reported as an integrated stochastic measurement. The rig's own traffic (inventory, probes)
   is identified by caller and excluded.
-- **Replication is accounted per result type and per mechanism**: a replica either acquires a part from a peer (the
-  transport is fetch or, on CAS, relink; sender and receiver each pay their side) or executes the merge/mutation itself.
-  Which happens, how often and by which settings is established by research, not asserted here. Recovery (restart with
+- **Replication accounting distinguishes peer acquisition from local execution by result type.** The graph artifacts
+  establish each supported acquisition mechanism per variant and account for sender and receiver traffic; a replica that
+  executes a merge or mutation itself pays its own reads and writes. Which happens, how often and by which settings is
+  established by research, not asserted here. Recovery (restart with
   intact state, replica replacement) is accounted the same way.
 - **Local storage and peer traffic are included** for every variant: metadata, cache and staging volumes of the remote
   variants are priced as block storage with their own I/O demand; interserver bytes are measured directionally and charged
@@ -158,10 +160,16 @@ evaluation and explanation.
 
 - Five stages as §4.1; the aggregation scope of tiers and free allowances is the provider's (per account/region), applied
   once per variant; allocation back to cells is proportional to the cell's share of the unit and shown.
-- **Feasible provisioning.** Block volumes are chosen as a valid allocation of capacity, IOPS and throughput that satisfies
-  the provider's dated coupling constraints (the billing artifact holds the constraints and the allocation algorithm);
-  impossible manual settings are rejected with the reason; multi-volume allocation is explicit.
-- Rounding: operation counts are integers per operation kind; money is rounded only for display.
+- **Feasible, minimal provisioning.** Automatic provisioning minimises monthly block-storage cost over the supported
+  layouts, subject to the registered capacity, performance, headroom and topology constraints and the provider's dated
+  coupling constraints; the billing artifact defines the candidate layouts and a deterministic tie-breaking rule. The same
+  objective applies to every variant, including the remote variants' local volumes. Explicit manual allocations are priced
+  as entered and identified as manual; impossible manual settings are rejected with the reason; multi-volume allocation is
+  explicit.
+- **Rounding.** Observed ledger counts and counts predicted for a concrete deterministic execution are integers. Monthly
+  expected event and request quantities keep fractional values through billing; event frequencies and probabilities are
+  never rounded. Discrete construction rules (parts per upload, volumes per replica) use explicit rounding nodes in the model
+  contract. Money is rounded only for display.
 - The same typed expression structure (§6) is evaluated for numbers and rendered for "show calculation", including the
   branch taken and the allocation.
 
@@ -202,13 +210,13 @@ review within its scope. A change to an artifact reopens its dependents.
 
 | Artifact | Owner | Required contents | Acceptance |
 |---|---|---|---|
-| `measurement-contract.md` + `ledger.schema.json` | phase 0 | ledger proxy schema (per attempt: id, timestamps start/end, caller identity, parsed S3 operation with multipart id/part number/ETag, copy source and size, batch keys with per-key outcomes, upstream store outcome separate from injected downstream outcome, exact status and error code, payload and wire bytes); lifecycle replay rules (writes as replacements, multipart parts keyed by upload id, completion and abort transitions, failed conditions leave state unchanged) with bounded timing uncertainty; counter-to-ledger mapping with overlaps listed; interserver byte measurement (dedicated-port capture or transparent proxy, directional, by endpoint, excluding client/Keeper/S3); local-volume I/O sampling for every variant; per-card completion conditions and background policy; multi-process layout (up to three servers, embedded Keeper, per-replica prefixes, shared CAS pool); fault injection | phase-0 probes (§5.3) replay end to end; review closed |
+| `measurement-contract.md` + `ledger.schema.json` | phase 0 | ledger proxy schema (per attempt: id, timestamps start/end, caller identity, parsed S3 operation with multipart id/part number/ETag, copy source and size, batch keys with per-key outcomes, upstream store outcome separate from injected downstream outcome, exact status and error code, payload and wire bytes); lifecycle replay rules: objects identified by store/bucket/key and incomplete parts by store/bucket/key/upload-id/part-number, replacement affecting only the matching identity; destination object identity recorded for every modifying request and both source and destination for COPY; completion and abort transitions; failed conditions leave state unchanged; bounded timing uncertainty; counter-to-ledger mapping with overlaps listed; interserver byte measurement (dedicated-port capture or transparent proxy, directional, by endpoint, excluding client/Keeper/S3); local-volume I/O sampling for every variant; per-card completion conditions and background policy; multi-process layout (up to three servers, embedded Keeper, per-replica prefixes, shared CAS pool); fault injection | phase-0 probes (§5.3) replay end to end; review closed |
 | `inputs-registry.json` | phase 0 seed, R1–R5 grow it | every quantity any expression references: id, kind (input / pinned / measured / derivation), scope, unit, default or rule, validity domain, evidence reference | dependency closure (§5.2) |
 | `coverage.json` | phase 0 seed (§5.6), R1–R5 grow it | term → card(s) → role (fit / hold-out / validation) → priority; every measured P1 coefficient names a fit dataset and a separate hold-out; integrated hold-outs list the coefficients they validate; excluded branches listed | evidence and support closure |
 | cards (`utils/cas-yardstick/yardstick/cards/*.py`) | R1–R5 | executable definitions: DDL, seeded generator, settings, operation sequence, completion condition, included maintenance, assertions that the intended shape and branches occurred (part type, object sizes, branch evidence from event fields and decoded placement, not event kinds alone) | runs; assertions pass |
 | operation-graph reports, one per variant + lifecycle (`docs/superpowers/reports/2026-10-<dd>-storage-cost-<variant>.md` + `measurements.json`) | R1–R5 | the graph per operation with source references at the pinned commit; the settings and constants it depends on with effective values; predictions vs measurements per card; gaps and causes; capability/reuse matrix rows for the variant; coefficients with provenance; the per-variant validation of shared lifecycle quantities (amplification, acquisition split) | exact-integer reconciliation on deterministic cards; hold-out gaps within stated tolerance; review closed |
-| `billing-contract.json` | phase 0 | §4.6 rules with URLs and dates; feasible allocation algorithm; pricing fixtures with exact expected money | pricing fixtures pass |
-| `model-contract.json` + `storage-cost-model.md` | phase 4 | §6 | all closure checks; review closed |
+| `billing-contract.json` | phase 0 | §4.6 rules with URLs and dates; candidate layouts, cost-minimising allocation algorithm and tie-breaking rule; pricing fixtures with exact expected money, including several feasible allocations whose selected one is verified against independently calculated alternatives | pricing fixtures pass |
+| `model-contract.json` + `storage-cost-model.md` | phase 4 | §6; fixtures with fractional monthly event frequencies verifying expansion into expected request quantities without intermediate rounding; a growing-backlog fixture verifying suppression of the total, deltas and cheapest mark | all closure checks; review closed |
 
 ### 5.2 Closure checks {#closure}
 
@@ -217,7 +225,9 @@ Run by checked-in scripts; all must pass before the page ships, and the page's t
 1. **Dependency closure:** every expression reference resolves to a registry entry; units and scopes agree (dimension
    check); derivations are acyclic; defaults and overrides resolve deterministically.
 2. **Support closure:** every enabled variant × operation × workload family has an applicability entry and evidence;
-   cutting a card disables every dependent coefficient and combination and invalidates presets that need them (§5.5).
+   cutting a card disables every dependent coefficient and combination and invalidates presets that need them (§5.5);
+   unavailable states (not supported, backlog grows, cannot reproduce) suppress total, deltas and cheapest mark, verified
+   by fixtures.
 3. **Evidence closure:** every measured P1 coefficient has provenance, validity domain, fit data and independent hold-out
    evidence; pinned constants cite source or document; deterministic branches have exact fixtures.
 4. **Accounting closure:** ledger replay reproduces request counts, lifecycle inventories and byte-hours with bounded
@@ -233,7 +243,7 @@ hold-outs** (natural replication, long run) whose gaps expose missing branches.
 
 | Phase | What | Gate |
 |---|---|---|
-| 0. Setup and acceptance slice | binaries; source at the pinned commit; RustFS behind the ledger proxy; yardstick extensions (multi-process, `local` policy, completion conditions, ledger/lifecycle integration, fault injection, external startup timing); registry, coverage and billing seeds; `measurement-contract.md` | **Executable acceptance slice**: four probes run end to end through all five stages and the page's drill-down — one `s3` insert reconciled to the exact integer; a two-process replicated fetch attributed sender/receiver with directional bytes; a proxy-injected failed multipart upload with the predicted residue, aborted by the rig; one CAS garbage cohort reclaimed with its reclaim delay. Runtime of the full coverage seed estimated from these plus a sample of the largest natural-merge and GC cards, recorded in the ledger; cuts per §5.5 if over budget |
+| 0. Setup and acceptance slice | binaries; source at the pinned commit; RustFS behind the ledger proxy; yardstick extensions (multi-process, `local` policy, completion conditions, ledger/lifecycle integration, fault injection, external startup timing); registry, coverage and billing seeds; `measurement-contract.md` | **Executable acceptance slice**: four probes run end to end through all five stages and the page's drill-down — one `s3` insert reconciled to the exact integer; a two-process replicated fetch attributed sender/receiver with directional bytes; a proxy-injected failed multipart upload with the predicted residue, aborted by the rig; one CAS garbage cohort reclaimed with its reclaim delay; and at least one probe exercising local-volume accounting: attributed local I/O with request-size information and an observed capacity peak with its measurement bound, carried through provisioning, pricing and drill-down, with the device/filesystem, cache/writeback boundaries, excluded rig activity and any host-specific limitation recorded (static pricing fixtures do not satisfy this probe). The multipart probe retains at least two distinct parts and replaces one before the abort, verifying coexistence and replacement accounting. Runtime of the full coverage seed estimated from these plus a sample of the largest natural-merge and GC cards, recorded in the ledger; cuts per §5.5 if over budget |
 | 1. Lifecycle definitions (R5) | executable workload definitions; part-type selection, parts per insert, amplification rule and fit on one variant; mutation and deletion shapes; acquisition-vs-execution rule and settings | R5 report v1 reviewed |
 | 2. Calibration (R1–R4) | graphs from source; isolated cards; exact-integer reconciliation; per-variant validation of lifecycle quantities | reports v1 reviewed |
 | 3. Integrated validation | hold-outs; multi-process natural replication; GC under load; recovery; long run; stochastic tolerances from observed variation; fresh hold-outs where a hold-out drove a change | hold-out gaps recorded |
@@ -347,8 +357,9 @@ design within §7; the `generate`/`check` script; the closure-check scripts.
 
 ## 11. Tier 2 {#tier2}
 
-"Next release (forecast)" toggle (26.6 optimisations not yet ported, each labelled with its measured 26.6 effect and the
-unmeasured interaction, excluded from validated savings; requires measuring 26.6 on the same cards); GCS and Azure values;
+"Next release (forecast)" toggle (candidate differences between the pinned 26.6 and 26.8 builds, established by Tier-2
+research, each labelled with its measured 26.6 effect and the unmeasured interaction, excluded from validated savings;
+requires measuring 26.6 on the same cards); GCS and Azure values;
 io2/st1; S3 staging; shards > 1; other namespace layouts; versioned buckets; KMS and VPC charges. Owner's note (ledger
 D5): the forecast was the owner's preferred headline before review.
 
@@ -361,4 +372,5 @@ D5): the forecast was the owner's preferred headline before review.
 | 2026-10-23 | Codex `gpt-6-astra` r1 (`tmp/codex_design_review_r1.log`) | 3 CRITICAL, 21 MAJOR, 1 MINOR; REVISE | applied (revision 2) |
 | 2026-10-23 | Codex r2 (`tmp/codex_design_review_r2.log`) | 16 MAJOR, 2 MINOR; REVISE | applied as revision 3 (Tier 1/2 scope freeze, registry, coverage table) |
 | 2026-10-23 | Codex r3 (`tmp/codex_design_review_r3.log`) | 12 MAJOR, 3 MINOR; REVISE | code-facing claims of revision 3 were wrong against the pinned source (part-type rule, multipart sizing, CAS acquisition vs execution, namespaces, interserver counters, gp3 coupling, versioning). Verified by the author in `tmp/src-26.8`; recorded in the ledger (A3) |
+| 2026-10-23 | Codex r4 (`tmp/codex_design_review_r4.log`) | 3 MAJOR, 3 MINOR; REVISE | all applied: cost-minimising provisioning with tie-break (§4.4), growing backlog = unavailable column (§4.3), rounding semantics (§4.4), local-volume probe and multipart part replacement in the acceptance slice (§5.3), lifecycle identity precision (§5.1), remaining implementation assertions removed (§0, §4.3, §11) |
 | 2026-10-23 | Convergence consult, Codex `gpt-6.1-sol` (`tmp/codex_consult_convergence.md`) | option C | **Revision 4 (this document):** the design keeps the product contract (supported domain, input semantics, accounting invariants, calculation and output contract, billing requirements, artifact contracts and gates) and makes no claim about the code; implementation facts move to versioned research artifacts with five closure checks and an executable acceptance slice at the phase-0 gate. r3 findings 4, 6, 7, 10, 11, 12, 14, 15 are design-level and are addressed in §4.3–§4.6, §5.2, §5.5; findings 1, 2, 3, 5, 8, 9, 13 are research-level and are now obligations of the artifacts in §5.1. Weakened per the consult: universal "derived from source and verified" → evidence policy (§3); accuracy promise scoped to validity domains (§1); Tier 2 "no formula changes" → versioned extensibility (§0); fixed review-round count → review as budget, exit by evidence (§3) |
