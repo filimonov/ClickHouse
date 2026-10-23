@@ -1,3 +1,4 @@
+import pathlib
 import re
 import threading
 import unittest
@@ -110,6 +111,18 @@ class S3ClientTest(unittest.TestCase):
         server, client = self.serve(['a'])
         client.list('yardstick-cost', '')
         self.assertEqual(server.requests[0][2], f'127.0.0.1:{server.server_port}')
+
+
+class RustfsEnvParityTest(unittest.TestCase):
+    def test_binary_launcher_sets_the_container_launcher_env(self):
+        """The rig must measure the server configuration of the container baseline."""
+        root = pathlib.Path(__file__).resolve().parent.parent
+
+        def names(script):
+            return set(re.findall(r'RUSTFS_[A-Z_]+(?==)', (root / script).read_text())) - {'RUSTFS_ADDRESS'}
+
+        self.assertEqual(names('rustfs-bin.sh'), names('rustfs.sh'))
+        self.assertIn('RUSTFS_OBS_USE_STDOUT', names('rustfs.sh'))
 
 
 if __name__ == '__main__':

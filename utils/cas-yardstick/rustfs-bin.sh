@@ -58,6 +58,9 @@ do_start()
     touch "$DATA/$MARKER"
     RUSTFS_ADDRESS="127.0.0.1:$PORT" RUSTFS_ACCESS_KEY=clickhouse RUSTFS_SECRET_KEY=clickhouse \
         RUSTFS_SCANNER_ENABLED=false RUSTFS_HEAL_ENABLED=false RUSTFS_DURABILITY_MODE=relaxed \
+        RUSTFS_RUNTIME_MAX_BLOCKING_THREADS=64 RUSTFS_RUNTIME_THREAD_KEEP_ALIVE=5 \
+        RUSTFS_ALLOCATOR_RECLAIM_ENABLED=true RUSTFS_ALLOCATOR_RECLAIM_INTERVAL_SECS=30 \
+        RUSTFS_OBS_USE_STDOUT=true \
         setsid nohup "$BIN" server "$DATA/volume" > "$DATA/rustfs.log" 2>&1 < /dev/null &
     echo $! > "$DATA/$PIDFILE"
     local ready=0
