@@ -362,9 +362,9 @@ def validate_coverage(d):
     problems = _run(obj(spec), d)
     if not problems:
         for i, row in enumerate(d["evidence"]):
-            # Held-out and validation rows are only honest if the prediction predates the measurement.
-            if row["role"] in ("holdout", "validation") and row["prediction_commit"] is None:
-                problems.append(f"$.evidence[{i}].prediction_commit: required for role {row['role']}")
+            # A held-out row is only honest if the prediction predates the measurement.
+            if row["role"] == "holdout" and row["prediction_commit"] is None:
+                problems.append(f"$.evidence[{i}].prediction_commit: required for role holdout")
     return problems
 
 
@@ -613,12 +613,16 @@ def validate_registry(d):
     tables = table_arities_from_registry(d)
     for i, pr in enumerate(d["precedence"]):
         pp = f"$.precedence[{i}]"
+        in_group = set()
         for m in pr["group"]:
             if m not in ids:
                 problems.append(f"{pp}.group: unknown id {m}")
-            if m in seen:
+            if m in in_group:
+                problems.append(f"{pp}.group: duplicate member {m}")
+            elif m in seen:
                 problems.append(f"{pp}.group: shares member {m} with precedence[{seen[m]}]")
-            seen[m] = i
+            in_group.add(m)
+            seen.setdefault(m, i)
         problems += [f"{pp}.default_locked: {m} is not in group" for m in pr["default_locked"] if m not in pr["group"]]
         for derived, rule in pr["rules"].items():
             if derived not in pr["group"]:

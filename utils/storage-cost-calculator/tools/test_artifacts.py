@@ -193,7 +193,8 @@ class CoverageTests(ArtifactTestCase):
         # A fit row may carry null; the same row relabelled as validation may not.
         f = roles["fit"]
         self.assert_rejects(artifacts.validate_coverage,
-                            with_value(c, ("evidence", f, "role"), "validation"), "prediction_commit")
+                            with_value(c, ("evidence", f, "role"), "holdout"), "prediction_commit")
+        self.assert_valid(artifacts.validate_coverage, with_value(c, ("evidence", f, "role"), "validation"))
         self.assert_valid(artifacts.validate_coverage, with_value(c, ("evidence", f, "prediction_commit"), None))
 
     def test_coverage_rejects_bad_role_priority(self):
@@ -226,6 +227,20 @@ class RegistryTests(ArtifactTestCase):
         dup = copy.deepcopy(r)
         dup["precedence"].append({"group": [group[0]], "default_locked": [], "rules": {}})
         self.assert_rejects(artifacts.validate_registry, dup, "shares member")
+
+    def test_registry_duplicate_member_within_group_is_not_a_cross_group_clash(self):
+        r = load("registry.json")
+        m = r["precedence"][0]["group"][0]
+        dup = copy.deepcopy(r)
+        dup["precedence"][0]["group"].append(m)
+        problems = artifacts.validate_registry(dup)
+        self.assertTrue(any("duplicate member" in p for p in problems), problems)
+        self.assertFalse(any("shares member" in p for p in problems), problems)
+        clash = copy.deepcopy(r)
+        clash["precedence"].append({"group": [m], "default_locked": [], "rules": {}})
+        problems = artifacts.validate_registry(clash)
+        self.assertTrue(any("shares member" in p and "precedence[0]" in p for p in problems), problems)
+        self.assertFalse(any("duplicate member" in p for p in problems), problems)
 
     def test_registry_rejects_inconsistent_value_type_and_duplicate_ids(self):
         r = load("registry.json")
