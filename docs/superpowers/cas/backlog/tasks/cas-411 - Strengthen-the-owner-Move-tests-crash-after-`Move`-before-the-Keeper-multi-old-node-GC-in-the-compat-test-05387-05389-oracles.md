@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-22 07:59'
-updated_date: '2026-10-22 23:27'
+updated_date: '2026-10-23 00:28'
 labels:
   - 'area:testing'
   - 'area:replication'
@@ -58,4 +58,6 @@ Provenance: umbrella review of the owner-Move series, 2026-10-22 (tests perspect
 2026-10-22: 05390 no longer masks an ALTER failure (`grep -o | head -1` removed), 05386–05392 carry `no-random-settings, no-random-merge-tree-settings`, and 05387 gained the replicated-merge oracle (branch commit after 721d7dea775). AC #2 (old-node GC in the compat test) is deprioritized by the owner: 26.6/26.8 coexistence is not a supported mode, upgrade = stop all 26.6.x first.
 
 2026-10-23 (third umbrella review): no test can reach the new `LOGICAL_ERROR` in `MergeTreeData::Transaction::commit` (it needs a producer that skips the early commit; a gtest would need a `MergeTreeData`); accepted as untested. The compat-test extensions (readonly mount keeps floor 1; old node GC over a Move) stay deprioritized by the owner.
+
+Review 2026-10-23 (tmp/review2/REPORT.md): add a test with a throwing event sink for the moveRefExact and dropRefExact audit sites (emitAuditBestEffort must not fail the durable mutation); the LockMemoryExceptionInThread in dropRefIfMatches/dropRefBestEffort has no test. Staged-source conflict paths now have RenameOfStagedEditConflictsWhenBaseWasDropped/Republished and RenameCommittedRefConflictsWhenSourceNamesAnotherManifest.
 <!-- SECTION:NOTES:END -->
