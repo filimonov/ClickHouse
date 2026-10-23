@@ -1,0 +1,55 @@
+{
+  "schema": "measurement/1",
+  "measurement_id": "run42/s3_default/insert_basic/small_part/k0",
+  "experiment_id": "insert_basic.small_part",
+  "run_id": "run42",
+  "card": "insert_basic",
+  "case_id": "small_part",
+  "policy": "s3_default",
+  "variant": "s3",
+  "cache_enabled": false,
+  "replicas": 1,
+  "k": 0,
+  "scale": 1.0,
+  "mode": "deterministic",
+  "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "commit": "78133cca87d",
+  "pass_dir": "tmp/rig/run42/pass0",
+  "status": "ok",
+  "effective_counts": {"parts": 1, "rows": 1000},
+  "effective_settings": {
+    "table": {"min_bytes_for_wide_part": 10485760},
+    "query": {"max_insert_threads": 1},
+    "server": {"s3_max_single_part_upload_size": 33554432}
+  },
+  "config_hashes": ["1111111111111111111111111111111111111111111111111111111111111111"],
+  "window": {"start_seq": 16, "end_seq": 40, "t_start_us": 1761300000100000, "t_end_us": 1761300000900000, "crossing": [12]},
+  "ledger": {
+    "foreground": {"r1": {"PutObject": {"attempts": 3, "delivered": 3, "dropped": 0, "injected": 0, "rejected": 0, "upstream_ok": 3, "upstream_error": 0, "upstream_unknown": 0, "req_payload_bytes": 3145728, "resp_payload_bytes": 0, "list_pages": 0, "list_keys": 0, "delete_calls": 0, "delete_keys": 0}}},
+    "maintenance": {},
+    "setup": {},
+    "teardown": {},
+    "rig": {}
+  },
+  "events": {"r1": {"S3PutObject": 3, "InsertedRows": 1000}},
+  "proc_io": {"r1": {"rchar": 4096, "wchar": 3151872, "syscr": 12, "syscw": 40, "read_bytes": 0, "write_bytes": 0}},
+  "generations": {"r1": [{"pid": 4242, "t_start_us": 1761299990000000, "t_end_us": 1761300001000000}]},
+  "local": {
+    "r1": {
+      "paths": ["/var/lib/clickhouse"],
+      "peak_allocated_bytes": 1048576,
+      "samples": [[1761300000100000, 524288], [1761300000500000, 1048576]],
+      "device": "/dev/nvme1n1",
+      "fs": "ext4",
+      "attribution": "process_io",
+      "trace": null,
+      "limitations": ["process-wide IO, not per-path"]
+    }
+  },
+  "interserver": {"relay0": {"to_target": 0, "from_target": 0, "connections_total": 0, "open_at_end": 0}},
+  "inventory": {"initial": "empty_verified", "byte_hours": {"active": {"lower": 0.5, "upper": 0.6}}, "uncertain_identities": 0},
+  "observations": {"part_type": "compact"},
+  "assertions": {"a1": {"expected": 3, "actual": 3, "ok": true}},
+  "wall_s": 4.2,
+  "unit_count": 1
+}

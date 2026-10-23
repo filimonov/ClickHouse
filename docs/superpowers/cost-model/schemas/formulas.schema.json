@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "formulas/1",
+  "description": "Formulas file (grammar v1): per operation, the ledger rows a variant produces. Standalone expression nodes validate against $defs/node.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "formulas/1"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "variant": {
+      "enum": [
+        "ebs",
+        "s3",
+        "s3plain",
+        "cas"
+      ]
+    },
+    "cells": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/cell"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "owner",
+    "variant",
+    "cells"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": [
+        "kind",
+        "dim"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "input",
+            "coef",
+            "lookup",
+            "var",
+            "const",
+            "add",
+            "sub",
+            "mul",
+            "div",
+            "min",
+            "max",
+            "ceil_to",
+            "floor_to",
+            "branch",
+            "sum_over",
+            "price"
+          ]
+        },
+        "dim": {
+          "type": "string"
+        }
+      },
+      "description": "Fields per kind: input/coef {id}; lookup {table_id, keys[]}; var {name} (only inside sum_over, name bound by an enclosing sum_over); const {value: number | string | 'unavailable'}; add/sub/mul {a,b}; div {a,b,on_zero: zero|unavailable}; min/max {args[]}; ceil_to/floor_to {x,step}; branch {cond:{op,a,b},then,else}; sum_over {set,var,body}; price {unit,rule_id,quantity}. The validator enforces the per-kind fields, var scoping and lookup arity."
+    },
+    "cell": {
+      "type": "object",
+      "properties": {
+        "ledger_rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "row_type": {
+                "enum": [
+                  "request",
+                  "storage",
+                  "transfer",
+                  "block_io",
+                  "block_capacity"
+                ]
+              },
+              "op_kind": {
+                "type": "string"
+              },
+              "outcome_class": {
+                "enum": [
+                  "ok",
+                  "client_error",
+                  "server_error",
+                  "dropped",
+                  "all"
+                ]
+              },
+              "category": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "active",
+                      "outdated",
+                      "garbage",
+                      "temporary",
+                      "incomplete",
+                      "detached",
+                      "metadata"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "route": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "ec2_s3_same_region",
+                      "ec2_ec2_cross_az",
+                      "internet"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "scope": {
+                "enum": [
+                  "variant",
+                  "replica",
+                  "volume"
+                ]
+              },
+              "expr": {
+                "$ref": "#/$defs/node"
+              }
+            },
+            "required": [
+              "row_type",
+              "op_kind",
+              "outcome_class",
+              "category",
+              "route",
+              "scope",
+              "expr"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "allocation": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "shares": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cell": {
+                        "type": "string"
+                      },
+                      "weight": {
+                        "$ref": "#/$defs/node"
+                      }
+                    },
+                    "required": [
+                      "cell",
+                      "weight"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "shares"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "enum": [
+                  "not_supported",
+                  "backlog_grows"
+                ]
+              },
+              "cond": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/node"
+                  },
+                  {
+                    "const": true
+                  }
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "cond",
+              "reason"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        }
+      },
+      "required": [
+        "ledger_rows",
+        "allocation",
+        "states",
+        "notes"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

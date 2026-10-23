@@ -1,0 +1,18 @@
+{
+  "kind": "branch", "dim": "count",
+  "cond": {"op": "<=", "a": {"kind": "input", "id": "object_size_bytes", "dim": "bytes"}, "b": {"kind": "coef", "id": "first_buffer_bytes", "dim": "bytes"}},
+  "then": {"kind": "const", "value": 1, "dim": "count"},
+  "else": {
+    "kind": "add", "dim": "count",
+    "a": {"kind": "const", "value": 1, "dim": "count"},
+    "b": {
+      "kind": "ceil_to", "dim": "count",
+      "x": {
+        "kind": "div", "dim": "count", "on_zero": "unavailable",
+        "a": {"kind": "sub", "dim": "bytes", "a": {"kind": "input", "id": "object_size_bytes", "dim": "bytes"}, "b": {"kind": "coef", "id": "first_buffer_bytes", "dim": "bytes"}},
+        "b": {"kind": "coef", "id": "part_size_bytes", "dim": "bytes"}
+      },
+      "step": {"kind": "const", "value": 1, "dim": "count"}
+    }
+  }
+}

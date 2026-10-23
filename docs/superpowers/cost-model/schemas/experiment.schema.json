@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "experiment/1",
+  "description": "Experiment manifest with typed parameters only; `experiment_id` is `<card>.<case_id>`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "experiment/1"
+    },
+    "experiment_id": {
+      "type": "string"
+    },
+    "card": {
+      "type": "string"
+    },
+    "case_id": {
+      "type": "string"
+    },
+    "policies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "replicas": {
+      "type": "integer"
+    },
+    "mode": {
+      "enum": [
+        "deterministic",
+        "stochastic"
+      ]
+    },
+    "controls": {
+      "type": "object",
+      "properties": {
+        "merges": {
+          "enum": [
+            "stop",
+            "measure"
+          ]
+        },
+        "gc": {
+          "enum": [
+            "off",
+            "measure"
+          ]
+        },
+        "ttl": {
+          "enum": [
+            "none",
+            "measure"
+          ]
+        }
+      },
+      "required": [
+        "merges",
+        "gc",
+        "ttl"
+      ],
+      "additionalProperties": false
+    },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "table": {
+          "type": "object"
+        },
+        "query": {
+          "type": "object"
+        },
+        "server": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "table",
+        "query",
+        "server"
+      ],
+      "additionalProperties": false
+    },
+    "params": {
+      "type": "object"
+    },
+    "scale": {
+      "type": "number"
+    },
+    "repeats": {
+      "type": "integer"
+    },
+    "timeout_s": {
+      "type": "integer"
+    },
+    "description": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "experiment_id",
+    "card",
+    "case_id",
+    "policies",
+    "replicas",
+    "mode",
+    "controls",
+    "settings",
+    "params",
+    "scale",
+    "repeats",
+    "timeout_s",
+    "description"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "prediction/1",
+  "description": "Request-count prediction written before the measurement; file `predictions/<experiment_id>.<policy>.json`. Evidence roles live in coverage, not here.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "prediction/1"
+    },
+    "experiment_id": {
+      "type": "string"
+    },
+    "policy": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "object"
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "foreground": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "min": {
+                      "type": "integer"
+                    },
+                    "max": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "min",
+                    "max"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "observations": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "foreground",
+        "observations"
+      ],
+      "additionalProperties": false
+    },
+    "tolerance": {
+      "type": "object",
+      "properties": {
+        "abs": {
+          "type": "object"
+        },
+        "rel": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "abs",
+        "rel"
+      ],
+      "additionalProperties": false
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "claim",
+          "path",
+          "line"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "prediction_commit": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "experiment_id",
+    "policy",
+    "inputs",
+    "expected",
+    "tolerance",
+    "source_refs",
+    "prediction_commit"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,6 @@
+{
+  "kind": "branch", "dim": "enum:part_type",
+  "cond": {"op": "<", "a": {"kind": "input", "id": "uncompressed_bytes_per_part", "dim": "bytes"}, "b": {"kind": "coef", "id": "min_bytes_for_wide_part", "dim": "bytes"}},
+  "then": {"kind": "const", "value": "compact", "dim": "enum:part_type"},
+  "else": {"kind": "const", "value": "wide", "dim": "enum:part_type"}
+}

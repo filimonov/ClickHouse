@@ -1,0 +1,10 @@
+{
+  "kind": "sum_over", "dim": "count", "set": "part_types", "var": "part_type",
+  "body": {
+    "kind": "lookup", "dim": "count", "table_id": "objects_per_part",
+    "keys": [
+      {"kind": "input", "id": "shape", "dim": "enum:shape"},
+      {"kind": "var", "name": "part_type", "dim": "enum:part_type"}
+    ]
+  }
+}

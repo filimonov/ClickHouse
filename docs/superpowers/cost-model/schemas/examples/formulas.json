@@ -1,0 +1,23 @@
+{
+  "schema": "formulas/1",
+  "owner": "variant-owner",
+  "variant": "s3",
+  "cells": {
+    "insert": {
+      "ledger_rows": [
+        {"row_type": "request", "op_kind": "PutObject", "outcome_class": "ok", "category": null, "route": null, "scope": "variant",
+         "expr": {"kind": "mul", "dim": "count",
+                  "a": {"kind": "input", "id": "parts_inserted", "dim": "count"},
+                  "b": {"kind": "lookup", "dim": "count", "table_id": "objects_per_part",
+                        "keys": [{"kind": "input", "id": "shape", "dim": "enum:shape"}, {"kind": "const", "value": "compact", "dim": "enum:part_type"}]}}}
+      ],
+      "allocation": {"shares": [{"cell": "insert", "weight": {"kind": "const", "value": 1, "dim": "ratio"}}]},
+      "states": [
+        {"id": "not_supported", "cond": {"kind": "branch", "dim": "bool", "cond": {"op": "==", "a": {"kind": "input", "id": "shape", "dim": "enum:shape"}, "b": {"kind": "const", "value": "wide_columns", "dim": "enum:shape"}},
+                                         "then": {"kind": "const", "value": 1, "dim": "bool"}, "else": {"kind": "const", "value": 0, "dim": "bool"}},
+         "reason": "wide_columns shape is out of the supported domain"}
+      ],
+      "notes": [{"kind": "const", "value": "unavailable", "dim": "count"}]
+    }
+  }
+}

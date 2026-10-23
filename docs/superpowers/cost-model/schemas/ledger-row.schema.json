@@ -1,0 +1,448 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ledger-row/1",
+  "description": "One JSON line of the relay ledger: an S3 attempt or a mark. `phase` is filled when the runner slices the ledger.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/attempt"
+    },
+    {
+      "$ref": "#/$defs/mark"
+    }
+  ],
+  "$defs": {
+    "attempt": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "attempt"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "caller": {
+          "enum": [
+            "r1",
+            "r2",
+            "r3",
+            "rig"
+          ]
+        },
+        "store_id": {
+          "type": "string"
+        },
+        "t_start_us": {
+          "type": "integer"
+        },
+        "t_end_us": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "query": {
+          "type": "object"
+        },
+        "req_headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "resp_headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "PutObject",
+            "CopyObject",
+            "CreateMultipartUpload",
+            "UploadPart",
+            "UploadPartCopy",
+            "CompleteMultipartUpload",
+            "AbortMultipartUpload",
+            "GetObject",
+            "HeadObject",
+            "ListObjectsV2",
+            "ListMultipartUploads",
+            "ListParts",
+            "DeleteObject",
+            "DeleteObjects",
+            "CreateBucket",
+            "HeadBucket",
+            "Unsupported",
+            "Other"
+          ]
+        },
+        "upload_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "part_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "copy_source": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "bucket": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "range": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bucket",
+                "key",
+                "range"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "req_payload_bytes": {
+          "type": "integer"
+        },
+        "req_wire_bytes": {
+          "type": "integer"
+        },
+        "resp_payload_bytes": {
+          "type": "integer"
+        },
+        "resp_wire_bytes": {
+          "type": "integer"
+        },
+        "payload_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expect_negotiated": {
+          "type": "boolean"
+        },
+        "downstream": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "enum": [
+                "delivered",
+                "dropped",
+                "injected",
+                "rejected"
+              ]
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "outcome",
+            "status"
+          ],
+          "additionalProperties": false
+        },
+        "upstream": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "enum": [
+                "ok",
+                "error",
+                "unknown",
+                "not_sent"
+              ]
+            },
+            "http_status": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "s3_code": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "outcome",
+            "http_status",
+            "s3_code"
+          ],
+          "additionalProperties": false
+        },
+        "response_body": {
+          "type": "object",
+          "properties": {
+            "upload_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "etag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "complete_error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed_parts": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "part_number": {
+                        "type": "integer"
+                      },
+                      "etag": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "part_number",
+                      "etag"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "delete_results": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "deleted": {
+                        "type": "boolean"
+                      },
+                      "code": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "deleted",
+                      "code"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "list": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "key_count": {
+                      "type": "integer"
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "key_count",
+                    "truncated"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "upload_id",
+            "etag",
+            "complete_error",
+            "completed_parts",
+            "delete_results",
+            "list"
+          ],
+          "additionalProperties": false
+        },
+        "injected_rule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase": {
+          "enum": [
+            "setup",
+            "window",
+            "teardown",
+            "outside"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "seq",
+        "caller",
+        "store_id",
+        "t_start_us",
+        "t_end_us",
+        "method",
+        "path",
+        "query",
+        "req_headers",
+        "resp_headers",
+        "bucket",
+        "key",
+        "op",
+        "upload_id",
+        "part_number",
+        "copy_source",
+        "req_payload_bytes",
+        "req_wire_bytes",
+        "resp_payload_bytes",
+        "resp_wire_bytes",
+        "payload_sha256",
+        "expect_negotiated",
+        "downstream",
+        "upstream",
+        "response_body",
+        "injected_rule",
+        "phase"
+      ],
+      "additionalProperties": false
+    },
+    "mark": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "mark"
+        },
+        "seq": {
+          "type": "integer"
+        },
+        "label": {
+          "type": "string"
+        },
+        "t_us": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "seq",
+        "label",
+        "t_us"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

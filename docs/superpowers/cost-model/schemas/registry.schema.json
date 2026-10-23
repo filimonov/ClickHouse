@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "registry/1",
+  "description": "Quantity registry. The validator also checks: unique ids, enum/table presence per value_type, a rule exactly for derivations, and that precedence groups never share members.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "registry/1"
+    },
+    "version": {
+      "type": "string"
+    },
+    "quantities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "block": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "input",
+              "pinned",
+              "measured",
+              "derivation"
+            ]
+          },
+          "scope": {
+            "enum": [
+              "cluster",
+              "replica",
+              "pool",
+              "volume"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value_type": {
+            "enum": [
+              "number",
+              "enum",
+              "table"
+            ]
+          },
+          "enum": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "table": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "index": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  },
+                  "dim": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "index",
+                  "dim"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": [
+                  "number",
+                  "string"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/node"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validity": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "assumed",
+                  "source",
+                  "measured",
+                  "provider"
+                ]
+              },
+              "ref": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "ref",
+              "version"
+            ],
+            "additionalProperties": false
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "sql": {
+                    "type": "string"
+                  },
+                  "mapping": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "sql",
+                  "mapping"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "unsupported"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "block",
+          "label",
+          "kind",
+          "scope",
+          "unit",
+          "value_type",
+          "enum",
+          "table",
+          "default",
+          "rule",
+          "coef",
+          "validity",
+          "evidence",
+          "hint",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sets": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "precedence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default_locked": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/node"
+            }
+          }
+        },
+        "required": [
+          "group",
+          "default_locked",
+          "rules"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "quantities",
+    "sets",
+    "precedence"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "$ref": "formulas.schema.json#/$defs/node"
+    }
+  }
+}

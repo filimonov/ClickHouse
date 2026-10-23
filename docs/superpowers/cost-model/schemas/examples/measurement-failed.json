@@ -1,0 +1,25 @@
+{
+  "schema": "measurement/1",
+  "measurement_id": "run42/s3_default/insert_basic/small_part/k1",
+  "experiment_id": "insert_basic.small_part",
+  "run_id": "run42",
+  "card": "insert_basic",
+  "case_id": "small_part",
+  "policy": "s3_default",
+  "variant": "s3",
+  "cache_enabled": false,
+  "replicas": 1,
+  "k": 1,
+  "scale": 1.0,
+  "mode": "deterministic",
+  "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "commit": "78133cca87d",
+  "pass_dir": "tmp/rig/run42/pass1",
+  "status": "FAILED",
+  "reason": "server did not become ready within 60 s",
+  "diagnostics": {"server_logs": ["tmp/rig/run42/pass1/r1/clickhouse-server.log"], "error_text": "timeout waiting for port 9000"},
+  "partial": {
+    "effective_counts": {"parts": 0},
+    "window": {"start_seq": 16, "end_seq": 20, "t_start_us": 1761300000100000, "t_end_us": 1761300000200000, "crossing": []}
+  }
+}

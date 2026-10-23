@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "coverage/1",
+  "description": "Cards, cases and the evidence plan. Rows with role `holdout` or `validation` need a non-null `prediction_commit` (checked by the validator).",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "coverage/1"
+    },
+    "version": {
+      "type": "string"
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "model_variants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "case_id": {
+                  "type": "string"
+                },
+                "policies": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "replicas": {
+                  "type": "integer"
+                },
+                "scale": {
+                  "type": "number"
+                },
+                "repeats": {
+                  "type": "integer"
+                },
+                "timeout_s": {
+                  "type": "integer"
+                },
+                "priority": {
+                  "enum": [
+                    "P1",
+                    "P2"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "planned",
+                    "run",
+                    "cut"
+                  ]
+                }
+              },
+              "required": [
+                "case_id",
+                "policies",
+                "replicas",
+                "scale",
+                "repeats",
+                "timeout_s",
+                "priority",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "model_variants",
+          "cases"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "coefficient": {
+            "type": "string"
+          },
+          "experiment_id": {
+            "type": "string"
+          },
+          "policy": {
+            "type": "string"
+          },
+          "span": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "role": {
+            "enum": [
+              "fit",
+              "holdout",
+              "validation"
+            ]
+          },
+          "prediction_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "measurement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "done",
+              "consumed",
+              "cut"
+            ]
+          }
+        },
+        "required": [
+          "coefficient",
+          "experiment_id",
+          "policy",
+          "span",
+          "role",
+          "prediction_commit",
+          "measurement_ids",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "domain": {
+      "type": "object",
+      "properties": {
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "families": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "variants",
+        "operations",
+        "families"
+      ],
+      "additionalProperties": false
+    },
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "cards",
+    "evidence",
+    "domain",
+    "excluded"
+  ],
+  "additionalProperties": false
+}

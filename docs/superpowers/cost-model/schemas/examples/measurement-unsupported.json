@@ -1,0 +1,20 @@
+{
+  "schema": "measurement/1",
+  "measurement_id": "run42/cas_default/insert_basic/small_part/k0",
+  "experiment_id": "insert_basic.small_part",
+  "run_id": "run42",
+  "card": "insert_basic",
+  "case_id": "small_part",
+  "policy": "cas_default",
+  "variant": "cas",
+  "cache_enabled": false,
+  "replicas": 1,
+  "k": 0,
+  "scale": 1.0,
+  "mode": "deterministic",
+  "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "commit": "78133cca87d",
+  "pass_dir": "tmp/rig/run42/pass0",
+  "status": "UNSUPPORTED",
+  "reason": "the build lacks the CAS disk type"
+}

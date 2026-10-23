@@ -1,0 +1,16 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "insert_basic.small_part",
+  "card": "insert_basic",
+  "case_id": "small_part",
+  "policies": ["ebs_default", "s3_default", "s3plain_default", "cas_default"],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {"merges": "stop", "gc": "off", "ttl": "none"},
+  "settings": {"table": {"min_bytes_for_wide_part": 10485760}, "query": {}, "server": {}},
+  "params": {"rows": 1000, "columns": 4},
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 300,
+  "description": "One small insert; counts the requests that write a single compact part."
+}

@@ -1,0 +1,27 @@
+{
+  "schema": "registry/1",
+  "version": "1",
+  "quantities": [
+    {"id": "uncompressed_bytes_per_part", "block": "workload", "label": "Uncompressed bytes per part", "kind": "input", "scope": "cluster", "unit": "bytes",
+     "value_type": "number", "enum": null, "table": null, "default": 1048576, "rule": null, "coef": null, "validity": {"uncompressed_bytes_per_part": [1, 1099511627776]},
+     "evidence": {"kind": "assumed", "ref": "design §4", "version": "1"}, "hint": {"sql": "SELECT avg(data_uncompressed_bytes) FROM system.parts", "mapping": {"avg(data_uncompressed_bytes)": "uncompressed_bytes_per_part"}}, "status": "ok"},
+    {"id": "shape", "block": "workload", "label": "Table shape", "kind": "input", "scope": "cluster", "unit": "",
+     "value_type": "enum", "enum": ["narrow", "wide_columns"], "table": null, "default": "narrow", "rule": null, "coef": null, "validity": null,
+     "evidence": {"kind": "assumed", "ref": "design §4", "version": "1"}, "hint": null, "status": "ok"},
+    {"id": "min_bytes_for_wide_part", "block": "engine", "label": "min_bytes_for_wide_part", "kind": "pinned", "scope": "cluster", "unit": "bytes",
+     "value_type": "number", "enum": null, "table": null, "default": 10485760, "rule": null, "coef": "min_bytes_for_wide_part", "validity": null,
+     "evidence": {"kind": "source", "ref": "src/Storages/MergeTree/MergeTreeSettings.cpp", "version": "78133cca87d"}, "hint": null, "status": "ok"},
+    {"id": "objects_per_part", "block": "engine", "label": "Objects per part", "kind": "measured", "scope": "cluster", "unit": "objects",
+     "value_type": "table", "enum": null, "table": {"index": ["shape", "part_type"], "dim": "count"}, "default": null, "rule": null, "coef": "objects_per_part", "validity": null,
+     "evidence": {"kind": "measured", "ref": "reports/2026-10-xx-storage-cost-rig", "version": "1"}, "hint": null, "status": "ok"},
+    {"id": "part_type", "block": "engine", "label": "Part type", "kind": "derivation", "scope": "cluster", "unit": "",
+     "value_type": "enum", "enum": ["compact", "wide"], "table": null, "default": null,
+     "rule": {"kind": "branch", "dim": "enum:part_type", "cond": {"op": "<", "a": {"kind": "input", "id": "uncompressed_bytes_per_part", "dim": "bytes"}, "b": {"kind": "coef", "id": "min_bytes_for_wide_part", "dim": "bytes"}},
+              "then": {"kind": "const", "value": "compact", "dim": "enum:part_type"}, "else": {"kind": "const", "value": "wide", "dim": "enum:part_type"}},
+     "coef": null, "validity": null, "evidence": {"kind": "source", "ref": "src/Storages/MergeTree/MergeTreeDataWriter.cpp", "version": "78133cca87d"}, "hint": null, "status": "ok"}
+  ],
+  "sets": {"part_types": ["part_type"]},
+  "precedence": [
+    {"group": ["uncompressed_bytes_per_part", "shape"], "default_locked": ["shape"], "rules": {}}
+  ]
+}

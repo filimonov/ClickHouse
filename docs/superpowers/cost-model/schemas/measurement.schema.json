@@ -1,0 +1,1152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "measurement/1",
+  "description": "Result of one (policy, card, case, repeat) run, discriminated by `status`. A FAILED row keeps whichever ok sections completed under `partial`.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ok"
+    },
+    {
+      "$ref": "#/$defs/unsupported"
+    },
+    {
+      "$ref": "#/$defs/failed"
+    }
+  ],
+  "$defs": {
+    "Counts": {
+      "type": "object",
+      "properties": {
+        "attempts": {
+          "type": "integer"
+        },
+        "delivered": {
+          "type": "integer"
+        },
+        "dropped": {
+          "type": "integer"
+        },
+        "injected": {
+          "type": "integer"
+        },
+        "rejected": {
+          "type": "integer"
+        },
+        "upstream_ok": {
+          "type": "integer"
+        },
+        "upstream_error": {
+          "type": "integer"
+        },
+        "upstream_unknown": {
+          "type": "integer"
+        },
+        "req_payload_bytes": {
+          "type": "integer"
+        },
+        "resp_payload_bytes": {
+          "type": "integer"
+        },
+        "list_pages": {
+          "type": "integer"
+        },
+        "list_keys": {
+          "type": "integer"
+        },
+        "delete_calls": {
+          "type": "integer"
+        },
+        "delete_keys": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "attempts",
+        "delivered",
+        "dropped",
+        "injected",
+        "rejected",
+        "upstream_ok",
+        "upstream_error",
+        "upstream_unknown",
+        "req_payload_bytes",
+        "resp_payload_bytes",
+        "list_pages",
+        "list_keys",
+        "delete_calls",
+        "delete_keys"
+      ],
+      "additionalProperties": false
+    },
+    "ok": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "measurement/1"
+        },
+        "measurement_id": {
+          "type": "string"
+        },
+        "experiment_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "card": {
+          "type": "string"
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "variant": {
+          "enum": [
+            "ebs",
+            "s3",
+            "s3plain",
+            "cas"
+          ]
+        },
+        "cache_enabled": {
+          "type": "boolean"
+        },
+        "replicas": {
+          "type": "integer"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "scale": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "deterministic",
+            "stochastic"
+          ]
+        },
+        "binary_sha256": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "pass_dir": {
+          "type": "string"
+        },
+        "status": {
+          "const": "ok"
+        },
+        "effective_counts": {
+          "type": "object"
+        },
+        "effective_settings": {
+          "type": "object",
+          "properties": {
+            "table": {
+              "type": "object"
+            },
+            "query": {
+              "type": "object"
+            },
+            "server": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "table",
+            "query",
+            "server"
+          ],
+          "additionalProperties": false
+        },
+        "config_hashes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "window": {
+          "type": "object",
+          "properties": {
+            "start_seq": {
+              "type": "integer"
+            },
+            "end_seq": {
+              "type": "integer"
+            },
+            "t_start_us": {
+              "type": "integer"
+            },
+            "t_end_us": {
+              "type": "integer"
+            },
+            "crossing": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          },
+          "required": [
+            "start_seq",
+            "end_seq",
+            "t_start_us",
+            "t_end_us",
+            "crossing"
+          ],
+          "additionalProperties": false
+        },
+        "ledger": {
+          "type": "object",
+          "properties": {
+            "foreground": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/Counts"
+                }
+              }
+            },
+            "maintenance": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/Counts"
+                }
+              }
+            },
+            "setup": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/Counts"
+                }
+              }
+            },
+            "teardown": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/$defs/Counts"
+                }
+              }
+            },
+            "rig": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Counts"
+              }
+            }
+          },
+          "required": [
+            "foreground",
+            "maintenance",
+            "setup",
+            "teardown",
+            "rig"
+          ],
+          "additionalProperties": false
+        },
+        "events": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "proc_io": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "rchar": {
+                "type": "integer"
+              },
+              "wchar": {
+                "type": "integer"
+              },
+              "syscr": {
+                "type": "integer"
+              },
+              "syscw": {
+                "type": "integer"
+              },
+              "read_bytes": {
+                "type": "integer"
+              },
+              "write_bytes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "rchar",
+              "wchar",
+              "syscr",
+              "syscw",
+              "read_bytes",
+              "write_bytes"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "generations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pid": {
+                  "type": "integer"
+                },
+                "t_start_us": {
+                  "type": "integer"
+                },
+                "t_end_us": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "pid",
+                "t_start_us",
+                "t_end_us"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "local": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "peak_allocated_bytes": {
+                "type": "integer"
+              },
+              "samples": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "device": {
+                "type": "string"
+              },
+              "fs": {
+                "type": "string"
+              },
+              "attribution": {
+                "const": "process_io"
+              },
+              "trace": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "tool": {
+                        "const": "strace"
+                      },
+                      "syscalls": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "count": {
+                              "type": "integer"
+                            },
+                            "bytes": {
+                              "type": "integer"
+                            },
+                            "size_histogram": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "required": [
+                            "count",
+                            "bytes",
+                            "size_histogram"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "tool",
+                      "syscalls"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "limitations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "paths",
+              "peak_allocated_bytes",
+              "samples",
+              "device",
+              "fs",
+              "attribution",
+              "trace",
+              "limitations"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "interserver": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "to_target": {
+                "type": "integer"
+              },
+              "from_target": {
+                "type": "integer"
+              },
+              "connections_total": {
+                "type": "integer"
+              },
+              "open_at_end": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "to_target",
+              "from_target",
+              "connections_total",
+              "open_at_end"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "inventory": {
+          "type": "object",
+          "properties": {
+            "initial": {
+              "enum": [
+                "empty_verified",
+                "declared"
+              ]
+            },
+            "byte_hours": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "lower": {
+                    "type": "number"
+                  },
+                  "upper": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "lower",
+                  "upper"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "uncertain_identities": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "initial",
+            "byte_hours",
+            "uncertain_identities"
+          ],
+          "additionalProperties": false
+        },
+        "observations": {
+          "type": "object"
+        },
+        "assertions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "expected": {},
+              "actual": {},
+              "ok": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "expected",
+              "actual",
+              "ok"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "wall_s": {
+          "type": "number"
+        },
+        "unit_count": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "schema",
+        "measurement_id",
+        "experiment_id",
+        "run_id",
+        "card",
+        "case_id",
+        "policy",
+        "variant",
+        "cache_enabled",
+        "replicas",
+        "k",
+        "scale",
+        "mode",
+        "binary_sha256",
+        "commit",
+        "pass_dir",
+        "status",
+        "effective_counts",
+        "effective_settings",
+        "config_hashes",
+        "window",
+        "ledger",
+        "events",
+        "proc_io",
+        "generations",
+        "local",
+        "interserver",
+        "inventory",
+        "observations",
+        "assertions",
+        "wall_s",
+        "unit_count"
+      ],
+      "additionalProperties": false
+    },
+    "unsupported": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "measurement/1"
+        },
+        "measurement_id": {
+          "type": "string"
+        },
+        "experiment_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "card": {
+          "type": "string"
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "variant": {
+          "enum": [
+            "ebs",
+            "s3",
+            "s3plain",
+            "cas"
+          ]
+        },
+        "cache_enabled": {
+          "type": "boolean"
+        },
+        "replicas": {
+          "type": "integer"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "scale": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "deterministic",
+            "stochastic"
+          ]
+        },
+        "binary_sha256": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "pass_dir": {
+          "type": "string"
+        },
+        "status": {
+          "const": "UNSUPPORTED"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "measurement_id",
+        "experiment_id",
+        "run_id",
+        "card",
+        "case_id",
+        "policy",
+        "variant",
+        "cache_enabled",
+        "replicas",
+        "k",
+        "scale",
+        "mode",
+        "binary_sha256",
+        "commit",
+        "pass_dir",
+        "status",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "failed": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "measurement/1"
+        },
+        "measurement_id": {
+          "type": "string"
+        },
+        "experiment_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "card": {
+          "type": "string"
+        },
+        "case_id": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "variant": {
+          "enum": [
+            "ebs",
+            "s3",
+            "s3plain",
+            "cas"
+          ]
+        },
+        "cache_enabled": {
+          "type": "boolean"
+        },
+        "replicas": {
+          "type": "integer"
+        },
+        "k": {
+          "type": "integer"
+        },
+        "scale": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "deterministic",
+            "stochastic"
+          ]
+        },
+        "binary_sha256": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "pass_dir": {
+          "type": "string"
+        },
+        "status": {
+          "const": "FAILED"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "diagnostics": {
+          "type": "object",
+          "properties": {
+            "server_logs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "error_text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "server_logs",
+            "error_text"
+          ],
+          "additionalProperties": false
+        },
+        "partial": {
+          "type": "object",
+          "properties": {
+            "effective_counts": {
+              "type": "object"
+            },
+            "effective_settings": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "type": "object"
+                },
+                "query": {
+                  "type": "object"
+                },
+                "server": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "table",
+                "query",
+                "server"
+              ],
+              "additionalProperties": false
+            },
+            "config_hashes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "window": {
+              "type": "object",
+              "properties": {
+                "start_seq": {
+                  "type": "integer"
+                },
+                "end_seq": {
+                  "type": "integer"
+                },
+                "t_start_us": {
+                  "type": "integer"
+                },
+                "t_end_us": {
+                  "type": "integer"
+                },
+                "crossing": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "required": [
+                "start_seq",
+                "end_seq",
+                "t_start_us",
+                "t_end_us",
+                "crossing"
+              ],
+              "additionalProperties": false
+            },
+            "ledger": {
+              "type": "object",
+              "properties": {
+                "foreground": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "$ref": "#/$defs/Counts"
+                    }
+                  }
+                },
+                "maintenance": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "$ref": "#/$defs/Counts"
+                    }
+                  }
+                },
+                "setup": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "$ref": "#/$defs/Counts"
+                    }
+                  }
+                },
+                "teardown": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "$ref": "#/$defs/Counts"
+                    }
+                  }
+                },
+                "rig": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/$defs/Counts"
+                  }
+                }
+              },
+              "required": [
+                "foreground",
+                "maintenance",
+                "setup",
+                "teardown",
+                "rig"
+              ],
+              "additionalProperties": false
+            },
+            "events": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              }
+            },
+            "proc_io": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "rchar": {
+                    "type": "integer"
+                  },
+                  "wchar": {
+                    "type": "integer"
+                  },
+                  "syscr": {
+                    "type": "integer"
+                  },
+                  "syscw": {
+                    "type": "integer"
+                  },
+                  "read_bytes": {
+                    "type": "integer"
+                  },
+                  "write_bytes": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "rchar",
+                  "wchar",
+                  "syscr",
+                  "syscw",
+                  "read_bytes",
+                  "write_bytes"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "generations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "pid": {
+                      "type": "integer"
+                    },
+                    "t_start_us": {
+                      "type": "integer"
+                    },
+                    "t_end_us": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "pid",
+                    "t_start_us",
+                    "t_end_us"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "local": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "paths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "peak_allocated_bytes": {
+                    "type": "integer"
+                  },
+                  "samples": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  },
+                  "device": {
+                    "type": "string"
+                  },
+                  "fs": {
+                    "type": "string"
+                  },
+                  "attribution": {
+                    "const": "process_io"
+                  },
+                  "trace": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "tool": {
+                            "const": "strace"
+                          },
+                          "syscalls": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "bytes": {
+                                  "type": "integer"
+                                },
+                                "size_histogram": {
+                                  "type": "object",
+                                  "additionalProperties": {
+                                    "type": "integer"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "bytes",
+                                "size_histogram"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "tool",
+                          "syscalls"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "limitations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "paths",
+                  "peak_allocated_bytes",
+                  "samples",
+                  "device",
+                  "fs",
+                  "attribution",
+                  "trace",
+                  "limitations"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "interserver": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "to_target": {
+                    "type": "integer"
+                  },
+                  "from_target": {
+                    "type": "integer"
+                  },
+                  "connections_total": {
+                    "type": "integer"
+                  },
+                  "open_at_end": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "to_target",
+                  "from_target",
+                  "connections_total",
+                  "open_at_end"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "inventory": {
+              "type": "object",
+              "properties": {
+                "initial": {
+                  "enum": [
+                    "empty_verified",
+                    "declared"
+                  ]
+                },
+                "byte_hours": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "lower": {
+                        "type": "number"
+                      },
+                      "upper": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "lower",
+                      "upper"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "uncertain_identities": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "initial",
+                "byte_hours",
+                "uncertain_identities"
+              ],
+              "additionalProperties": false
+            },
+            "observations": {
+              "type": "object"
+            },
+            "assertions": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "expected": {},
+                  "actual": {},
+                  "ok": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expected",
+                  "actual",
+                  "ok"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "wall_s": {
+              "type": "number"
+            },
+            "unit_count": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema",
+        "measurement_id",
+        "experiment_id",
+        "run_id",
+        "card",
+        "case_id",
+        "policy",
+        "variant",
+        "cache_enabled",
+        "replicas",
+        "k",
+        "scale",
+        "mode",
+        "binary_sha256",
+        "commit",
+        "pass_dir",
+        "status",
+        "reason",
+        "diagnostics"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
