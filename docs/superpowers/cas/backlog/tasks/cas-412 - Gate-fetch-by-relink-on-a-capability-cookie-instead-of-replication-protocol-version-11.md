@@ -3,9 +3,10 @@ id: CAS-412
 title: >-
   Gate fetch-by-relink on a capability cookie instead of replication protocol
   version 11
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-10-22 07:59'
+updated_date: '2026-10-23 01:44'
 labels:
   - 'area:replication'
   - 'complexity:small'
@@ -34,8 +35,8 @@ Provenance: owner-Move series PR body follow-up and umbrella review (compat pers
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Relink is chosen only when the peer sends the capability; protocol version alone never selects it
-- [ ] #2 Mixed-version test: a peer advertising version 11 without the capability gets a plain fetch
+- [x] #1 Relink is chosen only when the peer sends the capability; protocol version alone never selects it
+- [x] #2 Mixed-version test: a peer advertising version 11 without the capability gets a plain fetch
 <!-- AC:END -->
 
 ## Definition of Done
@@ -45,3 +46,9 @@ Provenance: owner-Move series PR body follow-up and umbrella review (compat pers
 - [ ] #3 Docs updated where user-visible (docs/en/antalya/cas) and the spec if the on-S3 format is touched (frozen since 26.6.4: new version + compatibility path)
 - [ ] #4 No fallback paths added; failures propagate
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Done on feature/cas-disk-transactions-draft @ 45a60a3f796 (above PR 2647's branch, not pushed): receiver sends client_protocol_version=10 (upstream ceiling) plus cas_capabilities=relink_confirm; the sender offers a relink only on that capability and answers server_protocol_version=min(client,10); constant 11 removed; replication.md gate table updated. Test test_relink_is_selected_by_the_capability_not_the_version: RED on the old binary (v10+capability got no offer), GREEN after; relink module 17/19 (2 failures are 'SYSTEM CAS GC RUN' not parsing in the local container client, unrelated).
+<!-- SECTION:NOTES:END -->
