@@ -18,6 +18,13 @@ ZK_PROBE = "SELECT count() FROM system.zookeeper WHERE path = '/'"
 PROC_IO_FIELDS = ('rchar', 'wchar', 'syscr', 'syscw', 'read_bytes', 'write_bytes')
 
 
+class GenerationCrashed(RuntimeError):
+    """A server process died before its final counters were read; the counters of its generation are lost."""
+    def __init__(self, replica: int, pid: int, error: str):
+        super().__init__(f'replica {replica} process {pid} died before its counters were read: {error}')
+        self.replica, self.pid, self.error = replica, pid, error
+
+
 def _now_us() -> int:
     return time.time_ns() // 1000
 
@@ -136,7 +143,7 @@ class Cluster:
         with open(os.path.join(self.run_dir(i), 'server.pid')) as f:
             pid = int(f.read())
         self.generations.setdefault(i, []).append({'pid': pid, 't_start_us': t_start_us, 't_end_us': None,
-                                                   'closed': None})
+                                                   'closed': None, 'crashed': False, 'crash_error': None})
         self._running.add(i)
         if i == 1:
             self._wait_keeper()
@@ -154,12 +161,19 @@ class Cluster:
                 time.sleep(KEEPER_POLL_SEC)
 
     def stop(self, i: int) -> None:
-        """Read the final counters, then shut replica `i` down; the generation is closed either way."""
+        """Read the final counters, then shut replica `i` down.
+
+        A server that died earlier cannot be read: the generation is marked crashed (see `counters_since`)
+        and the shutdown still runs.
+        """
         if i not in self._running:
             return
         generation = self.generations[i][-1]
         try:
             generation['closed'] = self._read(i, generation)
+        except Exception as e:
+            generation['crashed'] = True
+            generation['crash_error'] = f'{type(e).__name__}: {e}'
         finally:
             generation['t_end_us'] = _now_us()
             self._running.discard(i)
@@ -185,10 +199,15 @@ class Cluster:
         return {'generation': index, **self._read(i, self.generations[i][index])}
 
     def counters_since(self, i: int, baseline: dict) -> dict:
-        """Counters accumulated since `baseline` across restarts: closed generations plus the live one."""
+        """Counters accumulated since `baseline` across restarts: closed generations plus the live one.
+
+        Raises GenerationCrashed if a generation in the range lost its counters.
+        """
         total = {'events': {}, 'proc_io': {}}
         for index in range(baseline['generation'], len(self.generations[i])):
             generation = self.generations[i][index]
+            if generation['crashed']:
+                raise GenerationCrashed(i, generation['pid'], generation['crash_error'])
             counters = generation['closed'] or self._read(i, generation)
             for part in total:
                 _add(total[part], counters[part])

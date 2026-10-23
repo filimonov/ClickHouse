@@ -127,6 +127,25 @@ class CostConfigTest(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn(f'127.0.0.1:{t.http(2)}', problems[0])
 
+    def test_preflight_accepts_port_in_time_wait(self):
+        base = free_port_base() // 10 * 10 + 1000
+        t = Topology(port_base=base, replicas=1)
+        port = t.http(1)
+        listener = socket.socket()
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(('127.0.0.1', port))
+        listener.listen(1)
+        client = socket.create_connection(('127.0.0.1', port))
+        served, _ = listener.accept()
+        served.close()  # the side that closes first keeps the TIME_WAIT entry on the listening port
+        client.close()
+        listener.close()
+        plain = socket.socket()
+        self.addCleanup(plain.close)
+        with self.assertRaises(OSError):
+            plain.bind(('127.0.0.1', port))  # without SO_REUSEADDR the port really is unusable
+        self.assertEqual(t.preflight_new_endpoints(), [])
+
     def test_preflight_new_endpoints_ignores_proxy_and_store_ports(self):
         socks = []
         for port in (19131, 19121):

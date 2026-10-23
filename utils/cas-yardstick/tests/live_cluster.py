@@ -33,10 +33,6 @@ class LiveClusterTest(unittest.TestCase):
         if not was_up:
             self.addCleanup(script, 'stop')
         self.topology = Topology(port_base=19700, replicas=2)
-        # preflight binds without SO_REUSEADDR, so ports of the previous test's servers fail it while in TIME_WAIT.
-        deadline = time.time() + 130
-        while self.topology.preflight_new_endpoints() and time.time() < deadline:
-            time.sleep(2)
         self.proxy = LedgerProxy(('127.0.0.1', PORT), f'rustfs-{PORT}', self.pass_dir / 'ledger.jsonl',
                                  self.topology.callers)
         self.proxy.start()

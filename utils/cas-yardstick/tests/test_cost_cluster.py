@@ -2,7 +2,10 @@ import os
 import tempfile
 import unittest
 
-from yardstick.cost.cluster import Cluster
+from unittest import mock
+
+from yardstick.cost import cluster as cluster_module
+from yardstick.cost.cluster import Cluster, GenerationCrashed
 from yardstick.cost.topology import Topology
 
 
@@ -94,6 +97,11 @@ class ClusterTest(ClusterFixture):
         self.assertIn(os.path.join(self.pass_dir, 'r2', 'server.err.log'), message)
         self.assertIn(('sh', 'stop', 'r1'), self.log)
         self.assertFalse([e for e in self.log if e[0] == 'relay_start'])
+        self.assertIn(('sh', 'stop', 'r2'), self.log)
+        self.assertLess(self.log.index(('sh', 'stop', 'r2')), self.log.index(('sh', 'stop', 'r1')))
+        self.log.clear()
+        cluster.stop_all()
+        self.assertEqual(self.log, [])
 
     def test_relay_failure_stops_relays_and_servers(self):
         FakeRelay.fail_start = True
@@ -137,6 +145,66 @@ class ClusterTest(ClusterFixture):
         since = cluster.counters_since(2, baseline)
         self.assertEqual(since['events'], {'Q': 80, 'New': 5})
         self.assertEqual(since['proc_io'], {'rchar': 800})
+
+    def test_crashed_generation_raises_named_error(self):
+        cluster = self.make()
+        cluster.start_all()
+        baseline = cluster.snapshot_counters(2)
+        dead_pid = cluster.generations[2][0]['pid']
+        real_read = cluster._read
+
+        def read(i, generation):
+            if generation['pid'] == dead_pid:
+                raise FileNotFoundError(f'/proc/{dead_pid}/io')
+            return real_read(i, generation)
+
+        cluster._read = read
+        self.log.clear()
+        cluster.stop(2)
+        self.assertIn(('sh', 'stop', 'r2'), self.log)
+        generation = cluster.generations[2][0]
+        self.assertTrue(generation['crashed'])
+        self.assertIsNone(generation['closed'])
+        self.assertIn('FileNotFoundError', generation['crash_error'])
+        cluster.start(2)
+        with self.assertRaises(GenerationCrashed) as ctx:
+            cluster.counters_since(2, baseline)
+        self.assertEqual((ctx.exception.replica, ctx.exception.pid), (2, dead_pid))
+        # A baseline taken after the crash only spans the new generation.
+        later = cluster.snapshot_counters(2)
+        self.assertEqual(cluster.counters_since(2, later), {'events': {'Q': 0}, 'proc_io': {'rchar': 0}})
+
+    def test_keeper_readiness_retries_then_succeeds(self):
+        calls = []
+
+        class Flaky(FakeClient):
+            def query(self, sql, settings=None, timeout=3600):
+                calls.append(sql)
+                if len(calls) <= 2:
+                    raise RuntimeError('Keeper session not ready')
+                return '1\n'
+
+        self.topology = Topology(port_base=19700, replicas=1)
+        self.topology.preflight_new_endpoints = lambda: []
+        cluster = self.make()
+        cluster._client_factory = lambda port: Flaky(self.log, port)
+        with mock.patch.object(cluster_module, 'KEEPER_POLL_SEC', 0.001):
+            cluster.start_all()
+        self.assertEqual(len(calls), 3)
+
+    def test_keeper_never_ready_fails_and_cleans_up(self):
+        class Dead(FakeClient):
+            def query(self, sql, settings=None, timeout=3600):
+                raise RuntimeError('no session')
+
+        cluster = self.make()
+        cluster._client_factory = lambda port: Dead(self.log, port)
+        with mock.patch.object(cluster_module, 'KEEPER_POLL_SEC', 0.001), \
+                mock.patch.object(cluster_module, 'KEEPER_READY_TIMEOUT_SEC', 0.05):
+            with self.assertRaisesRegex(RuntimeError, r'replica 1 failed to start: Keeper not ready after 0\.05 s'):
+                cluster.start_all()
+        self.assertIn(('sh', 'stop', 'r1'), self.log)
+        self.assertNotIn(('sh', 'start', 'r2'), self.log)
 
     def test_stop_all_order(self):
         cluster = self.make()

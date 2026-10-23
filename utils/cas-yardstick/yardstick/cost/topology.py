@@ -51,6 +51,8 @@ class Topology:
         problems = []
         for host, port in wanted:
             s = socket.socket()
+            # Like the servers' listeners: a port in TIME_WAIT from a server stopped moments ago is usable.
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind((host, port))
             except OSError as e:
