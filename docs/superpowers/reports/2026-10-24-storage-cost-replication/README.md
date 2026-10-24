@@ -18,7 +18,7 @@ A follower acquires every inserted part by fetch and, with default settings, exe
 | Report runs | `cost-20261024T115147Z`, `cost-20261024T121344Z`, `cost-20261024T123232Z`; `measurements.jsonl` holds their 174 records, 168 ok and 6 FAILED (kept: they are open reconciliation items) |
 | Rig | every run executes the cards from a detached worktree at `f35fd96a730`, so all records name one rig commit; manifests and predictions are read from this directory |
 | Earlier runs | `cost-20261024T093949Z` (smoke, s3, K=1: found the zero-copy receiver `HeadObject`); `cost-20261024T113828Z` (stopped after 66 records: local had no window start, CAS windows crossed, s3plain sent `HeadObject` the assumed ranges missed, CAS republishes a failed blob 8 times). Neither is in `measurements.jsonl` |
-| Predictions | hold-out `replication-natural-holdout.wide` first at `630bc885ee4`; all cases `2c006846dbc`; CAS and s3plain ranges and the CAS fault graph revised at `0bc1e557850` after the stopped run, before the report runs; after the report runs `bac037b336d` turns the s3 `fetch.merge` sender read into a range and adds the fresh hold-out `faults.multipart-abort-part3c` |
+| Predictions | per file (`prediction_commit`): the natural hold-out `replication-natural-holdout.wide` on `s3`, `cas` and `local` at `630bc885ee4`, before any run; its `s3plain` file at `2c006846dbc`, where its mutation split became `null` because s3plain refuses mutations; every other case at `2c006846dbc`; CAS and s3plain ranges and the CAS fault graph revised at `0bc1e557850` after the stopped run, before the report runs; after the report runs `bac037b336d` turns the s3 `fetch.merge` sender read into a range and adds the fresh hold-out `faults.multipart-abort-part3c` |
 | Store | RustFS behind the ledger proxy; every record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
 | Cuts | `replacement.default` and `faults.fetch` (P2), owner directive D14: no manifest; `replacement_requests_per_part` and `fetch_retry_rate` are `unsupported` |
 
@@ -348,8 +348,9 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
   request count is in this paragraph and `acquire_requests` carries `abs` tolerance 1 for it. The re-read stays
   open.
 - **Manifest modes follow the cards.** The forced replication and fault cards are `stochastic` (CAS windows cross
-  their boundaries) and compare `s3`, `s3plain` and `local` exactly themselves; their 19 manifests said
-  `deterministic` and now say `stochastic`, as every record already did. No prediction relied on a stochastic
+  their boundaries) and compare `s3`, `s3plain` and `local` exactly themselves; 19 of the 23 manifests said
+  `deterministic` and now say `stochastic`, as every record already did (18 of them ran; `faults.multipart-abort-part3c`
+  has not; the 4 natural and restart manifests were already `stochastic`). No prediction relied on a stochastic
   tolerance: every tolerance is empty, so the slack is 0 either way, and the cards' own exact check (unpredicted ops
   included) ran for those policies. No verdict changes.
 - **CAS `faults.multipart-abort` k2, k3 (FAILED by a too strict card; resolved as a timing bound).** In each of the
