@@ -1,0 +1,120 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "merge-forced.wide-wide-sources",
+  "policy": "s3_cached",
+  "inputs": {
+    "gets_per_wide_source": "columns + 1",
+    "fit_experiment": "merge-forced.narrow-wide-sources",
+    "fit_run": "cost-20261024T073405Z"
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 267,
+        "GetObject": 82
+      }
+    },
+    "observations": {
+      "merges": [
+        {
+          "fan_in": 2,
+          "level": 1,
+          "rows": 100000,
+          "part_type": "Wide"
+        }
+      ]
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a disk transaction writes every part file as its own blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a file that fits the first upload buffer is one PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 188
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "a Wide part writes one .bin per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 224
+    },
+    {
+      "claim": "and one marks file per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 140
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    },
+    {
+      "claim": "and one marks file",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 59
+    },
+    {
+      "claim": "primary.cidx",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "a part is Compact when its bytes are below min_bytes_for_wide_part",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    }
+  ],
+  "prediction_commit": "80cd02f1c27"
+}
