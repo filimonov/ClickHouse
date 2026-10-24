@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "0f7f5344c110222a",
+ "version": "bcb6b0e1689c99b4",
  "manifest": {
   "code_sha256": "e2bd5508f2ca072376f8de3e49c5762becf4187d2066c9b43508fb5fef4fe082",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ff54fdb075460b1558025c8156397e865a1754c3e4d717a6a6412b0e9a49a81f"
   },
   "code_missing": [],
-  "contract_version": "0f7f5344c110222a",
+  "contract_version": "bcb6b0e1689c99b4",
   "registry_version": "0.2.0",
-  "registry_sha256": "f27a5b71531d41281a4982fe6f39b72f607066a620ca38a3a0921093a7f3df18",
+  "registry_sha256": "c175bfc5b3bbf3695a9983c5897a129634a685c313187043ef7bba0448e1cb6d",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "89db4243aef0358ecd2dcb549093f29e15cfa383335a166b2c4bb51e9ae80e1c",
+  "coverage_sha256": "e25ab07e8c99b8eaa02a0df63010898148fabb1849fc1ae842143116221018b7",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -3868,7 +3868,7 @@
    "coef": "merge_effective_fan_in",
    "validity": {
     "merge_size_ratio": [
-     18.22,
+     18.21,
      472.95
     ],
     "insert_rows": [
@@ -5906,7 +5906,7 @@
    "coef": "merge_fan_in_distribution",
    "validity": {
     "merge_size_ratio": [
-     18.22,
+     18.21,
      472.95
     ],
     "insert_rows": [
@@ -5984,7 +5984,7 @@
    "coef": "merge_result_size_distribution",
    "validity": {
     "merge_size_ratio": [
-     18.22,
+     18.21,
      472.95
     ],
     "insert_rows": [
@@ -6238,7 +6238,7 @@
    "value": 6.1437,
    "validity": {
     "merge_size_ratio": [
-     18.22,
+     18.21,
      472.95
     ],
     "insert_rows": [
@@ -6349,7 +6349,7 @@
    },
    "validity": {
     "merge_size_ratio": [
-     18.22,
+     18.21,
      472.95
     ],
     "insert_rows": [
@@ -6449,7 +6449,7 @@
    },
    "validity": {
     "merge_size_ratio": [
-     18.22,
+     18.21,
      472.95
     ],
     "insert_rows": [

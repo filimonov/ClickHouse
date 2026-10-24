@@ -359,6 +359,16 @@ prediction commit. Fixes are in `474392fb9ad`; the cards were re-run.
 | 11 | a merge can start after the final flush | Fixed test-first (`test_completion_waits_again_when_an_active_part_has_no_part_log_row`, `test_no_workload_request_after_the_observation_cutoff`): active parts must be explained by the part log, and a request after the cutoff fails the pass |
 | new MINOR | "serialized sizes" of native entries | Fixed: decoded `Block::bytes` for native, raw length for inline |
 
+Round 4 (`tmp/codex_lifecycle_prompt_r4.txt`, `tmp/codex_lifecycle_r4.log`) closed every open finding (1, 4, 5, 11
+and the wording MINOR) and re-checked 9, 12 and the 2 h prediction: **0 MAJOR open**. It confirmed all 45 records
+replay, 647 retirement entries over 18 merge records replay, the nine raw checksums match, and the fit reproduces
+(6.1436930). It found two MINORs:
+
+| Finding | Round 4 | Disposition |
+|---|---|---|
+| R4-1 | rounded validity and span bounds excluded their own fit records (18.21875 < 18.22) | Fixed: bounds round outward (validity 18.21–472.95) |
+| R4-2 | the observation cutoff is not in the records | Fixed in the card (`quiet_cutoff_us`, `cutoff_us` observations; test `test_observation_cutoff_is_recorded`). The report run predates it: its nine natural-merge records carry the assertion's verdict, not the timestamps; the next run of these cards (Task 7's `amplification-run.2h`) is the first to carry them |
+
 ## How to re-run {#rerun}
 
 ```bash

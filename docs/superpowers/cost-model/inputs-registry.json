@@ -3829,7 +3829,7 @@
       "coef": "merge_effective_fan_in",
       "validity": {
         "merge_size_ratio": [
-          18.22,
+          18.21,
           472.95
         ],
         "insert_rows": [
@@ -5867,7 +5867,7 @@
       "coef": "merge_fan_in_distribution",
       "validity": {
         "merge_size_ratio": [
-          18.22,
+          18.21,
           472.95
         ],
         "insert_rows": [
@@ -5945,7 +5945,7 @@
       "coef": "merge_result_size_distribution",
       "validity": {
         "merge_size_ratio": [
-          18.22,
+          18.21,
           472.95
         ],
         "insert_rows": [

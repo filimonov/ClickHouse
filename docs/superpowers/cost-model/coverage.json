@@ -1453,7 +1453,7 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          375.17,
+          375.16,
           472.95
         ],
         "insert_rows": [
@@ -1476,8 +1476,8 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          18.22,
-          20.81
+          18.21,
+          20.82
         ],
         "insert_rows": [
           100000,
@@ -1522,7 +1522,7 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          375.17,
+          375.16,
           472.95
         ],
         "insert_rows": [
@@ -1545,8 +1545,8 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          18.22,
-          20.81
+          18.21,
+          20.82
         ],
         "insert_rows": [
           100000,
@@ -1591,7 +1591,7 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          375.17,
+          375.16,
           472.95
         ],
         "insert_rows": [
@@ -1614,8 +1614,8 @@
       "policy": "s3",
       "span": {
         "merge_size_ratio": [
-          18.22,
-          20.81
+          18.21,
+          20.82
         ],
         "insert_rows": [
           100000,

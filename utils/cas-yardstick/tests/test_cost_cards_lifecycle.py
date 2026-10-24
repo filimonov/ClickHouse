@@ -390,6 +390,17 @@ class CardsTest(unittest.TestCase):
             card.state(ctx)['cutoff_us'] = 1200
             self.assertEqual(card.after_cutoff(ctx, {'window': {'t_end_us': 2000}}), [])
 
+    def test_observation_cutoff_is_recorded(self):
+        m = manifest('merge-natural.default')
+        card = CARDS['merge-natural']
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = ctx_for(m, FakeCluster(n=1), tmp, os.path.join(tmp, 'l'))
+            st = card.state(ctx)
+            st.update(part_log=PART_LOG, active_rows=[600], quiesced=True, quiet_cutoff=1010.5, cutoff_us=1010600000)
+            m['params']['rows'] = 100
+            obs = card.observe(ctx, {})
+        self.assertEqual((obs['quiet_cutoff_us'], obs['cutoff_us']), (1010500000, 1010600000))
+
     def test_layout_accumulates_across_snapshots(self):
         # A long run snapshots the layout before old_parts_lifetime can remove a merged-away part's files.
         m = manifest('merge-natural.default')

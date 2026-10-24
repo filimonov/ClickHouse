@@ -475,7 +475,10 @@ class NaturalMergeCard(LifecycleCard):
 
     def observe(self, ctx, draft):
         st = self.state(ctx)
-        return {**merge_observations(st['part_log'], st['active_rows'], self.p(ctx)['rows']), 'quiesced': st['quiesced']}
+        # The cutoff times let `window.no_workload_after_cutoff` be recomputed from the raw ledger.
+        quiet = st.get('quiet_cutoff')
+        return {**merge_observations(st['part_log'], st['active_rows'], self.p(ctx)['rows']), 'quiesced': st['quiesced'],
+                'quiet_cutoff_us': int(quiet * 1e6) if quiet is not None else None, 'cutoff_us': st.get('cutoff_us')}
 
 
 @register
