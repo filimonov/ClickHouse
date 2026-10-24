@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "55213d0c610c60ae",
+ "contract_version": "2a812e5a86648f62",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -520,7 +520,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -545,7 +545,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -570,7 +570,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -595,7 +595,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -620,7 +620,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -645,7 +645,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -698,7 +698,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -723,7 +723,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -748,7 +748,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -773,7 +773,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -798,7 +798,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -823,7 +823,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -874,7 +874,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
@@ -899,7 +899,7 @@
         "s3plain": {
          "value": null,
          "state": "not_supported",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
          "value": null,
