@@ -3,7 +3,7 @@
     "id": "merge_effective_fan_in",
     "kind": "scalar",
     "dim": "1",
-    "value": 6.1097,
+    "value": 6.3777,
     "validity": {
       "merge_size_ratio": [
         6.0,
@@ -37,8 +37,32 @@
       "commit": "09d0772a842c5d73cf3ef35b4c8b017d838215a0"
     },
     "status": "ok",
+    "domain": {
+      "fit": {
+        "columns": [
+          5,
+          5
+        ],
+        "insert_rows": [
+          1000,
+          100000
+        ],
+        "arrival": "back-to-back"
+      },
+      "holdout": {
+        "columns": [
+          20,
+          20
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ],
+        "arrival": "back-to-back"
+      }
+    },
     "fit": {
-      "method": "least squares of amplification_bytes against 1 + rewrite_levels over the final parts",
+      "method": "least squares of amplification_bytes against the registry rule write_amplification_rule: 1 + rewrite_levels at the row-weighted final part size (lifecycle.amplification_rule)",
       "records": [
         "cost-20261024T045917Z/s3/merge-natural/default/k1",
         "cost-20261024T045917Z/s3/merge-natural/default/k2",
@@ -48,17 +72,26 @@
         "cost-20261024T045917Z/s3/small-inserts/default/k3"
       ],
       "residuals": {
-        "cost-20261024T045917Z/s3/small-inserts/default/k1": -0.1383,
-        "cost-20261024T045917Z/s3/small-inserts/default/k2": -0.168,
-        "cost-20261024T045917Z/s3/small-inserts/default/k3": -0.1186,
-        "cost-20261024T045917Z/s3/merge-natural/default/k1": 0.1694,
-        "cost-20261024T045917Z/s3/merge-natural/default/k2": 0.1694,
-        "cost-20261024T045917Z/s3/merge-natural/default/k3": 0.1694
+        "cost-20261024T045917Z/s3/small-inserts/default/k1": -0.1756,
+        "cost-20261024T045917Z/s3/small-inserts/default/k2": -0.1805,
+        "cost-20261024T045917Z/s3/small-inserts/default/k3": -0.1557,
+        "cost-20261024T045917Z/s3/merge-natural/default/k1": 0.2069,
+        "cost-20261024T045917Z/s3/merge-natural/default/k2": 0.2069,
+        "cost-20261024T045917Z/s3/merge-natural/default/k3": 0.2069
       },
       "holdout_residuals": {
-        "cost-20261024T045917Z/s3/merge-natural/wide/k1": 0.0801,
-        "cost-20261024T045917Z/s3/merge-natural/wide/k2": 0.0801,
-        "cost-20261024T045917Z/s3/merge-natural/wide/k3": 0.0801
+        "cost-20261024T045917Z/s3/merge-natural/wide/k1": 0.1624,
+        "cost-20261024T045917Z/s3/merge-natural/wide/k2": 0.1624,
+        "cost-20261024T045917Z/s3/merge-natural/wide/k3": 0.1624
+      },
+      "committed_prediction": {
+        "model": "rewrite_levels (row-weighted average of the levels)",
+        "fan_in": 6.1912,
+        "residuals": {
+          "cost-20261024T045917Z/s3/merge-natural/wide/k1": 0.1064,
+          "cost-20261024T045917Z/s3/merge-natural/wide/k2": 0.1064,
+          "cost-20261024T045917Z/s3/merge-natural/wide/k3": 0.1064
+        }
       }
     }
   },
@@ -95,6 +128,30 @@
     "tolerance": {
       "max_tv": 0.3426
     },
+    "domain": {
+      "fit": {
+        "columns": [
+          5,
+          5
+        ],
+        "insert_rows": [
+          1000,
+          100000
+        ],
+        "arrival": "back-to-back"
+      },
+      "holdout": {
+        "columns": [
+          20,
+          20
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ],
+        "arrival": "back-to-back"
+      }
+    },
     "evidence": {
       "kind": "measured",
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -124,11 +181,18 @@
         "cost-20261024T045917Z/s3/small-inserts/default/k2",
         "cost-20261024T045917Z/s3/small-inserts/default/k3"
       ],
-      "holdout_tv": [
-        0.0503,
-        0.0503,
-        0.0503
-      ]
+      "holdout_tv": {
+        "against_committed_prediction": [
+          0.0503,
+          0.0503,
+          0.0503
+        ],
+        "against_this_table": [
+          0.051,
+          0.051,
+          0.051
+        ]
+      }
     }
   },
   {
@@ -164,6 +228,30 @@
     "tolerance": {
       "max_tv": 0.3852
     },
+    "domain": {
+      "fit": {
+        "columns": [
+          5,
+          5
+        ],
+        "insert_rows": [
+          1000,
+          100000
+        ],
+        "arrival": "back-to-back"
+      },
+      "holdout": {
+        "columns": [
+          20,
+          20
+        ],
+        "insert_rows": [
+          50000,
+          50000
+        ],
+        "arrival": "back-to-back"
+      }
+    },
     "evidence": {
       "kind": "measured",
       "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
@@ -193,11 +281,18 @@
         "cost-20261024T045917Z/s3/small-inserts/default/k2",
         "cost-20261024T045917Z/s3/small-inserts/default/k3"
       ],
-      "holdout_tv": [
-        0.0647,
-        0.0647,
-        0.0647
-      ]
+      "holdout_tv": {
+        "against_committed_prediction": [
+          0.0647,
+          0.0647,
+          0.0647
+        ],
+        "against_this_table": [
+          0.0619,
+          0.0619,
+          0.0619
+        ]
+      }
     }
   }
 ]

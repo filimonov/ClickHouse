@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from yardstick.cost import cli, ledger as L
 from yardstick.cost.cards import CARDS, lifecycle, probes
@@ -170,6 +171,25 @@ class ArithmeticTest(unittest.TestCase):
         self.assertAlmostEqual(lifecycle.rewrite_levels(64, 5), 2 + (64 / 25 - 1) / 4)
         self.assertAlmostEqual(lifecycle.amplification_model([25, 25], 5), 3)
 
+    def test_rewrite_levels_caps_at_twelve_like_the_registry_ladder(self):
+        self.assertEqual(lifecycle.rewrite_levels(5 ** 12, 5), 12)
+        self.assertEqual(lifecycle.rewrite_levels(5 ** 13, 5), 12)
+        self.assertAlmostEqual(lifecycle.rewrite_levels(5 ** 12 - 1, 5), 12, places=6)
+
+    def test_amplification_rule_is_the_registry_formula_at_the_row_weighted_ratio(self):
+        finals = [23, 23, 6, 6, 6]
+        r = lifecycle.weighted_ratio(finals)
+        self.assertAlmostEqual(r, (2 * 23 ** 2 + 3 * 6 ** 2) / 64)
+        self.assertAlmostEqual(lifecycle.amplification_rule(finals, 6.1), 1 + lifecycle.rewrite_levels(r, 6.1))
+        self.assertAlmostEqual(lifecycle.amplification_rule([32], 6.1), lifecycle.amplification_model([32], 6.1))
+        e, a = lifecycle.check_observation({'model': 'rewrite_levels_at_weighted_ratio', 'fan_in': 6.1, 'abs': 0.01,
+                                            'rel': 0}, lifecycle.amplification_rule(finals, 6.1),
+                                           {'final_size_ratios': finals})
+        self.assertEqual(e, a)
+        with self.assertRaises(ValueError):
+            lifecycle.check_observation({'model': 'unknown', 'fan_in': 6, 'abs': 0, 'rel': 0}, 1.0,
+                                        {'final_size_ratios': finals})
+
     def test_check_observation_kinds(self):
         self.assertEqual(lifecycle.check_observation(3, 3, {}), (3, 3))
         e, a = lifecycle.check_observation({'min': 2, 'max': 5}, 4, {})
@@ -262,8 +282,9 @@ class CardsTest(unittest.TestCase):
         m['params']['quiet_s'], m['params']['quiesce_timeout_s'] = 0, 1
         parts = [{'name': 'all_1_6_2', 'part_type': 'Wide', 'rows': '600', 'level': '2',
                   'data_uncompressed_bytes': '24000', 'active': 1}]
-        cluster = FakeCluster(n=1, answers={'FROM system.part_log': jsonl(PART_LOG),
-                                            'FROM system.parts WHERE': jsonl(parts)})
+        cluster = FakeCluster(n=1, answers={"event_type IN ('NewPart', 'MergeParts')": jsonl(PART_LOG),
+                                            'FROM system.parts WHERE': jsonl(parts),
+                                            'FROM system.remote_data_paths': ''})
         card = CARDS['merge-natural']
         with tempfile.TemporaryDirectory() as tmp:
             ctx = ctx_for(m, cluster, tmp, os.path.join(tmp, 'l'))
@@ -273,6 +294,56 @@ class CardsTest(unittest.TestCase):
         self.assertTrue(obs['quiesced'])
         self.assertEqual(obs['merges'], 2)
         self.assertEqual(obs['final_size_ratios'], [6.0])
+
+    def test_quiet_period_counts_a_merge_finished_between_polls(self):
+        # No merge is ever active at a poll, but one finished at t = 5 s: the 10 s quiet period ends at 15 s.
+        clock = {'t': 1000.0}
+        m = manifest('merge-natural.default')
+        m['params']['quiet_s'], m['params']['quiesce_timeout_s'] = 10, 60
+        answers = {'event_type = \'MergeParts\'': f'{int((clock["t"] + 5) * 1e6)}\n'}
+        cluster = FakeCluster(n=1, answers=answers)
+        card = CARDS['merge-natural']
+
+        def sleep(s):
+            clock['t'] += s
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(lifecycle.time, 'time', lambda: clock['t']), \
+                mock.patch.object(lifecycle.time, 'sleep', sleep), \
+                mock.patch.object(lifecycle.LifecycleCard, 'collect_layout', lambda self, ctx: None), \
+                mock.patch.object(lifecycle.ManifestCard, 'complete', lambda self, ctx, timeout_s=300: None):
+            ctx = ctx_for(m, cluster, tmp, os.path.join(tmp, 'l'))
+            card.wait_quiet(ctx)
+            self.assertTrue(card.state(ctx)['quiesced'])
+            self.assertGreaterEqual(clock['t'], 1015.0)
+            clock['t'] = 1000.0
+            m['params']['quiesce_timeout_s'] = 12
+            ctx = ctx_for(m, cluster, os.path.join(tmp, 'x'), os.path.join(tmp, 'l'))
+            card.wait_quiet(ctx)
+            self.assertFalse(card.state(ctx)['quiesced'])
+
+    def test_merged_away_parts_become_outdated_at_their_merge(self):
+        card = CARDS['merge-natural']
+        m = manifest('merge-natural.default')
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = ctx_for(m, FakeCluster(n=1), tmp, os.path.join(tmp, 'l'))
+            st = card.state(ctx)
+            st['part_log'] = PART_LOG
+            st['remote_paths'] = {f'all_{i}_{i}_0': [f'p/r1/k{i}a', f'p/r1/k{i}b'] for i in range(1, 7)}
+            st['remote_paths'].update({'all_1_3_1': ['p/r1/m1'], 'all_1_6_2': ['p/r1/m2']})
+            inv = Inventory()
+            for key in [k for v in st['remote_paths'].values() for k in v]:
+                inv.objects[('b', key)] = {'size': 1, 'category': 'active', 'created_us': 1, 'uncertain': False}
+            bounds = L.Bounds(inv, copy.deepcopy(inv), {('b', k): [] for k in [k for v in st['remote_paths'].values() for k in v]})
+            card.reclassify(ctx, bounds)
+            got = {(rc['t_us'], tuple(sorted(k[1] for k in rc['keys']))) for rc in bounds.reclassified}
+            self.assertEqual(got, {(10, ('p/r1/k1a', 'p/r1/k1b', 'p/r1/k2a', 'p/r1/k2b', 'p/r1/k3a', 'p/r1/k3b')),
+                                   (20, ('p/r1/k4a', 'p/r1/k4b', 'p/r1/k5a', 'p/r1/k5b', 'p/r1/k6a', 'p/r1/k6b',
+                                         'p/r1/m1'))})
+            self.assertTrue(all(rc['category'] == 'outdated' for rc in bounds.reclassified))
+            # A merged-away file whose object the pass never wrote cannot be classified: fail closed.
+            st['remote_paths']['all_1_1_0'].append('p/r1/unknown')
+            with self.assertRaises(ValueError):
+                card.reclassify(ctx, L.Bounds(Inventory(), Inventory(), {}))
 
     def test_small_inserts_control_is_measure(self):
         m = manifest('small-inserts.default')

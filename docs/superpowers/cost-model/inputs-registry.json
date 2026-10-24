@@ -722,7 +722,7 @@
     {
       "id": "part_type_predicate",
       "block": "schema",
-      "label": "Part type rule: a part is Compact when its uncompressed bytes < min_bytes_for_wide_part, its rows < min_rows_for_wide_part or its level < min_level_for_wide_part, else Wide. An insert measures the block in memory (Block::bytes); a merge sums the inputs' on-disk uncompressed column bytes, uses level max(input levels) + 1, and is Wide when any input is Wide. A mutation keeps the source type.",
+      "label": "Part type rule: a part is Compact when its uncompressed bytes < min_bytes_for_wide_part, its rows < min_rows_for_wide_part or its level < min_level_for_wide_part, else Wide. An insert measures the block in memory (Block::bytes); a merge sums the inputs' on-disk uncompressed column bytes, uses level max(input levels) + 1, and is Wide when any input is Wide. A mutation keeps the source type. Overrides: no adaptive granularity, or a Quantize('pq') column, forces Wide/Full.",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "",
@@ -858,9 +858,69 @@
       "status": "ok"
     },
     {
+      "id": "adaptive_granularity",
+      "block": "schema",
+      "label": "The table can write adaptive-granularity parts (index_granularity_bytes > 0, and mixed granularity allowed or no old non-adaptive part); without it every part is Wide",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "0",
+        "1"
+      ],
+      "table": null,
+      "default": "1",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:11680",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.merge_tree_settings WHERE name IN ('index_granularity_bytes', 'enable_mixed_granularity_parts')",
+        "mapping": {
+          "adaptive_granularity": "1 when index_granularity_bytes != 0 (table SETTINGS override)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "quantize_pq_codec",
+      "block": "schema",
+      "label": "A column of the part uses CODEC(Quantize('pq', ...)): the part is forced Wide/Full",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "0",
+        "1"
+      ],
+      "table": null,
+      "default": "0",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6428",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, compression_codec FROM system.columns WHERE database = '<db>' AND table = '<table>' AND compression_codec LIKE '%Quantize%'",
+        "mapping": {
+          "quantize_pq_codec": "1 when any column's codec is Quantize('pq', ...)"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "part_type",
       "block": "schema",
-      "label": "Part type of an inserted part",
+      "label": "Part type of an inserted part: Wide without adaptive granularity or with a Quantize('pq') column, else the size, rows and level predicate",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "",
@@ -875,42 +935,42 @@
         "kind": "branch",
         "dim": "enum:part_type",
         "cond": {
-          "op": "<",
+          "op": "==",
           "a": {
             "kind": "input",
-            "id": "part_bytes_uncompressed",
-            "dim": "B"
+            "id": "adaptive_granularity",
+            "dim": "enum:adaptive_granularity"
           },
           "b": {
-            "kind": "input",
-            "id": "min_bytes_for_wide_part",
-            "dim": "B"
+            "kind": "const",
+            "value": "0",
+            "dim": "enum:adaptive_granularity"
           }
         },
         "then": {
           "kind": "const",
-          "value": "compact",
+          "value": "wide",
           "dim": "enum:part_type"
         },
         "else": {
           "kind": "branch",
           "dim": "enum:part_type",
           "cond": {
-            "op": "<",
+            "op": "==",
             "a": {
               "kind": "input",
-              "id": "part_rows",
-              "dim": "count"
+              "id": "quantize_pq_codec",
+              "dim": "enum:quantize_pq_codec"
             },
             "b": {
-              "kind": "input",
-              "id": "min_rows_for_wide_part",
-              "dim": "count"
+              "kind": "const",
+              "value": "1",
+              "dim": "enum:quantize_pq_codec"
             }
           },
           "then": {
             "kind": "const",
-            "value": "compact",
+            "value": "wide",
             "dim": "enum:part_type"
           },
           "else": {
@@ -920,13 +980,13 @@
               "op": "<",
               "a": {
                 "kind": "input",
-                "id": "part_level",
-                "dim": "count"
+                "id": "part_bytes_uncompressed",
+                "dim": "B"
               },
               "b": {
                 "kind": "input",
-                "id": "min_level_for_wide_part",
-                "dim": "count"
+                "id": "min_bytes_for_wide_part",
+                "dim": "B"
               }
             },
             "then": {
@@ -935,9 +995,53 @@
               "dim": "enum:part_type"
             },
             "else": {
-              "kind": "const",
-              "value": "wide",
-              "dim": "enum:part_type"
+              "kind": "branch",
+              "dim": "enum:part_type",
+              "cond": {
+                "op": "<",
+                "a": {
+                  "kind": "input",
+                  "id": "part_rows",
+                  "dim": "count"
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "min_rows_for_wide_part",
+                  "dim": "count"
+                }
+              },
+              "then": {
+                "kind": "const",
+                "value": "compact",
+                "dim": "enum:part_type"
+              },
+              "else": {
+                "kind": "branch",
+                "dim": "enum:part_type",
+                "cond": {
+                  "op": "<",
+                  "a": {
+                    "kind": "input",
+                    "id": "part_level",
+                    "dim": "count"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "min_level_for_wide_part",
+                    "dim": "count"
+                  }
+                },
+                "then": {
+                  "kind": "const",
+                  "value": "compact",
+                  "dim": "enum:part_type"
+                },
+                "else": {
+                  "kind": "const",
+                  "value": "wide",
+                  "dim": "enum:part_type"
+                }
+              }
             }
           }
         }
@@ -946,7 +1050,7 @@
       "validity": null,
       "evidence": {
         "kind": "source",
-        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6403",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6402",
         "version": "26.8@09d0772a842"
       },
       "hint": {
@@ -1078,9 +1182,63 @@
       "status": "ok"
     },
     {
+      "id": "strict_upload_part_size",
+      "block": "inserts",
+      "label": "Fixed upload part size (0 = off): when set, every buffer is this size",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp:98",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('s3_max_single_part_upload_size', 's3_min_upload_part_size', 's3_strict_upload_part_size', 's3_upload_part_size_multiply_factor', 's3_upload_part_size_multiply_parts_count_threshold')",
+        "mapping": {
+          "strict_upload_part_size": "s3_strict_upload_part_size"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "max_single_part_upload_size",
+      "block": "inserts",
+      "label": "Largest object one buffer may send as a single PutObject",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 33554432,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/S3Defines.h:26",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('s3_max_single_part_upload_size', 's3_min_upload_part_size', 's3_strict_upload_part_size', 's3_upload_part_size_multiply_factor', 's3_upload_part_size_multiply_parts_count_threshold')",
+        "mapping": {
+          "max_single_part_upload_size": "s3_max_single_part_upload_size"
+        }
+      },
+      "status": "ok"
+    },
+    {
       "id": "multipart_sizing_rule",
       "block": "inserts",
-      "label": "Upload sizing: WriteBufferFromS3 fills a first buffer of multipart_first_part_bytes; an object that fits it, even exactly, is one PutObject. A second buffer (multipart_next_part_bytes) starts the multipart upload; every multipart_growth_parts parts the part size grows by multipart_growth_factor (up to 5 GiB). The last part holds the remainder.",
+      "label": "Upload sizing: with strict_upload_part_size = 0 WriteBufferFromS3 fills a first buffer of clamp(max_single_part_upload_size, min_upload_part_size, max_upload_part_size), then buffers of min_upload_part_size that grow by multipart_growth_factor every multipart_growth_parts buffers (up to 5 GiB); with a strict size every buffer is that size. A second filled buffer starts the multipart upload. At finalize one buffer of at most max_single_part_upload_size is one PutObject (an object of exactly 32 MiB by default); one larger buffer, possible only when the first buffer or the strict size exceeds max_single_part_upload_size, is a multipart upload of one part. The last part holds the remainder.",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "",
@@ -1139,7 +1297,7 @@
     {
       "id": "multipart_parts",
       "block": "inserts",
-      "label": "Data-carrying upload requests for one object: 1 (PutObject) up to the first buffer, else 1 + ceil((size - first) / next) UploadPart requests",
+      "label": "Data-carrying upload requests for one object: with a strict size ceil(size / strict); else 1 up to the first buffer and 1 + ceil((size - first) / next) beyond it (no growth step: valid below 499 later parts)",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "count",
@@ -1151,32 +1309,40 @@
         "kind": "branch",
         "dim": "count",
         "cond": {
-          "op": "<=",
+          "op": ">",
           "a": {
             "kind": "input",
-            "id": "object_bytes",
+            "id": "strict_upload_part_size",
             "dim": "B"
           },
           "b": {
-            "kind": "input",
-            "id": "multipart_first_part_bytes",
+            "kind": "const",
+            "value": 0,
             "dim": "B"
           }
         },
         "then": {
-          "kind": "const",
-          "value": 1,
-          "dim": "count"
-        },
-        "else": {
-          "kind": "add",
+          "kind": "branch",
           "dim": "count",
-          "a": {
+          "cond": {
+            "op": "<=",
+            "a": {
+              "kind": "input",
+              "id": "object_bytes",
+              "dim": "B"
+            },
+            "b": {
+              "kind": "input",
+              "id": "strict_upload_part_size",
+              "dim": "B"
+            }
+          },
+          "then": {
             "kind": "const",
             "value": 1,
             "dim": "count"
           },
-          "b": {
+          "else": {
             "kind": "ceil_to",
             "dim": "count",
             "x": {
@@ -1184,22 +1350,13 @@
               "dim": "count",
               "on_zero": "unavailable",
               "a": {
-                "kind": "sub",
-                "dim": "B",
-                "a": {
-                  "kind": "input",
-                  "id": "object_bytes",
-                  "dim": "B"
-                },
-                "b": {
-                  "kind": "input",
-                  "id": "multipart_first_part_bytes",
-                  "dim": "B"
-                }
+                "kind": "input",
+                "id": "object_bytes",
+                "dim": "B"
               },
               "b": {
                 "kind": "input",
-                "id": "multipart_next_part_bytes",
+                "id": "strict_upload_part_size",
                 "dim": "B"
               }
             },
@@ -1207,6 +1364,70 @@
               "kind": "const",
               "value": 1,
               "dim": "count"
+            }
+          }
+        },
+        "else": {
+          "kind": "branch",
+          "dim": "count",
+          "cond": {
+            "op": "<=",
+            "a": {
+              "kind": "input",
+              "id": "object_bytes",
+              "dim": "B"
+            },
+            "b": {
+              "kind": "input",
+              "id": "multipart_first_part_bytes",
+              "dim": "B"
+            }
+          },
+          "then": {
+            "kind": "const",
+            "value": 1,
+            "dim": "count"
+          },
+          "else": {
+            "kind": "add",
+            "dim": "count",
+            "a": {
+              "kind": "const",
+              "value": 1,
+              "dim": "count"
+            },
+            "b": {
+              "kind": "ceil_to",
+              "dim": "count",
+              "x": {
+                "kind": "div",
+                "dim": "count",
+                "on_zero": "unavailable",
+                "a": {
+                  "kind": "sub",
+                  "dim": "B",
+                  "a": {
+                    "kind": "input",
+                    "id": "object_bytes",
+                    "dim": "B"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "multipart_first_part_bytes",
+                    "dim": "B"
+                  }
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "multipart_next_part_bytes",
+                  "dim": "B"
+                }
+              },
+              "step": {
+                "kind": "const",
+                "value": 1,
+                "dim": "count"
+              }
             }
           }
         }
@@ -1227,6 +1448,103 @@
         "sql": "SELECT count() FROM system.blob_storage_log WHERE event_type = 'MultiPartUploadWrite' AND event_date = today()",
         "mapping": {
           "multipart_parts": "parts per upload: MultiPartUploadWrite rows / MultiPartUploadCreate rows"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_upload",
+      "block": "inserts",
+      "label": "The object goes up as a multipart upload (1) or one PutObject (0): multipart above max_single_part_upload_size, or with a strict size above that size",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": ">",
+          "a": {
+            "kind": "input",
+            "id": "object_bytes",
+            "dim": "B"
+          },
+          "b": {
+            "kind": "input",
+            "id": "max_single_part_upload_size",
+            "dim": "B"
+          }
+        },
+        "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        },
+        "else": {
+          "kind": "branch",
+          "dim": "count",
+          "cond": {
+            "op": ">",
+            "a": {
+              "kind": "input",
+              "id": "strict_upload_part_size",
+              "dim": "B"
+            },
+            "b": {
+              "kind": "const",
+              "value": 0,
+              "dim": "B"
+            }
+          },
+          "then": {
+            "kind": "branch",
+            "dim": "count",
+            "cond": {
+              "op": "<=",
+              "a": {
+                "kind": "input",
+                "id": "object_bytes",
+                "dim": "B"
+              },
+              "b": {
+                "kind": "input",
+                "id": "strict_upload_part_size",
+                "dim": "B"
+              }
+            },
+            "then": {
+              "kind": "const",
+              "value": 0,
+              "dim": "count"
+            },
+            "else": {
+              "kind": "const",
+              "value": 1,
+              "dim": "count"
+            }
+          },
+          "else": {
+            "kind": "const",
+            "value": 0,
+            "dim": "count"
+          }
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:180",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event_type, count() FROM system.blob_storage_log WHERE event_date = today() AND event_type IN ('Upload', 'MultiPartUploadCreate') GROUP BY event_type",
+        "mapping": {
+          "multipart_upload": "MultiPartUploadCreate vs Upload per object"
         }
       },
       "status": "ok"
@@ -1281,6 +1599,224 @@
         "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'min_insert_block_size_bytes'",
         "mapping": {
           "min_insert_block_size_bytes": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "use_strict_insert_block_limits",
+      "block": "inserts",
+      "label": "Strict insert block limits (0 = off): when on, max limits split blocks and the parts formula does not apply",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:162",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'use_strict_insert_block_limits'",
+        "mapping": {
+          "use_strict_insert_block_limits": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "max_block_size",
+      "block": "inserts",
+      "label": "Rows per block a SELECT reads, so per source block of an INSERT SELECT (optimize_trivial_insert_select is off)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 65409,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:155",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'max_block_size'",
+        "mapping": {
+          "max_block_size": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "max_insert_block_size",
+      "block": "inserts",
+      "label": "Rows per block the server parses formatted INSERT data into",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1048449,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:178",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'max_insert_block_size'",
+        "mapping": {
+          "max_insert_block_size": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_kind",
+      "block": "inserts",
+      "label": "INSERT with data (inline, formatted or native blocks) or INSERT SELECT; only INSERTs with data can go asynchronous",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "data",
+        "select"
+      ],
+      "table": null,
+      "default": "data",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Interpreters/executeQuery.cpp:2894",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT query FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, '<db>.<table>') LIMIT 10",
+        "mapping": {
+          "insert_kind": "select when the INSERT reads a SELECT, else data"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_source_block_rows",
+      "block": "inserts",
+      "label": "Rows per block entering the insert squash: max_block_size for INSERT SELECT, max_insert_block_size for data",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "==",
+          "a": {
+            "kind": "input",
+            "id": "insert_kind",
+            "dim": "enum:insert_kind"
+          },
+          "b": {
+            "kind": "const",
+            "value": "select",
+            "dim": "enum:insert_kind"
+          }
+        },
+        "then": {
+          "kind": "input",
+          "id": "max_block_size",
+          "dim": "count"
+        },
+        "else": {
+          "kind": "input",
+          "id": "max_insert_block_size",
+          "dim": "count"
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:5609",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('max_block_size', 'max_insert_block_size', 'optimize_trivial_insert_select')",
+        "mapping": {
+          "insert_source_block_rows": "max_block_size or max_insert_block_size"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_payload_bytes",
+      "block": "inserts",
+      "label": "Bytes of an INSERT's data as sent (the async buffer counts these, not table bytes)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1048576,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(bytes) FROM system.asynchronous_insert_log WHERE database = '<db>' AND table = '<table>' AND event_date = today()",
+        "mapping": {
+          "insert_payload_bytes": "avg(bytes)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_clients",
+      "block": "inserts",
+      "label": "Clients inserting concurrently; with wait_for_async_insert = 1 each has at most one insert in a buffer",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT max(c) FROM (SELECT toStartOfSecond(event_time) AS s, count() AS c FROM system.query_log WHERE type = 'QueryStart' AND query_kind = 'Insert' AND has(tables, '<db>.<table>') AND event_date = today() GROUP BY s)",
+        "mapping": {
+          "insert_clients": "concurrent INSERT queries per second, a lower bound"
         }
       },
       "status": "ok"
@@ -1396,7 +1932,7 @@
     {
       "id": "async_insert",
       "block": "inserts",
-      "label": "Async inserts on (async_insert; on by default in this build)",
+      "label": "Async inserts on: the query setting async_insert (on by default in this build) or the table's async_insert setting",
       "kind": "input",
       "scope": "cluster",
       "unit": "",
@@ -1418,7 +1954,88 @@
       "hint": {
         "sql": "SELECT value FROM system.settings WHERE name = 'async_insert'",
         "mapping": {
-          "async_insert": "value in the inserting user's profile"
+          "async_insert": "value in the inserting user's profile; MergeTree SETTINGS async_insert = 1 also enables it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "wait_for_async_insert",
+      "block": "inserts",
+      "label": "An async INSERT waits for its flush (1 = on)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:7228",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'wait_for_async_insert'",
+        "mapping": {
+          "wait_for_async_insert": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_deduplicate",
+      "block": "inserts",
+      "label": "Async insert deduplication (0 = off); when on, async_insert_max_query_number inserts also flush a buffer",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:2393",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'async_insert_deduplicate'",
+        "mapping": {
+          "async_insert_deduplicate": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_max_query_number",
+      "block": "inserts",
+      "label": "Inserts that flush a buffer when deduplication is on",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 450,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:7239",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'async_insert_max_query_number'",
+        "mapping": {
+          "async_insert_max_query_number": "value in the inserting user's profile; a query SETTINGS clause overrides it"
         }
       },
       "status": "ok"
@@ -1480,7 +2097,7 @@
     {
       "id": "async_insert_max_data_size",
       "block": "inserts",
-      "label": "Unparsed bytes that flush an async insert buffer",
+      "label": "Unparsed bytes that flush an async insert buffer; an INSERT with more data runs synchronously",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "B",
@@ -1507,7 +2124,7 @@
     {
       "id": "async_insert_flush_rule",
       "block": "inserts",
-      "label": "Async flush: inserts with the same query shape and settings share a buffer; it is flushed into one part per partition when its unparsed bytes reach async_insert_max_data_size, when async_insert_max_query_number inserts accumulate with deduplication on, or when its deadline passes. The deadline is the first insert time plus an adaptive timeout between async_insert_busy_timeout_min_ms and _max_ms that grows while inserts are frequent. With wait_for_async_insert = 1 a client waits for the flush, so only concurrent inserts share one.",
+      "label": "Async flush: an INSERT with data of at most async_insert_max_data_size bytes is queued (INSERT SELECT and larger data run synchronously); inserts with the same user, roles, query shape, settings and data kind share a buffer; it is flushed into one part per partition when its unparsed bytes reach async_insert_max_data_size, when async_insert_max_query_number inserts accumulate with deduplication on, or when its deadline passes. The deadline is the first insert time plus an adaptive timeout between async_insert_busy_timeout_min_ms and _max_ms that grows while inserts are frequent. With wait_for_async_insert = 1 a client waits for the flush, so only concurrent inserts share one.",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "",
@@ -1536,7 +2153,7 @@
     {
       "id": "inserts_per_async_flush",
       "block": "inserts",
-      "label": "Async inserts sharing one flush: the first insert plus those arriving within the longest busy timeout, at most a full buffer",
+      "label": "Async inserts sharing one flush, an upper-bound estimate: the first insert plus those arriving within the longest busy timeout, at most ceil(buffer / payload) entries, at most one per waiting client, at most async_insert_max_query_number with deduplication. The adaptive timeout can flush sooner.",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -1591,18 +2208,81 @@
                 }
               },
               {
-                "kind": "div",
+                "kind": "ceil_to",
                 "dim": "1",
-                "on_zero": "unavailable",
-                "a": {
-                  "kind": "input",
-                  "id": "async_insert_max_data_size",
-                  "dim": "B"
+                "x": {
+                  "kind": "div",
+                  "dim": "1",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "input",
+                    "id": "async_insert_max_data_size",
+                    "dim": "B"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "insert_payload_bytes",
+                    "dim": "B"
+                  }
                 },
-                "b": {
+                "step": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                }
+              },
+              {
+                "kind": "branch",
+                "dim": "1",
+                "cond": {
+                  "op": "==",
+                  "a": {
+                    "kind": "input",
+                    "id": "wait_for_async_insert",
+                    "dim": "count"
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "count"
+                  }
+                },
+                "then": {
                   "kind": "input",
-                  "id": "insert_bytes_uncompressed",
-                  "dim": "B"
+                  "id": "insert_clients",
+                  "dim": "count"
+                },
+                "else": {
+                  "kind": "const",
+                  "value": 1000000000000.0,
+                  "dim": "1"
+                }
+              },
+              {
+                "kind": "branch",
+                "dim": "1",
+                "cond": {
+                  "op": "==",
+                  "a": {
+                    "kind": "input",
+                    "id": "async_insert_deduplicate",
+                    "dim": "count"
+                  },
+                  "b": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "count"
+                  }
+                },
+                "then": {
+                  "kind": "input",
+                  "id": "async_insert_max_query_number",
+                  "dim": "count"
+                },
+                "else": {
+                  "kind": "const",
+                  "value": 1000000000000.0,
+                  "dim": "1"
                 }
               }
             ]
@@ -1612,9 +2292,9 @@
       "coef": null,
       "validity": null,
       "evidence": {
-        "kind": "source",
-        "ref": "tmp/src-26.8/src/Interpreters/AsynchronousInsertQueue.cpp:623",
-        "version": "26.8@09d0772a842"
+        "kind": "assumed",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle#parts-per-insert",
+        "version": "0.2.0"
       },
       "hint": {
         "sql": "SELECT avg(c) FROM (SELECT flush_query_id, count() AS c FROM system.asynchronous_insert_log WHERE status = 'Ok' AND table = '<table>' AND event_date = today() GROUP BY flush_query_id)",
@@ -1627,7 +2307,7 @@
     {
       "id": "parts_per_insert",
       "block": "inserts",
-      "label": "Parts one INSERT creates: per partition, one per squashed block (a block is emitted once it reaches either minimum and is never split); with async inserts, a flush shared by inserts_per_async_flush inserts",
+      "label": "Parts one INSERT creates, per partition: synchronously one per squashed block (whole source blocks joined until either minimum is reached; strict limits off); an async INSERT with data, at most async_insert_max_data_size bytes, a share of a flush of inserts_per_async_flush inserts. INSERT SELECT is always synchronous.",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -1650,31 +2330,16 @@
             "op": "==",
             "a": {
               "kind": "input",
-              "id": "async_insert",
-              "dim": "enum:async_insert"
+              "id": "insert_kind",
+              "dim": "enum:insert_kind"
             },
             "b": {
               "kind": "const",
-              "value": "1",
-              "dim": "enum:async_insert"
+              "value": "select",
+              "dim": "enum:insert_kind"
             }
           },
           "then": {
-            "kind": "div",
-            "dim": "1",
-            "on_zero": "unavailable",
-            "a": {
-              "kind": "const",
-              "value": 1,
-              "dim": "1"
-            },
-            "b": {
-              "kind": "input",
-              "id": "inserts_per_async_flush",
-              "dim": "1"
-            }
-          },
-          "else": {
             "kind": "max",
             "dim": "1",
             "args": [
@@ -1687,10 +2352,137 @@
                 "kind": "ceil_to",
                 "dim": "1",
                 "x": {
-                  "kind": "max",
+                  "kind": "div",
                   "dim": "1",
-                  "args": [
-                    {
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "input",
+                    "id": "insert_rows",
+                    "dim": "count"
+                  },
+                  "b": {
+                    "kind": "min",
+                    "dim": "count",
+                    "args": [
+                      {
+                        "kind": "ceil_to",
+                        "dim": "count",
+                        "x": {
+                          "kind": "input",
+                          "id": "min_insert_block_size_rows",
+                          "dim": "count"
+                        },
+                        "step": {
+                          "kind": "input",
+                          "id": "insert_source_block_rows",
+                          "dim": "count"
+                        }
+                      },
+                      {
+                        "kind": "ceil_to",
+                        "dim": "count",
+                        "x": {
+                          "kind": "div",
+                          "dim": "count",
+                          "on_zero": "unavailable",
+                          "a": {
+                            "kind": "input",
+                            "id": "min_insert_block_size_bytes",
+                            "dim": "B"
+                          },
+                          "b": {
+                            "kind": "div",
+                            "dim": "B/count",
+                            "on_zero": "unavailable",
+                            "a": {
+                              "kind": "input",
+                              "id": "insert_bytes_uncompressed",
+                              "dim": "B"
+                            },
+                            "b": {
+                              "kind": "input",
+                              "id": "insert_rows",
+                              "dim": "count"
+                            }
+                          }
+                        },
+                        "step": {
+                          "kind": "input",
+                          "id": "insert_source_block_rows",
+                          "dim": "count"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "step": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                }
+              }
+            ]
+          },
+          "else": {
+            "kind": "branch",
+            "dim": "1",
+            "cond": {
+              "op": "==",
+              "a": {
+                "kind": "input",
+                "id": "async_insert",
+                "dim": "enum:async_insert"
+              },
+              "b": {
+                "kind": "const",
+                "value": "1",
+                "dim": "enum:async_insert"
+              }
+            },
+            "then": {
+              "kind": "branch",
+              "dim": "1",
+              "cond": {
+                "op": "<=",
+                "a": {
+                  "kind": "input",
+                  "id": "insert_payload_bytes",
+                  "dim": "B"
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "async_insert_max_data_size",
+                  "dim": "B"
+                }
+              },
+              "then": {
+                "kind": "div",
+                "dim": "1",
+                "on_zero": "unavailable",
+                "a": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "inserts_per_async_flush",
+                  "dim": "1"
+                }
+              },
+              "else": {
+                "kind": "max",
+                "dim": "1",
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "1"
+                  },
+                  {
+                    "kind": "ceil_to",
+                    "dim": "1",
+                    "x": {
                       "kind": "div",
                       "dim": "1",
                       "on_zero": "unavailable",
@@ -1700,35 +2492,153 @@
                         "dim": "count"
                       },
                       "b": {
-                        "kind": "input",
-                        "id": "min_insert_block_size_rows",
-                        "dim": "count"
+                        "kind": "min",
+                        "dim": "count",
+                        "args": [
+                          {
+                            "kind": "ceil_to",
+                            "dim": "count",
+                            "x": {
+                              "kind": "input",
+                              "id": "min_insert_block_size_rows",
+                              "dim": "count"
+                            },
+                            "step": {
+                              "kind": "input",
+                              "id": "insert_source_block_rows",
+                              "dim": "count"
+                            }
+                          },
+                          {
+                            "kind": "ceil_to",
+                            "dim": "count",
+                            "x": {
+                              "kind": "div",
+                              "dim": "count",
+                              "on_zero": "unavailable",
+                              "a": {
+                                "kind": "input",
+                                "id": "min_insert_block_size_bytes",
+                                "dim": "B"
+                              },
+                              "b": {
+                                "kind": "div",
+                                "dim": "B/count",
+                                "on_zero": "unavailable",
+                                "a": {
+                                  "kind": "input",
+                                  "id": "insert_bytes_uncompressed",
+                                  "dim": "B"
+                                },
+                                "b": {
+                                  "kind": "input",
+                                  "id": "insert_rows",
+                                  "dim": "count"
+                                }
+                              }
+                            },
+                            "step": {
+                              "kind": "input",
+                              "id": "insert_source_block_rows",
+                              "dim": "count"
+                            }
+                          }
+                        ]
                       }
                     },
-                    {
-                      "kind": "div",
-                      "dim": "1",
-                      "on_zero": "unavailable",
-                      "a": {
-                        "kind": "input",
-                        "id": "insert_bytes_uncompressed",
-                        "dim": "B"
-                      },
-                      "b": {
-                        "kind": "input",
-                        "id": "min_insert_block_size_bytes",
-                        "dim": "B"
-                      }
+                    "step": {
+                      "kind": "const",
+                      "value": 1,
+                      "dim": "1"
                     }
-                  ]
-                },
-                "step": {
+                  }
+                ]
+              }
+            },
+            "else": {
+              "kind": "max",
+              "dim": "1",
+              "args": [
+                {
                   "kind": "const",
                   "value": 1,
                   "dim": "1"
+                },
+                {
+                  "kind": "ceil_to",
+                  "dim": "1",
+                  "x": {
+                    "kind": "div",
+                    "dim": "1",
+                    "on_zero": "unavailable",
+                    "a": {
+                      "kind": "input",
+                      "id": "insert_rows",
+                      "dim": "count"
+                    },
+                    "b": {
+                      "kind": "min",
+                      "dim": "count",
+                      "args": [
+                        {
+                          "kind": "ceil_to",
+                          "dim": "count",
+                          "x": {
+                            "kind": "input",
+                            "id": "min_insert_block_size_rows",
+                            "dim": "count"
+                          },
+                          "step": {
+                            "kind": "input",
+                            "id": "insert_source_block_rows",
+                            "dim": "count"
+                          }
+                        },
+                        {
+                          "kind": "ceil_to",
+                          "dim": "count",
+                          "x": {
+                            "kind": "div",
+                            "dim": "count",
+                            "on_zero": "unavailable",
+                            "a": {
+                              "kind": "input",
+                              "id": "min_insert_block_size_bytes",
+                              "dim": "B"
+                            },
+                            "b": {
+                              "kind": "div",
+                              "dim": "B/count",
+                              "on_zero": "unavailable",
+                              "a": {
+                                "kind": "input",
+                                "id": "insert_bytes_uncompressed",
+                                "dim": "B"
+                              },
+                              "b": {
+                                "kind": "input",
+                                "id": "insert_rows",
+                                "dim": "count"
+                              }
+                            }
+                          },
+                          "step": {
+                            "kind": "input",
+                            "id": "insert_source_block_rows",
+                            "dim": "count"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "step": {
+                    "kind": "const",
+                    "value": 1,
+                    "dim": "1"
+                  }
                 }
-              }
-            ]
+              ]
+            }
           }
         }
       },
@@ -1750,7 +2660,7 @@
     {
       "id": "old_parts_lifetime",
       "block": "merges",
-      "label": "Seconds an outdated part is kept before removal",
+      "label": "Minimum age before an outdated part may be removed; removal also waits for references and transactions and runs on the cleanup schedule",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "s",
@@ -1831,7 +2741,7 @@
     {
       "id": "max_parts_to_merge_at_once",
       "block": "merges",
-      "label": "Most parts one natural merge takes",
+      "label": "Most parts one simple-selector merge takes; TTL drop merges read it too, a whole-partition force merge (min_age_to_force_merge_seconds) does not",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "count",
@@ -1858,7 +2768,7 @@
     {
       "id": "merge_size_ratio",
       "block": "merges",
-      "label": "Size a part grows to by merges, in inserted parts",
+      "label": "Size of the part an inserted row ends up in, in inserted parts, row-weighted over the final parts: sum(r^2) / sum(r)",
       "kind": "input",
       "scope": "cluster",
       "unit": "1",
@@ -1875,9 +2785,9 @@
         "version": "0.2.0"
       },
       "hint": {
-        "sql": "SELECT sum(rows) / count() AS final_rows FROM system.parts WHERE active AND database = '<db>' AND table = '<table>'",
+        "sql": "SELECT sum(rows * rows) / sum(rows) AS weighted_rows FROM system.parts WHERE active AND database = '<db>' AND table = '<table>'",
         "mapping": {
-          "merge_size_ratio": "final_rows / part_rows (rows of an inserted part)"
+          "merge_size_ratio": "weighted_rows / part_rows (rows of an inserted part)"
         }
       },
       "status": "ok"
@@ -1921,7 +2831,7 @@
     {
       "id": "write_amplification_rule",
       "block": "merges",
-      "label": "Write amplification: bytes written by inserts and merges per inserted byte, for parts grown to merge_size_ratio inserted parts",
+      "label": "Write amplification: bytes written by inserts and merges per inserted byte: 1 + rewrite levels at merge_size_ratio with effective fan-in merge_effective_fan_in (levels capped at 12)",
       "kind": "derivation",
       "scope": "cluster",
       "unit": "1",
@@ -4037,7 +4947,7 @@
     {
       "id": "acquisition_rule",
       "block": "replication",
-      "label": "Fetch vs local execution of a replicated merge: the replica merges locally unless always_fetch_merged_part is set, execute_merges_on_single_replica_time_threshold > 0 picks another replica (merges only; with zero-copy also remote_fs_execute_merges_on_single_replica_time_threshold), a source part is missing locally, or the entry is older than prefer_fetch_merged_part_time_threshold and its sources hold at least prefer_fetch_merged_part_size_threshold bytes on disk while a replica has the result. A mutation follows the same rule with always_fetch_mutated_part, without the single-replica branch, and keeps the source part type. A replica that already has the part or a covering one skips the entry.",
+      "label": "Fetch vs local execution of a replicated merge, in order: skip when the part or a covering one is already here; fetch when always_fetch_merged_part; wait (no fetch check) for a TTL-recompress merge another replica was assigned, until try_fetch_recompressed_part_timeout; fetch when execute_merges_on_single_replica_time_threshold > 0, the entry is younger than it and another replica is picked; fetch when a source or patch part is missing or covered; wait while a source part has newer metadata; fetch when the entry is at least prefer_fetch_merged_part_time_threshold old, the sources hold at least prefer_fetch_merged_part_size_threshold bytes on disk and a replica has the result; with zero-copy, fetch or wait on the covering part and the exclusive lock; else merge locally. A mutation: fetch when always_fetch_mutated_part, the source is missing or covered, or the entry is that old and 1.1 x the source bytes on disk (expired TTL parts excluded) reach the size threshold with a replica holding the result; the single-replica branch never fires (merge entries only); zero-copy as for merges; else mutate locally, keeping the source part type.",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "",
@@ -4066,7 +4976,7 @@
     {
       "id": "prefer_fetch_merged_part_time_threshold",
       "block": "replication",
-      "label": "Age of a merge entry after which a replica prefers fetching a large result",
+      "label": "Age of a merge or mutation entry from which (inclusive) a replica prefers fetching a large result",
       "kind": "pinned",
       "scope": "cluster",
       "unit": "s",

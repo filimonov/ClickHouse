@@ -114,9 +114,9 @@
       "line": 6399
     },
     {
-      "claim": "otherwise the part is Wide",
+      "claim": "the type starts Wide; the predicate turns it Compact",
       "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
-      "line": 6404
+      "line": 6402
     },
     {
       "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
@@ -174,9 +174,14 @@
       "line": 32
     },
     {
-      "claim": "OPTIMIZE FINAL selects all parts of the partition, not through max_parts_to_merge_at_once",
-      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataMergerMutator.cpp",
-      "line": 320
+      "claim": "OPTIMIZE FINAL merges every partition with final = true",
+      "path": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp",
+      "line": 2497
+    },
+    {
+      "claim": "a final merge selects all parts of the partition, not through max_parts_to_merge_at_once",
+      "path": "tmp/src-26.8/src/Storages/StorageMergeTree.cpp",
+      "line": 1831
     },
     {
       "claim": "max_parts_to_merge_at_once = 1 limits only the natural merge selector",

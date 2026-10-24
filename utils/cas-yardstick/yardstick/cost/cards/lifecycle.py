@@ -15,6 +15,8 @@ from .base import DATABASE, POLL_S
 from .probes import ManifestCard, _count, compare_ledger, register, window_rows
 
 MIB = 1 << 20
+LADDER_LEVELS = 12  # levels of the registry's write amplification ladder
+AMPLIFICATION_MODELS = {}  # filled below: prediction `model` name -> function(final_ratios, fan_in)
 # A fixed-width CODEC(NONE) column of a wide part: 8192-row granules (index_granularity) and a 25-byte frame per
 # compressed block. A full UInt64 granule is 64 KiB = min_compress_block_size, so every granule closes its block.
 GRANULE_ROWS = 8192
@@ -129,16 +131,28 @@ def squashed_parts(rows: int, min_rows: int, source_block_rows: int) -> list:
 def rewrite_levels(ratio: float, fan_in: float) -> float:
     """Times a byte is rewritten by merges while its part grows to `ratio` inserted parts, at effective `fan_in`.
 
-    Whole levels up to the largest power of `fan_in` not above `ratio`, then the fraction of the next level; the
-    registry rule `write_amplification` is this function over a ladder of 12 levels.
+    Whole levels up to the largest power of `fan_in` not above `ratio`, then the fraction of the next level, capped
+    at 12 levels exactly as the registry ladder `write_amplification_rule` is.
     """
     if ratio <= 1:
         return 0.0
     level, size = 0, 1.0
-    while size * fan_in <= ratio and level < 12:
+    while size * fan_in <= ratio and level < LADDER_LEVELS:
         size *= fan_in
         level += 1
+    if level == LADDER_LEVELS:
+        return float(LADDER_LEVELS)
     return level + (ratio / size - 1) / (fan_in - 1)
+
+
+def weighted_ratio(final_ratios: list) -> float:
+    """Final part size, in inserted parts, that an inserted row ends up in on average: sum(r^2) / sum(r)."""
+    return sum(r * r for r in final_ratios) / sum(final_ratios)
+
+
+def amplification_rule(final_ratios: list, fan_in: float) -> float:
+    """The registry rule `write_amplification_rule`: 1 + rewrite_levels at the row-weighted final part size."""
+    return 1 + rewrite_levels(weighted_ratio(final_ratios), fan_in)
 
 
 def amplification_model(final_ratios: list, fan_in: float) -> float:
@@ -146,6 +160,9 @@ def amplification_model(final_ratios: list, fan_in: float) -> float:
     units: each final part's share of the inserted rows was rewritten `rewrite_levels` times."""
     total = sum(final_ratios)
     return 1 + sum(r / total * rewrite_levels(r, fan_in) for r in final_ratios)
+
+
+AMPLIFICATION_MODELS.update(rewrite_levels=amplification_model, rewrite_levels_at_weighted_ratio=amplification_rule)
 
 
 def bucket(value: float, buckets: tuple) -> str:
@@ -201,7 +218,7 @@ def check_observation(want, got, observations: dict) -> tuple:
 
     `want` is a value (exact), `{min, max}` (a bound; either side may be absent), `{reference, max_tv}` (a
     distribution within total-variation distance of the reference) or `{model, fan_in, abs, rel}` (amplification
-    against `amplification_model` over the record's `final_size_ratios`).
+    against `AMPLIFICATION_MODELS[model]` over the record's `final_size_ratios`; an unknown model is an error).
     """
     if not isinstance(want, dict) or not ({'min', 'max', 'reference', 'model'} & set(want)):
         return want, got
@@ -211,7 +228,9 @@ def check_observation(want, got, observations: dict) -> tuple:
         text = f'tv <= {want["max_tv"]}'
         return text, text if tv <= want['max_tv'] else f'tv {tv:.4f}'
     if 'model' in want:
-        predicted = amplification_model(observations['final_size_ratios'], want['fan_in'])
+        if want['model'] not in AMPLIFICATION_MODELS:
+            raise ValueError(f'unknown amplification model {want["model"]!r}')
+        predicted = AMPLIFICATION_MODELS[want['model']](observations['final_size_ratios'], want['fan_in'])
         slack = want['abs'] + want['rel'] * predicted
         text = f'{predicted:.4f} +- {slack:.4f}'
         return text, text if abs(got - predicted) <= slack else got
@@ -278,6 +297,41 @@ class LifecycleCard(ManifestCard):
         return self.rows_json(ctx, f"SELECT {PART_LOG_COLUMNS} FROM system.part_log WHERE {self.where()} AND "
                                    "event_type IN ('NewPart', 'MergeParts') AND error = 0 ORDER BY t_us")
 
+    def collect_layout(self, ctx) -> None:
+        """Object keys of every part file, outdated parts included, from `system.remote_data_paths`.
+
+        Called before the teardown: a merged-away part stays on disk for old_parts_lifetime, so its files are listed.
+        """
+        disk = ctx.policy.removesuffix('_cached')
+        out: dict = {}
+        if disk != 'local':
+            rows = self.rows_json(ctx, f"SELECT local_path, remote_path FROM system.remote_data_paths "
+                                       f"WHERE disk_name = '{disk}'")
+            for r in rows:
+                out.setdefault(r['local_path'].rstrip('/').split('/')[-2], []).append(r['remote_path'])
+        self.state(ctx)['remote_paths'] = out
+
+    def reclassify(self, ctx, bounds) -> None:
+        """Objects of merged-away parts are `outdated` from their merge on (design §4.3): retained, not active."""
+        st = self.state(ctx)
+        merges = sorted((r for r in st.get('part_log', []) if r['event_type'] == 'MergeParts'),
+                        key=lambda r: int(r['t_us']))
+        if not merges or ctx.policy == 'local':  # a local disk writes no objects to classify
+            return
+        by_key = {ident[1]: ident for ident in set(bounds.mutations) | set(bounds.upper.objects) |
+                  set(bounds.lower.objects)}
+        for m in merges:
+            keys = []
+            for part in m['merged_from']:
+                if part not in st['remote_paths']:
+                    raise ValueError(f'{self.name}: no remote paths for merged-away part {part}')
+                keys += st['remote_paths'][part]
+            unknown = sorted(k for k in keys if k not in by_key)
+            if unknown:
+                raise ValueError(f'{self.name}: objects of merged-away parts not in the pass ledger: {unknown[:5]}')
+            bounds.reclassify(sorted(by_key[k] for k in keys), 'outdated', int(m['t_us']),
+                              f'MergeParts {m["part_name"]} (system.part_log)')
+
     def observe(self, ctx, draft):
         return {}
 
@@ -288,6 +342,10 @@ class LifecycleCard(ManifestCard):
             out[f'observation.{key}'] = check_observation(want, draft['observations'].get(key), draft['observations'])
         rows = self.inserts(ctx) * self.p(ctx)['rows']
         out['rows.' + self.p(ctx)['replica']] = (rows, self.state(ctx).get('rows', [None])[0])
+        st = self.state(ctx)
+        if st.get('remote_paths') and any(r['event_type'] == 'MergeParts' for r in st.get('part_log', [])):
+            outdated = draft['inventory']['byte_hours'].get('outdated', {'lower': 0.0})
+            out['inventory.outdated_byte_hours>0'] = (True, outdated['lower'] > 0)
         if self.mode == 'deterministic':
             out['window.crossing'] = ([], draft['window']['crossing'])
         return out
@@ -312,6 +370,9 @@ class Boundaries(LifecycleCard):
     def complete(self, ctx, timeout_s=300):
         super().complete(ctx, timeout_s)
         self.state(ctx)['parts'] = self.parts(ctx)
+        if self.p(ctx)['kind'] == 'merge':
+            self.state(ctx)['part_log'] = self.part_log(ctx)
+            self.collect_layout(ctx)
 
     def observe(self, ctx, draft):
         rows = [r for r in window_rows(ctx) if r['caller'] == self.p(ctx)['replica'] and r['upstream']['outcome'] == 'ok']
@@ -335,18 +396,36 @@ class NaturalMergeCard(LifecycleCard):
 
     mode = 'stochastic'
 
-    def complete(self, ctx, timeout_s=300):
+    def wait_quiet(self, ctx) -> None:
+        """Wait until no merge has run for `quiet_s`, at most `quiesce_timeout_s`; `quiesced` says which ended it.
+
+        Wall-clock time, so the part log's merge end times compare with the polls.
+        """
         client, p = self.replica_client(ctx), self.p(ctx)
-        sql = f'SELECT count() FROM system.merges WHERE {self.where()}'
-        start = quiet_since = time.monotonic()
-        while time.monotonic() - quiet_since < p['quiet_s'] and time.monotonic() - start < p['quiesce_timeout_s']:
-            if _count(client, sql):
-                quiet_since = time.monotonic()
+        active = f'SELECT count() FROM system.merges WHERE {self.where()}'
+        finished = (f'SELECT toUnixTimestamp64Micro(max(event_time_microseconds)) FROM system.part_log '
+                    f"WHERE {self.where()} AND event_type = 'MergeParts'")
+        start = quiet_since = time.time()
+        quiesced = False
+        while time.time() - start < p['quiesce_timeout_s']:
+            if _count(client, active):
+                quiet_since = time.time()
+            elif time.time() - quiet_since >= p['quiet_s']:
+                # A merge that ran entirely between two polls shows only in the part log.
+                client.query('SYSTEM FLUSH LOGS')
+                quiet_since = max(quiet_since, _count(client, finished) / 1e6)
+                if time.time() - quiet_since >= p['quiet_s'] and not _count(client, active):
+                    quiesced = True
+                    break
             time.sleep(POLL_S)
-        self.state(ctx)['quiesced'] = time.monotonic() - quiet_since >= p['quiet_s']
+        self.state(ctx)['quiesced'] = quiesced
+
+    def complete(self, ctx, timeout_s=300):
+        self.wait_quiet(ctx)
         super().complete(ctx, timeout_s)
         self.state(ctx)['part_log'] = self.part_log(ctx)
         self.state(ctx)['active_rows'] = [r['rows'] for r in self.parts(ctx) if r['active']]
+        self.collect_layout(ctx)
 
     def observe(self, ctx, draft):
         st = self.state(ctx)
@@ -395,6 +474,7 @@ class MergeForced(LifecycleCard):
         super().complete(ctx, timeout_s)
         self.state(ctx)['parts'] = self.parts(ctx)
         self.state(ctx)['part_log'] = self.part_log(ctx)
+        self.collect_layout(ctx)
 
     def observe(self, ctx, draft):
         st = self.state(ctx)

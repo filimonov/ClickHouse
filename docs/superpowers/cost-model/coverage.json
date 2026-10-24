@@ -1294,7 +1294,7 @@
         ],
         "bytes_uncompressed": [
           11534360,
-          11534360
+          23068720
         ]
       },
       "role": "fit",
@@ -1681,6 +1681,10 @@
         "insert_rate": [
           20,
           20
+        ],
+        "insert_clients": [
+          16,
+          16
         ]
       },
       "role": "fit",
@@ -1697,7 +1701,15 @@
       "experiment_id": "async-inserts.bursty",
       "policy": "s3",
       "span": {
-        "insert_rate": [
+        "burst_size": [
+          100,
+          100
+        ],
+        "burst_pause_s": [
+          2,
+          2
+        ],
+        "insert_clients": [
           100,
           100
         ]
