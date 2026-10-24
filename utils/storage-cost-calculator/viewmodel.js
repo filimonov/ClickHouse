@@ -484,7 +484,11 @@
     }
     // One note per parameter: coefficients may bound it with different ranges, so the note lists each violated owner with its range.
     const byParam = new Map();
+    // A coefficient no cell reads cannot extrapolate anything, so it raises no note; a registry row follows its coefficient.
+    const reached = presets().reachedCoefficients(contract);
+    const coefIds = new Set(contract.coefficients.map((c) => c.id));
     for (const d of presets().validityDomains(contract)) {
+      if (coefIds.has(d.id) && !reached.has(d.id)) continue;
       if (!byParam.has(d.param)) byParam.set(d.param, []);
       byParam.get(d.param).push(d);
     }

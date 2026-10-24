@@ -156,7 +156,8 @@
     if (f.derived && f.kind === 'input') tags.push(badge('derived'));
     if (f.overridden) tags.push(badge('overridden', 'accent'));
     if (f.out_of_range) tags.push(badge('outside measured range', 'warn'));
-    if (f.kind === 'pinned') tags.push(badge('fixed by ClickHouse'));
+    // A pinned value is either a rule of the provider (evidence is a provider page) or fixed in the ClickHouse source.
+    if (f.kind === 'pinned') tags.push(badge(f.evidence_kind === 'provider' ? 'provider rule' : 'fixed by ClickHouse'));
     if (f.kind === 'measured') tags.push(badge('measured'));
     return tags.join('');
   }

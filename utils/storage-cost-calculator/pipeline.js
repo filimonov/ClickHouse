@@ -379,6 +379,17 @@
         const live = ev.rows.filter((r) => r.state !== 'ok' || r.quantity !== 0);
         if (live.length) states.push({ id: 'unsupported_cut', reason: `${v}.${op}: cut for ${cutFams.join(', ')} and the workload needs ${live.map((r) => `${r.row_type} ${r.op_kind}`).join(', ')}` });
       }
+      // A cut family with no rows prices nothing. That is a true zero only when every input the other columns read for
+      // this operation is zero; with no such input to check, the column cannot tell.
+      if (cutFams.length && !cell.ledger_rows.length) {
+        const siblings = contract.variants.filter((x) => x !== v).flatMap((x) => (((contract.formulas[x] || {})[op] || {}).ledger_rows || []).flatMap((r) => inputIds(r.expr)));
+        const deps = [...new Set(siblings)];
+        if (!deps.length) states.push({ id: 'unavailable', reason: `${v}.${op}: cut for ${cutFams.join(', ')} and the cell has no rows to show the workload is zero` });
+        else {
+          const live = deps.filter((id) => ctx.inputs.get(id) !== 0).map((id) => `${id} = ${JSON.stringify(ctx.inputs.has(id) ? ctx.inputs.get(id) : null)}`);
+          if (live.length) states.push({ id: 'unsupported_cut', reason: `${v}.${op}: cut for ${cutFams.join(', ')}, the cell has no rows and ${live.join(', ')} is non-zero` });
+        }
+      }
       for (const st of ev.states) if (st.active) states.push({ id: st.id, reason: `${v}.${op}: ${st.reason}` });
       const unavailableRows = ev.rows.map((r, i) => (r.state === 'ok' ? null : `${r.row_type} ${r.op_kind}: unavailable (${missingRefs(effective.ledger_rows[i].expr, ctx).join(', ') || 'see trace'})`)).filter(Boolean);
       if (!taints.length && (unavailableRows.length || ev.state !== 'ok')) {

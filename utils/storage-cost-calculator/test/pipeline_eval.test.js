@@ -498,3 +498,21 @@ test('test_pinned_quantity_default_reaches_expressions', () => {
   assert.equal(r.variants.s3.state, 'ok');
   close(r.variants.s3.total, run().variants.s3.total);
 });
+
+test('test_cut_cell_without_rows_never_prices_zero', () => {
+  // s3.mutations has no ledger rows; marking its family cut must not let a non-zero mutation workload price as $0.
+  const cut = (x) => { x.applicability.s3.mutations.lifecycle = 'unsupported_cut'; };
+  const c = load(cut);
+  assert.deepEqual(c.formulas.s3.mutations.ledger_rows, []);
+  const r = run({ mutations_per_month: 5 }, c);
+  assert.equal(r.variants.s3.state, 'unsupported_cut');
+  assert.match(r.variants.s3.reason, /s3\.mutations: cut for lifecycle.*mutations_per_month = 5/);
+  assert.equal(r.variants.s3.total, null);
+  // Zero workload on every input the operation reads elsewhere: the empty cell is a true zero.
+  assert.equal(run({}, c).variants.s3.state, 'ok');
+  // No sibling cell names a workload input: nothing shows the workload is zero, so the column is unavailable.
+  const blind = load((x) => { cut(x); for (const v of ['ebs', 'cas', 's3plain']) x.formulas[v].mutations = { ledger_rows: [], allocation: null, states: [], notes: [] }; });
+  const rb = run({}, blind);
+  assert.equal(rb.variants.s3.state, 'unavailable');
+  assert.equal(rb.variants.s3.total, null);
+});

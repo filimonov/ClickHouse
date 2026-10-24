@@ -49,6 +49,28 @@ test('test_coverage_checks_only_reached_coefficients', () => {
   assert.match(presets.coverageProblems(withExtra({ reported_only: true }, true), scenario).join('\n') || 'none', /none/, 'reported_only wins over a reference');
 });
 
+test('test_declared_extrapolation_must_be_declared_and_true', () => {
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'contracts', 'minimal.json'), 'utf8'));
+  const c = copy(raw);
+  c.coefficients.push({ id: 'extra_coef', kind: 'scalar', value: 1, dim: 'count', validity: { inserts_per_month: [1000, 2000] }, status: 'ok', evidence: { kind: 'measured', ref: 'fixture:extra' } });
+  const swap = (n) => { if (n && typeof n === 'object') { if (n.kind === 'coef' && n.id === 'puts_per_insert_cas') n.id = 'extra_coef'; Object.values(n).forEach(swap); } };
+  swap(c.formulas);
+  const loaded = contract.load(c);
+  const reaching = loaded.variants.filter((v) => presets.reachedCoefficients(loaded, v).has('extra_coef'));
+  assert.deepEqual(reaching, ['cas'], 'the swapped coefficient is read by the cas column only');
+  const scenario = (expected, rows) => ({ values: { inserts_per_month: rows }, locks: [], expected_extrapolated: expected });
+  // Undeclared: a problem. Declared for the variant that reaches it: reported as declared, not as a problem.
+  assert.match(presets.coverageProblems(loaded, scenario({}, 500)).join('\n'), /coefficient extra_coef: inserts_per_month = 500 is outside/);
+  const ok = presets.coverageReport(loaded, scenario({ cas: ['extra_coef'] }, 500));
+  assert.deepEqual(ok.problems, []);
+  assert.deepEqual(ok.declared, ['coefficient extra_coef: inserts_per_month = 500 is outside [1000, 2000] (declared)']);
+  // Declared for a variant that does not read it: still a problem.
+  assert.match(presets.coverageProblems(loaded, scenario({ ebs: ['extra_coef'] }, 500)).join('\n'), /coefficient extra_coef: inserts_per_month = 500 is outside/);
+  // A declaration that is not out of range is a problem, so declarations stay true.
+  assert.match(presets.coverageProblems(loaded, scenario({ cas: ['extra_coef'] }, 1500)).join('\n'), /declared extrapolation cas:extra_coef is not out of range/);
+  assert.match(presets.coverageProblems(loaded, scenario({ s3: ['no_such_coef'] }, 1500)).join('\n'), /declared extrapolation s3:no_such_coef/);
+});
+
 test('test_structure_only_prices_set_prices_missing', () => {
   // Preset ids are the billing contract's; `custom` is the page's editable copy.
   assert.deepEqual(Object.keys(presets.PRICES), [...LIVE.billing.presets.map((p) => p.id), 'custom']);

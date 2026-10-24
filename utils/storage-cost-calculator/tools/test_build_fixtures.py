@@ -236,7 +236,7 @@ class NodeCheckTest(unittest.TestCase):
             (out / NAME).write_text(json.dumps(bad))
             done = self.node_check(out)
             self.assertNotEqual(done.returncode, 0)
-            self.assertIn("r1 PutObject: measured 4, model 3 exactly", done.stdout)
+            self.assertRegex(done.stdout, r"r1 PutObject: measured 4, model 3 within [0-9.]+e-9")
             # An unmodelled measured op is a failure too, not a silent pass.
             extra = copy.deepcopy(fx)
             extra["measured_rows"].append({"caller": "r1", "op_kind": "HeadObject", "quantity": 2})

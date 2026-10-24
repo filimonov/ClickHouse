@@ -336,3 +336,17 @@ test('test_billing_rows_show_labels_and_given_percentages', () => {
   assert.ok(html.includes('(25.0% of <span data-value="23" data-kind="money">$23</span>)'), html);
   assert.equal(/<td>storage<\/td>/.test(html), false);
 });
+
+test('test_pinned_rule_badge_names_the_source_of_the_rule', () => {
+  const c = load((x) => {
+    const pin = (id, kind, ref) => x.registry.push(Object.assign(JSON.parse(JSON.stringify(x.registry.find((r) => r.id === 'replicas'))), { id, label: id, kind: 'pinned', default: 4, evidence: { kind, ref, version: '1' } }));
+    pin('ebs_pinned_by_provider', 'provider', 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-io-characteristics.html');
+    pin('pinned_by_clickhouse', 'source', 'src/Core/Settings.cpp:1');
+  });
+  const { parts } = page(base(), {}, c);
+  const field = (id) => { const at = parts.inputs.indexOf(`data-field="${id}"`); assert.ok(at >= 0, id); return parts.inputs.slice(at, parts.inputs.indexOf('data-field=', at + 1) >>> 0 || undefined); };
+  assert.ok(field('ebs_pinned_by_provider').includes('>provider rule<'), field('ebs_pinned_by_provider'));
+  assert.equal(field('ebs_pinned_by_provider').includes('fixed by ClickHouse'), false);
+  assert.ok(field('pinned_by_clickhouse').includes('>fixed by ClickHouse<'));
+  assert.equal(field('pinned_by_clickhouse').includes('provider rule'), false);
+});

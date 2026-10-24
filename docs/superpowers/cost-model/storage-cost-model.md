@@ -76,11 +76,11 @@ number. Request prices come from the billing preset `aws-us-east-1` (AWS price l
 
 ## Review {#review}
 
-Codex (`gpt-6-astra`, high effort, one round) reviewed the calculator code against the contract-only rule and the state and closure rules. It reported 5 MAJOR and 2 MINOR findings. Each MAJOR was reproduced with a failing test first, except the first, which follows the spec.
+Codex (`gpt-6-astra`, high effort, one round) reviewed the calculator code against the contract-only rule and the state and closure rules. It reported 5 MAJOR and 2 MINOR findings. The first MAJOR is a spec question; each other MAJOR is closed with a named test.
 
 | Finding | Severity | Disposition |
 |---|---|---|
-| Rate unit conversion in `pipeline.js`, delta subtraction, bar-segment sums in `viewmodel.js` are arithmetic outside the contract | MAJOR | Not reproduced as a violation. Rate conversion parses an input (§4.2: rate with unit selector, month = 730 h). A delta is a difference of two contract totals (§4.5). A bar segment groups billed lines by unit class and adds no new number. No change. |
+| Rate unit conversion in `pipeline.js`, delta subtraction, bar-segment sums in `viewmodel.js` are arithmetic outside the contract | MAJOR | Not a violation. Rate conversion parses an input (§4.2, the unit selector: month = 730 h). A delta is a difference of two contract totals, an output of the model (§4.5, deltas as outputs). A bar segment is display grouping the contract does not evaluate. No change. |
 | `allocate` re-bills each cell with the default outcome mix, so cell money disagrees with the billed total | MAJOR | Closed. `allocate` takes the outcome mix of the aggregate bill. Test `test_allocation_keeps_the_outcome_mix`. |
 | An operation whose families are all `not_applicable` is still evaluated and billed | MAJOR | Closed. `evaluateVariant` skips such an operation. Test `test_all_not_applicable_operation_contributes_nothing`. |
 | Extrapolation is lost through registry derivations and table coefficients | MAJOR | Closed. Derived values carry the flag into every `input` node that reads them. Table coefficients keep `validity` and lookups apply it. Test `test_extrapolation_survives_derivations_and_table_validity`. |

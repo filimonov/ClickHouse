@@ -303,7 +303,10 @@ test('test_out_of_range_note_once_per_param', () => {
     const vm = vmod.build(pipeline.run(live, r0.inputs, preset, {}), live, r0.fields, r0.lockOrder, { pricePreset: preset });
     return vm.notes.filter((n) => n.kind === 'out_of_range');
   };
-  const domains = presets.validityDomains(live).filter((d) => d.param === 'insert_rows');
+  // Coefficients no cell reads raise no note.
+  const reached = presets.reachedCoefficients(live);
+  const coefIds = new Set(live.coefficients.map((c) => c.id));
+  const domains = presets.validityDomains(live).filter((d) => d.param === 'insert_rows' && (!coefIds.has(d.id) || reached.has(d.id)));
   const fmt = (n) => n.toLocaleString('en-US');
   const range = (d) => `[${fmt(d.range[0])}, ${fmt(d.range[1])}]`;
   // 2,000,000 is above the 1,000-100,000, 1,000-400,000 and 1,000-600,000 maxima: several owners with different ranges, one note.
@@ -407,4 +410,19 @@ test('test_every_domain_operation_has_a_label', () => {
     for (const v of x.variants) x.applicability[v].mystery = Object.fromEntries(x.families.map((f) => [f, 'supported']));
   });
   assert.match(view({}, { contract: odd }).vm.problems.join('\n'), /operation mystery has no label in viewmodel\.js/);
+});
+
+test('test_out_of_range_notes_skip_coefficients_no_cell_reads', () => {
+  const withCoef = (id) => load((c) => {
+    c.coefficients.push({ id, kind: 'scalar', value: 1, dim: 'count', validity: { inserts_per_month: [0, 100] }, status: 'ok', evidence: { kind: 'measured', ref: 'fixture:extra' } });
+  });
+  const notes = (c) => view({ inserts_per_month: 500 }, { contract: c }).vm.notes.filter((n) => n.kind === 'out_of_range' && n.owners.some((o) => /extra_coef/.test(o)));
+  assert.deepEqual(notes(withCoef('extra_coef')), [], 'no cell reads it');
+  // The same coefficient in a cell does warn.
+  const read = load((c) => {
+    c.coefficients.push({ id: 'extra_coef', kind: 'scalar', value: 1, dim: 'count', validity: { inserts_per_month: [0, 100] }, status: 'ok', evidence: { kind: 'measured', ref: 'fixture:extra' } });
+    const swap = (n) => { if (n && typeof n === 'object') { if (n.kind === 'coef' && n.id === 'puts_per_insert_cas') n.id = 'extra_coef'; Object.values(n).forEach(swap); } };
+    swap(c.formulas);
+  });
+  assert.equal(notes(read).length, 1);
 });

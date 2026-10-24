@@ -40,6 +40,8 @@
         async_insert: '1', shape: 'narrow', merge_size_ratio: 256,
       },
       locks: ['ingest_rate', 'retention_days'],
+      // 1,000-row inserts lie below the EBS write-bytes validity; the page shows the dependent EBS numbers as extrapolated.
+      expected_extrapolated: { ebs: ['io_bytes_per_op', 'op_write_bytes'] },
     },
     // Analytics warehouse loaded in batches: 10 TiB kept one year, so ingest is derived (~28 GiB/day), two replicas.
     // A loader sends 100,000-row native inserts, one every 20 s: 10,240 GiB / 365 d = 28 GiB/day over 4,320 inserts
@@ -202,17 +204,17 @@
     return copy;
   }
 
-  // Every validity domain in the contract: coefficients and registry rows. Returns [{owner, param, range}].
+  // Every validity domain in the contract: coefficients and registry rows. Returns [{id, owner, param, range}].
   function validityDomains(contract) {
     const out = [];
-    for (const c of contract.coefficients) for (const [param, range] of Object.entries(c.validity || {})) out.push({ owner: `coefficient ${c.id}`, param, range });
-    for (const q of contract.registry) for (const [param, range] of Object.entries(q.validity || {})) out.push({ owner: `registry ${q.id}`, param, range });
+    for (const c of contract.coefficients) for (const [param, range] of Object.entries(c.validity || {})) out.push({ id: c.id, owner: `coefficient ${c.id}`, param, range });
+    for (const q of contract.registry) for (const [param, range] of Object.entries(q.validity || {})) out.push({ id: q.id, owner: `registry ${q.id}`, param, range });
     return out;
   }
 
   // Ids of the coefficients and tables the page can read for this contract: every `coef`/`lookup` node in a cell of
-  // any variant, followed through the registry derivations of the inputs those cells read.
-  function reachedCoefficients(contract) {
+  // any variant (or of `variant` alone), followed through the registry derivations of the inputs those cells read.
+  function reachedCoefficients(contract, variant) {
     const ids = new Set();
     const seenInputs = new Set();
     const rules = new Map(contract.registry.filter((q) => q.kind === 'derivation' && q.rule).map((q) => [q.id, q.rule]));
@@ -227,17 +229,21 @@
       }
       for (const v of Object.values(node)) visit(v);
     };
-    for (const v of contract.variants) for (const cell of Object.values((contract.formulas || {})[v] || {})) visit(cell);
+    for (const v of variant ? [variant] : contract.variants) for (const cell of Object.values((contract.formulas || {})[v] || {})) visit(cell);
     return ids;
   }
 
-  // Problems that keep a scenario from being "within measured coverage": an id that is not a registry input, a lock
-  // outside a precedence group, a value for a derived member, a value the pipeline rejects, or an effective value
-  // (scenario over registry defaults, derived members included) outside the validity domain of a coefficient the
-  // scenario reaches (see `reachedCoefficients`; `reported_only` coefficients are skipped) or of a registry row. A
-  // validity parameter the pipeline does not resolve cannot be checked and is a problem too.
-  function coverageProblems(contract, scenario) {
+  // Coverage of a scenario: `problems` keep it from being "within measured coverage" (an id that is not a registry
+  // input, a lock outside a precedence group, a value for a derived member, a value the pipeline rejects, or an
+  // effective value (scenario over registry defaults, derived members included) outside the validity domain of a
+  // coefficient the scenario reaches (see `reachedCoefficients`; `reported_only` coefficients are skipped) or of a
+  // registry row). A validity parameter the pipeline does not resolve cannot be checked and is a problem too.
+  // `scenario.expected_extrapolated` ({variant: [coefficient ids]}) declares coefficients that lie out of range on
+  // purpose: such a coefficient is listed in `declared` instead of `problems`. A declaration must stay true, so a
+  // declared coefficient the variant does not reach, or one that is in range, is a problem.
+  function coverageReport(contract, scenario) {
     const problems = [];
+    const declared = [];
     const res = pipeline().resolveInputs(contract, scenario.values, scenario.locks, {});
     problems.push(...res.problems);
     const byId = new Map(contract.registry.map((q) => [q.id, q]));
@@ -247,16 +253,33 @@
       else if (res.fields[id] && res.fields[id].derived) problems.push(`value ${id} is set but derived from its locked partners`);
     }
     const reached = reachedCoefficients(contract);
-    const skipped = new Set(contract.coefficients.filter((c) => c.reported_only || !reached.has(c.id)).map((c) => `coefficient ${c.id}`));
+    const reachedBy = new Map(contract.variants.map((v) => [v, reachedCoefficients(contract, v)]));
+    const coefIds = new Set(contract.coefficients.map((c) => c.id));
+    const skipped = new Set(contract.coefficients.filter((c) => c.reported_only || !reached.has(c.id)).map((c) => c.id));
+    const expected = scenario.expected_extrapolated || {};
+    const seenOut = new Set(); // `${variant}:${coefficient}` pairs found out of range
     for (const d of validityDomains(contract)) {
-      if (skipped.has(d.owner)) continue;
+      const id = d.id;
+      // A registry row that mirrors a coefficient follows that coefficient's reach.
+      if (coefIds.has(id) && skipped.has(id)) continue;
       if (!res.inputs.has(d.param)) { problems.push(`${d.owner}: validity parameter ${d.param} has no value to check`); continue; }
       const v = res.inputs.get(d.param);
-      if (typeof v !== 'number' || v < d.range[0] || v > d.range[1]) problems.push(`${d.owner}: ${d.param} = ${JSON.stringify(v)} is outside [${d.range[0]}, ${d.range[1]}]`);
+      if (typeof v === 'number' && v >= d.range[0] && v <= d.range[1]) continue;
+      const text = `${d.owner}: ${d.param} = ${JSON.stringify(v)} is outside [${d.range[0]}, ${d.range[1]}]`;
+      const variants = coefIds.has(id) ? contract.variants.filter((x) => reachedBy.get(x).has(id)) : [];
+      if (variants.length && variants.every((x) => (expected[x] || []).includes(id))) {
+        for (const x of variants) seenOut.add(`${x}:${id}`);
+        declared.push(`${text} (declared)`);
+      } else problems.push(text);
     }
-    return problems;
+    for (const [x, ids] of Object.entries(expected)) {
+      for (const id of ids) if (!seenOut.has(`${x}:${id}`)) problems.push(`declared extrapolation ${x}:${id} is not out of range for a coefficient that variant reaches`);
+    }
+    return { problems, declared };
   }
 
-  SCC.presets = { SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, reachedCoefficients, validityDomains };
+  function coverageProblems(contract, scenario) { return coverageReport(contract, scenario).problems; }
+
+  SCC.presets = { SCENARIOS, SWEEP_INPUTS, LADDER_FACTORS, ladderFor, ruleLabel, PRICES, priceLabel, priceFields, TRANSFER_LABELS, resolvePrice, coverageProblems, coverageReport, reachedCoefficients, validityDomains };
   if (typeof module !== 'undefined' && module.exports) module.exports = SCC.presets;
 })(typeof window !== 'undefined' ? window : globalThis);
