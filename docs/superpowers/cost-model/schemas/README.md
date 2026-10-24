@@ -11,11 +11,23 @@ doc_type: 'reference'
 
 Seven artifact shapes, each versioned by its `schema` field (`<name>/1`). The validators in
 `utils/storage-cost-calculator/tools/artifacts.py` are the source of truth. The `*.schema.json` files (JSON Schema
-2020-12) document the same shapes for readers and are not generated from, or interpreted by, the validators.
+2020-12) document the same shapes for readers; they are not generated from the validators.
+`test_committed_artifacts.py` runs every committed registry, coverage, formulas, measurement, prediction and experiment
+file, and a sample of ledger rows, through both, so the two cannot drift apart. It needs the `jsonschema` package.
 
 ```bash
-python3 utils/storage-cost-calculator/tools/test_artifacts.py
+cd utils/storage-cost-calculator/tools && python3 -m unittest test_artifacts test_committed_artifacts
 ```
+
+## Versioning {#versioning}
+
+- **Additive change, same version.** A new optional field, a new enum value a reader may ignore, or a new optional
+  section stays under `<name>/1`. Update the validator, the schema document and this README in the same commit.
+- **Breaking change, next version.** Removing or renaming a field, making a field required, changing a field's type or
+  meaning, or narrowing an enum moves to `<name>/2`. Readers keep accepting `/1` until every committed artifact is
+  rewritten.
+- `billing/1` has no schema document; `closure_check.billing` is its only shape validator. `coefficients.json` has
+  neither and is checked through the formulas that read it.
 
 ## Artifacts {#artifacts}
 
@@ -40,7 +52,7 @@ Every validator returns a list of `"<path>: <message>"` strings. An empty list m
 - **Measurement identity.** `binary_sha256` is the executed binary, `binary_download_sha256` the downloaded one (null when no `SHA256SUMS` lists it); a self-extracting `clickhouse` differs between the two. `commit` is the binary's source commit, `rig_commit` the rig's.
 - **Measurement sections.** `window.open_attempts` lists workload attempts that had no row at the window end, and `ledger.complete` is false when it is non-empty. Counts include `accepted_dropped` (upstream ok, reply lost) and `upstream_4xx`. `inventory.note` (optional) says why `initial` is `declared`; `inventory.reclassified` lists the `reclassify` calls. A clipped `local.*.trace` carries `window`, `outside`, `files` and `crossing`.
 - **Prediction.** Each expected count is an integer or `{"min","max"}`; a range may add `basis` (`derived` or `assumption`) with the `reason`, so an assumed bound is never read as a source derivation. Callers and ops come from the ledger enums.
-- **Coverage.** Evidence rows with role `holdout` or `validation` need a non-null `prediction_commit`. Only `fit` rows may carry null. Each case declares `duration_s`, its expected pass duration (`0..timeout_s`); `cost estimate` budgets every pass at `max(measured median, duration_s)`.
+- **Coverage.** Evidence rows with role `holdout` or `validation` need a non-null `prediction_commit`. Only `fit` rows may carry null. A row's `measurement_ids` name its own `policy`; a row that applies another policy's records to its variant names that policy in `borrowed_from`. Each case declares `duration_s`, its expected pass duration (`0..timeout_s`); `cost estimate` budgets every pass at `max(measured median, duration_s)`.
 - **Registry.** Ids are unique. `enum` is required for `value_type` `enum`, `table` for `table`. A `rule` exists exactly for `derivation`. Precedence groups never share members. `default_locked` and `rules` keys are group members. Set members, group members and table index ids must be registered quantities.
 
 ## Formulas grammar v1 {#formulas-grammar}

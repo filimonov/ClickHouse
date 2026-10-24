@@ -998,392 +998,54 @@
           "type": "object",
           "properties": {
             "effective_counts": {
-              "type": "object"
+              "$ref": "#/$defs/ok/properties/effective_counts"
             },
             "effective_settings": {
-              "type": "object",
-              "properties": {
-                "table": {
-                  "type": "object"
-                },
-                "query": {
-                  "type": "object"
-                },
-                "server": {
-                  "type": "object"
-                }
-              },
-              "required": [
-                "table",
-                "query",
-                "server"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/ok/properties/effective_settings"
             },
             "config_hashes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "$ref": "#/$defs/ok/properties/config_hashes"
             },
             "window": {
-              "type": "object",
-              "properties": {
-                "start_seq": {
-                  "type": "integer"
-                },
-                "end_seq": {
-                  "type": "integer"
-                },
-                "t_start_us": {
-                  "type": "integer"
-                },
-                "t_end_us": {
-                  "type": "integer"
-                },
-                "crossing": {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              },
-              "required": [
-                "start_seq",
-                "end_seq",
-                "t_start_us",
-                "t_end_us",
-                "crossing"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/ok/properties/window"
             },
             "ledger": {
-              "type": "object",
-              "properties": {
-                "foreground": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "$ref": "#/$defs/Counts"
-                    }
-                  }
-                },
-                "maintenance": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "$ref": "#/$defs/Counts"
-                    }
-                  }
-                },
-                "setup": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "$ref": "#/$defs/Counts"
-                    }
-                  }
-                },
-                "teardown": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "$ref": "#/$defs/Counts"
-                    }
-                  }
-                },
-                "rig": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/$defs/Counts"
-                  }
-                }
-              },
-              "required": [
-                "foreground",
-                "maintenance",
-                "setup",
-                "teardown",
-                "rig"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/ok/properties/ledger"
             },
             "events": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "number"
-                }
-              }
+              "$ref": "#/$defs/ok/properties/events"
             },
             "proc_io": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "rchar": {
-                    "type": "integer"
-                  },
-                  "wchar": {
-                    "type": "integer"
-                  },
-                  "syscr": {
-                    "type": "integer"
-                  },
-                  "syscw": {
-                    "type": "integer"
-                  },
-                  "read_bytes": {
-                    "type": "integer"
-                  },
-                  "write_bytes": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "rchar",
-                  "wchar",
-                  "syscr",
-                  "syscw",
-                  "read_bytes",
-                  "write_bytes"
-                ],
-                "additionalProperties": false
-              }
+              "$ref": "#/$defs/ok/properties/proc_io"
             },
             "generations": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "pid": {
-                      "type": "integer"
-                    },
-                    "t_start_us": {
-                      "type": "integer"
-                    },
-                    "t_end_us": {
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "pid",
-                    "t_start_us",
-                    "t_end_us"
-                  ],
-                  "additionalProperties": false
-                }
-              }
+              "$ref": "#/$defs/ok/properties/generations"
             },
             "local": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "paths": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "peak_allocated_bytes": {
-                    "type": "integer"
-                  },
-                  "samples": {
-                    "type": "array",
-                    "items": {
-                      "type": "array",
-                      "prefixItems": [
-                        {
-                          "type": "number"
-                        },
-                        {
-                          "type": "number"
-                        }
-                      ],
-                      "minItems": 2,
-                      "maxItems": 2
-                    }
-                  },
-                  "device": {
-                    "type": "string"
-                  },
-                  "fs": {
-                    "type": "string"
-                  },
-                  "attribution": {
-                    "const": "process_io"
-                  },
-                  "trace": {
-                    "anyOf": [
-                      {
-                        "type": "object",
-                        "properties": {
-                          "tool": {
-                            "const": "strace"
-                          },
-                          "syscalls": {
-                            "type": "object",
-                            "additionalProperties": {
-                              "type": "object",
-                              "properties": {
-                                "count": {
-                                  "type": "integer"
-                                },
-                                "bytes": {
-                                  "type": "integer"
-                                },
-                                "size_histogram": {
-                                  "type": "object",
-                                  "additionalProperties": {
-                                    "type": "integer"
-                                  }
-                                }
-                              },
-                              "required": [
-                                "count",
-                                "bytes",
-                                "size_histogram"
-                              ],
-                              "additionalProperties": false
-                            }
-                          }
-                        },
-                        "required": [
-                          "tool",
-                          "syscalls"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "limitations": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "required": [
-                  "paths",
-                  "peak_allocated_bytes",
-                  "samples",
-                  "device",
-                  "fs",
-                  "attribution",
-                  "trace",
-                  "limitations"
-                ],
-                "additionalProperties": false
-              }
+              "$ref": "#/$defs/ok/properties/local"
             },
             "interserver": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "to_target": {
-                    "type": "integer"
-                  },
-                  "from_target": {
-                    "type": "integer"
-                  },
-                  "connections_total": {
-                    "type": "integer"
-                  },
-                  "open_at_end": {
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "to_target",
-                  "from_target",
-                  "connections_total",
-                  "open_at_end"
-                ],
-                "additionalProperties": false
-              }
+              "$ref": "#/$defs/ok/properties/interserver"
             },
             "inventory": {
-              "type": "object",
-              "properties": {
-                "initial": {
-                  "enum": [
-                    "empty_verified",
-                    "declared"
-                  ]
-                },
-                "byte_hours": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "object",
-                    "properties": {
-                      "lower": {
-                        "type": "number"
-                      },
-                      "upper": {
-                        "type": "number"
-                      }
-                    },
-                    "required": [
-                      "lower",
-                      "upper"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "uncertain_identities": {
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "initial",
-                "byte_hours",
-                "uncertain_identities"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/ok/properties/inventory"
             },
             "observations": {
-              "type": "object"
+              "$ref": "#/$defs/ok/properties/observations"
             },
             "assertions": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "object",
-                "properties": {
-                  "expected": {},
-                  "actual": {},
-                  "ok": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "expected",
-                  "actual",
-                  "ok"
-                ],
-                "additionalProperties": false
-              }
+              "$ref": "#/$defs/ok/properties/assertions"
             },
             "wall_s": {
-              "type": "number"
+              "$ref": "#/$defs/ok/properties/wall_s"
             },
             "unit_count": {
-              "type": "number"
+              "$ref": "#/$defs/ok/properties/unit_count"
             }
           },
           "required": [],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Each section has the shape of the same section of an ok record."
         },
         "cleanup": {
           "$ref": "#/$defs/Cleanup"
