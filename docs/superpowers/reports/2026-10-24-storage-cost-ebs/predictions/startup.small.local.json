@@ -1,0 +1,33 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "startup.small",
+  "policy": "local",
+  "inputs": {
+    "role": "holdout",
+    "quantity": "io_bytes_per_op[recovery, write]",
+    "unit": "net /proc write_bytes per restart",
+    "baseline": "idle r1 rate of io-sizes.idle in the same report run x window wall_s",
+    "holdout_rule": "the hold-out passes when |value - fit mean| <= 2 x largest |fit record - fit mean| + 10 % of the fit + 5 % of the fit (ebs_fit.SCALAR_SLACK applied to the per-unit value); fit and hold-out come from the same run, the rule is fixed here before it"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "part load reads columns, checksums, granularity, index, rows",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeDataPart.cpp",
+      "line": 1504
+    },
+    {
+      "claim": "the disk access check writes, reads and removes a probe file at startup",
+      "path": "tmp/src-26.8/src/Disks/IDisk.cpp",
+      "line": 254
+    }
+  ],
+  "prediction_commit": "pending"
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "drop.partition-2",
+  "policy": "local",
+  "inputs": {
+    "role": "holdout",
+    "quantity": "io_bytes_per_op[deletes, write]",
+    "unit": "net /proc write_bytes per dropped part",
+    "baseline": "idle r1 rate of io-sizes.idle in the same report run x window wall_s",
+    "holdout_rule": "the hold-out passes when |value - fit mean| <= 2 x largest |fit record - fit mean| + 10 % of the fit + 5 % of the fit (ebs_fit.SCALAR_SLACK applied to the per-unit value); fit and hold-out come from the same run, the rule is fixed here before it"
+  },
+  "expected": {
+    "foreground": {},
+    "observations": {}
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "a disk transaction writes every part file as its own blob",
+      "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorageTransaction.cpp",
+      "line": 274
+    },
+    {
+      "claim": "a Wide part writes one .bin per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 224
+    },
+    {
+      "claim": "and one marks file per substream",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 140
+    },
+    {
+      "claim": "a Compact part writes all columns into data.bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterCompact.cpp",
+      "line": 53
+    }
+  ],
+  "prediction_commit": "pending"
+}
