@@ -1,0 +1,42 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "boundaries.merge-cross",
+  "card": "boundaries",
+  "case_id": "merge-cross",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "kind": "merge",
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "rows": 157287,
+    "inserts": 2,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS a, a % 1000 AS b, k * 7 AS c, intDiv(k, 3) AS d FROM numbers({rows})",
+    "derived_from": {
+      "min_bytes_for_wide_part": 10485760
+    },
+    "optimize": "OPTIMIZE TABLE {table} FINAL"
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 600,
+  "description": "Two inserts of 6/10 of min_bytes_for_wide_part each (Compact), then OPTIMIZE FINAL: the merge sums the inputs' uncompressed bytes past the threshold, so the result is Wide."
+}

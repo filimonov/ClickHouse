@@ -1,0 +1,45 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "async-inserts.bursty",
+  "card": "async-inserts",
+  "case_id": "bursty",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 1,
+  "mode": "stochastic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {
+      "async_insert": 1,
+      "wait_for_async_insert": 1,
+      "async_insert_busy_timeout_ms": 200
+    },
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "rows": 100,
+    "inserts": 1000,
+    "insert": "INSERT INTO {table} (k, a, b, c, d) VALUES {values}",
+    "pattern": "bursty",
+    "bursts": 10,
+    "burst_size": 100,
+    "pause_s": 2
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "10 bursts of 100 concurrent inserts of 100 rows, 2 s apart, async_insert = 1 with a 200 ms busy timeout; natural merges stopped."
+}

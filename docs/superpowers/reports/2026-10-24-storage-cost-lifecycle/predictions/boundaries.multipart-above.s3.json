@@ -1,0 +1,192 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "boundaries.multipart-above",
+  "policy": "s3",
+  "inputs": {
+    "x_bin_bytes": 50331656,
+    "requests": "multipart",
+    "other_objects": 9
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 9,
+        "CreateMultipartUpload": 1,
+        "UploadPart": 3,
+        "CompleteMultipartUpload": 1
+      }
+    },
+    "observations": {
+      "parts": [
+        {
+          "name": "all_1_1_0",
+          "part_type": "Wide",
+          "rows": 6289057,
+          "level": 0,
+          "data_uncompressed_bytes": 50312456,
+          "active": 1
+        }
+      ],
+      "upload_part_sizes": [
+        [
+          33554432,
+          16777216,
+          8
+        ]
+      ],
+      "large_put_sizes": []
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "the first upload buffer is clamp(max_single_part_upload_size, min, max part size)",
+      "path": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp",
+      "line": 51
+    },
+    {
+      "claim": "max_single_part_upload_size defaults to 32 MiB",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 26
+    },
+    {
+      "claim": "later buffers are min_upload_part_size",
+      "path": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp",
+      "line": 52
+    },
+    {
+      "claim": "min_upload_part_size defaults to 16 MiB",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 24
+    },
+    {
+      "claim": "the upload becomes multipart only when a second buffer is detached",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 154
+    },
+    {
+      "claim": "one buffer of at most max_single_part_upload_size is a single PutObject",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "a block is cut before a granule once it holds min_compress_block_size bytes",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterWide.cpp",
+      "line": 473
+    },
+    {
+      "claim": "min_compress_block_size defaults to 65536 = one 8192-row UInt64 granule",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 131
+    },
+    {
+      "claim": "index_granularity 8192 rows (an 8-byte row stays far below index_granularity_bytes)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 72
+    },
+    {
+      "claim": "each compressed block has a 9-byte header",
+      "path": "tmp/src-26.8/src/Compression/CompressionInfo.h",
+      "line": 17
+    },
+    {
+      "claim": "and a 16-byte CityHash128 checksum: CODEC(NONE) payload + 25 bytes per block",
+      "path": "tmp/src-26.8/src/Compression/CompressedWriteBuffer.cpp",
+      "line": 39
+    },
+    {
+      "claim": "the squash minimum raised to the row count keeps the insert one part",
+      "path": "tmp/src-26.8/src/Interpreters/Squashing.cpp",
+      "line": 395
+    },
+    {
+      "claim": "Wide marks are .cmrk2, one file per column next to its .bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 96
+    },
+    {
+      "claim": "a Wide part also writes columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 705
+    },
+    {
+      "claim": "primary.cidx only when the table has a primary key",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed (auto statistics are on for every column)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to basic, uniq_v2",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt when the writer has substreams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "every file is one object: one PutObject up to the first upload buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "zero-copy replication is off: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "otherwise the part is Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6404
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}

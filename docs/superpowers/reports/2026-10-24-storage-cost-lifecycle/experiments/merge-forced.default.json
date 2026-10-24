@@ -1,0 +1,38 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "merge-forced.default",
+  "card": "merge-forced",
+  "case_id": "default",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS a, a % 1000 AS b, k * 7 AS c, intDiv(k, 3) AS d FROM numbers({rows})",
+    "rows": 100000,
+    "inserts": 8,
+    "optimize": "OPTIMIZE TABLE {table} FINAL"
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 900,
+  "description": "8 inserts of 100 000 rows with natural merges stopped, then OPTIMIZE FINAL: one merge of all 8 parts."
+}

@@ -1,0 +1,44 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "boundaries.multipart-above",
+  "card": "boundaries",
+  "case_id": "multipart-above",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {
+      "min_insert_block_size_rows": 6289057
+    },
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "kind": "multipart",
+    "columns": "x UInt64 CODEC(NONE)",
+    "order_by": "tuple()",
+    "row_bytes": 8,
+    "rows": 6289057,
+    "inserts": 1,
+    "insert": "INSERT INTO {table} SELECT sipHash64(number, {seed}) FROM numbers({rows})",
+    "derived_from": {
+      "multipart_first_part_bytes": 33554432,
+      "multipart_next_part_bytes": 16777216
+    }
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 600,
+  "description": "One column file of the first buffer plus one second buffer (16777216 B) plus 8 bytes: a multipart upload of three parts."
+}

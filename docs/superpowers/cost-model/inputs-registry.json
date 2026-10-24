@@ -1,6 +1,6 @@
 {
   "schema": "registry/1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "quantities": [
     {
       "id": "data_bytes",
@@ -161,31 +161,6 @@
       ],
       "table": null,
       "default": "narrow",
-      "rule": null,
-      "coef": null,
-      "validity": null,
-      "evidence": {
-        "kind": "assumed",
-        "ref": "preset default",
-        "version": "0.1.0"
-      },
-      "hint": null,
-      "status": "ok"
-    },
-    {
-      "id": "part_type",
-      "block": "schema",
-      "label": "Part type",
-      "kind": "input",
-      "scope": "cluster",
-      "unit": "",
-      "value_type": "enum",
-      "enum": [
-        "compact",
-        "wide"
-      ],
-      "table": null,
-      "default": "wide",
       "rule": null,
       "coef": null,
       "validity": null,
@@ -661,6 +636,3530 @@
         "version": "0.1.0"
       },
       "hint": null,
+      "status": "ok"
+    },
+    {
+      "id": "min_bytes_for_wide_part",
+      "block": "schema",
+      "label": "Minimum uncompressed bytes for a Wide part",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 10485760,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:78",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'min_bytes_for_wide_part'",
+        "mapping": {
+          "min_bytes_for_wide_part": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "min_rows_for_wide_part",
+      "block": "schema",
+      "label": "Minimum rows for a Wide part",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:85",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'min_rows_for_wide_part'",
+        "mapping": {
+          "min_rows_for_wide_part": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "min_level_for_wide_part",
+      "block": "schema",
+      "label": "Minimum merge level for a Wide part",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:82",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'min_level_for_wide_part'",
+        "mapping": {
+          "min_level_for_wide_part": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "part_type_predicate",
+      "block": "schema",
+      "label": "Part type rule: a part is Compact when its uncompressed bytes < min_bytes_for_wide_part, its rows < min_rows_for_wide_part or its level < min_level_for_wide_part, else Wide. An insert measures the block in memory (Block::bytes); a merge sums the inputs' on-disk uncompressed column bytes, uses level max(input levels) + 1, and is Wide when any input is Wide. A mutation keeps the source type.",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "compact_if_any_below_minimum"
+      ],
+      "table": null,
+      "default": "compact_if_any_below_minimum",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6399",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT part_type, count(), sum(data_uncompressed_bytes) FROM system.parts WHERE active AND database = '<db>' AND table = '<table>' GROUP BY part_type",
+        "mapping": {
+          "part_type": "part_type of the active parts the rule produced"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "part_level",
+      "block": "schema",
+      "label": "Level of the part (0 for an inserted part)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp:735",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT level, count() FROM system.parts WHERE active AND database = '<db>' AND table = '<table>' GROUP BY level",
+        "mapping": {
+          "part_level": "level; inserted parts of a plain MergeTree are 0"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "part_bytes_uncompressed",
+      "block": "schema",
+      "label": "Uncompressed bytes of one inserted part",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "dim": "B",
+        "on_zero": "unavailable",
+        "a": {
+          "kind": "input",
+          "id": "insert_bytes_uncompressed",
+          "dim": "B"
+        },
+        "b": {
+          "kind": "input",
+          "id": "parts_per_insert",
+          "dim": "1"
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp:848",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT avg(bytes_uncompressed) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'NewPart'",
+        "mapping": {
+          "part_bytes_uncompressed": "avg(bytes_uncompressed); it adds marks and metadata files"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "part_rows",
+      "block": "schema",
+      "label": "Rows of one inserted part",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "div",
+        "dim": "count",
+        "on_zero": "unavailable",
+        "a": {
+          "kind": "input",
+          "id": "insert_rows",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "input",
+          "id": "parts_per_insert",
+          "dim": "1"
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp:915",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT avg(rows) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'NewPart'",
+        "mapping": {
+          "part_rows": "avg(rows)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "part_type",
+      "block": "schema",
+      "label": "Part type of an inserted part",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "compact",
+        "wide"
+      ],
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "enum:part_type",
+        "cond": {
+          "op": "<",
+          "a": {
+            "kind": "input",
+            "id": "part_bytes_uncompressed",
+            "dim": "B"
+          },
+          "b": {
+            "kind": "input",
+            "id": "min_bytes_for_wide_part",
+            "dim": "B"
+          }
+        },
+        "then": {
+          "kind": "const",
+          "value": "compact",
+          "dim": "enum:part_type"
+        },
+        "else": {
+          "kind": "branch",
+          "dim": "enum:part_type",
+          "cond": {
+            "op": "<",
+            "a": {
+              "kind": "input",
+              "id": "part_rows",
+              "dim": "count"
+            },
+            "b": {
+              "kind": "input",
+              "id": "min_rows_for_wide_part",
+              "dim": "count"
+            }
+          },
+          "then": {
+            "kind": "const",
+            "value": "compact",
+            "dim": "enum:part_type"
+          },
+          "else": {
+            "kind": "branch",
+            "dim": "enum:part_type",
+            "cond": {
+              "op": "<",
+              "a": {
+                "kind": "input",
+                "id": "part_level",
+                "dim": "count"
+              },
+              "b": {
+                "kind": "input",
+                "id": "min_level_for_wide_part",
+                "dim": "count"
+              }
+            },
+            "then": {
+              "kind": "const",
+              "value": "compact",
+              "dim": "enum:part_type"
+            },
+            "else": {
+              "kind": "const",
+              "value": "wide",
+              "dim": "enum:part_type"
+            }
+          }
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6403",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT part_type, count() FROM system.parts WHERE active AND level = 0 AND database = '<db>' AND table = '<table>' GROUP BY part_type",
+        "mapping": {
+          "part_type": "part_type (Compact or Wide)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_first_part_bytes",
+      "block": "inserts",
+      "label": "First upload buffer: an object up to this size is one PutObject, a larger one starts a multipart upload with a first part of this size",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 33554432,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp:51",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('s3_max_single_part_upload_size', 's3_min_upload_part_size', 's3_strict_upload_part_size', 's3_upload_part_size_multiply_factor', 's3_upload_part_size_multiply_parts_count_threshold')",
+        "mapping": {
+          "multipart_first_part_bytes": "clamp(s3_max_single_part_upload_size, s3_min_upload_part_size, s3_max_upload_part_size); a disk config <s3_...> key overrides",
+          "multipart_next_part_bytes": "s3_min_upload_part_size",
+          "multipart_growth_factor": "s3_upload_part_size_multiply_factor",
+          "multipart_growth_parts": "s3_upload_part_size_multiply_parts_count_threshold"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_next_part_bytes",
+      "block": "inserts",
+      "label": "Size of the second and later upload parts",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 16777216,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp:52",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('s3_max_single_part_upload_size', 's3_min_upload_part_size', 's3_strict_upload_part_size', 's3_upload_part_size_multiply_factor', 's3_upload_part_size_multiply_parts_count_threshold')",
+        "mapping": {
+          "multipart_first_part_bytes": "clamp(s3_max_single_part_upload_size, s3_min_upload_part_size, s3_max_upload_part_size); a disk config <s3_...> key overrides",
+          "multipart_next_part_bytes": "s3_min_upload_part_size",
+          "multipart_growth_factor": "s3_upload_part_size_multiply_factor",
+          "multipart_growth_parts": "s3_upload_part_size_multiply_parts_count_threshold"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_growth_parts",
+      "block": "inserts",
+      "label": "Upload parts between part-size growth steps",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 500,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/S3Defines.h:30",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('s3_max_single_part_upload_size', 's3_min_upload_part_size', 's3_strict_upload_part_size', 's3_upload_part_size_multiply_factor', 's3_upload_part_size_multiply_parts_count_threshold')",
+        "mapping": {
+          "multipart_first_part_bytes": "clamp(s3_max_single_part_upload_size, s3_min_upload_part_size, s3_max_upload_part_size); a disk config <s3_...> key overrides",
+          "multipart_next_part_bytes": "s3_min_upload_part_size",
+          "multipart_growth_factor": "s3_upload_part_size_multiply_factor",
+          "multipart_growth_parts": "s3_upload_part_size_multiply_parts_count_threshold"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_growth_factor",
+      "block": "inserts",
+      "label": "Part-size growth factor every multipart_growth_parts parts",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 2,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/S3Defines.h:29",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('s3_max_single_part_upload_size', 's3_min_upload_part_size', 's3_strict_upload_part_size', 's3_upload_part_size_multiply_factor', 's3_upload_part_size_multiply_parts_count_threshold')",
+        "mapping": {
+          "multipart_first_part_bytes": "clamp(s3_max_single_part_upload_size, s3_min_upload_part_size, s3_max_upload_part_size); a disk config <s3_...> key overrides",
+          "multipart_next_part_bytes": "s3_min_upload_part_size",
+          "multipart_growth_factor": "s3_upload_part_size_multiply_factor",
+          "multipart_growth_parts": "s3_upload_part_size_multiply_parts_count_threshold"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_sizing_rule",
+      "block": "inserts",
+      "label": "Upload sizing: WriteBufferFromS3 fills a first buffer of multipart_first_part_bytes; an object that fits it, even exactly, is one PutObject. A second buffer (multipart_next_part_bytes) starts the multipart upload; every multipart_growth_parts parts the part size grows by multipart_growth_factor (up to 5 GiB). The last part holds the remainder.",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "exp_buffers_single_put_up_to_first"
+      ],
+      "table": null,
+      "default": "exp_buffers_single_put_up_to_first",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp:180",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value FROM system.settings WHERE name IN ('s3_max_single_part_upload_size', 's3_min_upload_part_size', 's3_strict_upload_part_size', 's3_upload_part_size_multiply_factor', 's3_upload_part_size_multiply_parts_count_threshold')",
+        "mapping": {
+          "multipart_first_part_bytes": "clamp(s3_max_single_part_upload_size, s3_min_upload_part_size, s3_max_upload_part_size); a disk config <s3_...> key overrides",
+          "multipart_next_part_bytes": "s3_min_upload_part_size",
+          "multipart_growth_factor": "s3_upload_part_size_multiply_factor",
+          "multipart_growth_parts": "s3_upload_part_size_multiply_parts_count_threshold"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "object_bytes",
+      "block": "inserts",
+      "label": "Size of one object written to S3 (one part file)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1048576,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT part_type, column, column_data_compressed_bytes FROM system.parts_columns WHERE active AND database = '<db>' AND table = '<table>' ORDER BY column_data_compressed_bytes DESC LIMIT 20",
+        "mapping": {
+          "object_bytes": "column_data_compressed_bytes of a Wide part column (one file each); a Compact part writes all columns into data.bin, see data_compressed_bytes in system.parts"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "multipart_parts",
+      "block": "inserts",
+      "label": "Data-carrying upload requests for one object: 1 (PutObject) up to the first buffer, else 1 + ceil((size - first) / next) UploadPart requests",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "branch",
+        "dim": "count",
+        "cond": {
+          "op": "<=",
+          "a": {
+            "kind": "input",
+            "id": "object_bytes",
+            "dim": "B"
+          },
+          "b": {
+            "kind": "input",
+            "id": "multipart_first_part_bytes",
+            "dim": "B"
+          }
+        },
+        "then": {
+          "kind": "const",
+          "value": 1,
+          "dim": "count"
+        },
+        "else": {
+          "kind": "add",
+          "dim": "count",
+          "a": {
+            "kind": "const",
+            "value": 1,
+            "dim": "count"
+          },
+          "b": {
+            "kind": "ceil_to",
+            "dim": "count",
+            "x": {
+              "kind": "div",
+              "dim": "count",
+              "on_zero": "unavailable",
+              "a": {
+                "kind": "sub",
+                "dim": "B",
+                "a": {
+                  "kind": "input",
+                  "id": "object_bytes",
+                  "dim": "B"
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "multipart_first_part_bytes",
+                  "dim": "B"
+                }
+              },
+              "b": {
+                "kind": "input",
+                "id": "multipart_next_part_bytes",
+                "dim": "B"
+              }
+            },
+            "step": {
+              "kind": "const",
+              "value": 1,
+              "dim": "count"
+            }
+          }
+        }
+      },
+      "coef": null,
+      "validity": {
+        "object_bytes": [
+          0,
+          8405385216
+        ]
+      },
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Common/BufferAllocationPolicy.cpp:72",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT count() FROM system.blob_storage_log WHERE event_type = 'MultiPartUploadWrite' AND event_date = today()",
+        "mapping": {
+          "multipart_parts": "parts per upload: MultiPartUploadWrite rows / MultiPartUploadCreate rows"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "min_insert_block_size_rows",
+      "block": "inserts",
+      "label": "Insert squashing emits a block once it holds this many rows",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1048449,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:209",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'min_insert_block_size_rows'",
+        "mapping": {
+          "min_insert_block_size_rows": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "min_insert_block_size_bytes",
+      "block": "inserts",
+      "label": "Insert squashing emits a block once it holds this many bytes",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 268402944,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:232",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'min_insert_block_size_bytes'",
+        "mapping": {
+          "min_insert_block_size_bytes": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_rows",
+      "block": "inserts",
+      "label": "Rows per INSERT",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 100000,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(written_rows) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, '<db>.<table>') AND event_date >= today() - 7",
+        "mapping": {
+          "insert_rows": "avg(written_rows)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_bytes_uncompressed",
+      "block": "inserts",
+      "label": "Uncompressed bytes per INSERT",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 10485760,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(written_bytes) FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, '<db>.<table>') AND event_date >= today() - 7",
+        "mapping": {
+          "insert_bytes_uncompressed": "avg(written_bytes)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "partitions_per_insert",
+      "block": "inserts",
+      "label": "Partitions one INSERT touches",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(c) FROM (SELECT query_id, uniqExact(partition_id) AS c FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'NewPart' GROUP BY query_id)",
+        "mapping": {
+          "partitions_per_insert": "avg(c)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "insert_rate",
+      "block": "inserts",
+      "label": "INSERT queries per second, all clients together",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1/s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 1,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT count() / 86400 FROM system.query_log WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, '<db>.<table>') AND event_date = yesterday()",
+        "mapping": {
+          "insert_rate": "count() / 86400"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert",
+      "block": "inserts",
+      "label": "Async inserts on (async_insert; on by default in this build)",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "0",
+        "1"
+      ],
+      "table": null,
+      "default": "1",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:7225",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT value FROM system.settings WHERE name = 'async_insert'",
+        "mapping": {
+          "async_insert": "value in the inserting user's profile"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_busy_timeout_max_ms",
+      "block": "inserts",
+      "label": "Longest wait before an async insert buffer is flushed",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "ms",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 200,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:7252",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'async_insert_busy_timeout_max_ms'",
+        "mapping": {
+          "async_insert_busy_timeout_max_ms": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_busy_timeout_min_ms",
+      "block": "inserts",
+      "label": "Shortest adaptive wait before an async insert buffer is flushed",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "ms",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 50,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:7249",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'async_insert_busy_timeout_min_ms'",
+        "mapping": {
+          "async_insert_busy_timeout_min_ms": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_max_data_size",
+      "block": "inserts",
+      "label": "Unparsed bytes that flush an async insert buffer",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 10485760,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Core/Settings.cpp:7234",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.settings WHERE name = 'async_insert_max_data_size'",
+        "mapping": {
+          "async_insert_max_data_size": "value in the inserting user's profile; a query SETTINGS clause overrides it"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "async_insert_flush_rule",
+      "block": "inserts",
+      "label": "Async flush: inserts with the same query shape and settings share a buffer; it is flushed into one part per partition when its unparsed bytes reach async_insert_max_data_size, when async_insert_max_query_number inserts accumulate with deduplication on, or when its deadline passes. The deadline is the first insert time plus an adaptive timeout between async_insert_busy_timeout_min_ms and _max_ms that grows while inserts are frequent. With wait_for_async_insert = 1 a client waits for the flush, so only concurrent inserts share one.",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "size_count_or_deadline"
+      ],
+      "table": null,
+      "default": "size_count_or_deadline",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Interpreters/AsynchronousInsertQueue.cpp:680",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT count(), avg(rows) FROM system.asynchronous_insert_log WHERE status = 'Ok' AND database = '<db>' AND table = '<table>' AND event_date = today() GROUP BY flush_query_id",
+        "mapping": {
+          "async_insert_flush_rule": "inserts per flush: rows per flush_query_id"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "inserts_per_async_flush",
+      "block": "inserts",
+      "label": "Async inserts sharing one flush: the inserts arriving within the longest busy timeout, at most a full buffer, at least one",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "max",
+        "dim": "1",
+        "args": [
+          {
+            "kind": "const",
+            "value": 1,
+            "dim": "1"
+          },
+          {
+            "kind": "min",
+            "dim": "1",
+            "args": [
+              {
+                "kind": "div",
+                "dim": "1",
+                "on_zero": "unavailable",
+                "a": {
+                  "kind": "mul",
+                  "dim": "ms/s",
+                  "a": {
+                    "kind": "input",
+                    "id": "insert_rate",
+                    "dim": "1/s"
+                  },
+                  "b": {
+                    "kind": "input",
+                    "id": "async_insert_busy_timeout_max_ms",
+                    "dim": "ms"
+                  }
+                },
+                "b": {
+                  "kind": "const",
+                  "value": 1000,
+                  "dim": "ms/s"
+                }
+              },
+              {
+                "kind": "div",
+                "dim": "1",
+                "on_zero": "unavailable",
+                "a": {
+                  "kind": "input",
+                  "id": "async_insert_max_data_size",
+                  "dim": "B"
+                },
+                "b": {
+                  "kind": "input",
+                  "id": "insert_bytes_uncompressed",
+                  "dim": "B"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Interpreters/AsynchronousInsertQueue.cpp:623",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT avg(c) FROM (SELECT flush_query_id, count() AS c FROM system.asynchronous_insert_log WHERE status = 'Ok' AND table = '<table>' AND event_date = today() GROUP BY flush_query_id)",
+        "mapping": {
+          "inserts_per_async_flush": "avg(c)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "parts_per_insert",
+      "block": "inserts",
+      "label": "Parts one INSERT creates: per partition, one per squashed block (a block is emitted once it reaches either minimum and is never split); with async inserts, a flush shared by inserts_per_async_flush inserts",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "mul",
+        "dim": "1",
+        "a": {
+          "kind": "input",
+          "id": "partitions_per_insert",
+          "dim": "count"
+        },
+        "b": {
+          "kind": "branch",
+          "dim": "1",
+          "cond": {
+            "op": "==",
+            "a": {
+              "kind": "input",
+              "id": "async_insert",
+              "dim": "enum:async_insert"
+            },
+            "b": {
+              "kind": "const",
+              "value": "1",
+              "dim": "enum:async_insert"
+            }
+          },
+          "then": {
+            "kind": "div",
+            "dim": "1",
+            "on_zero": "unavailable",
+            "a": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+            },
+            "b": {
+              "kind": "input",
+              "id": "inserts_per_async_flush",
+              "dim": "1"
+            }
+          },
+          "else": {
+            "kind": "max",
+            "dim": "1",
+            "args": [
+              {
+                "kind": "const",
+                "value": 1,
+                "dim": "1"
+              },
+              {
+                "kind": "ceil_to",
+                "dim": "1",
+                "x": {
+                  "kind": "max",
+                  "dim": "1",
+                  "args": [
+                    {
+                      "kind": "div",
+                      "dim": "1",
+                      "on_zero": "unavailable",
+                      "a": {
+                        "kind": "input",
+                        "id": "insert_rows",
+                        "dim": "count"
+                      },
+                      "b": {
+                        "kind": "input",
+                        "id": "min_insert_block_size_rows",
+                        "dim": "count"
+                      }
+                    },
+                    {
+                      "kind": "div",
+                      "dim": "1",
+                      "on_zero": "unavailable",
+                      "a": {
+                        "kind": "input",
+                        "id": "insert_bytes_uncompressed",
+                        "dim": "B"
+                      },
+                      "b": {
+                        "kind": "input",
+                        "id": "min_insert_block_size_bytes",
+                        "dim": "B"
+                      }
+                    }
+                  ]
+                },
+                "step": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Interpreters/Squashing.cpp:395",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT count() / uniqExact(query_id) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'NewPart'",
+        "mapping": {
+          "parts_per_insert": "NewPart rows per INSERT query_id"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "old_parts_lifetime",
+      "block": "merges",
+      "label": "Seconds an outdated part is kept before removal",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 480,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:556",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'old_parts_lifetime'",
+        "mapping": {
+          "old_parts_lifetime": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "max_bytes_to_merge_at_max_space_in_pool",
+      "block": "merges",
+      "label": "Largest merge result the selector plans with free space",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 161061273600,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:474",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'max_bytes_to_merge_at_max_space_in_pool'",
+        "mapping": {
+          "max_bytes_to_merge_at_max_space_in_pool": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_selector_base",
+      "block": "merges",
+      "label": "SimpleMergeSelector base (write amplification vs part count)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 5,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:885",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'merge_selector_base'",
+        "mapping": {
+          "merge_selector_base": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "max_parts_to_merge_at_once",
+      "block": "merges",
+      "label": "Most parts one natural merge takes",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 100,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:636",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'max_parts_to_merge_at_once'",
+        "mapping": {
+          "max_parts_to_merge_at_once": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_size_ratio",
+      "block": "merges",
+      "label": "Size a part grows to by merges, in inserted parts",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 64,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "preset default",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT sum(rows) / count() AS final_rows FROM system.parts WHERE active AND database = '<db>' AND table = '<table>'",
+        "mapping": {
+          "merge_size_ratio": "final_rows / part_rows (rows of an inserted part)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_effective_fan_in",
+      "block": "merges",
+      "label": "Effective merge fan-in of the write amplification rule",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": null,
+      "coef": "merge_effective_fan_in",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT avg(length(merged_from)) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "merge_effective_fan_in": "compare with avg(length(merged_from)); the rule's value is fitted to amplification, not the mean"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "write_amplification_rule",
+      "block": "merges",
+      "label": "Write amplification: bytes written by inserts and merges per inserted byte, for parts grown to merge_size_ratio inserted parts",
+      "kind": "derivation",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": null,
+      "rule": {
+        "kind": "add",
+        "dim": "1",
+        "a": {
+          "kind": "const",
+          "value": 1,
+          "dim": "1"
+        },
+        "b": {
+          "kind": "branch",
+          "dim": "1",
+          "cond": {
+            "op": "<",
+            "a": {
+              "kind": "input",
+              "id": "merge_size_ratio",
+              "dim": "1"
+            },
+            "b": {
+              "kind": "const",
+              "value": 1,
+              "dim": "1"
+            }
+          },
+          "then": {
+            "kind": "const",
+            "value": 0,
+            "dim": "1"
+          },
+          "else": {
+            "kind": "branch",
+            "dim": "1",
+            "cond": {
+              "op": "<",
+              "a": {
+                "kind": "input",
+                "id": "merge_size_ratio",
+                "dim": "1"
+              },
+              "b": {
+                "kind": "coef",
+                "id": "merge_effective_fan_in",
+                "dim": "1"
+              }
+            },
+            "then": {
+              "kind": "div",
+              "dim": "1",
+              "on_zero": "unavailable",
+              "a": {
+                "kind": "sub",
+                "dim": "1",
+                "a": {
+                  "kind": "input",
+                  "id": "merge_size_ratio",
+                  "dim": "1"
+                },
+                "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                }
+              },
+              "b": {
+                "kind": "sub",
+                "dim": "1",
+                "a": {
+                  "kind": "coef",
+                  "id": "merge_effective_fan_in",
+                  "dim": "1"
+                },
+                "b": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                }
+              }
+            },
+            "else": {
+              "kind": "branch",
+              "dim": "1",
+              "cond": {
+                "op": "<",
+                "a": {
+                  "kind": "input",
+                  "id": "merge_size_ratio",
+                  "dim": "1"
+                },
+                "b": {
+                  "kind": "mul",
+                  "dim": "1",
+                  "a": {
+                    "kind": "coef",
+                    "id": "merge_effective_fan_in",
+                    "dim": "1"
+                  },
+                  "b": {
+                    "kind": "coef",
+                    "id": "merge_effective_fan_in",
+                    "dim": "1"
+                  }
+                }
+              },
+              "then": {
+                "kind": "add",
+                "dim": "1",
+                "a": {
+                  "kind": "const",
+                  "value": 1,
+                  "dim": "1"
+                },
+                "b": {
+                  "kind": "div",
+                  "dim": "1",
+                  "on_zero": "unavailable",
+                  "a": {
+                    "kind": "sub",
+                    "dim": "1",
+                    "a": {
+                      "kind": "div",
+                      "dim": "1",
+                      "on_zero": "unavailable",
+                      "a": {
+                        "kind": "input",
+                        "id": "merge_size_ratio",
+                        "dim": "1"
+                      },
+                      "b": {
+                        "kind": "coef",
+                        "id": "merge_effective_fan_in",
+                        "dim": "1"
+                      }
+                    },
+                    "b": {
+                      "kind": "const",
+                      "value": 1,
+                      "dim": "1"
+                    }
+                  },
+                  "b": {
+                    "kind": "sub",
+                    "dim": "1",
+                    "a": {
+                      "kind": "coef",
+                      "id": "merge_effective_fan_in",
+                      "dim": "1"
+                    },
+                    "b": {
+                      "kind": "const",
+                      "value": 1,
+                      "dim": "1"
+                    }
+                  }
+                }
+              },
+              "else": {
+                "kind": "branch",
+                "dim": "1",
+                "cond": {
+                  "op": "<",
+                  "a": {
+                    "kind": "input",
+                    "id": "merge_size_ratio",
+                    "dim": "1"
+                  },
+                  "b": {
+                    "kind": "mul",
+                    "dim": "1",
+                    "a": {
+                      "kind": "mul",
+                      "dim": "1",
+                      "a": {
+                        "kind": "coef",
+                        "id": "merge_effective_fan_in",
+                        "dim": "1"
+                      },
+                      "b": {
+                        "kind": "coef",
+                        "id": "merge_effective_fan_in",
+                        "dim": "1"
+                      }
+                    },
+                    "b": {
+                      "kind": "coef",
+                      "id": "merge_effective_fan_in",
+                      "dim": "1"
+                    }
+                  }
+                },
+                "then": {
+                  "kind": "add",
+                  "dim": "1",
+                  "a": {
+                    "kind": "const",
+                    "value": 2,
+                    "dim": "1"
+                  },
+                  "b": {
+                    "kind": "div",
+                    "dim": "1",
+                    "on_zero": "unavailable",
+                    "a": {
+                      "kind": "sub",
+                      "dim": "1",
+                      "a": {
+                        "kind": "div",
+                        "dim": "1",
+                        "on_zero": "unavailable",
+                        "a": {
+                          "kind": "input",
+                          "id": "merge_size_ratio",
+                          "dim": "1"
+                        },
+                        "b": {
+                          "kind": "mul",
+                          "dim": "1",
+                          "a": {
+                            "kind": "coef",
+                            "id": "merge_effective_fan_in",
+                            "dim": "1"
+                          },
+                          "b": {
+                            "kind": "coef",
+                            "id": "merge_effective_fan_in",
+                            "dim": "1"
+                          }
+                        }
+                      },
+                      "b": {
+                        "kind": "const",
+                        "value": 1,
+                        "dim": "1"
+                      }
+                    },
+                    "b": {
+                      "kind": "sub",
+                      "dim": "1",
+                      "a": {
+                        "kind": "coef",
+                        "id": "merge_effective_fan_in",
+                        "dim": "1"
+                      },
+                      "b": {
+                        "kind": "const",
+                        "value": 1,
+                        "dim": "1"
+                      }
+                    }
+                  }
+                },
+                "else": {
+                  "kind": "branch",
+                  "dim": "1",
+                  "cond": {
+                    "op": "<",
+                    "a": {
+                      "kind": "input",
+                      "id": "merge_size_ratio",
+                      "dim": "1"
+                    },
+                    "b": {
+                      "kind": "mul",
+                      "dim": "1",
+                      "a": {
+                        "kind": "mul",
+                        "dim": "1",
+                        "a": {
+                          "kind": "mul",
+                          "dim": "1",
+                          "a": {
+                            "kind": "coef",
+                            "id": "merge_effective_fan_in",
+                            "dim": "1"
+                          },
+                          "b": {
+                            "kind": "coef",
+                            "id": "merge_effective_fan_in",
+                            "dim": "1"
+                          }
+                        },
+                        "b": {
+                          "kind": "coef",
+                          "id": "merge_effective_fan_in",
+                          "dim": "1"
+                        }
+                      },
+                      "b": {
+                        "kind": "coef",
+                        "id": "merge_effective_fan_in",
+                        "dim": "1"
+                      }
+                    }
+                  },
+                  "then": {
+                    "kind": "add",
+                    "dim": "1",
+                    "a": {
+                      "kind": "const",
+                      "value": 3,
+                      "dim": "1"
+                    },
+                    "b": {
+                      "kind": "div",
+                      "dim": "1",
+                      "on_zero": "unavailable",
+                      "a": {
+                        "kind": "sub",
+                        "dim": "1",
+                        "a": {
+                          "kind": "div",
+                          "dim": "1",
+                          "on_zero": "unavailable",
+                          "a": {
+                            "kind": "input",
+                            "id": "merge_size_ratio",
+                            "dim": "1"
+                          },
+                          "b": {
+                            "kind": "mul",
+                            "dim": "1",
+                            "a": {
+                              "kind": "mul",
+                              "dim": "1",
+                              "a": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              },
+                              "b": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              }
+                            },
+                            "b": {
+                              "kind": "coef",
+                              "id": "merge_effective_fan_in",
+                              "dim": "1"
+                            }
+                          }
+                        },
+                        "b": {
+                          "kind": "const",
+                          "value": 1,
+                          "dim": "1"
+                        }
+                      },
+                      "b": {
+                        "kind": "sub",
+                        "dim": "1",
+                        "a": {
+                          "kind": "coef",
+                          "id": "merge_effective_fan_in",
+                          "dim": "1"
+                        },
+                        "b": {
+                          "kind": "const",
+                          "value": 1,
+                          "dim": "1"
+                        }
+                      }
+                    }
+                  },
+                  "else": {
+                    "kind": "branch",
+                    "dim": "1",
+                    "cond": {
+                      "op": "<",
+                      "a": {
+                        "kind": "input",
+                        "id": "merge_size_ratio",
+                        "dim": "1"
+                      },
+                      "b": {
+                        "kind": "mul",
+                        "dim": "1",
+                        "a": {
+                          "kind": "mul",
+                          "dim": "1",
+                          "a": {
+                            "kind": "mul",
+                            "dim": "1",
+                            "a": {
+                              "kind": "mul",
+                              "dim": "1",
+                              "a": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              },
+                              "b": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              }
+                            },
+                            "b": {
+                              "kind": "coef",
+                              "id": "merge_effective_fan_in",
+                              "dim": "1"
+                            }
+                          },
+                          "b": {
+                            "kind": "coef",
+                            "id": "merge_effective_fan_in",
+                            "dim": "1"
+                          }
+                        },
+                        "b": {
+                          "kind": "coef",
+                          "id": "merge_effective_fan_in",
+                          "dim": "1"
+                        }
+                      }
+                    },
+                    "then": {
+                      "kind": "add",
+                      "dim": "1",
+                      "a": {
+                        "kind": "const",
+                        "value": 4,
+                        "dim": "1"
+                      },
+                      "b": {
+                        "kind": "div",
+                        "dim": "1",
+                        "on_zero": "unavailable",
+                        "a": {
+                          "kind": "sub",
+                          "dim": "1",
+                          "a": {
+                            "kind": "div",
+                            "dim": "1",
+                            "on_zero": "unavailable",
+                            "a": {
+                              "kind": "input",
+                              "id": "merge_size_ratio",
+                              "dim": "1"
+                            },
+                            "b": {
+                              "kind": "mul",
+                              "dim": "1",
+                              "a": {
+                                "kind": "mul",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                },
+                                "b": {
+                                  "kind": "coef",
+                                  "id": "merge_effective_fan_in",
+                                  "dim": "1"
+                                }
+                              },
+                              "b": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              }
+                            }
+                          },
+                          "b": {
+                            "kind": "const",
+                            "value": 1,
+                            "dim": "1"
+                          }
+                        },
+                        "b": {
+                          "kind": "sub",
+                          "dim": "1",
+                          "a": {
+                            "kind": "coef",
+                            "id": "merge_effective_fan_in",
+                            "dim": "1"
+                          },
+                          "b": {
+                            "kind": "const",
+                            "value": 1,
+                            "dim": "1"
+                          }
+                        }
+                      }
+                    },
+                    "else": {
+                      "kind": "branch",
+                      "dim": "1",
+                      "cond": {
+                        "op": "<",
+                        "a": {
+                          "kind": "input",
+                          "id": "merge_size_ratio",
+                          "dim": "1"
+                        },
+                        "b": {
+                          "kind": "mul",
+                          "dim": "1",
+                          "a": {
+                            "kind": "mul",
+                            "dim": "1",
+                            "a": {
+                              "kind": "mul",
+                              "dim": "1",
+                              "a": {
+                                "kind": "mul",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                },
+                                "b": {
+                                  "kind": "coef",
+                                  "id": "merge_effective_fan_in",
+                                  "dim": "1"
+                                }
+                              },
+                              "b": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              }
+                            },
+                            "b": {
+                              "kind": "coef",
+                              "id": "merge_effective_fan_in",
+                              "dim": "1"
+                            }
+                          },
+                          "b": {
+                            "kind": "coef",
+                            "id": "merge_effective_fan_in",
+                            "dim": "1"
+                          }
+                        }
+                      },
+                      "then": {
+                        "kind": "add",
+                        "dim": "1",
+                        "a": {
+                          "kind": "const",
+                          "value": 5,
+                          "dim": "1"
+                        },
+                        "b": {
+                          "kind": "div",
+                          "dim": "1",
+                          "on_zero": "unavailable",
+                          "a": {
+                            "kind": "sub",
+                            "dim": "1",
+                            "a": {
+                              "kind": "div",
+                              "dim": "1",
+                              "on_zero": "unavailable",
+                              "a": {
+                                "kind": "input",
+                                "id": "merge_size_ratio",
+                                "dim": "1"
+                              },
+                              "b": {
+                                "kind": "mul",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                },
+                                "b": {
+                                  "kind": "coef",
+                                  "id": "merge_effective_fan_in",
+                                  "dim": "1"
+                                }
+                              }
+                            },
+                            "b": {
+                              "kind": "const",
+                              "value": 1,
+                              "dim": "1"
+                            }
+                          },
+                          "b": {
+                            "kind": "sub",
+                            "dim": "1",
+                            "a": {
+                              "kind": "coef",
+                              "id": "merge_effective_fan_in",
+                              "dim": "1"
+                            },
+                            "b": {
+                              "kind": "const",
+                              "value": 1,
+                              "dim": "1"
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "kind": "branch",
+                        "dim": "1",
+                        "cond": {
+                          "op": "<",
+                          "a": {
+                            "kind": "input",
+                            "id": "merge_size_ratio",
+                            "dim": "1"
+                          },
+                          "b": {
+                            "kind": "mul",
+                            "dim": "1",
+                            "a": {
+                              "kind": "mul",
+                              "dim": "1",
+                              "a": {
+                                "kind": "mul",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                },
+                                "b": {
+                                  "kind": "coef",
+                                  "id": "merge_effective_fan_in",
+                                  "dim": "1"
+                                }
+                              },
+                              "b": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              }
+                            },
+                            "b": {
+                              "kind": "coef",
+                              "id": "merge_effective_fan_in",
+                              "dim": "1"
+                            }
+                          }
+                        },
+                        "then": {
+                          "kind": "add",
+                          "dim": "1",
+                          "a": {
+                            "kind": "const",
+                            "value": 6,
+                            "dim": "1"
+                          },
+                          "b": {
+                            "kind": "div",
+                            "dim": "1",
+                            "on_zero": "unavailable",
+                            "a": {
+                              "kind": "sub",
+                              "dim": "1",
+                              "a": {
+                                "kind": "div",
+                                "dim": "1",
+                                "on_zero": "unavailable",
+                                "a": {
+                                  "kind": "input",
+                                  "id": "merge_size_ratio",
+                                  "dim": "1"
+                                },
+                                "b": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                }
+                              },
+                              "b": {
+                                "kind": "const",
+                                "value": 1,
+                                "dim": "1"
+                              }
+                            },
+                            "b": {
+                              "kind": "sub",
+                              "dim": "1",
+                              "a": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              },
+                              "b": {
+                                "kind": "const",
+                                "value": 1,
+                                "dim": "1"
+                              }
+                            }
+                          }
+                        },
+                        "else": {
+                          "kind": "branch",
+                          "dim": "1",
+                          "cond": {
+                            "op": "<",
+                            "a": {
+                              "kind": "input",
+                              "id": "merge_size_ratio",
+                              "dim": "1"
+                            },
+                            "b": {
+                              "kind": "mul",
+                              "dim": "1",
+                              "a": {
+                                "kind": "mul",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                },
+                                "b": {
+                                  "kind": "coef",
+                                  "id": "merge_effective_fan_in",
+                                  "dim": "1"
+                                }
+                              },
+                              "b": {
+                                "kind": "coef",
+                                "id": "merge_effective_fan_in",
+                                "dim": "1"
+                              }
+                            }
+                          },
+                          "then": {
+                            "kind": "add",
+                            "dim": "1",
+                            "a": {
+                              "kind": "const",
+                              "value": 7,
+                              "dim": "1"
+                            },
+                            "b": {
+                              "kind": "div",
+                              "dim": "1",
+                              "on_zero": "unavailable",
+                              "a": {
+                                "kind": "sub",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "div",
+                                  "dim": "1",
+                                  "on_zero": "unavailable",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "merge_size_ratio",
+                                    "dim": "1"
+                                  },
+                                  "b": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  }
+                                },
+                                "b": {
+                                  "kind": "const",
+                                  "value": 1,
+                                  "dim": "1"
+                                }
+                              },
+                              "b": {
+                                "kind": "sub",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "coef",
+                                  "id": "merge_effective_fan_in",
+                                  "dim": "1"
+                                },
+                                "b": {
+                                  "kind": "const",
+                                  "value": 1,
+                                  "dim": "1"
+                                }
+                              }
+                            }
+                          },
+                          "else": {
+                            "kind": "branch",
+                            "dim": "1",
+                            "cond": {
+                              "op": "<",
+                              "a": {
+                                "kind": "input",
+                                "id": "merge_size_ratio",
+                                "dim": "1"
+                              },
+                              "b": {
+                                "kind": "mul",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                },
+                                "b": {
+                                  "kind": "coef",
+                                  "id": "merge_effective_fan_in",
+                                  "dim": "1"
+                                }
+                              }
+                            },
+                            "then": {
+                              "kind": "add",
+                              "dim": "1",
+                              "a": {
+                                "kind": "const",
+                                "value": 8,
+                                "dim": "1"
+                              },
+                              "b": {
+                                "kind": "div",
+                                "dim": "1",
+                                "on_zero": "unavailable",
+                                "a": {
+                                  "kind": "sub",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "div",
+                                    "dim": "1",
+                                    "on_zero": "unavailable",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "merge_size_ratio",
+                                      "dim": "1"
+                                    },
+                                    "b": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "mul",
+                                                "dim": "1",
+                                                "a": {
+                                                  "kind": "mul",
+                                                  "dim": "1",
+                                                  "a": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  },
+                                                  "b": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  }
+                                                },
+                                                "b": {
+                                                  "kind": "coef",
+                                                  "id": "merge_effective_fan_in",
+                                                  "dim": "1"
+                                                }
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "const",
+                                    "value": 1,
+                                    "dim": "1"
+                                  }
+                                },
+                                "b": {
+                                  "kind": "sub",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  },
+                                  "b": {
+                                    "kind": "const",
+                                    "value": 1,
+                                    "dim": "1"
+                                  }
+                                }
+                              }
+                            },
+                            "else": {
+                              "kind": "branch",
+                              "dim": "1",
+                              "cond": {
+                                "op": "<",
+                                "a": {
+                                  "kind": "input",
+                                  "id": "merge_size_ratio",
+                                  "dim": "1"
+                                },
+                                "b": {
+                                  "kind": "mul",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "mul",
+                                                "dim": "1",
+                                                "a": {
+                                                  "kind": "mul",
+                                                  "dim": "1",
+                                                  "a": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  },
+                                                  "b": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  }
+                                                },
+                                                "b": {
+                                                  "kind": "coef",
+                                                  "id": "merge_effective_fan_in",
+                                                  "dim": "1"
+                                                }
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "coef",
+                                    "id": "merge_effective_fan_in",
+                                    "dim": "1"
+                                  }
+                                }
+                              },
+                              "then": {
+                                "kind": "add",
+                                "dim": "1",
+                                "a": {
+                                  "kind": "const",
+                                  "value": 9,
+                                  "dim": "1"
+                                },
+                                "b": {
+                                  "kind": "div",
+                                  "dim": "1",
+                                  "on_zero": "unavailable",
+                                  "a": {
+                                    "kind": "sub",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "div",
+                                      "dim": "1",
+                                      "on_zero": "unavailable",
+                                      "a": {
+                                        "kind": "input",
+                                        "id": "merge_size_ratio",
+                                        "dim": "1"
+                                      },
+                                      "b": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "mul",
+                                                "dim": "1",
+                                                "a": {
+                                                  "kind": "mul",
+                                                  "dim": "1",
+                                                  "a": {
+                                                    "kind": "mul",
+                                                    "dim": "1",
+                                                    "a": {
+                                                      "kind": "mul",
+                                                      "dim": "1",
+                                                      "a": {
+                                                        "kind": "coef",
+                                                        "id": "merge_effective_fan_in",
+                                                        "dim": "1"
+                                                      },
+                                                      "b": {
+                                                        "kind": "coef",
+                                                        "id": "merge_effective_fan_in",
+                                                        "dim": "1"
+                                                      }
+                                                    },
+                                                    "b": {
+                                                      "kind": "coef",
+                                                      "id": "merge_effective_fan_in",
+                                                      "dim": "1"
+                                                    }
+                                                  },
+                                                  "b": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  }
+                                                },
+                                                "b": {
+                                                  "kind": "coef",
+                                                  "id": "merge_effective_fan_in",
+                                                  "dim": "1"
+                                                }
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "const",
+                                      "value": 1,
+                                      "dim": "1"
+                                    }
+                                  },
+                                  "b": {
+                                    "kind": "sub",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    },
+                                    "b": {
+                                      "kind": "const",
+                                      "value": 1,
+                                      "dim": "1"
+                                    }
+                                  }
+                                }
+                              },
+                              "else": {
+                                "kind": "branch",
+                                "dim": "1",
+                                "cond": {
+                                  "op": "<",
+                                  "a": {
+                                    "kind": "input",
+                                    "id": "merge_size_ratio",
+                                    "dim": "1"
+                                  },
+                                  "b": {
+                                    "kind": "mul",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "mul",
+                                                "dim": "1",
+                                                "a": {
+                                                  "kind": "mul",
+                                                  "dim": "1",
+                                                  "a": {
+                                                    "kind": "mul",
+                                                    "dim": "1",
+                                                    "a": {
+                                                      "kind": "mul",
+                                                      "dim": "1",
+                                                      "a": {
+                                                        "kind": "coef",
+                                                        "id": "merge_effective_fan_in",
+                                                        "dim": "1"
+                                                      },
+                                                      "b": {
+                                                        "kind": "coef",
+                                                        "id": "merge_effective_fan_in",
+                                                        "dim": "1"
+                                                      }
+                                                    },
+                                                    "b": {
+                                                      "kind": "coef",
+                                                      "id": "merge_effective_fan_in",
+                                                      "dim": "1"
+                                                    }
+                                                  },
+                                                  "b": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  }
+                                                },
+                                                "b": {
+                                                  "kind": "coef",
+                                                  "id": "merge_effective_fan_in",
+                                                  "dim": "1"
+                                                }
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "coef",
+                                      "id": "merge_effective_fan_in",
+                                      "dim": "1"
+                                    }
+                                  }
+                                },
+                                "then": {
+                                  "kind": "add",
+                                  "dim": "1",
+                                  "a": {
+                                    "kind": "const",
+                                    "value": 10,
+                                    "dim": "1"
+                                  },
+                                  "b": {
+                                    "kind": "div",
+                                    "dim": "1",
+                                    "on_zero": "unavailable",
+                                    "a": {
+                                      "kind": "sub",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "div",
+                                        "dim": "1",
+                                        "on_zero": "unavailable",
+                                        "a": {
+                                          "kind": "input",
+                                          "id": "merge_size_ratio",
+                                          "dim": "1"
+                                        },
+                                        "b": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "mul",
+                                                "dim": "1",
+                                                "a": {
+                                                  "kind": "mul",
+                                                  "dim": "1",
+                                                  "a": {
+                                                    "kind": "mul",
+                                                    "dim": "1",
+                                                    "a": {
+                                                      "kind": "mul",
+                                                      "dim": "1",
+                                                      "a": {
+                                                        "kind": "mul",
+                                                        "dim": "1",
+                                                        "a": {
+                                                          "kind": "mul",
+                                                          "dim": "1",
+                                                          "a": {
+                                                            "kind": "coef",
+                                                            "id": "merge_effective_fan_in",
+                                                            "dim": "1"
+                                                          },
+                                                          "b": {
+                                                            "kind": "coef",
+                                                            "id": "merge_effective_fan_in",
+                                                            "dim": "1"
+                                                          }
+                                                        },
+                                                        "b": {
+                                                          "kind": "coef",
+                                                          "id": "merge_effective_fan_in",
+                                                          "dim": "1"
+                                                        }
+                                                      },
+                                                      "b": {
+                                                        "kind": "coef",
+                                                        "id": "merge_effective_fan_in",
+                                                        "dim": "1"
+                                                      }
+                                                    },
+                                                    "b": {
+                                                      "kind": "coef",
+                                                      "id": "merge_effective_fan_in",
+                                                      "dim": "1"
+                                                    }
+                                                  },
+                                                  "b": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  }
+                                                },
+                                                "b": {
+                                                  "kind": "coef",
+                                                  "id": "merge_effective_fan_in",
+                                                  "dim": "1"
+                                                }
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "const",
+                                        "value": 1,
+                                        "dim": "1"
+                                      }
+                                    },
+                                    "b": {
+                                      "kind": "sub",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      },
+                                      "b": {
+                                        "kind": "const",
+                                        "value": 1,
+                                        "dim": "1"
+                                      }
+                                    }
+                                  }
+                                },
+                                "else": {
+                                  "kind": "branch",
+                                  "dim": "1",
+                                  "cond": {
+                                    "op": "<",
+                                    "a": {
+                                      "kind": "input",
+                                      "id": "merge_size_ratio",
+                                      "dim": "1"
+                                    },
+                                    "b": {
+                                      "kind": "mul",
+                                      "dim": "1",
+                                      "a": {
+                                        "kind": "mul",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "mul",
+                                          "dim": "1",
+                                          "a": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "mul",
+                                                "dim": "1",
+                                                "a": {
+                                                  "kind": "mul",
+                                                  "dim": "1",
+                                                  "a": {
+                                                    "kind": "mul",
+                                                    "dim": "1",
+                                                    "a": {
+                                                      "kind": "mul",
+                                                      "dim": "1",
+                                                      "a": {
+                                                        "kind": "mul",
+                                                        "dim": "1",
+                                                        "a": {
+                                                          "kind": "mul",
+                                                          "dim": "1",
+                                                          "a": {
+                                                            "kind": "coef",
+                                                            "id": "merge_effective_fan_in",
+                                                            "dim": "1"
+                                                          },
+                                                          "b": {
+                                                            "kind": "coef",
+                                                            "id": "merge_effective_fan_in",
+                                                            "dim": "1"
+                                                          }
+                                                        },
+                                                        "b": {
+                                                          "kind": "coef",
+                                                          "id": "merge_effective_fan_in",
+                                                          "dim": "1"
+                                                        }
+                                                      },
+                                                      "b": {
+                                                        "kind": "coef",
+                                                        "id": "merge_effective_fan_in",
+                                                        "dim": "1"
+                                                      }
+                                                    },
+                                                    "b": {
+                                                      "kind": "coef",
+                                                      "id": "merge_effective_fan_in",
+                                                      "dim": "1"
+                                                    }
+                                                  },
+                                                  "b": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  }
+                                                },
+                                                "b": {
+                                                  "kind": "coef",
+                                                  "id": "merge_effective_fan_in",
+                                                  "dim": "1"
+                                                }
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          },
+                                          "b": {
+                                            "kind": "coef",
+                                            "id": "merge_effective_fan_in",
+                                            "dim": "1"
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "coef",
+                                        "id": "merge_effective_fan_in",
+                                        "dim": "1"
+                                      }
+                                    }
+                                  },
+                                  "then": {
+                                    "kind": "add",
+                                    "dim": "1",
+                                    "a": {
+                                      "kind": "const",
+                                      "value": 11,
+                                      "dim": "1"
+                                    },
+                                    "b": {
+                                      "kind": "div",
+                                      "dim": "1",
+                                      "on_zero": "unavailable",
+                                      "a": {
+                                        "kind": "sub",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "div",
+                                          "dim": "1",
+                                          "on_zero": "unavailable",
+                                          "a": {
+                                            "kind": "input",
+                                            "id": "merge_size_ratio",
+                                            "dim": "1"
+                                          },
+                                          "b": {
+                                            "kind": "mul",
+                                            "dim": "1",
+                                            "a": {
+                                              "kind": "mul",
+                                              "dim": "1",
+                                              "a": {
+                                                "kind": "mul",
+                                                "dim": "1",
+                                                "a": {
+                                                  "kind": "mul",
+                                                  "dim": "1",
+                                                  "a": {
+                                                    "kind": "mul",
+                                                    "dim": "1",
+                                                    "a": {
+                                                      "kind": "mul",
+                                                      "dim": "1",
+                                                      "a": {
+                                                        "kind": "mul",
+                                                        "dim": "1",
+                                                        "a": {
+                                                          "kind": "mul",
+                                                          "dim": "1",
+                                                          "a": {
+                                                            "kind": "mul",
+                                                            "dim": "1",
+                                                            "a": {
+                                                              "kind": "mul",
+                                                              "dim": "1",
+                                                              "a": {
+                                                                "kind": "coef",
+                                                                "id": "merge_effective_fan_in",
+                                                                "dim": "1"
+                                                              },
+                                                              "b": {
+                                                                "kind": "coef",
+                                                                "id": "merge_effective_fan_in",
+                                                                "dim": "1"
+                                                              }
+                                                            },
+                                                            "b": {
+                                                              "kind": "coef",
+                                                              "id": "merge_effective_fan_in",
+                                                              "dim": "1"
+                                                            }
+                                                          },
+                                                          "b": {
+                                                            "kind": "coef",
+                                                            "id": "merge_effective_fan_in",
+                                                            "dim": "1"
+                                                          }
+                                                        },
+                                                        "b": {
+                                                          "kind": "coef",
+                                                          "id": "merge_effective_fan_in",
+                                                          "dim": "1"
+                                                        }
+                                                      },
+                                                      "b": {
+                                                        "kind": "coef",
+                                                        "id": "merge_effective_fan_in",
+                                                        "dim": "1"
+                                                      }
+                                                    },
+                                                    "b": {
+                                                      "kind": "coef",
+                                                      "id": "merge_effective_fan_in",
+                                                      "dim": "1"
+                                                    }
+                                                  },
+                                                  "b": {
+                                                    "kind": "coef",
+                                                    "id": "merge_effective_fan_in",
+                                                    "dim": "1"
+                                                  }
+                                                },
+                                                "b": {
+                                                  "kind": "coef",
+                                                  "id": "merge_effective_fan_in",
+                                                  "dim": "1"
+                                                }
+                                              },
+                                              "b": {
+                                                "kind": "coef",
+                                                "id": "merge_effective_fan_in",
+                                                "dim": "1"
+                                              }
+                                            },
+                                            "b": {
+                                              "kind": "coef",
+                                              "id": "merge_effective_fan_in",
+                                              "dim": "1"
+                                            }
+                                          }
+                                        },
+                                        "b": {
+                                          "kind": "const",
+                                          "value": 1,
+                                          "dim": "1"
+                                        }
+                                      },
+                                      "b": {
+                                        "kind": "sub",
+                                        "dim": "1",
+                                        "a": {
+                                          "kind": "coef",
+                                          "id": "merge_effective_fan_in",
+                                          "dim": "1"
+                                        },
+                                        "b": {
+                                          "kind": "const",
+                                          "value": 1,
+                                          "dim": "1"
+                                        }
+                                      }
+                                    }
+                                  },
+                                  "else": {
+                                    "kind": "const",
+                                    "value": 12,
+                                    "dim": "1"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT 1 + sumIf(size_in_bytes, event_type = 'MergeParts') / sumIf(size_in_bytes, event_type = 'NewPart') FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7",
+        "mapping": {
+          "write_amplification_rule": "the query result over a window where merges keep up"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_fan_in_bucket",
+      "block": "merges",
+      "label": "Fan-in bucket of a merge",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7-8",
+        "9-12",
+        "13-20",
+        "21+"
+      ],
+      "table": null,
+      "default": "5",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "bucket key of merge_fan_in_distribution",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT length(merged_from) FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "merge_fan_in_bucket": "length(merged_from) in the bucket ranges"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_fan_in_distribution",
+      "block": "merges",
+      "label": "Fraction of natural merges per fan-in bucket",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "merge_fan_in_bucket"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "merge_fan_in_distribution",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT length(merged_from) AS fan_in, count() / sum(count()) OVER () FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts' GROUP BY fan_in ORDER BY fan_in",
+        "mapping": {
+          "merge_fan_in_distribution": "fraction per fan_in, summed into the buckets"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_result_size_bucket",
+      "block": "merges",
+      "label": "Merge result size bucket, in inserted parts",
+      "kind": "input",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "2-4",
+        "5-8",
+        "9-16",
+        "17-32",
+        "33-64",
+        "65-128",
+        "129-256",
+        "257-512",
+        "513+"
+      ],
+      "table": null,
+      "default": "5-8",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "assumed",
+        "ref": "bucket key of merge_result_size_distribution",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT rows FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts'",
+        "mapping": {
+          "merge_result_size_bucket": "rows / part_rows in the bucket ranges"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "merge_result_size_distribution",
+      "block": "merges",
+      "label": "Fraction of natural merges per result size bucket (result rows / inserted part rows)",
+      "kind": "measured",
+      "scope": "cluster",
+      "unit": "1",
+      "value_type": "table",
+      "enum": null,
+      "table": {
+        "index": [
+          "merge_result_size_bucket"
+        ],
+        "dim": "1"
+      },
+      "default": null,
+      "rule": null,
+      "coef": "merge_result_size_distribution",
+      "validity": null,
+      "evidence": {
+        "kind": "measured",
+        "ref": "docs/superpowers/reports/2026-10-24-storage-cost-lifecycle",
+        "version": "0.2.0"
+      },
+      "hint": {
+        "sql": "SELECT intDiv(rows, <part_rows>) AS size, count() FROM system.part_log WHERE database = '<db>' AND table = '<table>' AND event_date >= today() - 7 AND event_type = 'MergeParts' GROUP BY size ORDER BY size",
+        "mapping": {
+          "merge_result_size_distribution": "fraction per size, summed into the buckets"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "acquisition_rule",
+      "block": "replication",
+      "label": "Fetch vs local execution of a replicated merge: the replica merges locally unless always_fetch_merged_part is set, execute_merges_on_single_replica_time_threshold > 0 picks another replica (merges only; with zero-copy also remote_fs_execute_merges_on_single_replica_time_threshold), a source part is missing locally, or the entry is older than prefer_fetch_merged_part_time_threshold and its sources hold at least prefer_fetch_merged_part_size_threshold bytes on disk while a replica has the result. A mutation follows the same rule with always_fetch_mutated_part, without the single-replica branch, and keeps the source part type. A replica that already has the part or a covering one skips the entry.",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "",
+      "value_type": "enum",
+      "enum": [
+        "local_unless_fetch_condition"
+      ],
+      "table": null,
+      "default": "local_unless_fetch_condition",
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeFromLogEntryTask.cpp:224",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT event, value FROM system.events WHERE event IN ('ReplicatedPartMerges', 'ReplicatedPartFetchesOfMerged', 'ReplicatedPartMutations', 'ReplicatedPartFetches')",
+        "mapping": {
+          "acquisition_rule": "ReplicatedPartFetchesOfMerged vs ReplicatedPartMerges on each replica"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "prefer_fetch_merged_part_time_threshold",
+      "block": "replication",
+      "label": "Age of a merge entry after which a replica prefers fetching a large result",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 3600,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1284",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'prefer_fetch_merged_part_time_threshold'",
+        "mapping": {
+          "prefer_fetch_merged_part_time_threshold": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "prefer_fetch_merged_part_size_threshold",
+      "block": "replication",
+      "label": "Source bytes on disk above which an old merge entry is fetched",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "B",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 10737418240,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1294",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'prefer_fetch_merged_part_size_threshold'",
+        "mapping": {
+          "prefer_fetch_merged_part_size_threshold": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "execute_merges_on_single_replica_time_threshold",
+      "block": "replication",
+      "label": "Seconds the other replicas wait for the chosen replica's merge result (0 = off)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "s",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1304",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'execute_merges_on_single_replica_time_threshold'",
+        "mapping": {
+          "execute_merges_on_single_replica_time_threshold": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "always_fetch_merged_part",
+      "block": "replication",
+      "label": "Replica never merges and fetches every merge result (0 = off)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1341",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'always_fetch_merged_part'",
+        "mapping": {
+          "always_fetch_merged_part": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
+      "status": "ok"
+    },
+    {
+      "id": "always_fetch_mutated_part",
+      "block": "replication",
+      "label": "Replica never mutates and fetches every mutation result (0 = off)",
+      "kind": "pinned",
+      "scope": "cluster",
+      "unit": "count",
+      "value_type": "number",
+      "enum": null,
+      "table": null,
+      "default": 0,
+      "rule": null,
+      "coef": null,
+      "validity": null,
+      "evidence": {
+        "kind": "source",
+        "ref": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:1348",
+        "version": "26.8@09d0772a842"
+      },
+      "hint": {
+        "sql": "SELECT name, value, changed FROM system.merge_tree_settings WHERE name = 'always_fetch_mutated_part'",
+        "mapping": {
+          "always_fetch_mutated_part": "value; a table's own SETTINGS clause overrides it (SHOW CREATE TABLE)"
+        }
+      },
       "status": "ok"
     }
   ],

@@ -1,0 +1,205 @@
+{
+  "schema": "prediction/1",
+  "experiment_id": "boundaries.insert-split",
+  "policy": "s3",
+  "inputs": {
+    "part_rows": [
+      1111953,
+      1111953,
+      397216
+    ]
+  },
+  "expected": {
+    "foreground": {
+      "r1": {
+        "PutObject": 57
+      }
+    },
+    "observations": {
+      "parts": [
+        {
+          "name": "all_1_1_0",
+          "part_type": "Wide",
+          "rows": 1111953,
+          "level": 0,
+          "data_uncompressed_bytes": 44478120,
+          "active": 1
+        },
+        {
+          "name": "all_2_2_0",
+          "part_type": "Wide",
+          "rows": 1111953,
+          "level": 0,
+          "data_uncompressed_bytes": 44478120,
+          "active": 1
+        },
+        {
+          "name": "all_3_3_0",
+          "part_type": "Wide",
+          "rows": 397216,
+          "level": 0,
+          "data_uncompressed_bytes": 15888640,
+          "active": 1
+        }
+      ],
+      "upload_part_sizes": []
+    }
+  },
+  "tolerance": {
+    "abs": {},
+    "rel": {}
+  },
+  "source_refs": [
+    {
+      "claim": "min_insert_block_size_rows defaults to 1048449",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 209
+    },
+    {
+      "claim": "a MergeTree insert squashes to min_insert_block_size_rows",
+      "path": "tmp/src-26.8/src/Interpreters/InterpreterInsertQuery.cpp",
+      "line": 504
+    },
+    {
+      "claim": "squashing emits once the joined blocks reach either minimum; it never splits a block",
+      "path": "tmp/src-26.8/src/Interpreters/Squashing.cpp",
+      "line": 395
+    },
+    {
+      "claim": "optimize_trivial_insert_select is off: the SELECT keeps max_block_size",
+      "path": "tmp/src-26.8/src/Core/Settings.cpp",
+      "line": 5609
+    },
+    {
+      "claim": "max_block_size defaults to 65409 rows",
+      "path": "tmp/src-26.8/src/Core/Defines.h",
+      "line": 33
+    },
+    {
+      "claim": "numbers(N) is one source of max_block_size blocks",
+      "path": "tmp/src-26.8/src/Processors/QueryPlan/ReadFromSystemNumbersStep.cpp",
+      "line": 530
+    },
+    {
+      "claim": "a part is Compact when its uncompressed bytes, rows or level is below the minimum for Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6399
+    },
+    {
+      "claim": "otherwise the part is Wide",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 6404
+    },
+    {
+      "claim": "min_bytes_for_wide_part defaults to 10485760 outside ClickHouse Cloud",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 37
+    },
+    {
+      "claim": "min_rows_for_wide_part defaults to 0",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 85
+    },
+    {
+      "claim": "min_level_for_wide_part defaults to 0",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 82
+    },
+    {
+      "claim": "an insert measures the block in memory: 8 bytes per UInt64 value",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 848
+    },
+    {
+      "claim": "an insert chooses the part format from that size, its rows and its level",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 915
+    },
+    {
+      "claim": "an inserted part of a plain MergeTree is level 0",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataWriter.cpp",
+      "line": 735
+    },
+    {
+      "claim": "a Compact part reports data.bin uncompressed bytes as its column data",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartCompact.cpp",
+      "line": 155
+    },
+    {
+      "claim": "Wide marks are .cmrk2, one file per column next to its .bin",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeIndexGranularityInfo.cpp",
+      "line": 96
+    },
+    {
+      "claim": "a Wide part also writes columns_substreams.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 705
+    },
+    {
+      "claim": "primary.cidx only when the table has a primary key",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeDataPartWriterOnDisk.cpp",
+      "line": 119
+    },
+    {
+      "claim": "count.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 407
+    },
+    {
+      "claim": "serialization.json",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 423
+    },
+    {
+      "claim": "statistics.packed (auto statistics are on for every column)",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 436
+    },
+    {
+      "claim": "auto_statistics_types defaults to basic, uniq_v2",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2046
+    },
+    {
+      "claim": "columns.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 447
+    },
+    {
+      "claim": "columns_substreams.txt when the writer has substreams",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 465
+    },
+    {
+      "claim": "metadata_version.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 475
+    },
+    {
+      "claim": "default_compression_codec.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 483
+    },
+    {
+      "claim": "checksums.txt",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergedBlockOutputStream.cpp",
+      "line": 493
+    },
+    {
+      "claim": "every file is one object: one PutObject up to the first upload buffer",
+      "path": "tmp/src-26.8/src/IO/WriteBufferFromS3.cpp",
+      "line": 180
+    },
+    {
+      "claim": "no HEAD after an upload (check_objects_after_upload is false)",
+      "path": "tmp/src-26.8/src/IO/S3Defines.h",
+      "line": 55
+    },
+    {
+      "claim": "zero-copy replication is off: no shared-lock traffic",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 2155
+    }
+  ],
+  "prediction_commit": "uncommitted"
+}

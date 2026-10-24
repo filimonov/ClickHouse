@@ -1,0 +1,41 @@
+{
+  "schema": "experiment/1",
+  "experiment_id": "boundaries.wide-above-bytes",
+  "card": "boundaries",
+  "case_id": "wide-above-bytes",
+  "policies": [
+    "s3"
+  ],
+  "replicas": 1,
+  "mode": "deterministic",
+  "controls": {
+    "merges": "stop",
+    "gc": "off",
+    "ttl": "none"
+  },
+  "settings": {
+    "table": {
+      "max_parts_to_merge_at_once": 1
+    },
+    "query": {},
+    "server": {}
+  },
+  "params": {
+    "replica": "r1",
+    "seed": 20261024,
+    "kind": "insert",
+    "columns": "k UInt64, a UInt64, b UInt64, c UInt64, d UInt64",
+    "order_by": "k",
+    "row_bytes": 40,
+    "rows": 288359,
+    "inserts": 1,
+    "insert": "INSERT INTO {table} SELECT number + {i} * {rows} AS k, sipHash64(k, {seed}) AS a, a % 1000 AS b, k * 7 AS c, intDiv(k, 3) AS d FROM numbers({rows})",
+    "derived_from": {
+      "min_bytes_for_wide_part": 10485760
+    }
+  },
+  "scale": 1.0,
+  "repeats": 3,
+  "timeout_s": 600,
+  "description": "One insert of 11/10 of min_bytes_for_wide_part uncompressed: a Wide part."
+}
