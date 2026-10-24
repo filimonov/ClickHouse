@@ -446,3 +446,33 @@ class MainTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DerivationRefsTest(unittest.TestCase):
+    """A cell that reads a measured table through registry derivations finds that table's evidence."""
+
+    COV = {"domain": {"variants": ["cas"], "operations": ["gc"], "families": ["cas_gc"]},
+           "cards": [{"name": "gc-scale", "family": "cas_gc", "model_variants": ["cas"],
+                      "cases": [{"case_id": "objects-1k"}]}],
+           "evidence": [{"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "status": "done"}]}
+    APP = {"cas": {"gc": {"cas_gc": "supported"}}}
+
+    def registry(self):
+        lookup = {"kind": "lookup", "table_id": "gc_round_requests", "keys": [{"kind": "const", "value": "fold", "dim": "enum:t"}], "dim": "count"}
+        return {"quantities": [
+            {"id": "outer", "kind": "derivation", "rule": {"kind": "mul", "dim": "count", "a": {"kind": "input", "id": "inner", "dim": "count"},
+                                                             "b": {"kind": "input", "id": "outer", "dim": "count"}}},
+            {"id": "inner", "kind": "derivation", "rule": lookup},
+            {"id": "plain", "kind": "input", "rule": None}]}
+
+    def files(self):
+        cell = {"ledger_rows": [{"expr": {"kind": "input", "id": "outer", "dim": "count"}}], "states": [], "notes": []}
+        return [{"variant": "cas", "cells": {"gc": cell}}]
+
+    def test_chain_reaches_the_table_and_a_cycle_terminates(self):
+        self.assertEqual(cc._pending_cells(self.COV, self.files(), self.APP, registry=self.registry()), [])
+        self.assertEqual(cc.derived_refs({"kind": "input", "id": "outer"}, self.registry()),
+                         {("table", "gc_round_requests")})
+
+    def test_without_the_registry_the_cell_has_no_evidence(self):
+        self.assertEqual(cc._pending_cells(self.COV, self.files(), self.APP), [("cas", "gc", "cas_gc")])

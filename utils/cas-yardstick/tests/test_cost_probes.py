@@ -550,7 +550,7 @@ class CasExpectTest(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as tmp2:
                     _, ctx2, bad = self.run_probe(tmp2, expect=False, duplicate=True)
                     self.assertEqual(failing(card.assertions(ctx2, bad)),
-                                     ['expect_negotiated_rows>=1', 'ledger.r1.PutObject'])
+                                     ['expect_attempts_counted_once', 'expect_negotiated_rows>=1', 'ledger.r1.PutObject'])
                 with tempfile.TemporaryDirectory() as tmp3:
                     _, ctx3, lost = self.run_probe(tmp3, drop_negotiated=True)
                     self.assertIn('expect_rows_within_put_attempts', failing(card.assertions(ctx3, lost)))

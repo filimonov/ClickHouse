@@ -28,8 +28,9 @@ from .probes import CREATE_OPS, ManifestCard, _count, category, integrated, wind
 # rows stay disjoint by key; `gc/state`, `gc/maintenance_state` and `gc/gen/...` are GC authority, cursor and
 # per-round artifacts (CasLayout.h:332-390); `_pool_meta` is the pool-level metadata object probed at pool bootstrap
 # and read-modify-written by the reader floor (CasLayout.h:466, Pool/CasPool.cpp:123, Pool/CasPoolMeta.cpp:116);
-# `roots/` holds the loose mountpoint objects mirrored at their ClickHouse path, such as the server's startup access
-# check, and the mount-safety empty-root listing (CasLayout.h:317-329, :397, :453): no table write lands there.
+# `roots/` holds the loose mountpoint objects mirrored at their ClickHouse path, such as the server's startup write
+# probe (CasLayout.h:317-329, :397, :453; ContentAddressedTransaction.cpp:906): no MergeTree part or table file lands
+# there (those go to manifests and the namespace's `_files/`).
 CAS_FAMILIES = [
     {'name': 'blob_meta', 'regex': r'/blobs/[a-z0-9]+/[0-9a-f]{2}/[0-9a-f]+\.meta$', 'category': 'metadata',
      'payload': False},
@@ -254,6 +255,8 @@ class CasExpect(ManifestCard):
         # `100 Continue` adds no row. The classified PutObject attempts (foreground plus maintenance) less the plain
         # PUT rows bound the negotiated rows from above; a negotiated row the classification lost breaks the bound.
         out['expect_negotiated_ops'] = (True, set(obs['expect_negotiated_ops']) <= {'PutObject'})
+        # Rows and classified attempts agree per op (a double count shows here); the bound below catches a lost row.
+        out['expect_attempts_counted_once'] = (obs['window_rows_by_op'], obs['window_attempts_by_op'])
         room = obs['window_attempts_by_op'].get('PutObject', 0) - obs['plain_put_rows']
         out['expect_rows_within_put_attempts'] = (True, obs['expect_negotiated_rows'] <= room)
         out['no_gc_rounds'] = (0, sum(obs['request_attribution']['rounds'].values()))

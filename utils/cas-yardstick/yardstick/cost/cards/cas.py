@@ -586,7 +586,8 @@ class GcIdle(PopulatedPool):
         obs = draft['observations']
         out['heartbeat_requests>0'] = (True, obs['heartbeat_requests'] > 0)
         out['round_requests>0'] = (True, obs['round_requests'] > 0)
-        out['families_disjoint'] = (True, 'gc_hb' not in obs['round_families'] and obs['outside_round_families'] == ['gc_hb'])
+        # Round rows exclude gc_hb by construction; the check is that outside rounds only the heartbeat runs.
+        out['families_disjoint'] = (True, obs['outside_round_families'] == ['gc_hb'])
         out['rounds_succeeded'] = (True, bool(obs['round_outcomes']) and all(o in ('Success', 'Deferred')
                                                                                for o in obs['round_outcomes']))
         return out

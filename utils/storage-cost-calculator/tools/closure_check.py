@@ -173,7 +173,25 @@ def _cut_coefficients(coverage):
             if all(r["status"] == "cut" or r["experiment_id"] in cut_cases for r in rows)}
 
 
-def _pending_cells(coverage, formulas_list, applicability=None):
+def derived_refs(node, registry):
+    """(kind, id) of every coef and lookup table below `node`, following `input` nodes into registry derivations.
+
+    A cell may read a measured table through a derivation whose rule is the lookup; the evidence it needs is that
+    table's. Each derivation is expanded once, so a cyclic rule set terminates.
+    """
+    rules = {q["id"]: q["rule"] for q in (registry or {}).get("quantities", []) if q.get("kind") == "derivation" and q.get("rule")}
+    out, seen, todo = set(), set(), [node]
+    while todo:
+        for kind, ref in _walk(todo.pop(), []):
+            if kind in ("coef", "table"):
+                out.add((kind, ref))
+            elif kind == "input" and ref in rules and ref not in seen:
+                seen.add(ref)
+                todo.append(rules[ref])
+    return out
+
+
+def _pending_cells(coverage, formulas_list, applicability=None, registry=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
     A cell has evidence when every coefficient its formulas use has a completed (`done` or `consumed`) evidence
@@ -190,7 +208,7 @@ def _pending_cells(coverage, formulas_list, applicability=None):
         for op, cell in f.get("cells", {}).items():
             entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set()})
             entry["unsupported"] |= unconditional_not_supported(cell)
-            entry["coefs"] |= {ref for kind, ref in _walk(cell, []) if kind in ("coef", "table")}
+            entry["coefs"] |= {ref for kind, ref in derived_refs(cell, registry)}
     pending = []
     for v in domain["variants"]:
         for op in domain["operations"]:
@@ -202,15 +220,15 @@ def _pending_cells(coverage, formulas_list, applicability=None):
     return pending
 
 
-def _cells_on_cut(coverage, formulas_list):
+def _cells_on_cut(coverage, formulas_list, registry=None):
     """A cell that uses a coefficient resting only on cut experiments must be unconditionally not_supported."""
     cut = _cut_coefficients(coverage)
     out = []
     for f in formulas_list:
         for op, cell in (f.get("cells") or {}).items():
             unsupported = unconditional_not_supported(cell)
-            for kind, ref in sorted(set(_walk(cell, []))):
-                if kind in ("coef", "table") and ref in cut and not unsupported:
+            for kind, ref in sorted(derived_refs(cell, registry)):
+                if ref in cut and not unsupported:
                     out.append(f"cell {f['variant']}/{op} depends on cut coefficient {ref} and is not marked not_supported")
     return out
 
@@ -235,10 +253,10 @@ def support(registry, coverage, formulas_list, require_formulas=False, pending=N
         problems += [f"card {card['name']}: model variant {v} is not measured by any case policy"
                      for v in card["model_variants"] if v not in measured]
     problems += [f"family {f} has no card" for f in sorted(families - {c["family"] for c in coverage["cards"]})]
-    problems += _cells_on_cut(coverage, formulas_list)
+    problems += _cells_on_cut(coverage, formulas_list, registry)
     if _cut_coefficients(coverage) and not PRESETS.exists():
         print(f"note: {PRESETS} absent; cut propagation to presets not checked", file=sys.stderr)
-    pending_cells = _pending_cells(coverage, formulas_list, applicability)
+    pending_cells = _pending_cells(coverage, formulas_list, applicability, registry)
     if require_formulas and applicability is not None:
         # A variant whose reports claim no family would price nothing; that is missing work, not a free column.
         problems += [f"variant {v}: no formulas file lists a supported family" for v in sorted(applicability)

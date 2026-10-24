@@ -322,6 +322,11 @@ class GcLifecycleTest(unittest.TestCase):
                 card.measured(ctx)
             self.assertEqual(card.state(ctx)['cohort'], {('b', BLOB), ('b', MANIFEST)})
             self.assertTrue(any('DROP TABLE yardstick.t SYNC' in q for q in ctx.cluster.clients[0].log))
+            # A payload object written after the retire is not in the frozen cohort.
+            later = f'{P}/blobs/ch128/99/99aa'
+            led.add('PutObject', later)
+            self.assertNotIn(('b', later), card.state(ctx)['cohort'])
+            self.assertIn(('b', later), cas_probe.cohort(led.rows[1:]))
 
     def test_stages_and_delays_from_the_gc_log_and_the_ledger(self):
         m = manifest('gc-lifecycle.drop')

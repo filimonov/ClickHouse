@@ -266,7 +266,7 @@ def build(opts, mode="dev"):
     problems += closure_check.dependency(reg, formulas_list)
     problems += closure_check.support(reg, cov, formulas_list, require_formulas=mode == "final", applicability=app)
     # Counted here, not taken from `support`, so the evidence statement is the same in both modes.
-    support_pending = closure_check._pending_cells(cov, formulas_list, app)
+    support_pending = closure_check._pending_cells(cov, formulas_list, app, reg)
     problems += closure_check.evidence(cov, coefficients, measurement_ids, coefficient_identity(coefficients, coef_owner, evidence))
     problems += closure_check.billing(bil)
     if support_pending and mode == "dev":

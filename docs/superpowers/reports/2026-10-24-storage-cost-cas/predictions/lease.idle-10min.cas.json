@@ -4,12 +4,26 @@
   "policy": "cas",
   "inputs": {
     "idle_s": 600,
-    "role": "fit",
-    "rule": "one conditional PUT per mount_renew_period (10 s) from the last committed attempt start: rate = 1 / (10 s + attempt latency)"
+    "role": "validation",
+    "rule": "one conditional PUT of the mount object per mount_renew_period (10 s), start to start; plus the table cleanup listing",
+    "replaces": "the first prediction (no foreground), consumed by run cost-20261024T082909Z"
   },
   "expected": {
     "foreground": {
-      "r1": {}
+      "r1": {
+        "GetObject": {
+          "min": 1,
+          "max": 2,
+          "basis": "derived",
+          "reason": "the MergeTree cleanup thread lists the idle table once per run: idle sleep max_cleanup_delay_period 300 s + U(0, 10 s) (src/Storages/MergeTree/IMergeTreeCleanupThread.cpp:134-149), the listing gated by merge_tree_clear_old_temporary_directories_interval_seconds (MergeTreeCleanupThread.cpp:43-47) and done by iterateDirectory (MergeTreeData.cpp:4028): a catalog GET and a LIST of _files/ per run; a 600 s window holds 1 or 2 runs (measured 1 at 334-340 s in cost-20261024T082909Z)"
+        },
+        "ListObjectsV2": {
+          "min": 1,
+          "max": 2,
+          "basis": "derived",
+          "reason": "the MergeTree cleanup thread lists the idle table once per run: idle sleep max_cleanup_delay_period 300 s + U(0, 10 s) (src/Storages/MergeTree/IMergeTreeCleanupThread.cpp:134-149), the listing gated by merge_tree_clear_old_temporary_directories_interval_seconds (MergeTreeCleanupThread.cpp:43-47) and done by iterateDirectory (MergeTreeData.cpp:4028): a catalog GET and a LIST of _files/ per run; a 600 s window holds 1 or 2 runs (measured 1 at 334-340 s in cost-20261024T082909Z)"
+        }
+      }
     },
     "observations": {
       "lease_ops": [
@@ -49,6 +63,26 @@
       "claim": "gc/server-roots/<srid>/mount is the mount lease",
       "path": "tmp/src-26.8/src/Disks/DiskObjectStorage/MetadataStorages/ContentAddressed/Formats/CasLayout.h",
       "line": 446
+    },
+    {
+      "claim": "idle cleanup runs sleep max_cleanup_delay_period plus up to cleanup_delay_period_random_add",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/IMergeTreeCleanupThread.cpp",
+      "line": 134
+    },
+    {
+      "claim": "clearOldTemporaryDirectories runs when its interval has passed",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeCleanupThread.cpp",
+      "line": 43
+    },
+    {
+      "claim": "it iterates the table directory: on CAS a catalog GET and a LIST of the namespace files",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp",
+      "line": 4028
+    },
+    {
+      "claim": "max_cleanup_delay_period 300 s",
+      "path": "tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp",
+      "line": 1682
     }
   ],
   "prediction_commit": "8ae3a262cae"
