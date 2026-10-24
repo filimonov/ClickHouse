@@ -11754,7 +11754,7 @@
       "role": "fit",
       "prediction_commit": null,
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "io_bytes_per_op",
@@ -11764,7 +11764,7 @@
       "role": "fit",
       "prediction_commit": null,
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "io_bytes_per_op",
@@ -11774,7 +11774,7 @@
       "role": "fit",
       "prediction_commit": null,
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "io_bytes_per_op",
@@ -11784,7 +11784,7 @@
       "role": "fit",
       "prediction_commit": null,
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "io_bytes_per_op",
@@ -11794,7 +11794,7 @@
       "role": "fit",
       "prediction_commit": null,
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "io_bytes_per_op",
@@ -11804,7 +11804,7 @@
       "role": "fit",
       "prediction_commit": null,
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "io_bytes_per_op",
@@ -11814,7 +11814,7 @@
       "role": "fit",
       "prediction_commit": null,
       "measurement_ids": [],
-      "status": "planned"
+      "status": "cut"
     },
     {
       "coefficient": "peak_factor",
@@ -12160,81 +12160,6 @@
     },
     {
       "coefficient": "plain_meta_objects_per_part",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_meta_objects_per_part",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_meta_objects_per_part",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_meta_objects_per_part",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_meta_objects_per_part",
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3plain",
       "span": {
@@ -12831,81 +12756,6 @@
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k1",
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k2",
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_create_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_create_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_create_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_create_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k3"
       ],
       "status": "done"
     },
@@ -13512,81 +13362,6 @@
     },
     {
       "coefficient": "plain_rename_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_rename_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_rename_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_rename_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_rename_requests",
       "experiment_id": "objects-per-part.wide-wide",
       "policy": "s3plain",
       "span": {
@@ -13922,81 +13697,6 @@
     },
     {
       "coefficient": "plain_unlink_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_unlink_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_unlink_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_unlink_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_unlink_requests",
       "experiment_id": "drop.partition-2",
       "policy": "s3plain",
       "span": {
@@ -14142,81 +13842,6 @@
     },
     {
       "coefficient": "plain_dir_remove_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_remove_requests",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_remove_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_remove_requests",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_dir_remove_requests",
       "experiment_id": "drop.partition-2",
       "policy": "s3plain",
       "span": {
@@ -14357,43 +13982,6 @@
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k1",
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k2",
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_empty_part_objects",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_empty_part_objects",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "fit",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k3"
       ],
       "status": "done"
     },
@@ -15069,81 +14657,6 @@
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k1",
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k2",
         "cost-20261024T142405Z/s3plain_cached/drop/partition/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_objects_per_part",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "validation",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_objects_per_part",
-      "experiment_id": "drop.ttl",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "validation",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/ttl/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_objects_per_part",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "validation",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain/drop/table-sync/k3"
-      ],
-      "status": "done"
-    },
-    {
-      "coefficient": "plain_objects_per_part",
-      "experiment_id": "drop.table-sync",
-      "policy": "s3plain_cached",
-      "span": {
-        "active_parts": [
-          0,
-          0
-        ]
-      },
-      "role": "validation",
-      "prediction_commit": "0f1ad12f2a2",
-      "measurement_ids": [
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k1",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k2",
-        "cost-20261024T142405Z/s3plain_cached/drop/table-sync/k3"
       ],
       "status": "done"
     },
