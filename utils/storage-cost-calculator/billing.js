@@ -286,6 +286,8 @@
     return { lines, total: lines.reduce((s, l) => s + l.money, 0), provisioning };
   }
 
+  const blockRowOf = (ruleId, r) => (ruleId === 'block_capacity' ? r.row_type === 'block_capacity' : r.row_type === 'block_io');
+
   // Quantity a cell contributes to one aggregate billing line; allocation is proportional to it.
   function cellQuantity(line, rows, preset, outcomeMix) {
     const mine = rows.filter((r) => r.scope === line.scope);
@@ -312,8 +314,13 @@
       for (const name of Object.keys(c.shares || {})) if (!keyOf.has(name)) problems.push(`allocation share for unknown cell ${name}`);
     }
     const allocation = lines.map((l) => {
-      const own = Object.fromEntries(cells.map((c) => [c.key, cellQuantity(l, c.rows, preset, outcomeMix)]));
-      const sum = Object.values(own).reduce((s, w) => s + w, 0);
+      let own = Object.fromEntries(cells.map((c) => [c.key, cellQuantity(l, c.rows, preset, outcomeMix)]));
+      let sum = Object.values(own).reduce((s, w) => s + w, 0);
+      // A volume has a minimum size, so a zero demand still costs money: the cells that declared block rows share it equally.
+      if (sum <= 0 && l.rule_id.startsWith('block_')) {
+        own = Object.fromEntries(cells.map((c) => [c.key, c.rows.filter((r) => r.scope === l.scope && blockRowOf(l.rule_id, r)).length]));
+        sum = Object.values(own).reduce((s, w) => s + w, 0);
+      }
       if (sum <= 0 && l.money > EPS) problems.push(`${l.rule_id} money ${l.money} has no cell to allocate to`);
       // Fractions come from quantities, so a zero-priced line still shows who used it.
       const frac = Object.fromEntries(cells.map((c) => [c.key, 0]));

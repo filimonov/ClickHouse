@@ -1539,7 +1539,51 @@
    "states": [
     {
      "id": "not_supported",
-     "cond": true,
+     "cond": {
+      "kind": "branch",
+      "dim": "count",
+      "cond": {
+       "op": "!=",
+       "a": {
+        "kind": "add",
+        "dim": "count",
+        "a": {
+         "kind": "add",
+         "dim": "count",
+         "a": {
+          "kind": "input",
+          "id": "mutations_per_month",
+          "dim": "count"
+         },
+         "b": {
+          "kind": "input",
+          "id": "mutated_compact_parts_per_month",
+          "dim": "count"
+         }
+        },
+        "b": {
+         "kind": "input",
+         "id": "mutated_wide_parts_per_month",
+         "dim": "count"
+        }
+       },
+       "b": {
+        "kind": "const",
+        "value": 0,
+        "dim": "count"
+       }
+      },
+      "then": {
+       "kind": "const",
+       "value": 1,
+       "dim": "count"
+      },
+      "else": {
+       "kind": "const",
+       "value": 0,
+       "dim": "count"
+      }
+     },
      "reason": "s3_plain_rewritable cannot perform mutations (ALTER UPDATE, ALTER DELETE and lightweight DELETE; a lightweight UPDATE (patch parts) is possible only with enable_block_number_column and enable_block_offset_column): a plain metadata storage reports no hard links (tmp/src-26.8/src/Disks/DiskObjectStorage/DiskObjectStorage.cpp:805); checkMutationIsPossible refuses every mutation on such a disk (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:6240); a lightweight DELETE runs as ALTER UPDATE _row_exists, the same check (tmp/src-26.8/src/Interpreters/InterpreterDeleteQuery.cpp:200); that is the default lightweight_delete_mode (tmp/src-26.8/src/Core/Settings.cpp:5070); a lightweight UPDATE (patch parts) needs enable_block_number_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12630); and enable_block_offset_column (tmp/src-26.8/src/Storages/MergeTree/MergeTreeData.cpp:12635); which is off by default (tmp/src-26.8/src/Storages/MergeTree/MergeTreeSettings.cpp:2013)"
     }
    ]
@@ -3748,6 +3792,9 @@
   },
   "merges": {
    "lifecycle": "supported"
+  },
+  "mutations": {
+   "mutation_deletes": "supported"
   },
   "deletes": {
    "mutation_deletes": "supported"

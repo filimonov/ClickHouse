@@ -383,9 +383,13 @@ test('test_plain_copy_for_reasons_quantities_and_derivations', () => {
   const lv = vmod.build(pipeline.run(live, r0.inputs, aws, {}), live, r0.fields, r0.lockOrder, { pricePreset: aws, units: 'hour' });
   const f = (id) => lv.inputs.blocks.flatMap((b) => b.fields).find((x) => x.id === id);
   assert.equal(f('data_bytes').derived_text, 'Derived from ingest rate × retention');
-  // EBS and s3plain have measured models; the logs scenario mutates, which s3_plain_rewritable refuses. EBS drops and
-  // restarts are priced by assumption rows, so the column stays available.
-  assert.match(lv.cards.find((c) => c.variant === 's3plain').reason, /s3_plain_rewritable cannot perform mutations/);
+  // EBS and s3plain have measured models. The logs scenario is append-only, so s3plain stays comparable; a workload
+  // that mutates is refused by s3_plain_rewritable. EBS drops and restarts are priced by assumption rows, so the
+  // column stays available.
+  assert.equal(lv.cards.find((c) => c.variant === 's3plain').state, 'ok');
+  const mut = pipeline.resolveInputs(live, { ...presets.SCENARIOS.logs.values, mutations_per_month: 5 }, presets.SCENARIOS.logs.locks, {});
+  const lm = vmod.build(pipeline.run(live, mut.inputs, aws, {}), live, mut.fields, mut.lockOrder, { pricePreset: aws, units: 'hour' });
+  assert.match(lm.cards.find((c) => c.variant === 's3plain').reason, /s3_plain_rewritable cannot perform mutations/);
   assert.equal(lv.cards.find((c) => c.variant === 'ebs').state, 'ok');
   // Slider bounds in the shown unit: the ladder for a rate without a measured range, the range for replicas.
   // 500 GiB/day ×1/4 … ×8, shown per hour.

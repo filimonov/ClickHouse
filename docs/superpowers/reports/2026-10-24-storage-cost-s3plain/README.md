@@ -34,10 +34,14 @@ removal of the merged sources. The cards are those of the `s3` report plus `boun
 |---|---|---|
 | `storage`, `reads` | supported | a file is an object under its directory's random prefix (`Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.cpp:34`); reads resolve keys from the in-memory layout (`MetadataStorageFromPlainRewritableObjectStorage.cpp:359`) |
 | `inserts`, `merges` | supported | new part directories and the rename from `tmp_` (`Storages/MergeTree/DataPartStorageOnDiskBase.cpp:983`) are directory operations of the plain layout |
-| `mutations` | **not supported** | `DiskObjectStorage::supportsHardLinks` is false for a plain metadata storage (`Disks/DiskObjectStorage/DiskObjectStorage.cpp:805`), so `checkMutationIsPossible` refuses every mutation (`Storages/MergeTree/MergeTreeData.cpp:6240`). A lightweight `DELETE` runs as `ALTER UPDATE _row_exists` by default (`Interpreters/InterpreterDeleteQuery.cpp:200`, `Core/Settings.cpp:5070`) and hits the same check. Lightweight `UPDATE` needs `enable_block_number_column` (`MergeTreeData.cpp:12630`), off by default (`MergeTreeSettings.cpp:2013`) |
+| `mutations` | **not supported when the workload mutates** | `DiskObjectStorage::supportsHardLinks` is false for a plain metadata storage (`Disks/DiskObjectStorage/DiskObjectStorage.cpp:805`), so `checkMutationIsPossible` refuses every mutation (`Storages/MergeTree/MergeTreeData.cpp:6240`). A lightweight `DELETE` runs as `ALTER UPDATE _row_exists` by default (`Interpreters/InterpreterDeleteQuery.cpp:200`, `Core/Settings.cpp:5070`) and hits the same check. Lightweight `UPDATE` needs `enable_block_number_column` (`MergeTreeData.cpp:12630`), off by default (`MergeTreeSettings.cpp:2013`) |
 | `deletes` | supported | `DROP PARTITION` is one of the partition commands a plain-rewritable disk allows (`MergeTreeData.cpp:8249`); TTL expiry is a merge; `DROP TABLE` removes the directories |
 | `recovery` | supported | startup rebuilds the layout by listing `__meta/` (`MetadataStorageFromPlainRewritableObjectStorage.cpp:138`) |
 | `local_disk` | supported | the layout is held in memory (`MetadataStorageFromPlainRewritableObjectStorage.h:87`): no local file per object; only the cache uses the local disk |
+
+The `mutations` cell is `not_supported` only when the workload mutates: `mutations_per_month`,
+`mutated_compact_parts_per_month` and `mutated_wide_parts_per_month` all zero leaves the column comparable, and any
+non-zero value disables it with the reason below.
 
 Paths are under `tmp/src-26.8/src/`. Every mutation case runs on both plain policies and produces an `UNSUPPORTED`
 record with this reason and its cites. The server answers the same: `Mutations are not supported for immutable

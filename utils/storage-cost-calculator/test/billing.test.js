@@ -306,3 +306,24 @@ test('test_allocation_keeps_the_outcome_mix', () => {
   close(a.byCell.a.money, 0);
   close(a.byCell.b.money, b.total);
 });
+
+test('test_minimum_volume_goes_to_the_cells_that_declared_block_rows_even_at_zero_demand', () => {
+  // A volume has a minimum size, so zero demand still costs money. It goes to the cells that hold block rows.
+  const empty = row('block_capacity', 'capacity', 'all', 0, { scope: 'replica' });
+  const other = row('request', 'GetObject', 'ok', 1000, { scope: 'replica' });
+  const b = billing.bill([empty, other], P(), 'replica', null, null, { replicas: 1 });
+  const cap = line(b, 'block_capacity');
+  assert.ok(cap.money > 0);
+  const a = billing.allocate(b.lines, [{ key: 'disk', name: 'disk', rows: [empty] }, { key: 'reads', name: 'reads', rows: [other] }], P(), null);
+  assert.deepEqual(a.problems, []);
+  const capOf = (res, key) => res.byCell[key].lines.filter((l) => l.rule_id === 'block_capacity').reduce((t, l) => t + l.money, 0);
+  close(capOf(a, 'disk'), cap.money);
+  close(capOf(a, 'reads'), 0);
+  // Two such cells split it equally; a cell without block rows gets none.
+  const two = billing.allocate(b.lines, [{ key: 'x', name: 'x', rows: [empty] }, { key: 'y', name: 'y', rows: [empty] }, { key: 'reads', name: 'reads', rows: [other] }], P(), null);
+  close(capOf(two, 'x'), cap.money / 2);
+  close(capOf(two, 'reads'), 0);
+  // With no block row anywhere the money still has no cell.
+  const none = billing.allocate(b.lines, [{ key: 'reads', name: 'reads', rows: [other] }], P(), null);
+  assert.match(none.problems.join(';'), /block_capacity money .* has no cell to allocate to/);
+});

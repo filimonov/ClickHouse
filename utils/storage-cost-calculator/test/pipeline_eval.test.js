@@ -516,3 +516,37 @@ test('test_cut_cell_without_rows_never_prices_zero', () => {
   assert.equal(rb.variants.s3.state, 'unavailable');
   assert.equal(rb.variants.s3.total, null);
 });
+
+// A `not_supported` state may read the workload: the column is unsupported only when it runs the operation.
+const mutationState = (ids) => (x) => {
+  const sum = ids.map((id) => ({ kind: 'input', id, dim: 'count' })).reduce((a, b) => ({ kind: 'add', dim: 'count', a, b }));
+  x.formulas.s3plain.mutations.states = [{
+    id: 'not_supported',
+    cond: { kind: 'branch', dim: 'count', cond: { op: '!=', a: sum, b: { kind: 'const', value: 0, dim: 'count' } }, then: { kind: 'const', value: 1, dim: 'count' }, else: { kind: 'const', value: 0, dim: 'count' } },
+    reason: 'plain storage cannot mutate',
+  }];
+};
+
+test('test_conditional_not_supported_follows_mutation_inputs', () => {
+  const c = load(mutationState(['mutations_per_month']));
+  const zero = run({ mutations_per_month: 0 }, c).variants.s3plain;
+  assert.equal(zero.state, 'ok');
+  assert.notEqual(zero.total, null);
+  const some = run({ mutations_per_month: 3 }, c);
+  assert.equal(some.variants.s3plain.state, 'not_supported');
+  assert.match(some.variants.s3plain.reason, /plain storage cannot mutate/);
+  assert.equal(some.variants.s3plain.total, null);
+  assert.notEqual(some.cheapest, 's3plain');
+  // The other columns are unaffected.
+  assert.equal(some.variants.s3.state, 'ok');
+});
+
+test('test_conditional_not_supported_unresolvable_cond_is_unavailable', () => {
+  const c = load(mutationState(['mutations_per_month']));
+  const m = inputs({ mutations_per_month: 0 });
+  m.delete('mutations_per_month');
+  const sp = pipeline.run(c, m, AWS, {}).variants.s3plain;
+  assert.equal(sp.state, 'unavailable');
+  assert.notEqual(sp.state, 'ok');
+  assert.equal(sp.total, null);
+});

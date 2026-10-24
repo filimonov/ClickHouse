@@ -615,7 +615,6 @@ class PerFamilyBackingTest(unittest.TestCase):
                         ("ca", "b-card.x", "validation", "done")])
         self.assertEqual(cc._pending_cells(cov, self.files(expr), self.APP), [])
 
-
 class EvidenceScopeTest(unittest.TestCase):
     """Evidence backs the variant of the row's policy only, never an assumed key, and owners come from the reports."""
 
@@ -660,6 +659,38 @@ class EvidenceScopeTest(unittest.TestCase):
         self.assertEqual(artifacts.validate_coverage(cov), [])
         cov["evidence"][0]["borrowed_from"] = "cas"
         self.assertTrue(any("equals the row's policy" in p for p in artifacts.validate_coverage(cov)))
+
+
+class ConditionalNotSupportedBackingTest(unittest.TestCase):
+    """A row-less cell whose only content is a workload-conditional `not_supported` state prices nothing: no evidence needed."""
+
+    COV = {"domain": {"variants": ["cas"], "operations": ["gc"], "families": ["fam_a"]},
+           "cards": [{"name": "a-card", "family": "fam_a", "model_variants": ["cas"], "cases": [{"case_id": "x"}]}],
+           "evidence": []}
+    APP = {"cas": {"gc": {"fam_a": "supported"}}}
+    COND = {"kind": "branch", "dim": "count", "cond": {"op": "!=", "a": {"kind": "input", "id": "n", "dim": "count"},
+                                                       "b": {"kind": "const", "value": 0, "dim": "count"}},
+            "then": {"kind": "const", "value": 1, "dim": "count"}, "else": {"kind": "const", "value": 0, "dim": "count"}}
+
+    def files(self, rows=(), cond=None):
+        cell = {"ledger_rows": list(rows), "states": [{"id": "not_supported", "cond": cond or self.COND, "reason": "r"}], "notes": []}
+        return [{"variant": "cas", "cells": {"gc": cell}}]
+
+    def test_rowless_conditional_cell_is_not_pending(self):
+        self.assertEqual(cc._pending_cells(self.COV, self.files(), self.APP), [])
+
+    def test_a_cell_with_rows_still_needs_evidence(self):
+        row = {"expr": {"kind": "input", "id": "n", "dim": "count"}}
+        self.assertEqual(cc._pending_cells(self.COV, self.files(rows=[row]), self.APP), [("cas", "gc", "fam_a")])
+
+    def test_a_condition_reading_no_input_still_needs_evidence(self):
+        files = self.files(cond={"kind": "const", "value": 1, "dim": "count"})
+        self.assertEqual(cc._pending_cells(self.COV, files, self.APP), [("cas", "gc", "fam_a")])
+
+    def test_a_rowless_cell_with_no_such_state_still_needs_evidence(self):
+        files = self.files()
+        files[0]["cells"]["gc"]["states"] = []
+        self.assertEqual(cc._pending_cells(self.COV, files, self.APP), [("cas", "gc", "fam_a")])
 
 
 if __name__ == '__main__':

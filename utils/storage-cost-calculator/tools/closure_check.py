@@ -164,6 +164,14 @@ def unconditional_not_supported(cell):
                                           for s in cell.get("states") or [])
 
 
+def rowless_conditional_not_supported(cell):
+    """The cell prices nothing and says only that the variant cannot perform the operation when the workload reads
+    some input that is non-zero. A condition that reads no input is not a workload condition."""
+    return (isinstance(cell, dict) and not cell.get("ledger_rows") and not cell.get("allocation")
+            and any(isinstance(s, dict) and s.get("id") == "not_supported" and s.get("cond") is not True
+                    and derived_inputs(s.get("cond"), None) for s in cell.get("states") or []))
+
+
 def _cut_coefficients(coverage):
     cut_cases = {f"{c['name']}.{k['case_id']}" for c in coverage["cards"] for k in c["cases"] if k["status"] == "cut"}
     by_coef = {}
@@ -227,6 +235,8 @@ def _assumed_hits(node, registry, assumed):
 def _pending_cells(coverage, formulas_list, applicability=None, registry=None, measured=None, assumed=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
+    A cell with no rows whose states include a `not_supported` one prices nothing, so it needs no evidence either.
+
     A coefficient belongs to the families of the cards its fit and hold-out rows come from. A (cell, family) entry
     is backed when every coefficient the cell references (through registry derivations too) that belongs to that
     family has a completed fit row (`done` or `consumed`) and a `done` hold-out row from that family's cards on the
@@ -269,7 +279,7 @@ def _pending_cells(coverage, formulas_list, applicability=None, registry=None, m
     for f in formulas_list:
         for op, cell in f.get("cells", {}).items():
             entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set(), "quantities": set(), "assumed": set()})
-            entry["unsupported"] |= unconditional_not_supported(cell)
+            entry["unsupported"] |= unconditional_not_supported(cell) or rowless_conditional_not_supported(cell)
             entry["coefs"] |= {ref for kind, ref in derived_refs(cell, registry)}
             entry["quantities"] |= derived_inputs(cell, registry)
             entry["assumed"] |= _assumed_hits(cell, registry, assumed or {})
