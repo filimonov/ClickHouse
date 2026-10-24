@@ -267,6 +267,8 @@ li > .info-btn { margin: 0 0 0 6px; vertical-align: middle; }
 .panel-inputs .field-head .badge, .panel-inputs .field-head .btn-small { font-size: 11px; padding: 0 6px; line-height: 18px; }
 .panel-inputs .group-note { margin: 4px 0; padding: 4px 8px; }
 .row-note { display: block; font-weight: 400; font-size: 12px; color: var(--mute); }
+/* Room for a row hint on two lines instead of four. */
+@media (min-width: 901px) { .breakdown tbody th[scope="row"] { min-width: 150px; } }
 .evidence-columns td { text-align: right; }
 .notes-row th, .notes-row td { vertical-align: top; }
 .col-note { font-size: 12px; color: var(--mute); }
