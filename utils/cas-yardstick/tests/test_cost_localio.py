@@ -1,4 +1,5 @@
 import os
+import os
 import subprocess
 import tempfile
 import threading
@@ -159,6 +160,8 @@ class StraceTest(unittest.TestCase):
 
 class TracerTest(unittest.TestCase):
     def test_prefix(self):
+        # A relative pass dir (a relative --runs-dir) still yields an absolute output path: server.sh changes directory.
+        self.assertEqual(localio.Tracer('rel/pass', 1).path(), os.path.join(os.getcwd(), 'rel/pass/strace.r1.txt'))
         prefix = localio.Tracer('/p/pass', 2).prefix()
         self.assertEqual(prefix, 'strace -f -ttt -yy -e trace=write,pwrite64,writev,read,pread64,readv,fsync,fdatasync '
                                  '-o /p/pass/strace.r2.txt')

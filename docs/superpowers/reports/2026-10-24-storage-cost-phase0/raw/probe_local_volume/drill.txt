@@ -1,0 +1,33 @@
+== probe_local_volume
+1. inputs
+   data_bytes = 20480
+   ingest_rate = 500
+   retention_days = 40
+   replicas = 3
+   shards = 1
+   cache_enabled = 1
+   shape = narrow
+   part_type = wide
+   type_mix = plain
+   write_syscall = write
+   data_dir_io = [object Object]
+   data_dir_write_syscalls = write
+   probe_block_capacity_gib = 0.239532470703125
+   probe_block_iops = 1840.8539858627448
+   probe_block_mibps = 114.81239499654819
+   window_s = 2.065889
+2. rows (branch | predicted | measured | expected | exact)
+   block_capacity capacity all | - | 0.239532470703125 | null | null | null
+   block_io iops all | - | 1840.8539858627448 | null | null | null
+   block_io mibps all | - | 114.81239499654819 | null | null | null
+3. ledger summary
+   block_capacity: 1 rows, quantity 0.239532470703125
+   block_io: 2 rows, quantity 1955.666380859293
+4. billing
+   block_capacity: 6 GiB-month = $0.48
+   block_iops: 0 IOPS-month above baseline = $0
+   block_mibps: 0 MiB/s-month above baseline = $0
+   total = $0.48
+5. allocation
+   single: 1 x 6 GiB, 3000 IOPS, 125 MiB/s = $0.48/month
+OK probe_local_volume: 1 cell(s)

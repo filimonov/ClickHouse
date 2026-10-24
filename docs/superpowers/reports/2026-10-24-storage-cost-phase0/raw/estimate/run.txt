@@ -1,0 +1,5 @@
+case                  policy  status  wall_s  PUT     GET     LIST  DEL calls/keys  inter-from B  local wB
+gc-scale.sample       cas     ok      83.4    207024  117924  67    11/2836         0             928747520
+merge-natural.sample  s3      ok      7.8     963     600     0     0/0             0             5586944
+merge-natural.sample  cas     ok      8.8     943     940     0     0/0             0             558796800
+exit=0

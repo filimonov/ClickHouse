@@ -1,0 +1,225 @@
+{
+  "probe": "probe_local_volume",
+  "measurement_id": "cost-20261024T013942Z/local/probe_local_volume/gate/k1",
+  "cells": {
+    "probe_local_volume": {
+      "stage1_inputs": {
+        "inputs": {
+          "data_bytes": 20480,
+          "ingest_rate": 500,
+          "retention_days": 40,
+          "replicas": 3,
+          "shards": 1,
+          "cache_enabled": "1",
+          "shape": "narrow",
+          "part_type": "wide",
+          "type_mix": "plain",
+          "write_syscall": "write",
+          "data_dir_io": {
+            "fdatasync": {
+              "bytes": 0,
+              "count": 3,
+              "size_histogram": {}
+            },
+            "write": {
+              "bytes": 248711389,
+              "count": 3803,
+              "size_histogram": {
+                "1": 201,
+                "4": 2,
+                "8": 200,
+                "16": 200,
+                "64": 200,
+                "256": 400,
+                "512": 400,
+                "1024": 200,
+                "2048": 200,
+                "4096": 1400,
+                "262144": 200,
+                "1048576": 200
+              }
+            }
+          },
+          "data_dir_write_syscalls": [
+            "write"
+          ],
+          "probe_block_capacity_gib": 0.239532470703125,
+          "probe_block_iops": 1840.8539858627448,
+          "probe_block_mibps": 114.81239499654819,
+          "window_s": 2.065889
+        },
+        "coefs": {
+          "s3_max_single_part_upload_size": 33554432,
+          "s3_min_upload_part_size": 16777216,
+          "compressed_block_frame_bytes": 25,
+          "cas_expect_continue_min_bytes": 1048576,
+          "cas_inline_cap_bytes": 1048576
+        },
+        "observations": {
+          "data_dir_io": {
+            "fdatasync": {
+              "bytes": 0,
+              "count": 3,
+              "size_histogram": {}
+            },
+            "write": {
+              "bytes": 248711389,
+              "count": 3803,
+              "size_histogram": {
+                "1": 201,
+                "4": 2,
+                "8": 200,
+                "16": 200,
+                "64": 200,
+                "256": 400,
+                "512": 400,
+                "1024": 200,
+                "2048": 200,
+                "4096": 1400,
+                "262144": 200,
+                "1048576": 200
+              }
+            }
+          },
+          "data_dir_write_syscalls": [
+            "write"
+          ],
+          "probe_block_capacity_gib": 0.239532470703125,
+          "probe_block_iops": 1840.8539858627448,
+          "probe_block_mibps": 114.81239499654819,
+          "window_s": 2.065889
+        }
+      },
+      "stage2_rows": [
+        {
+          "row": "block_capacity capacity all",
+          "row_type": "block_capacity",
+          "op_kind": "capacity",
+          "outcome_class": "all",
+          "branch_taken": [],
+          "predicted": 0.239532470703125,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        },
+        {
+          "row": "block_io iops all",
+          "row_type": "block_io",
+          "op_kind": "iops",
+          "outcome_class": "all",
+          "branch_taken": [],
+          "predicted": 1840.8539858627448,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        },
+        {
+          "row": "block_io mibps all",
+          "row_type": "block_io",
+          "op_kind": "mibps",
+          "outcome_class": "all",
+          "branch_taken": [],
+          "predicted": 114.81239499654819,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        }
+      ],
+      "stage3_ledger_summary": {
+        "by_row_type": {
+          "block_capacity": {
+            "rows": 1,
+            "quantity": 0.239532470703125
+          },
+          "block_io": {
+            "rows": 2,
+            "quantity": 1955.666380859293
+          }
+        },
+        "states": [],
+        "extrapolated": false,
+        "allocation": null,
+        "notes": []
+      },
+      "stage4_billing_lines": [
+        {
+          "rule_id": "block_capacity",
+          "unit": "GiB-month",
+          "quantity": 6,
+          "money": 0.48,
+          "note": "single: 1 x (6 GiB, 3000 IOPS, 125 MiB/s)",
+          "tiers": null,
+          "source_url": "https://docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html",
+          "scope": "volume"
+        },
+        {
+          "rule_id": "block_iops",
+          "unit": "IOPS-month above baseline",
+          "quantity": 0,
+          "money": 0,
+          "note": "baseline 3000 per volume",
+          "tiers": null,
+          "source_url": "https://docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html",
+          "scope": "volume"
+        },
+        {
+          "rule_id": "block_mibps",
+          "unit": "MiB/s-month above baseline",
+          "quantity": 0,
+          "money": 0,
+          "note": "baseline 125 per volume",
+          "tiers": null,
+          "source_url": "https://docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html",
+          "scope": "volume"
+        }
+      ],
+      "billing_total": 0.48,
+      "stage5_allocation": {
+        "scope": "volume",
+        "demand": {
+          "capacity_gib": 0.239532470703125,
+          "peak_iops": 1840.8539858627448,
+          "peak_mibps": 114.81239499654819
+        },
+        "layout": "single",
+        "volumes": 1,
+        "size_gib": 6,
+        "iops": 3000,
+        "mibps": 125,
+        "monthly_cost": 0.48,
+        "feasible": true,
+        "manual": false,
+        "notes": [],
+        "alternatives": [
+          {
+            "layout": "single",
+            "volumes": 1,
+            "size_gib": 6,
+            "iops": 3000,
+            "mibps": 125,
+            "monthly_cost": 0.48
+          },
+          {
+            "layout": "stripe2",
+            "volumes": 2,
+            "size_gib": 6,
+            "iops": 3000,
+            "mibps": 125,
+            "monthly_cost": 0.96
+          },
+          {
+            "layout": "stripe4",
+            "volumes": 4,
+            "size_gib": 6,
+            "iops": 3000,
+            "mibps": 125,
+            "monthly_cost": 1.92
+          }
+        ],
+        "rejected": []
+      },
+      "measurement_id": "cost-20261024T013942Z/local/probe_local_volume/gate/k1"
+    }
+  },
+  "mismatches": []
+}

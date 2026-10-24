@@ -1,0 +1,33 @@
+== probe_cas_gc_cohort
+1. inputs
+   data_bytes = 20480
+   ingest_rate = 500
+   retention_days = 40
+   replicas = 3
+   shards = 1
+   cache_enabled = 1
+   shape = narrow
+   part_type = wide
+   type_mix = plain
+   expect_negotiated_rows = 0
+   blob_files_per_part = data.bin
+   parts = 20
+   cohort_reclaimed = 40
+   cohort_size = 40
+   deleting_callers = r1
+   expect_matches_source = true
+   gc_rounds_reclaiming = 2
+   probe_active_gib_months = 4.194353254514788e-11
+   probe_garbage_gib_months = 2.2991420337930315e-9
+   reclaim_delay_s = 12.90356
+2. rows (branch | predicted | measured | expected | exact)
+   storage garbage all | - | 2.2991420337930315e-9 | null | null | null
+   storage active all | - | 4.194353254514788e-11 | null | null | null
+3. ledger summary
+   storage: 2 rows, quantity 2.3410855663381795e-9
+4. billing
+   storage: 2.3410855663381795e-9 GB-month = $5.384496802577813e-11
+   total = $5.384496802577813e-11
+5. allocation
+   none
+OK probe_cas_gc_cohort: 1 cell(s)

@@ -1,0 +1,52 @@
+P1: 14.5 h   P1+P2: 17.8 h   budget: 72 h (includes the 1.25x rerun reserve)
+  objects-per-part.narrow-compact          P1   9 passes x 9 s [global]  (estimated from global median)
+  objects-per-part.narrow-wide             P1   9 passes x 9 s [global]  (estimated from global median)
+  objects-per-part.wide-compact            P1   9 passes x 9 s [global]  (estimated from global median)
+  objects-per-part.wide-wide               P1   9 passes x 9 s [global]  (estimated from global median)
+  objects-per-part.types-fit               P1   9 passes x 9 s [global]  (estimated from global median)
+  objects-per-part.types-holdout           P1   9 passes x 9 s [global]  (estimated from global median)
+  boundaries.part-size-sequence            P1  12 passes x 9 s [global]  (estimated from global median)
+  big-insert-multipart.multipart           P1   9 passes x 9 s [global]  (estimated from global median)
+  small-inserts.small-inserts              P1  12 passes x 8 s [family]
+  merge-natural.merge-natural              P1  12 passes x 8 s [card]
+  merge-forced.merge-forced                P1  12 passes x 8 s [family]
+  async-inserts.async-inserts              P2  12 passes x 8 s [family]
+  amplification-run.amplification-run      P2  12 passes x 8 s [family]
+  mutation.compact                         P1  12 passes x 9 s [global]  (estimated from global median)
+  mutation.wide                            P1  12 passes x 9 s [global]  (estimated from global median)
+  mutation.lightweight-delete              P1  12 passes x 9 s [global]  (estimated from global median)
+  drop.partition                           P1  12 passes x 9 s [global]  (estimated from global median)
+  drop.ttl                                 P1  12 passes x 9 s [global]  (estimated from global median)
+  drop.drop-table-sync                     P1  12 passes x 9 s [global]  (estimated from global median)
+  detach-attach.detach-attach              P2  12 passes x 9 s [global]  (estimated from global median)
+  cold-select.cache-off                    P1  12 passes x 9 s [global]  (estimated from global median)
+  cold-select.cache-on                     P1   9 passes x 9 s [global]  (estimated from global median)
+  cache-eviction.cache-eviction            P2   9 passes x 9 s [global]  (estimated from global median)
+  startup.startup                          P1  12 passes x 9 s [global]  (estimated from global median)
+  restart-catchup.restart-catchup          P1  12 passes x 9 s [global]  (estimated from global median)
+  replacement.replacement                  P2  12 passes x 9 s [global]  (estimated from global median)
+  replication.replication-fetch            P1  12 passes x 9 s [global]  (estimated from global median)
+  replication.replication-local            P1  12 passes x 9 s [global]  (estimated from global median)
+  replication.replication-natural          P1  12 passes x 9 s [global]  (estimated from global median)
+  replication.replication-natural-fit      P1  12 passes x 9 s [global]  (estimated from global median)
+  replication.replication-zero-copy        P1   3 passes x 9 s [global]  (estimated from global median)
+  faults.fault-put-5xx                     P1   9 passes x 9 s [global]  (estimated from global median)
+  faults.fault-lost-response               P1   9 passes x 9 s [global]  (estimated from global median)
+  faults.fault-multipart-abort             P1   9 passes x 9 s [global]  (estimated from global median)
+  faults.fault-fetch                       P2  12 passes x 9 s [global]  (estimated from global median)
+  cas-branches.fresh                       P1   3 passes x 9 s [global]  (estimated from global median)
+  cas-branches.hash-hit                    P1   3 passes x 9 s [global]  (estimated from global median)
+  cas-branches.adoption                    P1   3 passes x 9 s [global]  (estimated from global median)
+  cas-branches.inline                      P1   3 passes x 9 s [global]  (estimated from global median)
+  cas-branches.staging-peak                P1   3 passes x 9 s [global]  (estimated from global median)
+  cas-drop.foreground-ref-removal          P1   3 passes x 9 s [global]  (estimated from global median)
+  gc-lifecycle.reclaim-delay-by-stage      P1   3 passes x 83 s [family]
+  gc-idle.populated-pool                   P1   3 passes x 83 s [family]
+  gc-scale.objects-1k                      P1   3 passes x 83 s [card]
+  gc-scale.objects-10k                     P1   3 passes x 83 s [card]
+  gc-scale.objects-100k                    P1   3 passes x 83 s [card]
+  gc-scale.mounts                          P2   3 passes x 83 s [card]
+  gc-scale.ref-growth                      P2   3 passes x 83 s [card]
+  lease.lease                              P1   3 passes x 9 s [global]  (estimated from global median)
+  local-volume-sampling.sampled-on-every-card P1   9 passes x 9 s [global]  (estimated from global median)
+within budget: no cuts

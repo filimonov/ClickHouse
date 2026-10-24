@@ -170,7 +170,8 @@ class Tracer:
         self.pass_dir, self.replica = pass_dir, replica
 
     def path(self) -> str:
-        return os.path.join(self.pass_dir, f'strace.r{self.replica}.txt')
+        # Absolute: server.sh changes into the replica directory before strace opens its output file.
+        return os.path.abspath(os.path.join(self.pass_dir, f'strace.r{self.replica}.txt'))
 
     def prefix(self) -> str:
         # server.sh word-splits the prefix, so a path with whitespace would be cut apart.

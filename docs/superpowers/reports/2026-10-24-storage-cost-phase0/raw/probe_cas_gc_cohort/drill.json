@@ -1,0 +1,120 @@
+{
+  "probe": "probe_cas_gc_cohort",
+  "measurement_id": "cost-20261024T013942Z/cas/probe_cas_gc_cohort/gate/k1",
+  "cells": {
+    "probe_cas_gc_cohort": {
+      "stage1_inputs": {
+        "inputs": {
+          "data_bytes": 20480,
+          "ingest_rate": 500,
+          "retention_days": 40,
+          "replicas": 3,
+          "shards": 1,
+          "cache_enabled": "1",
+          "shape": "narrow",
+          "part_type": "wide",
+          "type_mix": "plain",
+          "expect_negotiated_rows": 0,
+          "blob_files_per_part": [
+            "data.bin"
+          ],
+          "parts": 20,
+          "cohort_reclaimed": 40,
+          "cohort_size": 40,
+          "deleting_callers": [
+            "r1"
+          ],
+          "expect_matches_source": true,
+          "gc_rounds_reclaiming": 2,
+          "probe_active_gib_months": 4.194353254514788e-11,
+          "probe_garbage_gib_months": 2.2991420337930315e-9,
+          "reclaim_delay_s": 12.90356
+        },
+        "coefs": {
+          "s3_max_single_part_upload_size": 33554432,
+          "s3_min_upload_part_size": 16777216,
+          "compressed_block_frame_bytes": 25,
+          "cas_expect_continue_min_bytes": 1048576,
+          "cas_inline_cap_bytes": 1048576
+        },
+        "observations": {
+          "cohort_reclaimed": 40,
+          "cohort_size": 40,
+          "deleting_callers": [
+            "r1"
+          ],
+          "expect_matches_source": true,
+          "expect_negotiated_rows": 0,
+          "gc_rounds_reclaiming": 2,
+          "probe_active_gib_months": 4.194353254514788e-11,
+          "probe_garbage_gib_months": 2.2991420337930315e-9,
+          "reclaim_delay_s": 12.90356
+        }
+      },
+      "stage2_rows": [
+        {
+          "row": "storage garbage all",
+          "row_type": "storage",
+          "op_kind": "garbage",
+          "outcome_class": "all",
+          "branch_taken": [],
+          "predicted": 2.2991420337930315e-9,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        },
+        {
+          "row": "storage active all",
+          "row_type": "storage",
+          "op_kind": "active",
+          "outcome_class": "all",
+          "branch_taken": [],
+          "predicted": 4.194353254514788e-11,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        }
+      ],
+      "stage3_ledger_summary": {
+        "by_row_type": {
+          "storage": {
+            "rows": 2,
+            "quantity": 2.3410855663381795e-9
+          }
+        },
+        "states": [],
+        "extrapolated": false,
+        "allocation": null,
+        "notes": []
+      },
+      "stage4_billing_lines": [
+        {
+          "rule_id": "storage",
+          "unit": "GB-month",
+          "quantity": 2.3410855663381795e-9,
+          "money": 5.384496802577813e-11,
+          "tiers": [
+            {
+              "from_gb": 0,
+              "up_to_gb": 51200,
+              "gb": 2.3410855663381795e-9,
+              "price_per_gb_month": 0.023,
+              "money": 5.384496802577813e-11
+            }
+          ],
+          "note": "garbage 2.2991420337930315e-9 GiB-months, active 4.194353254514788e-11 GiB-months",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "by_category": {
+            "garbage": 2.2991420337930315e-9,
+            "active": 4.194353254514788e-11
+          },
+          "scope": "variant"
+        }
+      ],
+      "billing_total": 5.384496802577813e-11,
+      "stage5_allocation": null,
+      "measurement_id": "cost-20261024T013942Z/cas/probe_cas_gc_cohort/gate/k1"
+    }
+  },
+  "mismatches": []
+}

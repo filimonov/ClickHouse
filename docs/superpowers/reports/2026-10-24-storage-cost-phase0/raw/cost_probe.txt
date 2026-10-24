@@ -1,0 +1,6 @@
+PASS probe_s3_insert  drill: tmp/cas-yardstick/cost-runs/cost-20261024T013942Z/drill-probe_s3_insert.json
+PASS probe_replicated_fetch  drill: tmp/cas-yardstick/cost-runs/cost-20261024T013942Z/drill-probe_replicated_fetch.json
+PASS probe_multipart_fault  drill: tmp/cas-yardstick/cost-runs/cost-20261024T013942Z/drill-probe_multipart_fault.json
+PASS probe_cas_gc_cohort  drill: tmp/cas-yardstick/cost-runs/cost-20261024T013942Z/drill-probe_cas_gc_cohort.json
+PASS probe_local_volume  drill: tmp/cas-yardstick/cost-runs/cost-20261024T013942Z/drill-probe_local_volume.json
+exit=0

@@ -419,6 +419,18 @@ class RunnerTest(RunnerFixture):
         self.assertEqual(record['events']['r1']['Q'], 80)  # (150 - 100) + 30
         self.assertEqual(len(record['generations']['r1']), 2)
 
+    def test_relative_runs_dir_gives_absolute_local_dirs(self):
+        seen = []
+        self.card.on_setup = lambda ctx: seen.extend(ctx.local_dirs + [ctx.pass_dir])
+        self.card.on_measured = self.writes(2)
+        cwd = os.getcwd()
+        os.chdir(self.runs_dir)
+        self.addCleanup(os.chdir, cwd)
+        record = run_case(self.card, MANIFEST, 'local', 0, self.deps(runs_dir='.'), cluster_factory=self.factory,
+                          config_writer=self.writer, sampler_factory=FakeSampler)
+        self.assertEqual(record['status'], 'ok')
+        self.assertTrue(seen and all(os.path.isabs(p) for p in seen), seen)
+
     def test_local_policy_uses_local_dirs_and_maps_variant(self):
         self.card.on_measured = self.writes(2)
         record = self.go(policy='local')

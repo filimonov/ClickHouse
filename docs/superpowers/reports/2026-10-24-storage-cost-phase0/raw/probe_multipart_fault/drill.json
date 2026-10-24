@@ -1,0 +1,259 @@
+{
+  "probe": "probe_multipart_fault",
+  "measurement_id": "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1",
+  "cells": {
+    "probe_multipart_fault": {
+      "stage1_inputs": {
+        "inputs": {
+          "data_bytes": 20480,
+          "ingest_rate": 500,
+          "retention_days": 40,
+          "replicas": 3,
+          "shards": 1,
+          "cache_enabled": "1",
+          "shape": "narrow",
+          "part_type": "wide",
+          "type_mix": "plain",
+          "rows": 40000,
+          "s_chars_total": 40938368,
+          "residue_bytes_band": [
+            40939368,
+            40953993
+          ],
+          "part_identities": 2,
+          "part_sizes_at_band_edges": [
+            [
+              33554432,
+              7384936
+            ],
+            [
+              33554432,
+              7399561
+            ]
+          ],
+          "s3_retry_attempts": 1,
+          "http_attempts_per_failing_call": 4,
+          "expected_exceptions": [
+            {
+              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
+              "type": "RuntimeError"
+            }
+          ],
+          "multipart": {
+            "after_abort": 0,
+            "object_created": false,
+            "part2": {
+              "attempts": 2,
+              "correlated": true,
+              "sha256": [
+                "65f5ba9cf9fab90a357ce5f27b29014ae28a42997eaa71705ed6b0055c01927e"
+              ]
+            },
+            "part_identities": 2,
+            "residue": {
+              "lower": 40939368,
+              "upper": 40939368
+            },
+            "uploads": [
+              [
+                "yardstick-cost",
+                "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll",
+                "NjMxZjIzYzQtZTczYy00ZGUxLWEwNjMtY2U4YmNiYzVhNzU3LjY3MWJiYmI4LWVmMzEtNDQzOC04ODdjLWJiMzUzMDdkMWQxNHgxNzkyODA2MDAxNjQzOTIwNzQ1"
+              ]
+            ]
+          },
+          "probe_incomplete_gib_months": 6.084541535577658e-9
+        },
+        "coefs": {
+          "s3_max_single_part_upload_size": 33554432,
+          "s3_min_upload_part_size": 16777216,
+          "compressed_block_frame_bytes": 25,
+          "cas_expect_continue_min_bytes": 1048576,
+          "cas_inline_cap_bytes": 1048576
+        },
+        "observations": {
+          "expected_exceptions": [
+            {
+              "message": "('INSERT INTO yardstick.t SELECT number, repeat(hex(sipHash64(number)), 64) FROM numbers(40000)', 'Code: 499. DB::Exception: Message: injected by the ledger proxy, Key: cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll, Bucket: yardstick-cost, Tags: \"345ec3c86f0222cfeb74f4a1a46bac78\" \"e5b99b73d3f0867d42cccc45ed0cd0b2\". (S3_ERROR) (version 26.8.27.20001.altinityantalya)\\n')",
+              "type": "RuntimeError"
+            }
+          ],
+          "multipart": {
+            "after_abort": 0,
+            "object_created": false,
+            "part2": {
+              "attempts": 2,
+              "correlated": true,
+              "sha256": [
+                "65f5ba9cf9fab90a357ce5f27b29014ae28a42997eaa71705ed6b0055c01927e"
+              ]
+            },
+            "part_identities": 2,
+            "residue": {
+              "lower": 40939368,
+              "upper": 40939368
+            },
+            "uploads": [
+              [
+                "yardstick-cost",
+                "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1/r1/fyr/jsitifgjwqvqfmnozyqstqkxnujll",
+                "NjMxZjIzYzQtZTczYy00ZGUxLWEwNjMtY2U4YmNiYzVhNzU3LjY3MWJiYmI4LWVmMzEtNDQzOC04ODdjLWJiMzUzMDdkMWQxNHgxNzkyODA2MDAxNjQzOTIwNzQ1"
+              ]
+            ]
+          },
+          "probe_incomplete_gib_months": 6.084541535577658e-9
+        }
+      },
+      "stage2_rows": [
+        {
+          "row": "request CreateMultipartUpload ok",
+          "row_type": "request",
+          "op_kind": "CreateMultipartUpload",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 1,
+          "measured": 1,
+          "expected": 1,
+          "exact": true,
+          "upstream_ok": 1,
+          "op_predicted": 1
+        },
+        {
+          "row": "request UploadPart ok",
+          "row_type": "request",
+          "op_kind": "UploadPart",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 3,
+          "measured": 3,
+          "expected": 3,
+          "exact": true,
+          "upstream_ok": 3,
+          "op_predicted": 3
+        },
+        {
+          "row": "request CompleteMultipartUpload ok",
+          "row_type": "request",
+          "op_kind": "CompleteMultipartUpload",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 4,
+          "expected": 4,
+          "exact": true,
+          "upstream_ok": 0,
+          "op_predicted": 4
+        },
+        {
+          "row": "request CompleteMultipartUpload server_error",
+          "row_type": "request",
+          "op_kind": "CompleteMultipartUpload",
+          "outcome_class": "server_error",
+          "branch_taken": [],
+          "predicted": 4,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        },
+        {
+          "row": "request AbortMultipartUpload ok",
+          "row_type": "request",
+          "op_kind": "AbortMultipartUpload",
+          "outcome_class": "ok",
+          "branch_taken": [],
+          "predicted": 0,
+          "measured": 4,
+          "expected": 4,
+          "exact": true,
+          "upstream_ok": 0,
+          "op_predicted": 4
+        },
+        {
+          "row": "request AbortMultipartUpload server_error",
+          "row_type": "request",
+          "op_kind": "AbortMultipartUpload",
+          "outcome_class": "server_error",
+          "branch_taken": [],
+          "predicted": 4,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        },
+        {
+          "row": "storage incomplete_parts all",
+          "row_type": "storage",
+          "op_kind": "incomplete_parts",
+          "outcome_class": "all",
+          "branch_taken": [],
+          "predicted": 6.084541535577658e-9,
+          "measured": null,
+          "expected": null,
+          "exact": null
+        }
+      ],
+      "stage3_ledger_summary": {
+        "by_row_type": {
+          "request": {
+            "rows": 6,
+            "quantity": 12
+          },
+          "storage": {
+            "rows": 1,
+            "quantity": 6.084541535577658e-9
+          }
+        },
+        "states": [],
+        "extrapolated": false,
+        "allocation": null,
+        "notes": []
+      },
+      "stage4_billing_lines": [
+        {
+          "rule_id": "put_copy_post_list",
+          "unit": "requests",
+          "quantity": 4,
+          "money": 0.00002,
+          "tiers": null,
+          "note": "0.005 per 1000; not billed: 4 server_error",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "delete_cancel",
+          "unit": "requests",
+          "quantity": 0,
+          "money": 0,
+          "tiers": null,
+          "note": "0 per 1000; not billed: 4 server_error",
+          "source_url": "https://aws.amazon.com/s3/pricing/",
+          "scope": "variant"
+        },
+        {
+          "rule_id": "storage",
+          "unit": "GB-month",
+          "quantity": 6.084541535577658e-9,
+          "money": 1.3994445531828615e-10,
+          "tiers": [
+            {
+              "from_gb": 0,
+              "up_to_gb": 51200,
+              "gb": 6.084541535577658e-9,
+              "price_per_gb_month": 0.023,
+              "money": 1.3994445531828615e-10
+            }
+          ],
+          "note": "incomplete 6.084541535577658e-9 GiB-months; incomplete billed as storage",
+          "source_url": "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonS3/current/us-east-1/index.json",
+          "by_category": {
+            "incomplete": 6.084541535577658e-9
+          },
+          "scope": "variant"
+        }
+      ],
+      "billing_total": 0.00002000013994445532,
+      "stage5_allocation": null,
+      "measurement_id": "cost-20261024T013942Z/s3/probe_multipart_fault/gate/k1"
+    }
+  },
+  "mismatches": []
+}

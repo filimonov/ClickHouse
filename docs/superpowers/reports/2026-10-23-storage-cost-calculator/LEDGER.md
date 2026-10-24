@@ -19,7 +19,7 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | 1. Ledger | done | this file |
 | 2. Spec review rounds (Codex) until no MAJOR | done | r1 REVISE (25, applied); r2 REVISE (18, applied as revision 3 with Tier 1/2 scope freeze); r3 REVISE (12 MAJOR, 3 MINOR). Non-convergence after 3 rounds; gpt-6.1-sol consult chose option C; revision 4 written (product contract + artifacts with closure checks + acceptance slice); r4: 3 MAJOR, 3 MINOR (applied, rev 4.1); r5: 0 MAJOR, 2 MINOR, READY (applied, rev 4.2). Findings per round 25 → 18 → 15 → 6 → 2 |
 | 3. Implementation plan (`writing-plans`) | done | three plans: `docs/superpowers/plans/2026-10-24-storage-cost-{phase0-rig,research,calculator}.md`; Codex plan review r1: 3 CRITICAL, ~30 MAJOR, 2 MINOR (`tmp/codex_plan_r1_findings.md`) → plans rewritten (frozen schemas in Plan 1 Task 0, experiment manifests, coverage evidence edges, evaluator+billing+drill pulled into phase 0, classic-script distribution, proxy framing, Keeper config, window semantics); r2: 4 CRITICAL, ~24 MAJOR (`tmp/codex_plan_r2_findings.md`) → plans revision 3 (Expect negotiation, traced writes, process generations, bounded replay, table coefficients + lookup, EBS formulas owner, CardContext, cleanup order, manual provisioning path, lock rules, closure in the Node suite). Stop rule: two rounds done; remaining issues are for per-task reviewers |
-| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first |
+| 4. Execute plan (`subagent-driven-development`) | in progress | Plan 1 first; SDD ledger (per-task progress, rulings) at `.superpowers/sdd/2026-10-24-storage-cost-phase0-rig/progress.md` (git-ignored); Tasks 0–13 complete (yardstick 309, tools 37, Node 57 tests); Task 14 (five acceptance probes on the live rig, predictions from the 26.8 source, runtime estimate) in progress 03:02 (opus implementer) |
 | 5. Umbrella review of the branch | pending | |
 | 6. Look & feel in a browser at several resolutions | pending | |
 | 7. Fix and repeat 5–7 | pending | |
@@ -57,3 +57,41 @@ worktree `~/workspace/ClickHouse/storage-cost-calc`. Unattended run started 2026
 | A4 | 2026-10-23 | `utils/cas-yardstick/rustfs.sh` runs RustFS via docker image `rustfs/rustfs:1.0.0-rc.3`; docker availability on this host checked at plan time (see watchdog log); the CI lane runs the bare binary (`ci/tmp/rustfs`, copied into the worktree). The plan must pick one and the ledger proxy must sit in front of it. | open, for the plan |
 | 2026-10-24 00:00 | RustFS binary starts standalone and answers 403 on 19121; loopback alias bind 127.0.1.x works; strace available; `/proc/sys/vm/drop_caches` not writable (no root) → EBS cold reads are an upper bound, host-specific label applies | recorded for Plan 1 Tasks 1, 4, 7 and Plan 2 Task 6 |
 | 2026-10-24 00:00 | Step 3 (plans): Codex plan review r1 running (pid 3928638, log 315 KB and growing, reading yardstick tests); no yardstick or own clickhouse processes; no subagents | none |
+| 2026-10-24 00:32 | Step 4: Task 0 implementer (sonnet) dispatched moments ago, no files yet (normal); no codex, yardstick or RustFS processes | none |
+| A5 | 2026-10-24 | RustFS 1.0.0-rc.3 `ListMultipartUploads` returns nothing for a directory-style prefix (`mp/`); a full key prefix works. Rig cleanup will abort uploads known from the proxy ledger instead. | workaround ruled (Plan 1 Task 8) |
+| 2026-10-24 00:56 | Step 4: Task 2 implementer active (proxy.py modified 00:55, tests being written); no codex/yardstick/RustFS processes; Tasks 0–1 complete | none |
+| 2026-10-24 01:26 | Step 4: Task 6 implementer running live cluster tests (RustFS binary up on 19121, one 26.8 server from the rig up, three live-cluster run dirs created in the last 2 min); no codex processes; Tasks 0–5 complete | none |
+| 2026-10-24 01:57 | Step 4: Task 8 fix round 1 in progress (proxy.py edited 01:56 for open_attempts); no codex/RustFS/own server processes; Tasks 0–7 complete, 289 tests | none |
+| A6 | 2026-10-24 | AWS pricing HTML pages return no rate tables to a fetcher; billing values were taken from the AWS price-list JSON files, the S3 error-code billing page and the gp3 docs (URLs + 2026-10-24 recorded per rule). Unit ambiguity: the S3 price list labels the first tier 51200 GB, suggesting binary GB; recorded as `units: gib_labelled_gb`; internet egress left null. | to confirm in Task 13 billing; owner may want to verify against a bill |
+| D13 | 2026-10-24 | Billing contract `units` enum = `decimal | binary_gb`; the AWS S3 preset is `binary_gb` (price list labels tiers 51200 GB / 512000 GB = exact TiB multiples; no explicit AWS statement found; recorded as `units_evidence`). The calculator must implement both. | the plan assumed `decimal`; the evidence points the other way; owner may verify against a bill |
+| 2026-10-24 02:27 | Step 4: Task 10 fix round 1 in progress (closure_check.py, tests and billing contract edited within the last minute); no codex/RustFS/own server processes; Tasks 0–9 complete, 309 tests | none |
+| 2026-10-24 02:56 | Step 4: Task 13 committed (040e5431b64), task reviewer running (dispatched 02:55); no codex/RustFS/own server processes; Tasks 0–12 complete | none |
+| 2026-10-24 03:26 | Step 4: Task 14 implementer active (probes.py created; small hooks in runner.py/cli.py/base.py with tests edited in the last 20 min; no live run yet); no RustFS/own server/codex processes; Tasks 0–13 complete | none |
+
+## Phase-0 gate {#phase0-gate}
+
+Gate passed 2026-10-24: `cost probe` exit 0 with five PASS in run `cost-20261024T013942Z`; predictions committed in
+`3157c681db5` before the run. Report: `docs/superpowers/reports/2026-10-24-storage-cost-phase0/README.md`.
+
+| Probe | Verdict | Prediction vs ledger |
+|---|---|---|
+| `probe_s3_insert` | PASS | r1 `PutObject` 11 = 11; no other op |
+| `probe_replicated_fetch` | PASS | r1 `PutObject` 11 = 11, `GetObject` 11 = 11; r2 `PutObject` 11 = 11, `GetObject` 8..11 → 9; r2 fetched 1 part, relay r1 32 064 B, relay r2 0 B |
+| `probe_multipart_fault` | PASS | `CreateMultipartUpload` 1, `UploadPart` 3, `Complete` 4, `Abort` 4, all exact; residue 40 939 368 B in band [40 939 368, 40 953 993]; 0 after the rig's abort |
+| `probe_cas_gc_cohort` | PASS | cohort 40 objects reclaimed 40/40 by r1; `reclaim_delay_s` 12.9; garbage byte-hours 1 802; 0 `Expect` rows as predicted |
+| `probe_local_volume` | PASS | data-dir writes use `write` only (3 803 calls) as predicted; peak 257 MB on `dm-1`/`ext4` (host root LVM, label "host-specific"); priced as `single` 6 GiB gp3 |
+
+- **Runtime estimate:** P1 14.5 h, P1+P2 17.8 h (about 18.6 h with per-pass start/stop overhead); budget 72 h, so
+  no cut under §5.5 and no quantity or preset disabled.
+- **Source facts against plan assumptions:** (1) `Expect: 100-continue` is negotiated only for conditional PUTs of
+  at least 1 MiB; blob publication is unconditional, so CAS blob uploads never negotiate it (D11 holds only for
+  conditional writes). (2) A failing S3 call costs `(s3_retry_attempts + 1)^2` HTTP attempts (SDK loop inside a
+  ClickHouse loop); the default 500 makes a failed Complete about 250 000 attempts. (3) A compact part is 11
+  objects on `s3` (`statistics.packed`, `columns_substreams.txt`, `data.cmrk4` included) but one blob plus one
+  manifest on CAS, so "a 100-column compact table" gives no object-count scale; the gc-scale sample used Wide.
+  (4) `hex()` drops leading zero bytes and `String` sizes live in `s.size.bin`, so the generator's rows are just
+  under 1 KiB of `s.bin`. (5) Manifests of a dropped table are reclaimed by GC as owner-removed bodies within
+  three 5 s rounds.
+- **Rig defects fixed in Task 14:** relative `--runs-dir` broke `strace -o` and the `local` disk path (servers
+  `cd` into their replica dir); `cost probe` ignored failed record assertions; observer aborts were not replayed;
+  closure_check could not read an array `formulas.json`.

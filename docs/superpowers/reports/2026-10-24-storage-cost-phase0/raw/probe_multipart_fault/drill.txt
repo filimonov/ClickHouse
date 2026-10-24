@@ -1,0 +1,40 @@
+== probe_multipart_fault
+1. inputs
+   data_bytes = 20480
+   ingest_rate = 500
+   retention_days = 40
+   replicas = 3
+   shards = 1
+   cache_enabled = 1
+   shape = narrow
+   part_type = wide
+   type_mix = plain
+   rows = 40000
+   s_chars_total = 40938368
+   residue_bytes_band = 40939368,40953993
+   part_identities = 2
+   part_sizes_at_band_edges = 33554432,7384936,33554432,7399561
+   s3_retry_attempts = 1
+   http_attempts_per_failing_call = 4
+   expected_exceptions = [object Object]
+   multipart = [object Object]
+   probe_incomplete_gib_months = 6.084541535577658e-9
+2. rows (branch | predicted | measured | expected | exact)
+   request CreateMultipartUpload ok | - | 1 | 1 | 1 | true
+   request UploadPart ok | - | 3 | 3 | 3 | true
+   request CompleteMultipartUpload ok | - | 0 | 4 | 4 | true
+   request CompleteMultipartUpload server_error | - | 4 | null | null | null
+   request AbortMultipartUpload ok | - | 0 | 4 | 4 | true
+   request AbortMultipartUpload server_error | - | 4 | null | null | null
+   storage incomplete_parts all | - | 6.084541535577658e-9 | null | null | null
+3. ledger summary
+   request: 6 rows, quantity 12
+   storage: 1 rows, quantity 6.084541535577658e-9
+4. billing
+   put_copy_post_list: 4 requests = $0.00002
+   delete_cancel: 0 requests = $0
+   storage: 6.084541535577658e-9 GB-month = $1.3994445531828615e-10
+   total = $0.00002000013994445532
+5. allocation
+   none
+OK probe_multipart_fault: 1 cell(s)

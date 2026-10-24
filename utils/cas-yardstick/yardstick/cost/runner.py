@@ -90,7 +90,8 @@ class _Pass:
         self.cluster_factory, self.config_writer, self.sampler_factory = cluster_factory, config_writer, sampler_factory
         case = manifest['case_id']
         self.rel = f'{policy}/{card.name}/{case}/k{k}'
-        self.pass_dir = os.path.join(deps.runs_dir, deps.run_id, self.rel)
+        # Absolute: servers run in their replica directory, so a relative local disk path would land under it.
+        self.pass_dir = os.path.abspath(os.path.join(deps.runs_dir, deps.run_id, self.rel))
         self.key_prefix = f'{deps.run_id}/{self.rel}'
         self.bucket = deps.topology.bucket
         self.labels = {role: f'{role}@{self.key_prefix}' for role in ledger_mod.MARK_ROLES}
