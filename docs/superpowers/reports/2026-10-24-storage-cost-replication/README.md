@@ -396,9 +396,11 @@ Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_re
   fitted. A card assertion of it needs a rerun and is parked (§[Review](#review)).
 - **The s3 `recovery` cell reads the catch-up table.** It prices catch-up `GetObject` and `PutObject` as
   `missed_parts_per_restart` × `restarts_per_month` × `replicas` ×
-  `catchup_requests_per_missed_part[variant_id][replication_op]` for replicas > 1. The receiver's load reads in
-  `inserts` and a CAS `recovery` cell are not wired: their validity parameters (`part_rows`, `active_parts`) cannot
-  be checked against the presets (`docs/superpowers/reports/2026-10-24-storage-cost-validation` §Wiring).
+  `catchup_requests_per_missed_part[variant_id][replication_op]` for replicas > 1, and the s3 `inserts` cell prices the receiver's load reads
+  (`acquire_requests[s3][insert][receiver][GetObject]`). A CAS `recovery` cell is not wired: its startup table was
+  measured at 3 active parts, which the presets cannot check
+  (`docs/superpowers/reports/2026-10-24-storage-cost-validation` §Wiring). `acquire_bytes` has no `cas` key: the
+  relink ships about 19–20 KB per part whatever its bytes.
 - **Records come from the card before `bac037b336d`.** Every fault record was measured with the card that asserted
   the upper residue bound; the k2/k3 CAS failures are that assertion. The validation report reran
   `faults.multipart-abort` on CAS and the fresh hold-out `faults.multipart-abort-part3c` with the current card.

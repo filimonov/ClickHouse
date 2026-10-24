@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 # Storage cost calculator — validation and hold-out ledger {#validation}
 
-Every hold-out that Plan 2 consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3`, `s3plain` and CAS: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The report holds 129 records, 117 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
+Every hold-out that Plan 2 consumed now has a done replacement on its variant, except `acquire_bytes` on CAS and `peak_factor` on EBS (both explained below). The CAS shape and threshold cases close the two pending CAS support entries. Natural merges reproduce the lifecycle fit on `s3` and `s3plain`: 11 merges, amplification 2.55 against the model's 2.38, inside the 0.25 tolerance. On CAS the three passes FAILED (0/3 ok, edges `consumed`): the card's own snapshot reads reach the store after the cutoff; the merge history in those FAILED records is identical. The acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant. The report holds 129 records, 117 ok. The 12 FAILED records are two falsified hold-outs and the CAS natural-merge passes, which fail on the card's own snapshot reads; they stay as findings.
 
 | Item | Value |
 |---|---|
@@ -197,7 +197,7 @@ lifecycle fit `merge_effective_fan_in` = 6.1437 (abs 0.2502) over each record's 
   Its values come from the FAILED records' partial observations; they are not evidence edges.
 - **R4-2.** Every `ok` record carries `quiet_cutoff_us` and `cutoff_us`. Replaying
   `window.no_workload_after_cutoff` from `raw/merge-natural/cost-20261024T154049Z/ledger.jsonl.gz`
-  (`tmp/t7/r42_replay.py`) gives 0 workload attempts after the cutoff in all six `s3` and `s3plain` records,
+  (`replay_cutoff.py` in this directory) gives 0 workload attempts after the cutoff in all six `s3` and `s3plain` records,
   equal to the recorded assertion; the cutoff lies 32–39 ms before the window end.
 
 ### Acquisition split {#acquisition-split}
@@ -259,20 +259,18 @@ tolerance; sender rows subtract the originator's own reads of the matching `repl
 | `s3` `recovery` | the `not_supported` state for missed parts is gone; `GetObject` and `PutObject` rows add restarts × replicas × `missed_parts_per_restart` × `catchup_requests_per_missed_part[s3][op]` for replicas > 1 | `766a9e5b7eb` |
 | `s3` `recovery` startup rows | kept: at 3 active narrow parts they give `GetObject` 50, `PutObject` 2, `DeleteObject` 2; the replicated restart measured 48, 1, 1 (`startup_requests_after_restart[s3]`, tolerance 2) | `766a9e5b7eb` |
 | registry `catchup_requests_per_missed_part` | table index `[variant_id, replication_op]`, as the coefficient | `766a9e5b7eb` |
+| `s3` `inserts` | the follower's 9 load reads per fetched part (`acquire_requests[s3][insert][receiver][GetObject]`, validity `insert_rows` 1 000–200 000 after `replication-fetch.insert-1k`) | `5f51532da31`, withdrawn in `feca627456f`, restored in review fix round 1 |
 | `catchup_requests_per_missed_part` validity | `missed_parts_per_restart` [0, 5]: the rows are exactly 0 at 0 missed parts, and both restart cases fetched 5 | review fix 3 (§[Review](#review)) |
 
-Not wired, because the page could not check their validity against the presets (`presets.js` `coverageProblems`
+Not wired, because the page could not check its validity against the presets (`presets.js` `coverageProblems`
 checks every reached coefficient):
 
-- **`s3` `inserts` follower load reads** (9 `GetObject` per fetched part, `acquire_requests[s3][insert][receiver]`):
-  the coefficient's validity is `part_rows` 50 000–200 000, which the presets' small inserts leave unchecked. Wired
-  at `5f51532da31`, removed again; the follower's load reads stay unpriced (§[Open items](#open-items)).
 - **`cas` `recovery`**: `startup_requests_after_restart[cas]` was measured at 3 active parts (`active_parts`, which
   the presets do not resolve). Wired at `766a9e5b7eb`, removed again; the cell stays `unsupported_cut`.
 
 ## Hold-out ledger {#ledger}
 
-Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
+Every coefficient whose hold-out was consumed in Plan 2, with its replacement (`coverage.json` at the report commit). A `_cached` policy measures the same variant, so `cas_cached` rows fold into `cas` (and `s3_cached`, `s3plain_cached` into theirs):
 
 | Coefficient | Variant | Consumed | Replacement (status) |
 |---|---|---|---|
@@ -281,25 +279,25 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 | `acquire_requests` | `cas` | `replication-fetch.insert-wide` | `replication-fetch.insert-3` (done) |
 | `acquire_requests` | `s3plain` | `replication-fetch.insert-wide` | `replication-fetch.insert-3` (done) |
 | `cas_branch_population` | `cas` | `cas-branches.mix-holdout` | `cas-branches.mix-holdout-2` (done) |
-| `cas_objects_per_part` | `cas` | `cas-branches.mix-holdout`, `objects-per-part.types-holdout` | `cas-branches.inline`, `cas-branches.mix-holdout-2`, `objects-per-part.narrow-wide-2`, `.wide-wide-2`, `.types-fit-wide-2` (done) |
+| `cas_objects_per_part` | `cas` | `cas-branches.mix-holdout`, `objects-per-part.types-holdout` | `cas-branches.inline`, `cas-branches.mix-holdout-2`, `objects-per-part.narrow-wide-2`, `objects-per-part.types-fit-wide-2`, `objects-per-part.wide-wide-2` (done) |
 | `delete_calls_per_removed_part` | `s3` | `drop.partition-3` | `drop.partition-2` (done) |
 | `empty_part_objects` | `s3` | `drop.partition-3` | `drop.partition-2` (done) |
 | `failed_upload_residue` | `cas` | `faults.multipart-abort-part3b` | `faults.multipart-abort-part3c` (done) |
 | `failed_upload_residue` | `s3plain` | `faults.multipart-abort-part3` | `faults.multipart-abort-75k` (done) |
 | `gc_round_requests` | `cas` | `gc-scale.objects-30k` | `gc-scale.objects-3k`, `gc-scale.objects-5k` (done) |
-| `io_bytes_per_op` | `ebs` | `io-sizes.mixed-holdout`, `io-sizes.types-holdout` | `io-sizes.mixed-holdout-2` (done) |
-| `io_request_size_distribution` | `ebs` | `io-sizes.mixed-holdout`, `io-sizes.types-holdout` | `io-sizes.mixed-holdout-2` (done) |
+| `io_bytes_per_op` | `ebs` | `io-sizes.mixed-holdout`, `io-sizes.mixed-holdout-2`, `io-sizes.types-holdout` | `io-sizes.mixed-holdout-3` (done) |
+| `io_request_size_distribution` | `ebs` | `io-sizes.mixed-holdout`, `io-sizes.mixed-holdout-2`, `io-sizes.types-holdout` | `io-sizes.mixed-holdout-3` (done) |
 | `local_exec_requests` | `cas` | `replication-local.merge-8` | `replication-local.merge-40k` (done) |
 | `local_exec_requests` | `s3plain` | `replication-local.merge-40k`, `replication-local.merge-8` | `replication-local.merge-30k` (done) |
 | `mutation_compact_gets_per_full_granule` | `s3` | `mutation.compact-30k` | `mutation.compact-20k`, `mutation.compact-45k` (done) |
 | `mutation_gets_per_part` | `s3` | `mutation.update-mixed`, `mutation.update-mixed-2`, `mutation.update-mixed-3` | `mutation.compact-20k`, `mutation.compact-45k`, `mutation.update-mixed-4` (done) |
 | `mutation_objects_written` | `s3` | `mutation.update-mixed`, `mutation.update-mixed-2`, `mutation.update-mixed-3` | `mutation.compact-20k`, `mutation.compact-45k`, `mutation.update-mixed-4` (done) |
 | `peak_factor` | `ebs` | `merge-natural.wide` | none on this variant |
-| `plain_dir_remove_requests` | `s3plain` | `drop.partition-3` | `drop.partition-2`, `merge-only.narrow-compact-removal`, `merge-only.wide-wide-removal` (done) |
+| `plain_dir_remove_requests` | `s3plain` | `drop.partition-3` | `drop.partition-2`, `merge-only.wide-wide-removal` (done) |
 | `plain_empty_part_objects` | `s3plain` | `drop.partition-3` | `drop.partition-2` (done) |
 | `plain_meta_objects_per_part` | `s3plain` | `objects-per-part.types-holdout` | `drop.partition-2`, `merge-only.narrow-compact-removal`, `merge-only.wide-wide-removal`, `merge-only.wide-wide-sources-3`, `objects-per-part.wide-wide`, `startup.wide-parts` (done) |
 | `plain_objects_per_part` | `s3plain` | `objects-per-part.types-holdout` | `objects-per-part.wide-wide` (done) |
-| `plain_unlink_requests` | `s3plain` | `drop.partition-3` | `drop.partition-2`, `merge-only.narrow-compact-removal`, `merge-only.wide-wide-removal` (done) |
+| `plain_unlink_requests` | `s3plain` | `drop.partition-3` | `drop.partition-2`, `merge-only.wide-wide-removal` (done) |
 | `reclaim_delay_periods` | `cas` | `gc-lifecycle.drop-60s` | `gc-lifecycle.drop-60s-12`, `gc-lifecycle.merge` (done) |
 | `retry_outcome_mix` | `cas` | `faults.put-5xx-nth7` | `faults.put-5xx-nth5` (done) |
 | `retry_outcome_mix` | `s3plain` | `faults.put-5xx-nth7` | `faults.put-5xx-nth5` (done) |
@@ -312,12 +310,12 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 
 | Coefficient | Gap |
 |---|---|
-| `cas_objects_per_part` | data-dependent: the Wide values are the generators' counts; other data uploads up to the candidate count (narrow Wide 10, wide 80, types 135); no rule predicts which mark files coincide |
-| `acquire_bytes[cas]` | the ratio model does not hold: relay bytes are about 19–20 KB per part whatever the part's bytes; no CAS cell reads it |
+| `cas_objects_per_part` | data-dependent: the Wide values are the generators' counts; other data uploads up to the candidate count (narrow Wide 10, wide 80, types 135: 1.25x, 1.94x, 1.8x the generators'); the page shows this band as a note on the CAS `inserts`, `storage` and `merges` cells; no rule predicts which mark files coincide |
+| `acquire_bytes[cas]` | the ratio model does not hold: relay bytes are about 19–20 KB per part whatever the part's bytes; the `cas` keys are removed from the table (no CAS cell reads it) |
 | `merge_effective_fan_in`, `merge_fan_in_distribution`, `merge_result_size_distribution` | validated on `s3` and `s3plain`; on `cas` the records fail on the card's own snapshot reads, with identical merge history |
 | `failed_upload_residue` | 0 on every variant within `upload_parts` 2–4; a part answered after the abort started stays in the replay's upper bound (replication report) |
 | `local_exec_requests` | per merge of 4 Compact sources; `GetObject` scales with sources (8 per source on `s3`, `s3plain`), so the per-merge value holds at 4 sources only |
-| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | not measured: the `S3Card` operation cards do not trace syscalls (`cards/base.py:62`), so a pass on `local` sees `write_bytes` only. Placed on Task 6 (replacement): write bytes from `/proc` in one untraced ops run on `local`, reads as a derivation from the s3 cold-read bytes and the D16 floor |
+| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | not measured: the `S3Card` operation cards do not trace syscalls (`cards/base.py:62`), so a pass on `local` sees `write_bytes` only. Placed on the EBS report (Tier 1), D17: write bytes from `/proc` in one untraced ops run on `local`, reads as a derivation from the s3 cold-read bytes and the D16 floor |
 
 ## Carried items {#carried}
 
@@ -331,18 +329,17 @@ Every coefficient whose hold-out was consumed in Plan 2, with its replacement:
 | phase-0 README wording | `amplification-run` is 30 h of P2 |
 | D14 cuts | `gc-under-load.default`: case and edges `cut`; `amplification-run.2h` was already cut |
 | leftovers | removed: worktrees `tmp/s3b_wt`, `tmp/s3r/wt`; the untracked `raw/*/cost-20261024T07*` and `raw/merge-forced/` slices of the s3 report. `tmp/rig-repl` did not exist; `tmp/s3p` holds no worktree |
-| s3 `inserts` follower reads (reviewer question) | not priced: validity unchecked by the presets (§[Wiring](#wiring)); open item |
+| s3 `inserts` follower reads (reviewer question) | priced (§[Wiring](#wiring)) |
 
 ## Open items {#open-items}
 
 | Item | Placement |
 |---|---|
-| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | Task 6 (replacement) |
+| EBS `io_bytes_per_op` for `mutations`, `deletes`, `reads`, `recovery` | EBS report (Tier 1), D17 |
 | CAS natural-merge validation | Tier 2: the lifecycle card's snapshot reads must leave the window, or be excluded as observer traffic, before the cutoff assertion can hold on CAS |
 | CAS uploads per part for other data | Tier 2: a mark-collapse rule from compressed block sizes, or a measured count per data profile |
 | `acquire_bytes[cas]` as bytes per part | Tier 2: refit as bytes per part (manifest size per file) |
 | snapshot reads inside `S3Card` windows on CAS | Tier 2: snapshot after the window end; today no cell prices them |
-| `s3` follower load reads on inserts | Tier 2: a small-part replication-fetch case to extend `acquire_requests` validity to the presets' part sizes, then the `inserts` row of `5f51532da31` |
 | `cas` `recovery` | Tier 2: a CAS restart case at several active part counts (startup requests per part) |
 
 ## Review {#review}
@@ -358,14 +355,14 @@ One Codex round (`gpt-6-astra`, reasoning high, read-only; prompt `tmp/codex_val
 | 4 | MINOR | placement prose listed `.mrk*`/`.cmrk*` and omitted the inline spill | closed: exact suffixes (`ContentAddressedTransaction.cpp:77`) and the spill (`:998`) |
 | 5 | MINOR | "same final sizes" in all nine merge records | closed: `s3` repeat 2 ended with 27, 23, 6, 6, 1, 1 |
 | 6 | MINOR | `s3plain` byte ratio 1.0008 | closed: 1.0005 |
-| 7 | MINOR | EBS placement named evidence that does not exist | closed: placement is Task 6 (replacement), with the method it uses |
+| 7 | MINOR | EBS placement named evidence that does not exist | closed: placement is the EBS report (Tier 1), D17, with the method it uses |
 
 ## Reproduce {#reproduce}
 
 ```bash
-git worktree add --detach tmp/t7/wt 9ed2efcd450
+git worktree add --detach ../rig-9ed2efcd450 9ed2efcd450   # any path outside this tree
 utils/cas-yardstick/rustfs-bin.sh ensure
-cd tmp/t7/wt && YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run \
+cd ../rig-9ed2efcd450 && YARDSTICK_LIVE=1 python3 utils/cas-yardstick/yardstick.py cost run \
   --binary ../../bin/26.8/clickhouse --source-dir ../../src-26.8 \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-validation \
   --manifests docs/superpowers/reports/2026-10-24-storage-cost-replication \

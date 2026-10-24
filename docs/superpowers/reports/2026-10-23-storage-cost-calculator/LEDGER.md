@@ -165,19 +165,19 @@ The whole-branch review of Plan 1 (8 Important, 4 deferred items to fix before P
 
 - **Hold-outs.** Every consumed Plan 2 hold-out has a done replacement on its variant, except `acquire_bytes` on CAS
   (relink bytes are about 19–20 KB per part, not a ratio) and `peak_factor` on EBS (an assumed input).
-- **Per-variant validation.** Natural merges match the lifecycle fit on `s3`, `s3plain` and CAS (amplification 2.55
-  against 2.38, tolerance 0.25); the acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant.
+- **Per-variant validation.** Natural merges match the lifecycle fit on `s3` and `s3plain` (amplification 2.55
+  against 2.38, tolerance 0.25); on CAS the passes FAILED on the card's snapshot reads (identical merge history); the acquisition split is inserts 1.0, merges 0.0, mutations 0.0 on every variant.
 - **CAS shapes.** `cas_objects_per_part` covers narrow, wide and types; it prices the generators' measured uploads,
-  which depend on the data (mark files with equal bytes are uploaded once).
+  which depend on the data (mark files with equal bytes are uploaded once); the page notes the band up to the
+  candidate count (1.25x–1.94x for Wide parts).
 - **Cuts.** `gc-under-load.default` and `amplification-run.2h` (D14).
 
 | Open item | Placement |
 |---|---|
-| EBS `io_bytes_per_op` for mutations, deletes, reads, recovery | Task 6 (replacement) |
+| EBS `io_bytes_per_op` for mutations, deletes, reads, recovery | EBS report (Tier 1), D17 |
 | CAS natural-merge validation: the lifecycle card's snapshot reads reach the store after the cutoff | Tier 2 |
 | CAS uploads per part for other data (mark collapse rule) | Tier 2 |
 | `acquire_bytes[cas]` as bytes per part | Tier 2 |
-| `s3` follower load reads on inserts (9 `GetObject` per fetched part) unpriced | Tier 2 |
 | CAS `recovery` cell (startup measured at 3 active parts only) | Tier 2 |
 | `closure_check.py --mode final` at `639dbbd22ee`: 2 problems, both outside this task's edges: support entry `ebs/storage/local_volumes`; the presets test (the `metrics` preset's `insert_rows` 1000 lies outside `io_bytes_per_op` [80 000, 300 000] and `plain_objects_per_part` [5 000, 400 000]) | owners: EBS and s3plain reports |
 | Yardstick test `test_phase0_coverage_declares_duration_floors` pinned phase-0 floors that Plan 2 coverage replaced | closed: the test keeps the invariants (controller ruling) |

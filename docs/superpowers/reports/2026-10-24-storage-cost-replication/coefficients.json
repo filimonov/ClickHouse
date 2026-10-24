@@ -106,9 +106,6 @@
         "result_type"
       ],
       "values": {
-        "cas|insert": 0.008806945374958864,
-        "cas|merge": 0.004484893895549125,
-        "cas|mutation": 0.008810231671920615,
         "ebs|insert": 1.0008048534610308,
         "ebs|merge": 1.0004090108811197,
         "ebs|mutation": 1.0008047623536769,
@@ -172,7 +169,7 @@
     },
     "status": "ok",
     "fit": {
-      "method": "interserver bytes the originator sent (relay0 from_target) / bytes on disk of the fetched parts (DownloadPart size_in_bytes), mean of K=3"
+      "method": "interserver bytes the originator sent (relay0 from_target) / bytes on disk of the fetched parts (DownloadPart size_in_bytes), mean of K=3; no cas key: the relink ships about 19-20 KB per part whatever its bytes, so a ratio does not hold (validation report)"
     }
   },
   {

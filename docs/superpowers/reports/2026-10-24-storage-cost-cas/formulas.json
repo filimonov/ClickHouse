@@ -234,6 +234,11 @@
      "kind": "input",
      "id": "cas_hash_hit_fraction",
      "dim": "1"
+    },
+    {
+     "kind": "const",
+     "dim": "enum:note",
+     "value": "Blob uploads per part are the shape generators' measured counts (narrow Wide 8, wide Wide 41.33, types Wide 75): mark files with equal bytes are uploaded once. Data whose mark files never coincide uploads up to 10, 80 and 135 per Wide part (1.25x, 1.94x, 1.8x the PutObject of those blobs); Compact parts are exact"
     }
    ]
   },
@@ -531,6 +536,11 @@
      "kind": "input",
      "id": "cas_merge_result_blob_uploads",
      "dim": "count"
+    },
+    {
+     "kind": "const",
+     "dim": "enum:note",
+     "value": "Blob uploads per part are the shape generators' measured counts (narrow Wide 8, wide Wide 41.33, types Wide 75): mark files with equal bytes are uploaded once. Data whose mark files never coincide uploads up to 10, 80 and 135 per Wide part (1.25x, 1.94x, 1.8x the PutObject of those blobs); Compact parts are exact"
     }
    ]
   },
@@ -4891,7 +4901,13 @@
    ],
    "allocation": null,
    "states": [],
-   "notes": [],
+   "notes": [
+    {
+     "kind": "const",
+     "dim": "enum:note",
+     "value": "Blob uploads per part are the shape generators' measured counts (narrow Wide 8, wide Wide 41.33, types Wide 75): mark files with equal bytes are uploaded once. Data whose mark files never coincide uploads up to 10, 80 and 135 per Wide part (1.25x, 1.94x, 1.8x the PutObject of those blobs); Compact parts are exact"
+    }
+   ],
    "excluded": [
     {
      "kind": "category",
