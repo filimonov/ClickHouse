@@ -1,6 +1,6 @@
 {
  "schema": "contract/1",
- "version": "76aaba5dd2294aec",
+ "version": "3f57c696fe5e5ff4",
  "manifest": {
   "code_sha256": "57709ee82f52f63de0b252a86b90d3353a0693ea4abbfab80fd4d7402bdae652",
   "code_files": {
@@ -14,11 +14,11 @@
    "viewmodel.js": "ad761a1be9c3f7a7670e50710a348cf1ecb6231e05fed7332dcbd48341e9433a"
   },
   "code_missing": [],
-  "contract_version": "76aaba5dd2294aec",
+  "contract_version": "3f57c696fe5e5ff4",
   "registry_version": "0.3.0",
   "registry_sha256": "561520cca723e1bba16e08dff1c4e9bea0f098d7dd397913708e285dd54e5d95",
   "coverage_version": "0.2.0",
-  "coverage_sha256": "164c93d9e8ebe6f76ef13a0b7d7a1bc459bd924273990cb0e0c225244e94c9bc",
+  "coverage_sha256": "96fffa60e6f0ee1cf9c71d820aa5751797fce6b3b0c8922ab76a190eb4fdc1ed",
   "billing_version": "0.1.0",
   "billing_sha256": "9bb353ff7b236626058c7b733a045805a7a81d1acf049a4a211e9f05816eaa96",
   "evidence": [
@@ -58,9 +58,9 @@
     "raw_sha256sums": "pending"
    }
   ],
-  "breakeven_sha256": "e123027b297d2f67187fa1e68625b1fb4cfd4587e7f58c8288c0d73ba91dcc83"
+  "breakeven_sha256": "f29f53aff7ffd6fd8afc58d664d95dafeaa5f1658d5c75c062a2cb22494d5173"
  },
- "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 13 variant x operation x family cell(s) have no evidence yet.",
+ "evidence_statement": "Built from 5 report(s): 2026-10-24-storage-cost-cas, 2026-10-24-storage-cost-lifecycle, 2026-10-24-storage-cost-phase0, 2026-10-24-storage-cost-s3, 2026-10-24-storage-cost-s3plain. 35 coefficient(s): 24 measured, 11 pinned to source. 27 P1 coefficient(s) have a done fit and a done hold-out. Registry 0.3.0, coverage 0.2.0, billing 0.1.0. 9 variant x operation x family cell(s) have no evidence yet.",
  "registry": [
   {
    "id": "data_bytes",
@@ -14622,7 +14622,13 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "input",
+      "id": "cas_branch_requests",
+      "dim": "enum:cas_branch_requests"
+     }
+    ]
    },
    "deletes": {
     "ledger_rows": [
@@ -14825,7 +14831,13 @@
     ],
     "allocation": null,
     "states": [],
-    "notes": []
+    "notes": [
+     {
+      "kind": "input",
+      "id": "cas_foreground_ref_removal_requests",
+      "dim": "count"
+     }
+    ]
    },
    "gc": {
     "ledger_rows": [
