@@ -86,8 +86,10 @@ class SupportTest(unittest.TestCase):
                 'priority': 'P1', 'status': case_status}
         return {'schema': 'coverage/1', 'version': '1',
                 'cards': [{'name': 'card', 'family': 'fam', 'model_variants': ['s3'], 'cases': [case]}],
-                'evidence': [{'coefficient': 'k', 'experiment_id': 'card.c', 'policy': 's3', 'span': {}, 'role': 'fit',
-                              'prediction_commit': None, 'measurement_ids': [], 'status': evidence_status}],
+                'evidence': [{'coefficient': 'k', 'experiment_id': 'card.c', 'policy': 's3', 'span': {}, 'role': role,
+                              'prediction_commit': 'abc1234' if role == 'holdout' else None, 'measurement_ids': [],
+                              'status': evidence_status}
+                             for role in ('fit', 'holdout')],
                 'domain': {'variants': ['s3'], 'operations': ['insert', 'merge'], 'families': ['fam']}, 'excluded': []}
 
     def test_support_enumerates_domain_and_cut_rule(self):
@@ -118,12 +120,14 @@ class SupportTest(unittest.TestCase):
         cov = {'schema': 'coverage/1', 'version': '1', 'domain': {'variants': ['s3', 'cas'], 'operations': ['x', 'y'], 'families': ['f', 'g']},
                'cards': [{'name': 'cf', 'family': 'f', 'model_variants': ['s3', 'cas'], 'cases': [case('c')]},
                          {'name': 'cg', 'family': 'g', 'model_variants': ['s3'], 'cases': [case('c', ('s3',))]}],
-               'evidence': [{'coefficient': k, 'experiment_id': e, 'policy': 's3', 'span': {}, 'role': 'fit', 'prediction_commit': None,
-                             'measurement_ids': [], 'status': 'done'} for k, e in (('kf', 'cf.c'), ('kg', 'cg.c'))],
+               'evidence': [{'coefficient': k, 'experiment_id': e, 'policy': 's3', 'span': {}, 'role': role,
+                             'prediction_commit': 'abc1234' if role == 'holdout' else None,
+                             'measurement_ids': [], 'status': 'done'} for k, e in (('kf', 'cf.c'), ('kg', 'cg.c'))
+                            for role in ('fit', 'holdout')],
                'excluded': []}
-        # s3: x uses kf and kg; y uses kf only. A cell needs completed evidence for every coefficient it uses, so
-        # s3/x has none for f (kg is only measured by a family-g card) and none for g (kf only by family f).
-        # cas: x is unconditionally not_supported; y uses kf (evidence for f, none for g; card cg does not cover cas).
+        # Per-family backing: kf belongs to f, kg to g. s3/x uses both, so f is backed by kf and g by kg. s3/y and
+        # cas/y use kf only: f is backed, g has no coefficient of its own and no validation row, so it is pending.
+        # cas: x is unconditionally not_supported.
         s3 = formulas('variant', {'kind': 'add', 'dim': 'count', 'a': coef('kf'), 'b': coef('kg')}, variant='s3', op='x')
         s3['cells']['y'] = formulas('variant', coef('kf'), variant='s3', op='y')['cells']['y']
         cas = formulas('variant', coef('kf'), variant='cas', op='y')
@@ -131,13 +135,14 @@ class SupportTest(unittest.TestCase):
                              'states': [{'id': 'not_supported', 'cond': True, 'reason': 'no such operation'}]}
         pending = []
         self.assertEqual(cc.support(registry(), cov, [s3, cas], pending=pending), [])
-        self.assertEqual(sorted(pending), [('cas', 'y', 'g'), ('s3', 'x', 'f'), ('s3', 'x', 'g'), ('s3', 'y', 'g')])
+        self.assertEqual(sorted(pending), [('cas', 'y', 'g'), ('s3', 'y', 'g')])
         final = cc.support(registry(), cov, [s3, cas], require_formulas=True)
-        self.assertEqual(len(final), 4)
+        self.assertEqual(len(final), 2)
         self.assertTrue(any('s3/y/g' in p for p in final) and any('cas/y/g' in p for p in final), final)
         conditional = copy.deepcopy(cas)
         conditional['cells']['x']['states'][0]['cond'] = {'kind': 'const', 'value': 1, 'dim': 'bool'}
-        self.assertEqual(len(cc.support(registry(), cov, [s3, conditional], require_formulas=True)), 6)
+        # cas/x performs the operation now but references nothing: neither family has evidence for it.
+        self.assertEqual(len(cc.support(registry(), cov, [s3, conditional], require_formulas=True)), 4)
 
     def test_card_variant_without_a_measuring_policy_is_flagged(self):
         cov = self.coverage()
@@ -454,7 +459,8 @@ class DerivationRefsTest(unittest.TestCase):
     COV = {"domain": {"variants": ["cas"], "operations": ["gc"], "families": ["cas_gc"]},
            "cards": [{"name": "gc-scale", "family": "cas_gc", "model_variants": ["cas"],
                       "cases": [{"case_id": "objects-1k"}]}],
-           "evidence": [{"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "status": "done"}]}
+           "evidence": [{"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "role": "fit", "status": "done"},
+                        {"coefficient": "gc_round_requests", "experiment_id": "gc-scale.objects-1k", "role": "holdout", "status": "done"}]}
     APP = {"cas": {"gc": {"cas_gc": "supported"}}}
 
     def registry(self):
@@ -476,3 +482,34 @@ class DerivationRefsTest(unittest.TestCase):
 
     def test_without_the_registry_the_cell_has_no_evidence(self):
         self.assertEqual(cc._pending_cells(self.COV, self.files(), self.APP), [("cas", "gc", "cas_gc")])
+
+
+class PerFamilyBackingTest(unittest.TestCase):
+    """A (cell, family) entry is backed by the coefficients of that family alone; pinned-only cells by validation."""
+
+    def cov(self, rows):
+        cards = [{"name": "a-card", "family": "fam_a", "model_variants": ["cas"], "cases": [{"case_id": "x"}, {"case_id": "y"}]},
+                 {"name": "b-card", "family": "fam_b", "model_variants": ["cas"], "cases": [{"case_id": "x"}, {"case_id": "y"}]}]
+        return {"domain": {"variants": ["cas"], "operations": ["gc"], "families": ["fam_a", "fam_b"]}, "cards": cards,
+                "evidence": [{"coefficient": c, "experiment_id": e, "role": r, "status": st} for c, e, r, st in rows]}
+
+    APP = {"cas": {"gc": {"fam_a": "supported", "fam_b": "supported"}}}
+
+    def files(self, expr):
+        return [{"variant": "cas", "cells": {"gc": {"ledger_rows": [{"expr": expr}], "states": [], "notes": []}}}]
+
+    def test_two_families_one_backed_gives_one_pending_entry(self):
+        expr = {"kind": "mul", "a": {"kind": "coef", "id": "ca"}, "b": {"kind": "coef", "id": "cb"}}
+        cov = self.cov([("ca", "a-card.x", "fit", "done"), ("ca", "a-card.y", "holdout", "done"),
+                        ("cb", "b-card.x", "fit", "done"), ("cb", "b-card.y", "holdout", "planned")])
+        self.assertEqual(cc._pending_cells(cov, self.files(expr), self.APP), [("cas", "gc", "fam_b")])
+
+    def test_pinned_only_cell_needs_a_done_validation_edge(self):
+        registry = {"quantities": [{"id": "rate", "kind": "derivation", "rule": {"kind": "input", "id": "period"}},
+                                   {"id": "period", "kind": "pinned", "rule": None}]}
+        expr = {"kind": "input", "id": "rate"}
+        app = {"cas": {"gc": {"fam_a": "supported"}}}
+        with_edge = self.cov([("rate", "a-card.x", "validation", "done")])
+        self.assertEqual(cc._pending_cells(with_edge, self.files(expr), app, registry=registry), [])
+        planned = self.cov([("rate", "a-card.x", "validation", "planned")])
+        self.assertEqual(cc._pending_cells(planned, self.files(expr), app, registry=registry), [("cas", "gc", "fam_a")])

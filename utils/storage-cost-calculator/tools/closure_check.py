@@ -194,30 +194,69 @@ def derived_refs(node, registry):
 def _pending_cells(coverage, formulas_list, applicability=None, registry=None):
     """Cells of variants x operations x families with neither evidence nor an unconditional `not_supported` state.
 
-    A cell has evidence when every coefficient its formulas use has a completed (`done` or `consumed`) evidence
-    row from a card of that family whose `model_variants` include the variant. A planned row backs nothing.
-    With the contract's `applicability`, only `supported` families need evidence; without it, every family does.
+    A coefficient belongs to the families of the cards its evidence rows come from. A (cell, family) entry is backed
+    when every coefficient the cell references (through registry derivations too) that belongs to that family has a
+    completed fit row (`done` or `consumed`) and a `done` hold-out row from that family's cards on the variant; the
+    cell's coefficients of other families are checked under their own entries. An entry with no coefficient of its
+    family is backed by a `done` validation row (or fit and hold-out rows) of that family for a quantity the cell
+    references (source-derived evidence exercised by a fixture). A planned row backs nothing. With the contract's
+    `applicability`, only `supported` families need evidence; without it, every family does.
     """
     domain = coverage["domain"]
     card_of = {f"{c['name']}.{k['case_id']}": c for c in coverage["cards"] for k in c["cases"]}
-    backed = {(row["coefficient"], card_of[row["experiment_id"]]["family"], v)
-              for row in coverage["evidence"] if row["status"] in ("done", "consumed") and row["experiment_id"] in card_of
-              for v in card_of[row["experiment_id"]]["model_variants"]}
+    rows = {}
+    for row in coverage["evidence"]:
+        card = card_of.get(row["experiment_id"])
+        if card is None:
+            continue
+        for v in card["model_variants"]:
+            rows.setdefault((row["coefficient"], card["family"], v), set()).add((row.get("role"), row["status"]))
+    families_of = {}
+    for coef, fam, _ in rows:
+        families_of.setdefault(coef, set()).add(fam)
+
+    def measured_ok(coef, fam, v):
+        got = rows.get((coef, fam, v), set())
+        return bool(got & {("fit", "done"), ("fit", "consumed")}) and ("holdout", "done") in got
+
+    def pinned_ok(quantities, fam, v):
+        return any(("validation", "done") in rows.get((q, fam, v), set()) or measured_ok(q, fam, v) for q in quantities)
+
     cells = {}
     for f in formulas_list:
         for op, cell in f.get("cells", {}).items():
-            entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set()})
+            entry = cells.setdefault((f["variant"], op), {"unsupported": False, "coefs": set(), "quantities": set()})
             entry["unsupported"] |= unconditional_not_supported(cell)
             entry["coefs"] |= {ref for kind, ref in derived_refs(cell, registry)}
+            entry["quantities"] |= derived_inputs(cell, registry)
     pending = []
     for v in domain["variants"]:
         for op in domain["operations"]:
-            entry = cells.get((v, op), {"unsupported": False, "coefs": set()})
+            entry = cells.get((v, op), {"unsupported": False, "coefs": set(), "quantities": set()})
             app = (applicability or {}).get(v, {}).get(op, {})
-            pending += [(v, op, fam) for fam in domain["families"]
-                        if (applicability is None or app.get(fam) == "supported")
-                        and not entry["unsupported"] and not (entry["coefs"] and all((c, fam, v) in backed for c in entry["coefs"]))]
+            for fam in domain["families"]:
+                if applicability is not None and app.get(fam) != "supported":
+                    continue
+                if entry["unsupported"]:
+                    continue
+                own = {c for c in entry["coefs"] if fam in families_of.get(c, set())}
+                backed = all(measured_ok(c, fam, v) for c in own) if own else pinned_ok(entry["quantities"], fam, v)
+                if not backed:
+                    pending.append((v, op, fam))
     return pending
+
+
+def derived_inputs(node, registry):
+    """Ids of every input below `node` and below the registry derivations it reaches."""
+    rules = {q["id"]: q["rule"] for q in (registry or {}).get("quantities", []) if q.get("kind") == "derivation" and q.get("rule")}
+    out, todo = set(), [node]
+    while todo:
+        for kind, ref in _walk(todo.pop(), []):
+            if kind == "input" and ref not in out:
+                out.add(ref)
+                if ref in rules:
+                    todo.append(rules[ref])
+    return out
 
 
 def _cells_on_cut(coverage, formulas_list, registry=None):
