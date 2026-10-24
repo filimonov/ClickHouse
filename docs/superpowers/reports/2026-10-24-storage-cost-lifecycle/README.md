@@ -9,7 +9,8 @@ doc_type: 'reference'
 
 # Storage cost calculator — lifecycle rules (R5) {#lifecycle}
 
-Every lifecycle rule below reconciles on the `s3` policy of the pinned binary: 15 cases × K=3, 45 records, all ok.
+Every lifecycle rule below reconciles on the `s3` policy of the pinned binary: 13 evidence cases plus 2 cut cases
+with data (`async-inserts.*`, cut by owner directive D14), × K=3, 45 records, all ok.
 Part types, part sizes and upload part sequences match their predictions exactly, including both source hold-outs
 (`boundaries.merge-cross`, `boundaries.multipart-equal`). The fitted hold-out `merge-natural.wide` lands inside its
 committed bounds. The write amplification rule fits with effective fan-in 6.14, and merged-away parts are accounted
@@ -213,8 +214,8 @@ lifecycle predictions bound them as an assumption. Values are identical in all t
 | `small-inserts.default` | fit | 1000 parts; 11 000–29 981 `PutObject` | 1000 parts, 194–197 merges, amplification 3.981–4.092; 13 150–13 175 |
 | `merge-natural.default` | fit | 64 parts; 704–1901 `PutObject` | 9 merges of 6 then 2 of 8, final parts 23, 23, 6, 6, 6, amplification 2.5522 (one repeat: final parts 27, 23, 6, 6, 1, 1, amplification 2.6142); 913 |
 | `merge-natural.wide` | hold-out | amplification 2.8030 ± 0.3474 (f = 6.1912 from the pre-run); fan-in TV ≤ 0.3426; result-size TV ≤ 0.3852; fan-in mean 5.06–7.36; 352–1871 `PutObject` | 5 merges of 6, 1 of 7, one final part; amplification 2.9094; TV 0.0503 and 0.0647; mean 6.17; 646 |
-| `async-inserts.steady` | fit (P2) | 1000 async inserts at 20/s: 200–1000 parts | 205, 204, 205 parts |
-| `async-inserts.bursty` | hold-out (P2) | 10 bursts of 100: 10–1000 parts | 19, 17, 17 parts |
+| `async-inserts.steady` | cut, data only (P2, no edges) | 1000 async inserts at 20/s: 200–1000 parts | 205, 204, 205 parts |
+| `async-inserts.bursty` | cut, data only (P2, no edges) | 10 bursts of 100: 10–1000 parts | 19, 17, 17 parts |
 
 Every merge case also asserts outdated byte-hours > 0: the objects of each merged-away part are reclassified
 `outdated` at its `MergeParts` time (`inventory.reclassified`, one entry per merge), and the replay reproduces them.
@@ -249,9 +250,9 @@ final part sizes of 18–473 inserted parts; the hold-out extends it to 20 colum
   band. The rules are in the hold-out
   prediction's `inputs.tolerance_rules`: amplification abs = largest fit residual + half the largest K=3 range;
   distribution TV = 2 × largest fit TV + 1 / predicted merges.
-- **Validation.** `amplification-run.2h` (one 1000-row insert per second for 2 h) has its manifest and a prediction
-  with the registry formula and this fit (f = 6.1437, abs 0.2502); Task 7 runs it (`coverage.json` status
-  `planned`).
+- **Validation.** `amplification-run.2h` (one 1000-row insert per second for 2 h) keeps its manifest and a prediction
+  with the registry formula and this fit (f = 6.1437, abs 0.2502). It is cut by owner directive D14 (`coverage.json`
+  status `cut`); no task runs it.
 
 ## Pass durations {#durations}
 
@@ -295,7 +296,8 @@ The natural-merge cases spend 60 s of each pass in the quiet period. A full run 
 - The fit covers fast back-to-back inserts only: fan-in sits at 6 to 9, and parts stop merging once their sizes
   diverge (final parts of 23 and 6 inserted parts after 64 inserts). Slower inserts and larger final sizes are the
   validation run's domain.
-- Merge `GetObject` counts are assumption ranges here; R2 derives them.
+- Merge `GetObject` counts are assumption ranges here. Measured: 16 for 2 and 64 for 8 Compact source parts, 8 per
+  5-column Compact source part; Task 2 (R2) pins them exactly.
 - The async cases bound part counts broadly (one flush per burst up to one per insert); they do not test the flush
   sharing estimate beyond the steady case's measured 4.8–5.0 inserts per flush.
 - No `DeleteObject` falls inside a window: outdated parts wait at least `old_parts_lifetime` (480 s), longer than
@@ -367,7 +369,9 @@ replay, 647 retirement entries over 18 merge records replay, the nine raw checks
 | Finding | Round 4 | Disposition |
 |---|---|---|
 | R4-1 | rounded validity and span bounds excluded their own fit records (18.21875 < 18.22) | Fixed: bounds round outward (validity 18.21–472.95) |
-| R4-2 | the observation cutoff is not in the records | Fixed in the card (`quiet_cutoff_us`, `cutoff_us` observations; test `test_observation_cutoff_is_recorded`). The report run predates it: its nine natural-merge records carry the assertion's verdict, not the timestamps; the next run of these cards (Task 7's `amplification-run.2h`) is the first to carry them |
+| R4-2 | the observation cutoff is not in the records | OPEN: the card records `quiet_cutoff_us` and `cutoff_us` (test `test_observation_cutoff_is_recorded`), but no lifecycle record carries them: the report run predates the change, and `amplification-run.2h` is cut. Placement: recorded by the next natural-merge run (Task 7 replacement hold-outs) |
+
+MINOR totals over the four rounds: 7 fixed, 1 parked (#16), 1 open (R4-2).
 
 **Cut by owner directive D14.** The campaign deadline cuts every P2 case (spec §5.5): `async-inserts.steady`,
 `async-inserts.bursty` and `amplification-run.2h` have `status: cut` in `coverage.json`. Their manifests and
