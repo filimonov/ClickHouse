@@ -107,7 +107,9 @@ def build(report_dirs, coverage):
                 foreign.setdefault(c["id"], c)
     fixtures = {}
     coefficient_only = []
-    edges = [(f"evidence[{i}]", e) for i, e in enumerate(coverage["evidence"]) if e["status"] == "done" and e["role"] in ROLES]
+    # A borrowed row reuses another policy's edge, whose own fixture already replays those records.
+    edges = [(f"evidence[{i}]", e) for i, e in enumerate(coverage["evidence"])
+             if e["status"] == "done" and e["role"] in ROLES and "borrowed_from" not in e]
     for edge_id, e in edges:
         where = f"edge {e['coefficient']} {e['role']} {e['experiment_id']}.{e['policy']}"
         name = f"{e['experiment_id']}.{e['policy']}.json"

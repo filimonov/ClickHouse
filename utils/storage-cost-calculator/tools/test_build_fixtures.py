@@ -107,6 +107,15 @@ class BuildFixturesTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("lifecycle_only/gate/k7 is in no report", err)
 
+    def test_borrowed_edge_adds_no_fixture(self):
+        # The borrowed row replays the same records as its source edge, which already has a fixture.
+        cov = self.coverage()
+        cov["evidence"].append(dict(cov["evidence"][0], policy="s3plain", borrowed_from=cov["evidence"][0]["policy"],
+                                    note="the plain requests equal the s3 ones"))
+        code, err = self.run_main(cov)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()), ["_coefficient_only.json", NAME])
+
     def test_missing_prediction_fails_with_the_edge(self):
         cov = self.coverage()
         cov["evidence"][0]["experiment_id"] = "insert_basic.other"
