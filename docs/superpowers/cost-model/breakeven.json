@@ -1,6 +1,6 @@
 {
  "schema": "breakeven/1",
- "contract_version": "71537558b0fe1af1",
+ "contract_version": "41783adb4de94895",
  "price_preset": "aws-us-east-1",
  "ladder_rule": "×1/4, ×1/2, ×1, ×2, ×4, ×8 of each scenario's value, clamped to the input's measured range; whole numbers for counts; the scenario value is always a point",
  "scenarios": {
@@ -36,8 +36,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2561.5045591920452,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -61,8 +61,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2647.787503430713,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -86,8 +86,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2820.3533919080496,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -111,8 +111,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3165.485168862722,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -136,8 +136,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3846.9177347045297,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -161,8 +161,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5167.421924791973,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -179,7 +179,7 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": [
@@ -198,6 +198,15 @@
        "x_between": [
         30000,
         60000
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
+       "b": "cas",
+       "x_between": [
+        7500,
+        15000
        ],
        "extrapolated": false
       }
@@ -233,8 +242,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2561.5045591920452,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -258,8 +267,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2647.787503430713,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -283,8 +292,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2820.3533919080496,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -308,8 +317,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3165.485168862722,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -333,8 +342,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3846.9177347045297,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -358,8 +367,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 5167.421924791973,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -376,7 +385,7 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": [
@@ -395,6 +404,15 @@
        "x_between": [
         1000,
         2000
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
+       "b": "cas",
+       "x_between": [
+        250,
+        500
        ],
        "extrapolated": false
       }
@@ -428,8 +446,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2818.5128633834593,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -453,8 +471,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2820.3533919080496,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -475,11 +493,11 @@
         "s3plain": {
          "value": 13701.161782091778,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2824.03444895723,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -500,11 +518,11 @@
         "s3plain": {
          "value": 20577.651473137666,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2827.7155060064106,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -521,10 +539,29 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "ebs",
+       "b": "cas",
+       "x_between": [
+        1,
+        2
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "s3",
+       "b": "cas",
+       "x_between": [
+        1,
+        2
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     }
    }
@@ -551,7 +588,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1724.329662253928,
+         "value": 1730.089662253928,
          "state": "ok",
          "extrapolated": false
         },
@@ -561,8 +598,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 984.1854633184536,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -576,7 +613,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1745.0335214104657,
+         "value": 1750.7935214104657,
          "state": "ok",
          "extrapolated": false
         },
@@ -586,8 +623,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 994.664629063235,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -601,7 +638,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1786.4412397235412,
+         "value": 1792.2012397235412,
          "state": "ok",
          "extrapolated": false
         },
@@ -611,8 +648,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1015.622960552798,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -626,7 +663,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1869.2566763496925,
+         "value": 1875.0166763496925,
          "state": "ok",
          "extrapolated": false
         },
@@ -636,8 +673,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1057.539623531924,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -651,7 +688,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 2034.8875496019948,
+         "value": 2040.6475496019948,
          "state": "ok",
          "extrapolated": false
         },
@@ -661,8 +698,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1141.3729494901759,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -676,7 +713,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 2366.1492961065996,
+         "value": 2371.9092961065994,
          "state": "ok",
          "extrapolated": false
         },
@@ -686,8 +723,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1309.0396014066798,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -704,7 +741,7 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": [
@@ -714,6 +751,15 @@
        "x_between": [
         7200,
         14400
+       ],
+       "extrapolated": true
+      },
+      {
+       "a": "ebs",
+       "b": "cas",
+       "x_between": [
+        3600,
+        7200
        ],
        "extrapolated": true
       }
@@ -739,7 +785,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1724.329662253928,
+         "value": 1730.089662253928,
          "state": "ok",
          "extrapolated": false
         },
@@ -749,8 +795,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 984.1854633184536,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -764,7 +810,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1745.0335214104657,
+         "value": 1750.7935214104657,
          "state": "ok",
          "extrapolated": false
         },
@@ -774,8 +820,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 994.664629063235,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -789,7 +835,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1786.4412397235412,
+         "value": 1792.2012397235412,
          "state": "ok",
          "extrapolated": false
         },
@@ -799,8 +845,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1015.622960552798,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -814,7 +860,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1869.2566763496925,
+         "value": 1875.0166763496925,
          "state": "ok",
          "extrapolated": false
         },
@@ -824,8 +870,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1057.539623531924,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -839,7 +885,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 2034.8875496019948,
+         "value": 2040.6475496019948,
          "state": "ok",
          "extrapolated": false
         },
@@ -849,8 +895,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1141.3729494901759,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -864,7 +910,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 2366.1492961065996,
+         "value": 2371.9092961065994,
          "state": "ok",
          "extrapolated": false
         },
@@ -874,8 +920,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1309.0396014066798,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -892,7 +938,7 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": [
@@ -902,6 +948,15 @@
        "x_between": [
         80,
         160
+       ],
+       "extrapolated": true
+      },
+      {
+       "a": "ebs",
+       "b": "cas",
+       "x_between": [
+        40,
+        80
        ],
        "extrapolated": true
       }
@@ -925,7 +980,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 845.4388016799525,
+         "value": 848.3188016799525,
          "state": "ok",
          "extrapolated": false
         },
@@ -935,8 +990,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1013.7824320282081,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -950,7 +1005,7 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 1786.4412397235412,
+         "value": 1792.2012397235412,
          "state": "ok",
          "extrapolated": false
         },
@@ -960,8 +1015,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1015.622960552798,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -975,18 +1030,18 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 3668.4461158107188,
+         "value": 3679.9661158107187,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": 7951.8347569496145,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1019.3040176019783,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1000,18 +1055,18 @@
          "extrapolated": true
         },
         "s3": {
-         "value": 5550.450991897896,
+         "value": 5567.730991897896,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
          "value": 11975.533953606238,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1022.9850746511587,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1028,10 +1083,29 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "ebs",
+       "b": "cas",
+       "x_between": [
+        4,
+        6
+       ],
+       "extrapolated": true
+      },
+      {
+       "a": "s3",
+       "b": "cas",
+       "x_between": [
+        1,
+        2
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     }
    }
@@ -1058,18 +1132,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 268.6626773232526,
+         "value": 268.69015732325266,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 424.3556647246446,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 191.65758074904645,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1083,18 +1157,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 386.4283071015007,
+         "value": 386.4557871015007,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 542.1212945028927,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 250.56007068264387,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1108,18 +1182,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 621.9595666579969,
+         "value": 621.9870466579969,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 777.6525540593889,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 368.3650505498387,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1133,18 +1207,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1093.0220857709892,
+         "value": 1093.0495657709891,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 1248.7150731723812,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 603.9750102842286,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1158,18 +1232,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2004.4232076294968,
+         "value": 2004.4506876294968,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2160.116195030889,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1075.1949297530082,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1183,18 +1257,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3806.749367713989,
+         "value": 3806.7768477139894,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 3962.4423551153814,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1986.8830772127533,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1208,10 +1282,10 @@
        "ok"
       ],
       "s3plain": [
-       "ok"
+       "not_supported"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": null,
@@ -1236,18 +1310,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 268.6626773232526,
+         "value": 268.69015732325266,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 424.3556647246446,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 191.65758074904645,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1261,18 +1335,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 386.4283071015007,
+         "value": 386.4557871015007,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 542.1212945028927,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 250.56007068264387,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1286,18 +1360,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 621.9595666579969,
+         "value": 621.9870466579969,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 777.6525540593889,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 368.3650505498387,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1311,18 +1385,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1093.0220857709892,
+         "value": 1093.0495657709891,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 1248.7150731723812,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 603.9750102842286,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1336,18 +1410,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2004.4232076294968,
+         "value": 2004.4506876294968,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2160.116195030889,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1075.1949297530082,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1361,18 +1435,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3806.749367713989,
+         "value": 3806.7768477139894,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 3962.4423551153814,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1986.8830772127533,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1386,10 +1460,10 @@
        "ok"
       ],
       "s3plain": [
-       "ok"
+       "not_supported"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": null,
@@ -1412,18 +1486,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 308.40434332899844,
+         "value": 308.41823332899844,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 386.2508370296945,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 366.52452202524864,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1437,18 +1511,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 621.9595666579969,
+         "value": 621.9870466579969,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 777.6525540593889,
-         "state": "ok",
+         "value": null,
+         "state": "not_supported",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 368.3650505498387,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1462,18 +1536,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1249.0700133159937,
+         "value": 1249.1249733159939,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 1560.455988118778,
-         "state": "ok",
-         "extrapolated": true
+         "value": null,
+         "state": "not_supported",
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 372.0461075990191,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1487,18 +1561,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1865.937522698383,
+         "value": 1866.0199626983829,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2333.0164849025587,
-         "state": "ok",
-         "extrapolated": true
+         "value": null,
+         "state": "not_supported",
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 375.7271646481994,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1512,13 +1586,23 @@
        "ok"
       ],
       "s3plain": [
-       "ok"
+       "not_supported"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "s3",
+       "b": "cas",
+       "x_between": [
+        1,
+        2
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     }
    }
@@ -1555,8 +1639,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 548.6118874621849,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1580,8 +1664,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 843.1243371301721,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1605,8 +1689,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1432.1288789312875,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1630,8 +1714,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2558.9591211392385,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1655,8 +1739,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 4812.61960555514,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1680,8 +1764,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 9319.940574386943,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1699,7 +1783,7 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": null,
@@ -1734,8 +1818,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 548.6118874621849,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1759,8 +1843,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 843.1243371301721,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1784,8 +1868,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1432.1288789312875,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1809,8 +1893,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2558.9591211392385,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1834,8 +1918,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 4812.61960555514,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1859,8 +1943,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 9319.940574386943,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1878,7 +1962,7 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": null,
@@ -1911,8 +1995,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1432.1288789312875,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1936,8 +2020,8 @@
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1433.9694074558777,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1958,11 +2042,11 @@
         "s3plain": {
          "value": 5791.6691209753035,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1437.6504645050582,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -1983,11 +2067,11 @@
         "s3plain": {
          "value": 8667.054561462952,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 1441.3315215542384,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2004,10 +2088,20 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "s3",
+       "b": "cas",
+       "x_between": [
+        1,
+        2
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     }
    }
@@ -2034,18 +2128,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1324.9000441340513,
+         "value": 4892.503306689055,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2445.64305937624,
+         "value": 9560.604570546055,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2592.1790691295246,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2059,18 +2153,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1670.0023572758205,
+         "value": 5237.605619830823,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2790.74537251801,
+         "value": 9905.706883687824,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2707.222994781082,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2084,18 +2178,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2351.3891899694863,
+         "value": 5918.99245252449,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 3472.1322052116752,
+         "value": 10587.093716381489,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2937.3108460841972,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2109,18 +2203,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3671.7806489466907,
+         "value": 7239.383911501694,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 4792.52366418888,
+         "value": 11907.485175358694,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3397.4865486904273,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2134,18 +2228,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 6312.5635669011,
+         "value": 9880.166829456102,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 7433.306582143289,
+         "value": 14548.268093313103,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 4288.9993265916,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2159,18 +2253,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 11594.129402809918,
+         "value": 15161.73266536492,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 12714.872418052108,
+         "value": 19829.83392922192,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 6049.671580041523,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2187,13 +2281,31 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": [
       {
        "a": "ebs",
+       "b": "s3",
+       "x_between": [
+        10000,
+        20000
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
        "b": "s3plain",
+       "x_between": [
+        20000,
+        40000
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
+       "b": "cas",
        "x_between": [
         5000,
         10000
@@ -2222,18 +2334,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1324.9000441340513,
+         "value": 4892.503306689055,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2445.64305937624,
+         "value": 9560.604570546055,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2592.1790691295246,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2247,18 +2359,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1670.0023572758205,
+         "value": 5237.605619830823,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2790.74537251801,
+         "value": 9905.706883687824,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2707.222994781082,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2272,18 +2384,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2351.3891899694863,
+         "value": 5918.99245252449,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 3472.1322052116752,
+         "value": 10587.093716381489,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2937.3108460841972,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2297,18 +2409,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 3671.7806489466907,
+         "value": 7239.383911501694,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 4792.52366418888,
+         "value": 11907.485175358694,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 3397.4865486904273,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2322,18 +2434,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 6312.5635669011,
+         "value": 9880.166829456102,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 7433.306582143289,
+         "value": 14548.268093313103,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 4288.9993265916,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2347,18 +2459,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 11594.129402809918,
+         "value": 15161.73266536492,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 12714.872418052108,
+         "value": 19829.83392922192,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 6049.671580041523,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2375,13 +2487,31 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
      "crossing": [
       {
        "a": "ebs",
+       "b": "s3",
+       "x_between": [
+        250,
+        500
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
        "b": "s3plain",
+       "x_between": [
+        500,
+        1000
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "ebs",
+       "b": "cas",
        "x_between": [
         125,
         250
@@ -2408,18 +2538,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 767.1132611864531,
+         "value": 1907.2989042603429,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 1140.6942662671827,
+         "value": 3463.332658879343,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2933.6297890350165,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2433,18 +2563,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 1563.6601223729062,
+         "value": 3917.5545751873524,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 2310.8221325343657,
+         "value": 7029.622084425352,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2935.470317559607,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2458,18 +2588,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 2351.3891899694863,
+         "value": 5918.99245252449,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 3472.1322052116752,
+         "value": 10587.093716381489,
          "state": "ok",
          "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2937.3108460841972,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2483,18 +2613,18 @@
          "extrapolated": false
         },
         "s3": {
-         "value": 4681.011979938973,
+         "value": 11889.741671715645,
          "state": "ok",
          "extrapolated": false
         },
         "s3plain": {
-         "value": 6922.498010423352,
+         "value": 21225.944199429647,
          "state": "ok",
-         "extrapolated": true
+         "extrapolated": false
         },
         "cas": {
-         "value": null,
-         "state": "unavailable",
+         "value": 2942.832431657968,
+         "state": "ok",
          "extrapolated": false
         }
        }
@@ -2511,10 +2641,29 @@
        "ok"
       ],
       "cas": [
-       "unavailable"
+       "ok"
       ]
      },
-     "crossing": null,
+     "crossing": [
+      {
+       "a": "ebs",
+       "b": "cas",
+       "x_between": [
+        1,
+        2
+       ],
+       "extrapolated": false
+      },
+      {
+       "a": "s3",
+       "b": "cas",
+       "x_between": [
+        1,
+        2
+       ],
+       "extrapolated": false
+      }
+     ],
      "problems": []
     }
    }
