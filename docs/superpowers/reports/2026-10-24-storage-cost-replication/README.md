@@ -20,7 +20,7 @@ A follower acquires every inserted part by fetch and, with default settings, exe
 | Earlier runs | `cost-20261024T093949Z` (smoke, s3, K=1: found the zero-copy receiver `HeadObject`); `cost-20261024T113828Z` (stopped after 66 records: local had no window start, CAS windows crossed, s3plain sent `HeadObject` the assumed ranges missed, CAS republishes a failed blob 8 times). Neither is in `measurements.jsonl` |
 | Predictions | per file (`prediction_commit`): the natural hold-out `replication-natural-holdout.wide` on `s3`, `cas` and `local` at `630bc885ee4`, before any run; its `s3plain` file at `2c006846dbc`, where its mutation split became `null` because s3plain refuses mutations; every other case at `2c006846dbc`; CAS and s3plain ranges and the CAS fault graph revised at `0bc1e557850` after the stopped run, before the report runs; after the report runs `bac037b336d` turns the s3 `fetch.merge` sender read into a range and adds the fresh hold-out `faults.multipart-abort-part3c` |
 | Store | RustFS behind the ledger proxy; every record replays from `raw/<card>/<run_id>/ledger.jsonl.gz` |
-| Cuts | `replacement.default` and `faults.fetch` (P2), owner directive D14: no manifest; `replacement_requests_per_part` and `fetch_retry_rate` are `unsupported` |
+| Cuts | `replacement.default` and `faults.fetch` (P2), owner directive D14: no manifest and no coefficient; the registry has no rows for them |
 
 Cards: `utils/cas-yardstick/yardstick/cost/cards/replication.py` (`replication-fetch`, `replication-local`,
 `replication-zero-copy`, `replication-natural-fit`, `replication-natural-holdout`, `restart-catchup`) and
@@ -156,7 +156,9 @@ Per acquired part, Compact parts of 5 `UInt64` columns (`acquire_requests`, `loc
   the same reads in the matching `replication-local` case where nothing is fetched (CAS reads its new manifest at
   promote, s3plain heads its new directory). Inserts use the merge case as that baseline.
 - **Interserver bytes.** `acquire_bytes` is what the serving replica sent per byte on disk of the fetched part:
-  1.0004–1.0008 for streamed parts (file framing), the manifest only for CAS.
+  1.0004–1.0008 for streamed parts (file framing), the manifest only for CAS. The `inserts` cells bill these
+  bytes on `ec2_ec2_cross_az` when `topology = cross_az` (ingest bytes × (replicas − 1) × `acquire_bytes`); the
+  CAS row is unavailable there because CAS has no per-byte key.
 
 ### Restart and catch-up, measured {#graphs-restart}
 
@@ -334,7 +336,7 @@ Restart catch-up (K=1; requests recomputed from the raw ledger with maintenance 
 | `retry_outcome_mix` | variant_id, fault_class, replication_op, attempt_kind | abs 0, rel 0 | {"nth": [3, 7]} | per failed attempt: attempts (attempt_kind attempts) and attempts the store saw (store_reached: upstream outcome other than not_sent) of the fault case minus the fault-free insert (faults.none); an absent key is 0 |
 | `failed_upload_residue` | variant_id | abs 0, rel 0 | {"upload_parts": [2, 3]} | incomplete multipart bytes in the replay after the window, before any rig abort |
 
-Values are in `coefficients.json`. `replacement_requests_per_part` and `fetch_retry_rate` are `unsupported` in the registry (their only cases are cut), defaults 0.
+Values are in `coefficients.json`. The cut cases measure no replacement or fetch-retry coefficient, so the registry has no rows for them.
 
 ## Gaps and limitations {#gaps}
 
